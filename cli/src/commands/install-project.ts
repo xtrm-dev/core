@@ -404,6 +404,43 @@ export async function installProjectSkill(toolName: string, projectRootOverride?
         }
     }
 
+    // Step 2c: Symlink .agents/skills → ../.claude/skills for Pi compatibility
+    // .claude/skills is the SSOT; Pi reads .agents/skills natively from cwd.
+    const claudeSkillsDir = path.join(claudeDir, 'skills');
+    if (await fs.pathExists(claudeSkillsDir)) {
+        const agentsDir = path.join(projectRoot, '.agents');
+        const agentsSkillsLink = path.join(agentsDir, 'skills');
+        const symlinkTarget = path.join('..', '.claude', 'skills');
+
+        let needsSymlink = true;
+        if (await fs.pathExists(agentsSkillsLink)) {
+            try {
+                const stat = await fs.lstat(agentsSkillsLink);
+                if (stat.isSymbolicLink()) {
+                    const current = await fs.readlink(agentsSkillsLink);
+                    if (current === symlinkTarget) {
+                        needsSymlink = false;
+                    } else {
+                        await fs.remove(agentsSkillsLink); // stale symlink — recreate
+                    }
+                } else {
+                    console.log(kleur.yellow('  ⚠ .agents/skills/ is a real directory — skipping Pi symlink'));
+                    needsSymlink = false;
+                }
+            } catch {
+                needsSymlink = true;
+            }
+        }
+
+        if (needsSymlink) {
+            await fs.mkdirp(agentsDir);
+            await fs.symlink(symlinkTarget, agentsSkillsLink);
+            console.log(`${kleur.green('  ✓')} .agents/skills → ../.claude/skills`);
+        } else {
+            console.log(kleur.dim('  ✓ .agents/skills symlink already in place'));
+        }
+    }
+
     // Step 3: Documentation Copy
     if (await fs.pathExists(skillReadmePath)) {
         console.log(kleur.bold('\n── Installing Documentation ──────────────'));
@@ -431,7 +468,6 @@ export async function installProjectSkill(toolName: string, projectRootOverride?
     console.log(kleur.white(`  Please read: ${kleur.cyan('.claude/docs/' + toolName + '-readme.md')}\n`));
 
     if (toolName === 'tdd-guard') {
-        // Check if tdd-guard CLI is installed globally
         const tddGuardCheck = spawnSync('tdd-guard', ['--version'], { stdio: 'pipe' });
         if (tddGuardCheck.status !== 0) {
             console.log(kleur.red('  ✗ tdd-guard CLI not found globally!\n'));
