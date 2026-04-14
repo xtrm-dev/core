@@ -48,6 +48,32 @@ function resolveStatuslineScript(worktreePath: string): string | null {
     return null;
 }
 
+function ensureWorktreeSpecialists(worktreePath: string, mainRepoPath: string): void {
+    const worktreeSpecialistsRoot = path.join(worktreePath, '.specialists');
+    mkdirSync(worktreeSpecialistsRoot, { recursive: true });
+
+    const specialistDirs = ['default', 'user'] as const;
+    for (const dirName of specialistDirs) {
+        const sourceDir = path.join(mainRepoPath, '.specialists', dirName);
+        if (!existsSync(sourceDir)) continue;
+
+        const targetDir = path.join(worktreeSpecialistsRoot, dirName);
+        const symlinkTarget = path.relative(path.dirname(targetDir), sourceDir);
+
+        try {
+            const existing = lstatSync(targetDir);
+            if (existing.isSymbolicLink() && readlinkSync(targetDir) === symlinkTarget) {
+                continue;
+            }
+            rmSync(targetDir, { recursive: true, force: true });
+        } catch {
+            // target does not exist
+        }
+
+        symlinkSync(symlinkTarget, targetDir, 'dir');
+    }
+}
+
 export interface SessionMeta {
     runtime: 'claude' | 'pi';
     launchedAt: string;
@@ -207,7 +233,16 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             }
         }
 
-        // 2. Write settings.local.json with statusLine bound to this worktree's
+        // 2. Symlink specialist definition directories into the worktree so
+        //    SpecialistLoader can resolve .specialists/default|user from cwd.
+        try {
+            ensureWorktreeSpecialists(worktreePath, mainRepoRoot);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(kleur.dim(`  warning: could not provision specialist definitions (${message})`));
+        }
+
+        // 3. Write settings.local.json with statusLine bound to this worktree's
         //    hook script path so runtime UI stays available in sandbox sessions.
         const localSettings: Record<string, unknown> = {};
         const statuslinePath = resolveStatuslineScript(worktreePath);
