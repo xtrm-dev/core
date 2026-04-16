@@ -24,6 +24,39 @@ afterEach(async () => {
 });
 
 describe('pi runtime safeguards', () => {
+  it('resolves bundled pi runtime sources from the workspace package layout', async () => {
+    const { resolveManagedPiCoreSourceDir, resolveManagedPiExtensionsSourceDir } = await import('../core/pi-runtime.js');
+    const repoRoot = path.resolve(process.cwd(), '..');
+
+    expect(resolveManagedPiExtensionsSourceDir()).toBe(path.join(repoRoot, 'packages/pi-extensions/extensions'));
+    expect(resolveManagedPiCoreSourceDir()).toBe(path.join(repoRoot, 'packages/pi-extensions/src/core'));
+  });
+
+  it('detects npmmirror 404s and emits the scoped npmjs hint for pi extensions', async () => {
+    const { getPiPackageInstallFailureHint, shouldRetryPiInstallViaNpmjs } = await import('../core/pi-runtime.js');
+    const output = 'npm error 404 Not Found - GET https://cdn.npmmirror.com/packages/%40jaggerxtrm/pi-extensions/0.7.8/pi-extensions-0.7.8.tgz';
+
+    expect(shouldRetryPiInstallViaNpmjs('npm:@jaggerxtrm/pi-extensions', output)).toBe(true);
+    expect(getPiPackageInstallFailureHint('npm:@jaggerxtrm/pi-extensions', output)).toEqual([
+      'detected registry mirror 404 for npm:@jaggerxtrm/pi-extensions',
+      'best fix: npm config set @jaggerxtrm:registry https://registry.npmjs.org',
+    ]);
+    expect(getPiPackageInstallFailureHint('npm:pi-gitnexus', output)).toEqual([]);
+  });
+
+  it('prunes stale pi-dex entries because xtrm-ui already replaces it', async () => {
+    const { pruneConflictingPiPackageEntries } = await import('../core/pi-runtime.js');
+
+    expect(pruneConflictingPiPackageEntries([
+      'npm:pi-dex',
+      'npm:pi-gitnexus',
+      'npm:@jaggerxtrm/pi-extensions',
+    ])).toEqual({
+      kept: ['npm:pi-gitnexus', 'npm:@jaggerxtrm/pi-extensions'],
+      removed: ['npm:pi-dex'],
+    });
+  });
+
   it('repairs incorrect @xtrm/pi-core symlink target', async () => {
     const { ensureCorePackageSymlink } = await import('../core/pi-runtime.js');
 

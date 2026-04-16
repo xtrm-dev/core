@@ -80,7 +80,6 @@
       "./packages/pi-extensions"
     ],
     "packages": [
-      "npm:pi-dex",
       "npm:pi-gitnexus",
       "npm:pi-serena-tools",
       "npm:@zenobius/pi-worktrees",

@@ -106,6 +106,9 @@ Pi auto-discovers extensions in `~/.pi/agent/extensions/`, so no manual
 pi-dex (`npm:pi-dex`) is **not** installed when using xtrm-ui — it was removed
 from managed packages to avoid the footer conflict.
 
+`xt pi reload` also prunes stale `npm:pi-dex` entries from Pi settings when it finds
+an older machine still loading pi-dex alongside xtrm-ui.
+
 `@heyhuynhgiabuu/pi-diff` is declared as an extension dependency for capability
 parity/reference. Rendering currently uses the local compatibility adapter described
 above until a stable library API is exported upstream.

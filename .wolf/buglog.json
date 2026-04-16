@@ -40,7 +40,7 @@
       "error_message": "Significant refactor of ",
       "file": ".xtrm/memory.md",
       "root_cause": "7 lines replaced/restructured",
-      "fix": "Rewrote 11→13 lines (7 removed)",
+      "fix": "Rewrote 11\u219213 lines (7 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -49,6 +49,24 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-02T22:22:27.166Z"
+    },
+    {
+      "id": "bug-004",
+      "timestamp": "2026-04-16T17:20:00Z",
+      "error_message": "Pi startup reported xtrm-ui conflicts with pi-dex for built-in tools and pidex-* themes",
+      "file": "cli/src/core/pi-runtime.ts",
+      "root_cause": "Older machines could still load stale npm:pi-dex from Pi settings even though xtrm-ui vendors the same tool renderers/themes and is intended to replace pi-dex.",
+      "fix": "Prune npm:pi-dex from user/project Pi settings during xt pi reload/init, remove stale pi-dex from published root pi package metadata, and document the cleanup behavior.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "pi-dex",
+        "settings-conflict",
+        "tool-conflict"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-16T17:20:00Z"
     }
   ]
 }

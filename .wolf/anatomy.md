@@ -1,6 +1,7 @@
 # anatomy.md
 
 > Auto-maintained by OpenWolf. Last scanned: 2026-04-02T22:22:27.122Z
+> Manual note 2026-04-16: Pi runtime now prefers packages/pi-extensions/* and prunes stale npm:pi-dex settings conflicts.
 > Files: 541 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./

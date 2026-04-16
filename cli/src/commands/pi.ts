@@ -7,7 +7,13 @@ import fs from 'fs-extra';
 import { findRepoRoot } from '../utils/repo-root.js';
 import { t } from '../utils/theme.js';
 import { runPiInstall } from './pi-install.js';
-import { ensureCorePackageSymlink, inventoryPiRuntime, remediateStalePiMcpAdapterOverride } from '../core/pi-runtime.js';
+import {
+    ensureCorePackageSymlink,
+    inventoryPiRuntime,
+    remediateStalePiMcpAdapterOverride,
+    resolveManagedPiCoreSourceDir,
+    resolveManagedPiExtensionsSourceDir,
+} from '../core/pi-runtime.js';
 import { createInstallPiCommand } from './install-pi.js';
 import { launchWorktreeSession } from '../utils/worktree-session.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
@@ -91,10 +97,10 @@ export function createPiCommand(): Command {
             const pointer = await getPiProjectPointer(projectRoot);
 
             const bundleRoot = await findRepoRoot();
-            const sourceDir = path.join(bundleRoot, '.xtrm', 'extensions');
+            const sourceDir = resolveManagedPiExtensionsSourceDir(bundleRoot);
             const globalTargetDir = path.join(PI_AGENT_DIR, 'extensions');
 
-            if (!await fs.pathExists(sourceDir)) {
+            if (!sourceDir || !await fs.pathExists(sourceDir)) {
                 console.log(kleur.dim('  ○ managed extensions not bundled in this install\n'));
                 return;
             }
@@ -184,7 +190,8 @@ export function createPiCommand(): Command {
             const projectRoot = resolveProjectRoot();
             const pointer = await getPiProjectPointer(projectRoot);
             const bundleRoot = await findRepoRoot();
-            const sourceDir = path.join(bundleRoot, '.xtrm', 'extensions');
+            const sourceDir = resolveManagedPiExtensionsSourceDir(bundleRoot);
+            const coreSourceDir = resolveManagedPiCoreSourceDir(bundleRoot);
             const globalTargetDir = path.join(PI_AGENT_DIR, 'extensions');
 
             try {
@@ -203,7 +210,9 @@ export function createPiCommand(): Command {
             }
 
             try {
-                const coreStatus = await ensureCorePackageSymlink(path.join(sourceDir, 'core'), projectRoot, false);
+                const coreStatus = coreSourceDir
+                    ? await ensureCorePackageSymlink(coreSourceDir, projectRoot, false)
+                    : 'missing-source';
                 if (coreStatus === 'repaired' || coreStatus === 'created') {
                     console.log(t.success('  ✓ repaired .xtrm/extensions/node_modules/@xtrm/pi-core symlink'));
                 } else if (coreStatus === 'ok') {
@@ -216,7 +225,7 @@ export function createPiCommand(): Command {
                 allOk = false;
             }
 
-            if (!await fs.pathExists(sourceDir)) {
+            if (!sourceDir || !await fs.pathExists(sourceDir)) {
                 console.log(kleur.dim('  ○ managed extensions not bundled in this install'));
             } else {
                 const plan = await inventoryPiRuntime(sourceDir, globalTargetDir);

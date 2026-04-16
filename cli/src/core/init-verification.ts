@@ -15,7 +15,7 @@ import os from 'os';
 import path from 'path';
 import { t, sym } from '../utils/theme.js';
 import { inventoryDeps, type BootstrapPlan } from './machine-bootstrap.js';
-import { inventoryPiRuntime, type PiRuntimePlan } from './pi-runtime.js';
+import { inventoryPiRuntime, resolveManagedPiExtensionsSourceDir, type PiRuntimePlan } from './pi-runtime.js';
 import { checkRuntimeSkillsViews } from './skills-runtime-views.js';
 
 interface CommandHook {
@@ -162,10 +162,9 @@ function verifyClaudeRuntime(projectRoot: string): {
 }
 
 async function verifyPiRuntime(projectRoot: string): Promise<PiRuntimePlan> {
-    const pkgRoot = resolvePkgRoot();
-    const sourceDir = path.join(pkgRoot, '.xtrm', 'extensions');
+    const sourceDir = resolveManagedPiExtensionsSourceDir();
 
-    if (!await fs.pathExists(sourceDir)) {
+    if (!sourceDir || !await fs.pathExists(sourceDir)) {
         // Not bundled — return empty plan
         return {
             extensions: [],
@@ -179,9 +178,9 @@ async function verifyPiRuntime(projectRoot: string): Promise<PiRuntimePlan> {
         };
     }
 
-    // Project installs no longer mirror extensions to .pi/extensions/ — Pi reads
-    // directly from .xtrm/extensions via settings.json. Verify packages only;
-    // pass sourceDir as targetDir so extension checks always return present.
+    // Project installs are package-based; verification only needs the managed
+    // package inventory. Pass sourceDir as targetDir so extension checks remain
+    // satisfied without requiring a mirrored .pi/extensions tree.
     void projectRoot;
     return await inventoryPiRuntime(sourceDir, sourceDir);
 }
@@ -201,21 +200,6 @@ function verifyProjectBootstrap(projectRoot: string): { beadsInitialized: boolea
     const instructionHeaders = agentsMd || claudeMd;
 
     return { beadsInitialized, gitnexusIndexed, instructionHeaders };
-}
-
-// ── Resolve package root ──────────────────────────────────────────────────────
-
-declare const __dirname: string;
-
-function resolvePkgRoot(): string {
-    const candidates = [
-        path.resolve(__dirname, '../..'),
-        path.resolve(__dirname, '../../..'),
-    ];
-    for (const c of candidates) {
-        if (fs.existsSync(path.join(c, '.xtrm', 'extensions'))) return c;
-    }
-    return candidates[0];
 }
 
 // ── Full verification ─────────────────────────────────────────────────────────

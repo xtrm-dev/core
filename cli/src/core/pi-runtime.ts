@@ -24,15 +24,47 @@ import { rebuildRuntimeActiveView } from './skills-materializer.js';
 // Resolve xtrm-tools package root from __dirname (cli/dist/ -> ../..)
 declare const __dirname: string;
 
+const MANAGED_PI_EXTENSION_SOURCE_CANDIDATES = [
+    ['packages', 'pi-extensions', 'extensions'],
+    ['.xtrm', 'extensions'],
+] as const;
+
+function resolveFirstExistingPath(
+    rootDir: string,
+    candidates: readonly (readonly string[])[],
+): string | null {
+    for (const candidate of candidates) {
+        const candidatePath = path.join(rootDir, ...candidate);
+        if (fs.existsSync(candidatePath)) {
+            return candidatePath;
+        }
+    }
+
+    return null;
+}
+
 function resolvePkgRoot(): string {
     const candidates = [
         path.resolve(__dirname, '../..'),
         path.resolve(__dirname, '../../..'),
     ];
-    for (const c of candidates) {
-        if (fs.existsSync(path.join(c, '.xtrm', 'extensions'))) return c;
+    for (const candidateRoot of candidates) {
+        if (resolveFirstExistingPath(candidateRoot, MANAGED_PI_EXTENSION_SOURCE_CANDIDATES)) {
+            return candidateRoot;
+        }
     }
     return candidates[0];
+}
+
+export function resolveManagedPiExtensionsSourceDir(pkgRoot: string = resolvePkgRoot()): string | null {
+    return resolveFirstExistingPath(pkgRoot, MANAGED_PI_EXTENSION_SOURCE_CANDIDATES);
+}
+
+export function resolveManagedPiCoreSourceDir(pkgRoot: string = resolvePkgRoot()): string | null {
+    return resolveFirstExistingPath(pkgRoot, [
+        ['packages', 'pi-extensions', 'src', 'core'],
+        ['.xtrm', 'extensions', 'core'],
+    ]);
 }
 
 const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
@@ -41,6 +73,7 @@ const PI_MCP_ADAPTER_REQUIRED_ENTRY = 'commands.js';
 const PROJECT_EXTENSIONS_ENTRY = '../.xtrm/extensions';
 const PROJECT_SKILLS_ENTRY = '../.xtrm/skills/active/pi';
 const PROJECT_EXTENSION_PACKAGE_ID = 'npm:@jaggerxtrm/pi-extensions';
+const CONFLICTING_PI_PACKAGE_IDS = new Set<string>(['npm:pi-dex']);
 const LEGACY_PROJECT_EXTENSION_ENTRIES = new Set<string>([
     PROJECT_EXTENSIONS_ENTRY,
     '.xtrm/extensions',
@@ -395,16 +428,98 @@ async function isPackagePresentInPiAgent(agentDir: string, piPackageId: string):
     return fs.pathExists(packageDir);
 }
 
-export type PiPackageInstallRunner = (piPackageId: string) => number | null;
+const NPMJS_REGISTRY_URL = 'https://registry.npmjs.org';
+
+interface PiPackageInstallResult {
+    status: number | null;
+    stdout: string;
+    stderr: string;
+}
+
+interface PiPackageInstallAttempt {
+    status: number | null;
+    output: string;
+    retriedWithNpmjs: boolean;
+}
+
+export type PiPackageInstallRunner = (piPackageId: string, env?: NodeJS.ProcessEnv) => PiPackageInstallResult;
+
+function runPiPackageInstall(piPackageId: string, env?: NodeJS.ProcessEnv): PiPackageInstallResult {
+    const installResult = spawnSync('pi', ['install', piPackageId], {
+        stdio: 'pipe',
+        encoding: 'utf8',
+        env,
+    });
+
+    return {
+        status: installResult.status,
+        stdout: installResult.stdout ?? '',
+        stderr: installResult.stderr ?? '',
+    };
+}
+
+function getPiPackageInstallOutput(result: PiPackageInstallResult): string {
+    return `${result.stdout}\n${result.stderr}`.trim();
+}
+
+function buildNpmjsRegistryEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    return {
+        ...baseEnv,
+        NPM_CONFIG_REGISTRY: NPMJS_REGISTRY_URL,
+        npm_config_registry: NPMJS_REGISTRY_URL,
+    };
+}
+
+export function shouldRetryPiInstallViaNpmjs(piPackageId: string, output: string): boolean {
+    if (piPackageId !== PROJECT_EXTENSION_PACKAGE_ID) return false;
+
+    const normalizedOutput = output.toLowerCase();
+    return normalizedOutput.includes('npmmirror') && normalizedOutput.includes('404');
+}
+
+export function getPiPackageInstallFailureHint(piPackageId: string, output: string): string[] {
+    if (!shouldRetryPiInstallViaNpmjs(piPackageId, output)) {
+        return [];
+    }
+
+    return [
+        `detected registry mirror 404 for ${piPackageId}`,
+        `best fix: npm config set @jaggerxtrm:registry ${NPMJS_REGISTRY_URL}`,
+    ];
+}
+
+function installPiPackageWithFallback(
+    piPackageId: string,
+    log?: (message: string) => void,
+    installRunner: PiPackageInstallRunner = runPiPackageInstall,
+): PiPackageInstallAttempt {
+    const initialResult = installRunner(piPackageId);
+    const initialOutput = getPiPackageInstallOutput(initialResult);
+
+    if ((initialResult.status ?? 1) === 0) {
+        return { status: initialResult.status, output: initialOutput, retriedWithNpmjs: false };
+    }
+
+    if (!shouldRetryPiInstallViaNpmjs(piPackageId, initialOutput)) {
+        return { status: initialResult.status, output: initialOutput, retriedWithNpmjs: false };
+    }
+
+    log?.(kleur.dim(`Detected npmmirror 404 for ${piPackageId}; retrying via ${NPMJS_REGISTRY_URL}`));
+    const retriedResult = installRunner(piPackageId, buildNpmjsRegistryEnv());
+    const retriedOutput = getPiPackageInstallOutput(retriedResult);
+
+    return {
+        status: retriedResult.status,
+        output: [initialOutput, retriedOutput].filter(Boolean).join('\n'),
+        retriedWithNpmjs: true,
+    };
+}
 
 export async function ensureAlwaysGlobalPiPackages(
     dryRun: boolean,
     log?: (message: string) => void,
     agentDir: string = PI_AGENT_DIR,
-    installRunner: PiPackageInstallRunner = (piPackageId) => {
-        const installResult = spawnSync('pi', ['install', piPackageId], { stdio: 'pipe', encoding: 'utf8' });
-        return installResult.status;
-    },
+    installRunner: PiPackageInstallRunner = runPiPackageInstall,
 ): Promise<{ installed: string[]; failed: string[] }> {
     const installed: string[] = [];
     const failed: string[] = [];
@@ -421,15 +536,18 @@ export async function ensureAlwaysGlobalPiPackages(
             continue;
         }
 
-        const installStatus = installRunner(pkg.id);
-        if (installStatus === 0) {
+        const installAttempt = installPiPackageWithFallback(pkg.id, log, installRunner);
+        if (installAttempt.status === 0) {
             installed.push(pkg.id);
-            log?.(`${sym.ok} ${pkg.displayName} (global)`);
+            log?.(`${sym.ok} ${pkg.displayName} (global${installAttempt.retriedWithNpmjs ? ', npmjs fallback' : ''})`);
             continue;
         }
 
         failed.push(pkg.id);
         log?.(kleur.yellow(`⚠ ${pkg.displayName} — global install failed`));
+        for (const hint of getPiPackageInstallFailureHint(pkg.id, installAttempt.output)) {
+            log?.(kleur.yellow(`  → ${hint}`));
+        }
     }
 
     return { installed, failed };
@@ -653,6 +771,73 @@ function normalizeStringArray(value: unknown): string[] {
     return value.filter((entry): entry is string => typeof entry === 'string');
 }
 
+export function pruneConflictingPiPackageEntries(entries: readonly string[]): { kept: string[]; removed: string[] } {
+    const kept: string[] = [];
+    const removed: string[] = [];
+
+    for (const entry of entries) {
+        if (CONFLICTING_PI_PACKAGE_IDS.has(entry)) {
+            removed.push(entry);
+            continue;
+        }
+        kept.push(entry);
+    }
+
+    return { kept, removed };
+}
+
+async function pruneConflictingPiPackagesFromSettings(
+    settingsPath: string,
+    scopeLabel: string,
+    dryRun: boolean,
+    log?: (message: string) => void,
+): Promise<string[]> {
+    if (!await fs.pathExists(settingsPath)) {
+        return [];
+    }
+
+    let existingSettings: PiSettingsShape = {};
+    try {
+        existingSettings = await fs.readJson(settingsPath) as PiSettingsShape;
+    } catch {
+        return [];
+    }
+
+    const existingPackages = normalizeStringArray(existingSettings.packages);
+    const { kept, removed } = pruneConflictingPiPackageEntries(existingPackages);
+    if (removed.length === 0) {
+        return [];
+    }
+
+    if (dryRun) {
+        log?.(kleur.dim(`[DRY RUN] would remove conflicting Pi package(s) from ${scopeLabel}: ${removed.join(', ')}`));
+        return removed;
+    }
+
+    await fs.writeJson(settingsPath, { ...existingSettings, packages: kept }, { spaces: 2 });
+    log?.(kleur.dim(`Removed conflicting Pi package(s) from ${scopeLabel}: ${removed.join(', ')}`));
+    return removed;
+}
+
+async function cleanupConflictingPiPackageSettings(
+    projectRoot: string,
+    dryRun: boolean,
+    log?: (message: string) => void,
+): Promise<void> {
+    await pruneConflictingPiPackagesFromSettings(
+        path.join(PI_AGENT_DIR, 'settings.json'),
+        '~/.pi/agent/settings.json',
+        dryRun,
+        log,
+    );
+    await pruneConflictingPiPackagesFromSettings(
+        path.join(projectRoot, '.pi', 'settings.json'),
+        `${projectRoot}/.pi/settings.json`,
+        dryRun,
+        log,
+    );
+}
+
 async function updatePiSettings(
     projectRoot: string,
     dryRun: boolean,
@@ -676,8 +861,9 @@ async function updatePiSettings(
     }
 
     const LEGACY_PACKAGE_IDS = new Set(['npm:@xtrm/pi-extensions', './extensions/']);
-    const existingPackages = normalizeStringArray(existingSettings.packages)
+    const existingProjectPackages = normalizeStringArray(existingSettings.packages)
         .filter((entry) => !LEGACY_PACKAGE_IDS.has(entry) && !entry.startsWith('./extensions/'));
+    const { kept: existingPackages } = pruneConflictingPiPackageEntries(existingProjectPackages);
     if (!existingPackages.includes(PROJECT_EXTENSION_PACKAGE_ID)) {
         existingPackages.push(PROJECT_EXTENSION_PACKAGE_ID);
     }
@@ -793,13 +979,16 @@ export async function executePiSync(
         }
 
         try {
-            const r = spawnSync('pi', installArgs, { stdio: 'pipe', encoding: 'utf8' });
-            if (r.status === 0) {
+            const installAttempt = installPiPackageWithFallback(pkg.id, log);
+            if (installAttempt.status === 0) {
                 result.packagesInstalled.push(pkg.id);
-                log(`${sym.ok} ${pkg.displayName}`);
+                log(`${sym.ok} ${pkg.displayName}${installAttempt.retriedWithNpmjs ? ' (npmjs fallback)' : ''}`);
             } else {
                 result.failed.push(pkg.id);
                 log(kleur.yellow(`⚠ ${pkg.displayName} — install failed`));
+                for (const hint of getPiPackageInstallFailureHint(pkg.id, installAttempt.output)) {
+                    log(kleur.yellow(`  → ${hint}`));
+                }
             }
         } catch (err) {
             result.failed.push(pkg.id);
@@ -828,7 +1017,7 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
     const { dryRun = false, isGlobal = false, projectRoot } = opts;
 
     const pkgRoot = resolvePkgRoot();
-    const sourceDir = path.join(pkgRoot, '.xtrm', 'extensions');
+    const sourceDir = resolveManagedPiExtensionsSourceDir(pkgRoot);
     const resolvedProjectRoot = projectRoot || process.cwd();
     const log = (msg: string) => console.log(kleur.dim(`    ${msg}`));
 
@@ -840,7 +1029,7 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
         failed: [],
     };
 
-    if (!await fs.pathExists(sourceDir)) {
+    if (!sourceDir || !await fs.pathExists(sourceDir)) {
         console.log(kleur.dim('\n  Managed extensions: skipped (not bundled in npm package)\n'));
         return result;
     }
@@ -849,6 +1038,8 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
     if (preflight.staleOverride.remediated) {
         result.extensionsRemoved.push('pi-mcp-adapter');
     }
+
+    await cleanupConflictingPiPackageSettings(resolvedProjectRoot, dryRun, log);
 
     if (isGlobal) {
         const targetDir = path.join(PI_AGENT_DIR, 'extensions');
@@ -918,15 +1109,18 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
         }
 
         try {
-            const installResult = spawnSync('pi', ['install', pkg.id], { stdio: 'pipe', encoding: 'utf8' });
-            if (installResult.status === 0) {
+            const installAttempt = installPiPackageWithFallback(pkg.id, log);
+            if (installAttempt.status === 0) {
                 result.packagesInstalled.push(pkg.id);
-                log(`${sym.ok} ${pkg.displayName}`);
+                log(`${sym.ok} ${pkg.displayName}${installAttempt.retriedWithNpmjs ? ' (npmjs fallback)' : ''}`);
                 continue;
             }
 
             result.failed.push(pkg.id);
             log(kleur.yellow(`⚠ ${pkg.displayName} — install failed`));
+            for (const hint of getPiPackageInstallFailureHint(pkg.id, installAttempt.output)) {
+                log(kleur.yellow(`  → ${hint}`));
+            }
         } catch (err) {
             result.failed.push(pkg.id);
             log(kleur.red(`✗ ${pkg.displayName}: ${err}`));
