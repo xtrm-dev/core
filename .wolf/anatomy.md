@@ -6,6 +6,7 @@
 
 ## ./
 
+- `handofffixpublish.md` — Handoff steps for repairing main package publish (~260 tok)
 - `.gitignore` — Git ignore rules (~318 tok)
 - `.mcp.json` (~41 tok)
 - `.npmignore` (~42 tok)
