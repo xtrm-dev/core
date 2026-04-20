@@ -23,15 +23,6 @@
             "timeout": 3000
           }
         ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/specialists-session-start.mjs"
-          }
-        ]
       }
     ],
     "PreToolUse": [
@@ -105,15 +96,6 @@
             "timeout": 3000
           }
         ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/specialists-complete.mjs"
-          }
-        ]
       }
     ],
     "Stop": [
@@ -139,17 +121,6 @@
             "type": "command",
             "command": "node \"/home/dawid/dev/xtrm-tools/.xtrm/hooks/beads-compact-save.mjs\"",
             "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/specialists-complete.mjs"
           }
         ]
       }

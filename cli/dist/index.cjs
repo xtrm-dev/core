@@ -29866,8 +29866,8 @@ function resolveOptionalTierRoot(skillsRoot) {
 function resolveUserPacksRoot(skillsRoot) {
   return import_node_path.default.join(skillsRoot, "user", "packs");
 }
-function resolveActiveRuntimeRoot(skillsRoot, runtime) {
-  return import_node_path.default.join(skillsRoot, "active", runtime);
+function resolveActiveRuntimeRoot(skillsRoot, _runtime) {
+  return import_node_path.default.join(skillsRoot, "active");
 }
 function resolveStateFilePath(skillsRoot) {
   return import_node_path.default.join(skillsRoot, STATE_FILE_NAME);
@@ -43891,13 +43891,6 @@ async function setRuntimeEnabledPacks(skillsRoot, runtime, packNames) {
 }
 
 // src/core/skills-materializer.ts
-var PI_NPM_PROVIDED_SKILLS = /* @__PURE__ */ new Set([
-  "gitnexus-debugging",
-  "gitnexus-exploring",
-  "gitnexus-impact-analysis",
-  "gitnexus-pr-review",
-  "gitnexus-refactoring"
-]);
 function sortByName(entries) {
   return [...entries].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -43936,12 +43929,11 @@ async function selectRuntimeSkills(runtime, skillsRoot) {
   const defaultSkills = await discoverDefaultSkills(skillsRoot);
   const enabledPackSkills = await collectEnabledPackSkills(skillsRoot, enabledPacks);
   const allSkills = sortByName([...defaultSkills, ...enabledPackSkills]);
-  const filteredSkills = runtime === "pi" ? allSkills.filter((s) => !PI_NPM_PROVIDED_SKILLS.has(s.name)) : allSkills;
-  assertNoRuntimeCollisions(runtime, filteredSkills);
+  assertNoRuntimeCollisions(runtime, allSkills);
   return {
     runtime,
     enabledPacks: [...enabledPacks],
-    skills: filteredSkills
+    skills: allSkills
   };
 }
 async function buildRuntimeTempView(runtime, skillsRoot, selectedSkills) {
@@ -44017,11 +44009,31 @@ async function rebuildRuntimeActiveView(runtime, skillsRoot) {
   };
 }
 async function rebuildAllRuntimeActiveViews(skillsRoot) {
-  const results = [];
-  for (const runtime of SKILLS_RUNTIMES) {
-    results.push(await rebuildRuntimeActiveView(runtime, skillsRoot));
+  const state = await readSkillsState(skillsRoot);
+  const mergedEnabledPacks = [.../* @__PURE__ */ new Set([
+    ...state.enabledPacks.claude,
+    ...state.enabledPacks.pi
+  ])].sort((a, b) => a.localeCompare(b));
+  const defaultSkills = await discoverDefaultSkills(skillsRoot);
+  const enabledPackSkills = await collectEnabledPackSkills(skillsRoot, mergedEnabledPacks);
+  const mergedSkills = sortByName([...defaultSkills, ...enabledPackSkills]);
+  assertNoRuntimeCollisions("claude", mergedSkills);
+  const activeRuntimeRoot = resolveActiveRuntimeRoot(skillsRoot, "claude");
+  await import_fs_extra6.default.ensureDir(import_node_path4.default.dirname(activeRuntimeRoot));
+  const nonSymlinkEntryNames = await findNonSymlinkEntries(activeRuntimeRoot);
+  if (nonSymlinkEntryNames.length > 0) {
+    console.log(
+      `[xtrm] Warning: ${activeRuntimeRoot} contains non-symlink entries (${nonSymlinkEntryNames.join(", ")}). These entries will be evicted during runtime view rebuild. Do not write skills to .claude/skills directly; write to .xtrm/skills/default or packs.`
+    );
   }
-  return results;
+  const tempRoot = await buildRuntimeTempView("claude", skillsRoot, mergedSkills);
+  await atomicSwapDirectory(tempRoot, activeRuntimeRoot);
+  return [{
+    runtime: "claude",
+    enabledPackCount: mergedEnabledPacks.length,
+    discoveredSkillCount: mergedSkills.length,
+    symlinkNames: mergedSkills.map((skill) => skill.name)
+  }];
 }
 
 // src/core/skills-scaffold.ts
@@ -44062,16 +44074,16 @@ async function ensureAgentsSkillsSymlink(projectRoot) {
     throw new Error(`Skills invariants failed. ${summary}`);
   }
   const materializedViews = await rebuildAllRuntimeActiveViews(skillsRoot);
-  const activatedClaudeSkills = materializedViews.find((view) => view.runtime === "claude")?.discoveredSkillCount ?? 0;
-  const activatedPiSkills = materializedViews.find((view) => view.runtime === "pi")?.discoveredSkillCount ?? 0;
+  const activatedClaudeSkills = materializedViews[0]?.discoveredSkillCount ?? 0;
+  const activatedPiSkills = activatedClaudeSkills;
   await ensureSkillsSymlink(
     import_path3.default.join(projectRoot, ".claude", "skills"),
-    import_path3.default.join("..", ".xtrm", "skills", "active", "claude"),
+    import_path3.default.join("..", ".xtrm", "skills", "active"),
     ".claude/skills"
   );
   const agentsSkillsPath = import_path3.default.join(projectRoot, ".agents", "skills");
   if (await import_fs_extra7.default.pathExists(agentsSkillsPath)) {
-    console.log(kleur_default.dim("  \u25CB .agents/skills is deprecated; runtime skills are generated under .xtrm/skills/active/*"));
+    console.log(kleur_default.dim("  \u25CB .agents/skills is deprecated; runtime skills are generated under .xtrm/skills/active"));
   }
   return {
     activatedClaudeSkills,
@@ -44221,7 +44233,7 @@ async function launchWorktreeSession(opts) {
       const message = error48 instanceof Error ? error48.message : String(error48);
       console.log(kleur_default.dim(`  warning: could not rebuild active Claude skills view (${message})`));
       const wtSkillsDir = import_node_path5.default.join(claudeDir, "skills");
-      const claudeSkillsTarget = import_node_path5.default.join("..", ".xtrm", "skills", "active", "claude");
+      const claudeSkillsTarget = import_node_path5.default.join("..", ".xtrm", "skills", "active");
       try {
         const existing = (0, import_node_fs.lstatSync)(wtSkillsDir);
         if (!existing.isSymbolicLink() || (0, import_node_fs.readlinkSync)(wtSkillsDir) !== claudeSkillsTarget) {
@@ -44807,7 +44819,7 @@ var PI_AGENT_DIR = process.env.PI_AGENT_DIR || import_path4.default.join((0, imp
 var PI_MCP_ADAPTER_OVERRIDE_DIR = import_path4.default.join(PI_AGENT_DIR, "extensions", "pi-mcp-adapter");
 var PI_MCP_ADAPTER_REQUIRED_ENTRY = "commands.js";
 var PROJECT_EXTENSIONS_ENTRY = "../.xtrm/extensions";
-var PROJECT_SKILLS_ENTRY = "../.xtrm/skills/active/pi";
+var PROJECT_SKILLS_ENTRY = "../.xtrm/skills/active";
 var PROJECT_EXTENSION_PACKAGE_ID = "npm:@jaggerxtrm/pi-extensions";
 var CONFLICTING_PI_PACKAGE_IDS = /* @__PURE__ */ new Set(["npm:pi-dex"]);
 var LEGACY_PROJECT_EXTENSION_ENTRIES = /* @__PURE__ */ new Set([
@@ -46555,8 +46567,8 @@ var import_path10 = __toESM(require("path"), 1);
 // src/core/skills-runtime-views.ts
 var import_fs_extra15 = __toESM(require_lib(), 1);
 var import_node_path8 = __toESM(require("path"), 1);
-var CLAUDE_POINTER_TARGET = import_node_path8.default.join("..", ".xtrm", "skills", "active", "claude");
-var PI_SKILLS_ENTRY = "../.xtrm/skills/active/pi";
+var CLAUDE_POINTER_TARGET = import_node_path8.default.join("..", ".xtrm", "skills", "active");
+var PI_SKILLS_ENTRY = "../.xtrm/skills/active";
 async function readSymlinkTarget(linkPath) {
   const stat = await import_fs_extra15.default.lstat(linkPath).catch(() => null);
   if (!stat?.isSymbolicLink()) {
@@ -46597,32 +46609,26 @@ async function hasPiSkillsPointer(projectRoot) {
   return Array.isArray(settings.skills) && settings.skills.includes(PI_SKILLS_ENTRY);
 }
 async function checkRuntimeSkillsViews(projectRoot) {
-  const activeClaudeRoot = import_node_path8.default.join(projectRoot, ".xtrm", "skills", "active", "claude");
-  const activePiRoot = import_node_path8.default.join(projectRoot, ".xtrm", "skills", "active", "pi");
-  const activeClaudeEntries = await listRuntimeEntries(activeClaudeRoot);
-  const activePiEntries = await listRuntimeEntries(activePiRoot);
-  const activeClaudeReady = activeClaudeEntries.length > 0 && await hasOnlyValidSymlinkEntries(activeClaudeRoot, activeClaudeEntries);
-  const activePiReady = activePiEntries.length > 0 && await hasOnlyValidSymlinkEntries(activePiRoot, activePiEntries);
+  const activeRoot = import_node_path8.default.join(projectRoot, ".xtrm", "skills", "active");
+  const activeEntries = await listRuntimeEntries(activeRoot);
+  const activeReady = activeEntries.length > 0 && await hasOnlyValidSymlinkEntries(activeRoot, activeEntries);
   const claudePointerReady = await readSymlinkTarget(import_node_path8.default.join(projectRoot, ".claude", "skills")) === CLAUDE_POINTER_TARGET;
   const piPointerReady = await hasPiSkillsPointer(projectRoot);
   const hasDeprecatedAgentsSkillsPath = await import_fs_extra15.default.pathExists(import_node_path8.default.join(projectRoot, ".agents", "skills"));
   return {
-    activeClaudeReady,
-    activePiReady,
+    activeReady,
     claudePointerReady,
     piPointerReady,
-    activeClaudeEntries,
-    activePiEntries,
+    activeEntries,
     hasDeprecatedAgentsSkillsPath
   };
 }
 async function assertRuntimeSkillsViews(projectRoot) {
   const check2 = await checkRuntimeSkillsViews(projectRoot);
   const failures = [];
-  if (!check2.activeClaudeReady) failures.push("active claude view is missing, empty, or contains invalid links");
-  if (!check2.activePiReady) failures.push("active pi view is missing, empty, or contains invalid links");
-  if (!check2.claudePointerReady) failures.push(".claude/skills is not linked to ../.xtrm/skills/active/claude");
-  if (!check2.piPointerReady) failures.push(".pi/settings.json.skills does not include ../.xtrm/skills/active/pi");
+  if (!check2.activeReady) failures.push("active view is missing, empty, or contains invalid links");
+  if (!check2.claudePointerReady) failures.push(".claude/skills is not linked to ../.xtrm/skills/active");
+  if (!check2.piPointerReady) failures.push(".pi/settings.json.skills does not include ../.xtrm/skills/active");
   if (failures.length > 0) {
     throw new Error(`Runtime skills view validation failed: ${failures.join("; ")}`);
   }
@@ -46734,7 +46740,7 @@ async function runInitVerification(projectRoot) {
   const piPlan = await verifyPiRuntime(projectRoot);
   const projectResult = verifyProjectBootstrap(projectRoot);
   const skillsRuntimeResult = await checkRuntimeSkillsViews(projectRoot);
-  const allPassed = machinePlan.allRequiredPresent && claudeResult.hooksWired && piPlan.allRequiredPresent && skillsRuntimeResult.activeClaudeReady && skillsRuntimeResult.activePiReady && skillsRuntimeResult.claudePointerReady && skillsRuntimeResult.piPointerReady && projectResult.beadsInitialized;
+  const allPassed = machinePlan.allRequiredPresent && claudeResult.hooksWired && piPlan.allRequiredPresent && skillsRuntimeResult.activeReady && skillsRuntimeResult.claudePointerReady && skillsRuntimeResult.piPointerReady && projectResult.beadsInitialized;
   return {
     machineBootstrap: {
       allRequiredPresent: machinePlan.allRequiredPresent,
@@ -46747,8 +46753,7 @@ async function runInitVerification(projectRoot) {
       missingPackages: piPlan.missingPackages.filter((s) => s.pkg.required).map((s) => s.pkg.displayName)
     },
     skillsRuntime: {
-      activeClaudeReady: skillsRuntimeResult.activeClaudeReady,
-      activePiReady: skillsRuntimeResult.activePiReady,
+      activeReady: skillsRuntimeResult.activeReady,
       claudePointerReady: skillsRuntimeResult.claudePointerReady,
       piPointerReady: skillsRuntimeResult.piPointerReady,
       hasDeprecatedAgentsSkillsPath: skillsRuntimeResult.hasDeprecatedAgentsSkillsPath
@@ -46790,8 +46795,7 @@ function renderVerificationSummary(result) {
     console.log(`  ${prIcon} ${prLabel} \u2014 ${parts.join("; ")}`);
   }
   const skillsParts = [];
-  if (!result.skillsRuntime.activeClaudeReady) skillsParts.push("active/claude");
-  if (!result.skillsRuntime.activePiReady) skillsParts.push("active/pi");
+  if (!result.skillsRuntime.activeReady) skillsParts.push("active");
   if (!result.skillsRuntime.claudePointerReady) skillsParts.push(".claude/skills pointer");
   if (!result.skillsRuntime.piPointerReady) skillsParts.push(".pi settings skills pointer");
   const srIcon = skillsParts.length === 0 ? sym.ok : sym.warn;
