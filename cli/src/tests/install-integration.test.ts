@@ -7,7 +7,7 @@ vi.mock('../commands/pi-install.js', () => ({
   runPiInstall: vi.fn(async (_dryRun: boolean, _isGlobal: boolean, projectRoot: string) => {
     const settingsPath = path.join(projectRoot, '.pi', 'settings.json');
     fs.ensureDirSync(path.dirname(settingsPath));
-    fs.writeJsonSync(settingsPath, { skills: ['../.xtrm/skills/active/pi'] }, { spaces: 2 });
+    fs.writeJsonSync(settingsPath, { skills: ['../.xtrm/skills/active'] }, { spaces: 2 });
   }),
 }));
 
@@ -118,20 +118,18 @@ describe('xtrm install integration', () => {
     await runInstallCli(['--yes']);
 
     const claudeSkillsPath = path.join(tmpDir, '.claude', 'skills');
-    const activeClaudePath = path.join(tmpDir, '.xtrm', 'skills', 'active', 'claude');
-    const activePiPath = path.join(tmpDir, '.xtrm', 'skills', 'active', 'pi');
+    const activePath = path.join(tmpDir, '.xtrm', 'skills', 'active');
     const piSettingsPath = path.join(tmpDir, '.pi', 'settings.json');
 
     const claudeLinkStat = fs.lstatSync(claudeSkillsPath);
 
     expect(claudeLinkStat.isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(claudeSkillsPath)).toBe(path.join('..', '.xtrm', 'skills', 'active', 'claude'));
-    expect(fs.pathExistsSync(activeClaudePath)).toBe(true);
-    expect(fs.pathExistsSync(activePiPath)).toBe(true);
+    expect(fs.readlinkSync(claudeSkillsPath)).toBe(path.join('..', '.xtrm', 'skills', 'active'));
+    expect(fs.pathExistsSync(activePath)).toBe(true);
 
     const piSettings = fs.readJsonSync(piSettingsPath) as { skills?: string[] };
     expect(Array.isArray(piSettings.skills)).toBe(true);
-    expect(piSettings.skills).toContain('../.xtrm/skills/active/pi');
+    expect(piSettings.skills).toContain('../.xtrm/skills/active');
 
     const claudeMtimeBefore = claudeLinkStat.mtimeMs;
 

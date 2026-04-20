@@ -45,7 +45,7 @@ async function writePack(skillsRoot: string, tier: 'optional' | 'user', packName
 }
 
 describe('skills-materializer', () => {
-  it('materializes sorted runtime skills from default + enabled packs', async () => {
+  it('materializes sorted active skills from default + enabled packs', async () => {
     const tempDir = await createTempDir();
     const skillsRoot = path.join(tempDir, '.xtrm', 'skills');
 
@@ -62,7 +62,7 @@ describe('skills-materializer', () => {
     expect(result.discoveredSkillCount).toBe(3);
     expect(result.symlinkNames).toEqual(['alpha', 'beta', 'zeta']);
 
-    const activeRuntimeRoot = path.join(skillsRoot, 'active', 'claude');
+    const activeRuntimeRoot = path.join(skillsRoot, 'active');
     expect((await fs.readdir(activeRuntimeRoot)).sort()).toEqual(['alpha', 'beta', 'zeta']);
     expect((await fs.lstat(path.join(activeRuntimeRoot, 'alpha'))).isSymbolicLink()).toBe(true);
     expect((await fs.lstat(path.join(activeRuntimeRoot, 'beta'))).isSymbolicLink()).toBe(true);
@@ -72,7 +72,7 @@ describe('skills-materializer', () => {
   it('fails fast on duplicate skill names and leaves existing active view unchanged', async () => {
     const tempDir = await createTempDir();
     const skillsRoot = path.join(tempDir, '.xtrm', 'skills');
-    const activeRuntimeRoot = path.join(skillsRoot, 'active', 'claude');
+    const activeRuntimeRoot = path.join(skillsRoot, 'active');
 
     await writeSkill(path.join(skillsRoot, 'default'), 'alpha');
     await writePack(skillsRoot, 'optional', 'pack-one', ['alpha']);
@@ -88,7 +88,7 @@ describe('skills-materializer', () => {
     expect(await fs.pathExists(path.join(activeRuntimeRoot, 'sentinel.txt'))).toBe(true);
   });
 
-  it('rebuilds all runtime active views with independent enabled packs', async () => {
+  it('rebuilds single active view from union of claude and pi enabled packs', async () => {
     const tempDir = await createTempDir();
     const skillsRoot = path.join(tempDir, '.xtrm', 'skills');
 
@@ -105,20 +105,13 @@ describe('skills-materializer', () => {
     expect(results).toEqual([
       {
         runtime: 'claude',
-        enabledPackCount: 1,
-        discoveredSkillCount: 2,
-        symlinkNames: ['always-on', 'claude-skill'],
-      },
-      {
-        runtime: 'pi',
-        enabledPackCount: 1,
-        discoveredSkillCount: 2,
-        symlinkNames: ['always-on', 'pi-skill'],
+        enabledPackCount: 2,
+        discoveredSkillCount: 3,
+        symlinkNames: ['always-on', 'claude-skill', 'pi-skill'],
       },
     ]);
 
-    expect((await fs.readdir(path.join(skillsRoot, 'active', 'claude'))).sort()).toEqual(['always-on', 'claude-skill']);
-    expect((await fs.readdir(path.join(skillsRoot, 'active', 'pi'))).sort()).toEqual(['always-on', 'pi-skill']);
+    expect((await fs.readdir(path.join(skillsRoot, 'active'))).sort()).toEqual(['always-on', 'claude-skill', 'pi-skill']);
   });
 
   it('keeps rebuildAllRuntimeActiveViews idempotent across repeated calls', async () => {
@@ -135,21 +128,16 @@ describe('skills-materializer', () => {
     await rebuildAllRuntimeActiveViews(skillsRoot);
 
     const firstTargets = new Map<string, string>();
-    for (const runtime of ['claude', 'pi'] as const) {
-      const activeRuntimeRoot = path.join(skillsRoot, 'active', runtime);
-      for (const name of (await fs.readdir(activeRuntimeRoot)).sort()) {
-        firstTargets.set(`${runtime}:${name}`, await fs.readlink(path.join(activeRuntimeRoot, name)));
-      }
+    const activeRuntimeRoot = path.join(skillsRoot, 'active');
+    for (const name of (await fs.readdir(activeRuntimeRoot)).sort()) {
+      firstTargets.set(name, await fs.readlink(path.join(activeRuntimeRoot, name)));
     }
 
     await rebuildAllRuntimeActiveViews(skillsRoot);
 
     const secondTargets = new Map<string, string>();
-    for (const runtime of ['claude', 'pi'] as const) {
-      const activeRuntimeRoot = path.join(skillsRoot, 'active', runtime);
-      for (const name of (await fs.readdir(activeRuntimeRoot)).sort()) {
-        secondTargets.set(`${runtime}:${name}`, await fs.readlink(path.join(activeRuntimeRoot, name)));
-      }
+    for (const name of (await fs.readdir(activeRuntimeRoot)).sort()) {
+      secondTargets.set(name, await fs.readlink(path.join(activeRuntimeRoot, name)));
     }
 
     expect([...secondTargets.entries()]).toEqual([...firstTargets.entries()]);
