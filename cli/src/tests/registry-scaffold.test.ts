@@ -344,7 +344,7 @@ describe('ensureAgentsSkillsSymlink', () => {
     await fs.writeFile(path.join(skillRoot, 'SKILL.md'), `# ${name}\n`, 'utf8');
   }
 
-  itIfSymlinkSupported('rebuilds runtime active views and points .claude/skills at active/claude', async () => {
+  itIfSymlinkSupported('rebuilds active view and points .claude/skills at active', async () => {
     const tempDir = await createTempDir();
     const skillsRoot = path.join(tempDir, '.xtrm', 'skills');
 
@@ -366,21 +366,17 @@ describe('ensureAgentsSkillsSymlink', () => {
     const activation = await ensureAgentsSkillsSymlink(tempDir);
 
     const claudeLink = path.join(tempDir, '.claude', 'skills');
-    const activeClaude = path.join(skillsRoot, 'active', 'claude');
+    const activeClaude = path.join(skillsRoot, 'active');
 
     expect((await fs.lstat(claudeLink)).isSymbolicLink()).toBe(true);
-    expect(await fs.readlink(claudeLink)).toBe(path.join('..', '.xtrm', 'skills', 'active', 'claude'));
+    expect(await fs.readlink(claudeLink)).toBe(path.join('..', '.xtrm', 'skills', 'active'));
 
     const activeEntries = (await fs.readdir(activeClaude)).sort();
     expect(activeEntries).toEqual(['alpha', 'beta']);
 
-    const activePi = path.join(skillsRoot, 'active', 'pi');
-    const activePiEntries = (await fs.readdir(activePi)).sort();
-    expect(activePiEntries).toEqual(['alpha']);
-
     expect(activation).toEqual({
       activatedClaudeSkills: 2,
-      activatedPiSkills: 1,
+      activatedPiSkills: 2,
     });
     expect((await fs.lstat(path.join(activeClaude, 'alpha'))).isSymbolicLink()).toBe(true);
     expect((await fs.lstat(path.join(activeClaude, 'beta'))).isSymbolicLink()).toBe(true);
@@ -429,10 +425,10 @@ describe('ensureAgentsSkillsSymlink', () => {
     expect(await fs.pathExists(path.join(claudeSkillsDir, 'local.txt'))).toBe(false);
   });
 
-  itIfSymlinkSupported('evicts non-symlink entries from active/claude during rebuild', async () => {
+  itIfSymlinkSupported('evicts non-symlink entries from active during rebuild', async () => {
     const tempDir = await createTempDir();
     const skillsRoot = path.join(tempDir, '.xtrm', 'skills');
-    const activeClaudeRoot = path.join(skillsRoot, 'active', 'claude');
+    const activeClaudeRoot = path.join(skillsRoot, 'active');
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     await writeSkill(path.join(skillsRoot, 'default'), 'alpha');

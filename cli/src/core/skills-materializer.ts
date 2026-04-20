@@ -2,22 +2,11 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'fs-extra';
 import {
-  SKILLS_RUNTIMES,
   type SkillsRuntime,
   resolveActiveRuntimeRoot,
 } from './skills-layout.js';
 import { discoverDefaultSkills, discoverTierPacks, type DiscoveredSkill } from './skill-discovery.js';
 import { readSkillsState } from './skills-state.js';
-
-// Skills already shipped by npm Pi packages — exclude from 'pi' runtime view to avoid collisions.
-// These remain in the 'claude' view since specialists reference them.
-const PI_NPM_PROVIDED_SKILLS = new Set([
-  'gitnexus-debugging',
-  'gitnexus-exploring',
-  'gitnexus-impact-analysis',
-  'gitnexus-pr-review',
-  'gitnexus-refactoring',
-]);
 
 export interface RuntimeSkillSelection {
   readonly runtime: SkillsRuntime;
@@ -86,16 +75,12 @@ export async function selectRuntimeSkills(
   const enabledPackSkills = await collectEnabledPackSkills(skillsRoot, enabledPacks);
   const allSkills = sortByName([...defaultSkills, ...enabledPackSkills]);
 
-  const filteredSkills = runtime === 'pi'
-    ? allSkills.filter(s => !PI_NPM_PROVIDED_SKILLS.has(s.name))
-    : allSkills;
-
-  assertNoRuntimeCollisions(runtime, filteredSkills);
+  assertNoRuntimeCollisions(runtime, allSkills);
 
   return {
     runtime,
     enabledPacks: [...enabledPacks],
-    skills: filteredSkills,
+    skills: allSkills,
   };
 }
 
@@ -199,11 +184,37 @@ export async function rebuildRuntimeActiveView(
 }
 
 export async function rebuildAllRuntimeActiveViews(skillsRoot: string): Promise<RuntimeActiveViewResult[]> {
-  const results: RuntimeActiveViewResult[] = [];
+  const state = await readSkillsState(skillsRoot);
+  const mergedEnabledPacks = [...new Set([
+    ...state.enabledPacks.claude,
+    ...state.enabledPacks.pi,
+  ])].sort((a, b) => a.localeCompare(b));
 
-  for (const runtime of SKILLS_RUNTIMES) {
-    results.push(await rebuildRuntimeActiveView(runtime, skillsRoot));
+  const defaultSkills = await discoverDefaultSkills(skillsRoot);
+  const enabledPackSkills = await collectEnabledPackSkills(skillsRoot, mergedEnabledPacks);
+  const mergedSkills = sortByName([...defaultSkills, ...enabledPackSkills]);
+
+  assertNoRuntimeCollisions('claude', mergedSkills);
+
+  const activeRuntimeRoot = resolveActiveRuntimeRoot(skillsRoot, 'claude');
+  await fs.ensureDir(path.dirname(activeRuntimeRoot));
+
+  const nonSymlinkEntryNames = await findNonSymlinkEntries(activeRuntimeRoot);
+  if (nonSymlinkEntryNames.length > 0) {
+    console.log(
+      `[xtrm] Warning: ${activeRuntimeRoot} contains non-symlink entries (${nonSymlinkEntryNames.join(', ')}). ` +
+      'These entries will be evicted during runtime view rebuild. ' +
+      'Do not write skills to .claude/skills directly; write to .xtrm/skills/default or packs.',
+    );
   }
 
-  return results;
+  const tempRoot = await buildRuntimeTempView('claude', skillsRoot, mergedSkills);
+  await atomicSwapDirectory(tempRoot, activeRuntimeRoot);
+
+  return [{
+    runtime: 'claude',
+    enabledPackCount: mergedEnabledPacks.length,
+    discoveredSkillCount: mergedSkills.length,
+    symlinkNames: mergedSkills.map((skill) => skill.name),
+  }];
 }

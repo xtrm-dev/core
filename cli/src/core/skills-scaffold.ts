@@ -54,18 +54,18 @@ export async function ensureAgentsSkillsSymlink(projectRoot: string): Promise<Sk
     }
 
     const materializedViews = await rebuildAllRuntimeActiveViews(skillsRoot);
-    const activatedClaudeSkills = materializedViews.find(view => view.runtime === 'claude')?.discoveredSkillCount ?? 0;
-    const activatedPiSkills = materializedViews.find(view => view.runtime === 'pi')?.discoveredSkillCount ?? 0;
+    const activatedClaudeSkills = materializedViews[0]?.discoveredSkillCount ?? 0;
+    const activatedPiSkills = activatedClaudeSkills;
 
     await ensureSkillsSymlink(
         path.join(projectRoot, '.claude', 'skills'),
-        path.join('..', '.xtrm', 'skills', 'active', 'claude'),
+        path.join('..', '.xtrm', 'skills', 'active'),
         '.claude/skills',
     );
 
     const agentsSkillsPath = path.join(projectRoot, '.agents', 'skills');
     if (await fs.pathExists(agentsSkillsPath)) {
-        console.log(kleur.dim('  ○ .agents/skills is deprecated; runtime skills are generated under .xtrm/skills/active/*'));
+        console.log(kleur.dim('  ○ .agents/skills is deprecated; runtime skills are generated under .xtrm/skills/active'));
     }
 
     return {

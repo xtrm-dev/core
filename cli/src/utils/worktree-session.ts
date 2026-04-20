@@ -217,7 +217,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
 
             // Best-effort fallback symlink if rebuild fails.
             const wtSkillsDir = path.join(claudeDir, 'skills');
-            const claudeSkillsTarget = path.join('..', '.xtrm', 'skills', 'active', 'claude');
+            const claudeSkillsTarget = path.join('..', '.xtrm', 'skills', 'active');
             try {
                 const existing = lstatSync(wtSkillsDir);
                 if (!existing.isSymbolicLink() || readlinkSync(wtSkillsDir) !== claudeSkillsTarget) {

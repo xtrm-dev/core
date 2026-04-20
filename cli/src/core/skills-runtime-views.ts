@@ -6,17 +6,15 @@ interface PiSettings {
 }
 
 export interface RuntimeViewCheckResult {
-  readonly activeClaudeReady: boolean;
-  readonly activePiReady: boolean;
+  readonly activeReady: boolean;
   readonly claudePointerReady: boolean;
   readonly piPointerReady: boolean;
-  readonly activeClaudeEntries: string[];
-  readonly activePiEntries: string[];
+  readonly activeEntries: string[];
   readonly hasDeprecatedAgentsSkillsPath: boolean;
 }
 
-const CLAUDE_POINTER_TARGET = path.join('..', '.xtrm', 'skills', 'active', 'claude');
-const PI_SKILLS_ENTRY = '../.xtrm/skills/active/pi';
+const CLAUDE_POINTER_TARGET = path.join('..', '.xtrm', 'skills', 'active');
+const PI_SKILLS_ENTRY = '../.xtrm/skills/active';
 
 async function readSymlinkTarget(linkPath: string): Promise<string | null> {
   const stat = await fs.lstat(linkPath).catch(() => null);
@@ -67,16 +65,12 @@ async function hasPiSkillsPointer(projectRoot: string): Promise<boolean> {
 }
 
 export async function checkRuntimeSkillsViews(projectRoot: string): Promise<RuntimeViewCheckResult> {
-  const activeClaudeRoot = path.join(projectRoot, '.xtrm', 'skills', 'active', 'claude');
-  const activePiRoot = path.join(projectRoot, '.xtrm', 'skills', 'active', 'pi');
+  const activeRoot = path.join(projectRoot, '.xtrm', 'skills', 'active');
 
-  const activeClaudeEntries = await listRuntimeEntries(activeClaudeRoot);
-  const activePiEntries = await listRuntimeEntries(activePiRoot);
+  const activeEntries = await listRuntimeEntries(activeRoot);
 
-  const activeClaudeReady = activeClaudeEntries.length > 0
-    && await hasOnlyValidSymlinkEntries(activeClaudeRoot, activeClaudeEntries);
-  const activePiReady = activePiEntries.length > 0
-    && await hasOnlyValidSymlinkEntries(activePiRoot, activePiEntries);
+  const activeReady = activeEntries.length > 0
+    && await hasOnlyValidSymlinkEntries(activeRoot, activeEntries);
 
   const claudePointerReady = await readSymlinkTarget(path.join(projectRoot, '.claude', 'skills')) === CLAUDE_POINTER_TARGET;
   const piPointerReady = await hasPiSkillsPointer(projectRoot);
@@ -84,12 +78,10 @@ export async function checkRuntimeSkillsViews(projectRoot: string): Promise<Runt
   const hasDeprecatedAgentsSkillsPath = await fs.pathExists(path.join(projectRoot, '.agents', 'skills'));
 
   return {
-    activeClaudeReady,
-    activePiReady,
+    activeReady,
     claudePointerReady,
     piPointerReady,
-    activeClaudeEntries,
-    activePiEntries,
+    activeEntries,
     hasDeprecatedAgentsSkillsPath,
   };
 }
@@ -98,10 +90,9 @@ export async function assertRuntimeSkillsViews(projectRoot: string): Promise<voi
   const check = await checkRuntimeSkillsViews(projectRoot);
 
   const failures: string[] = [];
-  if (!check.activeClaudeReady) failures.push('active claude view is missing, empty, or contains invalid links');
-  if (!check.activePiReady) failures.push('active pi view is missing, empty, or contains invalid links');
-  if (!check.claudePointerReady) failures.push('.claude/skills is not linked to ../.xtrm/skills/active/claude');
-  if (!check.piPointerReady) failures.push('.pi/settings.json.skills does not include ../.xtrm/skills/active/pi');
+  if (!check.activeReady) failures.push('active view is missing, empty, or contains invalid links');
+  if (!check.claudePointerReady) failures.push('.claude/skills is not linked to ../.xtrm/skills/active');
+  if (!check.piPointerReady) failures.push('.pi/settings.json.skills does not include ../.xtrm/skills/active');
 
   if (failures.length > 0) {
     throw new Error(`Runtime skills view validation failed: ${failures.join('; ')}`);

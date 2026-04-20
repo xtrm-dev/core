@@ -48,8 +48,7 @@ export interface VerificationResult {
         missingPackages: string[];
     };
     skillsRuntime: {
-        activeClaudeReady: boolean;
-        activePiReady: boolean;
+        activeReady: boolean;
         claudePointerReady: boolean;
         piPointerReady: boolean;
         hasDeprecatedAgentsSkillsPath: boolean;
@@ -215,8 +214,7 @@ export async function runInitVerification(projectRoot: string): Promise<Verifica
         machinePlan.allRequiredPresent &&
         claudeResult.hooksWired &&
         piPlan.allRequiredPresent &&
-        skillsRuntimeResult.activeClaudeReady &&
-        skillsRuntimeResult.activePiReady &&
+        skillsRuntimeResult.activeReady &&
         skillsRuntimeResult.claudePointerReady &&
         skillsRuntimeResult.piPointerReady &&
         projectResult.beadsInitialized;
@@ -233,8 +231,7 @@ export async function runInitVerification(projectRoot: string): Promise<Verifica
             missingPackages: piPlan.missingPackages.filter(s => s.pkg.required).map(s => s.pkg.displayName),
         },
         skillsRuntime: {
-            activeClaudeReady: skillsRuntimeResult.activeClaudeReady,
-            activePiReady: skillsRuntimeResult.activePiReady,
+            activeReady: skillsRuntimeResult.activeReady,
             claudePointerReady: skillsRuntimeResult.claudePointerReady,
             piPointerReady: skillsRuntimeResult.piPointerReady,
             hasDeprecatedAgentsSkillsPath: skillsRuntimeResult.hasDeprecatedAgentsSkillsPath,
@@ -287,8 +284,7 @@ export function renderVerificationSummary(result: VerificationResult): void {
 
     // Skills runtime
     const skillsParts: string[] = [];
-    if (!result.skillsRuntime.activeClaudeReady) skillsParts.push('active/claude');
-    if (!result.skillsRuntime.activePiReady) skillsParts.push('active/pi');
+    if (!result.skillsRuntime.activeReady) skillsParts.push('active');
     if (!result.skillsRuntime.claudePointerReady) skillsParts.push('.claude/skills pointer');
     if (!result.skillsRuntime.piPointerReady) skillsParts.push('.pi settings skills pointer');
     const srIcon = skillsParts.length === 0 ? sym.ok : sym.warn;
