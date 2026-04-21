@@ -9,8 +9,8 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 4.6
-synced_at: zz22-docs
+version: 4.8
+synced_at: a58a4dda
 ---
 
 # Specialists Usage
@@ -29,13 +29,34 @@ Specialists are autonomous AI agents that run independently — fresh context, d
 
 ---
 
+## Response Style Policy
+
+- Be direct, concise, and professional.
+- Answer the user's actual question first, in the first sentence when possible.
+- Do not append conversational filler like:
+  - "If you want, I can..."
+  - "I can also..."
+  - "Let me know if you want..."
+  unless the user explicitly asked for options.
+- Do not restate context the user already provided unless needed to resolve ambiguity.
+- Prefer short conclusions over long explanatory structures.
+- Use bullets only when they improve clarity; otherwise respond in plain prose.
+- Do not hedge unnecessarily. If the answer is clear, state it plainly.
+- Do not give a recommendation section unless the user asked for recommendations or a decision.
+- Do not propose next steps automatically after every answer.
+- When reporting status, give:
+  1. current state
+  2. blocker or result
+  3. only the next action if action is already implied or necessary
+- Default to terse operational language, not coaching language.
+
 ## Hard Rules
 
 1. **Zero implementation by orchestrator.** When this skill is active for substantial work, you do not implement the solution yourself.
 2. **Never explore yourself.** All discovery, codebase mapping, and read-only investigation go through **explorer** (or **debugger** for root-cause analysis).
 3. **Run explorer before executor when context is lacking.** If the bead already has clear scope — files, symbols, approach — send executor directly. Only run explorer first when the issue lacks a clear track.
 4. **For tracked work, the bead is the prompt.** The bead description, notes, and parent context are the instruction surface.
-5. **`--bead` and `--prompt` are mutually exclusive.** If you need to refine instructions, update the bead notes; do not add `--prompt`.
+5. **`--bead` is the only prompt.** Never use `--prompt`. If you need to refine instructions, update the bead notes first.
 6. **Chains belong to epics.** A chain is a worktree lineage (executor → reviewer → fix). An epic is the merge-gated identity that owns chains. Use `sp epic merge <epic>` to publish — never merge individual chains that belong to an unresolved epic.
 7. **Merge through epics, not manual git.** Use `sp epic merge <epic-id>` for wave-bound chains or `sp merge <chain-root-bead>` for standalone chains. Never use manual `git merge` for specialist work.
 8. **No destructive operations by specialists.** No `rm -rf`, no force pushes, no database drops, no credential rotation, no mass deletes, no history rewrites. Surface destructive requirements to the user.
@@ -72,7 +93,7 @@ specialists run <name> --bead <id> --background  # background run
 specialists run <name> --bead <id> --worktree    # isolated worktree (edit-capable specialists)
 specialists run <name> --bead <id> --job <job-id> # reuse another job's worktree
 specialists run <name> --bead <id> --epic <epic-id> # explicitly declare epic membership
-specialists run <name> --prompt "..."         # ad-hoc (no bead tracking)
+specialists run <name> --bead <id> --force-stale-base  # bypass stale-base guard
 specialists run <name> --bead <id> --keep-alive  # keep session alive after first turn
 specialists run <name> --bead <id> --context-depth 2  # inject parent bead context
 
@@ -87,7 +108,9 @@ specialists status --job <job-id>             # single-job detail view (legacy �
 # Epic lifecycle (canonical publication path)
 specialists epic list [--unresolved]          # list epics with lifecycle state
 specialists epic status <epic-id>             # show chains, blockers, readiness
+specialists epic sync <epic-id> [--apply]     # reconcile DB vs live state (dry-run default)
 specialists epic resolve <epic-id>            # transition open -> resolving
+specialists epic abandon <epic-id> --reason <text> [--force]  # terminal transition for stuck epics
 specialists epic merge <epic-id> [--pr]       # publish all epic-owned chains
 
 # Merge (for standalone chains only)
@@ -100,11 +123,15 @@ specialists end [--pr]                        # close session, publish via merge
 specialists steer <job-id> "new direction"    # redirect ANY running job mid-run
 specialists resume <job-id> "next task"       # resume a waiting keep-alive job
 specialists stop <job-id>                     # cancel a job
+specialists stop <job-id> --force             # 5s SIGTERM timeout, then pgroup kill + error status
 
 # Management
 specialists edit <name>                       # edit specialist config (dot-path, --preset)
 specialists clean                             # purge old job dirs + worktree GC
 specialists clean --processes                 # kill all running/starting specialist jobs
+specialists db vacuum                         # compact SQLite storage (refuses if jobs running)
+specialists db prune --before <iso|duration> --dry-run|--apply  # prune old events/results/terminal jobs
+specialists doctor orphans                    # integrity scan: orphan, stale-pointer, integrity-violation
 specialists init --sync-skills                # re-sync skills only (no full init)
 specialists init --no-xtrm-check              # skip xtrm prerequisite check (CI/testing)
 ```
@@ -177,7 +204,7 @@ via `--context-depth 2`. The bead chain IS the context chain — zero manual wir
 task-abc: "Fix auth token refresh"
   └── abc-exp:  explorer   (READ_ONLY — auto-appends output to abc-exp notes)
   └── abc-impl: executor   (self-appends output to abc-impl notes, closes bead)
-  └── abc-rev:  reviewer   (READ_ONLY — auto-appends verdict via --job <exec-job>)
+  └── abc-rev:  reviewer   (auto-appends verdict to abc-rev notes via --job <exec-job>)
   └── abc-fix:  executor   (if reviewer PARTIAL — fix bead, same worktree via --job)
 ```
 
@@ -187,7 +214,7 @@ task-abc: "Fix auth token refresh"
 |------|----------------|-----|
 | abc-exp | abc-exp (own) + task-abc (parent) | `--bead abc-exp --context-depth 2` |
 | abc-impl | abc-impl (own) + abc-exp (explorer findings in notes) + task-abc | `--bead abc-impl --context-depth 2` |
-| reviewer | abc-impl bead (with executor output + reviewer verdict in notes) | `--bead abc-impl --job <exec-job>` |
+| abc-rev | abc-rev (own) + abc-impl (executor output in notes) + task-abc | `--bead abc-rev --job <exec-job> --context-depth 2` |
 | abc-fix | abc-fix (own) + abc-impl (executor output + reviewer verdict) + abc-exp | `--bead abc-fix --job <exec-job> --context-depth 2` |
 
 - No copy-paste, no manual note injection between steps
@@ -228,11 +255,15 @@ specialists run executor --worktree --bead abc-impl --context-depth 2 --backgrou
 # 6. [MERGE] Merge impl worktree branch into master
 sp merge abc-impl --rebuild
 
-# 7. Wave 3 — Reviewer (no separate bead — uses --job + --prompt to enter executor's worktree)
-specialists run reviewer --job a1b2c3 --keep-alive --background --prompt "Review the token refresh fix"
+# 7. Wave 3 — Reviewer (own bead, enters executor's worktree via --job)
+bd create --title "Review: token refresh fix" --type task --priority 2
+# -> unitAI-abc-rev
+bd dep add abc-rev abc-impl
+
+specialists run reviewer --bead abc-rev --job a1b2c3 --context-depth 2 --keep-alive --background
 # -> Job started: r4v5w6
-# Reviewer reads task bead from job a1b2c3's status.json automatically
-# Reviewer auto-appends verdict to bead notes (READ_ONLY)
+# Reviewer sees: abc-rev + abc-impl (with executor output in notes) + abc via context-depth
+# Reviewer auto-appends verdict to abc-rev notes
 specialists result r4v5w6
 # -> PASS: close task bead. PARTIAL/FAIL: go to step 8.
 
@@ -304,8 +335,8 @@ Reads `worktree_path` from the target job's `status.json` and uses that director
 The caller's own `--bead` remains authoritative — `--job` only selects the workspace.
 
 ```bash
-# Reviewer enters executor's worktree to review exactly what was written
-specialists run reviewer --job 49adda --keep-alive --background
+# Reviewer enters executor's worktree with its own bead
+specialists run reviewer --bead unitAI-rev --job 49adda --context-depth 2 --keep-alive --background
 
 # Fix executor re-enters same worktree (--bead provides new fix bead, --job provides workspace)
 specialists run executor --bead hgpu.3-fix --job 49adda --context-depth 2 --background
@@ -336,7 +367,7 @@ Use when the caller explicitly accepts concurrent write risk (e.g., target job k
 | Scenario | Flag to use |
 |----------|------------|
 | First executor run for a task | `--worktree --bead <impl-bead>` |
-| Reviewer on executor's output | `--job <exec-job-id>` (no `--worktree`) |
+| Reviewer on executor's output | `--bead <review-bead> --job <exec-job-id> --context-depth 2` |
 | Fix executor after reviewer PARTIAL | `--bead <fix-bead> --job <exec-job-id>` |
 | Force entry to blocked worktree | `--bead <fix-bead> --job <exec-job-id> --force-job` |
 | Prep job belonging to epic (non-epic parent) | `--bead <prep-bead> --epic <epic-id>` |
@@ -367,35 +398,36 @@ Map bead dependencies to match the execution pipeline. The dep graph IS the wave
 
 ### Simple bug fix
 ```
-task → explore → impl
-                  └── reviewer via --job (no own bead needed)
-                  └── fix (if PARTIAL) → child of impl
+task → explore → impl → review
+                         └── fix (if PARTIAL) → child of impl
 ```
 ```bash
 bd dep add explore task
 bd dep add impl explore
-# reviewer: specialists run reviewer --job <impl-job>
+bd dep add review impl
+# reviewer: specialists run reviewer --bead review --job <impl-job> --context-depth 2
 # fix: bd dep add fix impl
 ```
 
 ### Complex feature (overthinker)
 ```
-task → explore → design → impl → [reviewer via --job] → [fix if PARTIAL]
+task → explore → design → impl → review → [fix if PARTIAL]
 ```
 ```bash
 bd dep add explore task
 bd dep add design explore
 bd dep add impl design
-# reviewer: specialists run reviewer --job <impl-job>
+bd dep add review impl
+# reviewer: specialists run reviewer --bead review --job <impl-job> --context-depth 2
 ```
 
 ### Epic with N children
 Each child gets its own explore → impl chain. Reviewer runs via `--job` per impl.
 ```
 epic
-  ├── child-1 → explore-1 → impl-1  (reviewer via --job impl-1-job)
-  ├── child-2 → explore-2 → impl-2  (reviewer via --job impl-2-job)
-  └── child-N → explore-N → impl-N  (reviewer via --job impl-N-job)
+  ├── child-1 → explore-1 → impl-1 → review-1  (reviewer --bead review-1 --job impl-1-job)
+  ├── child-2 → explore-2 → impl-2 → review-2  (reviewer --bead review-2 --job impl-2-job)
+  └── child-N → explore-N → impl-N → review-N  (reviewer --bead review-N --job impl-N-job)
 ```
 Children (chains) within the same epic can run **in parallel** if they own disjoint files.
 
@@ -430,16 +462,15 @@ The review → fix loop is the mechanism for iterative quality improvement withi
 1. Executor provisions --worktree, implements, enters waiting.
    -> Job: exec-job (KEEP ALIVE — do not stop)
 
-2. Reviewer enters same worktree via --job exec-job.
+2. Reviewer enters same worktree via --bead <review-bead> --job exec-job --context-depth 2.
    -> sp ps shows the chain:
       feature/unitAI-impl-executor · unitAI-impl
         ◐ exec-job   executor   waiting
         └ ◐ rev-job   reviewer   starting
-   -> Auto-appends verdict (PASS/PARTIAL/FAIL) to bead notes.
+   -> Auto-appends verdict (PASS/PARTIAL/FAIL) to review bead notes.
 
 3a. PASS:
-    -> Resume executor: "Reviewer PASS. Commit your changes."
-    -> Verify commit landed on branch (git log)
+    -> Verify auto-commit landed on branch (git log)
     -> Stop reviewer, then stop executor
     -> Merge via sp merge
 
@@ -460,14 +491,17 @@ specialists run executor --worktree --bead unitAI-impl --context-depth 2 --backg
 # -> Job started: exec-job (e.g. 49adda)
 # DO NOT sp stop — executor stays alive for the entire review cycle
 
-# Step 2 — Reviewer enters same worktree
-specialists run reviewer --job 49adda --keep-alive --background --prompt "Review impl changes"
+# Step 2 — Create reviewer bead and dispatch
+bd create --title "Review: impl changes" --type task --priority 2
+# -> unitAI-rev
+bd dep add rev impl
+specialists run reviewer --bead unitAI-rev --job 49adda --context-depth 2 --keep-alive --background
 # -> Job started: rev-job
 specialists result rev-job
 
-# Step 3a — PASS: resume executor to commit, then stop both
-specialists resume 49adda "Reviewer PASS. Git add and commit your changes."
-# Wait for commit, verify with: git log feature/unitAI-impl-executor --oneline -1
+# Step 3a — PASS: verify auto-commit landed, then stop both
+# Executor auto-commits substantive changes on each turn completion
+# Verify with: git log feature/unitAI-impl-executor --oneline -1
 specialists stop rev-job
 specialists stop 49adda
 sp merge unitAI-impl --rebuild
@@ -475,8 +509,11 @@ sp merge unitAI-impl --rebuild
 # Step 3b — PARTIAL: resume executor with fix instructions (same session, full context)
 specialists resume 49adda "Reviewer PARTIAL. Fix: <paste specific findings here>"
 # Executor applies fixes, enters waiting again
-# Dispatch new reviewer:
-specialists run reviewer --job 49adda --keep-alive --background --prompt "Re-review after fix"
+# Dispatch new reviewer (new bead for each re-review):
+bd create --title "Re-review: impl after fix" --type task --priority 2
+# -> unitAI-rev2
+bd dep add rev2 impl
+specialists run reviewer --bead unitAI-rev2 --job 49adda --context-depth 2 --keep-alive --background
 # Repeat until PASS
 
 # After final PASS + commit + stop:
@@ -496,10 +533,10 @@ Only dispatch a new fix executor when the original specialist is dead (crashed, 
 
 ### Key invariants
 - **Never stop the executor/debugger before reviewer verdict.** The specialist stays in `waiting` throughout the review cycle. Stopping prematurely kills the resume path and risks uncommitted changes.
-- **Executors do not auto-commit.** After reviewer PASS, you must resume the executor with explicit commit instructions. Verify the commit landed before stopping.
-- Each fix iteration uses `resume` on the same specialist — not a new child bead or new executor.
+- **Executors auto-commit substantive changes** on each turn completion (via `auto_commit: checkpoint_on_waiting`). After reviewer PASS, verify the commit landed on the branch before stopping.
+- Each fix iteration uses `resume` on the same executor — not a new child bead or new executor.
 - Multiple reviewer → resume → re-review cycles are expected. The worktree and specialist session are stable across all cycles.
-- Only stop after: (1) reviewer PASS, (2) executor committed, (3) commit verified on branch.
+- Only stop after: (1) reviewer PASS, (2) auto-commit verified on branch.
 
 ---
 
@@ -534,8 +571,7 @@ sp stop exec-job          # ✗ kills resume path, risks uncommitted work
 sp stop overthinker-job   # ✗ loses context if follow-up questions arise
 
 # GOOD — chain completes naturally
-sp resume exec-job "Reviewer PASS. Commit your changes."
-# verify commit...
+# verify auto-commit landed on branch...
 sp merge unitAI-impl      # publishes branch
 # THEN stop members (future: auto-stopped by merge)
 sp stop rev-job
@@ -671,7 +707,7 @@ The specialist reads:
 
 This prevents specialists from rediscovering known gotchas on every run.
 
-`--prompt` and `--bead` cannot be combined. When you need to give a specialist
+**Never use `--prompt`.** For tracked work, always use `--bead`. When you need to give a specialist
 specific instructions beyond what's in the bead description, update the bead notes first:
 
 ```bash
@@ -714,9 +750,9 @@ Run `specialists list` to see what's available. Match by task type:
 ### Specialist selection notes
 
 - **executor does not run tests** — it runs `lint + tsc` only. Tests belong to the reviewer or test-runner phase.
-- **executor enters `waiting` after first turn** — `interactive: true` is now default. **Never stop the executor before reviewer verdict.** Keep it alive so you can: (1) resume with fix instructions if reviewer says PARTIAL, (2) resume with "commit your changes" after reviewer PASS. Executors do not auto-commit — you must explicitly resume them to commit. Only `sp stop` after the commit is verified on the branch.
-- **explorer** is READ_ONLY — its output auto-appends to the input bead's notes. No implementation.
-- **reviewer** is best dispatched via `--job <exec-job> --prompt "..."` — it enters the same worktree to see exactly what was written. `--job` alone is not enough; `--prompt` or `--bead` is always required.
+- **executor enters `waiting` after first turn** — `interactive: true` is now default. **Never stop the executor before reviewer verdict.** Keep it alive so you can resume with fix instructions if reviewer says PARTIAL. Executors auto-commit substantive changes on each turn via `auto_commit: checkpoint_on_waiting`. Only `sp stop` after reviewer PASS and commit verified on the branch.
+- **explorer** is READ_ONLY — output auto-appends to the input bead's notes. No implementation.
+- **reviewer** always gets its own bead: `--bead <review-bead> --job <exec-job> --context-depth 2`. The reviewer sees the executor's output via auto-appended bead notes + context-depth. Never use `--prompt`.
 - **debugger** over **explorer** when you need root cause analysis — GitNexus call-chain tracing, ranked hypotheses, evidence-backed remediation.
 - **overthinker** before **executor** for any non-trivial task — surfaces edge cases, challenges assumptions, produces solution direction. Cheap relative to wrong implementation.
 - **researcher** is the docs specialist — never look up library docs yourself, delegate to researcher.
@@ -731,7 +767,7 @@ specialists run debugger --bead unitAI-bug --context-depth 2 --background
 specialists run planner --bead unitAI-scope --context-depth 2 --background
 specialists run overthinker --bead unitAI-design --context-depth 2 --keep-alive --background
 specialists run executor --worktree --bead unitAI-impl --context-depth 2 --background
-specialists run reviewer --job <exec-job-id> --keep-alive --background --prompt "Review the <feature> implementation"
+specialists run reviewer --bead unitAI-rev --job <exec-job-id> --context-depth 2 --keep-alive --background
 specialists run sync-docs --bead unitAI-docs --context-depth 2 --keep-alive --background
 specialists run test-runner --bead unitAI-tests --context-depth 2 --background
 specialists run specialists-creator --bead unitAI-skill --context-depth 2 --background
@@ -852,8 +888,8 @@ specialists steer a1b2c3 "Do NOT audit. Write the actual file to disk now."
 > before killing a keep-alive job.**
 
 > **Critical:** Never stop an executor or debugger before the reviewer delivers its verdict.
-> Stopping prematurely: (1) kills the resume path for fix loops, (2) risks uncommitted changes
-> (executors don't auto-commit), and (3) forces dispatching a new specialist instead of resuming.
+> Stopping prematurely: (1) kills the resume path for fix loops, and (2) forces dispatching a
+> new specialist instead of resuming. Executors auto-commit substantive changes on each turn.
 
 ```bash
 # Check before stopping
@@ -917,7 +953,7 @@ bd create --title "Explore: map job run architecture" --type task --priority 2  
 bd dep add exp 3f7b
 bd create --title "Implement: worktree isolation" --type task --priority 2  # -> unitAI-impl
 bd dep add impl exp
-# Note: reviewer runs via --job, inherits epic from impl bead.parent
+# Note: reviewer gets own bead, enters via --job, inherits epic from bead.parent
 
 # Stage 1 — Explorer (prep job, declares epic explicitly)
 specialists run explorer --bead unitAI-exp --epic unitAI-3f7b --context-depth 2 --background
@@ -932,8 +968,10 @@ specialists run executor --worktree --bead unitAI-impl --context-depth 2 --backg
 # epic_id = bead.parent (unitAI-3f7b)
 specialists result job2
 
-# Stage 3 — Reviewer (uses --job, same worktree)
-specialists run reviewer --job job2 --keep-alive --background --prompt "Review implementation"
+# Stage 3 — Reviewer (own bead, uses --job for same worktree)
+bd create --title "Review: worktree isolation impl" --type task --priority 2  # -> unitAI-rev
+bd dep add rev impl
+specialists run reviewer --bead unitAI-rev --job job2 --context-depth 2 --keep-alive --background
 # -> Job started: job3
 specialists result job3
 # PASS → ready for epic merge. PARTIAL → fix loop.
@@ -942,8 +980,10 @@ specialists result job3
 bd create --title "Fix: reviewer gaps on impl" --type bug --priority 1  # -> unitAI-fix1
 bd dep add fix1 impl
 specialists run executor --bead fix1 --job job2 --context-depth 2 --background
-# Re-review
-specialists run reviewer --job job2 --keep-alive --background --prompt "Re-review after fix"
+# Re-review (new reviewer bead)
+bd create --title "Re-review: impl after fix" --type task --priority 2  # -> unitAI-rev2
+bd dep add rev2 impl
+specialists run reviewer --bead unitAI-rev2 --job job2 --context-depth 2 --keep-alive --background
 
 # [MERGE] Publish epic
 sp epic status unitAI-3f7b  # verify readiness: merge_ready, all chains PASS
@@ -1018,8 +1058,8 @@ MCP is intentionally minimal. Use CLI for orchestration, monitoring, steering, r
 
 ## Known Issues
 
-- **READ_ONLY output auto-appends** to the input bead after completion (via Supervisor). Output also available via `specialists result`.
-- **`--bead` and `--prompt` conflict** by design. For tracked work, update bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.
+- **All specialist output auto-appends** to the input bead notes on every `run_complete` (via Supervisor). Status-aware headers: `[WAITING]` vs `[DONE]`. Output also available via `specialists result`.
+- **`--prompt` is deprecated for tracked work.** Always use `--bead`. Update bead notes for additional instructions: `bd update <id> --notes "INSTRUCTION: ..."`
 - **Job in `waiting` now shows magenta status** with resume hint in `status`, WAIT banner in `feed`, and resume footer in `result`. Always check before stopping a keep-alive job.
 - **Explorer (qwen) may produce empty output** — the model sometimes completes tool calls but fails to emit a final text summary. The bead notes will be empty. If this happens, either re-run with a different model or do the investigation yourself.
 - **`specialists init` requires xtrm** — `.xtrm/` directory and `xt` CLI must exist. Use `--no-xtrm-check` to bypass in CI/testing.
@@ -1031,9 +1071,59 @@ MCP is intentionally minimal. Use CLI for orchestration, monitoring, steering, r
 
 ```bash
 specialists doctor      # health check: hooks, MCP, zombie jobs, skill drift detection
+specialists doctor orphans  # integrity scan for orphan/stale-pointer/integrity-violation
 specialists edit <name> # edit specialist config (dot-path, --preset)
 specialists clean --processes  # kill stale/zombie specialist processes
 ```
+
+## Stuck-State Recovery
+
+Use this flow when epic/job state disagrees with live runtime or close path loops.
+
+### 1) Reconcile epic state first (safe default)
+
+```bash
+sp epic status <epic-id>
+sp epic sync <epic-id>            # dry-run default, inspect planned fixes
+sp epic sync <epic-id> --apply    # apply reconciliation after review
+```
+
+`sp epic sync` is primary recovery command. It reconciles DB state against live job/worktree state.
+
+### 2) Terminally abandon unrecoverable epic
+
+```bash
+sp epic abandon <epic-id> --reason "stuck chain with unrecoverable state"
+# If guard blocks due to active pointers you intentionally want cleared:
+sp epic abandon <epic-id> --reason "manual recovery" --force
+```
+
+Use only when epic cannot be restored to valid resolving/merge path.
+
+### 3) Restore DB hygiene after recovery
+
+```bash
+sp doctor orphans
+sp db vacuum
+sp db prune --before 30d --dry-run
+sp db prune --before 30d --apply
+```
+
+- `sp db vacuum` compacts SQLite file, refuses while jobs running.
+- `sp db prune` removes old rows from events/results/terminal jobs; dry-run first.
+
+### 4) Hard-stop wedged jobs when normal stop fails
+
+```bash
+sp stop <job-id>
+sp stop <job-id> --force
+```
+
+`--force` waits 5s for SIGTERM, then kills process group and records explicit error status.
+
+### 5) `sp end` open-state loop fix
+
+If `sp end` detects open-state mismatch, tool now suggests `sp epic resolve <epic-id>` as next command (no redirect loop).
 
 - **RPC timeout on worktree job start** (30s, `command id=1`) → pi runs `npm install` in fresh
   worktrees if `.pi/settings.json` lists local packages. Root cause: worktree gets a stale copy
@@ -1047,10 +1137,10 @@ specialists clean --processes  # kill stale/zombie specialist processes
 - **Job hangs** → `specialists steer <id> "finish up"` or `specialists stop <id>`
 - **Config skipped** → stderr shows `[specialists] skipping <file>: <reason>`
 - **Stall timeout** → specialist hit 120s inactivity. Check `specialists feed <id>`, then retry or switch.
-- **`--prompt` and `--bead` conflict** → use bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.
+- **Never use `--prompt`** → use bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.
 - **Worktree already exists** → it will be reused (not recreated). Safe to re-run.
 - **`--job` fails: worktree_path missing** → target job was not started with `--worktree`. Use `--worktree` on the next run.
-- **`--job` without `--prompt` or `--bead`** → reviewer/executor requires one of these. Use `--prompt "Review the X implementation"` with `--job`.
+- **`--job` without `--bead`** → reviewer/executor requires `--bead`. Create a reviewer bead first, then use `--bead <review-bead> --job <exec-job> --context-depth 2`.
 - **Stale specialist processes** → SessionStart hook warns about old binary versions. Run `specialists clean --processes` to kill them all.
 - **`specialists init` fails with xtrm error** → xtrm must be installed first: `npm install -g xtrm-tools && xt install`. Use `--no-xtrm-check` in CI.
 - **Skill drift detected by doctor** → Run `specialists init --sync-skills` to re-sync canonical skills to `.xtrm/skills/default/` and refresh active symlinks.

@@ -170,3 +170,6 @@
 {"id":"int-aa8375f4","kind":"tool_call","created_at":"2026-04-13T01:34:30.992305753Z","actor":"you@example.com","issue_id":"xtrm-3kpo","model":"openai-codex/gpt-5.3-codex","tool_name":"reviewer","exit_code":0}
 {"id":"int-d2ea7f16","kind":"tool_call","created_at":"2026-04-13T01:37:38.61306928Z","actor":"you@example.com","issue_id":"xtrm-3kpo","model":"openai-codex/gpt-5.3-codex","tool_name":"reviewer","exit_code":0}
 {"id":"int-f4c8b414","kind":"tool_call","created_at":"2026-04-13T01:53:37.100581704Z","actor":"you@example.com","issue_id":"xtrm-u5oy","model":"dashscope/qwen3.5-plus","tool_name":"researcher","exit_code":0}
+{"id":"int-1b1eb8b9","kind":"tool_call","created_at":"2026-04-20T20:45:56.212735425Z","actor":"you@example.com","issue_id":"xtrm-5f9x","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
+{"id":"int-4e6b159c","kind":"tool_call","created_at":"2026-04-20T20:48:57.551146097Z","actor":"you@example.com","issue_id":"xtrm-dmcc","model":"openai-codex/gpt-5.3-codex","tool_name":"reviewer","exit_code":0}
+{"id":"int-854b7433","kind":"tool_call","created_at":"2026-04-20T20:55:44.386677335Z","actor":"you@example.com","issue_id":"xtrm-vs4x","model":"openai-codex/gpt-5.3-codex","tool_name":"reviewer","exit_code":0}

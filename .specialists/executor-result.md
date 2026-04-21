@@ -1,102 +1,119 @@
 ## Summary
-Implemented the merge-delta cwd fix by resolving the **main worktree root** and running preview/merge/gates against that directory instead of `process.cwd()`.
-
-I applied the fix in:
-
-- `/home/dawid/projects/specialists/src/cli/merge.ts`
-
-(That is where `previewBranchMergeDelta`, `mergeBranch`, and `runMergePlan` exist.)
+Skills runtime split removed. `active/pi` + `active/claude` collapsed into single `active/`. Default tier kept canonical source. Active tier stays materialized merge view.
 
 ## Status
-✅ success
+partial
 
 ## Changes
-- Added `resolveMainWorktreeRoot(cwd)`:
-  - Uses `git worktree list --porcelain`
-  - Reads the first `worktree ...` entry (main worktree)
-  - Falls back to `git rev-parse --show-toplevel`
-- Updated merge-path functions to accept/preserve explicit `cwd`:
-  - `previewBranchMergeDelta(branch, cwd?)`
-  - `assertBranchMergeWorthiness(target, cwd?)`
-  - `getConflictFiles(cwd?)`
-  - `mergeBranch(branch, cwd?)`
-  - `runTypecheckGate(cwd?)`
-  - `runRebuild(cwd?)`
-  - `readChangedFilesForLastMerge(cwd?)`
-- Updated `runMergePlan(...)`:
-  - Resolves `mainRepoRoot` once
-  - Passes `mainRepoRoot` to preview + merge + typecheck + changed-file detection + rebuild
-
-This ensures `sp merge` preview merge is performed from main worktree context, preventing self-merge empty delta when invoked from a worktree.
+- `cli/src/core/skills-layout.ts`
+  - `resolveActiveRuntimeRoot()` now returns `.xtrm/skills/active` directly.
+- `cli/src/core/skills-materializer.ts`
+  - removed `PI_NPM_PROVIDED_SKILLS` exclusion.
+  - `selectRuntimeSkills()` now returns full set for both runtimes.
+  - `rebuildAllRuntimeActiveViews()` now does single rebuild (`claude`) and returns single result.
+- `cli/src/core/skills-scaffold.ts`
+  - `.claude/skills` symlink target changed to `../.xtrm/skills/active`.
+  - activation counts now unified (`activatedPiSkills = activatedClaudeSkills`).
+  - deprecation log updated to single active path.
+- `cli/src/core/pi-runtime.ts`
+  - `PROJECT_SKILLS_ENTRY` changed to `../.xtrm/skills/active`.
+- `cli/src/tests/skills-materializer.test.ts`
+  - expectations updated for single active root.
+- Additional dependent updates to keep runtime consistent:
+  - `cli/src/core/skills-runtime-views.ts` migrated to single active view checks.
+  - `cli/src/core/init-verification.ts` skills runtime verification switched to single `activeReady`.
+  - `cli/src/utils/worktree-session.ts` fallback symlink target switched to `active`.
+  - `cli/src/tests/install-integration.test.ts` updated path assertions/mocks.
+  - `cli/src/tests/registry-scaffold.test.ts` updated active view/symlink expectations.
 
 ## Verification
-- `bunx tsc --noEmit` (in `/home/dawid/projects/specialists`) passed.
-- GitNexus impact analysis run (repo: `specialists`) for:
-  - `previewBranchMergeDelta` → LOW
-  - `mergeBranch` → LOW
-  - `runMergePlan` → LOW
-- GitNexus detect changes run (repo: `specialists`).
+- Ran: `cd cli && npm run -s typecheck`
+  - failed, but failures pre-existing/unrelated (missing `prompts` types, other strict TS errors outside touched area).
+- Ran: `cd cli && npm run lint`
+  - failed: no `lint` script in `cli/package.json`.
 
 ## Risks
-- `resolveMainWorktreeRoot` assumes first `git worktree list --porcelain` entry is the main worktree (matches your stated invariant).
-- Existing uncommitted edits in `specialists` repo outside this task may still appear in detect-changes output (pre-existing noise).
+- Runtime-specific pack divergence now ignored in materialized active view (`rebuildAllRuntimeActiveViews` uses claude selection only). If state differs by runtime, pi-specific packs no longer materialize separately.
+- Some untouched runtime-scoped command flows may still assume dual-runtime semantics at state level.
 
 ## Follow-ups
-- Add a focused regression test for:
-  - invoking merge from a linked worktree while target branch is ahead of main
-  - asserting non-empty preview delta when substantive changes exist.
-- If you want, I can port the same guard pattern to any similar merge-preview logic elsewhere.
+- Decide policy for runtime-specific pack state:
+  - either enforce identical `enabledPacks` for claude/pi,
+  - or merge both runtime pack sets when materializing single active view.
+- Fix repo-wide TS strict failures, then re-run typecheck gate.
+- If wanted, I can close bead `xtrm-avqb`, run memory ack, commit, push.
 
 ## Beads
-- Claimed and worked issue: `xtrm-3kpo` (in this session context).
+- claimed: `xtrm-avqb`
+- notes appended with implementation summary
+- not closed yet
 
 ## Machine-readable block
 ```json
 {
-  "summary": "Fixed sp merge empty-delta false positives by resolving main worktree root and executing preview/merge/typecheck/rebuild operations in that cwd, avoiding branch-into-self merges from worktree invocation contexts.",
-  "status": "success",
+  "summary": "Collapsed skills runtime materialization to single .xtrm/skills/active view, removed pi-specific filtering, rewired Claude/Pi pointers to active root, and updated dependent runtime verification/worktree/test expectations.",
+  "status": "partial",
   "issues_closed": [],
   "issues_created": [],
   "follow_ups": [
-    "Add regression tests for preview merge when invoked from a worktree",
-    "Optionally apply the same main-worktree cwd enforcement to any other merge-preview commands"
+    "Define single-view materialization policy when enabledPacks differs between claude and pi runtimes.",
+    "Resolve existing repository-wide TypeScript strict errors, then re-run typecheck.",
+    "Close bead xtrm-avqb after memory ack if user confirms session-close flow."
   ],
   "risks": [
-    "Relies on git worktree list first-entry invariant for main worktree selection",
-    "GitNexus detect_changes output includes unrelated pre-existing modifications in specialists repo"
+    "Single-view rebuild currently derives from claude runtime selection; pi-only enabled packs in state are ignored.",
+    "Runtime-scoped commands may still assume dual-runtime behavior at state layer."
   ],
   "verification": [
-    "Ran bunx tsc --noEmit in /home/dawid/projects/specialists (passed)",
-    "Ran gitnexus_impact for previewBranchMergeDelta/mergeBranch/runMergePlan in repo specialists (all LOW)",
-    "Ran gitnexus_detect_changes in repo specialists"
+    "cd cli && npm run -s typecheck (failed due to pre-existing unrelated strict TS errors)",
+    "cd cli && npm run lint (failed: missing lint script)"
   ],
   "files_changed": [
-    "/home/dawid/projects/specialists/src/cli/merge.ts"
+    "cli/src/core/skills-layout.ts",
+    "cli/src/core/skills-materializer.ts",
+    "cli/src/core/skills-scaffold.ts",
+    "cli/src/core/pi-runtime.ts",
+    "cli/src/core/skills-runtime-views.ts",
+    "cli/src/core/init-verification.ts",
+    "cli/src/utils/worktree-session.ts",
+    "cli/src/tests/skills-materializer.test.ts",
+    "cli/src/tests/install-integration.test.ts",
+    "cli/src/tests/registry-scaffold.test.ts"
   ],
   "symbols_modified": [
-    "resolveMainWorktreeRoot",
-    "previewBranchMergeDelta",
-    "assertBranchMergeWorthiness",
-    "getConflictFiles",
-    "mergeBranch",
-    "runTypecheckGate",
-    "runRebuild",
-    "readChangedFilesForLastMerge",
-    "runMergePlan"
+    "resolveActiveRuntimeRoot",
+    "selectRuntimeSkills",
+    "rebuildAllRuntimeActiveViews",
+    "ensureAgentsSkillsSymlink",
+    "PROJECT_SKILLS_ENTRY",
+    "checkRuntimeSkillsViews",
+    "assertRuntimeSkillsViews",
+    "runInitVerification",
+    "renderVerificationSummary"
   ],
-  "lint_pass": true,
+  "lint_pass": false,
   "tests_pass": false,
   "impact_report": {
     "files_touched": [
-      "/home/dawid/projects/specialists/src/cli/merge.ts"
+      "cli/src/core/skills-layout.ts",
+      "cli/src/core/skills-materializer.ts",
+      "cli/src/core/skills-scaffold.ts",
+      "cli/src/core/pi-runtime.ts",
+      "cli/src/core/skills-runtime-views.ts",
+      "cli/src/core/init-verification.ts",
+      "cli/src/utils/worktree-session.ts",
+      "cli/src/tests/skills-materializer.test.ts",
+      "cli/src/tests/install-integration.test.ts",
+      "cli/src/tests/registry-scaffold.test.ts"
     ],
     "symbols_analyzed": [
-      "previewBranchMergeDelta",
-      "mergeBranch",
-      "runMergePlan"
+      "resolveActiveRuntimeRoot",
+      "rebuildAllRuntimeActiveViews",
+      "ensureAgentsSkillsSymlink",
+      "PROJECT_SKILLS_ENTRY"
     ],
-    "highest_risk": "LOW",
-    "tool_invocations": 6
+    "highest_risk": "MEDIUM",
+    "tool_invocations": 18
   }
 }
 ```
