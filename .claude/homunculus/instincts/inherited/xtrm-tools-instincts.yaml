@@ -1,0 +1,614 @@
+# Instincts generated from https://github.com/Jaggerxtrm/xtrm-tools
+# Generated: 2026-04-13T12:56:29.050Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: xtrm-tools-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Commit Length
+
+## Action
+
+Write moderate-length commit messages (~57 characters)
+
+## Evidence
+
+- Average commit message length: 57 chars
+- Based on 22 commits
+
+---
+id: xtrm-tools-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: xtrm-tools-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: xtrm-tools-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Export Style
+
+## Action
+
+Prefer mixed exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: mixed
+
+---
+id: xtrm-tools-test-framework
+trigger: "when writing tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Test Framework
+
+## Action
+
+Use vitest as the test framework
+
+## Evidence
+
+- Test framework detected: vitest
+- File pattern: *.test.ts
+
+---
+id: xtrm-tools-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: xtrm-tools-test-mocking
+trigger: "when mocking dependencies in tests"
+confidence: 0.75
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Test Mocking
+
+## Action
+
+Use vi.mock for mocking
+
+## Evidence
+
+- Mocking pattern detected: vi.mock
+- Consistent across test files
+
+---
+id: xtrm-tools-test-types
+trigger: "when planning tests for a feature"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Test Types
+
+## Action
+
+Write unit, integration tests to match project standards
+
+## Evidence
+
+- Test types detected: unit, integration
+- Coverage config: no
+
+---
+id: xtrm-tools-workflow-feature-branch-merge-workflow
+trigger: "when doing feature branch merge workflow"
+confidence: 0.75
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Workflow Feature Branch Merge Workflow
+
+## Action
+
+Follow the feature-branch-merge-workflow workflow:
+1. Complete feature or migration work on a branch.
+2. Merge the branch into main, resolving any conflicts.
+3. Commit the merge, which repeats the file changes from the feature branch.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~5x per month
+- Files: packages/pi-extensions/extensions/README.md, packages/pi-extensions/package.json, packages/pi-extensions/src/core/README.md
+
+---
+id: xtrm-tools-workflow-package-metadata-and-publish-workflow
+trigger: "when doing package metadata and publish workflow"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Workflow Package Metadata And Publish Workflow
+
+## Action
+
+Follow the package-metadata-and-publish-workflow workflow:
+1. Update package.json with new metadata or version.
+2. Edit or create README.md for the package.
+3. Update documentation files referencing the package.
+4. Update or regenerate registry files (e.g., .xtrm/registry.json).
+5. Update or run scripts that sync versions (e.g., scripts/sync-cli-version.mjs).
+6. Publish the package to npm.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: packages/pi-extensions/package.json, packages/pi-extensions/README.md, docs/pi-extensions.md
+
+---
+id: xtrm-tools-workflow-extension-migration-or-bulk-refactor-workflow
+trigger: "when doing extension migration or bulk refactor workflow"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Workflow Extension Migration Or Bulk Refactor Workflow
+
+## Action
+
+Follow the extension-migration-or-bulk-refactor-workflow workflow:
+1. Move or copy extension source files to new locations.
+2. Update package.json and related metadata.
+3. Update import paths and registry/index files.
+4. Remove legacy or deprecated files and symlinks.
+5. Update documentation to reflect new architecture.
+6. Regenerate or update migration notes.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: packages/pi-extensions/extensions/*/index.ts, packages/pi-extensions/extensions/*/package.json, packages/pi-extensions/src/core/*.ts
+
+---
+id: xtrm-tools-workflow-cli-runtime-update-workflow
+trigger: "when doing cli runtime update workflow"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Workflow Cli Runtime Update Workflow
+
+## Action
+
+Follow the cli-runtime-update-workflow workflow:
+1. Edit CLI command files to change extension/package logic.
+2. Update core runtime scripts to handle new package names or migration logic.
+3. Fix or migrate settings files to match new package structure.
+4. Test CLI to ensure new logic works as intended.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: cli/src/commands/pi-install.ts, cli/src/commands/pi.ts, cli/src/core/pi-runtime.ts
+
+---
+id: xtrm-tools-workflow-documentation-sync-and-update-workflow
+trigger: "when doing documentation sync and update workflow"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Workflow Documentation Sync And Update Workflow
+
+## Action
+
+Follow the documentation-sync-and-update-workflow workflow:
+1. Edit multiple documentation files to reflect new architecture or workflows.
+2. Update synced_at timestamps or metadata in docs.
+3. Validate documentation using scripts or drift detectors.
+4. Commit all updated docs together.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: docs/*.md, .xtrm/cache/docs-list.json
+
+---
+id: xtrm-tools-instinct-file-naming-camelCase
+trigger: "When creating a new file (except classes or constants)"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct File Naming CamelCase
+
+## Action
+
+Name the file using camelCase (e.g., myFile.ts)
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.files
+- Observed in packages/pi-extensions/src/core/*.ts
+
+---
+id: xtrm-tools-instinct-function-naming-camelCase
+trigger: "When defining a new function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Function Naming CamelCase
+
+## Action
+
+Name the function using camelCase (e.g., getExtensionName)
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.functions
+- Seen in packages/pi-extensions/src/core/*.ts
+
+---
+id: xtrm-tools-instinct-class-naming-PascalCase
+trigger: "When defining a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Class Naming PascalCase
+
+## Action
+
+Name the class using PascalCase (e.g., ExtensionLoader)
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.classes
+- Seen in packages/pi-extensions/src/core/*.ts
+
+---
+id: xtrm-tools-instinct-constant-naming-SCREAMING_SNAKE_CASE
+trigger: "When defining a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Constant Naming SCREAMING_SNAKE_CASE
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE (e.g., DEFAULT_PATH)
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.constants
+- Seen in packages/pi-extensions/src/core/*.ts
+
+---
+id: xtrm-tools-instinct-relative-imports
+trigger: "When importing modules within the repo"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Relative Imports
+
+## Action
+
+Use relative import paths (e.g., import x from '../shared/x')
+
+## Evidence
+
+- Pattern in codeStyle.importStyle
+- Seen in packages/pi-extensions/src/core/*.ts
+
+---
+id: xtrm-tools-instinct-mixed-export-style
+trigger: "When exporting modules or functions"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Mixed Export Style
+
+## Action
+
+Use either named or default exports as appropriate for the context
+
+## Evidence
+
+- Pattern in codeStyle.exportStyle
+- Seen in packages/pi-extensions/extensions/*/index.ts
+
+---
+id: xtrm-tools-instinct-vitest-test-pattern
+trigger: "When writing a test file"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Vitest Test Pattern
+
+## Action
+
+Name the file with a .test.ts suffix and use vitest as the test framework
+
+## Evidence
+
+- Pattern in testing.filePattern and testing.framework
+- Seen in packages/pi-extensions/src/core/*.test.ts
+
+---
+id: xtrm-tools-instinct-vi-mock-for-mocking
+trigger: "When mocking dependencies in tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Vi Mock For Mocking
+
+## Action
+
+Use vi.mock for mocking modules or functions
+
+## Evidence
+
+- Pattern in testing.mockingStyle
+- Seen in packages/pi-extensions/src/core/*.test.ts
+
+---
+id: xtrm-tools-instinct-unit-and-integration-tests
+trigger: "When writing tests for new features or changes"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Unit And Integration Tests
+
+## Action
+
+Write both unit and integration tests as appropriate
+
+## Evidence
+
+- Pattern in testing.testTypes
+- Seen in packages/pi-extensions/src/core/*.test.ts
+
+---
+id: xtrm-tools-instinct-commit-prefix-format
+trigger: "When writing a commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Commit Prefix Format
+
+## Action
+
+Prefix the commit message with one of: feat, fix, chore, refactor, docs, followed by a colon and a brief description
+
+## Evidence
+
+- Pattern in commits.prefixes
+- Seen in commit 'feat: scaffold @xtrm/pi-extensions package workspace'
+
+---
+id: xtrm-tools-instinct-commit-length-guideline
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Commit Length Guideline
+
+## Action
+
+Keep the commit message concise (around 57 characters on average)
+
+## Evidence
+
+- Pattern in commits.averageLength
+- Seen in commit examples
+
+---
+id: xtrm-tools-instinct-feature-branch-merge
+trigger: "When a feature branch is ready to be integrated into main after development or migration work"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Feature Branch Merge
+
+## Action
+
+Merge the feature branch into main, resolving any conflicts, and commit the merge (which may repeat file changes from the feature branch)
+
+## Evidence
+
+- Workflow: feature-branch-merge-workflow
+- Seen in merge commits like 'Merge branch 'feature/xtrm-54xq.1-executor''
+
+---
+id: xtrm-tools-instinct-package-metadata-publish
+trigger: "When preparing to publish a package, update its metadata, or after renaming a package"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Package Metadata Publish
+
+## Action
+
+Update package.json, README, documentation, registry, and sync scripts, then publish the package
+
+## Evidence
+
+- Workflow: package-metadata-and-publish-workflow
+- Seen in commits updating package.json and README.md
+
+---
+id: xtrm-tools-instinct-extension-migration-bulk-refactor
+trigger: "When performing a major migration or refactor of extension architecture or directory structure"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Extension Migration Bulk Refactor
+
+## Action
+
+Move/copy extension files, update metadata and imports, remove legacy code, update docs, and record migration notes
+
+## Evidence
+
+- Workflow: extension-migration-or-bulk-refactor-workflow
+- Seen in commits like 'refactor: remove legacy config/pi/extensions and symlink code paths'
+
+---
+id: xtrm-tools-instinct-cli-runtime-update
+trigger: "When changing how the CLI loads, installs, or manages extensions/packages"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Cli Runtime Update
+
+## Action
+
+Edit CLI command files and runtime scripts, fix settings, and test new logic
+
+## Evidence
+
+- Workflow: cli-runtime-update-workflow
+- Seen in changes to cli/src/commands/pi-install.ts
+
+---
+id: xtrm-tools-instinct-docs-sync-update
+trigger: "When the codebase or extension architecture changes significantly and documentation needs to be updated to match"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: Jaggerxtrm/xtrm-tools
+---
+
+# Xtrm Tools Instinct Docs Sync Update
+
+## Action
+
+Edit and sync documentation, update metadata, validate docs, and commit all changes together
+
+## Evidence
+
+- Workflow: documentation-sync-and-update-workflow
+- Seen in commits updating docs/*.md and .xtrm/cache/docs-list.json
+
