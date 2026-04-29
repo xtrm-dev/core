@@ -1,262 +1,142 @@
 ---
 name: sync-docs
 description: >-
-  Mode-routed documentation sync for xtrm projects. Three modes: targeted
-  (named docs only), area (time-windowed + source scope), full audit.
-  Commit-based context gathering, not PR-based. Use whenever docs need
-  syncing after code changes, the user asks to "sync docs", "update docs",
-  "doc audit", "check docs health", or "detect drift".
+  Single-doc documentation sync specialist for xtrm projects. Each invocation
+  operates on exactly one doc named in the bead's SCOPE. Source files are
+  off-limits to every tool — context comes from a pre-script (xt report
+  excerpt + commits) and per-commit `git show <hash> -- <paths>` for at most
+  3 unclear commits. Hard runtime cap. Use when one specific doc needs
+  syncing after code changes — never for whole-tree audits.
 gemini-command: sync-docs
-version: 2.0.0
+version: 3.1.0
 ---
 
 # sync-docs
 
-Keeps project documentation in sync with code reality.
+Single-doc sync specialist. One invocation = one doc.
 
-## Overview
+## The single-doc invariant
+
+The bead's `SCOPE` field MUST name exactly one doc path. If SCOPE names zero docs, multiple docs, or a non-doc path, emit `BLOCKED: scope-violation` in Phase 1 and stop. There is no other mode. There is no "audit" or "area" path. Multi-doc updates are N parallel sync-docs runs orchestrated externally.
+
+The mandatory rule (`sync-docs-scope-discipline`) appended after this skill is enforced. Read it. It encodes the hard tool bans, the budget, the steer-obey rule, and the compaction-STOP rule.
+
+## How you read code
+
+You don't, broadly. Source files under `src/`, `tests/`, `pi/`, `packages/`, `config/specialists/`, `.specialists/default/` are off-limits to **every tool**: `Read`, `Grep`, `Glob`, `find`, `cat`, `head`, `tail`, `sed`, `awk`, `rg`, `git grep`, `python -c open(...)`, and any `Bash` redirection that pipes a source file.
+
+The legal channels for understanding what changed:
+
+1. **Pre-script context** (already injected above): latest xt report excerpt + `git log master --oneline -20`.
+2. **Your one doc's content** (`Read`).
+3. **Filtered drift**: `python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py scan --json`, filtered through `jq` or `python -c` to YOUR ONE DOC. Discard everything else.
+4. **Filtered context_gatherer** (only if pre-script context is insufficient): `python3 .xtrm/skills/default/sync-docs/scripts/context_gatherer.py --doc <YOUR_DOC>` — that flag only.
+5. **Per-commit diff** for unclear claims: `git show <hash> -- <path1> [<path2>...]`. Maximum 3 such calls per run. NEVER `git diff <a>..<b>`. NEVER `git show <hash>` without `--`.
+
+## Phases
+
+| Phase | Action | Budget |
+|---|---|---|
+| 1 | Verify SCOPE names exactly one doc. STOP if not. | 0 tools |
+| 2 | Filtered drift scan for that one doc. | 1 call |
+| 3 | Per-commit `git show <hash> -- <paths>` for unclear commits. | ≤3 calls |
+| 4 | Edit the one doc. Bump `version` + `updated`. Stamp via `drift_detector.py update-sync <path>`. | edits to one doc only |
+| 5 | Re-run filtered drift; confirm cleared. Emit final report. | 1 call |
+
+After Phase 5, stop. Do not look at other docs. Do not propose new beads.
+
+## Phase 1: SCOPE check
+
+Read the bead's SCOPE field. It must name exactly one doc path. Examples of valid SCOPE:
 
 ```
-Phase 0: Route mode/scope   — targeted, area, or full audit?
-Phase 1: Gather context      — commits, issues, changed files in window
-Phase 2: Inspect with xtrm   — what does the docs suite report?
-Phase 3: Detect drift         — which docs are stale?
-Phase 4: Plan delta           — what to edit vs report
-Phase 5: Execute fixes        — update docs within scope
-Phase 6: Validate             — confirm no remaining drift
+SCOPE: docs/cli-reference.md
+SCOPE: CHANGELOG.md
 ```
 
-**Audit vs Execute:** Bead-linked runs execute all phases. Non-bead runs with
-"audit/check/report" stop after Phase 4. Non-bead runs with "update/fix/sync"
-execute.
+Examples that are `BLOCKED: scope-violation`:
 
----
+```
+SCOPE:                                  # empty
+SCOPE: docs/cli-reference.md docs/features.md   # multiple
+SCOPE: docs/                            # directory
+SCOPE: src/cli/run.ts                   # non-doc
+```
 
-## Phase 0: Route Mode and Scope
+If blocked, emit:
 
-Determine your mode BEFORE gathering context. This controls everything downstream.
+```
+DOC: <whatever was in SCOPE, or empty>
+VERDICT: BLOCKED
+EDITS: none
+NOTES: scope-violation — <reason>
+```
 
-### Mode precedence
+and stop.
 
-| Priority | Condition | Mode |
-|----------|-----------|------|
-| 1 | Prompt contains explicit doc file paths | **Targeted** |
-| 2 | Prompt contains time window + directory/source scope | **Area** |
-| 3 | Everything else | **Full audit** |
-
-### Mode behaviors
-
-**Targeted** — edit ONLY the named docs. Gather recent context for understanding.
-Report collateral docs that likely also need updates but do NOT edit them.
-
-**Area** — derive candidate docs from changed source paths within the time window.
-Use drift detector to confirm staleness. Edit candidate docs within derived scope.
-
-**Full audit** — run complete docs audit. Contextualize with recent commits/issues.
-Use drift detector + structure analyzer for comprehensive coverage.
-
-### Execution policy
-
-| Condition | Action |
-|-----------|--------|
-| `$bead_id` present | Execute (all phases) |
-| No bead + "audit"/"check"/"report"/"what's stale" | Report only (stop Phase 4) |
-| No bead + "update"/"fix"/"sync" | Execute |
-
----
-
-## Phase 1: Gather Scoped Context
-
-### Context gatherer
-
-The context gatherer supports time-window and scope-aware gathering:
+## Phase 2: Filtered drift
 
 ```bash
-# Targeted: specific docs + time window
-python3 .xtrm/skills/default/sync-docs/scripts/context_gatherer.py \
-  --doc docs/features.md --doc docs/cli-reference.md --since-hours 24
-
-# Area: source scope + time window
-python3 .xtrm/skills/default/sync-docs/scripts/context_gatherer.py \
-  --scope-path src/specialist/ --since-hours 24
-
-# Area: broader window
-python3 .xtrm/skills/default/sync-docs/scripts/context_gatherer.py \
-  --scope-path src/cli/ --since-days 7
-
-# Full audit: broad window
-python3 .xtrm/skills/default/sync-docs/scripts/context_gatherer.py \
-  --since-days 7
-
-# Legacy compat (commit count)
-python3 .xtrm/skills/default/sync-docs/scripts/context_gatherer.py \
-  --since-commits 30
+python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py scan --json \
+  | jq '[.[] | select(.path == "<YOUR_DOC>")]'
 ```
 
-**Default:** `--since-hours 24` when no window specified.
+If your doc reports stale, capture the list of commits since `synced_at` — those are your candidate commits for Phase 3.
 
-Outputs JSON with:
-- `mode_hint`: targeted / area / full
-- `window`: type + value + git_since
-- `scope`: doc targets + source paths
-- `git.recent_commits`: commits with changed files
-- `git.changed_files`: unique files ranked by change frequency
-- `git.changed_dirs`: directory-level summary
-- `bd.closed_issues`: recently closed issues
-- `docs`: drift detector results
+If your doc is not in the drift output (no `source_of_truth_for` declared, or no commits since `synced_at`), use the pre-script's recent commits + your reading of the doc's content to form a candidate list.
 
-### xtrm docs suite
+## Phase 3: Per-commit diff (unclear cases only)
 
-Use for operator-facing inspection:
+For commits whose subjects don't make the impact on your doc obvious, run:
 
 ```bash
-xtrm docs list --json
-xtrm docs show --json
-xtrm docs cross-check --json --days 30
+git show <hash> -- <path1> <path2>
 ```
 
----
+The `<paths>` should be paths your doc actually claims about (e.g. if the doc is `docs/cli-reference.md`, paths under `src/cli/` and `src/index.ts` are reasonable; paths under `pi/` are not unless the doc covers pi).
 
-## Phase 2: Inspect Docs State
+Maximum 3 such calls per run. If 3 calls aren't enough, the commit set is too broad — emit `BLOCKED: too-many-unclear-commits` and ask for a narrower bead.
 
-Use `xtrm docs` to answer:
-- What docs exist and their metadata?
-- Which have missing or outdated frontmatter?
-- Coverage gaps between recent work and docs?
+## Phase 4: Edit
 
-If the CLI already isolates the problem clearly, skip to Phase 4.
+For your one doc:
+- Update content based on the gathered context.
+- Bump frontmatter `version` (patch/minor/major per change) and `updated` (today).
+- Stamp:
+  ```bash
+  python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py update-sync <YOUR_DOC>
+  ```
 
----
+Edit nothing else. CHANGELOG, README, other docs, source files — all off-limits.
 
-## Phase 3: Detect Drift
+## Phase 5: Validate
 
-Use the drift detector filtered to your scope:
+Re-run the filtered drift scan from Phase 2. Confirm your doc is no longer stale.
 
-```bash
-# All docs
-python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py scan --json
+## Final report
 
-# With commit window
-python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py scan --since 30 --json
+```
+DOC: <path>
+VERDICT: <UPDATED | NO_CHANGE_NEEDED | BLOCKED>
+COMMITS_REVIEWED: <hash1>, <hash2>, ...
+EDITS: <one-line summary, or "none">
+DRIFT_BEFORE: <stale | clean | unknown>
+DRIFT_AFTER: <clean | n/a>
+SUGGESTED_FOLLOWUPS: <other doc names that may need separate sync-docs runs — names only, never edited>
 ```
 
-A doc is stale when:
-1. It declares `source_of_truth_for` globs in frontmatter
-2. AND commits affecting matching files exist AFTER the `synced_at` hash
+## References
 
-### Staleness model
+- [Frontmatter schema](references/schema.md) — required/optional fields, categories, version-bump rules
+- [Doc structure](references/doc-structure.md) — INDEX block regen, structure analyzer
 
-- **Time windows** decide what recent work to consider now (relevance)
-- **`synced_at` / hash-based drift** decides whether a doc is actually stale (truth)
-- **Fallback**: when metadata is missing, time-window heuristics prioritize review
+## Anti-patterns (forbidden by the mandatory rule)
 
----
-
-## Phase 4: Plan Delta
-
-Before editing, identify:
-- Docs to update (within scope)
-- Docs to leave untouched
-- Collateral docs to report only (targeted mode)
-
-**If audit-only, stop here and output the report.**
-
-Include both:
-- `xtrm docs` findings (operator-facing)
-- Python analyzer findings (drift/structure enforcement)
-
----
-
-## Phase 5: Execute Fixes
-
-| Situation | Action |
-|-----------|--------|
-| Stale docs file | Update content + bump `version` + `updated` |
-| README bloated | Extract large sections to focused docs files |
-| Missing docs file | Generate scaffold via `validate_doc.py --generate` |
-| Stale CHANGELOG | Add entry with changelog script |
-| Invalid schema | Fix frontmatter |
-
-### After each doc update
-
-Stamp the sync checkpoint:
-```bash
-python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py update-sync <doc-path>
-```
-
-### Targeted mode boundary
-
-In targeted mode, ONLY edit the named docs. If you discover other docs need
-updating, list them in your output as "Suggested follow-ups" — do not edit them.
-
-### Structure analysis (full audit only)
-
-```bash
-python3 .xtrm/skills/default/sync-docs/scripts/doc_structure_analyzer.py
-python3 .xtrm/skills/default/sync-docs/scripts/doc_structure_analyzer.py --fix
-```
-
-### Add changelog entry
-
-```bash
-python3 .xtrm/skills/default/sync-docs/scripts/changelog/add_entry.py \
-  CHANGELOG.md Added "Describe the documentation update"
-```
-
----
-
-## Phase 6: Validate
-
-Re-run both layers:
-
-```bash
-xtrm docs list --json
-xtrm docs cross-check --json --days 30
-python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py scan --json
-```
-
-Confirm updated docs no longer show as stale.
-
----
-
-## Frontmatter Schema
-
-All `docs/*.md` files require valid YAML frontmatter.
-
-### Required Fields
-
-| Field | Format | Example |
-|-------|--------|---------|
-| `title` | string | `"Hooks Reference"` |
-| `scope` | string | `hooks` |
-| `category` | enum | `reference` |
-| `version` | semver | `1.0.0` |
-| `updated` | date | `2026-03-22` |
-
-### Valid Categories
-
-`api` | `architecture` | `guide` | `overview` | `plan` | `reference`
-
-### Optional Fields
-
-| Field | Format | Use |
-|-------|--------|-----|
-| `description` | string | Brief summary |
-| `source_of_truth_for` | list of globs | Link to code areas |
-| `synced_at` | git hash | Drift checkpoint |
-| `domain` | list of tags | Categorization |
-
----
-
-## Command Selection Rules
-
-**`xtrm docs` first** for understanding current docs state:
-- `xtrm docs list --json` — inventory
-- `xtrm docs show --json` — frontmatter inspection
-- `xtrm docs cross-check --json` — drift, coverage gaps
-
-**Python scripts** for enforcement and sync internals:
-- `drift_detector.py` — `synced_at` / `source_of_truth_for` checks
-- `doc_structure_analyzer.py` — README bloat, missing docs, changelog gaps
-- `validate_metadata.py` / `validate_doc.py` — schema/index validation
-- `context_gatherer.py` — scoped commit/issue context for sync decisions
+- Reading source files by **any** tool, not just `Read`
+- `git diff <a>..<b>` (range diffs) or `git show <hash>` without `--`
+- Editing CHANGELOG / README / other docs / source files (unless that file IS the SCOPE doc)
+- Auditing the docs/ tree
+- Running `context_gatherer.py` with `--scope-path` or `--since-days` (broad)
+- Re-fetching after compaction
+- Continuing after a steer/stop
+- "Let me also check X" loops
