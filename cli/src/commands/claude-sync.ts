@@ -235,6 +235,7 @@ export function createClaudeSyncCommand(): Command {
     .option('--accept-overwrite', 'Required with --apply to confirm overwrite of managed sections')
     .option('--list', 'List known canonical fragments + versions')
     .option('--add <fragment>', 'Append sentinels for <fragment> to end of CLAUDE.md (use when migrating)')
+    .option('--json', 'Emit machine-readable JSON (with --check or --list)')
     .option('--cwd <path>', 'Operate on CLAUDE.md in this directory (default: process.cwd())')
     .option('--repo-name <name>', 'Override repo name for gitnexus template substitution')
     .option('--repo-stats <stats>', 'Override repo stats for gitnexus template substitution')
@@ -244,6 +245,7 @@ export function createClaudeSyncCommand(): Command {
       acceptOverwrite?: boolean;
       list?: boolean;
       add?: string;
+      json?: boolean;
       cwd?: string;
       repoName?: string;
       repoStats?: string;
@@ -252,6 +254,16 @@ export function createClaudeSyncCommand(): Command {
       const cwd = path.resolve(opts.cwd ?? process.cwd());
 
       if (opts.list) {
+        if (opts.json) {
+          const out = [...fragments.values()].map(f => ({
+            name: f.name,
+            version: f.version,
+            description: f.description,
+            template_vars: f.templateVars,
+          }));
+          console.log(JSON.stringify(out, null, 2));
+          return;
+        }
         console.log(kleur.bold('Canonical CLAUDE.md fragments:\n'));
         for (const frag of [...fragments.values()].sort((a, b) => a.name.localeCompare(b.name))) {
           const vars = frag.templateVars.length ? `  ${kleur.dim(`(vars: ${frag.templateVars.join(', ')})`)}` : '';
@@ -306,8 +318,31 @@ export function createClaudeSyncCommand(): Command {
 
       // Default: --check
       const drift = checkDrift(content, fragments, ctx);
+      const sections = findManagedSections(content);
+      if (opts.json) {
+        const present = sections.map(s => ({
+          name: s.name,
+          version: s.version,
+          canonical_version: fragments.get(s.name)?.version ?? null,
+        }));
+        const knownNames = [...fragments.values()].map(f => f.name);
+        const out = {
+          claude_md: claudeMd,
+          repo_context: ctx,
+          managed_sections: present,
+          drift: drift.map(d => ({
+            name: d.name,
+            kind: d.kind,
+            current_version: d.currentVersion ?? null,
+            canonical_version: d.canonicalVersion ?? null,
+          })),
+          known_fragments: knownNames,
+        };
+        console.log(JSON.stringify(out, null, 2));
+        if (drift.length > 0) process.exit(1);
+        return;
+      }
       if (drift.length === 0) {
-        const sections = findManagedSections(content);
         console.log(kleur.green(`✓ Clean: ${path.relative(cwd, claudeMd)}  (${sections.length} managed section${sections.length === 1 ? '' : 's'})`));
         return;
       }
