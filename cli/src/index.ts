@@ -24,6 +24,7 @@ import { createMergeCommand } from './commands/merge.js';
 import { createDebugCommand } from './commands/debug.js';
 import { createReportCommand } from './commands/report.js';
 import { createSkillsCommand } from './commands/skills.js';
+import { createClaudeSyncCommand } from './commands/claude-sync.js';
 import { printBanner } from './utils/banner.js';
 
 const program = new Command();
@@ -68,6 +69,7 @@ program.addCommand(createMergeCommand());
 program.addCommand(createDebugCommand());
 program.addCommand(createReportCommand());
 program.addCommand(createSkillsCommand());
+program.addCommand(createClaudeSyncCommand());
 program.addCommand(createHelpCommand());
 program
     .command('update')
