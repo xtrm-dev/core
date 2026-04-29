@@ -49902,6 +49902,16 @@ function createHelpCommand() {
       "  xtrm reset [--yes/-y]",
       "    Clear saved CLI preferences.",
       "",
+      "  xtrm doctor [--cwd <path>]",
+      "    Health check for xtrm-managed surfaces (currently: CLAUDE.md fragments).",
+      "",
+      "  xtrm claude-sync [options]",
+      "    Sync managed CLAUDE.md fragments via XTRM-MANAGED:* sentinels.",
+      "    Modes: --check (default, exit 1 on drift), --apply --accept-overwrite,",
+      "           --list, --add <fragment>. Use --json on --check or --list for",
+      "           machine-readable output. Templated fragments use --repo-name /",
+      "           --repo-stats overrides.",
+      "",
       "  xtrm help",
       "    Show this help page."
     ]));
