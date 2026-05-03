@@ -79,6 +79,24 @@ const LEGACY_PROJECT_EXTENSION_ENTRIES = new Set<string>([
     '.xtrm/extensions',
 ]);
 
+function runExternalPiToolPatch(pkgRoot: string, dryRun: boolean, log?: (message: string) => void): void {
+    const scriptPath = path.join(pkgRoot, 'scripts', 'patch-external-pi-tools.mjs');
+    if (!fs.existsSync(scriptPath)) return;
+
+    if (dryRun) {
+        log?.(`[DRY RUN] node ${scriptPath}`);
+        return;
+    }
+
+    const result = spawnSync('node', [scriptPath], { encoding: 'utf8' });
+    if (result.status !== 0) {
+        const stderr = (result.stderr ?? '').trim();
+        if (stderr) log?.(`external tool patch failed: ${stderr}`);
+    } else {
+        log?.('external tool compact/spacing patches applied');
+    }
+}
+
 // ── Extension Registry ───────────────────────────────────────────────────────
 
 export interface ManagedExtension {
@@ -1143,6 +1161,8 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
             await rebuildRuntimeActiveView('pi', skillsRoot);
         }
     }
+
+    runExternalPiToolPatch(pkgRoot, dryRun, log);
 
     await updatePiSettings(resolvedProjectRoot, dryRun, log);
 

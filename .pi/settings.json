@@ -4,7 +4,5 @@
     "../.xtrm/skills/active",
     "../.xtrm/skills/active/pi"
   ],
-  "packages": [
-    "npm:@jaggerxtrm/pi-extensions"
-  ]
+  "packages": []
 }

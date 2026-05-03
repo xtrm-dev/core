@@ -34,8 +34,8 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/documenting/SKILL.md",
-        ".xtrm/skills/active/pi/using-xtrm/SKILL.md"
+        ".xtrm/skills/active/documenting/SKILL.md",
+        ".xtrm/skills/active/using-xtrm/SKILL.md"
       ],
       "scripts": []
     },
@@ -48,18 +48,17 @@
       ],
       "stale_threshold_days": 30
     },
-    "communication": {
-      "publishes": [
-        "memory_report",
-        "memory_md"
-      ]
-    },
     "capabilities": {
       "required_tools": [],
       "external_commands": []
     },
     "stall_detection": {},
     "beads_integration": "auto",
-    "beads_write_notes": true
+    "beads_write_notes": true,
+    "mandatory_rules": {
+      "template_sets": [
+        "serena-cheatsheet"
+      ]
+    }
   }
 }

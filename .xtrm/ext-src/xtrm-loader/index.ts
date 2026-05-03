@@ -133,7 +133,6 @@ export default function (pi: ExtensionAPI) {
 				const memoryContent = fs.readFileSync(memoryPath, "utf8").trim();
 				if (memoryContent) {
 					parts.push(memoryContent);
-					logger.info(`Injected .xtrm/memory.md (${memoryContent.length} chars)`);
 				}
 			} catch { /* fail open */ }
 		}

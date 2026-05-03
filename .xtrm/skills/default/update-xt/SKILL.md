@@ -74,6 +74,31 @@ node -e "const s=require('./.pi/settings.json'); console.log(s.skills)" 2>/dev/n
 for f in .xtrm/skills/active/*; do [ -L "$f" ] || echo "NOT A SYMLINK: $f"; done
 ```
 
+## Implementation Self-Check
+
+Do not trust the surface commands alone. Before claiming that `xt init` handles
+drift correctly, verify the underlying implementation behavior in the CLI source.
+
+Required checks:
+
+| File | What to verify |
+|------|----------------|
+| `cli/src/core/drift.ts` | Drift is classified by comparing installed user file hashes against registry hashes from the package payload |
+| `cli/src/core/registry-scaffold.ts` | Drifted files are reported and skipped by default unless `force` is enabled |
+| `cli/src/commands/init.ts` | `xt init` calls the registry install step with `force: false` |
+
+What you must confirm from code before reporting success:
+
+- `xt init` does check for local drift between the user's `.xtrm` files and the
+  package payload that bootstrapped them.
+- That check is hash-based for registry-managed `.xtrm` files, not just a loose
+  status heuristic.
+- `xt init -y` is non-destructive for drifted `.xtrm` files by default. It
+  preserves local edits unless a separate force path is used.
+
+If the implementation no longer matches those rules, stop and report the mismatch
+instead of repeating this skill's older assumptions.
+
 ## Remediation
 
 Two commands cover almost all drift. Know which fixes what:
@@ -86,6 +111,8 @@ Two commands cover almost all drift. Know which fixes what:
 ### Fix: Skills symlink stale or active/ view wrong
 
 `xt claude install` does NOT rebuild skills. Only `xt init` does (Phase 6b).
+`xt init -y` will repair missing/outdated registry-managed files, but it will
+preserve locally drifted `.xtrm` files by default.
 
 ```bash
 xt init -y
@@ -158,6 +185,13 @@ readlink .claude/skills
 node -e "const s=require('./.pi/settings.json'); console.log(s.skills.includes('../.xtrm/skills/active'))" 2>/dev/null
 # Must output: true
 ```
+
+Also restate the implementation-level conclusion in your report:
+
+- `xt init` verified drift against package registry hashes
+- local drifted `.xtrm` files were preserved by default
+- no forced overwrite path was used unless explicitly requested
+
 
 If `xt status` still shows drift after targeted fixes, run the full sync:
 ```bash

@@ -105,17 +105,9 @@ export default function serenaCompactExtension(pi: ExtensionAPI): void {
     toolsExpanded = ctx.ui.getToolsExpanded();
   });
 
-  // Compact Serena tool results
-  pi.on("tool_result", async (event: ToolResultEvent) => {
-    // Only handle Serena/MCP tools
-    if (!isSerenaTool(event.toolName)) return undefined;
-    
-    // If tools are expanded, don't compact
-    if (toolsExpanded) return undefined;
-    
-    // Compact the content
-    const compacted = compactResult(event.toolName, event.content, 6);
-    
-    return { content: compacted };
+  // NOTE: xtrm-ui owns external tool compaction globally in this project.
+  // Keep this extension passive to avoid double-transforms and conflicts.
+  pi.on("tool_result", async (_event: ToolResultEvent) => {
+    return undefined;
   });
 }

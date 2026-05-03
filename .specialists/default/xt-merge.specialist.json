@@ -34,7 +34,7 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/xt-merge/SKILL.md"
+        ".xtrm/skills/active/xt-merge/SKILL.md"
       ],
       "scripts": []
     },
@@ -42,13 +42,11 @@
       "files_to_watch": [
         "src/specialist/schema.ts",
         "src/specialist/runner.ts",
-        ".xtrm/skills/active/pi/xt-merge/SKILL.md"
+        ".xtrm/skills/active/xt-merge/SKILL.md"
       ],
       "stale_threshold_days": 30
     },
-    "communication": {
-      "output_to": ".specialists/merge-prs-result.md"
-    },
+    "output_file": ".specialists/merge-prs-result.md",
     "capabilities": {
       "required_tools": [],
       "external_commands": []
