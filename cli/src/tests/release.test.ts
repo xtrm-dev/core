@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
+import { buildReleaseTemplate, getPackageVersion, getReleaseTag, getReleaseScopeViolations } from '../commands/release.js';
 import { buildReportBundle, getCommitDate, listXtReports } from '../core/xt-reports.js';
 
 function git(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): string {
@@ -27,10 +28,6 @@ function initRepo(): string {
   return dir;
 }
 
-afterEach(() => {
-  // temp dirs auto cleaned by OS
-});
-
 describe('release helper', () => {
   it('reads commit date from annotated tag commit', () => {
     const cwd = initRepo();
@@ -48,5 +45,32 @@ describe('release helper', () => {
     expect(bundle.output).toContain('2026-01-01-a.md');
     expect(bundle.output).not.toContain('2025-12-31-old.md');
     expect(bundle.output.length).toBeGreaterThan(0);
+  });
+
+  it('keeps prepare template shape', () => {
+    const template = buildReleaseTemplate({ from: 'v1.0.0', to: 'HEAD', bundle: 'bundle-body', versionMode: 'patch' });
+    expect(template).toContain('version_mode=patch');
+    expect(template).toContain('range=v1.0.0..HEAD');
+    expect(template).toContain('xt_reports:');
+    expect(template).toContain('bundle-body');
+  });
+
+  it('derives publish tag from cli/package.json version', () => {
+    const cwd = initRepo();
+    expect(getPackageVersion(cwd)).toBe('1.2.3');
+    expect(getReleaseTag(cwd)).toBe('v1.2.3');
+  });
+
+  it('rejects release scope when unstaged outside allowlist', () => {
+    const cwd = initRepo();
+    writeFileSync(path.join(cwd, 'notes.md'), 'dirty');
+    expect(getReleaseScopeViolations(cwd)).toEqual(['notes.md']);
+  });
+
+  it('rejects release scope when staged outside allowlist', () => {
+    const cwd = initRepo();
+    writeFileSync(path.join(cwd, 'notes.md'), 'dirty');
+    git(['add', 'notes.md'], cwd);
+    expect(getReleaseScopeViolations(cwd)).toEqual(['notes.md']);
   });
 });
