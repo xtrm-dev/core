@@ -28,6 +28,7 @@ export interface InstallOpts {
     prune?: boolean;
     backport?: boolean;
     global?: boolean;
+    projectRoot?: string;
     /** Skip machine bootstrap (beads/dolt/bv/deepwiki) — used by the init orchestrator which handles it in a dedicated phase. */
     skipMachineBootstrap?: boolean;
     /** Skip Claude runtime sync (hooks/settings wiring). */
@@ -138,7 +139,7 @@ export async function runInstall(opts: InstallOpts = {}): Promise<void> {
 
     const effectiveYes = yes || process.argv.includes('--yes') || process.argv.includes('-y');
     const packageRoot = resolvePackageRoot();
-    const projectRoot = getProjectRoot();
+    const projectRoot = opts.projectRoot ?? getProjectRoot();
 
     if (!skipMachineBootstrap) {
         await runMachineBootstrap({ yes: effectiveYes });

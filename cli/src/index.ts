@@ -26,6 +26,7 @@ import { createReportCommand } from './commands/report.js';
 import { createSkillsCommand } from './commands/skills.js';
 import { createClaudeSyncCommand } from './commands/claude-sync.js';
 import { createDoctorCommand } from './commands/doctor.js';
+import { createUpdateCommand } from './commands/update.js';
 import { printBanner } from './utils/banner.js';
 
 const program = new Command();
@@ -72,14 +73,8 @@ program.addCommand(createReportCommand());
 program.addCommand(createSkillsCommand());
 program.addCommand(createClaudeSyncCommand());
 program.addCommand(createDoctorCommand());
+program.addCommand(createUpdateCommand());
 program.addCommand(createHelpCommand());
-program
-    .command('update')
-    .description('Reinstall and sync all tools to latest (alias: xtrm init --prune -y)')
-    .action(async () => {
-        await printBanner(version);
-        await runProjectInit({ prune: true, yes: true });
-    });
 
 // Default action: show help
 program
@@ -103,7 +98,7 @@ process.on('unhandledRejection', (reason) => {
 
 // Show banner for setup commands (never for help/version output)
 const isHelpOrVersion = process.argv.some(a => a === '--help' || a === '-h' || a === '--version' || a === '-V');
-const isSetupCommand = ['init', 'update'].includes(process.argv[2] ?? '');
+const isSetupCommand = ['init'].includes(process.argv[2] ?? '');
 
 (async () => {
     if (!isHelpOrVersion && isSetupCommand) {
