@@ -31,7 +31,7 @@ export function resolveUserPacksRoot(skillsRoot: string): string {
   return path.join(skillsRoot, 'user', 'packs');
 }
 
-export function resolveActiveRuntimeRoot(skillsRoot: string, _runtime: SkillsRuntime): string {
+export function resolveActiveRuntimeRoot(skillsRoot: string): string {
   return path.join(skillsRoot, 'active');
 }
 

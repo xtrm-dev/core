@@ -67,14 +67,13 @@ describe.skipIf(SYMLINK_UNSUPPORTED)('skills migration boundary contracts', () =
 
     await fs.ensureDir(path.join(projectRoot, '.pi'));
     await fs.writeJson(path.join(projectRoot, '.pi', 'settings.json'), {
-      skills: ['../.xtrm/skills/active/pi'],
+      skills: ['../.xtrm/skills/active'],
     });
 
     await fs.ensureDir(path.join(projectRoot, '.agents', 'skills'));
 
     const verification = await runInitVerification(projectRoot);
-    expect(verification.skillsRuntime.activeClaudeReady).toBe(true);
-    expect(verification.skillsRuntime.activePiReady).toBe(true);
+    expect(verification.skillsRuntime.activeReady).toBe(true);
     expect(verification.skillsRuntime.claudePointerReady).toBe(true);
     expect(verification.skillsRuntime.piPointerReady).toBe(true);
     expect(verification.skillsRuntime.hasDeprecatedAgentsSkillsPath).toBe(true);

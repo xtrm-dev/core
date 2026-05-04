@@ -1,8 +1,7 @@
 {
   "extensions": [],
   "skills": [
-    "../.xtrm/skills/active",
-    "../.xtrm/skills/active/pi"
+    "../.xtrm/skills/active"
   ],
   "packages": []
 }

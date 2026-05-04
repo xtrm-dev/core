@@ -65,7 +65,7 @@ describe('installSkills', () => {
     });
 
     it('fails when active runtime view is missing a trinity skill', async () => {
-        await fsExtra.remove(path.join(tmpDir, '.xtrm', 'skills', 'active', 'claude', 'using-service-skills'));
+        await fsExtra.remove(path.join(tmpDir, '.xtrm', 'skills', 'active', 'using-service-skills'));
 
         await expect(installSkills(tmpDir, ACTUAL_SKILLS_ROOT)).rejects.toThrow(/using-service-skills/);
     });
