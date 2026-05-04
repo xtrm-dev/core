@@ -127,10 +127,8 @@ describe('xt skills JSON CLI integration', () => {
     expect(afterEnable.enabledPacks.claude).toEqual(['alpha-pack']);
     expect(afterEnable.enabledPacks.pi).toEqual(['alpha-pack']);
 
-    const claudeActiveAfterEnable = fs.readdirSync(path.join(skillsRoot, 'active', 'claude')).sort();
-    const piActiveAfterEnable = fs.readdirSync(path.join(skillsRoot, 'active', 'pi')).sort();
-    expect(claudeActiveAfterEnable).toEqual(['alpha-skill', 'always-on']);
-    expect(piActiveAfterEnable).toEqual(['alpha-skill', 'always-on']);
+    const activeAfterEnable = fs.readdirSync(path.join(skillsRoot, 'active')).sort();
+    expect(activeAfterEnable).toEqual(['alpha-skill', 'always-on']);
 
     const disablePiOnly = run(['skills', 'disable', 'alpha-pack', '--global', '--pi', '--json'], {
       env: { HOME: tmpHome },
@@ -143,10 +141,8 @@ describe('xt skills JSON CLI integration', () => {
     expect(afterDisablePiOnly.enabledPacks.claude).toEqual(['alpha-pack']);
     expect(afterDisablePiOnly.enabledPacks.pi).toEqual([]);
 
-    const claudeActiveAfterDisable = fs.readdirSync(path.join(skillsRoot, 'active', 'claude')).sort();
-    const piActiveAfterDisable = fs.readdirSync(path.join(skillsRoot, 'active', 'pi')).sort();
-    expect(claudeActiveAfterDisable).toEqual(['alpha-skill', 'always-on']);
-    expect(piActiveAfterDisable).toEqual(['always-on']);
+    const activeAfterDisable = fs.readdirSync(path.join(skillsRoot, 'active')).sort();
+    expect(activeAfterDisable).toEqual(['always-on']);
   });
 
   it('disable all clears both runtimes atomically', () => {
@@ -186,8 +182,7 @@ describe('xt skills JSON CLI integration', () => {
     };
     expect(persistedState.enabledPacks).toEqual({ claude: [], pi: [] });
 
-    expect(fs.readdirSync(path.join(skillsRoot, 'active', 'claude')).sort()).toEqual(['always-on']);
-    expect(fs.readdirSync(path.join(skillsRoot, 'active', 'pi')).sort()).toEqual(['always-on']);
+    expect(fs.readdirSync(path.join(skillsRoot, 'active')).sort()).toEqual(['always-on']);
   });
 
   it('syncs PACK.json skills from filesystem during enable when metadata is stale', () => {

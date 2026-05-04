@@ -1,7 +1,6 @@
 import fs from 'fs-extra';
 import { z } from 'zod';
 import {
-  SKILLS_RUNTIMES,
   SKILLS_STATE_SCHEMA_VERSION,
   type SkillsRuntime,
   resolveActiveRuntimeRoot,
@@ -58,9 +57,7 @@ export async function ensureSkillsTreeStructure(skillsRoot: string): Promise<voi
   await fs.ensureDir(resolveOptionalTierRoot(skillsRoot));
   await fs.ensureDir(resolveUserPacksRoot(skillsRoot));
 
-  for (const runtime of SKILLS_RUNTIMES) {
-    await fs.ensureDir(resolveActiveRuntimeRoot(skillsRoot, runtime));
-  }
+  await fs.ensureDir(resolveActiveRuntimeRoot(skillsRoot));
 }
 
 export async function writeSkillsState(skillsRoot: string, state: SkillsState): Promise<SkillsState> {

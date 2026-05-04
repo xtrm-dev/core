@@ -89,7 +89,7 @@ async function buildRuntimeTempView(
   skillsRoot: string,
   selectedSkills: readonly DiscoveredSkill[],
 ): Promise<string> {
-  const activeRuntimeRoot = resolveActiveRuntimeRoot(skillsRoot, runtime);
+  const activeRuntimeRoot = resolveActiveRuntimeRoot(skillsRoot);
   const activeParentRoot = path.dirname(activeRuntimeRoot);
   const tempRoot = path.join(activeParentRoot, `${runtime}.tmp-${randomUUID()}`);
 
@@ -160,7 +160,7 @@ export async function rebuildRuntimeActiveView(
 ): Promise<RuntimeActiveViewResult> {
   const selection = await selectRuntimeSkills(runtime, skillsRoot);
 
-  const activeRuntimeRoot = resolveActiveRuntimeRoot(skillsRoot, runtime);
+  const activeRuntimeRoot = resolveActiveRuntimeRoot(skillsRoot);
   await fs.ensureDir(path.dirname(activeRuntimeRoot));
 
   const nonSymlinkEntryNames = await findNonSymlinkEntries(activeRuntimeRoot);
@@ -196,7 +196,7 @@ export async function rebuildAllRuntimeActiveViews(skillsRoot: string): Promise<
 
   assertNoRuntimeCollisions('claude', mergedSkills);
 
-  const activeRuntimeRoot = resolveActiveRuntimeRoot(skillsRoot, 'claude');
+  const activeRuntimeRoot = resolveActiveRuntimeRoot(skillsRoot);
   await fs.ensureDir(path.dirname(activeRuntimeRoot));
 
   const nonSymlinkEntryNames = await findNonSymlinkEntries(activeRuntimeRoot);

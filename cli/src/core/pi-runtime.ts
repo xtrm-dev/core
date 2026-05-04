@@ -19,7 +19,7 @@ import { homedir } from 'node:os';
 import { t, sym } from '../utils/theme.js';
 import { resolveSkillsRoot } from './skills-layout.js';
 import { validateSkillsInvariants } from './skill-discovery.js';
-import { rebuildRuntimeActiveView } from './skills-materializer.js';
+import { rebuildAllRuntimeActiveViews } from './skills-materializer.js';
 
 // Resolve xtrm-tools package root from __dirname (cli/dist/ -> ../..)
 declare const __dirname: string;
@@ -1158,7 +1158,7 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
         }
 
         if (!dryRun) {
-            await rebuildRuntimeActiveView('pi', skillsRoot);
+            await rebuildAllRuntimeActiveViews(skillsRoot);
         }
     }
 
