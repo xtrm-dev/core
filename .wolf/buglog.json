@@ -67,6 +67,41 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-16T17:20:00Z"
+    },
+    {
+      "id": "bug-005",
+      "timestamp": "2026-05-04T09:59:05Z",
+      "error_message": "xtrm-loader logged 'Injected .xtrm/memory.md ...' during before_agent_start and polluted the Pi TUI user prompt row",
+      "file": ".xtrm/packages/pi-extensions/extensions/xtrm-loader/index.ts",
+      "root_cause": "before_agent_start emitted an INFO log for routine memory injection on every turn instead of staying silent while mutating the system prompt.",
+      "fix": "Removed the per-turn logger.info call while preserving memory.md injection into the system prompt.",
+      "tags": [
+        "pi",
+        "xtrm-loader",
+        "before_agent_start",
+        "tui",
+        "logging"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-04T09:59:05Z"
+    },
+    {
+      "id": "bug-006",
+      "timestamp": "2026-05-04T10:18:18Z",
+      "error_message": "pi-runtime test 'runs global installs for missing required runtime packages' expected installed packages but got []",
+      "file": "cli/test/pi-runtime.test.ts",
+      "root_cause": "Test installRunner mock returned numeric 0, but PiPackageInstallRunner now returns an object with status/stdout/stderr; installPiPackageWithFallback treated numeric return as failed/undefined status.",
+      "fix": "Updated the mock to return { status: 0, stdout: '', stderr: '' }.",
+      "tags": [
+        "test",
+        "pi-runtime",
+        "mock-contract",
+        "typescript"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-04T10:18:18Z"
     }
   ]
 }

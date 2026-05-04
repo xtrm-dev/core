@@ -114,7 +114,7 @@ describe('ensureAlwaysGlobalPiPackages', () => {
         const installOrder: string[] = [];
         const result = await ensureAlwaysGlobalPiPackages(false, undefined, agentDir, (piPackageId) => {
             installOrder.push(piPackageId);
-            return 0;
+            return { status: 0, stdout: '', stderr: '' };
         });
 
         expect(installOrder).toEqual(['npm:pi-gitnexus', 'npm:pi-serena-tools']);

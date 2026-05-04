@@ -19,6 +19,7 @@
     "cli/dist",
     "cli/package.json",
     "scripts/ghgrep.mjs",
+    "scripts/patch-external-pi-tools.mjs",
     ".xtrm/config",
     ".xtrm/hooks",
     "packages/pi-extensions",

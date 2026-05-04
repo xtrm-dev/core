@@ -37,7 +37,7 @@
     "customMessageBg": "surfaceCustom",
     "customMessageText": "",
     "customMessageLabel": "accentBlue",
-    "toolPendingBg": "surfaceAlt",
+    "toolPendingBg": "surfaceMuted",
     "toolSuccessBg": "surfaceAlt",
     "toolErrorBg": "surfaceAlt",
     "toolTitle": "",

@@ -2,6 +2,8 @@
 
 > Auto-maintained by OpenWolf. Last scanned: 2026-04-02T22:22:27.122Z
 > Manual note 2026-04-16: Pi runtime now prefers packages/pi-extensions/* and prunes stale npm:pi-dex settings conflicts.
+> Manual note 2026-05-04: xtrm-loader memory injection is silent during before_agent_start; xtrm-ui dark pending row backgrounds use surfaceMuted across active pi-extension theme copies.
+> Manual note 2026-05-04: specialists-agent-guard Claude hook blocks raw Agent only when using-specialists markers are active; pi-runtime tests mock PiPackageInstallRunner with {status, stdout, stderr}.
 > Files: 541 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./

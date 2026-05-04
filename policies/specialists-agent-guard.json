@@ -1,0 +1,17 @@
+{
+  "id": "specialists-agent-guard",
+  "description": "Block raw Agent tool calls when a using-specialists workflow is active so tracked work routes through specialists CLI.",
+  "version": "1",
+  "runtime": "claude",
+  "order": 18,
+  "claude": {
+    "hooks": [
+      {
+        "event": "PreToolUse",
+        "matcher": "Agent",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/specialists-agent-guard.mjs",
+        "timeout": 2000
+      }
+    ]
+  }
+}

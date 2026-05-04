@@ -44826,6 +44826,21 @@ var LEGACY_PROJECT_EXTENSION_ENTRIES = /* @__PURE__ */ new Set([
   PROJECT_EXTENSIONS_ENTRY,
   ".xtrm/extensions"
 ]);
+function runExternalPiToolPatch(pkgRoot, dryRun, log) {
+  const scriptPath = import_path4.default.join(pkgRoot, "scripts", "patch-external-pi-tools.mjs");
+  if (!import_fs_extra9.default.existsSync(scriptPath)) return;
+  if (dryRun) {
+    log?.(`[DRY RUN] node ${scriptPath}`);
+    return;
+  }
+  const result = (0, import_child_process3.spawnSync)("node", [scriptPath], { encoding: "utf8" });
+  if (result.status !== 0) {
+    const stderr = (result.stderr ?? "").trim();
+    if (stderr) log?.(`external tool patch failed: ${stderr}`);
+  } else {
+    log?.("external tool compact/spacing patches applied");
+  }
+}
 var MANAGED_EXTENSIONS = [
   { id: "core", displayName: "@xtrm/pi-core", isLibrary: true, required: true },
   { id: "auto-session-name", displayName: "auto-session-name", required: false },
@@ -45528,6 +45543,7 @@ async function runPiRuntimeSync(opts = {}) {
       await rebuildRuntimeActiveView("pi", skillsRoot);
     }
   }
+  runExternalPiToolPatch(pkgRoot, dryRun, log);
   await updatePiSettings(resolvedProjectRoot, dryRun, log);
   const requiredFailed = missingPackages.filter((status) => status.pkg.required && result.failed.includes(status.pkg.id));
   if (requiredFailed.length === 0) {
