@@ -27,6 +27,7 @@ import { createSkillsCommand } from './commands/skills.js';
 import { createClaudeSyncCommand } from './commands/claude-sync.js';
 import { createDoctorCommand } from './commands/doctor.js';
 import { createUpdateCommand } from './commands/update.js';
+import { createReleaseCommand } from './commands/release.js';
 import { printBanner } from './utils/banner.js';
 
 const program = new Command();
@@ -74,6 +75,7 @@ program.addCommand(createSkillsCommand());
 program.addCommand(createClaudeSyncCommand());
 program.addCommand(createDoctorCommand());
 program.addCommand(createUpdateCommand());
+program.addCommand(createReleaseCommand());
 program.addCommand(createHelpCommand());
 
 // Default action: show help
