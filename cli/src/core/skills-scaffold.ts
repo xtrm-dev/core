@@ -10,10 +10,80 @@ export interface SkillsActivationResult {
     readonly activatedPiSkills: number;
 }
 
+interface EnsureSkillsSymlinkOptions {
+    readonly force?: boolean;
+}
+
+async function collectFileSnapshot(rootDir: string): Promise<Map<string, string>> {
+    const snapshot = new Map<string, string>();
+
+    async function walk(currentDir: string): Promise<void> {
+        const entries = await fs.readdir(currentDir, { withFileTypes: true }).catch(() => [] as fs.Dirent[]);
+        entries.sort((left, right) => left.name.localeCompare(right.name));
+
+        for (const entry of entries) {
+            const entryPath = path.join(currentDir, entry.name);
+            const relativePath = path.relative(rootDir, entryPath);
+
+            if (entry.isDirectory()) {
+                await walk(entryPath);
+                continue;
+            }
+
+            if (!entry.isFile()) {
+                continue;
+            }
+
+            snapshot.set(relativePath, await fs.readFile(entryPath, 'utf8'));
+        }
+    }
+
+    if (await fs.pathExists(rootDir)) {
+        await walk(rootDir);
+    }
+
+    return snapshot;
+}
+
+async function backupManagedSkillsDirectory(linkPath: string): Promise<string> {
+    const backupPath = `${linkPath}.bak-${new Date().toISOString().replace(/:/g, '-')}`;
+    await fs.copy(linkPath, backupPath, { overwrite: true, errorOnExist: false, dereference: true });
+    return backupPath;
+}
+
+function isSkillsMigrationForced(options: EnsureSkillsSymlinkOptions): boolean {
+    return options.force || ['1', 'true', 'yes'].includes(String(process.env.XTRM_FORCE_SKILLS_MIGRATION ?? '').toLowerCase());
+}
+
+async function replaceRealDirectoryWithSymlink(
+    linkPath: string,
+    symlinkTarget: string,
+    label: string,
+    options: EnsureSkillsSymlinkOptions,
+): Promise<void> {
+    if (label === '.claude/skills') {
+        console.log(kleur.yellow('  ⚠ .claude/skills is runtime-managed read-only view; direct writes unsupported.'));
+        console.log(kleur.yellow('    Move custom skills to .xtrm/skills/user/ then rebuild.'));
+    }
+
+    const isForced = isSkillsMigrationForced(options);
+
+    if (isForced) {
+        const backupPath = await backupManagedSkillsDirectory(linkPath);
+        console.log(kleur.yellow(`  ⚠ ${label} backed up to ${backupPath}`));
+    }
+
+    await fs.remove(linkPath);
+    await fs.mkdirp(path.dirname(linkPath));
+    await fs.symlink(symlinkTarget, linkPath);
+    console.log(kleur.yellow(`  ⚠ ${label} real path replaced with managed symlink`));
+}
+
 export async function ensureSkillsSymlink(
     linkPath: string,
     symlinkTarget: string,
     label: string,
+    options: EnsureSkillsSymlinkOptions = {},
 ): Promise<void> {
     const existing = await fs.lstat(linkPath).catch(() => null);
     if (existing) {
@@ -25,20 +95,27 @@ export async function ensureSkillsSymlink(
             }
             await fs.remove(linkPath);
         } else {
-            if (label === '.claude/skills') {
-                console.log(kleur.yellow('  ⚠ .claude/skills is a runtime-managed read-only view; direct writes are unsupported.'));
-                console.log(kleur.yellow('    Move custom skills to .xtrm/skills/default or .xtrm/skills/{optional,user}/packs/* and rebuild.'));
+            const targetSnapshot = await collectFileSnapshot(path.resolve(path.dirname(linkPath), symlinkTarget));
+            const existingSnapshot = await collectFileSnapshot(linkPath);
+            const matchesManagedView = targetSnapshot.size === existingSnapshot.size && [...targetSnapshot.entries()].every(([relativePath, content]) => existingSnapshot.get(relativePath) === content);
+
+            if (!matchesManagedView && !isSkillsMigrationForced(options)) {
+                throw new Error(
+                    `Refusing to replace existing ${label}. Backup existing files from ${label}, then re-run with --force. See docs/cat-b-distribution.md.`,
+                );
             }
-            await fs.remove(linkPath);
-            console.log(kleur.yellow(`  ⚠ ${label} was a real path — replaced with managed symlink`));
+
+            await replaceRealDirectoryWithSymlink(linkPath, symlinkTarget, label, options);
+            return;
         }
     }
+
     await fs.mkdirp(path.dirname(linkPath));
     await fs.symlink(symlinkTarget, linkPath);
     console.log(`${kleur.green('  ✓')} ${label} → ${symlinkTarget}`);
 }
 
-export async function ensureAgentsSkillsSymlink(projectRoot: string): Promise<SkillsActivationResult> {
+export async function ensureAgentsSkillsSymlink(projectRoot: string, options: EnsureSkillsSymlinkOptions = {}): Promise<SkillsActivationResult> {
     const skillsRoot = resolveSkillsRoot(projectRoot);
     if (!await fs.pathExists(path.join(skillsRoot, 'default'))) {
         return {
@@ -61,6 +138,7 @@ export async function ensureAgentsSkillsSymlink(projectRoot: string): Promise<Sk
         path.join(projectRoot, '.claude', 'skills'),
         path.join('..', '.xtrm', 'skills', 'active'),
         '.claude/skills',
+        options,
     );
 
     const agentsSkillsPath = path.join(projectRoot, '.agents', 'skills');

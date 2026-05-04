@@ -205,7 +205,11 @@ export async function runInstall(opts: InstallOpts = {}): Promise<void> {
     await runPiInstall(dryRun, isGlobal, projectRoot);
 
     if (!dryRun) {
-        await ensureAgentsSkillsSymlink(projectRoot);
+        if (force) {
+            await ensureAgentsSkillsSymlink(projectRoot, { force: true });
+        } else {
+            await ensureAgentsSkillsSymlink(projectRoot);
+        }
         await assertRuntimeSkillsViews(projectRoot);
     }
 

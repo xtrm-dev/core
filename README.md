@@ -47,6 +47,7 @@ Native integration with the [specialists](https://github.com/Jaggerxtrm/speciali
 | [docs/cli-architecture.md](docs/cli-architecture.md) | CLI internals — install flow, diff/sync engine, config merge |
 | [docs/docs-commands.md](docs/docs-commands.md) | Docs command suite — `show`, `list`, `cross-check`, output modes, drift checks |
 | [docs/project-skills.md](docs/project-skills.md) | Legacy project-skill migration notes and current asset location |
+| [docs/cat-b-distribution.md](docs/cat-b-distribution.md) | Cat B distribution ownership, migration policy, Windows stance |
 | [docs/testing.md](docs/testing.md) | Live testing checklist — integration, gates, worktree flows |
 | [CHANGELOG.md](CHANGELOG.md) | Full version history |
 
