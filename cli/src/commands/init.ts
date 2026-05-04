@@ -817,7 +817,9 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
     await runPiInstall(false, Boolean(opts.global), projectRoot);
 
     // ── Phase 6b: Rebuild runtime skills views + wire runtime pointers ───────
-    const skillsActivation = await ensureAgentsSkillsSymlink(projectRoot);
+    const skillsActivation = opts.force
+        ? await ensureAgentsSkillsSymlink(projectRoot, { force: true })
+        : await ensureAgentsSkillsSymlink(projectRoot);
     if (skillsActivation.activatedClaudeSkills === skillsActivation.activatedPiSkills) {
         console.log(kleur.green(`  ✓ Activated ${skillsActivation.activatedClaudeSkills} default skills → .xtrm/skills/active/{claude,pi}`));
     } else {
