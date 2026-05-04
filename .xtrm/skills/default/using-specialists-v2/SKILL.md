@@ -205,7 +205,7 @@ Run `specialists list` if you need the live registry. Choose by task, not by hab
 | Docs audit/sync | `sync-docs` | Docs may be stale or need targeted synchronization. |
 | External/live research | `researcher` | Current library/docs/media lookup is needed. |
 | Specialist config | `specialists-creator` | Creating or changing specialist JSON/config. |
-| Release changelog drafting | `changelog-keeper` | A new tag is being cut and a `[X.Y.Z] - YYYY-MM-DD` section is needed. Driven by `sp release prepare`, not invoked directly. |
+| Release publication (end-to-end) | `changelog-keeper` | A new tag is being cut. MEDIUM specialist: drafts CHANGELOG section from xt reports, bumps package.json, rebuilds dist, commits, tags, pushes. Use the `releasing` skill to dispatch. |
 
 Selection rules:
 
@@ -480,9 +480,18 @@ Use `sp ps` instead of ad-hoc polling.
 sp ps
 sp ps <job-id>
 sp ps --follow
+sp ps --running                       # only starting/running/waiting jobs
+sp ps --bead <bead-id>                # only jobs linked to one bead
+sp ps --since 30m                     # only jobs started in the last 30 minutes
+sp ps --mine                          # only jobs whose bead is assigned to you
+sp ps --include-terminal              # include merged/abandoned epics (hidden by default)
 sp feed <job-id>
 sp result <job-id>
 ```
+
+Filter flags compose: `sp ps --running --bead <id>` is the canonical way to inspect "what's actively working on this issue right now". By default `sp ps` hides epics in `merged` or `abandoned` state to keep the snapshot focused; use `--include-terminal` (or `--all`) to bring them back.
+
+When dead epics pile up in `failed` state (sibling-chain conflicts, manual stops), recover with `sp epic abandon <epic-id> --reason "<text>"`. The `failed -> abandoned` transition is allowed specifically for cleanup; live members still require `--force`.
 
 Read results at every stage. Every specialist (not just READ_ONLY) auto-appends per-turn output to the input bead notes on each `run_complete`, with `[WAITING]` or `[DONE]` headers — `bd show <bead-id>` shows the full handoff trail. `sp result <job-id>` works on `waiting` jobs and returns the most recent turn plus a "Session is waiting for your input" footer; use it to decide whether to resume. If result is empty, inspect feed and rerun or switch specialists before relying on it.
 
@@ -534,18 +543,19 @@ Rules:
 
 ## Release Publication
 
-Tagged releases go through `sp release`, not manual `git tag`:
+Tagged releases go through the `releasing` skill, which dispatches the
+`changelog-keeper` MEDIUM specialist. The specialist reads xt session
+reports, drafts the new section into `CHANGELOG.md`, bumps `package.json`,
+rebuilds `dist/`, commits with `release: vX.Y.Z`, tags, and pushes
+`--follow-tags`. Optional `gh release create` if the bead requests it.
 
-```bash
-sp release prepare [--major | --minor | --patch]   # default: --patch
-sp release publish
-```
+Operator gate: a single `git diff --stat HEAD~1 HEAD` after the specialist
+finishes. Must show only `CHANGELOG.md`, `package.json`, `dist/`. Anything
+else means scope was violated — revert and refile.
 
-`prepare` invokes the `changelog-keeper` specialist to draft a Keep-a-Changelog section between the previous tag and the next tag, bumps `package.json`, and stages `CHANGELOG.md` + `package.json` + `dist/index.js`. It does not commit — operator reviews and commits with `release: v<version>`.
-
-`publish` validates the staged commit (dirty-tree refusal, HEAD message match, version match, top-section match in `CHANGELOG.md`), creates the annotated tag, pushes to origin, and optionally creates a GitHub release via `gh`. Re-emits the empty `[Unreleased]` placeholder for the next cycle.
-
-The `changelog-keeper` specialist is READ_ONLY; the CLI is the file mutator. See `docs/release.md` for the operator runbook.
+The `changelog-keeper-scope` mandatory rule enforces the edit whitelist at
+the specialist level. See `config/skills/releasing/SKILL.md` for the bead
+template, dispatch command, and recovery commands.
 
 ## Epic Lifecycle
 
@@ -672,6 +682,8 @@ Reviewer cannot enter job workspace:
 Check target job status with sp ps. MEDIUM/HIGH jobs are blocked from entering a running write-capable workspace unless forced.
 ```
 
+When resolver/catalog changes are under review inside a worktree, run `sp config show <name> --resolved --from-source` so reviewer sees local source behavior, not installed dist.
+
 Explorer produced empty output:
 
 ```text
@@ -681,3 +693,9 @@ Inspect feed. If no usable final summary exists, rerun with a clearer explorer b
 ## What Not To Put In This Skill
 
 Do not add historical migration notes, stale model names, exhaustive command references, internal token counts, long stuck-state postmortems, or title-only examples. Put long reference material in docs and keep this skill focused on current canonical orchestration.
+
+
+## gitnexus_impact stall mitigation
+- Keep impact analysis requirement.
+- If `gitnexus_impact` stalls, use timeout-protected execution path.
+- On timeout, fall back to `gitnexus_query` + `gitnexus_context`, continue debugging, note degraded blast-radius confidence, file upstream repro.
