@@ -50,3 +50,7 @@
 | 00:25 | Session end: 1 writes across 1 files (memory.md) | 2 reads | ~264 tok |
 | 17:20 | Fixed Pi runtime conflict cleanup | cli/src/core/pi-runtime.ts, cli/src/tests/pi-runtime-safeguards.test.ts, docs/xtrm-ui.md, package.json | auto-prune stale npm:pi-dex + package-source fixes | ~820 |
 | 17:45 | Created handofffixpublish.md | publish recovery handoff | documented local-agent recovery steps | ~260 |
+
+| 23:36 | Updated session close report | .xtrm/reports/2026-05-04-95d4f878.md, .wolf/anatomy.md | filled xtrm-emr8 + xtrm-ul5a handoff context | ~5200 |
+| 23:38 | Closed session report bead | xtrm-vxtc, .xtrm/reports/2026-05-04-95d4f878.md | report marked complete; open issues section updated | ~220 |
+| 00:02 | Closed stale Cat B epic | xtrm-sjbc, .xtrm/reports/2026-05-04-95d4f878.md | no open local bd issues remain | ~180 |

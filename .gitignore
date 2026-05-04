@@ -35,7 +35,6 @@ skills/*-workspace/
 .claude/worktrees/
 .worktrees/
 .xtrm/worktrees/
-.xtrm/reports/
 .xtrm/statusline-claim
 .xtrm/debug.db
 .xtrm-session-state.json
