@@ -40,6 +40,7 @@ Model tiers:
 Rules:
 - Always pick the **highest version** in a family (`claude-sonnet-4-6` not `4-5`, `gemini-3.1-pro-preview` not `gemini-2.5-pro`)
 - `model` and `fallback_model` must be **different providers**
+- If a specialist needs a longer fallback chain, keep first fallback in `fallback_model` and let runtime supply any extra retry tier.
 - Never write a model string you have not pinged in this session
 
 ---
@@ -162,6 +163,10 @@ specialists models  # confirm assignments look balanced
 
 ---
 
+## Canonical references
+
+Reference any canonical skill or rule by name; runtime finds it.
+
 ## Quick Start: Scaffold + `sp edit`
 
 ```bash
@@ -169,7 +174,7 @@ specialists models  # confirm assignments look balanced
 node config/skills/specialists-creator/scripts/scaffold-specialist.ts config/specialists/my-specialist.specialist.json
 
 # 2. Apply a preset for common model/thinking defaults (optional but preferred)
-sp edit my-specialist --preset standard
+sp edit my-specialist --preset medium
 
 # 3. Set individual fields via dot.path (primary mutation workflow)
 sp edit my-specialist specialist.metadata.name my-specialist
@@ -177,6 +182,8 @@ sp edit my-specialist specialist.metadata.version 1.0.0
 sp edit my-specialist specialist.execution.model anthropic/claude-sonnet-4-6
 sp edit my-specialist specialist.execution.fallback_model google-gemini-cli/gemini-3.1-pro-preview
 sp edit my-specialist specialist.execution.permission_required READ_ONLY
+sp edit my-specialist specialist.execution.extensions.serena false
+sp edit my-specialist specialist.execution.extensions.gitnexus false
 
 # 4. Use --file only for multiline prompt fields
 sp edit my-specialist specialist.prompt.system --file .tmp/system.prompt.txt
@@ -186,7 +193,7 @@ sp edit my-specialist specialist.prompt.task_template --file .tmp/task-template.
 sp view my-specialist
 
 # 6. Validate schema
-bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
+bun config/skills/specialists-creator/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
 ```
 
 ---
@@ -211,7 +218,7 @@ bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/m
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `model` | string | — | required — ping before using |
-| `fallback_model` | string | — | must be a different provider |
+| `fallback_model` | string | — | first fallback only; runtime may append more tiers |
 | `mode` | enum | `auto` | `tool` \| `skill` \| `auto` |
 | `timeout_ms` | number | `120000` | ms |
 | `stall_timeout_ms` | number | — | kill if no event for N ms |
@@ -220,6 +227,8 @@ bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/m
 | `output_type` | enum | `custom` | `codegen` \| `analysis` \| `review` \| `synthesis` \| `orchestration` \| `workflow` \| `research` \| `custom` |
 | `permission_required` | enum | `READ_ONLY` | see tier table below |
 | `thinking_level` | enum | — | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
+| `extensions.serena` | boolean | `true` | set `false` to opt out of Serena extension injection for this specialist |
+| `extensions.gitnexus` | boolean | `true` | set `false` to opt out of GitNexus extension injection for this specialist |
 
 **When to use `execution.interactive`**
 
@@ -230,16 +239,80 @@ bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/m
   - MCP `start_specialist`: `keep_alive` enables, `no_keep_alive` disables.
 - Effective precedence: explicit disable (`--no-keep-alive` / `no_keep_alive`) → explicit enable (`--keep-alive` / `keep_alive`) → `execution.interactive` → one-shot default.
 
-**Permission tiers** — controls which pi tools are available:
+**Permission tiers** — controls the *native* pi tools the specialist gets. The full resolved tool set also includes catalog-defined GitNexus and Serena tools per tier; see [docs/manifest.md](../../../docs/manifest.md) for the complete picture.
 
-| Level | pi --tools | Use when |
-|-------|-----------|----------|
-| `READ_ONLY` | `read,grep,find,ls` | Read-only analysis, no bash |
-| `LOW` | `+bash` | Inspect/run commands, no file edits |
-| `MEDIUM` | `+edit` | Can edit existing files |
-| `HIGH` | `+write` | Full access — can create new files |
+| Level | Native tools (cumulative) | Use when |
+|-------|---------------------------|----------|
+| `READ_ONLY` | `read, grep, find, ls` | Read-only analysis, no bash |
+| `LOW` | `+ bash` | Inspect/run commands, no file edits |
+| `MEDIUM` | `+ edit` | Can edit existing files |
+| `HIGH` | `+ write` | Full access — can create new files |
+
+After choosing a tier, verify the resolved tool list before dispatching:
+
+```bash
+sp config show <name> --resolved
+```
 
 **Common pitfall:** `READ_WRITE` is **not** a valid value — use `LOW` or higher.
+
+### Per-specialist `permissions[<TIER>]` override (rarely needed)
+
+Most specialists use the catalog default deny baseline. **Do not declare an override unless this specialist's policy genuinely diverges from its tier.** When you do override, remember the specialist block replaces catalog defaults for that tier.
+
+If divergence is real, add a top-level `permissions` block (sibling to `execution`):
+
+```jsonc
+{
+  "specialist": {
+    "execution": { "permission_required": "READ_ONLY" },
+    "permissions": {
+      "READ_ONLY": {
+        "denied_natives_when_extension": ["grep", "find", "ls"],
+        "denied_natives_mode": "hard"
+      }
+    }
+  }
+}
+```
+
+| Field | Type | Default | Effect |
+|-------|------|---------|--------|
+| `denied_natives_when_extension` | `string[]` | `[]` | Native tools to deny only when a replacement extension is healthy. Catalog defaults apply first; specialist override replaces them for that tier. |
+| `denied_natives_mode` | `"soft"` \| `"hard"` | `"soft"` | `soft` keeps the tool with a preference hint; `hard` removes it (with auto-restore if the extension degrades) |
+
+The override block can only *deny* natives — it cannot add new tools beyond the catalog tier. To add tools, change the tier or update the catalog file.
+
+**Decision rule when authoring:**
+1. Pick the lowest tier that satisfies the specialist's actual capability needs.
+2. Run `sp config show <name> --resolved` and inspect the `--tools` line.
+3. If the tools are right, you're done — no override needed.
+4. If a native tool is genuinely worse than an extension equivalent for this specialist's task, declare a soft-deny first to observe behavior, then promote to hard-deny once you trust it.
+
+See [docs/manifest.md](../../../docs/manifest.md) for full deny-mode semantics, extension health gating, and the canonical explorer example.
+
+**Per-specialist extension opt-out**
+
+Use `execution.extensions` only when this specialist must suppress default extension injection.
+Both flags default to `true`, so omit this block unless opt-out is required.
+
+```json
+{
+  "specialist": {
+    "execution": {
+      "extensions": {
+        "serena": false,
+        "gitnexus": false
+      }
+    }
+  }
+}
+```
+
+Typical use cases:
+- `serena: false` for specialists that must avoid Serena tool/LSP injection
+- `gitnexus: false` for specialists that should not receive GitNexus graph tooling
+- set both `false` for constrained runs that need clean extension surface
 
 ### `specialist.prompt` (required)
 
@@ -356,8 +429,6 @@ planner — epic result:
 
 `run` accepts either a **file path** (`./scripts/foo.sh`, `~/scripts/foo.sh`) or a **shell command** (`bd ready`, `git status`). Pre-run validation checks that file paths exist and shell commands are on `PATH`. Shebang typos (e.g. `pytho` instead of `python`) are caught and reported as errors before the session starts.
 
-`path` is accepted as a deprecated alias for `run`.
-
 ### `specialist.capabilities` (optional)
 
 Informational declarations used by pre-run validation and future tooling (e.g. `specialists doctor`).
@@ -382,27 +453,6 @@ Informational declarations used by pre-run validation and future tooling (e.g. `
 ```
 
 Writes the final session output to this file path after the session completes. Relative to the working directory.
-
-### `specialist.communication` (optional)
-
-```json
-{
-  "communication": {
-    "next_specialists": "planner"
-  }
-}
-```
-
-Or as an array:
-```json
-{
-  "communication": {
-    "next_specialists": ["planner", "test-runner"]
-  }
-}
-```
-
-`next_specialists` declares which specialist(s) should receive this specialist's output as `$previous_result`. Chaining is executed by the caller (e.g. `run_parallel` pipeline) — this field is declarative metadata.
 
 ### `specialist.validation` (optional)
 
@@ -480,7 +530,7 @@ Files listed under `skills.paths` are read and appended to the system prompt at 
 {
   "skills": {
     "paths": [
-      "skills/specialist-author/SKILL.md",
+      ".xtrm/skills/active/specialists-creator/SKILL.md",
       ".claude/agents.md"
     ]
   }
@@ -575,9 +625,6 @@ Scripts run **locally** (not inside the agent session):
     "capabilities": {
       "required_tools": ["bash", "read"],
       "external_commands": ["git"]
-    },
-    "communication": {
-      "next_specialists": ["sync-docs"]
     },
     "output_file": ".specialists/review.md",
     "beads_integration": "auto"
@@ -681,7 +728,7 @@ pi --model <provider>/<fallback-model-id> --print "ping"   # must return "pong"
 node config/skills/specialists-creator/scripts/scaffold-specialist.ts config/specialists/my-specialist.specialist.json
 
 # 3. Mutate with sp edit (dot.path + presets)
-sp edit my-specialist --preset standard
+sp edit my-specialist --preset medium
 sp edit my-specialist specialist.execution.model <provider>/<primary-model-id>
 sp edit my-specialist specialist.execution.fallback_model <provider>/<fallback-model-id>
 
@@ -693,7 +740,7 @@ sp edit my-specialist specialist.prompt.task_template --file .tmp/task-template.
 sp view my-specialist
 
 # 6. Validate schema with the bundled helper
-bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
+bun config/skills/specialists-creator/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
 
 # 7. List to confirm discovery
 specialists list
@@ -702,4 +749,4 @@ specialists list
 specialists run my-specialist --prompt "ping" --no-beads
 ```
 
-If you need the underlying implementation, read `skills/specialist-author/scripts/validate-specialist.ts`. It is a thin Bun/TypeScript wrapper over `parseSpecialist()` from `src/specialist/schema.ts`, which keeps the helper cross-platform for Windows, macOS, and Linux.
+If you need the underlying implementation, read `config/skills/specialists-creator/scripts/validate-specialist.ts`. It is a thin Bun/TypeScript wrapper over `parseSpecialist()` from `src/specialist/schema.ts`, which keeps the helper cross-platform for Windows, macOS, and Linux.

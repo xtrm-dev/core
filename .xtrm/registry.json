@@ -743,8 +743,12 @@
           "hash": "d28484cda62e8712fecbaf0fa8871d4f72fb7188557e5bc362caca79ef72cd45",
           "version": "0.7.13"
         },
+        "releasing/scripts/xt-reports.ts": {
+          "hash": "e462f34284e132b3500bf4d538426258da5f9deafd2fade0f9249faee2013f0f",
+          "version": "0.7.13"
+        },
         "releasing/SKILL.md": {
-          "hash": "f79d35f37fd8e765f133e2304c6feaf5949cb9948a740531d9ac9beb53ccbfaf",
+          "hash": "35d5ab5048572c1c0110500ab202b69023be5b0a0cb0efea9a44fa8f0ca42b19",
           "version": "0.7.13"
         },
         "scoping-service-skills/scripts/scope.py": {
@@ -859,12 +863,20 @@
           "hash": "ba8bebb2c085444120743af8dc859dd7c2592d6290e93aa5e1c08403109bdce7",
           "version": "0.7.13"
         },
+        "specialists-creator/scripts/audit-spec-uniformity.mjs": {
+          "hash": "cfc6aa6fc89f18c2e1ddf794047b309aa8cb0185617d84545eb5cb20135d5ac4",
+          "version": "0.7.13"
+        },
+        "specialists-creator/scripts/scaffold-specialist.ts": {
+          "hash": "c1bfa3693d644072e6d387d2519e131624d99c5b85521ae638680d7485267403",
+          "version": "0.7.13"
+        },
         "specialists-creator/scripts/validate-specialist.ts": {
           "hash": "38ee618b51b4327b2a63a1addd6ed3dd8a8397894f1aa2f7e39342bf6a83dbb5",
           "version": "0.7.13"
         },
         "specialists-creator/SKILL.md": {
-          "hash": "274e463dca527f74f9fa95cf91c0be00f08ce518001f6e518a8d2eab8536156b",
+          "hash": "078da9be6602f39b634f0bc577009de44cdadf54198b3c4d5cac23fa7a7d1067",
           "version": "0.7.13"
         },
         "sync-docs/evals/evals.json": {
@@ -940,11 +952,15 @@
           "version": "0.7.13"
         },
         "using-nodes/SKILL.md": {
-          "hash": "f5ba8af38a725423014fb1de4799a0de133d19f3adbcc50f909546ceda8746a0",
+          "hash": "742e9d2ad512a05c86855b88ae65f9065370876d9e7c1b10db2b68958248bc7b",
           "version": "0.7.13"
         },
         "using-quality-gates/SKILL.md": {
           "hash": "4445e363a2930b8d233d79028eff3759dd90eed031a68f1ef6295fc5167fda93",
+          "version": "0.7.13"
+        },
+        "using-script-specialists/SKILL.md": {
+          "hash": "2fc9b461da9dc5eceb3b92fd235f4828cd338e5016cbbd69108d7826e9418c83",
           "version": "0.7.13"
         },
         "using-service-skills/scripts/cataloger.py": {
@@ -964,7 +980,7 @@
           "version": "0.7.13"
         },
         "using-specialists-v2/SKILL.md": {
-          "hash": "4a5bfcf6f5081c7dbc5fb6c66cd77e84276300eb9cc36781586b3a0cd24954db",
+          "hash": "acb67810f96b4968730918dc7c12135135b083a70c25bd973ca58302d85946b9",
           "version": "0.7.13"
         },
         "using-specialists/evals/evals.json": {
@@ -972,7 +988,7 @@
           "version": "0.7.13"
         },
         "using-specialists/SKILL.md": {
-          "hash": "163ba4e25c3f2363b64fa14057288d85954d98a1d05d7af943ad76e6e53bbf3e",
+          "hash": "6522c8d769befc9e0c609cbefd5b8d3aeb73cb9cfe3a67a08e79f56422926ee5",
           "version": "0.7.13"
         },
         "using-specialists/SKILL.safe.md": {
