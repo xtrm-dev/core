@@ -57,7 +57,7 @@
     "lint": "echo 'No linting configured'",
     "test": "npm test --workspace cli",
     "version": "npm run sync:cli-version && git add cli/package.json packages/pi-extensions/package.json",
-    "prepublishOnly": "npm run sync:cli-version && npm run gen-registry && npm run build",
+    "prepublishOnly": "npm run sync:cli-version && node scripts/vendor-specialists-skills.mjs && npm run gen-registry && npm run build",
     "release": "npm publish --tag latest",
     "release:pi-extensions": "npm publish --workspace @jaggerxtrm/pi-extensions --tag latest --access public",
     "release:all": "npm run release && npm run release:pi-extensions",
