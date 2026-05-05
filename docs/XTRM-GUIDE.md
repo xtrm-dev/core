@@ -2,8 +2,8 @@
 title: XTRM-Tools Complete Guide
 scope: xtrm-guide
 category: reference
-version: 1.2.0
-updated: 2026-04-01
+version: 1.3.0
+updated: 2026-05-05
 domain: []
 ---
 
@@ -56,6 +56,10 @@ xt claude [name]      # open Claude in worktree
 xt pi [name]          # open Pi in worktree
 xt end                # close one worktree session (rebase/push/pr/cleanup)
 xt memory update      # synthesize .xtrm/memory.md from bd memories + repo state
+xt update             # dry-run xtrm-managed asset refresh for current repo
+xt update --apply --root ~/dev  # refresh all xtrm-managed repos under a root
+xt release prepare --patch      # prepare release files from xt reports
+xt release publish              # create annotated tag and push release
 xt merge              # drain queued xt/* PRs FIFO via xt-merge specialist
 xt worktree list
 xt worktree clean
@@ -76,7 +80,9 @@ xt skills create-pack <name> # create user pack scaffold
 - `xt end` handles the publish step for a single worktree session: rebase onto the current target branch, push, open the PR, and optionally clean up the local worktree.
 - `xt merge` is the queue-drain follow-up when multiple `xt/*` PRs are open. It delegates to the `xt-merge` specialist, sorts queued PRs FIFO by creation time, waits for green CI on the head PR, merges with `--rebase --delete-branch`, then rebases and force-pushes the remaining queued branches before repeating. Use `xt merge --dry-run` to inspect queue order and CI state without merging.
 - `xt memory update` delegates to the `memory-processor` specialist. It synthesizes `.xtrm/memory.md` from bd memories plus current project state, shows a spinner while the specialist runs, then prints the final summary tail. Use `--dry-run` to classify/report without writing and `--no-beads` to skip creating a tracking bead.
-- `xt report` is the session close report suite. `xt report generate` collects git log, bd issue state, and specialist job data into a skeleton Markdown file at `.xtrm/reports/<date>-<hash>.md`. The agent then fills narrative sections using the `session-close-report` skill to produce a reference-quality technical handoff for the next agent. `show`/`list`/`diff` subcommands support consumption and comparison of saved reports.
+- `xt update` refreshes xtrm-managed assets. Without flags it is a dry-run for the current repo; use `--apply` to write, `--repo <path>` for one target, or `--root <dir>` to discover and refresh every repo with `.xtrm/registry.json`.
+- `xt release prepare` / `xt release publish` is the canonical release surface. `prepare` drafts from xt reports through the changelog script surface and prepares release files; `publish` creates the annotated tag, pushes commits/tags, and can create a GitHub release.
+- `xt report` is the session close report suite. `xt report generate` collects git log, bd issue state, and specialist job data into a skeleton Markdown file at `.xtrm/reports/<date>-<hash>.md`. The agent then fills narrative sections using the `session-close-report` skill to produce a reference-quality technical handoff for the next agent. When multiple orchestrators run on the same day, update the latest same-day report as the SSOT handoff instead of creating duplicates. `show`/`list`/`diff` subcommands support consumption and comparison of saved reports.
 
 ## Documentation Commands
 
