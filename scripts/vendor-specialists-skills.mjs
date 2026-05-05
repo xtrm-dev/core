@@ -19,6 +19,7 @@ const skillNames = [
   'specialists-creator',
   'using-specialists',
   'using-specialists-v2',
+  'using-specialists-v3',
   'using-script-specialists',
 ];
 

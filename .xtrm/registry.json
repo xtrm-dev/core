@@ -948,7 +948,7 @@
           "version": "0.7.16"
         },
         "using-kpi/SKILL.md": {
-          "hash": "0fbabb82d9d8ca12098122e86196e3d4a24de4a9ca94874f8a84487bcc393f5e",
+          "hash": "dc22c51783b5bfb787c5bb10f46d3585151a33a3486e76ae38e3f43fb09f03bb",
           "version": "0.7.16"
         },
         "using-nodes/SKILL.md": {
@@ -980,7 +980,15 @@
           "version": "0.7.16"
         },
         "using-specialists-v2/SKILL.md": {
-          "hash": "b75444b6d178e318c063fd11ab431be52bd10f0aa62a3a1526d13dc35c62028c",
+          "hash": "1c2f1025769c4da8befc969ddd2676a225ca6e35f81435d0397ac932647c9fde",
+          "version": "0.7.16"
+        },
+        "using-specialists-v3/evals/evals.json": {
+          "hash": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
+          "version": "0.7.16"
+        },
+        "using-specialists-v3/SKILL.md": {
+          "hash": "9a053e98cac1595b83595b4b813debd072569c2e5b3f45ac92c1dad1e00d55db",
           "version": "0.7.16"
         },
         "using-specialists/evals/evals.json": {
@@ -1498,7 +1506,7 @@
           "version": "0.7.16"
         },
         "extensions/xtrm-ui/index.ts": {
-          "hash": "f06ac1b3efe0aa1b41c3c2c7e8ca261b5a56571c56298f312328662f478f6f7e",
+          "hash": "eb6252817a072d16a3c578734c6924d34bff5483214fe7cc7652413484a853e6",
           "version": "0.7.16"
         },
         "extensions/xtrm-ui/package.json": {
@@ -1526,7 +1534,7 @@
           "version": "0.7.16"
         },
         "package.json": {
-          "hash": "16534bbbc25f860a434b4e757667af8c3bc669d7a8bd22e4996187aabd5f0425",
+          "hash": "df58999f2e608b4d8afdc98fc5b9411c4c5fbf2f5894c51ced57e8e397245c3a",
           "version": "0.7.16"
         },
         "README.md": {
