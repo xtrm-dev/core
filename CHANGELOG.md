@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.16] - 2026-05-05
+
+### Fixed
+- `xt update` and `xt install` now repair a broken `.xtrm/skills/default` symlink before running the registry install. Previously only `xt init` repaired stale dev-mode symlinks, so updates failed on machines where the legacy symlink target no longer existed. The npm package root is always the source.
+
 ## [0.7.15] - 2026-05-05
 
 ### Changed

@@ -55493,6 +55493,14 @@ async function runInstall(opts = {}) {
   console.log(kleur_default.bold("\n  \u2699  xtrm install (.xtrm registry scaffold)"));
   console.log(kleur_default.dim(`  \u2022 registry: ${registryPath}`));
   console.log(kleur_default.dim(`  \u2022 target: ${userXtrmDir}`));
+  const scaffoldResult = await scaffoldSkillsDefaultFromPackage({
+    packageRoot,
+    userXtrmDir,
+    dryRun
+  });
+  if (scaffoldResult === "copy") {
+    console.log(kleur_default.dim("  \u2022 Repaired .xtrm/skills/default from package payload"));
+  }
   const stats = await installFromRegistry({
     packageRoot,
     registry: registry2,
