@@ -16,6 +16,7 @@ import {
 import {
     installFromRegistry,
     resolvePackageRoot,
+    scaffoldSkillsDefaultFromPackage,
     type InstallStats,
     type RegistryManifest,
 } from '../core/registry-scaffold.js';
@@ -158,6 +159,15 @@ export async function runInstall(opts: InstallOpts = {}): Promise<void> {
     console.log(kleur.bold('\n  ⚙  xtrm install (.xtrm registry scaffold)'));
     console.log(kleur.dim(`  • registry: ${registryPath}`));
     console.log(kleur.dim(`  • target: ${userXtrmDir}`));
+
+    const scaffoldResult = await scaffoldSkillsDefaultFromPackage({
+        packageRoot,
+        userXtrmDir,
+        dryRun,
+    });
+    if (scaffoldResult === 'copy') {
+        console.log(kleur.dim('  • Repaired .xtrm/skills/default from package payload'));
+    }
 
     const stats = await installFromRegistry({
         packageRoot,
