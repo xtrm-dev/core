@@ -8,7 +8,7 @@ description: >
   work without drift. Trigger for code review, debugging, implementation,
   planning, test generation, doc sync, multi-chain epics, and any question about
   specialist orchestration.
-version: 1.1
+version: 1.4
 ---
 
 # Specialists V2
@@ -51,6 +51,21 @@ When the local version is behind, the latest CHANGELOG entry can be summarized v
 14. Stale-base guard: dispatch refuses to provision a worktree when sibling epic chains have unmerged substantive commits. Override only with explicit `--force-stale-base` and a reason. Merge-time rebase happens automatically.
 15. Auto-checkpoint: executor and debugger commit substantive worktree changes on `waiting` by default (`auto_commit: checkpoint_on_waiting`). Noise paths (`.xtrm/`, `.wolf/`, `.specialists/jobs/`, `.beads/`) are filtered.
 16. Per-turn output appends to the input bead notes for **all** specialists on every `run_complete`, with `[WAITING — more output may follow]` or `[DONE]` headers. `bd show <bead-id>` is a valid path to read intermediate output.
+17. Specialist jobs do not orchestrate nested specialist chains. The top-level orchestrator dispatches specialists, collects results, and advances the workflow.
+18. Treat test failures as evidence to classify against the bead scope. Validate whether failures are in-scope, pre-existing, or infrastructure-related before sending an executor into a fix loop.
+
+## Canonical Runtime State
+
+These are current operating facts, not migration notes:
+
+- **Asset ownership:** Cat A runtime assets — specialists, mandatory-rules, catalog, and nodes — resolve live from the specialists package after project tiers. Cat B filesystem assets — skills and hooks — are owned by xtrm-tools under `.xtrm/skills/default` and `.xtrm/hooks/default`.
+- **Resolution precedence:** project/user tiers win over managed defaults; package-live is the final fallback. Mandatory-rule indexes are not stacked across tiers; per-id mandatory-rule files may fall through to package canonical when absent locally.
+- **Drift surface:** use `sp doctor --check-drift` to inspect stale managed defaults and `sp prune-stale-defaults --dry-run` to preview cleanup.
+- **Source verification:** resolver/catalog changes in a worktree are verified with `sp config show <name> --resolved --from-source` so evidence comes from the checked-out source, not an installed dist.
+- **Worktree publication:** edit-capable specialists produce worktree branches. Before review or merge, verify the branch diff and status from that worktree.
+- **Epic publication:** epics are the merge-gated identity. Publish through `sp epic merge`; use `sp epic abandon` to deliberately close failed or cancelled epic bookkeeping.
+- **CLI safety:** command help paths are side-effect free. New commands must parse `--help`/`-h` before action and have a no-write help test.
+- **Release context:** changelog-keeper receives xt report context through the `releasing` skill's helper. Release-range logic supports annotated tags.
 
 ## Autonomous Drive
 
@@ -199,11 +214,13 @@ Run `specialists list` if you need the live registry. Choose by task, not by hab
 | Planning/decomposition | `planner` | You need beads, dependencies, file scopes, or sequencing. |
 | Design/tradeoffs | `overthinker` | The approach is risky, ambiguous, or needs critique. |
 | Implementation | `executor` | The contract is clear enough to write code or docs. |
-| Compliance/code review | `reviewer` | An executor/debugger produced changes that need a verdict. |
+| Compliance/code review | `reviewer` | An executor/debugger produced changes that need the final PASS/PARTIAL/FAIL verdict. |
+| Implementation sanity | `code-sanity` | You want a cheap READ_ONLY smell pass for simplicity, type safety, dead code, brittle async/error handling, or maintainability before reviewer. |
+| Security/dependency audit | `security-auditor` | You need threat modeling, secure-code review, package advisory triage, or agent/config security scanning. LOW: scan/read/recommend only. |
 | Multiple review perspectives | `parallel-review` | A critical diff needs independent review passes. |
 | Test execution | `test-runner` | You need suites run and failures interpreted. |
 | Docs audit/sync | `sync-docs` | Docs may be stale or need targeted synchronization. |
-| External/live research | `researcher` | Current library/docs/media lookup is needed. |
+| External/live research | `researcher` | Current non-security library/docs/media lookup is needed. |
 | Specialist config | `specialists-creator` | Creating or changing specialist JSON/config. |
 | Release publication (end-to-end) | `changelog-keeper` | A new tag is being cut. MEDIUM specialist: drafts CHANGELOG section from xt reports, bumps package.json, rebuilds dist, commits, tags, pushes. Use the `releasing` skill to dispatch. |
 
@@ -212,7 +229,9 @@ Selection rules:
 - Explorer is READ_ONLY and should answer specific questions.
 - Debugger is better than explorer for failures because it traces causes and remediation.
 - Executor does not own full test validation; use reviewer/test-runner for that phase.
-- Reviewer always uses its own bead plus `--job <executor-job>`.
+- Code-sanity is optional and non-blocking by default: use it when a diff smells overcomplicated or type-risky, then resume executor with concrete findings. It is not a merge gate.
+- Security-auditor may run safe local audit commands and web/source research, but must not edit files, update dependencies, exfiltrate secrets, or run destructive/live-target exploit tests. Executor applies any recommended fixes in a separate bead.
+- Reviewer always uses its own bead plus `--job <executor-job>` and remains the final merge gate.
 - Sync-docs is for audit/sync; executor is for heavy doc rewrites.
 - Specialists-creator should precede specialist config/schema edits.
 
@@ -224,8 +243,12 @@ Daily commands:
 specialists list
 specialists list-rules                          # rule × specialist matrix
 specialists doctor
+specialists doctor --check-drift                 # inspect stale .specialists/default snapshots
+sp prune-stale-defaults --dry-run                # preview redundant default snapshots
 specialists run <name> --bead <id> --background
 specialists run executor --bead <impl-bead> --background       # worktree auto-provisioned
+specialists run code-sanity --bead <sanity-bead> --job <exec-job> --keep-alive --background
+specialists run security-auditor --bead <security-bead> --job <exec-job> --keep-alive --background
 specialists run reviewer --bead <review-bead> --job <exec-job> --keep-alive --background
 specialists ps
 specialists ps <job-id>
@@ -245,6 +268,7 @@ sp merge <chain-root-bead>
 sp epic status <epic-id>
 sp epic sync <epic-id> --apply
 sp epic merge <epic-id>
+sp epic abandon <epic-id> --reason "..."
 sp end
 ```
 
@@ -318,6 +342,42 @@ bd dep add <impl> <explore-or-task>
 specialists run executor --worktree --bead <impl> --context-depth 3 --background
 specialists result <exec-job>
 ```
+
+Optional code-sanity pass for implementation smell checks (use when the diff is non-trivial or likely to accumulate agent-code complexity):
+
+```bash
+bd create --title "Code sanity check token refresh retry" --type task --priority 3 \
+  --description "PROBLEM: Cheap READ_ONLY sanity pass for executor implementation quality before final review.
+SUCCESS: Identify concrete simplicity/type-safety/maintainability findings, or return OK.
+SCOPE: executor job <exec-job>, implementation diff only.
+NON_GOALS: No requirements verdict, no security audit, no test execution, no edits.
+CONSTRAINTS: At most 5 concrete findings; cite files/symbols/lines where possible.
+VALIDATION: Findings are suitable to paste into specialists resume <exec-job>.
+OUTPUT: OK/FINDINGS/BLOCKED with handoff."
+bd dep add <sanity> <impl>
+specialists run code-sanity --bead <sanity> --job <exec-job> --context-depth 3 --keep-alive --background
+specialists result <sanity-job>
+```
+
+If code-sanity returns `FINDINGS`, resume executor with those concrete instructions, then rerun code-sanity only if the fixes were substantive. Do not treat code-sanity `OK` as reviewer PASS.
+
+Optional security pass when the task touches auth, secrets, input handling, dependency updates, package advisories, agent config, hooks, or exposed endpoints:
+
+```bash
+bd create --title "Security audit token refresh retry" --type task --priority 2 \
+  --description "PROBLEM: Scoped security/dependency/config audit for executor changes.
+SUCCESS: Identify evidence-backed security findings or return no findings.
+SCOPE: executor job <exec-job>, changed files, relevant manifests/config only.
+NON_GOALS: No edits, no package updates, no destructive scans, no live exploit testing.
+CONSTRAINTS: LOW permission; recommendations only. HN/social signals are not authoritative proof.
+VALIDATION: Findings cite local evidence or OSV/GHSA/NVD/vendor/package-audit sources.
+OUTPUT: Security audit summary, findings, dependency triage, residual risk."
+bd dep add <security> <impl>
+specialists run security-auditor --bead <security> --job <exec-job> --context-depth 3 --keep-alive --background
+specialists result <security-job>
+```
+
+If security-auditor recommends code or dependency changes, create/resume an executor fix bead. Do not let security-auditor apply updates.
 
 Create review bead:
 
@@ -432,6 +492,12 @@ Standard loop:
 ```text
 executor --worktree --bead impl
   -> waiting after turn
+optional code-sanity --bead sanity --job exec-job
+  -> OK: continue
+  -> FINDINGS: resume executor with exact sanity findings
+optional security-auditor --bead security --job exec-job
+  -> no findings: continue
+  -> findings: create/resume executor fix bead; auditor never edits
 reviewer --bead review --job exec-job
   -> PASS: verify commit, publish, stop members if needed
   -> PARTIAL: resume executor with exact findings
@@ -440,7 +506,7 @@ reviewer --bead review --job exec-job
 
 Prefer `sp resume <exec-job>` over a new fix executor when the original job is waiting and context is healthy. Use a new fix bead with `--job <exec-job>` only when the original executor is dead, context exhausted, or a separate audit trail is required.
 
-Reviewer output must be consumed before publishing. Do not treat job completion as equivalent to acceptance.
+Code-sanity and security-auditor outputs are advisory inputs to the chain; reviewer output must still be consumed before publishing. Do not treat job completion, code-sanity OK, or security no-findings as equivalent to reviewer acceptance.
 
 ## Dependency Mapping
 
@@ -502,6 +568,8 @@ Context percentage in `sp ps`/feed is an action signal:
 - 65-80%: steer toward conclusion.
 - Above 80%: finish, summarize, or replace the job.
 
+Do not confuse raw token totals with context percentage. `sp ps` may show raw token counts around 50k-100k for large-context models; that alone is not a stop signal. Use the context percentage when available, plus stalls, repeated edit failures, or scope drift.
+
 ## Steering And Resume
 
 Use `steer` for running jobs:
@@ -545,9 +613,10 @@ Rules:
 
 Tagged releases go through the `releasing` skill, which dispatches the
 `changelog-keeper` MEDIUM specialist. The specialist reads xt session
-reports, drafts the new section into `CHANGELOG.md`, bumps `package.json`,
-rebuilds `dist/`, commits with `release: vX.Y.Z`, tags, and pushes
-`--follow-tags`. Optional `gh release create` if the bead requests it.
+reports via the releasing skill's `xt-reports.ts` helper, drafts the new
+section into `CHANGELOG.md`, bumps `package.json`, rebuilds `dist/`, commits
+with `release: vX.Y.Z`, tags, and pushes `--follow-tags`. Optional
+`gh release create` if the bead requests it.
 
 Operator gate: a single `git diff --stat HEAD~1 HEAD` after the specialist
 finishes. Must show only `CHANGELOG.md`, `package.json`, `dist/`. Anything
@@ -556,6 +625,11 @@ else means scope was violated — revert and refile.
 The `changelog-keeper-scope` mandatory rule enforces the edit whitelist at
 the specialist level. See `config/skills/releasing/SKILL.md` for the bead
 template, dispatch command, and recovery commands.
+
+Release helper contract:
+
+- Report extraction is provided by the `releasing` skill, so consumer repos do not need repo-local release helper scripts.
+- Release ranges support annotated tags and should be validated through the same path used by tagged releases.
 
 ## Epic Lifecycle
 
@@ -663,12 +737,16 @@ sp epic status <epic-id>
 sp epic sync <epic-id> --apply
 ```
 
-Specialist missing or config skipped:
+Specialist missing, config skipped, or stale default snapshots:
 
 ```bash
 specialists list
 specialists doctor
+specialists doctor --check-drift
+sp prune-stale-defaults --dry-run
 ```
+
+`sp prune-stale-defaults` is intentionally operator-facing. Always run `--dry-run` first unless the bead explicitly asks to apply cleanup.
 
 Worktree already exists:
 
@@ -693,9 +771,3 @@ Inspect feed. If no usable final summary exists, rerun with a clearer explorer b
 ## What Not To Put In This Skill
 
 Do not add historical migration notes, stale model names, exhaustive command references, internal token counts, long stuck-state postmortems, or title-only examples. Put long reference material in docs and keep this skill focused on current canonical orchestration.
-
-
-## gitnexus_impact stall mitigation
-- Keep impact analysis requirement.
-- If `gitnexus_impact` stalls, use timeout-protected execution path.
-- On timeout, fall back to `gitnexus_query` + `gitnexus_context`, continue debugging, note degraded blast-radius confidence, file upstream repro.
