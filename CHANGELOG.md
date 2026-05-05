@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.17] - 2026-05-05
+
+### Added
+- Vendored `using-specialists-v3` skill from the specialists repo into `.xtrm/skills/default/`. The skill now ships in the npm tarball and is installed by `xt install` / `xt update` without requiring a specialists checkout.
+
+### Changed
+- `scripts/vendor-specialists-skills.mjs` includes `using-specialists-v3` in the canonical vendor list.
+- Refreshed `using-specialists-v2/SKILL.md` from the specialists source.
+
 ## [0.7.16] - 2026-05-05
 
 ### Fixed
