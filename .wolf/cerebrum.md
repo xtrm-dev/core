@@ -10,6 +10,7 @@
 
 ## Key Learnings
 
+- xtrm-ui owns Pi thinking display policy: default compact mode should hide assistant thinking with no placeholder; expansion (Ctrl+O/tool expanded) should reveal full thinking.
 - xtrm-ui supersedes pi-dex; stale `npm:pi-dex` entries should be pruned from Pi settings to avoid tool/theme conflicts.
 - **Project:** xtrm-tools
 - **Description:** Claude Code tools installer (skills, hooks, MCP servers)

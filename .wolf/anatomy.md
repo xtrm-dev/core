@@ -1222,3 +1222,5 @@
 ## cli/src/core/
 
 - `machine-bootstrap.ts` — Unified machine-bootstrap phase for managed third-party dependencies. (~4536 tok)
+
+> Manual note 2026-05-05: Published @jaggerxtrm/pi-extensions@0.7.17 with xtrm-ui silent hidden-thinking: compact mode hides thinking with no placeholder; Ctrl+O expansion reveals thinking.

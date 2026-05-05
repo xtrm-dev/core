@@ -33,7 +33,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   cleanOutputLines,
   countPrefixedItems,
@@ -66,6 +67,7 @@ export interface XtrmUiPrefs {
   forceTheme: boolean; // When false, skip setTheme (allow external theme override)
   toolRowBg: boolean; // Subtle background behind tool text rows (no padding)
   compactExternalToolResults: boolean; // Compact extension tool results (disables full expand output)
+  hideThinkingPlaceholder: boolean; // When false, hidden thinking blocks render no placeholder text
 }
 
 // ============================================================================
@@ -83,6 +85,7 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   forceTheme: true,
   toolRowBg: false,
   compactExternalToolResults: true,
+  hideThinkingPlaceholder: false,
 };
 
 // ============================================================================
@@ -108,6 +111,7 @@ function normalizePrefs(input: unknown): XtrmUiPrefs {
     toolRowBg: source.toolRowBg ?? DEFAULT_PREFS.toolRowBg,
     compactExternalToolResults:
       source.compactExternalToolResults ?? DEFAULT_PREFS.compactExternalToolResults,
+    hideThinkingPlaceholder: source.hideThinkingPlaceholder ?? DEFAULT_PREFS.hideThinkingPlaceholder,
   };
 }
 
@@ -123,6 +127,74 @@ function loadPrefs(entries: ReadonlyArray<MaybeCustomEntry>): XtrmUiPrefs {
 
 function persistPrefs(pi: ExtensionAPI, prefs: XtrmUiPrefs): void {
   pi.appendEntry(XTRM_UI_PREFS_ENTRY, prefs);
+}
+
+
+// ============================================================================
+// Thinking Chrome
+// ============================================================================
+
+type AssistantMessageComponentCtor = {
+  prototype: {
+    updateContent?: (message: AssistantMessageLike) => void;
+    setExpanded?: (expanded: boolean) => void;
+  };
+};
+
+type AssistantContentBlock = { type?: string; thinking?: string };
+type AssistantMessageLike = { content?: AssistantContentBlock[] };
+type PatchableAssistantMessage = {
+  hideThinkingBlock?: boolean;
+  hiddenThinkingLabel?: string;
+  lastMessage?: AssistantMessageLike;
+  __xtrmThinkingExpanded?: boolean;
+  updateContent?: (message: AssistantMessageLike) => void;
+};
+
+const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiSilentHiddenThinking";
+
+async function installSilentHiddenThinkingPatch(): Promise<void> {
+  const entryPath = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
+  const componentPath = join(dirname(entryPath), "modes", "interactive", "components", "assistant-message.js");
+  const mod = await import(pathToFileURL(componentPath).href) as {
+    AssistantMessageComponent?: AssistantMessageComponentCtor;
+  };
+  const proto = mod.AssistantMessageComponent?.prototype as
+    | (AssistantMessageComponentCtor["prototype"] & { [PATCHED_ASSISTANT_MESSAGE]?: boolean })
+    | undefined;
+  if (!proto?.updateContent || proto[PATCHED_ASSISTANT_MESSAGE]) return;
+
+  const updateContent = proto.updateContent;
+  proto.updateContent = function patchedUpdateContent(this: PatchableAssistantMessage, message: AssistantMessageLike) {
+    if (this.hiddenThinkingLabel === "" && Array.isArray(message.content)) {
+      if (!this.__xtrmThinkingExpanded) {
+        updateContent.call(this, {
+          ...message,
+          content: message.content.filter((block) => block.type !== "thinking" || !block.thinking?.trim()),
+        });
+        return;
+      }
+
+      const previousHideThinking = this.hideThinkingBlock;
+      this.hideThinkingBlock = false;
+      updateContent.call(this, message);
+      this.hideThinkingBlock = previousHideThinking;
+      return;
+    }
+    updateContent.call(this, message);
+  };
+
+  proto.setExpanded = function setExpanded(this: PatchableAssistantMessage, expanded: boolean) {
+    this.__xtrmThinkingExpanded = expanded;
+    if (this.lastMessage) this.updateContent?.(this.lastMessage);
+  };
+  proto[PATCHED_ASSISTANT_MESSAGE] = true;
+}
+
+function applyThinkingChrome(ctx: ExtensionContext, prefs: XtrmUiPrefs): void {
+  (ctx.ui as { setHiddenThinkingLabel?: (label?: string) => void }).setHiddenThinkingLabel?.(
+    prefs.hideThinkingPlaceholder ? undefined : "",
+  );
 }
 
 // ============================================================================
@@ -1190,6 +1262,8 @@ function isXtrmTheme(name: string | undefined): boolean {
 }
 
 export default function xtrmUiExtension(pi: ExtensionAPI): void {
+  void installSilentHiddenThinkingPatch().catch(() => undefined);
+
   let prefs: XtrmUiPrefs = { ...DEFAULT_PREFS };
   let previousThemeName: string | null = null;
   const extensionThemeDir = join(__dirname, "../../themes/xtrm-ui");
@@ -1203,6 +1277,7 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
 
   const refresh = (ctx: ExtensionContext) => {
     applyXtrmChrome(ctx, prefs, getThinkingLevel);
+    applyThinkingChrome(ctx, prefs);
   };
 
   pi.on("resources_discover", async () => ({
