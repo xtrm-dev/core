@@ -110,4 +110,79 @@ describe('runInstall broken default symlink repair', () => {
     expect((await fs.lstat(targetDir)).isSymbolicLink()).toBe(false);
     expect(await fs.readFile(path.join(targetDir, 'README.md'), 'utf8')).toBe('# skill\n');
   });
+
+  it('preserves valid symlink at .xtrm/skills/default', async () => {
+    const packageRoot = path.join(tmpDir, 'pkg');
+    const targetDir = path.join(tmpDir, '.xtrm', 'skills', 'default');
+    const devDir = path.join(tmpDir, 'dev-skills');
+
+    fs.ensureDirSync(path.join(packageRoot, '.xtrm'));
+    fs.writeJsonSync(path.join(packageRoot, '.xtrm', 'registry.json'), { version: '1.0.0', assets: {} });
+    fs.ensureDirSync(devDir);
+    fs.writeFileSync(path.join(devDir, 'README.md'), '# dev skill\n', 'utf8');
+    fs.ensureDirSync(path.dirname(targetDir));
+    fs.symlinkSync(devDir, targetDir);
+
+    mocked.scaffoldSkillsDefaultFromPackage.mockImplementation(async () => 'noop');
+    mocked.installFromRegistry.mockImplementation(async () => ({
+      installed: 0,
+      upToDate: 0,
+      driftedSkipped: 0,
+      forced: 0,
+      expectedInstalls: 0,
+      missingSourceSkipped: 0,
+    }));
+
+    await runInstall({
+      yes: true,
+      dryRun: false,
+      projectRoot: tmpDir,
+      skipMachineBootstrap: true,
+      skipClaudeRuntimeSync: true,
+    });
+
+    expect((await fs.lstat(targetDir)).isSymbolicLink()).toBe(true);
+    expect(await fs.readlink(targetDir)).toBe(devDir);
+  });
+
+  it('dryRun leaves broken symlink untouched at .xtrm/skills/default', async () => {
+    const packageRoot = path.join(tmpDir, 'pkg');
+    const sourceDir = path.join(packageRoot, '.xtrm', 'skills', 'default');
+    const targetDir = path.join(tmpDir, '.xtrm', 'skills', 'default');
+
+    fs.ensureDirSync(path.join(packageRoot, '.xtrm'));
+    fs.writeJsonSync(path.join(packageRoot, '.xtrm', 'registry.json'), { version: '1.0.0', assets: {} });
+    fs.ensureDirSync(sourceDir);
+    fs.writeFileSync(path.join(sourceDir, 'README.md'), '# skill\n', 'utf8');
+    fs.ensureDirSync(path.dirname(targetDir));
+    fs.symlinkSync('/missing/dev/skills/default', targetDir);
+
+    mocked.scaffoldSkillsDefaultFromPackage.mockImplementation(async ({ dryRun }) => (dryRun ? 'noop' : 'copy'));
+    mocked.installFromRegistry.mockImplementation(async () => ({
+      installed: 0,
+      upToDate: 0,
+      driftedSkipped: 0,
+      forced: 0,
+      expectedInstalls: 0,
+      missingSourceSkipped: 0,
+    }));
+
+    await runInstall({
+      yes: true,
+      dryRun: true,
+      projectRoot: tmpDir,
+      skipMachineBootstrap: true,
+      skipClaudeRuntimeSync: true,
+    });
+
+    expect(mocked.scaffoldSkillsDefaultFromPackage).toHaveBeenCalledWith({
+      packageRoot,
+      userXtrmDir: path.join(tmpDir, '.xtrm'),
+      dryRun: true,
+    });
+    expect((await fs.lstat(targetDir)).isSymbolicLink()).toBe(true);
+    expect(await fs.pathExists(targetDir)).toBe(false);
+    expect(await fs.pathExists(path.join(targetDir, 'README.md'))).toBe(false);
+  });
+
 });
