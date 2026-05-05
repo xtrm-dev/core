@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.15] - 2026-05-05
+
+### Changed
+- Updated `using-xtrm` and `docs/XTRM-GUIDE.md` to document `xt update`, `xt release prepare/publish`, and same-day SSOT session report behavior.
+
 ## [0.7.14] - 2026-05-05
 
 ### Added
