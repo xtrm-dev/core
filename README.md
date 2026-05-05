@@ -206,6 +206,9 @@ xtrm <command> [options]
 | `attach [slug]` | Re-attach to an existing worktree and resume the Claude or Pi session |
 | `end` | Close worktree session: rebase, push, PR, cleanup |
 | `memory update` | Run `memory-processor` to synthesize bd memories + repo state into `.xtrm/memory.md` |
+| `update` | Refresh xtrm-managed files for one repo or many (`--apply`, `--repo <path>`, `--root <dir>`, `--json`) |
+| `release prepare` | Prepare a release from xt reports and changelog drafting (`--major`, `--minor`, `--patch`, `--from`, `--to`) |
+| `release publish` | Publish a prepared release with annotated tag/push and optional GitHub release |
 | `merge` | Drain queued `xt/*` PRs via `xt-merge`: FIFO CI gate → rebase merge → rebase cascade |
 | `worktree list` | List active `xt/*` worktrees with runtime, last activity, and resume hint |
 | `worktree clean` | Remove merged worktrees |
@@ -217,7 +220,7 @@ xtrm <command> [options]
 
 **Flags:** `--yes / -y` (non-interactive), `--dry-run` (preview), `--prune` (force-replace hooks)
 
-For detailed docs command usage, see [docs/docs-commands.md](docs/docs-commands.md) or run `xtrm docs --help` / `xtrm docs cross-check --help`.
+For detailed docs command usage, see [docs/docs-commands.md](docs/docs-commands.md) or run `xtrm docs --help` / `xtrm docs cross-check --help`. For release flow details, run `xt release --help`; `xt release prepare` currently depends on the specialists changelog script compatibility tracked by `unitAI-dnmcg`.
 
 See [docs/cli-architecture.md](docs/cli-architecture.md) for internals.
 
