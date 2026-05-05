@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.14] - 2026-05-05
+
+### Added
+- `xt update` command with dry-run/apply modes, `--repo`, `--root`, JSON/human output, and multi-repo xtrm-managed asset refresh.
+- `xt release prepare` and `xt release publish` command surface, with canonical xt report bundling in `cli/src/core/xt-reports.ts`.
+- Versioned session reports under `.xtrm/reports/`, including the completed 2026-05-04 Cat B handoff report.
+
+### Changed
+- Cat B distribution now uses xtrm-tools as the npm distributor for filesystem-bound skills/hooks, while seven specialists-owned skills are vendored from the specialists repo at publish time.
+- Skills runtime layout is flat: `.xtrm/skills/active/` is the single active view; stale per-runtime `active/claude` and `active/pi` assumptions were removed.
+- `xt doctor` now reports Cat B skill/hook drift, runtime view readiness, duplicate canonical names, JSON output, and `--check-drift` CI behavior.
+- `session-close-report` now updates the latest same-day SSOT report instead of creating duplicate reports for parallel orchestrators.
+- Cat B migration docs now protect existing `.claude/skills` content and document the Windows stance.
+
+### Fixed
+- Annotated tag report date resolution now uses `git log -1 --format=%cs`, preventing empty xt report bundles for annotated tags.
+
 ## [0.7.1] - 2026-04-02
 
 ### Added
