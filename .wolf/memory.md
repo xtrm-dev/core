@@ -54,3 +54,4 @@
 | 23:36 | Updated session close report | .xtrm/reports/2026-05-04-95d4f878.md, .wolf/anatomy.md | filled xtrm-emr8 + xtrm-ul5a handoff context | ~5200 |
 | 23:38 | Closed session report bead | xtrm-vxtc, .xtrm/reports/2026-05-04-95d4f878.md | report marked complete; open issues section updated | ~220 |
 | 00:02 | Closed stale Cat B epic | xtrm-sjbc, .xtrm/reports/2026-05-04-95d4f878.md | no open local bd issues remain | ~180 |
+| 01:00 | Updated session-close-report skill | .xtrm/skills/default/session-close-report/SKILL.md | prefer same-day SSOT report updates over duplicate reports | ~1200 |

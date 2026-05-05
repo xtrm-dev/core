@@ -6,6 +6,7 @@
 > Manual note 2026-05-04: specialists-agent-guard Claude hook blocks raw Agent only when using-specialists markers are active; pi-runtime tests mock PiPackageInstallRunner with {status, stdout, stderr}.
 > Files: 541 tracked | Anatomy hits: 0 | Misses: 0
 > Manual note 2026-05-04: session report 2026-05-04-95d4f878.md covers completed xtrm-emr8 Cat B epic, xt release ul5a merge, and stash@{0} dirty-state caveat.
+> Manual note 2026-05-05: session-close-report skill now prefers updating the latest same-day SSOT report instead of creating duplicate reports for parallel orchestrators.
 
 ## ./
 
