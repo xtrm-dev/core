@@ -73,3 +73,6 @@
 
 - 2026-05-08: xtrm-5nwu wired `xt update` to report global xt Pi package freshness and `--apply` refresh missing/outdated managed packages; targeted update/pi-runtime tests pass 27/27.
 - 2026-05-08: Pi process timers running `sp` crashed with exit 127 even with explicit PATH/absolute sp; use foreground `sleep && sp ps` via bash for this session.
+
+- 2026-05-08: xtrm-modr wired xt doctor global Pi package health into text and JSON using piPackages; missing/outdated/version-unknown report remediation, doctor never installs, npm lookup is timeout-bounded.
+- 2026-05-08: Repeated shell backtick quoting trap during reviewer resume; always use single-quoted or heredoc payloads for sp/bd text.

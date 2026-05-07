@@ -171,6 +171,19 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-07T19:50:09.389Z"
+    },
+    {
+      "id": "bug-011",
+      "date": "2026-05-08",
+      "error_message": "Shell command substitution triggered by backticks inside a double-quoted sp resume message; bash attempted to execute branch names/file paths and failed before resume.",
+      "root_cause": "Used double quotes around a long shell argument containing markdown backticks. Bash evaluates backticks even inside double quotes.",
+      "fix": "Re-ran sp resume using a single-quoted argument with no backticks. Continue using single quotes or heredoc/temp files for bd/sp text payloads.",
+      "tags": [
+        "shell-quoting",
+        "sp",
+        "orchestration",
+        "repeat-bug"
+      ]
     }
   ]
 }
