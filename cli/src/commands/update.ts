@@ -3,6 +3,7 @@ import kleur from 'kleur';
 import path from 'node:path';
 import fs from 'fs-extra';
 import { checkDrift } from '../core/drift.js';
+import { assureXtManagedPiPackages } from '../core/pi-runtime.js';
 import { findManagedRepos } from '../core/repo-discovery.js';
 import { runInstall } from './install.js';
 
@@ -71,6 +72,19 @@ function printTable(rows: RepoUpdateResult[]): void {
     }
 }
 
+function printPiPackages(packageAssurance: Awaited<ReturnType<typeof assureXtManagedPiPackages>>): void {
+    if (packageAssurance.missing.length === 0 && packageAssurance.outdated.length === 0) {
+        return;
+    }
+
+    console.log(kleur.bold('\n  Pi Packages'));
+    console.log(kleur.dim('  ' + '-'.repeat(50)));
+    for (const status of packageAssurance.statuses) {
+        if (status.state === 'current') continue;
+        console.log(`${status.state.padEnd(10)} ${status.pkg.displayName}`);
+    }
+}
+
 export function createUpdateCommand(): Command {
     return new Command('update')
         .description('Refresh xtrm-managed files for one repo or many')
@@ -85,13 +99,16 @@ export function createUpdateCommand(): Command {
                 rows.push(await updateRepo(repo, Boolean(opts.apply)));
             }
 
+            const packageAssurance = await assureXtManagedPiPackages(Boolean(opts.apply));
+
             if (opts.json) {
-                console.log(JSON.stringify({ repos: rows }, null, 2));
+                console.log(JSON.stringify({ repos: rows, packages: packageAssurance }, null, 2));
             } else {
                 printTable(rows);
+                printPiPackages(packageAssurance);
             }
 
-            if (rows.some(row => row.status === 'failed')) {
+            if (rows.some(row => row.status === 'failed') || packageAssurance.failed.length > 0) {
                 process.exitCode = 1;
             }
         });
