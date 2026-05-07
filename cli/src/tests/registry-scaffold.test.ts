@@ -150,18 +150,16 @@ describe('scaffoldSkillsDefaultFromPackage', () => {
     expect(await fs.readFile(path.join(targetDir, 'README.md'), 'utf8')).toBe('# skill\n');
   });
 
-  it('returns noop when targetDir is a valid symlink', async () => {
+  it('returns noop when targetDir points at the current package skills payload', async () => {
     const tempDir = await createTempDir();
     const packageRoot = path.join(tempDir, 'pkg');
     const userXtrmDir = path.join(tempDir, 'user-xtrm');
     const sourceDir = path.join(packageRoot, '.xtrm', 'skills', 'default');
     const targetDir = path.join(userXtrmDir, 'skills', 'default');
-    const symlinkTarget = path.join(tempDir, 'dev-skills');
 
     await fs.ensureDir(sourceDir);
-    await fs.ensureDir(symlinkTarget);
     await fs.ensureDir(path.dirname(targetDir));
-    await fs.symlink(symlinkTarget, targetDir);
+    await fs.symlink(sourceDir, targetDir);
 
     const result = await scaffoldSkillsDefaultFromPackage({
       packageRoot,
@@ -170,8 +168,35 @@ describe('scaffoldSkillsDefaultFromPackage', () => {
     });
 
     expect(result).toBe('noop');
-    // valid symlink target should remain untouched
     expect((await fs.lstat(targetDir)).isSymbolicLink()).toBe(true);
+    expect(await fs.readlink(targetDir)).toBe(sourceDir);
+  });
+
+  it('replaces a stale but valid symlink with the current package payload', async () => {
+    const tempDir = await createTempDir();
+    const packageRoot = path.join(tempDir, 'pkg');
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+    const sourceDir = path.join(packageRoot, '.xtrm', 'skills', 'default');
+    const targetDir = path.join(userXtrmDir, 'skills', 'default');
+    const staleDir = path.join(tempDir, 'old-dev-skills');
+
+    await fs.ensureDir(sourceDir);
+    await fs.writeFile(path.join(sourceDir, 'README.md'), '# current skill\n', 'utf8');
+    await fs.ensureDir(staleDir);
+    await fs.writeFile(path.join(staleDir, 'README.md'), '# stale skill\n', 'utf8');
+    await fs.ensureDir(path.dirname(targetDir));
+    await fs.symlink(staleDir, targetDir);
+
+    const result = await scaffoldSkillsDefaultFromPackage({
+      packageRoot,
+      userXtrmDir,
+      dryRun: false,
+    });
+
+    expect(result).toBe('copy');
+    expect((await fs.lstat(targetDir)).isSymbolicLink()).toBe(false);
+    expect(await fs.readFile(path.join(targetDir, 'README.md'), 'utf8')).toBe('# current skill\n');
+    expect(await fs.readFile(path.join(staleDir, 'README.md'), 'utf8')).toBe('# stale skill\n');
   });
 
   it('returns noop in dry-run mode', async () => {

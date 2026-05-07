@@ -92,11 +92,20 @@ export async function scaffoldSkillsDefaultFromPackage(params: {
     const stat = await fs.lstat(targetDir).catch(() => null);
     if (stat) {
         if (stat.isSymbolicLink()) {
-            const isValid = await fs.pathExists(targetDir);
-            if (isValid) {
-                return 'noop'; // valid symlink (dev mode), leave it alone
+            const [sourceRealPath, targetRealPath] = await Promise.all([
+                fs.realpath(sourceDir).catch(() => null),
+                fs.realpath(targetDir).catch(() => null),
+            ]);
+
+            if (sourceRealPath && targetRealPath && sourceRealPath === targetRealPath) {
+                return 'noop'; // current package/dev symlink, leave it alone
             }
-            // broken symlink — remove and re-scaffold
+
+            if (dryRun) {
+                return 'noop';
+            }
+
+            // Broken or stale symlink — remove and re-scaffold from the current package payload.
             await fs.remove(targetDir);
         } else {
             return 'noop'; // real directory, leave it alone

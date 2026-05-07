@@ -10,6 +10,7 @@
 
 ## Key Learnings
 
+- Specialists defaults migrated to npm package runtime: `.specialists/default/` is no longer the source of truth. Local default mirrors/YAMLs shadow package roles and should be removed unless intentionally overriding; preserve project-only roles in `.specialists/user/`.
 - xtrm-ui owns Pi thinking display policy: default compact mode should hide assistant thinking with no placeholder; expansion (Ctrl+O/tool expanded) should reveal full thinking.
 - xtrm-ui supersedes pi-dex; stale `npm:pi-dex` entries should be pruned from Pi settings to avoid tool/theme conflicts.
 - **Project:** xtrm-tools
@@ -19,6 +20,8 @@
 
 <!-- Mistakes made and corrected. Each entry prevents the same mistake recurring. -->
 <!-- Format: [YYYY-MM-DD] Description of what went wrong and what to do instead. -->
+
+[2026-05-07] XTRM UI hidden thinking must render with NO placeholder. Do not add a positive `showThinkingPlaceholder` preference or any path that can re-enable placeholder text; compact mode should be silent until expanded.
 
 [2026-04-02] When dispatching executor to create a new skill alongside existing skills, steer it to NOT delete or modify any existing .xtrm/skills/default/* directories. Executor deleted find-docs (untracked by git) while cleaning active/ symlinks — git checkout could not restore it. Always include explicit instruction: "Do not delete or modify any existing skill directories."
 

@@ -1,4 +1,6 @@
 # anatomy.md
+> Manual note 2026-05-07: session report .xtrm/reports/2026-05-07-986757b.md documents substantial dirty-state handoff for xtrm-tools-be9, including Pi UI compaction/theme changes, .pi/npm runtime drift, and specialists default mirror deletions.
+> Manual note 2026-05-07: xtrm-tools-be9 fix updates scaffoldSkillsDefaultFromPackage to replace valid-but-stale .xtrm/skills/default symlinks unless they resolve to the current package payload.
 
 > Auto-maintained by OpenWolf. Last scanned: 2026-04-02T22:22:27.122Z
 > Manual note 2026-04-16: Pi runtime now prefers packages/pi-extensions/* and prunes stale npm:pi-dex settings conflicts.
@@ -1224,3 +1226,6 @@
 - `machine-bootstrap.ts` — Unified machine-bootstrap phase for managed third-party dependencies. (~4536 tok)
 
 > Manual note 2026-05-05: Published @jaggerxtrm/pi-extensions@0.7.17 with xtrm-ui silent hidden-thinking: compact mode hides thinking with no placeholder; Ctrl+O expansion reveals thinking.
+
+> Manual note 2026-05-07: Specialists defaults are package-owned at runtime; `.specialists/default/` was removed from the repo, and project-only `parallel-review` lives in `.specialists/user/parallel-review.specialist.json`.
+> Manual note 2026-05-07: `.pi/npm` is ignored local Pi npm runtime state; the tracked symlink deletion is intentional when `.pi/settings.json` uses `packages: ["npm:@jaggerxtrm/pi-extensions"]`.

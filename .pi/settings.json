@@ -3,5 +3,7 @@
   "skills": [
     "../.xtrm/skills/active"
   ],
-  "packages": []
+  "packages": [
+    "npm:@jaggerxtrm/pi-extensions"
+  ]
 }

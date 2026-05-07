@@ -33,7 +33,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   cleanOutputLines,
   countPrefixedItems,
@@ -54,7 +55,7 @@ import {
 // Types
 // ============================================================================
 
-export type XtrmThemeName = "pidex-dark" | "pidex-light";
+export type XtrmThemeName = "pidex-dark" | "pidex-light" | "pidex-dark-flattools" | "pidex-light-flattools";
 export type XtrmDensity = "compact" | "comfortable";
 
 export interface XtrmUiPrefs {
@@ -64,6 +65,8 @@ export interface XtrmUiPrefs {
   compactTools: boolean;
   showFooter: boolean; // Our key addition - when false, skip setFooter()
   forceTheme: boolean; // When false, skip setTheme (allow external theme override)
+  toolRowBg: boolean; // Subtle background behind tool text rows (no padding)
+  compactExternalToolResults: boolean; // Compact extension tool results (disables full expand output)
 }
 
 // ============================================================================
@@ -79,6 +82,8 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   compactTools: true,
   showFooter: false, // XTRM: disable pi-dex footer, use custom-footer
   forceTheme: true,
+  toolRowBg: false,
+  compactExternalToolResults: true,
 };
 
 // ============================================================================
@@ -95,12 +100,15 @@ function normalizePrefs(input: unknown): XtrmUiPrefs {
   if (!input || typeof input !== "object") return { ...DEFAULT_PREFS };
   const source = input as Partial<XtrmUiPrefs>;
   return {
-    themeName: source.themeName === "pidex-light" ? "pidex-light" : "pidex-dark",
+    themeName: source.themeName === "pidex-light" || source.themeName === "pidex-light-flattools" ? "pidex-light" : "pidex-dark",
     density: source.density === "comfortable" ? "comfortable" : "compact",
     showHeader: source.showHeader ?? DEFAULT_PREFS.showHeader,
     compactTools: source.compactTools ?? DEFAULT_PREFS.compactTools,
     showFooter: source.showFooter ?? DEFAULT_PREFS.showFooter,
     forceTheme: source.forceTheme ?? DEFAULT_PREFS.forceTheme,
+    toolRowBg: source.toolRowBg ?? DEFAULT_PREFS.toolRowBg,
+    compactExternalToolResults:
+      source.compactExternalToolResults ?? DEFAULT_PREFS.compactExternalToolResults,
   };
 }
 
@@ -118,6 +126,72 @@ function persistPrefs(pi: ExtensionAPI, prefs: XtrmUiPrefs): void {
   pi.appendEntry(XTRM_UI_PREFS_ENTRY, prefs);
 }
 
+
+// ============================================================================
+// Thinking Chrome
+// ============================================================================
+
+type AssistantMessageComponentCtor = {
+  prototype: {
+    updateContent?: (message: AssistantMessageLike) => void;
+    setExpanded?: (expanded: boolean) => void;
+  };
+};
+
+type AssistantContentBlock = { type?: string; thinking?: string };
+type AssistantMessageLike = { content?: AssistantContentBlock[] };
+type PatchableAssistantMessage = {
+  hideThinkingBlock?: boolean;
+  hiddenThinkingLabel?: string;
+  lastMessage?: AssistantMessageLike;
+  __xtrmThinkingExpanded?: boolean;
+  updateContent?: (message: AssistantMessageLike) => void;
+};
+
+const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiSilentHiddenThinking";
+
+async function installSilentHiddenThinkingPatch(): Promise<void> {
+  const entryPath = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
+  const componentPath = join(dirname(entryPath), "modes", "interactive", "components", "assistant-message.js");
+  const mod = await import(pathToFileURL(componentPath).href) as {
+    AssistantMessageComponent?: AssistantMessageComponentCtor;
+  };
+  const proto = mod.AssistantMessageComponent?.prototype as
+    | (AssistantMessageComponentCtor["prototype"] & { [PATCHED_ASSISTANT_MESSAGE]?: boolean })
+    | undefined;
+  if (!proto?.updateContent || proto[PATCHED_ASSISTANT_MESSAGE]) return;
+
+  const updateContent = proto.updateContent;
+  proto.updateContent = function patchedUpdateContent(this: PatchableAssistantMessage, message: AssistantMessageLike) {
+    if (this.hiddenThinkingLabel === "" && Array.isArray(message.content)) {
+      if (!this.__xtrmThinkingExpanded) {
+        updateContent.call(this, {
+          ...message,
+          content: message.content.filter((block) => block.type !== "thinking" || !block.thinking?.trim()),
+        });
+        return;
+      }
+
+      const previousHideThinking = this.hideThinkingBlock;
+      this.hideThinkingBlock = false;
+      updateContent.call(this, message);
+      this.hideThinkingBlock = previousHideThinking;
+      return;
+    }
+    updateContent.call(this, message);
+  };
+
+  proto.setExpanded = function setExpanded(this: PatchableAssistantMessage, expanded: boolean) {
+    this.__xtrmThinkingExpanded = expanded;
+    if (this.lastMessage) this.updateContent?.(this.lastMessage);
+  };
+  proto[PATCHED_ASSISTANT_MESSAGE] = true;
+}
+
+function applyThinkingChrome(ctx: ExtensionContext, _prefs: XtrmUiPrefs): void {
+  (ctx.ui as { setHiddenThinkingLabel?: (label?: string) => void }).setHiddenThinkingLabel?.("");
+}
+
 // ============================================================================
 // Chrome Application
 // ============================================================================
@@ -125,6 +199,12 @@ function persistPrefs(pi: ExtensionAPI, prefs: XtrmUiPrefs): void {
 function fitVisible(text: string, width: number): string {
   const truncated = truncateToWidth(text, width);
   return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
+}
+
+function resolveThemeForPrefs(prefs: XtrmUiPrefs): XtrmThemeName {
+  const base = prefs.themeName === "pidex-light" || prefs.themeName === "pidex-light-flattools" ? "pidex-light" : "pidex-dark";
+  if (!prefs.toolRowBg) return (base + "-flattools") as XtrmThemeName;
+  return base as XtrmThemeName;
 }
 
 function formatThinking(level: string): string {
@@ -137,7 +217,7 @@ function applyXtrmChrome(
   getThinkingLevel: () => string
 ): void {
   // Theme
-  if (prefs.forceTheme) ctx.ui.setTheme(prefs.themeName);
+  if (prefs.forceTheme) ctx.ui.setTheme(resolveThemeForPrefs(prefs));
 
   // Tool expansion
   ctx.ui.setToolsExpanded(!prefs.compactTools);
@@ -221,6 +301,7 @@ function applyXtrmChrome(
   }
   // If showFooter is false, we do NOT call setFooter - custom-footer will handle it
 }
+
 
 // ============================================================================
 // Tool Render Helpers
@@ -318,6 +399,8 @@ function registerCommands(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs, setPref
         `Compact tools: ${prefs.compactTools ? "on" : "off"}`,
         `Show header: ${prefs.showHeader ? "yes" : "no"}`,
         `Show footer: ${prefs.showFooter ? "yes" : "no"} (custom-footer handles this)`,
+        `Tool row background: ${prefs.toolRowBg ? "on" : "off"}`,
+        `Compact external tool results: ${prefs.compactExternalToolResults ? "on" : "off"}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ];
@@ -357,7 +440,7 @@ function registerCommands(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs, setPref
         ctx.ui.notify("Usage: /xtrm-ui-density compact|comfortable", "warning");
         return;
       }
-      const prefs = { ...getPrefs(), density };
+      const prefs = { ...getPrefs(), density, compactExternalToolResults: density === "compact" };
       setPrefs(prefs);
       persistPrefs(pi, prefs);
       applyXtrmChrome(ctx, prefs, getThinkingLevel);
@@ -399,6 +482,50 @@ function registerCommands(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs, setPref
       persistPrefs(pi, prefs);
       applyXtrmChrome(ctx, prefs, getThinkingLevel);
       ctx.ui.notify(`XTRM UI force theme ${forceTheme ? "enabled" : "disabled"}`, "info");
+    },
+  });
+
+  pi.registerCommand("xtrm-ui-rowbg", {
+    description: "Toggle subtle tool-row background: on|off",
+    getArgumentCompletions: (prefix) => {
+      const values = ["on", "off"].filter((item) => item.startsWith(prefix));
+      return values.length > 0 ? values.map((value) => ({ value, label: value })) : null;
+    },
+    handler: async (args, ctx) => {
+      const normalized = args.trim().toLowerCase();
+      if (normalized !== "on" && normalized !== "off") {
+        ctx.ui.notify("Usage: /xtrm-ui-rowbg on|off", "warning");
+        return;
+      }
+      const toolRowBg = normalized === "on";
+      const prefs = { ...getPrefs(), toolRowBg };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      applyXtrmChrome(ctx, prefs, getThinkingLevel);
+      ctx.ui.notify(`Tool row background ${toolRowBg ? "enabled" : "disabled"}.`, "info");
+    },
+  });
+
+  pi.registerCommand("xtrm-ui-compact-tools", {
+    description: "Compact extension tool results: on|off (off keeps full Ctrl+O expand output)",
+    getArgumentCompletions: (prefix) => {
+      const values = ["on", "off"].filter((item) => item.startsWith(prefix));
+      return values.length > 0 ? values.map((value) => ({ value, label: value })) : null;
+    },
+    handler: async (args, ctx) => {
+      const normalized = args.trim().toLowerCase();
+      if (normalized !== "on" && normalized !== "off") {
+        ctx.ui.notify("Usage: /xtrm-ui-compact-tools on|off", "warning");
+        return;
+      }
+      const compactExternalToolResults = normalized === "on";
+      const prefs = { ...getPrefs(), compactExternalToolResults };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      ctx.ui.notify(
+        `Compact external tool results ${compactExternalToolResults ? "enabled" : "disabled"}.`,
+        "info",
+      );
     },
   });
 
@@ -743,8 +870,88 @@ function summarizeSerenaToolResult(
   }
 }
 
-function registerXtrmUiTools(pi: ExtensionAPI): void {
+
+function formatHierarchyText(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) {
+      out.push("");
+      continue;
+    }
+    if (line.startsWith("● ")) {
+      out.push(line);
+      continue;
+    }
+    if (/^(Read|Searched|Listed|Update\(|File must be read first|Now )/.test(line.trimStart())) {
+      out.push(`  └─ ${line.trimStart()}`);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+function normalizeToolLabel(toolName: string): string {
+  const gitnexusMap: Record<string, string> = {
+    gitnexus_query: "gitnexus query",
+    gitnexus_context: "gitnexus context",
+    gitnexus_impact: "gitnexus impact",
+    gitnexus_detect_changes: "gitnexus detect_changes",
+    gitnexus_list_repos: "gitnexus list_repos",
+    gitnexus_rename: "gitnexus rename",
+    gitnexus_cypher: "gitnexus cypher",
+  };
+
+  if (gitnexusMap[toolName]) return gitnexusMap[toolName];
+
+  if (toolName.startsWith("gitnexus_")) {
+    return `gitnexus ${toolName.slice("gitnexus_".length)}`;
+  }
+
+  const idx = toolName.indexOf("_");
+  if (idx > 0) {
+    const head = toolName.slice(0, idx);
+    const tail = toolName.slice(idx + 1);
+    if (head && tail) return `${head} ${tail}`;
+  }
+
+  return toolName;
+}
+
+function summarizeGenericToolResult(
+  toolName: string,
+  input: Record<string, unknown>,
+  text: string,
+  durationMs: number | undefined,
+): string {
+  const payload = parseJson(text);
+  const duration = formatDuration(durationMs);
+  const subject = summarizeToolSubject(toolName, input) ?? summarizeSerenaSubject(toolName, input);
+  const count = countJsonItems(payload) ?? countLines(text);
+  const label = formatLineLabel(count, "line");
+  const joined = joinMeta([label, duration]);
+  const normalized = normalizeToolLabel(toolName);
+  return `• ${normalized}${subject ? ` ${subject}` : ""}${joined ? ` · ${joined}` : ""}`;
+}
+
+const XTRM_BUILTIN_TOOLS = new Set(["bash", "read", "edit", "write", "find", "grep", "ls"]);
+
+type RowTheme = {
+  bg(token: string, text: string): string;
+};
+
+function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): void {
   const activeToolCalls = new Map<string, string>();
+
+  const toolRowText = (theme: RowTheme, text: string) =>
+    new Text(
+      text,
+      0,
+      0,
+      getPrefs().toolRowBg ? (line: string) => theme.bg("selectedBg", line) : undefined,
+    );
   const activeSignatureCounts = new Map<string, number>();
   const toolCallStartTimes = new Map<string, number>();
 
@@ -769,7 +976,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     activeSignatureCounts.has(stableToolSignature(toolName, args));
 
   const renderPendingCallIfActive = (toolName: string, args: Record<string, unknown>, theme: any) =>
-    isToolCallActive(toolName, args) ? renderPendingCall(toolName, args, theme) : new Text("", 0, 0);
+    isToolCallActive(toolName, args) ? renderPendingCall(toolName, args, theme) : toolRowText(theme, "");
 
   pi.on("tool_call", async (event) => {
     trackToolCallStart(event.toolCallId, event.toolName, event.input as Record<string, unknown>);
@@ -779,20 +986,29 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     trackToolCallEnd(event.toolCallId);
   });
 
-  pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
-    if (!SERENA_COMPACT_TOOLS.has(event.toolName)) return undefined;
-    if (ctx.ui.getToolsExpanded()) return undefined;
+  pi.on("tool_result", async (event: ToolResultEvent, _ctx) => {
     if (event.isError) return undefined;
+    if (!getPrefs().compactExternalToolResults) return undefined;
+    if (XTRM_BUILTIN_TOOLS.has(event.toolName)) return undefined;
 
     const text = getTextContent({ content: event.content as Array<{ type: string; text?: string }> });
-    if (!text.trim()) return undefined;
-
     const startedAt = toolCallStartTimes.get(event.toolCallId);
     const durationMs = startedAt != null ? Date.now() - startedAt : undefined;
-    const compactText = summarizeSerenaToolResult(event.toolName, event.input, text, durationMs);
+
+    const fallbackText = "[non-text result]";
+    const sourceText = text.trim() ? text : fallbackText;
+
+    const safeInput =
+      event.input && typeof event.input === "object" && !Array.isArray(event.input)
+        ? (event.input as Record<string, unknown>)
+        : {};
+
+    const compactText = SERENA_COMPACT_TOOLS.has(event.toolName)
+      ? summarizeSerenaToolResult(event.toolName, safeInput, sourceText, durationMs)
+      : summarizeGenericToolResult(event.toolName, safeInput, sourceText, durationMs);
 
     return {
-      content: [{ type: "text", text: compactText }],
+      content: [{ type: "text", text: formatHierarchyText(compactText) }],
       details: event.details,
     };
   });
@@ -802,6 +1018,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     label: "bash",
     description: getTools(process.cwd()).bash.description,
     parameters: getTools(process.cwd()).bash.parameters,
+    renderShell: "self",
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const started = Date.now();
       const result = await getTools(ctx.cwd).bash.execute(toolCallId, params, signal, onUpdate);
@@ -813,7 +1030,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
       const meta = getXtrmMeta<BashToolDetails, Record<string, unknown>>(details);
       const command = shortenCommand(String(meta?.args.command ?? ""));
       if (isPartial) {
-        return new Text(`${theme.fg("accent", "•")} ${theme.fg("toolTitle", "Running ")}${theme.fg("accent", command)}${theme.fg("toolTitle", " in bash")}`, 0, 0);
+        return toolRowText(theme, `${theme.fg("accent", "•")} ${theme.fg("toolTitle", "Running ")}${theme.fg("accent", command)}${theme.fg("toolTitle", " in bash")}`);
       }
       const output = getTextContent(result as any);
       const outputLines = cleanOutputLines(output);
@@ -824,7 +1041,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
       let text = `${bullet} ${theme.fg("toolTitle", "Ran ")}${theme.fg("accent", command)}`;
       if (summary) text += theme.fg("dim", ` · ${summary}`);
       if (expanded && outputLines.length > 0) text += `\n${renderVerticalPreview(theme, outputLines, 10)}`;
-      return new Text(text, 0, 0);
+      return toolRowText(theme, text);
     },
   });
 
@@ -833,6 +1050,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     label: "read",
     description: getTools(process.cwd()).read.description,
     parameters: getTools(process.cwd()).read.parameters,
+    renderShell: "self",
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const started = Date.now();
       const result = await getTools(ctx.cwd).read.execute(toolCallId, params, signal, onUpdate);
@@ -840,7 +1058,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     },
     renderCall: (args, theme) => renderPendingCallIfActive("read", args as Record<string, unknown>, theme),
     renderResult(result, { expanded, isPartial }, theme) {
-      if (isPartial) return new Text(renderToolSummary(theme, "pending", "read", "loading", undefined), 0, 0);
+      if (isPartial) return toolRowText(theme, renderToolSummary(theme, "pending", "read", "loading", undefined));
       const details = (result.details ?? {}) as DetailsWithXtrmMeta<ReadToolDetails, Record<string, unknown>>;
       const meta = getXtrmMeta<ReadToolDetails, Record<string, unknown>>(details);
       const subjectBase = shortenPath(String(meta?.args.path ?? ""));
@@ -848,13 +1066,13 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
       const subject = range ? `${subjectBase}:${range}` : subjectBase;
       const first = result.content[0];
       if (first?.type === "image") {
-        return new Text(renderToolSummary(theme, "success", "read", subject, joinMeta(["image", formatDuration(meta?.durationMs)])), 0, 0);
+        return toolRowText(theme, renderToolSummary(theme, "success", "read", subject, joinMeta(["image", formatDuration(meta?.durationMs)])));
       }
       const textContent = getTextContent(result as any);
       const lines = textContent.split("\n");
       let text = renderToolSummary(theme, "success", "read", subject, joinMeta([formatLineLabel(lines.length, "line"), formatDuration(meta?.durationMs), details.truncation?.truncated ? `from ${details.truncation.totalLines}` : undefined]));
       if (expanded && textContent.length > 0) text += `\n${renderOutputPreview(theme, previewLines(textContent, 14), 14)}`;
-      return new Text(text, 0, 0);
+      return toolRowText(theme, text);
     },
   });
 
@@ -863,6 +1081,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     label: "edit",
     description: getTools(process.cwd()).edit.description,
     parameters: getTools(process.cwd()).edit.parameters,
+    renderShell: "self",
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const started = Date.now();
       const result = await getTools(ctx.cwd).edit.execute(toolCallId, params, signal, onUpdate);
@@ -870,17 +1089,17 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     },
     renderCall: (args, theme) => renderPendingCallIfActive("edit", args as Record<string, unknown>, theme),
     renderResult(result, { expanded, isPartial }, theme) {
-      if (isPartial) return new Text(renderToolSummary(theme, "pending", "edit", "applying", undefined), 0, 0);
+      if (isPartial) return toolRowText(theme, renderToolSummary(theme, "pending", "edit", "applying", undefined));
       const details = (result.details ?? {}) as DetailsWithXtrmMeta<EditToolDetails, Record<string, unknown>>;
       const meta = getXtrmMeta<EditToolDetails, Record<string, unknown>>(details);
       const textContent = getTextContent(result as any);
       if (/^error/i.test(textContent.trim())) {
-        return new Text(renderToolSummary(theme, "error", "edit", shortenPath(String(meta?.args.path ?? "")), textContent.split("\n")[0]), 0, 0);
+        return toolRowText(theme, renderToolSummary(theme, "error", "edit", shortenPath(String(meta?.args.path ?? "")), textContent.split("\n")[0]));
       }
       const stats = details.diff ? diffStats(details.diff) : { additions: 0, removals: 0 };
       let text = renderToolSummary(theme, "success", "edit", shortenPath(String(meta?.args.path ?? "")), joinMeta([`+${stats.additions}`, `-${stats.removals}`, formatDuration(meta?.durationMs)]));
       if (expanded && details.diff) text += `\n${renderRichDiffPreview(theme, details.diff, 18)}`;
-      return new Text(text, 0, 0);
+      return toolRowText(theme, text);
     },
   });
 
@@ -889,6 +1108,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     label: "write",
     description: getTools(process.cwd()).write.description,
     parameters: getTools(process.cwd()).write.parameters,
+    renderShell: "self",
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const started = Date.now();
       const args = params as Record<string, unknown>;
@@ -901,19 +1121,19 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     },
     renderCall: (args, theme) => renderPendingCallIfActive("write", args as Record<string, unknown>, theme),
     renderResult(result, { expanded, isPartial }, theme) {
-      if (isPartial) return new Text(renderToolSummary(theme, "pending", "write", "writing", undefined), 0, 0);
+      if (isPartial) return toolRowText(theme, renderToolSummary(theme, "pending", "write", "writing", undefined));
       const details = (result.details ?? {}) as DetailsWithXtrmMeta<Record<string, never>, Record<string, unknown>>;
       const meta = getXtrmMeta<Record<string, never>, Record<string, unknown>>(details);
       const textContent = getTextContent(result as any);
       if (/^error/i.test(textContent.trim())) {
-        return new Text(renderToolSummary(theme, "error", "write", shortenPath(String(meta?.args.path ?? "")), textContent.split("\n")[0]), 0, 0);
+        return toolRowText(theme, renderToolSummary(theme, "error", "write", shortenPath(String(meta?.args.path ?? "")), textContent.split("\n")[0]));
       }
 
       const subject = shortenPath(String(meta?.args.path ?? ""));
       const preview = details.xtrmWritePreview;
 
       if (preview?.kind === "unchanged") {
-        return new Text(renderToolSummary(theme, "success", "write", subject, joinMeta(["no changes", formatDuration(meta?.durationMs)])), 0, 0);
+        return toolRowText(theme, renderToolSummary(theme, "success", "write", subject, joinMeta(["no changes", formatDuration(meta?.durationMs)])));
       }
 
       if (preview?.kind === "updated") {
@@ -925,15 +1145,14 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
           joinMeta([`+${preview.additions}`, `-${preview.removals}`, formatDuration(meta?.durationMs)]),
         );
         if (expanded && preview.diff) text += `\n${renderRichDiffPreview(theme, preview.diff, 18)}`;
-        return new Text(text, 0, 0);
+        return toolRowText(theme, text);
       }
 
       const lines = preview?.kind === "created"
         ? preview.lineCount
         : lineCount(String(meta?.args.content ?? ""));
 
-      return new Text(
-        renderToolSummary(
+      return toolRowText(theme, renderToolSummary(
           theme,
           "success",
           "write",
@@ -951,6 +1170,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     label: "find",
     description: getTools(process.cwd()).find.description,
     parameters: getTools(process.cwd()).find.parameters,
+    renderShell: "self",
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const started = Date.now();
       const result = await getTools(ctx.cwd).find.execute(toolCallId, params, signal, onUpdate);
@@ -958,14 +1178,14 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     },
     renderCall: (args, theme) => renderPendingCallIfActive("find", args as Record<string, unknown>, theme),
     renderResult(result, { expanded, isPartial }, theme) {
-      if (isPartial) return new Text(renderToolSummary(theme, "pending", "find", "searching", undefined), 0, 0);
+      if (isPartial) return toolRowText(theme, renderToolSummary(theme, "pending", "find", "searching", undefined));
       const details = (result.details ?? {}) as DetailsWithXtrmMeta<FindToolDetails, Record<string, unknown>>;
       const meta = getXtrmMeta<FindToolDetails, Record<string, unknown>>(details);
       const textContent = getTextContent(result as any);
       const count = summarizeCount(textContent);
       let text = renderToolSummary(theme, "success", "find", String(meta?.args.pattern ?? ""), joinMeta([formatLineLabel(count, "match"), formatDuration(meta?.durationMs), details.resultLimitReached ? "limit reached" : undefined]));
       if (expanded && count > 0) text += `\n${renderOutputPreview(theme, previewLines(textContent, 10), 10)}`;
-      return new Text(text, 0, 0);
+      return toolRowText(theme, text);
     },
   });
 
@@ -974,6 +1194,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     label: "grep",
     description: getTools(process.cwd()).grep.description,
     parameters: getTools(process.cwd()).grep.parameters,
+    renderShell: "self",
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const started = Date.now();
       const result = await getTools(ctx.cwd).grep.execute(toolCallId, params, signal, onUpdate);
@@ -981,14 +1202,14 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     },
     renderCall: (args, theme) => renderPendingCallIfActive("grep", args as Record<string, unknown>, theme),
     renderResult(result, { expanded, isPartial }, theme) {
-      if (isPartial) return new Text(renderToolSummary(theme, "pending", "grep", "searching", undefined), 0, 0);
+      if (isPartial) return toolRowText(theme, renderToolSummary(theme, "pending", "grep", "searching", undefined));
       const details = (result.details ?? {}) as DetailsWithXtrmMeta<GrepToolDetails, Record<string, unknown>>;
       const meta = getXtrmMeta<GrepToolDetails, Record<string, unknown>>(details);
       const textContent = getTextContent(result as any);
       const count = countPrefixedItems(textContent, ["-- "]) || summarizeCount(textContent);
       let text = renderToolSummary(theme, "success", "grep", String(meta?.args.pattern ?? ""), joinMeta([formatLineLabel(count, "match"), formatDuration(meta?.durationMs), details.matchLimitReached ? "limit reached" : undefined]));
       if (expanded && textContent.length > 0) text += `\n${renderOutputPreview(theme, previewLines(textContent, 12), 12)}`;
-      return new Text(text, 0, 0);
+      return toolRowText(theme, text);
     },
   });
 
@@ -997,6 +1218,7 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     label: "ls",
     description: getTools(process.cwd()).ls.description,
     parameters: getTools(process.cwd()).ls.parameters,
+    renderShell: "self",
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const started = Date.now();
       const result = await getTools(ctx.cwd).ls.execute(toolCallId, params, signal, onUpdate);
@@ -1004,14 +1226,14 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
     },
     renderCall: (args, theme) => renderPendingCallIfActive("ls", args as Record<string, unknown>, theme),
     renderResult(result, { expanded, isPartial }, theme) {
-      if (isPartial) return new Text(renderToolSummary(theme, "pending", "ls", "listing", undefined), 0, 0);
+      if (isPartial) return toolRowText(theme, renderToolSummary(theme, "pending", "ls", "listing", undefined));
       const details = (result.details ?? {}) as DetailsWithXtrmMeta<LsToolDetails, Record<string, unknown>>;
       const meta = getXtrmMeta<LsToolDetails, Record<string, unknown>>(details);
       const textContent = getTextContent(result as any);
       const count = summarizeCount(textContent);
       let text = renderToolSummary(theme, "success", "ls", shortenPath(String(meta?.args.path ?? ".")), joinMeta([formatLineLabel(count, "entry"), formatDuration(meta?.durationMs), details.entryLimitReached ? "limit reached" : undefined]));
       if (expanded && count > 0) text += `\n${renderOutputPreview(theme, previewLines(textContent, 12), 12)}`;
-      return new Text(text, 0, 0);
+      return toolRowText(theme, text);
     },
   });
 }
@@ -1021,10 +1243,12 @@ function registerXtrmUiTools(pi: ExtensionAPI): void {
 // ============================================================================
 
 function isXtrmTheme(name: string | undefined): boolean {
-  return name === "pidex-dark" || name === "pidex-light";
+  return name === "pidex-dark" || name === "pidex-light" || name === "pidex-dark-flattools" || name === "pidex-light-flattools";
 }
 
 export default function xtrmUiExtension(pi: ExtensionAPI): void {
+  void installSilentHiddenThinkingPatch().catch(() => undefined);
+
   let prefs: XtrmUiPrefs = { ...DEFAULT_PREFS };
   let previousThemeName: string | null = null;
   const extensionThemeDir = join(__dirname, "../../themes/xtrm-ui");
@@ -1033,11 +1257,12 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   const setPrefs = (p: XtrmUiPrefs) => { prefs = p; };
   const getThinkingLevel = () => formatThinking(pi.getThinkingLevel());
 
-  registerXtrmUiTools(pi);
+  registerXtrmUiTools(pi, getPrefs);
   registerCommands(pi, getPrefs, setPrefs, getThinkingLevel);
 
   const refresh = (ctx: ExtensionContext) => {
     applyXtrmChrome(ctx, prefs, getThinkingLevel);
+    applyThinkingChrome(ctx, prefs);
   };
 
   pi.on("resources_discover", async () => ({
@@ -1051,9 +1276,11 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
     }
     refresh(ctx);
 
-    setTimeout(() => {
-      if (prefs.forceTheme) ctx.ui.setTheme(prefs.themeName);
-    }, 0);
+    if (prefs.forceTheme) {
+      setTimeout(() => {
+        ctx.ui.setTheme(resolveThemeForPrefs(prefs));
+      }, 0);
+    }
   });
 
   pi.on("session_switch", async (_event, ctx) => {

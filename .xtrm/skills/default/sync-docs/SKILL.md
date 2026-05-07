@@ -78,7 +78,7 @@ and stop.
 
 ```bash
 python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py scan --json \
-  | jq '[.[] | select(.path == "<YOUR_DOC>")]'
+  | jq '[.stale[]? | select(.doc == "<YOUR_DOC>")]'
 ```
 
 If your doc reports stale, capture the list of commits since `synced_at` — those are your candidate commits for Phase 3.

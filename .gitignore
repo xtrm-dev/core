@@ -77,3 +77,6 @@ hooks/tsconfig-cache.json
 .specialists/db/*.db
 .specialists/db/*.db-wal
 .specialists/db/*.db-shm
+
+# Serena project metadata for nested package workspaces
+.xtrm/packages/pi-extensions/.serena/

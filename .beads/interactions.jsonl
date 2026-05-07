@@ -177,3 +177,8 @@
 {"id":"int-aaaad9b2","kind":"tool_call","created_at":"2026-05-04T10:07:00.777882449Z","actor":"you@example.com","issue_id":"xtrm-gt64","model":"openai-codex/gpt-5.4","tool_name":"planner","exit_code":0}
 {"id":"int-cbc5be5e","kind":"tool_call","created_at":"2026-05-04T10:08:22.107526513Z","actor":"you@example.com","issue_id":"xtrm-qeyn","model":"openai-codex/gpt-5.4-mini","tool_name":"executor","exit_code":1}
 {"id":"int-a4537caf","kind":"tool_call","created_at":"2026-05-04T10:15:13.095204242Z","actor":"you@example.com","issue_id":"xtrm-u8lz","model":"openai-codex/gpt-5.3-codex","tool_name":"reviewer","exit_code":0}
+{"id":"int-6b23a6e7","kind":"tool_call","created_at":"2026-05-07T16:42:10.691308755Z","actor":"dawid","issue_id":"xtrm-svhc","model":"openai-codex/gpt-5.4-mini","tool_name":"code-sanity","exit_code":0}
+{"id":"int-bc4b1c00","kind":"tool_call","created_at":"2026-05-07T16:46:38.359031826Z","actor":"dawid","issue_id":"xtrm-svhc","model":"openai-codex/gpt-5.4-mini","tool_name":"code-sanity","exit_code":0}
+{"id":"int-add846b5","kind":"tool_call","created_at":"2026-05-07T16:56:49.231549807Z","actor":"dawid","issue_id":"xtrm-svhc","model":"openai-codex/gpt-5.4","tool_name":"security-auditor","exit_code":0}
+{"id":"int-8bc99c0b","kind":"tool_call","created_at":"2026-05-07T16:59:48.3675442Z","actor":"dawid","issue_id":"xtrm-svhc","model":"openai-codex/gpt-5.3-codex","tool_name":"reviewer","exit_code":0}
+{"id":"int-317cc753","kind":"tool_call","created_at":"2026-05-07T17:07:08.431613414Z","actor":"dawid","issue_id":"xtrm-svhc","model":"anthropic/claude-sonnet-4-6","tool_name":"parallel-review","exit_code":1}

@@ -111,17 +111,17 @@ describe('runInstall broken default symlink repair', () => {
     expect(await fs.readFile(path.join(targetDir, 'README.md'), 'utf8')).toBe('# skill\n');
   });
 
-  it('preserves valid symlink at .xtrm/skills/default', async () => {
+  it('preserves symlink at .xtrm/skills/default when scaffold reports noop', async () => {
     const packageRoot = path.join(tmpDir, 'pkg');
     const targetDir = path.join(tmpDir, '.xtrm', 'skills', 'default');
-    const devDir = path.join(tmpDir, 'dev-skills');
+    const sourceDir = path.join(packageRoot, '.xtrm', 'skills', 'default');
 
     fs.ensureDirSync(path.join(packageRoot, '.xtrm'));
     fs.writeJsonSync(path.join(packageRoot, '.xtrm', 'registry.json'), { version: '1.0.0', assets: {} });
-    fs.ensureDirSync(devDir);
-    fs.writeFileSync(path.join(devDir, 'README.md'), '# dev skill\n', 'utf8');
+    fs.ensureDirSync(sourceDir);
+    fs.writeFileSync(path.join(sourceDir, 'README.md'), '# dev skill\n', 'utf8');
     fs.ensureDirSync(path.dirname(targetDir));
-    fs.symlinkSync(devDir, targetDir);
+    fs.symlinkSync(sourceDir, targetDir);
 
     mocked.scaffoldSkillsDefaultFromPackage.mockImplementation(async () => 'noop');
     mocked.installFromRegistry.mockImplementation(async () => ({
@@ -142,7 +142,7 @@ describe('runInstall broken default symlink repair', () => {
     });
 
     expect((await fs.lstat(targetDir)).isSymbolicLink()).toBe(true);
-    expect(await fs.readlink(targetDir)).toBe(devDir);
+    expect(await fs.readlink(targetDir)).toBe(sourceDir);
   });
 
   it('dryRun leaves broken symlink untouched at .xtrm/skills/default', async () => {

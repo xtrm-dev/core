@@ -56,3 +56,6 @@
 | 00:02 | Closed stale Cat B epic | xtrm-sjbc, .xtrm/reports/2026-05-04-95d4f878.md | no open local bd issues remain | ~180 |
 | 01:00 | Updated session-close-report skill | .xtrm/skills/default/session-close-report/SKILL.md | prefer same-day SSOT report updates over duplicate reports | ~1200 |
 | 10:49 | Updated using-xtrm docs for v0.7.14 commands | .xtrm/skills/default/using-xtrm/SKILL.md, docs/XTRM-GUIDE.md | documented xt update/release/report SSOT surfaces | ~650 |
+| 17:45 | Generated session close report | .xtrm/reports/2026-05-07-986757b.md, .wolf/anatomy.md | documented uncommitted substantial work, cleanup blockers, and next priorities for xtrm-tools-be9 | ~4300 |
+| 17:50 | Fixed stale skills/default symlink repair | cli/src/core/registry-scaffold.ts, cli/src/tests/registry-scaffold.test.ts, cli/src/tests/install-runInstall.test.ts | preserve only current package symlink; stale valid symlinks are replaced with current payload | ~900 |
+| 19:05 | Reconciled dirty runtime migration state | .specialists/default, .pi/settings.json, xtrm-ui, registry, report | package-owned specialists defaults, local Pi npm runtime, xtrm-ui cleanup, validation recorded | ~1800 |

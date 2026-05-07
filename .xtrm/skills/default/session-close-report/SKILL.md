@@ -41,6 +41,52 @@ are factually superseded.
 
 ## Workflow
 
+### 0. Cleanup before reporting (MANDATORY)
+
+A report on a dirty session is misleading. Before selecting or generating any
+report, verify and clean up everything this session opened. The report must
+reflect a clean terminal state.
+
+```bash
+# 0a. Worktrees opened during the session
+git worktree list                  # any feature/fix/chore worktrees still here?
+# Remove every worktree this session created (or that a stopped specialist left):
+git worktree remove <path>         # for each stale entry
+git branch -D <branch>             # only after confirming merged or abandoned
+git worktree prune                 # drop stale metadata
+
+# 0b. Specialist jobs still running or waiting
+sp ps                              # MUST be empty (or only intentionally kept-alive jobs)
+sp stop <job-id>                   # for any leftover running/waiting job
+# After every sp stop, re-check sp ps and git worktree list — sp stop should
+# clean its worktree, but verify.
+
+# 0c. Stale background processes from the session
+ps -ef | grep -E '(serena|gitnexus|specialists|sp-serve|sp-script|pi[ -]|claude)' | grep -v grep
+# Kill anything you launched that is still running and no longer needed.
+# Be especially careful with:
+#   - serena MCP servers (often leak when an MCP host crashes)
+#   - gitnexus index processes (`npx gitnexus analyze` can outlive its terminal)
+#   - sp-serve / sp-script tmux sessions
+#   - orphaned `pi` or `claude` processes from interactive sessions
+
+tmux ls 2>/dev/null                # any sp-* or xt-* tmux sessions left?
+tmux kill-session -t <name>        # for each stale session
+
+# 0d. Tmp dirs the session created (only if large or sensitive)
+ls -la /tmp/sp-serve-* /tmp/sp-script-* 2>/dev/null
+```
+
+Do not skip any sub-step. If a process refuses to stop cleanly, document it in
+the **Problems Encountered** section of the report so the next agent knows.
+
+A clean session ends with:
+- `git worktree list` showing only the main worktree (plus any intentional ones)
+- `sp ps` showing 0 jobs (or only intentional keep-alive)
+- no leaked `serena` / `gitnexus` / `specialists` / `sp-serve` / `sp-script`
+  processes from this session
+- no orphaned tmux sessions matching `sp-*` or `xt-*`
+
 ### 1. Select report: update existing or generate new
 
 For same-day update:
@@ -115,8 +161,8 @@ delete this section. If prior dispatches exist, keep and extend them.
 #### Problems Encountered
 Every problem hit during the session. Root Cause and Resolution columns are
 mandatory. Include: bugs discovered, wrong approaches tried, blockers hit,
-tooling failures. If no problems exist anywhere in the same-day report, delete
-this section entirely.
+tooling failures, and any cleanup-step failures from Step 0 above. If no
+problems exist anywhere in the same-day report, delete this section entirely.
 
 #### Code Changes
 The skeleton lists files. Add narrative:
@@ -175,11 +221,27 @@ If you updated an existing same-day report after an earlier report commit, commi
 that update with the same message style or fold it into the current final commit
 before push.
 
+### 6. Final cleanup verification (MANDATORY)
+
+After committing, re-run the Step 0 checks one more time:
+
+```bash
+git worktree list
+sp ps
+ps -ef | grep -E '(serena|gitnexus|specialists|sp-serve|sp-script)' | grep -v grep
+tmux ls 2>/dev/null
+```
+
+If any of these show session-leaked artifacts, stop them now or document them
+in the report. Do not consider the session "closed" until this verification is
+clean.
+
 ## Quality bar
 
 The reference is `~/projects/specialists/.xtrm/reports/2026-03-30-orchestration-session.md`.
 Every report must match that level of detail. Specifically:
 
+- Step 0 cleanup performed before report generation; Step 6 verification clean.
 - No empty `<!-- FILL -->` markers left in the final output
 - No duplicate same-day reports unless explicitly requested by the operator
 - Every closed issue has context, not just an ID
