@@ -93,13 +93,15 @@ describe('pi runtime safeguards', () => {
   it('builds a doctor report for all-present xt pi packages', async () => {
     const { getXtManagedPiPackageDoctorReport } = await import('../core/pi-runtime.js');
 
-    const report = await getXtManagedPiPackageDoctorReport(async (piPackageId) => ({
+    const versionProvider = vi.fn(async () => ({
       installedVersion: '1.0.0',
       expectedVersion: '1.0.0',
     }));
+    const report = await getXtManagedPiPackageDoctorReport(versionProvider);
 
     expect(report.hasIssues).toBe(false);
     expect(report.issues).toEqual([]);
+    expect(versionProvider).toHaveBeenCalledTimes(7);
   });
 
   it('builds a doctor report for missing and outdated xt pi packages with remediation commands', async () => {
@@ -117,10 +119,10 @@ describe('pi runtime safeguards', () => {
 
     expect(report.hasIssues).toBe(true);
     expect(report.missing.map(issue => [issue.pkg.id, issue.remediation])).toEqual([
-      ['npm:pi-serena-tools', 'xt pi reload'],
+      ['npm:pi-serena-tools', 'pi install npm:pi-serena-tools'],
     ]);
     expect(report.outdated.map(issue => [issue.pkg.id, issue.installedVersion, issue.expectedVersion, issue.remediation])).toEqual([
-      ['npm:pi-gitnexus', '1.0.0', '1.1.0', 'xt pi reload'],
+      ['npm:pi-gitnexus', '1.0.0', '1.1.0', 'pi install npm:pi-gitnexus'],
     ]);
   });
 
