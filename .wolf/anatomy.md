@@ -1229,3 +1229,9 @@
 
 > Manual note 2026-05-07: Specialists defaults are package-owned at runtime; `.specialists/default/` was removed from the repo, and project-only `parallel-review` lives in `.specialists/user/parallel-review.specialist.json`.
 > Manual note 2026-05-07: `.pi/npm` is ignored local Pi npm runtime state; the tracked symlink deletion is intentional when `.pi/settings.json` uses `packages: ["npm:@jaggerxtrm/pi-extensions"]`.
+- `.wolf/cerebrum.md` / `.wolf/memory.md`: captured Pi Serena global package prerequisite after tool availability issue.
+- `.wolf/buglog.json`: added bug-010 for shell backtick command substitution during bd description creation; tracked .xtrm changes were reverted.
+
+- 2026-05-07: Session report path `.xtrm/reports/2026-05-07-986757b.md` is the same-day SSOT handoff; CHANGELOG now uses an `[Unreleased]` block above released versions.
+
+- 2026-05-07: `.beads/export-state.json` is local bd export metadata and should be ignored alongside `.beads/export-state/`.

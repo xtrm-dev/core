@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- `session-close-report`: add paranoid cleanup, due-diligence, and CHANGELOG synchronization requirements so session handoffs include process cleanup, content audits, and consumer-facing changelog checks.
+- `releasing`: update the release skill to drive releases end-to-end without relying on the deprecated `xt release` flow.
+- `using-specialists-v3`: strengthen specialist orchestration guidance around runtime listing, file-layer discipline, security/code-sanity chains, monitoring, and worktree cleanup.
+
 ## [0.7.17] - 2026-05-05
 
 ### Added
@@ -131,7 +138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [Legacy Unreleased]
 
 ### Added
 - **Optional skill packs installed (commit `0e711e76`)**: added domain bundles under `.xtrm/skills/optional/` — `research-methods` (`brainstorming`, `academic-researcher`, `deep-research`, `fact-checker`), `code-quality` (`systematic-debugging`, `verification-before-completion`, `code-review-excellence`, `multi-reviewer-patterns`), `security-ops` (`security-auditor`), `data-engineering` (`data-analyst`), `architecture-design` (`architecture-patterns`, `subagent-driven-development`, `prompt-engineering-patterns`).

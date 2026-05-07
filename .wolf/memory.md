@@ -59,3 +59,9 @@
 | 17:45 | Generated session close report | .xtrm/reports/2026-05-07-986757b.md, .wolf/anatomy.md | documented uncommitted substantial work, cleanup blockers, and next priorities for xtrm-tools-be9 | ~4300 |
 | 17:50 | Fixed stale skills/default symlink repair | cli/src/core/registry-scaffold.ts, cli/src/tests/registry-scaffold.test.ts, cli/src/tests/install-runInstall.test.ts | preserve only current package symlink; stale valid symlinks are replaced with current payload | ~900 |
 | 19:05 | Reconciled dirty runtime migration state | .specialists/default, .pi/settings.json, xtrm-ui, registry, report | package-owned specialists defaults, local Pi npm runtime, xtrm-ui cleanup, validation recorded | ~1800 |
+[2026-05-07] Learned: Pi Serena tools require global `npm:pi-serena-tools`; missing package caused Serena tools to be unavailable/disabled in Pi.
+[2026-05-07] Fixed accidental shell backtick substitution in bd create command; reverted unintended tracked .xtrm changes and logged bug-010. Use single-quoted heredoc for bead descriptions with backticks.
+
+- 2026-05-07: Session close report updated as same-day SSOT; CHANGELOG gained [Unreleased] entries for session-close-report, releasing, and using-specialists-v3 skill behavior changes.
+
+- 2026-05-07: Ignored `.beads/export-state.json` after bd commit/export recreated it as local metadata during session close.

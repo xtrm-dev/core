@@ -16,6 +16,8 @@
 - **Project:** xtrm-tools
 - **Description:** Claude Code tools installer (skills, hooks, MCP servers)
 
+- Pi Serena tools availability depends on global Pi package `npm:pi-serena-tools`; if Serena tools appear disabled/unavailable in Pi, run/verify `pi install npm:pi-serena-tools` before blaming Serena or specialists.
+
 ## Do-Not-Repeat
 
 <!-- Mistakes made and corrected. Each entry prevents the same mistake recurring. -->

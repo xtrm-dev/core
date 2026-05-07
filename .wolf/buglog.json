@@ -154,6 +154,23 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-07T17:05:00Z"
+    },
+    {
+      "id": "bug-010",
+      "timestamp": "2026-05-07T19:50:09.389Z",
+      "error_message": "Backtick command substitution in bd create --description executed xt update/paths while creating bead",
+      "file": "shell/bd command invocation",
+      "root_cause": "Used double-quoted shell argument containing markdown backticks; bash treated backticks as command substitution, accidentally running xt update/xt update --apply and stripping code spans from bead text.",
+      "fix": "Immediately reverted unintended tracked .xtrm changes with git checkout and rewrote corrupted bead using single-quoted heredoc. Use --body-file - <<'EOF' for bead descriptions containing backticks or shell snippets.",
+      "tags": [
+        "shell-quoting",
+        "bd",
+        "command-substitution",
+        "unintended-command"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T19:50:09.389Z"
     }
   ]
 }
