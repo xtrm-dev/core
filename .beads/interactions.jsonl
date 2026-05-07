@@ -192,3 +192,5 @@
 {"id":"int-dde1a685","kind":"field_change","created_at":"2026-05-07T21:57:41.025934761Z","actor":"dawid","issue_id":"xtrm-basg","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"review complete"}}
 {"id":"int-5d039549","kind":"tool_call","created_at":"2026-05-07T21:57:48.143198838Z","actor":"dawid","issue_id":"xtrm-basg","model":"openai-codex/gpt-5.4-mini","tool_name":"code-sanity","exit_code":0}
 {"id":"int-d89af8f0","kind":"tool_call","created_at":"2026-05-07T22:01:52.235059029Z","actor":"dawid","issue_id":"xtrm-basg","model":"openai-codex/gpt-5.3-codex","tool_name":"reviewer","exit_code":0}
+{"id":"int-aeff4331","kind":"tool_call","created_at":"2026-05-07T22:14:09.921043635Z","actor":"dawid","issue_id":"xtrm-ppwi","model":"openai-codex/gpt-5.4-mini","tool_name":"code-sanity","exit_code":0}
+{"id":"int-a28d719f","kind":"field_change","created_at":"2026-05-07T22:21:33.946536196Z","actor":"dawid","issue_id":"xtrm-ppwi","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Job 73a461 stopped (done)"}}

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
-import { inventoryPiRuntime, executePiSync, ensureAlwaysGlobalPiPackages } from '../src/core/pi-runtime.js';
+import { inventoryPiRuntime, executePiSync, ensureAlwaysGlobalPiPackages, getXtManagedPiPackages } from '../src/core/pi-runtime.js';
 
 async function makeExtension(baseDir: string, name: string, extraFiles: Record<string, string> = {}): Promise<void> {
     const extDir = path.join(baseDir, name);
@@ -96,13 +96,14 @@ describe('ensureAlwaysGlobalPiPackages', () => {
     });
 
     it('does not invoke pi install when global package directories already exist', async () => {
-        await fs.ensureDir(path.join(agentDir, 'npm', 'node_modules', 'pi-gitnexus'));
-        await fs.ensureDir(path.join(agentDir, 'npm', 'node_modules', 'pi-serena-tools'));
+        for (const pkg of getXtManagedPiPackages()) {
+            await fs.ensureDir(path.join(agentDir, 'npm', 'node_modules', pkg.id.slice(4)));
+        }
 
         let installCalls = 0;
         const result = await ensureAlwaysGlobalPiPackages(false, undefined, agentDir, () => {
             installCalls += 1;
-            return 0;
+            return { status: 0, stdout: '', stderr: '' };
         });
 
         expect(installCalls).toBe(0);
@@ -117,8 +118,9 @@ describe('ensureAlwaysGlobalPiPackages', () => {
             return { status: 0, stdout: '', stderr: '' };
         });
 
-        expect(installOrder).toEqual(['npm:pi-gitnexus', 'npm:pi-serena-tools']);
-        expect(result.installed).toEqual(['npm:pi-gitnexus', 'npm:pi-serena-tools']);
+        const expectedPackageIds = getXtManagedPiPackages().map(pkg => pkg.id);
+        expect(installOrder).toEqual(expectedPackageIds);
+        expect(result.installed).toEqual(expectedPackageIds);
         expect(result.failed).toEqual([]);
     });
 });

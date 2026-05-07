@@ -67,3 +67,6 @@
 - 2026-05-07: Ignored `.beads/export-state.json` after bd commit/export recreated it as local metadata during session close.
 
 - 2026-05-08: xtrm-basg added provider-injected Pi package freshness states (`missing`, `current`, `outdated`, `version-unknown`) plus canonical xt-managed Pi package inventory tests.
+
+- 2026-05-08: xtrm-ppwi changed global Pi package assurance to cover every `getXtManagedPiPackages()` entry and updated pi-runtime tests to 25 focused passes.
+- 2026-05-08: Repeated shell backtick quoting trap once during xtrm-ppwi close notes; no source damage, but keep using single-quoted bd text only.

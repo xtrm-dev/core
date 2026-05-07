@@ -103,6 +103,48 @@ describe('pi runtime safeguards', () => {
     });
   });
 
+  it('ensures every canonical xt pi package in the global pi agent npm tree', async () => {
+    const { ensureAlwaysGlobalPiPackages, getXtManagedPiPackages } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'global-agent');
+    const installCalls: string[] = [];
+
+    const result = await ensureAlwaysGlobalPiPackages(
+      false,
+      undefined,
+      agentDir,
+      (piPackageId) => {
+        installCalls.push(piPackageId);
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    );
+
+    const expectedPackageIds = getXtManagedPiPackages().map(pkg => pkg.id);
+    expect(installCalls).toEqual(expectedPackageIds);
+    expect(result.installed).toEqual(expectedPackageIds);
+    expect(result.failed).toEqual([]);
+  });
+
+  it('does not treat project pi settings as proof of global package installation', async () => {
+    const { ensureAlwaysGlobalPiPackages, getXtManagedPiPackages } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'global-agent');
+    const projectRoot = path.join(tempRoot, 'project');
+    const projectPackageIds = getXtManagedPiPackages().map(pkg => pkg.id);
+    await fs.outputJson(path.join(projectRoot, '.pi', 'settings.json'), { packages: projectPackageIds });
+
+    const installCalls: string[] = [];
+    await ensureAlwaysGlobalPiPackages(
+      false,
+      undefined,
+      agentDir,
+      (piPackageId) => {
+        installCalls.push(piPackageId);
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    );
+
+    expect(installCalls).toEqual(projectPackageIds);
+  });
+
   it('repairs incorrect @xtrm/pi-core symlink target', async () => {
     const { ensureCorePackageSymlink } = await import('../core/pi-runtime.js');
 

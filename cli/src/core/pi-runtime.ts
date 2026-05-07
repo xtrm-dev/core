@@ -153,11 +153,6 @@ const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:@aliou/pi-processes', displayName: 'pi-processes', required: true },
 ];
 
-const ALWAYS_GLOBAL_INSTALL_PACKAGE_IDS = new Set<string>([
-    'npm:pi-gitnexus',
-    'npm:pi-serena-tools',
-]);
-
 const PROJECT_REQUIRED_PACKAGE_IDS = [
     PROJECT_EXTENSION_PACKAGE_ID,
     ...MANAGED_PACKAGES.map(pkg => pkg.id),
@@ -609,9 +604,7 @@ export async function ensureAlwaysGlobalPiPackages(
     const installed: string[] = [];
     const failed: string[] = [];
 
-    const packagesToEnsure = MANAGED_PACKAGES.filter(pkg => ALWAYS_GLOBAL_INSTALL_PACKAGE_IDS.has(pkg.id));
-
-    for (const pkg of packagesToEnsure) {
+    for (const pkg of getXtManagedPiPackages()) {
         if (await isPackagePresentInPiAgent(agentDir, pkg.id)) {
             continue;
         }
@@ -1130,14 +1123,24 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
         const targetDir = path.join(PI_AGENT_DIR, 'extensions');
         const plan = await inventoryPiRuntime(sourceDir, targetDir);
         renderPiRuntimePlan(plan);
-        if (plan.allPresent) return result;
 
-        const synced = await executePiSync(plan, sourceDir, targetDir, {
-            dryRun,
-            isGlobal: true,
-            removeOrphaned: true,
-        });
-        return mergePiSyncResults(result, synced);
+        if (!plan.allPresent) {
+            const synced = await executePiSync(plan, sourceDir, targetDir, {
+                dryRun,
+                isGlobal: true,
+                removeOrphaned: true,
+            });
+            result.extensionsAdded.push(...synced.extensionsAdded);
+            result.extensionsUpdated.push(...synced.extensionsUpdated);
+            result.extensionsRemoved.push(...synced.extensionsRemoved);
+            result.packagesInstalled.push(...synced.packagesInstalled);
+            result.failed.push(...synced.failed);
+        }
+
+        const alwaysGlobalInstallResult = await ensureAlwaysGlobalPiPackages(dryRun, log);
+        result.packagesInstalled.push(...alwaysGlobalInstallResult.installed);
+        result.failed.push(...alwaysGlobalInstallResult.failed);
+        return result;
     }
 
     const installedPkgIds = getInstalledPiPackages();

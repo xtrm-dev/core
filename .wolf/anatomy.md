@@ -1237,3 +1237,5 @@
 - 2026-05-07: `.beads/export-state.json` is local bd export metadata and should be ignored alongside `.beads/export-state/`.
 
 - 2026-05-08: `cli/src/core/pi-runtime.ts` exports `getXtManagedPiPackages()` and provider-injected `getManagedPiPackageFreshness()` for network-free Pi package freshness classification.
+
+- 2026-05-08: `ensureAlwaysGlobalPiPackages()` now checks all `getXtManagedPiPackages()` entries under global Pi agent npm tree; project `.pi/settings.json` is not proof of global install.
