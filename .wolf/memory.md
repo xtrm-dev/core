@@ -70,3 +70,6 @@
 
 - 2026-05-08: xtrm-ppwi changed global Pi package assurance to cover every `getXtManagedPiPackages()` entry and updated pi-runtime tests to 25 focused passes.
 - 2026-05-08: Repeated shell backtick quoting trap once during xtrm-ppwi close notes; no source damage, but keep using single-quoted bd text only.
+
+- 2026-05-08: xtrm-5nwu wired `xt update` to report global xt Pi package freshness and `--apply` refresh missing/outdated managed packages; targeted update/pi-runtime tests pass 27/27.
+- 2026-05-08: Pi process timers running `sp` crashed with exit 127 even with explicit PATH/absolute sp; use foreground `sleep && sp ps` via bash for this session.
