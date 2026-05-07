@@ -90,6 +90,47 @@ describe('pi runtime safeguards', () => {
     ]);
   });
 
+  it('builds a doctor report for all-present xt pi packages', async () => {
+    const { getXtManagedPiPackageDoctorReport } = await import('../core/pi-runtime.js');
+
+    const versionProvider = vi.fn(async () => ({
+      installedVersion: '1.0.0',
+      expectedVersion: '1.0.0',
+    }));
+    const report = await getXtManagedPiPackageDoctorReport(versionProvider);
+
+    expect(report.hasIssues).toBe(false);
+    expect(report.issues).toEqual([]);
+    expect(versionProvider).toHaveBeenCalledTimes(7);
+  });
+
+  it('builds a doctor report for missing, outdated, and unknown xt pi packages with remediation commands', async () => {
+    const { getXtManagedPiPackageDoctorReport } = await import('../core/pi-runtime.js');
+
+    const report = await getXtManagedPiPackageDoctorReport(async (piPackageId) => {
+      if (piPackageId === 'npm:pi-serena-tools') {
+        return { installedVersion: null, expectedVersion: '1.1.0' };
+      }
+      if (piPackageId === 'npm:pi-gitnexus') {
+        return { installedVersion: '1.0.0', expectedVersion: '1.1.0' };
+      }
+      if (piPackageId === 'npm:@aliou/pi-processes') {
+        return { installedVersion: '1.0.0', expectedVersion: null };
+      }
+      return { installedVersion: '1.0.0', expectedVersion: '1.0.0' };
+    });
+
+    expect(report.hasIssues).toBe(true);
+    expect(report.missing.map(issue => [issue.pkg.id, issue.remediation])).toEqual([
+      ['npm:pi-serena-tools', 'pi install npm:pi-serena-tools'],
+    ]);
+    expect(report.outdated.map(issue => [issue.pkg.id, issue.installedVersion, issue.expectedVersion, issue.remediation])).toEqual([
+      ['npm:pi-gitnexus', '1.0.0', '1.1.0', 'pi install npm:pi-gitnexus'],
+    ]);
+    expect(report.issues.some(issue => issue.state === 'version-unknown' && issue.pkg.id === 'npm:@aliou/pi-processes')).toBe(true);
+    expect(report.issues.find(issue => issue.state === 'version-unknown')?.remediation).toContain('check network/npm registry');
+  });
+
   it('prunes stale pi-dex entries because xtrm-ui already replaces it', async () => {
     const { pruneConflictingPiPackageEntries } = await import('../core/pi-runtime.js');
 

@@ -6,6 +6,7 @@ import kleur from 'kleur';
 import Table from 'cli-table3';
 import { checkDrift, type DriftReport } from '../core/drift.js';
 import { checkRuntimeSkillsViews, type RuntimeViewCheckResult } from '../core/skills-runtime-views.js';
+import { getXtManagedPiPackageDoctorReport, type XtManagedPiPackageDoctorReport } from '../core/pi-runtime.js';
 import { discoverDefaultSkills, type DiscoveredSkill } from '../core/skill-discovery.js';
 
 interface CheckJson {
@@ -46,6 +47,11 @@ interface CatBJson {
   runtimeView: RuntimeViewCheckResult;
   duplicates: string[];
   summary: { ok: number; warnings: number; errors: number };
+}
+
+interface DoctorJson {
+  catB: CatBJson;
+  piPackages: XtManagedPiPackageDoctorReport;
 }
 
 function ok(msg: string) { console.log(`  ${kleur.green('✓')} ${msg}`); }
@@ -262,6 +268,33 @@ function renderCatB(report: CatBJson): void {
   }
 }
 
+function renderXtManagedPiPackages(report: XtManagedPiPackageDoctorReport): boolean {
+  section('Pi packages');
+  if (report.issues.length === 0) {
+    ok('all xt-shipped Pi packages present and current');
+    return true;
+  }
+
+  for (const issue of report.missing) {
+    warn(issue.pkg.displayName.padEnd(28) + ' missing');
+    fix(issue.remediation);
+  }
+
+  for (const issue of report.outdated) {
+    warn(issue.pkg.displayName.padEnd(28) + ' outdated ' + (issue.installedVersion ?? 'unknown') + ' → ' + (issue.expectedVersion ?? 'unknown'));
+    fix(issue.remediation);
+  }
+
+  const unknown = report.issues.filter(issue => issue.state === 'version-unknown');
+  for (const issue of unknown) {
+    warn(issue.pkg.displayName.padEnd(28) + ' version unknown (offline or npm lookup failed)');
+    fix(issue.remediation);
+  }
+
+  console.log(kleur.dim('  outbound: npm view <pkg> version --registry https://registry.npmjs.org'));
+  return false;
+}
+
 function hasCatBIssues(report: CatBJson): boolean {
   return report.skills.some(row => row.status !== 'in-sync')
     || report.hooks.some(row => row.status !== 'in-sync')
@@ -284,18 +317,21 @@ export function createDoctorCommand(): Command {
       const runtimeView = await checkRuntimeSkillsViews(cwd);
       const duplicates = await detectDuplicateCanonicalNames(cwd);
       const catB = await buildCatBJson(registry, cwd, drift, runtimeView, duplicates);
+      const piPackages = await getXtManagedPiPackageDoctorReport();
+      const doctorJson = { catB, piPackages };
 
       if (opts.json) {
-        console.log(JSON.stringify(catB, null, 2));
-        if (hasCatBIssues(catB)) process.exitCode = 1;
+        console.log(JSON.stringify(doctorJson, null, 2));
+        if (piPackages.hasIssues || hasCatBIssues(catB)) process.exitCode = 1;
         return;
       }
 
       console.log(`\n${kleur.bold('xt doctor')}\n`);
       const fragmentsOk = checkClaudeMdFragments(cwd);
+      const piPackagesOk = renderXtManagedPiPackages(piPackages);
       renderCatB(catB);
 
-      const failed = !fragmentsOk || hasCatBIssues(catB);
+      const failed = !fragmentsOk || !piPackagesOk || piPackages.hasIssues || hasCatBIssues(catB);
       if (failed) {
         console.log('');
         console.log(`  ${kleur.yellow('○')} ${kleur.bold('Some checks failed')}  — follow the fix hints above`);

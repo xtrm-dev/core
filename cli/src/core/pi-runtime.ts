@@ -195,6 +195,23 @@ export interface PiPackageAssuranceResult {
     failed: string[];
 }
 
+export interface XtManagedPiPackageDoctorIssue {
+    pkg: ManagedPackage;
+    npmPackageName: string;
+    installedVersion: string | null;
+    expectedVersion: string | null;
+    state: PiPackageFreshnessState;
+    remediation: string;
+}
+
+export interface XtManagedPiPackageDoctorReport {
+    issues: XtManagedPiPackageDoctorIssue[];
+    missing: XtManagedPiPackageDoctorIssue[];
+    outdated: XtManagedPiPackageDoctorIssue[];
+    ok: XtManagedPiPackageDoctorIssue[];
+    hasIssues: boolean;
+}
+
 export interface PiPackageVersionInfo {
     installedVersion: string | null;
     expectedVersion: string | null;
@@ -494,10 +511,13 @@ async function getInstalledPiPackageVersion(agentDir: string, npmPackageName: st
     }
 }
 
+const PI_PACKAGE_VERSION_LOOKUP_TIMEOUT_MS = 5000;
+
 async function getExpectedPiPackageVersion(npmPackageName: string): Promise<string | null> {
     const result = spawnSync('npm', ['view', npmPackageName, 'version', '--registry', NPMJS_REGISTRY_URL], {
         encoding: 'utf8',
         stdio: 'pipe',
+        timeout: PI_PACKAGE_VERSION_LOOKUP_TIMEOUT_MS,
     });
 
     if (result.status !== 0) return null;
@@ -715,6 +735,38 @@ export async function assureXtManagedPiPackages(
     }
 
     return { statuses, missing, outdated, installed, refreshed, failed };
+}
+
+export async function getXtManagedPiPackageDoctorReport(
+    versionProvider: PiPackageVersionProvider = async (_piPackageId, npmPackageName) => ({
+        installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName),
+        expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
+    }),
+): Promise<XtManagedPiPackageDoctorReport> {
+    const statuses = await getManagedPiPackageFreshness(versionProvider, getXtManagedPiPackages());
+    const issues = statuses
+        .filter((status) => status.state !== 'current')
+        .map((status) => ({
+            ...status,
+            remediation: status.state === 'version-unknown'
+                ? 'check network/npm registry, then rerun xt doctor'
+                : 'pi install ' + status.pkg.id,
+        }));
+
+    const missing = issues.filter((issue) => issue.state === 'missing');
+    const outdated = issues.filter((issue) => issue.state === 'outdated');
+    const ok = statuses.filter((status) => status.state === 'current').map((status) => ({
+        ...status,
+        remediation: '',
+    }));
+
+    return {
+        issues,
+        missing,
+        outdated,
+        ok,
+        hasIssues: issues.length > 0,
+    };
 }
 
 /**
