@@ -104,7 +104,7 @@ describe('pi runtime safeguards', () => {
     expect(versionProvider).toHaveBeenCalledTimes(7);
   });
 
-  it('builds a doctor report for missing and outdated xt pi packages with remediation commands', async () => {
+  it('builds a doctor report for missing, outdated, and unknown xt pi packages with remediation commands', async () => {
     const { getXtManagedPiPackageDoctorReport } = await import('../core/pi-runtime.js');
 
     const report = await getXtManagedPiPackageDoctorReport(async (piPackageId) => {
@@ -113,6 +113,9 @@ describe('pi runtime safeguards', () => {
       }
       if (piPackageId === 'npm:pi-gitnexus') {
         return { installedVersion: '1.0.0', expectedVersion: '1.1.0' };
+      }
+      if (piPackageId === 'npm:@aliou/pi-processes') {
+        return { installedVersion: '1.0.0', expectedVersion: null };
       }
       return { installedVersion: '1.0.0', expectedVersion: '1.0.0' };
     });
@@ -124,6 +127,8 @@ describe('pi runtime safeguards', () => {
     expect(report.outdated.map(issue => [issue.pkg.id, issue.installedVersion, issue.expectedVersion, issue.remediation])).toEqual([
       ['npm:pi-gitnexus', '1.0.0', '1.1.0', 'pi install npm:pi-gitnexus'],
     ]);
+    expect(report.issues.some(issue => issue.state === 'version-unknown' && issue.pkg.id === 'npm:@aliou/pi-processes')).toBe(true);
+    expect(report.issues.find(issue => issue.state === 'version-unknown')?.remediation).toContain('check network/npm registry');
   });
 
   it('prunes stale pi-dex entries because xtrm-ui already replaces it', async () => {

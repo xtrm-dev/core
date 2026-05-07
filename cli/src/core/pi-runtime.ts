@@ -511,10 +511,13 @@ async function getInstalledPiPackageVersion(agentDir: string, npmPackageName: st
     }
 }
 
+const PI_PACKAGE_VERSION_LOOKUP_TIMEOUT_MS = 5000;
+
 async function getExpectedPiPackageVersion(npmPackageName: string): Promise<string | null> {
     const result = spawnSync('npm', ['view', npmPackageName, 'version', '--registry', NPMJS_REGISTRY_URL], {
         encoding: 'utf8',
         stdio: 'pipe',
+        timeout: PI_PACKAGE_VERSION_LOOKUP_TIMEOUT_MS,
     });
 
     if (result.status !== 0) return null;
@@ -745,7 +748,9 @@ export async function getXtManagedPiPackageDoctorReport(
         .filter((status) => status.state !== 'current')
         .map((status) => ({
             ...status,
-            remediation: 'pi install ' + status.pkg.id,
+            remediation: status.state === 'version-unknown'
+                ? 'check network/npm registry, then rerun xt doctor'
+                : 'pi install ' + status.pkg.id,
         }));
 
     const missing = issues.filter((issue) => issue.state === 'missing');
