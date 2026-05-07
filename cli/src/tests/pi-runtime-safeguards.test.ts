@@ -44,6 +44,52 @@ describe('pi runtime safeguards', () => {
     expect(getPiPackageInstallFailureHint('npm:pi-gitnexus', output)).toEqual([]);
   });
 
+  it('classifies managed npm-backed pi package freshness with an injectable provider', async () => {
+    const { getManagedPiPackageFreshness } = await import('../core/pi-runtime.js');
+
+    const statuses = await getManagedPiPackageFreshness((piPackageId) => {
+      const versions: Record<string, { installedVersion: string | null; expectedVersion: string | null }> = {
+        'npm:current-package': { installedVersion: '1.2.3', expectedVersion: '1.2.3' },
+        'npm:outdated-package': { installedVersion: '1.2.2', expectedVersion: '1.2.3' },
+        'npm:missing-package': { installedVersion: null, expectedVersion: '1.2.3' },
+        'npm:unknown-package': { installedVersion: '1.2.3', expectedVersion: null },
+      };
+      return versions[piPackageId] ?? { installedVersion: null, expectedVersion: null };
+    }, [
+      { id: 'npm:current-package', displayName: 'current', required: true },
+      { id: 'npm:outdated-package', displayName: 'outdated', required: true },
+      { id: 'npm:missing-package', displayName: 'missing', required: true },
+      { id: 'npm:unknown-package', displayName: 'unknown', required: true },
+    ]);
+
+    expect(statuses.map(status => [
+      status.pkg.id,
+      status.npmPackageName,
+      status.installedVersion,
+      status.expectedVersion,
+      status.state,
+    ])).toEqual([
+      ['npm:current-package', 'current-package', '1.2.3', '1.2.3', 'current'],
+      ['npm:outdated-package', 'outdated-package', '1.2.2', '1.2.3', 'outdated'],
+      ['npm:missing-package', 'missing-package', null, '1.2.3', 'missing'],
+      ['npm:unknown-package', 'unknown-package', '1.2.3', null, 'version-unknown'],
+    ]);
+  });
+
+  it('exposes the canonical xt-managed pi package inventory for freshness checks', async () => {
+    const { getXtManagedPiPackages } = await import('../core/pi-runtime.js');
+
+    expect(getXtManagedPiPackages().map(pkg => pkg.id)).toEqual([
+      'npm:@jaggerxtrm/pi-extensions',
+      'npm:pi-gitnexus',
+      'npm:pi-serena-tools',
+      'npm:@zenobius/pi-worktrees',
+      'npm:@robhowley/pi-structured-return',
+      'npm:@aliou/pi-guardrails',
+      'npm:@aliou/pi-processes',
+    ]);
+  });
+
   it('prunes stale pi-dex entries because xtrm-ui already replaces it', async () => {
     const { pruneConflictingPiPackageEntries } = await import('../core/pi-runtime.js');
 

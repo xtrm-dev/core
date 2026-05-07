@@ -65,3 +65,5 @@
 - 2026-05-07: Session close report updated as same-day SSOT; CHANGELOG gained [Unreleased] entries for session-close-report, releasing, and using-specialists-v3 skill behavior changes.
 
 - 2026-05-07: Ignored `.beads/export-state.json` after bd commit/export recreated it as local metadata during session close.
+
+- 2026-05-08: xtrm-basg added provider-injected Pi package freshness states (`missing`, `current`, `outdated`, `version-unknown`) plus canonical xt-managed Pi package inventory tests.

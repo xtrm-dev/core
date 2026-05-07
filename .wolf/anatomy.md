@@ -1235,3 +1235,5 @@
 - 2026-05-07: Session report path `.xtrm/reports/2026-05-07-986757b.md` is the same-day SSOT handoff; CHANGELOG now uses an `[Unreleased]` block above released versions.
 
 - 2026-05-07: `.beads/export-state.json` is local bd export metadata and should be ignored alongside `.beads/export-state/`.
+
+- 2026-05-08: `cli/src/core/pi-runtime.ts` exports `getXtManagedPiPackages()` and provider-injected `getManagedPiPackageFreshness()` for network-free Pi package freshness classification.

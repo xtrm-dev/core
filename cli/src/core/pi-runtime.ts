@@ -73,6 +73,11 @@ const PI_MCP_ADAPTER_REQUIRED_ENTRY = 'commands.js';
 const PROJECT_EXTENSIONS_ENTRY = '../.xtrm/extensions';
 const PROJECT_SKILLS_ENTRY = '../.xtrm/skills/active';
 const PROJECT_EXTENSION_PACKAGE_ID = 'npm:@jaggerxtrm/pi-extensions';
+const PROJECT_EXTENSION_PACKAGE: ManagedPackage = {
+    id: PROJECT_EXTENSION_PACKAGE_ID,
+    displayName: '@jaggerxtrm/pi-extensions',
+    required: true,
+};
 const CONFLICTING_PI_PACKAGE_IDS = new Set<string>(['npm:pi-dex']);
 const LEGACY_PROJECT_EXTENSION_ENTRIES = new Set<string>([
     PROJECT_EXTENSIONS_ENTRY,
@@ -158,6 +163,10 @@ const PROJECT_REQUIRED_PACKAGE_IDS = [
     ...MANAGED_PACKAGES.map(pkg => pkg.id),
 ];
 
+export function getXtManagedPiPackages(): ManagedPackage[] {
+    return [PROJECT_EXTENSION_PACKAGE, ...MANAGED_PACKAGES];
+}
+
 // ── Inventory ─────────────────────────────────────────────────────────────────
 
 export interface ExtensionStatus {
@@ -170,6 +179,27 @@ export interface ExtensionStatus {
 export interface PackageStatus {
     pkg: ManagedPackage;
     installed: boolean;
+}
+
+export type PiPackageFreshnessState = 'missing' | 'current' | 'outdated' | 'version-unknown';
+
+export interface PiPackageVersionInfo {
+    installedVersion: string | null;
+    expectedVersion: string | null;
+}
+
+export type PiPackageVersionProvider = (
+    piPackageId: string,
+    npmPackageName: string,
+    pkg: ManagedPackage,
+) => PiPackageVersionInfo | Promise<PiPackageVersionInfo>;
+
+export interface PiPackageFreshnessStatus {
+    pkg: ManagedPackage;
+    npmPackageName: string;
+    installedVersion: string | null;
+    expectedVersion: string | null;
+    state: PiPackageFreshnessState;
 }
 
 export interface PiRuntimePlan {
@@ -408,12 +438,8 @@ export interface PiSyncResult {
 
 function getProjectRequiredPackageStatuses(installedPkgIds: readonly string[]): PackageStatus[] {
     return PROJECT_REQUIRED_PACKAGE_IDS.map((packageId) => {
-        const managed = MANAGED_PACKAGES.find((pkg) => pkg.id === packageId);
-        const pkg: ManagedPackage = managed ?? {
-            id: PROJECT_EXTENSION_PACKAGE_ID,
-            displayName: '@jaggerxtrm/pi-extensions',
-            required: true,
-        };
+        const managed = getXtManagedPiPackages().find((pkg) => pkg.id === packageId);
+        const pkg: ManagedPackage = managed ?? PROJECT_EXTENSION_PACKAGE;
 
         return {
             pkg,
@@ -436,6 +462,47 @@ function parseNpmPackageName(piPackageId: string): string | null {
     if (!piPackageId.startsWith('npm:')) return null;
     const npmPackageName = piPackageId.slice(4).trim();
     return npmPackageName.length > 0 ? npmPackageName : null;
+}
+
+function classifyPiPackageFreshness(info: PiPackageVersionInfo): PiPackageFreshnessState {
+    if (!info.installedVersion) return 'missing';
+    if (!info.expectedVersion) return 'version-unknown';
+    return info.installedVersion === info.expectedVersion ? 'current' : 'outdated';
+}
+
+export async function getManagedPiPackageFreshness(
+    versionProvider: PiPackageVersionProvider,
+    packages: readonly ManagedPackage[] = getXtManagedPiPackages(),
+): Promise<PiPackageFreshnessStatus[]> {
+    const statuses: PiPackageFreshnessStatus[] = [];
+
+    for (const pkg of packages) {
+        const npmPackageName = parseNpmPackageName(pkg.id);
+        if (!npmPackageName) {
+            statuses.push({
+                pkg,
+                npmPackageName: '',
+                installedVersion: null,
+                expectedVersion: null,
+                state: 'version-unknown',
+            });
+            continue;
+        }
+
+        const info = await versionProvider(pkg.id, npmPackageName, pkg);
+        const installedVersion = info.installedVersion ?? null;
+        const expectedVersion = info.expectedVersion ?? null;
+
+        statuses.push({
+            pkg,
+            npmPackageName,
+            installedVersion,
+            expectedVersion,
+            state: classifyPiPackageFreshness({ installedVersion, expectedVersion }),
+        });
+    }
+
+    return statuses;
 }
 
 async function isPackagePresentInPiAgent(agentDir: string, piPackageId: string): Promise<boolean> {
