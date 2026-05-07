@@ -195,6 +195,23 @@ export interface PiPackageAssuranceResult {
     failed: string[];
 }
 
+export interface XtManagedPiPackageDoctorIssue {
+    pkg: ManagedPackage;
+    npmPackageName: string;
+    installedVersion: string | null;
+    expectedVersion: string | null;
+    state: PiPackageFreshnessState;
+    remediation: string;
+}
+
+export interface XtManagedPiPackageDoctorReport {
+    issues: XtManagedPiPackageDoctorIssue[];
+    missing: XtManagedPiPackageDoctorIssue[];
+    outdated: XtManagedPiPackageDoctorIssue[];
+    ok: XtManagedPiPackageDoctorIssue[];
+    hasIssues: boolean;
+}
+
 export interface PiPackageVersionInfo {
     installedVersion: string | null;
     expectedVersion: string | null;
@@ -715,6 +732,36 @@ export async function assureXtManagedPiPackages(
     }
 
     return { statuses, missing, outdated, installed, refreshed, failed };
+}
+
+export async function getXtManagedPiPackageDoctorReport(
+    versionProvider: PiPackageVersionProvider = async (_piPackageId, npmPackageName) => ({
+        installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName),
+        expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
+    }),
+): Promise<XtManagedPiPackageDoctorReport> {
+    const statuses = await getManagedPiPackageFreshness(versionProvider, getXtManagedPiPackages());
+    const issues = statuses
+        .filter((status) => status.state !== 'current')
+        .map((status) => ({
+            ...status,
+            remediation: 'pi install ' + status.pkg.id,
+        }));
+
+    const missing = issues.filter((issue) => issue.state === 'missing');
+    const outdated = issues.filter((issue) => issue.state === 'outdated');
+    const ok = statuses.filter((status) => status.state === 'current').map((status) => ({
+        ...status,
+        remediation: '',
+    }));
+
+    return {
+        issues,
+        missing,
+        outdated,
+        ok,
+        hasIssues: issues.length > 0,
+    };
 }
 
 /**

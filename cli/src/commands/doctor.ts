@@ -6,6 +6,7 @@ import kleur from 'kleur';
 import Table from 'cli-table3';
 import { checkDrift, type DriftReport } from '../core/drift.js';
 import { checkRuntimeSkillsViews, type RuntimeViewCheckResult } from '../core/skills-runtime-views.js';
+import { getXtManagedPiPackageDoctorReport } from '../core/pi-runtime.js';
 import { discoverDefaultSkills, type DiscoveredSkill } from '../core/skill-discovery.js';
 
 interface CheckJson {
@@ -262,6 +263,28 @@ function renderCatB(report: CatBJson): void {
   }
 }
 
+function renderXtManagedPiPackages(): Promise<boolean> {
+  section('Pi packages');
+  return getXtManagedPiPackageDoctorReport().then(report => {
+    if (report.issues.length === 0) {
+      ok('all xt-shipped Pi packages present and current');
+      return true;
+    }
+
+    for (const issue of report.missing) {
+      warn(issue.pkg.displayName.padEnd(28) + ' missing');
+      fix(issue.remediation);
+    }
+
+    for (const issue of report.outdated) {
+      warn(issue.pkg.displayName.padEnd(28) + ' outdated ' + (issue.installedVersion ?? 'unknown') + ' → ' + (issue.expectedVersion ?? 'unknown'));
+      fix(issue.remediation);
+    }
+
+    return false;
+  });
+}
+
 function hasCatBIssues(report: CatBJson): boolean {
   return report.skills.some(row => row.status !== 'in-sync')
     || report.hooks.some(row => row.status !== 'in-sync')
@@ -293,9 +316,10 @@ export function createDoctorCommand(): Command {
 
       console.log(`\n${kleur.bold('xt doctor')}\n`);
       const fragmentsOk = checkClaudeMdFragments(cwd);
+      const piPackagesOk = await renderXtManagedPiPackages();
       renderCatB(catB);
 
-      const failed = !fragmentsOk || hasCatBIssues(catB);
+      const failed = !fragmentsOk || !piPackagesOk || hasCatBIssues(catB);
       if (failed) {
         console.log('');
         console.log(`  ${kleur.yellow('○')} ${kleur.bold('Some checks failed')}  — follow the fix hints above`);
