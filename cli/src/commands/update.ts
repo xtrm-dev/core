@@ -87,7 +87,7 @@ function printPiPackages(packageAssurance: Awaited<ReturnType<typeof assureXtMan
 
 export function createUpdateCommand(): Command {
     return new Command('update')
-        .description('Refresh xtrm-managed files for one repo or many')
+        .description('Refresh xtrm-managed files and assure global xt Pi packages for one repo or many; missing or outdated packages are refreshed on --apply')
         .option('--apply', 'Write changes with install force mode', false)
         .option('--root <dir>', 'Walk root and update every repo with .xtrm/registry.json')
         .option('--repo <path>', 'Target one repo path instead of cwd')

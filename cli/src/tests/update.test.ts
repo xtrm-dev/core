@@ -154,4 +154,11 @@ describe('xtrm update', () => {
 
     expect(result.json).toEqual({ repos: [{ repo, status: 'already-current' }], packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [] } });
   });
+
+  it('help mentions package freshness and refresh behavior', async () => {
+    const command = createUpdateCommand();
+    const help = await command.helpInformation();
+    expect(help).toContain('global xt Pi packages');
+    expect(help).toContain('missing or outdated packages');
+  });
 });
