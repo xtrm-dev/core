@@ -1,94 +1,200 @@
 ---
 name: releasing
 description: >-
-  Cut a release with the canonical xt release prepare/publish flow. Use when the
-  operator wants to publish a new tag (vX.Y.Z). Prepare drafts CHANGELOG from xt
-  reports and performs deterministic release-file mutations; publish creates the
-  annotated tag, pushes commits/tags, and can create a GitHub release.
-version: 1.2.0
+  Cut a release end-to-end. Promotes the existing [Unreleased] CHANGELOG block
+  to a dated [vX.Y.Z] section, bumps the package version, rebuilds dist,
+  commits, tags, pushes, and publishes to npm. Optionally dispatches the
+  changelog-keeper specialist to fill gaps in [Unreleased] from xt reports
+  before promotion.
+version: 2.0.0
 ---
 
 # releasing
 
-Canonical release publication via `xt release prepare` and `xt release publish`.
+End-to-end release skill. Drives the release directly with bash; no `xt release`
+wrapper. Assumes `[Unreleased]` in `CHANGELOG.md` is already populated by the
+`session-close-report` skill (Step 6) across the contributing sessions.
 
 ## When to use
 
-The operator wants to cut a release. They say "release it", "ship vX.Y.Z", "cut a tag", or just "release".
+The operator says "release it", "ship vX.Y.Z", "cut a tag", or just "release".
 
-## How
+## Preconditions
 
-1. Determine target version. Default is patch bump from most recent semver tag. Operator may specify `--minor`, `--major`, or explicit version.
+- Working tree clean except whitelisted release artifacts.
+- `CHANGELOG.md` exists with an `[Unreleased]` block.
+- On the publish branch (usually `master`).
+- npm auth set up (`npm whoami` succeeds).
 
-2. Determine tag range. Default is `<latest-tag>..HEAD`. For backfills, operator names `--from` / `--to` explicitly.
+If the project has no `CHANGELOG.md`, stop and ask the operator.
 
-3. Prepare release files:
+## Flow
 
-   ```bash
-   xt release prepare --patch
-   # or: xt release prepare --minor --from <tag> --to HEAD
-   ```
+### 1. Decide version
 
-   `prepare` is the canonical path. It builds the xt report bundle, calls the specialists changelog drafting script (`sp script changelog-keeper`), updates release files, rebuilds dist, and enforces the release scope guard.
+```bash
+git tag --sort=-v:refname | head -3        # last release
+git log <last-tag>..HEAD --oneline | wc -l # commit count since
+```
 
-   Current blocker: until specialists issue `unitAI-dnmcg` lands, `prepare` can fail with `interactive specialists are not allowed` because the changelog drafting specialist is not yet script-compatible. If that happens, do a manual prepare using the same scope rules and then continue with `xt release publish`.
+Default is patch bump. Operator may say `--minor`, `--major`, or specify
+`vX.Y.Z` explicitly. If the in-range work added user-facing surface (new flags,
+new endpoints, new commands), bump minor unless operator says otherwise.
 
-4. Verify release diff before publishing.
+### 2. Inspect [Unreleased]
 
-   ```bash
-   git diff --stat HEAD~1 HEAD
-   git status --short
-   ```
+```bash
+sed -n '/## \[Unreleased\]/,/## \[/p' CHANGELOG.md
+```
 
-   Release diff must be limited to release artifacts such as:
-   - `CHANGELOG.md`
-   - package manifests / lockfile for version sync
-   - generated `cli/dist/**` or `dist/**`
+Decision:
 
-5. Publish:
+- **Populated and complete** (covers the user-facing changes since last tag):
+  proceed to Step 3.
+- **Populated but gappy or sparse** (some sessions skipped Step 6, or the
+  bullets do not match commits): dispatch `changelog-keeper` to reconcile from
+  xt reports, then re-inspect. See "Optional: changelog-keeper dispatch".
+- **Empty** but commits since last tag are pure-internal (refactors,
+  doc-only): proceed; the released section will be near-empty.
+- **Empty** but there are user-facing changes: dispatch `changelog-keeper`.
 
-   ```bash
-   xt release publish
-   # optional GitHub release:
-   xt release publish --gh-release
-   ```
+### 3. Promote [Unreleased] → [vX.Y.Z]
 
-   `publish` creates the annotated tag for the current package version, pushes commits and tags, and optionally creates the GitHub release.
+Edit `CHANGELOG.md`:
 
-6. Confirm:
+- Insert a new empty `## [Unreleased]` block at the top.
+- Rename the previous `[Unreleased]` to `## [vX.Y.Z] — YYYY-MM-DD` (today's
+  date).
+- Keep the section bodies (Added / Changed / Fixed / etc.) untouched.
 
-   ```bash
-   git tag --list 'v*' | tail -3
-   git log --oneline -1
-   git status --short --branch
-   ```
+### 4. Bump version
+
+```bash
+# package.json: "version": "X.Y.Z"
+# package-lock.json: "version" appears at top and inside packages[""]
+```
+
+Edit both. Other lockfiles (bun.lock, pnpm-lock) generally do not encode the
+top-level version — skip unless the project does.
+
+### 5. Build
+
+```bash
+npm run build
+git status --short
+```
+
+Tracked `dist/**` may or may not change (often byte-identical when HEAD
+already had a fresh build).
+
+### 6. Verify release scope
+
+```bash
+git status --short
+git diff --stat
+```
+
+Allowed paths only:
+
+- `CHANGELOG.md`
+- `package.json`
+- `package-lock.json` (if tracked)
+- `dist/**` (if tracked)
+
+Anything else dirty → stop, fix scope, retry. Stash unrelated untracked files
+(e.g. downstream specialist leakage in `.specialists/user/`) before continuing.
+
+### 7. Commit, tag, push
+
+```bash
+git add CHANGELOG.md package.json package-lock.json dist/   # only what's tracked
+git commit -m "release: vX.Y.Z"
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin <branch>
+git push origin vX.Y.Z
+```
+
+### 8. Publish to npm
+
+```bash
+npm publish --access public    # --access public for scoped packages
+```
+
+### 9. Refresh global toolchain
+
+If this project ships a CLI the operator uses globally:
+
+```bash
+npm i -g <package>@X.Y.Z
+<cli> --version
+```
+
+### 10. Confirm
+
+```bash
+git tag --list 'v*' | tail -3
+git log --oneline -1
+git status --short
+npm view <package> version
+```
+
+### 11. Optional: GitHub release
+
+```bash
+gh release create vX.Y.Z --notes "$(sed -n '/## \[vX.Y.Z\]/,/## \[/p' CHANGELOG.md | head -n -1)"
+```
+
+## Optional: changelog-keeper dispatch
+
+When `[Unreleased]` is empty or sparse and user-facing work shipped, file a
+small bead and dispatch `changelog-keeper`:
+
+```text
+TITLE: Fill [Unreleased] from <prev-tag>..HEAD
+PROBLEM: [Unreleased] is missing entries for sessions <list> which shipped user-facing changes; release vX.Y.Z is being cut.
+SUCCESS: [Unreleased] reflects every user-facing change in the range, in Keep-a-Changelog format.
+SCOPE: CHANGELOG.md only.
+REFERENCES: .xtrm/reports/<prev-tag-date>..<today> (filtered to in-range), recent commit subjects.
+NON_GOALS: no version bump, no build, no commit, no tag — skill owns those.
+CONSTRAINTS: edit CHANGELOG.md only; one bullet per change; bead refs in parens; sections Added / Changed / Fixed / Removed / Deprecated / Security; do not invent entries not grounded in reports or commits.
+VALIDATION: diff shows only [Unreleased] body changed; bullets cover the report set.
+OUTPUT: updated CHANGELOG.md with populated [Unreleased].
+```
+
+```bash
+sp run changelog-keeper --bead <bead-id>
+```
+
+After it returns, re-inspect `[Unreleased]` and proceed to Step 3. Skill — not
+keeper — owns version bump, build, commit, tag, push, publish.
 
 ## Why this design
 
-- `xt` owns deterministic release mutation: changelog insertion, version bump, build, scope guard, commit/tag/push.
-- The specialist owns only changelog drafting from xt reports through a script-compatible, READ_ONLY surface.
-- xt reports are synthesis input, not raw git log + bd query. Reports are pre-curated, signal-rich, written in user-facing language.
-- `xt release publish` is intentionally separate so operators can inspect prepared release files before pushing the tag.
-
-## Manual fallback while unitAI-dnmcg is open
-
-If `xt release prepare` fails on the changelog script compatibility guard:
-
-1. Draft the CHANGELOG section manually from `.xtrm/reports/` and recent commits.
-2. Bump package versions and lockfile.
-3. Run `npm run build`.
-4. Commit with `release: vX.Y.Z`.
-5. Run `xt release publish`.
-
-Do not broaden the release diff beyond release artifacts.
+- `session-close-report` already drafts user-facing prose per session and
+  appends to `[Unreleased]` (Step 6 of that skill). The release-time work is
+  therefore small: promote, bump, build, commit, tag, push, publish.
+- Keeping the deterministic mutations in bash (driven by this skill) avoids
+  three failure modes seen with the old `xt release` wrapper: hardcoded
+  workspace paths, wrong specialist invocation, and a regex template engine
+  that over-greedy-matches `$VAR` patterns inside report prose.
+- The `changelog-keeper` specialist is now CHANGELOG-only and only invoked on
+  demand to fill gaps. It does not own commits, tags, pushes, or builds.
 
 ## Parallel sessions
 
-Each orchestrator runs this skill in its own session. Specialist commits + tags + pushes atomically. If two sessions try same version, first push wins; second sees remote tag conflict and aborts cleanly. Operator picks next version and retries.
+Two operators racing the same version: first `git push origin vX.Y.Z` wins;
+second sees a non-fast-forward / tag-exists error and aborts. Operator picks
+the next version and retries.
 
 ## Don't
 
-- Don't call `sp release prepare` / `sp release publish` as the canonical path. They are deprecated aliases in specialists.
-- Don't bypass `xt release publish` for tag/push unless the command itself is broken.
-- Don't broaden release diffs with source/docs/config changes. File a separate bead for non-release work.
-- Don't pre-stage unrelated files. The release scope guard should see a clean tree except allowed release artifacts.
+- Don't call `xt release prepare` / `xt release publish` — retired. See
+  `unitAI-g29jv`.
+- Don't broaden the release diff with source/docs/config changes. File a
+  separate bead.
+- Don't pre-stage unrelated files. The release scope check should see a clean
+  tree except whitelisted release artifacts.
+- Don't invent CHANGELOG entries from `git log -p`. The reports + existing
+  `[Unreleased]` are the input.
+- Don't `git push --force` or rewrite tags. If a release ships wrong, cut a
+  patch.
