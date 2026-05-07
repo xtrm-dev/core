@@ -124,6 +124,39 @@ describe('pi runtime safeguards', () => {
     expect(result.failed).toEqual([]);
   });
 
+  it('reports missing and outdated xt pi packages and refreshes only stale ones', async () => {
+    const { assureXtManagedPiPackages } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'global-agent');
+    const packageVersions: Record<string, { installedVersion: string | null; expectedVersion: string | null }> = {
+      'npm:pi-gitnexus': { installedVersion: null, expectedVersion: '1.0.0' },
+      'npm:pi-serena-tools': { installedVersion: '1.0.0', expectedVersion: '1.1.0' },
+      'npm:@zenobius/pi-worktrees': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
+      'npm:@robhowley/pi-structured-return': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
+      'npm:@aliou/pi-guardrails': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
+      'npm:@aliou/pi-processes': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
+      'npm:@jaggerxtrm/pi-extensions': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
+    };
+    const installCalls: string[] = [];
+
+    const result = await assureXtManagedPiPackages(
+      false,
+      undefined,
+      agentDir,
+      (piPackageId) => {
+        installCalls.push(piPackageId);
+        return { status: 0, stdout: '', stderr: '' };
+      },
+      async (piPackageId) => packageVersions[piPackageId] ?? { installedVersion: null, expectedVersion: null },
+    );
+
+    expect(result.missing.map(status => status.pkg.id)).toEqual(['npm:pi-gitnexus']);
+    expect(result.outdated.map(status => status.pkg.id)).toEqual(['npm:pi-serena-tools']);
+    expect(installCalls).toEqual(['npm:pi-gitnexus', 'npm:pi-serena-tools']);
+    expect(result.installed).toEqual(['npm:pi-gitnexus']);
+    expect(result.refreshed).toEqual(['npm:pi-serena-tools']);
+    expect(result.failed).toEqual([]);
+  });
+
   it('does not treat project pi settings as proof of global package installation', async () => {
     const { ensureAlwaysGlobalPiPackages, getXtManagedPiPackages } = await import('../core/pi-runtime.js');
     const agentDir = path.join(tempRoot, 'global-agent');

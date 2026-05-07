@@ -178,6 +178,23 @@ export interface PackageStatus {
 
 export type PiPackageFreshnessState = 'missing' | 'current' | 'outdated' | 'version-unknown';
 
+export interface PiPackageAssuranceStatus {
+    pkg: ManagedPackage;
+    npmPackageName: string;
+    installedVersion: string | null;
+    expectedVersion: string | null;
+    state: PiPackageFreshnessState;
+}
+
+export interface PiPackageAssuranceResult {
+    statuses: PiPackageAssuranceStatus[];
+    missing: PiPackageAssuranceStatus[];
+    outdated: PiPackageAssuranceStatus[];
+    installed: string[];
+    refreshed: string[];
+    failed: string[];
+}
+
 export interface PiPackageVersionInfo {
     installedVersion: string | null;
     expectedVersion: string | null;
@@ -465,6 +482,30 @@ function classifyPiPackageFreshness(info: PiPackageVersionInfo): PiPackageFreshn
     return info.installedVersion === info.expectedVersion ? 'current' : 'outdated';
 }
 
+async function getInstalledPiPackageVersion(agentDir: string, npmPackageName: string): Promise<string | null> {
+    const packageJsonPath = path.join(agentDir, 'npm', 'node_modules', npmPackageName, 'package.json');
+    if (!await fs.pathExists(packageJsonPath)) return null;
+
+    try {
+        const packageJson = await fs.readJson(packageJsonPath) as { version?: unknown };
+        return typeof packageJson.version === 'string' ? packageJson.version : null;
+    } catch {
+        return null;
+    }
+}
+
+async function getExpectedPiPackageVersion(npmPackageName: string): Promise<string | null> {
+    const result = spawnSync('npm', ['view', npmPackageName, 'version', '--registry', NPMJS_REGISTRY_URL], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+    });
+
+    if (result.status !== 0) return null;
+
+    const version = (result.stdout ?? '').trim();
+    return version.length > 0 ? version : null;
+}
+
 export async function getManagedPiPackageFreshness(
     versionProvider: PiPackageVersionProvider,
     packages: readonly ManagedPackage[] = getXtManagedPiPackages(),
@@ -629,6 +670,51 @@ export async function ensureAlwaysGlobalPiPackages(
     }
 
     return { installed, failed };
+}
+
+export async function assureXtManagedPiPackages(
+    dryRun: boolean,
+    log?: (message: string) => void,
+    agentDir: string = PI_AGENT_DIR,
+    installRunner: PiPackageInstallRunner = runPiPackageInstall,
+    versionProvider: PiPackageVersionProvider = async (_piPackageId, npmPackageName) => ({
+        installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName),
+        expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
+    }),
+): Promise<PiPackageAssuranceResult> {
+    const statuses = await getManagedPiPackageFreshness(versionProvider);
+    const missing = statuses.filter((status) => status.state === 'missing');
+    const outdated = statuses.filter((status) => status.state === 'outdated');
+    const installed: string[] = [];
+    const refreshed: string[] = [];
+    const failed: string[] = [];
+
+    for (const status of [...missing, ...outdated]) {
+        if (dryRun) {
+            log?.('[DRY RUN] pi install ' + status.pkg.id);
+            continue;
+        }
+
+        const installAttempt = installPiPackageWithFallback(status.pkg.id, log, installRunner);
+        if (installAttempt.status === 0) {
+            if (status.state === 'missing') {
+                installed.push(status.pkg.id);
+                log?.(sym.ok + ' ' + status.pkg.displayName);
+            } else {
+                refreshed.push(status.pkg.id);
+                log?.(sym.ok + ' ' + status.pkg.displayName + ' (refreshed)');
+            }
+            continue;
+        }
+
+        failed.push(status.pkg.id);
+        log?.(kleur.yellow('⚠ ' + status.pkg.displayName + ' — ' + status.state + ' package update failed'));
+        for (const hint of getPiPackageInstallFailureHint(status.pkg.id, installAttempt.output)) {
+            log?.(kleur.yellow('  → ' + hint));
+        }
+    }
+
+    return { statuses, missing, outdated, installed, refreshed, failed };
 }
 
 /**
