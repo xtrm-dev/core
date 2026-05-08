@@ -21,13 +21,13 @@ async function walkUp(startDir: string, predicate: (dir: string) => Promise<bool
 async function isSourceRepoRoot(dir: string): Promise<boolean> {
   const skillsPath = path.join(dir, 'skills');
   const hooksPath = path.join(dir, 'hooks');
-  return fs.pathExists(skillsPath) && fs.pathExists(hooksPath);
+  return (await fs.pathExists(skillsPath)) && (await fs.pathExists(hooksPath));
 }
 
 async function isProjectRoot(dir: string): Promise<boolean> {
   const xtrmPath = path.join(dir, '.xtrm');
   const gitPath = path.join(dir, '.git');
-  return fs.pathExists(xtrmPath) || fs.pathExists(gitPath);
+  return (await fs.pathExists(xtrmPath)) || (await fs.pathExists(gitPath));
 }
 
 /**

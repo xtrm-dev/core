@@ -3,6 +3,31 @@ import prompts from 'prompts';
 import kleur from 'kleur';
 import type { PreflightPlan, TargetPlan, OptionalServerItem } from './preflight.js';
 
+interface ChoiceValue {
+    type: 'file' | 'mcp-core' | 'mcp-optional';
+    target?: string;
+    name?: string;
+    status?: 'missing' | 'outdated' | 'drifted';
+    category?: string;
+    agent?: string | null;
+    server?: OptionalServerItem;
+}
+
+interface PromptChoice {
+    title: string;
+    value?: ChoiceValue | null;
+    disabled?: boolean;
+    selected?: boolean;
+}
+
+function hasValue(choice: PromptChoice): choice is PromptChoice & { value: ChoiceValue } {
+    return choice.value !== null && choice.value !== undefined;
+}
+
+function isSelectedDefault(choice: PromptChoice): choice is PromptChoice & { value: ChoiceValue; selected: true } {
+    return choice.selected === true && hasValue(choice);
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface SelectedFileItem {
@@ -14,7 +39,7 @@ export interface SelectedFileItem {
 
 export interface SelectedMcpItem {
     target: string;
-    agent: string;
+    agent: string | null;
     name: string;
 }
 
@@ -23,7 +48,7 @@ export interface SelectedPlan {
     mcpCore: SelectedMcpItem[];
     optionalServers: OptionalServerItem[];
     repoRoot: string;
-    syncMode: 'copy' | 'symlink';
+    syncMode: PreflightPlan['syncMode'];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -34,9 +59,9 @@ const STATUS_LABEL: Record<string, string> = {
     drifted:  kleur.magenta('[≠]'),   // magenta = conflict/divergence
 };
 
-function fileChoices(target: TargetPlan): any[] {
+function fileChoices(target: TargetPlan): PromptChoice[] {
     if (target.files.length === 0) return [];
-    const choices: any[] = [
+    const choices: PromptChoice[] = [
         { title: kleur.bold().dim(`  ── ${target.label} files ──`), disabled: true, value: null },
     ];
     for (const f of target.files) {
@@ -51,12 +76,12 @@ function fileChoices(target: TargetPlan): any[] {
     return choices;
 }
 
-function mcpCoreChoices(target: TargetPlan): any[] {
+function mcpCoreChoices(target: TargetPlan): PromptChoice[] {
     const uninstalled = target.mcpCore.filter(m => !m.installed);
     const installed   = target.mcpCore.filter(m => m.installed);
     if (target.mcpCore.length === 0) return [];
 
-    const choices: any[] = [
+    const choices: PromptChoice[] = [
         { title: kleur.bold().dim(`  ── ${target.label} MCP servers ──`), disabled: true, value: null },
     ];
     for (const m of uninstalled) {
@@ -76,9 +101,9 @@ function mcpCoreChoices(target: TargetPlan): any[] {
     return choices;
 }
 
-function optionalChoices(optionalServers: OptionalServerItem[]): any[] {
+function optionalChoices(optionalServers: OptionalServerItem[]): PromptChoice[] {
     if (optionalServers.length === 0) return [];
-    const choices: any[] = [
+    const choices: PromptChoice[] = [
         { title: kleur.bold().dim('  ── optional servers ──'), disabled: true, value: null },
     ];
     for (const s of optionalServers) {
@@ -98,7 +123,7 @@ export async function interactivePlan(
     plan: PreflightPlan,
     opts: { dryRun?: boolean; yes?: boolean } = {}
 ): Promise<SelectedPlan | null> {
-    const allChoices = [
+    const allChoices: PromptChoice[] = [
         ...plan.targets.flatMap(t => [...fileChoices(t), ...mcpCoreChoices(t)]),
         ...optionalChoices(plan.optionalServers),
     ].filter(c => c.title); // remove any undefined entries
@@ -125,7 +150,7 @@ export async function interactivePlan(
 
     if (opts.yes) {
         // Select all pre-selected defaults, skip prompt
-        const selected = allChoices.filter(c => !c.disabled && c.selected && c.value).map(c => c.value);
+        const selected = allChoices.filter(isSelectedDefault).map(choice => choice.value);
         return buildSelectedPlan(selected, plan);
     }
 
@@ -148,18 +173,18 @@ export async function interactivePlan(
     return buildSelectedPlan(response.selected, plan);
 }
 
-function buildSelectedPlan(selected: any[], plan: PreflightPlan): SelectedPlan {
+function buildSelectedPlan(selected: ChoiceValue[], plan: PreflightPlan): SelectedPlan {
     const files: SelectedFileItem[] = selected
-        .filter(v => v?.type === 'file')
-        .map(v => ({ target: v.target, name: v.name, status: v.status, category: v.category }));
+        .filter((value): value is ChoiceValue & { type: 'file'; target: string; name: string; status: SelectedFileItem['status']; category: string } => value.type === 'file')
+        .map(value => ({ target: value.target, name: value.name, status: value.status, category: value.category }));
 
     const mcpCore: SelectedMcpItem[] = selected
-        .filter(v => v?.type === 'mcp-core')
-        .map(v => ({ target: v.target, agent: v.agent, name: v.name }));
+        .filter((value): value is ChoiceValue & { type: 'mcp-core'; target: string; name: string; agent: string | null } => value.type === 'mcp-core')
+        .map(value => ({ target: value.target, agent: value.agent, name: value.name }));
 
     const optionalServers: OptionalServerItem[] = selected
-        .filter(v => v?.type === 'mcp-optional')
-        .map(v => v.server);
+        .filter((value): value is ChoiceValue & { type: 'mcp-optional'; server: OptionalServerItem } => value.type === 'mcp-optional')
+        .map(value => value.server);
 
     return { files, mcpCore, optionalServers, repoRoot: plan.repoRoot, syncMode: plan.syncMode };
 }
