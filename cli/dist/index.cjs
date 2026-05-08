@@ -50380,9 +50380,14 @@ async function compareItem(category, item, repoPath, systemPath, changeSet, prun
 }
 
 // src/commands/init.ts
-var PKG_ROOT = resolvePackageRoot2();
-var MCP_CORE_CONFIG_PATH = import_path15.default.join(PKG_ROOT, ".xtrm", "config", "claude.mcp.json");
-var INSTRUCTIONS_DIR = import_path15.default.join(PKG_ROOT, ".xtrm", "config", "instructions");
+var cachedPackageRoot;
+function getPackageRoot() {
+  cachedPackageRoot ??= resolvePackageRoot2();
+  return cachedPackageRoot;
+}
+function getInstructionsDir() {
+  return import_path15.default.join(getPackageRoot(), ".xtrm", "config", "instructions");
+}
 var XTRM_BLOCK_START = "<!-- xtrm:start -->";
 var XTRM_BLOCK_END = "<!-- xtrm:end -->";
 function parseComposeServices(content) {
@@ -50464,7 +50469,7 @@ async function injectProjectInstructionHeaders(projectRoot) {
   ];
   console.log(kleur_default.bold("Injecting xtrm agent instruction headers..."));
   for (const target of targets) {
-    const templatePath = import_path15.default.join(INSTRUCTIONS_DIR, target.template);
+    const templatePath = import_path15.default.join(getInstructionsDir(), target.template);
     if (!await import_fs_extra21.default.pathExists(templatePath)) {
       console.log(kleur_default.yellow(`  \u26A0 Missing template: ${target.template}`));
       continue;
@@ -50667,7 +50672,7 @@ async function runProjectInit(opts = {}) {
   }
   await runMachineBootstrapPhase({ dryRun: false });
   await runClaudeRuntimeSyncPhase({ repoRoot: projectRoot, dryRun: false, isGlobal: false });
-  const packageRoot = PKG_ROOT;
+  const packageRoot = getPackageRoot();
   const ctx = await getContext({
     createMissingDirs: true,
     isGlobal: opts.global,
