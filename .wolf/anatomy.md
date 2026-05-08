@@ -1243,3 +1243,5 @@
 - 2026-05-08: `xt update` package assurance lives in `cli/src/commands/update.ts` via `assureXtManagedPiPackages()` from `cli/src/core/pi-runtime.ts`; dry-run reports stale packages, `--apply` refreshes managed missing/outdated packages only.
 
 - 2026-05-08: xt doctor package health lives in cli/src/commands/doctor.ts and cli/src/core/pi-runtime.ts via getXtManagedPiPackageDoctorReport(); JSON includes piPackages and text renders Pi packages section.
+
+- 2026-05-08: Session close report for Pi package hardening stored at .xtrm/reports/2026-05-08-030283f.md; CHANGELOG [Unreleased] documents xtrm-basg/xtrm-ppwi/xtrm-5nwu/xtrm-modr.

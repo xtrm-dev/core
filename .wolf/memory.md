@@ -76,3 +76,5 @@
 
 - 2026-05-08: xtrm-modr wired xt doctor global Pi package health into text and JSON using piPackages; missing/outdated/version-unknown report remediation, doctor never installs, npm lookup is timeout-bounded.
 - 2026-05-08: Repeated shell backtick quoting trap during reviewer resume; always use single-quoted or heredoc payloads for sp/bd text.
+
+- 2026-05-08: Session report .xtrm/reports/2026-05-08-030283f.md summarizes Pi package hardening stack and changelog sync; xtrm-6xus tracks deferred operator docs sync.
