@@ -2,9 +2,9 @@
 title: CLI Architecture
 scope: cli-architecture
 category: reference
-version: 1.6.0
-updated: 2026-04-13
-synced_at: f1f6b5de
+version: 1.7.0
+updated: 2026-05-08
+synced_at: 477fe83
 source_of_truth_for:
   - "cli/src/**/*.ts"
 domain: [cli]
@@ -40,6 +40,8 @@ xt / xtrm
 ├── init             → commands/init.ts
 ├── clean            → commands/clean.ts
 ├── status           → commands/status.ts
+├── update           → commands/update.ts → core/registry-scaffold.ts + core/pi-runtime.ts
+├── doctor           → commands/doctor.ts → core/drift.ts + core/pi-runtime.ts
 ├── docs             → commands/docs.ts
 │   ├── docs show         → displays frontmatter for README, CHANGELOG, docs/*.md
 │   ├── docs list         → inventories markdown docs with metadata and cache support
@@ -59,6 +61,8 @@ xt / xtrm
 │   └── skills create-pack → create user pack scaffold with PACK.json
 └── help             → commands/help.ts
 ```
+
+`update` and `doctor` both consume Pi package health helpers from `core/pi-runtime.ts`. `update` can mutate: dry-run reports stale packages and `--apply` refreshes only missing/outdated xt-managed Pi packages. `doctor` is report-only: text renders a **Pi packages** section and JSON includes `piPackages`; missing/outdated/version-unknown states set a failing health result with remediation.
 
 The `docs` command family is intentionally split into:
 - `show` for direct frontmatter inspection
@@ -129,6 +133,36 @@ Registers `xt merge`, another specialist-backed wrapper.
 - maps `--no-beads` to a beadless specialist run
 - leaves queue semantics to the specialist: find open `xt/*` PRs, sort FIFO, gate on CI, merge the head PR with rebase, then rebase and force-push the remaining queued branches
 - uses `ora` plus a captured tail so the merge queue can be monitored without dumping the full specialist transcript into the terminal
+
+
+### `commands/doctor.ts`
+
+**`createDoctorCommand()`**
+
+Registers `xt doctor`, the project health command for xtrm-managed surfaces. It combines:
+
+- Cat B asset drift (`core/drift.ts`) for files installed under `.xtrm/`
+- runtime skill view readiness and duplicate canonical skill-name checks
+- global xt-managed Pi package health from `getXtManagedPiPackageDoctorReport()`
+
+Text output includes a **Pi packages** section. JSON output has shape `{ catB, piPackages }`. `piPackages` contains `ok`, `missing`, `outdated`, `issues`, and `hasIssues`; `version-unknown` indicates npm/latest lookup failed or the operator is offline. Doctor prints remediation but never installs packages.
+
+### `commands/update.ts`
+
+**`createUpdateCommand()`**
+
+Registers `xt update`, the xtrm-managed asset refresh command for one repo or many. For each target repo it calls the registry scaffold/update path, then runs `assureXtManagedPiPackages()` once for the session:
+
+- dry-run reports missing/outdated xt-managed Pi packages without writing
+- `--apply` refreshes only `missing` and `outdated` managed packages via `pi install <package>`
+- unrelated user packages are preserved because package operations are additive and limited to the canonical managed inventory
+- JSON output includes `{ repos, packages }` where `packages` mirrors the assurance result
+
+### `core/pi-runtime.ts`
+
+The Pi runtime module owns the canonical xt-managed package inventory and package health contracts. Use `getXtManagedPiPackages()` rather than hard-coded package allowlists. The inventory currently includes `npm:@jaggerxtrm/pi-extensions`, `npm:pi-gitnexus`, `npm:pi-serena-tools`, `npm:@zenobius/pi-worktrees`, `npm:@robhowley/pi-structured-return`, `npm:@aliou/pi-guardrails`, and `npm:@aliou/pi-processes`.
+
+`getManagedPiPackageFreshness()` is provider-injected and network-free; command layers supply installed/latest version providers. `assureXtManagedPiPackages()` drives update/apply behavior. `getXtManagedPiPackageDoctorReport()` adapts the same freshness states for doctor output.
 
 ### `commands/report.ts`
 

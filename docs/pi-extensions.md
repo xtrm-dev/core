@@ -2,14 +2,16 @@
 title: Pi Extensions Reference
 scope: pi-extensions
 category: reference
-version: 2.0.0
-updated: 2026-04-13
-synced_at: f1f6b5de
+version: 2.1.0
+updated: 2026-05-08
+synced_at: 477fe83
 source_of_truth_for:
   - "packages/pi-extensions/package.json"
   - "packages/pi-extensions/extensions/**/index.ts"
   - "packages/pi-extensions/extensions/**/package.json"
   - "cli/src/core/pi-runtime.ts"
+  - "cli/src/commands/update.ts"
+  - "cli/src/commands/doctor.ts"
 domain: [pi, extensions]
 ---
 
@@ -33,7 +35,9 @@ Pi extensions use a **package-install model**:
 
 1. **Source of truth**: `packages/pi-extensions/extensions/<name>/` + `packages/pi-extensions/src/core/`
 2. **Distribution unit**: `npm:@jaggerxtrm/pi-extensions`
-3. **Runtime wiring**: project `.pi/settings.json` includes `npm:@jaggerxtrm/pi-extensions` in `packages`
+3. **Runtime wiring**: project `.pi/settings.json` includes `npm:@jaggerxtrm/pi-extensions` in `packages`; global/user Pi package assurance also checks every xt-managed Pi package
+
+The canonical xt-managed package inventory is shared by runtime sync, `xt update`, and `xt doctor`: `npm:@jaggerxtrm/pi-extensions`, `npm:pi-gitnexus`, `npm:pi-serena-tools`, `npm:@zenobius/pi-worktrees`, `npm:@robhowley/pi-structured-return`, `npm:@aliou/pi-guardrails`, and `npm:@aliou/pi-processes`.
 
 There is no supported runtime flow that depends on `config/pi/extensions/**` or `.xtrm/config/pi/extensions/**`.
 
@@ -91,7 +95,8 @@ Pi discovers the package using:
 xtrm pi install     # install/verify runtime packages + settings wiring
 xtrm pi setup       # interactive first-time setup
 xtrm pi status      # show extension/package inventory
-xtrm pi doctor      # diagnose issues
+xtrm pi doctor      # diagnose Pi runtime install/settings/package issues
+xt doctor           # diagnose project assets + global xt-managed Pi package freshness
 xtrm pi reload      # force reload after manual edits
 ```
 
@@ -103,11 +108,14 @@ xtrm pi reload      # force reload after manual edits
 |-------|--------|
 | Missing `npm:@jaggerxtrm/pi-extensions` | Run `pi install npm:@jaggerxtrm/pi-extensions` |
 | Missing `.pi/settings.json` | Create file and write managed `packages` + `skills` entries |
+| Missing canonical xt-managed package in the user Pi package store | Run `pi install <package>` during runtime sync/update apply |
+| Outdated canonical xt-managed package | `xt update` reports it; `xt update --apply` refreshes it |
+| Unknown latest package version | `xt doctor` reports `version-unknown` and asks the operator to check npm/network, then rerun doctor |
 | Legacy `.pi/extensions/<managed-id>` real copies | Remove legacy copies during cleanup |
 
 ### Worktree Compatibility
 
-Worktrees reuse the same package model; no extension source mirroring from legacy config paths is required.
+Worktrees reuse the same package model; no extension source mirroring from legacy config paths is required. Worktree Pi sessions should not treat project `.pi/settings.json` alone as proof that xt-managed packages are installed — health checks inspect package presence/version through the shared Pi package inventory.
 
 ## Active Extensions
 
@@ -159,6 +167,8 @@ Adds `… +N more lines` indicator when truncated. Respects expanded view toggle
 ## Notes
 
 - Managed XTRM extensions are delivered through `npm:@jaggerxtrm/pi-extensions`.
+- `xt doctor` is report-only: it checks package freshness and prints remediation, but never installs or updates packages.
+- `xt update --apply` is the command that refreshes missing/outdated xt-managed Pi packages.
 - Use `pi install -l` only for ad-hoc third-party/local extensions outside the managed set.
 - Legacy `config/pi/extensions/**` and `.xtrm/config/pi/extensions/**` trees are retired.
 - Shared core helpers now live in `packages/pi-extensions/src/core/`.

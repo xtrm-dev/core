@@ -2,13 +2,16 @@
 title: .xtrm Directory Reference
 scope: xtrm-directory
 category: reference
-version: 1.2.0
-updated: 2026-04-13
-synced_at: f1f6b5de
+version: 1.3.0
+updated: 2026-05-08
+synced_at: 477fe83
 description: "Centralized xtrm configuration and runtime data directory"
 source_of_truth_for:
   - ".xtrm/**"
   - "packages/pi-extensions/package.json"
+  - "cli/src/core/pi-runtime.ts"
+  - "cli/src/commands/update.ts"
+  - "cli/src/commands/doctor.ts"
 domain: [config, xtrm]
 ---
 
@@ -34,7 +37,7 @@ domain: [config, xtrm]
 | `.claude/hooks/` | `.xtrm/hooks/` | Hook scripts |
 | `.claude/settings.json` hooks | `.xtrm/hooks/` + policy compile | Hook configuration |
 | `.agents/skills/` | `.xtrm/skills/` | Skills tier architecture |
-| `.pi/extensions/` symlink | `packages/pi-extensions/extensions/` + global symlinks | Pi extension packages |
+| `.pi/extensions/` managed copies/symlinks | `npm:@jaggerxtrm/pi-extensions` + `.pi/settings.json` package entry | Pi extension package |
 | `.pi/skills/` | `.xtrm/skills/active/pi/` | Runtime active view |
 | Worktree sibling dirs | `.xtrm/worktrees/` | Git worktrees |
 
@@ -92,14 +95,17 @@ Pi extensions are delivered via npm package installation:
 
 1. **Source**: `packages/pi-extensions/extensions/<name>/` in the xtrm-tools monorepo
 2. **Distribution**: `npm:@jaggerxtrm/pi-extensions` — published to npm registry
-3. **Project install**: `pi install npm:@jaggerxtrm/pi-extensions` — registered in `.pi/settings.json` `packages` key
-4. **Runtime load**: Pi discovers extensions via `keywords: ["pi-package"]` + `pi.extensions: ["./src/index.ts"]`
+3. **Project wiring**: `.pi/settings.json` records `npm:@jaggerxtrm/pi-extensions` and `.xtrm/skills/active` so Pi loads the project runtime
+4. **Package assurance**: `xt pi`, `xt update`, and `xt doctor` share the canonical xt-managed Pi package inventory from `cli/src/core/pi-runtime.ts`
+5. **Runtime load**: Pi discovers extensions via `keywords: ["pi-package"]` + `pi.extensions: ["./src/index.ts"]`
 
 This means:
 - Extensions are versioned and published independently of the main xtrm-tools package
-- `xt pi install` ensures the package is installed in `.pi/npm/node_modules/@jaggerxtrm/pi-extensions`
-- Worktrees automatically share extensions (`.pi/npm` symlinked to main repo)
-- No symlink maintenance or duplicate discovery issues
+- `xt pi install` ensures the extension package is registered and installed for Pi runtime use
+- `xt update` dry-run reports missing/outdated xt-managed Pi packages, and `xt update --apply` refreshes only those managed packages
+- `xt doctor` reports package freshness in text and JSON (`piPackages`) but never mutates state
+- Worktrees automatically share the package model (`.pi/npm` can be symlinked to the main repo)
+- No legacy extension source mirroring or duplicate discovery issues
 
 See [pi-extensions.md](pi-extensions.md) for the full extension reference.
 
