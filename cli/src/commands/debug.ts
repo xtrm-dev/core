@@ -32,8 +32,18 @@ interface DebugOptions {
 
 type ColorFn = (s: string) => string;
 
+type OutcomeFn = (outcome: string | null) => string;
+
+interface KindLabelDef {
+  label: string | OutcomeFn;
+  color: ColorFn | OutcomeFn;
+}
+
+const committedLabel: OutcomeFn = (outcome: string | null) => outcome === 'error' ? 'ACMT-' : 'ACMT+';
+const committedColor: ColorFn = (s: string) => (s === 'ACMT-' ? kleur.red(s) : kleur.cyan(s));
+
 // Gate and lifecycle events: fixed 5-char label + fixed color
-const KIND_LABELS: Record<string, { label: string; color: ColorFn }> = {
+const KIND_LABELS: Record<string, KindLabelDef> = {
   'session.start':         { label: 'SESS+', color: kleur.green  },
   'session.end':           { label: 'SESS-', color: kleur.white  },
   'gate.edit.allow':       { label: 'EDIT+', color: kleur.green  },
@@ -46,8 +56,7 @@ const KIND_LABELS: Record<string, { label: string; color: ColorFn }> = {
   'gate.worktree.block':   { label: 'WTRE-', color: kleur.red    },
   'bd.claimed':            { label: 'CLMD ', color: kleur.cyan   },
   'bd.closed':             { label: 'CLSD ', color: kleur.green  },
-  'bd.committed':          { label: outcome => outcome === 'error' ? 'ACMT-' : 'ACMT+',
-                             color: outcome => outcome === 'error' ? kleur.red : kleur.cyan } as any,
+  'bd.committed':          { label: committedLabel, color: committedColor },
 };
 
 // Tool call events: derive 5-char abbrev from tool_name
@@ -86,9 +95,9 @@ function getLabel(event: XtrmEvent): string {
     const label = event.outcome === 'error' ? 'ACMT-' : 'ACMT+';
     return event.outcome === 'error' ? kleur.red(label) : kleur.cyan(label);
   }
-  return (def as { label: string; color: ColorFn }).color(
-    (def as { label: string; color: ColorFn }).label
-  );
+  return typeof def.color === 'function' && typeof def.label === 'string'
+    ? def.color(def.label)
+    : kleur.dim('UNKN ');
 }
 
 // ── Session color map ─────────────────────────────────────────────────────────
