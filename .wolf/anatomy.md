@@ -1247,3 +1247,5 @@
 - 2026-05-08: Session close report for Pi package hardening stored at .xtrm/reports/2026-05-08-030283f.md; CHANGELOG [Unreleased] documents xtrm-basg/xtrm-ppwi/xtrm-5nwu/xtrm-modr.
 
 - 2026-05-08: Global Pi package health docs live in docs/XTRM-GUIDE.md, docs/pi-extensions.md, docs/xtrm-directory.md, and docs/cli-architecture.md; all track cli/src/core/pi-runtime.ts plus update/doctor command surfaces where relevant.
+
+- 2026-05-08: Session report .xtrm/reports/2026-05-08-030283f.md now includes xtrm-6xus docs sync and xtrm-2k16 report-update closure.
