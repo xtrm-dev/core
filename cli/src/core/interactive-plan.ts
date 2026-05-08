@@ -24,8 +24,8 @@ function hasValue(choice: PromptChoice): choice is PromptChoice & { value: Choic
     return choice.value !== null && choice.value !== undefined;
 }
 
-function isChoiceValue(value: ChoiceValue | null | undefined): value is ChoiceValue {
-    return value !== null && value !== undefined;
+function isSelectedDefault(choice: PromptChoice): choice is PromptChoice & { value: ChoiceValue; selected: true } {
+    return choice.selected === true && hasValue(choice);
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ function mcpCoreChoices(target: TargetPlan): PromptChoice[] {
     const installed   = target.mcpCore.filter(m => m.installed);
     if (target.mcpCore.length === 0) return [];
 
-    const choices: any[] = [
+    const choices: PromptChoice[] = [
         { title: kleur.bold().dim(`  ── ${target.label} MCP servers ──`), disabled: true, value: null },
     ];
     for (const m of uninstalled) {
@@ -150,7 +150,7 @@ export async function interactivePlan(
 
     if (opts.yes) {
         // Select all pre-selected defaults, skip prompt
-        const selected = allChoices.filter(hasValue).map(choice => choice.value);
+        const selected = allChoices.filter(isSelectedDefault).map(choice => choice.value);
         return buildSelectedPlan(selected, plan);
     }
 
