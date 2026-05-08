@@ -4,7 +4,7 @@ scope: xtrm-guide
 category: reference
 version: 1.4.0
 updated: 2026-05-08
-synced_at: 477fe83
+synced_at: a249e75
 source_of_truth_for:
   - "cli/src/commands/update.ts"
   - "cli/src/commands/doctor.ts"

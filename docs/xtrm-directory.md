@@ -4,7 +4,7 @@ scope: xtrm-directory
 category: reference
 version: 1.3.0
 updated: 2026-05-08
-synced_at: 477fe83
+synced_at: a249e75
 description: "Centralized xtrm configuration and runtime data directory"
 source_of_truth_for:
   - ".xtrm/**"
