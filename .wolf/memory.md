@@ -82,3 +82,5 @@
 - 2026-05-08: Docs drift sync for xtrm-6xus updated docs/XTRM-GUIDE.md, docs/pi-extensions.md, docs/xtrm-directory.md, and docs/cli-architecture.md for xt update/xt doctor global Pi package health.
 
 - 2026-05-08: Same-day session report .xtrm/reports/2026-05-08-030283f.md updated after xtrm-6xus docs sync to include docs validation and final next-priority state.
+
+- 2026-05-08: Merged origin/main into docs branch; npm:pi-mcp-adapter is canonical xt-managed Pi package and must appear in package inventory docs/tests.

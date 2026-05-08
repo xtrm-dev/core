@@ -37,7 +37,7 @@ Pi extensions use a **package-install model**:
 2. **Distribution unit**: `npm:@jaggerxtrm/pi-extensions`
 3. **Runtime wiring**: project `.pi/settings.json` includes `npm:@jaggerxtrm/pi-extensions` in `packages`; global/user Pi package assurance also checks every xt-managed Pi package
 
-The canonical xt-managed package inventory is shared by runtime sync, `xt update`, and `xt doctor`: `npm:@jaggerxtrm/pi-extensions`, `npm:pi-gitnexus`, `npm:pi-serena-tools`, `npm:@zenobius/pi-worktrees`, `npm:@robhowley/pi-structured-return`, `npm:@aliou/pi-guardrails`, and `npm:@aliou/pi-processes`.
+The canonical xt-managed package inventory is shared by runtime sync, `xt update`, and `xt doctor`: `npm:@jaggerxtrm/pi-extensions`, `npm:pi-gitnexus`, `npm:pi-serena-tools`, `npm:@zenobius/pi-worktrees`, `npm:@robhowley/pi-structured-return`, `npm:@aliou/pi-guardrails`, `npm:@aliou/pi-processes`, and `npm:pi-mcp-adapter`.
 
 There is no supported runtime flow that depends on `config/pi/extensions/**` or `.xtrm/config/pi/extensions/**`.
 

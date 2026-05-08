@@ -1249,3 +1249,5 @@
 - 2026-05-08: Global Pi package health docs live in docs/XTRM-GUIDE.md, docs/pi-extensions.md, docs/xtrm-directory.md, and docs/cli-architecture.md; all track cli/src/core/pi-runtime.ts plus update/doctor command surfaces where relevant.
 
 - 2026-05-08: Session report .xtrm/reports/2026-05-08-030283f.md now includes xtrm-6xus docs sync and xtrm-2k16 report-update closure.
+
+- 2026-05-08: cli/src/core/pi-runtime.ts MANAGED_PACKAGES includes npm:pi-mcp-adapter; docs package inventories include it in XTRM-GUIDE, pi-extensions, and cli-architecture.

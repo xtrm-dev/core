@@ -177,7 +177,7 @@ Current extension source layout is **directory-based** under `packages/pi-extens
 - `quality-gates/`
 - `service-skills/`
 
-Canonical xt-managed Pi packages are `npm:@jaggerxtrm/pi-extensions`, `npm:pi-gitnexus`, `npm:pi-serena-tools`, `npm:@zenobius/pi-worktrees`, `npm:@robhowley/pi-structured-return`, `npm:@aliou/pi-guardrails`, and `npm:@aliou/pi-processes`. `xt update` and `xt doctor` check this same inventory; `xt doctor` is report-only, while `xt update --apply` refreshes stale managed packages. Project `.pi/settings.json` still records the extension package and skill path so Pi can load the project runtime.
+Canonical xt-managed Pi packages are `npm:@jaggerxtrm/pi-extensions`, `npm:pi-gitnexus`, `npm:pi-serena-tools`, `npm:@zenobius/pi-worktrees`, `npm:@robhowley/pi-structured-return`, `npm:@aliou/pi-guardrails`, `npm:@aliou/pi-processes`, and `npm:pi-mcp-adapter`. `xt update` and `xt doctor` check this same inventory; `xt doctor` is report-only, while `xt update --apply` refreshes stale managed packages. Project `.pi/settings.json` still records the extension package and skill path so Pi can load the project runtime.
 
 Pi extension package resolution now relies on the managed symlink at `.xtrm/extensions/node_modules/@xtrm/pi-core` (legacy `.pi/node_modules/@xtrm/pi-core` is no longer used).
 

@@ -87,6 +87,7 @@ describe('pi runtime safeguards', () => {
       'npm:@robhowley/pi-structured-return',
       'npm:@aliou/pi-guardrails',
       'npm:@aliou/pi-processes',
+      'npm:pi-mcp-adapter',
     ]);
   });
 
@@ -101,7 +102,7 @@ describe('pi runtime safeguards', () => {
 
     expect(report.hasIssues).toBe(false);
     expect(report.issues).toEqual([]);
-    expect(versionProvider).toHaveBeenCalledTimes(7);
+    expect(versionProvider).toHaveBeenCalledTimes(8);
   });
 
   it('builds a doctor report for missing, outdated, and unknown xt pi packages with remediation commands', async () => {
@@ -176,6 +177,7 @@ describe('pi runtime safeguards', () => {
       'npm:@aliou/pi-guardrails': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
       'npm:@aliou/pi-processes': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
       'npm:@jaggerxtrm/pi-extensions': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
+      'npm:pi-mcp-adapter': { installedVersion: '1.0.0', expectedVersion: '1.0.0' },
     };
     const installCalls: string[] = [];
 

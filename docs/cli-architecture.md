@@ -160,7 +160,7 @@ Registers `xt update`, the xtrm-managed asset refresh command for one repo or ma
 
 ### `core/pi-runtime.ts`
 
-The Pi runtime module owns the canonical xt-managed package inventory and package health contracts. Use `getXtManagedPiPackages()` rather than hard-coded package allowlists. The inventory currently includes `npm:@jaggerxtrm/pi-extensions`, `npm:pi-gitnexus`, `npm:pi-serena-tools`, `npm:@zenobius/pi-worktrees`, `npm:@robhowley/pi-structured-return`, `npm:@aliou/pi-guardrails`, and `npm:@aliou/pi-processes`.
+The Pi runtime module owns the canonical xt-managed package inventory and package health contracts. Use `getXtManagedPiPackages()` rather than hard-coded package allowlists. The inventory currently includes `npm:@jaggerxtrm/pi-extensions`, `npm:pi-gitnexus`, `npm:pi-serena-tools`, `npm:@zenobius/pi-worktrees`, `npm:@robhowley/pi-structured-return`, `npm:@aliou/pi-guardrails`, `npm:@aliou/pi-processes`, and `npm:pi-mcp-adapter`.
 
 `getManagedPiPackageFreshness()` is provider-injected and network-free; command layers supply installed/latest version providers. `assureXtManagedPiPackages()` drives update/apply behavior. `getXtManagedPiPackageDoctorReport()` adapts the same freshness states for doctor output.
 

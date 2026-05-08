@@ -16,11 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Pi runtime package assurance now uses the canonical xt-managed package inventory, including `npm:@jaggerxtrm/pi-extensions`, instead of a two-package allowlist. (xtrm-ppwi)
 - Pi package freshness classification is centralized behind provider-injected helpers so commands can share deterministic missing/outdated/version-unknown behavior. (xtrm-basg)
-
-### Changed
 - `session-close-report`: add paranoid cleanup, due-diligence, and CHANGELOG synchronization requirements so session handoffs include process cleanup, content audits, and consumer-facing changelog checks.
 - `releasing`: update the release skill to drive releases end-to-end without relying on the deprecated `xt release` flow.
 - `using-specialists-v3`: strengthen specialist orchestration guidance around runtime listing, file-layer discipline, security/code-sanity chains, monitoring, and worktree cleanup.
+
+### Fixed
+- Pi runtime sync (`xtrm-n83y`) now installs `npm:pi-mcp-adapter` as a required managed Pi package, preventing Pi MCP startup blocks after `xt init` / `xt update` while still removing stale `~/.pi/agent/extensions/pi-mcp-adapter` extension overrides.
 
 ## [0.7.17] - 2026-05-05
 
