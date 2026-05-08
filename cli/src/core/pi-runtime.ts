@@ -146,6 +146,7 @@ const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:@robhowley/pi-structured-return', displayName: 'pi-structured-return', required: true },
     { id: 'npm:@aliou/pi-guardrails', displayName: 'pi-guardrails', required: false },
     { id: 'npm:@aliou/pi-processes', displayName: 'pi-processes', required: true },
+    { id: 'npm:pi-mcp-adapter', displayName: 'pi-mcp-adapter', required: true },
 ];
 
 const ALWAYS_GLOBAL_INSTALL_PACKAGE_IDS = new Set<string>([
