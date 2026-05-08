@@ -182,3 +182,4 @@
 {"id":"int-add846b5","kind":"tool_call","created_at":"2026-05-07T16:56:49.231549807Z","actor":"dawid","issue_id":"xtrm-svhc","model":"openai-codex/gpt-5.4","tool_name":"security-auditor","exit_code":0}
 {"id":"int-8bc99c0b","kind":"tool_call","created_at":"2026-05-07T16:59:48.3675442Z","actor":"dawid","issue_id":"xtrm-svhc","model":"openai-codex/gpt-5.3-codex","tool_name":"reviewer","exit_code":0}
 {"id":"int-317cc753","kind":"tool_call","created_at":"2026-05-07T17:07:08.431613414Z","actor":"dawid","issue_id":"xtrm-svhc","model":"anthropic/claude-sonnet-4-6","tool_name":"parallel-review","exit_code":1}
+{"id":"int-de9b43c8","kind":"field_change","created_at":"2026-05-08T10:36:04.185632293Z","actor":"you@example.com","issue_id":"xtrm-4jhd","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Done: wrote 2026-05-08 session report and synced CHANGELOG [Unreleased] for pi-mcp-adapter runtime fix."}}
