@@ -86,10 +86,19 @@ describe('doctor command', () => {
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skills.every((row: { status: string }) => row.status === 'in-sync')).toBe(true);
-    expect(parsed.hooks.every((row: { status: string }) => row.status === 'in-sync')).toBe(true);
-    expect(parsed.runtimeView).toMatchObject({ activeReady: true, claudePointerReady: true, piPointerReady: true });
-    expect(parsed.duplicates).toEqual([]);
+    expect(parsed.catB.skills.every((row: { status: string }) => row.status === 'in-sync')).toBe(true);
+    expect(parsed.catB.hooks.every((row: { status: string }) => row.status === 'in-sync')).toBe(true);
+    expect(parsed.catB.runtimeView).toMatchObject({ activeReady: true, claudePointerReady: true, piPointerReady: true });
+    expect(parsed.catB.duplicates).toEqual([]);
+  });
+
+  it('doctor clean repo with no .beads passes', async () => {
+    await setupCleanRepo();
+    await fs.remove(path.join(tmpDir, '.beads'));
+    const result = await runDoctor(['--json']);
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.catB.sharedBeadsServerState).toBe('not-applicable');
   });
 
   it('reports drifted, missing, extra, and non-zero exit with --check-drift', async () => {
