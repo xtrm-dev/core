@@ -10,8 +10,26 @@ if ! command -v semgrep >/dev/null; then
     exit 0
 fi
 
-git fetch origin main --quiet 2>/dev/null || true
-BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1)
+# Derive base ref dynamically: prefer the branch's tracked upstream, fall back
+# to common default branches, finally to HEAD~N where N covers the whole push.
+upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+if [ -n "$upstream" ]; then
+    BASE_REF="$upstream"
+else
+    BASE_REF=""
+    for cand in origin/main origin/master main master; do
+        git rev-parse --verify "$cand" >/dev/null 2>&1 && BASE_REF="$cand" && break
+    done
+fi
+
+[ -n "$BASE_REF" ] && git fetch "${BASE_REF%%/*}" "${BASE_REF#*/}" --quiet 2>/dev/null || true
+
+if [ -n "$BASE_REF" ]; then
+    BASE=$(git merge-base HEAD "$BASE_REF" 2>/dev/null || true)
+fi
+# Final fallback: walk back enough to cover the entire push (find common
+# ancestor across N revs; default 50 if no remote tracking)
+[ -z "${BASE:-}" ] && BASE=$(git rev-list HEAD --max-count=50 | tail -1)
 
 exec semgrep scan \
     --config=p/default \
