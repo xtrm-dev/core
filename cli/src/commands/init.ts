@@ -507,7 +507,7 @@ interface InitInventory {
 
 async function runPreflight(projectRoot: string, opts: InstallOpts): Promise<InitInventory> {
     // Source repo for skills/hooks (bundled in npm package or git repo)
-    const repoRoot = await findRepoRoot();
+    const repoRoot = await findRepoRoot().catch(() => projectRoot);
 
     // Machine tool availability via unified bootstrap module (read-only)
     const bootstrapPlan = inventoryDeps();
@@ -834,7 +834,7 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
         ? await ensureAgentsSkillsSymlink(projectRoot, { force: true })
         : await ensureAgentsSkillsSymlink(projectRoot);
     if (skillsActivation.activatedClaudeSkills === skillsActivation.activatedPiSkills) {
-        console.log(kleur.green(`  ✓ Activated ${skillsActivation.activatedClaudeSkills} default skills → .xtrm/skills/active/{claude,pi}`));
+        console.log(kleur.green(`  ✓ Activated ${skillsActivation.activatedClaudeSkills} default skills → .xtrm/skills/active`));
     } else {
         console.log(kleur.green(`  ✓ Activated runtime skills → claude:${skillsActivation.activatedClaudeSkills}, pi:${skillsActivation.activatedPiSkills}`));
     }
