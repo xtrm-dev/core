@@ -1,0 +1,39 @@
+name: Semgrep
+
+# SAST scanner — replaces CodeQL on private user-owned repos where GitHub
+# Advanced Security is unavailable. Free, runs entirely in CI, fails the PR
+# on any high/critical finding.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"  # Monday 06:00 UTC weekly
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep scan
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Semgrep CI
+        run: semgrep ci
+        env:
+          # No SEMGREP_APP_TOKEN — runs in OSS mode using rule packs from semgrep registry.
+          # auto picks: r/security-audit, r/secrets, r/python, r/dockerfile, etc., based on detected stack.
+          SEMGREP_RULES: >-
+            p/default
+            p/security-audit
+            p/secrets
+            p/python
+            p/dockerfile
+            p/github-actions
