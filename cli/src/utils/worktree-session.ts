@@ -195,6 +195,19 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         }
     }
 
+    // Strip bd's stub .beads/ to force common-dir discovery for shared dolt access.
+    // bd's post-checkout git hook (installed at <commonRoot>/.beads/hooks/) fires
+    // when `git worktree add` runs and scaffolds a stub .beads/ in the new worktree.
+    // Without this rm, the next `bd <cmd>` from inside the worktree promotes the
+    // stub into a full dolt-sql-server install (60-200 MB RSS each, plus a leak
+    // vector on cleanup) instead of sharing the parent server via common-dir
+    // discovery. See xtrm-as7d / unitAI-0wz2p (specialists side, same fix).
+    try {
+        rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
+    } catch {
+        // Non-fatal: worst case the per-worktree dolt server still spawns.
+    }
+
     writeSessionMeta(worktreePath, runtime);
     console.log(kleur.green(`\n  ✓ Worktree ready — launching ${runtime}...\n`));
 
