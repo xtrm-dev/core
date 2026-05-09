@@ -6,7 +6,7 @@ import { checkDrift } from '../core/drift.js';
 import { resolvePackageRoot } from '../core/registry-scaffold.js';
 import { assureXtManagedPiPackages } from '../core/pi-runtime.js';
 import { findManagedRepos } from '../core/repo-discovery.js';
-import { runInstall } from './install.js';
+import { isStrictRegistryMode, runInstall } from './install.js';
 
 type UpdateStatus = 'refreshed' | 'already-current' | 'failed';
 
@@ -16,7 +16,15 @@ interface RepoUpdateResult {
     reason?: string;
 }
 
-async function resolveTargetRepos(opts: { root?: string; repo?: string }): Promise<string[]> {
+interface UpdateOpts {
+    root?: string;
+    repo?: string;
+    json?: boolean;
+    apply?: boolean;
+    strictRegistry?: boolean;
+}
+
+async function resolveTargetRepos(opts: Pick<UpdateOpts, 'root' | 'repo'>): Promise<string[]> {
     if (opts.repo) return [path.resolve(opts.repo)];
     if (opts.root) return findManagedRepos(path.resolve(opts.root));
     return [process.cwd()];
@@ -26,7 +34,7 @@ function getCurrentPackageRegistryPath(): string {
     return path.join(resolvePackageRoot(), '.xtrm', 'registry.json');
 }
 
-async function updateRepo(repoRoot: string, apply: boolean): Promise<RepoUpdateResult> {
+async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdateResult> {
     const registryPath = getCurrentPackageRegistryPath();
     const userXtrmDir = path.join(repoRoot, '.xtrm');
 
@@ -38,7 +46,7 @@ async function updateRepo(repoRoot: string, apply: boolean): Promise<RepoUpdateR
         const drift = await checkDrift(registryPath, userXtrmDir);
         const hasChanges = drift.missing.length > 0 || drift.drifted.length > 0;
 
-        if (!apply) {
+        if (!opts.apply) {
             return {
                 repo: repoRoot,
                 status: hasChanges ? 'refreshed' : 'already-current',
@@ -57,24 +65,38 @@ async function updateRepo(repoRoot: string, apply: boolean): Promise<RepoUpdateR
             projectRoot: repoRoot,
             skipMachineBootstrap: true,
             skipClaudeRuntimeSync: true,
+            strictRegistry: isStrictRegistryMode(opts),
         });
 
         return { repo: repoRoot, status: 'refreshed', reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}` };
     } catch (error) {
-        return { repo: repoRoot, status: 'failed', reason: error instanceof Error ? error.message : String(error) };
+        return {
+            repo: repoRoot,
+            status: 'failed',
+            reason: formatRegistrySourceMismatchReason(error, isStrictRegistryMode(opts)),
+        };
     }
 }
 
-function printTable(rows: RepoUpdateResult[]): void {
-    const widths = rows.reduce((acc, row) => ({
-        repo: Math.max(acc.repo, row.repo.length),
-        status: Math.max(acc.status, row.status.length),
-    }), { repo: 4, status: 6 });
-
-    console.log(kleur.bold(`  ${'repo'.padEnd(widths.repo)}  ${'status'.padEnd(widths.status)}  reason`));
-    for (const row of rows) {
-        console.log(`${row.repo.padEnd(widths.repo)}  ${row.status.padEnd(widths.status)}  ${row.reason ?? ''}`);
+function formatRegistrySourceMismatchReason(error: unknown, strictRegistry: boolean): string {
+    const message = error instanceof Error ? error.message : String(error);
+    const prefix = 'Registry/source mismatch: missing package source files.';
+    if (!message.startsWith(prefix)) {
+        return message;
     }
+
+    if (strictRegistry || process.env.DEBUG === 'true') {
+        return message;
+    }
+
+    const paths = message
+        .split('\n')
+        .slice(1)
+        .map(line => line.trim().replace(/^•\s*/, ''))
+        .filter(Boolean);
+    const visiblePaths = paths.slice(0, 3);
+    const remaining = paths.length - visiblePaths.length;
+    return `${prefix} ${visiblePaths.join(', ')}${remaining > 0 ? ` (+${remaining} more)` : ''}`;
 }
 
 function printPiPackages(packageAssurance: Awaited<ReturnType<typeof assureXtManagedPiPackages>>): void {
@@ -90,21 +112,35 @@ function printPiPackages(packageAssurance: Awaited<ReturnType<typeof assureXtMan
     }
 }
 
+function printTable(rows: RepoUpdateResult[]): void {
+    const widths = rows.reduce((acc, row) => ({
+        repo: Math.max(acc.repo, row.repo.length),
+        status: Math.max(acc.status, row.status.length),
+    }), { repo: 4, status: 6 });
+
+    console.log(kleur.bold(`  ${'repo'.padEnd(widths.repo)}  ${'status'.padEnd(widths.status)}  reason`));
+    for (const row of rows) {
+        console.log(`${row.repo.padEnd(widths.repo)}  ${row.status.padEnd(widths.status)}  ${row.reason ?? ''}`);
+    }
+}
+
 export function createUpdateCommand(): Command {
     return new Command('update')
         .description('Refresh xtrm-managed files and assure global xt Pi packages for one repo or many; missing or outdated packages are refreshed on --apply')
         .option('--apply', 'Write changes with install force mode', false)
+        .option('--strict-registry', 'Fail on registry/source mismatch or missing registry source files', false)
         .option('--root <dir>', 'Walk root and update every repo with .xtrm/registry.json')
         .option('--repo <path>', 'Target one repo path instead of cwd')
         .option('--json', 'Print JSON output', false)
         .action(async (opts) => {
-            const repos = await resolveTargetRepos(opts);
+            const typedOpts = opts as UpdateOpts;
+            const repos = await resolveTargetRepos(typedOpts);
             const rows: RepoUpdateResult[] = [];
             for (const repo of repos) {
-                rows.push(await updateRepo(repo, Boolean(opts.apply)));
+                rows.push(await updateRepo(repo, typedOpts));
             }
 
-            const packageAssurance = await assureXtManagedPiPackages(Boolean(opts.apply));
+            const packageAssurance = await assureXtManagedPiPackages(Boolean(typedOpts.apply));
 
             if (opts.json) {
                 console.log(JSON.stringify({ repos: rows, packages: packageAssurance }, null, 2));

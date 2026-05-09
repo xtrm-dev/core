@@ -29,6 +29,7 @@ export interface InstallOpts {
     prune?: boolean;
     backport?: boolean;
     global?: boolean;
+    strictRegistry?: boolean;
     projectRoot?: string;
     /** Skip machine bootstrap (beads/dolt/bv/deepwiki) — used by the init orchestrator which handles it in a dedicated phase. */
     skipMachineBootstrap?: boolean;
@@ -121,6 +122,10 @@ function getProjectRoot(): string {
     return gitResult.status === 0 ? (gitResult.stdout ?? '').trim() : process.cwd();
 }
 
+export function isStrictRegistryMode(opts: { strictRegistry?: boolean }): boolean {
+    return opts.strictRegistry ?? process.env.XTRM_STRICT_REGISTRY === '1';
+}
+
 export async function runInstall(opts: InstallOpts = {}): Promise<void> {
     const {
         dryRun = false,
@@ -132,6 +137,7 @@ export async function runInstall(opts: InstallOpts = {}): Promise<void> {
         skipMachineBootstrap = false,
         skipClaudeRuntimeSync = false,
     } = opts;
+    const strictRegistry = isStrictRegistryMode(opts);
 
     if (backport) {
         console.log(kleur.yellow('  ⚠ xtrm install --backport is no longer supported in registry mode.'));
@@ -176,6 +182,7 @@ export async function runInstall(opts: InstallOpts = {}): Promise<void> {
         dryRun,
         force,
         yes: effectiveYes,
+        strictRegistry,
     });
 
     if (prune) {
@@ -227,7 +234,11 @@ export async function runInstall(opts: InstallOpts = {}): Promise<void> {
     await renderSummaryCard(stats, dryRun);
 
     if (stats.missingSourceSkipped > 0) {
-        console.log(kleur.yellow(`  ⚠ Registry/source mismatch: ${stats.missingSourceSkipped} expected file${stats.missingSourceSkipped === 1 ? '' : 's'} were missing from package payload.`));
+        const mismatchMessage = `Registry/source mismatch: ${stats.missingSourceSkipped} expected file${stats.missingSourceSkipped === 1 ? '' : 's'} were missing from package payload.`;
+        if (strictRegistry) {
+            throw new Error(mismatchMessage);
+        }
+        console.log(kleur.yellow(`  ⚠ ${mismatchMessage}`));
         console.log(kleur.yellow('    Install continued, but your runtime may be incomplete. Regenerate/publish registry assets to resolve.'));
         console.log('');
     }
@@ -246,6 +257,7 @@ export function createInstallCommand(): Command {
         .option('--backport', 'Backport drifted local changes back to the repository', false)
         .option('--force', 'Overwrite locally drifted files', false)
         .option('--global', 'Install to user-global scope (~/.xtrm) instead of project-local', false)
+        .option('--strict-registry', 'Fail on registry/source mismatch or missing registry source files', false)
         .action(async (opts) => {
             console.log(kleur.yellow('  ⚠  xtrm install is deprecated — use xtrm init\n'));
             await runInstall(opts);

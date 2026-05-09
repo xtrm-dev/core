@@ -358,6 +358,44 @@ describe('installFromRegistry', () => {
     expect(await fs.pathExists(path.join(userXtrmDir, 'skills', 'default', 'alpha', 'SKILL.md'))).toBe(true);
     expect(await fs.pathExists(path.join(userXtrmDir, 'skills', 'default', 'documenting', 'tests', 'integration_test.sh'))).toBe(false);
   });
+
+  it('fails in strict registry mode when a registry source file is missing', async () => {
+    const tempDir = await createTempDir();
+    const packageRoot = path.join(tempDir, 'pkg');
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+
+    const existingSource = path.join(packageRoot, '.xtrm', 'skills', 'default', 'alpha', 'SKILL.md');
+    await fs.ensureDir(path.dirname(existingSource));
+    await fs.writeFile(existingSource, '# alpha\n', 'utf8');
+
+    const registry = {
+      version: '1.0.0',
+      assets: {
+        skills_default: {
+          source_dir: '.xtrm/skills/default',
+          install_mode: 'copy' as const,
+          files: {
+            'alpha/SKILL.md': { hash: 'alpha-hash', version: '1.0.0' },
+            'documenting/tests/integration_test.sh': { hash: 'missing-hash', version: '1.0.0' },
+          },
+        },
+      },
+    };
+
+    await fs.ensureDir(path.join(packageRoot, '.xtrm'));
+    await fs.writeJson(path.join(packageRoot, '.xtrm', 'registry.json'), registry);
+
+    await expect(installFromRegistry({
+      packageRoot,
+      registry,
+      userXtrmDir,
+      dryRun: false,
+      force: true,
+      yes: true,
+      strictRegistry: true,
+    })).rejects.toThrowError(/Registry\/source mismatch: missing package source files\./);
+    await expect(fs.pathExists(path.join(userXtrmDir, 'skills', 'default', 'alpha', 'SKILL.md'))).resolves.toBe(true);
+  });
 });
 
 describe('ensureAgentsSkillsSymlink', () => {
@@ -435,7 +473,7 @@ describe('ensureAgentsSkillsSymlink', () => {
     expect(messages.some(message => message.includes('.claude/skills symlink already in place'))).toBe(true);
   });
 
-  itIfSymlinkSupported('replaces existing real .claude/skills directory', async () => {
+  itIfSymlinkSupported('refuses to replace existing real .claude/skills directory', async () => {
     const tempDir = await createTempDir();
     const defaultRoot = path.join(tempDir, '.xtrm', 'skills', 'default');
     const claudeSkillsDir = path.join(tempDir, '.claude', 'skills');
@@ -444,10 +482,9 @@ describe('ensureAgentsSkillsSymlink', () => {
     await fs.ensureDir(claudeSkillsDir);
     await fs.writeFile(path.join(claudeSkillsDir, 'local.txt'), 'local', 'utf8');
 
-    await ensureAgentsSkillsSymlink(tempDir);
-
-    expect((await fs.lstat(claudeSkillsDir)).isSymbolicLink()).toBe(true);
-    expect(await fs.pathExists(path.join(claudeSkillsDir, 'local.txt'))).toBe(false);
+    await expect(ensureAgentsSkillsSymlink(tempDir)).rejects.toThrowError(/Refusing to replace existing \.claude\/skills/);
+    expect((await fs.lstat(claudeSkillsDir)).isSymbolicLink()).toBe(false);
+    expect(await fs.pathExists(path.join(claudeSkillsDir, 'local.txt'))).toBe(true);
   });
 
   itIfSymlinkSupported('evicts non-symlink entries from active during rebuild', async () => {

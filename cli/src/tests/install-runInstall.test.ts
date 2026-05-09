@@ -185,4 +185,27 @@ describe('runInstall broken default symlink repair', () => {
     expect(await fs.pathExists(path.join(targetDir, 'README.md'))).toBe(false);
   });
 
+  it('throws in strict registry mode when installFromRegistry reports missing source files', async () => {
+    const packageRoot = path.join(tmpDir, 'pkg');
+    fs.ensureDirSync(path.join(packageRoot, '.xtrm'));
+    fs.writeJsonSync(path.join(packageRoot, '.xtrm', 'registry.json'), { version: '1.0.0', assets: {} });
+    mocked.installFromRegistry.mockResolvedValue({
+      installed: 0,
+      upToDate: 0,
+      driftedSkipped: 0,
+      forced: 0,
+      expectedInstalls: 1,
+      missingSourceSkipped: 1,
+    });
+
+    await expect(runInstall({
+      yes: true,
+      dryRun: false,
+      projectRoot: tmpDir,
+      skipMachineBootstrap: true,
+      skipClaudeRuntimeSync: true,
+      strictRegistry: true,
+    })).rejects.toThrowError(/Registry\/source mismatch: 1 expected file were missing from package payload\./);
+  });
+
 });
