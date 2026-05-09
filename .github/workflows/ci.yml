@@ -48,6 +48,9 @@ jobs:
         npx eslint . --ignore-pattern "**/node_modules/**" || echo "Eslint not configured yet"
         ruff check . || echo "Ruff not configured yet"
 
+    - name: Check skills ownership drift
+      run: npm run check:skills-ownership
+
     - name: Policy parity checks (Claude + Pi)
       run: |
         mkdir -p ~/.pi/agent/extensions
