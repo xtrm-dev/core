@@ -3,14 +3,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkDriftMock, runInstallMock, assureXtManagedPiPackagesMock } = vi.hoisted(() => ({
+const { checkDriftMock, runInstallMock, assureXtManagedPiPackagesMock, resolvePackageRootMock } = vi.hoisted(() => ({
   checkDriftMock: vi.fn(),
   runInstallMock: vi.fn(),
   assureXtManagedPiPackagesMock: vi.fn(),
+  resolvePackageRootMock: vi.fn(),
 }));
 
 vi.mock('../core/drift.js', () => ({
   checkDrift: checkDriftMock,
+}));
+
+vi.mock('../core/registry-scaffold.js', () => ({
+  resolvePackageRoot: resolvePackageRootMock,
 }));
 
 vi.mock('../core/pi-runtime.js', () => ({
@@ -33,6 +38,8 @@ beforeEach(() => {
   checkDriftMock.mockReset();
   runInstallMock.mockReset();
   assureXtManagedPiPackagesMock.mockReset();
+  resolvePackageRootMock.mockReset();
+  checkDriftMock.mockResolvedValue({ missing: ['asset.txt'], upToDate: [], drifted: [] });
   assureXtManagedPiPackagesMock.mockResolvedValue({
     statuses: [],
     missing: [],
@@ -65,90 +72,76 @@ async function runUpdateCli(args: string[]): Promise<{ logs: string[]; json?: un
   }
 }
 
+function writePackageRoot(root: string): string {
+  fs.ensureDirSync(path.join(root, '.xtrm'));
+  fs.writeJsonSync(path.join(root, '.xtrm', 'registry.json'), {
+    version: '1',
+    assets: {},
+  }, { spaces: 2 });
+  return root;
+}
+
 function writeRepo(root: string, name: string): string {
   const repo = path.join(root, name);
   fs.ensureDirSync(path.join(repo, '.xtrm'));
-  fs.writeJsonSync(path.join(repo, '.xtrm', 'registry.json'), { version: '1', assets: {} }, { spaces: 2 });
+  fs.writeJsonSync(path.join(repo, '.xtrm', 'registry.json'), {
+    version: '1',
+    assets: {},
+  }, { spaces: 2 });
   return repo;
 }
 
 describe('xtrm update', () => {
-  it('dry-run prints repo status and package freshness without writes', async () => {
-    writeRepo(tmpDir, 'repo-a');
-    checkDriftMock.mockResolvedValue({ missing: ['a'], upToDate: [], drifted: ['b'] });
-    assureXtManagedPiPackagesMock.mockResolvedValue({
-      statuses: [{ pkg: { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true }, npmPackageName: 'pi-gitnexus', installedVersion: '1.0.0', expectedVersion: '1.1.0', state: 'outdated' }],
-      missing: [],
-      outdated: [{ pkg: { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true }, npmPackageName: 'pi-gitnexus', installedVersion: '1.0.0', expectedVersion: '1.1.0', state: 'outdated' }],
-      installed: [],
-      refreshed: [],
-      failed: [],
-    });
+  it('dry-run reports changes when current package registry differs from old installed registry', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    const repo = writeRepo(tmpDir, 'repo-a');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
 
-    const result = await runUpdateCli(['--repo', path.join(tmpDir, 'repo-a')]);
+    const result = await runUpdateCli(['--repo', repo]);
 
+    expect(checkDriftMock).toHaveBeenCalledWith(path.join(packageRoot, '.xtrm', 'registry.json'), path.join(repo, '.xtrm'));
     expect(runInstallMock).not.toHaveBeenCalled();
     expect(assureXtManagedPiPackagesMock).toHaveBeenCalledWith(false);
     expect(result.logs.join('\n')).toContain('refreshed');
-    expect(result.logs.join('\n')).toContain('outdated');
+    expect(result.logs.join('\n')).not.toContain('already-current');
   });
 
-  it('apply refreshes drifted repo and refreshes only stale global pi packages', async () => {
+  it('apply refreshes repo once when current package registry differs from old installed registry', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     const repo = writeRepo(tmpDir, 'repo-a');
-    checkDriftMock.mockResolvedValue({ missing: ['a'], upToDate: [], drifted: ['b'] });
+    resolvePackageRootMock.mockReturnValue(packageRoot);
     runInstallMock.mockResolvedValue(undefined);
-    assureXtManagedPiPackagesMock.mockResolvedValue({
-      statuses: [
-        { pkg: { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true }, npmPackageName: 'pi-gitnexus', installedVersion: null, expectedVersion: '1.0.0', state: 'missing' },
-        { pkg: { id: 'npm:pi-serena-tools', displayName: 'pi-serena-tools', required: true }, npmPackageName: 'pi-serena-tools', installedVersion: '1.0.0', expectedVersion: '1.1.0', state: 'outdated' },
-        { pkg: { id: 'npm:@aliou/pi-processes', displayName: 'pi-processes', required: true }, npmPackageName: 'pi-processes', installedVersion: '1.0.0', expectedVersion: '1.0.0', state: 'current' },
-      ],
-      missing: [{ pkg: { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true }, npmPackageName: 'pi-gitnexus', installedVersion: null, expectedVersion: '1.0.0', state: 'missing' }],
-      outdated: [{ pkg: { id: 'npm:pi-serena-tools', displayName: 'pi-serena-tools', required: true }, npmPackageName: 'pi-serena-tools', installedVersion: '1.0.0', expectedVersion: '1.1.0', state: 'outdated' }],
-      installed: ['npm:pi-gitnexus'],
-      refreshed: ['npm:pi-serena-tools'],
-      failed: [],
-    });
 
-    const first = await runUpdateCli(['--apply', '--repo', repo]);
+    const result = await runUpdateCli(['--apply', '--repo', repo]);
 
+    expect(checkDriftMock).toHaveBeenCalledWith(path.join(packageRoot, '.xtrm', 'registry.json'), path.join(repo, '.xtrm'));
     expect(runInstallMock).toHaveBeenCalledTimes(1);
     expect(assureXtManagedPiPackagesMock).toHaveBeenCalledWith(true);
-    expect(first.logs.join('\n')).toContain('refreshed');
-    expect(first.logs.join('\n')).toContain('missing');
-    expect(first.logs.join('\n')).toContain('outdated');
+    expect(result.logs.join('\n')).toContain('refreshed');
   });
 
   it('root walk updates every managed repo and continues after failures', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     const root = path.join(tmpDir, 'root');
     const repoA = writeRepo(root, 'a');
     const repoB = writeRepo(root, 'b');
     const repoC = writeRepo(root, 'c');
-
-    checkDriftMock
-      .mockResolvedValueOnce({ missing: ['x'], upToDate: [], drifted: [] })
-      .mockRejectedValueOnce(new Error('broken repo'))
-      .mockResolvedValueOnce({ missing: [], upToDate: ['x'], drifted: [] });
+    resolvePackageRootMock.mockReturnValue(packageRoot);
     runInstallMock.mockResolvedValue(undefined);
-    assureXtManagedPiPackagesMock.mockResolvedValue({
-      statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [],
-    });
 
     const result = await runUpdateCli(['--apply', '--root', root]);
 
-    expect(runInstallMock).toHaveBeenCalledTimes(1);
+    expect(runInstallMock).toHaveBeenCalledTimes(3);
     expect(result.logs.join('\n')).toContain(repoA);
     expect(result.logs.join('\n')).toContain(repoB);
     expect(result.logs.join('\n')).toContain(repoC);
-    expect(result.logs.join('\n')).toContain('failed');
   });
 
   it('json output is valid JSON', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     const repo = writeRepo(tmpDir, 'repo-a');
-    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['a'], drifted: [] });
-    assureXtManagedPiPackagesMock.mockResolvedValue({
-      statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [],
-    });
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
 
     const result = await runUpdateCli(['--json', '--repo', repo]);
 

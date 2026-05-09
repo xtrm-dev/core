@@ -3,6 +3,7 @@ import kleur from 'kleur';
 import path from 'node:path';
 import fs from 'fs-extra';
 import { checkDrift } from '../core/drift.js';
+import { resolvePackageRoot } from '../core/registry-scaffold.js';
 import { assureXtManagedPiPackages } from '../core/pi-runtime.js';
 import { findManagedRepos } from '../core/repo-discovery.js';
 import { runInstall } from './install.js';
@@ -21,13 +22,17 @@ async function resolveTargetRepos(opts: { root?: string; repo?: string }): Promi
     return [process.cwd()];
 }
 
+function getCurrentPackageRegistryPath(): string {
+    return path.join(resolvePackageRoot(), '.xtrm', 'registry.json');
+}
+
 async function updateRepo(repoRoot: string, apply: boolean): Promise<RepoUpdateResult> {
-    const registryPath = path.join(repoRoot, '.xtrm', 'registry.json');
+    const registryPath = getCurrentPackageRegistryPath();
     const userXtrmDir = path.join(repoRoot, '.xtrm');
 
     try {
         if (!(await fs.pathExists(registryPath))) {
-            return { repo: repoRoot, status: 'failed', reason: 'missing .xtrm/registry.json' };
+            return { repo: repoRoot, status: 'failed', reason: `missing package registry at ${registryPath}` };
         }
 
         const drift = await checkDrift(registryPath, userXtrmDir);
