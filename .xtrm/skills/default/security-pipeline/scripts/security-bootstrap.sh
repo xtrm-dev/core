@@ -53,10 +53,12 @@ git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
 # ── 3. Copy files (conflict-aware) ────────────────────────────────────────
 copy_file() {
     local rel="$1"
-    local src="$SOURCE/$rel"
+    # Try templates/ first (skill layout), then SOURCE root (mercury-infra layout)
+    local src="$SOURCE/templates/$rel"
+    [ -f "$src" ] || src="$SOURCE/$rel"
     local dst="$TARGET/$rel"
     if [ ! -f "$src" ]; then
-        echo "  ⚠️  source missing: $rel"
+        echo "  ⚠️  source missing: $rel (looked in templates/ and root)"
         return
     fi
     mkdir -p "$(dirname "$dst")"
@@ -181,12 +183,31 @@ EOF
     echo "  + .github/dependabot.yml ($(echo "${ECOSYSTEMS[*]}" | wc -w) ecosystems)"
 fi
 
-# ── 5. .githooks/pre-push (only if .githooks dir exists) ──────────────────
-if [ -d "$TARGET/.githooks" ]; then
-    echo "  ⚠️  .githooks/ exists — manually merge anti-direct-push logic from $SOURCE/.githooks/pre-push"
+# ── 5. .githooks/pre-push (merge baseline if existing, install if absent) ──
+# Source candidates: templates/.githooks/pre-push.template (skill) OR .githooks/pre-push (mercury-infra)
+PREPUSH_SRC=""
+for cand in "$SOURCE/templates/.githooks/pre-push.template" "$SOURCE/.githooks/pre-push"; do
+    [ -f "$cand" ] && PREPUSH_SRC="$cand" && break
+done
+if [ -z "$PREPUSH_SRC" ]; then
+    echo "  ⚠️  no pre-push baseline found; skipping hooks"
+elif [ -f "$TARGET/.githooks/pre-push" ]; then
+    # Append baseline with idempotency marker so we don't double-inject
+    if ! grep -q "security-pipeline-baseline" "$TARGET/.githooks/pre-push" 2>/dev/null; then
+        {
+            echo ""
+            echo "# >>> security-pipeline-baseline (managed by security-bootstrap.sh) >>>"
+            cat "$PREPUSH_SRC"
+            echo "# <<< security-pipeline-baseline <<<"
+        } >> "$TARGET/.githooks/pre-push"
+        chmod +x "$TARGET/.githooks/pre-push"
+        echo "  + .githooks/pre-push (appended baseline to existing)"
+    else
+        echo "  ✓ .githooks/pre-push (baseline already present)"
+    fi
 else
     mkdir -p "$TARGET/.githooks"
-    cp "$SOURCE/.githooks/pre-push" "$TARGET/.githooks/pre-push"
+    cp "$PREPUSH_SRC" "$TARGET/.githooks/pre-push"
     chmod +x "$TARGET/.githooks/pre-push"
     echo "  + .githooks/pre-push"
 fi

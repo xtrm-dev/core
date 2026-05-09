@@ -16,8 +16,14 @@ regexes = [
 paths = [
     # Local secrets (gitignored — never committed). The --no-git scan walks
     # the filesystem so these get visited; in CI git history they don't exist.
+    # NOTE: narrow patterns only — never blanket-allowlist .env.* because
+    # tracked files like .env.production with real credentials would be ignored.
     '''^\.env$''',
-    '''^\.env\..*''',
+    '''^\.env\.local$''',
+    '''^\.env\.development\.local$''',
+    '''^\.env\.test\.local$''',
+    '''^\.env\.production\.local$''',
+    '''^\.env\.example$''',
 
     # Beads issue tracker — JSONL exports of issues + memories.
     # High-entropy strings (memory keys, dolt commit hashes) trip generic-api-key.

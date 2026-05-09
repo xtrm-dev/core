@@ -64,4 +64,4 @@ repos:
         pass_filenames: false
         # Skips silently if osv-scanner is not installed locally —
         # CI will catch it. To install: go install github.com/google/osv-scanner/cmd/osv-scanner@latest
-        entry: bash -c 'command -v osv-scanner >/dev/null && osv-scanner --recursive --skip-git ./ || echo "osv-scanner not installed locally — skipping (CI covers it)"'
+        entry: bash -c 'if command -v osv-scanner >/dev/null; then osv-scanner --recursive ./; else echo "osv-scanner not installed locally — skipping (CI covers it)"; fi'

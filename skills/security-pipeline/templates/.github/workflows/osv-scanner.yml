@@ -5,6 +5,8 @@ name: OSV Scanner
 # Scans manifests + lockfiles against the OSV.dev database.
 
 on:
+  push:
+    branches: [main, master]    # scan immediately after every merge
   pull_request:
     branches: [main, master]
   schedule:
