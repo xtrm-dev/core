@@ -28,6 +28,7 @@ from bootstrap import (  # noqa: E402
     RootResolutionError,
     find_service_for_path,
     get_project_root,
+    get_registry_path,
     get_service,
     load_registry,
     save_registry,
@@ -110,6 +111,22 @@ def check_drift_from_hook_stdin() -> None:
     sys.exit(0)
 
 
+def _print_missing_registry_hint(project_root: str | None = None) -> None:
+    if project_root is None:
+        try:
+            project_root = get_project_root()
+        except RootResolutionError:
+            project_root = "."
+
+    root = Path(project_root)
+    expected = (
+        f"Registry not found. Expected one of: {root / 'service-registry.json'}, "
+        f"{root / '.claude/skills/service-registry.json'}, "
+        f"{root / '.xtrm/skills/user/packs/*/service-registry.json'}"
+    )
+    print(expected, file=sys.stderr)
+
+
 def update_sync_time(service_id: str, project_root: str | None = None) -> bool:
     """Update last_sync timestamp for a service in the registry."""
     try:
@@ -140,6 +157,11 @@ def scan_drift(project_root: str | None = None) -> list[dict]:
             return []
 
     root = Path(project_root)
+    registry_path = get_registry_path(project_root)
+    if not registry_path.exists():
+        _print_missing_registry_hint(project_root)
+        return []
+
     registry = load_registry(project_root)
     drifted: list[dict] = []
 

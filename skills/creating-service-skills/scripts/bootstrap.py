@@ -5,8 +5,17 @@ Bootstrap module for Service Skill Trinity.
 Provides root-discovery and registry CRUD operations shared across all
 service-skill workflow scripts. All scripts in the trinity import from here.
 
-Registry location: .xtrm/skills/user/packs/<pack>/service-registry.json (preferred)
-Skills location:   .xtrm/skills/user/packs/<pack>/<service-id>/
+Registry resolution order:
+  1) $SERVICE_REGISTRY_PATH override
+  2) <root>/service-registry.json
+  3) <root>/.claude/skills/service-registry.json
+  4) <root>/.xtrm/skills/user/packs/*/service-registry.json
+
+For pack glob, first hit wins after disambiguation:
+- If active pack discoverable, matching pack registry preferred
+- Else lexicographically first registry used with stderr warning
+
+Skills location: .xtrm/skills/user/packs/<pack>/<service-id>/
 """
 
 import json
@@ -96,6 +105,23 @@ def get_pack_path(project_root: str | None = None) -> Path | None:
     return None
 
 
+def _select_pack_registry(pack_registries: list[Path], project_root: str) -> Path:
+    active_pack = get_pack_path(project_root)
+    if active_pack is not None:
+        active_candidate = active_pack / "service-registry.json"
+        if active_candidate in pack_registries:
+            return active_candidate
+
+    chosen = sorted(pack_registries)[0]
+    if len(pack_registries) > 1:
+        candidates = ", ".join(str(p) for p in sorted(pack_registries))
+        print(
+            f"Warning: multiple pack registries found, using {chosen}. Candidates: {candidates}",
+            file=sys.stderr,
+        )
+    return chosen
+
+
 def get_registry_path(project_root: str | None = None) -> Path:
     env_registry = os.environ.get("SERVICE_REGISTRY_PATH")
     if env_registry:
@@ -106,25 +132,19 @@ def get_registry_path(project_root: str | None = None) -> Path:
         project_root = env_root or get_project_root()
 
     root = Path(project_root)
-    pack_path = get_pack_path(project_root)
-    if pack_path is not None:
-        canonical = pack_path / "service-registry.json"
-        if canonical.exists():
-            return canonical
-
-    legacy_pack = root / ".xtrm" / "skills" / "user" / "packs" / "service-registry.json"
-    if legacy_pack.exists():
-        return legacy_pack
+    preferred = root / "service-registry.json"
+    if preferred.exists():
+        return preferred
 
     legacy = root / ".claude" / "skills" / "service-registry.json"
     if legacy.exists():
         return legacy
 
-    preferred = root / "service-registry.json"
-    if preferred.exists() or not legacy.exists():
-        return preferred
+    pack_registries = sorted(root.glob(".xtrm/skills/user/packs/*/service-registry.json"))
+    if pack_registries:
+        return _select_pack_registry(pack_registries, project_root)
 
-    return legacy
+    return preferred
 
 
 def load_registry(project_root: str | None = None) -> dict[str, Any]:
