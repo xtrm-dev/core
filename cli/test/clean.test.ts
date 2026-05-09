@@ -61,7 +61,7 @@ describe('xtrm clean — canonical wiring validation', () => {
     }
   });
 
-  it('reports stale matcher: gitnexus-hook.cjs with Read|Grep|Glob prefix is removed', () => {
+  it('keeps canonical matcher: gitnexus-hook.cjs with Read|Grep|Glob prefix', () => {
     const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'xtrm-clean-test-'));
     const hooksDir = path.join(tmpHome, '.claude', 'hooks');
     mkdirSync(path.join(tmpHome, '.claude'), { recursive: true });
@@ -72,7 +72,7 @@ describe('xtrm clean — canonical wiring validation', () => {
       hooks: {
         PostToolUse: [
           {
-            // Stale: canonical has Bash|mcp__serena__... (no Read|Grep|Glob)
+            // Canonical: current hooks.json includes Read|Grep|Glob prefix
             matcher: 'Read|Grep|Glob|Bash|mcp__serena__find_symbol|mcp__serena__get_symbols_overview',
             hooks: [{ type: 'command', command: `node "${path.join(hooksDir, 'gitnexus/gitnexus-hook.cjs')}"`, timeout: 10000 }],
           },
@@ -82,9 +82,8 @@ describe('xtrm clean — canonical wiring validation', () => {
 
     try {
       const r = runClean(['--dry-run', '--hooks-only'], { HOME: tmpHome });
-      expect(r.stdout, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).toMatch(
-        /gitnexus-hook\.cjs.*stale wiring/i,
-      );
+      expect(r.stdout).toContain('No orphaned hook entries found');
+      expect(r.stdout).not.toMatch(/gitnexus-hook\.cjs.*stale wiring/i);
     } finally {
       rmSync(tmpHome, { recursive: true, force: true });
     }

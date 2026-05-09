@@ -202,6 +202,7 @@ describe('gen-registry idempotence', () => {
     expect(secondOutput).toBe(firstOutput);
 
     const parsed = parseRegistryManifest(JSON.parse(secondOutput));
-    expect(Object.keys(parsed.assets).sort()).toEqual(['config', 'extensions', 'hooks', 'skills']);
+    expect(Object.keys(parsed.assets).sort()).toEqual(['config', 'hooks', 'skills', 'skills_optional']);
+    expect(parsed.assets.skills_optional.files).toEqual({});
   });
 });

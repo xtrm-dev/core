@@ -6,23 +6,22 @@ Phase 1 of the two-phase workflow: generates a structural skeleton for a new
 service skill by parsing docker-compose.yml, Dockerfiles, and dependency files.
 The skeleton contains [PENDING RESEARCH] markers for the agent to fill in Phase 2.
 
-Output location: .claude/skills/<service-id>/
+Output location: .xtrm/skills/user/packs/<pack>/<service-id>/
 """
 
+import re
+import shutil
 import sys
 from pathlib import Path
 
-# Resolve bootstrap from this script's directory
 script_dir = Path(__file__).parent
 sys.path.insert(0, str(script_dir))
 
-from bootstrap import RootResolutionError, get_project_root, register_service  # noqa: E402
+from bootstrap import RootResolutionError, get_pack_path, get_project_root, register_service  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Official documentation map — populated from detected technologies
-# ---------------------------------------------------------------------------
+SERVICE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-_]{0,63}$")
+
 OFFICIAL_DOCS: dict[str, tuple[str, str]] = {
-    # Docker images / databases
     "postgres": ("PostgreSQL", "https://www.postgresql.org/docs/"),
     "timescale": ("TimescaleDB", "https://docs.timescale.com/"),
     "timescaledb": ("TimescaleDB", "https://docs.timescale.com/"),
@@ -34,7 +33,6 @@ OFFICIAL_DOCS: dict[str, tuple[str, str]] = {
     "rabbitmq": ("RabbitMQ", "https://www.rabbitmq.com/documentation.html"),
     "kafka": ("Apache Kafka", "https://kafka.apache.org/documentation/"),
     "clickhouse": ("ClickHouse", "https://clickhouse.com/docs/"),
-    # Python packages
     "fastapi": ("FastAPI", "https://fastapi.tiangolo.com/"),
     "flask": ("Flask", "https://flask.palletsprojects.com/"),
     "django": ("Django", "https://docs.djangoproject.com/"),
@@ -51,19 +49,51 @@ OFFICIAL_DOCS: dict[str, tuple[str, str]] = {
 }
 
 
+def validate_service_id(service_id: str) -> None:
+    if not SERVICE_ID_PATTERN.fullmatch(service_id):
+        raise ValueError("service_id must match ^[a-z0-9][a-z0-9-_]{0,63}$")
+
+
+def ensure_legacy_symlink(target_dir: Path, legacy_dir: Path, pack_root: Path) -> None:
+    resolved_target = target_dir.resolve(strict=False)
+    resolved_legacy = legacy_dir.resolve(strict=False)
+    resolved_pack_root = pack_root.resolve(strict=False)
+
+    if resolved_pack_root not in resolved_target.parents and resolved_target != resolved_pack_root:
+        raise ValueError(f"legacy symlink target must stay within {resolved_pack_root}")
+    if resolved_pack_root not in resolved_legacy.parents and resolved_legacy != resolved_pack_root:
+        raise ValueError(f"legacy symlink path must stay within {resolved_pack_root}")
+
+    if legacy_dir.is_symlink():
+        legacy_dir.unlink()
+    elif legacy_dir.exists():
+        if legacy_dir.is_dir() and not any(legacy_dir.iterdir()):
+            legacy_dir.rmdir()
+        else:
+            raise ValueError("legacy path exists and is not an empty symlink-safe directory")
+
+    legacy_dir.parent.mkdir(parents=True, exist_ok=True)
+    legacy_dir.symlink_to(target_dir, target_is_directory=True)
+
+
 def scaffold_service_skill(service_id: str, compose_data: dict) -> Path:
-    """
-    Main entry point for Phase 1 scaffolding.
-    """
+    validate_service_id(service_id)
     try:
         project_root = get_project_root()
     except RootResolutionError as e:
         print(f"Error: {e}")
         sys.exit(1)
 
-    skill_dir = Path(project_root) / ".claude" / "skills" / service_id
-    if skill_dir.exists():
-        print(f"Skill directory already exists: {skill_dir}")
+    pack_path = get_pack_path(project_root)
+    if pack_path is None:
+        print("Error: unable to resolve pack path. Set XTRM_PACK or leave only one pack under .xtrm/skills/user/packs.")
+        sys.exit(1)
+
+    skill_dir = pack_path / service_id
+    legacy_dir = Path(project_root) / ".claude" / "skills" / service_id
+    if skill_dir.exists() or legacy_dir.exists():
+        existing = skill_dir if skill_dir.exists() else legacy_dir
+        print(f"Skill directory already exists: {existing}")
         print("Aborting to prevent overwriting. Delete it manually if you want to re-scaffold.")
         sys.exit(1)
 
@@ -75,23 +105,13 @@ def scaffold_service_skill(service_id: str, compose_data: dict) -> Path:
     (skill_dir / "references").mkdir()
     (skill_dir / "assets").mkdir()
 
-    # Detect service details from compose
     service_config = compose_data.get("services", {}).get(service_id, {})
-
-    # 1. Generate SKILL.md
     write_skill_md(service_id, service_config, skill_dir)
-
-    # 2. Generate script stubs
     write_script_stubs(service_id, skill_dir)
-
-    # 3. Generate reference stubs
     write_reference_stubs(service_id, skill_dir)
 
-    # 4. Register service in bootstrap state
-    # [TODO] Fill in territory and name properly
-    register_service(
-        service_id, service_id, [], str((skill_dir / "SKILL.md").relative_to(project_root))
-    )
+    register_service(service_id, service_id, [], str((skill_dir / "SKILL.md").relative_to(project_root)), project_root=project_root)
+    ensure_legacy_symlink(skill_dir, legacy_dir, pack_path)
 
     print(f"\n✅ Phase 1 Complete for {service_id}")
     print("Next step: Run Phase 2 deep dive for this service.")
@@ -99,13 +119,9 @@ def scaffold_service_skill(service_id: str, compose_data: dict) -> Path:
 
 
 def write_skill_md(service_id: str, config: dict, skill_dir: Path) -> None:
-    """Generate the root SKILL.md file."""
     name = service_id.replace("-", " ").replace("_", " ").title()
     persona = f"{name} Expert"
-
-    # Detect docs to link
     docs_section = ""
-    # [PENDING] Implement documentation auto-detection logic here
 
     content = f"""---
 name: {service_id}
@@ -211,13 +227,8 @@ Minimum 5 rows required.
 
 
 def write_script_stubs(service_id: str, skill_dir: Path) -> None:
-    """
-    Write Phase 1 script stubs into the skill's scripts/ directory.
-    """
     scripts_dir = skill_dir / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
-
-    # health_probe.py stub (using replace to avoid f-string escaping hell)
     health_probe_tpl = '''#!/usr/bin/env python3
 """Health probe for {{SERVICE_ID}}.
 
@@ -228,30 +239,21 @@ import subprocess
 import sys
 
 CONTAINER = "{{SERVICE_ID}}"
-# [PENDING RESEARCH] Set the actual external-mapped DB port (e.g. 5433 for host, 5432 for container)
 DB_PORT = 5433
-# [PENDING RESEARCH] Set the actual output table(s) and stale thresholds in minutes
-STALE_CHECKS: list[dict] = [
-    # {"table": "table_name", "ts_col": "created_at", "stale_minutes": 10},
-]
+STALE_CHECKS: list[dict] = []
 
 
 def check_container() -> bool:
-    result = subprocess.run(
-        ["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER],
-        capture_output=True, text=True
-    )
+    result = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER], capture_output=True, text=True)
     running = result.stdout.strip() == "true"
     print(f"Container {CONTAINER}: {'RUNNING' if running else 'STOPPED'}")
     return running
 
 
 def check_table_freshness() -> bool:
-    """[PENDING RESEARCH] Query actual output tables with correct stale thresholds."""
     if not STALE_CHECKS:
         print("Table freshness: NOT CONFIGURED (Phase 2 required)")
         return True
-    # [PENDING RESEARCH] Implement actual DB checks here
     return True
 
 
@@ -272,27 +274,17 @@ if __name__ == "__main__":
     args = p.parse_args()
     main(as_json=args.json)
 '''
-    (scripts_dir / "health_probe.py").write_text(
-        health_probe_tpl.replace("{{SERVICE_ID}}", service_id), encoding="utf-8"
-    )
-
-    # log_hunter.py stub
+    (scripts_dir / "health_probe.py").write_text(health_probe_tpl.replace("{{SERVICE_ID}}", service_id), encoding="utf-8")
     log_hunter_tpl = '''#!/usr/bin/env python3
 """Log hunter for {{SERVICE_ID}}.
 
 [PENDING RESEARCH] Replace generic patterns with actual error strings
 found in the codebase exception handlers during Phase 2 deep dive.
 """
-import json
-import re
 import subprocess
-import sys
 from collections import defaultdict
 
 CONTAINER = "{{SERVICE_ID}}"
-
-# [PENDING RESEARCH] Replace with patterns sourced from the actual codebase.
-# Find them with: search_for_pattern("logger.error|raise|panic!")
 PATTERNS: list[tuple[str, str, str]] = [
     ("ConnectionError", "ERROR", "Database or Redis connectivity issue"),
     ("TimeoutError", "WARNING", "External service latency detected"),
@@ -300,19 +292,13 @@ PATTERNS: list[tuple[str, str, str]] = [
 
 
 def hunt_logs(tail: int = 200) -> dict:
-    """Tails logs and matches against patterns."""
-    result = subprocess.run(
-        ["docker", "logs", "--tail", str(tail), CONTAINER],
-        capture_output=True, text=True
-    )
+    result = subprocess.run(["docker", "logs", "--tail", str(tail), CONTAINER], capture_output=True, text=True)
     logs = result.stdout + result.stderr
     matches = defaultdict(int)
-
     for line in logs.splitlines():
         for pattern, level, desc in PATTERNS:
             if pattern in line:
                 matches[pattern] += 1
-
     return dict(matches)
 
 
@@ -329,30 +315,23 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 '''
-    (scripts_dir / "log_hunter.py").write_text(
-        log_hunter_tpl.replace("{{SERVICE_ID}}", service_id), encoding="utf-8"
-    )
-
-    # data_explorer.py stub
+    (scripts_dir / "log_hunter.py").write_text(log_hunter_tpl.replace("{{SERVICE_ID}}", service_id), encoding="utf-8")
     data_explorer_tpl = '''#!/usr/bin/env python3
 """Data explorer for {{SERVICE_ID}} — read-only DB inspection.
 
 [PENDING RESEARCH] Fill in actual table names, columns, and host port
 during Phase 2 deep dive. All queries must use parameterized %s placeholders.
 """
-import json
 import sys
 
-# [PENDING RESEARCH] Set the actual table and connection settings
 TABLE = "[PENDING RESEARCH]"
 DB_HOST = "localhost"
-DB_PORT = 5433  # [PENDING RESEARCH] external mapped port, not container-internal
+DB_PORT = 5433
 DB_NAME = "[PENDING RESEARCH]"
 DB_USER = "postgres"
 
 
 def recent_rows(limit: int = 20, as_json: bool = False) -> None:
-    """[PENDING RESEARCH] Query most recent rows from the output table."""
     print(f"[PENDING RESEARCH] Implement: SELECT * FROM {TABLE} ORDER BY created_at DESC LIMIT %s")
     print("Use parameterized queries only — no f-strings in SQL.")
 
@@ -369,66 +348,55 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 '''
-    (scripts_dir / "data_explorer.py").write_text(
-        data_explorer_tpl.replace("{{SERVICE_ID}}", service_id), encoding="utf-8"
-    )
-
-    # Makefile — standard diagnostic runner for every skill
+    (scripts_dir / "data_explorer.py").write_text(data_explorer_tpl.replace("{{SERVICE_ID}}", service_id), encoding="utf-8")
     makefile_tpl = """# Skill diagnostic scripts for {{SERVICE_ID}}
 # Usage: make <target>   (from this directory)
 # Override python: make health PYTHON=/path/to/python3
 
-# Auto-detect: prefer project venv (4 levels up), fall back to system python3
 _VENV := $(wildcard ../../../../venv/bin/python3)
 PYTHON ?= $(if $(_VENV),../../../../venv/bin/python3,python3)
 
 .PHONY: health health-json data data-json logs errors db help
 
 help:
-\t@echo "Available targets:"
-\t@echo "  health      - Run health probe (human readable)"
-\t@echo "  health-json - Run health probe (JSON output)"
-\t@echo "  data        - Show latest DB records"
-\t@echo "  data-json   - Show latest DB records (JSON, limit 5)"
-\t@echo "  logs        - Tail and analyze recent logs"
-\t@echo "  errors      - Show errors/criticals only"
-\t@echo "  db          - Run DB helper example queries"
-\t@echo ""
-\t@echo "Python: $(PYTHON)"
+	@echo "Available targets:"
+	@echo "  health      - Run health probe (human readable)"
+	@echo "  health-json - Run health probe (JSON output)"
+	@echo "  data        - Show latest DB records"
+	@echo "  data-json   - Show latest DB records (JSON, limit 5)"
+	@echo "  logs        - Tail and analyze recent logs"
+	@echo "  errors      - Show errors/criticals only"
+	@echo "  db          - Run DB helper example queries"
+	@echo ""
+	@echo "Python: $(PYTHON)"
 
 health:
-\t$(PYTHON) health_probe.py
+	$(PYTHON) health_probe.py
 
 health-json:
-\t$(PYTHON) health_probe.py --json
+	$(PYTHON) health_probe.py --json
 
 data:
-\t$(PYTHON) data_explorer.py
+	$(PYTHON) data_explorer.py
 
 data-json:
-\t$(PYTHON) data_explorer.py --json --limit 5
+	$(PYTHON) data_explorer.py --json --limit 5
 
 logs:
-\t$(PYTHON) log_hunter.py --tail 50
+	$(PYTHON) log_hunter.py --tail 50
 
 errors:
-\t$(PYTHON) log_hunter.py --errors-only --tail 50
+	$(PYTHON) log_hunter.py --errors-only --tail 50
 
 db:
-\t$(PYTHON) db_helper.py
+	$(PYTHON) db_helper.py
 """
-    (scripts_dir / "Makefile").write_text(
-        makefile_tpl.replace("{{SERVICE_ID}}", service_id), encoding="utf-8"
-    )
+    (scripts_dir / "Makefile").write_text(makefile_tpl.replace("{{SERVICE_ID}}", service_id), encoding="utf-8")
 
 
 def write_reference_stubs(service_id: str, skill_dir: Path) -> None:
-    """Generate reference markdown files."""
     name = service_id.replace("-", " ").replace("_", " ").title()
-
-    # deep_dive.md
-    (skill_dir / "references" / "deep_dive.md").write_text(
-        f"""# Phase 2 Research: {name}
+    (skill_dir / "references" / "deep_dive.md").write_text(f"""# Phase 2 Research: {name}
 
 ## Source Analysis
 - **Entry Point**: [FILL]
@@ -442,19 +410,12 @@ def write_reference_stubs(service_id: str, skill_dir: Path) -> None:
 ## Invariants
 - [Must always X]
 - [Must never Y]
-""",
-        encoding="utf-8",
-    )
-
-    # architecture_ssot.md (stub)
-    (skill_dir / "references" / "architecture_ssot.md").write_text(
-        f"""# {name} Architecture
+""", encoding="utf-8")
+    (skill_dir / "references" / "architecture_ssot.md").write_text(f"""# {name} Architecture
 
 [PENDING RESEARCH] Replace with link to project-level SSOT if exists,
 otherwise document high-level components here.
-""",
-        encoding="utf-8",
-    )
+""", encoding="utf-8")
 
 
 if __name__ == "__main__":
@@ -463,20 +424,14 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: scaffolder.py <docker-compose-path> [service-id]")
         sys.exit(1)
-
     compose_path = Path(sys.argv[1])
     if not compose_path.exists():
         print(f"Compose file not found: {compose_path}")
         sys.exit(1)
-
     with open(compose_path) as f:
         data = yaml.safe_load(f)
-
     if len(sys.argv) > 2:
-        # Scaffold specific service
-        sid = sys.argv[2]
-        scaffold_service_skill(sid, data)
+        scaffold_service_skill(sys.argv[2], data)
     else:
-        # Scaffold all services in compose
         for sid in data.get("services", {}).keys():
             scaffold_service_skill(sid, data)

@@ -334,7 +334,7 @@ export function createCleanCommand(): Command {
 
             // Clean skills
             if (!hooksOnly) {
-                console.log(kleur.bold('\n  Scanning ~/.xtrm/skills/active/{claude,pi} and deprecated ~/.agents/skills/...'));
+                console.log(kleur.bold('\n  Scanning ~/.xtrm/skills/active and deprecated ~/.agents/skills/...'));
                 result.skillsRemoved = await cleanSkills(dryRun);
 
                 if (result.skillsRemoved.length > 0) {

@@ -52,7 +52,7 @@ Skills are organized into a **three-tier model** under `.xtrm/skills/`:
 | `optional` | Optional packs populated by `xt install` | Managed (replaceable) | Add-on packs and domain bundles (e.g. research-methods, code-quality, security-ops, data-engineering, architecture-design); activation is runtime-scoped via `xt skills enable <pack>` |
 | `user` | Local author-owned overlays | User-writable | Custom skills, overrides |
 
-Each runtime (Claude, Pi) has an **active view** under `.xtrm/skills/active/{claude,pi}/` containing symlinks to the resolved skill set.
+Canonical runtime active view is flat `.xtrm/skills/active/` containing symlinks to the resolved skill set. No live `.xtrm/skills/active/{claude,pi}/` split remains. Managed hooks live under `.xtrm/hooks/`; no `.xtrm/hooks/default/` tier is part of current contract.
 
 ## Directory Structure
 
@@ -127,7 +127,7 @@ Contains custom skills and override directives. Never overwritten by managed syn
 Each runtime has an **active view** directory:
 
 ```
-.xtrm/skills/active/{claude,pi}/
+.xtrm/skills/active/
 ```
 
 These are populated by **materialization** (`rebuildRuntimeActiveView`):

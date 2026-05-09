@@ -36,7 +36,7 @@ beforeEach(() => {
   fs.ensureDirSync(path.join(tmpDir, '.xtrm'));
   fs.writeJsonSync(path.join(tmpDir, '.xtrm', 'registry.json'), { version: '1', assets: {} }, { spaces: 2 });
   checkDriftMock.mockResolvedValue({ missing: [], upToDate: [], drifted: [] });
-  checkRuntimeSkillsViewsMock.mockResolvedValue({ activeReady: true, claudePointerReady: true, piPointerReady: true });
+  checkRuntimeSkillsViewsMock.mockResolvedValue({ activeReady: true, claudePointerReady: true, piPointerReady: true, hasDeprecatedAgentsSkillsPath: false });
   discoverDefaultSkillsMock.mockResolvedValue([]);
   getXtManagedPiPackageDoctorReportMock.mockReset();
 });
@@ -83,6 +83,7 @@ describe('xt doctor command', () => {
     const jsonLogs = await runDoctorCli(['--json']);
     const parsed = JSON.parse(jsonLogs[0]);
     expect(parsed.piPackages.hasIssues).toBe(false);
+    expect(parsed.catB.runtimeView.hasDeprecatedAgentsSkillsPath).toBe(false);
     expect(parsed.piPackages.issues).toEqual([]);
   });
 

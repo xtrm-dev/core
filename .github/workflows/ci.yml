@@ -48,12 +48,18 @@ jobs:
         npx eslint . --ignore-pattern "**/node_modules/**" || echo "Eslint not configured yet"
         ruff check . || echo "Ruff not configured yet"
 
+    - name: Check skills ownership drift
+      run: npm run check:skills-ownership
+
     - name: Policy parity checks (Claude + Pi)
       run: |
         mkdir -p ~/.pi/agent/extensions
         cp -r packages/pi-extensions/extensions/* ~/.pi/agent/extensions/
         node scripts/compile-policies.mjs --check
         node scripts/compile-policies.mjs --check-pi
+
+    - name: Registry ↔ npm pack parity
+      run: npm run check:registry-pack-parity
 
     - name: Run Tests
       run: |

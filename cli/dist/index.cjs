@@ -31281,12 +31281,12 @@ async function walkUp(startDir, predicate) {
 async function isSourceRepoRoot(dir) {
   const skillsPath = import_path.default.join(dir, "skills");
   const hooksPath = import_path.default.join(dir, "hooks");
-  return import_fs_extra.default.pathExists(skillsPath) && import_fs_extra.default.pathExists(hooksPath);
+  return await import_fs_extra.default.pathExists(skillsPath) && await import_fs_extra.default.pathExists(hooksPath);
 }
 async function isProjectRoot(dir) {
   const xtrmPath = import_path.default.join(dir, ".xtrm");
   const gitPath = import_path.default.join(dir, ".git");
-  return import_fs_extra.default.pathExists(xtrmPath) || import_fs_extra.default.pathExists(gitPath);
+  return await import_fs_extra.default.pathExists(xtrmPath) || await import_fs_extra.default.pathExists(gitPath);
 }
 async function findRepoRoot() {
   const fromCwd = await walkUp(process.cwd(), isSourceRepoRoot);
@@ -46012,6 +46012,11 @@ async function launchWorktreeSession(opts) {
       process.exit(1);
     }
   }
+  try {
+    (0, import_node_fs.rmSync)(import_node_path5.default.join(worktreePath, ".beads"), { recursive: true, force: true });
+    (0, import_node_fs.symlinkSync)(import_node_path5.default.join(mainRepoRoot, ".beads"), import_node_path5.default.join(worktreePath, ".beads"), "dir");
+  } catch {
+  }
   writeSessionMeta(worktreePath, runtime);
   console.log(kleur_default.green(`
   \u2713 Worktree ready \u2014 launching ${runtime}...
@@ -46612,6 +46617,11 @@ var PI_MCP_ADAPTER_REQUIRED_ENTRY = "commands.js";
 var PROJECT_EXTENSIONS_ENTRY = "../.xtrm/extensions";
 var PROJECT_SKILLS_ENTRY = "../.xtrm/skills/active";
 var PROJECT_EXTENSION_PACKAGE_ID = "npm:@jaggerxtrm/pi-extensions";
+var PROJECT_EXTENSION_PACKAGE = {
+  id: PROJECT_EXTENSION_PACKAGE_ID,
+  displayName: "@jaggerxtrm/pi-extensions",
+  required: true
+};
 var CONFLICTING_PI_PACKAGE_IDS = /* @__PURE__ */ new Set(["npm:pi-dex"]);
 var LEGACY_PROJECT_EXTENSION_ENTRIES = /* @__PURE__ */ new Set([
   PROJECT_EXTENSIONS_ENTRY,
@@ -46655,16 +46665,16 @@ var MANAGED_PACKAGES = [
   { id: "npm:@zenobius/pi-worktrees", displayName: "pi-worktrees", required: true },
   { id: "npm:@robhowley/pi-structured-return", displayName: "pi-structured-return", required: true },
   { id: "npm:@aliou/pi-guardrails", displayName: "pi-guardrails", required: false },
-  { id: "npm:@aliou/pi-processes", displayName: "pi-processes", required: true }
+  { id: "npm:@aliou/pi-processes", displayName: "pi-processes", required: true },
+  { id: "npm:pi-mcp-adapter", displayName: "pi-mcp-adapter", required: true }
 ];
-var ALWAYS_GLOBAL_INSTALL_PACKAGE_IDS = /* @__PURE__ */ new Set([
-  "npm:pi-gitnexus",
-  "npm:pi-serena-tools"
-]);
 var PROJECT_REQUIRED_PACKAGE_IDS = [
   PROJECT_EXTENSION_PACKAGE_ID,
   ...MANAGED_PACKAGES.map((pkg) => pkg.id)
 ];
+function getXtManagedPiPackages() {
+  return [PROJECT_EXTENSION_PACKAGE, ...MANAGED_PACKAGES];
+}
 function getInstalledPiPackages() {
   const result = (0, import_child_process3.spawnSync)("pi", ["list"], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) return [];
@@ -46801,31 +46811,71 @@ function renderPiRuntimePlan(plan) {
 }
 function getProjectRequiredPackageStatuses(installedPkgIds) {
   return PROJECT_REQUIRED_PACKAGE_IDS.map((packageId) => {
-    const managed = MANAGED_PACKAGES.find((pkg2) => pkg2.id === packageId);
-    const pkg = managed ?? {
-      id: PROJECT_EXTENSION_PACKAGE_ID,
-      displayName: "@jaggerxtrm/pi-extensions",
-      required: true
-    };
+    const managed = getXtManagedPiPackages().find((pkg2) => pkg2.id === packageId);
+    const pkg = managed ?? PROJECT_EXTENSION_PACKAGE;
     return {
       pkg,
       installed: installedPkgIds.includes(packageId)
     };
   });
 }
-function mergePiSyncResults(base, incoming) {
-  return {
-    extensionsAdded: [...base.extensionsAdded, ...incoming.extensionsAdded],
-    extensionsUpdated: [...base.extensionsUpdated, ...incoming.extensionsUpdated],
-    extensionsRemoved: [...base.extensionsRemoved, ...incoming.extensionsRemoved],
-    packagesInstalled: [...base.packagesInstalled, ...incoming.packagesInstalled],
-    failed: [...base.failed, ...incoming.failed]
-  };
-}
 function parseNpmPackageName(piPackageId) {
   if (!piPackageId.startsWith("npm:")) return null;
   const npmPackageName = piPackageId.slice(4).trim();
   return npmPackageName.length > 0 ? npmPackageName : null;
+}
+function classifyPiPackageFreshness(info) {
+  if (!info.installedVersion) return "missing";
+  if (!info.expectedVersion) return "version-unknown";
+  return info.installedVersion === info.expectedVersion ? "current" : "outdated";
+}
+async function getInstalledPiPackageVersion(agentDir, npmPackageName) {
+  const packageJsonPath = import_path4.default.join(agentDir, "npm", "node_modules", npmPackageName, "package.json");
+  if (!await import_fs_extra9.default.pathExists(packageJsonPath)) return null;
+  try {
+    const packageJson = await import_fs_extra9.default.readJson(packageJsonPath);
+    return typeof packageJson.version === "string" ? packageJson.version : null;
+  } catch {
+    return null;
+  }
+}
+var PI_PACKAGE_VERSION_LOOKUP_TIMEOUT_MS = 5e3;
+async function getExpectedPiPackageVersion(npmPackageName) {
+  const result = (0, import_child_process3.spawnSync)("npm", ["view", npmPackageName, "version", "--registry", NPMJS_REGISTRY_URL], {
+    encoding: "utf8",
+    stdio: "pipe",
+    timeout: PI_PACKAGE_VERSION_LOOKUP_TIMEOUT_MS
+  });
+  if (result.status !== 0) return null;
+  const version3 = (result.stdout ?? "").trim();
+  return version3.length > 0 ? version3 : null;
+}
+async function getManagedPiPackageFreshness(versionProvider, packages = getXtManagedPiPackages()) {
+  const statuses = [];
+  for (const pkg of packages) {
+    const npmPackageName = parseNpmPackageName(pkg.id);
+    if (!npmPackageName) {
+      statuses.push({
+        pkg,
+        npmPackageName: "",
+        installedVersion: null,
+        expectedVersion: null,
+        state: "version-unknown"
+      });
+      continue;
+    }
+    const info = await versionProvider(pkg.id, npmPackageName, pkg);
+    const installedVersion = info.installedVersion ?? null;
+    const expectedVersion = info.expectedVersion ?? null;
+    statuses.push({
+      pkg,
+      npmPackageName,
+      installedVersion,
+      expectedVersion,
+      state: classifyPiPackageFreshness({ installedVersion, expectedVersion })
+    });
+  }
+  return statuses;
 }
 async function isPackagePresentInPiAgent(agentDir, piPackageId) {
   const npmPackageName = parseNpmPackageName(piPackageId);
@@ -46892,8 +46942,7 @@ function installPiPackageWithFallback(piPackageId, log, installRunner = runPiPac
 async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall) {
   const installed = [];
   const failed = [];
-  const packagesToEnsure = MANAGED_PACKAGES.filter((pkg) => ALWAYS_GLOBAL_INSTALL_PACKAGE_IDS.has(pkg.id));
-  for (const pkg of packagesToEnsure) {
+  for (const pkg of getXtManagedPiPackages()) {
     if (await isPackagePresentInPiAgent(agentDir, pkg.id)) {
       continue;
     }
@@ -46914,6 +46963,63 @@ async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR
     }
   }
   return { installed, failed };
+}
+async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, versionProvider = async (_piPackageId, npmPackageName) => ({
+  installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName),
+  expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
+})) {
+  const statuses = await getManagedPiPackageFreshness(versionProvider);
+  const missing = statuses.filter((status) => status.state === "missing");
+  const outdated = statuses.filter((status) => status.state === "outdated");
+  const installed = [];
+  const refreshed = [];
+  const failed = [];
+  for (const status of [...missing, ...outdated]) {
+    if (dryRun) {
+      log?.("[DRY RUN] pi install " + status.pkg.id);
+      continue;
+    }
+    const installAttempt = installPiPackageWithFallback(status.pkg.id, log, installRunner);
+    if (installAttempt.status === 0) {
+      if (status.state === "missing") {
+        installed.push(status.pkg.id);
+        log?.(sym.ok + " " + status.pkg.displayName);
+      } else {
+        refreshed.push(status.pkg.id);
+        log?.(sym.ok + " " + status.pkg.displayName + " (refreshed)");
+      }
+      continue;
+    }
+    failed.push(status.pkg.id);
+    log?.(kleur_default.yellow("\u26A0 " + status.pkg.displayName + " \u2014 " + status.state + " package update failed"));
+    for (const hint of getPiPackageInstallFailureHint(status.pkg.id, installAttempt.output)) {
+      log?.(kleur_default.yellow("  \u2192 " + hint));
+    }
+  }
+  return { statuses, missing, outdated, installed, refreshed, failed };
+}
+async function getXtManagedPiPackageDoctorReport(versionProvider = async (_piPackageId, npmPackageName) => ({
+  installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName),
+  expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
+})) {
+  const statuses = await getManagedPiPackageFreshness(versionProvider, getXtManagedPiPackages());
+  const issues = statuses.filter((status) => status.state !== "current").map((status) => ({
+    ...status,
+    remediation: status.state === "version-unknown" ? "check network/npm registry, then rerun xt doctor" : "pi install " + status.pkg.id
+  }));
+  const missing = issues.filter((issue2) => issue2.state === "missing");
+  const outdated = issues.filter((issue2) => issue2.state === "outdated");
+  const ok2 = statuses.filter((status) => status.state === "current").map((status) => ({
+    ...status,
+    remediation: ""
+  }));
+  return {
+    issues,
+    missing,
+    outdated,
+    ok: ok2,
+    hasIssues: issues.length > 0
+  };
 }
 async function ensureCorePackageSymlink(coreSrcDir, projectRoot, dryRun, log) {
   if (!await import_fs_extra9.default.pathExists(coreSrcDir)) return "missing-source";
@@ -47248,13 +47354,22 @@ async function runPiRuntimeSync(opts = {}) {
     const targetDir = import_path4.default.join(PI_AGENT_DIR, "extensions");
     const plan = await inventoryPiRuntime(sourceDir, targetDir);
     renderPiRuntimePlan(plan);
-    if (plan.allPresent) return result;
-    const synced = await executePiSync(plan, sourceDir, targetDir, {
-      dryRun,
-      isGlobal: true,
-      removeOrphaned: true
-    });
-    return mergePiSyncResults(result, synced);
+    if (!plan.allPresent) {
+      const synced = await executePiSync(plan, sourceDir, targetDir, {
+        dryRun,
+        isGlobal: true,
+        removeOrphaned: true
+      });
+      result.extensionsAdded.push(...synced.extensionsAdded);
+      result.extensionsUpdated.push(...synced.extensionsUpdated);
+      result.extensionsRemoved.push(...synced.extensionsRemoved);
+      result.packagesInstalled.push(...synced.packagesInstalled);
+      result.failed.push(...synced.failed);
+    }
+    const alwaysGlobalInstallResult2 = await ensureAlwaysGlobalPiPackages(dryRun, log);
+    result.packagesInstalled.push(...alwaysGlobalInstallResult2.installed);
+    result.failed.push(...alwaysGlobalInstallResult2.failed);
+    return result;
   }
   const installedPkgIds = getInstalledPiPackages();
   const packageStatuses = getProjectRequiredPackageStatuses(installedPkgIds);
@@ -47872,8 +47987,14 @@ async function scaffoldSkillsDefaultFromPackage(params) {
   const stat = await import_fs_extra13.default.lstat(targetDir).catch(() => null);
   if (stat) {
     if (stat.isSymbolicLink()) {
-      const isValid = await import_fs_extra13.default.pathExists(targetDir);
-      if (isValid) {
+      const [sourceRealPath, targetRealPath] = await Promise.all([
+        import_fs_extra13.default.realpath(sourceDir).catch(() => null),
+        import_fs_extra13.default.realpath(targetDir).catch(() => null)
+      ]);
+      if (sourceRealPath && targetRealPath && sourceRealPath === targetRealPath) {
+        return "noop";
+      }
+      if (dryRun) {
         return "noop";
       }
       await import_fs_extra13.default.remove(targetDir);
@@ -50264,9 +50385,14 @@ async function compareItem(category, item, repoPath, systemPath, changeSet, prun
 }
 
 // src/commands/init.ts
-var PKG_ROOT = resolvePackageRoot2();
-var MCP_CORE_CONFIG_PATH = import_path15.default.join(PKG_ROOT, ".xtrm", "config", "claude.mcp.json");
-var INSTRUCTIONS_DIR = import_path15.default.join(PKG_ROOT, ".xtrm", "config", "instructions");
+var cachedPackageRoot;
+function getPackageRoot() {
+  cachedPackageRoot ??= resolvePackageRoot2();
+  return cachedPackageRoot;
+}
+function getInstructionsDir() {
+  return import_path15.default.join(getPackageRoot(), ".xtrm", "config", "instructions");
+}
 var XTRM_BLOCK_START = "<!-- xtrm:start -->";
 var XTRM_BLOCK_END = "<!-- xtrm:end -->";
 function parseComposeServices(content) {
@@ -50348,7 +50474,7 @@ async function injectProjectInstructionHeaders(projectRoot) {
   ];
   console.log(kleur_default.bold("Injecting xtrm agent instruction headers..."));
   for (const target of targets) {
-    const templatePath = import_path15.default.join(INSTRUCTIONS_DIR, target.template);
+    const templatePath = import_path15.default.join(getInstructionsDir(), target.template);
     if (!await import_fs_extra21.default.pathExists(templatePath)) {
       console.log(kleur_default.yellow(`  \u26A0 Missing template: ${target.template}`));
       continue;
@@ -50551,7 +50677,7 @@ async function runProjectInit(opts = {}) {
   }
   await runMachineBootstrapPhase({ dryRun: false });
   await runClaudeRuntimeSyncPhase({ repoRoot: projectRoot, dryRun: false, isGlobal: false });
-  const packageRoot = PKG_ROOT;
+  const packageRoot = getPackageRoot();
   const ctx = await getContext({
     createMissingDirs: true,
     isGlobal: opts.global,
@@ -53800,6 +53926,8 @@ function createMergeCommand() {
 var import_node_child_process13 = require("child_process");
 var import_node_fs9 = require("fs");
 var import_node_path18 = require("path");
+var committedLabel = (outcome) => outcome === "error" ? "ACMT-" : "ACMT+";
+var committedColor = (s) => s === "ACMT-" ? kleur_default.red(s) : kleur_default.cyan(s);
 var KIND_LABELS = {
   "session.start": { label: "SESS+", color: kleur_default.green },
   "session.end": { label: "SESS-", color: kleur_default.white },
@@ -53813,10 +53941,7 @@ var KIND_LABELS = {
   "gate.worktree.block": { label: "WTRE-", color: kleur_default.red },
   "bd.claimed": { label: "CLMD ", color: kleur_default.cyan },
   "bd.closed": { label: "CLSD ", color: kleur_default.green },
-  "bd.committed": {
-    label: (outcome) => outcome === "error" ? "ACMT-" : "ACMT+",
-    color: (outcome) => outcome === "error" ? kleur_default.red : kleur_default.cyan
-  }
+  "bd.committed": { label: committedLabel, color: committedColor }
 };
 var TOOL_ABBREVS = {
   Bash: "BASH",
@@ -53858,9 +53983,7 @@ function getLabel(event) {
     const label = event.outcome === "error" ? "ACMT-" : "ACMT+";
     return event.outcome === "error" ? kleur_default.red(label) : kleur_default.cyan(label);
   }
-  return def.color(
-    def.label
-  );
+  return typeof def.color === "function" && typeof def.label === "string" ? def.color(def.label) : kleur_default.dim("UNKN ");
 }
 var SESSION_COLORS = [
   kleur_default.blue,
@@ -55345,6 +55468,28 @@ function renderCatB(report) {
     for (const name of report.duplicates) warn(`duplicate: ${name}`);
   }
 }
+function renderXtManagedPiPackages(report) {
+  section2("Pi packages");
+  if (report.issues.length === 0) {
+    ok("all xt-shipped Pi packages present and current");
+    return true;
+  }
+  for (const issue2 of report.missing) {
+    warn(issue2.pkg.displayName.padEnd(28) + " missing");
+    fix(issue2.remediation);
+  }
+  for (const issue2 of report.outdated) {
+    warn(issue2.pkg.displayName.padEnd(28) + " outdated " + (issue2.installedVersion ?? "unknown") + " \u2192 " + (issue2.expectedVersion ?? "unknown"));
+    fix(issue2.remediation);
+  }
+  const unknown2 = report.issues.filter((issue2) => issue2.state === "version-unknown");
+  for (const issue2 of unknown2) {
+    warn(issue2.pkg.displayName.padEnd(28) + " version unknown (offline or npm lookup failed)");
+    fix(issue2.remediation);
+  }
+  console.log(kleur_default.dim("  outbound: npm view <pkg> version --registry https://registry.npmjs.org"));
+  return false;
+}
 function hasCatBIssues(report) {
   return report.skills.some((row) => row.status !== "in-sync") || report.hooks.some((row) => row.status !== "in-sync") || !report.runtimeView.activeReady || !report.runtimeView.claudePointerReady || !report.runtimeView.piPointerReady || report.duplicates.length > 0;
 }
@@ -55356,17 +55501,20 @@ function createDoctorCommand() {
     const runtimeView = await checkRuntimeSkillsViews(cwd);
     const duplicates = await detectDuplicateCanonicalNames(cwd);
     const catB = await buildCatBJson(registry2, cwd, drift, runtimeView, duplicates);
+    const piPackages = await getXtManagedPiPackageDoctorReport();
+    const doctorJson = { catB, piPackages };
     if (opts.json) {
-      console.log(JSON.stringify(catB, null, 2));
-      if (hasCatBIssues(catB)) process.exitCode = 1;
+      console.log(JSON.stringify(doctorJson, null, 2));
+      if (piPackages.hasIssues || hasCatBIssues(catB)) process.exitCode = 1;
       return;
     }
     console.log(`
 ${kleur_default.bold("xt doctor")}
 `);
     const fragmentsOk = checkClaudeMdFragments(cwd);
+    const piPackagesOk = renderXtManagedPiPackages(piPackages);
     renderCatB(catB);
-    const failed = !fragmentsOk || hasCatBIssues(catB);
+    const failed = !fragmentsOk || !piPackagesOk || piPackages.hasIssues || hasCatBIssues(catB);
     if (failed) {
       console.log("");
       console.log(`  ${kleur_default.yellow("\u25CB")} ${kleur_default.bold("Some checks failed")}  \u2014 follow the fix hints above`);
@@ -55608,19 +55756,32 @@ function printTable(rows) {
     console.log(`${row.repo.padEnd(widths.repo)}  ${row.status.padEnd(widths.status)}  ${row.reason ?? ""}`);
   }
 }
+function printPiPackages(packageAssurance) {
+  if (packageAssurance.missing.length === 0 && packageAssurance.outdated.length === 0) {
+    return;
+  }
+  console.log(kleur_default.bold("\n  Pi Packages"));
+  console.log(kleur_default.dim("  " + "-".repeat(50)));
+  for (const status of packageAssurance.statuses) {
+    if (status.state === "current") continue;
+    console.log(`${status.state.padEnd(10)} ${status.pkg.displayName}`);
+  }
+}
 function createUpdateCommand() {
-  return new Command("update").description("Refresh xtrm-managed files for one repo or many").option("--apply", "Write changes with install force mode", false).option("--root <dir>", "Walk root and update every repo with .xtrm/registry.json").option("--repo <path>", "Target one repo path instead of cwd").option("--json", "Print JSON output", false).action(async (opts) => {
+  return new Command("update").description("Refresh xtrm-managed files and assure global xt Pi packages for one repo or many; missing or outdated packages are refreshed on --apply").option("--apply", "Write changes with install force mode", false).option("--root <dir>", "Walk root and update every repo with .xtrm/registry.json").option("--repo <path>", "Target one repo path instead of cwd").option("--json", "Print JSON output", false).action(async (opts) => {
     const repos = await resolveTargetRepos(opts);
     const rows = [];
     for (const repo of repos) {
       rows.push(await updateRepo(repo, Boolean(opts.apply)));
     }
+    const packageAssurance = await assureXtManagedPiPackages(Boolean(opts.apply));
     if (opts.json) {
-      console.log(JSON.stringify({ repos: rows }, null, 2));
+      console.log(JSON.stringify({ repos: rows, packages: packageAssurance }, null, 2));
     } else {
       printTable(rows);
+      printPiPackages(packageAssurance);
     }
-    if (rows.some((row) => row.status === "failed")) {
+    if (rows.some((row) => row.status === "failed") || packageAssurance.failed.length > 0) {
       process.exitCode = 1;
     }
   });

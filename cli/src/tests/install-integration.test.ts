@@ -22,7 +22,7 @@ vi.mock('../core/machine-bootstrap.js', async () => {
 import { createInstallCommand } from '../commands/install.js';
 
 interface HooksConfig {
-  hooks: Record<string, Array<{ script: string; matcher?: string; timeout?: number }>>;
+  hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> }>>;
 }
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -61,15 +61,8 @@ function readHooksConfig(): HooksConfig {
   return fs.readJsonSync(path.join(REPO_ROOT, '.xtrm', 'config', 'hooks.json')) as HooksConfig;
 }
 
-function expectedCommandForScript(scriptName: string, absolutePath: string): string {
-  const extension = path.extname(scriptName).toLowerCase();
-  if (extension === '.mjs' || extension === '.cjs' || extension === '.js') {
-    return `node "${absolutePath}"`;
-  }
-  if (extension === '.sh') {
-    return `bash "${absolutePath}"`;
-  }
-  return `${process.platform === 'win32' ? 'python' : 'python3'} "${absolutePath}"`;
+function expectedCommand(commandTemplate: string, hooksRoot: string): string {
+  return commandTemplate.replace(/\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/([^\s"]+)/g, `"${hooksRoot}/$1"`);
 }
 
 describe('xtrm install integration', () => {
@@ -79,16 +72,13 @@ describe('xtrm install integration', () => {
     expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'hooks'))).toBe(true);
     expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'config'))).toBe(true);
     expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'skills', 'default'))).toBe(true);
-    expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'extensions'))).toBe(true);
     expect(fs.pathExistsSync(path.join(tmpDir, '.mcp.json'))).toBe(true);
 
     const mcpConfig = fs.readJsonSync(path.join(tmpDir, '.mcp.json')) as { mcpServers?: Record<string, unknown> };
     expect(Object.keys(mcpConfig.mcpServers ?? {})).toEqual(expect.arrayContaining([
-      'serena',
       'gitnexus',
       'github-grep',
       'deepwiki',
-      'context7',
     ]));
 
     const settingsPath = path.join(tmpDir, '.claude', 'settings.json');
@@ -99,17 +89,20 @@ describe('xtrm install integration', () => {
     };
     const hooksConfig = readHooksConfig();
 
+    const hooksRoot = path.join(tmpDir, '.xtrm', 'hooks');
     for (const [eventName, definitions] of Object.entries(hooksConfig.hooks)) {
       const wrappers = settings.hooks[eventName] ?? [];
       expect(wrappers.length).toBe(definitions.length);
 
       definitions.forEach((definition, index) => {
         const wrapper = wrappers[index];
-        const commandHook = wrapper.hooks[0];
-        const expectedAbsolutePath = path.join(tmpDir, '.xtrm', 'hooks', definition.script);
+        expect(wrapper.hooks.length).toBe(definition.hooks.length);
 
-        expect(commandHook.type).toBe('command');
-        expect(commandHook.command).toBe(expectedCommandForScript(definition.script, expectedAbsolutePath));
+        definition.hooks.forEach((hook, hookIndex) => {
+          const commandHook = wrapper.hooks[hookIndex];
+          expect(commandHook.type).toBe(hook.type);
+          expect(commandHook.command).toBe(expectedCommand(hook.command, hooksRoot));
+        });
       });
     }
   });

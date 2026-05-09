@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "owners": {
+    "releasing": {
+      "owner": "xtrm-tools",
+      "source": "xtrm-tools",
+      "kind": "skill"
+    },
+    "update-specialists": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
+    },
+    "using-kpi": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
+    },
+    "using-nodes": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
+    },
+    "specialists-creator": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
+    },
+    "using-specialists": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
+    },
+    "using-specialists-v2": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
+    },
+    "using-specialists-v3": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
+    },
+    "using-script-specialists": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
+    }
+  },
+  "mirrors": {
+    "specialists": {
+      "package": "specialists",
+      "source_path": "config/skills",
+      "release": {
+        "package": "specialists",
+        "sha": "unknown"
+      }
+    }
+  }
+}

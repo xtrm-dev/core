@@ -1,4 +1,5 @@
 # anatomy.md
+> Manual note 2026-05-08: xtrm-cplc fixed workspace xtrm-cli tarball --version/--help crash by lazy-resolving init packageRoot and marking cli/package.json private/nonpublishable; canonical root xtrm-tools tarball remains release/install package.
 > Manual note 2026-05-07: session report .xtrm/reports/2026-05-07-986757b.md documents substantial dirty-state handoff for xtrm-tools-be9, including Pi UI compaction/theme changes, .pi/npm runtime drift, and specialists default mirror deletions.
 > Manual note 2026-05-07: xtrm-tools-be9 fix updates scaffoldSkillsDefaultFromPackage to replace valid-but-stale .xtrm/skills/default symlinks unless they resolve to the current package payload.
 
@@ -1251,3 +1252,5 @@
 - 2026-05-08: Session report .xtrm/reports/2026-05-08-030283f.md now includes xtrm-6xus docs sync and xtrm-2k16 report-update closure.
 
 - 2026-05-08: cli/src/core/pi-runtime.ts MANAGED_PACKAGES includes npm:pi-mcp-adapter; docs package inventories include it in XTRM-GUIDE, pi-extensions, and cli-architecture.
+
+- 2026-05-08: `.wolf/cerebrum.md` and `.wolf/memory.md` record specialist orchestration correction: do not early-stop specialists to self-execute; improve bead contracts/prompts and steer/diagnose instead.

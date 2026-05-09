@@ -1,0 +1,18 @@
+{
+  "mirrors": {
+    "specialists": {
+      "package": "specialists",
+      "sha": "unknown",
+      "assets": [
+        "update-specialists",
+        "using-kpi",
+        "using-nodes",
+        "specialists-creator",
+        "using-specialists",
+        "using-specialists-v2",
+        "using-specialists-v3",
+        "using-script-specialists"
+      ]
+    }
+  }
+}

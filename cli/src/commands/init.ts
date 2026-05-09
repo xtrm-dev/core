@@ -24,9 +24,21 @@ import { calculateDiff } from '../core/diff.js';
 import { findRepoRoot } from '../utils/repo-root.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
 
-const PKG_ROOT = resolvePackageRoot();
-const MCP_CORE_CONFIG_PATH = path.join(PKG_ROOT, '.xtrm', 'config', 'claude.mcp.json');
-const INSTRUCTIONS_DIR = path.join(PKG_ROOT, '.xtrm', 'config', 'instructions');
+let cachedPackageRoot: string | undefined;
+
+function getPackageRoot(): string {
+    cachedPackageRoot ??= resolvePackageRoot();
+    return cachedPackageRoot;
+}
+
+function getMcpCoreConfigPath(): string {
+    return path.join(getPackageRoot(), '.xtrm', 'config', 'claude.mcp.json');
+}
+
+function getInstructionsDir(): string {
+    return path.join(getPackageRoot(), '.xtrm', 'config', 'instructions');
+}
+
 const XTRM_BLOCK_START = '<!-- xtrm:start -->';
 const XTRM_BLOCK_END = '<!-- xtrm:end -->';
 const syncedProjectMcpRoots = new Set<string>();
@@ -202,7 +214,8 @@ async function syncProjectMcpServers(projectRoot: string): Promise<void> {
     if (syncedProjectMcpRoots.has(projectRoot)) return;
     syncedProjectMcpRoots.add(projectRoot);
 
-    if (!await fs.pathExists(MCP_CORE_CONFIG_PATH)) return;
+    const mcpCoreConfigPath = getMcpCoreConfigPath();
+    if (!await fs.pathExists(mcpCoreConfigPath)) return;
 
     console.log(kleur.bold('\n── Installing MCP (project scope) ─────────'));
 
@@ -211,7 +224,7 @@ async function syncProjectMcpServers(projectRoot: string): Promise<void> {
         return;
     }
 
-    const mcpConfig = await fs.readJson(MCP_CORE_CONFIG_PATH);
+    const mcpConfig = await fs.readJson(mcpCoreConfigPath);
     const servers = Object.entries(mcpConfig?.mcpServers ?? {}) as Array<[string, any]>;
     if (servers.length === 0) {
         console.log(kleur.dim('  ℹ No core MCP servers configured.'));
@@ -282,7 +295,7 @@ export async function injectProjectInstructionHeaders(projectRoot: string): Prom
     console.log(kleur.bold('Injecting xtrm agent instruction headers...'));
 
     for (const target of targets) {
-        const templatePath = path.join(INSTRUCTIONS_DIR, target.template);
+        const templatePath = path.join(getInstructionsDir(), target.template);
         if (!await fs.pathExists(templatePath)) {
             console.log(kleur.yellow(`  ⚠ Missing template: ${target.template}`));
             continue;
@@ -754,7 +767,7 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
     await runClaudeRuntimeSyncPhase({ repoRoot: projectRoot, dryRun: false, isGlobal: false });
 
     // ── Phase 6: Registry scaffold (.xtrm files copy) ───────────────────────
-    const packageRoot = PKG_ROOT;
+    const packageRoot = getPackageRoot();
     const ctx = await getContext({
         createMissingDirs: true,
         isGlobal: opts.global,
@@ -821,7 +834,7 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
         ? await ensureAgentsSkillsSymlink(projectRoot, { force: true })
         : await ensureAgentsSkillsSymlink(projectRoot);
     if (skillsActivation.activatedClaudeSkills === skillsActivation.activatedPiSkills) {
-        console.log(kleur.green(`  ✓ Activated ${skillsActivation.activatedClaudeSkills} default skills → .xtrm/skills/active/{claude,pi}`));
+        console.log(kleur.green(`  ✓ Activated ${skillsActivation.activatedClaudeSkills} default skills → .xtrm/skills/active`));
     } else {
         console.log(kleur.green(`  ✓ Activated runtime skills → claude:${skillsActivation.activatedClaudeSkills}, pi:${skillsActivation.activatedPiSkills}`));
     }

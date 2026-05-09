@@ -16,7 +16,7 @@ import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { findRepoRoot } from '../utils/repo-root.js';
 import { t, sym } from '../utils/theme.js';
-import { inventoryPiRuntime, executePiSync, renderPiRuntimePlan } from '../core/pi-runtime.js';
+import { inventoryPiRuntime, executePiSync, renderPiRuntimePlan, resolveManagedPiExtensionsSourceDir } from '../core/pi-runtime.js';
 import { isPiInstalled, isPnpmInstalled } from '../core/machine-bootstrap.js';
 
 const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
@@ -86,15 +86,19 @@ export function createInstallPiCommand(): Command {
 
             // ── Drift Check Mode ──────────────────────────────────────────────────────
             if (check) {
-                const sourceDir = path.join(piConfigDir, 'extensions');
+                const sourceDir = resolveManagedPiExtensionsSourceDir();
                 const targetDir = path.join(PI_AGENT_DIR, 'extensions');
+
+                if (!sourceDir) {
+                    console.log(kleur.dim('\n  Managed extensions: skipped (not bundled in npm package)\n'));
+                    return;
+                }
 
                 const plan = await inventoryPiRuntime(sourceDir, targetDir);
                 renderPiRuntimePlan(plan);
 
-                if (plan.missingExtensions.length > 0 || 
-                    plan.staleExtensions.length > 0 || 
-                    plan.orphanedExtensions.length > 0) {
+                const hasDrift = plan.missingExtensions.length > 0 || plan.staleExtensions.length > 0 || plan.orphanedExtensions.length > 0;
+                if (hasDrift) {
                     console.error(kleur.red('  ✗ Pi runtime drift detected. Run `xtrm pi` to sync.\n'));
                     process.exit(1);
                 }
@@ -178,23 +182,27 @@ export function createInstallPiCommand(): Command {
             }
 
             // ── Extension & Package Sync ───────────────────────────────────────────────
-            const sourceDir = path.join(piConfigDir, 'extensions');
+            const sourceDir = resolveManagedPiExtensionsSourceDir();
             const targetDir = path.join(PI_AGENT_DIR, 'extensions');
 
-            const plan = await inventoryPiRuntime(sourceDir, targetDir);
-            renderPiRuntimePlan(plan);
+            if (!sourceDir) {
+                console.log(kleur.dim('\n  Managed extensions: skipped (not bundled in npm package)\n'));
+            } else {
+                const plan = await inventoryPiRuntime(sourceDir, targetDir);
+                renderPiRuntimePlan(plan);
 
-            if (!plan.allPresent) {
-                const result = await executePiSync(plan, sourceDir, targetDir, {
-                    dryRun: false,
-                    isGlobal: true,
-                    removeOrphaned: true,
-                    log: (msg) => console.log(kleur.dim(`    ${msg}`)),
-                });
+                if (!plan.allPresent) {
+                    const result = await executePiSync(plan, sourceDir, targetDir, {
+                        dryRun: false,
+                        isGlobal: true,
+                        removeOrphaned: true,
+                        log: (msg) => console.log(kleur.dim(`    ${msg}`)),
+                    });
 
-                const total = result.extensionsAdded.length + result.extensionsUpdated.length + result.packagesInstalled.length;
-                if (total > 0) {
-                    console.log(t.success(`\n    ${sym.ok} Synced ${total} items`));
+                    const total = result.extensionsAdded.length + result.extensionsUpdated.length + result.packagesInstalled.length;
+                    if (total > 0) {
+                        console.log(t.success(`\n    ${sym.ok} Synced ${total} items`));
+                    }
                 }
             }
 

@@ -30,3 +30,5 @@
 ## Decision Log
 
 <!-- Significant technical decisions with rationale. Why X was chosen over Y. -->
+
+[2026-05-08] Do not early-stop specialists to take over the work yourself. If a specialist appears stuck, diagnose with `sp ps`, `sp feed`, `sp result`, and observability, then report/steer; only stop on explicit user instruction or destructive/runaway behavior. Bad specialist behavior usually means the bead/contract/prompt was underspecified by the orchestrator: write clearer, bounded, meaningful bead descriptions and specialist contracts up front.

@@ -184,6 +184,24 @@
         "orchestration",
         "repeat-bug"
       ]
+    },
+    {
+      "id": "bug-012",
+      "timestamp": "2026-05-08T23:01:20Z",
+      "error_message": "npm pack --workspace cli temp install crashed on xt --version with 'Failed to locate package root: .xtrm/registry.json not found'",
+      "file": "cli/src/commands/init.ts",
+      "root_cause": "init.ts resolved packageRoot at module import time via resolvePackageRoot(), so importing the CLI loaded init and crashed before --version/--help could run when the workspace-only xtrm-cli package lacks root .xtrm assets.",
+      "fix": "Made package-root access lazy in init.ts, resolving only when init actions need package assets; marked cli/package.json private to document workspace package as nonpublishable; rebuilt dist and smoke-tested workspace/root tarballs.",
+      "tags": [
+        "package-smoke",
+        "cli",
+        "lazy-init",
+        "xtrm-cli",
+        "npm-pack"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-08T23:01:20Z"
     }
   ]
 }

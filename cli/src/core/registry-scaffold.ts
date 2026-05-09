@@ -33,6 +33,10 @@ export interface InstallStats {
     missingSourceSkipped: number;
 }
 
+function formatMissingSources(missingSources: readonly string[]): string {
+    return missingSources.map(sourcePath => '    • ' + sourcePath).join('\n');
+}
+
 export const USER_OWNED_PATHS: readonly string[] = [
     'memory.md',
     'skills/user/',
@@ -140,8 +144,9 @@ export async function installFromRegistry(params: {
     dryRun: boolean;
     force: boolean;
     yes: boolean;
+    strictRegistry?: boolean;
 }): Promise<InstallStats> {
-    const { packageRoot, registry, userXtrmDir, dryRun, force, yes } = params;
+    const { packageRoot, registry, userXtrmDir, dryRun, force, yes, strictRegistry = false } = params;
     const registryPath = path.join(packageRoot, '.xtrm', 'registry.json');
 
     const drift = await checkDrift(registryPath, userXtrmDir);
@@ -207,6 +212,7 @@ export async function installFromRegistry(params: {
     let forced = 0;
     let expectedInstalls = 0;
     let missingSourceSkipped = 0;
+    const missingSources: string[] = [];
 
     for (const asset of Object.values(registry.assets)) {
         for (const [filePath] of Object.entries(asset.files)) {
@@ -242,7 +248,9 @@ export async function installFromRegistry(params: {
             const sourceExists = await fs.pathExists(sourcePath);
             if (!sourceExists) {
                 missingSourceSkipped += 1;
-                console.log(kleur.yellow(`  ⚠ Skipping missing source file: ${toPosix(path.relative(packageRoot, sourcePath))}`));
+                const missingSource = toPosix(path.relative(packageRoot, sourcePath));
+                missingSources.push(missingSource);
+                console.log(kleur.yellow(`  ⚠ Skipping missing source file: ${missingSource}`));
                 continue;
             }
 
@@ -257,6 +265,13 @@ export async function installFromRegistry(params: {
             await fs.copy(sourcePath, targetPath, { overwrite: true });
             installed += 1;
         }
+    }
+
+    if (strictRegistry && missingSources.length > 0) {
+        throw new Error([
+            'Registry/source mismatch: missing package source files.',
+            formatMissingSources(missingSources),
+        ].join('\n'));
     }
 
     return {

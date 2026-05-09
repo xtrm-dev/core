@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, unlinkSync, lstatSync, readlinkSync, rmSync } from 'node:fs';
 
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
+import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 
 export interface WorktreeSessionOptions {
     runtime: 'claude' | 'pi';
@@ -195,6 +196,22 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         }
     }
 
+    // Symlink .beads/ to parent so bd inside the worktree shares the parent's
+    // dolt server. bd's post-checkout/pre-commit/post-merge git hooks (registered
+    // via the parent's core.hooksPath = .beads/hooks/) fire on any git operation
+    // inside the worktree and would re-scaffold a per-worktree .beads/ + dolt
+    // server otherwise (60–200 MB RSS each, leak vector on cleanup, plus the
+    // user-reported "database 'jaggers_agent_tools' not found" symptom).
+    // Plain rm -rf is not enough — the first git commit re-creates everything.
+    // The symlink makes bd operate on the parent's data; verified end-to-end.
+    // See xtrm-as7d / unitAI-0wz2p (specialists side, same fix).
+    try {
+        rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
+        symlinkSync(path.join(mainRepoRoot, '.beads'), path.join(worktreePath, '.beads'), 'dir');
+    } catch {
+        // Non-fatal: bd will recover by re-scaffolding a per-worktree stub.
+    }
+
     writeSessionMeta(worktreePath, runtime);
     console.log(kleur.green(`\n  ✓ Worktree ready — launching ${runtime}...\n`));
 
@@ -261,6 +278,10 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
                 writeFileSync(localSettingsPath, JSON.stringify(localSettings, null, 2));
             } catch { /* non-fatal */ }
         }
+    }
+
+    if (runtime === 'pi') {
+        await runPiLaunchPreflight(worktreePath, false);
     }
 
     // Launch the runtime in the worktree

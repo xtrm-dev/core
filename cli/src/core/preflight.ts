@@ -67,6 +67,12 @@ export function isBinaryAvailable(binary: string): boolean {
 
 // ── Main export ────────────────────────────────────────────────────────────
 
+type TargetResult = TargetPlan | null;
+
+function isTargetPlan(target: TargetResult): target is TargetPlan {
+    return target !== null;
+}
+
 export async function runPreflight(
     repoRoot: string,
     prune = false
@@ -77,8 +83,8 @@ export async function runPreflight(
     const canonicalMcp = loadCanonicalMcpConfig(repoRoot);
 
     // Run all target checks in parallel
-    const targetResults = await Promise.all(
-        candidates.map(async (c) => {
+    const targetResults: TargetResult[] = await Promise.all(
+        candidates.map(async (c): Promise<TargetResult> => {
             // Fix 1: Per-target error isolation — one bad target doesn't abort the whole preflight
             try {
                 const exists = await fs.pathExists(c.path);
@@ -110,7 +116,7 @@ export async function runPreflight(
         })
     );
 
-    const targets = targetResults.filter((t): t is TargetPlan => t !== null);
+    const targets = targetResults.filter(isTargetPlan);
 
     // Fix 2: Gather all actually installed MCP servers (across all agents, core + optional)
     // allInstalledMcp previously only contained core server names from mcpCore — optional servers

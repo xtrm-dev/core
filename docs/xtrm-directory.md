@@ -38,7 +38,7 @@ domain: [config, xtrm]
 | `.claude/settings.json` hooks | `.xtrm/hooks/` + policy compile | Hook configuration |
 | `.agents/skills/` | `.xtrm/skills/` | Skills tier architecture |
 | `.pi/extensions/` managed copies/symlinks | `npm:@jaggerxtrm/pi-extensions` + `.pi/settings.json` package entry | Pi extension package |
-| `.pi/skills/` | `.xtrm/skills/active/pi/` | Runtime active view |
+| `.pi/skills/` | `.xtrm/skills/active/` | Runtime active view |
 | Worktree sibling dirs | `.xtrm/worktrees/` | Git worktrees |
 
 ## Directory Layout
@@ -114,7 +114,7 @@ See [pi-extensions.md](pi-extensions.md) for the full extension reference.
 The following paths are **deprecated** and should not be used:
 
 - `.agents/skills/` — migrated to `.xtrm/skills/` (symlinked for backward compatibility)
-- `.pi/skills/` — migrated to `.xtrm/skills/active/pi/`
+- `.pi/skills/` — migrated to `.xtrm/skills/active/`
 - `.xtrm/extensions/` — migrated to npm package `@jaggerxtrm/pi-extensions` in v0.7.8
 - `.xtrm/ext-src/` — migrated to `packages/pi-extensions/` in v0.7.8
 - `.pi/extensions/<managed-id>` — replaced by npm package install (cleanup during migration)

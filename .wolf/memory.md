@@ -84,3 +84,7 @@
 - 2026-05-08: Same-day session report .xtrm/reports/2026-05-08-030283f.md updated after xtrm-6xus docs sync to include docs validation and final next-priority state.
 
 - 2026-05-08: Merged origin/main into docs branch; npm:pi-mcp-adapter is canonical xt-managed Pi package and must appear in package inventory docs/tests.
+
+- 2026-05-08: User correction — never early-stop specialists and then manually do their work. Let specialists complete; if behavior is poor, fix future bead contracts/prompts with meaningful descriptions, scope, success criteria, constraints, and expected outputs. Diagnose/steer before any stop.
+
+| 23:01 | Fixed xtrm-cplc workspace CLI tarball smoke | cli/src/commands/init.ts, cli/package.json, cli/dist/index.cjs | lazy package-root resolution; cli workspace private; pack/install smoke passed | — |

@@ -1,5 +1,6 @@
 {
   "name": "xtrm-cli",
+  "private": true,
   "version": "0.7.17",
   "description": "Claude Code tools installer (skills, hooks, MCP servers)",
   "main": "./dist/index.js",
@@ -42,6 +43,7 @@
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.3.0",
+    "@types/prompts": "^2.4.9",
     "fast-check": "^4.6.0",
     "tdd-guard-vitest": "^0.1.6",
     "tsup": "^8.5.1",

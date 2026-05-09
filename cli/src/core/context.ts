@@ -19,11 +19,15 @@ export interface GetContextOptions {
     projectRoot?: string;
 }
 
-let config: Conf | null = null;
+type ConfigShape = {
+    syncMode: SyncMode;
+};
 
-function getConfig(): Conf {
+let config: Conf<ConfigShape> | null = null;
+
+function getConfig(): Conf<ConfigShape> {
     if (!config) {
-        config = new Conf({
+        config = new Conf<ConfigShape>({
             projectName: 'xtrm-cli',
             defaults: {
                 syncMode: 'copy',
@@ -62,7 +66,7 @@ export async function getContext(options: GetContextOptions = {}): Promise<Conte
 
     return {
         targets: selectedPaths,
-        syncMode: activeConfig.get('syncMode') as SyncMode,
+        syncMode: activeConfig.get('syncMode'),
         config: activeConfig,
     };
 }

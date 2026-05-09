@@ -8,19 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const destinationRoot = path.join(repoRoot, '.xtrm', 'skills', 'default');
+const manifestPath = path.join(repoRoot, 'docs', 'skills-ownership.json');
 const fallbackSpecialistsRepoPaths = [
   path.resolve(repoRoot, '../specialists'),
   path.resolve(repoRoot, '../../../../specialists'),
-];
-const skillNames = [
-  'update-specialists',
-  'using-kpi',
-  'using-nodes',
-  'specialists-creator',
-  'using-specialists',
-  'using-specialists-v2',
-  'using-specialists-v3',
-  'using-script-specialists',
 ];
 
 async function assertDirectoryExists(directoryPath, errorMessage) {
@@ -30,6 +21,17 @@ async function assertDirectoryExists(directoryPath, errorMessage) {
   } catch {
     throw new Error(errorMessage);
   }
+}
+
+async function readManifest() {
+  return JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+}
+
+function getSpecialistsSkillNames(manifest) {
+  return Object.entries(manifest.owners)
+    .filter(([, owner]) => owner.owner === 'specialists')
+    .map(([skillName]) => skillName)
+    .sort();
 }
 
 async function resolveSpecialistsRepoPath() {
@@ -67,8 +69,10 @@ async function copySkillDirectory(specialistsSkillsRoot, skillName) {
 }
 
 async function main() {
+  const manifest = await readManifest();
   const specialistsRepoPath = await resolveSpecialistsRepoPath();
-  const specialistsSkillsRoot = path.join(specialistsRepoPath, 'config', 'skills');
+  const specialistsSkillsRoot = path.join(specialistsRepoPath, manifest.mirrors.specialists.source_path);
+  const skillNames = getSpecialistsSkillNames(manifest);
 
   await assertDirectoryExists(specialistsSkillsRoot, `Missing specialists skills root: ${specialistsSkillsRoot}`);
   await assertDirectoryExists(destinationRoot, `Missing destination root: ${destinationRoot}`);
