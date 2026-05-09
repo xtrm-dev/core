@@ -327,7 +327,7 @@ export function createDoctorCommand(): Command {
 
       if (opts.json) {
         console.log(JSON.stringify(doctorJson, null, 2));
-        if (piPackages.hasIssues || hasCatBIssues(catB)) process.exitCode = 1;
+        if (hasCatBIssues(catB) || (opts.checkDrift && piPackages.hasIssues)) process.exitCode = 1;
         return;
       }
 
