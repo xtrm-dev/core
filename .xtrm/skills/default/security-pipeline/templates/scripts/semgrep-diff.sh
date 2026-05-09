@@ -24,22 +24,25 @@ fi
 
 [ -n "$BASE_REF" ] && git fetch "${BASE_REF%%/*}" "${BASE_REF#*/}" --quiet 2>/dev/null || true
 
+SEMGREP_BASELINE_ARGS=()
 if [ -n "$BASE_REF" ]; then
     BASE=$(git merge-base HEAD "$BASE_REF" 2>/dev/null || true)
+    # If merge-base resolves to HEAD (branch tip == upstream), the diff is
+    # legitimately empty — pass --baseline-commit anyway so semgrep produces
+    # an empty result instead of falling back to a full scan.
+    [ -n "$BASE" ] && SEMGREP_BASELINE_ARGS=(--baseline-commit="$BASE")
 fi
-# Final fallback: walk back enough to cover the push. On a single-commit
-# history rev-list returns HEAD itself — using HEAD as baseline produces an
-# empty diff and silently misses everything. Refuse that case and run a
-# full scan instead so first-push coverage stays honest.
-if [ -z "${BASE:-}" ]; then
+# Last-resort fallback only if upstream resolution gave nothing at all.
+# rev-list can equal HEAD on single-commit histories; that would silently
+# scan nothing, so refuse the HEAD-as-baseline case and run a full scan.
+if [ ${#SEMGREP_BASELINE_ARGS[@]} -eq 0 ]; then
     BASE=$(git rev-list HEAD --max-count=50 | tail -1)
-fi
-HEAD_SHA=$(git rev-parse HEAD)
-SEMGREP_BASELINE_ARGS=()
-if [ -n "${BASE:-}" ] && [ "$BASE" != "$HEAD_SHA" ]; then
-    SEMGREP_BASELINE_ARGS=(--baseline-commit="$BASE")
-else
-    echo "[semgrep-diff] no usable baseline (single-commit branch?) — running full scan"
+    HEAD_SHA=$(git rev-parse HEAD)
+    if [ -n "$BASE" ] && [ "$BASE" != "$HEAD_SHA" ]; then
+        SEMGREP_BASELINE_ARGS=(--baseline-commit="$BASE")
+    else
+        echo "[semgrep-diff] no usable baseline (single-commit branch?) — running full scan"
+    fi
 fi
 
 exec semgrep scan \
