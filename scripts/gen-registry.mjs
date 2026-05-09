@@ -86,7 +86,16 @@ async function hashFile(filePath) {
 }
 
 async function buildAssetFiles(sourceDir) {
-  const sourceAbsolutePath = await ensureSourceDirExists(sourceDir);
+  let sourceAbsolutePath;
+  try {
+    sourceAbsolutePath = await ensureSourceDirExists(sourceDir);
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      return {};
+    }
+    throw error;
+  }
+
   const allFiles = await collectFilePaths(sourceAbsolutePath);
   const files = {};
 
