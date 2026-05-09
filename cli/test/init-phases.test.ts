@@ -370,4 +370,15 @@ describe('xtrm init phased orchestrator', () => {
         expect(logs.join('\n')).toContain('--yes supplied; proceeding with the git root.');
         expect(mocked.runMachineBootstrap).toHaveBeenCalledWith({ dryRun: false });
     });
+
+    it('surfaces actionable error when source repo root cannot be resolved', async () => {
+        const calls: string[] = [];
+        setupSpawnSync(projectRoot, calls);
+        mocked.findRepoRoot.mockRejectedValueOnce(new Error('Could not locate xtrm-tools source repo root from current runtime.'));
+
+        const { runProjectInit } = await import('../src/commands/init.js?t=missing-root-' + Date.now());
+        await expect(runProjectInit({ yes: true })).rejects.toThrow('Could not locate xtrm-tools source repo root from current runtime.');
+
+        expect(mocked.ensureAgentsSkillsSymlink).not.toHaveBeenCalled();
+    });
 });
