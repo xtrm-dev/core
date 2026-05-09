@@ -8,6 +8,7 @@ import { checkDrift, type DriftReport } from '../core/drift.js';
 import { checkRuntimeSkillsViews, type RuntimeViewCheckResult } from '../core/skills-runtime-views.js';
 import { getXtManagedPiPackageDoctorReport, type XtManagedPiPackageDoctorReport } from '../core/pi-runtime.js';
 import { discoverDefaultSkills, type DiscoveredSkill } from '../core/skill-discovery.js';
+import { ensureBeadsSharedServerEnabled, hasBeadsDir, type SharedBeadsServerState } from '../core/beads-shared-server.js';
 
 interface CheckJson {
   managed_sections: Array<{ name: string; version: string; canonical_version: string | null }>;
@@ -46,6 +47,7 @@ interface CatBJson {
   hooks: AssetRow[];
   runtimeView: RuntimeViewCheckResult;
   duplicates: string[];
+  sharedBeadsServerState: SharedBeadsServerState;
   summary: { ok: number; warnings: number; errors: number };
 }
 
@@ -219,7 +221,7 @@ function formatRuntimeView(check: RuntimeViewCheckResult): string {
   ].join(' ');
 }
 
-async function buildCatBJson(registry: RegistryManifest, cwd: string, drift: DriftReport, runtimeView: RuntimeViewCheckResult, duplicates: string[]): Promise<CatBJson> {
+async function buildCatBJson(registry: RegistryManifest, cwd: string, drift: DriftReport, runtimeView: RuntimeViewCheckResult, duplicates: string[], sharedBeadsServerState: SharedBeadsServerState): Promise<CatBJson> {
   const skills = await toRows(registry, cwd, 'skills', drift);
   const hooks = await toRows(registry, cwd, 'hooks', drift);
   const summary = [...skills, ...hooks].reduce((acc, row) => {
@@ -236,7 +238,7 @@ async function buildCatBJson(registry: RegistryManifest, cwd: string, drift: Dri
   }
   if (duplicates.length > 0) summary.errors += 1;
 
-  return { skills, hooks, runtimeView, duplicates, summary };
+  return { skills, hooks, runtimeView, duplicates, sharedBeadsServerState, summary };
 }
 
 function renderCatB(report: CatBJson): void {
@@ -316,7 +318,10 @@ export function createDoctorCommand(): Command {
       const drift = await checkDrift(path.join(cwd, '.xtrm', 'registry.json'), path.join(cwd, '.xtrm'));
       const runtimeView = await checkRuntimeSkillsViews(cwd);
       const duplicates = await detectDuplicateCanonicalNames(cwd);
-      const catB = await buildCatBJson(registry, cwd, drift, runtimeView, duplicates);
+      const sharedBeadsServerState = (await hasBeadsDir(cwd))
+        ? (await ensureBeadsSharedServerEnabled(cwd, false)).state
+        : 'not-applicable';
+      const catB = await buildCatBJson(registry, cwd, drift, runtimeView, duplicates, sharedBeadsServerState);
       const piPackages = await getXtManagedPiPackageDoctorReport();
       const doctorJson = { catB, piPackages };
 

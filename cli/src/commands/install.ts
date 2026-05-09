@@ -21,6 +21,7 @@ import {
     type RegistryManifest,
 } from '../core/registry-scaffold.js';
 import { syncPiMcpConfig, syncProjectMcpConfig } from '../core/project-mcp-sync.js';
+import { ensureBeadsSharedServerEnabled } from '../core/beads-shared-server.js';
 
 export interface InstallOpts {
     dryRun?: boolean;
@@ -229,6 +230,7 @@ export async function runInstall(opts: InstallOpts = {}): Promise<void> {
             await ensureAgentsSkillsSymlink(projectRoot);
         }
         await assertRuntimeSkillsViews(projectRoot);
+        await ensureBeadsSharedServerEnabled(projectRoot, true);
     }
 
     await renderSummaryCard(stats, dryRun);

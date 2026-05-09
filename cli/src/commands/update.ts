@@ -7,8 +7,9 @@ import { resolvePackageRoot } from '../core/registry-scaffold.js';
 import { assureXtManagedPiPackages } from '../core/pi-runtime.js';
 import { findManagedRepos } from '../core/repo-discovery.js';
 import { isStrictRegistryMode, runInstall } from './install.js';
+import { ensureBeadsSharedServerEnabled, hasBeadsDir } from '../core/beads-shared-server.js';
 
-type UpdateStatus = 'refreshed' | 'already-current' | 'failed';
+type UpdateStatus = 'refreshed' | 'already-current' | 'failed' | 'skipped';
 
 interface RepoUpdateResult {
     repo: string;
@@ -44,7 +45,11 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
         }
 
         const drift = await checkDrift(registryPath, userXtrmDir);
-        const hasChanges = drift.missing.length > 0 || drift.drifted.length > 0;
+        const hasBeads = await hasBeadsDir(repoRoot);
+        const sharedServer = hasBeads
+            ? await ensureBeadsSharedServerEnabled(repoRoot, Boolean(opts.apply))
+            : { changed: false, state: 'not-applicable' as const };
+        const hasChanges = drift.missing.length > 0 || drift.drifted.length > 0 || sharedServer.changed;
 
         if (!opts.apply) {
             return {
