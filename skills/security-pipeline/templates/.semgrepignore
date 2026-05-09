@@ -1,0 +1,26 @@
+# Semgrep ignores — same spirit as .gitleaks.toml allowlist.
+# Excludes machine-generated, externally-synced, or runtime-state directories
+# that aren't part of this repo's review/security boundary.
+
+.beads/
+.specialists/
+.dolt/
+.xtrm/
+.bv/
+.emdash/
+.gitnexus
+data/
+logs/
+grafana/data/
+traefik/logs/
+
+# Test fixtures and snapshots — false positive heavy
+**/test_fixtures/
+**/snapshots/
+
+# Lock files
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+poetry.lock
+Pipfile.lock
