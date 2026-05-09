@@ -19,6 +19,7 @@ vi.mock('../core/pi-runtime.js', () => ({
 
 vi.mock('../commands/install.js', () => ({
   runInstall: runInstallMock,
+  isStrictRegistryMode: (opts: { strictRegistry?: boolean }) => opts.strictRegistry ?? process.env.XTRM_STRICT_REGISTRY === '1',
 }));
 
 import { createUpdateCommand } from '../commands/update.js';
@@ -49,18 +50,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function runUpdateCli(args: string[]): Promise<{ logs: string[]; json?: unknown }> {
+async function runUpdateCli(args: string[]): Promise<{ logs: string[]; json?: unknown; exitCode: number | undefined }> {
   const logs: string[] = [];
   const logSpy = vi.spyOn(console, 'log').mockImplementation((...values: unknown[]) => {
     logs.push(values.map(String).join(' '));
   });
+  const previousExitCode = process.exitCode;
+  process.exitCode = undefined;
 
   try {
     const command = createUpdateCommand();
     await command.parseAsync(['node', 'xtrm-update-test', ...args]);
     const jsonText = logs.join('\n');
-    return { logs, json: jsonText.includes('{') ? JSON.parse(jsonText) : undefined };
+    return { logs, json: jsonText.includes('{') ? JSON.parse(jsonText) : undefined, exitCode: process.exitCode };
   } finally {
+    process.exitCode = previousExitCode;
     logSpy.mockRestore();
   }
 }
@@ -153,6 +157,29 @@ describe('xtrm update', () => {
     const result = await runUpdateCli(['--json', '--repo', repo]);
 
     expect(result.json).toEqual({ repos: [{ repo, status: 'already-current' }], packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [] } });
+  });
+
+  it('apply exits non-zero in strict registry env when registry source missing', async () => {
+    const repo = writeRepo(tmpDir, 'repo-a');
+    checkDriftMock.mockResolvedValue({ missing: ['missing/file.md'], upToDate: [], drifted: [] });
+    runInstallMock.mockImplementation(async (opts: { strictRegistry?: boolean }) => {
+      expect(opts.strictRegistry).toBe(true);
+      throw new Error('Registry/source mismatch: missing package source files.\n    • .xtrm/skills/default/missing/file.md');
+    });
+    assureXtManagedPiPackagesMock.mockResolvedValue({
+      statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [],
+    });
+    const previousStrict = process.env.XTRM_STRICT_REGISTRY;
+    process.env.XTRM_STRICT_REGISTRY = '1';
+
+    try {
+      const result = await runUpdateCli(['--apply', '--repo', repo]);
+      expect(result.exitCode).toBe(1);
+      expect(result.logs.join('\n')).toContain('failed');
+      expect(result.logs.join('\n')).not.toContain('/missing/file.md');
+    } finally {
+      process.env.XTRM_STRICT_REGISTRY = previousStrict;
+    }
   });
 
   it('help mentions package freshness and refresh behavior', async () => {
