@@ -65,6 +65,9 @@ jobs:
         npm run check:specialists-vendor
         git diff --exit-code -- .xtrm/skills/default .xtrm/specialists-source.json .xtrm/registry.json
 
+    - name: Flat active skills layout guard
+      run: npm run check:layout-guards
+
     - name: Run Tests
       run: |
         npm test --prefix cli
