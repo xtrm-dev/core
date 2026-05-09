@@ -27,6 +27,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Registry ↔ npm pack parity
+        run: npm run check:registry-pack-parity
+
       - name: Publish to npm
         run: npm publish --provenance
         env:

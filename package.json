@@ -61,7 +61,8 @@
     "release": "npm publish --tag latest",
     "release:pi-extensions": "npm publish --workspace @jaggerxtrm/pi-extensions --tag latest --access public",
     "release:all": "npm run release && npm run release:pi-extensions",
-    "gen-registry": "node scripts/gen-registry.mjs"
+    "gen-registry": "node scripts/gen-registry.mjs",
+    "check:registry-pack-parity": "node scripts/check-registry-pack-parity.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

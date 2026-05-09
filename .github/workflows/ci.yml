@@ -55,6 +55,9 @@ jobs:
         node scripts/compile-policies.mjs --check
         node scripts/compile-policies.mjs --check-pi
 
+    - name: Registry ↔ npm pack parity
+      run: npm run check:registry-pack-parity
+
     - name: Run Tests
       run: |
         npm test --prefix cli
