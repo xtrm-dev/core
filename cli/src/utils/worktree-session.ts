@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, unlinkSync, lstatSync, readlinkSync, rmSync } from 'node:fs';
 
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
+import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 
 export interface WorktreeSessionOptions {
     runtime: 'claude' | 'pi';
@@ -277,6 +278,10 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
                 writeFileSync(localSettingsPath, JSON.stringify(localSettings, null, 2));
             } catch { /* non-fatal */ }
         }
+    }
+
+    if (runtime === 'pi') {
+        await runPiLaunchPreflight(worktreePath, false);
     }
 
     // Launch the runtime in the worktree
