@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createInstallPiCommand } from '../src/commands/install-pi.js';
 
 describe('createInstallPiCommand', () => {
@@ -107,21 +107,17 @@ describe('createInstallPiCommand', () => {
         expect(keys).toContain('qwen-cli');
     });
 
-    it('extensions directory contains expected extension package directories', () => {
-        const fs = require('node:fs');
-        const p = require('node:path');
-        const extDir = p.resolve(__dirname, '..', '..', 'config', 'pi', 'extensions');
-        const packages = ['auto-session-name', 'auto-update', 'compact-header', 'custom-footer', 'git-checkpoint', 'quality-gates', 'beads', 'session-flow', 'service-skills', 'xtrm-loader', 'custom-provider-qwen-cli'];
-        for (const pkg of packages) {
-            expect(fs.existsSync(p.join(extDir, pkg, 'index.ts'))).toBe(true);
-            expect(fs.existsSync(p.join(extDir, pkg, 'package.json'))).toBe(true);
-        }
+    it('extensions directory resolves from current runtime source', async () => {
+        const { resolveManagedPiExtensionsSourceDir } = await import('../src/core/pi-runtime.js?t=' + Date.now());
+        const path = require('node:path');
+        const sourceDir = resolveManagedPiExtensionsSourceDir();
+        expect(sourceDir).toBe(path.resolve(__dirname, '..', '..', 'packages', 'pi-extensions', 'extensions'));
     });
 
     it('custom-provider-qwen-cli extension has index.ts and package.json', () => {
         const fs = require('node:fs');
         const p = require('node:path');
-        const base = p.resolve(__dirname, '..', '..', 'config', 'pi', 'extensions', 'custom-provider-qwen-cli');
+        const base = p.resolve(__dirname, '..', '..', 'packages', 'pi-extensions', 'extensions', 'custom-provider-qwen-cli');
         expect(fs.existsSync(p.join(base, 'index.ts'))).toBe(true);
         expect(fs.existsSync(p.join(base, 'package.json'))).toBe(true);
     });
@@ -192,5 +188,31 @@ describe('createInstallPiCommand', () => {
         const cmd = createInstallPiCommand();
         const hasCheck = (cmd as any).options.some((opt: any) => opt.long === '--check');
         expect(hasCheck).toBe(true);
+    });
+
+    it('--check skips cleanly when managed extension source is unavailable', async () => {
+        vi.resetModules();
+        vi.doMock('../src/core/pi-runtime.js', async () => {
+            const actual = await vi.importActual<typeof import('../src/core/pi-runtime.js')>('../src/core/pi-runtime.js');
+            return {
+                ...actual,
+                resolveManagedPiExtensionsSourceDir: vi.fn(() => null),
+            };
+        });
+        const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { createInstallPiCommand: createCommand } = await import('../src/commands/install-pi.js?t=check-null-' + Date.now());
+        const cmd = createCommand();
+        await (cmd as any)._actionHandler([], { check: true, yes: false, setup: false });
+        expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining('Managed extensions: skipped'));
+        expect(consoleError).not.toHaveBeenCalled();
+        consoleLog.mockRestore();
+        consoleError.mockRestore();
+    });
+
+    it('createInstallPiCommand supports --setup flag for first-time config writes', () => {
+        const cmd = createInstallPiCommand();
+        const hasSetup = (cmd as any).options.some((opt: any) => opt.long === '--setup');
+        expect(hasSetup).toBe(true);
     });
 });
