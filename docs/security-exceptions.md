@@ -1,3 +1,7 @@
+---
+updated_at: 2026-05-09
+---
+
 # Security Exception: basic-ftp@5.2.0
 
 - ID: DEP-HIGH-002
