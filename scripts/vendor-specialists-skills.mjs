@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +9,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const destinationRoot = path.join(repoRoot, '.xtrm', 'skills', 'default');
-const manifestPath = path.join(repoRoot, 'docs', 'skills-ownership.json');
+const manifestPath = path.join(repoRoot, '.xtrm', 'specialists-source.json');
+const ownershipManifestPath = path.join(repoRoot, 'docs', 'skills-ownership.json');
 const fallbackSpecialistsRepoPaths = [
   path.resolve(repoRoot, '../specialists'),
   path.resolve(repoRoot, '../../../../specialists'),
@@ -23,8 +25,8 @@ async function assertDirectoryExists(directoryPath, errorMessage) {
   }
 }
 
-async function readManifest() {
-  return JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+async function readJson(filePath) {
+  return JSON.parse(await fs.readFile(filePath, 'utf8'));
 }
 
 function getSpecialistsSkillNames(manifest) {
@@ -32,6 +34,18 @@ function getSpecialistsSkillNames(manifest) {
     .filter(([, owner]) => owner.owner === 'specialists')
     .map(([skillName]) => skillName)
     .sort();
+}
+
+function parseArgs(argv) {
+  const source = { kind: 'repo' };
+
+  for (const value of argv) {
+    if (value === '--specialists-tarball' || value.startsWith('--specialists-tarball=')) source.kind = 'tarball';
+    else if (value === '--specialists-package' || value.startsWith('--specialists-package=')) source.kind = 'package';
+    else if (value === '--specialists-ref' || value.startsWith('--specialists-ref=')) source.kind = 'ref';
+  }
+
+  return source;
 }
 
 async function resolveSpecialistsRepoPath() {
@@ -58,21 +72,74 @@ async function resolveSpecialistsRepoPath() {
   );
 }
 
+async function collectFilePaths(rootDir) {
+  const entries = await fs.readdir(rootDir, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    if (entry.name === '__pycache__') continue;
+    const absolutePath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await collectFilePaths(absolutePath));
+      continue;
+    }
+    if (entry.isFile()) files.push(absolutePath);
+  }
+
+  return files;
+}
+
+async function hashFile(filePath) {
+  const content = await fs.readFile(filePath);
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
 async function copySkillDirectory(specialistsSkillsRoot, skillName) {
   const sourceDir = path.join(specialistsSkillsRoot, skillName);
   const destinationDir = path.join(destinationRoot, skillName);
 
   await assertDirectoryExists(sourceDir, `Missing specialists skill dir: ${sourceDir}`);
+  await fs.rm(destinationDir, { recursive: true, force: true });
   await fs.mkdir(destinationDir, { recursive: true });
   await fs.cp(sourceDir, destinationDir, { recursive: true, force: true, errorOnExist: false });
   console.log(`Vendored ${skillName} from ${sourceDir}`);
 }
 
+function sortObject(value) {
+  return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+async function buildManifest(source, specialistsRepoPath, specialistsSkillsRoot, skillNames) {
+  const files = {};
+  for (const skillName of skillNames) {
+    const skillDir = path.join(specialistsSkillsRoot, skillName);
+    const skillFiles = await collectFilePaths(skillDir);
+    const hashes = {};
+    for (const filePath of skillFiles) {
+      const relativePath = path.relative(skillDir, filePath).split(path.sep).join('/');
+      hashes[relativePath] = await hashFile(filePath);
+    }
+    files[skillName] = sortObject(hashes);
+  }
+
+  return {
+    version: 1,
+    source: {
+      ...source,
+      repo_path: path.relative(repoRoot, specialistsRepoPath).split(path.sep).join('/'),
+      source_path: path.relative(specialistsRepoPath, specialistsSkillsRoot).split(path.sep).join('/'),
+    },
+    skills: skillNames,
+    files,
+  };
+}
+
 async function main() {
-  const manifest = await readManifest();
+  const source = parseArgs(process.argv.slice(2));
+  const ownershipManifest = await readJson(ownershipManifestPath);
   const specialistsRepoPath = await resolveSpecialistsRepoPath();
-  const specialistsSkillsRoot = path.join(specialistsRepoPath, manifest.mirrors.specialists.source_path);
-  const skillNames = getSpecialistsSkillNames(manifest);
+  const specialistsSkillsRoot = path.join(specialistsRepoPath, ownershipManifest.mirrors.specialists.source_path);
+  const skillNames = getSpecialistsSkillNames(ownershipManifest);
 
   await assertDirectoryExists(specialistsSkillsRoot, `Missing specialists skills root: ${specialistsSkillsRoot}`);
   await assertDirectoryExists(destinationRoot, `Missing destination root: ${destinationRoot}`);
@@ -80,6 +147,10 @@ async function main() {
   for (const skillName of skillNames) {
     await copySkillDirectory(specialistsSkillsRoot, skillName);
   }
+
+  const manifest = await buildManifest(source, specialistsRepoPath, specialistsSkillsRoot, skillNames);
+  await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  console.log(`Wrote ${path.relative(repoRoot, manifestPath)}`);
 }
 
 main().catch((error) => {

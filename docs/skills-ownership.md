@@ -1,3 +1,7 @@
+---
+updated_at: 2026-05-09
+---
+
 # Skills ownership
 
 Machine-readable source: `docs/skills-ownership.json`.

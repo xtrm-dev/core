@@ -30,7 +30,10 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Install Node dependencies
-      run: npm install && cd cli && npm install
+      run: npm ci && cd cli && npm ci
+
+    - name: Check package metadata
+      run: npm run check:package
 
     - name: Build TypeScript
       run: cd cli && npm run build
@@ -58,8 +61,15 @@ jobs:
         node scripts/compile-policies.mjs --check
         node scripts/compile-policies.mjs --check-pi
 
-    - name: Registry ↔ npm pack parity
-      run: npm run check:registry-pack-parity
+    - name: Verify specialists vendor freshness
+      run: |
+        npm run check:skills-ownership
+        npm run check:registry-pack-parity
+        npm run check:specialists-vendor
+        git diff --exit-code -- .xtrm/skills/default .xtrm/specialists-source.json .xtrm/registry.json
+
+    - name: Flat active skills layout guard
+      run: npm run check:layout-guards
 
     - name: Run Tests
       run: |

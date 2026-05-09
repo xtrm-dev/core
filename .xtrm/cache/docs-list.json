@@ -1,24 +1,27 @@
 {
-  "timestamp": 1776994900259,
-  "repoRoot": "/home/dawid/dev/xtrm-tools",
+  "timestamp": 1778317671386,
+  "repoRoot": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger",
   "entries": [
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/XTRM-GUIDE.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/XTRM-GUIDE.md",
       "relativePath": "docs/XTRM-GUIDE.md",
       "frontmatter": {
         "title": "XTRM-Tools Complete Guide",
         "scope": "xtrm-guide",
         "category": "reference",
-        "version": "1.2.0",
-        "updated": "2026-04-01",
-        "domain": "[]",
+        "version": "1.4.0",
+        "updated": "2026-05-08",
+        "synced_at": "a249e75",
+        "source_of_truth_for": "",
+        "domain": "[cli, pi, docs]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Overview](#overview) | XTRM is a policy-driven workflow layer | | [Installation](#ins"
       },
-      "sizeBytes": 7959,
-      "lastModified": "2026-04-13T12:59:21.641Z"
+      "sizeBytes": 10658,
+      "lastModified": "2026-05-09T09:07:50.089Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/bash-tools.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/bash-tools.md",
       "relativePath": "docs/bash-tools.md",
       "frontmatter": {
         "title": "Specialist Bash Tools",
@@ -28,30 +31,41 @@
         "updated": "2026-04-02",
         "source_of_truth_for": "",
         "domain": "[]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Overview](#overview) | xtrm supports two access layers for specialist tooling: | | [T"
       },
-      "sizeBytes": 4717,
-      "lastModified": "2026-04-13T12:59:21.641Z"
+      "sizeBytes": 4740,
+      "lastModified": "2026-05-09T09:07:50.097Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/cli-architecture.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/cat-b-distribution.md",
+      "relativePath": "docs/cat-b-distribution.md",
+      "frontmatter": {
+        "updated_at": "2026-05-09"
+      },
+      "sizeBytes": 1869,
+      "lastModified": "2026-05-09T09:07:50.101Z"
+    },
+    {
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/cli-architecture.md",
       "relativePath": "docs/cli-architecture.md",
       "frontmatter": {
         "title": "CLI Architecture",
         "scope": "cli-architecture",
         "category": "reference",
-        "version": "1.6.0",
-        "updated": "2026-04-13",
-        "synced_at": "f1f6b5de",
+        "version": "1.7.0",
+        "updated": "2026-05-08",
+        "synced_at": "a249e75",
         "source_of_truth_for": "",
         "domain": "[cli]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Entry Point](#entry-point) | `cli/src/index | | [Install Flow (`xtrm install`)](#inst"
       },
-      "sizeBytes": 17233,
-      "lastModified": "2026-04-13T12:59:21.642Z"
+      "sizeBytes": 19918,
+      "lastModified": "2026-05-09T09:07:50.101Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/docs-commands.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/docs-commands.md",
       "relativePath": "docs/docs-commands.md",
       "frontmatter": {
         "title": "Documentation Commands",
@@ -63,13 +77,14 @@
         "description": "Reference for xtrm docs subcommands: show, list, and cross-check",
         "source_of_truth_for": "",
         "domain": "[docs, cli]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Command Suite](#command-suite) | | Command | Purpose | | | [`xtrm docs show`](#xtrm-d"
       },
-      "sizeBytes": 3846,
-      "lastModified": "2026-04-13T12:59:21.642Z"
+      "sizeBytes": 3869,
+      "lastModified": "2026-05-09T09:07:50.117Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/hooks.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/hooks.md",
       "relativePath": "docs/hooks.md",
       "frontmatter": {
         "title": "Hooks Reference",
@@ -81,13 +96,14 @@
         "description": "All hook events, scripts, and behavior for the xtrm plugin",
         "source_of_truth_for": "",
         "domain": "[hooks, claude, enforcement]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Event Model](#event-model) | | Event | When | | | [Hook Groups](#hook-groups) | Alway"
       },
-      "sizeBytes": 7255,
-      "lastModified": "2026-04-13T12:59:21.642Z"
+      "sizeBytes": 7278,
+      "lastModified": "2026-05-09T09:07:50.121Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/mcp-servers.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/mcp-servers.md",
       "relativePath": "docs/mcp-servers.md",
       "frontmatter": {
         "title": "MCP Servers Configuration",
@@ -97,13 +113,14 @@
         "updated": "2026-04-01",
         "source_of_truth_for": "",
         "domain": "[]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Overview](#overview) | xtrm now maintains **two MCP canonical sources** because Claud"
       },
-      "sizeBytes": 1689,
-      "lastModified": "2026-04-13T12:59:21.642Z"
+      "sizeBytes": 1712,
+      "lastModified": "2026-05-09T09:07:50.121Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/mcp.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/mcp.md",
       "relativePath": "docs/mcp.md",
       "frontmatter": {
         "title": "MCP Module",
@@ -114,30 +131,32 @@
         "description": "MCP server configuration, canonical sources, and operational workflow",
         "source_of_truth_for": "",
         "domain": "[mcp, claude, config]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Canonical Sources](#canonical-sources) | | File | Purpose | | | [Operational Workflow"
       },
-      "sizeBytes": 2235,
-      "lastModified": "2026-04-13T12:59:21.642Z"
+      "sizeBytes": 2258,
+      "lastModified": "2026-05-09T09:07:50.125Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/pi-extensions.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/pi-extensions.md",
       "relativePath": "docs/pi-extensions.md",
       "frontmatter": {
         "title": "Pi Extensions Reference",
         "scope": "pi-extensions",
         "category": "reference",
-        "version": "2.0.0",
-        "updated": "2026-04-13",
-        "synced_at": "f1f6b5de",
+        "version": "2.1.0",
+        "updated": "2026-05-08",
+        "synced_at": "a249e75",
         "source_of_truth_for": "",
         "domain": "[pi, extensions]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Architecture Overview](#architecture-overview) | Pi extensions use a **package-instal"
       },
-      "sizeBytes": 6303,
-      "lastModified": "2026-04-13T12:59:21.642Z"
+      "sizeBytes": 7711,
+      "lastModified": "2026-05-09T09:07:50.129Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/policies.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/policies.md",
       "relativePath": "docs/policies.md",
       "frontmatter": {
         "title": "Policy Reference",
@@ -148,13 +167,14 @@
         "synced_at": "f1f6b5de",
         "source_of_truth_for": "",
         "domain": "[hooks, enforcement]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Active Policies](#active-policies) | | Policy | Runtime | Description | | | [Add / Up"
       },
-      "sizeBytes": 2031,
-      "lastModified": "2026-04-13T12:59:21.642Z"
+      "sizeBytes": 2054,
+      "lastModified": "2026-05-09T09:07:50.129Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/pre-install-cleanup.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/pre-install-cleanup.md",
       "relativePath": "docs/pre-install-cleanup.md",
       "frontmatter": {
         "title": "Pre-Install Cleanup Guide",
@@ -164,13 +184,14 @@
         "updated": "2026-03-22",
         "description": "Cleanup steps before reinstalling xtrm plugin/hooks/extensions on legacy machines",
         "domain": "[install, migration, claude, pi]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [1) Remove legacy Claude hook files](#1-remove-legacy-claude-hook-files) | _no summary"
       },
-      "sizeBytes": 2505,
-      "lastModified": "2026-04-13T12:59:21.642Z"
+      "sizeBytes": 2528,
+      "lastModified": "2026-05-09T09:07:50.133Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/project-skills.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/project-skills.md",
       "relativePath": "docs/project-skills.md",
       "frontmatter": {
         "title": "Project Skills Migration Reference",
@@ -181,13 +202,32 @@
         "description": "Migration notes for legacy project-scoped skills after the gl8b move",
         "source_of_truth_for": "",
         "domain": "[skills, claude, pi]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Current Source Layout](#current-source-layout) | Use assets from: | | [Installer Expe"
       },
-      "sizeBytes": 1367,
-      "lastModified": "2026-04-13T12:59:21.643Z"
+      "sizeBytes": 1390,
+      "lastModified": "2026-05-09T09:07:50.133Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/skills-registry-exploration.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/security-exceptions.md",
+      "relativePath": "docs/security-exceptions.md",
+      "frontmatter": {
+        "updated_at": "2026-05-09"
+      },
+      "sizeBytes": 679,
+      "lastModified": "2026-05-09T09:07:50.137Z"
+    },
+    {
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/skills-ownership.md",
+      "relativePath": "docs/skills-ownership.md",
+      "frontmatter": {
+        "updated_at": "2026-05-09"
+      },
+      "sizeBytes": 746,
+      "lastModified": "2026-05-09T09:07:50.141Z"
+    },
+    {
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/skills-registry-exploration.md",
       "relativePath": "docs/skills-registry-exploration.md",
       "frontmatter": {
         "title": "Skills Registry Exploration",
@@ -199,13 +239,14 @@
         "description": "Skills registry design: three-tier model, CLI contract, migration plan",
         "source_of_truth_for": "",
         "domain": "[skills, cli, registry]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [1) Current architecture analysis and pain points](#1-current-architecture-analysis-an"
       },
-      "sizeBytes": 23775,
-      "lastModified": "2026-04-13T12:59:21.643Z"
+      "sizeBytes": 23798,
+      "lastModified": "2026-05-09T09:07:50.141Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/skills-tier-architecture.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/skills-tier-architecture.md",
       "relativePath": "docs/skills-tier-architecture.md",
       "frontmatter": {
         "title": "Skills Tier Architecture",
@@ -217,13 +258,14 @@
         "description": "Three-tier skills model: default, optional packs, and user packs with runtime active views",
         "source_of_truth_for": "",
         "domain": "[skills, cli, architecture]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Overview](#overview) | Skills are organized into a **three-tier model** under ` | | ["
       },
-      "sizeBytes": 10265,
-      "lastModified": "2026-04-13T12:59:21.643Z"
+      "sizeBytes": 10406,
+      "lastModified": "2026-05-09T09:07:50.141Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/skills.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/skills.md",
       "relativePath": "docs/skills.md",
       "frontmatter": {
         "title": "Skills Catalog",
@@ -235,13 +277,14 @@
         "description": "Skills tier architecture: default skills, optional packs, user packs, and xt skills CLI",
         "source_of_truth_for": "",
         "domain": "[skills, claude, pi]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Tier Architecture](#tier-architecture) | | Tier | Location | Mutability | Purpose | |"
       },
-      "sizeBytes": 6812,
-      "lastModified": "2026-04-13T12:59:21.643Z"
+      "sizeBytes": 6886,
+      "lastModified": "2026-05-09T09:07:50.145Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/testing.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/testing.md",
       "relativePath": "docs/testing.md",
       "frontmatter": {
         "title": "Production Live Testing Checklist",
@@ -251,13 +294,14 @@
         "updated": "2026-03-18",
         "description": "Checklist for validating all project skills and hooks in a real project environment",
         "domain": "[testing, hooks, skills]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Scope](#scope) | Project skills covered: | | [Global Preflight](#global-preflight) | "
       },
-      "sizeBytes": 5303,
-      "lastModified": "2026-04-13T12:59:21.643Z"
+      "sizeBytes": 5326,
+      "lastModified": "2026-05-09T09:07:50.145Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/todo.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/todo.md",
       "relativePath": "docs/todo.md",
       "frontmatter": {
         "title": "Skills Backlog",
@@ -267,13 +311,14 @@
         "updated": "2026-03-18",
         "description": "Planned skills and improvements backlog",
         "domain": "[skills, planning]",
+        "updated_at": "2026-05-09",
         "summary": "- [ ] New skill: using github-grep, deepwiki, context7 to validate and explore implementation examples for best practice"
       },
-      "sizeBytes": 702,
-      "lastModified": "2026-03-25T04:43:20.708Z"
+      "sizeBytes": 725,
+      "lastModified": "2026-05-09T09:07:50.149Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/worktrees.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/worktrees.md",
       "relativePath": "docs/worktrees.md",
       "frontmatter": {
         "title": "xt Worktrees",
@@ -284,31 +329,33 @@
         "synced_at": "66b408d",
         "source_of_truth_for": "",
         "domain": "[cli, worktrees, beads]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Quick Start](#quick-start) | `xt end` is the publish step for one worktree: it rebase"
       },
-      "sizeBytes": 12967,
-      "lastModified": "2026-04-13T12:59:21.644Z"
+      "sizeBytes": 12990,
+      "lastModified": "2026-05-09T09:07:50.153Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/xtrm-directory.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/xtrm-directory.md",
       "relativePath": "docs/xtrm-directory.md",
       "frontmatter": {
         "title": ".xtrm Directory Reference",
         "scope": "xtrm-directory",
         "category": "reference",
-        "version": "1.2.0",
-        "updated": "2026-04-13",
-        "synced_at": "f1f6b5de",
+        "version": "1.3.0",
+        "updated": "2026-05-08",
+        "synced_at": "a249e75",
         "description": "Centralized xtrm configuration and runtime data directory",
         "source_of_truth_for": "",
         "domain": "[config, xtrm]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Overview](#overview) | ` | | [Directory Layout](#directory-layout) | | Subdirectory |"
       },
-      "sizeBytes": 5666,
-      "lastModified": "2026-04-13T12:59:26.089Z"
+      "sizeBytes": 6233,
+      "lastModified": "2026-05-09T09:07:50.161Z"
     },
     {
-      "filePath": "/home/dawid/dev/xtrm-tools/docs/xtrm-ui.md",
+      "filePath": "/home/dawid/dev/xtrm-tools/.worktrees/xtrm-0h5x/xtrm-0h5x-debugger/docs/xtrm-ui.md",
       "relativePath": "docs/xtrm-ui.md",
       "frontmatter": {
         "title": "XTRM UI Extension",
@@ -320,10 +367,11 @@
         "description": "Pi extension that replaces pi-dex with XTRM-tuned chrome and pi-diff-style write/edit previews while preserving custom-footer ownership",
         "source_of_truth_for": "",
         "domain": "[pi, extensions, ui, themes]",
+        "updated_at": "2026-05-09",
         "summary": "| Section | Summary | |---|---| | [Overview](#overview) | `xtrm-ui` is a Pi extension that wraps the visual chrome from "
       },
-      "sizeBytes": 4885,
-      "lastModified": "2026-04-16T15:40:43.201Z"
+      "sizeBytes": 4908,
+      "lastModified": "2026-05-09T09:07:50.165Z"
     }
   ]
 }

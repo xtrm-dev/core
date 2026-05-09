@@ -30,7 +30,23 @@ const assets = {
     source_dir: '.xtrm/config',
     install_mode: 'copy',
   },
+  pi_extensions: {
+    source_dir: 'packages/pi-extensions',
+    install_mode: 'copy',
+  },
 };
+
+async function readSpecialistsSource() {
+  const manifestPath = path.join(repoRoot, '.xtrm', 'specialists-source.json');
+  try {
+    return JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
 
 function toPosixPath(value) {
   return value.split(path.sep).join('/');
@@ -112,9 +128,12 @@ async function buildAssetFiles(sourceDir) {
   return Object.fromEntries(sortedEntries);
 }
 
+const specialistsSource = await readSpecialistsSource();
+
 const registry = {
   version: '1',
   assets: {},
+  specialists_source: specialistsSource,
 };
 
 for (const [assetName, asset] of Object.entries(assets)) {

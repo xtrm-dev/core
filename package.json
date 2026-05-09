@@ -56,9 +56,12 @@
     "start": "node cli/dist/index.cjs",
     "lint": "echo 'No linting configured'",
     "test": "npm test --workspace cli",
+    "check:package": "node scripts/assert-no-self-dependency.mjs",
     "version": "npm run sync:cli-version && git add cli/package.json packages/pi-extensions/package.json",
     "check:skills-ownership": "node scripts/check-skills-ownership.mjs",
-    "prepublishOnly": "npm run sync:cli-version && npm run check:skills-ownership && node scripts/vendor-specialists-skills.mjs && npm run gen-registry && npm run build",
+    "check:specialists-vendor": "node scripts/verify-specialists-vendor.mjs",
+    "check:layout-guards": "node scripts/check-layout-guards.mjs",
+    "prepublishOnly": "npm run sync:cli-version && npm run check:package && npm run check:skills-ownership && node scripts/vendor-specialists-skills.mjs --specialists-package specialists --specialists-ref integration/2026-05-09-orchestrator && npm run gen-registry && npm run check:registry-pack-parity && npm run check:specialists-vendor && npm run check:layout-guards && npm run build",
     "release": "npm publish --tag latest",
     "release:pi-extensions": "npm publish --workspace @jaggerxtrm/pi-extensions --tag latest --access public",
     "release:all": "npm run release && npm run release:pi-extensions",
@@ -75,8 +78,7 @@
     "dotenv": "^17.3.1",
     "fs-extra": "^11.2.0",
     "kleur": "^4.1.5",
-    "prompts": "^2.4.2",
-    "xtrm-tools": "^2.0.2"
+    "prompts": "^2.4.2"
   },
   "overrides": {
     "protobufjs": "7.5.5",
