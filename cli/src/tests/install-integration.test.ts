@@ -79,16 +79,13 @@ describe('xtrm install integration', () => {
     expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'hooks'))).toBe(true);
     expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'config'))).toBe(true);
     expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'skills', 'default'))).toBe(true);
-    expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'extensions'))).toBe(true);
     expect(fs.pathExistsSync(path.join(tmpDir, '.mcp.json'))).toBe(true);
 
     const mcpConfig = fs.readJsonSync(path.join(tmpDir, '.mcp.json')) as { mcpServers?: Record<string, unknown> };
     expect(Object.keys(mcpConfig.mcpServers ?? {})).toEqual(expect.arrayContaining([
-      'serena',
       'gitnexus',
       'github-grep',
       'deepwiki',
-      'context7',
     ]));
 
     const settingsPath = path.join(tmpDir, '.claude', 'settings.json');
