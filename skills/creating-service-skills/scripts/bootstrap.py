@@ -250,3 +250,30 @@ if __name__ == "__main__":
     else:
         print(f"Unknown command: {command}")
         sys.exit(1)
+
+def run_gitnexus_json(args: list[str], timeout: float = 2.0) -> dict[str, Any] | list[Any] | None:
+    try:
+        cmd = ["npx", "gitnexus", *args, "--json"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout.strip() or "null")
+    except json.JSONDecodeError:
+        return None
+
+
+def is_gitnexus_available(timeout: float = 2.0) -> tuple[bool, str]:
+    if os.environ.get("GITNEXUS_DISABLE"):
+        return False, "disabled by GITNEXUS_DISABLE"
+    try:
+        probe = run_gitnexus_json(["detect_changes", "--scope", "unstaged"], timeout=timeout)
+    except Exception as exc:
+        return False, str(exc)
+    if probe is None:
+        return False, "unreachable or stale index"
+    if isinstance(probe, dict) and probe.get("warning"):
+        return False, str(probe.get("warning"))
+    return True, "ok"
