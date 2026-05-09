@@ -26,7 +26,7 @@ domain: [skills, claude, pi]
 | Section | Summary |
 |---|---|
 | [Tier Architecture](#tier-architecture) | Three-tier model: default (managed), optional packs, user packs |
-| [Runtime Active Views](#runtime-active-views) | `.xtrm/skills/active/{claude,pi}` symlink directories |
+| [Runtime Active View](#runtime-active-view) | `.xtrm/skills/active` flat symlink directory |
 | [xt skills CLI](#xt-skills-cli) | `xt skills list/enable/disable/create-pack` |
 | [Default Skills Catalog](#default-skills-catalog) | ~30 baseline skills for core workflows |
 | [Related Docs](#related-docs) | Architecture deep-dives and CLI reference |
@@ -34,7 +34,7 @@ domain: [skills, claude, pi]
 
 # Skills Module
 
-Skills are organized into a **three-tier architecture** under `.xtrm/skills/`. The `xt skills` CLI manages skill packs and runtime active views.
+Skills are organized into a **three-tier architecture** under `.xtrm/skills/`. Canonical runtime view is flat `.xtrm/skills/active`; no per-runtime `active/claude` or `active/pi` layout. Managed hooks live under `.xtrm/hooks/`; no live `.xtrm/hooks/default/` tier remains.
 
 ## Tier Architecture
 
@@ -53,9 +53,7 @@ Current optional pack catalog includes `research-methods`, `code-quality`, `secu
 Each runtime has a resolved active view:
 
 ```
-.xtrm/skills/active/
-├── claude/    # Symlinks to Claude's resolved skill set
-└── pi/        # Symlinks to Pi's resolved skill set
+.xtrm/skills/active/    # Flat symlink directory for resolved runtime skills
 ```
 
 Active views are rebuilt when packs are enabled/disabled. Resolution order: `user` → `optional` → `default`.
