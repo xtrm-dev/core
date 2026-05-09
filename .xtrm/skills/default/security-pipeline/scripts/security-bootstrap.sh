@@ -202,7 +202,13 @@ else
     cp "$PREPUSH_SRC" "$BASELINE"
     chmod +x "$BASELINE"
     if [ -f "$TARGET/.githooks/pre-push" ] && ! grep -q "security-pipeline-managed-wrapper" "$TARGET/.githooks/pre-push" 2>/dev/null; then
-        # Existing hook present and not yet our wrapper — move it aside
+        # Existing hook present and not yet our wrapper — move it aside.
+        # Preserve any pre-existing pre-push.local first so we never clobber it.
+        if [ -f "$TARGET/.githooks/pre-push.local" ]; then
+            ts=$(date +%s)
+            mv "$TARGET/.githooks/pre-push.local" "$TARGET/.githooks/pre-push.local.bak.$ts"
+            echo "  ↪ existing pre-push.local preserved as pre-push.local.bak.$ts"
+        fi
         mv "$TARGET/.githooks/pre-push" "$TARGET/.githooks/pre-push.local"
         chmod +x "$TARGET/.githooks/pre-push.local"
         echo "  ↪ existing .githooks/pre-push moved to pre-push.local"
