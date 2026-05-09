@@ -76,6 +76,11 @@
     "prompts": "^2.4.2",
     "xtrm-tools": "^2.0.2"
   },
+  "overrides": {
+    "protobufjs": "7.5.5",
+    "fast-uri": "3.1.2",
+    "@aws-sdk/xml-builder": "3.972.22"
+  },
   "pi": {
     "extensions": [
       "./packages/pi-extensions"
