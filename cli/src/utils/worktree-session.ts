@@ -195,17 +195,20 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         }
     }
 
-    // Strip bd's stub .beads/ to force common-dir discovery for shared dolt access.
-    // bd's post-checkout git hook (installed at <commonRoot>/.beads/hooks/) fires
-    // when `git worktree add` runs and scaffolds a stub .beads/ in the new worktree.
-    // Without this rm, the next `bd <cmd>` from inside the worktree promotes the
-    // stub into a full dolt-sql-server install (60-200 MB RSS each, plus a leak
-    // vector on cleanup) instead of sharing the parent server via common-dir
-    // discovery. See xtrm-as7d / unitAI-0wz2p (specialists side, same fix).
+    // Symlink .beads/ to parent so bd inside the worktree shares the parent's
+    // dolt server. bd's post-checkout/pre-commit/post-merge git hooks (registered
+    // via the parent's core.hooksPath = .beads/hooks/) fire on any git operation
+    // inside the worktree and would re-scaffold a per-worktree .beads/ + dolt
+    // server otherwise (60–200 MB RSS each, leak vector on cleanup, plus the
+    // user-reported "database 'jaggers_agent_tools' not found" symptom).
+    // Plain rm -rf is not enough — the first git commit re-creates everything.
+    // The symlink makes bd operate on the parent's data; verified end-to-end.
+    // See xtrm-as7d / unitAI-0wz2p (specialists side, same fix).
     try {
         rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
+        symlinkSync(path.join(mainRepoRoot, '.beads'), path.join(worktreePath, '.beads'), 'dir');
     } catch {
-        // Non-fatal: worst case the per-worktree dolt server still spawns.
+        // Non-fatal: bd will recover by re-scaffolding a per-worktree stub.
     }
 
     writeSessionMeta(worktreePath, runtime);

@@ -46012,6 +46012,11 @@ async function launchWorktreeSession(opts) {
       process.exit(1);
     }
   }
+  try {
+    (0, import_node_fs.rmSync)(import_node_path5.default.join(worktreePath, ".beads"), { recursive: true, force: true });
+    (0, import_node_fs.symlinkSync)(import_node_path5.default.join(mainRepoRoot, ".beads"), import_node_path5.default.join(worktreePath, ".beads"), "dir");
+  } catch {
+  }
   writeSessionMeta(worktreePath, runtime);
   console.log(kleur_default.green(`
   \u2713 Worktree ready \u2014 launching ${runtime}...
