@@ -183,33 +183,58 @@ EOF
     echo "  + .github/dependabot.yml ($(echo "${ECOSYSTEMS[*]}" | wc -w) ecosystems)"
 fi
 
-# ── 5. .githooks/pre-push (merge baseline if existing, install if absent) ──
-# Source candidates: templates/.githooks/pre-push.template (skill) OR .githooks/pre-push (mercury-infra)
+# ── 5. .githooks/pre-push (install wrapper if existing, install baseline if absent) ──
+# Codex-audit-driven design (do NOT regress): existing pre-push hooks may
+#   (a) end with `exit 0` — appending baseline makes it unreachable
+#   (b) read stdin (push refs) — single-pass, baseline would see EOF
+# Solution: when a pre-push exists, move it to pre-push.local and install a
+# managed wrapper that runs baseline FIRST (preserving stdin via tee) and
+# then re-feeds stdin to pre-push.local.
 PREPUSH_SRC=""
 for cand in "$SOURCE/templates/.githooks/pre-push.template" "$SOURCE/.githooks/pre-push"; do
     [ -f "$cand" ] && PREPUSH_SRC="$cand" && break
 done
 if [ -z "$PREPUSH_SRC" ]; then
     echo "  ⚠️  no pre-push baseline found; skipping hooks"
-elif [ -f "$TARGET/.githooks/pre-push" ]; then
-    # Append baseline with idempotency marker so we don't double-inject
-    if ! grep -q "security-pipeline-baseline" "$TARGET/.githooks/pre-push" 2>/dev/null; then
-        {
-            echo ""
-            echo "# >>> security-pipeline-baseline (managed by security-bootstrap.sh) >>>"
-            cat "$PREPUSH_SRC"
-            echo "# <<< security-pipeline-baseline <<<"
-        } >> "$TARGET/.githooks/pre-push"
-        chmod +x "$TARGET/.githooks/pre-push"
-        echo "  + .githooks/pre-push (appended baseline to existing)"
-    else
-        echo "  ✓ .githooks/pre-push (baseline already present)"
-    fi
 else
     mkdir -p "$TARGET/.githooks"
-    cp "$PREPUSH_SRC" "$TARGET/.githooks/pre-push"
+    BASELINE="$TARGET/.githooks/.security-pipeline-baseline"
+    cp "$PREPUSH_SRC" "$BASELINE"
+    chmod +x "$BASELINE"
+    if [ -f "$TARGET/.githooks/pre-push" ] && ! grep -q "security-pipeline-managed-wrapper" "$TARGET/.githooks/pre-push" 2>/dev/null; then
+        # Existing hook present and not yet our wrapper — move it aside
+        mv "$TARGET/.githooks/pre-push" "$TARGET/.githooks/pre-push.local"
+        chmod +x "$TARGET/.githooks/pre-push.local"
+        echo "  ↪ existing .githooks/pre-push moved to pre-push.local"
+    fi
+    cat > "$TARGET/.githooks/pre-push" <<'WRAPEOF'
+#!/usr/bin/env bash
+# security-pipeline-managed-wrapper — installed by security-bootstrap.sh
+# Runs the security baseline first, then any user-local pre-push hook.
+# Both receive the original push refs on stdin.
+set -uo pipefail
+
+REFS=$(cat)
+HOOKS_DIR=$(dirname "$0")
+
+# 1. Baseline: anti-direct-main + pre-commit pre-push chain
+if [ -x "$HOOKS_DIR/.security-pipeline-baseline" ]; then
+    echo "$REFS" | "$HOOKS_DIR/.security-pipeline-baseline" "$@"
+    rc=$?
+    [ $rc -ne 0 ] && exit $rc
+fi
+
+# 2. User-local hook (preserves any pre-existing logic)
+if [ -x "$HOOKS_DIR/pre-push.local" ]; then
+    echo "$REFS" | "$HOOKS_DIR/pre-push.local" "$@"
+    rc=$?
+    [ $rc -ne 0 ] && exit $rc
+fi
+
+exit 0
+WRAPEOF
     chmod +x "$TARGET/.githooks/pre-push"
-    echo "  + .githooks/pre-push"
+    echo "  + .githooks/pre-push (managed wrapper) + .security-pipeline-baseline"
 fi
 
 # ── 6. Commit + PR ────────────────────────────────────────────────────────

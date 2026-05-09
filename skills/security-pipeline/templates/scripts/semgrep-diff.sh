@@ -27,9 +27,20 @@ fi
 if [ -n "$BASE_REF" ]; then
     BASE=$(git merge-base HEAD "$BASE_REF" 2>/dev/null || true)
 fi
-# Final fallback: walk back enough to cover the entire push (find common
-# ancestor across N revs; default 50 if no remote tracking)
-[ -z "${BASE:-}" ] && BASE=$(git rev-list HEAD --max-count=50 | tail -1)
+# Final fallback: walk back enough to cover the push. On a single-commit
+# history rev-list returns HEAD itself — using HEAD as baseline produces an
+# empty diff and silently misses everything. Refuse that case and run a
+# full scan instead so first-push coverage stays honest.
+if [ -z "${BASE:-}" ]; then
+    BASE=$(git rev-list HEAD --max-count=50 | tail -1)
+fi
+HEAD_SHA=$(git rev-parse HEAD)
+SEMGREP_BASELINE_ARGS=()
+if [ -n "${BASE:-}" ] && [ "$BASE" != "$HEAD_SHA" ]; then
+    SEMGREP_BASELINE_ARGS=(--baseline-commit="$BASE")
+else
+    echo "[semgrep-diff] no usable baseline (single-commit branch?) — running full scan"
+fi
 
 exec semgrep scan \
     --config=p/default \
@@ -38,7 +49,7 @@ exec semgrep scan \
     --config=p/python \
     --config=p/dockerfile \
     --config=p/github-actions \
-    --baseline-commit="$BASE" \
+    "${SEMGREP_BASELINE_ARGS[@]}" \
     --error \
     --quiet \
     --skip-unknown-extensions
