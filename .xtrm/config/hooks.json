@@ -2,6 +2,7 @@
   "hooks": {
     "SessionStart": [
       {
+        "script": "beads-compact-restore.mjs",
         "hooks": [
           {
             "type": "command",
@@ -126,6 +127,7 @@
     ],
     "PreCompact": [
       {
+        "script": "beads-compact-save.mjs",
         "hooks": [
           {
             "type": "command",

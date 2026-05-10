@@ -92,7 +92,14 @@ const hooksOutput = {};
 for (const [key, hookEntries] of eventGroups) {
   const [event, matcher] = key.split('\0');
   if (!hooksOutput[event]) hooksOutput[event] = [];
-  const group = matcher ? { matcher, hooks: hookEntries } : { hooks: hookEntries };
+  const preferredScript = hookEntries
+    .map((hook) => hook.command.match(/beads-compact-(restore|save)\.mjs/)?.[0])
+    .find(Boolean);
+  const group = {
+    ...(matcher ? { matcher } : {}),
+    ...(preferredScript ? { script: preferredScript } : {}),
+    hooks: hookEntries,
+  };
   hooksOutput[event].push(group);
 }
 
