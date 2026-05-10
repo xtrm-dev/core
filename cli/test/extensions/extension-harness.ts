@@ -47,6 +47,7 @@ export class ExtensionHarness {
 			},
 			sessionManager: {
 				sessionId: "mock-session-123",
+				getSessionId: vi.fn().mockReturnValue("mock-session-123"),
 				getEntries: vi.fn().mockReturnValue([]),
 				getLeafEntry: vi.fn().mockReturnValue({ id: "last-entry" }),
 				getBranch: vi.fn().mockReturnValue([]),

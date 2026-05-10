@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import customFooterExtension from "../../../packages/pi-extensions/extensions/custom-footer/index";
-import { SubprocessRunner, EventAdapter } from "../../../packages/pi-extensions/src/core/lib";
+import { SubprocessRunner, EventAdapter } from "../../../packages/pi-extensions/src/core";
 
-vi.mock("../../../packages/pi-extensions/src/core/lib", async () => {
-	const actual = await vi.importActual<any>("../../../packages/pi-extensions/src/core/lib");
+vi.mock("../../../packages/pi-extensions/src/core", async () => {
+	const actual = await vi.importActual<any>("../../../packages/pi-extensions/src/core");
 	return {
 		...actual,
 		SubprocessRunner: { run: vi.fn() },
@@ -52,7 +52,7 @@ describe("custom-footer parity", () => {
 			if (cmd === "git" && args[0] === "branch") return { code: 0, stdout: "xt/demo\n", stderr: "" };
 			if (cmd === "git" && args.includes("status")) return { code: 0, stdout: " M file.ts\nA  new.ts\n", stderr: "" };
 			if (cmd === "git" && args.includes("rev-list")) return { code: 0, stdout: "0 1\n", stderr: "" };
-			if (cmd === "bd" && args[0] === "kv") return { code: 0, stdout: "xtrm-123\n", stderr: "" };
+			if (cmd === "bd" && args[0] === "list" && args[1] === "--status=in_progress") return { code: 0, stdout: "◐ xtrm-123 in progress\n", stderr: "" };
 			if (cmd === "bd" && args[0] === "show") {
 				return { code: 0, stdout: JSON.stringify([{ status: "in_progress", title: "Fix footer parity" }]), stderr: "" };
 			}
@@ -88,7 +88,7 @@ describe("custom-footer parity", () => {
 			if (cmd === "git" && args[0] === "branch") return { code: 0, stdout: "xt/demo\n", stderr: "" };
 			if (cmd === "git" && args.includes("status")) return { code: 0, stdout: "", stderr: "" };
 			if (cmd === "git" && args.includes("rev-list")) return { code: 0, stdout: "0 0\n", stderr: "" };
-			if (cmd === "bd" && args[0] === "kv") return { code: 0, stdout: "\n", stderr: "" };
+			if (cmd === "bd" && args[0] === "list" && args[1] === "--status=in_progress") return { code: 0, stdout: "", stderr: "" };
 			if (cmd === "bd" && args[0] === "list") return { code: 0, stdout: "(5 open, 0 in progress)", stderr: "" };
 			return { code: 1, stdout: "", stderr: "" };
 		});
