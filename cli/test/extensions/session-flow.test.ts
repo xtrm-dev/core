@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ExtensionHarness } from "./extension-harness";
 import sessionFlowExtension from "../../../packages/pi-extensions/extensions/session-flow/index";
-import { SubprocessRunner } from "../../../packages/pi-extensions/src/core/lib";
+import { SubprocessRunner } from "../../../packages/pi-extensions/src/core";
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
 	isBashToolResult: (event: any) => event?.toolName === "bash",
 }));
 
-vi.mock("../../../packages/pi-extensions/src/core/lib", async () => {
-	const actual = await vi.importActual<any>("../../../packages/pi-extensions/src/core/lib");
+vi.mock("../../../packages/pi-extensions/src/core", async () => {
+	const actual = await vi.importActual<any>("../../../packages/pi-extensions/src/core");
 	return {
 		...actual,
 		SubprocessRunner: {
