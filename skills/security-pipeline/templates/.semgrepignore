@@ -13,8 +13,10 @@ logs/
 grafana/data/
 traefik/logs/
 
-# .xtrm/ runtime + cache, but DO scan the security-pipeline skill source.
-# Blanket .xtrm/ exclusion would hide bugs in scripts we ship to other repos.
+# .xtrm/ runtime + cache + non-security skills.
+# We DO scan the security-pipeline skill source because its scripts ship
+# into target repos and must be SAST-clean. Use blanket exclude + explicit
+# unignore so new skills don't silently become scan targets.
 .xtrm/state.json
 .xtrm/statusline-claim
 .xtrm/logs/
@@ -26,31 +28,9 @@ traefik/logs/
 .xtrm/skills/active/
 .xtrm/skills/optional/
 .xtrm/skills/user/
-.xtrm/skills/default/clean-code/
-.xtrm/skills/default/creating-service-skills/
-.xtrm/skills/default/deepwiki/
-.xtrm/skills/default/delegating/
-.xtrm/skills/default/documenting/
-.xtrm/skills/default/find-docs/
-.xtrm/skills/default/find-skills/
-.xtrm/skills/default/github-search/
-.xtrm/skills/default/gitnexus-cli/
-.xtrm/skills/default/gitnexus-debugging/
-.xtrm/skills/default/gitnexus-exploring/
-.xtrm/skills/default/gitnexus-guide/
-.xtrm/skills/default/gitnexus-impact-analysis/
-.xtrm/skills/default/gitnexus-refactoring/
-.xtrm/skills/default/last30days/
-.xtrm/skills/default/quality-gates/
-.xtrm/skills/default/scoping-service-skills/
-.xtrm/skills/default/session-close-report/
-.xtrm/skills/default/skill-creator/
-.xtrm/skills/default/sync-docs/
-.xtrm/skills/default/updating-service-skills/
-.xtrm/skills/default/using-quality-gates/
-.xtrm/skills/default/using-specialists-v3/
-.xtrm/skills/default/using-xtrm/
-# (security-pipeline left in scope — its scripts ship into target repos)
+.xtrm/skills/default/
+!.xtrm/skills/default/security-pipeline/
+!.xtrm/skills/default/security-pipeline/**
 
 # Test fixtures and snapshots — false positive heavy
 **/test_fixtures/
