@@ -28,9 +28,11 @@ traefik/logs/
 .xtrm/skills/active/
 .xtrm/skills/optional/
 .xtrm/skills/user/
-.xtrm/skills/default/
-!.xtrm/skills/default/security-pipeline/
-!.xtrm/skills/default/security-pipeline/**
+# Use glob '*' on immediate children so the parent stays included; this lets
+# the negation actually re-include security-pipeline (gitignore semantics
+# refuse to descend into an excluded parent directory).
+.xtrm/skills/default/*
+!.xtrm/skills/default/security-pipeline
 
 # Test fixtures and snapshots — false positive heavy
 **/test_fixtures/
