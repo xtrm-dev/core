@@ -10,15 +10,27 @@ if ! command -v semgrep >/dev/null; then
     exit 0
 fi
 
-# Derive base ref dynamically: prefer the branch's tracked upstream, fall back
-# to common default branches, finally to HEAD~N where N covers the whole push.
+# Derive base ref dynamically. Order:
+#   1. branch's tracked upstream ('@{u}') — most reliable
+#   2. common default branches if their *remote* version exists (origin/*)
+#   3. local default branches IF different from current branch
+# We refuse to use the current branch as its own baseline because then
+# merge-base resolves to HEAD and --baseline-commit=HEAD silently scans
+# nothing on every push.
+HEAD_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+HEAD_SHA=$(git rev-parse HEAD)
+
 upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+BASE_REF=""
 if [ -n "$upstream" ]; then
     BASE_REF="$upstream"
 else
-    BASE_REF=""
     for cand in origin/main origin/master main master; do
-        git rev-parse --verify "$cand" >/dev/null 2>&1 && BASE_REF="$cand" && break
+        git rev-parse --verify "$cand" >/dev/null 2>&1 || continue
+        # Skip a local-branch candidate that IS the current branch
+        [ "$cand" = "$HEAD_BRANCH" ] && continue
+        BASE_REF="$cand"
+        break
     done
 fi
 
@@ -27,21 +39,19 @@ fi
 SEMGREP_BASELINE_ARGS=()
 if [ -n "$BASE_REF" ]; then
     BASE=$(git merge-base HEAD "$BASE_REF" 2>/dev/null || true)
-    # If merge-base resolves to HEAD (branch tip == upstream), the diff is
-    # legitimately empty — pass --baseline-commit anyway so semgrep produces
-    # an empty result instead of falling back to a full scan.
+    # merge-base==HEAD here means branch is at upstream tip — legitimate empty
+    # diff. Pass --baseline-commit so semgrep produces an empty result rather
+    # than falling back to a full scan.
     [ -n "$BASE" ] && SEMGREP_BASELINE_ARGS=(--baseline-commit="$BASE")
 fi
-# Last-resort fallback only if upstream resolution gave nothing at all.
-# rev-list can equal HEAD on single-commit histories; that would silently
-# scan nothing, so refuse the HEAD-as-baseline case and run a full scan.
+# Last-resort: no upstream resolved at all. rev-list can equal HEAD on single
+# -commit histories; reject and full-scan in that case.
 if [ ${#SEMGREP_BASELINE_ARGS[@]} -eq 0 ]; then
     BASE=$(git rev-list HEAD --max-count=50 | tail -1)
-    HEAD_SHA=$(git rev-parse HEAD)
     if [ -n "$BASE" ] && [ "$BASE" != "$HEAD_SHA" ]; then
         SEMGREP_BASELINE_ARGS=(--baseline-commit="$BASE")
     else
-        echo "[semgrep-diff] no usable baseline (single-commit branch?) — running full scan"
+        echo "[semgrep-diff] no usable baseline (no upstream, single-commit branch, or pushing default branch directly) — running full scan"
     fi
 fi
 
