@@ -507,7 +507,13 @@ interface InitInventory {
 
 async function runPreflight(projectRoot: string, opts: InstallOpts): Promise<InitInventory> {
     // Source repo for skills/hooks (bundled in npm package or git repo)
-    const repoRoot = await findRepoRoot().catch(() => projectRoot);
+    let repoRoot: string;
+    try {
+        repoRoot = await findRepoRoot();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Compilation failed: ${message}`);
+    }
 
     // Machine tool availability via unified bootstrap module (read-only)
     const bootstrapPlan = inventoryDeps();

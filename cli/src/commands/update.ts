@@ -131,7 +131,7 @@ function printTable(rows: RepoUpdateResult[]): void {
 
 export function createUpdateCommand(): Command {
     return new Command('update')
-        .description('Refresh xtrm-managed files and assure global xt Pi packages for one repo or many; missing or outdated packages are refreshed on --apply')
+        .description('Refresh xtrm-managed files and assure global xt Pi packages for one repo or many; missing or outdated packages are refreshed on --apply. Alias for init-era repo refresh; see xtrm init for full bootstrap.')
         .option('--apply', 'Write changes with install force mode', false)
         .option('--strict-registry', 'Fail on registry/source mismatch or missing registry source files', false)
         .option('--root <dir>', 'Walk root and update every repo with .xtrm/registry.json')
