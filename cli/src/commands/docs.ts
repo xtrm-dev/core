@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import fs from 'fs-extra';
 import path from 'path';
-import { findRepoRoot } from '../utils/repo-root.js';
+import { findProjectRoot } from '../utils/repo-root.js';
 import { t, sym } from '../utils/theme.js';
 import { parseFrontmatter, DocEntry, scanDocFiles } from '../utils/docs-scanner.js';
 import { readCache, writeCache, isCacheValid } from '../utils/docs-cache.js';
@@ -158,7 +158,7 @@ export function createDocsCommand(): Command {
         .option('--raw', 'Output raw YAML frontmatter', false)
         .option('--json', 'Output JSON', false)
         .action(async (filter: string | undefined, opts: { raw: boolean; json: boolean }) => {
-            const repoRoot = await findRepoRoot();
+            const repoRoot = await findProjectRoot();
             const entries = await collectDocFiles(repoRoot, filter);
 
             if (entries.length === 0) {
@@ -199,7 +199,7 @@ export function createDocsCommand(): Command {
         .option('--json', 'Output JSON array', false)
         .option('--no-cache', 'Bypass cache and force fresh scan')
         .action(async (opts: { dir?: string; pattern?: string; filter?: string; json: boolean; cache: boolean }) => {
-            const repoRoot = await findRepoRoot();
+            const repoRoot = await findProjectRoot();
 
             // Parse --filter field=value
             let fmFilter: { field: string; value: string } | undefined;
@@ -289,7 +289,7 @@ export function createDocsCommand(): Command {
         .action(async (opts: { days: string; json: boolean }) => {
             try {
                 const days = parseInt(opts.days, 10) || 30;
-                const repoRoot = await findRepoRoot();
+                const repoRoot = await findProjectRoot();
 
                 // Check availability of external tools
                 const ghOk = isGhAvailable();
@@ -350,7 +350,7 @@ export function createDocsCommand(): Command {
         .option('--fix', 'Auto-fix simple issues (add missing updated_at)', false)
         .option('--json', 'Output JSON', false)
         .action(async (filter: string | undefined, opts: { fix: boolean; json: boolean }) => {
-            const repoRoot = await findRepoRoot();
+            const repoRoot = await findProjectRoot();
             const entries = await collectDocFiles(repoRoot, filter);
 
             if (entries.length === 0) {
