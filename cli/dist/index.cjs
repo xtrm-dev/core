@@ -59139,7 +59139,13 @@ async function injectProjectInstructionHeaders(projectRoot) {
 async function installServiceSkillHooks(_projectRoot) {
 }
 async function runPreflight(projectRoot, opts) {
-  const repoRoot = await findRepoRoot().catch(() => projectRoot);
+  let repoRoot;
+  try {
+    repoRoot = await findRepoRoot();
+  } catch (error48) {
+    const message = error48 instanceof Error ? error48.message : String(error48);
+    throw new Error(`Compilation failed: ${message}`);
+  }
   const bootstrapPlan = inventoryDeps();
   let skillsChanges = 0;
   try {
@@ -64471,7 +64477,7 @@ function printTable(rows) {
   }
 }
 function createUpdateCommand() {
-  return new Command("update").description("Refresh xtrm-managed files and assure global xt Pi packages for one repo or many; missing or outdated packages are refreshed on --apply").option("--apply", "Write changes with install force mode", false).option("--strict-registry", "Fail on registry/source mismatch or missing registry source files", false).option("--root <dir>", "Walk root and update every repo with .xtrm/registry.json").option("--repo <path>", "Target one repo path instead of cwd").option("--json", "Print JSON output", false).action(async (opts) => {
+  return new Command("update").description("Refresh xtrm-managed files and assure global xt Pi packages for one repo or many; missing or outdated packages are refreshed on --apply. Alias for init-era repo refresh; see xtrm init for full bootstrap.").option("--apply", "Write changes with install force mode", false).option("--strict-registry", "Fail on registry/source mismatch or missing registry source files", false).option("--root <dir>", "Walk root and update every repo with .xtrm/registry.json").option("--repo <path>", "Target one repo path instead of cwd").option("--json", "Print JSON output", false).action(async (opts) => {
     const typedOpts = opts;
     const repos = await resolveTargetRepos(typedOpts);
     const rows = [];
