@@ -35,8 +35,14 @@ echo "── Target: $TARGET ($SLUG) ──"
 
 # ── 1. Detect ecosystems for dependabot.yml ───────────────────────────────
 ECOSYSTEMS=()
-[ -f requirements.txt ] || find . -maxdepth 3 -name 'requirements*.txt' -not -path '*/node_modules/*' -print -quit | grep -q . && ECOSYSTEMS+=("pip")
-[ -f pyproject.toml ] && ECOSYSTEMS+=("pip-pyproject")
+# pip ecosystem covers BOTH requirements*.txt and pyproject.toml — emit a
+# single 'pip' entry to avoid duplicate dependabot blocks for /.
+HAS_PIP=0
+if [ -f requirements.txt ] || find . -maxdepth 3 -name 'requirements*.txt' -not -path '*/node_modules/*' -print -quit | grep -q .; then
+    HAS_PIP=1
+fi
+[ -f pyproject.toml ] && HAS_PIP=1
+[ "$HAS_PIP" = "1" ] && ECOSYSTEMS+=("pip")
 [ -f package.json ] && [ "$(cat package.json | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d))' 2>/dev/null)" -gt 1 ] && ECOSYSTEMS+=("npm")
 find . -maxdepth 5 -name 'Dockerfile' -not -path '*/node_modules/*' -print -quit | grep -q . && ECOSYSTEMS+=("docker")
 [ -f go.mod ] && ECOSYSTEMS+=("gomod")
@@ -100,7 +106,7 @@ else
         echo "updates:"
         for eco in "${ECOSYSTEMS[@]}"; do
             case "$eco" in
-                pip|pip-pyproject)
+                pip)
                     cat <<'EOF'
   - package-ecosystem: pip
     directory: /
