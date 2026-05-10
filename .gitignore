@@ -80,3 +80,6 @@ hooks/tsconfig-cache.json
 
 # Serena project metadata for nested package workspaces
 .xtrm/packages/pi-extensions/.serena/
+
+# Beads / Dolt files (added by bd init)
+.beads-credential-key
