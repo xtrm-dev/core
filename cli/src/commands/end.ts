@@ -228,6 +228,37 @@ ${details}
     console.log(t.success(`  ✓ Rebuilt cli/dist and committed ${stagedDist.length} file(s)`));
 }
 
+export function findBeadsSymlinkIntroductions(cwd: string, upstream: string): string[] {
+    const diffResult = git(['diff', '--raw', `${upstream}..HEAD`, '--', '.beads/'], cwd);
+    if (!diffResult.ok) {
+        console.warn(kleur.yellow('  ⚠ Could not inspect .beads diff for symlink mode changes; continuing safely.'));
+        return [];
+    }
+
+    return [...new Set(
+        diffResult.out
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean)
+            .flatMap(line => {
+                const match = line.match(/^:[0-9]{6} ([0-9]{6}) [0-9a-f]{7,40} [0-9a-f]{7,40} ([A-Z]+(?:[0-9]+)?)\t(.+)$/);
+                if (!match) return [];
+                const destinationMode = match[1];
+                const path = match[3];
+                return destinationMode === '120000' && path.startsWith('.beads/') ? [path] : [];
+            }),
+    )];
+}
+
+function printBeadsSymlinkGuardError(paths: string[], upstream: string): void {
+    console.error(kleur.red('\n  ✗ Refusing to push: .beads symlink mode change detected\n'));
+    for (const path of paths) {
+        console.error(kleur.red(`    ${path}`));
+    }
+    console.error(kleur.dim(`\n  Recover with:
+    git restore --source=${upstream} -- .beads/\n  Then re-run: xt end\n`));
+}
+
 /** Generate PR body from issues, commit log, diff stat */
 function buildPrBody(
     issues: Array<{ id: string; title: string; description: string; reason: string }>,
@@ -399,7 +430,14 @@ export function createEndCommand(): Command {
             // 8. Rebuild generated CLI bundle if session commits touched cli/src/
             maybeRebuildCliDist(cwd, defaultBranch);
 
-            // 9. Push (force-with-lease = safe after rebase)
+            // 9. Guard: refuse .beads symlink introductions before push
+            const beadsSymlinkPaths = findBeadsSymlinkIntroductions(cwd, `origin/${defaultBranch}`);
+            if (beadsSymlinkPaths.length > 0) {
+                printBeadsSymlinkGuardError(beadsSymlinkPaths, `origin/${defaultBranch}`);
+                process.exit(1);
+            }
+
+            // 10. Push (force-with-lease = safe after rebase)
             const pushConfirmed = await confirmDestructiveAction({
                 yes: opts.yes,
                 message: `Force-push ${branch} to origin with --force-with-lease?`,

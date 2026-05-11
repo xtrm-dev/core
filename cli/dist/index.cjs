@@ -61073,6 +61073,33 @@ ${details}
   }
   console.log(t.success(`  \u2713 Rebuilt cli/dist and committed ${stagedDist.length} file(s)`));
 }
+function findBeadsSymlinkIntroductions(cwd, upstream) {
+  const diffResult = git(["diff", "--raw", `${upstream}..HEAD`, "--", ".beads/"], cwd);
+  if (!diffResult.ok) {
+    console.warn(kleur_default.yellow("  \u26A0 Could not inspect .beads diff for symlink mode changes; continuing safely."));
+    return [];
+  }
+  return [...new Set(
+    diffResult.out.split("\n").map((line) => line.trim()).filter(Boolean).flatMap((line) => {
+      const match = line.match(/^:[0-9]{6} ([0-9]{6}) [0-9a-f]{7,40} [0-9a-f]{7,40} ([A-Z]+(?:[0-9]+)?)\t(.+)$/);
+      if (!match) return [];
+      const destinationMode = match[1];
+      const path44 = match[3];
+      return destinationMode === "120000" && path44.startsWith(".beads/") ? [path44] : [];
+    })
+  )];
+}
+function printBeadsSymlinkGuardError(paths, upstream) {
+  console.error(kleur_default.red("\n  \u2717 Refusing to push: .beads symlink mode change detected\n"));
+  for (const path44 of paths) {
+    console.error(kleur_default.red(`    ${path44}`));
+  }
+  console.error(kleur_default.dim(`
+  Recover with:
+    git restore --source=${upstream} -- .beads/
+  Then re-run: xt end
+`));
+}
 function buildPrBody(issues, commitLog, diffStat, branch) {
   const lines = [];
   lines.push("## What");
@@ -61205,6 +61232,11 @@ function createEndCommand() {
     }
     console.log(t.success(`  \u2713 Rebased onto origin/${defaultBranch}`));
     maybeRebuildCliDist(cwd, defaultBranch);
+    const beadsSymlinkPaths = findBeadsSymlinkIntroductions(cwd, `origin/${defaultBranch}`);
+    if (beadsSymlinkPaths.length > 0) {
+      printBeadsSymlinkGuardError(beadsSymlinkPaths, `origin/${defaultBranch}`);
+      process.exit(1);
+    }
     const pushConfirmed = await confirmDestructiveAction({
       yes: opts.yes,
       message: `Force-push ${branch} to origin with --force-with-lease?`,
