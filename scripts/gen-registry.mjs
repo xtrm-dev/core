@@ -30,10 +30,6 @@ const assets = {
     source_dir: '.xtrm/config',
     install_mode: 'copy',
   },
-  pi_extensions: {
-    source_dir: 'packages/pi-extensions',
-    install_mode: 'copy',
-  },
 };
 
 async function readSpecialistsSource() {
