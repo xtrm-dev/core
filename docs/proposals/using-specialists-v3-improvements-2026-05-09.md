@@ -1,9 +1,9 @@
 # Proposed improvements to `using-specialists-v3` skill
 
-**Source:** lessons from the 2026-05-09 xtrm-tools full-auto orchestration session (~75 specialist dispatches, 22 chains landed, 6 friction beads filed).
+**Source:** lessons from the 2026-05-09 xtrm-tools full-auto orchestration session (~75 specialist dispatches, 22 chains landed, 6 friction beads filed), with a 2026-05-11 addendum from a follow-up cli-test-suite epic (11 dispatches across 5 disjoint clusters, 34→0 fails, captured in `.xtrm/reports/2026-05-11-1f573e2.md`). Addendum additions are tagged inline as **(2026-05-11)**.
 **Target:** `specialists/config/skills/using-specialists-v3/SKILL.md` (current version: 3.2).
 **Owner:** specialists repo.
-**Bead:** xtrm-clzv.
+**Bead:** xtrm-clzv (+ xtrm-wa45 for the 2026-05-11 addendum).
 
 The skill is solid for **dispatch + chain + reviewer**. The gaps surfaced by this session live around **integration-phase reconciliation, post-merge smoke validation, conversation-style overthinker use, autonomous long-running orchestration, and explicit workarounds for known harness bugs that won't be fixed before the next release**. This document proposes additive sections + targeted edits.
 
@@ -198,22 +198,75 @@ Empirical conflict rates from 2026-05-09:
 Default heuristic: if 3+ chains touch the same file, **serial-dispatch them**.
 ````
 
-### A6. Overthinker as conversation (PATTERN UPDATE)
+### A5b. Pre-epic test-failure-map pattern **(2026-05-11)**
 
-Current skill mentions overthinker for "risky design, tradeoffs, premortem". This session showed a different pattern: **conversation**. Send overthinker to evaluate a strategy, then resume with pushback when its first answer feels too cautious. Got 3 retracted recommendations after challenge.
+When a test suite has many failures and the operator wants them all fixed, do NOT dispatch parallel fix chains blind. Land one read-only mapping bead first.
 
 ````markdown
-## Overthinker as Conversation
+## Pre-Epic: Test-Failure-Map Pattern
 
-Overthinker excels when used iteratively — not as a one-shot oracle. After its first response, **read carefully and challenge any recommendation that feels overcautious or hand-wavy**. Common patterns the orchestrator should push back on:
+Use when:
+- A test suite shows ≥ ~5 failures and the operator says "fix all"
+- The failures span multiple files / subsystems
+- Root causes are not yet attributed per failure
 
+### Step-by-step
+
+1. **Run the suite once**, save the full log to `/tmp/<suite>-fails.log`. Do not interpret yet.
+2. **File one mapping bead** (e.g., `test-runner: refresh <epic> CLI failure map`) with this contract shape:
+   - `PROBLEM:` the exact command run, its exit status, the raw failure count.
+   - `SUCCESS:` cluster table grouping every failure by **likely shared root cause and file scope**, plus a recommended fix-chain order.
+   - `SCOPE:` the log file path + the bounded set of test files involved.
+   - `CONSTRAINTS:` READ_ONLY, no source/test edits, no fix attempts. The mapping bead's only job is to think.
+3. **Optionally dispatch test-runner / explorer / debugger** for this bead (READ_ONLY), OR fill the map inline by orchestrator reading the log.
+4. **Build the cluster table** with at minimum: cluster name | files (counts) | representative error | root-cause hypothesis | likely-owner area | targeted validation command. Save in bead notes.
+5. **Plan fix chains** off the cluster table:
+   - One chain per cluster, file scopes disjoint between chains where possible.
+   - Order by leverage (largest cluster first), then by simplicity.
+   - Decide debugger-or-executor per cluster: debugger when root cause unclear, executor when bead constraint is concrete.
+6. **Save the topology insight as a memory** (`bd remember`) — patterns about where this codebase's test fragility concentrates are reusable across future regressions.
+
+### Why this beats dispatch-blind
+
+Empirically (2026-05-11 xtrm-tools, 34 fails → 5 clusters):
+- 56 % of fails collapsed under ONE cluster's single root cause (`findRepoRoot` vs `findProjectRoot` in docs CLI). A blind parallel dispatch would have over-dispatched 19 fixes instead of 1.
+- 30 % collapsed under another single shared harness drift. Same logic.
+- The remaining 14 % were 3 small unrelated clusters — each got a tight focused bead.
+- Total: 5 fix chains vs ~10 had we dispatched per file. Net specialist spend ~$0.50 vs ~$1.50+.
+
+### Failure modes to watch for
+
+- **Clusters that look shared but aren't**: if the same error string appears in unrelated tests, the root causes may differ. Don't merge clusters by error text alone — confirm by reading the stack traces.
+- **One cluster's fix introduces another's regression**: each cluster's bead must include "no regressions in other clusters" as VALIDATION, with the test command spanning all known-failing areas.
+- **Pre-existing failures vs new regressions**: name pre-existing failures explicitly in each chain's NON_GOALS so reviewers don't FAIL on them.
+````
+
+### A6. Specialist rebuttal as routine (PATTERN UPDATE — generalized from overthinker 2026-05-09 / reviewer 2026-05-11)
+
+Current skill mentions overthinker for "risky design, tradeoffs, premortem". The 2026-05-09 session showed a different pattern: **conversation**. Send overthinker to evaluate a strategy, then resume with pushback when its first answer feels too cautious. Got 3 retracted recommendations after challenge.
+
+**Generalized 2026-05-11**: the same pattern works on **reviewer** too. 3 of 5 reviews this session returned PARTIAL on a non-applicable gate (gitnexus_impact on a test-only diff). One-line rebuttal flipped all 3 to PASS. Treat overcautious specialist verdicts as the first turn of a conversation, not a final decision.
+
+````markdown
+## Specialist Rebuttal as Routine
+
+Several specialists default to over-cautious verdicts when an evidence gate looks unsatisfied. The orchestrator's job is to challenge that verdict with cited evidence, not to accept it. Common rebuttal-worthy patterns:
+
+### Overthinker
 - "Hold for operator decision" without specifying what decision is needed → push: "Cite file/line evidence for why this is a product decision rather than a mechanical resolution."
 - "Close as superseded by X" without verification → push: "Read the current state of <file> and check whether feature Y from this bead is actually present."
 - "Run separate small beads" or "run one big bead" without rationale → push: "Pick one and explain operationally — cost difference, conflict expectations, reviewer scope."
 
-Resume with explicit ammunition (specific file/line refs, current branch state, links). Overthinker's second-round answers were significantly more grounded after the push.
+### Reviewer **(2026-05-11)**
+- "PARTIAL — missing gitnexus_impact evidence" on a test-only diff → rebut: "gitnexus_impact analyzes runtime call graphs; test fixture mocks have no callers in the production graph; the bead's impact-gate constraint is conditional on modifying a runtime entrypoint, which did not happen here."
+- "FAIL — full suite shows N+1 fails" where one of the fails is a known flake from concurrent runs → rebut: re-run the suspect test in isolation, paste the clean output, then resume reviewer with "The flake was from concurrent vitest runs during parallel review; isolated rerun: P/P. Re-evaluate."
+- "FAIL — injected diff doesn't match claimed change" when the injected diff is a known-buggy reviewer context (xtrm-axwq) → rebut with cumulative-diff commands from the bead SCOPE (see B1).
 
-When done, close the bead and capture the conversation in the session-close-report's "Specialist Dispatches" section under the overthinker entry — it's high-value handoff context.
+### General rule
+
+Resume with explicit ammunition: file/line refs, exact rerun output, link to the bead memory that documents the rebuttal pattern. Don't argue from authority; argue from new evidence. After a successful rebuttal, save the rebuttal text as a `bd remember` so the next session inherits it.
+
+When done, capture rebuttals in the session-close-report under the relevant specialist's "Problems" sub-table — they're durable handoff context and pattern-of-pattern fuel for future training.
 ````
 
 ### A7. Sleep timer + cron pattern for autonomous runs
@@ -269,6 +322,17 @@ Common orchestrator-internal beads that don't need novel memory:
 - Reviewer beads (xtrm-bbbb) created to dispatch reviewer on a parent
 - Re-review beads after fix turns
 - Decomposition tracker beads created by planners (memory captured in children)
+
+### Parallel-chain commit ordering **(2026-05-11)**
+
+The bd commit-gate is **project-wide**, not per-worktree. While **any** bead in the project is `in_progress`, **no** worktree can commit. Practical consequence for parallel-chain epics:
+
+- You CAN dispatch two executors in parallel — they work in separate worktrees, no commit-time collision.
+- But once executor A returns and executor B is still running, you CANNOT commit A's worktree until B's bead is closed (or vice versa).
+- Workflow: close the finished chain's executor bead FIRST (memory-ack + `bd close`), THEN commit that chain's worktree, THEN wait on the other chain.
+- This forces a serial-tail on the commit step. Plan for it: parallel-dispatch saves time on the *thinking* step, not the commit step.
+
+If the commit-gate blocks unexpectedly mid-orchestration, `bd query "status=in_progress"` reveals which claim is holding it open.
 ````
 
 ### A9. Session-close-report integration (MANDATORY at session end)
@@ -387,6 +451,70 @@ Repeat as needed; the flag gets stripped on some bd auto-init paths.
 
 ### Dolt journal corruption (xtrm-yb0u)
 **Recovery:** operator-only. Stop further bd writes. Snapshot `~/.beads/shared-server/dolt`. Run `dolt fsck` (read-only) first to assess. Decide on `--revive-journal-with-data-loss` only after reviewing the warning.
+
+### Worktree `.beads/` directory-to-symlink swap pollutes checkpoint commits **(2026-05-11)** (xtrm-nsca)
+
+`xt claude` / specialist worktree provisioning (per commit `63d2bb1` in xtrm-tools) replaces the tracked `.beads/` directory with a symlink to the parent repo's `.beads/`, so bd hooks inside the worktree resolve to the shared dolt server. Side effect: when the executor/debugger commits a checkpoint, git stages the directory→symlink change as **1.7k lines of phantom `.beads/` deletions** alongside the real fix, polluting the chain diff. Reviewer then either FAILs on out-of-scope deletions or sees a stale/limited diff and FAILs on missing source change.
+
+**Bead-time prevention:** put this CONSTRAINT in every edit-capable specialist's bead:
+> "When committing, do NOT include any `.beads/*` paths. Use `git add` with explicit source/test paths (NOT `git add -A` or `git add .`). If `git status` shows `.beads/*` deletions, ignore them — they are a known provisioning artifact."
+
+This works when specialists follow it (~40 % did, 2026-05-11). When they don't, recover before reviewer:
+
+**Per-chain recovery sequence** (run inside the executor/debugger worktree):
+
+```bash
+git reset --mixed HEAD~1                               # uncommit the polluted checkpoint
+rm <worktree>/.beads                                   # drop the provisioning symlink
+git checkout HEAD -- .beads/                           # restore .beads as a directory from HEAD
+git restore --staged .beads/                           # drop any newly-staged .beads/* paths
+git checkout -- .beads/issues.jsonl                    # revert any bd auto-export churn
+git add <source/test files only>                       # stage real changes explicitly
+git commit -m "<conventional message> (<bead-id>)"     # clean commit
+```
+
+If bd auto-export re-stages `.beads/issues.jsonl` between `bd close` and `git commit`, `git reset HEAD~1 -- .beads/issues.jsonl && git checkout -- .beads/issues.jsonl && git commit --amend --no-edit` cleans it.
+
+**Pre-merge cleanup:** `sp merge` refuses if the worktree (or main repo) has uncommitted `.beads/issues.jsonl`. Always:
+
+```bash
+git -C <worktree> restore --staged .beads/issues.jsonl
+git -C <worktree> checkout -- .beads/issues.jsonl
+git -C <main-repo> restore --staged .beads/issues.jsonl
+git -C <main-repo> stash push -m "pre-merge" -- .beads/issues.jsonl
+sp merge <chain-root-bead>
+```
+
+Filed for systemic fix at `xtrm-nsca` (xtrm-tools-side) — candidate solutions: write `.beads` to `.git/worktrees/<name>/info/exclude` during provisioning, `git update-index --skip-worktree` on `.beads/*`, or a chain-internal pathspec filter on checkpoint commits.
+
+### Reviewer reflexive PARTIAL on test-only diffs **(2026-05-11)**
+
+The reviewer specialist (`gpt-5.3-codex thinking:low`) reflexively flags missing `gitnexus_impact` evidence even when the diff is entirely under `test/` or `tests/` paths. Three of five reviews this session PARTIAL'd on this gate. Durable rebuttal (works every time):
+
+> "Re-evaluate. The diff is entirely under `<test-path>` (N files, M lines, no runtime symbol touched). `gitnexus_impact` analyzes runtime call graphs — test fixture mocks have no callers in the production graph. The bead's impact-gate constraint is conditional on modifying a runtime entrypoint, which did not happen here. Issue final verdict PASS."
+
+Each rebuttal cost ~1 specialist turn (~$0.05). Bake a preempt into the bead CONSTRAINT:
+> "`gitnexus_impact` requirement does NOT apply if the diff is entirely under `test/` or `tests/` paths. Reviewer should issue PASS without that evidence when the diff is test-only."
+
+Reviewer then PASSes on the first turn.
+
+### `sp merge` refuses on dirty main worktree even when unrelated **(2026-05-11)**
+
+`sp merge` validates main is clean before rebasing. Between every chain merge, bd auto-export re-touches `.beads/issues.jsonl` on the main repo (and the worktree). `sp merge` then refuses with "cannot rebase: You have unstaged changes" or "Your index contains uncommitted changes".
+
+**Workaround**, run before every `sp merge`:
+
+```bash
+git -C <main-repo>  restore --staged .beads/issues.jsonl 2>/dev/null
+git -C <main-repo>  stash push -m "pre-merge" -- .beads/issues.jsonl 2>&1 | tail -1
+git -C <worktree>   restore --staged .beads/issues.jsonl 2>/dev/null
+git -C <worktree>   checkout -- .beads/issues.jsonl 2>/dev/null
+sp merge <bead-id>
+# after merge:
+git -C <main-repo> stash drop 2>/dev/null
+```
+
+For epic merges, repeat the cleanup BEFORE each `sp epic merge` even when the previous one succeeded — bd activity between merges re-dirties the tree.
 ````
 
 ---
@@ -403,3 +531,10 @@ To apply this proposal:
 6. Update SKILL.md description to mention "integration phase" and "debugger-restitch pattern" so the skill triggers on those keywords too.
 
 The session that produced this proposal is captured in `xtrm-tools/.xtrm/reports/2026-05-09-31d59db.md` with full context (75 dispatches, 22 chains, 6 friction beads, debugger-restitch deployments, overthinker conversation).
+
+The 2026-05-11 addendum draws from `xtrm-tools/.xtrm/reports/2026-05-11-1f573e2.md` (11 dispatches, 5-cluster epic, 34→0 cli test fails) and the durable memories:
+
+- `xtrm-tools-cli-test-failure-topology-post-pr` — empirical concentration of test fragility (see A5b).
+- `specialist-worktree-provisioning-in-xtrm-tools-replaces-trac` — workaround recipe (see Part C).
+- `reviewer-specialist-gpt-5-3-codex-thinking-low` — gitnexus_impact rebuttal (see Part C + A6).
+- `xtrm-tools-xtrm-config-hooks-json-is-generated` — project-specific but exemplifies the "don't edit generated files" lesson worth surfacing as a generic CONSTRAINT in executor beads that touch any compiled artifact.
