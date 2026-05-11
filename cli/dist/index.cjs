@@ -55142,6 +55142,41 @@ function ensureWorktreeSpecialists(worktreePath, mainRepoPath) {
     (0, import_node_fs.symlinkSync)(symlinkTarget, targetDir, "dir");
   }
 }
+function suppressBeadsWorktreeNoise(worktreePath) {
+  try {
+    const gitDirResult = (0, import_node_child_process.spawnSync)("git", ["-C", worktreePath, "rev-parse", "--absolute-git-dir"], {
+      cwd: worktreePath,
+      stdio: "pipe",
+      encoding: "utf8"
+    });
+    if (gitDirResult.status !== 0) return;
+    const gitDir = (gitDirResult.stdout ?? "").trim();
+    if (!gitDir) return;
+    const excludePath = import_node_path5.default.join(gitDir, "info", "exclude");
+    (0, import_node_fs.mkdirSync)(import_node_path5.default.dirname(excludePath), { recursive: true });
+    const excludeEntry = ".beads";
+    const excludeContents = (0, import_node_fs.existsSync)(excludePath) ? (0, import_node_fs.readFileSync)(excludePath, "utf8") : "";
+    if (!excludeContents.split(/\r?\n/).includes(excludeEntry)) {
+      const prefix = excludeContents.length > 0 && !excludeContents.endsWith("\n") ? "\n" : "";
+      (0, import_node_fs.writeFileSync)(excludePath, `${excludeContents}${prefix}${excludeEntry}
+`);
+    }
+    const trackedResult = (0, import_node_child_process.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
+      cwd: worktreePath,
+      stdio: "pipe",
+      encoding: "utf8"
+    });
+    if (trackedResult.status !== 0) return;
+    const trackedPaths = (trackedResult.stdout ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (trackedPaths.length === 0) return;
+    (0, import_node_child_process.spawnSync)("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
+      cwd: worktreePath,
+      stdio: "pipe",
+      encoding: "utf8"
+    });
+  } catch {
+  }
+}
 function sessionMetaPath(worktreePath) {
   return import_node_path5.default.join(worktreePath, ".xtrm", "session-meta.json");
 }
@@ -55224,6 +55259,7 @@ async function launchWorktreeSession(opts) {
   try {
     (0, import_node_fs.rmSync)(import_node_path5.default.join(worktreePath, ".beads"), { recursive: true, force: true });
     (0, import_node_fs.symlinkSync)(import_node_path5.default.join(mainRepoRoot, ".beads"), import_node_path5.default.join(worktreePath, ".beads"), "dir");
+    suppressBeadsWorktreeNoise(worktreePath);
   } catch {
   }
   writeSessionMeta(worktreePath, runtime);

@@ -75,6 +75,50 @@ function ensureWorktreeSpecialists(worktreePath: string, mainRepoPath: string): 
     }
 }
 
+function suppressBeadsWorktreeNoise(worktreePath: string): void {
+    try {
+        const gitDirResult = spawnSync('git', ['-C', worktreePath, 'rev-parse', '--absolute-git-dir'], {
+            cwd: worktreePath,
+            stdio: 'pipe',
+            encoding: 'utf8',
+        });
+        if (gitDirResult.status !== 0) return;
+
+        const gitDir = (gitDirResult.stdout ?? '').trim();
+        if (!gitDir) return;
+
+        const excludePath = path.join(gitDir, 'info', 'exclude');
+        mkdirSync(path.dirname(excludePath), { recursive: true });
+        const excludeEntry = '.beads';
+        const excludeContents = existsSync(excludePath) ? readFileSync(excludePath, 'utf8') : '';
+        if (!excludeContents.split(/\r?\n/).includes(excludeEntry)) {
+            const prefix = excludeContents.length > 0 && !excludeContents.endsWith('\n') ? '\n' : '';
+            writeFileSync(excludePath, `${excludeContents}${prefix}${excludeEntry}\n`);
+        }
+
+        const trackedResult = spawnSync('git', ['-C', worktreePath, 'ls-files', '--', '.beads'], {
+            cwd: worktreePath,
+            stdio: 'pipe',
+            encoding: 'utf8',
+        });
+        if (trackedResult.status !== 0) return;
+
+        const trackedPaths = (trackedResult.stdout ?? '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        if (trackedPaths.length === 0) return;
+
+        spawnSync('git', ['-C', worktreePath, 'update-index', '--skip-worktree', '--', ...trackedPaths], {
+            cwd: worktreePath,
+            stdio: 'pipe',
+            encoding: 'utf8',
+        });
+    } catch {
+        // non-fatal
+    }
+}
+
 export interface SessionMeta {
     runtime: 'claude' | 'pi';
     launchedAt: string;
@@ -208,6 +252,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     try {
         rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
         symlinkSync(path.join(mainRepoRoot, '.beads'), path.join(worktreePath, '.beads'), 'dir');
+        suppressBeadsWorktreeNoise(worktreePath);
     } catch {
         // Non-fatal: bd will recover by re-scaffolding a per-worktree stub.
     }
