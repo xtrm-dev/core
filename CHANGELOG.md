@@ -12,10 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `xt doctor`: report global xt-managed Pi package health in text and JSON via `piPackages`, including missing, outdated, and version-unknown states with remediation; doctor remains report-only and never installs packages. (xtrm-modr)
 - `xt update`: check global xt-managed Pi package freshness during dry-run and JSON output, and refresh only missing/outdated managed packages when `--apply` is used. (xtrm-5nwu)
+- `policies/beads.json`: wire `beads-compact-save.mjs` to `PreCompact` and `beads-compact-restore.mjs` to `SessionStart` so beads state survives Claude Code compaction; generated `.xtrm/config/hooks.json` carries a narrow wrapper-level `script` field for these entries only. (xtrm-4amc.5)
+- `xtrm update --help` advertises the `init` alias so operators discover the unified entry point from either command. (xtrm-4amc.7)
 
 ### Changed
 - Pi runtime package assurance now uses the canonical xt-managed package inventory, including `npm:@jaggerxtrm/pi-extensions`, instead of a two-package allowlist. (xtrm-ppwi)
 - Pi package freshness classification is centralized behind provider-injected helpers so commands can share deterministic missing/outdated/version-unknown behavior. (xtrm-basg)
+- `scripts/gen-registry.mjs` no longer emits a `pi_extensions` asset for project scaffold; `packages/pi-extensions` is global-only install and is not copied into target projects' `.xtrm/`. Re-lands the fix from commit `452d961` lost during the 2026-05-09 integration restitch. (xtrm-xvjg)
 - `session-close-report`: add paranoid cleanup, due-diligence, and CHANGELOG synchronization requirements so session handoffs include process cleanup, content audits, and consumer-facing changelog checks.
 - `releasing`: update the release skill to drive releases end-to-end without relying on the deprecated `xt release` flow.
 - `using-specialists-v3`: strengthen specialist orchestration guidance around runtime listing, file-layer discipline, security/code-sanity chains, monitoring, and worktree cleanup.
@@ -23,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `xtrm-cli` workspace tarball startup no longer resolves package assets at import time, so temp-installed `xt` / `xtrm` `--version` and help commands work without a root `.xtrm/registry.json`; the workspace package is marked private while root `xtrm-tools` remains the canonical distributable. (xtrm-cplc)
 - Pi runtime sync (`xtrm-n83y`) now installs `npm:pi-mcp-adapter` as a required managed Pi package, preventing Pi MCP startup blocks after `xt init` / `xt update` while still removing stale `~/.pi/agent/extensions/pi-mcp-adapter` extension overrides.
+- `.beads/` is no longer committed as a self-referential symlink (introduced accidentally in PR #196); restored as a tracked directory with sensitive runtime files (`.beads-credential-key`, `interactions.jsonl`) properly gitignored, and `dolt.shared-server: true` added to `.beads/config.yaml` for parity with sibling projects. Fresh clones no longer fail with "too many levels of symbolic links". (xtrm-f3s2)
+- `xtrm docs` (`list`, `verify`, `show`, `cross-check`): use `findProjectRoot()` instead of `findRepoRoot()` so the scanner respects the current project / fixture cwd rather than always traversing the xtrm-tools package source's `docs/`. (xtrm-4amc.1)
+- `runProjectInit` throws an actionable `Compilation failed: ...` error when the source repo root cannot be resolved, instead of resolving to undefined and silently no-op'ing. (xtrm-4amc.7)
 
 ## [0.7.17] - 2026-05-05
 
