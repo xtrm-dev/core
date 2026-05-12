@@ -74,7 +74,6 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@artale/pi-procs": "^1.1.0",
     "comment-json": "^4.2.3",
     "conf": "^15.1.0",
     "dotenv": "^17.3.1",
@@ -83,9 +82,9 @@
     "prompts": "^2.4.2"
   },
   "overrides": {
-    "protobufjs": "7.5.5",
     "fast-uri": "3.1.2",
-    "@aws-sdk/xml-builder": "3.972.22"
+    "@aws-sdk/xml-builder": "3.972.22",
+    "vite": "8.0.12"
   },
   "pi": {
     "extensions": [
@@ -99,5 +98,10 @@
       "npm:@aliou/pi-guardrails",
       "npm:@aliou/pi-processes"
     ]
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "8.0.12"
+    }
   }
 }

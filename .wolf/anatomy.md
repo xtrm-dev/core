@@ -1,4 +1,5 @@
 # anatomy.md
+> Manual note 2026-05-13: xtrm-krk0 clears OSV by removing unused @artale/pi-procs/tdd-guard deps, making cli/vitest.config.ts load tdd-guard-vitest optionally, pinning Vite for pnpm, and refreshing lockfiles/dist.
 > Manual note 2026-05-13: xtrm-6m4y wired root security pipeline files (Dependabot, OSV, Semgrep, Gitleaks, pre-commit/pre-push wrappers) and added scripts/osv-diff.sh so local push OSV only blocks vulnerabilities new vs baseline.
 > Manual note 2026-05-08: xtrm-cplc fixed workspace xtrm-cli tarball --version/--help crash by lazy-resolving init packageRoot and marking cli/package.json private/nonpublishable; canonical root xtrm-tools tarball remains release/install package.
 > Manual note 2026-05-07: session report .xtrm/reports/2026-05-07-986757b.md documents substantial dirty-state handoff for xtrm-tools-be9, including Pi UI compaction/theme changes, .pi/npm runtime drift, and specialists default mirror deletions.

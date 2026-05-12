@@ -89,3 +89,4 @@
 
 | 23:01 | Fixed xtrm-cplc workspace CLI tarball smoke | cli/src/commands/init.ts, cli/package.json, cli/dist/index.cjs | lazy package-root resolution; cli workspace private; pack/install smoke passed | — |
 - 2026-05-13: xtrm-6m4y added xtrm-tools security pipeline root config; local hooks now chain project reminders plus pre-commit security gates, and OSV push checks diff against baseline to avoid blocking old dependency debt.
+- 2026-05-13: xtrm-krk0 OSV fix removed unused @artale/pi-procs and bundled tdd-guard deps; cli/vitest.config.ts now loads tdd-guard-vitest only when installed, and OSV/audit/test gates pass clean.

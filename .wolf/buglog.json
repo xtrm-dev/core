@@ -236,6 +236,27 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-12T22:54:42Z"
+    },
+    {
+      "id": "bug-015",
+      "timestamp": "2026-05-12T23:12:25Z",
+      "error_message": "OSV scanner reported npm vulnerabilities in package-lock.json, cli/package-lock.json, and cli/pnpm-lock.yaml after security pipeline bootstrap",
+      "file": "package.json, cli/package.json, cli/vitest.config.ts",
+      "root_cause": "Unused root @artale/pi-procs dependency pulled Pi agent provider dependencies including @mistralai/mistralai; cli lockfiles retained vulnerable transitive test tooling via tdd-guard/tdd-guard-vitest and stale Vite resolution.",
+      "fix": "Removed unused @artale/pi-procs and tdd-guard package dependencies, made the Vitest TDD reporter optional, pinned Vite for pnpm, refreshed npm/pnpm lockfiles, rebuilt dist, and verified osv-scanner reports no issues.",
+      "tags": [
+        "security-pipeline",
+        "osv-scanner",
+        "npm",
+        "dependencies",
+        "tdd-guard"
+      ],
+      "related_bugs": [
+        "bug-013",
+        "bug-014"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T23:12:25Z"
     }
   ]
 }
