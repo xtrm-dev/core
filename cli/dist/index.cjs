@@ -54246,6 +54246,22 @@ function ensureWorktreeSpecialists(worktreePath, mainRepoPath) {
     (0, import_node_fs.symlinkSync)(symlinkTarget, targetDir, "dir");
   }
 }
+function normalizeParentHooksPath(mainRepoRoot) {
+  try {
+    const result = (0, import_node_child_process.spawnSync)("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
+      stdio: "pipe",
+      encoding: "utf8"
+    });
+    if (result.status !== 0) return;
+    const current = (result.stdout ?? "").trim();
+    if (!current) return;
+    if (import_node_path5.default.isAbsolute(current)) return;
+    if (current !== ".beads/hooks" && current !== "./.beads/hooks") return;
+    const absolute = import_node_path5.default.join(mainRepoRoot, ".beads", "hooks");
+    (0, import_node_child_process.spawnSync)("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
+  } catch {
+  }
+}
 function markBeadsSkipWorktree(worktreePath) {
   try {
     const trackedResult = (0, import_node_child_process.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
@@ -54343,6 +54359,7 @@ async function launchWorktreeSession(opts) {
       process.exit(1);
     }
   }
+  normalizeParentHooksPath(mainRepoRoot);
   try {
     (0, import_node_fs.rmSync)(import_node_path5.default.join(worktreePath, ".beads"), { recursive: true, force: true });
     markBeadsSkipWorktree(worktreePath);

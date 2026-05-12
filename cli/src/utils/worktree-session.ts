@@ -76,6 +76,38 @@ function ensureWorktreeSpecialists(worktreePath: string, mainRepoPath: string): 
 }
 
 /**
+ * Normalize the parent repo's `core.hooksPath` to an absolute path if it is
+ * currently a relative `.beads/hooks` reference. Older bd installs stored a
+ * relative path which would resolve against the worktree's cwd in a worktree
+ * — i.e., against the (now-missing) worktree-local `.beads/hooks/`. The fix
+ * is idempotent: only rewrites the exact relative `.beads/hooks` form, never
+ * touches absolute paths, project-style `.githooks` chains, or unset values.
+ *
+ * No-op for the vast majority of repos surveyed 2026-05-12 — but cheap
+ * insurance so a fresh-install on an older bd binary cannot resurface the
+ * "hooks fire from missing path" failure mode after xtrm-cbjo lands.
+ */
+function normalizeParentHooksPath(mainRepoRoot: string): void {
+    try {
+        const result = spawnSync('git', ['-C', mainRepoRoot, 'config', '--get', 'core.hooksPath'], {
+            stdio: 'pipe',
+            encoding: 'utf8',
+        });
+        if (result.status !== 0) return;
+        const current = (result.stdout ?? '').trim();
+        if (!current) return;
+        if (path.isAbsolute(current)) return;
+        // Only rewrite the canonical bd default. Leave `.githooks` chains and
+        // other project conventions alone — those are intentional.
+        if (current !== '.beads/hooks' && current !== './.beads/hooks') return;
+        const absolute = path.join(mainRepoRoot, '.beads', 'hooks');
+        spawnSync('git', ['-C', mainRepoRoot, 'config', 'core.hooksPath', absolute], { stdio: 'pipe' });
+    } catch {
+        // non-fatal
+    }
+}
+
+/**
  * After bd/git worktree create, mark all tracked .beads/* files as skip-worktree
  * so that removing the local .beads/ directory does not show as deletions in
  * `git status` (and therefore does not pollute checkpoint commits or PR diffs).
@@ -228,6 +260,10 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             process.exit(1);
         }
     }
+
+    // Normalize parent's core.hooksPath to absolute if it's still the bd
+    // relative default — safety net for older bd installs (see xtrm-2s44).
+    normalizeParentHooksPath(mainRepoRoot);
 
     // Remove worktree-local .beads/ entirely. bd inside the worktree resolves
     // its DB via git common-dir discovery (shared-server mode + absolute
