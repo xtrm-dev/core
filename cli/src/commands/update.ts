@@ -5,11 +5,11 @@ import fs from 'fs-extra';
 import { checkDrift } from '../core/drift.js';
 import { resolvePackageRoot } from '../core/registry-scaffold.js';
 import { assureXtManagedPiPackages } from '../core/pi-runtime.js';
-import { findManagedRepos } from '../core/repo-discovery.js';
+import { scanXtrmRepos } from '../core/repo-discovery.js';
 import { isStrictRegistryMode, runInstall } from './install.js';
 import { ensureBeadsSharedServerEnabled, hasBeadsDir } from '../core/beads-shared-server.js';
 
-type UpdateStatus = 'refreshed' | 'already-current' | 'failed' | 'skipped';
+type UpdateStatus = 'refreshed' | 'already-current' | 'failed' | 'skipped' | 'incomplete';
 
 interface RepoUpdateResult {
     repo: string;
@@ -25,10 +25,20 @@ interface UpdateOpts {
     strictRegistry?: boolean;
 }
 
-async function resolveTargetRepos(opts: Pick<UpdateOpts, 'root' | 'repo'>): Promise<string[]> {
-    if (opts.repo) return [path.resolve(opts.repo)];
-    if (opts.root) return findManagedRepos(path.resolve(opts.root));
-    return [process.cwd()];
+interface ResolvedTargets {
+    /** Repos ready for the normal update flow (have .xtrm/ + registry.json). */
+    targets: string[];
+    /** Repos with .xtrm/ but no registry.json. Surfaced as warnings; never auto-fixed. */
+    incomplete: string[];
+}
+
+async function resolveTargetRepos(opts: Pick<UpdateOpts, 'root' | 'repo'>): Promise<ResolvedTargets> {
+    if (opts.repo) return { targets: [path.resolve(opts.repo)], incomplete: [] };
+    if (opts.root) {
+        const scan = await scanXtrmRepos(path.resolve(opts.root));
+        return { targets: scan.managed, incomplete: scan.incomplete };
+    }
+    return { targets: [process.cwd()], incomplete: [] };
 }
 
 function getCurrentPackageRegistryPath(): string {
@@ -139,10 +149,20 @@ export function createUpdateCommand(): Command {
         .option('--json', 'Print JSON output', false)
         .action(async (opts) => {
             const typedOpts = opts as UpdateOpts;
-            const repos = await resolveTargetRepos(typedOpts);
+            const { targets, incomplete } = await resolveTargetRepos(typedOpts);
             const rows: RepoUpdateResult[] = [];
-            for (const repo of repos) {
+            for (const repo of targets) {
                 rows.push(await updateRepo(repo, typedOpts));
+            }
+
+            // Surface incomplete repos (have .xtrm/ but no registry.json).
+            // Never auto-fix — would be destructive without explicit opt-in.
+            for (const repo of incomplete) {
+                rows.push({
+                    repo,
+                    status: 'incomplete',
+                    reason: 'missing .xtrm/registry.json — run `xt init` or `xt install` to repair',
+                });
             }
 
             const packageAssurance = await assureXtManagedPiPackages(Boolean(typedOpts.apply));
