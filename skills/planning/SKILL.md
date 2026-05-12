@@ -182,33 +182,54 @@ under it with `--parent=<existing-epic-id>` and skip creating a new epic.
 
 If this is genuinely new work with no parent, create the epic first.
 
+### Bead contract format (aligned with `using-specialists-v3`)
+
+Planner-created beads use the same 7-section contract that `using-specialists-v3` SKILL.md requires for orchestrator-written beads. Downstream executor / debugger / reviewer / code-sanity / security-auditor specialists read the bead via `bd show <id>` and expect this exact shape. Any drift between this template and the using-specialists-v3 contract creates partial contracts and weakens downstream specialist output.
+
+The seven sections — `PROBLEM / SUCCESS / SCOPE / NON_GOALS / CONSTRAINTS / VALIDATION / OUTPUT` — are mandatory for every task and every epic. Optional auxiliary sections (`REFERENCES`, `APPROACH NOTES`) may follow at the bottom.
+
 ### Create the epic (new work only)
 
 ```bash
 bd create \
   --title="<Feature name — concise verb phrase>" \
   --description="$(cat <<'EOF'
-## Overview
+## PROBLEM
 
-<2-3 sentences: what this is and why it exists>
+<2-3 sentences: what user/project problem this epic exists to solve. Why now.>
 
-## Goals
+## SUCCESS
 
-- Goal 1: measurable outcome
-- Goal 2: measurable outcome
+<End-state across all child beads. Observable, testable, in prose.>
 
-## Non-goals
+## SCOPE
 
-- What we are explicitly NOT doing
+<Area of project affected. Name files, modules, packages, or bounded surfaces. Avoid generic paths like "src/". Cross-cutting epics may list multiple bounded surfaces.>
 
-## Success criteria
+## NON_GOALS
 
-- [ ] Criteria 1 (observable, testable)
-- [ ] Criteria 2
+- <Explicit boundary 1>
+- <What this epic does NOT include even though tangentially related>
 
-## Context / background
+## CONSTRAINTS
 
-<Links to specs, related issues, existing code paths>
+- <Sequencing rules across children>
+- <API / wire-format / migration compatibility requirements>
+- <Branch / merge / release-gate rules>
+
+## VALIDATION
+
+- [ ] <Observable criterion 1>
+- [ ] <Observable criterion 2>
+- [ ] <Test suite green / drift checks clean / smoke pass>
+
+## OUTPUT
+
+<What the orchestrator reports back at epic close. Usually: a summary referencing each child's handoff + the integration evidence + residual risks.>
+
+## REFERENCES
+
+<Optional: links to specs, related issues, existing code paths, prior session reports.>
 EOF
 )" \
   --type=epic \
@@ -221,23 +242,42 @@ EOF
 bd create \
   --title="<Action phrase — what gets built>" \
   --description="$(cat <<'EOF'
-## Context
+## PROBLEM
 
-<Why does this task exist? What does it enable? What comes before/after?>
+<Why this task exists. What does it enable. Anchor to the epic's PROBLEM and name the specific gap this task closes.>
 
-## What to build
+## SUCCESS
 
-<Specific deliverables. Not "implement X" — "X that does Y when Z">
+<Observable acceptance criteria in prose. The bar for "done" before VALIDATION checkboxes.>
 
-## Acceptance criteria
+## SCOPE
 
-- [ ] Criterion 1
-- [ ] Criterion 2
-- [ ] Tests pass / lint clean
+<Files, symbols, modules this task MAY touch. Be explicit — file:line or symbol-list when possible. Cross-cutting tasks list every surface; otherwise narrow. Forbidden boundary ("do NOT touch") goes in NON_GOALS or CONSTRAINTS.>
 
-## Approach notes
+## NON_GOALS
 
-<Relevant code paths (file:line), patterns to follow, discovered risks>
+- <Related improvement explicitly excluded from this task>
+- <Surface that looks adjacent but is out of scope>
+
+## CONSTRAINTS
+
+- <Hard rule: API compatibility, error-text backward-compat, migration safety>
+- <Style / pattern: follow existing convention in <file>>
+- <Do-not-touch boundary outside SCOPE>
+
+## VALIDATION
+
+- [ ] <Lint / typecheck / unit test for this surface>
+- [ ] <Regression test for the specific failure mode being fixed>
+- [ ] <Integration / smoke check if applicable>
+
+## OUTPUT
+
+<What the executing specialist hands back: changed files list, verification evidence (command output / test pass summary), residual risks. This is what `bd show <id>` will surface to reviewer at gate.>
+
+## APPROACH NOTES
+
+<Optional: relevant code paths (file:line), patterns to follow, discovered risks from Phase 2 exploration. Advisory only — not a contract.>
 EOF
 )" \
   --type=task \
@@ -255,15 +295,21 @@ bd dep add <B-id> <A-id>
 bd dep relate <issue-a> <issue-b>
 ```
 
-### Issue description quality bar
+### Issue description quality bar (7-section contract)
 
-Every task issue description must answer:
-1. **Why** — why does this exist? (not obvious from the title)
-2. **What** — specific deliverables (not vague)
-3. **When done** — acceptance criteria as checkboxes
-4. **How** — approach hints, relevant code paths, patterns to follow
+Every task and epic description must fill all seven mandatory sections:
 
-If you can't fill in all four, the scope is still unclear — go back to Phase 1.
+1. **PROBLEM** — why this exists, what user/project problem it solves
+2. **SUCCESS** — observable acceptance criteria in prose
+3. **SCOPE** — files / symbols / surfaces this work may touch (no generic "src/")
+4. **NON_GOALS** — related improvements explicitly excluded
+5. **CONSTRAINTS** — hard rules (API compat, style, do-not-touch boundaries)
+6. **VALIDATION** — checkbox list of proof-of-done
+7. **OUTPUT** — what the executing specialist hands back
+
+If you cannot fill all seven, the scope is still unclear — go back to Phase 1.
+
+**Why this matters**: the bead description is the only contract the executor / debugger / reviewer / code-sanity / security-auditor specialist sees via `bd show <id>`. The `using-specialists-v3` SKILL.md in the specialists project teaches the human orchestrator to write 7-section contracts; the planner must produce the same so the contract surface is uniform across human-orchestrated and planner-orchestrated chains. If this template drifts from `using-specialists-v3`, downstream specialists work against weaker contracts and produce noisier output. Any change to either skill must be mirrored in the other.
 
 ---
 
