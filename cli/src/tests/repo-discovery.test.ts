@@ -51,6 +51,38 @@ describe('scanXtrmRepos', () => {
         expect(scan.incomplete).toEqual([]);
     });
 
+    it('skips .worktrees/* (specialists worktree provisioning) — xtrm-ny61', async () => {
+        // Top-level real repo (managed)
+        const realRepo = path.join(tmpRoot, 'real-repo');
+        await fs.ensureDir(path.join(realRepo, '.xtrm'));
+        await fs.writeJson(path.join(realRepo, '.xtrm', 'registry.json'), { assets: {} });
+        // Specialists-style transient worktree under .worktrees/
+        const transient = path.join(realRepo, '.worktrees', 'unitAI-foo', 'unitAI-foo-executor');
+        await fs.ensureDir(path.join(transient, '.xtrm'));
+        await fs.writeJson(path.join(transient, '.xtrm', 'registry.json'), { assets: {} });
+
+        const scan = await scanXtrmRepos(tmpRoot);
+
+        expect(scan.managed).toEqual([realRepo]);
+        expect(scan.managed).not.toContain(transient);
+        expect(scan.incomplete).toEqual([]);
+    });
+
+    it('skips worktrees/* (xt-claude / xt-pi worktree path) — xtrm-ny61', async () => {
+        const realRepo = path.join(tmpRoot, 'xt-repo');
+        await fs.ensureDir(path.join(realRepo, '.xtrm'));
+        await fs.writeJson(path.join(realRepo, '.xtrm', 'registry.json'), { assets: {} });
+        // xt-claude-style transient worktree under .xtrm/worktrees/
+        const transient = path.join(realRepo, '.xtrm', 'worktrees', 'xt-claude-xyz');
+        await fs.ensureDir(path.join(transient, '.xtrm'));
+
+        const scan = await scanXtrmRepos(tmpRoot);
+
+        expect(scan.managed).toEqual([realRepo]);
+        expect(scan.managed).not.toContain(transient);
+        expect(scan.incomplete).toEqual([]);
+    });
+
     it('discovers multiple managed + incomplete repos at varying depths', async () => {
         const m1 = path.join(tmpRoot, 'a', 'm1');
         const m2 = path.join(tmpRoot, 'b', 'deep', 'm2');

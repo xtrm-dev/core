@@ -1,7 +1,13 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-const SKIP_DIRS = new Set(['.git', 'node_modules']);
+// Skipped during recursive scan:
+// - .git, node_modules: standard.
+// - .worktrees: specialists' worktree provisioning path (e.g. <repo>/.worktrees/<bead>/<role>).
+// - worktrees: xt-claude / xt-pi worktree path (e.g. <repo>/.xtrm/worktrees/<name>).
+//   Both contain transient checkouts that inherit their parent's .xtrm/, so descending
+//   into them over-reports the same repo many times in `xt update --root` sweeps.
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.worktrees', 'worktrees']);
 const XTRM_DIR = '.xtrm';
 const REGISTRY_MARKER = path.join(XTRM_DIR, 'registry.json');
 

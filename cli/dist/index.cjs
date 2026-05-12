@@ -63081,7 +63081,7 @@ var import_fs_extra37 = __toESM(require_lib(), 1);
 // src/core/repo-discovery.ts
 var import_fs_extra35 = __toESM(require_lib(), 1);
 var import_node_path23 = __toESM(require("path"), 1);
-var SKIP_DIRS = /* @__PURE__ */ new Set([".git", "node_modules"]);
+var SKIP_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".worktrees", "worktrees"]);
 var XTRM_DIR = ".xtrm";
 var REGISTRY_MARKER = import_node_path23.default.join(XTRM_DIR, "registry.json");
 async function scanXtrmRepos(rootDir) {
