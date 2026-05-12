@@ -14,7 +14,12 @@ export async function ensureBeadsSharedServerEnabled(repoRoot: string, apply: bo
 
   const configPath = path.join(beadsDir, 'config.yaml');
   const raw = await fs.pathExists(configPath) ? await fs.readFile(configPath, 'utf8') : '';
-  const parsed = (raw.trim() ? yaml.parse(raw) : {}) as Record<string, unknown>;
+  // yaml.parse returns null for a comments-only file (default after fresh `bd init`);
+  // also guard against non-object scalar parses just in case.
+  const rawParsed = raw.trim() ? yaml.parse(raw) : {};
+  const parsed = (rawParsed && typeof rawParsed === 'object' && !Array.isArray(rawParsed)
+    ? rawParsed
+    : {}) as Record<string, unknown>;
   const dolt = ((parsed.dolt as Record<string, unknown> | undefined) ?? {});
   if (dolt['shared-server'] === true) return { changed: false, state: 'enabled' };
 

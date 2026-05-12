@@ -62807,7 +62807,8 @@ async function ensureBeadsSharedServerEnabled(repoRoot, apply) {
   if (!await import_fs_extra33.default.pathExists(beadsDir)) return { changed: false, state: "not-applicable" };
   const configPath = import_node_path21.default.join(beadsDir, "config.yaml");
   const raw = await import_fs_extra33.default.pathExists(configPath) ? await import_fs_extra33.default.readFile(configPath, "utf8") : "";
-  const parsed = raw.trim() ? import_yaml.default.parse(raw) : {};
+  const rawParsed = raw.trim() ? import_yaml.default.parse(raw) : {};
+  const parsed = rawParsed && typeof rawParsed === "object" && !Array.isArray(rawParsed) ? rawParsed : {};
   const dolt = parsed.dolt ?? {};
   if (dolt["shared-server"] === true) return { changed: false, state: "enabled" };
   if (!apply) return { changed: true, state: "updated" };
