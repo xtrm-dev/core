@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `session-close-report`: add paranoid cleanup, due-diligence, and CHANGELOG synchronization requirements so session handoffs include process cleanup, content audits, and consumer-facing changelog checks.
 - `releasing`: update the release skill to drive releases end-to-end without relying on the deprecated `xt release` flow.
 - `using-specialists-v3`: strengthen specialist orchestration guidance around runtime listing, file-layer discipline, security/code-sanity chains, monitoring, and worktree cleanup.
+- `planning` skill: align Phase 4 with the `using-specialists-v3` 7-section bead contract (PROBLEM/SUCCESS/SCOPE/NON_GOALS/CONSTRAINTS/VALIDATION/OUTPUT). Affects every bead created by a planner specialist run going forward. (xtrm-bkgf)
+- `transcriber` specialist migrated from `dashscope/qwen3.5-plus` to `nano-gpt/qwen/qwen3.5-397b-a17b-thinking` after dashscope provider was retired. Companion to specialists `unitAI-ght3j`.
+- `prepublishOnly`'s `--specialists-ref` updated from the deleted `integration/2026-05-09-orchestrator` branch to `master` so the vendor step uses a live ref (vendor script's sibling-path fallback was masking the misconfiguration). (xtrm-m6yd)
 
 ### Fixed
 - `xtrm-cli` workspace tarball startup no longer resolves package assets at import time, so temp-installed `xt` / `xtrm` `--version` and help commands work without a root `.xtrm/registry.json`; the workspace package is marked private while root `xtrm-tools` remains the canonical distributable. (xtrm-cplc)
@@ -32,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runProjectInit` throws an actionable `Compilation failed: ...` error when the source repo root cannot be resolved, instead of resolving to undefined and silently no-op'ing. (xtrm-4amc.7)
 - `cli/src/utils/worktree-session.ts`: new `suppressBeadsWorktreeNoise` helper runs after the existing `.beads`-dir-to-symlink swap during worktree provisioning. Appends `.beads` to the per-worktree `<gitdir>/info/exclude` and runs `git update-index --skip-worktree` on tracked `.beads/*` files. Future `xt claude` / `xt pi` worktree checkpoint commits no longer carry 1.7k lines of phantom `.beads/` deletions, eliminating the manual commit-rewrite workaround for edit-capable specialists. (xtrm-nsca)
 - `xt end`: new pre-push guard parses `git diff <upstream>..HEAD --raw -- .beads/` and aborts the push with an actionable error if any path under `.beads/` has destination mode `120000` (symlink). Defense-in-depth catches the case where prevention is bypassed (executors using `git add -A`, manual operator pushes, external scripts) so a `.beads` self-symlink can never be merged to a shipping branch. (xtrm-w1ip)
+- `scripts/check-layout-guards.mjs` no longer flags itself as an offender. The script contains the staleActiveTiers strings by necessity to detect them in other files; added a self-reference to the `transientAllowlist`. Unblocks `npm run check:layout-guards` as a usable release gate. (xtrm-4kt0)
+- Stale GitNexus "(N symbols, M relationships, K execution flows)" counter scrubbed from tracked `AGENTS.md` + `CLAUDE.md`; new `check:gitnexus-no-counter` build gate prevents the counter from being reintroduced by ad-hoc `gitnexus analyze` runs that bypass `--skip-agents-md --no-stats` (specialists supervisor already passes both since fd60db04). Wired into `prepublishOnly`. (xtrm-c6sf)
 
 ## [0.7.17] - 2026-05-05
 
