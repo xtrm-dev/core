@@ -1,0 +1,54 @@
+# Pre-commit — local mirror of CI security gates.
+#
+# Two stages:
+#   - commit  → fast checks (gitleaks staged-diff, hygiene)
+#   - push    → heavy checks (semgrep diff-only, osv-scanner diff-only)
+#
+# This repo uses core.hooksPath=.githooks; run `make install-hooks` instead of
+# `pre-commit install` so the checked-in hook wrappers can chain project hooks.
+
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+      - id: check-yaml
+        stages: [pre-commit]
+        args: [--allow-multiple-documents]
+      - id: check-json
+        stages: [pre-commit]
+      - id: check-merge-conflict
+        stages: [pre-commit]
+      - id: check-added-large-files
+        stages: [pre-commit]
+        args: [--maxkb=1024]
+      - id: detect-private-key
+        stages: [pre-commit]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        stages: [pre-commit]
+
+  - repo: local
+    hooks:
+      - id: semgrep
+        name: semgrep (push, diff-only vs upstream)
+        stages: [pre-push]
+        language: system
+        pass_filenames: false
+        entry: ./scripts/semgrep-diff.sh
+
+      - id: osv-scanner
+        name: osv-scanner (push, diff-only vs upstream)
+        stages: [pre-push]
+        language: system
+        pass_filenames: false
+        entry: ./scripts/osv-diff.sh

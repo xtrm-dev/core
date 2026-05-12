@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
+# security-pipeline-managed-wrapper
+# Runs project-local pre-commit checks, then pre-commit framework checks.
+set -uo pipefail
 
-# [jaggers] doc-reminder
-if command -v python3 &>/dev/null && [ -f "/home/dawid/dev/xtrm-tools/.claude/git-hooks/doc_reminder.py" ]; then
-    python3 "/home/dawid/dev/xtrm-tools/.claude/git-hooks/doc_reminder.py" || true
+HOOKS_DIR=$(dirname "$0")
+
+if [ -x "$HOOKS_DIR/pre-commit.local" ]; then
+    "$HOOKS_DIR/pre-commit.local" "$@"
+    rc=$?
+    [ $rc -ne 0 ] && exit $rc
 fi
+
+if command -v pre-commit >/dev/null 2>&1 && [ -f .pre-commit-config.yaml ]; then
+    pre-commit run --hook-stage pre-commit || exit 1
+else
+    echo "pre-commit not installed or .pre-commit-config.yaml missing — skipping local commit security checks"
+fi
+
+exit 0

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Project-local pre-push checks preserved by the security pipeline wrapper.
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+HOOK="$ROOT/.claude/git-hooks/skill_staleness.py"
+
+if command -v python3 >/dev/null 2>&1 && [ -f "$HOOK" ]; then
+    python3 "$HOOK" || true
+fi

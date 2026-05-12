@@ -202,6 +202,40 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-08T23:01:20Z"
+    },
+    {
+      "id": "bug-013",
+      "timestamp": "2026-05-12T22:53:21Z",
+      "error_message": "pre-commit pre-push OSV diff gate reported all existing vulnerabilities as new",
+      "file": "scripts/osv-diff.sh",
+      "root_cause": "OSV JSON source paths from the archived baseline tree were normalized relative to the live repo cwd, so identical lockfile findings had different source keys and compared as newly introduced.",
+      "fix": "Pass current and baseline scan roots into the JSON comparison and normalize each absolute source path relative to its own root before diffing vulnerability keys.",
+      "tags": [
+        "security-pipeline",
+        "osv-scanner",
+        "pre-push",
+        "baseline-diff"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T22:53:21Z"
+    },
+    {
+      "id": "bug-014",
+      "timestamp": "2026-05-12T22:54:42Z",
+      "error_message": "pre-commit run --hook-stage pre-push --all-files modified hundreds of unrelated tracked files",
+      "file": ".pre-commit-config.yaml",
+      "root_cause": "Commit-stage formatting hooks inherited default_stages and still ran during the pre-push all-files validation, so trailing-whitespace/end-of-file-fixer touched the whole dirty worktree.",
+      "fix": "Reverted all unintended tracked changes and changed formatting validation to run only on the security pipeline files for this task; future full pre-push validation should avoid all-files formatting hooks in dirty worktrees or pin hygiene hooks to pre-commit only.",
+      "tags": [
+        "pre-commit",
+        "dirty-worktree",
+        "validation",
+        "unintended-formatting"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T22:54:42Z"
     }
   ]
 }
