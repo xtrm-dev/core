@@ -314,6 +314,43 @@ needing the fix**. The safety net in `launchWorktreeSession` /
 creation if a relative `.beads/hooks` ever does appear, so the survey is mostly
 defensive.
 
+### Worktree-internal artifact inventory (xtrm-x80f)
+
+A worktree is a partial clone with extras: bd metadata, npm caches, runtime
+state, per-worktree settings. None of these belong on a chain branch — but
+the moment any of them get staged via `git add -A` or a checkpoint commit,
+they can ride a PR into `main`. The matrix below documents what is protected
+by which mechanism. Audit it whenever you add a new per-worktree artifact.
+
+| Artifact | Source | Mechanism in a worktree | Status |
+|----------|--------|-------------------------|--------|
+| `.beads/*` | bd tracked dir | rm + `skip-worktree` (xtrm-cbjo) | ✅ |
+| `.beads-credential-key`, `.beads/dolt-monitor.pid`, `.beads/dolt-server.activity` | bd runtime | gitignored at parent | ✅ |
+| `.pi/npm/` | npm cache | gitignored + symlink to parent | ✅ |
+| `.pi/extensions/` | pi runtime | gitignored under `.xtrm/extensions/**/.pi/` | ✅ |
+| `.specialists/default` | (xtrm-tools: untracked) | symlink to parent in worktree | ✅ |
+| `.specialists/user` | tracked (.json overrides) | symlink to parent in worktree | ⚠️ merge-hazard candidate, tracked at follow-up bead |
+| `.specialists/{jobs,ready,trace.jsonl,db/*}` | runtime state | gitignored at parent | ✅ |
+| `.claude/skills` | install symlink | gitignored | ✅ |
+| `.claude/settings.local.json` | per-worktree write (`launchWorktreeSession`) | gitignored (user-global + project) | ✅ |
+| `.claude/worktrees/`, `.claude/tdd-guard/data/` | runtime | gitignored | ✅ |
+| `.xtrm/worktrees/`, `.xtrm/skills/active/`, `.xtrm/session-meta.json`, `.xtrm/statusline-claim`, `.xtrm/debug.db` | runtime | gitignored | ✅ |
+| `AGENTS.md`, `CLAUDE.md` | tracked | gitnexus stat-counter scrubbed (xtrm-c6sf), build-gate prevents reintroduction | ✅ |
+| `.gitnexus/` | runtime | gitignored | ✅ |
+| `.dolt/`, `*.db` | runtime | gitignored | ✅ |
+
+The remaining ⚠️ is `.specialists/user/*.json`: the symlink swap in
+`ensureWorktreeSpecialists` has the same shape as the pre-fix `.beads`
+problem — a chain-branch checkpoint could capture the dir→symlink delta and
+squash-merge would wipe the parent's `.specialists/user/`. Lower urgency
+than `.beads` (smaller blast radius, files are intentional overrides) but
+worth resolving with the same skip-worktree pattern when convenient.
+
+The defense-in-depth pre-push guard in `xt end`
+(`findBeadsSymlinkIntroductions`) currently only checks `.beads/*`. Extend
+to `.specialists/*` if/when the symlink swap there becomes the next chain
+of work.
+
 ## Pre-Release Validation Methodology
 
 Before publishing a new xtrm-tools version, validate the operator-facing CLI locally
