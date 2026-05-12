@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `xt doctor`: report global xt-managed Pi package health in text and JSON via `piPackages`, including missing, outdated, and version-unknown states with remediation; doctor remains report-only and never installs packages. (xtrm-modr)
 - `xt update`: check global xt-managed Pi package freshness during dry-run and JSON output, and refresh only missing/outdated managed packages when `--apply` is used. (xtrm-5nwu)
+- `xt update --root <dir>`: surface partial-install repos in the output. Directories under `<root>` that contain a `.xtrm/` folder but no `.xtrm/registry.json` are now reported with status `incomplete` and a remediation hint (run `xt init` or `xt install`). Previously these were silently skipped. New `scanXtrmRepos` helper exposes the split (`managed`, `incomplete`) for programmatic callers; `findManagedRepos` kept as a backward-compatible thin wrapper. (xtrm-asqq)
 - `policies/beads.json`: wire `beads-compact-save.mjs` to `PreCompact` and `beads-compact-restore.mjs` to `SessionStart` so beads state survives Claude Code compaction; generated `.xtrm/config/hooks.json` carries a narrow wrapper-level `script` field for these entries only. (xtrm-4amc.5)
 - `xtrm update --help` advertises the `init` alias so operators discover the unified entry point from either command. (xtrm-4amc.7)
 
