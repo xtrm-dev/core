@@ -17,6 +17,9 @@ const transientAllowlist = [
   '.specialists/trace.jsonl',
   '.specialists/executor-result.md',
   '.xtrm/skills/default/update-xt/SKILL.md',
+  // self-reference: this script contains the staleActiveTiers strings by
+  // necessity to detect them elsewhere; skip itself to avoid a false positive.
+  'scripts/check-layout-guards.mjs',
 ];
 
 function trackedFiles() {
