@@ -335,7 +335,7 @@ fi
 {
   "strictMode": true,
   "maxFileSize": 500000,
-  "allowedPaths": ["/tmp", "/home/user/projects"]
+  "allowedPaths": ["/tmp", "$HOME/projects"]
 }
 ```
 

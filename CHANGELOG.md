@@ -686,7 +686,7 @@ ln -s ~/.claude/skills/prompt-improving ~/.claude/skills/p
   - Can be disabled without restart
 - **UserPromptSubmit hook registration** in `settings.json`
   - Timeout: 1s
-  - Command: `/home/dawid/.claude/hooks/skill-suggestion.sh`
+  - Command: `~/.claude/hooks/skill-suggestion.sh`
 
 #### Skill Features
 - **AskUserQuestion dialogs** in `ccs-delegation` skill for interactive delegation choice
