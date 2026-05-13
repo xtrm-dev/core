@@ -62,6 +62,7 @@ jobs:
             sp-only)
               cd "$repo_dir"
               npm init -y >/dev/null
+              npm install -g @jaggerxtrm/specialists
               sp list >/tmp/sp-list.stdout 2>/tmp/sp-list.stderr
               assert_exit_zero $? "sp-only sp list"
               if sp init >/tmp/sp-init.stdout 2>/tmp/sp-init.stderr; then
@@ -78,6 +79,7 @@ jobs:
               assert_exit_zero $? "xt-then-sp xt install"
               xt init >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
               assert_exit_zero $? "xt-then-sp xt init"
+              npm install -g @jaggerxtrm/specialists
               sp init >/tmp/sp-init.stdout 2>/tmp/sp-init.stderr
               assert_exit_zero $? "xt-then-sp sp init"
               sp doctor >/tmp/sp-doctor.stdout 2>/tmp/sp-doctor.stderr
@@ -87,6 +89,7 @@ jobs:
             sp-then-xt)
               cd "$repo_dir"
               npm init -y >/dev/null
+              npm install -g @jaggerxtrm/specialists
               if sp init >/tmp/sp-first.stdout 2>/tmp/sp-first.stderr; then
                 echo "sp-then-xt: sp init unexpectedly succeeded before xt install/init" >&2
                 exit 1
