@@ -200,11 +200,17 @@ docs/skills-ownership.json
 
 12. **For specialist-tracked edits, follow the auto-mode pattern: `--worktree` executor → reviewer with `--job <exec-job>` → `sp finalize` → `sp merge`.** Direct edits are only acceptable for: pre-push hook fixes that arrive after a reviewer PASS; CI triage where the executor's auto-worktree can't see merged files (because it forks from origin/main); and clearly mechanical follow-ups. Document the deviation in the commit body or bead note.
 
-### Known issues (deferred work)
+### Resolved (was deferred, now final)
 
-- **xtrm-5k0o**: `xt init -y` on a fresh ubuntu-latest runner doesn't reach the Project Bootstrap phase. Cause: post-machine dependency check uses cached PATH and doesn't see `~/.local/bin` binaries it just installed. Symptom: `xt doctor` reports "Not inside an xtrm project". Workaround: `install-order-matrix.yml` is gated to `workflow_dispatch` only (xtrm-g20x). Until fixed, the matrix is a manual regression catcher, not a PR gate.
-- **Vendor script schema**: `.xtrm/specialists-source.json` `.source.ref` and `.source.resolved_sha` are read but not yet written by `vendor-specialists-skills.mjs`. Add a `--write-ref` flag in a follow-up.
-- **Fresh-machine smoke is not blocking on `npm publish` automatically** — actually it IS now, via `publish.yml` `needs:` chain. But operator-only `pre-publish-readiness.yml` is still informational. Keep both paths.
+The three previously-deferred items are all closed as of `xtrm-lhqy`:
+
+- **Vendor script writes ref + resolved_sha.** `scripts/vendor-specialists-skills.mjs` now accepts `--specialists-ref <value>` and writes both `source.ref` and `source.resolved_sha` (the git HEAD of the specialists checkout at vendor time) to `.xtrm/specialists-source.json`. No hand-edits needed; `publish.yml` reads the value via `jq`.
+- **xtrm-5k0o (PATH cache) fixed.** `checkDep` in `cli/src/core/machine-bootstrap.ts` extends `process.env.PATH` with `~/.local/bin`, `/usr/local/bin`, and `/opt/homebrew/bin` on module load, so `spawnSync` finds binaries that were just installed in the same process.
+- **`pre-publish-readiness.yml` is a real dry-run.** Rewritten as a 3-job DAG (resolve_ref → fresh_machine_smoke → publish_dry_run) that runs the exact same gate chain as `publish.yml` minus `npm publish`. Use it to confirm the chain is green before tagging.
+
+### install-order-matrix scope clarification
+
+`install-order-matrix.yml` stays `workflow_dispatch`-only by design — not because of a bug we can fix. The legs install third-party packages (`@beads/bd`, `oh-pi`, `dolt`, `bv`, etc.) whose bin layouts and post-install download behavior vary across environments. `@beads/bd` is a binary-downloader that drops the real `bd` into `~/.local/bin` via a postinstall script; `oh-pi` exposes only `oh-pi` (the `pi` command on dev machines is a separately-installed `@mariozechner/pi-coding-agent`). Validating those is upstream packaging concerns, not release-contract concerns. Run the matrix manually before tagging when you want a regression catcher; the actual release gating happens in `publish.yml` → `fresh_machine_smoke` which exercises the full `xt init` + `sp init` flow against the vendored mirror.
 
 ### Cross-references
 

@@ -1,11 +1,12 @@
 name: Install order matrix
 
-# NOTE: operator-triggered only (workflow_dispatch). Cannot run on push/PR
-# until xtrm-5k0o is fixed: `xt init -y` on a fresh ubuntu-latest runner
-# does not reach the Project Bootstrap phase because its post-machine
-# dependency check uses cached PATH and doesn't see the binaries it just
-# installed. The matrix still works as a regression catcher when run
-# manually; see docs/release.md.
+# Operator-triggered. Cannot run on push/PR because the four legs
+# install third-party packages (@beads/bd, oh-pi, dolt, bv, …) whose
+# bin layouts and post-install download steps vary by environment.
+# That variance is outside the release-contract scope. checkDep in
+# machine-bootstrap.ts already extends PATH with the well-known
+# install dirs (xtrm-5k0o); see docs/release.md for what the matrix
+# does and doesn't gate.
 
 on:
   workflow_dispatch:
