@@ -45,6 +45,8 @@ jobs:
         run: npm run check:skills-ownership
 
       - name: Check specialists vendor
+        env:
+          SPECIALISTS_REPO_PATH: ${{ github.workspace }}/specialists-src
         run: npm run check:specialists-vendor
 
       - name: Check layout guards
