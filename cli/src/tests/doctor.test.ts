@@ -126,4 +126,17 @@ describe('xt doctor command', () => {
     expect(parsed.piPackages.issues.some((issue: { state: string }) => issue.state === 'version-unknown')).toBe(true);
     expect(parsed.piPackages.hasIssues).toBe(true);
   });
+
+  it('resolves project root from subdirectories', async () => {
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
+    const nestedDir = path.join(tmpDir, 'cli', 'nested');
+    fs.ensureDirSync(nestedDir);
+    process.chdir(nestedDir);
+
+    const jsonLogs = await runDoctorCli(['--json']);
+    const parsed = JSON.parse(jsonLogs[0]);
+
+    expect(parsed.catB.runtimeView).toBeDefined();
+    expect(parsed.piPackages.hasIssues).toBe(false);
+  });
 });

@@ -63775,6 +63775,14 @@ async function toRows(registry2, cwd, surface, drift) {
 async function loadRegistry(cwd) {
   return import_fs_extra34.default.readJson(import_node_path22.default.join(cwd, ".xtrm", "registry.json"));
 }
+async function resolveDoctorCwd(optsCwd) {
+  const cwd = optsCwd ? import_node_path22.default.resolve(optsCwd) : await findProjectRoot();
+  const registryPath = import_node_path22.default.join(cwd, ".xtrm", "registry.json");
+  if (!await import_fs_extra34.default.pathExists(registryPath)) {
+    throw new Error(`Not inside an xtrm project: ${cwd}`);
+  }
+  return cwd;
+}
 async function readSpecialistsSkillNames(repoPath) {
   const skillsRoot = import_node_path22.default.join(repoPath, "config", "skills");
   if (!await import_fs_extra34.default.pathExists(skillsRoot)) return [];
@@ -63882,7 +63890,7 @@ function hasCatBIssues(report) {
 }
 function createDoctorCommand() {
   return new Command("doctor").description("Health check for the xtrm-managed surfaces of the current project").option("--cwd <path>", "Operate on this directory (default: process.cwd())").option("--json", "Output machine-readable JSON", false).option("--check-drift", "Exit non-zero on any drift, missing, extra, or duplicate").action(async (opts) => {
-    const cwd = import_node_path22.default.resolve(opts.cwd ?? process.cwd());
+    const cwd = await resolveDoctorCwd(opts.cwd);
     const registry2 = await loadRegistry(cwd);
     const drift = await checkDrift(import_node_path22.default.join(cwd, ".xtrm", "registry.json"), import_node_path22.default.join(cwd, ".xtrm"));
     const runtimeView = await checkRuntimeSkillsViews(cwd);
