@@ -228,10 +228,24 @@ ${details}
     console.log(t.success(`  ✓ Rebuilt cli/dist and committed ${stagedDist.length} file(s)`));
 }
 
+/**
+ * Scan the cumulative diff against `upstream` for any path that would be
+ * introduced as a symlink (mode 120000) under one of the guarded prefixes.
+ *
+ * Guarded prefixes: `.beads/` and `.specialists/`. Both have parent-tracked
+ * content and are dir->symlink-swapped (or rm'd) in worktrees. A squash-merge
+ * of a branch carrying such a symlink wipes the parent's directory on main
+ * (real incident: projects/infra PR #39 for `.beads`; same shape applies to
+ * `.specialists/user/*` per xtrm-6jd2).
+ *
+ * Kept under the historical name `findBeadsSymlinkIntroductions` so existing
+ * imports continue to work; covers both prefixes now.
+ */
 export function findBeadsSymlinkIntroductions(cwd: string, upstream: string): string[] {
-    const diffResult = git(['diff', '--raw', `${upstream}..HEAD`, '--', '.beads/'], cwd);
+    const guardedPrefixes = ['.beads/', '.specialists/'];
+    const diffResult = git(['diff', '--raw', `${upstream}..HEAD`, '--', ...guardedPrefixes], cwd);
     if (!diffResult.ok) {
-        console.warn(kleur.yellow('  ⚠ Could not inspect .beads diff for symlink mode changes; continuing safely.'));
+        console.warn(kleur.yellow('  ⚠ Could not inspect guarded-path diff for symlink mode changes; continuing safely.'));
         return [];
     }
 
@@ -245,18 +259,24 @@ export function findBeadsSymlinkIntroductions(cwd: string, upstream: string): st
                 if (!match) return [];
                 const destinationMode = match[1];
                 const path = match[3];
-                return destinationMode === '120000' && path.startsWith('.beads/') ? [path] : [];
+                if (destinationMode !== '120000') return [];
+                return guardedPrefixes.some(p => path.startsWith(p)) ? [path] : [];
             }),
     )];
 }
 
 function printBeadsSymlinkGuardError(paths: string[], upstream: string): void {
-    console.error(kleur.red('\n  ✗ Refusing to push: .beads symlink mode change detected\n'));
+    console.error(kleur.red('\n  ✗ Refusing to push: guarded-path symlink mode change detected\n'));
     for (const path of paths) {
         console.error(kleur.red(`    ${path}`));
     }
+    // Group recovery hint by top-level prefix so the operator restores only
+    // what's affected. `.beads/` and `.specialists/` both need the upstream
+    // tree restored to clear the symlink mode.
+    const affectedPrefixes = [...new Set(paths.map(p => p.split('/')[0] + '/'))];
+    const restoreTargets = affectedPrefixes.join(' ');
     console.error(kleur.dim(`\n  Recover with:
-    git restore --source=${upstream} -- .beads/\n  Then re-run: xt end\n`));
+    git restore --source=${upstream} -- ${restoreTargets}\n  Then re-run: xt end\n`));
 }
 
 /** Generate PR body from issues, commit log, diff stat */

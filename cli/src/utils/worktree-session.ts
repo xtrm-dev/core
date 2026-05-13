@@ -73,6 +73,15 @@ function ensureWorktreeSpecialists(worktreePath: string, mainRepoPath: string): 
 
         symlinkSync(symlinkTarget, targetDir, 'dir');
     }
+
+    // Mask the dir->symlink swap from git: skip-worktree on tracked
+    // .specialists/{default,user}/* paths so checkpoint commits don't capture
+    // phantom deletions or stage the symlink itself with mode 120000.
+    // Same merge-hazard pattern fixed for .beads in xtrm-cbjo — without this
+    // a chain-branch squash-merge would wipe the parent's .specialists/user/
+    // (see infra repo PR #39 for the equivalent .beads incident). xtrm-6jd2.
+    markPathSkipWorktree(worktreePath, '.specialists/default');
+    markPathSkipWorktree(worktreePath, '.specialists/user');
 }
 
 /**
@@ -108,16 +117,19 @@ function normalizeParentHooksPath(mainRepoRoot: string): void {
 }
 
 /**
- * After bd/git worktree create, mark all tracked .beads/* files as skip-worktree
- * so that removing the local .beads/ directory does not show as deletions in
- * `git status` (and therefore does not pollute checkpoint commits or PR diffs).
+ * Mark all tracked files under `<worktree>/<pathspec>` as skip-worktree so
+ * that index/worktree differences for those paths do not surface in
+ * `git status` or checkpoint diffs.
  *
- * The caller is expected to `rm -rf <worktree>/.beads` immediately after; this
- * function only masks the index/worktree delta from git.
+ * Used for runtime-only directories that are either rm'd (`.beads`) or
+ * dir->symlink-swapped (`.specialists/{default,user}`) inside a worktree
+ * but should never be committed back to the chain branch — preventing the
+ * `.beads`-style squash-merge wipe hazard (real incident: projects/infra
+ * PR #39 for `.beads`; same shape applies to `.specialists/user/*`).
  */
-function markBeadsSkipWorktree(worktreePath: string): void {
+function markPathSkipWorktree(worktreePath: string, pathspec: string): void {
     try {
-        const trackedResult = spawnSync('git', ['-C', worktreePath, 'ls-files', '--', '.beads'], {
+        const trackedResult = spawnSync('git', ['-C', worktreePath, 'ls-files', '--', pathspec], {
             cwd: worktreePath,
             stdio: 'pipe',
             encoding: 'utf8',
@@ -277,7 +289,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // See xtrm-cbjo (this fix) supersedes xtrm-as7d / xtrm-nsca / unitAI-u08e8.
     try {
         rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
-        markBeadsSkipWorktree(worktreePath);
+        markPathSkipWorktree(worktreePath, '.beads');
     } catch {
         // Non-fatal: bd will recover via git common-dir resolution regardless.
     }
