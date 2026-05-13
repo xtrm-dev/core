@@ -1,10 +1,13 @@
 name: Install order matrix
 
+# NOTE: operator-triggered only (workflow_dispatch). Cannot run on push/PR
+# until xtrm-5k0o is fixed: `xt init -y` on a fresh ubuntu-latest runner
+# does not reach the Project Bootstrap phase because its post-machine
+# dependency check uses cached PATH and doesn't see the binaries it just
+# installed. The matrix still works as a regression catcher when run
+# manually; see docs/release.md.
+
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
