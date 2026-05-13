@@ -94,12 +94,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          dump_logs() {
+            echo "==== fresh-machine smoke failed; dumping captured logs ===="
+            shopt -s nullglob
+            for f in /tmp/xt-*.log /tmp/sp-*.log; do
+              if [ -s "$f" ]; then
+                echo "---- $f ----"
+                cat "$f"
+              fi
+            done
+            shopt -u nullglob
+          }
+          trap dump_logs ERR
+
           repo_dir="$(mktemp -d)"
           printf '%s' "$repo_dir" > /tmp/fresh-machine-repo-dir
           git init "$repo_dir"
           cd "$repo_dir"
-          xt install >/tmp/xt-install.log 2>&1
-          xt init >/tmp/xt-init.log 2>&1
+          xt init -y >/tmp/xt-init.log 2>&1
           xt doctor --cwd . --json >/tmp/xt-doctor-1.log 2>&1
           xt update --apply --repo . >/tmp/xt-update.log 2>&1
           xt doctor --cwd . --json >/tmp/xt-doctor-2.log 2>&1
@@ -117,5 +130,5 @@ jobs:
           test -f .xtrm/skills/default/using-specialists-v3/SKILL.md
           test -f .xtrm/skills/default/update-specialists/SKILL.md
           ! find .xtrm -type l | grep -q .
-          ! grep -R "Source and destination must not be the same" /tmp/xt-install.log /tmp/xt-init.log /tmp/xt-doctor-1.log /tmp/xt-update.log /tmp/xt-doctor-2.log /tmp/sp-init.log /tmp/sp-doctor.log /tmp/sp-list.log
+          ! grep -R "Source and destination must not be the same" /tmp/xt-init.log /tmp/xt-doctor-1.log /tmp/xt-update.log /tmp/xt-doctor-2.log /tmp/sp-init.log /tmp/sp-doctor.log /tmp/sp-list.log
           test -s /tmp/sp-doctor.log

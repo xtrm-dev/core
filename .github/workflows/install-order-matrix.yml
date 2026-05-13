@@ -67,8 +67,7 @@ jobs:
             xt-only)
               cd "$repo_dir"
               npm init -y >/dev/null
-              xt install >/tmp/xt-install.stdout 2>/tmp/xt-install.stderr
-              xt init >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
+              xt init -y >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
               xt doctor --json >/tmp/xt-doctor.stdout 2>/tmp/xt-doctor.stderr
               assert_no_symlinks_under_repo "$repo_dir" "xt-only"
               ;;
@@ -87,8 +86,7 @@ jobs:
             xt-then-sp)
               cd "$repo_dir"
               npm init -y >/dev/null
-              xt install >/tmp/xt-install.stdout 2>/tmp/xt-install.stderr
-              xt init >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
+              xt init -y >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
               npm install -g @jaggerxtrm/specialists
               sp init >/tmp/sp-init.stdout 2>/tmp/sp-init.stderr
               sp doctor >/tmp/sp-doctor.stdout 2>/tmp/sp-doctor.stderr
@@ -103,8 +101,7 @@ jobs:
                 exit 1
               fi
               assert_stderr_contains /tmp/sp-first.stderr 'xt (install|init)' "sp-then-xt"
-              xt install >/tmp/xt-install.stdout 2>/tmp/xt-install.stderr
-              xt init >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
+              xt init -y >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
               sp init >/tmp/sp-second.stdout 2>/tmp/sp-second.stderr
               sp doctor >/tmp/sp-doctor.stdout 2>/tmp/sp-doctor.stderr
               assert_no_symlinks_under_repo "$repo_dir" "sp-then-xt"
