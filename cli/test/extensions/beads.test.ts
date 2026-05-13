@@ -1,5 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ExtensionHarness } from "./extension-harness";
+
+// Mock the @mariozechner Pi runtime packages before importing the extension —
+// Pi provides these at runtime, but CI's npm install does not pull them in.
+// Without these mocks, vitest fails the entire test file at module-load time
+// trying to resolve unused-at-test-time imports from the extension source.
+// See xtrm-qdsx.
+vi.mock("@mariozechner/pi-coding-agent", () => ({
+	isToolCallEventType: vi.fn(() => false),
+	isBashToolResult: vi.fn(() => false),
+}));
+vi.mock("@mariozechner/pi-tui", () => ({
+	truncateToWidth: vi.fn((s: string) => s),
+	visibleWidth: vi.fn((s: string) => s.length),
+}));
+
 import beadsExtension from "../../../packages/pi-extensions/extensions/beads/index";
 import { SubprocessRunner } from "../../../packages/pi-extensions/src/core/lib";
 import * as fs from "node:fs";
@@ -98,7 +113,7 @@ describe.skip("Beads Extension (API mismatch - see xtrm-p3gk)", () => {
 
 	it("should inject memory reminder on bd close", async () => {
 		(SubprocessRunner.run as any).mockResolvedValue({ code: 0, stdout: "", stderr: "" });
-		
+
 		beadsExtension(harness.pi);
 
 		const result = await harness.emit("tool_result", {
