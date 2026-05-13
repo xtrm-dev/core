@@ -269,7 +269,7 @@ Common failure modes and fixes:
 ## Worktree hygiene: `.beads/` and `core.hooksPath`
 
 Modern bd 1.0.3 stores `core.hooksPath` as an **absolute parent path** at `bd init`
-time (e.g. `/home/user/repo/.beads/hooks`), so worktrees inherit parent hooks via
+time (e.g. `$HOME/repo/.beads/hooks`), so worktrees inherit parent hooks via
 shared git config — no on-disk `.beads/` is needed inside a worktree. Since
 `xtrm-cbjo` (xtrm-tools commit `937b151`) and `unitAI-yvqmf` (specialists commit
 `986bc8e4`), `xt claude` / `xt pi` / `sp run` worktrees do **not** create a
