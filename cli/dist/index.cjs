@@ -59969,8 +59969,8 @@ function formatRelativeTime(timestamp) {
   return `${days} day${days > 1 ? "s" : ""} ago`;
 }
 function createStatusCommand() {
-  return new Command("status").description("Show status and optionally sync target environments").option("--json", "Output machine-readable JSON", false).action(async (opts) => {
-    const { json: json2 } = opts;
+  return new Command("status").description("Show status and optionally sync target environments").option("--json", "Output machine-readable JSON", false).option("--check", "Non-interactive summary; never prompt", false).action(async (opts) => {
+    const { json: json2, check: check2 } = opts;
     const repoRoot = await findRepoRoot();
     const candidates = getCandidatePaths();
     const targets = [];
@@ -60037,6 +60037,10 @@ function createStatusCommand() {
     console.log(kleur_default.yellow(`
   \u26A0  ${totalPending} pending change${totalPending !== 1 ? "s" : ""} across ${pending.length} environment${pending.length !== 1 ? "s" : ""}
 `));
+    if (check2 || !process.stdin.isTTY) {
+      console.log(kleur_default.gray("  Skipped. Run 'xt sync' to apply.\n"));
+      return;
+    }
     const { selected } = await (0, import_prompts4.default)({
       type: "multiselect",
       name: "selected",
