@@ -63,12 +63,13 @@
     "check:layout-guards": "node scripts/check-layout-guards.mjs",
     "check:gitnexus-no-counter": "node scripts/check-gitnexus-no-counter.mjs",
     "check:skills-symlinks": "node scripts/check-skills-symlinks.mjs",
-    "prepublishOnly": "npm run sync:cli-version && npm run check:package && npm run check:skills-ownership && node scripts/vendor-specialists-skills.mjs --specialists-package specialists --specialists-ref master && npm run gen-registry && npm run check:registry-pack-parity && npm run check:specialists-vendor && npm run check:layout-guards && npm run check:gitnexus-no-counter && npm run check:skills-symlinks && npm run build",
+    "prepublishOnly": "npm run sync:cli-version && npm run check:package && npm run check:skills-ownership && node scripts/vendor-specialists-skills.mjs --specialists-package specialists --specialists-ref master && npm run gen-registry && npm run check:registry-pack-parity && npm run check:payload-hygiene && npm run check:specialists-vendor && npm run check:layout-guards && npm run check:gitnexus-no-counter && npm run check:skills-symlinks && npm run build",
     "release": "npm publish --tag latest",
     "release:pi-extensions": "npm publish --workspace @jaggerxtrm/pi-extensions --tag latest --access public",
     "release:all": "npm run release && npm run release:pi-extensions",
     "gen-registry": "node scripts/gen-registry.mjs",
-    "check:registry-pack-parity": "node scripts/check-registry-pack-parity.mjs"
+    "check:registry-pack-parity": "node scripts/check-registry-pack-parity.mjs",
+    "check:payload-hygiene": "node scripts/check-payload-hygiene.mjs"
   },
   "engines": {
     "node": ">=20.0.0"
