@@ -5,7 +5,34 @@ on:
     types: [published]
 
 jobs:
+  resolve_ref:
+    runs-on: ubuntu-latest
+    outputs:
+      specialists_ref: ${{ steps.resolve.outputs.specialists_ref }}
+    steps:
+      - name: Checkout xtrm-tools
+        uses: actions/checkout@v4
+
+      - name: Resolve specialists ref from manifest
+        id: resolve
+        shell: bash
+        run: |
+          ref="$(jq -er '.source.ref' .xtrm/specialists-source.json)"
+          if [ -z "$ref" ] || [ "$ref" = "null" ]; then
+            echo "::error::.xtrm/specialists-source.json missing source.ref" >&2
+            exit 1
+          fi
+          echo "specialists_ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Resolved specialists ref: $ref"
+
+  fresh_machine_smoke:
+    needs: resolve_ref
+    uses: ./.github/workflows/fresh-machine-smoke.yml
+    with:
+      specialists_ref: ${{ needs.resolve_ref.outputs.specialists_ref }}
+
   publish:
+    needs: [resolve_ref, fresh_machine_smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,13 +46,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Jaggerxtrm/specialists
-          ref: master
+          ref: ${{ needs.resolve_ref.outputs.specialists_ref }}
           path: specialists-src
 
       - name: Record specialists source
         shell: bash
+        env:
+          SPECIALISTS_REF: ${{ needs.resolve_ref.outputs.specialists_ref }}
         run: |
-          echo "specialists_ref=master" >> "$GITHUB_STEP_SUMMARY"
+          echo "specialists_ref=$SPECIALISTS_REF" >> "$GITHUB_STEP_SUMMARY"
           echo "specialists_sha=$(git -C specialists-src rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           echo "SPECIALISTS_REPO_PATH=$GITHUB_WORKSPACE/specialists-src" >> "$GITHUB_ENV"
 

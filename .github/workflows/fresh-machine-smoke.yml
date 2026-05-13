@@ -13,6 +13,16 @@ on:
         required: false
         default: ""
         type: string
+  workflow_call:
+    inputs:
+      specialists_ref:
+        required: false
+        default: master
+        type: string
+      specialists_tarball_url:
+        required: false
+        default: ""
+        type: string
 
 jobs:
   smoke:
