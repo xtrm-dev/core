@@ -32,7 +32,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
@@ -57,29 +57,7 @@ jobs:
         run: npm run check:registry-pack-parity
 
       - name: Check asset contract
-        shell: bash
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-
-          const contractPath = './specialists-src/dist/asset-contract.json';
-          const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
-          const vendorRoot = process.env.SPECIALISTS_REPO_PATH;
-
-          if (!vendorRoot) {
-            throw new Error('SPECIALISTS_REPO_PATH missing');
-          }
-
-          if (!fs.existsSync(vendorRoot)) {
-            throw new Error(`Vendor root missing: ${vendorRoot}`);
-          }
-
-          console.log(`asset contract: ${contractPath}`);
-          console.log(`vendor root: ${vendorRoot}`);
-          console.log(`contract keys: ${Object.keys(contract).join(', ')}`);
-          NODE
-        env:
-          SPECIALISTS_REPO_PATH: ${{ github.workspace }}/specialists-src
+        run: node scripts/verify-asset-contract.mjs --contract ./specialists-src/dist/asset-contract.json --vendor-root .xtrm/skills/default
 
       - name: Publish to npm
         run: npm publish --provenance
