@@ -37,6 +37,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Bun is required by @jaggerxtrm/specialists (sp shebang).
+      - name: Use Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Pack xtrm-tools
         run: |
           set -euo pipefail
