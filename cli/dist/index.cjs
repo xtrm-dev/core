@@ -38962,7 +38962,8 @@ function resolveHooksForProjectRuntime(hooks, projectHooksDir) {
   const normalizedHooksDir = normalizeHookCommandPath(projectHooksDir);
   const rewrittenHooks = {};
   for (const [eventName, wrappers] of Object.entries(hooks)) {
-    rewrittenHooks[eventName] = wrappers.map((wrapper) => ({
+    const wrapperList = Array.isArray(wrappers) ? wrappers : [wrappers];
+    rewrittenHooks[eventName] = wrapperList.map((wrapper) => ({
       ...wrapper,
       hooks: wrapper.hooks.map((hook) => {
         if (hook.type !== "command") {
