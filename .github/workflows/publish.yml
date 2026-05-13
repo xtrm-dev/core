@@ -17,13 +17,19 @@ jobs:
         id: resolve
         shell: bash
         run: |
-          ref="$(jq -er '.source.ref' .xtrm/specialists-source.json)"
-          if [ -z "$ref" ] || [ "$ref" = "null" ]; then
-            echo "::error::.xtrm/specialists-source.json missing source.ref" >&2
+          # Prefer the immutable resolved_sha (what we vendored against)
+          # over the moving ref (e.g. 'master'). This guarantees the
+          # specialists tarball used by fresh-machine-smoke matches the
+          # mirror in .xtrm/skills/default by construction.
+          sha="$(jq -r '.source.resolved_sha // empty' .xtrm/specialists-source.json)"
+          ref="$(jq -r '.source.ref // empty' .xtrm/specialists-source.json)"
+          resolved="${sha:-$ref}"
+          if [ -z "$resolved" ]; then
+            echo "::error::.xtrm/specialists-source.json missing both source.resolved_sha and source.ref" >&2
             exit 1
           fi
-          echo "specialists_ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Resolved specialists ref: $ref"
+          echo "specialists_ref=$resolved" >> "$GITHUB_OUTPUT"
+          echo "Resolved specialists ref: $resolved (sha=$sha ref=$ref)"
 
   fresh_machine_smoke:
     needs: resolve_ref
