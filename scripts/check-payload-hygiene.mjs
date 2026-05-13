@@ -98,12 +98,10 @@ async function main() {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-payload-'));
   const textLeaks = [];
   try {
-    if (forbiddenFiles.length === 0) {
-      const tarballPath = runPackTarball(tempDir);
-      const tarballFiles = listTarballFiles(tarballPath).filter((filePath) => TEXT_FILE_PATTERN.test(filePath));
-      const textByFile = new Map(tarballFiles.map((filePath) => [filePath, readTarballFile(tarballPath, filePath)]));
-      textLeaks.push(...findAbsolutePathLeaks(textByFile));
-    }
+    const tarballPath = runPackTarball(tempDir);
+    const tarballFiles = listTarballFiles(tarballPath).filter((filePath) => TEXT_FILE_PATTERN.test(filePath));
+    const textByFile = new Map(tarballFiles.map((filePath) => [filePath, readTarballFile(tarballPath, filePath)]));
+    textLeaks.push(...findAbsolutePathLeaks(textByFile));
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

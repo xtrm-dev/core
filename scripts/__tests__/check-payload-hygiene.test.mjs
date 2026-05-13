@@ -31,3 +31,15 @@ test('flags absolute path leaks in packed text', () => {
     { filePath: 'config.json', match: '/home/alice/' },
   ]);
 });
+
+test('reports both denylist hits and absolute-path leaks together', () => {
+  const forbidden = findForbiddenPackFiles(['.pi/logs/run.log']);
+  const leaks = findAbsolutePathLeaks(new Map([
+    ['README.md', 'see /home/alice/project'],
+  ]));
+
+  assert.equal(forbidden.length, 1);
+  assert.equal(leaks.length, 1);
+  assert.equal(forbidden[0].filePath, '.pi/logs/run.log');
+  assert.equal(leaks[0].filePath, 'README.md');
+});
