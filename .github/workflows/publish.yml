@@ -15,10 +15,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout specialists source
+        uses: actions/checkout@v4
+        with:
+          repository: Jaggerxtrm/specialists
+          ref: master
+          path: specialists-src
+
+      - name: Record specialists source
+        shell: bash
+        run: |
+          echo "specialists_ref=master" >> "$GITHUB_STEP_SUMMARY"
+          echo "specialists_sha=$(git -C specialists-src rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "SPECIALISTS_REPO_PATH=$GITHUB_WORKSPACE/specialists-src" >> "$GITHUB_ENV"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
@@ -27,10 +41,28 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check skills ownership
+        run: npm run check:skills-ownership
+
+      - name: Check specialists vendor
+        env:
+          SPECIALISTS_REPO_PATH: ${{ github.workspace }}/specialists-src
+        run: npm run check:specialists-vendor
+
+      - name: Check layout guards
+        run: npm run check:layout-guards
+
+      - name: Check payload hygiene
+        run: npm run check:payload-hygiene
+
       - name: Registry ↔ npm pack parity
         run: npm run check:registry-pack-parity
+
+      - name: Check asset contract
+        run: node scripts/verify-asset-contract.mjs --contract ./specialists-src/dist/asset-contract.json --vendor-root .xtrm/skills/default
 
       - name: Publish to npm
         run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          SPECIALISTS_REPO_PATH: ${{ github.workspace }}/specialists-src
