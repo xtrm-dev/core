@@ -1,4 +1,7 @@
 **/__pycache__/
 **/*.pyc
 **/.pytest_cache/
+.xtrm/skills/default/**/evals/**
+.xtrm/skills/default/**/workspace/iteration-*/**
+packages/*/.serena/**
 skills/documenting/tests/
