@@ -32,7 +32,10 @@
     "!packages/pi-extensions/extensions/**/.pi/**",
     "!.xtrm/extensions/**/.pi/**",
     "!.xtrm/**/test_*.py",
-    "!.xtrm/**/tests/**"
+    "!.xtrm/**/tests/**",
+    "!.xtrm/skills/default/**/evals/**",
+    "!.xtrm/skills/default/**/workspace/iteration-*/**",
+    "!packages/*/.serena/**"
   ],
   "publishConfig": {
     "access": "public"
