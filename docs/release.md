@@ -208,6 +208,16 @@ The three previously-deferred items are all closed as of `xtrm-lhqy`:
 - **xtrm-5k0o (PATH cache) fixed.** `checkDep` in `cli/src/core/machine-bootstrap.ts` extends `process.env.PATH` with `~/.local/bin`, `/usr/local/bin`, and `/opt/homebrew/bin` on module load, so `spawnSync` finds binaries that were just installed in the same process.
 - **`pre-publish-readiness.yml` is a real dry-run.** Rewritten as a 3-job DAG (resolve_ref → fresh_machine_smoke → publish_dry_run) that runs the exact same gate chain as `publish.yml` minus `npm publish`. Use it to confirm the chain is green before tagging.
 
+### What the fresh-machine smoke actually asserts
+
+`fresh-machine-smoke.yml` runs the full bootstrap (`xt init -y`, `xt doctor`, `xt update`, `sp init/doctor/list`) and captures every output. But its **gate assertions** are deliberately narrow — only the three things the release contract actually owns:
+
+1. The three must-have specialists skills exist under `.xtrm/skills/default/<skill>/SKILL.md` (`using-specialists-v3`, `update-specialists`, `using-specialists-auto`).
+2. No symlinks anywhere under `.xtrm/`.
+3. No "Source and destination must not be the same" regression in any log.
+
+**Explicitly NOT asserted**: `.xtrm/registry.json` (depends on Project Bootstrap phase, which needs `bd`), `sp list` output (needs the `bd` workspace + Pi extensions). Those bind to third-party packages with their own postinstall behaviour — outside the release-contract scope. `xt init -y` failing because `@beads/bd` couldn't download its native binary is **not** a release-contract violation.
+
 ### Runtime prerequisites for `sp`
 
 `@jaggerxtrm/specialists` ships its `sp` binary with `#!/usr/bin/env bun` and declares `engines.bun >= 1.0.0`. Any environment running `sp init` / `sp doctor` / `sp list` must have Bun on PATH. CI workflows (`fresh-machine-smoke.yml`, `install-order-matrix.yml`) install Bun via `oven-sh/setup-bun@v2`. Local operators need `curl -fsSL https://bun.sh/install | bash` or equivalent.
