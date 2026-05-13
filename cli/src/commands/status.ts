@@ -37,8 +37,9 @@ export function createStatusCommand(): Command {
     return new Command('status')
         .description('Show status and optionally sync target environments')
         .option('--json', 'Output machine-readable JSON', false)
+        .option('--check', 'Non-interactive summary; never prompt', false)
         .action(async (opts) => {
-            const { json } = opts;
+            const { json, check } = opts;
 
             const repoRoot = await findRepoRoot();
 
@@ -131,6 +132,11 @@ export function createStatusCommand(): Command {
 
             const pending = results.filter(r => r.totalChanges > 0);
             console.log(kleur.yellow(`\n  ⚠  ${totalPending} pending change${totalPending !== 1 ? 's' : ''} across ${pending.length} environment${pending.length !== 1 ? 's' : ''}\n`));
+
+            if (check || !process.stdin.isTTY) {
+                console.log(kleur.gray("  Skipped. Run 'xt sync' to apply.\n"));
+                return;
+            }
 
             // ── Inline sync offer ────────────────────────────────────────────
             const { selected } = await prompts({
