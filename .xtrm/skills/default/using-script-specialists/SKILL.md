@@ -9,7 +9,9 @@ description: >
   output immediately, or when the work is a single LLM call with structured
   input/output. Do NOT use for tracked agent work — that belongs to
   `using-specialists-v2`.
-version: 1.0
+version: 1.1.0
+updated: 2026-05-06
+synced_at: a0e54d0c
 ---
 
 # Script-Class Specialists
@@ -54,7 +56,7 @@ A spec is rejected at request time (`specialist_load_error`) if any of:
 - `execution.interactive` is `true`
 - `execution.requires_worktree` is `true`
 - `execution.permission_required` is anything other than `READ_ONLY`
-- `skills.scripts` is non-empty
+- `skills.scripts` is non-empty (always rejected; no `--allow-local-scripts` bypass)
 - `prompt.task_template` is missing
 - a referenced `$var` in the chosen template is not supplied (`template_variable_missing`)
 
@@ -101,9 +103,9 @@ sp script <specialist-name> \
 Behaviour:
 
 - Loads the spec via `SpecialistLoader` (same loader as `sp run`).
-- Renders `prompt.task_template` (or named template) with `--vars`.
-- Spawns `pi --mode json --no-session --no-extensions --no-tools` with the
-  resolved model.
+- Renders `prompt.task_template` (or named template) with `--vars`, then feeds the rendered prompt via stdin.
+- `--db-path /path/to/observability.db` is an exact SQLite file path; omit it to use the project default `.specialists/db/observability.db`.
+- Spawns `pi` in JSON mode with no session, no extensions, no tools, and offline; forwards the resolved model, optional `--thinking`, and `--system-prompt` when `prompt.system` is set (full override, not append).
 - Returns the final assistant text on stdout. With `--json`, returns the full
   `ScriptGenerateResult` envelope.
 - Writes one row to `.specialists/db/observability.db` (same writer as `sp run`).

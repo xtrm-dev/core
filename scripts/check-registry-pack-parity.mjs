@@ -9,12 +9,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const registryPath = path.join(repoRoot, '.xtrm', 'registry.json');
+// `packages/pi-extensions` is intentionally NOT a managed root since xtrm-xvjg
+// (2026-05-11): pi-extensions is a global-only install, not scaffolded into
+// project `.xtrm/` directories. It still ships via the xtrm-tools npm pack so
+// it is globally installable, but it must not be in the project registry —
+// the parity check only enforces the registry↔pack invariant for assets that
+// are scaffolded into consumer projects.
 const managedRoots = [
   '.xtrm/config',
   '.xtrm/hooks',
   '.xtrm/skills/default',
   '.xtrm/skills/optional',
-  'packages/pi-extensions',
 ];
 const allowlist = new Map([
   [
