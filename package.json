@@ -63,6 +63,7 @@
     "version": "npm run sync:cli-version && git add cli/package.json packages/pi-extensions/package.json",
     "check:skills-ownership": "node scripts/check-skills-ownership.mjs",
     "check:specialists-vendor": "node scripts/verify-specialists-vendor.mjs",
+    "check:asset-contract": "node scripts/verify-asset-contract.mjs",
     "check:layout-guards": "node scripts/check-layout-guards.mjs",
     "check:gitnexus-no-counter": "node scripts/check-gitnexus-no-counter.mjs",
     "check:skills-symlinks": "node scripts/check-skills-symlinks.mjs",

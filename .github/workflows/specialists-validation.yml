@@ -1,0 +1,66 @@
+name: Specialists asset validation
+
+on:
+  repository_dispatch:
+    types:
+      - specialists-asset-validation
+  workflow_dispatch:
+    inputs:
+      specialists_sha:
+        description: specialists commit SHA to validate
+        required: true
+        type: string
+      expected_package_version:
+        description: optional specialists package version
+        required: false
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout xtrm-tools
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve specialists SHA
+        id: specialists
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "sha=${{ github.event.client_payload.specialists_sha }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ github.event.client_payload.specialists_tag }}" >> "$GITHUB_OUTPUT"
+            echo "package_version=${{ github.event.client_payload.specialists_package_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ inputs.specialists_sha }}" >> "$GITHUB_OUTPUT"
+            echo "package_version=${{ inputs.expected_package_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout specialists
+        uses: actions/checkout@v4
+        with:
+          repository: Jaggerxtrm/specialists
+          ref: ${{ steps.specialists.outputs.sha }}
+          path: specialists-src
+          token: ${{ github.token }}
+
+      - name: Validate specialists asset contract
+        run: node scripts/verify-asset-contract.mjs --contract specialists-src/dist/asset-contract.json --vendor-root .xtrm/skills/default
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Specialists asset validation done"
+          echo "sha: ${{ steps.specialists.outputs.sha }}"
+          echo "package_version: ${{ steps.specialists.outputs.package_version }}"
+          echo "tag: ${{ steps.specialists.outputs.tag }}"
