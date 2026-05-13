@@ -59,6 +59,7 @@ function globToRegExp(pattern) {
     .replace(/\*/g, '[^/]*')
     .replace(/::DOUBLE_STAR::/g, '.*')
     .replace(/\?/g, '[^/]');
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- pattern source is package.json 'files' negation entries (project-controlled build-time data)
   return new RegExp(`^${escaped}$`);
 }
 
