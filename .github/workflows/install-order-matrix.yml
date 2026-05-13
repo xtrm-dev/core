@@ -1,0 +1,112 @@
+name: Install order matrix
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: xt-only
+          - leg: sp-only
+          - leg: xt-then-sp
+          - leg: sp-then-xt
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pack xtrm-tools
+        run: |
+          set -euo pipefail
+          npm pack
+
+      - name: Run install-order leg ${{ matrix.leg }}
+        env:
+          INSTALL_ORDER_LEG: ${{ matrix.leg }}
+        run: |
+          set -euo pipefail
+          source scripts/__tests__/install-order-asserts.sh
+
+          tarball="$(echo xtrm-tools-*.tgz)"
+          repo_dir="$(mktemp -d)"
+          npm install -g "./${tarball}"
+
+          case "$INSTALL_ORDER_LEG" in
+            xt-only)
+              cd "$repo_dir"
+              npm init -y >/dev/null
+              xt init >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
+              assert_exit_zero $? "xt-only xt init"
+              xt doctor --json >/tmp/xt-doctor.stdout 2>/tmp/xt-doctor.stderr
+              assert_exit_zero $? "xt-only xt doctor"
+              assert_no_symlinks_under_repo "$repo_dir" "xt-only"
+              ;;
+            sp-only)
+              cd "$repo_dir"
+              npm init -y >/dev/null
+              npm install -g @jaggerxtrm/specialists
+              sp list >/tmp/sp-list.stdout 2>/tmp/sp-list.stderr
+              assert_exit_zero $? "sp-only sp list"
+              if sp init >/tmp/sp-init.stdout 2>/tmp/sp-init.stderr; then
+                echo "sp-only: sp init unexpectedly succeeded" >&2
+                exit 1
+              fi
+              assert_stderr_contains /tmp/sp-init.stderr 'xt (install|init)' "sp-only"
+              assert_no_symlinks_under_repo "$repo_dir" "sp-only"
+              ;;
+            xt-then-sp)
+              cd "$repo_dir"
+              npm init -y >/dev/null
+              xt install >/tmp/xt-install.stdout 2>/tmp/xt-install.stderr
+              assert_exit_zero $? "xt-then-sp xt install"
+              xt init >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
+              assert_exit_zero $? "xt-then-sp xt init"
+              npm install -g @jaggerxtrm/specialists
+              sp init >/tmp/sp-init.stdout 2>/tmp/sp-init.stderr
+              assert_exit_zero $? "xt-then-sp sp init"
+              sp doctor >/tmp/sp-doctor.stdout 2>/tmp/sp-doctor.stderr
+              assert_exit_zero $? "xt-then-sp sp doctor"
+              assert_no_symlinks_under_repo "$repo_dir" "xt-then-sp"
+              ;;
+            sp-then-xt)
+              cd "$repo_dir"
+              npm init -y >/dev/null
+              npm install -g @jaggerxtrm/specialists
+              if sp init >/tmp/sp-first.stdout 2>/tmp/sp-first.stderr; then
+                echo "sp-then-xt: sp init unexpectedly succeeded before xt install/init" >&2
+                exit 1
+              fi
+              assert_stderr_contains /tmp/sp-first.stderr 'xt (install|init)' "sp-then-xt"
+              xt install >/tmp/xt-install.stdout 2>/tmp/xt-install.stderr
+              assert_exit_zero $? "sp-then-xt xt install"
+              xt init >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
+              assert_exit_zero $? "sp-then-xt xt init"
+              sp init >/tmp/sp-second.stdout 2>/tmp/sp-second.stderr
+              assert_exit_zero $? "sp-then-xt sp init"
+              sp doctor >/tmp/sp-doctor.stdout 2>/tmp/sp-doctor.stderr
+              assert_exit_zero $? "sp-then-xt sp doctor"
+              assert_no_symlinks_under_repo "$repo_dir" "sp-then-xt"
+              ;;
+            *)
+              echo "unknown leg: $INSTALL_ORDER_LEG" >&2
+              exit 1
+              ;;
+          esac
