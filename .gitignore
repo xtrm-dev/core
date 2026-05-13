@@ -21,7 +21,8 @@ cli/node_modules
 # TDD Guard runtime data
 .claude/tdd-guard/data/
 
-# Pi npm cache
+# Pi npm cache (symlink AND directory forms — executors sometimes create as symlink to abs path)
+.pi/npm
 .pi/npm/
 
 # Nested repos
