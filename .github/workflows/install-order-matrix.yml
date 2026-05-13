@@ -67,6 +67,8 @@ jobs:
             xt-only)
               cd "$repo_dir"
               npm init -y >/dev/null
+              git init -q
+              git -c user.email=ci@example.com -c user.name=ci commit -q --allow-empty -m bootstrap
               xt init -y >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
               xt doctor --json >/tmp/xt-doctor.stdout 2>/tmp/xt-doctor.stderr
               assert_no_symlinks_under_repo "$repo_dir" "xt-only"
@@ -74,6 +76,8 @@ jobs:
             sp-only)
               cd "$repo_dir"
               npm init -y >/dev/null
+              git init -q
+              git -c user.email=ci@example.com -c user.name=ci commit -q --allow-empty -m bootstrap
               npm install -g @jaggerxtrm/specialists
               sp list >/tmp/sp-list.stdout 2>/tmp/sp-list.stderr
               if sp init >/tmp/sp-init.stdout 2>/tmp/sp-init.stderr; then
@@ -86,6 +90,8 @@ jobs:
             xt-then-sp)
               cd "$repo_dir"
               npm init -y >/dev/null
+              git init -q
+              git -c user.email=ci@example.com -c user.name=ci commit -q --allow-empty -m bootstrap
               xt init -y >/tmp/xt-init.stdout 2>/tmp/xt-init.stderr
               npm install -g @jaggerxtrm/specialists
               sp init >/tmp/sp-init.stdout 2>/tmp/sp-init.stderr
@@ -95,6 +101,8 @@ jobs:
             sp-then-xt)
               cd "$repo_dir"
               npm init -y >/dev/null
+              git init -q
+              git -c user.email=ci@example.com -c user.name=ci commit -q --allow-empty -m bootstrap
               npm install -g @jaggerxtrm/specialists
               if sp init >/tmp/sp-first.stdout 2>/tmp/sp-first.stderr; then
                 echo "sp-then-xt: sp init unexpectedly succeeded before xt install/init" >&2
