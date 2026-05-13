@@ -54551,13 +54551,11 @@ async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR
   return { installed, failed };
 }
 async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, versionProvider) {
-  const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => {
-    const npmRootDir = await resolveGlobalNpmRootDir();
-    return {
-      installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? void 0),
-      expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
-    };
-  });
+  const npmRootDir = await resolveGlobalNpmRootDir();
+  const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
+    installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? void 0),
+    expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
+  }));
   const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider);
   const missing = statuses.filter((status) => status.state === "missing");
   const outdated = statuses.filter((status) => status.state === "outdated");
@@ -54588,11 +54586,13 @@ async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, i
   }
   return { statuses, missing, outdated, installed, refreshed, failed };
 }
-async function getXtManagedPiPackageDoctorReport(versionProvider = async (_piPackageId, npmPackageName) => ({
-  installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName, await resolveGlobalNpmRootDir() ?? void 0),
-  expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
-})) {
-  const statuses = await getManagedPiPackageFreshness(versionProvider, getXtManagedPiPackages());
+async function getXtManagedPiPackageDoctorReport(versionProvider) {
+  const npmRootDir = await resolveGlobalNpmRootDir();
+  const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
+    installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName, npmRootDir ?? void 0),
+    expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
+  }));
+  const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider, getXtManagedPiPackages());
   const issues = statuses.filter((status) => status.state !== "current").map((status) => ({
     ...status,
     remediation: status.state === "version-unknown" ? "check network/npm registry, then rerun xt doctor" : "pi install " + status.pkg.id
