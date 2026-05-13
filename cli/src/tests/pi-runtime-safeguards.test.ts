@@ -44,6 +44,26 @@ describe('pi runtime safeguards', () => {
     expect(getPiPackageInstallFailureHint('npm:pi-gitnexus', output)).toEqual([]);
   });
 
+  it('resolves npm-backed pi packages from global npm root when agent tree is absent', async () => {
+    const { getInstalledPiPackageVersion, isPackagePresentInPiAgent } = await import('../core/pi-runtime.js');
+    const npmRootDir = path.join(tempRoot, 'global-npm-root', 'node_modules');
+    const packageDir = path.join(npmRootDir, '@zenobius', 'pi-worktrees');
+    await fs.outputJson(path.join(packageDir, 'package.json'), { version: '2.3.4' });
+
+    await expect(getInstalledPiPackageVersion(process.env.PI_AGENT_DIR as string, '@zenobius/pi-worktrees', npmRootDir)).resolves.toBe('2.3.4');
+    await expect(isPackagePresentInPiAgent(process.env.PI_AGENT_DIR as string, 'npm:@zenobius/pi-worktrees', npmRootDir)).resolves.toBe(true);
+  });
+
+  it('prefers local agent package version over global fallback for unscoped pi-coding-agent', async () => {
+    const { getInstalledPiPackageVersion } = await import('../core/pi-runtime.js');
+    const agentDir = process.env.PI_AGENT_DIR as string;
+    const npmRootDir = path.join(tempRoot, 'global-npm-root', 'node_modules');
+    await fs.outputJson(path.join(agentDir, 'npm', 'node_modules', 'pi-coding-agent', 'package.json'), { version: '1.2.3' });
+    await fs.outputJson(path.join(npmRootDir, 'pi-coding-agent', 'package.json'), { version: '9.9.9' });
+
+    await expect(getInstalledPiPackageVersion(agentDir, 'pi-coding-agent', npmRootDir)).resolves.toBe('1.2.3');
+  });
+
   it('classifies managed npm-backed pi package freshness with an injectable provider', async () => {
     const { getManagedPiPackageFreshness } = await import('../core/pi-runtime.js');
 
@@ -103,6 +123,32 @@ describe('pi runtime safeguards', () => {
     expect(report.hasIssues).toBe(false);
     expect(report.issues).toEqual([]);
     expect(versionProvider).toHaveBeenCalledTimes(8);
+  });
+
+  it('marks globally installed scoped packages as current or outdated, never missing', async () => {
+    const { getManagedPiPackageFreshness } = await import('../core/pi-runtime.js');
+    const npmRootDir = path.join(tempRoot, 'global-npm-root', 'node_modules');
+    const packageDir = path.join(npmRootDir, '@scope', 'pi-foo');
+    await fs.outputJson(path.join(packageDir, 'package.json'), { version: '3.4.5' });
+
+    const statuses = await getManagedPiPackageFreshness(async (_piPackageId, npmPackageName) => {
+      const installedVersion = await fs.readJson(path.join(npmRootDir, npmPackageName, 'package.json'))
+        .then((pkg: { version?: unknown }) => typeof pkg.version === 'string' ? pkg.version : null)
+        .catch(() => null);
+      return { installedVersion, expectedVersion: '3.4.5' };
+    }, [
+      { id: 'npm:@scope/pi-foo', displayName: 'pi-foo', required: true },
+    ]);
+
+    expect(statuses).toEqual([
+      expect.objectContaining({
+        pkg: expect.objectContaining({ id: 'npm:@scope/pi-foo' }),
+        installedVersion: '3.4.5',
+        expectedVersion: '3.4.5',
+        state: 'current',
+      }),
+    ]);
+    expect(statuses.some(status => status.state === 'missing')).toBe(false);
   });
 
   it('builds a doctor report for missing, outdated, and unknown xt pi packages with remediation commands', async () => {
