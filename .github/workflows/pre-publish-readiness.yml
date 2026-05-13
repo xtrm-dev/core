@@ -33,8 +33,10 @@ jobs:
 
       - name: Record specialists source
         shell: bash
+        env:
+          SPECIALISTS_REF: ${{ inputs.specialists_ref }}
         run: |
-          echo "specialists_ref=${{ inputs.specialists_ref }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "specialists_ref=$SPECIALISTS_REF" >> "$GITHUB_STEP_SUMMARY"
           echo "specialists_sha=$(git -C specialists-src rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           echo "SPECIALISTS_REPO_PATH=$GITHUB_WORKSPACE/specialists-src" >> "$GITHUB_ENV"
 

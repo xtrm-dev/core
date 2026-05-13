@@ -36,14 +36,21 @@ jobs:
 
       - name: Resolve specialists SHA
         id: specialists
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_SHA: ${{ github.event.client_payload.specialists_sha }}
+          DISPATCH_TAG: ${{ github.event.client_payload.specialists_tag }}
+          DISPATCH_PACKAGE_VERSION: ${{ github.event.client_payload.specialists_package_version }}
+          INPUT_SHA: ${{ inputs.specialists_sha }}
+          INPUT_PACKAGE_VERSION: ${{ inputs.expected_package_version }}
         run: |
-          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "sha=${{ github.event.client_payload.specialists_sha }}" >> "$GITHUB_OUTPUT"
-            echo "tag=${{ github.event.client_payload.specialists_tag }}" >> "$GITHUB_OUTPUT"
-            echo "package_version=${{ github.event.client_payload.specialists_package_version }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            echo "sha=$DISPATCH_SHA" >> "$GITHUB_OUTPUT"
+            echo "tag=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
+            echo "package_version=$DISPATCH_PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
           else
-            echo "sha=${{ inputs.specialists_sha }}" >> "$GITHUB_OUTPUT"
-            echo "package_version=${{ inputs.expected_package_version }}" >> "$GITHUB_OUTPUT"
+            echo "sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
+            echo "package_version=$INPUT_PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout specialists
@@ -59,8 +66,12 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          RESOLVED_SHA: ${{ steps.specialists.outputs.sha }}
+          RESOLVED_PACKAGE_VERSION: ${{ steps.specialists.outputs.package_version }}
+          RESOLVED_TAG: ${{ steps.specialists.outputs.tag }}
         run: |
           echo "Specialists asset validation done"
-          echo "sha: ${{ steps.specialists.outputs.sha }}"
-          echo "package_version: ${{ steps.specialists.outputs.package_version }}"
-          echo "tag: ${{ steps.specialists.outputs.tag }}"
+          echo "sha: $RESOLVED_SHA"
+          echo "package_version: $RESOLVED_PACKAGE_VERSION"
+          echo "tag: $RESOLVED_TAG"
