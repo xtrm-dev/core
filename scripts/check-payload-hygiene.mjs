@@ -29,6 +29,14 @@ const ABSOLUTE_PATH_PATTERNS = [
 
 const allowlist = new Set([]);
 
+// Files that intentionally mention absolute-path strings as documentation
+// (changelog entries describing past fixes, hygiene-script self-tests, etc.).
+// Forbidden-path scanning still applies to these.
+const ABSOLUTE_PATH_LEAK_ALLOWLIST = new Set([
+  'CHANGELOG.md',
+  'scripts/check-payload-hygiene.mjs',
+]);
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
@@ -47,6 +55,7 @@ export function findForbiddenPackFiles(packFiles) {
 export function findAbsolutePathLeaks(textByFile) {
   const leaks = [];
   for (const [filePath, content] of textByFile) {
+    if (ABSOLUTE_PATH_LEAK_ALLOWLIST.has(filePath)) continue;
     for (const pattern of ABSOLUTE_PATH_PATTERNS) {
       const match = content.match(pattern);
       if (match && !allowlist.has(filePath)) {
