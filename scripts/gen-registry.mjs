@@ -32,6 +32,10 @@ const assets = {
   },
 };
 
+const packExclusionPatterns = (packageJson.files ?? [])
+  .filter((entry) => typeof entry === 'string' && entry.startsWith('!'))
+  .map((entry) => entry.slice(1));
+
 async function readSpecialistsSource() {
   const manifestPath = path.join(repoRoot, '.xtrm', 'specialists-source.json');
   try {
@@ -46,6 +50,23 @@ async function readSpecialistsSource() {
 
 function toPosixPath(value) {
   return value.split(path.sep).join('/');
+}
+
+function globToRegExp(pattern) {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '::DOUBLE_STAR::')
+    .replace(/\*/g, '[^/]*')
+    .replace(/::DOUBLE_STAR::/g, '.*')
+    .replace(/\?/g, '[^/]');
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- pattern source is package.json 'files' negation entries (project-controlled build-time data)
+  return new RegExp(`^${escaped}$`);
+}
+
+const packExclusionMatchers = packExclusionPatterns.map(globToRegExp);
+
+function isExcludedByPack(relativePath) {
+  return packExclusionMatchers.some((matcher) => matcher.test(relativePath));
 }
 
 function isIgnoredByGit(relativePath) {
@@ -111,6 +132,7 @@ async function buildAssetFiles(sourceDir) {
     const canonicalFilePath = await fs.realpath(absoluteFilePath);
     const relativeToRepo = toPosixPath(path.relative(repoRoot, canonicalFilePath));
     if (isIgnoredByGit(relativeToRepo)) continue;
+    if (isExcludedByPack(relativeToRepo)) continue;
 
     const relativeToSource = toPosixPath(path.relative(sourceAbsolutePath, canonicalFilePath));
     const hash = await hashFile(canonicalFilePath);
