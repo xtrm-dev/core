@@ -1,0 +1,47 @@
+# Gitleaks config — extends default rules with xtrm-tools allowlists.
+# Docs: https://github.com/gitleaks/gitleaks/blob/master/README.md#configuration
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "xtrm-tools allowlist"
+stopwords = []
+regexes = [
+    # Test fixture placeholders in cli/test/install-pi.test.ts.
+    '''sk-existing-123''',
+    '''zai-existing-456''',
+]
+paths = [
+    # Local secrets (gitignored). Keep narrow: do not blanket-allowlist .env.*.
+    '''^\.env$''',
+    '''^\.env\.local$''',
+    '''^\.env\.development\.local$''',
+    '''^\.env\.test\.local$''',
+    '''^\.env\.production\.local$''',
+    '''^\.env\.example$''',
+
+    # Local package/cache directories visited by no-git scans.
+    '''^node_modules/.*''',
+    '''^cli/node_modules/.*''',
+    '''^\.pi/npm/.*''',
+    '''^cli/\.pi/npm/.*''',
+
+    # Beads issue tracker exports and Dolt storage contain commit hashes,
+    # issue IDs, memory keys, and runtime state that trip generic rules.
+    '''^\.beads/.*''',
+    '''^\.dolt/.*''',
+    '''^\.gitnexus/.*''',
+    '''^\.serena/cache/.*''',
+
+    # Specialist runtime state and local DB caches.
+    '''^\.specialists/db/.*''',
+    '''^\.specialists/jobs/.*''',
+    '''^\.specialists/ready/.*''',
+
+    # XTRM runtime/generated state.
+    '''^\.xtrm/statusline-claim$''',
+    '''^\.xtrm/cache/.*''',
+    '''^\.xtrm/logs/.*''',
+    '''^\.xtrm/worktrees/.*''',
+]

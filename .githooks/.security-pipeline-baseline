@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Security baseline for pre-push: anti-main-push + pre-commit push-stage checks.
+set -uo pipefail
+
+PROTECTED_BRANCHES="main master"
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    branch="${remote_ref#refs/heads/}"
+    for protected in $PROTECTED_BRANCHES; do
+        if [ "$branch" = "$protected" ]; then
+            echo "🚫 Direct push to '$protected' blocked." >&2
+            echo "Open a PR instead, then merge through GitHub." >&2
+            echo "Bypass only for emergencies: git push --no-verify" >&2
+            exit 1
+        fi
+    done
+done
+
+if command -v pre-commit >/dev/null 2>&1 && [ -f .pre-commit-config.yaml ]; then
+    pre-commit run --hook-stage pre-push --all-files || exit 1
+else
+    echo "pre-commit not installed or .pre-commit-config.yaml missing — skipping local push security checks (CI covers them)"
+fi
+
+exit 0

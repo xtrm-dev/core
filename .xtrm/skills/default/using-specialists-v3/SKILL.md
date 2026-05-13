@@ -152,7 +152,7 @@ git worktree remove <path>
 git branch -d <merged-branch>     # only after confirming merged
 ```
 
-`sp ps` must be empty (or only contain jobs you intentionally kept alive) before session close. Stale worktrees and stale jobs both block future dispatches via the stale-base guard.
+`sp ps` must have no active jobs and no unresolved terminal problems before session close. If it only shows old terminal history that you have intentionally acknowledged, run `sp clean --ps --dry-run` and then `sp clean --ps` to soft-hide those rows from the default dashboard. This does not delete SQLite history or change job status; use `sp ps --include-cleaned` or `sp ps --all` for audit visibility. Stale worktrees and stale jobs both block future dispatches via the stale-base guard.
 
 ## When To Delegate
 
@@ -192,6 +192,9 @@ sp ps --help
 sp feed --help
 sp result --help
 sp resume --help
+sp steer --help
+sp stop --help
+sp finalize --help
 sp merge --help
 sp epic --help
 ```
@@ -500,7 +503,13 @@ bd dep add <review> <impl>
 specialists run reviewer --bead <review> --job <exec-job> --context-depth 3
 specialists result <review-job>
 
-# 6. Publish after reviewer PASS
+# 6. Cascade-finalize the chain after reviewer PASS
+# (auto-finalize fires automatically when reviewer PASS appears in
+# streaming output. PASS delivered via `sp resume` does not stream —
+# run sp finalize to close any waiting keep-alive members.)
+sp finalize <review-job>     # accepts any chain member; cascades to all waiting members
+
+# 7. Publish
 sp merge <impl>
 bd close <task> --reason "Reviewer PASS; merged."
 ```
@@ -533,9 +542,14 @@ specialists run executor --bead <impl-b> --context-depth 3
 specialists run reviewer --bead <review-a> --job <exec-a-job> --context-depth 3
 specialists run reviewer --bead <review-b> --job <exec-b-job> --context-depth 3
 
+# Per-chain cascade-finalize (only needed if PASS arrived via sp resume;
+# auto-finalize handles the streaming case automatically)
+sp finalize <review-a-job>
+sp finalize <review-b-job>
+
 # Publish
-sp epic status <epic>
-sp epic merge <epic>
+sp epic status <epic>          # verify derived state shows merge_ready
+sp epic merge <epic>           # batch publish all chains in dependency order with tsc gate per merge
 ```
 
 Use `--epic <id>` when job belongs to epic but bead is not direct child. Avoid parallel executors on same file; sequence them or consolidate work.
@@ -552,8 +566,8 @@ optional code-sanity/security-auditor -> advisory findings
 reviewer -> PASS | PARTIAL | FAIL
 ```
 
-- `PASS`: verify expected commit/diff, then publish.
-- `PARTIAL`: resume same executor/debugger with exact findings, then re-review.
+- `PASS`: verify expected commit/diff. If reviewer's PASS appeared in its streaming output, auto-finalize already closed the chain — go straight to `sp merge` / `sp epic merge`. If PASS arrived via `sp resume`, run `sp finalize <any-chain-job-id>` first to cascade-close any waiting keep-alive members, then publish.
+- `PARTIAL`: resume same executor/debugger with exact findings, then re-review (`sp resume <reviewer-job>`).
 - `FAIL`: stop and decide whether to replace chain, re-scope bead, or ask operator if judgment is required.
 
 Prefer resume over new fix executor when original job is waiting and context is healthy:
@@ -605,12 +619,17 @@ What differs: orchestrator uses specialists beyond the common trio, so planning,
 Use `sp ps` for state and `sp result` for completed turns.
 
 ```bash
-sp ps
-sp ps <job-id>
-sp ps --bead <bead-id>
+sp ps                         # active jobs + unresolved terminal problems
+sp ps --active                # active jobs only
+sp ps --health                # include detailed process tables
+sp ps --include-terminal      # include uncleaned terminal history
+sp ps --include-cleaned       # include rows hidden by sp clean --ps
+sp ps --all                   # full audit view, including cleaned/dead/history
 sp feed <job-id>
 sp result <job-id>
 ```
+
+Default `sp ps` is the actionable dashboard, not raw history. Error/cancelled terminal rows stay visible until an operator acknowledges them with `sp clean --ps`; cleaned rows remain in SQLite and are visible via `--include-cleaned`/`--all`.
 
 If job is running, use `sp feed`. If it is waiting, use `sp result` and decide whether to resume, review, merge, or stop. Avoid tight polling; sleep based on task size, then check once.
 
@@ -651,25 +670,32 @@ Source: latest xt report + `xt --help`; keep commands here, not full CLI surface
 
 ## Merge And Publication
 
-Standalone chain:
+Per-chain merge (works for standalone chains AND for any PASS chain inside an active epic):
 
 ```bash
 sp merge <chain-root-bead>
 ```
 
-Epic-owned chains:
+Batch publish all chains in an epic in dependency order with tsc gate between each:
 
 ```bash
 sp epic status <epic-id>
 sp epic merge <epic-id>
 ```
 
+Manual finalizer fallback when reviewer PASS arrived via resume (auto-finalize only fires on streaming output):
+
+```bash
+sp finalize <any-chain-job-id>     # cascades: closes ALL waiting keep-alive members of the chain
+```
+
 Rules:
 
 - Merge only after reviewer PASS unless operator explicitly accepts draft for follow-up work.
-- Use `sp epic merge` for unresolved epic chains; `sp merge` refuses those by design.
-- Do not manually `git merge` specialist branches.
-- If merge refuses because chain job is still `waiting`, consume result and either resume/stop/finalize that job deliberately.
+- Per-chain `sp merge` is allowed for any PASS chain regardless of sibling-epic state. Use `sp epic merge` only when batching all epic chains together (atomic publish, topological order, tsc gate per merge).
+- Do not manually `git merge` specialist branches — the redesign removed the conditions that previously forced manual fallback (sticky FAILED, inverted merge gates, missing PASS finalizer).
+- If merge refuses because a chain job is still `waiting`, run `sp finalize <any-job-in-chain>` — it cascades to close every waiting keep-alive member of that chain via `supervisor.finalizeWaitingJob()`.
+- If a previous `sp epic merge` failed (rebase conflict, dirty worktree) and persisted a soft `failed` marker, the next attempt retries fresh — only `merged` and `abandoned` are truly terminal. Just clear the conflict source.
 - If merge reports dirty worktree, inspect that worktree. Revert generated noise only when clearly unrelated; otherwise ask or re-dispatch.
 - Run or confirm required gates before closing root bead or epic.
 
@@ -691,6 +717,17 @@ Then choose one action:
 - Re-scope bead if scope was wrong.
 - Escalate if human decision is needed.
 - Replace specialist only if failure mode repeats.
+
+### Common failure patterns (and the canonical fix)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `sp merge` refuses with "non-terminal chain jobs" after reviewer PASS | Auto-finalize did not fire (PASS arrived via `sp resume`, not streaming) | `sp finalize <any-chain-job-id>` — cascades to close every waiting keep-alive member |
+| `sp epic merge` says epic is "in terminal state 'failed'" | Prior `sp epic merge` hit a transient error (rebase conflict, dirty worktree) and persisted a soft `failed` marker | Clear the original conflict source, then re-run `sp epic merge` — it retries fresh, only `merged`/`abandoned` truly block |
+| `sp epic merge` says "rebase failed: unstaged changes" in a worktree | bd auto-export or other tooling left uncommitted changes inside the worktree | `cd .worktrees/<bead>/<bead>-executor && git stash push -u -m epic-merge-prep`, then re-run from main repo |
+| `sp ps` shows old terminal jobs after a session | Default dashboard keeps unresolved terminal problems visible until acknowledged | `sp clean --ps --dry-run`, then `sp clean --ps` to soft-hide from default ps; use `sp ps --include-cleaned`/`--all` for audit history |
+| Reviewer keeps returning PARTIAL on functional contracts already met | Reviewer demanding tool-event evidence (e.g. `gitnexus_impact`) the executor never recorded | Operator override after verifying SUCCESS criteria are factually met — iteration cannot satisfy a process-evidence gate that was never going to be recorded |
+| Multiple `sp run` background launches drop silently under shell parallelism | Known launch-ceremony race | Re-check `sp ps` after each dispatch and retry the missing one; serialize when reliability matters |
 
 ## What Orchestrator Does Differently Because Of This Skill
 

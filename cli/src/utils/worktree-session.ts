@@ -75,27 +75,48 @@ function ensureWorktreeSpecialists(worktreePath: string, mainRepoPath: string): 
     }
 }
 
-function suppressBeadsWorktreeNoise(worktreePath: string): void {
+/**
+ * Normalize the parent repo's `core.hooksPath` to an absolute path if it is
+ * currently a relative `.beads/hooks` reference. Older bd installs stored a
+ * relative path which would resolve against the worktree's cwd in a worktree
+ * — i.e., against the (now-missing) worktree-local `.beads/hooks/`. The fix
+ * is idempotent: only rewrites the exact relative `.beads/hooks` form, never
+ * touches absolute paths, project-style `.githooks` chains, or unset values.
+ *
+ * No-op for the vast majority of repos surveyed 2026-05-12 — but cheap
+ * insurance so a fresh-install on an older bd binary cannot resurface the
+ * "hooks fire from missing path" failure mode after xtrm-cbjo lands.
+ */
+function normalizeParentHooksPath(mainRepoRoot: string): void {
     try {
-        const gitDirResult = spawnSync('git', ['-C', worktreePath, 'rev-parse', '--absolute-git-dir'], {
-            cwd: worktreePath,
+        const result = spawnSync('git', ['-C', mainRepoRoot, 'config', '--get', 'core.hooksPath'], {
             stdio: 'pipe',
             encoding: 'utf8',
         });
-        if (gitDirResult.status !== 0) return;
+        if (result.status !== 0) return;
+        const current = (result.stdout ?? '').trim();
+        if (!current) return;
+        if (path.isAbsolute(current)) return;
+        // Only rewrite the canonical bd default. Leave `.githooks` chains and
+        // other project conventions alone — those are intentional.
+        if (current !== '.beads/hooks' && current !== './.beads/hooks') return;
+        const absolute = path.join(mainRepoRoot, '.beads', 'hooks');
+        spawnSync('git', ['-C', mainRepoRoot, 'config', 'core.hooksPath', absolute], { stdio: 'pipe' });
+    } catch {
+        // non-fatal
+    }
+}
 
-        const gitDir = (gitDirResult.stdout ?? '').trim();
-        if (!gitDir) return;
-
-        const excludePath = path.join(gitDir, 'info', 'exclude');
-        mkdirSync(path.dirname(excludePath), { recursive: true });
-        const excludeEntry = '.beads';
-        const excludeContents = existsSync(excludePath) ? readFileSync(excludePath, 'utf8') : '';
-        if (!excludeContents.split(/\r?\n/).includes(excludeEntry)) {
-            const prefix = excludeContents.length > 0 && !excludeContents.endsWith('\n') ? '\n' : '';
-            writeFileSync(excludePath, `${excludeContents}${prefix}${excludeEntry}\n`);
-        }
-
+/**
+ * After bd/git worktree create, mark all tracked .beads/* files as skip-worktree
+ * so that removing the local .beads/ directory does not show as deletions in
+ * `git status` (and therefore does not pollute checkpoint commits or PR diffs).
+ *
+ * The caller is expected to `rm -rf <worktree>/.beads` immediately after; this
+ * function only masks the index/worktree delta from git.
+ */
+function markBeadsSkipWorktree(worktreePath: string): void {
+    try {
         const trackedResult = spawnSync('git', ['-C', worktreePath, 'ls-files', '--', '.beads'], {
             cwd: worktreePath,
             stdio: 'pipe',
@@ -240,21 +261,25 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         }
     }
 
-    // Symlink .beads/ to parent so bd inside the worktree shares the parent's
-    // dolt server. bd's post-checkout/pre-commit/post-merge git hooks (registered
-    // via the parent's core.hooksPath = .beads/hooks/) fire on any git operation
-    // inside the worktree and would re-scaffold a per-worktree .beads/ + dolt
-    // server otherwise (60–200 MB RSS each, leak vector on cleanup, plus the
-    // user-reported "database 'jaggers_agent_tools' not found" symptom).
-    // Plain rm -rf is not enough — the first git commit re-creates everything.
-    // The symlink makes bd operate on the parent's data; verified end-to-end.
-    // See xtrm-as7d / unitAI-0wz2p (specialists side, same fix).
+    // Normalize parent's core.hooksPath to absolute if it's still the bd
+    // relative default — safety net for older bd installs (see xtrm-2s44).
+    normalizeParentHooksPath(mainRepoRoot);
+
+    // Remove worktree-local .beads/ entirely. bd inside the worktree resolves
+    // its DB via git common-dir discovery (shared-server mode + absolute
+    // core.hooksPath at the parent's .beads/hooks/), so no on-disk .beads/ is
+    // needed. The previous dir->symlink approach made bd happy but caused a
+    // serious merge hazard: any commit/PR carrying the .beads symlink (mode
+    // 120000) wipes the parent's .beads/ on squash-merge (see infra repo PR
+    // #39, 2026-05-12). With the directory gone, the tracked .beads/* paths
+    // are masked via skip-worktree so the index/worktree delta does not
+    // surface in `git status` or checkpoint diffs.
+    // See xtrm-cbjo (this fix) supersedes xtrm-as7d / xtrm-nsca / unitAI-u08e8.
     try {
         rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
-        symlinkSync(path.join(mainRepoRoot, '.beads'), path.join(worktreePath, '.beads'), 'dir');
-        suppressBeadsWorktreeNoise(worktreePath);
+        markBeadsSkipWorktree(worktreePath);
     } catch {
-        // Non-fatal: bd will recover by re-scaffolding a per-worktree stub.
+        // Non-fatal: bd will recover via git common-dir resolution regardless.
     }
 
     writeSessionMeta(worktreePath, runtime);

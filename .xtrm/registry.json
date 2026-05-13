@@ -980,7 +980,7 @@
           "version": "0.7.17"
         },
         "update-xt/SKILL.md": {
-          "hash": "709b137af5b2488111f435b92c14482e296e1b938ac86c1b3465f746ca13fc6e",
+          "hash": "c0cf987bcb4698069cef1d498bf605f0e71ae46c9599daadb66bc58cd801a20f",
           "version": "0.7.17"
         },
         "updating-service-skills/scripts/drift_detector.py": {
@@ -1032,7 +1032,7 @@
           "version": "0.7.17"
         },
         "using-specialists-v3/SKILL.md": {
-          "hash": "b20915f6f7349b8f7f077511783cd8497c430ec5faf0022a529a16b58bdf1cff",
+          "hash": "880ff914e97a8a212024276f2845976257aa0e4ab79e025c9870f59bbbc0f31a",
           "version": "0.7.17"
         },
         "using-specialists/evals/evals.json": {
@@ -1463,7 +1463,7 @@
       },
       "using-specialists-v3": {
         "evals/evals.json": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
-        "SKILL.md": "b20915f6f7349b8f7f077511783cd8497c430ec5faf0022a529a16b58bdf1cff"
+        "SKILL.md": "880ff914e97a8a212024276f2845976257aa0e4ab79e025c9870f59bbbc0f31a"
       }
     }
   }

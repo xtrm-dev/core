@@ -266,6 +266,91 @@ Common failure modes and fixes:
 | `PACK_METADATA_MISMATCH: metadata-only: X, filesystem-only: Y` | A user-skill-pack (`.xtrm/skills/user/packs/<name>/PACK.json`) lists a skill that has been renamed on disk | Edit `PACK.json` so the listed skill names match the directory names; re-run. |
 | `Cannot read properties of null (reading 'dolt')` | Repo's `.beads/config.yaml` is comments-only (fresh `bd init` default); pre-`xtrm-16ec` xtrm crashes parsing it | Upgrade xtrm-tools to ≥ 0.7.18; the parse result is coerced to `{}` defensively now. |
 
+## Worktree hygiene: `.beads/` and `core.hooksPath`
+
+Modern bd 1.0.3 stores `core.hooksPath` as an **absolute parent path** at `bd init`
+time (e.g. `/home/user/repo/.beads/hooks`), so worktrees inherit parent hooks via
+shared git config — no on-disk `.beads/` is needed inside a worktree. Since
+`xtrm-cbjo` (xtrm-tools commit `937b151`) and `unitAI-yvqmf` (specialists commit
+`986bc8e4`), `xt claude` / `xt pi` / `sp run` worktrees do **not** create a
+`.beads/` symlink; they `rm -rf <worktree>/.beads` and `git update-index
+--skip-worktree --` on tracked `.beads/*` paths. This eliminates the
+squash-merge `.beads`-wipe hazard documented in projects/infra PR #39.
+
+### Audit your `core.hooksPath` once (xtrm-2s44)
+
+If your bd was installed before 1.0.3, `core.hooksPath` may be the relative
+string `.beads/hooks`, which would resolve against a worktree's cwd — i.e.,
+the (now-missing) worktree-local `.beads/hooks/`. To survey:
+
+```bash
+for r in ~/dev/*/ ~/projects/*/*/; do
+  [ -d "$r/.git" ] && [ -d "$r/.beads" ] || continue
+  hp=$(git -C "$r" config core.hooksPath 2>/dev/null || echo "<unset>")
+  case "$hp" in
+    /*)              cat="ABSOLUTE" ;;
+    "<unset>")       cat="UNSET" ;;
+    .beads/hooks)    cat="RELATIVE-BD  <- needs fix" ;;
+    *)               cat="OTHER       (project .githooks chain — leave alone)" ;;
+  esac
+  printf "%-50s %s\n" "${r#$HOME/}  $cat" "$hp"
+done
+```
+
+Classification:
+- `ABSOLUTE` — correct, no action.
+- `RELATIVE-BD` (literal `.beads/hooks` or `./.beads/hooks`) — rewrite once:
+  ```bash
+  git -C <repo> config core.hooksPath "$(realpath <repo>/.beads/hooks)"
+  ```
+- `OTHER` like `.githooks` — project-specific hook chain, leave alone. bd in
+  these repos works via direct invocation (not git hooks), so worktree hygiene
+  is unaffected.
+- `UNSET` — no hooks wired anywhere; same outcome as `OTHER`.
+
+Survey across `~/dev` + `~/projects/mercury` on 2026-05-12 returned **0 repos
+needing the fix**. The safety net in `launchWorktreeSession` /
+`provisionWorktree` (`normalizeParentHooksPath`) auto-rewrites on next worktree
+creation if a relative `.beads/hooks` ever does appear, so the survey is mostly
+defensive.
+
+### Worktree-internal artifact inventory (xtrm-x80f)
+
+A worktree is a partial clone with extras: bd metadata, npm caches, runtime
+state, per-worktree settings. None of these belong on a chain branch — but
+the moment any of them get staged via `git add -A` or a checkpoint commit,
+they can ride a PR into `main`. The matrix below documents what is protected
+by which mechanism. Audit it whenever you add a new per-worktree artifact.
+
+| Artifact | Source | Mechanism in a worktree | Status |
+|----------|--------|-------------------------|--------|
+| `.beads/*` | bd tracked dir | rm + `skip-worktree` (xtrm-cbjo) | ✅ |
+| `.beads-credential-key`, `.beads/dolt-monitor.pid`, `.beads/dolt-server.activity` | bd runtime | gitignored at parent | ✅ |
+| `.pi/npm/` | npm cache | gitignored + symlink to parent | ✅ |
+| `.pi/extensions/` | pi runtime | gitignored under `.xtrm/extensions/**/.pi/` | ✅ |
+| `.specialists/default` | (xtrm-tools: untracked) | symlink to parent in worktree | ✅ |
+| `.specialists/user` | tracked (.json overrides) | symlink to parent in worktree | ⚠️ merge-hazard candidate, tracked at follow-up bead |
+| `.specialists/{jobs,ready,trace.jsonl,db/*}` | runtime state | gitignored at parent | ✅ |
+| `.claude/skills` | install symlink | gitignored | ✅ |
+| `.claude/settings.local.json` | per-worktree write (`launchWorktreeSession`) | gitignored (user-global + project) | ✅ |
+| `.claude/worktrees/`, `.claude/tdd-guard/data/` | runtime | gitignored | ✅ |
+| `.xtrm/worktrees/`, `.xtrm/skills/active/`, `.xtrm/session-meta.json`, `.xtrm/statusline-claim`, `.xtrm/debug.db` | runtime | gitignored | ✅ |
+| `AGENTS.md`, `CLAUDE.md` | tracked | gitnexus stat-counter scrubbed (xtrm-c6sf), build-gate prevents reintroduction | ✅ |
+| `.gitnexus/` | runtime | gitignored | ✅ |
+| `.dolt/`, `*.db` | runtime | gitignored | ✅ |
+
+The remaining ⚠️ is `.specialists/user/*.json`: the symlink swap in
+`ensureWorktreeSpecialists` has the same shape as the pre-fix `.beads`
+problem — a chain-branch checkpoint could capture the dir→symlink delta and
+squash-merge would wipe the parent's `.specialists/user/`. Lower urgency
+than `.beads` (smaller blast radius, files are intentional overrides) but
+worth resolving with the same skip-worktree pattern when convenient.
+
+The defense-in-depth pre-push guard in `xt end`
+(`findBeadsSymlinkIntroductions`) currently only checks `.beads/*`. Extend
+to `.specialists/*` if/when the symlink swap there becomes the next chain
+of work.
+
 ## Pre-Release Validation Methodology
 
 Before publishing a new xtrm-tools version, validate the operator-facing CLI locally

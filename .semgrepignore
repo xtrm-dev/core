@@ -1,0 +1,46 @@
+# Semgrep ignores for generated, runtime, vendored, and high-noise paths.
+
+# Dependencies / build outputs
+node_modules/
+cli/node_modules/
+cli/dist/
+.pi/npm/
+cli/.pi/npm/
+
+# Runtime state and local caches
+.beads/
+.bv/
+.dolt/
+.emdash/
+.gitnexus
+.specialists/db/
+.specialists/jobs/
+.specialists/ready/
+.xtrm/cache/
+.xtrm/config/
+.xtrm/ext-src/
+.xtrm/hooks/
+.xtrm/logs/
+.xtrm/packages/
+.xtrm/skills/active/
+.xtrm/skills/optional/
+.xtrm/skills/user/
+.xtrm/state.json
+.xtrm/statusline-claim
+.xtrm/worktrees/
+
+# Scan the security-pipeline skill source, but skip other bundled default skills
+# to avoid re-scanning documentation/persona content as application code.
+.xtrm/skills/default/*
+!.xtrm/skills/default/security-pipeline
+
+# Test fixtures and snapshots — false-positive heavy.
+**/test_fixtures/
+**/snapshots/
+
+# Lock files are handled by OSV/Dependabot, not Semgrep SAST.
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+poetry.lock
+Pipfile.lock

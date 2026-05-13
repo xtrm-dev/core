@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "source": {
+    "kind": "ref",
+    "repo_path": "../specialists",
+    "source_path": "config/skills"
+  },
+  "skills": [
+    "specialists-creator",
+    "update-specialists",
+    "using-kpi",
+    "using-nodes",
+    "using-script-specialists",
+    "using-specialists",
+    "using-specialists-v2",
+    "using-specialists-v3"
+  ],
+  "files": {
+    "specialists-creator": {
+      "scripts/audit-spec-uniformity.mjs": "cfc6aa6fc89f18c2e1ddf794047b309aa8cb0185617d84545eb5cb20135d5ac4",
+      "scripts/scaffold-specialist.ts": "c1bfa3693d644072e6d387d2519e131624d99c5b85521ae638680d7485267403",
+      "scripts/validate-specialist.ts": "3a5f5a3a77c50e98ecf9188634ff2882f8143b19d0f28a53aff5c42e1bd09dfa",
+      "SKILL.md": "250cd9376b818142d1ccca71b48198086723ab2453ebac1eb69c3ba6293e9721"
+    },
+    "update-specialists": {
+      "SKILL.md": "fdf8c680cf3e5dce80c9426f52b56c953f4f7f663c23a33a3378b2b6e4bab5a9"
+    },
+    "using-kpi": {
+      "SKILL.md": "dc22c51783b5bfb787c5bb10f46d3585151a33a3486e76ae38e3f43fb09f03bb"
+    },
+    "using-nodes": {
+      "SKILL.md": "742e9d2ad512a05c86855b88ae65f9065370876d9e7c1b10db2b68958248bc7b"
+    },
+    "using-script-specialists": {
+      "SKILL.md": "b73f6113a76c598cd6cf4fc9a910df0ca6cedba5e8280b0028df1ca2fe86187d"
+    },
+    "using-specialists": {
+      "evals/evals.json": "d69d2ee9e9cb3739ca38cc8d5d73a12845c99c8c0e2da721b0ee1db10fb17bab",
+      "SKILL.md": "5072d3356f9741557fba1b1419614301277f807c0799976099b9226c6f542e3f"
+    },
+    "using-specialists-v2": {
+      "SKILL.md": "45fd944558a8008046f6a3624b97f26b48b0ea72095bf722024490f7b069bc59"
+    },
+    "using-specialists-v3": {
+      "evals/evals.json": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
+      "SKILL.md": "880ff914e97a8a212024276f2845976257aa0e4ab79e025c9870f59bbbc0f31a"
+    }
+  }
+}
