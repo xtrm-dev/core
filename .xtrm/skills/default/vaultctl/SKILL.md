@@ -21,13 +21,13 @@ No server, no embeddings, no container — fast local BM25 search with full CRUD
 ```toml
 [[sources]]
 id = "vault"
-root = "/home/dawid/second-mind"
+root = "$HOME/second-mind"
 include_glob = "**/*.md"
 exclude_glob = ".worktrees/**"
 
 [[sources]]
 id = "transcripts"
-root = "/home/dawid/dev/transcriptoz/transcripts"
+root = "$HOME/dev/transcriptoz/transcripts"
 include_glob = "**/*.analysis.md"
 ```
 
