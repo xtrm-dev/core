@@ -1,0 +1,57 @@
+name: Pre-publish readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      specialists_ref:
+        description: Specialists ref to inspect
+        required: false
+        default: master
+        type: string
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Checkout specialists source
+        uses: actions/checkout@v4
+        with:
+          repository: Jaggerxtrm/specialists
+          ref: ${{ inputs.specialists_ref }}
+          path: specialists-src
+
+      - name: Record specialists source
+        shell: bash
+        env:
+          SPECIALISTS_REF: ${{ inputs.specialists_ref }}
+        run: |
+          echo "specialists_ref=$SPECIALISTS_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "specialists_sha=$(git -C specialists-src rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "SPECIALISTS_REPO_PATH=$GITHUB_WORKSPACE/specialists-src" >> "$GITHUB_ENV"
+
+      - name: Check payload hygiene
+        run: npm run check:payload-hygiene
+
+      - name: Check asset contract
+        run: node scripts/verify-asset-contract.mjs --contract ./specialists-src/dist/asset-contract.json --vendor-root .xtrm/skills/default
+
+      - name: Readiness checklist
+        shell: bash
+        run: |
+          cat <<'TXT'
+          Run fresh-machine smoke gate before tag:
+          1. open .github/workflows/fresh-machine-smoke.yml
+          2. dispatch fresh-machine smoke workflow with same release ref
+          3. confirm payload hygiene + asset contract + smoke all pass
+          TXT

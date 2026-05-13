@@ -2,6 +2,7 @@
   "version": 1,
   "source": {
     "kind": "ref",
+    "ref": "master",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
