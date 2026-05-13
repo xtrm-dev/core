@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findAbsolutePathLeaks, findForbiddenPackFiles } from '../check-payload-hygiene.mjs';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { findAbsolutePathLeaks, findForbiddenPackFiles, readTarballFile } from '../check-payload-hygiene.mjs';
 
 test('flags forbidden packed paths', () => {
   const hits = findForbiddenPackFiles([
@@ -42,4 +46,22 @@ test('reports both denylist hits and absolute-path leaks together', () => {
   assert.equal(leaks.length, 1);
   assert.equal(forbidden[0].filePath, '.pi/logs/run.log');
   assert.equal(leaks[0].filePath, 'README.md');
+});
+
+test('reads large tarball files without buffer exhaustion', async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-payload-test-'));
+  try {
+    const packageDir = path.join(tempDir, 'package');
+    await fs.mkdir(packageDir);
+    const bigFilePath = path.join(packageDir, 'big.txt');
+    await fs.writeFile(bigFilePath, 'x'.repeat(2 * 1024 * 1024 + 1));
+
+    const tarballPath = path.join(tempDir, 'payload.tgz');
+    execFileSync('tar', ['-czf', tarballPath, '-C', tempDir, 'package']);
+
+    const content = readTarballFile(tarballPath, 'big.txt');
+    assert.equal(content.length, 2 * 1024 * 1024 + 1);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 });
