@@ -32,7 +32,7 @@ const assets = {
   },
 };
 
-const packExclusionPatterns = packageJson.files
+const packExclusionPatterns = (packageJson.files ?? [])
   .filter((entry) => typeof entry === 'string' && entry.startsWith('!'))
   .map((entry) => entry.slice(1));
 
