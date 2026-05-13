@@ -9,6 +9,7 @@ import { checkRuntimeSkillsViews, type RuntimeViewCheckResult } from '../core/sk
 import { getXtManagedPiPackageDoctorReport, type XtManagedPiPackageDoctorReport } from '../core/pi-runtime.js';
 import { discoverDefaultSkills, type DiscoveredSkill } from '../core/skill-discovery.js';
 import { ensureBeadsSharedServerEnabled, hasBeadsDir, type SharedBeadsServerState } from '../core/beads-shared-server.js';
+import { findProjectRoot } from '../utils/repo-root.js';
 
 interface CheckJson {
   managed_sections: Array<{ name: string; version: string; canonical_version: string | null }>;
@@ -182,6 +183,17 @@ async function loadRegistry(cwd: string): Promise<RegistryManifest> {
   return fs.readJson(path.join(cwd, '.xtrm', 'registry.json')) as Promise<RegistryManifest>;
 }
 
+async function resolveDoctorCwd(optsCwd?: string): Promise<string> {
+  const cwd = optsCwd ? path.resolve(optsCwd) : await findProjectRoot();
+  const registryPath = path.join(cwd, '.xtrm', 'registry.json');
+
+  if (!(await fs.pathExists(registryPath))) {
+    throw new Error(`Not inside an xtrm project: ${cwd}`);
+  }
+
+  return cwd;
+}
+
 async function readSpecialistsSkillNames(repoPath: string): Promise<string[]> {
   const skillsRoot = path.join(repoPath, 'config', 'skills');
   if (!await fs.pathExists(skillsRoot)) return [];
@@ -313,7 +325,7 @@ export function createDoctorCommand(): Command {
     .option('--json', 'Output machine-readable JSON', false)
     .option('--check-drift', 'Exit non-zero on any drift, missing, extra, or duplicate')
     .action(async (opts: { cwd?: string; json?: boolean; checkDrift?: boolean }) => {
-      const cwd = path.resolve(opts.cwd ?? process.cwd());
+      const cwd = await resolveDoctorCwd(opts.cwd);
       const registry = await loadRegistry(cwd);
       const drift = await checkDrift(path.join(cwd, '.xtrm', 'registry.json'), path.join(cwd, '.xtrm'));
       const runtimeView = await checkRuntimeSkillsViews(cwd);
