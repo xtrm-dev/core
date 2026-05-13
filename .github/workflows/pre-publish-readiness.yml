@@ -29,17 +29,21 @@ jobs:
         env:
           INPUT_REF: ${{ inputs.specialists_ref }}
         run: |
+          # Prefer the immutable resolved_sha (matches the mirror by
+          # construction) unless the operator passed an explicit override.
           if [ -n "$INPUT_REF" ]; then
-            ref="$INPUT_REF"
+            resolved="$INPUT_REF"
           else
-            ref="$(jq -er '.source.ref' .xtrm/specialists-source.json)"
+            sha="$(jq -r '.source.resolved_sha // empty' .xtrm/specialists-source.json)"
+            ref="$(jq -r '.source.ref // empty' .xtrm/specialists-source.json)"
+            resolved="${sha:-$ref}"
           fi
-          if [ -z "$ref" ] || [ "$ref" = "null" ]; then
+          if [ -z "$resolved" ]; then
             echo "::error::could not resolve specialists ref" >&2
             exit 1
           fi
-          echo "specialists_ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Resolved specialists ref: $ref"
+          echo "specialists_ref=$resolved" >> "$GITHUB_OUTPUT"
+          echo "Resolved specialists ref: $resolved"
 
   fresh_machine_smoke:
     needs: resolve_ref
