@@ -132,7 +132,7 @@
           "version": "0.7.17"
         },
         "creating-service-skills/scripts/scaffolder.py": {
-          "hash": "744a81bf17d69b797e298d203f3403c5222580f112b1fd2c2fe9ce28cdde5d31",
+          "hash": "0f74c7dc47497e1f046c784b740d4d141c4401031ab4309983d16c9b8cd5548e",
           "version": "0.7.17"
         },
         "creating-service-skills/SKILL.md": {
@@ -247,26 +247,6 @@
           "hash": "148a1e54e5b646a6909bd40dcb5ab0a8f0825a35a68fd2449bca51b5f476abb4",
           "version": "0.7.17"
         },
-        "documenting/tests/integration_test.sh": {
-          "hash": "8fe051f89b12bb577c1abcbb18954f99f89ee1207d1e8b3352c78ac44d1f183f",
-          "version": "0.7.17"
-        },
-        "documenting/tests/test_changelog.py": {
-          "hash": "64cbae3d9a525f477196f65c3eb5765b12ddad59bf52931d7bc103798aa75bae",
-          "version": "0.7.17"
-        },
-        "documenting/tests/test_drift_detector.py": {
-          "hash": "a71af3d0c1489fc3387031786b0d32453301994b15469016f0aa7c92877c1305",
-          "version": "0.7.17"
-        },
-        "documenting/tests/test_orchestrator.py": {
-          "hash": "8ad8d56ee9ad0d48a6b447844a4a4676d867c29c3bfff280f397e7f4c972f2fa",
-          "version": "0.7.17"
-        },
-        "documenting/tests/test_validate_metadata.py": {
-          "hash": "51e54116f7f9fe78ca913d122b9c436cabaaba9cebe8f31a46f89cba556dfe03",
-          "version": "0.7.17"
-        },
         "find-docs/SKILL.md": {
           "hash": "344d9b44f573c1ef28ab56754a9cf6f08cf4521fb95babbc2e509be38f65333f",
           "version": "0.7.17"
@@ -332,7 +312,7 @@
           "version": "0.7.17"
         },
         "hook-development/references/patterns.md": {
-          "hash": "315e63e4118ac039f1b2085b14afd4fdc759f009cb287c83dab41bbcec100c80",
+          "hash": "d5dc513af7756dff436bcf5fe09ee4d9a87dfb7d410b83029c64492c90da377c",
           "version": "0.7.17"
         },
         "hook-development/scripts/hook-linter.sh": {
@@ -612,7 +592,7 @@
           "version": "0.7.17"
         },
         "last30days/scripts/test-v1-vs-v2.sh": {
-          "hash": "46c940c8ff182bd8b5ceaf644ed6f3573295331b81c44ab58f2038efcc74bce9",
+          "hash": "01013eda215cf8979ceac30e6ad2ca54da2f7669faeba67640793408825a1a40",
           "version": "0.7.17"
         },
         "last30days/scripts/watchlist.py": {
@@ -621,10 +601,6 @@
         },
         "last30days/SKILL.md": {
           "hash": "a437a67e7ae741b2ceaee35740a535a65e8f8aadf14d479d378616c7ccc46232",
-          "version": "0.7.17"
-        },
-        "planning/evals/evals.json": {
-          "hash": "d8cdaeebbf23c6e59ed182f34a64cf40a556d863a0b237aff5d175015289c8a2",
           "version": "0.7.17"
         },
         "planning/SKILL.md": {
@@ -683,60 +659,8 @@
           "hash": "0570f34a7fbca7f4a53fd751503a78152401b0697e95baf06bf1c221b1000f83",
           "version": "0.7.17"
         },
-        "quality-gates/evals/evals.json": {
-          "hash": "2997124435c7cb6b773ae176d7475e76fd9299e7faa8436d27d745698b0d6ed2",
-          "version": "0.7.17"
-        },
         "quality-gates/README.md": {
           "hash": "f161db6c1c6b6cea904057bb89dba559d8518d8e1bdbba7838a343162c4e6cf5",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/edge-case-auto-fix-verification/with_skill/outputs/response.md": {
-          "hash": "be1bd60d6f7e820c9cbb4d6b0b154ebd60531e7cf30070914f88d0171e56dfb7",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/edge-case-mixed-language-project/with_skill/outputs/response.md": {
-          "hash": "b04e06a67b8b3746c0abffcd1c1769172ecd71f298c29348758df04842159fee",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/eval-summary.md": {
-          "hash": "65f0689c54e6f6eda68d0a86a1cef83324e11f9128ddc07c67339fddfaf156de",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/FINAL-EVAL-SUMMARY.md": {
-          "hash": "e336e5c7b936fc110076c3e18417db685a187b61c31de6c160bcb1f192aa4dab",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/partial-install-python-only/with_skill/outputs/response.md": {
-          "hash": "3f00e57f56e8364b62af15d9ec247f6d2d22568cc115ff855248d2f8febf071a",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/python-refactor-request/with_skill/outputs/response.md": {
-          "hash": "6b24e12b82fd005784c9e538eca76b94819880f21e71886aecb962e504eee078",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/quality-gate-error-fix/with_skill/outputs/response.md": {
-          "hash": "56e4170d3093952d223cab07d36003773e52951ba4a474c52c7d87ed287f4b9b",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/should-not-trigger-general-chat/with_skill/outputs/response.md": {
-          "hash": "7fc4b4166bc7b4d2c4986688a064c1954cf7a61830b797be0d9b73293f500a61",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/should-not-trigger-math-question/with_skill/outputs/response.md": {
-          "hash": "1704dc4936ba99371f72ad2af257e88ecd7ce31503e94db5e8331559e86a5432",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/should-not-trigger-unrelated-coding/with_skill/outputs/response.md": {
-          "hash": "584b15e74029287511c57eee9095638ad3ce503ed144c6fc2843f9c8382f84b4",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/tdd-guard-blocking-confusion/with_skill/outputs/response.md": {
-          "hash": "ce0b097032c05e32bb129f8cf50b7de41fbe2d2eb3a16eba79236dcc70cd5f10",
-          "version": "0.7.17"
-        },
-        "quality-gates/workspace/iteration-1/typescript-feature-with-tests/with_skill/outputs/response.md": {
-          "hash": "dbb5fdd2b2cde70654ba45440172437de10f7418f6be8057893cce36dcec3854",
           "version": "0.7.17"
         },
         "README.txt": {
@@ -923,10 +847,6 @@
           "hash": "250cd9376b818142d1ccca71b48198086723ab2453ebac1eb69c3ba6293e9721",
           "version": "0.7.17"
         },
-        "sync-docs/evals/evals.json": {
-          "hash": "3790cb952840849d762b74be66fabf91f745400f519524c9e234c258cc502c0c",
-          "version": "0.7.17"
-        },
         "sync-docs/references/doc-structure.md": {
           "hash": "bd30ca7777262b582c95d72a9507ad307aad21b806594ee98d855449763a6247",
           "version": "0.7.17"
@@ -967,10 +887,6 @@
           "hash": "ebcdfe1f4d8e752e1a594ac32fcac2cf7d7817f65202b90fe4d58b266cf8fd33",
           "version": "0.7.17"
         },
-        "test-planning/evals/evals.json": {
-          "hash": "e3b6096d7d7cabed1a3c43ac04981a9bd33c0baa88fa82c567de9daff54be053",
-          "version": "0.7.17"
-        },
         "test-planning/SKILL.md": {
           "hash": "aecc048749a0dcbe9115d87c0a01729a7c7ca51dbb5ea8b8a25a35638f88c4ac",
           "version": "0.7.17"
@@ -980,7 +896,7 @@
           "version": "0.7.17"
         },
         "update-xt/SKILL.md": {
-          "hash": "c0cf987bcb4698069cef1d498bf605f0e71ae46c9599daadb66bc58cd801a20f",
+          "hash": "e88b4bd6864f6ad341b6f6e7cabaf946665316354f7c46027211fa77d5312d00",
           "version": "0.7.17"
         },
         "updating-service-skills/scripts/drift_detector.py": {
@@ -1015,10 +931,6 @@
           "hash": "0e0dc7f15357580f0914f1dde7b00dbc3f757b16dba4623d9c7d8b303815b267",
           "version": "0.7.17"
         },
-        "using-service-skills/scripts/test_skill_activator.py": {
-          "hash": "484d957d7682a5f604d3bbc314c448d85ab78766ecb2f6fff3e7990692d1a8cd",
-          "version": "0.7.17"
-        },
         "using-service-skills/SKILL.md": {
           "hash": "3ca830174c3bf13ce573443618b43c5b03575f0cd13660c3206dd3eae21c39a7",
           "version": "0.7.17"
@@ -1027,16 +939,8 @@
           "hash": "45fd944558a8008046f6a3624b97f26b48b0ea72095bf722024490f7b069bc59",
           "version": "0.7.17"
         },
-        "using-specialists-v3/evals/evals.json": {
-          "hash": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
-          "version": "0.7.17"
-        },
         "using-specialists-v3/SKILL.md": {
           "hash": "880ff914e97a8a212024276f2845976257aa0e4ab79e025c9870f59bbbc0f31a",
-          "version": "0.7.17"
-        },
-        "using-specialists/evals/evals.json": {
-          "hash": "d69d2ee9e9cb3739ca38cc8d5d73a12845c99c8c0e2da721b0ee1db10fb17bab",
           "version": "0.7.17"
         },
         "using-specialists/SKILL.md": {
@@ -1052,7 +956,7 @@
           "version": "0.7.17"
         },
         "vaultctl/SKILL.md": {
-          "hash": "01e34e64c3ae360c9c424ed9e63aaee96dcf6fa32b873665e60a07287c416902",
+          "hash": "fe4e5287982be10acc2439727b4b8add7052b037a7c67fb48e7bcf214cc54214",
           "version": "0.7.17"
         },
         "xt-debugging/SKILL.md": {
