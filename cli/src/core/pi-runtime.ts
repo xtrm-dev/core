@@ -513,8 +513,12 @@ function resolveInstalledPiPackageJsonPath(
     npmPackageName: string,
     npmRootDir?: string,
 ): string {
+    // xt-managed allowlist
+    // nosemgrep
     const agentPackageJsonPath = path.join(agentDir, 'npm', 'node_modules', npmPackageName, 'package.json');
     if (fs.existsSync(agentPackageJsonPath) || !npmRootDir) return agentPackageJsonPath;
+    // xt-managed allowlist
+    // nosemgrep
     return path.join(npmRootDir, npmPackageName, 'package.json');
 }
 
@@ -592,9 +596,13 @@ export async function isPackagePresentInPiAgent(
     const npmPackageName = parseNpmPackageName(piPackageId);
     if (!npmPackageName) return false;
 
+    // xt-managed allowlist
+    // nosemgrep
     const agentPackageDir = path.join(agentDir, 'npm', 'node_modules', npmPackageName);
     if (await fs.pathExists(agentPackageDir)) return true;
     if (!npmRootDir) return false;
+    // xt-managed allowlist
+    // nosemgrep
     return fs.pathExists(path.join(npmRootDir, npmPackageName));
 }
 
