@@ -44,6 +44,16 @@ describe('pi runtime safeguards', () => {
     expect(getPiPackageInstallFailureHint('npm:pi-gitnexus', output)).toEqual([]);
   });
 
+  it('resolves npm-backed pi packages from global npm root when agent tree is absent', async () => {
+    const { getInstalledPiPackageVersion, isPackagePresentInPiAgent } = await import('../core/pi-runtime.js');
+    const npmRootDir = path.join(tempRoot, 'global-npm-root', 'node_modules');
+    const packageDir = path.join(npmRootDir, '@zenobius', 'pi-worktrees');
+    await fs.outputJson(path.join(packageDir, 'package.json'), { version: '2.3.4' });
+
+    await expect(getInstalledPiPackageVersion(process.env.PI_AGENT_DIR as string, '@zenobius/pi-worktrees', npmRootDir)).resolves.toBe('2.3.4');
+    await expect(isPackagePresentInPiAgent(process.env.PI_AGENT_DIR as string, 'npm:@zenobius/pi-worktrees', npmRootDir)).resolves.toBe(true);
+  });
+
   it('classifies managed npm-backed pi package freshness with an injectable provider', async () => {
     const { getManagedPiPackageFreshness } = await import('../core/pi-runtime.js');
 
