@@ -189,7 +189,8 @@ function resolveHooksForProjectRuntime(hooks: Record<string, HookWrapper[]>, pro
     const rewrittenHooks: Record<string, HookWrapper[]> = {};
 
     for (const [eventName, wrappers] of Object.entries(hooks)) {
-        rewrittenHooks[eventName] = wrappers.map(wrapper => ({
+        const wrapperList = Array.isArray(wrappers) ? wrappers : [wrappers as HookWrapper];
+        rewrittenHooks[eventName] = wrapperList.map(wrapper => ({
             ...wrapper,
             hooks: wrapper.hooks.map(hook => {
                 if (hook.type !== 'command') {
