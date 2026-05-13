@@ -168,12 +168,16 @@ describe('xt init banner non-blocking', () => {
 
     it('xt init --yes bypasses confirmation and completes quickly', () => {
         // This test may fail if external tools (bd, gitnexus) aren't available
-        // but should not hang waiting for confirmation
+        // but should not hang waiting for confirmation.
+        // Wall-clock can reach ~30s on slow CI runners because spawnSync's
+        // timeout cleanup waits for the child after SIGTERM; the assertion
+        // we care about is "no interactive prompt", not "init was fast".
+        // Bump vitest test timeout to 60s so we don't flake on CI. (xtrm-qdsx)
         const r = run(['init', '--yes'], { cwd: repoDir, timeout: 15000 });
         // Should not hang on confirmation prompt
         const combined = r.stdout + r.stderr;
         expect(combined).not.toMatch(/press any key|continue\?/i);
-    });
+    }, 60000);
 });
 
 describe('xt init confirmation gate', () => {

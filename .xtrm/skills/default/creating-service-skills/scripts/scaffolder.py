@@ -56,13 +56,10 @@ def validate_service_id(service_id: str) -> None:
 
 def ensure_legacy_symlink(target_dir: Path, legacy_dir: Path, pack_root: Path) -> None:
     resolved_target = target_dir.resolve(strict=False)
-    resolved_legacy = legacy_dir.resolve(strict=False)
     resolved_pack_root = pack_root.resolve(strict=False)
 
     if resolved_pack_root not in resolved_target.parents and resolved_target != resolved_pack_root:
         raise ValueError(f"legacy symlink target must stay within {resolved_pack_root}")
-    if resolved_pack_root not in resolved_legacy.parents and resolved_legacy != resolved_pack_root:
-        raise ValueError(f"legacy symlink path must stay within {resolved_pack_root}")
 
     if legacy_dir.is_symlink():
         legacy_dir.unlink()
