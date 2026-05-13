@@ -54185,6 +54185,12 @@ function resolveManagedPiCoreSourceDir(pkgRoot = resolvePkgRoot()) {
 var PI_AGENT_DIR = process.env.PI_AGENT_DIR || import_path4.default.join((0, import_node_os.homedir)(), ".pi", "agent");
 var PI_MCP_ADAPTER_OVERRIDE_DIR = import_path4.default.join(PI_AGENT_DIR, "extensions", "pi-mcp-adapter");
 var PI_MCP_ADAPTER_REQUIRED_ENTRY = "commands.js";
+async function resolveGlobalNpmRootDir() {
+  const result = (0, import_child_process2.spawnSync)("npm", ["root", "-g"], { encoding: "utf8", stdio: "pipe" });
+  if (result.status !== 0) return null;
+  const npmRootDir = (result.stdout ?? "").trim();
+  return npmRootDir.length > 0 ? npmRootDir : null;
+}
 var PROJECT_EXTENSIONS_ENTRY = "../.xtrm/extensions";
 var PROJECT_SKILLS_ENTRY = "../.xtrm/skills/active";
 var PROJECT_EXTENSION_PACKAGE_ID = "npm:@jaggerxtrm/pi-extensions";
@@ -54400,8 +54406,13 @@ function classifyPiPackageFreshness(info) {
   if (!info.expectedVersion) return "version-unknown";
   return info.installedVersion === info.expectedVersion ? "current" : "outdated";
 }
-async function getInstalledPiPackageVersion(agentDir, npmPackageName) {
-  const packageJsonPath = import_path4.default.join(agentDir, "npm", "node_modules", npmPackageName, "package.json");
+function resolveInstalledPiPackageJsonPath(agentDir, npmPackageName, npmRootDir) {
+  const agentPackageJsonPath = import_path4.default.join(agentDir, "npm", "node_modules", npmPackageName, "package.json");
+  if (import_fs_extra8.default.existsSync(agentPackageJsonPath) || !npmRootDir) return agentPackageJsonPath;
+  return import_path4.default.join(npmRootDir, npmPackageName, "package.json");
+}
+async function getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir) {
+  const packageJsonPath = resolveInstalledPiPackageJsonPath(agentDir, npmPackageName, npmRootDir);
   if (!await import_fs_extra8.default.pathExists(packageJsonPath)) return null;
   try {
     const packageJson = await import_fs_extra8.default.readJson(packageJsonPath);
@@ -54448,11 +54459,13 @@ async function getManagedPiPackageFreshness(versionProvider, packages = getXtMan
   }
   return statuses;
 }
-async function isPackagePresentInPiAgent(agentDir, piPackageId) {
+async function isPackagePresentInPiAgent(agentDir, piPackageId, npmRootDir) {
   const npmPackageName = parseNpmPackageName(piPackageId);
   if (!npmPackageName) return false;
-  const packageDir = import_path4.default.join(agentDir, "npm", "node_modules", npmPackageName);
-  return import_fs_extra8.default.pathExists(packageDir);
+  const agentPackageDir = import_path4.default.join(agentDir, "npm", "node_modules", npmPackageName);
+  if (await import_fs_extra8.default.pathExists(agentPackageDir)) return true;
+  if (!npmRootDir) return false;
+  return import_fs_extra8.default.pathExists(import_path4.default.join(npmRootDir, npmPackageName));
 }
 var NPMJS_REGISTRY_URL = "https://registry.npmjs.org";
 function runPiPackageInstall(piPackageId, env3) {
@@ -54513,8 +54526,9 @@ function installPiPackageWithFallback(piPackageId, log, installRunner = runPiPac
 async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall) {
   const installed = [];
   const failed = [];
+  const npmRootDir = await resolveGlobalNpmRootDir();
   for (const pkg of getXtManagedPiPackages()) {
-    if (await isPackagePresentInPiAgent(agentDir, pkg.id)) {
+    if (await isPackagePresentInPiAgent(agentDir, pkg.id, npmRootDir ?? void 0)) {
       continue;
     }
     if (dryRun) {
@@ -54535,11 +54549,15 @@ async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR
   }
   return { installed, failed };
 }
-async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, versionProvider = async (_piPackageId, npmPackageName) => ({
-  installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName),
-  expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
-})) {
-  const statuses = await getManagedPiPackageFreshness(versionProvider);
+async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, versionProvider) {
+  const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => {
+    const npmRootDir = await resolveGlobalNpmRootDir();
+    return {
+      installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? void 0),
+      expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
+    };
+  });
+  const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider);
   const missing = statuses.filter((status) => status.state === "missing");
   const outdated = statuses.filter((status) => status.state === "outdated");
   const installed = [];
@@ -54570,7 +54588,7 @@ async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, i
   return { statuses, missing, outdated, installed, refreshed, failed };
 }
 async function getXtManagedPiPackageDoctorReport(versionProvider = async (_piPackageId, npmPackageName) => ({
-  installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName),
+  installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName, await resolveGlobalNpmRootDir() ?? void 0),
   expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
 })) {
   const statuses = await getManagedPiPackageFreshness(versionProvider, getXtManagedPiPackages());
