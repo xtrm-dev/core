@@ -1,0 +1,111 @@
+name: Fresh-machine smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      specialists_ref:
+        description: specialists ref to checkout and pack when tarball URL not provided
+        required: false
+        default: master
+        type: string
+      specialists_tarball_url:
+        description: optional tarball URL or local path for specialists package
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout xtrm-tools
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Use Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Isolate npm cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm config set cache "$(mktemp -d)" --global
+
+      - name: Pack xtrm-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --json > /tmp/xtrm-pack.json
+          cp "$(node -e "const fs=require('fs'); const entries=JSON.parse(fs.readFileSync('/tmp/xtrm-pack.json','utf8')); console.log(entries[0].filename)")" /tmp/xtrm-tools.tgz
+
+      - name: Checkout specialists source
+        if: ${{ inputs.specialists_tarball_url == '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: Jaggerxtrm/specialists
+          ref: ${{ inputs.specialists_ref }}
+          path: specialists-src
+
+      - name: Prepare specialists tarball
+        shell: bash
+        env:
+          SPECIALISTS_TARBALL_URL: ${{ inputs.specialists_tarball_url }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$SPECIALISTS_TARBALL_URL" ]]; then
+            if [[ "$SPECIALISTS_TARBALL_URL" =~ ^https?:// ]]; then
+              curl -fsSL "$SPECIALISTS_TARBALL_URL" -o /tmp/specialists.tgz
+            else
+              cp "$SPECIALISTS_TARBALL_URL" /tmp/specialists.tgz
+            fi
+            exit 0
+          fi
+
+          pushd specialists-src >/dev/null
+          npm pack --json > /tmp/specialists-pack.json
+          filename="$(node -e "const fs=require('fs'); const entries=JSON.parse(fs.readFileSync('/tmp/specialists-pack.json','utf8')); console.log(entries[0].filename)")"
+          cp "$filename" /tmp/specialists.tgz
+          popd >/dev/null
+
+      - name: Install tarballs globally
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g /tmp/xtrm-tools.tgz /tmp/specialists.tgz
+
+      - name: Run smoke flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_dir="$(mktemp -d)"
+          printf '%s' "$repo_dir" > /tmp/fresh-machine-repo-dir
+          git init "$repo_dir"
+          cd "$repo_dir"
+          xt install >/tmp/xt-install.log 2>&1
+          xt init >/tmp/xt-init.log 2>&1
+          xt doctor --cwd . --json >/tmp/xt-doctor-1.log 2>&1
+          xt update --apply --repo . >/tmp/xt-update.log 2>&1
+          xt doctor --cwd . --json >/tmp/xt-doctor-2.log 2>&1
+          sp init >/tmp/sp-init.log 2>&1
+          sp doctor >/tmp/sp-doctor.log 2>&1
+          sp list >/tmp/sp-list.log 2>&1
+
+      - name: Validate smoke assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_dir="$(cat /tmp/fresh-machine-repo-dir)"
+          cd "$repo_dir"
+          test -f .xtrm/registry.json
+          test -f .xtrm/skills/default/using-specialists-v3/SKILL.md
+          test -f .xtrm/skills/default/update-specialists/SKILL.md
+          ! find .xtrm -type l | grep -q .
+          ! grep -R "Source and destination must not be the same" /tmp/xt-install.log /tmp/xt-init.log /tmp/xt-doctor-1.log /tmp/xt-update.log /tmp/xt-doctor-2.log /tmp/sp-init.log /tmp/sp-doctor.log /tmp/sp-list.log
+          test -s /tmp/sp-doctor.log
