@@ -83,8 +83,14 @@ function listTarballFiles(tarballPath) {
   return output.trim().split('\n').filter(Boolean).map((entry) => entry.replace(/^package\//, ''));
 }
 
-function readTarballFile(tarballPath, filePath) {
-  return execFileSync('tar', ['-xOf', tarballPath, `package/${filePath}`], { encoding: 'utf8' });
+const TAR_READ_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
+export function readTarballFile(tarballPath, filePath) {
+  // Large packed files need more than execFileSync default 1MB buffer.
+  return execFileSync('tar', ['-xOf', tarballPath, `package/${filePath}`], {
+    encoding: 'utf8',
+    maxBuffer: TAR_READ_MAX_BUFFER_BYTES,
+  });
 }
 
 async function main() {
