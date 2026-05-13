@@ -6,6 +6,7 @@
  */
 
 import { spawnSync } from 'child_process';
+import path from 'node:path';
 import kleur from 'kleur';
 import { t } from '../utils/theme.js';
 
@@ -163,6 +164,25 @@ export interface BootstrapPlan {
     allRequiredPresent: boolean;
     allPresent: boolean;
 }
+
+// Directories that install steps may write to but may NOT be in PATH yet
+// in the same process (notably on fresh CI runners where ~/.local/bin is
+// only added by .profile, which non-interactive shells don't source).
+// We extend PATH once on module load so spawnSync can find them.
+const FALLBACK_BIN_DIRS = [
+    `${process.env.HOME ?? ''}/.local/bin`,
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+].filter(Boolean);
+
+(function extendPathOnce(): void {
+    const currentPath = process.env.PATH ?? '';
+    const existing = new Set(currentPath.split(path.delimiter));
+    const additions = FALLBACK_BIN_DIRS.filter(dir => !existing.has(dir));
+    if (additions.length > 0) {
+        process.env.PATH = [currentPath, ...additions].filter(Boolean).join(path.delimiter);
+    }
+})();
 
 function checkDep(dep: ManagedDependency): DependencyStatus {
     const result = spawnSync(dep.cli, [dep.versionFlag], {

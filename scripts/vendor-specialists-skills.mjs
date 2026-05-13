@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,13 +43,39 @@ function getSpecialistsSkillNames(manifest) {
 function parseArgs(argv) {
   const source = { kind: 'repo' };
 
-  for (const value of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const value = argv[i];
     if (value === '--specialists-tarball' || value.startsWith('--specialists-tarball=')) source.kind = 'tarball';
     else if (value === '--specialists-package' || value.startsWith('--specialists-package=')) source.kind = 'package';
-    else if (value === '--specialists-ref' || value.startsWith('--specialists-ref=')) source.kind = 'ref';
+    else if (value === '--specialists-ref') {
+      source.kind = 'ref';
+      source.ref = argv[++i];
+    } else if (value.startsWith('--specialists-ref=')) {
+      source.kind = 'ref';
+      source.ref = value.slice('--specialists-ref='.length);
+    }
   }
 
   return source;
+}
+
+async function resolveCommitSha(specialistsRepoPath) {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', specialistsRepoPath, 'rev-parse', 'HEAD']);
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+async function resolveCommitRef(specialistsRepoPath) {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', specialistsRepoPath, 'rev-parse', '--abbrev-ref', 'HEAD']);
+    const ref = stdout.trim();
+    return ref === 'HEAD' ? null : ref;
+  } catch {
+    return null;
+  }
 }
 
 async function resolveSpecialistsRepoPath() {
@@ -122,13 +152,20 @@ async function buildManifest(source, specialistsRepoPath, specialistsSkillsRoot,
     files[skillName] = sortObject(hashes);
   }
 
+  const resolvedSha = await resolveCommitSha(specialistsRepoPath);
+  const detectedRef = source.ref ?? (await resolveCommitRef(specialistsRepoPath));
+
+  const sourceBlock = {
+    ...source,
+    ...(detectedRef ? { ref: detectedRef } : {}),
+    ...(resolvedSha ? { resolved_sha: resolvedSha } : {}),
+    repo_path: path.relative(repoRoot, specialistsRepoPath).split(path.sep).join('/'),
+    source_path: path.relative(specialistsRepoPath, specialistsSkillsRoot).split(path.sep).join('/'),
+  };
+
   return {
     version: 1,
-    source: {
-      ...source,
-      repo_path: path.relative(repoRoot, specialistsRepoPath).split(path.sep).join('/'),
-      source_path: path.relative(specialistsRepoPath, specialistsSkillsRoot).split(path.sep).join('/'),
-    },
+    source: sourceBlock,
     skills: skillNames,
     files,
   };

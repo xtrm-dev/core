@@ -1,20 +1,74 @@
 name: Pre-publish readiness
 
+# Operator-triggered dry-run of the publish gate chain. Runs the EXACT
+# same gates as publish.yml minus npm publish itself. Use this before
+# tagging a release to confirm the chain is green; reading "all jobs
+# passed" here means publish.yml will pass on the actual release.
+
 on:
   workflow_dispatch:
     inputs:
       specialists_ref:
-        description: Specialists ref to inspect
+        description: "Override specialists ref. Leave blank to use .xtrm/specialists-source.json source.ref."
         required: false
-        default: master
+        default: ""
         type: string
 
 jobs:
-  readiness:
+  resolve_ref:
+    runs-on: ubuntu-latest
+    outputs:
+      specialists_ref: ${{ steps.resolve.outputs.specialists_ref }}
+    steps:
+      - name: Checkout xtrm-tools
+        uses: actions/checkout@v4
+
+      - name: Resolve specialists ref
+        id: resolve
+        shell: bash
+        env:
+          INPUT_REF: ${{ inputs.specialists_ref }}
+        run: |
+          if [ -n "$INPUT_REF" ]; then
+            ref="$INPUT_REF"
+          else
+            ref="$(jq -er '.source.ref' .xtrm/specialists-source.json)"
+          fi
+          if [ -z "$ref" ] || [ "$ref" = "null" ]; then
+            echo "::error::could not resolve specialists ref" >&2
+            exit 1
+          fi
+          echo "specialists_ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Resolved specialists ref: $ref"
+
+  fresh_machine_smoke:
+    needs: resolve_ref
+    uses: ./.github/workflows/fresh-machine-smoke.yml
+    with:
+      specialists_ref: ${{ needs.resolve_ref.outputs.specialists_ref }}
+
+  publish_dry_run:
+    needs: [resolve_ref, fresh_machine_smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout specialists source
+        uses: actions/checkout@v4
+        with:
+          repository: Jaggerxtrm/specialists
+          ref: ${{ needs.resolve_ref.outputs.specialists_ref }}
+          path: specialists-src
+
+      - name: Record specialists source
+        shell: bash
+        env:
+          SPECIALISTS_REF: ${{ needs.resolve_ref.outputs.specialists_ref }}
+        run: |
+          echo "specialists_ref=$SPECIALISTS_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "specialists_sha=$(git -C specialists-src rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "SPECIALISTS_REPO_PATH=$GITHUB_WORKSPACE/specialists-src" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -24,34 +78,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Checkout specialists source
-        uses: actions/checkout@v4
-        with:
-          repository: Jaggerxtrm/specialists
-          ref: ${{ inputs.specialists_ref }}
-          path: specialists-src
+      - name: Build
+        run: npm run build
 
-      - name: Record specialists source
-        shell: bash
+      - name: Check skills ownership
+        run: npm run check:skills-ownership
+
+      - name: Check specialists vendor
         env:
-          SPECIALISTS_REF: ${{ inputs.specialists_ref }}
-        run: |
-          echo "specialists_ref=$SPECIALISTS_REF" >> "$GITHUB_STEP_SUMMARY"
-          echo "specialists_sha=$(git -C specialists-src rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          echo "SPECIALISTS_REPO_PATH=$GITHUB_WORKSPACE/specialists-src" >> "$GITHUB_ENV"
+          SPECIALISTS_REPO_PATH: ${{ github.workspace }}/specialists-src
+        run: npm run check:specialists-vendor
+
+      - name: Check layout guards
+        run: npm run check:layout-guards
 
       - name: Check payload hygiene
         run: npm run check:payload-hygiene
 
+      - name: Registry ↔ npm pack parity
+        run: npm run check:registry-pack-parity
+
       - name: Check asset contract
         run: node scripts/verify-asset-contract.mjs --contract ./specialists-src/dist/asset-contract.json --vendor-root .xtrm/skills/default
 
-      - name: Readiness checklist
-        shell: bash
-        run: |
-          cat <<'TXT'
-          Run fresh-machine smoke gate before tag:
-          1. open .github/workflows/fresh-machine-smoke.yml
-          2. dispatch fresh-machine smoke workflow with same release ref
-          3. confirm payload hygiene + asset contract + smoke all pass
-          TXT
+      - name: npm pack dry-run
+        run: npm pack --dry-run
+
+      - name: Readiness summary
+        if: success()
+        run: echo "✅ All publish gates green. Safe to tag and release."

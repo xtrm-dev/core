@@ -46,6 +46,11 @@
       "owner": "specialists",
       "source": "specialists",
       "kind": "skill"
+    },
+    "using-specialists-auto": {
+      "owner": "specialists",
+      "source": "specialists",
+      "kind": "skill"
     }
   },
   "mirrors": {

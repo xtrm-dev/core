@@ -3,6 +3,7 @@
   "source": {
     "kind": "ref",
     "ref": "master",
+    "resolved_sha": "9a06332254d2edd8c04b509f511b2c47dc78c708",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
@@ -13,6 +14,7 @@
     "using-nodes",
     "using-script-specialists",
     "using-specialists",
+    "using-specialists-auto",
     "using-specialists-v2",
     "using-specialists-v3"
   ],
@@ -39,12 +41,15 @@
       "evals/evals.json": "d69d2ee9e9cb3739ca38cc8d5d73a12845c99c8c0e2da721b0ee1db10fb17bab",
       "SKILL.md": "5072d3356f9741557fba1b1419614301277f807c0799976099b9226c6f542e3f"
     },
+    "using-specialists-auto": {
+      "SKILL.md": "7e5ced0726dcb1e5a7c08c8102d40f722943e5d826b9edea0e6b4c76dadb0986"
+    },
     "using-specialists-v2": {
       "SKILL.md": "45fd944558a8008046f6a3624b97f26b48b0ea72095bf722024490f7b069bc59"
     },
     "using-specialists-v3": {
       "evals/evals.json": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
-      "SKILL.md": "880ff914e97a8a212024276f2845976257aa0e4ab79e025c9870f59bbbc0f31a"
+      "SKILL.md": "be1dbea64fd7d6b5d1759a6cbfd7ad8dd41dab90ad1d029e1c57bce60b8d74b4"
     }
   }
 }
