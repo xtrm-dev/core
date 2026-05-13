@@ -97,4 +97,78 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     );
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
+
+  it('marks tracked .specialists/{default,user} paths skip-worktree on claude worktree (xtrm-6jd2)', async () => {
+    const repoRoot = path.join(tempRoot, 'repo');
+    const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-claude-spec1');
+    const gitDir = path.join(worktreePath, '.git');
+
+    await fs.ensureDir(repoRoot);
+    await fs.ensureDir(path.join(repoRoot, '.beads'));
+    await fs.ensureDir(path.join(repoRoot, '.specialists', 'default'));
+    await fs.ensureDir(path.join(repoRoot, '.specialists', 'user'));
+    await fs.writeFile(path.join(repoRoot, '.specialists', 'user', 'a.specialist.json'), '{}');
+    await fs.ensureDir(path.join(repoRoot, '.xtrm', 'worktrees'));
+    process.chdir(repoRoot);
+
+    mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+      const joinedArgs = args.join(' ');
+
+      if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
+        return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+      }
+
+      if (command === 'git' && joinedArgs === 'rev-parse --git-common-dir') {
+        return { status: 0, stdout: '.git\n', stderr: '' };
+      }
+
+      if (command === 'bd' && args[0] === 'worktree' && args[1] === 'create') {
+        fs.ensureDirSync(worktreePath);
+        fs.ensureDirSync(gitDir);
+        // Simulate bd's checkout of tracked .beads/* and .specialists/user/*.
+        fs.ensureDirSync(path.join(worktreePath, '.beads'));
+        fs.writeFileSync(path.join(worktreePath, '.beads', 'issues.jsonl'), '');
+        fs.ensureDirSync(path.join(worktreePath, '.specialists', 'user'));
+        fs.writeFileSync(path.join(worktreePath, '.specialists', 'user', 'a.specialist.json'), '{}');
+        return { status: 0, stdout: '', stderr: '' };
+      }
+
+      if (command === 'git' && joinedArgs === `-C ${worktreePath} ls-files -- .beads`) {
+        return { status: 0, stdout: '.beads/issues.jsonl\n', stderr: '' };
+      }
+
+      if (command === 'git' && joinedArgs === `-C ${worktreePath} ls-files -- .specialists/default`) {
+        return { status: 0, stdout: '', stderr: '' };
+      }
+
+      if (command === 'git' && joinedArgs === `-C ${worktreePath} ls-files -- .specialists/user`) {
+        return { status: 0, stdout: '.specialists/user/a.specialist.json\n', stderr: '' };
+      }
+
+      // ensureAgentsSkillsSymlink + claude CLI launch — return success.
+      return { status: 0, stdout: '', stderr: '' };
+    });
+
+    const exitSpy = mockProcessExit();
+    const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+    await expect(launchWorktreeSession({ runtime: 'claude', name: 'spec1' })).rejects.toThrow('exit:0');
+
+    // .specialists/user must be skip-worktree'd (matches the tracked .json file).
+    expect(mocked.spawnSync).toHaveBeenCalledWith(
+      'git',
+      ['-C', worktreePath, 'update-index', '--skip-worktree', '--', '.specialists/user/a.specialist.json'],
+      expect.objectContaining({ cwd: worktreePath }),
+    );
+
+    // .specialists/default has no tracked files in this test — verify the
+    // ls-files probe still happened so the contract is consistent.
+    expect(mocked.spawnSync).toHaveBeenCalledWith(
+      'git',
+      ['-C', worktreePath, 'ls-files', '--', '.specialists/default'],
+      expect.objectContaining({ cwd: worktreePath }),
+    );
+
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
 });

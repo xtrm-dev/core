@@ -48,4 +48,32 @@ describe('end beads symlink guard', () => {
 
     expect(findBeadsSymlinkIntroductions('/repo', 'origin/main')).toEqual(['.beads/test-symlink']);
   });
+
+  it('blocks .specialists symlink introductions (xtrm-6jd2)', async () => {
+    mockGitRawDiff(':000000 120000 0000000 abcdef2 A\t.specialists/user');
+    const { findBeadsSymlinkIntroductions } = await import('../commands/end.js');
+
+    expect(findBeadsSymlinkIntroductions('/repo', 'origin/main')).toEqual(['.specialists/user']);
+  });
+
+  it('allows normal .specialists file changes without symlink mode', async () => {
+    mockGitRawDiff(':100644 100644 abcdef1 abcdef2 M\t.specialists/user/researcher.specialist.json');
+    const { findBeadsSymlinkIntroductions } = await import('../commands/end.js');
+
+    expect(findBeadsSymlinkIntroductions('/repo', 'origin/main')).toEqual([]);
+  });
+
+  it('reports both .beads and .specialists symlinks together', async () => {
+    mockGitRawDiff(
+      ':000000 120000 0000000 aaaaaaa A\t.beads/x\n' +
+      ':000000 120000 0000000 bbbbbbb A\t.specialists/default\n' +
+      ':100644 100644 ccccccc ddddddd M\tcli/src/index.ts',
+    );
+    const { findBeadsSymlinkIntroductions } = await import('../commands/end.js');
+
+    expect(findBeadsSymlinkIntroductions('/repo', 'origin/main').sort()).toEqual([
+      '.beads/x',
+      '.specialists/default',
+    ]);
+  });
 });

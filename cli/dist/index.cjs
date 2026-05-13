@@ -55081,6 +55081,8 @@ function ensureWorktreeSpecialists(worktreePath, mainRepoPath) {
     }
     (0, import_node_fs.symlinkSync)(symlinkTarget, targetDir, "dir");
   }
+  markPathSkipWorktree(worktreePath, ".specialists/default");
+  markPathSkipWorktree(worktreePath, ".specialists/user");
 }
 function normalizeParentHooksPath(mainRepoRoot) {
   try {
@@ -55098,9 +55100,9 @@ function normalizeParentHooksPath(mainRepoRoot) {
   } catch {
   }
 }
-function markBeadsSkipWorktree(worktreePath) {
+function markPathSkipWorktree(worktreePath, pathspec) {
   try {
-    const trackedResult = (0, import_node_child_process.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
+    const trackedResult = (0, import_node_child_process.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", pathspec], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -55198,7 +55200,7 @@ async function launchWorktreeSession(opts) {
   normalizeParentHooksPath(mainRepoRoot);
   try {
     (0, import_node_fs.rmSync)(import_node_path5.default.join(worktreePath, ".beads"), { recursive: true, force: true });
-    markBeadsSkipWorktree(worktreePath);
+    markPathSkipWorktree(worktreePath, ".beads");
   } catch {
   }
   writeSessionMeta(worktreePath, runtime);
@@ -60712,9 +60714,10 @@ ${details}
   console.log(t.success(`  \u2713 Rebuilt cli/dist and committed ${stagedDist.length} file(s)`));
 }
 function findBeadsSymlinkIntroductions(cwd, upstream) {
-  const diffResult = git(["diff", "--raw", `${upstream}..HEAD`, "--", ".beads/"], cwd);
+  const guardedPrefixes = [".beads/", ".specialists/"];
+  const diffResult = git(["diff", "--raw", `${upstream}..HEAD`, "--", ...guardedPrefixes], cwd);
   if (!diffResult.ok) {
-    console.warn(kleur_default.yellow("  \u26A0 Could not inspect .beads diff for symlink mode changes; continuing safely."));
+    console.warn(kleur_default.yellow("  \u26A0 Could not inspect guarded-path diff for symlink mode changes; continuing safely."));
     return [];
   }
   return [...new Set(
@@ -60723,18 +60726,21 @@ function findBeadsSymlinkIntroductions(cwd, upstream) {
       if (!match) return [];
       const destinationMode = match[1];
       const path44 = match[3];
-      return destinationMode === "120000" && path44.startsWith(".beads/") ? [path44] : [];
+      if (destinationMode !== "120000") return [];
+      return guardedPrefixes.some((p) => path44.startsWith(p)) ? [path44] : [];
     })
   )];
 }
 function printBeadsSymlinkGuardError(paths, upstream) {
-  console.error(kleur_default.red("\n  \u2717 Refusing to push: .beads symlink mode change detected\n"));
+  console.error(kleur_default.red("\n  \u2717 Refusing to push: guarded-path symlink mode change detected\n"));
   for (const path44 of paths) {
     console.error(kleur_default.red(`    ${path44}`));
   }
+  const affectedPrefixes = [...new Set(paths.map((p) => p.split("/")[0] + "/"))];
+  const restoreTargets = affectedPrefixes.join(" ");
   console.error(kleur_default.dim(`
   Recover with:
-    git restore --source=${upstream} -- .beads/
+    git restore --source=${upstream} -- ${restoreTargets}
   Then re-run: xt end
 `));
 }
