@@ -16,8 +16,10 @@ repos:
     hooks:
       - id: trailing-whitespace
         stages: [pre-commit]
+        exclude: '^(cli/dist/|packages/.*/dist/|.*\.map$)'
       - id: end-of-file-fixer
         stages: [pre-commit]
+        exclude: '^(cli/dist/|packages/.*/dist/|.*\.map$)'
       - id: check-yaml
         stages: [pre-commit]
         args: [--allow-multiple-documents]
