@@ -738,13 +738,11 @@ export async function assureXtManagedPiPackages(
     installRunner: PiPackageInstallRunner = runPiPackageInstall,
     versionProvider?: PiPackageVersionProvider,
 ): Promise<PiPackageAssuranceResult> {
-    const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => {
-        const npmRootDir = await resolveGlobalNpmRootDir();
-        return {
-            installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? undefined),
-            expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
-        };
-    });
+    const npmRootDir = await resolveGlobalNpmRootDir();
+    const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
+        installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? undefined),
+        expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
+    }));
 
     const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider);
     const missing = statuses.filter((status) => status.state === 'missing');
@@ -782,12 +780,15 @@ export async function assureXtManagedPiPackages(
 }
 
 export async function getXtManagedPiPackageDoctorReport(
-    versionProvider: PiPackageVersionProvider = async (_piPackageId, npmPackageName) => ({
-        installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName, (await resolveGlobalNpmRootDir()) ?? undefined),
-        expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
-    }),
+    versionProvider?: PiPackageVersionProvider,
 ): Promise<XtManagedPiPackageDoctorReport> {
-    const statuses = await getManagedPiPackageFreshness(versionProvider, getXtManagedPiPackages());
+    const npmRootDir = await resolveGlobalNpmRootDir();
+    const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
+        installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName, npmRootDir ?? undefined),
+        expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
+    }));
+
+    const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider, getXtManagedPiPackages());
     const issues = statuses
         .filter((status) => status.state !== 'current')
         .map((status) => ({
