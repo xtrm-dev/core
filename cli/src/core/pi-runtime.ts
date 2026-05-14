@@ -80,6 +80,11 @@ async function resolveGlobalNpmRootDir(): Promise<string | null> {
 }
 const PROJECT_EXTENSIONS_ENTRY = '../.xtrm/extensions';
 const PROJECT_SKILLS_ENTRY = '../.xtrm/skills/active';
+// User-level fallback: skills installed at user scope live under
+// ~/.xtrm/skills/default/ and must resolve when a project doesn't
+// vendor a copy (xtrm-4h6u). Pi resolves entries in order, so project
+// active always wins; user default is the last-chance fallback.
+const USER_DEFAULT_SKILLS_ENTRY = '~/.xtrm/skills/default';
 const PROJECT_EXTENSION_PACKAGE_ID = 'npm:@jaggerxtrm/pi-extensions';
 const PROJECT_EXTENSION_PACKAGE: ManagedPackage = {
     id: PROJECT_EXTENSION_PACKAGE_ID,
@@ -1099,7 +1104,7 @@ async function cleanupConflictingPiPackageSettings(
     );
 }
 
-async function updatePiSettings(
+export async function updatePiSettings(
     projectRoot: string,
     dryRun: boolean,
     log?: (message: string) => void,
@@ -1129,9 +1134,17 @@ async function updatePiSettings(
         existingPackages.push(PROJECT_EXTENSION_PACKAGE_ID);
     }
 
+    // Skills resolution order:
+    //   1. PROJECT_SKILLS_ENTRY (../.xtrm/skills/active) — project-local
+    //   2. (user-added entries preserved here in middle)
+    //   3. USER_DEFAULT_SKILLS_ENTRY (~/.xtrm/skills/default) — fallback
+    // Pi picks the first match per skill name; without #3, specialists
+    // that reference skills not vendored into the project fail to resolve
+    // (xtrm-4h6u).
     const existingSkills = normalizeStringArray(existingSettings.skills)
-        .filter((entry) => entry !== PROJECT_SKILLS_ENTRY);
+        .filter((entry) => entry !== PROJECT_SKILLS_ENTRY && entry !== USER_DEFAULT_SKILLS_ENTRY);
     existingSkills.unshift(PROJECT_SKILLS_ENTRY);
+    existingSkills.push(USER_DEFAULT_SKILLS_ENTRY);
 
     const existingExtensions = normalizeStringArray(existingSettings.extensions)
         .filter((entry) => !LEGACY_PROJECT_EXTENSION_ENTRIES.has(entry));
@@ -1144,7 +1157,7 @@ async function updatePiSettings(
     };
 
     await fs.writeJson(piSettingsPath, nextSettings, { spaces: 2 });
-    log?.(kleur.dim(`Updated .pi/settings.json → ${PROJECT_EXTENSION_PACKAGE_ID} + ${PROJECT_SKILLS_ENTRY}`));
+    log?.(kleur.dim(`Updated .pi/settings.json → ${PROJECT_EXTENSION_PACKAGE_ID} + ${PROJECT_SKILLS_ENTRY} + ${USER_DEFAULT_SKILLS_ENTRY}`));
 }
 
 /**

@@ -303,4 +303,65 @@ describe('pi runtime safeguards', () => {
     expect(result.remediated).toBe(true);
     expect(await fs.pathExists(overrideDir)).toBe(false);
   });
+
+  describe('updatePiSettings — pi skills resolution paths (xtrm-4h6u)', () => {
+    it('seeds both project active and user default into a fresh .pi/settings.json', async () => {
+      const { updatePiSettings } = await import('../core/pi-runtime.js');
+      const projectRoot = path.join(tempRoot, 'fresh-project');
+      await fs.ensureDir(projectRoot);
+
+      await updatePiSettings(projectRoot, false);
+
+      const settings = await fs.readJson(path.join(projectRoot, '.pi', 'settings.json'));
+      expect(settings.skills).toEqual([
+        '../.xtrm/skills/active',
+        '~/.xtrm/skills/default',
+      ]);
+    });
+
+    it('preserves user-added skill paths between the two managed entries', async () => {
+      const { updatePiSettings } = await import('../core/pi-runtime.js');
+      const projectRoot = path.join(tempRoot, 'with-user-paths');
+      await fs.ensureDir(path.join(projectRoot, '.pi'));
+
+      await fs.writeJson(path.join(projectRoot, '.pi', 'settings.json'), {
+        skills: ['./my-custom-skills', '/abs/team-skills'],
+      });
+
+      await updatePiSettings(projectRoot, false);
+
+      const settings = await fs.readJson(path.join(projectRoot, '.pi', 'settings.json'));
+      expect(settings.skills).toEqual([
+        '../.xtrm/skills/active',
+        './my-custom-skills',
+        '/abs/team-skills',
+        '~/.xtrm/skills/default',
+      ]);
+    });
+
+    it('is idempotent — a second run does not duplicate the managed entries', async () => {
+      const { updatePiSettings } = await import('../core/pi-runtime.js');
+      const projectRoot = path.join(tempRoot, 'idempotent');
+      await fs.ensureDir(projectRoot);
+
+      await updatePiSettings(projectRoot, false);
+      await updatePiSettings(projectRoot, false);
+
+      const settings = await fs.readJson(path.join(projectRoot, '.pi', 'settings.json'));
+      expect(settings.skills).toEqual([
+        '../.xtrm/skills/active',
+        '~/.xtrm/skills/default',
+      ]);
+    });
+
+    it('does not write in dry-run mode', async () => {
+      const { updatePiSettings } = await import('../core/pi-runtime.js');
+      const projectRoot = path.join(tempRoot, 'dry-run');
+      await fs.ensureDir(projectRoot);
+
+      await updatePiSettings(projectRoot, true);
+
+      expect(await fs.pathExists(path.join(projectRoot, '.pi', 'settings.json'))).toBe(false);
+    });
+  });
 });

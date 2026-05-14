@@ -54194,6 +54194,7 @@ async function resolveGlobalNpmRootDir() {
 }
 var PROJECT_EXTENSIONS_ENTRY = "../.xtrm/extensions";
 var PROJECT_SKILLS_ENTRY = "../.xtrm/skills/active";
+var USER_DEFAULT_SKILLS_ENTRY = "~/.xtrm/skills/default";
 var PROJECT_EXTENSION_PACKAGE_ID = "npm:@jaggerxtrm/pi-extensions";
 var PROJECT_EXTENSION_PACKAGE = {
   id: PROJECT_EXTENSION_PACKAGE_ID,
@@ -54820,8 +54821,9 @@ async function updatePiSettings(projectRoot, dryRun, log) {
   if (!existingPackages.includes(PROJECT_EXTENSION_PACKAGE_ID)) {
     existingPackages.push(PROJECT_EXTENSION_PACKAGE_ID);
   }
-  const existingSkills = normalizeStringArray(existingSettings.skills).filter((entry) => entry !== PROJECT_SKILLS_ENTRY);
+  const existingSkills = normalizeStringArray(existingSettings.skills).filter((entry) => entry !== PROJECT_SKILLS_ENTRY && entry !== USER_DEFAULT_SKILLS_ENTRY);
   existingSkills.unshift(PROJECT_SKILLS_ENTRY);
+  existingSkills.push(USER_DEFAULT_SKILLS_ENTRY);
   const existingExtensions = normalizeStringArray(existingSettings.extensions).filter((entry) => !LEGACY_PROJECT_EXTENSION_ENTRIES.has(entry));
   const nextSettings = {
     ...existingSettings,
@@ -54830,7 +54832,7 @@ async function updatePiSettings(projectRoot, dryRun, log) {
     packages: existingPackages
   };
   await import_fs_extra8.default.writeJson(piSettingsPath, nextSettings, { spaces: 2 });
-  log?.(kleur_default.dim(`Updated .pi/settings.json \u2192 ${PROJECT_EXTENSION_PACKAGE_ID} + ${PROJECT_SKILLS_ENTRY}`));
+  log?.(kleur_default.dim(`Updated .pi/settings.json \u2192 ${PROJECT_EXTENSION_PACKAGE_ID} + ${PROJECT_SKILLS_ENTRY} + ${USER_DEFAULT_SKILLS_ENTRY}`));
 }
 async function executePiSync(plan, sourceDir, targetDir, opts = {}) {
   const {
