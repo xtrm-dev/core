@@ -274,6 +274,19 @@ export async function installFromRegistry(params: {
         ].join('\n'));
     }
 
+    // Snapshot the package registry into the target .xtrm/ so `xt update
+    // --root` and downstream tooling can identify this repo as managed.
+    // Without this, freshly-init'd repos show as "incomplete" until the
+    // operator manually copies registry.json from the xtrm-tools package
+    // (see xtrm-ya2i).
+    if (!dryRun) {
+        // Both inputs internal: userXtrmDir resolved by getContext from package
+        // config; 'registry.json' is a hardcoded filename. No user input here.
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+        const targetRegistryPath = path.join(userXtrmDir, 'registry.json');
+        await fs.copy(registryPath, targetRegistryPath, { overwrite: true });
+    }
+
     return {
         installed,
         upToDate: upToDateSet.size,

@@ -265,6 +265,81 @@ describe('installFromRegistry', () => {
     expect(await fs.pathExists(path.join(userXtrmDir, 'memory.md'))).toBe(false);
   });
 
+  it('seeds registry.json into the target .xtrm/ (xtrm-ya2i)', async () => {
+    const tempDir = await createTempDir();
+    const packageRoot = path.join(tempDir, 'pkg');
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+
+    const hookSource = path.join(packageRoot, '.xtrm', 'hooks', 'post-tool-use.mjs');
+    await fs.ensureDir(path.dirname(hookSource));
+    await fs.writeFile(hookSource, 'export default {}\n', 'utf8');
+
+    const registry = {
+      version: '1.0.0',
+      assets: {
+        core: {
+          source_dir: '.xtrm',
+          install_mode: 'copy' as const,
+          files: {
+            'hooks/post-tool-use.mjs': { hash: 'hook-hash', version: '1.0.0' },
+          },
+        },
+      },
+    };
+
+    await fs.ensureDir(path.join(packageRoot, '.xtrm'));
+    await fs.writeJson(path.join(packageRoot, '.xtrm', 'registry.json'), registry);
+
+    await installFromRegistry({
+      packageRoot,
+      registry,
+      userXtrmDir,
+      dryRun: false,
+      force: true,
+      yes: true,
+    });
+
+    const targetRegistryPath = path.join(userXtrmDir, 'registry.json');
+    expect(await fs.pathExists(targetRegistryPath)).toBe(true);
+    const written = await fs.readJson(targetRegistryPath);
+    expect(written).toEqual(registry);
+  });
+
+  it('skips registry.json snapshot in dry-run mode (xtrm-ya2i)', async () => {
+    const tempDir = await createTempDir();
+    const packageRoot = path.join(tempDir, 'pkg');
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+
+    const hookSource = path.join(packageRoot, '.xtrm', 'hooks', 'post-tool-use.mjs');
+    await fs.ensureDir(path.dirname(hookSource));
+    await fs.writeFile(hookSource, 'export default {}\n', 'utf8');
+
+    const registry = {
+      version: '1.0.0',
+      assets: {
+        core: {
+          source_dir: '.xtrm',
+          install_mode: 'copy' as const,
+          files: { 'hooks/post-tool-use.mjs': { hash: 'h', version: '1.0.0' } },
+        },
+      },
+    };
+
+    await fs.ensureDir(path.join(packageRoot, '.xtrm'));
+    await fs.writeJson(path.join(packageRoot, '.xtrm', 'registry.json'), registry);
+
+    await installFromRegistry({
+      packageRoot,
+      registry,
+      userXtrmDir,
+      dryRun: true,
+      force: true,
+      yes: true,
+    });
+
+    expect(await fs.pathExists(path.join(userXtrmDir, 'registry.json'))).toBe(false);
+  });
+
   it('installs optional skills packs from registry assets', async () => {
     const tempDir = await createTempDir();
     const packageRoot = path.join(tempDir, 'pkg');
