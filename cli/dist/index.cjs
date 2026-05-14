@@ -59186,6 +59186,11 @@ ${status.stderr || ""}`.toLowerCase();
     timeout: 12e4
   });
   if (analyze.status === 0) {
+    const gitnexusPollutionPath = import_path15.default.join(projectRoot, ".xtrm", "skills", "active", "gitnexus");
+    try {
+      import_fs_extra21.default.removeSync(gitnexusPollutionPath);
+    } catch {
+    }
     console.log(kleur_default.green("  \u2713 GitNexus index updated"));
     return;
   }

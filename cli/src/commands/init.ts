@@ -964,6 +964,24 @@ async function runGitNexusInitForProject(projectRoot: string): Promise<void> {
     });
 
     if (analyze.status === 0) {
+        // gitnexus analyze unconditionally writes 6 skills into
+        // <project>/.claude/skills/gitnexus/<skill-name>/SKILL.md. Because
+        // xtrm makes .claude/skills a symlink to .xtrm/skills/active/, those
+        // writes land in active/gitnexus/ as a non-symlink directory, which
+        // breaks the flat-active-view invariant and trips activeReady (see
+        // skills-runtime-views.ts hasOnlyValidSymlinkEntries). Remove the
+        // pollution — the same skills are already vendored as flat entries
+        // under .xtrm/skills/default/ and symlinked into active/ correctly
+        // (xtrm-wbfd). projectRoot is derived from git rev-parse or an
+        // internal opts.projectRoot; not user input.
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+        const gitnexusPollutionPath = path.join(projectRoot, '.xtrm', 'skills', 'active', 'gitnexus');
+        try {
+            fs.removeSync(gitnexusPollutionPath);
+        } catch {
+            // Non-fatal: if the dir wasn't created or we lack permissions,
+            // activeReady will still warn; that's no worse than today.
+        }
         console.log(kleur.green('  ✓ GitNexus index updated'));
         return;
     }
