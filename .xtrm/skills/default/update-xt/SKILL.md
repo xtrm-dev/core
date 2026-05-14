@@ -28,7 +28,8 @@ This is what a correctly installed project looks like. Check each item.
 | `.xtrm/skills/active/` | Flat directory of symlinks to `../default/<skill>` |
 | `active/pi/` subdirectory | Must NOT exist (stale — old runtime split) |
 | `active/claude/` subdirectory | Must NOT exist (stale — old runtime split) |
-| `.pi/settings.json` `.skills` array | Must include `"../.xtrm/skills/active"` |
+| `.pi/settings.json` `.skills` array | Must include `"../.xtrm/skills/active"` (project-local, wins) |
+| `.pi/settings.json` `.skills` array | Must include `"~/.xtrm/skills/default"` (user-level fallback — xtrm-4h6u) |
 | `.pi/settings.json` `.skills` array | Must NOT include `"../.xtrm/skills/active/pi"` (old path) |
 
 ### Hooks wiring
@@ -65,10 +66,10 @@ readlink .claude/skills
 ls .xtrm/skills/active/pi 2>/dev/null && echo "STALE: active/pi exists"
 ls .xtrm/skills/active/claude 2>/dev/null && echo "STALE: active/claude exists"
 
-# 5. Pi settings skills entry
+# 5. Pi settings skills entries (both must be present since xtrm-4h6u)
 node -e "const s=require('./.pi/settings.json'); console.log(s.skills)" 2>/dev/null
-# Expected to include: ../.xtrm/skills/active
-# Stale if includes: ../.xtrm/skills/active/pi
+# Expected to include BOTH: ../.xtrm/skills/active  AND  ~/.xtrm/skills/default
+# Stale if only first entry present, or if includes: ../.xtrm/skills/active/pi
 
 # 6. Active view integrity (all entries must be valid symlinks)
 for f in .xtrm/skills/active/*; do [ -L "$f" ] || echo "NOT A SYMLINK: $f"; done
@@ -167,6 +168,16 @@ cd cli && npm run build
 xt init -y   # now runs with updated code
 ```
 
+**Worktree caveat**: `npm run build` from inside `.xtrm/worktrees/<name>/cli/` is blocked by a guard script — building from a worktree contaminates dist with worktree-specific absolute paths. If you're working in a worktree, build from a detached worktree outside `.xtrm/`:
+
+```bash
+git worktree add --detach /tmp/xt-build HEAD
+cd /tmp/xt-build/cli && npm ci && npm run build
+cp dist/index.cjs <worktree-root>/cli/dist/index.cjs
+cp dist/index.cjs.map <worktree-root>/cli/dist/index.cjs.map
+git worktree remove /tmp/xt-build --force
+```
+
 ## Verification
 
 After all fixes, confirm canonical state is restored:
@@ -217,7 +228,7 @@ Output classifies each discovered repo by `.xtrm/` state:
 |--------|---------|--------|
 | `refreshed` | `.xtrm/registry.json` present; drift vs current package detected | `--apply` will reinstall managed assets |
 | `already-current` | `.xtrm/registry.json` present; no drift | no action |
-| `incomplete` | `.xtrm/` directory exists but `.xtrm/registry.json` is missing | needs manual `xt init` or `cp` of registry.json from xtrm-tools (see "Bootstrapping incomplete repos" below) |
+| `incomplete` | `.xtrm/` directory exists but `.xtrm/registry.json` is missing | `xt init -y` now seeds registry.json automatically (xtrm-ya2i, xtrm-tools ≥ 0.7.18). Older `.xtrm/` dirs created before that fix still need the recipe below. |
 | `failed` | Hard error during drift check or install | inspect reason — common: PACK metadata drift, missing source files, fs-extra refusing to copy onto a symlink |
 
 Transient worktree paths under `.worktrees/` (specialists) or `.xtrm/worktrees/`
@@ -245,12 +256,15 @@ Two scenarios:
 
 ```bash
 cd <repo>
-xt init -y                                            # scaffold .xtrm/{config,hooks,skills}
-cp /path/to/xtrm-tools/.xtrm/registry.json .xtrm/      # seed the registry snapshot
-xt update --apply --repo .                            # bring everything in sync
+xt init -y                       # scaffolds .xtrm/{config,hooks,skills} AND seeds registry.json
+xt update --apply --repo .       # bring everything in sync (registry-driven)
 ```
 
-(Filed `xtrm-ya2i` — `xt init`'s Project Bootstrap phase should seed `registry.json` automatically; until that lands, the `cp` step is required.)
+`xt init -y` now snapshots `.xtrm/registry.json` from the installed xtrm-tools package automatically (xtrm-ya2i). The previous manual `cp /path/to/xtrm-tools/.xtrm/registry.json .xtrm/` step is no longer needed on xtrm-tools ≥ 0.7.18. If you're on an older version (or the registry is missing for some other reason), fall back to:
+
+```bash
+cp "$(npm root -g)/xtrm-tools/.xtrm/registry.json" .xtrm/
+```
 
 **B. The repo is intentionally not xtrm-managed.** Leave the `.xtrm/` partial dir
 alone; `incomplete` is just a status row, not an error. If you want it to stop
@@ -262,9 +276,61 @@ Common failure modes and fixes:
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `Source and destination must not be the same` | `npm link`'d xtrm-tools + repo has symlinked `.xtrm/skills/default → xtrm-tools` (link chain collapses to same canonical path) | Skip — the repo is already in sync via the live symlinks. Not a real failure. |
+| `Source and destination must not be the same` | `npm link`'d xtrm-tools + repo has symlinked `.xtrm/skills/default → xtrm-tools` (link chain collapses to same canonical path) | Functionally fine — repo is already in sync via the live symlinks, not a real failure. If you want to **fully decouple** the project from the dev tree, follow the migration recipe below. |
 | `PACK_METADATA_MISMATCH: metadata-only: X, filesystem-only: Y` | A user-skill-pack (`.xtrm/skills/user/packs/<name>/PACK.json`) lists a skill that has been renamed on disk | Edit `PACK.json` so the listed skill names match the directory names; re-run. |
 | `Cannot read properties of null (reading 'dolt')` | Repo's `.beads/config.yaml` is comments-only (fresh `bd init` default); pre-`xtrm-16ec` xtrm crashes parsing it | Upgrade xtrm-tools to ≥ 0.7.18; the parse result is coerced to `{}` defensively now. |
+
+## Migrating a dev-linked project to a real consumer install
+
+A project ends up with `.xtrm/skills/default` (or another `.xtrm/` asset) as a **symlink** back to the dev tree when:
+- xtrm-tools was `npm link`-ed globally (`/home/<user>/.nvm/.../node_modules/xtrm-tools` → `/home/<user>/dev/xtrm-tools/`), AND
+- the project's `.xtrm/skills/default` was manually replaced with a symlink to the npm-global path (common dev-loop shortcut so skill edits propagate instantly).
+
+`installFromRegistry`'s `scaffoldSkillsDefaultFromPackage` has an intentional branch (`registry-scaffold.ts:104`): *"if target is a symlink whose realpath equals the package realpath → noop"*. This **preserves the dev symlink** on every `xt update`. The arrangement is functional but the project is invisibly coupled to whatever lives in the dev tree (or whatever the global npm path points to).
+
+### When to migrate
+
+- Before publishing a consumer-facing release of the dependent project.
+- Before handing the project to another developer / machine.
+- When you want `xt update --apply` to actually *write files into the project* rather than no-op.
+
+### Detection
+
+```bash
+# Is .xtrm/skills/default a symlink, and where does it point?
+readlink <repo>/.xtrm/skills/default
+# If empty / not-a-symlink: nothing to migrate.
+# If points anywhere outside <repo>/: needs migration.
+```
+
+### Recipe
+
+```bash
+cd <repo>
+
+# 1. Remove the symlink (does NOT touch the real files in the dev tree).
+rm .xtrm/skills/default
+
+# 2. Re-run init — copies real files from the installed xtrm-tools package
+#    into .xtrm/skills/default/ AND seeds .xtrm/registry.json (xtrm-ya2i).
+xt init -y
+
+# 3. If the symlink was committed (git ls-files showed it as mode 120000),
+#    flip the tracked entry to a real directory:
+git rm --cached .xtrm/skills/default 2>/dev/null   # ok if it was untracked
+git add .xtrm/skills/default
+git commit -m "chore: replace dev symlink with real xtrm skills payload"
+
+# 4. Optional sanity: confirm no more symlinks point outside the repo.
+find .xtrm -type l -lname '/*' -o -type l ! -lname '../*' -a ! -lname './*'
+# Empty output means clean.
+```
+
+### What `npm install -g xtrm-tools` alone does
+
+Replacing the `npm link` with a real npm install (`npm install -g xtrm-tools`) breaks the dev-tree coupling — the global path becomes real files at the published version — **but it does not remove the project's symlink.** The symlink still points at the global npm path, which now resolves to immutable published files. The project keeps working but stays pinned to the npm-installed version forever, and `.xtrm/skills/default` remains a symlink on disk.
+
+To get true isolation (real files inside `<repo>/.xtrm/skills/default/`), the recipe above is still required.
 
 ## Worktree hygiene: `.beads/` and `core.hooksPath`
 
@@ -336,6 +402,7 @@ by which mechanism. Audit it whenever you add a new per-worktree artifact.
 | `.claude/worktrees/`, `.claude/tdd-guard/data/` | runtime | gitignored | ✅ |
 | `.xtrm/worktrees/`, `.xtrm/skills/active/`, `.xtrm/session-meta.json`, `.xtrm/statusline-claim`, `.xtrm/debug.db` | runtime | gitignored | ✅ |
 | `AGENTS.md`, `CLAUDE.md` | tracked | gitnexus stat-counter scrubbed (xtrm-c6sf), build-gate prevents reintroduction | ✅ |
+| `pnpm-workspace.yaml`, `cli/pnpm-workspace.yaml` | generated by pnpm in an npm-workspaces repo when specialist tooling shells out to pnpm | gitignored (xtrm-ombq) | ✅ |
 | `.gitnexus/` | runtime | gitignored | ✅ |
 | `.dolt/`, `*.db` | runtime | gitignored | ✅ |
 
