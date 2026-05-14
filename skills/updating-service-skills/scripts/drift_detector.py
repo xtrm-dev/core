@@ -3,15 +3,17 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 BOOTSTRAP_DIR = Path(__file__).parent.parent.parent / "creating-service-skills" / "scripts"
 sys.path.insert(0, str(BOOTSTRAP_DIR))
-from bootstrap import RootResolutionError, find_service_for_path, get_project_root, get_registry_path, get_service, is_gitnexus_available, load_registry, run_gitnexus_json, save_registry  # noqa: E402
+from bootstrap import RootResolutionError, find_service_for_path, get_project_root, get_registry_path, get_service, is_gitnexus_available, load_registry, run_gitnexus_json, save_registry  # type: ignore[import-not-found]  # noqa: E402
 
 def check_drift(file_path: str, project_root: str | None = None) -> dict:
     if project_root is None:
         try: project_root = get_project_root()
         except RootResolutionError: return {"drift": False, "reason": "Cannot resolve project root"}
+    project_root = cast(str, project_root)
     fp = Path(file_path)
     if fp.is_absolute():
         try: file_path = str(fp.relative_to(project_root))
@@ -35,6 +37,7 @@ def _print_missing_registry_hint(project_root: str | None = None) -> None:
     if project_root is None:
         try: project_root = get_project_root()
         except RootResolutionError: project_root = "."
+    project_root = cast(str, project_root)
     root = Path(project_root)
     print(f"Registry not found. Expected one of: {root / 'service-registry.json'}, {root / '.claude/skills/service-registry.json'}, {root / '.xtrm/skills/user/packs/*/service-registry.json'}", file=sys.stderr)
 
@@ -82,6 +85,7 @@ def scan_drift(project_root: str | None = None, enrich_with_gitnexus: bool = Fal
     if project_root is None:
         try: project_root = get_project_root()
         except RootResolutionError: return []
+    project_root = cast(str, project_root)
     root = Path(project_root)
     if not get_registry_path(project_root).exists(): _print_missing_registry_hint(project_root); return []
     registry = load_registry(project_root)

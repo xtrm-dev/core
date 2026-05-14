@@ -56470,6 +56470,10 @@ async function installFromRegistry(params) {
       formatMissingSources(missingSources)
     ].join("\n"));
   }
+  if (!dryRun) {
+    const targetRegistryPath = import_path8.default.join(userXtrmDir, "registry.json");
+    await import_fs_extra13.default.copy(registryPath, targetRegistryPath, { overwrite: true });
+  }
   return {
     installed,
     upToDate: upToDateSet.size,
