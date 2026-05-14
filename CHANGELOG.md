@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.18] - 2026-05-14
+
 ### Added
 - Security baseline pipeline: new GitHub Actions workflows for `gitleaks`, `semgrep`, and `osv-scanner` triggered on push and PR; project-level `.githooks/pre-commit` + `.githooks/pre-push` security mirrors with `.local` extension hooks; `.pre-commit-config.yaml` framework integration; `.gitleaks.toml`, `.semgrepignore`, and `.github/dependabot.yml`. New helper scripts `scripts/osv-diff.sh`, `scripts/semgrep-diff.sh`, `scripts/security-scan.sh`. (xtrm-6m4y / PR #206)
 - Vendor freshness manifest committed at `.xtrm/specialists-source.json` so CI's `Verify specialists vendor freshness` step has a reference snapshot (was previously generated only at `prepublishOnly` time, leaving main CI red on every push). (PR #206)

@@ -3,7 +3,7 @@
   "source": {
     "kind": "ref",
     "ref": "master",
-    "resolved_sha": "9a06332254d2edd8c04b509f511b2c47dc78c708",
+    "resolved_sha": "1bddf3138c8fe95895ca2e7ac12d622f05ad5941",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
@@ -49,7 +49,7 @@
     },
     "using-specialists-v3": {
       "evals/evals.json": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
-      "SKILL.md": "be1dbea64fd7d6b5d1759a6cbfd7ad8dd41dab90ad1d029e1c57bce60b8d74b4"
+      "SKILL.md": "c8aa5dccd55fe6a461e66202a6829a3f1b9f9b4dc8c54f5c4f2847eb585b30f1"
     }
   }
 }
