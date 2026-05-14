@@ -58815,7 +58815,7 @@ ${normalizedBody}
 ${endMarker}`;
   const escapedStart = startMarker.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
   const escapedEnd = endMarker.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
-  const existingBlockPattern = new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}`, "m");
+  const existingBlockPattern = new RegExp(`${escapedStart}[\\s\\S]*${escapedEnd}`, "m");
   if (existingBlockPattern.test(fileContent)) {
     return fileContent.replace(existingBlockPattern, managedBlock);
   }

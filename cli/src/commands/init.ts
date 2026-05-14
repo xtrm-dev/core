@@ -275,7 +275,16 @@ export function upsertManagedBlock(
     const managedBlock = `${startMarker}\n${normalizedBody}\n${endMarker}`;
     const escapedStart = startMarker.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
     const escapedEnd = endMarker.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
-    const existingBlockPattern = new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}`, 'm');
+
+    // Greedy match from the FIRST start marker to the LAST end marker so any
+    // duplicate-content + orphan-end-marker tail left behind by older lazy
+    // (`*?`) versions of this function gets swept into the replacement
+    // (xtrm-ya67). The lazy variant only consumed the first start..end pair,
+    // leaving a duplicated header block + a free-floating end marker after it.
+    // Markers are caller-supplied but pre-escaped via the replace() above; no
+    // ReDoS surface from end-user input here.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+    const existingBlockPattern = new RegExp(`${escapedStart}[\\s\\S]*${escapedEnd}`, 'm');
 
     if (existingBlockPattern.test(fileContent)) {
         return fileContent.replace(existingBlockPattern, managedBlock);
@@ -336,7 +345,7 @@ function getScriptFilename(hook: any): string | null {
 /**
  * Prune hooks from settings.json that are NOT in the canonical config.
  * This removes stale entries from old versions before merging new ones.
- * 
+ *
  * @param existing Current settings.json hooks
  * @param canonical Canonical hooks config from hooks.json
  * @returns Pruned settings with stale hooks removed
@@ -974,5 +983,3 @@ function getProjectRoot(): string {
     }
     return path.resolve(result.stdout.trim());
 }
-
-
