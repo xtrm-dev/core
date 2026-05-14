@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.19] - 2026-05-14
+
+### Fixed
+- `xt init`'s Project Bootstrap phase no longer leaves Skills Runtime in an `incomplete: active` state on a fresh repo. Bare `gitnexus analyze` (invoked by xt init) unconditionally writes 6 skills to `<project>/.claude/skills/gitnexus/<name>/SKILL.md`, and because xtrm makes `.claude/skills` a symlink to `.xtrm/skills/active/`, those writes landed as a non-symlink directory at `.xtrm/skills/active/gitnexus/` — breaking the flat-active-view invariant and tripping `hasOnlyValidSymlinkEntries` → `activeReady=false`. After `gitnexus analyze` returns, `runGitNexusInitForProject` now removes that polluting subdir (idempotent, try/catch wrapped). No functionality loss — the same gitnexus skills are already vendored as flat `gitnexus-cli`, `gitnexus-debugging`, etc. under `.xtrm/skills/default/` and symlinked into `active/`. Fresh-repo smoke now reports `✓ All phases verified successfully.` (5/5 green). (xtrm-wbfd / PR #252)
+
 ## [0.7.18] - 2026-05-14
 
 ### Added
