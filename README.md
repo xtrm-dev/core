@@ -22,13 +22,13 @@ The `planning` skill generates a structured issue board from any spec or idea �
 
 A live statusline renders in every Claude Code session: active claim, open issue count, model, context window health (color-coded truecolor gradient), and token usage — all in a single line below the prompt. No configuration required after `xtrm init`.
 
-### Specialists *(upcoming)*
+### Specialists
 
-Native integration with the [specialists](https://github.com/Jaggerxtrm/specialists) framework — spawning purpose-built sub-agents for parallel workloads, code review, and long-running background tasks directly from within a session.
+Specialists are first-class in v0.7.19. `xtrm-tools` vendors specialist skills into `.xtrm/skills/default/`, keeps user fallback under `~/.xtrm/skills/default/`, and runs the release-contract handshake through `.github/workflows/specialists-validation.yml`. `sp` is a runtime prerequisite for specialist commands.
 
 ---
 
-**Version 0.7.1** | [Complete Guide](XTRM-GUIDE.md) | [Changelog](CHANGELOG.md)
+**Version 0.7.19** | [Complete Guide](XTRM-GUIDE.md) | [Changelog](CHANGELOG.md)
 
 ---
 
@@ -40,6 +40,10 @@ Native integration with the [specialists](https://github.com/Jaggerxtrm/speciali
 | [docs/hooks.md](docs/hooks.md) | All hooks — event wiring, gate logic, order, authoring |
 | [docs/policies.md](docs/policies.md) | Policy system — compiler, schema, Claude/Pi parity |
 | [docs/skills.md](docs/skills.md) | Skills catalog — all skills, categories, how they load |
+| [docs/release.md](docs/release.md) | Release contract — specialists handshake, publish gates, runtime prereqs |
+| [docs/skills-ownership.md](docs/skills-ownership.md) | Skills ownership — vendored vs owned skills, publish contract |
+| [docs/xtrm-directory.md](docs/xtrm-directory.md) | `.xtrm/` directory layout — managed assets and user fallback |
+| [docs/skills-tier-architecture.md](docs/skills-tier-architecture.md) | Skills tiers — default, optional, user fallback |
 | [docs/pi-extensions.md](docs/pi-extensions.md) | Pi extensions — managed sync, authoring, parity notes |
 | [docs/worktrees.md](docs/worktrees.md) | xt worktrees — `xt claude/pi`, `xt attach`, `xt end`, isolation model |
 | [docs/mcp-servers.md](docs/mcp-servers.md) | MCP servers — gitnexus, github-grep, deepwiki, official plugins |
@@ -57,14 +61,14 @@ Native integration with the [specialists](https://github.com/Jaggerxtrm/speciali
 
 ```bash
 # Install globally (one-time)
-npm install -g github:Jaggerxtrm/xtrm-tools@latest
+npm install -g xtrm-tools
 
 # Set up xtrm in your project
 xtrm init
 
 # Verify
 claude plugin list
-# → xtrm-tools@xtrm-tools  Version: 0.7.1  Status: enabled
+# → xtrm-tools@xtrm-tools  Version: 0.7.19  Status: enabled
 ```
 
 **One-line run:**
@@ -130,7 +134,13 @@ These skills implement the xtrm-specific development workflow — session manage
 | `planning` | Structured issue board from any spec, with phases and deps |
 | `test-planning` | Test coverage planning alongside implementation work |
 | `delegating` | Cost-optimized task delegation to background agents |
-| `using-specialists` | Specialist routing and execution workflow (`specialists run/feed/result`) |
+| `using-specialists-v3` | Specialist routing and execution workflow (current vendored contract) |
+| `using-specialists-auto` | Auto-mode specialists execution and handoff flow |
+| `update-specialists` | Sync vendored specialists skills from upstream source |
+| `releasing` | Release-contract workflow and publish gating |
+| `xt-debugging` | Runtime debugging, traces, and failure triage |
+| `init-session` | Session bootstrap and context setup |
+| `session-close-report` | End-of-session report generation and handoff |
 | `orchestrating-agents` | Multi-model orchestration (Gemini, Qwen handshake) |
 | `documenting` | SSOT doc maintenance with drift detection |
 | `sync-docs` | Doc audit and structural sync across a sprint |
@@ -197,30 +207,30 @@ xtrm <command> [options]
 
 | Command | Description |
 |---------|-------------|
-| `install` | Install plugin + beads + gitnexus (interactive target selection) |
-| `init` | Initialize project (bd, gitnexus, service-registry) |
+| `claude` | Launch Claude Code in a sandboxed worktree |
+| `pi` | Launch Pi in a sandboxed worktree |
+| `init` | Bootstrap xtrm with phased installer: machine → Claude → Pi → project |
 | `status` | Read-only diff view |
+| `reset` | Reset xtrm-managed state |
 | `clean` | Remove orphaned hooks |
-| `claude [name]` | Launch Claude Code in a sandboxed `xt/<name>` worktree |
-| `pi [name]` | Launch Pi in a sandboxed `xt/<name>` worktree |
-| `attach [slug]` | Re-attach to an existing worktree and resume the Claude or Pi session |
 | `end` | Close worktree session: rebase, push, PR, cleanup |
-| `memory update` | Run `memory-processor` to synthesize bd memories + repo state into `.xtrm/memory.md` |
-| `update` | Refresh xtrm-managed files for one repo or many (`--apply`, `--repo <path>`, `--root <dir>`, `--json`) |
-| `release prepare` | Prepare a release from xt reports and changelog drafting (`--major`, `--minor`, `--patch`, `--from`, `--to`) |
-| `release publish` | Publish a prepared release with annotated tag/push and optional GitHub release |
-| `merge` | Drain queued `xt/*` PRs via `xt-merge`: FIFO CI gate → rebase merge → rebase cascade |
-| `worktree list` | List active `xt/*` worktrees with runtime, last activity, and resume hint |
-| `worktree clean` | Remove merged worktrees |
-| `docs` | Documentation inspection and drift-check suite (`xtrm docs --help`) |
-| `docs show` | Display frontmatter for README, CHANGELOG, docs/*.md |
-| `docs list` | Inventory markdown docs with filters, summaries, and optional cache bypass |
-| `docs cross-check` | Compare docs against recent PR activity and closed bd issues |
+| `worktree` | Worktree operations: list and clean |
+| `attach` | Re-attach to an existing worktree and resume the Claude or Pi session |
+| `docs` | Documentation inspection and drift-check suite |
+| `memory` | Memory synthesis and update flow |
+| `merge` | Drain queued `xt/*` PRs via `xt-merge` |
 | `debug` | Watch hook and bd lifecycle events in real time |
+| `report` | Session and workflow report generation |
+| `skills` | Skills catalog and enable/disable management |
+| `claude-sync` | Sync Claude-specific settings and managed state |
+| `doctor` | Health checks, drift, and Pi package reporting |
+| `update` | Refresh xtrm-managed files for one repo or many |
+| `release` | Release flow and publish helpers |
+| `help` | Show command help |
 
 **Flags:** `--yes / -y` (non-interactive), `--dry-run` (preview), `--prune` (force-replace hooks)
 
-For detailed docs command usage, see [docs/docs-commands.md](docs/docs-commands.md) or run `xtrm docs --help` / `xtrm docs cross-check --help`. For release flow details, run `xt release --help`; `xt release prepare` currently depends on the specialists changelog script compatibility tracked by `unitAI-dnmcg`.
+For detailed docs command usage, see [docs/docs-commands.md](docs/docs-commands.md) or run `xtrm docs --help` / `xtrm docs cross-check --help`. For release flow details, see [docs/release.md](docs/release.md); the release skill drives the contract directly and does not rely on the deprecated `xt release prepare/publish` flow.
 
 See [docs/cli-architecture.md](docs/cli-architecture.md) for internals.
 
@@ -266,11 +276,13 @@ See [XTRM-GUIDE.md](XTRM-GUIDE.md) for the full `bd` command reference.
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 0.7.1 | 2026-04-02 | Optional packs pre-populated on install; Pi core symlink path fix; new default skills (`deepwiki`, `specialists-creator`, `using-specialists`) |
-| 0.5.30 | 2026-03-22 | Fix statusline on fresh installs; `xt end --dry-run` |
-| 0.5.29 | 2026-03-22 | Statusline truecolor gradient; `--no-verify` autocommit; xt-merge skill |
-| 0.5.24 | 2026-03-21 | Hash-based docs drift detection; CLI docs cleanup |
-| 0.5.20 | 2026-03-21 | `xtrm docs show`; worktree-boundary hook; statusline injection |
+| 0.7.19 | 2026-05-14 | README, CLI, and docs synced to shipped npm package; release-contract and specialists workflow fully documented |
+| 0.7.18 | 2026-05-13 | Specialists became first-class; vendored specialist skills, release-contract handshake, `npm publish --provenance`, Pi package health reporting, security pipeline |
+| 0.7.17 | 2026-05-12 | Skills ownership and vendoring contract tightened; user fallback under `~/.xtrm/skills/default` documented |
+| 0.7.16 | 2026-05-11 | CLI and docs drift cleanup; workflow orchestration polish |
+| 0.7.15 | 2026-05-10 | Session and hooks maintenance; publish prep hardening |
+| 0.7.14 | 2026-05-09 | Worktree and statusline refinements |
+| 0.7.13 | 2026-05-08 | Core workflow stability updates |
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
