@@ -1,6 +1,6 @@
 # XTRM-Tools Complete Guide
 
-> **Version 0.5.24** | A comprehensive reference for the XTRM-Tools dual-runtime workflow system (Claude Code + Pi).
+> **Version 0.7.19** | A comprehensive reference for the XTRM-Tools dual-runtime workflow system (Claude Code + Pi).
 
 ---
 
@@ -72,7 +72,7 @@ xtrm init
 
 # Verify installation
 claude plugin list
-# → xtrm-tools@xtrm-tools  Version: 0.5.24  Status: ✔ enabled
+# → xtrm-tools@xtrm-tools  Version: 0.7.19  Status: ✔ enabled
 ```
 
 ### One-Line Run
@@ -112,7 +112,7 @@ plugins/xtrm-tools/
 ```json
 {
   "name": "xtrm-tools",
-  "version": "0.5.24",
+  "version": "0.7.19",
   "description": "xtrm-tools: dual-runtime workflow enforcement (Claude Code + Pi) — hooks, extensions, skills, and MCP servers",
   "mcpServers": "./.mcp.json"
 }
@@ -369,14 +369,13 @@ bd status
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 0.5.24 | 2026-03-21 | Hash-based docs drift detection; CLI docs cleanup; `docs` and `debug` commands documented |
-| 0.5.23 | 2026-03-21 | `xtrm debug` command for real-time event monitoring |
-| 0.5.20 | 2026-03-21 | `xtrm docs show` command; worktree-boundary hook; statusline injection |
-| 0.5.10 | 2026-03-21 | Install cleanup: `cleanStalePrePluginFiles()` removes stale `~/.claude/hooks/` + `~/.claude/skills/` on install; Qwen/Gemini dead code removed |
-| 0.5.9 | 2026-03-20 | Worktrees moved inside repo under `.xtrm/worktrees/`; `.gitignore` entry added |
-| 0.5.8 | 2026-03-20 | session-flow rewrite: removed xtrm-finish/session-state dead code; claim sync + stop gate + `xt end` reminder |
-| 0.5.7 | 2026-03-20 | Dead hooks removed (`main-guard.mjs`, `guard-rules.mjs`, `agent_context.py`); dead CLI removed (`finish.ts`, `session-state.ts`) |
-| 0.5.6 | 2026-03-20 | `xt` CLI commands (`xt claude`, `xt pi`, `xt worktree list/clean/remove`, `xt end`); plugin-only delivery for Claude; deprecated `xtrm finish` and `.xtrm-session-state.json` |
+| 0.7.19 | 2026-05-14 | `xt init` now cleans stray GitNexus skills dirt after bootstrap; fresh-repo smoke restores clean active skills state |
+| 0.7.18 | 2026-05-14 | Security baseline pipeline added: gitleaks, semgrep, osv-scanner, plus pre-commit/pre-push mirrors and payload hygiene gates |
+| 0.7.17 | 2026-05-05 | Vendored `using-specialists-v3`; install/update now ship canonical specialists skill list |
+| 0.7.16 | 2026-05-05 | `xt update` and `xt install` repair broken `.xtrm/skills/default` symlinks before registry install |
+| 0.7.15 | 2026-05-05 | Updated `using-xtrm` and docs to cover `xt update`, release prepare/publish, and SSOT session report behavior |
+| 0.7.14 | 2026-05-05 | Added `xt update`, `xt release prepare/publish`, and versioned session reports under `.xtrm/reports/` |
+| 0.7.1 | 2026-04-02 | Versioned session reports and docs sync landed for Cat B workflows |
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
