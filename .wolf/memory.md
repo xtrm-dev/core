@@ -90,3 +90,26 @@
 | 23:01 | Fixed xtrm-cplc workspace CLI tarball smoke | cli/src/commands/init.ts, cli/package.json, cli/dist/index.cjs | lazy package-root resolution; cli workspace private; pack/install smoke passed | — |
 - 2026-05-13: xtrm-6m4y added xtrm-tools security pipeline root config; local hooks now chain project reminders plus pre-commit security gates, and OSV push checks diff against baseline to avoid blocking old dependency debt.
 - 2026-05-13: xtrm-krk0 OSV fix removed unused @artale/pi-procs and bundled tdd-guard deps; cli/vitest.config.ts now loads tdd-guard-vitest only when installed, and OSV/audit/test gates pass clean.
+- 2026-05-15: xtrm-ui now prototypes border-only cold-color framing for external Pi tools via ToolExecutionComponent patch, covering Serena/GitNexus/structured_return/process/generic extension tools; structured_return and process get custom compact summaries before frame rendering.
+- 2026-05-15: xtrm-ui external tool frame chrome should use plain border-only shapes; do not put tool names in the border/title line because the compact content line already names the tool.
+- 2026-05-15: xtrm-ui external tool compaction preserves xtrmOriginalText in details and frame rendering should show that original text when Ctrl+O expanded=true; border is intentionally dimmed/subtle.
+- 2026-05-15: xtrm-ui internal Pi component patches must resolve the live Pi package via process argv/global @earendil path before @mario fallback; import.meta.resolve('@mariozechner/pi-coding-agent') can hit stale ~/node_modules and patch the wrong package.
+- 2026-05-15: xtrm-ui external frame patch is versioned so /reload can replace old prototype patches; compact external frames should use result.content summary only, not native call/result renderer output.
+- 2026-05-15: xtrm-ui external frame pending state now renders a single compact pending summary from tool args, avoiding transient native call+result duplication before tool_result arrives.
+- 2026-05-15: xtrm-ui external frames use a compact width cap (44 content columns) in collapsed view; expanded view uses available width for detail.
+- 2026-05-15: xtrm-ui compact density should avoid terminal auto-wrap at column 0; keep framed external content at 38 cols and native tool summary subject/meta at 34 cols.
+- 2026-05-15: xtrm-ui compact summaries cap native subject/meta segments to avoid unindented terminal wraps; external framed content cap is 38 columns.
+- 2026-05-15: xtrm-ui collapsed external frames are single-row inline frames to match native tool vertical density; Ctrl+O expanded keeps the full multi-line box.
+- 2026-05-15: one-line underline/overline pseudo-frames are not portable in Pi TUI; use real tight 3-line boxes for collapsed external tools instead.
+- 2026-05-15: xtrm-ui non-native tools now use native-density full-line cold tinted backgrounds instead of framed boxes; expanded view tints each full-width line.
+- 2026-05-15: xtrm-ui external tool bg rows use the full available tool row width while keeping compact one-line collapsed content; no border/box spacing.
+- 2026-05-15: xtrm-ui external tool chrome is user-selectable: /xtrm-ui chrome background|box or /xtrm-ui-external-chrome background|box. Background is default; box keeps the previous tight box style.
+- 2026-05-15: sp-terminal-overlay Pi extension provides /sp-feed, /sp-ps, /xtrm-ps, and /xtrm-terminal streaming overlay commands. It uses ctx.ui.custom overlay mode and child_process spawn via shell.
+- 2026-05-15: sp-terminal-overlay overlay handle must be scoped outside ctx.ui.custom factory; overlay is centered at 80% width/height; command output uses simple ANSI cursor/clear-screen emulation for repainting dashboards like sp ps --follow.
+- 2026-05-15: sp-terminal-overlay crash mitigation throttles stream redraws to 100ms and avoids double-closing overlays; if it crashes again, disable the extension from registry and switch to a widget/status approach.
+- 2026-05-15: Pi overlay custom() onHandle object in current runtime may not provide requestRender(); sp-terminal-overlay must use tui.requestRender() only.
+- 2026-05-15: sp-terminal-overlay renders a fixed 24-row output body so the 80% centered overlay does not grow/shrink with command output.
+- 2026-05-15: xtrm-ui background chrome highlights compact non-native tool-name prefixes with a brighter badge background inside the subtle full-row background.
+- 2026-05-15: xtrm-ui background chrome highlights compact non-native tool-name prefixes with a brighter badge background inside the subtle full-row background.
+- 2026-05-15: sp-terminal-overlay preserves safe numeric CSI SGR colors for append-only feed output, strips SGR in terminal repaint mode to avoid ANSI-unsafe cursor slicing, and resets rows before borders.
+- 2026-05-15: xtrm-ui external badge styling must not add visible padding after truncation; it caused rendered rows to exceed terminal width by 2 columns.

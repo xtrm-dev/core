@@ -1256,3 +1256,26 @@
 - 2026-05-08: cli/src/core/pi-runtime.ts MANAGED_PACKAGES includes npm:pi-mcp-adapter; docs package inventories include it in XTRM-GUIDE, pi-extensions, and cli-architecture.
 
 - 2026-05-08: `.wolf/cerebrum.md` and `.wolf/memory.md` record specialist orchestration correction: do not early-stop specialists to self-execute; improve bead contracts/prompts and steer/diagnose instead.
+> Manual note 2026-05-15: packages/pi-extensions/extensions/xtrm-ui/index.ts adds external tool frame chrome for non-built-in Pi tools and structured_return/process compact summaries.
+> Manual note 2026-05-15: xtrm-ui external tool border labels removed; process compact summary pluralization fixed.
+> Manual note 2026-05-15: xtrm-ui external frame renderer now switches to original tool text in expanded view and uses dimmed border color.
+> Manual note 2026-05-15: xtrm-ui Pi component patch resolver now targets the live CLI package path instead of stale @mario import resolution.
+> Manual note 2026-05-15: xtrm-ui external frame patch version bumped to replace older label/call+result framing on /reload.
+> Manual note 2026-05-15: xtrm-ui external frame pending state now uses compact pending summaries from tool args.
+> Manual note 2026-05-15: xtrm-ui external frame patch v3 adds compact content width cap and preserves wide expanded view.
+> Manual note 2026-05-15: xtrm-ui frame patch v4 tightens compact width and renderToolSummary caps subject/meta to stabilize indentation.
+> Manual note 2026-05-15: xtrm-ui format.renderToolSummary now caps subject/meta and external frame patch v4 caps content to 38 columns.
+> Manual note 2026-05-15: xtrm-ui external frame patch v5 renders collapsed frames as one-row inline framed summaries; expanded remains full box.
+> Manual note 2026-05-15: xtrm-ui external frame patch v6 reverts pseudo-inline frames to real tight boxes capped at 34 cols.
+> Manual note 2026-05-15: xtrm-ui external tool patch v7 replaces box frames with native-density full-line cold background rows.
+> Manual note 2026-05-15: xtrm-ui v7 full-line background rows use full available render width and removed obsolete frame color helpers.
+> Manual note 2026-05-15: xtrm-ui prefs include externalToolChrome, status shows it, /xtrm-ui chrome background|box and /xtrm-ui-external-chrome switch modes.
+> Manual note 2026-05-15: added packages/pi-extensions/extensions/sp-terminal-overlay plus registry wrapper. Commands stream sp feed -f / sp ps --follow / arbitrary shell output into overlay.
+> Manual note 2026-05-15: sp-terminal-overlay fixed handle scope, centered 80% overlay, and added basic terminal repaint emulation for sp ps --follow.
+> Manual note 2026-05-15: sp-terminal-overlay now throttles requestRender and uses done() as the only close path to avoid overlay double-dispose crashes.
+> Manual note 2026-05-15: sp-terminal-overlay removed onHandle/requestRender usage after Pi runtime exposed a handle without requestRender().
+> Manual note 2026-05-15: sp-terminal-overlay render() pads body rows to DEFAULT_VISIBLE_LINES for fixed visual height.
+> Manual note 2026-05-15: xtrm-ui external patch v9 adds vibrant badge background for compact tool-name prefixes.
+> Manual note 2026-05-15: xtrm-ui external patch v9 adds vibrant badge background for compact tool-name prefixes.
+> Manual note 2026-05-15: sp-terminal-overlay now preserves safe SGR color sequences for feed output after overthinker confirmed the allowlisted approach with reset/width guardrails.
+> Manual note 2026-05-15: xtrm-ui external patch v10 fixes badge width overflow by styling the matched prefix without adding visible spaces.

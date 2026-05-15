@@ -40,7 +40,7 @@
       "error_message": "Significant refactor of ",
       "file": ".xtrm/memory.md",
       "root_cause": "7 lines replaced/restructured",
-      "fix": "Rewrote 11\u219213 lines (7 removed)",
+      "fix": "Rewrote 11→13 lines (7 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -257,6 +257,308 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-05-12T23:12:25Z"
+    },
+    {
+      "id": "bug-016",
+      "timestamp": "2026-05-15T18:12:20.845Z",
+      "error_message": "xtrm-ui shape/summarizer changes did not appear after Pi /reload; structured_return still showed old generic summary and no external tool border.",
+      "file": ".pi/npm/node_modules/@jaggerxtrm/pi-extensions",
+      "root_cause": "Project-local Pi package npm:@jaggerxtrm/pi-extensions at .pi/npm/node_modules shadowed the updated global symlink and was still version 0.7.17, so Pi reloaded stale xtrm-ui code.",
+      "fix": "Reinstalled the project-local package with npm install --prefix .pi/npm ./packages/pi-extensions so project and global package copies both point at version 0.7.19 code containing the frame patch and structured_return/process summarizers.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "project-local-package",
+        "reload",
+        "stale-package"
+      ],
+      "related_bugs": [
+        "bug-004"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:12:20.846Z"
+    },
+    {
+      "id": "bug-017",
+      "timestamp": "2026-05-15T18:14:39.104Z",
+      "error_message": "xtrm-ui process compact summary rendered \"0 processs\" for zero process list.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "Used generic formatLineLabel(count, \"process\"), which pluralizes by appending s and produces processs instead of processes.",
+      "fix": "Use explicit process/processes pluralization in summarizeProcessToolResult list summary.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "process",
+        "pluralization",
+        "ui-copy"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:14:39.104Z"
+    },
+    {
+      "id": "bug-018",
+      "timestamp": "2026-05-15T18:15:33.846Z",
+      "error_message": "Ctrl+O expanded view did not expand xtrm-ui-compacted external tool results.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "tool_result compaction replaced external tool text content with a one-line summary, so renderers had no original text to show when expanded.",
+      "fix": "Preserve original tool text as details.xtrmOriginalText and have the external frame renderer switch to that text when ToolExecutionComponent.expanded is true.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "expanded-view",
+        "ctrl-o"
+      ],
+      "related_bugs": [
+        "bug-016"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:15:33.847Z"
+    },
+    {
+      "id": "bug-019",
+      "timestamp": "2026-05-15T18:19:18.839Z",
+      "error_message": "xtrm-ui external tool border shape still did not render after new code was loaded; compact summaries changed but border patch had no visible effect.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "installExternalToolFramePatch used import.meta.resolve(\"@mariozechner/pi-coding-agent\"), which resolved to stale ~/node_modules/@mariozechner/pi-coding-agent instead of the live Pi CLI package under ~/.nvm/.../@earendil-works/pi-coding-agent. The patch modified the wrong ToolExecutionComponent prototype.",
+      "fix": "Added resolvePiCodingAgentEntryPath() that prioritizes process.argv[1] realpath and the active Node global @earendil package before @mario fallback, then uses that entry path for assistant-message and tool-execution patches.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "tool-rendering",
+        "module-resolution",
+        "stale-package"
+      ],
+      "related_bugs": [
+        "bug-016",
+        "bug-018"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:19:18.839Z"
+    },
+    {
+      "id": "bug-020",
+      "timestamp": "2026-05-15T18:25:40.512Z",
+      "error_message": "xtrm-ui external frames showed duplicate tool names and old border labels after reload.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "The frame renderer framed the native rendered output for tools with renderers, which included both call header and result body. Also the first prototype patch used an unversioned boolean sentinel, so /reload did not replace the old label-bearing closure.",
+      "fix": "Frame result.content summary for compact mode, original text only for expanded mode, and version the ToolExecutionComponent patch so newer /reloads replace the old prototype patch.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "duplicate-rendering",
+        "reload"
+      ],
+      "related_bugs": [
+        "bug-018",
+        "bug-019"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:25:40.512Z"
+    },
+    {
+      "id": "bug-021",
+      "timestamp": "2026-05-15T18:27:38.392Z",
+      "error_message": "xtrm-ui external tool rows briefly showed duplicate native call/result content for 1-2 seconds before normalizing to compact summary.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "Before tool_result arrived, the frame renderer had no compact result content and fell back to framing native rendered call output, causing transient duplicated display.",
+      "fix": "Added pending summary extraction from tool args so compact external frames render one pending line before result content exists.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "pending-state",
+        "duplicate-rendering"
+      ],
+      "related_bugs": [
+        "bug-020"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:27:38.393Z"
+    },
+    {
+      "id": "bug-022",
+      "timestamp": "2026-05-15T18:31:16.462Z",
+      "error_message": "xtrm-ui external frames rendered too wide in compact mode, inconsistent with normal compact density.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "frameToolLines used the full available viewport width as the compact content cap, so long one-line summaries produced broad rectangles.",
+      "fix": "Added EXTERNAL_TOOL_FRAME_COMPACT_MAX_CONTENT_WIDTH=44 for collapsed frames while preserving full available width when expanded.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "density",
+        "compact-ui"
+      ],
+      "related_bugs": [
+        "bug-020",
+        "bug-021"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:31:16.463Z"
+    },
+    {
+      "id": "bug-023",
+      "timestamp": "2026-05-15T18:34:20.417Z",
+      "error_message": "xtrm-ui compact tool rows had inconsistent left indentation because long subjects/meta wrapped at terminal column 0.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/format.ts",
+      "root_cause": "Compact rows allowed long command/path/meta segments, relying on terminal wrapping instead of keeping one compact row with a stable gutter.",
+      "fix": "Cap renderToolSummary subject/meta to 34 columns, bash command summaries to 38 columns, and external frame collapsed content to 38 columns.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "compact-density",
+        "indentation",
+        "wrapping"
+      ],
+      "related_bugs": [
+        "bug-022"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:34:20.418Z"
+    },
+    {
+      "id": "bug-024",
+      "timestamp": "2026-05-15T18:41:08.098Z",
+      "error_message": "xtrm-ui external framed tools had too much vertical distance between tool calls compared with native compact one-line tool rows.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "Collapsed external tools used a three-line box (top/content/bottom), making each tool call take three rows plus normal row spacing.",
+      "fix": "Render collapsed external frames as a single-row inline frame with dim cold side borders and underline/overline content; keep the full box for expanded view.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "vertical-density",
+        "compact-ui"
+      ],
+      "related_bugs": [
+        "bug-022",
+        "bug-023"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:41:08.098Z"
+    },
+    {
+      "id": "bug-025",
+      "timestamp": "2026-05-15T18:45:20.491Z",
+      "error_message": "xtrm-ui one-line inline external frames rendered as broken/erased text in the terminal.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "The pseudo-frame used underline and overline ANSI styling, which is not rendered consistently by Pi/TUI terminal output.",
+      "fix": "Removed pseudo-inline frame styling and restored real box drawing for collapsed external tools, tightened to one content line capped at 34 columns.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "terminal-rendering",
+        "ansi"
+      ],
+      "related_bugs": [
+        "bug-024"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T18:45:20.491Z"
+    },
+    {
+      "id": "bug-026",
+      "timestamp": "2026-05-15T20:52:45.288Z",
+      "error_message": "sp-terminal-overlay showed \"handle is not defined\", opened off-center, and sp ps --follow accumulated repaint frames instead of updating a fixed screen.",
+      "file": "packages/pi-extensions/extensions/sp-terminal-overlay/index.ts",
+      "root_cause": "Overlay handle variable was scoped inside the custom component factory while onHandle was in options scope; overlay anchor used right-center/72%; stream parser treated ANSI cursor/clear-screen repaint sequences as plain output.",
+      "fix": "Moved handle to openTerminalOverlay scope, changed overlay to center/80%, and added simple ANSI CSI terminal emulation for cursor home, clear screen, clear line, and cursor movement.",
+      "tags": [
+        "pi",
+        "overlay",
+        "sp-terminal-overlay",
+        "ansi",
+        "terminal-emulation"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T20:52:45.288Z"
+    },
+    {
+      "id": "bug-027",
+      "timestamp": "2026-05-15T20:57:55.997Z",
+      "error_message": "sp-terminal-overlay made Pi crash badly when running streaming overlays.",
+      "file": "packages/pi-extensions/extensions/sp-terminal-overlay/index.ts",
+      "root_cause": "Likely over-aggressive overlay redraws on every output chunk plus double close path using both handle.close() and done().",
+      "fix": "Throttle redraws to at most every 100ms, clear pending render timers on dispose, and remove handle.close() from the component close path so done() owns overlay teardown.",
+      "tags": [
+        "pi",
+        "overlay",
+        "sp-terminal-overlay",
+        "crash",
+        "render-throttle"
+      ],
+      "related_bugs": [
+        "bug-026"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T20:57:55.997Z"
+    },
+    {
+      "id": "bug-028",
+      "timestamp": "2026-05-15T21:01:09.276Z",
+      "error_message": "TypeError: handle?.requestRender is not a function in sp-terminal-overlay.",
+      "file": "packages/pi-extensions/extensions/sp-terminal-overlay/index.ts",
+      "root_cause": "Current Pi custom overlay onHandle object does not expose requestRender(), despite docs/examples implying a render handle may exist.",
+      "fix": "Removed overlay handle usage entirely and rely only on documented tui.requestRender().",
+      "tags": [
+        "pi",
+        "overlay",
+        "sp-terminal-overlay",
+        "requestRender",
+        "crash"
+      ],
+      "related_bugs": [
+        "bug-027"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T21:01:09.277Z"
+    },
+    {
+      "id": "bug-029",
+      "timestamp": "2026-05-15T21:17:08.303Z",
+      "error_message": "sp-terminal-overlay rendered sp feed/sp ps output in plain white instead of preserving original colors.",
+      "file": "packages/pi-extensions/extensions/sp-terminal-overlay/index.ts",
+      "root_cause": "ANSI CSI SGR color sequences were consumed and discarded by the mini terminal parser.",
+      "fix": "Preserve allowlisted numeric CSI SGR sequences for append-only output, reset styling per rendered row, keep cursor/clear controls consumed, and strip SGR in cursor-addressed repaint mode to avoid ANSI-unsafe screen mutation.",
+      "tags": [
+        "pi",
+        "overlay",
+        "sp-terminal-overlay",
+        "ansi",
+        "colors"
+      ],
+      "related_bugs": [
+        "bug-026",
+        "bug-028"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T21:17:08.303Z"
+    },
+    {
+      "id": "bug-030",
+      "timestamp": "2026-05-15T21:20:18.056Z",
+      "error_message": "Pi crashed: Rendered line exceeds terminal width (58 > 56) after xtrm-ui external badge styling.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "highlightExternalToolBadge added visible spaces around the badge after the line was already truncated to render width, increasing visible row width by 2.",
+      "fix": "Style the matched tool prefix in-place without adding visible padding and bump external tool patch version to v10.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "badge",
+        "width-overflow",
+        "crash"
+      ],
+      "related_bugs": [
+        "bug-029"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T21:20:18.056Z"
     }
   ]
 }

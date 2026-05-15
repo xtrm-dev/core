@@ -1,0 +1,15 @@
+{
+  "name": "@xtrm/pi-sp-terminal-overlay",
+  "version": "0.1.0",
+  "description": "XTRM Pi overlay for streaming sp feed and terminal command output",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

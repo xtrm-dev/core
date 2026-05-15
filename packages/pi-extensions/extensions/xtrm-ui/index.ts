@@ -32,7 +32,7 @@ import {
   createWriteTool,
 } from "@mariozechner/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -57,6 +57,7 @@ import {
 
 export type XtrmThemeName = "pidex-dark" | "pidex-light" | "pidex-dark-flattools" | "pidex-light-flattools";
 export type XtrmDensity = "compact" | "comfortable";
+export type XtrmExternalToolChrome = "background" | "box";
 
 export interface XtrmUiPrefs {
   themeName: XtrmThemeName;
@@ -67,6 +68,7 @@ export interface XtrmUiPrefs {
   forceTheme: boolean; // When false, skip setTheme (allow external theme override)
   toolRowBg: boolean; // Subtle background behind tool text rows (no padding)
   compactExternalToolResults: boolean; // Compact extension tool results (disables full expand output)
+  externalToolChrome: XtrmExternalToolChrome; // Visual treatment for non-native tool rows
   hideThinkingPlaceholder: boolean; // When false, hidden thinking blocks render no placeholder text
 }
 
@@ -85,8 +87,16 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   forceTheme: true,
   toolRowBg: false,
   compactExternalToolResults: true,
+  externalToolChrome: "background",
   hideThinkingPlaceholder: false,
 };
+
+let activeExternalToolChrome: XtrmExternalToolChrome = DEFAULT_PREFS.externalToolChrome;
+
+function setActiveExternalToolChrome(chrome: XtrmExternalToolChrome): void {
+  activeExternalToolChrome = chrome;
+}
+
 
 // ============================================================================
 // Preferences
@@ -111,6 +121,7 @@ function normalizePrefs(input: unknown): XtrmUiPrefs {
     toolRowBg: source.toolRowBg ?? DEFAULT_PREFS.toolRowBg,
     compactExternalToolResults:
       source.compactExternalToolResults ?? DEFAULT_PREFS.compactExternalToolResults,
+    externalToolChrome: source.externalToolChrome === "box" ? "box" : "background",
     hideThinkingPlaceholder: source.hideThinkingPlaceholder ?? DEFAULT_PREFS.hideThinkingPlaceholder,
   };
 }
@@ -153,8 +164,39 @@ type PatchableAssistantMessage = {
 
 const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiSilentHiddenThinking";
 
+function maybeFileUrlToPath(value: string): string {
+  return value.startsWith("file:") ? fileURLToPath(value) : value;
+}
+
+function resolvePiCodingAgentEntryPath(): string {
+  const candidates: string[] = [];
+
+  const argvPath = process.argv[1];
+  if (argvPath && existsSync(argvPath)) {
+    const realArgvPath = realpathSync(argvPath);
+    if (realArgvPath.endsWith("/dist/cli.js")) {
+      candidates.push(join(dirname(realArgvPath), "index.js"));
+    }
+  }
+
+  candidates.push(
+    join(dirname(process.execPath), "..", "lib", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "index.js"),
+    join(dirname(process.execPath), "..", "lib", "node_modules", "@mariozechner", "pi-coding-agent", "dist", "index.js"),
+  );
+
+  for (const packageName of ["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"]) {
+    try {
+      candidates.push(maybeFileUrlToPath(import.meta.resolve(packageName)));
+    } catch {}
+  }
+
+  const entryPath = candidates.find((candidate) => existsSync(candidate));
+  if (!entryPath) throw new Error("Could not resolve pi-coding-agent entry path");
+  return entryPath;
+}
+
 async function installSilentHiddenThinkingPatch(): Promise<void> {
-  const entryPath = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
+  const entryPath = resolvePiCodingAgentEntryPath();
   const componentPath = join(dirname(entryPath), "modes", "interactive", "components", "assistant-message.js");
   const mod = await import(pathToFileURL(componentPath).href) as {
     AssistantMessageComponent?: AssistantMessageComponentCtor;
@@ -189,6 +231,240 @@ async function installSilentHiddenThinkingPatch(): Promise<void> {
     if (this.lastMessage) this.updateContent?.(this.lastMessage);
   };
   proto[PATCHED_ASSISTANT_MESSAGE] = true;
+}
+
+type ToolExecutionComponentCtor = {
+  prototype: {
+    getRenderShell?: () => "default" | "self";
+    hasRendererDefinition?: () => boolean;
+    render?: (width: number) => string[];
+  };
+};
+
+type PatchableToolExecutionComponent = {
+  toolName?: string;
+  args?: unknown;
+  result?: { content?: Array<{ type: string; text?: string }>; details?: unknown; isError?: boolean };
+  expanded?: boolean;
+  hasRendererDefinition?: () => boolean;
+};
+
+type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | "external";
+
+const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 10;
+const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_PATTERN, "");
+}
+
+function isBlankRenderedLine(line: string): boolean {
+  return stripAnsi(line).trim().length === 0;
+}
+
+function externalToolFrameKind(toolName: string | undefined): ExternalToolFrameKind | undefined {
+  if (!toolName || XTRM_BUILTIN_TOOLS.has(toolName)) return undefined;
+  if (toolName === "structured_return") return "structured";
+  if (toolName === "process") return "process";
+  if (toolName.startsWith("gitnexus_")) return "gitnexus";
+  if (SERENA_COMPACT_TOOLS.has(toolName)) return "serena";
+  return "external";
+}
+
+function padVisible(text: string, width: number): string {
+  const visible = visibleWidth(text);
+  return text + " ".repeat(Math.max(0, width - visible));
+}
+
+function getXtrmOriginalText(details: unknown): string | undefined {
+  const record = asRecord(details);
+  return typeof record?.xtrmOriginalText === "string" ? record.xtrmOriginalText : undefined;
+}
+
+function getToolArgs(component: PatchableToolExecutionComponent): Record<string, unknown> {
+  return component.args && typeof component.args === "object" && !Array.isArray(component.args)
+    ? component.args as Record<string, unknown>
+    : {};
+}
+
+function summarizeExternalToolPending(toolName: string | undefined, input: Record<string, unknown>): string {
+  const name = toolName ?? "tool";
+  if (name === "structured_return") {
+    return `• structured_return ${shortenCommand(String(input.command ?? "running"), 38)}`;
+  }
+  if (name === "process") {
+    return `• process ${String(input.action ?? "running")}`;
+  }
+  if (name.startsWith("gitnexus_")) {
+    const subject = summarizeSerenaSubject(name, input) ?? summarizeToolSubject(name, input);
+    return `• ${normalizeToolLabel(name)}${subject ? ` ${subject}` : ""}`;
+  }
+  if (SERENA_COMPACT_TOOLS.has(name)) {
+    const subject = summarizeSerenaSubject(name, input);
+    return `• serena ${name}${subject ? ` ${subject}` : ""}`;
+  }
+  const subject = summarizeToolSubject(name, input) ?? summarizeSerenaSubject(name, input);
+  return `• ${normalizeToolLabel(name)}${subject ? ` ${subject}` : ""}`;
+}
+
+function extractResultTextLines(component: PatchableToolExecutionComponent): string[] | undefined {
+  const originalText = component.expanded ? getXtrmOriginalText(component.result?.details) : undefined;
+  if (originalText) return originalText.split("\n");
+
+  const text = component.result?.content?.find((content) => content.type === "text")?.text;
+  if (text) return text.split("\n");
+
+  return [summarizeExternalToolPending(component.toolName, getToolArgs(component))];
+}
+
+function trimRenderedToolLines(lines: string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+  while (start < end && isBlankRenderedLine(lines[start] ?? "")) start++;
+  while (end > start && isBlankRenderedLine(lines[end - 1] ?? "")) end--;
+  return lines.slice(start, end).map((line) => line.replace(/\s+$/u, ""));
+}
+
+function externalToolBgRgb(kind: ExternalToolFrameKind): [number, number, number] {
+  const bgColors: Record<ExternalToolFrameKind, [number, number, number]> = {
+    serena: [13, 34, 49],
+    gitnexus: [31, 23, 55],
+    structured: [35, 23, 55],
+    process: [10, 42, 52],
+    external: [27, 33, 43],
+  };
+  return bgColors[kind];
+}
+
+function externalToolBgColor(kind: ExternalToolFrameKind, text: string): string {
+  const [r, g, b] = externalToolBgRgb(kind);
+  return `\x1b[48;2;${r};${g};${b}m${text}\x1b[49m`;
+}
+
+function externalToolBadgeColor(kind: ExternalToolFrameKind, text: string): string {
+  const bgColors: Record<ExternalToolFrameKind, [number, number, number]> = {
+    serena: [26, 96, 132],
+    gitnexus: [82, 58, 150],
+    structured: [105, 61, 150],
+    process: [17, 118, 145],
+    external: [74, 88, 112],
+  };
+  const [badgeR, badgeG, badgeB] = bgColors[kind];
+  const [rowR, rowG, rowB] = externalToolBgRgb(kind);
+  return `\x1b[1m\x1b[48;2;${badgeR};${badgeG};${badgeB}m${text}\x1b[22m\x1b[48;2;${rowR};${rowG};${rowB}m`;
+}
+
+function highlightExternalToolBadge(kind: ExternalToolFrameKind, line: string): string {
+  const match = line.match(/^(•\s+(?:serena\s+\S+|gitnexus(?:_\S+)?|structured_return|process|\S+))/u);
+  if (!match?.[1]) return line;
+  return externalToolBadgeColor(kind, match[1]) + line.slice(match[1].length);
+}
+
+function externalToolBorderColor(kind: ExternalToolFrameKind, text: string): string {
+  const colors: Record<ExternalToolFrameKind, [number, number, number]> = {
+    serena: [150, 210, 255],
+    gitnexus: [185, 168, 255],
+    structured: [205, 166, 255],
+    process: [145, 231, 255],
+    external: [168, 181, 199],
+  };
+  const [r, g, b] = colors[kind];
+  return `[2m[38;2;${r};${g};${b}m${text}[39m[22m`;
+}
+
+function collapsedExternalToolLines(contentLines: string[], expanded: boolean): string[] {
+  return expanded ? contentLines : [contentLines.join(" · ")];
+}
+
+function renderExternalToolBackgroundLines(
+  contentLines: string[],
+  width: number,
+  kind: ExternalToolFrameKind,
+  expanded: boolean,
+): string[] {
+  const availableWidth = Math.max(8, width);
+  const renderWidth = availableWidth;
+  const visibleLines = collapsedExternalToolLines(contentLines, expanded);
+
+  return visibleLines.map((rawLine) => {
+    const line = truncateToWidth(rawLine, Math.max(1, renderWidth - 2));
+    const highlighted = highlightExternalToolBadge(kind, line);
+    return externalToolBgColor(kind, ` ${padVisible(highlighted, Math.max(1, renderWidth - 2))} `);
+  });
+}
+
+function renderExternalToolBoxLines(
+  contentLines: string[],
+  width: number,
+  kind: ExternalToolFrameKind,
+  expanded: boolean,
+): string[] {
+  const availableWidth = Math.max(8, width - 4);
+  const maxContentWidth = expanded ? availableWidth : Math.min(availableWidth, 34);
+  const visibleLines = collapsedExternalToolLines(contentLines, expanded);
+  const contentWidth = Math.max(
+    1,
+    Math.min(maxContentWidth, ...visibleLines.map((line) => visibleWidth(line))),
+  );
+  const innerWidth = contentWidth + 2;
+
+  const framed = [externalToolBorderColor(kind, `╭${"─".repeat(innerWidth)}╮`)];
+  for (const rawLine of visibleLines) {
+    const line = truncateToWidth(rawLine, contentWidth);
+    framed.push(`${externalToolBorderColor(kind, "│")} ${padVisible(line, contentWidth)} ${externalToolBorderColor(kind, "│")}`);
+  }
+  framed.push(externalToolBorderColor(kind, `╰${"─".repeat(innerWidth)}╯`));
+  return framed;
+}
+
+function renderExternalToolLines(
+  lines: string[],
+  width: number,
+  kind: ExternalToolFrameKind,
+  expanded = false,
+): string[] {
+  const contentLines = trimRenderedToolLines(lines).filter((line) => !isBlankRenderedLine(line));
+  if (contentLines.length === 0) return [];
+
+  return activeExternalToolChrome === "box"
+    ? renderExternalToolBoxLines(contentLines, width, kind, expanded)
+    : renderExternalToolBackgroundLines(contentLines, width, kind, expanded);
+}
+
+async function installExternalToolFramePatch(): Promise<void> {
+  const entryPath = resolvePiCodingAgentEntryPath();
+  const componentPath = join(dirname(entryPath), "modes", "interactive", "components", "tool-execution.js");
+  const mod = await import(pathToFileURL(componentPath).href) as {
+    ToolExecutionComponent?: ToolExecutionComponentCtor;
+  };
+  const proto = mod.ToolExecutionComponent?.prototype as
+    | (ToolExecutionComponentCtor["prototype"] & { [PATCHED_EXTERNAL_TOOL_FRAME]?: boolean })
+    | undefined;
+  if (!proto?.render || proto[PATCHED_EXTERNAL_TOOL_FRAME] === EXTERNAL_TOOL_FRAME_PATCH_VERSION) return;
+
+  const getRenderShell = proto.getRenderShell;
+  const render = proto.render;
+
+  proto.getRenderShell = function patchedGetRenderShell(this: PatchableToolExecutionComponent) {
+    const kind = externalToolFrameKind(this.toolName);
+    if (kind) return "self";
+    return getRenderShell?.call(this) ?? "default";
+  };
+
+  proto.render = function patchedRender(this: PatchableToolExecutionComponent, width: number) {
+    const rendered = render.call(this, width);
+    const kind = externalToolFrameKind(this.toolName);
+    if (!kind || rendered.length === 0) return rendered;
+
+    const firstContentIndex = rendered.findIndex((line) => !isBlankRenderedLine(line));
+    const leading = firstContentIndex > 0 ? rendered.slice(0, firstContentIndex) : [];
+    const content = extractResultTextLines(this) ?? rendered;
+    const styled = renderExternalToolLines(content, width, kind, Boolean(this.expanded));
+    return styled.length > 0 ? [...leading, ...styled] : rendered;
+  };
+
+  proto[PATCHED_EXTERNAL_TOOL_FRAME] = EXTERNAL_TOOL_FRAME_PATCH_VERSION;
 }
 
 function applyThinkingChrome(ctx: ExtensionContext, prefs: XtrmUiPrefs): void {
@@ -396,6 +672,13 @@ function parseDensityArg(arg: string): XtrmDensity | undefined {
   return undefined;
 }
 
+function parseExternalToolChromeArg(arg: string): XtrmExternalToolChrome | undefined {
+  const normalized = arg.trim().toLowerCase();
+  if (normalized === "background" || normalized === "bg" || normalized === "row") return "background";
+  if (normalized === "box" || normalized === "frame" || normalized === "border") return "box";
+  return undefined;
+}
+
 function registerCommands(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs, setPrefs: (p: XtrmUiPrefs) => void, getThinkingLevel: () => string) {
   pi.registerMessageRenderer("xtrm-ui-info", (message, _options, theme) => {
     const title = (message.details as { title?: string } | undefined)?.title ?? "XTRM UI";
@@ -407,7 +690,26 @@ function registerCommands(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs, setPref
 
   pi.registerCommand("xtrm-ui", {
     description: "Show XTRM UI status and active preferences",
-    handler: async (_args, ctx) => {
+    handler: async (args, ctx) => {
+      const trimmedArgs = args.trim();
+      if (trimmedArgs) {
+        const [subcommand, ...rest] = trimmedArgs.split(/\s+/u);
+        if (subcommand === "chrome" || subcommand === "external-chrome" || subcommand === "tool-chrome") {
+          const externalToolChrome = parseExternalToolChromeArg(rest.join(" "));
+          if (!externalToolChrome) {
+            ctx.ui.notify("Usage: /xtrm-ui chrome background|box", "warning");
+            return;
+          }
+          const prefs = { ...getPrefs(), externalToolChrome };
+          setPrefs(prefs);
+          persistPrefs(pi, prefs);
+          ctx.ui.notify(`External tool chrome set to ${externalToolChrome}.`, "info");
+          return;
+        }
+        ctx.ui.notify("Usage: /xtrm-ui [chrome background|box]", "warning");
+        return;
+      }
+
       const prefs = getPrefs();
       const contextUsage = ctx.getContextUsage();
       const lines = [
@@ -419,6 +721,7 @@ function registerCommands(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs, setPref
         `Show footer: ${prefs.showFooter ? "yes" : "no"} (custom-footer handles this)`,
         `Tool row background: ${prefs.toolRowBg ? "on" : "off"}`,
         `Compact external tool results: ${prefs.compactExternalToolResults ? "on" : "off"}`,
+        `External tool chrome: ${prefs.externalToolChrome}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ];
@@ -546,6 +849,25 @@ function registerCommands(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs, setPref
         `Compact external tool results ${compactExternalToolResults ? "enabled" : "disabled"}.`,
         "info",
       );
+    },
+  });
+
+  pi.registerCommand("xtrm-ui-external-chrome", {
+    description: "Choose non-native tool chrome: background|box",
+    getArgumentCompletions: (prefix) => {
+      const values = ["background", "box"].filter((item) => item.startsWith(prefix));
+      return values.length > 0 ? values.map((value) => ({ value, label: value })) : null;
+    },
+    handler: async (args, ctx) => {
+      const externalToolChrome = parseExternalToolChromeArg(args);
+      if (!externalToolChrome) {
+        ctx.ui.notify("Usage: /xtrm-ui-external-chrome background|box", "warning");
+        return;
+      }
+      const prefs = { ...getPrefs(), externalToolChrome };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      ctx.ui.notify(`External tool chrome set to ${externalToolChrome}.`, "info");
     },
   });
 
@@ -956,6 +1278,101 @@ function summarizeGenericToolResult(
   return `• ${normalized}${subject ? ` ${subject}` : ""}${joined ? ` · ${joined}` : ""}`;
 }
 
+function summarizeStructuredReturnToolResult(
+  input: Record<string, unknown>,
+  text: string,
+  details: unknown,
+  durationMs: number | undefined,
+): string {
+  const record = asRecord(details);
+  const command = shortenCommand(String(input.command ?? text.split("→")[0] ?? "command"), 52);
+  const resultText = text.includes("→") ? text.split("→").slice(1).join("→").trim() : text.trim();
+  const resultLines = resultText.split("\n").map((line) => line.trim()).filter(Boolean);
+  const summary = resultLines.find((line) => !line.startsWith("cwd:"));
+  const parser = typeof record?.parser === "string" ? record.parser : undefined;
+  const exitCode = typeof record?.exitCode === "number" ? `exit ${record.exitCode}` : undefined;
+  const duration = formatDuration(durationMs);
+  const meta = joinMeta([summary ? shortenCommand(summary, 72) : undefined, parser, exitCode, duration]);
+  return `• structured_return ${command}${meta ? ` · ${meta}` : ""}`;
+}
+
+function summarizeProcessToolResult(
+  input: Record<string, unknown>,
+  text: string,
+  details: unknown,
+  durationMs: number | undefined,
+): string {
+  const record = asRecord(details);
+  const action = String(record?.action ?? input.action ?? "action");
+  const duration = formatDuration(durationMs);
+  const meta = (...parts: Array<string | undefined>) => {
+    const joined = joinMeta([...parts, duration]);
+    return joined ? ` · ${joined}` : "";
+  };
+
+  if (action === "start") {
+    const proc = asRecord(record?.process);
+    const name = String(proc?.name ?? input.name ?? "process");
+    const id = proc?.id ? String(proc.id) : undefined;
+    const pid = proc?.pid != null ? `pid ${String(proc.pid)}` : undefined;
+    return `• process start "${name}"${meta(id, pid)}`;
+  }
+
+  if (action === "list") {
+    const processes = Array.isArray(record?.processes) ? record.processes : [];
+    const running = processes.filter((item) => {
+      const proc = asRecord(item);
+      return proc?.status === "running" || proc?.status === "terminating";
+    }).length;
+    return `• process list${meta(`${processes.length} ${processes.length === 1 ? "process" : "processes"}`, `${running} running`)}`;
+  }
+
+  if (action === "output") {
+    const output = asRecord(record?.output);
+    const stdout = Array.isArray(output?.stdout) ? output.stdout.length : undefined;
+    const stderr = Array.isArray(output?.stderr) ? output.stderr.length : undefined;
+    return `• process output ${String(input.id ?? "process")}${meta(
+      stdout != null ? `${stdout} stdout` : undefined,
+      stderr != null ? `${stderr} stderr` : undefined,
+    )}`;
+  }
+
+  if (action === "logs") {
+    return `• process logs ${String(input.id ?? "process")}${meta("log paths")}`;
+  }
+
+  const message = typeof record?.message === "string" ? record.message : text.split("\n")[0];
+  return `• process ${action}${message ? ` · ${shortenCommand(message, 38)}` : ""}${duration ? ` · ${duration}` : ""}`;
+}
+
+function summarizeExternalToolResult(
+  toolName: string,
+  input: Record<string, unknown>,
+  text: string,
+  details: unknown,
+  durationMs: number | undefined,
+): string {
+  if (SERENA_COMPACT_TOOLS.has(toolName)) {
+    return summarizeSerenaToolResult(toolName, input, text, durationMs);
+  }
+  if (toolName === "structured_return") {
+    return summarizeStructuredReturnToolResult(input, text, details, durationMs);
+  }
+  if (toolName === "process") {
+    return summarizeProcessToolResult(input, text, details, durationMs);
+  }
+  return summarizeGenericToolResult(toolName, input, text, durationMs);
+}
+
+function withXtrmToolDetails(details: unknown, sourceText: string, toolName: string): unknown {
+  const record = asRecord(details);
+  return {
+    ...(record ?? {}),
+    xtrmOriginalText: sourceText,
+    xtrmToolFrame: externalToolFrameKind(toolName),
+  };
+}
+
 const XTRM_BUILTIN_TOOLS = new Set(["bash", "read", "edit", "write", "find", "grep", "ls"]);
 
 function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): void {
@@ -1005,6 +1422,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
   pi.on("tool_result", async (event: ToolResultEvent, _ctx) => {
     if (event.isError) return undefined;
     if (XTRM_BUILTIN_TOOLS.has(event.toolName)) return undefined;
+    if (!getPrefs().compactExternalToolResults) return undefined;
 
     const text = getTextContent({ content: event.content as Array<{ type: string; text?: string }> });
     const startedAt = toolCallStartTimes.get(event.toolCallId);
@@ -1018,13 +1436,17 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         ? (event.input as Record<string, unknown>)
         : {};
 
-    const compactText = SERENA_COMPACT_TOOLS.has(event.toolName)
-      ? summarizeSerenaToolResult(event.toolName, safeInput, sourceText, durationMs)
-      : summarizeGenericToolResult(event.toolName, safeInput, sourceText, durationMs);
+    const compactText = summarizeExternalToolResult(
+      event.toolName,
+      safeInput,
+      sourceText,
+      event.details,
+      durationMs,
+    );
 
     return {
       content: [{ type: "text", text: formatHierarchyText(compactText) }],
-      details: event.details,
+      details: withXtrmToolDetails(event.details, sourceText, event.toolName),
     };
   });
 
@@ -1043,7 +1465,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderResult(result, { expanded, isPartial }, theme) {
       const details = (result.details ?? {}) as DetailsWithXtrmMeta<BashToolDetails, Record<string, unknown>>;
       const meta = getXtrmMeta<BashToolDetails, Record<string, unknown>>(details);
-      const command = shortenCommand(String(meta?.args.command ?? ""));
+      const command = shortenCommand(String(meta?.args.command ?? ""), 38);
       if (isPartial) {
         return toolRowText(theme, `${theme.fg("accent", "•")} ${theme.fg("toolTitle", "Running ")}${theme.fg("accent", command)}${theme.fg("toolTitle", " in bash")}`);
       }
@@ -1263,13 +1685,17 @@ function isXtrmTheme(name: string | undefined): boolean {
 
 export default function xtrmUiExtension(pi: ExtensionAPI): void {
   void installSilentHiddenThinkingPatch().catch(() => undefined);
+  void installExternalToolFramePatch().catch(() => undefined);
 
   let prefs: XtrmUiPrefs = { ...DEFAULT_PREFS };
   let previousThemeName: string | null = null;
   const extensionThemeDir = join(__dirname, "../../themes/xtrm-ui");
 
   const getPrefs = () => prefs;
-  const setPrefs = (p: XtrmUiPrefs) => { prefs = p; };
+  const setPrefs = (p: XtrmUiPrefs) => {
+    prefs = p;
+    setActiveExternalToolChrome(p.externalToolChrome);
+  };
   const getThinkingLevel = () => formatThinking(pi.getThinkingLevel());
 
   registerXtrmUiTools(pi, getPrefs);
@@ -1285,7 +1711,7 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   }));
 
   pi.on("session_start", async (_event, ctx) => {
-    prefs = loadPrefs(ctx.sessionManager.getEntries() as Array<MaybeCustomEntry>);
+    setPrefs(loadPrefs(ctx.sessionManager.getEntries() as Array<MaybeCustomEntry>));
     if (!previousThemeName && !isXtrmTheme(ctx.ui.theme.name)) {
       previousThemeName = ctx.ui.theme.name ?? null;
     }

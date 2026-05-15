@@ -32,3 +32,11 @@
 <!-- Significant technical decisions with rationale. Why X was chosen over Y. -->
 
 [2026-05-08] Do not early-stop specialists to take over the work yourself. If a specialist appears stuck, diagnose with `sp ps`, `sp feed`, `sp result`, and observability, then report/steer; only stop on explicit user instruction or destructive/runaway behavior. Bad specialist behavior usually means the bead/contract/prompt was underspecified by the orchestrator: write clearer, bounded, meaningful bead descriptions and specialist contracts up front.
+
+[2026-05-15] XTRM UI external tool borders should not duplicate the tool name in the crossing/top border label. Keep the tool identity in the compact content line only; border should be plain shape chrome.
+
+[2026-05-15] XTRM UI external tool compacting must preserve expanded-view behavior: compact rows may summarize, but Ctrl+O should reveal original/full tool text. Border chrome should be visually thin/subtle, not prominent.
+
+[2026-05-15] XTRM UI external frames must contain exactly one tool identity in compact view: use the compact result summary only, not both the tool call header and result line. Do not frame call+result together for compact external tools.
+
+[2026-05-15] XTRM UI external frames must avoid transient duplicate call+result display during pending/partial phase. Hide or frame only the compact summary after result exists; pending should not frame native call+result content.

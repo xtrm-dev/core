@@ -41,3 +41,10 @@ Pi discovers this package through:
 - `pi.extensions: ["./src/index.ts"]`
 
 After install, keep `.pi/settings.json` package wiring pointed at `npm:@jaggerxtrm/pi-extensions`.
+
+## Managed extensions
+
+Notable bundled extensions include:
+
+- `xtrm-ui` — XTRM Pi chrome, native tool summaries, selectable external tool chrome (`/xtrm-ui chrome background|box`).
+- `sp-terminal-overlay` — `/sp-feed`, `/sp-ps`, and `/xtrm-terminal` streaming overlays for specialist monitoring.
