@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `xt claude` / `xt pi` worktree launch output and xtrm/specialist guidance now clarify that clean git worktrees do not include ignored dependency artifacts such as `node_modules/` or `.venv/`; users should run the repo's normal bootstrap inside the worktree instead of tracking dependency directories. (xtrm-tbih / #257)
+
 ## [0.7.19] - 2026-05-14
 
 ### Fixed
