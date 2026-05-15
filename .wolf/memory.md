@@ -113,3 +113,4 @@
 - 2026-05-15: xtrm-ui background chrome highlights compact non-native tool-name prefixes with a brighter badge background inside the subtle full-row background.
 - 2026-05-15: sp-terminal-overlay preserves safe numeric CSI SGR colors for append-only feed output, strips SGR in terminal repaint mode to avoid ANSI-unsafe cursor slicing, and resets rows before borders.
 - 2026-05-15: xtrm-ui external badge styling must not add visible padding after truncation; it caused rendered rows to exceed terminal width by 2 columns.
+- 2026-05-15: xtrm-ewou merged #257 clean-worktree dependency guidance to main: xtrm does not provision or track node_modules/.venv; use repo bootstrap commands inside worktrees.

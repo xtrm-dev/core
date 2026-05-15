@@ -296,8 +296,10 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
 
     writeSessionMeta(worktreePath, runtime);
     console.log(kleur.green(`\n  ✓ Worktree ready — launching ${runtime}...\n`));
+    console.log(kleur.dim('  note: clean git worktrees do not include ignored dependency dirs like node_modules/ or .venv/'));
+    console.log(kleur.dim('        if lint/tests need them, run this repo\'s normal bootstrap inside the worktree (make bootstrap, just setup, npm ci, uv sync, etc.)\n'));
 
-    // Pi worktree: no bootstrap needed.
+    // Pi runtime bootstrap is handled globally. Project dependency setup is still repo-owned.
     // - Extensions: globally linked (~/.pi/agent/extensions/ → repo)
     // - Packages: installed globally at ~/.pi/agent/npm/
     // Worktree inherits both from global locations.

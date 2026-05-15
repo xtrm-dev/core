@@ -25,6 +25,10 @@ bd update <id> --claim            # claim before any edit
 
 > Use `bv --robot-next` for the single top pick. Use `bv --robot-triage --format toon` to save context tokens. **Never run bare `bv` — it launches an interactive TUI.**
 
+### Worktree dependency setup
+
+`xt claude` / `xt pi` sessions use clean git worktrees. Git does not copy ignored dependency artifacts such as `node_modules/`, `.venv/`, build caches, or generated outputs. If a repo's lint/tests need those files, run the repo's normal bootstrap inside the worktree (`make bootstrap`, `just setup`, `npm ci`, `uv sync`, etc.). Do not track dependency directories to make worktrees pass.
+
 ---
 
 ## Trigger Patterns

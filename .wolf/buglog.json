@@ -40,7 +40,7 @@
       "error_message": "Significant refactor of ",
       "file": ".xtrm/memory.md",
       "root_cause": "7 lines replaced/restructured",
-      "fix": "Rewrote 11→13 lines (7 removed)",
+      "fix": "Rewrote 11\u219213 lines (7 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -559,6 +559,24 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-05-15T21:20:18.056Z"
+    },
+    {
+      "id": "bug-031",
+      "timestamp": "2026-05-15T22:04:51Z",
+      "error_message": "GitHub issue #257: fresh xt/sp worktrees lack ignored dependency dirs such as node_modules/.venv, causing specialist validation tools to appear missing",
+      "file": "cli/src/utils/worktree-session.ts, .xtrm/skills/default/using-specialists-v3/SKILL.md, .xtrm/skills/default/using-xtrm/SKILL.md",
+      "root_cause": "Normal git worktree behavior creates a clean checkout and does not copy ignored dependency artifacts; xtrm messaging and specialist guidance did not make repo-owned bootstrap responsibility explicit.",
+      "fix": "Added a worktree creation note and skill guidance directing users/specialists to run the repo standard bootstrap inside the worktree instead of tracking dependency artifacts or expecting xtrm provisioning.",
+      "tags": [
+        "worktree",
+        "dependencies",
+        "specialists",
+        "validation",
+        "ux"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T22:04:51Z"
     }
   ]
 }
