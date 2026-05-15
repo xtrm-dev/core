@@ -55228,6 +55228,8 @@ async function launchWorktreeSession(opts) {
   console.log(kleur_default.green(`
   \u2713 Worktree ready \u2014 launching ${runtime}...
 `));
+  console.log(kleur_default.dim("  note: clean git worktrees do not include ignored dependency dirs like node_modules/ or .venv/"));
+  console.log(kleur_default.dim("        if lint/tests need them, run this repo's normal bootstrap inside the worktree (make bootstrap, just setup, npm ci, uv sync, etc.)\n"));
   if (runtime === "claude") {
     const claudeDir = import_node_path5.default.join(worktreePath, ".claude");
     try {

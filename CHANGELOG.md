@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.20] - 2026-05-15
+
 ### Added
 - `@jaggerxtrm/pi-extensions`: new `sp-terminal-overlay` managed Pi extension with `/sp-feed`, `/sp-ps` (`/xtrm-ps` alias), and `/xtrm-terminal <command>` overlay commands for streaming specialist feed/dashboard output inside Pi. The overlay is centered, fixed-height, scrollable, throttles live redraws, and preserves safe SGR colors for append-style `sp feed` output. (xtrm-3e4n)
 
 ### Changed
 - `xtrm-ui`: non-native/external tool output can now use selectable chrome via `/xtrm-ui chrome background|box` or `/xtrm-ui-external-chrome background|box`; background mode uses native-density full-row cold tinting with a brighter tool-name badge, while box mode keeps the tight framed style. `structured_return` and `process` now share the compact summary treatment used for Serena/GitNexus tools and retain expanded-output behavior. (xtrm-3e4n)
-- `xt claude` / `xt pi` worktree launch output and xtrm/specialist guidance now clarify that clean git worktrees do not include ignored dependency artifacts such as `node_modules/` or `.venv/`; users should run the repo's normal bootstrap inside the worktree instead of tracking dependency directories. (xtrm-tbih / #257)
+- Decision for GitHub #257: xtrm will not provision or track per-worktree dependency artifacts. `xt claude` / `xt pi` launch output and xtrm/specialist guidance now explain that clean git worktrees omit ignored directories such as `node_modules/` and `.venv/`, and instruct users to run the repo's normal bootstrap inside the worktree (`make bootstrap`, `just setup`, `npm ci`, `uv sync`, etc.) when lint/tests need those dependencies. (xtrm-tbih / #257)
 
 ## [0.7.19] - 2026-05-14
 
