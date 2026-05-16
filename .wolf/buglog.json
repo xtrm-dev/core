@@ -619,6 +619,28 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-05-16T15:20:00Z"
+    },
+    {
+      "id": "bug-034",
+      "timestamp": "2026-05-16T15:30:00Z",
+      "error_message": "xtrm-ui badge alignment change did not appear after /reload.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "EXTERNAL_TOOL_FRAME_PATCH_VERSION stayed at 10, so installExternalToolFramePatch skipped replacing the already-patched ToolExecutionComponent prototype and kept the old renderer closure.",
+      "fix": "Bump EXTERNAL_TOOL_FRAME_PATCH_VERSION to 11 after changing external background badge rendering.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "reload",
+        "prototype-patch",
+        "external-tools"
+      ],
+      "related_bugs": [
+        "bug-020",
+        "bug-030",
+        "bug-033"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T15:30:00Z"
     }
   ]
 }

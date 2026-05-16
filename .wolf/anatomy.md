@@ -1282,3 +1282,4 @@
 > Manual note 2026-05-15: xtrm-ui external patch v10 fixes badge width overflow by styling the matched prefix without adding visible spaces.
 > Manual note 2026-05-16: `packages/pi-extensions/extensions/xtrm-ui/index.ts` clears built-in tool pending-call tracking in the `tool_result` hook to prevent native tool call/result double-paint flicker.
 > Manual note 2026-05-16: xtrm-ui external background chrome now removes full-row tint/padding and highlights only the displayed tool-name token with dark text on a cold badge.
+> Manual note 2026-05-16: xtrm-ui external frame patch version bumped to v11 so /reload replaces the old background-badge renderer closure.

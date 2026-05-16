@@ -116,3 +116,4 @@
 - 2026-05-15: xtrm-ewou merged #257 clean-worktree dependency guidance to main: xtrm does not provision or track node_modules/.venv; use repo bootstrap commands inside worktrees.
 - 2026-05-16: xtrm-ui native tool compact flicker fix clears built-in tool active-call tracking on tool_result so renderCall becomes blank before final compact result renders.
 - 2026-05-16: xtrm-ui external background chrome aligns with native rows by not adding leading/full-row padding; only the first displayed tool-name token after the bullet gets cold badge background with dark non-bold text.
+- 2026-05-16: xtrm-ui prototype patch changes must bump EXTERNAL_TOOL_FRAME_PATCH_VERSION; otherwise /reload keeps the old ToolExecutionComponent wrapper closure and UI tweaks appear unchanged.
