@@ -598,6 +598,27 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-05-16T13:20:00Z"
+    },
+    {
+      "id": "bug-033",
+      "timestamp": "2026-05-16T15:20:00Z",
+      "error_message": "xtrm-ui external tool rows did not align with native tool rows and colored the bullet/result row rather than only the tool-name token.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "The external background renderer added explicit leading/trailing spaces plus full-row background padding, and the badge matcher colored the whole displayed prefix including the bullet and extra tokens.",
+      "fix": "Remove full-row background padding from background chrome; truncate/render from column zero; make badge matching preserve the bullet unstyled and color only the first displayed tool-name token with non-bold dark text on a cold badge.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "alignment",
+        "badge"
+      ],
+      "related_bugs": [
+        "bug-030",
+        "bug-032"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T15:20:00Z"
     }
   ]
 }

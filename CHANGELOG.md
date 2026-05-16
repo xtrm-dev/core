@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `xtrm-ui`: native/standard Pi tools (`bash`, `read`, `edit`, `write`, `find`, `grep`, `ls`) now clear their pending call row as soon as the final tool result is received, avoiding the transient two-row flicker before compact rendering collapses to one row. (xtrm-a404)
+- `xtrm-ui`: external tool background chrome now aligns with native tool rows and colors only the actual displayed tool-name token with a non-bold dark-on-cold badge, leaving the bullet and result text unfilled. (xtrm-bm43)
 
 ## [v0.7.20] - 2026-05-15
 
@@ -18,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@jaggerxtrm/pi-extensions`: new `sp-terminal-overlay` managed Pi extension with `/sp-feed`, `/sp-ps` (`/xtrm-ps` alias), and `/xtrm-terminal <command>` overlay commands for streaming specialist feed/dashboard output inside Pi. The overlay is centered, fixed-height, scrollable, throttles live redraws, and preserves safe SGR colors for append-style `sp feed` output. (xtrm-3e4n)
 
 ### Changed
-- `xtrm-ui`: non-native/external tool output can now use selectable chrome via `/xtrm-ui chrome background|box` or `/xtrm-ui-external-chrome background|box`; background mode uses native-density full-row cold tinting with a brighter tool-name badge, while box mode keeps the tight framed style. `structured_return` and `process` now share the compact summary treatment used for Serena/GitNexus tools and retain expanded-output behavior. (xtrm-3e4n)
+- `xtrm-ui`: non-native/external tool output can now use selectable chrome via `/xtrm-ui chrome background|box` or `/xtrm-ui-external-chrome background|box`; background mode uses native-density rows with a cold badge on only the displayed tool-name token, while box mode keeps the tight framed style. `structured_return` and `process` now share the compact summary treatment used for Serena/GitNexus tools and retain expanded-output behavior. (xtrm-3e4n)
 - Decision for GitHub #257: xtrm will not provision or track per-worktree dependency artifacts. `xt claude` / `xt pi` launch output and xtrm/specialist guidance now explain that clean git worktrees omit ignored directories such as `node_modules/` and `.venv/`, and instruct users to run the repo's normal bootstrap inside the worktree (`make bootstrap`, `just setup`, `npm ci`, `uv sync`, etc.) when lint/tests need those dependencies. (xtrm-tbih / #257)
 
 ## [0.7.19] - 2026-05-14

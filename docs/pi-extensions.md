@@ -166,8 +166,8 @@ and extension tools. Operators can switch external tool chrome with:
 /xtrm-ui-external-chrome background|box
 ```
 
-`background` mode keeps native-density single rows with cold full-line tinting
-and a brighter tool-name badge. `box` mode keeps the tighter framed treatment.
+`background` mode keeps native-density single rows aligned with native tool output
+and highlights only the displayed tool-name token with a cold badge. `box` mode keeps the tighter framed treatment.
 Expanded mode preserves original result text where available.
 
 ### `sp-terminal-overlay`
