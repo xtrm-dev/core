@@ -1421,7 +1421,10 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
 
   pi.on("tool_result", async (event: ToolResultEvent, _ctx) => {
     if (event.isError) return undefined;
-    if (XTRM_BUILTIN_TOOLS.has(event.toolName)) return undefined;
+    if (XTRM_BUILTIN_TOOLS.has(event.toolName)) {
+      trackToolCallEnd(event.toolCallId);
+      return undefined;
+    }
     if (!getPrefs().compactExternalToolResults) return undefined;
 
     const text = getTextContent({ content: event.content as Array<{ type: string; text?: string }> });

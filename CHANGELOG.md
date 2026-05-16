@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `xtrm-ui`: native/standard Pi tools (`bash`, `read`, `edit`, `write`, `find`, `grep`, `ls`) now clear their pending call row as soon as the final tool result is received, avoiding the transient two-row flicker before compact rendering collapses to one row. (xtrm-a404)
+
 ## [v0.7.20] - 2026-05-15
 
 ### Added

@@ -577,6 +577,27 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-15T22:04:51Z"
+    },
+    {
+      "id": "bug-032",
+      "timestamp": "2026-05-16T13:20:00Z",
+      "error_message": "Standard/native Pi tools briefly rendered two rows (pending call plus compact result) before collapsing to one compact xtrm-ui row.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "Built-in tool renderCall stayed active until tool_execution_end. Pi can render the final tool_result before tool_execution_end, so the pending call row and final compact result row were visible in the same frame.",
+      "fix": "For built-in tools, clear xtrm-ui active-call tracking in the tool_result hook before returning, so renderCall is blank when the final compact result renders; tool_execution_end remains idempotent cleanup.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "native-tools",
+        "compact-tools",
+        "flicker"
+      ],
+      "related_bugs": [
+        "bug-020",
+        "bug-021"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T13:20:00Z"
     }
   ]
 }
