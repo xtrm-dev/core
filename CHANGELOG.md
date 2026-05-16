@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.21] - 2026-05-16
+
 ### Fixed
 - `xtrm-ui`: native/standard Pi tools (`bash`, `read`, `edit`, `write`, `find`, `grep`, `ls`) now clear their pending call row as soon as the final tool result is received, avoiding the transient two-row flicker before compact rendering collapses to one row. (xtrm-a404)
 - `xtrm-ui`: external tool background chrome now aligns with native tool rows and colors only the actual displayed tool-name token with a non-bold dark-on-cold badge, leaving the bullet and result text unfilled. Bumped the internal external tool frame patch version so `/reload` replaces older prototype wrappers. (xtrm-bm43, xtrm-do9o)
