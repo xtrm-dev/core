@@ -9,12 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [v0.7.21]
+
+This section bundles two independently-published releases under the same root version number; each subheading corresponds to a distinct npm package and publish date.
+
+### `xtrm-tools` v0.7.21 — 2026-05-19
+
+#### Added
+- New `issue-triage` skill at `.xtrm/skills/default/issue-triage/`: bead board grooming pass using the full `bd dep --type` vocabulary (blocks, tracks, relates-to, parent-child, discovered-from, until, caused-by, validates, supersedes). Workflow phases: Snapshot → Cluster Discovery (mechanical + AI duplicate detection + explorer specialist for code-overlap + overthinker for synthesis) → Rewire (per-cluster confirm) → Verify (cycles/lint) → Handoff (triage report + optional P0 next-session pickup). Generates an executable `apply.sh` artifact alongside the triage bead so operators can review every mutation as a reviewable diff. Includes GitNexus inline reinforcement path (with explicit fallback flag when no index is available), a relationship-vocabulary cheat-sheet, pitfalls section, and an output checklist. Validated via two A/B eval iterations (10/10 vs no-skill baseline 9/10; 14/14 vs prior iteration 11/14). (xtrm-125p, xtrm-iank)
+
+#### Changed
 - `sp-terminal-overlay`: `/sp-ps` and `/xtrm-ps` now render a one-shot `sp ps` snapshot instead of defaulting to `sp ps --follow`; `--follow`/`-f` args are stripped so repainting dashboards do not loop indefinitely in the overlay. `/sp-feed` remains the streaming command. (xtrm-x76a)
+- Vendored `using-specialists-v3` skill bumped to upstream `specialists` master (resolved_sha `68d81ec`). The "Dependency Linking" section is rewritten as "Dependency Linking And Relationship Vocabulary" with full `--type` semantics: orchestrators no longer overload `blocks` for follow-ups (`discovered-from`), root-cause links (`caused-by`), verification pairs (`validates`), duplicates (`supersedes`), or restitch replacements. Aligns with the new `issue-triage` skill's vocabulary table. (0ded9e6)
+- `package.json` `files` whitelist now excludes `.xtrm/skills/default/*-workspace/**` so per-skill eval workspaces (created during A/B benchmarking under the skill-creator loop) are not pulled into `npm pack`. (xtrm-ph91)
 
-## [v0.7.21] - 2026-05-16
+#### Fixed
+- `xtrm-ui` (carried from pi-extensions v0.7.21): native/standard Pi tools clear their pending call row as soon as the final tool result is received, avoiding the transient two-row flicker before compact rendering collapses to one row. See xtrm-a404.
+- `xtrm-ui` (carried from pi-extensions v0.7.21): external tool background chrome aligns with native tool rows and colors only the displayed tool-name token with a non-bold dark-on-cold badge. See xtrm-bm43, xtrm-do9o.
 
-### Fixed
+### `@jaggerxtrm/pi-extensions` v0.7.21 — 2026-05-16
+
+#### Fixed
 - `xtrm-ui`: native/standard Pi tools (`bash`, `read`, `edit`, `write`, `find`, `grep`, `ls`) now clear their pending call row as soon as the final tool result is received, avoiding the transient two-row flicker before compact rendering collapses to one row. (xtrm-a404)
 - `xtrm-ui`: external tool background chrome now aligns with native tool rows and colors only the actual displayed tool-name token with a non-bold dark-on-cold badge, leaving the bullet and result text unfilled. Bumped the internal external tool frame patch version so `/reload` replaces older prototype wrappers. (xtrm-bm43, xtrm-do9o)
 
