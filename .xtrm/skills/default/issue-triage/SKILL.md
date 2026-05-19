@@ -1,5 +1,5 @@
 ---
-name: triaging
+name: issue-triage
 description: >
   Board hygiene pass for a beads project. Walks every open issue, detects
   duplicates and semantic clusters via `bd find-duplicates` and explorer/
@@ -15,7 +15,7 @@ description: >
   reports duplicate/overlapping work or asks for board orientation.
 ---
 
-# Triaging
+# Issue Triage
 
 Turn a flat backlog into an ordered graph. Every open issue ends the pass
 either: (a) deduped, (b) parented to an epic, (c) wired with the right
