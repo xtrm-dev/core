@@ -84,7 +84,7 @@ Two chrome modes are available:
 
 | Mode | Behavior | Use when |
 |------|----------|----------|
-| `background` | Native-density single-row summaries with a subtle cold full-row tint and brighter tool-name badge | Default; best for dense mixed native/MCP sessions |
+| `background` | Native-density single-row summaries with only the displayed tool-name token highlighted as a cold badge | Default; best for dense mixed native/MCP sessions |
 | `box` | Tight cold-colored box around compact content; expanded output uses the full box | Useful when non-native tool output needs stronger visual separation |
 
 Known tool families receive tailored compact summaries and color families:

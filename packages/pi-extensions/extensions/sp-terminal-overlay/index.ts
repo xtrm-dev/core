@@ -26,8 +26,12 @@ function resolveSpFeedCommand(args: string): string {
 }
 
 function resolveSpPsCommand(args: string): string {
-  const trimmed = args.trim();
-  return trimmed ? `sp ps ${trimmed}` : "sp ps --follow";
+  const snapshotArgs = args
+    .trim()
+    .split(/\s+/u)
+    .filter((part) => part && part !== "--follow" && part !== "-f")
+    .join(" ");
+  return snapshotArgs ? `sp ps ${snapshotArgs}` : "sp ps";
 }
 
 function openTerminalOverlay(ctx: ExtensionCommandContext, title: string, command: string): Promise<void> {
@@ -455,7 +459,7 @@ export default function spTerminalOverlayExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("sp-ps", {
-    description: "Open a streaming overlay for `sp ps --follow`",
+    description: "Open a snapshot overlay for `sp ps`",
     handler: async (args, ctx) => {
       await openTerminalOverlay(ctx, "sp ps", resolveSpPsCommand(args));
     },

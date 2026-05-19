@@ -577,6 +577,92 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-15T22:04:51Z"
+    },
+    {
+      "id": "bug-032",
+      "timestamp": "2026-05-16T13:20:00Z",
+      "error_message": "Standard/native Pi tools briefly rendered two rows (pending call plus compact result) before collapsing to one compact xtrm-ui row.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "Built-in tool renderCall stayed active until tool_execution_end. Pi can render the final tool_result before tool_execution_end, so the pending call row and final compact result row were visible in the same frame.",
+      "fix": "For built-in tools, clear xtrm-ui active-call tracking in the tool_result hook before returning, so renderCall is blank when the final compact result renders; tool_execution_end remains idempotent cleanup.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "native-tools",
+        "compact-tools",
+        "flicker"
+      ],
+      "related_bugs": [
+        "bug-020",
+        "bug-021"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T13:20:00Z"
+    },
+    {
+      "id": "bug-033",
+      "timestamp": "2026-05-16T15:20:00Z",
+      "error_message": "xtrm-ui external tool rows did not align with native tool rows and colored the bullet/result row rather than only the tool-name token.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "The external background renderer added explicit leading/trailing spaces plus full-row background padding, and the badge matcher colored the whole displayed prefix including the bullet and extra tokens.",
+      "fix": "Remove full-row background padding from background chrome; truncate/render from column zero; make badge matching preserve the bullet unstyled and color only the first displayed tool-name token with non-bold dark text on a cold badge.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "external-tools",
+        "alignment",
+        "badge"
+      ],
+      "related_bugs": [
+        "bug-030",
+        "bug-032"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T15:20:00Z"
+    },
+    {
+      "id": "bug-034",
+      "timestamp": "2026-05-16T15:30:00Z",
+      "error_message": "xtrm-ui badge alignment change did not appear after /reload.",
+      "file": "packages/pi-extensions/extensions/xtrm-ui/index.ts",
+      "root_cause": "EXTERNAL_TOOL_FRAME_PATCH_VERSION stayed at 10, so installExternalToolFramePatch skipped replacing the already-patched ToolExecutionComponent prototype and kept the old renderer closure.",
+      "fix": "Bump EXTERNAL_TOOL_FRAME_PATCH_VERSION to 11 after changing external background badge rendering.",
+      "tags": [
+        "pi",
+        "xtrm-ui",
+        "reload",
+        "prototype-patch",
+        "external-tools"
+      ],
+      "related_bugs": [
+        "bug-020",
+        "bug-030",
+        "bug-033"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T15:30:00Z"
+    },
+    {
+      "id": "bug-035",
+      "timestamp": "2026-05-19T08:10:00Z",
+      "error_message": "/sp-ps overlay repainted indefinitely and was visually noisy for demos/operator use.",
+      "file": "packages/pi-extensions/extensions/sp-terminal-overlay/index.ts",
+      "root_cause": "/sp-ps defaulted to `sp ps --follow`, which is a cursor-addressed dashboard stream. The overlay is designed for append-style streams and simple snapshots, not a continuously repainting dashboard.",
+      "fix": "Change /sp-ps and /xtrm-ps to run one-shot `sp ps` snapshots by default and strip `--follow`/`-f` arguments; leave /sp-feed as the streaming command.",
+      "tags": [
+        "pi",
+        "sp-terminal-overlay",
+        "sp-ps",
+        "overlay",
+        "terminal-emulation"
+      ],
+      "related_bugs": [
+        "bug-026",
+        "bug-027",
+        "bug-029"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T08:10:00Z"
     }
   ]
 }

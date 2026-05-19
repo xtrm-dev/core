@@ -1,0 +1,13 @@
+{
+  "skill_name": "triage",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "board-a-mixed-patterns",
+      "prompt": "First, reseed the fixture by running: bash /home/dawid/dev/xtrm-tools/.xtrm/skills/default/triage/evals/scripts/seed-board-a.sh\n\nThen cd into /tmp/triage-evals/board-a/ and run a triage pass on the open issues. Read SEEDED.md to confirm the fixture is set up. Audit the board for missing relationship edges, duplicate work, mis-prioritised items, and epic merger candidates. Produce a triage proposal: create a triage bead in the fixture with the full plan (proposed bd commands per detection pattern), and show me a concise inline summary of what you found.\n\nDo NOT apply any mutations — proposal only. Do NOT touch the in-progress issue.\n\nWhen done, output: (a) the triage bead's id, (b) the full triage bead body via 'bd show <id>', and (c) a one-paragraph inline summary.",
+      "expected_output": "A triage bead is created in /tmp/triage-evals/board-a/. The bead body contains specific `bd dep` and `bd update` commands using --type=caused-by (or --blocks) for the extension-loader bug+feature, --type=supersedes for the status-line duplicates, an epic merger proposal for the 3 hook-runner siblings, --type=validates for the dolt-client test↔impl pair, --type=discovered-from for the auth-middleware follow-up, and a priority bump or block edge for the cli/index.ts priority mismatch. The in-progress fix-vy0 is left unmutated. The agent does NOT apply any mutations.",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}

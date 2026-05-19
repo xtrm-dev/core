@@ -166,8 +166,8 @@ and extension tools. Operators can switch external tool chrome with:
 /xtrm-ui-external-chrome background|box
 ```
 
-`background` mode keeps native-density single rows with cold full-line tinting
-and a brighter tool-name badge. `box` mode keeps the tighter framed treatment.
+`background` mode keeps native-density single rows aligned with native tool output
+and highlights only the displayed tool-name token with a cold badge. `box` mode keeps the tighter framed treatment.
 Expanded mode preserves original result text where available.
 
 ### `sp-terminal-overlay`
@@ -176,7 +176,7 @@ Streaming terminal-style overlay for specialist monitoring inside Pi. Commands:
 
 ```bash
 /sp-feed [job-id-or-args]        # sp feed -f [args]
-/sp-ps [args]                    # sp ps --follow by default
+/sp-ps [args]                    # sp ps snapshot; --follow/-f stripped
 /xtrm-ps [args]                  # alias for /sp-ps
 /xtrm-terminal <command>         # arbitrary shell command in overlay
 ```
@@ -193,7 +193,7 @@ scroll, and PageUp/PageDown page.
 - `service-skills` — Service skill routing and activation
 - `custom-footer` — 2-line status bar with claim/open issues
 - `xtrm-ui` — pi-dex chrome + pi-diff-style write/edit rendering + compact external tool chrome
-- `sp-terminal-overlay` — centered streaming overlay for `sp feed -f`, `sp ps --follow`, and arbitrary shell commands
+- `sp-terminal-overlay` — centered overlay for streaming `sp feed -f`, snapshot `sp ps`, and arbitrary shell commands
 - `xtrm-loader` — XTRM context injection (using-xtrm skill + `.xtrm/memory.md` + project context)
 - `auto-session-name` — Generates session names from branch/context
 - `auto-update` — Checks for xtrm-tools updates

@@ -339,6 +339,10 @@
           "hash": "861e5134c41aba3504374cbb522d225b8bdbf065e352009fea11a89593e0040e",
           "version": "0.7.20"
         },
+        "issue-triage/SKILL.md": {
+          "hash": "6dd94b1848f9ee2bafc4ea9a6b3a812e4ded4d8f0b2a601138c0f7fa358fd627",
+          "version": "0.7.20"
+        },
         "last30days/scripts/briefing.py": {
           "hash": "58c895621b028f3d265dd4a98d2ab8169d2256c468bd73e6dd3adf765dca2e67",
           "version": "0.7.20"
@@ -944,7 +948,7 @@
           "version": "0.7.20"
         },
         "using-specialists-v3/SKILL.md": {
-          "hash": "8bc8fc7ef6ecb3de9720239f40c7bcea46eaad9fe230daee514e955add9933e8",
+          "hash": "643264862dfa758f85cff41a150be13d6a0c2c8ed42ded6186a3b9b16a87852b",
           "version": "0.7.20"
         },
         "using-specialists/SKILL.md": {
@@ -1331,7 +1335,7 @@
     "source": {
       "kind": "ref",
       "ref": "master",
-      "resolved_sha": "fc9e32328e843b7f506b65fba734e1e814d33829",
+      "resolved_sha": "68d81ecc260371c2b213bf4c744fb881f2fb9eef",
       "repo_path": "../specialists",
       "source_path": "config/skills"
     },
@@ -1377,7 +1381,7 @@
       },
       "using-specialists-v3": {
         "evals/evals.json": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
-        "SKILL.md": "8bc8fc7ef6ecb3de9720239f40c7bcea46eaad9fe230daee514e955add9933e8"
+        "SKILL.md": "643264862dfa758f85cff41a150be13d6a0c2c8ed42ded6186a3b9b16a87852b"
       }
     }
   }

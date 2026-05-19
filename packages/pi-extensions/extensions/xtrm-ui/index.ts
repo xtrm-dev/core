@@ -252,7 +252,7 @@ type PatchableToolExecutionComponent = {
 type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | "external";
 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 10;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 11;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 function stripAnsi(text: string): string {
@@ -326,39 +326,22 @@ function trimRenderedToolLines(lines: string[]): string[] {
   return lines.slice(start, end).map((line) => line.replace(/\s+$/u, ""));
 }
 
-function externalToolBgRgb(kind: ExternalToolFrameKind): [number, number, number] {
-  const bgColors: Record<ExternalToolFrameKind, [number, number, number]> = {
-    serena: [13, 34, 49],
-    gitnexus: [31, 23, 55],
-    structured: [35, 23, 55],
-    process: [10, 42, 52],
-    external: [27, 33, 43],
-  };
-  return bgColors[kind];
-}
-
-function externalToolBgColor(kind: ExternalToolFrameKind, text: string): string {
-  const [r, g, b] = externalToolBgRgb(kind);
-  return `\x1b[48;2;${r};${g};${b}m${text}\x1b[49m`;
-}
-
 function externalToolBadgeColor(kind: ExternalToolFrameKind, text: string): string {
   const bgColors: Record<ExternalToolFrameKind, [number, number, number]> = {
-    serena: [26, 96, 132],
-    gitnexus: [82, 58, 150],
-    structured: [105, 61, 150],
-    process: [17, 118, 145],
-    external: [74, 88, 112],
+    serena: [82, 210, 255],
+    gitnexus: [178, 154, 255],
+    structured: [205, 166, 255],
+    process: [92, 226, 255],
+    external: [178, 190, 210],
   };
   const [badgeR, badgeG, badgeB] = bgColors[kind];
-  const [rowR, rowG, rowB] = externalToolBgRgb(kind);
-  return `\x1b[1m\x1b[48;2;${badgeR};${badgeG};${badgeB}m${text}\x1b[22m\x1b[48;2;${rowR};${rowG};${rowB}m`;
+  return `\x1b[38;2;3;8;12m\x1b[48;2;${badgeR};${badgeG};${badgeB}m${text}\x1b[39m\x1b[49m`;
 }
 
 function highlightExternalToolBadge(kind: ExternalToolFrameKind, line: string): string {
-  const match = line.match(/^(•\s+(?:serena\s+\S+|gitnexus(?:_\S+)?|structured_return|process|\S+))/u);
-  if (!match?.[1]) return line;
-  return externalToolBadgeColor(kind, match[1]) + line.slice(match[1].length);
+  const match = line.match(/^(•\s+)(\S+)/u);
+  if (!match?.[1] || !match[2]) return line;
+  return match[1] + externalToolBadgeColor(kind, match[2]) + line.slice(match[1].length + match[2].length);
 }
 
 function externalToolBorderColor(kind: ExternalToolFrameKind, text: string): string {
@@ -388,9 +371,8 @@ function renderExternalToolBackgroundLines(
   const visibleLines = collapsedExternalToolLines(contentLines, expanded);
 
   return visibleLines.map((rawLine) => {
-    const line = truncateToWidth(rawLine, Math.max(1, renderWidth - 2));
-    const highlighted = highlightExternalToolBadge(kind, line);
-    return externalToolBgColor(kind, ` ${padVisible(highlighted, Math.max(1, renderWidth - 2))} `);
+    const line = truncateToWidth(rawLine, Math.max(1, renderWidth));
+    return highlightExternalToolBadge(kind, line);
   });
 }
 
@@ -1421,7 +1403,10 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
 
   pi.on("tool_result", async (event: ToolResultEvent, _ctx) => {
     if (event.isError) return undefined;
-    if (XTRM_BUILTIN_TOOLS.has(event.toolName)) return undefined;
+    if (XTRM_BUILTIN_TOOLS.has(event.toolName)) {
+      trackToolCallEnd(event.toolCallId);
+      return undefined;
+    }
     if (!getPrefs().compactExternalToolResults) return undefined;
 
     const text = getTextContent({ content: event.content as Array<{ type: string; text?: string }> });
