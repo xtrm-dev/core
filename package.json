@@ -35,6 +35,7 @@
     "!.xtrm/**/tests/**",
     "!.xtrm/skills/default/**/evals/**",
     "!.xtrm/skills/default/**/workspace/iteration-*/**",
+    "!.xtrm/skills/default/*-workspace/**",
     "!packages/*/.serena/**"
   ],
   "publishConfig": {
