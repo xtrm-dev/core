@@ -118,3 +118,4 @@
 - 2026-05-16: xtrm-ui external background chrome aligns with native rows by not adding leading/full-row padding; only the first displayed tool-name token after the bullet gets cold badge background with dark non-bold text.
 - 2026-05-16: xtrm-ui prototype patch changes must bump EXTERNAL_TOOL_FRAME_PATCH_VERSION; otherwise /reload keeps the old ToolExecutionComponent wrapper closure and UI tweaks appear unchanged.
 - 2026-05-19: sp-terminal-overlay /sp-ps and /xtrm-ps should be snapshot-only (`sp ps`); strip --follow/-f because repaint dashboards loop noisily in the overlay. Keep /sp-feed as streaming.
+- 2026-05-19: README now documents v0.7.21 update methodology: install latest xtrm-tools/specialists, remember xt update is dry-run by default, use --apply with --root/--repo, run xt init -y for incomplete repos or missing active skills, and verify issue-triage symlinks.

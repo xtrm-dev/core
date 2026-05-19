@@ -6,6 +6,7 @@
 > Manual note 2026-05-07: session report .xtrm/reports/2026-05-07-986757b.md documents substantial dirty-state handoff for xtrm-tools-be9, including Pi UI compaction/theme changes, .pi/npm runtime drift, and specialists default mirror deletions.
 > Manual note 2026-05-07: xtrm-tools-be9 fix updates scaffoldSkillsDefaultFromPackage to replace valid-but-stale .xtrm/skills/default symlinks unless they resolve to the current package payload.
 
+> Manual note 2026-05-19: README refreshed for v0.7.21 update methodology, update-xt and issue-triage skill catalog entries, and missing-skill verification commands.
 > Auto-maintained by OpenWolf. Last scanned: 2026-04-02T22:22:27.122Z
 > Manual note 2026-04-16: Pi runtime now prefers packages/pi-extensions/* and prunes stale npm:pi-dex settings conflicts.
 > Manual note 2026-05-04: xtrm-loader memory injection is silent during before_agent_start; xtrm-ui dark pending row backgrounds use surfaceMuted across active pi-extension theme copies.

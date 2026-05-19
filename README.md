@@ -28,7 +28,7 @@ Specialists are first-class in v0.7.19. `xtrm-tools` vendors specialist skills i
 
 ---
 
-**Version 0.7.19** | [Complete Guide](XTRM-GUIDE.md) | [Changelog](CHANGELOG.md)
+**Version 0.7.21** | [Complete Guide](XTRM-GUIDE.md) | [Changelog](CHANGELOG.md)
 
 ---
 
@@ -68,7 +68,7 @@ xtrm init
 
 # Verify
 claude plugin list
-# → xtrm-tools@xtrm-tools  Version: 0.7.19  Status: enabled
+# → xtrm-tools@xtrm-tools  Version: 0.7.21  Status: enabled
 ```
 
 **One-line run:**
@@ -92,6 +92,52 @@ xt merge
 ```
 
 `xt end` handles one worktree session at a time. `xt merge` is the follow-up queue operator: it inspects open `xt/*` PRs, processes them FIFO, waits for green CI on the oldest PR, merges it with `--rebase`, then rebases the remaining queued xt branches and repeats. `xt memory update` shells out to the `memory-processor` specialist, which condenses bd memories and current project state into `.xtrm/memory.md`; use `--dry-run` to inspect without writing.
+
+### Keeping xtrm and specialists updated
+
+Update the installed packages first. `xt update` reads assets from the globally installed `xtrm-tools` package, so an old global install cannot deliver new skills.
+
+```bash
+npm install -g xtrm-tools@latest @jaggerxtrm/specialists@latest
+xt --version
+sp --version
+```
+
+Refresh one repo or a whole fleet. `xt update` is a dry-run by default; add `--apply` to write changes.
+
+```bash
+# Preview drift
+xt update --repo .
+xt update --root ~/dev
+xt update --root ~/projects
+
+# Apply managed asset updates
+xt update --apply --repo .
+xt update --apply --root ~/dev
+xt update --apply --root ~/projects
+```
+
+If a repo is reported as incomplete or a newly shipped skill is missing, bootstrap or rebuild the active view:
+
+```bash
+cd <repo>
+xt init -y
+xt update --apply --repo .
+
+# Verify a shipped skill landed and is active
+ls .xtrm/skills/default/issue-triage/SKILL.md
+ls -l .xtrm/skills/active/issue-triage
+ls -l .claude/skills/issue-triage
+```
+
+Check specialists runtime drift separately from xtrm-managed skills/hooks:
+
+```bash
+sp doctor --check-drift
+sp prune-stale-defaults --dry-run --root <repo-or-root>
+# after review, prune redundant defaults only:
+sp prune-stale-defaults --root <repo-or-root>
+```
 
 ---
 
@@ -136,7 +182,9 @@ These skills implement the xtrm-specific development workflow — session manage
 | `delegating` | Cost-optimized task delegation to background agents |
 | `using-specialists-v3` | Specialist routing and execution workflow (current vendored contract) |
 | `using-specialists-auto` | Auto-mode specialists execution and handoff flow |
-| `update-specialists` | Sync vendored specialists skills from upstream source |
+| `update-specialists` | Reconcile specialists runtime drift and xtrm-managed asset drift |
+| `update-xt` | Refresh xtrm-managed assets across one repo or many |
+| `issue-triage` | Board hygiene: specialist-only semantic duplicate clustering and graph rewiring |
 | `releasing` | Release-contract workflow and publish gating |
 | `xt-debugging` | Runtime debugging, traces, and failure triage |
 | `init-session` | Session bootstrap and context setup |
@@ -224,11 +272,21 @@ xtrm <command> [options]
 | `skills` | Skills catalog and enable/disable management |
 | `claude-sync` | Sync Claude-specific settings and managed state |
 | `doctor` | Health checks, drift, and Pi package reporting |
-| `update` | Refresh xtrm-managed files for one repo or many |
+| `update` | Refresh xtrm-managed files for one repo or many (`--apply` writes; dry-run by default) |
 | `release` | Release flow and publish helpers |
 | `help` | Show command help |
 
 **Flags:** `--yes / -y` (non-interactive), `--dry-run` (preview), `--prune` (force-replace hooks)
+
+Useful update commands:
+
+```bash
+xt update --root ~/dev              # dry-run fleet refresh
+xt update --apply --root ~/dev      # write managed asset updates
+xt update --repo .                  # dry-run current repo
+xt update --apply --repo .          # write current repo updates
+xt init -y                          # bootstrap incomplete repo / rebuild active skills
+```
 
 For detailed docs command usage, see [docs/docs-commands.md](docs/docs-commands.md) or run `xtrm docs --help` / `xtrm docs cross-check --help`. For release flow details, see [docs/release.md](docs/release.md); the release skill drives the contract directly and does not rely on the deprecated `xt release prepare/publish` flow.
 
@@ -276,6 +334,8 @@ See [XTRM-GUIDE.md](XTRM-GUIDE.md) for the full `bd` command reference.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.7.21 | 2026-05-16 | Pi extension polish and current package line; update flow verified for xtrm-managed skills and specialists runtime |
+| 0.7.20 | 2026-05-15 | Worktree bootstrap guidance and Pi external tool overlay/chrome release |
 | 0.7.19 | 2026-05-14 | README, CLI, and docs synced to shipped npm package; release-contract and specialists workflow fully documented |
 | 0.7.18 | 2026-05-13 | Specialists became first-class; vendored specialist skills, release-contract handshake, `npm publish --provenance`, Pi package health reporting, security pipeline |
 | 0.7.17 | 2026-05-12 | Skills ownership and vendoring contract tightened; user fallback under `~/.xtrm/skills/default` documented |
