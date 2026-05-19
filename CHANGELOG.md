@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `sp-terminal-overlay`: `/sp-ps` and `/xtrm-ps` now render a one-shot `sp ps` snapshot instead of defaulting to `sp ps --follow`; `--follow`/`-f` args are stripped so repainting dashboards do not loop indefinitely in the overlay. `/sp-feed` remains the streaming command. (xtrm-x76a)
+
 ## [v0.7.21] - 2026-05-16
 
 ### Fixed

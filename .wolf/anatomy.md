@@ -1283,3 +1283,4 @@
 > Manual note 2026-05-16: `packages/pi-extensions/extensions/xtrm-ui/index.ts` clears built-in tool pending-call tracking in the `tool_result` hook to prevent native tool call/result double-paint flicker.
 > Manual note 2026-05-16: xtrm-ui external background chrome now removes full-row tint/padding and highlights only the displayed tool-name token with dark text on a cold badge.
 > Manual note 2026-05-16: xtrm-ui external frame patch version bumped to v11 so /reload replaces the old background-badge renderer closure.
+> Manual note 2026-05-19: `packages/pi-extensions/extensions/sp-terminal-overlay/index.ts` makes `/sp-ps` and `/xtrm-ps` snapshot-only by stripping `--follow`/`-f`; `/sp-feed` remains streaming.
