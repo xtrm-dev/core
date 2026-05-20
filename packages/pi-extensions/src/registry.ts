@@ -9,6 +9,7 @@ import customProviderQwenCliExtension from "./extensions/custom-provider-qwen-cl
 import gitCheckpointExtension from "./extensions/git-checkpoint.ts";
 import lspBootstrapExtension from "./extensions/lsp-bootstrap.ts";
 import piSerenaCompactExtension from "./extensions/pi-serena-compact.ts";
+import serenaPoolExtension from "./extensions/serena-pool.ts";
 import qualityGatesExtension from "./extensions/quality-gates.ts";
 import serviceSkillsExtension from "./extensions/service-skills.ts";
 import sessionFlowExtension from "./extensions/session-flow.ts";
@@ -29,6 +30,7 @@ export const managedPiExtensions: readonly ManagedPiExtension[] = [
   { id: "custom-footer", register: customFooterExtension },
   { id: "custom-provider-qwen-cli", register: customProviderQwenCliExtension },
   { id: "git-checkpoint", register: gitCheckpointExtension },
+  { id: "serena-pool", register: serenaPoolExtension },
   { id: "lsp-bootstrap", register: lspBootstrapExtension },
   { id: "pi-serena-compact", register: piSerenaCompactExtension },
   { id: "quality-gates", register: qualityGatesExtension },
