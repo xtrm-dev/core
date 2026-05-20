@@ -35,7 +35,12 @@ const POLL_INTERVAL_MS = 300;
 const LOCK_TIMEOUT_MS = 10_000;
 const ORPHAN_TERM_GRACE_MS = 2_000;
 
-const STATE_DIR = join(tmpdir(), "serena-pool");
+export const STATE_DIR = join(tmpdir(), "serena-pool");
+
+const DEBUG_ENABLED = (process.env.DEBUG ?? "").split(/[\s,]+/).includes("serena-pool");
+function debug(msg: string, ...args: unknown[]): void {
+  if (DEBUG_ENABLED) console.error(`[serena-pool] ${msg}`, ...args);
+}
 
 type PoolState = {
   pid: number;
@@ -293,28 +298,47 @@ async function spawnSerena(projectRoot: string, port: number, instanceId: string
   return child.pid;
 }
 
-async function ensureSerenaForRoot(projectRoot: string): Promise<number | null> {
+export async function ensureSerenaForRoot(projectRoot: string): Promise<number | null> {
   const port = hashToPort(projectRoot);
+  debug(`ensureSerenaForRoot root=${projectRoot} port=${port}`);
 
   // Fast path: someone already serving on this port. Trust it.
-  if (await isPortListening(port)) return port;
+  if (await isPortListening(port)) {
+    debug(`fast path: port ${port} already listening`);
+    return port;
+  }
 
+  debug(`acquiring lock for port ${port}`);
   const lock = await acquireLock(port, LOCK_TIMEOUT_MS);
   try {
     // Re-check under the lock — another concurrent spawner may have won.
-    if (await isPortListening(port)) return port;
+    if (await isPortListening(port)) {
+      debug(`raced: port ${port} now listening under lock`);
+      return port;
+    }
 
     // Reap orphans from a previously-recorded dead daemon, if any.
     const prior = readState(port);
     if (prior) {
-      await reapOrphansIfDaemonDead(prior);
+      debug(`prior state found pid=${prior.pid} pgid=${prior.pgid}`);
+      const alive = isSameProcess(prior.pid, prior.startTime);
+      if (alive) {
+        debug(`prior daemon still alive — skipping reap (port may be transient down)`);
+      } else {
+        const candidates = findProcessesByPgid(prior.pgid);
+        debug(`prior daemon dead; reaping ${candidates.length} orphan(s) in pgid=${prior.pgid}`);
+        await reapOrphansIfDaemonDead(prior);
+      }
       removeState(port);
+    } else {
+      debug(`no prior state`);
     }
 
     // Spawn fresh Serena. Detached → new process group, pgid == pid.
     const instanceId = randomUUID();
     const pid = await spawnSerena(projectRoot, port, instanceId);
     const startTime = getProcessStartTime(pid);
+    debug(`spawned Serena pid=${pid} pgid=${pid} startTime=${startTime}`);
     writeState({
       pid,
       pgid: pid, // detached process is a new group leader
@@ -330,11 +354,30 @@ async function ensureSerenaForRoot(projectRoot: string): Promise<number | null> 
       console.warn(`[serena-pool] Serena did not become healthy on port ${port} within ${STARTUP_TIMEOUT_MS}ms (pid=${pid})`);
       return null;
     }
+    debug(`ready on port ${port}`);
     return port;
   } finally {
     lock.release();
+    debug(`released lock for port ${port}`);
   }
 }
+
+// Internals exported for testing.
+export const __internals = {
+  hashToPort,
+  isPortListening,
+  isPidAlive,
+  isSameProcess,
+  getProcessStartTime,
+  findProcessesByPgid,
+  getRepoRoot,
+  readState,
+  writeState,
+  removeState,
+  stateFilePath,
+  lockFilePath,
+};
+export type { PoolState };
 
 export default function registerSerenaPool(pi: ExtensionAPI) {
   pi.on("session_start", async (_event: unknown, ctx: any) => {
