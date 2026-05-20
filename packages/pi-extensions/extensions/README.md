@@ -15,3 +15,21 @@ Commands:
 - `/xtrm-terminal <command>` — opens an arbitrary shell command in an overlay.
 
 Keys: `Esc`/`q` close, `r` restart, arrows/page keys scroll.
+
+## serena-pool
+
+Shared Serena daemon pool for Pi sessions.
+
+Behavior:
+
+- Resolves the current git repo root on `session_start`.
+- Maps each repo root to a deterministic local port.
+- Reuses an existing Serena MCP daemon when the port is already listening.
+- Spawns Serena via `uvx` when no daemon is listening and exports `SERENA_MCP_PORT` for `pi-serena-tools`.
+- Persists ownership state under `/tmp/serena-pool` and reaps only owned orphan process groups from dead recorded daemons.
+
+Debugging:
+
+```bash
+DEBUG=serena-pool pi
+```

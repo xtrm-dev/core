@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.23] — 2026-05-21
+
+This section documents an independently-published `@jaggerxtrm/pi-extensions` patch release; root `xtrm-tools` remains on the v0.7.21 line.
+
+### `@jaggerxtrm/pi-extensions` v0.7.23 — 2026-05-21
+
+#### Changed
+- `serena-pool`: added ownership-based orphan cleanup for the shared Serena daemon. The extension records pid/pgid/start time under `/tmp/serena-pool`, reaps only process groups it owns after the recorded daemon is verifiably dead, and leaves unrelated editor/test/hook LSP processes untouched. (xtrm-zfw28)
+- `serena-pool`: added `DEBUG=serena-pool` tracing and an e2e driver under `extensions/serena-pool/test/e2e.ts` to exercise shared-daemon startup and cleanup behavior. (xtrm-zfw28)
+
+## [v0.7.22] — 2026-05-21
+
+This section documents an independently-published `@jaggerxtrm/pi-extensions` patch release; root `xtrm-tools` remains on the v0.7.21 line.
+
+### `@jaggerxtrm/pi-extensions` v0.7.22 — 2026-05-21
+
+#### Added
+- New `serena-pool` managed Pi extension. On `session_start`, it resolves the git repo root, maps that root to a deterministic local port, starts one shared Serena MCP daemon when needed, sets `SERENA_MCP_PORT` for `pi-serena-tools`, and keeps the daemon alive across Pi sessions so repeated tool calls do not spawn duplicate Serena servers. (xtrm-0nu9p)
+
 ## [v0.7.21]
 
 This section bundles two independently-published releases under the same root version number; each subheading corresponds to a distinct npm package and publish date.

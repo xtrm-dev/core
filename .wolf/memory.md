@@ -119,3 +119,4 @@
 - 2026-05-16: xtrm-ui prototype patch changes must bump EXTERNAL_TOOL_FRAME_PATCH_VERSION; otherwise /reload keeps the old ToolExecutionComponent wrapper closure and UI tweaks appear unchanged.
 - 2026-05-19: sp-terminal-overlay /sp-ps and /xtrm-ps should be snapshot-only (`sp ps`); strip --follow/-f because repaint dashboards loop noisily in the overlay. Keep /sp-feed as streaming.
 - 2026-05-19: README now documents v0.7.21 update methodology: install latest xtrm-tools/specialists, remember xt update is dry-run by default, use --apply with --root/--repo, run xt init -y for incomplete repos or missing active skills, and verify issue-triage symlinks.
+- 2026-05-21: Docs/changelog updated for @jaggerxtrm/pi-extensions 0.7.22/0.7.23 serena-pool releases; docs/pi-extensions.md now documents shared Serena daemon pooling, deterministic ports, SERENA_MCP_PORT wiring, DEBUG=serena-pool, and owned orphan cleanup.
