@@ -285,15 +285,63 @@ EOF
   --parent=<epic-id>
 ```
 
-### Wire dependencies
+### Wire dependencies and relationships
+
+Use the right edge type when creating the board. `blocks` is only for hard
+must-happen-before sequencing; overusing it makes `bd ready` untrustworthy and
+hides review/test/follow-up meaning.
 
 ```bash
-# B depends on A (A blocks B)
-bd dep add <B-id> <A-id>
+# B depends on A; A blocks B. Use only when B cannot start until A is done.
+bd dep add <B-id> <A-id> --type blocks
 
-# Non-blocking relationship
+# Epic ownership. Prefer --parent at create time when possible.
+bd create --parent <epic-id> --title "Implement parser" --type task --priority 2
+bd dep add <child-id> <epic-id> --type parent-child
+
+# Follow-up discovered while working/reviewing another bead. Not a blocker.
+bd dep add <follow-up-id> <source-id> --type discovered-from
+
+# Reviewer/test/sanity/security bead verifies implementation. Not a blocker.
+bd dep add <verification-id> <impl-id> --type validates
+
+# Failure symptom points to root cause.
+bd dep add <failing-test-id> <root-cause-id> --type caused-by
+
+# Replacement work supersedes obsolete or wrongly scoped work.
+bd supersede <old-id> --with <new-id>
+bd dep add <new-id> <old-id> --type supersedes
+
+# Non-blocking context or overlap.
 bd dep relate <issue-a> <issue-b>
+bd dep add <local-id> <external-or-upstream-id> --type tracks
 ```
+
+Relationship cheat-sheet for planner-created boards:
+
+| Type | Use when |
+|---|---|
+| `blocks` | Real sequencing gate: dependent work cannot begin until prerequisite closes |
+| `parent-child` | Epic owns child tasks/chains; prefer `bd create --parent <epic>` |
+| `validates` | Test, reviewer, code-sanity, or security bead proves an implementation |
+| `discovered-from` | New follow-up was found while handling another bead |
+| `caused-by` | Failure/symptom bead points at a root-cause bead |
+| `supersedes` | New bead replaces older/wrong/abandoned work; prefer `bd supersede` |
+| `tracks` | Local issue mirrors external/upstream work without owning or blocking it |
+| `relates-to` / `related` | Soft context/overlap with no scheduling effect; prefer `bd dep relate` |
+| `until` | Temporary precondition that matters only until a stated event/condition lands |
+
+Planning-specific patterns:
+
+- Companion test/reviewer/sanity/security issues should usually use `validates`,
+  not `blocks`. Gate execution order in prose or with explicit acceptance criteria
+  if a test truly must land first.
+- Follow-up issues spawned by exploration or review should use `discovered-from`,
+  not `blocks`.
+- Duplicate or obsolete scopes should be collapsed with `bd duplicate` or
+  `bd supersede` before planning parallel work.
+- After writing edges, run `bd dep cycles` and fix accidental cycles before
+  handing the board off.
 
 ### Issue description quality bar (7-section contract)
 
@@ -440,7 +488,7 @@ Then begin work on the first task. The planning phase is complete.
 Before presenting the plan to the user:
 
 - [ ] Every issue has context / what / AC / notes
-- [ ] Dependencies are correct (A blocks B when B needs A's output)
+- [ ] Relationships are typed correctly (`blocks` only for hard sequencing; `validates`/`discovered-from`/`caused-by`/`supersedes` used where appropriate)
 - [ ] No task is more than "one session" of work (split if needed)
 - [ ] GitNexus evidence captured (query/context/impact) or fallback path explicitly stated
 - [ ] If refactor scope exists, rename/extract safety checks were included in plan

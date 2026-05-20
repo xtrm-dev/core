@@ -608,7 +608,7 @@
           "version": "0.7.21"
         },
         "planning/SKILL.md": {
-          "hash": "2d40c7c5ba048043cd25f4a616bbb48f46bb0222b459e634741056b2ca1a2366",
+          "hash": "3dee3ed7dde10127a79b352c298149c3adf7e3b9748258db8b31c10db13f1434",
           "version": "0.7.21"
         },
         "premortem/SKILL.md": {
@@ -948,7 +948,7 @@
           "version": "0.7.21"
         },
         "using-specialists-v3/SKILL.md": {
-          "hash": "643264862dfa758f85cff41a150be13d6a0c2c8ed42ded6186a3b9b16a87852b",
+          "hash": "974cf171eb12a81414d0f8e6d88dade52b38518a7565fd3feb5483db292b6b11",
           "version": "0.7.21"
         },
         "using-specialists/SKILL.md": {
@@ -1335,7 +1335,7 @@
     "source": {
       "kind": "ref",
       "ref": "master",
-      "resolved_sha": "68d81ecc260371c2b213bf4c744fb881f2fb9eef",
+      "resolved_sha": "d8eb6933d88837aeacfa46a74300ba983973ed0c",
       "repo_path": "../specialists",
       "source_path": "config/skills"
     },
@@ -1381,7 +1381,7 @@
       },
       "using-specialists-v3": {
         "evals/evals.json": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
-        "SKILL.md": "643264862dfa758f85cff41a150be13d6a0c2c8ed42ded6186a3b9b16a87852b"
+        "SKILL.md": "974cf171eb12a81414d0f8e6d88dade52b38518a7565fd3feb5483db292b6b11"
       }
     }
   }
