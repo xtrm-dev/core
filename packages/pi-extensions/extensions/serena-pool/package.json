@@ -1,0 +1,23 @@
+{
+  "name": "serena-pool",
+  "version": "1.0.0",
+  "description": "Shared Serena daemon per repo root — sets SERENA_MCP_PORT before pi-serena-tools fires",
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "serena",
+    "mcp",
+    "pool"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.56.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
