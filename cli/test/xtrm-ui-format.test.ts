@@ -10,6 +10,7 @@ import {
   cleanOutputLines,
   joinMeta,
   renderToolSummary,
+  TOOL_ROW_MARKER,
   countPrefixedItems,
   lineCount,
   previewLines,
@@ -269,17 +270,17 @@ describe('renderToolSummary', () => {
 
   it('uses accent color for pending status', () => {
     const result = renderToolSummary(theme, 'pending', 'bash');
-    expect(result).toContain('[accent:•]');
+    expect(result).toContain(`[accent:${TOOL_ROW_MARKER}]`);
   });
 
   it('uses success color for success status', () => {
     const result = renderToolSummary(theme, 'success', 'read');
-    expect(result).toContain('[success:•]');
+    expect(result).toContain(`[success:${TOOL_ROW_MARKER}]`);
   });
 
   it('uses error color for error status', () => {
     const result = renderToolSummary(theme, 'error', 'edit');
-    expect(result).toContain('[error:•]');
+    expect(result).toContain(`[error:${TOOL_ROW_MARKER}]`);
   });
 
   it('includes subject when provided', () => {

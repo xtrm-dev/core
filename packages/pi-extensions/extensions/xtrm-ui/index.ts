@@ -47,6 +47,7 @@ import {
   previewLines,
   renderRichDiffPreview,
   renderToolSummary,
+  TOOL_ROW_MARKER,
   shortenCommand,
   shortenPath,
 } from "./format";
@@ -252,7 +253,7 @@ type PatchableToolExecutionComponent = {
 type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | "external";
 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 11;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 12;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 function stripAnsi(text: string): string {
@@ -291,21 +292,21 @@ function getToolArgs(component: PatchableToolExecutionComponent): Record<string,
 function summarizeExternalToolPending(toolName: string | undefined, input: Record<string, unknown>): string {
   const name = toolName ?? "tool";
   if (name === "structured_return") {
-    return `• structured_return ${shortenCommand(String(input.command ?? "running"), 38)}`;
+    return `${TOOL_ROW_MARKER} structured_return ${shortenCommand(String(input.command ?? "running"), 38)}`;
   }
   if (name === "process") {
-    return `• process ${String(input.action ?? "running")}`;
+    return `${TOOL_ROW_MARKER} process ${String(input.action ?? "running")}`;
   }
   if (name.startsWith("gitnexus_")) {
     const subject = summarizeSerenaSubject(name, input) ?? summarizeToolSubject(name, input);
-    return `• ${normalizeToolLabel(name)}${subject ? ` ${subject}` : ""}`;
+    return `${TOOL_ROW_MARKER} ${normalizeToolLabel(name)}${subject ? ` ${subject}` : ""}`;
   }
   if (SERENA_COMPACT_TOOLS.has(name)) {
     const subject = summarizeSerenaSubject(name, input);
-    return `• serena ${name}${subject ? ` ${subject}` : ""}`;
+    return `${TOOL_ROW_MARKER} serena ${name}${subject ? ` ${subject}` : ""}`;
   }
   const subject = summarizeToolSubject(name, input) ?? summarizeSerenaSubject(name, input);
-  return `• ${normalizeToolLabel(name)}${subject ? ` ${subject}` : ""}`;
+  return `${TOOL_ROW_MARKER} ${normalizeToolLabel(name)}${subject ? ` ${subject}` : ""}`;
 }
 
 function extractResultTextLines(component: PatchableToolExecutionComponent): string[] | undefined {
@@ -339,7 +340,7 @@ function externalToolBadgeColor(kind: ExternalToolFrameKind, text: string): stri
 }
 
 function highlightExternalToolBadge(kind: ExternalToolFrameKind, line: string): string {
-  const match = line.match(/^(•\s+)(\S+)/u);
+  const match = line.match(/^([•›]\s+)(\S+)/u);
   if (!match?.[1] || !match[2]) return line;
   return match[1] + externalToolBadgeColor(kind, match[2]) + line.slice(match[1].length + match[2].length);
 }
@@ -1140,28 +1141,28 @@ function summarizeSerenaToolResult(
     case "jet_brains_find_symbol":
     case "jet_brains_find_referencing_symbols": {
       const count = countJsonItems(payload) ?? (text.match(/"name_path"\s*:/g)?.length ?? 0);
-      return `• serena ${toolName} ${subject ?? "symbol"}${meta(formatLineLabel(count, "result"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena ${toolName} ${subject ?? "symbol"}${meta(formatLineLabel(count, "result"), duration)}`;
     }
     case "get_symbols_overview":
     case "jet_brains_get_symbols_overview":
     case "jet_brains_type_hierarchy": {
       const count = Math.max(countOverviewSymbols(payload), text.match(/"name_path"\s*:/g)?.length ?? 0);
-      return `• serena ${toolName} ${subject ?? "file"}${meta(formatLineLabel(count, "symbol"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena ${toolName} ${subject ?? "file"}${meta(formatLineLabel(count, "symbol"), duration)}`;
     }
     case "search_for_pattern": {
       const count = countSearchMatches(payload) ?? (text.match(/^\s*>\s*\d+:/gm)?.length ?? 0);
-      return `• serena search ${subject ?? "pattern"}${meta(formatLineLabel(count, "match"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena search ${subject ?? "pattern"}${meta(formatLineLabel(count, "match"), duration)}`;
     }
     case "read_file": {
-      return `• serena read ${subject ?? "file"}${meta(formatLineLabel(countLines(text), "line"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena read ${subject ?? "file"}${meta(formatLineLabel(countLines(text), "line"), duration)}`;
     }
     case "list_dir": {
       const count = countJsonItems(payload) ?? countLines(text);
-      return `• serena list_dir ${subject ?? "."}${meta(formatLineLabel(count, "entry"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena list_dir ${subject ?? "."}${meta(formatLineLabel(count, "entry"), duration)}`;
     }
     case "find_file": {
       const count = countJsonItems(payload) ?? countLines(text);
-      return `• serena find_file ${String(input.file_mask ?? "")}${meta(formatLineLabel(count, "match"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena find_file ${String(input.file_mask ?? "")}${meta(formatLineLabel(count, "match"), duration)}`;
     }
     case "replace_symbol_body":
     case "insert_after_symbol":
@@ -1182,14 +1183,14 @@ function summarizeSerenaToolResult(
     case "restart_language_server":
     case "onboarding":
     case "serena_mcp_reset":
-      return `• serena ${toolName}${subject ? ` ${subject}` : ""}${meta(duration)}`;
+      return `${TOOL_ROW_MARKER} serena ${toolName}${subject ? ` ${subject}` : ""}${meta(duration)}`;
     case "execute_shell_command": {
       const count = countLines(text);
-      return `• serena shell ${subject ?? "command"}${meta(formatLineLabel(count, "line"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena shell ${subject ?? "command"}${meta(formatLineLabel(count, "line"), duration)}`;
     }
     default: {
       const count = countJsonItems(payload) ?? countLines(text);
-      return `• serena ${toolName}${subject ? ` ${subject}` : ""}${meta(formatLineLabel(count, "item"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena ${toolName}${subject ? ` ${subject}` : ""}${meta(formatLineLabel(count, "item"), duration)}`;
     }
   }
 }
@@ -1257,7 +1258,7 @@ function summarizeGenericToolResult(
   const label = formatLineLabel(count, "line");
   const joined = joinMeta([label, duration]);
   const normalized = normalizeToolLabel(toolName);
-  return `• ${normalized}${subject ? ` ${subject}` : ""}${joined ? ` · ${joined}` : ""}`;
+  return `${TOOL_ROW_MARKER} ${normalized}${subject ? ` ${subject}` : ""}${joined ? ` · ${joined}` : ""}`;
 }
 
 function summarizeStructuredReturnToolResult(
@@ -1275,7 +1276,7 @@ function summarizeStructuredReturnToolResult(
   const exitCode = typeof record?.exitCode === "number" ? `exit ${record.exitCode}` : undefined;
   const duration = formatDuration(durationMs);
   const meta = joinMeta([summary ? shortenCommand(summary, 72) : undefined, parser, exitCode, duration]);
-  return `• structured_return ${command}${meta ? ` · ${meta}` : ""}`;
+  return `${TOOL_ROW_MARKER} structured_return ${command}${meta ? ` · ${meta}` : ""}`;
 }
 
 function summarizeProcessToolResult(
@@ -1297,7 +1298,7 @@ function summarizeProcessToolResult(
     const name = String(proc?.name ?? input.name ?? "process");
     const id = proc?.id ? String(proc.id) : undefined;
     const pid = proc?.pid != null ? `pid ${String(proc.pid)}` : undefined;
-    return `• process start "${name}"${meta(id, pid)}`;
+    return `${TOOL_ROW_MARKER} process start "${name}"${meta(id, pid)}`;
   }
 
   if (action === "list") {
@@ -1306,25 +1307,25 @@ function summarizeProcessToolResult(
       const proc = asRecord(item);
       return proc?.status === "running" || proc?.status === "terminating";
     }).length;
-    return `• process list${meta(`${processes.length} ${processes.length === 1 ? "process" : "processes"}`, `${running} running`)}`;
+    return `${TOOL_ROW_MARKER} process list${meta(`${processes.length} ${processes.length === 1 ? "process" : "processes"}`, `${running} running`)}`;
   }
 
   if (action === "output") {
     const output = asRecord(record?.output);
     const stdout = Array.isArray(output?.stdout) ? output.stdout.length : undefined;
     const stderr = Array.isArray(output?.stderr) ? output.stderr.length : undefined;
-    return `• process output ${String(input.id ?? "process")}${meta(
+    return `${TOOL_ROW_MARKER} process output ${String(input.id ?? "process")}${meta(
       stdout != null ? `${stdout} stdout` : undefined,
       stderr != null ? `${stderr} stderr` : undefined,
     )}`;
   }
 
   if (action === "logs") {
-    return `• process logs ${String(input.id ?? "process")}${meta("log paths")}`;
+    return `${TOOL_ROW_MARKER} process logs ${String(input.id ?? "process")}${meta("log paths")}`;
   }
 
   const message = typeof record?.message === "string" ? record.message : text.split("\n")[0];
-  return `• process ${action}${message ? ` · ${shortenCommand(message, 38)}` : ""}${duration ? ` · ${duration}` : ""}`;
+  return `${TOOL_ROW_MARKER} process ${action}${message ? ` · ${shortenCommand(message, 38)}` : ""}${duration ? ` · ${duration}` : ""}`;
 }
 
 function summarizeExternalToolResult(
@@ -1452,13 +1453,13 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const meta = getXtrmMeta<BashToolDetails, Record<string, unknown>>(details);
       const command = shortenCommand(String(meta?.args.command ?? ""), 38);
       if (isPartial) {
-        return toolRowText(theme, `${theme.fg("accent", "•")} ${theme.fg("toolTitle", "Running ")}${theme.fg("accent", command)}${theme.fg("toolTitle", " in bash")}`);
+        return toolRowText(theme, `${theme.fg("accent", TOOL_ROW_MARKER)} ${theme.fg("toolTitle", "Running ")}${theme.fg("accent", command)}${theme.fg("toolTitle", " in bash")}`);
       }
       const output = getTextContent(result as any);
       const outputLines = cleanOutputLines(output);
       const exitMatch = output.match(/exit code:\s*(-?\d+)/i);
       const exitCode = exitMatch ? Number.parseInt(exitMatch[1] ?? "0", 10) : 0;
-      const bullet = exitCode === 0 ? theme.fg("success", "•") : theme.fg("error", "•");
+      const bullet = exitCode === 0 ? theme.fg("success", TOOL_ROW_MARKER) : theme.fg("error", TOOL_ROW_MARKER);
       const summary = joinMeta([formatLineLabel(outputLines.length, "line"), formatDuration(meta?.durationMs), details.truncation?.truncated ? "truncated" : undefined]);
       let text = `${bullet} ${theme.fg("toolTitle", "Ran ")}${theme.fg("accent", command)}`;
       if (summary) text += theme.fg("dim", ` · ${summary}`);
