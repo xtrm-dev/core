@@ -39,7 +39,7 @@ export const STATE_DIR = join(tmpdir(), "serena-pool");
 
 const DEBUG_ENABLED = (process.env.DEBUG ?? "").split(/[\s,]+/).includes("serena-pool");
 function debug(msg: string, ...args: unknown[]): void {
-  if (DEBUG_ENABLED) console.error(`[serena-pool] ${msg}`, ...args);
+  if (DEBUG_ENABLED) console.error("[serena-pool]", msg, ...args);
 }
 
 type PoolState = {

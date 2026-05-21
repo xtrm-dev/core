@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.25] — 2026-05-21
+
+This section documents an independently-published `@jaggerxtrm/pi-extensions` patch release; root `xtrm-tools` remains on the v0.7.21 line.
+
+### `@jaggerxtrm/pi-extensions` v0.7.25 — 2026-05-21
+
+#### Fixed
+- `serena-pool`: debug logging now passes the message as a separate console argument instead of interpolating it into the format string, satisfying the semgrep pre-push security gate. Supersedes the already-published npm-only v0.7.24 package for GitHub release purposes. (xtrm-sqo33)
+
 ## [v0.7.24] — 2026-05-21
 
 This section documents an independently-published `@jaggerxtrm/pi-extensions` patch release; root `xtrm-tools` remains on the v0.7.21 line.
