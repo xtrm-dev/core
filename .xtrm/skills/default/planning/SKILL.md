@@ -315,6 +315,9 @@ bd dep add <new-id> <old-id> --type supersedes
 # Non-blocking context or overlap.
 bd dep relate <issue-a> <issue-b>
 bd dep add <local-id> <external-or-upstream-id> --type tracks
+
+# Temporary precondition that expires when a named event/condition lands.
+bd dep add <chain-id> <precondition-id> --type until
 ```
 
 Relationship cheat-sheet for planner-created boards:
@@ -435,8 +438,8 @@ Then begin work on the first task. The planning phase is complete.
     bd create --title="Scaffold xtrm audit command" --description="Context: ..." --type=task
     bd create --title="Implement hook validation — compare config/hooks.json to settings.json" ...
     bd create --title="Add --fix flag for auto-remediation" ...
-    bd dep add <wiring-id> <scaffold-id>    # wiring depends on scaffold
-    bd dep add <fix-id> <wiring-id>         # fix depends on wiring
+    bd dep add <wiring-id> <scaffold-id> --type blocks    # wiring depends on scaffold
+    bd dep add <fix-id> <wiring-id> --type blocks         # fix depends on wiring
   </bd_commands>
 </example>
 
