@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.24] — 2026-05-21
+
+This section documents an independently-published `@jaggerxtrm/pi-extensions` patch release; root `xtrm-tools` remains on the v0.7.21 line.
+
+### `@jaggerxtrm/pi-extensions` v0.7.24 — 2026-05-21
+
+#### Changed
+- `xtrm-ui`: compact tool-result rows now use the lighter `›` marker instead of `•` for xtrm-ui-owned native and external compact summaries. The marker is centralized as `TOOL_ROW_MARKER`; external badge parsing accepts both old and new markers for compatibility, and prompt/input prefix behavior remains unchanged. (xtrm-0vda4)
+
 ## [v0.7.23] — 2026-05-21
 
 This section documents an independently-published `@jaggerxtrm/pi-extensions` patch release; root `xtrm-tools` remains on the v0.7.21 line.

@@ -258,6 +258,8 @@ export function formatLineLabel(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+export const TOOL_ROW_MARKER = "›";
+
 const TOOL_SUMMARY_SUBJECT_MAX = 34;
 const TOOL_SUMMARY_META_MAX = 34;
 
@@ -275,7 +277,7 @@ export function renderToolSummary(
     : "muted";
   const compactSubject = subject ? shortenCommand(subject, TOOL_SUMMARY_SUBJECT_MAX) : undefined;
   const compactMeta = meta ? shortenCommand(meta, TOOL_SUMMARY_META_MAX) : undefined;
-  let text = `${theme.fg(color, "•")} ${theme.fg("toolTitle", theme.bold(label))}`;
+  let text = `${theme.fg(color, TOOL_ROW_MARKER)} ${theme.fg("toolTitle", theme.bold(label))}`;
   if (compactSubject) text += ` ${theme.fg("accent", compactSubject)}`;
   if (compactMeta) text += theme.fg("muted", ` · ${compactMeta}`);
   return text;
