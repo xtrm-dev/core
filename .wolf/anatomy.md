@@ -7,6 +7,7 @@
 > Manual note 2026-05-07: xtrm-tools-be9 fix updates scaffoldSkillsDefaultFromPackage to replace valid-but-stale .xtrm/skills/default symlinks unless they resolve to the current package payload.
 
 > Manual note 2026-05-19: README refreshed for v0.7.21 update methodology, update-xt and issue-triage skill catalog entries, and missing-skill verification commands.
+> Manual note 2026-05-21: using-specialists-v3 gained bd swarm epic-readiness context; validation cleaned packages/pi-extensions/.pi/structured-returns runtime logs.
 > Auto-maintained by OpenWolf. Last scanned: 2026-04-02T22:22:27.122Z
 > Manual note 2026-04-16: Pi runtime now prefers packages/pi-extensions/* and prunes stale npm:pi-dex settings conflicts.
 > Manual note 2026-05-04: xtrm-loader memory injection is silent during before_agent_start; xtrm-ui dark pending row backgrounds use surfaceMuted across active pi-extension theme copies.
@@ -1286,3 +1287,4 @@
 > Manual note 2026-05-16: xtrm-ui external frame patch version bumped to v11 so /reload replaces the old background-badge renderer closure.
 > Manual note 2026-05-19: `packages/pi-extensions/extensions/sp-terminal-overlay/index.ts` makes `/sp-ps` and `/xtrm-ps` snapshot-only by stripping `--follow`/`-f`; `/sp-feed` remains streaming.
 > Manual note 2026-05-21: CHANGELOG.md and docs/pi-extensions.md document @jaggerxtrm/pi-extensions 0.7.22/0.7.23 serena-pool release and follow-up cleanup/tracing.
+> Manual note 2026-05-21: xtrm-ui local marker experiment uses `›` for tool-row summaries in format.ts/index.ts; Pi agent npm store installed from packages/pi-extensions for testing.

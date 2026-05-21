@@ -663,6 +663,24 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-05-19T08:10:00Z"
+    },
+    {
+      "id": "bug-036",
+      "timestamp": "2026-05-20T18:28:00Z",
+      "error_message": "Manual fleet skill copy script deleted the xtrm-tools source planning skill before copying because the source repo was also one of the targets.",
+      "file": ".xtrm/skills/default/planning/SKILL.md",
+      "root_cause": "The script used the live source directory as copy source while iterating target repos, and when target == source repo it removed the destination/source directory before shutil.copytree ran.",
+      "fix": "Restore planning from git, then snapshot source skills to a temporary directory before iterating targets; copy from the temp snapshot and verify SKILL.md hashes plus active symlinks across all repos.",
+      "tags": [
+        "skills",
+        "fleet-copy",
+        "manual-sync",
+        "self-copy",
+        "planning"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T18:28:00Z"
     }
   ]
 }
