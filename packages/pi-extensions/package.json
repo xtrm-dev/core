@@ -1,6 +1,6 @@
 {
   "name": "@jaggerxtrm/pi-extensions",
-  "version": "0.7.25",
+  "version": "0.8.0",
   "description": "Unified Pi extension entrypoint for xtrm-managed extensions",
   "type": "module",
   "publishConfig": {
