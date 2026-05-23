@@ -848,7 +848,7 @@
           "version": "0.7.21"
         },
         "specialists-creator/SKILL.md": {
-          "hash": "250cd9376b818142d1ccca71b48198086723ab2453ebac1eb69c3ba6293e9721",
+          "hash": "f8951e41b20d03a1a5cb71cd79fc7a17f525aba7005cce893d2a4524fc5a169e",
           "version": "0.7.21"
         },
         "sync-docs/references/doc-structure.md": {
@@ -948,7 +948,7 @@
           "version": "0.7.21"
         },
         "using-specialists-v3/SKILL.md": {
-          "hash": "974cf171eb12a81414d0f8e6d88dade52b38518a7565fd3feb5483db292b6b11",
+          "hash": "034692ee7ce97984a587a9ac4a612c3b71e37e03fea6a4d23bf37e388ace6cca",
           "version": "0.7.21"
         },
         "using-specialists/SKILL.md": {
@@ -1333,9 +1333,9 @@
   "specialists_source": {
     "version": 1,
     "source": {
-      "kind": "ref",
+      "kind": "repo",
       "ref": "master",
-      "resolved_sha": "d8eb6933d88837aeacfa46a74300ba983973ed0c",
+      "resolved_sha": "275336d01955d006a11c176c8be9a6acdef4e7af",
       "repo_path": "../specialists",
       "source_path": "config/skills"
     },
@@ -1355,7 +1355,7 @@
         "scripts/audit-spec-uniformity.mjs": "cfc6aa6fc89f18c2e1ddf794047b309aa8cb0185617d84545eb5cb20135d5ac4",
         "scripts/scaffold-specialist.ts": "c1bfa3693d644072e6d387d2519e131624d99c5b85521ae638680d7485267403",
         "scripts/validate-specialist.ts": "3a5f5a3a77c50e98ecf9188634ff2882f8143b19d0f28a53aff5c42e1bd09dfa",
-        "SKILL.md": "250cd9376b818142d1ccca71b48198086723ab2453ebac1eb69c3ba6293e9721"
+        "SKILL.md": "f8951e41b20d03a1a5cb71cd79fc7a17f525aba7005cce893d2a4524fc5a169e"
       },
       "update-specialists": {
         "SKILL.md": "fdf8c680cf3e5dce80c9426f52b56c953f4f7f663c23a33a3378b2b6e4bab5a9"
@@ -1381,7 +1381,7 @@
       },
       "using-specialists-v3": {
         "evals/evals.json": "e77fb10567d67489a0b56700693cd6199a68fd830ee91c4c939aef0fe8fad4bd",
-        "SKILL.md": "974cf171eb12a81414d0f8e6d88dade52b38518a7565fd3feb5483db292b6b11"
+        "SKILL.md": "034692ee7ce97984a587a9ac4a612c3b71e37e03fea6a4d23bf37e388ace6cca"
       }
     }
   }
