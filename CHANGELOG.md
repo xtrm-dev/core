@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `xt init` and `xt update` now apply/report the bd auto-stage patch: set `export.git-add: false` to stop mid-work `.beads/issues.jsonl` staging, then append an idempotent pre-commit shim that stages the freshly exported JSONL snapshot at commit time. Hook resolution honors `core.hooksPath`, including bd v1.0.3's valid `.beads/hooks/pre-commit` target. (xtrm-h9hqg)
 - `xt init` and `xt update` now include bd/GitNexus dependency maintenance summaries: installed-vs-latest detection, non-major auto-upgrade attempts on apply, `bd doctor --fix --yes`, and GitNexus reindex when status is stale/missing/schema-drifted. (xtrm-h9hqg)
+- `update-xt` skill now documents bd auto-stage patch checks, `xt update --all-repos`, dependency maintenance summaries, and the valid bd v1.0.3 `.beads/hooks/pre-commit` hook target. (xtrm-h9hqg)
+- `using-specialists-v3` was refreshed with Iron-style review hardening: SCRUTINY taxonomy, mandatory code-sanity/obligations gates for production diffs, Git State Precondition, and the manual Cherry-Pick Playbook while prohibiting `sp merge` / `sp epic merge`. (unitAI-qr8mg)
 
 ## [v0.8.0] — 2026-05-23
 
