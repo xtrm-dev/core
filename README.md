@@ -103,18 +103,20 @@ xt --version
 sp --version
 ```
 
-Refresh one repo or a whole fleet. `xt update` is a dry-run by default; add `--apply` to write changes.
+Refresh one repo or a whole fleet. `xt update` is a dry-run by default; add `--apply` to write changes. Current versions also check bd/GitNexus maintenance and apply the bd auto-stage patch (`export.git-add=false` plus a pre-commit JSONL stage shim) so bd writes stay quiet mid-work while commits still include the latest `.beads/issues.jsonl` snapshot.
 
 ```bash
 # Preview drift
 xt update --repo .
 xt update --root ~/dev
 xt update --root ~/projects
+xt update --all-repos          # shorthand sweep for ~/dev + ~/projects
 
 # Apply managed asset updates
 xt update --apply --repo .
 xt update --apply --root ~/dev
 xt update --apply --root ~/projects
+xt update --apply --all-repos  # patches and commits each changed repo
 ```
 
 If a repo is reported as incomplete or a newly shipped skill is missing, bootstrap or rebuild the active view:

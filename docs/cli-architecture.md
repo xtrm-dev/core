@@ -152,12 +152,14 @@ Text output includes a **Pi packages** section. JSON output has shape `{ catB, p
 
 **`createUpdateCommand()`**
 
-Registers `xt update`, the xtrm-managed asset refresh command for one repo or many. For each target repo it calls the registry scaffold/update path, then runs `assureXtManagedPiPackages()` once for the session:
+Registers `xt update`, the xtrm-managed asset refresh command for one repo or many. For each target repo it evaluates registry drift, bd auto-stage patch state, and dependency maintenance, then runs `assureXtManagedPiPackages()` once for the session:
 
 - dry-run reports missing/outdated xt-managed Pi packages without writing
 - `--apply` refreshes only `missing` and `outdated` managed packages via `pi install <package>`
 - unrelated user packages are preserved because package operations are additive and limited to the canonical managed inventory
-- JSON output includes `{ repos, packages }` where `packages` mirrors the assurance result
+- bd repos are patched to keep `export.git-add=false` and append an idempotent pre-commit shim that stages `.beads/issues.jsonl` at commit time
+- `--all-repos` scans `~/dev` and `~/projects`; with `--apply`, each changed repo is committed independently as `chore: apply bd auto-stage patch (xtrm-tools auto-applied)`
+- JSON output includes `{ repos, packages }`; each repo row may include a `maintenance` summary for bd/GitNexus checks
 
 ### `core/pi-runtime.ts`
 

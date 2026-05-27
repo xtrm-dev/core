@@ -760,7 +760,7 @@
           "version": "0.8.0"
         },
         "session-close-report/SKILL.md": {
-          "hash": "9b4bb82312cd78a60aff39b7476f0360e678a76be33242b81be8c1d8163380b1",
+          "hash": "98c170dded2b9ec88e2f38da6cb99d07b40cda7c0df5cd9b8e176747231e9d2c",
           "version": "0.8.0"
         },
         "skill-creator/agents/analyzer.md": {
@@ -948,7 +948,7 @@
           "version": "0.8.0"
         },
         "using-specialists-v3/SKILL.md": {
-          "hash": "034692ee7ce97984a587a9ac4a612c3b71e37e03fea6a4d23bf37e388ace6cca",
+          "hash": "e98b5fb499f06d5a00e161ba97d87c506d7fe41e0bc28c556cfd69ef23725ea9",
           "version": "0.8.0"
         },
         "using-specialists/SKILL.md": {
@@ -960,7 +960,7 @@
           "version": "0.8.0"
         },
         "using-xtrm/SKILL.md": {
-          "hash": "935f7b4edb633e43efcc7425c611768aa2655e1129d7fbfe7a8aaf152a431a2c",
+          "hash": "e72740acfda2f3a7733c2a9adbf5f503d9ba6d15fdc96721e9219cbb0a9ee66b",
           "version": "0.8.0"
         },
         "vaultctl/SKILL.md": {
