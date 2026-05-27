@@ -42,6 +42,8 @@ import {
   diffStats,
   formatDuration,
   formatLineLabel,
+  formatPayloadSize,
+  joinCompactMeta,
   joinMeta,
   lineCount,
   previewLines,
@@ -1129,9 +1131,10 @@ function summarizeSerenaToolResult(
 ): string {
   const payload = parseJson(text);
   const duration = formatDuration(durationMs);
+  const payloadSize = formatPayloadSize(text);
   const subject = summarizeSerenaSubject(toolName, input);
   const meta = (...parts: Array<string | undefined>) => {
-    const joined = joinMeta(parts);
+    const joined = joinCompactMeta([duration, payloadSize, ...parts]);
     return joined ? ` · ${joined}` : "";
   };
 
@@ -1141,28 +1144,28 @@ function summarizeSerenaToolResult(
     case "jet_brains_find_symbol":
     case "jet_brains_find_referencing_symbols": {
       const count = countJsonItems(payload) ?? (text.match(/"name_path"\s*:/g)?.length ?? 0);
-      return `${TOOL_ROW_MARKER} serena ${toolName} ${subject ?? "symbol"}${meta(formatLineLabel(count, "result"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena ${toolName} ${subject ?? "symbol"}${meta(formatLineLabel(count, "result"))}`;
     }
     case "get_symbols_overview":
     case "jet_brains_get_symbols_overview":
     case "jet_brains_type_hierarchy": {
       const count = Math.max(countOverviewSymbols(payload), text.match(/"name_path"\s*:/g)?.length ?? 0);
-      return `${TOOL_ROW_MARKER} serena ${toolName} ${subject ?? "file"}${meta(formatLineLabel(count, "symbol"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena ${toolName} ${subject ?? "file"}${meta(formatLineLabel(count, "symbol"))}`;
     }
     case "search_for_pattern": {
       const count = countSearchMatches(payload) ?? (text.match(/^\s*>\s*\d+:/gm)?.length ?? 0);
-      return `${TOOL_ROW_MARKER} serena search ${subject ?? "pattern"}${meta(formatLineLabel(count, "match"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena search ${subject ?? "pattern"}${meta(formatLineLabel(count, "match"))}`;
     }
     case "read_file": {
-      return `${TOOL_ROW_MARKER} serena read ${subject ?? "file"}${meta(formatLineLabel(countLines(text), "line"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena read ${subject ?? "file"}${meta(formatLineLabel(countLines(text), "line"))}`;
     }
     case "list_dir": {
       const count = countJsonItems(payload) ?? countLines(text);
-      return `${TOOL_ROW_MARKER} serena list_dir ${subject ?? "."}${meta(formatLineLabel(count, "entry"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena list_dir ${subject ?? "."}${meta(formatLineLabel(count, "entry"))}`;
     }
     case "find_file": {
       const count = countJsonItems(payload) ?? countLines(text);
-      return `${TOOL_ROW_MARKER} serena find_file ${String(input.file_mask ?? "")}${meta(formatLineLabel(count, "match"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena find_file ${String(input.file_mask ?? "")}${meta(formatLineLabel(count, "match"))}`;
     }
     case "replace_symbol_body":
     case "insert_after_symbol":
@@ -1183,14 +1186,14 @@ function summarizeSerenaToolResult(
     case "restart_language_server":
     case "onboarding":
     case "serena_mcp_reset":
-      return `${TOOL_ROW_MARKER} serena ${toolName}${subject ? ` ${subject}` : ""}${meta(duration)}`;
+      return `${TOOL_ROW_MARKER} serena ${toolName}${subject ? ` ${subject}` : ""}${meta()}`;
     case "execute_shell_command": {
       const count = countLines(text);
-      return `${TOOL_ROW_MARKER} serena shell ${subject ?? "command"}${meta(formatLineLabel(count, "line"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena shell ${subject ?? "command"}${meta(formatLineLabel(count, "line"))}`;
     }
     default: {
       const count = countJsonItems(payload) ?? countLines(text);
-      return `${TOOL_ROW_MARKER} serena ${toolName}${subject ? ` ${subject}` : ""}${meta(formatLineLabel(count, "item"), duration)}`;
+      return `${TOOL_ROW_MARKER} serena ${toolName}${subject ? ` ${subject}` : ""}${meta(formatLineLabel(count, "item"))}`;
     }
   }
 }
@@ -1253,10 +1256,11 @@ function summarizeGenericToolResult(
 ): string {
   const payload = parseJson(text);
   const duration = formatDuration(durationMs);
+  const payloadSize = formatPayloadSize(text);
   const subject = summarizeToolSubject(toolName, input) ?? summarizeSerenaSubject(toolName, input);
   const count = countJsonItems(payload) ?? countLines(text);
   const label = formatLineLabel(count, "line");
-  const joined = joinMeta([label, duration]);
+  const joined = joinCompactMeta([duration, payloadSize, label]);
   const normalized = normalizeToolLabel(toolName);
   return `${TOOL_ROW_MARKER} ${normalized}${subject ? ` ${subject}` : ""}${joined ? ` · ${joined}` : ""}`;
 }
@@ -1274,8 +1278,8 @@ function summarizeStructuredReturnToolResult(
   const summary = resultLines.find((line) => !line.startsWith("cwd:"));
   const parser = typeof record?.parser === "string" ? record.parser : undefined;
   const exitCode = typeof record?.exitCode === "number" ? `exit ${record.exitCode}` : undefined;
-  const duration = formatDuration(durationMs);
-  const meta = joinMeta([summary ? shortenCommand(summary, 72) : undefined, parser, exitCode, duration]);
+  const resultMeta = joinCompactMeta([formatDuration(durationMs), formatPayloadSize(text)]);
+  const meta = joinMeta([summary ? shortenCommand(summary, 72) : undefined, parser, exitCode, resultMeta]);
   return `${TOOL_ROW_MARKER} structured_return ${command}${meta ? ` · ${meta}` : ""}`;
 }
 
@@ -1288,8 +1292,9 @@ function summarizeProcessToolResult(
   const record = asRecord(details);
   const action = String(record?.action ?? input.action ?? "action");
   const duration = formatDuration(durationMs);
+  const payloadSize = formatPayloadSize(text);
   const meta = (...parts: Array<string | undefined>) => {
-    const joined = joinMeta([...parts, duration]);
+    const joined = joinCompactMeta([duration, payloadSize, ...parts]);
     return joined ? ` · ${joined}` : "";
   };
 
@@ -1325,7 +1330,7 @@ function summarizeProcessToolResult(
   }
 
   const message = typeof record?.message === "string" ? record.message : text.split("\n")[0];
-  return `${TOOL_ROW_MARKER} process ${action}${message ? ` · ${shortenCommand(message, 38)}` : ""}${duration ? ` · ${duration}` : ""}`;
+  return `${TOOL_ROW_MARKER} process ${action}${message ? ` · ${shortenCommand(message, 38)}` : ""}${meta()}`;
 }
 
 function summarizeExternalToolResult(
@@ -1451,17 +1456,22 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderResult(result, { expanded, isPartial }, theme) {
       const details = (result.details ?? {}) as DetailsWithXtrmMeta<BashToolDetails, Record<string, unknown>>;
       const meta = getXtrmMeta<BashToolDetails, Record<string, unknown>>(details);
-      const command = shortenCommand(String(meta?.args.command ?? ""), 38);
+      const command = shortenCommand(String(meta?.args.command ?? ""), 80);
       if (isPartial) {
-        return toolRowText(theme, `${theme.fg("accent", TOOL_ROW_MARKER)} ${theme.fg("toolTitle", "Running ")}${theme.fg("accent", command)}${theme.fg("toolTitle", " in bash")}`);
+        return toolRowText(theme, `${theme.fg("accent", TOOL_ROW_MARKER)} ${theme.fg("toolTitle", "bash:")}${theme.fg("accent", command)}`);
       }
       const output = getTextContent(result as any);
       const outputLines = cleanOutputLines(output);
       const exitMatch = output.match(/exit code:\s*(-?\d+)/i);
       const exitCode = exitMatch ? Number.parseInt(exitMatch[1] ?? "0", 10) : 0;
       const bullet = exitCode === 0 ? theme.fg("success", TOOL_ROW_MARKER) : theme.fg("error", TOOL_ROW_MARKER);
-      const summary = joinMeta([formatLineLabel(outputLines.length, "line"), formatDuration(meta?.durationMs), details.truncation?.truncated ? "truncated" : undefined]);
-      let text = `${bullet} ${theme.fg("toolTitle", "Ran ")}${theme.fg("accent", command)}`;
+      const summary = joinCompactMeta([
+        formatDuration(meta?.durationMs),
+        formatPayloadSize(output),
+        formatLineLabel(outputLines.length, "line"),
+        details.truncation?.truncated ? "truncated" : undefined,
+      ]);
+      let text = `${bullet} ${theme.fg("toolTitle", "bash:")}${theme.fg("accent", command)}`;
       if (summary) text += theme.fg("dim", ` · ${summary}`);
       if (expanded && outputLines.length > 0) text += `\n${renderVerticalPreview(theme, outputLines, 10)}`;
       return toolRowText(theme, text);

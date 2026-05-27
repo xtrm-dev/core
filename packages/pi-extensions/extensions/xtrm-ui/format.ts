@@ -260,8 +260,8 @@ export function formatLineLabel(count: number, noun: string): string {
 
 export const TOOL_ROW_MARKER = "›";
 
-const TOOL_SUMMARY_SUBJECT_MAX = 34;
-const TOOL_SUMMARY_META_MAX = 34;
+const TOOL_SUMMARY_SUBJECT_MAX = 80;
+const TOOL_SUMMARY_META_MAX = 64;
 
 export function renderToolSummary(
   theme: { fg(color: string, text: string): string; bold(text: string): string },
@@ -286,4 +286,24 @@ export function renderToolSummary(
 export function joinMeta(parts: Array<string | undefined | false>): string | undefined {
   const filtered = parts.filter((part): part is string => typeof part === "string" && part.length > 0);
   return filtered.length > 0 ? filtered.join(" · ") : undefined;
+}
+
+export function joinCompactMeta(parts: Array<string | undefined | false>): string | undefined {
+  const filtered = parts.filter((part): part is string => typeof part === "string" && part.length > 0);
+  return filtered.length > 0 ? filtered.join(":") : undefined;
+}
+
+export function formatPayloadSize(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const bytes = new TextEncoder().encode(text).length;
+  if (bytes <= 0) return undefined;
+  if (bytes < 1024) return `${bytes}B`;
+
+  const kib = bytes / 1024;
+  if (kib < 1024) {
+    return `${kib < 10 ? kib.toFixed(1) : Math.round(kib)}KB`;
+  }
+
+  const mib = kib / 1024;
+  return `${mib < 10 ? mib.toFixed(1) : Math.round(mib)}MB`;
 }

@@ -7,7 +7,9 @@ import {
   renderRichDiffPreview,
   formatDuration,
   formatLineLabel,
+  formatPayloadSize,
   cleanOutputLines,
+  joinCompactMeta,
   joinMeta,
   renderToolSummary,
   TOOL_ROW_MARKER,
@@ -257,6 +259,28 @@ describe('joinMeta', () => {
 
   it('returns undefined for empty array', () => {
     expect(joinMeta([])).toBeUndefined();
+  });
+});
+
+// ── compact metadata helpers ────────────────────────────────────────────────
+
+describe('joinCompactMeta', () => {
+  it('joins compact metadata with colon separators', () => {
+    expect(joinCompactMeta(['19ms', '1.2KB', '3 lines'])).toBe('19ms:1.2KB:3 lines');
+  });
+
+  it('filters empty values', () => {
+    expect(joinCompactMeta([undefined, '', false, '1 line'])).toBe('1 line');
+  });
+});
+
+describe('formatPayloadSize', () => {
+  it('formats byte payloads', () => {
+    expect(formatPayloadSize('abc')).toBe('3B');
+  });
+
+  it('formats KiB payloads as compact KB labels', () => {
+    expect(formatPayloadSize('x'.repeat(1536))).toBe('1.5KB');
   });
 });
 
