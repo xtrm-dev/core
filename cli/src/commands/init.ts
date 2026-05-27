@@ -23,6 +23,8 @@ import { getContext } from '../core/context.js';
 import { calculateDiff } from '../core/diff.js';
 import { findRepoRoot } from '../utils/repo-root.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
+import { ensureBdAutoStagePatch, summarizeBdAutoStagePatch } from '../core/bd-auto-stage-patch.js';
+import { printDependencyMaintenanceSummary, runDependencyMaintenance } from '../core/dependency-maintenance.js';
 
 let cachedPackageRoot: string | undefined;
 
@@ -860,7 +862,13 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
     // headers, and ensure the GitNexus code intelligence index is current.
     await runProjectBootstrap(projectRoot, isGitRepo);
 
-    // ── Phase 8: Verification ────────────────────────────────────────────────
+    // ── Phase 8: Dependency maintenance ──────────────────────────────────────
+    // Check bd/gitnexus freshness, run bd doctor repairs, and refresh stale
+    // GitNexus indexes as part of the single init summary.
+    const dependencyMaintenance = await runDependencyMaintenance(projectRoot, true);
+    printDependencyMaintenanceSummary(dependencyMaintenance);
+
+    // ── Phase 9: Verification ────────────────────────────────────────────────
     // Unified verification across all phases: machine, Claude, Pi, project.
     const verification = await runInitVerification(projectRoot);
     renderVerificationSummary(verification);
@@ -900,6 +908,11 @@ async function runBdInitForProject(projectRoot: string): Promise<void> {
         const text = `${result.stdout || ''}\n${result.stderr || ''}`.toLowerCase();
         if (text.includes('already initialized')) {
             console.log(kleur.dim('  ✓ beads workspace already initialized'));
+            const patch = await ensureBdAutoStagePatch(projectRoot, true);
+            console.log(kleur.dim(`  • ${summarizeBdAutoStagePatch(patch)}`));
+            for (const warning of patch.warnings) {
+                console.log(kleur.yellow(`  ⚠ ${warning}`));
+            }
             return;
         }
         if (result.stdout) process.stdout.write(result.stdout);
@@ -910,6 +923,12 @@ async function runBdInitForProject(projectRoot: string): Promise<void> {
 
     if (result.stdout) process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
+
+    const patch = await ensureBdAutoStagePatch(projectRoot, true);
+    console.log(kleur.dim(`  • ${summarizeBdAutoStagePatch(patch)}`));
+    for (const warning of patch.warnings) {
+        console.log(kleur.yellow(`  ⚠ ${warning}`));
+    }
 }
 
 async function runGitNexusInitForProject(projectRoot: string): Promise<void> {

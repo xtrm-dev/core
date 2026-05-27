@@ -1,4 +1,5 @@
 # anatomy.md
+> Manual note 2026-05-27: xtrm-h9hqg adds cli/src/core/bd-auto-stage-patch.ts and dependency-maintenance.ts; xt init/update now patch bd export.git-add/pre-commit shim and report bd/gitnexus maintenance.
 > Manual note 2026-05-15: xtrm-ewou reconciles #257 worktree bootstrap guidance onto main; clean worktrees omit node_modules/.venv and users should run repo bootstrap.
 > Manual note 2026-05-13: xtrm-krk0 clears OSV by removing unused @artale/pi-procs/tdd-guard deps, making cli/vitest.config.ts load tdd-guard-vitest optionally, pinning Vite for pnpm, and refreshing lockfiles/dist.
 > Manual note 2026-05-13: xtrm-6m4y wired root security pipeline files (Dependabot, OSV, Semgrep, Gitleaks, pre-commit/pre-push wrappers) and added scripts/osv-diff.sh so local push OSV only blocks vulnerabilities new vs baseline.

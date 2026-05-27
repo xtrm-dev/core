@@ -3,11 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkDriftMock, runInstallMock, assureXtManagedPiPackagesMock, resolvePackageRootMock } = vi.hoisted(() => ({
+const { checkDriftMock, runInstallMock, assureXtManagedPiPackagesMock, resolvePackageRootMock, ensureBdAutoStagePatchMock, runDependencyMaintenanceMock } = vi.hoisted(() => ({
   checkDriftMock: vi.fn(),
   runInstallMock: vi.fn(),
   assureXtManagedPiPackagesMock: vi.fn(),
   resolvePackageRootMock: vi.fn(),
+  ensureBdAutoStagePatchMock: vi.fn(),
+  runDependencyMaintenanceMock: vi.fn(),
 }));
 
 vi.mock('../core/drift.js', () => ({
@@ -27,6 +29,16 @@ vi.mock('../commands/install.js', () => ({
   isStrictRegistryMode: (opts: { strictRegistry?: boolean }) => opts.strictRegistry ?? process.env.XTRM_STRICT_REGISTRY === '1',
 }));
 
+vi.mock('../core/bd-auto-stage-patch.js', () => ({
+  ensureBdAutoStagePatch: ensureBdAutoStagePatchMock,
+  summarizeBdAutoStagePatch: (result: { config: string; hook: string }) => `bd export.git-add: ${result.config}, pre-commit shim: ${result.hook}`,
+}));
+
+vi.mock('../core/dependency-maintenance.js', () => ({
+  runDependencyMaintenance: runDependencyMaintenanceMock,
+  printDependencyMaintenanceSummary: vi.fn(),
+}));
+
 import { createUpdateCommand } from '../commands/update.js';
 
 let tmpDir = '';
@@ -40,6 +52,8 @@ beforeEach(() => {
   runInstallMock.mockReset();
   assureXtManagedPiPackagesMock.mockReset();
   resolvePackageRootMock.mockReset();
+  ensureBdAutoStagePatchMock.mockReset();
+  runDependencyMaintenanceMock.mockReset();
   checkDriftMock.mockResolvedValue({ missing: ['asset.txt'], upToDate: [], drifted: [] });
   assureXtManagedPiPackagesMock.mockResolvedValue({
     statuses: [],
@@ -48,6 +62,12 @@ beforeEach(() => {
     installed: [],
     refreshed: [],
     failed: [],
+  });
+  ensureBdAutoStagePatchMock.mockResolvedValue({ changed: false, config: 'already-disabled', hook: 'already-present', warnings: [] });
+  runDependencyMaintenanceMock.mockResolvedValue({
+    tools: [],
+    bdDoctor: { state: 'checked' },
+    gitnexusIndex: { state: 'current' },
   });
 });
 
@@ -110,6 +130,39 @@ describe('xtrm update', () => {
     expect(result.logs.join('\n')).not.toContain('already-current');
   });
 
+  it('dry-run reports refresh when only the bd auto-stage patch is missing', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    const repo = writeRepo(tmpDir, 'repo-a');
+    await fs.ensureDir(path.join(repo, '.beads'));
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
+    ensureBdAutoStagePatchMock.mockResolvedValue({ changed: true, config: 'updated', hook: 'updated', warnings: [] });
+
+    const result = await runUpdateCli(['--repo', repo]);
+
+    expect(runInstallMock).not.toHaveBeenCalled();
+    expect(result.logs.join('\n')).toContain('refreshed');
+    expect(result.logs.join('\n')).toContain('bd export.git-add: updated');
+  });
+
+  it('apply patches bd auto-stage without running registry install when registry is current', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    const repo = writeRepo(tmpDir, 'repo-a');
+    await fs.ensureDir(path.join(repo, '.beads'));
+    await fs.writeFile(path.join(repo, '.beads', 'config.yaml'), 'dolt:\n  shared-server: true\n');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
+    ensureBdAutoStagePatchMock
+      .mockResolvedValueOnce({ changed: true, config: 'updated', hook: 'updated', warnings: [] })
+      .mockResolvedValueOnce({ changed: true, config: 'updated', hook: 'updated', warnings: [] });
+
+    const result = await runUpdateCli(['--apply', '--repo', repo]);
+
+    expect(runInstallMock).not.toHaveBeenCalled();
+    expect(ensureBdAutoStagePatchMock).toHaveBeenLastCalledWith(repo, true);
+    expect(result.logs.join('\n')).toContain('refreshed');
+  });
+
   it('apply refreshes repo once when current package registry differs from old installed registry', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     const repo = writeRepo(tmpDir, 'repo-a');
@@ -149,7 +202,14 @@ describe('xtrm update', () => {
 
     const result = await runUpdateCli(['--json', '--repo', repo]);
 
-    expect(result.json).toEqual({ repos: [{ repo, status: 'already-current' }], packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [] } });
+    expect(result.json).toEqual({
+      repos: [{
+        repo,
+        status: 'already-current',
+        maintenance: { tools: [], bdDoctor: { state: 'checked' }, gitnexusIndex: { state: 'current' } },
+      }],
+      packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [] },
+    });
   });
 
   it('apply exits non-zero in strict registry env when registry source missing', async () => {
@@ -182,5 +242,6 @@ describe('xtrm update', () => {
     const help = await command.helpInformation();
     expect(help).toContain('global xt Pi packages');
     expect(help).toContain('missing or outdated packages');
+    expect(help).toContain('--all-repos');
   });
 });

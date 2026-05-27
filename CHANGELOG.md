@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `xt update --all-repos` sweeps `~/dev` and `~/projects` for xtrm-managed repos; dry-run inventories by default, while `--apply` patches changed repos and commits each one with `chore: apply bd auto-stage patch (xtrm-tools auto-applied)`. (xtrm-h9hqg)
+
+### Changed
+
+- `xt init` and `xt update` now apply/report the bd auto-stage patch: set `export.git-add: false` to stop mid-work `.beads/issues.jsonl` staging, then append an idempotent pre-commit shim that stages the freshly exported JSONL snapshot at commit time. Hook resolution honors `core.hooksPath`, including bd v1.0.3's valid `.beads/hooks/pre-commit` target. (xtrm-h9hqg)
+- `xt init` and `xt update` now include bd/GitNexus dependency maintenance summaries: installed-vs-latest detection, non-major auto-upgrade attempts on apply, `bd doctor --fix --yes`, and GitNexus reindex when status is stale/missing/schema-drifted. (xtrm-h9hqg)
+
 ## [v0.8.0] — 2026-05-23
 
 Cumulative roll-up of two weeks of cross-package infrastructure work. Minor bump justified by the combined surface: this is the first xtrm-tools release that **simultaneously** consolidates the dolt shared-server pattern (already in 0.7.21 — restated here so the bundle reads cleanly), the `@jaggerxtrm/pi-extensions` serena-pool integration (sub-package versions 0.7.22 → 0.7.25, all published independently to npm and now mirrored in tree), and the `@jaggerxtrm/specialists` v3.16.0 skill-mirror refresh that introduces bare-mode authoring on the consumer side. None of the changes individually warranted breaking the 0.7.21-line pattern; together they justify a minor bump because **fresh `npm install -g xtrm-tools` consumers now receive a materially different runtime surface** vs. the 0.7.21 tarball.

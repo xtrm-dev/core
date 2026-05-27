@@ -40,7 +40,7 @@
       "error_message": "Significant refactor of ",
       "file": ".xtrm/memory.md",
       "root_cause": "7 lines replaced/restructured",
-      "fix": "Rewrote 11\u219213 lines (7 removed)",
+      "fix": "Rewrote 11→13 lines (7 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -681,6 +681,44 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-20T18:28:00Z"
+    },
+    {
+      "id": "bug-037",
+      "timestamp": "2026-05-27T16:20:00Z",
+      "error_message": "Targeted xtrm-h9hqg validation initially failed: update.test expected runInstall not to run when only bd auto-stage patch was missing; typecheck then failed on SpawnSync stdout Buffer typing.",
+      "file": "cli/src/tests/update.test.ts; cli/src/core/dependency-maintenance.ts",
+      "root_cause": "The test repo had a .beads directory without shared-server config, so ensureBeadsSharedServerEnabled marked registryChanges=true; dependency-maintenance also passed spawnSync stdout directly to extractVersion despite the union type allowing Buffer.",
+      "fix": "Seed shared-server config in the patch-only test fixture and coerce npm view stdout with String(...) before version extraction.",
+      "tags": [
+        "xtrm-h9hqg",
+        "tests",
+        "typecheck",
+        "bd-auto-stage",
+        "typescript"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T16:20:00Z"
+    },
+    {
+      "id": "bug-038",
+      "timestamp": "2026-05-27T17:10:00Z",
+      "error_message": "Dist smoke on a fresh bd init repo reported pre-commit shim: misconfigured-hooks-path for core.hooksPath=.beads/hooks and did not append the shim.",
+      "file": "cli/src/core/bd-auto-stage-patch.ts",
+      "root_cause": "The initial implementation treated every .beads/hooks core.hooksPath as the historical broken source-dir misconfiguration, but bd v1.0.3 fresh init legitimately installs executable hooks there.",
+      "fix": "Resolve .beads/hooks/pre-commit as a valid hook target when the file exists; only report misconfigured-hooks-path when core.hooksPath points at .beads/hooks and no pre-commit hook target exists. Added regression coverage.",
+      "tags": [
+        "xtrm-h9hqg",
+        "bd",
+        "core.hooksPath",
+        "smoke-test",
+        "pre-commit"
+      ],
+      "related_bugs": [
+        "bug-037"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T17:10:00Z"
     }
   ]
 }
