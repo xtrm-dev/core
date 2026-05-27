@@ -1,3 +1,5 @@
 dolt.shared-server: true
 dolt:
   shared-server: true
+
+export.git-add: false

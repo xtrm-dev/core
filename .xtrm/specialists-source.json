@@ -1,9 +1,9 @@
 {
   "version": 1,
   "source": {
-    "kind": "repo",
+    "kind": "ref",
     "ref": "master",
-    "resolved_sha": "275336d01955d006a11c176c8be9a6acdef4e7af",
+    "resolved_sha": "4f8410ebac0e03e49bdeb9114b21bceec291a5d4",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
