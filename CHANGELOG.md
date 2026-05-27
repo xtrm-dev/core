@@ -9,16 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [v0.8.1] — 2026-05-27
+
+Patch release for the post-v0.8.0 CLI maintenance surface and Pi compact UI polish. The root `xtrm-tools`, `xtrm-cli`, and `@jaggerxtrm/pi-extensions` workspaces share version 0.8.1; publish root `xtrm-tools` and the Pi extensions package from the same release commit/tag.
+
+### `xtrm-tools` v0.8.1 — 2026-05-27
+
+#### Added
 
 - `xt update --all-repos` sweeps `~/dev` and `~/projects` for xtrm-managed repos; dry-run inventories by default, while `--apply` patches changed repos and commits each one with `chore: apply bd auto-stage patch (xtrm-tools auto-applied)`. (xtrm-h9hqg)
 
-### Changed
+#### Changed
 
 - `xt init` and `xt update` now apply/report the bd auto-stage patch: set `export.git-add: false` to stop mid-work `.beads/issues.jsonl` staging, then append an idempotent pre-commit shim that stages the freshly exported JSONL snapshot at commit time. Hook resolution honors `core.hooksPath`, including bd v1.0.3's valid `.beads/hooks/pre-commit` target. (xtrm-h9hqg)
 - `xt init` and `xt update` now include bd/GitNexus dependency maintenance summaries: installed-vs-latest detection, non-major auto-upgrade attempts on apply, `bd doctor --fix --yes`, and GitNexus reindex when status is stale/missing/schema-drifted. (xtrm-h9hqg)
 - `update-xt` skill now documents bd auto-stage patch checks, `xt update --all-repos`, dependency maintenance summaries, and the valid bd v1.0.3 `.beads/hooks/pre-commit` hook target. (xtrm-h9hqg)
 - `using-specialists-v3` was refreshed with Iron-style review hardening: SCRUTINY taxonomy, mandatory code-sanity/obligations gates for production diffs, Git State Precondition, and the manual Cherry-Pick Playbook while prohibiting `sp merge` / `sp epic merge`. (unitAI-qr8mg)
+
+### `@jaggerxtrm/pi-extensions` v0.8.1 — 2026-05-27
+
+#### Changed
+
+- `xtrm-ui` compact shell rows now render native bash tool activity as `bash:<command>` instead of `Ran <command>`, with no space after the colon for grep/shell-heavy workflows. (xtrm-pkaxm)
+- `xtrm-ui` compact summaries now allow longer one-line subjects and metadata before truncation, so legitimate short shell commands remain fully visible in compact mode. (xtrm-pkaxm)
+- `xtrm-ui` compact result metadata now includes payload size in a colon-delimited `duration:payload:count` form (for example `19ms:1.2KB:3 lines`) across native bash and external tool compaction paths where text payloads are available. (xtrm-pkaxm)
+
 
 ## [v0.8.0] — 2026-05-23
 
