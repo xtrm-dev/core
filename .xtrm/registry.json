@@ -776,7 +776,7 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/skill_activator.py": {
-          "hash": "15ac29dcb27dbe996a86aed83ac68d2c28bbc7f7d2b0abade9bfc239871676d4",
+          "hash": "b76f7861dacf302f9d958202e8dd60bf54ad1265d098e5f3072423beac0a25a2",
           "version": "0.8.1"
         },
         "service-skills/scripts/skill_migrator.py": {
@@ -1296,7 +1296,7 @@
           "version": "0.8.1"
         },
         "hooks.json": {
-          "hash": "b884687cc391b7178f0e87c01a608bba387abb53edf91351d64d930bcb16adf1",
+          "hash": "3ea1432dc7baeed6a9bc8b6a43712f8bd6e3de275f0f6d1175399f83035c4060",
           "version": "0.8.1"
         },
         "instructions/agents-top.md": {

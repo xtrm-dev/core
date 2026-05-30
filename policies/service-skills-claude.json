@@ -1,0 +1,26 @@
+{
+  "id": "service-skills-claude",
+  "description": "Service-skills runtime (Claude): inject the service catalog at session start (cataloger.py), enforce expert-skill activation when a service territory is touched (skill_activator.py), and flag documentation drift after edits (drift_detector.py). All three no-op cheaply when the project has no service-registry, so they are safe to wire in every repo.",
+  "version": "1",
+  "runtime": "claude",
+  "order": 41,
+  "claude": {
+    "hooks": [
+      {
+        "event": "SessionStart",
+        "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/cataloger.py\""
+      },
+      {
+        "event": "PreToolUse",
+        "matcher": "Read|Write|Edit|Glob|Grep|Bash|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/skill_activator.py\""
+      },
+      {
+        "event": "PostToolUse",
+        "matcher": "Write|Edit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/drift_detector.py\" check-hook",
+        "timeout": 10000
+      }
+    ]
+  }
+}
