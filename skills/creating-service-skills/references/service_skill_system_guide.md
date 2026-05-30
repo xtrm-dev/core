@@ -23,6 +23,8 @@
 
 The **Service Skill System** transforms an AI agent from a generic assistant into a service-aware operator. Each Docker service in your project gets a dedicated **skill package**: a structured combination of operational documentation and executable diagnostic scripts.
 
+Canonical section contract lives at `references/service_skill_contract.json` and is the SSOT for SKILL.md headings.
+
 ### What a Skill Provides
 
 | Layer | Contents | Purpose |
@@ -265,6 +267,10 @@ if not token_present:
 ---
 
 ## 9. Anti-Patterns
+
+### Canonical Section Contract
+
+Do not duplicate or reinterpret the section contract in prose. Read `references/service_skill_contract.json` for the ordered heading list, required devops sections, graph-derived sections, and semantic marker rules.
 
 | Anti-pattern | Why It Fails |
 |---|---|
