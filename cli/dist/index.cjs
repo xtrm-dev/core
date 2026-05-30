@@ -33,9 +33,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../node_modules/commander/lib/error.js
+// ../../xtrm-tools/node_modules/commander/lib/error.js
 var require_error = __commonJS({
-  "../node_modules/commander/lib/error.js"(exports2) {
+  "../../xtrm-tools/node_modules/commander/lib/error.js"(exports2) {
     "use strict";
     var CommanderError2 = class extends Error {
       /**
@@ -69,9 +69,9 @@ var require_error = __commonJS({
   }
 });
 
-// ../node_modules/commander/lib/argument.js
+// ../../xtrm-tools/node_modules/commander/lib/argument.js
 var require_argument = __commonJS({
-  "../node_modules/commander/lib/argument.js"(exports2) {
+  "../../xtrm-tools/node_modules/commander/lib/argument.js"(exports2) {
     "use strict";
     var { InvalidArgumentError: InvalidArgumentError2 } = require_error();
     var Argument2 = class {
@@ -198,9 +198,9 @@ var require_argument = __commonJS({
   }
 });
 
-// ../node_modules/commander/lib/help.js
+// ../../xtrm-tools/node_modules/commander/lib/help.js
 var require_help = __commonJS({
-  "../node_modules/commander/lib/help.js"(exports2) {
+  "../../xtrm-tools/node_modules/commander/lib/help.js"(exports2) {
     "use strict";
     var { humanReadableArgName } = require_argument();
     var Help2 = class {
@@ -801,9 +801,9 @@ ${itemIndentStr}`);
   }
 });
 
-// ../node_modules/commander/lib/option.js
+// ../../xtrm-tools/node_modules/commander/lib/option.js
 var require_option = __commonJS({
-  "../node_modules/commander/lib/option.js"(exports2) {
+  "../../xtrm-tools/node_modules/commander/lib/option.js"(exports2) {
     "use strict";
     var { InvalidArgumentError: InvalidArgumentError2 } = require_error();
     var Option2 = class {
@@ -1115,9 +1115,9 @@ var require_option = __commonJS({
   }
 });
 
-// ../node_modules/commander/lib/suggestSimilar.js
+// ../../xtrm-tools/node_modules/commander/lib/suggestSimilar.js
 var require_suggestSimilar = __commonJS({
-  "../node_modules/commander/lib/suggestSimilar.js"(exports2) {
+  "../../xtrm-tools/node_modules/commander/lib/suggestSimilar.js"(exports2) {
     "use strict";
     var maxDistance = 3;
     function editDistance(a, b) {
@@ -1196,14 +1196,14 @@ var require_suggestSimilar = __commonJS({
   }
 });
 
-// ../node_modules/commander/lib/command.js
+// ../../xtrm-tools/node_modules/commander/lib/command.js
 var require_command = __commonJS({
-  "../node_modules/commander/lib/command.js"(exports2) {
+  "../../xtrm-tools/node_modules/commander/lib/command.js"(exports2) {
     "use strict";
     var EventEmitter = require("events").EventEmitter;
     var childProcess = require("child_process");
-    var path47 = require("path");
-    var fs42 = require("fs");
+    var path48 = require("path");
+    var fs43 = require("fs");
     var process11 = require("process");
     var { Argument: Argument2, humanReadableArgName } = require_argument();
     var { CommanderError: CommanderError2 } = require_error();
@@ -2197,7 +2197,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (fs42.existsSync(executableFile)) return;
+        if (fs43.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -2215,11 +2215,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
         let launchWithNode = false;
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
-          const localBin = path47.resolve(baseDir, baseName);
-          if (fs42.existsSync(localBin)) return localBin;
-          if (sourceExt.includes(path47.extname(baseName))) return void 0;
+          const localBin = path48.resolve(baseDir, baseName);
+          if (fs43.existsSync(localBin)) return localBin;
+          if (sourceExt.includes(path48.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext) => fs42.existsSync(`${localBin}${ext}`)
+            (ext) => fs43.existsSync(`${localBin}${ext}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -2231,21 +2231,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = fs42.realpathSync(this._scriptPath);
+            resolvedScriptPath = fs43.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
-          executableDir = path47.resolve(
-            path47.dirname(resolvedScriptPath),
+          executableDir = path48.resolve(
+            path48.dirname(resolvedScriptPath),
             executableDir
           );
         }
         if (executableDir) {
           let localFile = findFile(executableDir, executableFile);
           if (!localFile && !subcommand._executableFile && this._scriptPath) {
-            const legacyName = path47.basename(
+            const legacyName = path48.basename(
               this._scriptPath,
-              path47.extname(this._scriptPath)
+              path48.extname(this._scriptPath)
             );
             if (legacyName !== this._name) {
               localFile = findFile(
@@ -2256,7 +2256,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
           }
           executableFile = localFile || executableFile;
         }
-        launchWithNode = sourceExt.includes(path47.extname(executableFile));
+        launchWithNode = sourceExt.includes(path48.extname(executableFile));
         let proc;
         if (process11.platform !== "win32") {
           if (launchWithNode) {
@@ -3171,7 +3171,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @return {Command}
        */
       nameFromFilename(filename) {
-        this._name = path47.basename(filename, path47.extname(filename));
+        this._name = path48.basename(filename, path48.extname(filename));
         return this;
       }
       /**
@@ -3185,9 +3185,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} [path]
        * @return {(string|null|Command)}
        */
-      executableDir(path48) {
-        if (path48 === void 0) return this._executableDir;
-        this._executableDir = path48;
+      executableDir(path49) {
+        if (path49 === void 0) return this._executableDir;
+        this._executableDir = path49;
         return this;
       }
       /**
@@ -3443,9 +3443,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
   }
 });
 
-// ../node_modules/commander/index.js
+// ../../xtrm-tools/node_modules/commander/index.js
 var require_commander = __commonJS({
-  "../node_modules/commander/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/commander/index.js"(exports2) {
     "use strict";
     var { Argument: Argument2 } = require_argument();
     var { Command: Command2 } = require_command();
@@ -3466,9 +3466,9 @@ var require_commander = __commonJS({
   }
 });
 
-// ../node_modules/universalify/index.js
+// ../../xtrm-tools/node_modules/universalify/index.js
 var require_universalify = __commonJS({
-  "../node_modules/universalify/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/universalify/index.js"(exports2) {
     "use strict";
     exports2.fromCallback = function(fn) {
       return Object.defineProperty(function(...args) {
@@ -3494,9 +3494,9 @@ var require_universalify = __commonJS({
   }
 });
 
-// ../node_modules/graceful-fs/polyfills.js
+// ../../xtrm-tools/node_modules/graceful-fs/polyfills.js
 var require_polyfills = __commonJS({
-  "../node_modules/graceful-fs/polyfills.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/graceful-fs/polyfills.js"(exports2, module2) {
     "use strict";
     var constants = require("constants");
     var origCwd = process.cwd;
@@ -3521,54 +3521,54 @@ var require_polyfills = __commonJS({
     }
     var chdir;
     module2.exports = patch;
-    function patch(fs42) {
+    function patch(fs43) {
       if (constants.hasOwnProperty("O_SYMLINK") && process.version.match(/^v0\.6\.[0-2]|^v0\.5\./)) {
-        patchLchmod(fs42);
+        patchLchmod(fs43);
       }
-      if (!fs42.lutimes) {
-        patchLutimes(fs42);
+      if (!fs43.lutimes) {
+        patchLutimes(fs43);
       }
-      fs42.chown = chownFix(fs42.chown);
-      fs42.fchown = chownFix(fs42.fchown);
-      fs42.lchown = chownFix(fs42.lchown);
-      fs42.chmod = chmodFix(fs42.chmod);
-      fs42.fchmod = chmodFix(fs42.fchmod);
-      fs42.lchmod = chmodFix(fs42.lchmod);
-      fs42.chownSync = chownFixSync(fs42.chownSync);
-      fs42.fchownSync = chownFixSync(fs42.fchownSync);
-      fs42.lchownSync = chownFixSync(fs42.lchownSync);
-      fs42.chmodSync = chmodFixSync(fs42.chmodSync);
-      fs42.fchmodSync = chmodFixSync(fs42.fchmodSync);
-      fs42.lchmodSync = chmodFixSync(fs42.lchmodSync);
-      fs42.stat = statFix(fs42.stat);
-      fs42.fstat = statFix(fs42.fstat);
-      fs42.lstat = statFix(fs42.lstat);
-      fs42.statSync = statFixSync(fs42.statSync);
-      fs42.fstatSync = statFixSync(fs42.fstatSync);
-      fs42.lstatSync = statFixSync(fs42.lstatSync);
-      if (fs42.chmod && !fs42.lchmod) {
-        fs42.lchmod = function(path47, mode, cb) {
+      fs43.chown = chownFix(fs43.chown);
+      fs43.fchown = chownFix(fs43.fchown);
+      fs43.lchown = chownFix(fs43.lchown);
+      fs43.chmod = chmodFix(fs43.chmod);
+      fs43.fchmod = chmodFix(fs43.fchmod);
+      fs43.lchmod = chmodFix(fs43.lchmod);
+      fs43.chownSync = chownFixSync(fs43.chownSync);
+      fs43.fchownSync = chownFixSync(fs43.fchownSync);
+      fs43.lchownSync = chownFixSync(fs43.lchownSync);
+      fs43.chmodSync = chmodFixSync(fs43.chmodSync);
+      fs43.fchmodSync = chmodFixSync(fs43.fchmodSync);
+      fs43.lchmodSync = chmodFixSync(fs43.lchmodSync);
+      fs43.stat = statFix(fs43.stat);
+      fs43.fstat = statFix(fs43.fstat);
+      fs43.lstat = statFix(fs43.lstat);
+      fs43.statSync = statFixSync(fs43.statSync);
+      fs43.fstatSync = statFixSync(fs43.fstatSync);
+      fs43.lstatSync = statFixSync(fs43.lstatSync);
+      if (fs43.chmod && !fs43.lchmod) {
+        fs43.lchmod = function(path48, mode, cb) {
           if (cb) process.nextTick(cb);
         };
-        fs42.lchmodSync = function() {
+        fs43.lchmodSync = function() {
         };
       }
-      if (fs42.chown && !fs42.lchown) {
-        fs42.lchown = function(path47, uid, gid, cb) {
+      if (fs43.chown && !fs43.lchown) {
+        fs43.lchown = function(path48, uid, gid, cb) {
           if (cb) process.nextTick(cb);
         };
-        fs42.lchownSync = function() {
+        fs43.lchownSync = function() {
         };
       }
       if (platform === "win32") {
-        fs42.rename = typeof fs42.rename !== "function" ? fs42.rename : (function(fs$rename) {
+        fs43.rename = typeof fs43.rename !== "function" ? fs43.rename : (function(fs$rename) {
           function rename(from, to, cb) {
             var start = Date.now();
             var backoff = 0;
             fs$rename(from, to, function CB(er) {
               if (er && (er.code === "EACCES" || er.code === "EPERM" || er.code === "EBUSY") && Date.now() - start < 6e4) {
                 setTimeout(function() {
-                  fs42.stat(to, function(stater, st) {
+                  fs43.stat(to, function(stater, st) {
                     if (stater && stater.code === "ENOENT")
                       fs$rename(from, to, CB);
                     else
@@ -3584,9 +3584,9 @@ var require_polyfills = __commonJS({
           }
           if (Object.setPrototypeOf) Object.setPrototypeOf(rename, fs$rename);
           return rename;
-        })(fs42.rename);
+        })(fs43.rename);
       }
-      fs42.read = typeof fs42.read !== "function" ? fs42.read : (function(fs$read) {
+      fs43.read = typeof fs43.read !== "function" ? fs43.read : (function(fs$read) {
         function read(fd, buffer, offset, length, position, callback_) {
           var callback;
           if (callback_ && typeof callback_ === "function") {
@@ -3594,22 +3594,22 @@ var require_polyfills = __commonJS({
             callback = function(er, _, __) {
               if (er && er.code === "EAGAIN" && eagCounter < 10) {
                 eagCounter++;
-                return fs$read.call(fs42, fd, buffer, offset, length, position, callback);
+                return fs$read.call(fs43, fd, buffer, offset, length, position, callback);
               }
               callback_.apply(this, arguments);
             };
           }
-          return fs$read.call(fs42, fd, buffer, offset, length, position, callback);
+          return fs$read.call(fs43, fd, buffer, offset, length, position, callback);
         }
         if (Object.setPrototypeOf) Object.setPrototypeOf(read, fs$read);
         return read;
-      })(fs42.read);
-      fs42.readSync = typeof fs42.readSync !== "function" ? fs42.readSync : /* @__PURE__ */ (function(fs$readSync) {
+      })(fs43.read);
+      fs43.readSync = typeof fs43.readSync !== "function" ? fs43.readSync : /* @__PURE__ */ (function(fs$readSync) {
         return function(fd, buffer, offset, length, position) {
           var eagCounter = 0;
           while (true) {
             try {
-              return fs$readSync.call(fs42, fd, buffer, offset, length, position);
+              return fs$readSync.call(fs43, fd, buffer, offset, length, position);
             } catch (er) {
               if (er.code === "EAGAIN" && eagCounter < 10) {
                 eagCounter++;
@@ -3619,11 +3619,11 @@ var require_polyfills = __commonJS({
             }
           }
         };
-      })(fs42.readSync);
-      function patchLchmod(fs43) {
-        fs43.lchmod = function(path47, mode, callback) {
-          fs43.open(
-            path47,
+      })(fs43.readSync);
+      function patchLchmod(fs44) {
+        fs44.lchmod = function(path48, mode, callback) {
+          fs44.open(
+            path48,
             constants.O_WRONLY | constants.O_SYMLINK,
             mode,
             function(err, fd) {
@@ -3631,80 +3631,80 @@ var require_polyfills = __commonJS({
                 if (callback) callback(err);
                 return;
               }
-              fs43.fchmod(fd, mode, function(err2) {
-                fs43.close(fd, function(err22) {
+              fs44.fchmod(fd, mode, function(err2) {
+                fs44.close(fd, function(err22) {
                   if (callback) callback(err2 || err22);
                 });
               });
             }
           );
         };
-        fs43.lchmodSync = function(path47, mode) {
-          var fd = fs43.openSync(path47, constants.O_WRONLY | constants.O_SYMLINK, mode);
+        fs44.lchmodSync = function(path48, mode) {
+          var fd = fs44.openSync(path48, constants.O_WRONLY | constants.O_SYMLINK, mode);
           var threw = true;
           var ret;
           try {
-            ret = fs43.fchmodSync(fd, mode);
+            ret = fs44.fchmodSync(fd, mode);
             threw = false;
           } finally {
             if (threw) {
               try {
-                fs43.closeSync(fd);
+                fs44.closeSync(fd);
               } catch (er) {
               }
             } else {
-              fs43.closeSync(fd);
+              fs44.closeSync(fd);
             }
           }
           return ret;
         };
       }
-      function patchLutimes(fs43) {
-        if (constants.hasOwnProperty("O_SYMLINK") && fs43.futimes) {
-          fs43.lutimes = function(path47, at, mt, cb) {
-            fs43.open(path47, constants.O_SYMLINK, function(er, fd) {
+      function patchLutimes(fs44) {
+        if (constants.hasOwnProperty("O_SYMLINK") && fs44.futimes) {
+          fs44.lutimes = function(path48, at, mt, cb) {
+            fs44.open(path48, constants.O_SYMLINK, function(er, fd) {
               if (er) {
                 if (cb) cb(er);
                 return;
               }
-              fs43.futimes(fd, at, mt, function(er2) {
-                fs43.close(fd, function(er22) {
+              fs44.futimes(fd, at, mt, function(er2) {
+                fs44.close(fd, function(er22) {
                   if (cb) cb(er2 || er22);
                 });
               });
             });
           };
-          fs43.lutimesSync = function(path47, at, mt) {
-            var fd = fs43.openSync(path47, constants.O_SYMLINK);
+          fs44.lutimesSync = function(path48, at, mt) {
+            var fd = fs44.openSync(path48, constants.O_SYMLINK);
             var ret;
             var threw = true;
             try {
-              ret = fs43.futimesSync(fd, at, mt);
+              ret = fs44.futimesSync(fd, at, mt);
               threw = false;
             } finally {
               if (threw) {
                 try {
-                  fs43.closeSync(fd);
+                  fs44.closeSync(fd);
                 } catch (er) {
                 }
               } else {
-                fs43.closeSync(fd);
+                fs44.closeSync(fd);
               }
             }
             return ret;
           };
-        } else if (fs43.futimes) {
-          fs43.lutimes = function(_a3, _b, _c, cb) {
+        } else if (fs44.futimes) {
+          fs44.lutimes = function(_a3, _b, _c, cb) {
             if (cb) process.nextTick(cb);
           };
-          fs43.lutimesSync = function() {
+          fs44.lutimesSync = function() {
           };
         }
       }
       function chmodFix(orig) {
         if (!orig) return orig;
         return function(target, mode, cb) {
-          return orig.call(fs42, target, mode, function(er) {
+          return orig.call(fs43, target, mode, function(er) {
             if (chownErOk(er)) er = null;
             if (cb) cb.apply(this, arguments);
           });
@@ -3714,7 +3714,7 @@ var require_polyfills = __commonJS({
         if (!orig) return orig;
         return function(target, mode) {
           try {
-            return orig.call(fs42, target, mode);
+            return orig.call(fs43, target, mode);
           } catch (er) {
             if (!chownErOk(er)) throw er;
           }
@@ -3723,7 +3723,7 @@ var require_polyfills = __commonJS({
       function chownFix(orig) {
         if (!orig) return orig;
         return function(target, uid, gid, cb) {
-          return orig.call(fs42, target, uid, gid, function(er) {
+          return orig.call(fs43, target, uid, gid, function(er) {
             if (chownErOk(er)) er = null;
             if (cb) cb.apply(this, arguments);
           });
@@ -3733,7 +3733,7 @@ var require_polyfills = __commonJS({
         if (!orig) return orig;
         return function(target, uid, gid) {
           try {
-            return orig.call(fs42, target, uid, gid);
+            return orig.call(fs43, target, uid, gid);
           } catch (er) {
             if (!chownErOk(er)) throw er;
           }
@@ -3753,13 +3753,13 @@ var require_polyfills = __commonJS({
             }
             if (cb) cb.apply(this, arguments);
           }
-          return options ? orig.call(fs42, target, options, callback) : orig.call(fs42, target, callback);
+          return options ? orig.call(fs43, target, options, callback) : orig.call(fs43, target, callback);
         };
       }
       function statFixSync(orig) {
         if (!orig) return orig;
         return function(target, options) {
-          var stats = options ? orig.call(fs42, target, options) : orig.call(fs42, target);
+          var stats = options ? orig.call(fs43, target, options) : orig.call(fs43, target);
           if (stats) {
             if (stats.uid < 0) stats.uid += 4294967296;
             if (stats.gid < 0) stats.gid += 4294967296;
@@ -3783,22 +3783,22 @@ var require_polyfills = __commonJS({
   }
 });
 
-// ../node_modules/graceful-fs/legacy-streams.js
+// ../../xtrm-tools/node_modules/graceful-fs/legacy-streams.js
 var require_legacy_streams = __commonJS({
-  "../node_modules/graceful-fs/legacy-streams.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/graceful-fs/legacy-streams.js"(exports2, module2) {
     "use strict";
     var Stream = require("stream").Stream;
     module2.exports = legacy;
-    function legacy(fs42) {
+    function legacy(fs43) {
       return {
         ReadStream,
         WriteStream
       };
-      function ReadStream(path47, options) {
-        if (!(this instanceof ReadStream)) return new ReadStream(path47, options);
+      function ReadStream(path48, options) {
+        if (!(this instanceof ReadStream)) return new ReadStream(path48, options);
         Stream.call(this);
         var self = this;
-        this.path = path47;
+        this.path = path48;
         this.fd = null;
         this.readable = true;
         this.paused = false;
@@ -3832,7 +3832,7 @@ var require_legacy_streams = __commonJS({
           });
           return;
         }
-        fs42.open(this.path, this.flags, this.mode, function(err, fd) {
+        fs43.open(this.path, this.flags, this.mode, function(err, fd) {
           if (err) {
             self.emit("error", err);
             self.readable = false;
@@ -3843,10 +3843,10 @@ var require_legacy_streams = __commonJS({
           self._read();
         });
       }
-      function WriteStream(path47, options) {
-        if (!(this instanceof WriteStream)) return new WriteStream(path47, options);
+      function WriteStream(path48, options) {
+        if (!(this instanceof WriteStream)) return new WriteStream(path48, options);
         Stream.call(this);
-        this.path = path47;
+        this.path = path48;
         this.fd = null;
         this.writable = true;
         this.flags = "w";
@@ -3871,7 +3871,7 @@ var require_legacy_streams = __commonJS({
         this.busy = false;
         this._queue = [];
         if (this.fd === null) {
-          this._open = fs42.open;
+          this._open = fs43.open;
           this._queue.push([this._open, this.path, this.flags, this.mode, void 0]);
           this.flush();
         }
@@ -3880,9 +3880,9 @@ var require_legacy_streams = __commonJS({
   }
 });
 
-// ../node_modules/graceful-fs/clone.js
+// ../../xtrm-tools/node_modules/graceful-fs/clone.js
 var require_clone = __commonJS({
-  "../node_modules/graceful-fs/clone.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/graceful-fs/clone.js"(exports2, module2) {
     "use strict";
     module2.exports = clone2;
     var getPrototypeOf = Object.getPrototypeOf || function(obj) {
@@ -3903,11 +3903,11 @@ var require_clone = __commonJS({
   }
 });
 
-// ../node_modules/graceful-fs/graceful-fs.js
+// ../../xtrm-tools/node_modules/graceful-fs/graceful-fs.js
 var require_graceful_fs = __commonJS({
-  "../node_modules/graceful-fs/graceful-fs.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/graceful-fs/graceful-fs.js"(exports2, module2) {
     "use strict";
-    var fs42 = require("fs");
+    var fs43 = require("fs");
     var polyfills = require_polyfills();
     var legacy = require_legacy_streams();
     var clone2 = require_clone();
@@ -3939,12 +3939,12 @@ var require_graceful_fs = __commonJS({
         m = "GFS4: " + m.split(/\n/).join("\nGFS4: ");
         console.error(m);
       };
-    if (!fs42[gracefulQueue]) {
+    if (!fs43[gracefulQueue]) {
       queue = global[gracefulQueue] || [];
-      publishQueue(fs42, queue);
-      fs42.close = (function(fs$close) {
+      publishQueue(fs43, queue);
+      fs43.close = (function(fs$close) {
         function close(fd, cb) {
-          return fs$close.call(fs42, fd, function(err) {
+          return fs$close.call(fs43, fd, function(err) {
             if (!err) {
               resetQueue();
             }
@@ -3956,48 +3956,48 @@ var require_graceful_fs = __commonJS({
           value: fs$close
         });
         return close;
-      })(fs42.close);
-      fs42.closeSync = (function(fs$closeSync) {
+      })(fs43.close);
+      fs43.closeSync = (function(fs$closeSync) {
         function closeSync(fd) {
-          fs$closeSync.apply(fs42, arguments);
+          fs$closeSync.apply(fs43, arguments);
           resetQueue();
         }
         Object.defineProperty(closeSync, previousSymbol, {
           value: fs$closeSync
         });
         return closeSync;
-      })(fs42.closeSync);
+      })(fs43.closeSync);
       if (/\bgfs4\b/i.test(process.env.NODE_DEBUG || "")) {
         process.on("exit", function() {
-          debug(fs42[gracefulQueue]);
-          require("assert").equal(fs42[gracefulQueue].length, 0);
+          debug(fs43[gracefulQueue]);
+          require("assert").equal(fs43[gracefulQueue].length, 0);
         });
       }
     }
     var queue;
     if (!global[gracefulQueue]) {
-      publishQueue(global, fs42[gracefulQueue]);
+      publishQueue(global, fs43[gracefulQueue]);
     }
-    module2.exports = patch(clone2(fs42));
-    if (process.env.TEST_GRACEFUL_FS_GLOBAL_PATCH && !fs42.__patched) {
-      module2.exports = patch(fs42);
-      fs42.__patched = true;
+    module2.exports = patch(clone2(fs43));
+    if (process.env.TEST_GRACEFUL_FS_GLOBAL_PATCH && !fs43.__patched) {
+      module2.exports = patch(fs43);
+      fs43.__patched = true;
     }
-    function patch(fs43) {
-      polyfills(fs43);
-      fs43.gracefulify = patch;
-      fs43.createReadStream = createReadStream;
-      fs43.createWriteStream = createWriteStream2;
-      var fs$readFile = fs43.readFile;
-      fs43.readFile = readFile;
-      function readFile(path47, options, cb) {
+    function patch(fs44) {
+      polyfills(fs44);
+      fs44.gracefulify = patch;
+      fs44.createReadStream = createReadStream;
+      fs44.createWriteStream = createWriteStream2;
+      var fs$readFile = fs44.readFile;
+      fs44.readFile = readFile;
+      function readFile(path48, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$readFile(path47, options, cb);
-        function go$readFile(path48, options2, cb2, startTime) {
-          return fs$readFile(path48, options2, function(err) {
+        return go$readFile(path48, options, cb);
+        function go$readFile(path49, options2, cb2, startTime) {
+          return fs$readFile(path49, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$readFile, [path48, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$readFile, [path49, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -4005,16 +4005,16 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$writeFile = fs43.writeFile;
-      fs43.writeFile = writeFile;
-      function writeFile(path47, data, options, cb) {
+      var fs$writeFile = fs44.writeFile;
+      fs44.writeFile = writeFile;
+      function writeFile(path48, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$writeFile(path47, data, options, cb);
-        function go$writeFile(path48, data2, options2, cb2, startTime) {
-          return fs$writeFile(path48, data2, options2, function(err) {
+        return go$writeFile(path48, data, options, cb);
+        function go$writeFile(path49, data2, options2, cb2, startTime) {
+          return fs$writeFile(path49, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$writeFile, [path48, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$writeFile, [path49, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -4022,17 +4022,17 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$appendFile = fs43.appendFile;
+      var fs$appendFile = fs44.appendFile;
       if (fs$appendFile)
-        fs43.appendFile = appendFile;
-      function appendFile(path47, data, options, cb) {
+        fs44.appendFile = appendFile;
+      function appendFile(path48, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$appendFile(path47, data, options, cb);
-        function go$appendFile(path48, data2, options2, cb2, startTime) {
-          return fs$appendFile(path48, data2, options2, function(err) {
+        return go$appendFile(path48, data, options, cb);
+        function go$appendFile(path49, data2, options2, cb2, startTime) {
+          return fs$appendFile(path49, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$appendFile, [path48, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$appendFile, [path49, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -4040,9 +4040,9 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$copyFile = fs43.copyFile;
+      var fs$copyFile = fs44.copyFile;
       if (fs$copyFile)
-        fs43.copyFile = copyFile;
+        fs44.copyFile = copyFile;
       function copyFile(src, dest, flags, cb) {
         if (typeof flags === "function") {
           cb = flags;
@@ -4060,34 +4060,34 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$readdir = fs43.readdir;
-      fs43.readdir = readdir;
+      var fs$readdir = fs44.readdir;
+      fs44.readdir = readdir;
       var noReaddirOptionVersions = /^v[0-5]\./;
-      function readdir(path47, options, cb) {
+      function readdir(path48, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path48, options2, cb2, startTime) {
-          return fs$readdir(path48, fs$readdirCallback(
-            path48,
+        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path49, options2, cb2, startTime) {
+          return fs$readdir(path49, fs$readdirCallback(
+            path49,
             options2,
             cb2,
             startTime
           ));
-        } : function go$readdir2(path48, options2, cb2, startTime) {
-          return fs$readdir(path48, options2, fs$readdirCallback(
-            path48,
+        } : function go$readdir2(path49, options2, cb2, startTime) {
+          return fs$readdir(path49, options2, fs$readdirCallback(
+            path49,
             options2,
             cb2,
             startTime
           ));
         };
-        return go$readdir(path47, options, cb);
-        function fs$readdirCallback(path48, options2, cb2, startTime) {
+        return go$readdir(path48, options, cb);
+        function fs$readdirCallback(path49, options2, cb2, startTime) {
           return function(err, files) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
               enqueue([
                 go$readdir,
-                [path48, options2, cb2],
+                [path49, options2, cb2],
                 err,
                 startTime || Date.now(),
                 Date.now()
@@ -4102,21 +4102,21 @@ var require_graceful_fs = __commonJS({
         }
       }
       if (process.version.substr(0, 4) === "v0.8") {
-        var legStreams = legacy(fs43);
+        var legStreams = legacy(fs44);
         ReadStream = legStreams.ReadStream;
         WriteStream = legStreams.WriteStream;
       }
-      var fs$ReadStream = fs43.ReadStream;
+      var fs$ReadStream = fs44.ReadStream;
       if (fs$ReadStream) {
         ReadStream.prototype = Object.create(fs$ReadStream.prototype);
         ReadStream.prototype.open = ReadStream$open;
       }
-      var fs$WriteStream = fs43.WriteStream;
+      var fs$WriteStream = fs44.WriteStream;
       if (fs$WriteStream) {
         WriteStream.prototype = Object.create(fs$WriteStream.prototype);
         WriteStream.prototype.open = WriteStream$open;
       }
-      Object.defineProperty(fs43, "ReadStream", {
+      Object.defineProperty(fs44, "ReadStream", {
         get: function() {
           return ReadStream;
         },
@@ -4126,7 +4126,7 @@ var require_graceful_fs = __commonJS({
         enumerable: true,
         configurable: true
       });
-      Object.defineProperty(fs43, "WriteStream", {
+      Object.defineProperty(fs44, "WriteStream", {
         get: function() {
           return WriteStream;
         },
@@ -4137,7 +4137,7 @@ var require_graceful_fs = __commonJS({
         configurable: true
       });
       var FileReadStream = ReadStream;
-      Object.defineProperty(fs43, "FileReadStream", {
+      Object.defineProperty(fs44, "FileReadStream", {
         get: function() {
           return FileReadStream;
         },
@@ -4148,7 +4148,7 @@ var require_graceful_fs = __commonJS({
         configurable: true
       });
       var FileWriteStream = WriteStream;
-      Object.defineProperty(fs43, "FileWriteStream", {
+      Object.defineProperty(fs44, "FileWriteStream", {
         get: function() {
           return FileWriteStream;
         },
@@ -4158,7 +4158,7 @@ var require_graceful_fs = __commonJS({
         enumerable: true,
         configurable: true
       });
-      function ReadStream(path47, options) {
+      function ReadStream(path48, options) {
         if (this instanceof ReadStream)
           return fs$ReadStream.apply(this, arguments), this;
         else
@@ -4178,7 +4178,7 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function WriteStream(path47, options) {
+      function WriteStream(path48, options) {
         if (this instanceof WriteStream)
           return fs$WriteStream.apply(this, arguments), this;
         else
@@ -4196,22 +4196,22 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function createReadStream(path47, options) {
-        return new fs43.ReadStream(path47, options);
+      function createReadStream(path48, options) {
+        return new fs44.ReadStream(path48, options);
       }
-      function createWriteStream2(path47, options) {
-        return new fs43.WriteStream(path47, options);
+      function createWriteStream2(path48, options) {
+        return new fs44.WriteStream(path48, options);
       }
-      var fs$open = fs43.open;
-      fs43.open = open;
-      function open(path47, flags, mode, cb) {
+      var fs$open = fs44.open;
+      fs44.open = open;
+      function open(path48, flags, mode, cb) {
         if (typeof mode === "function")
           cb = mode, mode = null;
-        return go$open(path47, flags, mode, cb);
-        function go$open(path48, flags2, mode2, cb2, startTime) {
-          return fs$open(path48, flags2, mode2, function(err, fd) {
+        return go$open(path48, flags, mode, cb);
+        function go$open(path49, flags2, mode2, cb2, startTime) {
+          return fs$open(path49, flags2, mode2, function(err, fd) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$open, [path48, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$open, [path49, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -4219,20 +4219,20 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      return fs43;
+      return fs44;
     }
     function enqueue(elem) {
       debug("ENQUEUE", elem[0].name, elem[1]);
-      fs42[gracefulQueue].push(elem);
+      fs43[gracefulQueue].push(elem);
       retry();
     }
     var retryTimer;
     function resetQueue() {
       var now = Date.now();
-      for (var i = 0; i < fs42[gracefulQueue].length; ++i) {
-        if (fs42[gracefulQueue][i].length > 2) {
-          fs42[gracefulQueue][i][3] = now;
-          fs42[gracefulQueue][i][4] = now;
+      for (var i = 0; i < fs43[gracefulQueue].length; ++i) {
+        if (fs43[gracefulQueue][i].length > 2) {
+          fs43[gracefulQueue][i][3] = now;
+          fs43[gracefulQueue][i][4] = now;
         }
       }
       retry();
@@ -4240,9 +4240,9 @@ var require_graceful_fs = __commonJS({
     function retry() {
       clearTimeout(retryTimer);
       retryTimer = void 0;
-      if (fs42[gracefulQueue].length === 0)
+      if (fs43[gracefulQueue].length === 0)
         return;
-      var elem = fs42[gracefulQueue].shift();
+      var elem = fs43[gracefulQueue].shift();
       var fn = elem[0];
       var args = elem[1];
       var err = elem[2];
@@ -4264,7 +4264,7 @@ var require_graceful_fs = __commonJS({
           debug("RETRY", fn.name, args);
           fn.apply(null, args.concat([startTime]));
         } else {
-          fs42[gracefulQueue].push(elem);
+          fs43[gracefulQueue].push(elem);
         }
       }
       if (retryTimer === void 0) {
@@ -4274,12 +4274,12 @@ var require_graceful_fs = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/fs/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/fs/index.js
 var require_fs = __commonJS({
-  "node_modules/fs-extra/lib/fs/index.js"(exports2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/fs/index.js"(exports2) {
     "use strict";
     var u = require_universalify().fromCallback;
-    var fs42 = require_graceful_fs();
+    var fs43 = require_graceful_fs();
     var api = [
       "access",
       "appendFile",
@@ -4320,26 +4320,26 @@ var require_fs = __commonJS({
       "utimes",
       "writeFile"
     ].filter((key) => {
-      return typeof fs42[key] === "function";
+      return typeof fs43[key] === "function";
     });
-    Object.assign(exports2, fs42);
+    Object.assign(exports2, fs43);
     api.forEach((method) => {
-      exports2[method] = u(fs42[method]);
+      exports2[method] = u(fs43[method]);
     });
     exports2.exists = function(filename, callback) {
       if (typeof callback === "function") {
-        return fs42.exists(filename, callback);
+        return fs43.exists(filename, callback);
       }
       return new Promise((resolve4) => {
-        return fs42.exists(filename, resolve4);
+        return fs43.exists(filename, resolve4);
       });
     };
     exports2.read = function(fd, buffer, offset, length, position, callback) {
       if (typeof callback === "function") {
-        return fs42.read(fd, buffer, offset, length, position, callback);
+        return fs43.read(fd, buffer, offset, length, position, callback);
       }
       return new Promise((resolve4, reject) => {
-        fs42.read(fd, buffer, offset, length, position, (err, bytesRead, buffer2) => {
+        fs43.read(fd, buffer, offset, length, position, (err, bytesRead, buffer2) => {
           if (err) return reject(err);
           resolve4({ bytesRead, buffer: buffer2 });
         });
@@ -4347,10 +4347,10 @@ var require_fs = __commonJS({
     };
     exports2.write = function(fd, buffer, ...args) {
       if (typeof args[args.length - 1] === "function") {
-        return fs42.write(fd, buffer, ...args);
+        return fs43.write(fd, buffer, ...args);
       }
       return new Promise((resolve4, reject) => {
-        fs42.write(fd, buffer, ...args, (err, bytesWritten, buffer2) => {
+        fs43.write(fd, buffer, ...args, (err, bytesWritten, buffer2) => {
           if (err) return reject(err);
           resolve4({ bytesWritten, buffer: buffer2 });
         });
@@ -4358,10 +4358,10 @@ var require_fs = __commonJS({
     };
     exports2.readv = function(fd, buffers, ...args) {
       if (typeof args[args.length - 1] === "function") {
-        return fs42.readv(fd, buffers, ...args);
+        return fs43.readv(fd, buffers, ...args);
       }
       return new Promise((resolve4, reject) => {
-        fs42.readv(fd, buffers, ...args, (err, bytesRead, buffers2) => {
+        fs43.readv(fd, buffers, ...args, (err, bytesRead, buffers2) => {
           if (err) return reject(err);
           resolve4({ bytesRead, buffers: buffers2 });
         });
@@ -4369,17 +4369,17 @@ var require_fs = __commonJS({
     };
     exports2.writev = function(fd, buffers, ...args) {
       if (typeof args[args.length - 1] === "function") {
-        return fs42.writev(fd, buffers, ...args);
+        return fs43.writev(fd, buffers, ...args);
       }
       return new Promise((resolve4, reject) => {
-        fs42.writev(fd, buffers, ...args, (err, bytesWritten, buffers2) => {
+        fs43.writev(fd, buffers, ...args, (err, bytesWritten, buffers2) => {
           if (err) return reject(err);
           resolve4({ bytesWritten, buffers: buffers2 });
         });
       });
     };
-    if (typeof fs42.realpath.native === "function") {
-      exports2.realpath.native = u(fs42.realpath.native);
+    if (typeof fs43.realpath.native === "function") {
+      exports2.realpath.native = u(fs43.realpath.native);
     } else {
       process.emitWarning(
         "fs.realpath.native is not a function. Is fs being monkey-patched?",
@@ -4390,14 +4390,14 @@ var require_fs = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/mkdirs/utils.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/mkdirs/utils.js
 var require_utils = __commonJS({
-  "node_modules/fs-extra/lib/mkdirs/utils.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/mkdirs/utils.js"(exports2, module2) {
     "use strict";
-    var path47 = require("path");
+    var path48 = require("path");
     module2.exports.checkPath = function checkPath(pth) {
       if (process.platform === "win32") {
-        const pathHasInvalidWinCharacters = /[<>:"|?*]/.test(pth.replace(path47.parse(pth).root, ""));
+        const pathHasInvalidWinCharacters = /[<>:"|?*]/.test(pth.replace(path48.parse(pth).root, ""));
         if (pathHasInvalidWinCharacters) {
           const error51 = new Error(`Path contains invalid characters: ${pth}`);
           error51.code = "EINVAL";
@@ -4408,11 +4408,11 @@ var require_utils = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/mkdirs/make-dir.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/mkdirs/make-dir.js
 var require_make_dir = __commonJS({
-  "node_modules/fs-extra/lib/mkdirs/make-dir.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/mkdirs/make-dir.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_fs();
+    var fs43 = require_fs();
     var { checkPath } = require_utils();
     var getMode = (options) => {
       const defaults = { mode: 511 };
@@ -4421,14 +4421,14 @@ var require_make_dir = __commonJS({
     };
     module2.exports.makeDir = async (dir, options) => {
       checkPath(dir);
-      return fs42.mkdir(dir, {
+      return fs43.mkdir(dir, {
         mode: getMode(options),
         recursive: true
       });
     };
     module2.exports.makeDirSync = (dir, options) => {
       checkPath(dir);
-      return fs42.mkdirSync(dir, {
+      return fs43.mkdirSync(dir, {
         mode: getMode(options),
         recursive: true
       });
@@ -4436,9 +4436,9 @@ var require_make_dir = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/mkdirs/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/mkdirs/index.js
 var require_mkdirs = __commonJS({
-  "node_modules/fs-extra/lib/mkdirs/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/mkdirs/index.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
     var { makeDir: _makeDir, makeDirSync } = require_make_dir();
@@ -4455,38 +4455,38 @@ var require_mkdirs = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/path-exists/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/path-exists/index.js
 var require_path_exists = __commonJS({
-  "node_modules/fs-extra/lib/path-exists/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/path-exists/index.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var fs42 = require_fs();
-    function pathExists(path47) {
-      return fs42.access(path47).then(() => true).catch(() => false);
+    var fs43 = require_fs();
+    function pathExists(path48) {
+      return fs43.access(path48).then(() => true).catch(() => false);
     }
     module2.exports = {
       pathExists: u(pathExists),
-      pathExistsSync: fs42.existsSync
+      pathExistsSync: fs43.existsSync
     };
   }
 });
 
-// node_modules/fs-extra/lib/util/utimes.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/util/utimes.js
 var require_utimes = __commonJS({
-  "node_modules/fs-extra/lib/util/utimes.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/util/utimes.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_fs();
+    var fs43 = require_fs();
     var u = require_universalify().fromPromise;
-    async function utimesMillis(path47, atime, mtime) {
-      const fd = await fs42.open(path47, "r+");
+    async function utimesMillis(path48, atime, mtime) {
+      const fd = await fs43.open(path48, "r+");
       let error51 = null;
       try {
-        await fs42.futimes(fd, atime, mtime);
+        await fs43.futimes(fd, atime, mtime);
       } catch (futimesErr) {
         error51 = futimesErr;
       } finally {
         try {
-          await fs42.close(fd);
+          await fs43.close(fd);
         } catch (closeErr) {
           if (!error51) error51 = closeErr;
         }
@@ -4495,16 +4495,16 @@ var require_utimes = __commonJS({
         throw error51;
       }
     }
-    function utimesMillisSync(path47, atime, mtime) {
-      const fd = fs42.openSync(path47, "r+");
+    function utimesMillisSync(path48, atime, mtime) {
+      const fd = fs43.openSync(path48, "r+");
       let error51 = null;
       try {
-        fs42.futimesSync(fd, atime, mtime);
+        fs43.futimesSync(fd, atime, mtime);
       } catch (futimesErr) {
         error51 = futimesErr;
       } finally {
         try {
-          fs42.closeSync(fd);
+          fs43.closeSync(fd);
         } catch (closeErr) {
           if (!error51) error51 = closeErr;
         }
@@ -4520,15 +4520,15 @@ var require_utimes = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/util/stat.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/util/stat.js
 var require_stat = __commonJS({
-  "node_modules/fs-extra/lib/util/stat.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/util/stat.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_fs();
-    var path47 = require("path");
+    var fs43 = require_fs();
+    var path48 = require("path");
     var u = require_universalify().fromPromise;
     function getStats(src, dest, opts) {
-      const statFunc = opts.dereference ? (file2) => fs42.stat(file2, { bigint: true }) : (file2) => fs42.lstat(file2, { bigint: true });
+      const statFunc = opts.dereference ? (file2) => fs43.stat(file2, { bigint: true }) : (file2) => fs43.lstat(file2, { bigint: true });
       return Promise.all([
         statFunc(src),
         statFunc(dest).catch((err) => {
@@ -4539,7 +4539,7 @@ var require_stat = __commonJS({
     }
     function getStatsSync(src, dest, opts) {
       let destStat;
-      const statFunc = opts.dereference ? (file2) => fs42.statSync(file2, { bigint: true }) : (file2) => fs42.lstatSync(file2, { bigint: true });
+      const statFunc = opts.dereference ? (file2) => fs43.statSync(file2, { bigint: true }) : (file2) => fs43.lstatSync(file2, { bigint: true });
       const srcStat = statFunc(src);
       try {
         destStat = statFunc(dest);
@@ -4553,8 +4553,8 @@ var require_stat = __commonJS({
       const { srcStat, destStat } = await getStats(src, dest, opts);
       if (destStat) {
         if (areIdentical(srcStat, destStat)) {
-          const srcBaseName = path47.basename(src);
-          const destBaseName = path47.basename(dest);
+          const srcBaseName = path48.basename(src);
+          const destBaseName = path48.basename(dest);
           if (funcName === "move" && srcBaseName !== destBaseName && srcBaseName.toLowerCase() === destBaseName.toLowerCase()) {
             return { srcStat, destStat, isChangingCase: true };
           }
@@ -4576,8 +4576,8 @@ var require_stat = __commonJS({
       const { srcStat, destStat } = getStatsSync(src, dest, opts);
       if (destStat) {
         if (areIdentical(srcStat, destStat)) {
-          const srcBaseName = path47.basename(src);
-          const destBaseName = path47.basename(dest);
+          const srcBaseName = path48.basename(src);
+          const destBaseName = path48.basename(dest);
           if (funcName === "move" && srcBaseName !== destBaseName && srcBaseName.toLowerCase() === destBaseName.toLowerCase()) {
             return { srcStat, destStat, isChangingCase: true };
           }
@@ -4596,12 +4596,12 @@ var require_stat = __commonJS({
       return { srcStat, destStat };
     }
     async function checkParentPaths(src, srcStat, dest, funcName) {
-      const srcParent = path47.resolve(path47.dirname(src));
-      const destParent = path47.resolve(path47.dirname(dest));
-      if (destParent === srcParent || destParent === path47.parse(destParent).root) return;
+      const srcParent = path48.resolve(path48.dirname(src));
+      const destParent = path48.resolve(path48.dirname(dest));
+      if (destParent === srcParent || destParent === path48.parse(destParent).root) return;
       let destStat;
       try {
-        destStat = await fs42.stat(destParent, { bigint: true });
+        destStat = await fs43.stat(destParent, { bigint: true });
       } catch (err) {
         if (err.code === "ENOENT") return;
         throw err;
@@ -4612,12 +4612,12 @@ var require_stat = __commonJS({
       return checkParentPaths(src, srcStat, destParent, funcName);
     }
     function checkParentPathsSync(src, srcStat, dest, funcName) {
-      const srcParent = path47.resolve(path47.dirname(src));
-      const destParent = path47.resolve(path47.dirname(dest));
-      if (destParent === srcParent || destParent === path47.parse(destParent).root) return;
+      const srcParent = path48.resolve(path48.dirname(src));
+      const destParent = path48.resolve(path48.dirname(dest));
+      if (destParent === srcParent || destParent === path48.parse(destParent).root) return;
       let destStat;
       try {
-        destStat = fs42.statSync(destParent, { bigint: true });
+        destStat = fs43.statSync(destParent, { bigint: true });
       } catch (err) {
         if (err.code === "ENOENT") return;
         throw err;
@@ -4631,8 +4631,8 @@ var require_stat = __commonJS({
       return destStat.ino !== void 0 && destStat.dev !== void 0 && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev;
     }
     function isSrcSubdir(src, dest) {
-      const srcArr = path47.resolve(src).split(path47.sep).filter((i) => i);
-      const destArr = path47.resolve(dest).split(path47.sep).filter((i) => i);
+      const srcArr = path48.resolve(src).split(path48.sep).filter((i) => i);
+      const destArr = path48.resolve(dest).split(path48.sep).filter((i) => i);
       return srcArr.every((cur, i) => destArr[i] === cur);
     }
     function errMsg(src, dest, funcName) {
@@ -4652,9 +4652,9 @@ var require_stat = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/util/async.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/util/async.js
 var require_async = __commonJS({
-  "node_modules/fs-extra/lib/util/async.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/util/async.js"(exports2, module2) {
     "use strict";
     async function asyncIteratorConcurrentProcess(iterator, fn) {
       const promises = [];
@@ -4680,12 +4680,12 @@ var require_async = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/copy/copy.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/copy/copy.js
 var require_copy = __commonJS({
-  "node_modules/fs-extra/lib/copy/copy.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/copy/copy.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_fs();
-    var path47 = require("path");
+    var fs43 = require_fs();
+    var path48 = require("path");
     var { mkdirs } = require_mkdirs();
     var { pathExists } = require_path_exists();
     var { utimesMillis } = require_utimes();
@@ -4708,7 +4708,7 @@ var require_copy = __commonJS({
       await stat.checkParentPaths(src, srcStat, dest, "copy");
       const include = await runFilter(src, dest, opts);
       if (!include) return;
-      const destParent = path47.dirname(dest);
+      const destParent = path48.dirname(dest);
       const dirExists = await pathExists(destParent);
       if (!dirExists) {
         await mkdirs(destParent);
@@ -4720,7 +4720,7 @@ var require_copy = __commonJS({
       return opts.filter(src, dest);
     }
     async function getStatsAndPerformCopy(destStat, src, dest, opts) {
-      const statFn = opts.dereference ? fs42.stat : fs42.lstat;
+      const statFn = opts.dereference ? fs43.stat : fs43.lstat;
       const srcStat = await statFn(src);
       if (srcStat.isDirectory()) return onDir(srcStat, destStat, src, dest, opts);
       if (srcStat.isFile() || srcStat.isCharacterDevice() || srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts);
@@ -4732,7 +4732,7 @@ var require_copy = __commonJS({
     async function onFile(srcStat, destStat, src, dest, opts) {
       if (!destStat) return copyFile(srcStat, src, dest, opts);
       if (opts.overwrite) {
-        await fs42.unlink(dest);
+        await fs43.unlink(dest);
         return copyFile(srcStat, src, dest, opts);
       }
       if (opts.errorOnExist) {
@@ -4740,29 +4740,29 @@ var require_copy = __commonJS({
       }
     }
     async function copyFile(srcStat, src, dest, opts) {
-      await fs42.copyFile(src, dest);
+      await fs43.copyFile(src, dest);
       if (opts.preserveTimestamps) {
         if (fileIsNotWritable(srcStat.mode)) {
           await makeFileWritable(dest, srcStat.mode);
         }
-        const updatedSrcStat = await fs42.stat(src);
+        const updatedSrcStat = await fs43.stat(src);
         await utimesMillis(dest, updatedSrcStat.atime, updatedSrcStat.mtime);
       }
-      return fs42.chmod(dest, srcStat.mode);
+      return fs43.chmod(dest, srcStat.mode);
     }
     function fileIsNotWritable(srcMode) {
       return (srcMode & 128) === 0;
     }
     function makeFileWritable(dest, srcMode) {
-      return fs42.chmod(dest, srcMode | 128);
+      return fs43.chmod(dest, srcMode | 128);
     }
     async function onDir(srcStat, destStat, src, dest, opts) {
       if (!destStat) {
-        await fs42.mkdir(dest);
+        await fs43.mkdir(dest);
       }
-      await asyncIteratorConcurrentProcess(await fs42.opendir(src), async (item) => {
-        const srcItem = path47.join(src, item.name);
-        const destItem = path47.join(dest, item.name);
+      await asyncIteratorConcurrentProcess(await fs43.opendir(src), async (item) => {
+        const srcItem = path48.join(src, item.name);
+        const destItem = path48.join(dest, item.name);
         const include = await runFilter(srcItem, destItem, opts);
         if (include) {
           const { destStat: destStat2 } = await stat.checkPaths(srcItem, destItem, "copy", opts);
@@ -4770,26 +4770,26 @@ var require_copy = __commonJS({
         }
       });
       if (!destStat) {
-        await fs42.chmod(dest, srcStat.mode);
+        await fs43.chmod(dest, srcStat.mode);
       }
     }
     async function onLink(destStat, src, dest, opts) {
-      let resolvedSrc = await fs42.readlink(src);
+      let resolvedSrc = await fs43.readlink(src);
       if (opts.dereference) {
-        resolvedSrc = path47.resolve(process.cwd(), resolvedSrc);
+        resolvedSrc = path48.resolve(process.cwd(), resolvedSrc);
       }
       if (!destStat) {
-        return fs42.symlink(resolvedSrc, dest);
+        return fs43.symlink(resolvedSrc, dest);
       }
       let resolvedDest = null;
       try {
-        resolvedDest = await fs42.readlink(dest);
+        resolvedDest = await fs43.readlink(dest);
       } catch (e) {
-        if (e.code === "EINVAL" || e.code === "UNKNOWN") return fs42.symlink(resolvedSrc, dest);
+        if (e.code === "EINVAL" || e.code === "UNKNOWN") return fs43.symlink(resolvedSrc, dest);
         throw e;
       }
       if (opts.dereference) {
-        resolvedDest = path47.resolve(process.cwd(), resolvedDest);
+        resolvedDest = path48.resolve(process.cwd(), resolvedDest);
       }
       if (resolvedSrc !== resolvedDest) {
         if (stat.isSrcSubdir(resolvedSrc, resolvedDest)) {
@@ -4799,19 +4799,19 @@ var require_copy = __commonJS({
           throw new Error(`Cannot overwrite '${resolvedDest}' with '${resolvedSrc}'.`);
         }
       }
-      await fs42.unlink(dest);
-      return fs42.symlink(resolvedSrc, dest);
+      await fs43.unlink(dest);
+      return fs43.symlink(resolvedSrc, dest);
     }
     module2.exports = copy;
   }
 });
 
-// node_modules/fs-extra/lib/copy/copy-sync.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/copy/copy-sync.js
 var require_copy_sync = __commonJS({
-  "node_modules/fs-extra/lib/copy/copy-sync.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/copy/copy-sync.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_graceful_fs();
-    var path47 = require("path");
+    var fs43 = require_graceful_fs();
+    var path48 = require("path");
     var mkdirsSync = require_mkdirs().mkdirsSync;
     var utimesMillisSync = require_utimes().utimesMillisSync;
     var stat = require_stat();
@@ -4832,12 +4832,12 @@ var require_copy_sync = __commonJS({
       const { srcStat, destStat } = stat.checkPathsSync(src, dest, "copy", opts);
       stat.checkParentPathsSync(src, srcStat, dest, "copy");
       if (opts.filter && !opts.filter(src, dest)) return;
-      const destParent = path47.dirname(dest);
-      if (!fs42.existsSync(destParent)) mkdirsSync(destParent);
+      const destParent = path48.dirname(dest);
+      if (!fs43.existsSync(destParent)) mkdirsSync(destParent);
       return getStats(destStat, src, dest, opts);
     }
     function getStats(destStat, src, dest, opts) {
-      const statSync2 = opts.dereference ? fs42.statSync : fs42.lstatSync;
+      const statSync2 = opts.dereference ? fs43.statSync : fs43.lstatSync;
       const srcStat = statSync2(src);
       if (srcStat.isDirectory()) return onDir(srcStat, destStat, src, dest, opts);
       else if (srcStat.isFile() || srcStat.isCharacterDevice() || srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts);
@@ -4852,14 +4852,14 @@ var require_copy_sync = __commonJS({
     }
     function mayCopyFile(srcStat, src, dest, opts) {
       if (opts.overwrite) {
-        fs42.unlinkSync(dest);
+        fs43.unlinkSync(dest);
         return copyFile(srcStat, src, dest, opts);
       } else if (opts.errorOnExist) {
         throw new Error(`'${dest}' already exists`);
       }
     }
     function copyFile(srcStat, src, dest, opts) {
-      fs42.copyFileSync(src, dest);
+      fs43.copyFileSync(src, dest);
       if (opts.preserveTimestamps) handleTimestamps(srcStat.mode, src, dest);
       return setDestMode(dest, srcStat.mode);
     }
@@ -4874,10 +4874,10 @@ var require_copy_sync = __commonJS({
       return setDestMode(dest, srcMode | 128);
     }
     function setDestMode(dest, srcMode) {
-      return fs42.chmodSync(dest, srcMode);
+      return fs43.chmodSync(dest, srcMode);
     }
     function setDestTimestamps(src, dest) {
-      const updatedSrcStat = fs42.statSync(src);
+      const updatedSrcStat = fs43.statSync(src);
       return utimesMillisSync(dest, updatedSrcStat.atime, updatedSrcStat.mtime);
     }
     function onDir(srcStat, destStat, src, dest, opts) {
@@ -4885,12 +4885,12 @@ var require_copy_sync = __commonJS({
       return copyDir(src, dest, opts);
     }
     function mkDirAndCopy(srcMode, src, dest, opts) {
-      fs42.mkdirSync(dest);
+      fs43.mkdirSync(dest);
       copyDir(src, dest, opts);
       return setDestMode(dest, srcMode);
     }
     function copyDir(src, dest, opts) {
-      const dir = fs42.opendirSync(src);
+      const dir = fs43.opendirSync(src);
       try {
         let dirent;
         while ((dirent = dir.readSync()) !== null) {
@@ -4901,29 +4901,29 @@ var require_copy_sync = __commonJS({
       }
     }
     function copyDirItem(item, src, dest, opts) {
-      const srcItem = path47.join(src, item);
-      const destItem = path47.join(dest, item);
+      const srcItem = path48.join(src, item);
+      const destItem = path48.join(dest, item);
       if (opts.filter && !opts.filter(srcItem, destItem)) return;
       const { destStat } = stat.checkPathsSync(srcItem, destItem, "copy", opts);
       return getStats(destStat, srcItem, destItem, opts);
     }
     function onLink(destStat, src, dest, opts) {
-      let resolvedSrc = fs42.readlinkSync(src);
+      let resolvedSrc = fs43.readlinkSync(src);
       if (opts.dereference) {
-        resolvedSrc = path47.resolve(process.cwd(), resolvedSrc);
+        resolvedSrc = path48.resolve(process.cwd(), resolvedSrc);
       }
       if (!destStat) {
-        return fs42.symlinkSync(resolvedSrc, dest);
+        return fs43.symlinkSync(resolvedSrc, dest);
       } else {
         let resolvedDest;
         try {
-          resolvedDest = fs42.readlinkSync(dest);
+          resolvedDest = fs43.readlinkSync(dest);
         } catch (err) {
-          if (err.code === "EINVAL" || err.code === "UNKNOWN") return fs42.symlinkSync(resolvedSrc, dest);
+          if (err.code === "EINVAL" || err.code === "UNKNOWN") return fs43.symlinkSync(resolvedSrc, dest);
           throw err;
         }
         if (opts.dereference) {
-          resolvedDest = path47.resolve(process.cwd(), resolvedDest);
+          resolvedDest = path48.resolve(process.cwd(), resolvedDest);
         }
         if (resolvedSrc !== resolvedDest) {
           if (stat.isSrcSubdir(resolvedSrc, resolvedDest)) {
@@ -4937,16 +4937,16 @@ var require_copy_sync = __commonJS({
       }
     }
     function copyLink(resolvedSrc, dest) {
-      fs42.unlinkSync(dest);
-      return fs42.symlinkSync(resolvedSrc, dest);
+      fs43.unlinkSync(dest);
+      return fs43.symlinkSync(resolvedSrc, dest);
     }
     module2.exports = copySync;
   }
 });
 
-// node_modules/fs-extra/lib/copy/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/copy/index.js
 var require_copy2 = __commonJS({
-  "node_modules/fs-extra/lib/copy/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/copy/index.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
     module2.exports = {
@@ -4956,17 +4956,17 @@ var require_copy2 = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/remove/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/remove/index.js
 var require_remove = __commonJS({
-  "node_modules/fs-extra/lib/remove/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/remove/index.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_graceful_fs();
+    var fs43 = require_graceful_fs();
     var u = require_universalify().fromCallback;
-    function remove(path47, callback) {
-      fs42.rm(path47, { recursive: true, force: true }, callback);
+    function remove(path48, callback) {
+      fs43.rm(path48, { recursive: true, force: true }, callback);
     }
-    function removeSync(path47) {
-      fs42.rmSync(path47, { recursive: true, force: true });
+    function removeSync(path48) {
+      fs43.rmSync(path48, { recursive: true, force: true });
     }
     module2.exports = {
       remove: u(remove),
@@ -4975,33 +4975,33 @@ var require_remove = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/empty/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/empty/index.js
 var require_empty = __commonJS({
-  "node_modules/fs-extra/lib/empty/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/empty/index.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var fs42 = require_fs();
-    var path47 = require("path");
+    var fs43 = require_fs();
+    var path48 = require("path");
     var mkdir = require_mkdirs();
     var remove = require_remove();
     var emptyDir = u(async function emptyDir2(dir) {
       let items;
       try {
-        items = await fs42.readdir(dir);
+        items = await fs43.readdir(dir);
       } catch {
         return mkdir.mkdirs(dir);
       }
-      return Promise.all(items.map((item) => remove.remove(path47.join(dir, item))));
+      return Promise.all(items.map((item) => remove.remove(path48.join(dir, item))));
     });
     function emptyDirSync(dir) {
       let items;
       try {
-        items = fs42.readdirSync(dir);
+        items = fs43.readdirSync(dir);
       } catch {
         return mkdir.mkdirsSync(dir);
       }
       items.forEach((item) => {
-        item = path47.join(dir, item);
+        item = path48.join(dir, item);
         remove.removeSync(item);
       });
     }
@@ -5014,57 +5014,57 @@ var require_empty = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/ensure/file.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/file.js
 var require_file = __commonJS({
-  "node_modules/fs-extra/lib/ensure/file.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/file.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var path47 = require("path");
-    var fs42 = require_fs();
+    var path48 = require("path");
+    var fs43 = require_fs();
     var mkdir = require_mkdirs();
     async function createFile(file2) {
       let stats;
       try {
-        stats = await fs42.stat(file2);
+        stats = await fs43.stat(file2);
       } catch {
       }
       if (stats && stats.isFile()) return;
-      const dir = path47.dirname(file2);
+      const dir = path48.dirname(file2);
       let dirStats = null;
       try {
-        dirStats = await fs42.stat(dir);
+        dirStats = await fs43.stat(dir);
       } catch (err) {
         if (err.code === "ENOENT") {
           await mkdir.mkdirs(dir);
-          await fs42.writeFile(file2, "");
+          await fs43.writeFile(file2, "");
           return;
         } else {
           throw err;
         }
       }
       if (dirStats.isDirectory()) {
-        await fs42.writeFile(file2, "");
+        await fs43.writeFile(file2, "");
       } else {
-        await fs42.readdir(dir);
+        await fs43.readdir(dir);
       }
     }
     function createFileSync(file2) {
       let stats;
       try {
-        stats = fs42.statSync(file2);
+        stats = fs43.statSync(file2);
       } catch {
       }
       if (stats && stats.isFile()) return;
-      const dir = path47.dirname(file2);
+      const dir = path48.dirname(file2);
       try {
-        if (!fs42.statSync(dir).isDirectory()) {
-          fs42.readdirSync(dir);
+        if (!fs43.statSync(dir).isDirectory()) {
+          fs43.readdirSync(dir);
         }
       } catch (err) {
         if (err && err.code === "ENOENT") mkdir.mkdirsSync(dir);
         else throw err;
       }
-      fs42.writeFileSync(file2, "");
+      fs43.writeFileSync(file2, "");
     }
     module2.exports = {
       createFile: u(createFile),
@@ -5073,55 +5073,55 @@ var require_file = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/ensure/link.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/link.js
 var require_link = __commonJS({
-  "node_modules/fs-extra/lib/ensure/link.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/link.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var path47 = require("path");
-    var fs42 = require_fs();
+    var path48 = require("path");
+    var fs43 = require_fs();
     var mkdir = require_mkdirs();
     var { pathExists } = require_path_exists();
     var { areIdentical } = require_stat();
     async function createLink(srcpath, dstpath) {
       let dstStat;
       try {
-        dstStat = await fs42.lstat(dstpath, { bigint: true });
+        dstStat = await fs43.lstat(dstpath, { bigint: true });
       } catch {
       }
       let srcStat;
       try {
-        srcStat = await fs42.lstat(srcpath, { bigint: true });
+        srcStat = await fs43.lstat(srcpath, { bigint: true });
       } catch (err) {
         err.message = err.message.replace("lstat", "ensureLink");
         throw err;
       }
       if (dstStat && areIdentical(srcStat, dstStat)) return;
-      const dir = path47.dirname(dstpath);
+      const dir = path48.dirname(dstpath);
       const dirExists = await pathExists(dir);
       if (!dirExists) {
         await mkdir.mkdirs(dir);
       }
-      await fs42.link(srcpath, dstpath);
+      await fs43.link(srcpath, dstpath);
     }
     function createLinkSync(srcpath, dstpath) {
       let dstStat;
       try {
-        dstStat = fs42.lstatSync(dstpath, { bigint: true });
+        dstStat = fs43.lstatSync(dstpath, { bigint: true });
       } catch {
       }
       try {
-        const srcStat = fs42.lstatSync(srcpath, { bigint: true });
+        const srcStat = fs43.lstatSync(srcpath, { bigint: true });
         if (dstStat && areIdentical(srcStat, dstStat)) return;
       } catch (err) {
         err.message = err.message.replace("lstat", "ensureLink");
         throw err;
       }
-      const dir = path47.dirname(dstpath);
-      const dirExists = fs42.existsSync(dir);
-      if (dirExists) return fs42.linkSync(srcpath, dstpath);
+      const dir = path48.dirname(dstpath);
+      const dirExists = fs43.existsSync(dir);
+      if (dirExists) return fs43.linkSync(srcpath, dstpath);
       mkdir.mkdirsSync(dir);
-      return fs42.linkSync(srcpath, dstpath);
+      return fs43.linkSync(srcpath, dstpath);
     }
     module2.exports = {
       createLink: u(createLink),
@@ -5130,18 +5130,18 @@ var require_link = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/ensure/symlink-paths.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/symlink-paths.js
 var require_symlink_paths = __commonJS({
-  "node_modules/fs-extra/lib/ensure/symlink-paths.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/symlink-paths.js"(exports2, module2) {
     "use strict";
-    var path47 = require("path");
-    var fs42 = require_fs();
+    var path48 = require("path");
+    var fs43 = require_fs();
     var { pathExists } = require_path_exists();
     var u = require_universalify().fromPromise;
     async function symlinkPaths(srcpath, dstpath) {
-      if (path47.isAbsolute(srcpath)) {
+      if (path48.isAbsolute(srcpath)) {
         try {
-          await fs42.lstat(srcpath);
+          await fs43.lstat(srcpath);
         } catch (err) {
           err.message = err.message.replace("lstat", "ensureSymlink");
           throw err;
@@ -5151,8 +5151,8 @@ var require_symlink_paths = __commonJS({
           toDst: srcpath
         };
       }
-      const dstdir = path47.dirname(dstpath);
-      const relativeToDst = path47.join(dstdir, srcpath);
+      const dstdir = path48.dirname(dstpath);
+      const relativeToDst = path48.join(dstdir, srcpath);
       const exists = await pathExists(relativeToDst);
       if (exists) {
         return {
@@ -5161,39 +5161,39 @@ var require_symlink_paths = __commonJS({
         };
       }
       try {
-        await fs42.lstat(srcpath);
+        await fs43.lstat(srcpath);
       } catch (err) {
         err.message = err.message.replace("lstat", "ensureSymlink");
         throw err;
       }
       return {
         toCwd: srcpath,
-        toDst: path47.relative(dstdir, srcpath)
+        toDst: path48.relative(dstdir, srcpath)
       };
     }
     function symlinkPathsSync(srcpath, dstpath) {
-      if (path47.isAbsolute(srcpath)) {
-        const exists2 = fs42.existsSync(srcpath);
+      if (path48.isAbsolute(srcpath)) {
+        const exists2 = fs43.existsSync(srcpath);
         if (!exists2) throw new Error("absolute srcpath does not exist");
         return {
           toCwd: srcpath,
           toDst: srcpath
         };
       }
-      const dstdir = path47.dirname(dstpath);
-      const relativeToDst = path47.join(dstdir, srcpath);
-      const exists = fs42.existsSync(relativeToDst);
+      const dstdir = path48.dirname(dstpath);
+      const relativeToDst = path48.join(dstdir, srcpath);
+      const exists = fs43.existsSync(relativeToDst);
       if (exists) {
         return {
           toCwd: relativeToDst,
           toDst: srcpath
         };
       }
-      const srcExists = fs42.existsSync(srcpath);
+      const srcExists = fs43.existsSync(srcpath);
       if (!srcExists) throw new Error("relative srcpath does not exist");
       return {
         toCwd: srcpath,
-        toDst: path47.relative(dstdir, srcpath)
+        toDst: path48.relative(dstdir, srcpath)
       };
     }
     module2.exports = {
@@ -5203,17 +5203,17 @@ var require_symlink_paths = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/ensure/symlink-type.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/symlink-type.js
 var require_symlink_type = __commonJS({
-  "node_modules/fs-extra/lib/ensure/symlink-type.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/symlink-type.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_fs();
+    var fs43 = require_fs();
     var u = require_universalify().fromPromise;
     async function symlinkType(srcpath, type) {
       if (type) return type;
       let stats;
       try {
-        stats = await fs42.lstat(srcpath);
+        stats = await fs43.lstat(srcpath);
       } catch {
         return "file";
       }
@@ -5223,7 +5223,7 @@ var require_symlink_type = __commonJS({
       if (type) return type;
       let stats;
       try {
-        stats = fs42.lstatSync(srcpath);
+        stats = fs43.lstatSync(srcpath);
       } catch {
         return "file";
       }
@@ -5236,13 +5236,13 @@ var require_symlink_type = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/ensure/symlink.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/symlink.js
 var require_symlink = __commonJS({
-  "node_modules/fs-extra/lib/ensure/symlink.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/symlink.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var path47 = require("path");
-    var fs42 = require_fs();
+    var path48 = require("path");
+    var fs43 = require_fs();
     var { mkdirs, mkdirsSync } = require_mkdirs();
     var { symlinkPaths, symlinkPathsSync } = require_symlink_paths();
     var { symlinkType, symlinkTypeSync } = require_symlink_type();
@@ -5251,64 +5251,64 @@ var require_symlink = __commonJS({
     async function createSymlink(srcpath, dstpath, type) {
       let stats;
       try {
-        stats = await fs42.lstat(dstpath);
+        stats = await fs43.lstat(dstpath);
       } catch {
       }
       if (stats && stats.isSymbolicLink()) {
         let srcStat;
-        if (path47.isAbsolute(srcpath)) {
-          srcStat = await fs42.stat(srcpath, { bigint: true });
+        if (path48.isAbsolute(srcpath)) {
+          srcStat = await fs43.stat(srcpath, { bigint: true });
         } else {
-          const dstdir = path47.dirname(dstpath);
-          const relativeToDst = path47.join(dstdir, srcpath);
+          const dstdir = path48.dirname(dstpath);
+          const relativeToDst = path48.join(dstdir, srcpath);
           try {
-            srcStat = await fs42.stat(relativeToDst, { bigint: true });
+            srcStat = await fs43.stat(relativeToDst, { bigint: true });
           } catch {
-            srcStat = await fs42.stat(srcpath, { bigint: true });
+            srcStat = await fs43.stat(srcpath, { bigint: true });
           }
         }
-        const dstStat = await fs42.stat(dstpath, { bigint: true });
+        const dstStat = await fs43.stat(dstpath, { bigint: true });
         if (areIdentical(srcStat, dstStat)) return;
       }
       const relative = await symlinkPaths(srcpath, dstpath);
       srcpath = relative.toDst;
       const toType = await symlinkType(relative.toCwd, type);
-      const dir = path47.dirname(dstpath);
+      const dir = path48.dirname(dstpath);
       if (!await pathExists(dir)) {
         await mkdirs(dir);
       }
-      return fs42.symlink(srcpath, dstpath, toType);
+      return fs43.symlink(srcpath, dstpath, toType);
     }
     function createSymlinkSync(srcpath, dstpath, type) {
       let stats;
       try {
-        stats = fs42.lstatSync(dstpath);
+        stats = fs43.lstatSync(dstpath);
       } catch {
       }
       if (stats && stats.isSymbolicLink()) {
         let srcStat;
-        if (path47.isAbsolute(srcpath)) {
-          srcStat = fs42.statSync(srcpath, { bigint: true });
+        if (path48.isAbsolute(srcpath)) {
+          srcStat = fs43.statSync(srcpath, { bigint: true });
         } else {
-          const dstdir = path47.dirname(dstpath);
-          const relativeToDst = path47.join(dstdir, srcpath);
+          const dstdir = path48.dirname(dstpath);
+          const relativeToDst = path48.join(dstdir, srcpath);
           try {
-            srcStat = fs42.statSync(relativeToDst, { bigint: true });
+            srcStat = fs43.statSync(relativeToDst, { bigint: true });
           } catch {
-            srcStat = fs42.statSync(srcpath, { bigint: true });
+            srcStat = fs43.statSync(srcpath, { bigint: true });
           }
         }
-        const dstStat = fs42.statSync(dstpath, { bigint: true });
+        const dstStat = fs43.statSync(dstpath, { bigint: true });
         if (areIdentical(srcStat, dstStat)) return;
       }
       const relative = symlinkPathsSync(srcpath, dstpath);
       srcpath = relative.toDst;
       type = symlinkTypeSync(relative.toCwd, type);
-      const dir = path47.dirname(dstpath);
-      const exists = fs42.existsSync(dir);
-      if (exists) return fs42.symlinkSync(srcpath, dstpath, type);
+      const dir = path48.dirname(dstpath);
+      const exists = fs43.existsSync(dir);
+      if (exists) return fs43.symlinkSync(srcpath, dstpath, type);
       mkdirsSync(dir);
-      return fs42.symlinkSync(srcpath, dstpath, type);
+      return fs43.symlinkSync(srcpath, dstpath, type);
     }
     module2.exports = {
       createSymlink: u(createSymlink),
@@ -5317,9 +5317,9 @@ var require_symlink = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/ensure/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/index.js
 var require_ensure = __commonJS({
-  "node_modules/fs-extra/lib/ensure/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/ensure/index.js"(exports2, module2) {
     "use strict";
     var { createFile, createFileSync } = require_file();
     var { createLink, createLinkSync } = require_link();
@@ -5344,9 +5344,9 @@ var require_ensure = __commonJS({
   }
 });
 
-// ../node_modules/jsonfile/utils.js
+// ../../xtrm-tools/node_modules/jsonfile/utils.js
 var require_utils2 = __commonJS({
-  "../node_modules/jsonfile/utils.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/jsonfile/utils.js"(exports2, module2) {
     "use strict";
     function stringify2(obj, { EOL = "\n", finalEOL = true, replacer = null, spaces } = {}) {
       const EOF = finalEOL ? EOL : "";
@@ -5361,9 +5361,9 @@ var require_utils2 = __commonJS({
   }
 });
 
-// ../node_modules/jsonfile/index.js
+// ../../xtrm-tools/node_modules/jsonfile/index.js
 var require_jsonfile = __commonJS({
-  "../node_modules/jsonfile/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/jsonfile/index.js"(exports2, module2) {
     "use strict";
     var _fs;
     try {
@@ -5377,9 +5377,9 @@ var require_jsonfile = __commonJS({
       if (typeof options === "string") {
         options = { encoding: options };
       }
-      const fs42 = options.fs || _fs;
+      const fs43 = options.fs || _fs;
       const shouldThrow = "throws" in options ? options.throws : true;
-      let data = await universalify.fromCallback(fs42.readFile)(file2, options);
+      let data = await universalify.fromCallback(fs43.readFile)(file2, options);
       data = stripBom(data);
       let obj;
       try {
@@ -5399,10 +5399,10 @@ var require_jsonfile = __commonJS({
       if (typeof options === "string") {
         options = { encoding: options };
       }
-      const fs42 = options.fs || _fs;
+      const fs43 = options.fs || _fs;
       const shouldThrow = "throws" in options ? options.throws : true;
       try {
-        let content = fs42.readFileSync(file2, options);
+        let content = fs43.readFileSync(file2, options);
         content = stripBom(content);
         return JSON.parse(content, options.reviver);
       } catch (err) {
@@ -5415,15 +5415,15 @@ var require_jsonfile = __commonJS({
       }
     }
     async function _writeFile(file2, obj, options = {}) {
-      const fs42 = options.fs || _fs;
+      const fs43 = options.fs || _fs;
       const str = stringify2(obj, options);
-      await universalify.fromCallback(fs42.writeFile)(file2, str, options);
+      await universalify.fromCallback(fs43.writeFile)(file2, str, options);
     }
     var writeFile = universalify.fromPromise(_writeFile);
     function writeFileSync3(file2, obj, options = {}) {
-      const fs42 = options.fs || _fs;
+      const fs43 = options.fs || _fs;
       const str = stringify2(obj, options);
-      return fs42.writeFileSync(file2, str, options);
+      return fs43.writeFileSync(file2, str, options);
     }
     module2.exports = {
       readFile,
@@ -5434,9 +5434,9 @@ var require_jsonfile = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/json/jsonfile.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/json/jsonfile.js
 var require_jsonfile2 = __commonJS({
-  "node_modules/fs-extra/lib/json/jsonfile.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/json/jsonfile.js"(exports2, module2) {
     "use strict";
     var jsonFile = require_jsonfile();
     module2.exports = {
@@ -5449,28 +5449,28 @@ var require_jsonfile2 = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/output-file/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/output-file/index.js
 var require_output_file = __commonJS({
-  "node_modules/fs-extra/lib/output-file/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/output-file/index.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var fs42 = require_fs();
-    var path47 = require("path");
+    var fs43 = require_fs();
+    var path48 = require("path");
     var mkdir = require_mkdirs();
     var pathExists = require_path_exists().pathExists;
     async function outputFile(file2, data, encoding = "utf-8") {
-      const dir = path47.dirname(file2);
+      const dir = path48.dirname(file2);
       if (!await pathExists(dir)) {
         await mkdir.mkdirs(dir);
       }
-      return fs42.writeFile(file2, data, encoding);
+      return fs43.writeFile(file2, data, encoding);
     }
     function outputFileSync(file2, ...args) {
-      const dir = path47.dirname(file2);
-      if (!fs42.existsSync(dir)) {
+      const dir = path48.dirname(file2);
+      if (!fs43.existsSync(dir)) {
         mkdir.mkdirsSync(dir);
       }
-      fs42.writeFileSync(file2, ...args);
+      fs43.writeFileSync(file2, ...args);
     }
     module2.exports = {
       outputFile: u(outputFile),
@@ -5479,9 +5479,9 @@ var require_output_file = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/json/output-json.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/json/output-json.js
 var require_output_json = __commonJS({
-  "node_modules/fs-extra/lib/json/output-json.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/json/output-json.js"(exports2, module2) {
     "use strict";
     var { stringify: stringify2 } = require_utils2();
     var { outputFile } = require_output_file();
@@ -5493,9 +5493,9 @@ var require_output_json = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/json/output-json-sync.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/json/output-json-sync.js
 var require_output_json_sync = __commonJS({
-  "node_modules/fs-extra/lib/json/output-json-sync.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/json/output-json-sync.js"(exports2, module2) {
     "use strict";
     var { stringify: stringify2 } = require_utils2();
     var { outputFileSync } = require_output_file();
@@ -5507,9 +5507,9 @@ var require_output_json_sync = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/json/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/json/index.js
 var require_json = __commonJS({
-  "node_modules/fs-extra/lib/json/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/json/index.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
     var jsonFile = require_jsonfile2();
@@ -5525,12 +5525,12 @@ var require_json = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/move/move.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/move/move.js
 var require_move = __commonJS({
-  "node_modules/fs-extra/lib/move/move.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/move/move.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_fs();
-    var path47 = require("path");
+    var fs43 = require_fs();
+    var path48 = require("path");
     var { copy } = require_copy2();
     var { remove } = require_remove();
     var { mkdirp } = require_mkdirs();
@@ -5540,8 +5540,8 @@ var require_move = __commonJS({
       const overwrite = opts.overwrite || opts.clobber || false;
       const { srcStat, isChangingCase = false } = await stat.checkPaths(src, dest, "move", opts);
       await stat.checkParentPaths(src, srcStat, dest, "move");
-      const destParent = path47.dirname(dest);
-      const parsedParentPath = path47.parse(destParent);
+      const destParent = path48.dirname(dest);
+      const parsedParentPath = path48.parse(destParent);
       if (parsedParentPath.root !== destParent) {
         await mkdirp(destParent);
       }
@@ -5556,7 +5556,7 @@ var require_move = __commonJS({
         }
       }
       try {
-        await fs42.rename(src, dest);
+        await fs43.rename(src, dest);
       } catch (err) {
         if (err.code !== "EXDEV") {
           throw err;
@@ -5577,12 +5577,12 @@ var require_move = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/move/move-sync.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/move/move-sync.js
 var require_move_sync = __commonJS({
-  "node_modules/fs-extra/lib/move/move-sync.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/move/move-sync.js"(exports2, module2) {
     "use strict";
-    var fs42 = require_graceful_fs();
-    var path47 = require("path");
+    var fs43 = require_graceful_fs();
+    var path48 = require("path");
     var copySync = require_copy2().copySync;
     var removeSync = require_remove().removeSync;
     var mkdirpSync = require_mkdirs().mkdirpSync;
@@ -5592,12 +5592,12 @@ var require_move_sync = __commonJS({
       const overwrite = opts.overwrite || opts.clobber || false;
       const { srcStat, isChangingCase = false } = stat.checkPathsSync(src, dest, "move", opts);
       stat.checkParentPathsSync(src, srcStat, dest, "move");
-      if (!isParentRoot(dest)) mkdirpSync(path47.dirname(dest));
+      if (!isParentRoot(dest)) mkdirpSync(path48.dirname(dest));
       return doRename(src, dest, overwrite, isChangingCase);
     }
     function isParentRoot(dest) {
-      const parent = path47.dirname(dest);
-      const parsedPath = path47.parse(parent);
+      const parent = path48.dirname(dest);
+      const parsedPath = path48.parse(parent);
       return parsedPath.root === parent;
     }
     function doRename(src, dest, overwrite, isChangingCase) {
@@ -5606,12 +5606,12 @@ var require_move_sync = __commonJS({
         removeSync(dest);
         return rename(src, dest, overwrite);
       }
-      if (fs42.existsSync(dest)) throw new Error("dest already exists.");
+      if (fs43.existsSync(dest)) throw new Error("dest already exists.");
       return rename(src, dest, overwrite);
     }
     function rename(src, dest, overwrite) {
       try {
-        fs42.renameSync(src, dest);
+        fs43.renameSync(src, dest);
       } catch (err) {
         if (err.code !== "EXDEV") throw err;
         return moveAcrossDevice(src, dest, overwrite);
@@ -5630,9 +5630,9 @@ var require_move_sync = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/move/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/move/index.js
 var require_move2 = __commonJS({
-  "node_modules/fs-extra/lib/move/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/move/index.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
     module2.exports = {
@@ -5642,9 +5642,9 @@ var require_move2 = __commonJS({
   }
 });
 
-// node_modules/fs-extra/lib/index.js
+// ../../xtrm-tools/cli/node_modules/fs-extra/lib/index.js
 var require_lib = __commonJS({
-  "node_modules/fs-extra/lib/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/fs-extra/lib/index.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       // Export promiseified graceful-fs:
@@ -5663,9 +5663,9 @@ var require_lib = __commonJS({
   }
 });
 
-// ../node_modules/prompts/node_modules/kleur/index.js
+// ../../xtrm-tools/node_modules/prompts/node_modules/kleur/index.js
 var require_kleur = __commonJS({
-  "../node_modules/prompts/node_modules/kleur/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/node_modules/kleur/index.js"(exports2, module2) {
     "use strict";
     var { FORCE_COLOR: FORCE_COLOR2, NODE_DISABLE_COLORS: NODE_DISABLE_COLORS2, TERM: TERM2 } = process.env;
     var $2 = {
@@ -5760,9 +5760,9 @@ var require_kleur = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/action.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/action.js
 var require_action = __commonJS({
-  "../node_modules/prompts/dist/util/action.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/action.js"(exports2, module2) {
     "use strict";
     module2.exports = (key, isSelect) => {
       if (key.meta && key.name !== "escape") return;
@@ -5797,9 +5797,9 @@ var require_action = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/strip.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/strip.js
 var require_strip = __commonJS({
-  "../node_modules/prompts/dist/util/strip.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/strip.js"(exports2, module2) {
     "use strict";
     module2.exports = (str) => {
       const pattern = ["[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)", "(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))"].join("|");
@@ -5809,9 +5809,9 @@ var require_strip = __commonJS({
   }
 });
 
-// ../node_modules/sisteransi/src/index.js
+// ../../xtrm-tools/node_modules/sisteransi/src/index.js
 var require_src = __commonJS({
-  "../node_modules/sisteransi/src/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/sisteransi/src/index.js"(exports2, module2) {
     "use strict";
     var ESC = "\x1B";
     var CSI = `${ESC}[`;
@@ -5865,9 +5865,9 @@ var require_src = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/clear.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/clear.js
 var require_clear = __commonJS({
-  "../node_modules/prompts/dist/util/clear.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/clear.js"(exports2, module2) {
     "use strict";
     function _createForOfIteratorHelper(o, allowArrayLike) {
       var it = typeof Symbol !== "undefined" && o[Symbol.iterator] || o["@@iterator"];
@@ -5942,9 +5942,9 @@ var require_clear = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/figures.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/figures.js
 var require_figures = __commonJS({
-  "../node_modules/prompts/dist/util/figures.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/figures.js"(exports2, module2) {
     "use strict";
     var main = {
       arrowUp: "\u2191",
@@ -5979,9 +5979,9 @@ var require_figures = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/style.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/style.js
 var require_style = __commonJS({
-  "../node_modules/prompts/dist/util/style.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/style.js"(exports2, module2) {
     "use strict";
     var c = require_kleur();
     var figures = require_figures();
@@ -6024,9 +6024,9 @@ var require_style = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/lines.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/lines.js
 var require_lines = __commonJS({
-  "../node_modules/prompts/dist/util/lines.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/lines.js"(exports2, module2) {
     "use strict";
     var strip = require_strip();
     module2.exports = function(msg, perLine) {
@@ -6037,9 +6037,9 @@ var require_lines = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/wrap.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/wrap.js
 var require_wrap = __commonJS({
-  "../node_modules/prompts/dist/util/wrap.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/wrap.js"(exports2, module2) {
     "use strict";
     module2.exports = (msg, opts = {}) => {
       const tab = Number.isSafeInteger(parseInt(opts.margin)) ? new Array(parseInt(opts.margin)).fill(" ").join("") : opts.margin || "";
@@ -6053,9 +6053,9 @@ var require_wrap = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/entriesToDisplay.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/entriesToDisplay.js
 var require_entriesToDisplay = __commonJS({
-  "../node_modules/prompts/dist/util/entriesToDisplay.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/entriesToDisplay.js"(exports2, module2) {
     "use strict";
     module2.exports = (cursor, total, maxVisible) => {
       maxVisible = maxVisible || total;
@@ -6070,9 +6070,9 @@ var require_entriesToDisplay = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/util/index.js
+// ../../xtrm-tools/node_modules/prompts/dist/util/index.js
 var require_util = __commonJS({
-  "../node_modules/prompts/dist/util/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/util/index.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       action: require_action(),
@@ -6087,9 +6087,9 @@ var require_util = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/elements/prompt.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/prompt.js
 var require_prompt = __commonJS({
-  "../node_modules/prompts/dist/elements/prompt.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/prompt.js"(exports2, module2) {
     "use strict";
     var readline = require("readline");
     var _require = require_util();
@@ -6152,9 +6152,9 @@ var require_prompt = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/elements/text.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/text.js
 var require_text = __commonJS({
-  "../node_modules/prompts/dist/elements/text.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/text.js"(exports2, module2) {
     "use strict";
     function asyncGeneratorStep(gen, resolve4, reject, _next, _throw, key, arg) {
       try {
@@ -6368,9 +6368,9 @@ ${i ? " " : figures.pointerSmall} ${color.red().italic(l)}`, ``);
   }
 });
 
-// ../node_modules/prompts/dist/elements/select.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/select.js
 var require_select = __commonJS({
-  "../node_modules/prompts/dist/elements/select.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/select.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt();
@@ -6516,9 +6516,9 @@ var require_select = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/elements/toggle.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/toggle.js
 var require_toggle = __commonJS({
-  "../node_modules/prompts/dist/elements/toggle.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/toggle.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt();
@@ -6614,9 +6614,9 @@ var require_toggle = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/datepart.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/datepart.js
 var require_datepart = __commonJS({
-  "../node_modules/prompts/dist/dateparts/datepart.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/datepart.js"(exports2, module2) {
     "use strict";
     var DatePart = class _DatePart {
       constructor({
@@ -6653,9 +6653,9 @@ var require_datepart = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/meridiem.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/meridiem.js
 var require_meridiem = __commonJS({
-  "../node_modules/prompts/dist/dateparts/meridiem.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/meridiem.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart();
     var Meridiem = class extends DatePart {
@@ -6677,9 +6677,9 @@ var require_meridiem = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/day.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/day.js
 var require_day = __commonJS({
-  "../node_modules/prompts/dist/dateparts/day.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/day.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart();
     var pos = (n) => {
@@ -6709,9 +6709,9 @@ var require_day = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/hours.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/hours.js
 var require_hours = __commonJS({
-  "../node_modules/prompts/dist/dateparts/hours.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/hours.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart();
     var Hours = class extends DatePart {
@@ -6737,9 +6737,9 @@ var require_hours = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/milliseconds.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/milliseconds.js
 var require_milliseconds = __commonJS({
-  "../node_modules/prompts/dist/dateparts/milliseconds.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/milliseconds.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart();
     var Milliseconds = class extends DatePart {
@@ -6763,9 +6763,9 @@ var require_milliseconds = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/minutes.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/minutes.js
 var require_minutes = __commonJS({
-  "../node_modules/prompts/dist/dateparts/minutes.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/minutes.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart();
     var Minutes = class extends DatePart {
@@ -6790,9 +6790,9 @@ var require_minutes = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/month.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/month.js
 var require_month = __commonJS({
-  "../node_modules/prompts/dist/dateparts/month.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/month.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart();
     var Month = class extends DatePart {
@@ -6819,9 +6819,9 @@ var require_month = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/seconds.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/seconds.js
 var require_seconds = __commonJS({
-  "../node_modules/prompts/dist/dateparts/seconds.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/seconds.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart();
     var Seconds = class extends DatePart {
@@ -6846,9 +6846,9 @@ var require_seconds = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/year.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/year.js
 var require_year = __commonJS({
-  "../node_modules/prompts/dist/dateparts/year.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/year.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart();
     var Year = class extends DatePart {
@@ -6873,9 +6873,9 @@ var require_year = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/dateparts/index.js
+// ../../xtrm-tools/node_modules/prompts/dist/dateparts/index.js
 var require_dateparts = __commonJS({
-  "../node_modules/prompts/dist/dateparts/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/dateparts/index.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       DatePart: require_datepart(),
@@ -6891,9 +6891,9 @@ var require_dateparts = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/elements/date.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/date.js
 var require_date = __commonJS({
-  "../node_modules/prompts/dist/elements/date.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/date.js"(exports2, module2) {
     "use strict";
     function asyncGeneratorStep(gen, resolve4, reject, _next, _throw, key, arg) {
       try {
@@ -7117,9 +7117,9 @@ ${i ? ` ` : figures.pointerSmall} ${color.red().italic(l)}`, ``);
   }
 });
 
-// ../node_modules/prompts/dist/elements/number.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/number.js
 var require_number = __commonJS({
-  "../node_modules/prompts/dist/elements/number.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/number.js"(exports2, module2) {
     "use strict";
     function asyncGeneratorStep(gen, resolve4, reject, _next, _throw, key, arg) {
       try {
@@ -7332,9 +7332,9 @@ ${i ? ` ` : figures.pointerSmall} ${color.red().italic(l)}`, ``);
   }
 });
 
-// ../node_modules/prompts/dist/elements/multiselect.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/multiselect.js
 var require_multiselect = __commonJS({
-  "../node_modules/prompts/dist/elements/multiselect.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/multiselect.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var _require = require_src();
@@ -7563,9 +7563,9 @@ Instructions:
   }
 });
 
-// ../node_modules/prompts/dist/elements/autocomplete.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/autocomplete.js
 var require_autocomplete = __commonJS({
-  "../node_modules/prompts/dist/elements/autocomplete.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/autocomplete.js"(exports2, module2) {
     "use strict";
     function asyncGeneratorStep(gen, resolve4, reject, _next, _throw, key, arg) {
       try {
@@ -7818,9 +7818,9 @@ var require_autocomplete = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/elements/autocompleteMultiselect.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/autocompleteMultiselect.js
 var require_autocompleteMultiselect = __commonJS({
-  "../node_modules/prompts/dist/elements/autocompleteMultiselect.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/autocompleteMultiselect.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var _require = require_src();
@@ -7977,9 +7977,9 @@ Filtered results for: ${this.inputValue ? this.inputValue : color.gray("Enter so
   }
 });
 
-// ../node_modules/prompts/dist/elements/confirm.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/confirm.js
 var require_confirm = __commonJS({
-  "../node_modules/prompts/dist/elements/confirm.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/confirm.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt();
@@ -8049,9 +8049,9 @@ var require_confirm = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/elements/index.js
+// ../../xtrm-tools/node_modules/prompts/dist/elements/index.js
 var require_elements = __commonJS({
-  "../node_modules/prompts/dist/elements/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/elements/index.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       TextPrompt: require_text(),
@@ -8067,9 +8067,9 @@ var require_elements = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/prompts.js
+// ../../xtrm-tools/node_modules/prompts/dist/prompts.js
 var require_prompts = __commonJS({
-  "../node_modules/prompts/dist/prompts.js"(exports2) {
+  "../../xtrm-tools/node_modules/prompts/dist/prompts.js"(exports2) {
     "use strict";
     var $2 = exports2;
     var el = require_elements();
@@ -8131,9 +8131,9 @@ var require_prompts = __commonJS({
   }
 });
 
-// ../node_modules/prompts/dist/index.js
+// ../../xtrm-tools/node_modules/prompts/dist/index.js
 var require_dist = __commonJS({
-  "../node_modules/prompts/dist/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/dist/index.js"(exports2, module2) {
     "use strict";
     function ownKeys(object2, enumerableOnly) {
       var keys = Object.keys(object2);
@@ -8351,9 +8351,9 @@ var require_dist = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/action.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/action.js
 var require_action2 = __commonJS({
-  "../node_modules/prompts/lib/util/action.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/action.js"(exports2, module2) {
     "use strict";
     module2.exports = (key, isSelect) => {
       if (key.meta && key.name !== "escape") return;
@@ -8388,9 +8388,9 @@ var require_action2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/strip.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/strip.js
 var require_strip2 = __commonJS({
-  "../node_modules/prompts/lib/util/strip.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/strip.js"(exports2, module2) {
     "use strict";
     module2.exports = (str) => {
       const pattern = [
@@ -8403,9 +8403,9 @@ var require_strip2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/clear.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/clear.js
 var require_clear2 = __commonJS({
-  "../node_modules/prompts/lib/util/clear.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/clear.js"(exports2, module2) {
     "use strict";
     var strip = require_strip2();
     var { erase, cursor } = require_src();
@@ -8422,9 +8422,9 @@ var require_clear2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/figures.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/figures.js
 var require_figures2 = __commonJS({
-  "../node_modules/prompts/lib/util/figures.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/figures.js"(exports2, module2) {
     "use strict";
     var main = {
       arrowUp: "\u2191",
@@ -8459,9 +8459,9 @@ var require_figures2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/style.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/style.js
 var require_style2 = __commonJS({
-  "../node_modules/prompts/lib/util/style.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/style.js"(exports2, module2) {
     "use strict";
     var c = require_kleur();
     var figures = require_figures2();
@@ -8492,9 +8492,9 @@ var require_style2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/lines.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/lines.js
 var require_lines2 = __commonJS({
-  "../node_modules/prompts/lib/util/lines.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/lines.js"(exports2, module2) {
     "use strict";
     var strip = require_strip2();
     module2.exports = function(msg, perLine) {
@@ -8505,9 +8505,9 @@ var require_lines2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/wrap.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/wrap.js
 var require_wrap2 = __commonJS({
-  "../node_modules/prompts/lib/util/wrap.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/wrap.js"(exports2, module2) {
     "use strict";
     module2.exports = (msg, opts = {}) => {
       const tab = Number.isSafeInteger(parseInt(opts.margin)) ? new Array(parseInt(opts.margin)).fill(" ").join("") : opts.margin || "";
@@ -8522,9 +8522,9 @@ var require_wrap2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/entriesToDisplay.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/entriesToDisplay.js
 var require_entriesToDisplay2 = __commonJS({
-  "../node_modules/prompts/lib/util/entriesToDisplay.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/entriesToDisplay.js"(exports2, module2) {
     "use strict";
     module2.exports = (cursor, total, maxVisible) => {
       maxVisible = maxVisible || total;
@@ -8536,9 +8536,9 @@ var require_entriesToDisplay2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/util/index.js
+// ../../xtrm-tools/node_modules/prompts/lib/util/index.js
 var require_util2 = __commonJS({
-  "../node_modules/prompts/lib/util/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/util/index.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       action: require_action2(),
@@ -8553,9 +8553,9 @@ var require_util2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/elements/prompt.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/prompt.js
 var require_prompt2 = __commonJS({
-  "../node_modules/prompts/lib/elements/prompt.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/prompt.js"(exports2, module2) {
     "use strict";
     var readline = require("readline");
     var { action } = require_util2();
@@ -8612,9 +8612,9 @@ var require_prompt2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/elements/text.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/text.js
 var require_text2 = __commonJS({
-  "../node_modules/prompts/lib/elements/text.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/text.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt2();
@@ -8793,9 +8793,9 @@ ${i ? " " : figures.pointerSmall} ${color.red().italic(l)}`, ``);
   }
 });
 
-// ../node_modules/prompts/lib/elements/select.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/select.js
 var require_select2 = __commonJS({
-  "../node_modules/prompts/lib/elements/select.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/select.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt2();
@@ -8936,9 +8936,9 @@ var require_select2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/elements/toggle.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/toggle.js
 var require_toggle2 = __commonJS({
-  "../node_modules/prompts/lib/elements/toggle.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/toggle.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt2();
@@ -9037,9 +9037,9 @@ var require_toggle2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/datepart.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/datepart.js
 var require_datepart2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/datepart.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/datepart.js"(exports2, module2) {
     "use strict";
     var DatePart = class _DatePart {
       constructor({ token, date: date5, parts, locales }) {
@@ -9071,9 +9071,9 @@ var require_datepart2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/meridiem.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/meridiem.js
 var require_meridiem2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/meridiem.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/meridiem.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart2();
     var Meridiem = class extends DatePart {
@@ -9095,9 +9095,9 @@ var require_meridiem2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/day.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/day.js
 var require_day2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/day.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/day.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart2();
     var pos = (n) => {
@@ -9127,9 +9127,9 @@ var require_day2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/hours.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/hours.js
 var require_hours2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/hours.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/hours.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart2();
     var Hours = class extends DatePart {
@@ -9156,9 +9156,9 @@ var require_hours2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/milliseconds.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/milliseconds.js
 var require_milliseconds2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/milliseconds.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/milliseconds.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart2();
     var Milliseconds = class extends DatePart {
@@ -9182,9 +9182,9 @@ var require_milliseconds2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/minutes.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/minutes.js
 var require_minutes2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/minutes.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/minutes.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart2();
     var Minutes = class extends DatePart {
@@ -9209,9 +9209,9 @@ var require_minutes2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/month.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/month.js
 var require_month2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/month.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/month.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart2();
     var Month = class extends DatePart {
@@ -9238,9 +9238,9 @@ var require_month2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/seconds.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/seconds.js
 var require_seconds2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/seconds.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/seconds.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart2();
     var Seconds = class extends DatePart {
@@ -9265,9 +9265,9 @@ var require_seconds2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/year.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/year.js
 var require_year2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/year.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/year.js"(exports2, module2) {
     "use strict";
     var DatePart = require_datepart2();
     var Year = class extends DatePart {
@@ -9292,9 +9292,9 @@ var require_year2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/dateparts/index.js
+// ../../xtrm-tools/node_modules/prompts/lib/dateparts/index.js
 var require_dateparts2 = __commonJS({
-  "../node_modules/prompts/lib/dateparts/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/dateparts/index.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       DatePart: require_datepart2(),
@@ -9310,9 +9310,9 @@ var require_dateparts2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/elements/date.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/date.js
 var require_date2 = __commonJS({
-  "../node_modules/prompts/lib/elements/date.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/date.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt2();
@@ -9489,9 +9489,9 @@ ${i ? ` ` : figures.pointerSmall} ${color.red().italic(l)}`,
   }
 });
 
-// ../node_modules/prompts/lib/elements/number.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/number.js
 var require_number2 = __commonJS({
-  "../node_modules/prompts/lib/elements/number.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/number.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt2();
@@ -9669,9 +9669,9 @@ ${i ? ` ` : figures.pointerSmall} ${color.red().italic(l)}`, ``);
   }
 });
 
-// ../node_modules/prompts/lib/elements/multiselect.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/multiselect.js
 var require_multiselect2 = __commonJS({
-  "../node_modules/prompts/lib/elements/multiselect.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/multiselect.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var { cursor } = require_src();
@@ -9894,9 +9894,9 @@ Instructions:
   }
 });
 
-// ../node_modules/prompts/lib/elements/autocomplete.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/autocomplete.js
 var require_autocomplete2 = __commonJS({
-  "../node_modules/prompts/lib/elements/autocomplete.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/autocomplete.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt2();
@@ -10110,9 +10110,9 @@ var require_autocomplete2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/elements/autocompleteMultiselect.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/autocompleteMultiselect.js
 var require_autocompleteMultiselect2 = __commonJS({
-  "../node_modules/prompts/lib/elements/autocompleteMultiselect.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/autocompleteMultiselect.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var { cursor } = require_src();
@@ -10270,9 +10270,9 @@ Filtered results for: ${this.inputValue ? this.inputValue : color.gray("Enter so
   }
 });
 
-// ../node_modules/prompts/lib/elements/confirm.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/confirm.js
 var require_confirm2 = __commonJS({
-  "../node_modules/prompts/lib/elements/confirm.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/confirm.js"(exports2, module2) {
     "use strict";
     var color = require_kleur();
     var Prompt = require_prompt2();
@@ -10343,9 +10343,9 @@ var require_confirm2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/elements/index.js
+// ../../xtrm-tools/node_modules/prompts/lib/elements/index.js
 var require_elements2 = __commonJS({
-  "../node_modules/prompts/lib/elements/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/elements/index.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       TextPrompt: require_text2(),
@@ -10361,9 +10361,9 @@ var require_elements2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/prompts.js
+// ../../xtrm-tools/node_modules/prompts/lib/prompts.js
 var require_prompts2 = __commonJS({
-  "../node_modules/prompts/lib/prompts.js"(exports2) {
+  "../../xtrm-tools/node_modules/prompts/lib/prompts.js"(exports2) {
     "use strict";
     var $2 = exports2;
     var el = require_elements2();
@@ -10427,9 +10427,9 @@ var require_prompts2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/lib/index.js
+// ../../xtrm-tools/node_modules/prompts/lib/index.js
 var require_lib2 = __commonJS({
-  "../node_modules/prompts/lib/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/lib/index.js"(exports2, module2) {
     "use strict";
     var prompts6 = require_prompts2();
     var passOn = ["suggest", "format", "onState", "validate", "onRender", "type"];
@@ -10501,9 +10501,9 @@ var require_lib2 = __commonJS({
   }
 });
 
-// ../node_modules/prompts/index.js
+// ../../xtrm-tools/node_modules/prompts/index.js
 var require_prompts3 = __commonJS({
-  "../node_modules/prompts/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/prompts/index.js"(exports2, module2) {
     "use strict";
     function isNodeLT(tar) {
       tar = (Array.isArray(tar) ? tar : tar.split(".")).map(Number);
@@ -10518,9 +10518,9 @@ var require_prompts3 = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/codegen/code.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
-  "../node_modules/ajv/dist/compile/codegen/code.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/codegen/code.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.regexpCode = exports2.getEsmExportName = exports2.getProperty = exports2.safeStringify = exports2.stringify = exports2.strConcat = exports2.addCodeArg = exports2.str = exports2._ = exports2.nil = exports2._Code = exports2.Name = exports2.IDENTIFIER = exports2._CodeOrName = void 0;
@@ -10672,9 +10672,9 @@ var require_code = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/codegen/scope.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/codegen/scope.js
 var require_scope = __commonJS({
-  "../node_modules/ajv/dist/compile/codegen/scope.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/codegen/scope.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ValueScope = exports2.ValueScopeName = exports2.Scope = exports2.varKinds = exports2.UsedValueState = void 0;
@@ -10817,9 +10817,9 @@ var require_scope = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/codegen/index.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/codegen/index.js
 var require_codegen = __commonJS({
-  "../node_modules/ajv/dist/compile/codegen/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/codegen/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.or = exports2.and = exports2.not = exports2.CodeGen = exports2.operators = exports2.varKinds = exports2.ValueScopeName = exports2.ValueScope = exports2.Scope = exports2.Name = exports2.regexpCode = exports2.stringify = exports2.getProperty = exports2.nil = exports2.strConcat = exports2.str = exports2._ = void 0;
@@ -11537,9 +11537,9 @@ var require_codegen = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/util.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/util.js
 var require_util3 = __commonJS({
-  "../node_modules/ajv/dist/compile/util.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/util.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.checkStrictMode = exports2.getErrorPath = exports2.Type = exports2.useFunc = exports2.setEvaluated = exports2.evaluatedPropsToName = exports2.mergeEvaluated = exports2.eachItem = exports2.unescapeJsonPointer = exports2.escapeJsonPointer = exports2.escapeFragment = exports2.unescapeFragment = exports2.schemaRefOrVal = exports2.schemaHasRulesButRef = exports2.schemaHasRules = exports2.checkUnknownRules = exports2.alwaysValidSchema = exports2.toHash = void 0;
@@ -11704,9 +11704,9 @@ var require_util3 = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/names.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/names.js
 var require_names = __commonJS({
-  "../node_modules/ajv/dist/compile/names.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/names.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -11743,9 +11743,9 @@ var require_names = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/errors.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/errors.js
 var require_errors = __commonJS({
-  "../node_modules/ajv/dist/compile/errors.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/errors.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.extendErrors = exports2.resetErrorsCount = exports2.reportExtraError = exports2.reportError = exports2.keyword$DataError = exports2.keywordError = void 0;
@@ -11865,9 +11865,9 @@ var require_errors = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/validate/boolSchema.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/validate/boolSchema.js
 var require_boolSchema = __commonJS({
-  "../node_modules/ajv/dist/compile/validate/boolSchema.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/validate/boolSchema.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.boolOrEmptySchema = exports2.topBoolOrEmptySchema = void 0;
@@ -11916,9 +11916,9 @@ var require_boolSchema = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/rules.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/rules.js
 var require_rules = __commonJS({
-  "../node_modules/ajv/dist/compile/rules.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/rules.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getRules = exports2.isJSONType = void 0;
@@ -11947,9 +11947,9 @@ var require_rules = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/validate/applicability.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/validate/applicability.js
 var require_applicability = __commonJS({
-  "../node_modules/ajv/dist/compile/validate/applicability.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/validate/applicability.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.shouldUseRule = exports2.shouldUseGroup = exports2.schemaHasRulesForType = void 0;
@@ -11970,9 +11970,9 @@ var require_applicability = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/validate/dataType.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/validate/dataType.js
 var require_dataType = __commonJS({
-  "../node_modules/ajv/dist/compile/validate/dataType.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/validate/dataType.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.reportTypeError = exports2.checkDataTypes = exports2.checkDataType = exports2.coerceAndCheckDataType = exports2.getJSONTypes = exports2.getSchemaTypes = exports2.DataType = void 0;
@@ -12154,9 +12154,9 @@ var require_dataType = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/validate/defaults.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/validate/defaults.js
 var require_defaults = __commonJS({
-  "../node_modules/ajv/dist/compile/validate/defaults.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/validate/defaults.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.assignDefaults = void 0;
@@ -12191,9 +12191,9 @@ var require_defaults = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/code.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/code.js
 var require_code2 = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/code.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/code.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateUnion = exports2.validateArray = exports2.usePattern = exports2.callValidateCode = exports2.schemaProperties = exports2.allSchemaProperties = exports2.noPropertyInData = exports2.propertyInData = exports2.isOwnProperty = exports2.hasPropFunc = exports2.reportMissingProp = exports2.checkMissingProp = exports2.checkReportMissingProp = void 0;
@@ -12324,9 +12324,9 @@ var require_code2 = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/validate/keyword.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/validate/keyword.js
 var require_keyword = __commonJS({
-  "../node_modules/ajv/dist/compile/validate/keyword.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/validate/keyword.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateKeywordUsage = exports2.validSchemaType = exports2.funcKeywordCode = exports2.macroKeywordCode = void 0;
@@ -12442,9 +12442,9 @@ var require_keyword = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/validate/subschema.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/validate/subschema.js
 var require_subschema = __commonJS({
-  "../node_modules/ajv/dist/compile/validate/subschema.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/validate/subschema.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.extendSubschemaMode = exports2.extendSubschemaData = exports2.getSubschema = void 0;
@@ -12525,9 +12525,9 @@ var require_subschema = __commonJS({
   }
 });
 
-// ../node_modules/fast-deep-equal/index.js
+// ../../xtrm-tools/node_modules/fast-deep-equal/index.js
 var require_fast_deep_equal = __commonJS({
-  "../node_modules/fast-deep-equal/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/fast-deep-equal/index.js"(exports2, module2) {
     "use strict";
     module2.exports = function equal(a, b) {
       if (a === b) return true;
@@ -12560,9 +12560,9 @@ var require_fast_deep_equal = __commonJS({
   }
 });
 
-// ../node_modules/json-schema-traverse/index.js
+// ../../xtrm-tools/node_modules/json-schema-traverse/index.js
 var require_json_schema_traverse = __commonJS({
-  "../node_modules/json-schema-traverse/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/json-schema-traverse/index.js"(exports2, module2) {
     "use strict";
     var traverse = module2.exports = function(schema, opts, cb) {
       if (typeof opts == "function") {
@@ -12648,9 +12648,9 @@ var require_json_schema_traverse = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/resolve.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/resolve.js
 var require_resolve = __commonJS({
-  "../node_modules/ajv/dist/compile/resolve.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/resolve.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getSchemaRefs = exports2.resolveUrl = exports2.normalizeId = exports2._getFullPath = exports2.getFullPath = exports2.inlineRef = void 0;
@@ -12804,9 +12804,9 @@ var require_resolve = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/validate/index.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/validate/index.js
 var require_validate = __commonJS({
-  "../node_modules/ajv/dist/compile/validate/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/validate/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getData = exports2.KeywordCxt = exports2.validateFunctionCode = void 0;
@@ -13312,9 +13312,9 @@ var require_validate = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/runtime/validation_error.js
+// ../../xtrm-tools/node_modules/ajv/dist/runtime/validation_error.js
 var require_validation_error = __commonJS({
-  "../node_modules/ajv/dist/runtime/validation_error.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/runtime/validation_error.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var ValidationError = class extends Error {
@@ -13328,9 +13328,9 @@ var require_validation_error = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/ref_error.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/ref_error.js
 var require_ref_error = __commonJS({
-  "../node_modules/ajv/dist/compile/ref_error.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/ref_error.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var resolve_1 = require_resolve();
@@ -13345,9 +13345,9 @@ var require_ref_error = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/compile/index.js
+// ../../xtrm-tools/node_modules/ajv/dist/compile/index.js
 var require_compile = __commonJS({
-  "../node_modules/ajv/dist/compile/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/compile/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.resolveSchema = exports2.getCompilingSchema = exports2.resolveRef = exports2.compileSchema = exports2.SchemaEnv = void 0;
@@ -13569,9 +13569,9 @@ var require_compile = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/refs/data.json
+// ../../xtrm-tools/node_modules/ajv/dist/refs/data.json
 var require_data = __commonJS({
-  "../node_modules/ajv/dist/refs/data.json"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ajv/dist/refs/data.json"(exports2, module2) {
     module2.exports = {
       $id: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#",
       description: "Meta-schema for $data reference (JSON AnySchema extension proposal)",
@@ -13588,9 +13588,9 @@ var require_data = __commonJS({
   }
 });
 
-// ../node_modules/fast-uri/lib/utils.js
+// ../../xtrm-tools/node_modules/fast-uri/lib/utils.js
 var require_utils3 = __commonJS({
-  "../node_modules/fast-uri/lib/utils.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/fast-uri/lib/utils.js"(exports2, module2) {
     "use strict";
     var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
     var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
@@ -13714,8 +13714,8 @@ var require_utils3 = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path47) {
-      let input = path47;
+    function removeDotSegments(path48) {
+      let input = path48;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -13901,9 +13901,9 @@ var require_utils3 = __commonJS({
   }
 });
 
-// ../node_modules/fast-uri/lib/schemes.js
+// ../../xtrm-tools/node_modules/fast-uri/lib/schemes.js
 var require_schemes = __commonJS({
-  "../node_modules/fast-uri/lib/schemes.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/fast-uri/lib/schemes.js"(exports2, module2) {
     "use strict";
     var { isUUID } = require_utils3();
     var URN_REG = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu;
@@ -13967,8 +13967,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path47, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path47 && path47 !== "/" ? path47 : void 0;
+        const [path48, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path48 && path48 !== "/" ? path48 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -14111,9 +14111,9 @@ var require_schemes = __commonJS({
   }
 });
 
-// ../node_modules/fast-uri/index.js
+// ../../xtrm-tools/node_modules/fast-uri/index.js
 var require_fast_uri = __commonJS({
-  "../node_modules/fast-uri/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/fast-uri/index.js"(exports2, module2) {
     "use strict";
     var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, escapePreservingEscapes, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = require_utils3();
     var { SCHEMES, getSchemeHandler } = require_schemes();
@@ -14397,9 +14397,9 @@ var require_fast_uri = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/runtime/uri.js
+// ../../xtrm-tools/node_modules/ajv/dist/runtime/uri.js
 var require_uri = __commonJS({
-  "../node_modules/ajv/dist/runtime/uri.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/runtime/uri.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var uri = require_fast_uri();
@@ -14408,9 +14408,9 @@ var require_uri = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/core.js
+// ../../xtrm-tools/node_modules/ajv/dist/core.js
 var require_core = __commonJS({
-  "../node_modules/ajv/dist/core.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/core.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.CodeGen = exports2.Name = exports2.nil = exports2.stringify = exports2.str = exports2._ = exports2.KeywordCxt = void 0;
@@ -15019,9 +15019,9 @@ var require_core = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/core/id.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/core/id.js
 var require_id = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/core/id.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/core/id.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var def = {
@@ -15034,9 +15034,9 @@ var require_id = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/core/ref.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/core/ref.js
 var require_ref = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/core/ref.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/core/ref.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.callRef = exports2.getValidate = void 0;
@@ -15156,9 +15156,9 @@ var require_ref = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/core/index.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/core/index.js
 var require_core2 = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/core/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/core/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var id_1 = require_id();
@@ -15177,9 +15177,9 @@ var require_core2 = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/limitNumber.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/limitNumber.js
 var require_limitNumber = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15209,9 +15209,9 @@ var require_limitNumber = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/multipleOf.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/multipleOf.js
 var require_multipleOf = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15237,9 +15237,9 @@ var require_multipleOf = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/runtime/ucs2length.js
+// ../../xtrm-tools/node_modules/ajv/dist/runtime/ucs2length.js
 var require_ucs2length = __commonJS({
-  "../node_modules/ajv/dist/runtime/ucs2length.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/runtime/ucs2length.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     function ucs2length(str) {
@@ -15263,9 +15263,9 @@ var require_ucs2length = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/limitLength.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/limitLength.js
 var require_limitLength = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15295,9 +15295,9 @@ var require_limitLength = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/pattern.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/pattern.js
 var require_pattern = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -15332,9 +15332,9 @@ var require_pattern = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/limitProperties.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/limitProperties.js
 var require_limitProperties = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15361,9 +15361,9 @@ var require_limitProperties = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/required.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/required.js
 var require_required = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/required.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/required.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -15443,9 +15443,9 @@ var require_required = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/limitItems.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/limitItems.js
 var require_limitItems = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15472,9 +15472,9 @@ var require_limitItems = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/runtime/equal.js
+// ../../xtrm-tools/node_modules/ajv/dist/runtime/equal.js
 var require_equal = __commonJS({
-  "../node_modules/ajv/dist/runtime/equal.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/runtime/equal.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var equal = require_fast_deep_equal();
@@ -15483,9 +15483,9 @@ var require_equal = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
 var require_uniqueItems = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dataType_1 = require_dataType();
@@ -15550,9 +15550,9 @@ var require_uniqueItems = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/const.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/const.js
 var require_const = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/const.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/const.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15579,9 +15579,9 @@ var require_const = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/enum.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/enum.js
 var require_enum = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/enum.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/enum.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15628,9 +15628,9 @@ var require_enum = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/validation/index.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/index.js
 var require_validation = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/validation/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/validation/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var limitNumber_1 = require_limitNumber();
@@ -15666,9 +15666,9 @@ var require_validation = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
 var require_additionalItems = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateAdditionalItems = void 0;
@@ -15719,9 +15719,9 @@ var require_additionalItems = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/items.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/items.js
 var require_items = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/items.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/items.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateTuple = void 0;
@@ -15776,9 +15776,9 @@ var require_items = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
 var require_prefixItems = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var items_1 = require_items();
@@ -15793,9 +15793,9 @@ var require_prefixItems = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/items2020.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/items2020.js
 var require_items2020 = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15828,9 +15828,9 @@ var require_items2020 = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/contains.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/contains.js
 var require_contains = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15922,9 +15922,9 @@ var require_contains = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/dependencies.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/dependencies.js
 var require_dependencies = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateSchemaDeps = exports2.validatePropertyDeps = exports2.error = void 0;
@@ -16016,9 +16016,9 @@ var require_dependencies = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
 var require_propertyNames = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -16059,9 +16059,9 @@ var require_propertyNames = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
 var require_additionalProperties = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -16165,9 +16165,9 @@ var require_additionalProperties = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/properties.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/properties.js
 var require_properties = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var validate_1 = require_validate();
@@ -16223,9 +16223,9 @@ var require_properties = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
 var require_patternProperties = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -16297,9 +16297,9 @@ var require_patternProperties = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/not.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/not.js
 var require_not = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/not.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/not.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util3();
@@ -16328,9 +16328,9 @@ var require_not = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/anyOf.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/anyOf.js
 var require_anyOf = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -16345,9 +16345,9 @@ var require_anyOf = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/oneOf.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/oneOf.js
 var require_oneOf = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -16403,9 +16403,9 @@ var require_oneOf = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/allOf.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/allOf.js
 var require_allOf = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util3();
@@ -16430,9 +16430,9 @@ var require_allOf = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/if.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/if.js
 var require_if = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/if.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/if.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -16499,9 +16499,9 @@ var require_if = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/thenElse.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/thenElse.js
 var require_thenElse = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util3();
@@ -16517,9 +16517,9 @@ var require_thenElse = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/applicator/index.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/index.js
 var require_applicator = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/applicator/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/applicator/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var additionalItems_1 = require_additionalItems();
@@ -16565,9 +16565,9 @@ var require_applicator = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/format/format.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/format/format.js
 var require_format = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/format/format.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/format/format.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -16655,9 +16655,9 @@ var require_format = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/format/index.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/format/index.js
 var require_format2 = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/format/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/format/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var format_1 = require_format();
@@ -16666,9 +16666,9 @@ var require_format2 = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/metadata.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/metadata.js
 var require_metadata = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/metadata.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/metadata.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.contentVocabulary = exports2.metadataVocabulary = void 0;
@@ -16689,9 +16689,9 @@ var require_metadata = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/draft7.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/draft7.js
 var require_draft7 = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/draft7.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/draft7.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var core_1 = require_core2();
@@ -16711,9 +16711,9 @@ var require_draft7 = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/discriminator/types.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/discriminator/types.js
 var require_types = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.DiscrError = void 0;
@@ -16725,9 +16725,9 @@ var require_types = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/vocabularies/discriminator/index.js
+// ../../xtrm-tools/node_modules/ajv/dist/vocabularies/discriminator/index.js
 var require_discriminator = __commonJS({
-  "../node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -16830,9 +16830,9 @@ var require_discriminator = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/refs/json-schema-draft-07.json
+// ../../xtrm-tools/node_modules/ajv/dist/refs/json-schema-draft-07.json
 var require_json_schema_draft_07 = __commonJS({
-  "../node_modules/ajv/dist/refs/json-schema-draft-07.json"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ajv/dist/refs/json-schema-draft-07.json"(exports2, module2) {
     module2.exports = {
       $schema: "http://json-schema.org/draft-07/schema#",
       $id: "http://json-schema.org/draft-07/schema#",
@@ -16987,9 +16987,9 @@ var require_json_schema_draft_07 = __commonJS({
   }
 });
 
-// ../node_modules/ajv/dist/ajv.js
+// ../../xtrm-tools/node_modules/ajv/dist/ajv.js
 var require_ajv = __commonJS({
-  "../node_modules/ajv/dist/ajv.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ajv/dist/ajv.js"(exports2, module2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.MissingRefError = exports2.ValidationError = exports2.CodeGen = exports2.Name = exports2.nil = exports2.stringify = exports2.str = exports2._ = exports2.KeywordCxt = exports2.Ajv = void 0;
@@ -17057,9 +17057,9 @@ var require_ajv = __commonJS({
   }
 });
 
-// ../node_modules/ajv-formats/dist/formats.js
+// ../../xtrm-tools/node_modules/ajv-formats/dist/formats.js
 var require_formats = __commonJS({
-  "../node_modules/ajv-formats/dist/formats.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv-formats/dist/formats.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.formatNames = exports2.fastFormats = exports2.fullFormats = void 0;
@@ -17224,9 +17224,9 @@ var require_formats = __commonJS({
   }
 });
 
-// ../node_modules/ajv-formats/dist/limit.js
+// ../../xtrm-tools/node_modules/ajv-formats/dist/limit.js
 var require_limit = __commonJS({
-  "../node_modules/ajv-formats/dist/limit.js"(exports2) {
+  "../../xtrm-tools/node_modules/ajv-formats/dist/limit.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.formatLimitDefinition = void 0;
@@ -17296,9 +17296,9 @@ var require_limit = __commonJS({
   }
 });
 
-// ../node_modules/ajv-formats/dist/index.js
+// ../../xtrm-tools/node_modules/ajv-formats/dist/index.js
 var require_dist2 = __commonJS({
-  "../node_modules/ajv-formats/dist/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ajv-formats/dist/index.js"(exports2, module2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var formats_1 = require_formats();
@@ -17325,12 +17325,12 @@ var require_dist2 = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs42, exportName) {
+    function addFormats(ajv, list, fs43, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = codegen_1._`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs42[f]);
+        ajv.addFormat(f, fs43[f]);
     }
     module2.exports = exports2 = formatsPlugin;
     Object.defineProperty(exports2, "__esModule", { value: true });
@@ -17338,9 +17338,9 @@ var require_dist2 = __commonJS({
   }
 });
 
-// ../node_modules/semver/internal/constants.js
+// ../../xtrm-tools/node_modules/semver/internal/constants.js
 var require_constants = __commonJS({
-  "../node_modules/semver/internal/constants.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/internal/constants.js"(exports2, module2) {
     "use strict";
     var SEMVER_SPEC_VERSION = "2.0.0";
     var MAX_LENGTH = 256;
@@ -17370,9 +17370,9 @@ var require_constants = __commonJS({
   }
 });
 
-// ../node_modules/semver/internal/debug.js
+// ../../xtrm-tools/node_modules/semver/internal/debug.js
 var require_debug = __commonJS({
-  "../node_modules/semver/internal/debug.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/internal/debug.js"(exports2, module2) {
     "use strict";
     var debug = typeof process === "object" && process.env && process.env.NODE_DEBUG && /\bsemver\b/i.test(process.env.NODE_DEBUG) ? (...args) => console.error("SEMVER", ...args) : () => {
     };
@@ -17380,9 +17380,9 @@ var require_debug = __commonJS({
   }
 });
 
-// ../node_modules/semver/internal/re.js
+// ../../xtrm-tools/node_modules/semver/internal/re.js
 var require_re = __commonJS({
-  "../node_modules/semver/internal/re.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/internal/re.js"(exports2, module2) {
     "use strict";
     var {
       MAX_SAFE_COMPONENT_LENGTH,
@@ -17468,9 +17468,9 @@ var require_re = __commonJS({
   }
 });
 
-// ../node_modules/semver/internal/parse-options.js
+// ../../xtrm-tools/node_modules/semver/internal/parse-options.js
 var require_parse_options = __commonJS({
-  "../node_modules/semver/internal/parse-options.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/internal/parse-options.js"(exports2, module2) {
     "use strict";
     var looseOption = Object.freeze({ loose: true });
     var emptyOpts = Object.freeze({});
@@ -17487,9 +17487,9 @@ var require_parse_options = __commonJS({
   }
 });
 
-// ../node_modules/semver/internal/identifiers.js
+// ../../xtrm-tools/node_modules/semver/internal/identifiers.js
 var require_identifiers = __commonJS({
-  "../node_modules/semver/internal/identifiers.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/internal/identifiers.js"(exports2, module2) {
     "use strict";
     var numeric = /^[0-9]+$/;
     var compareIdentifiers = (a, b) => {
@@ -17512,9 +17512,9 @@ var require_identifiers = __commonJS({
   }
 });
 
-// ../node_modules/semver/classes/semver.js
+// ../../xtrm-tools/node_modules/semver/classes/semver.js
 var require_semver = __commonJS({
-  "../node_modules/semver/classes/semver.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/classes/semver.js"(exports2, module2) {
     "use strict";
     var debug = require_debug();
     var { MAX_LENGTH, MAX_SAFE_INTEGER } = require_constants();
@@ -17791,9 +17791,9 @@ var require_semver = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/parse.js
+// ../../xtrm-tools/node_modules/semver/functions/parse.js
 var require_parse = __commonJS({
-  "../node_modules/semver/functions/parse.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/parse.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var parse4 = (version3, options, throwErrors = false) => {
@@ -17813,9 +17813,9 @@ var require_parse = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/valid.js
+// ../../xtrm-tools/node_modules/semver/functions/valid.js
 var require_valid = __commonJS({
-  "../node_modules/semver/functions/valid.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/valid.js"(exports2, module2) {
     "use strict";
     var parse4 = require_parse();
     var valid = (version3, options) => {
@@ -17826,9 +17826,9 @@ var require_valid = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/clean.js
+// ../../xtrm-tools/node_modules/semver/functions/clean.js
 var require_clean = __commonJS({
-  "../node_modules/semver/functions/clean.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/clean.js"(exports2, module2) {
     "use strict";
     var parse4 = require_parse();
     var clean = (version3, options) => {
@@ -17839,9 +17839,9 @@ var require_clean = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/inc.js
+// ../../xtrm-tools/node_modules/semver/functions/inc.js
 var require_inc = __commonJS({
-  "../node_modules/semver/functions/inc.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/inc.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var inc = (version3, release, options, identifier, identifierBase) => {
@@ -17863,9 +17863,9 @@ var require_inc = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/diff.js
+// ../../xtrm-tools/node_modules/semver/functions/diff.js
 var require_diff = __commonJS({
-  "../node_modules/semver/functions/diff.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/diff.js"(exports2, module2) {
     "use strict";
     var parse4 = require_parse();
     var diff = (version1, version22) => {
@@ -17907,9 +17907,9 @@ var require_diff = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/major.js
+// ../../xtrm-tools/node_modules/semver/functions/major.js
 var require_major = __commonJS({
-  "../node_modules/semver/functions/major.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/major.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var major2 = (a, loose) => new SemVer(a, loose).major;
@@ -17917,9 +17917,9 @@ var require_major = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/minor.js
+// ../../xtrm-tools/node_modules/semver/functions/minor.js
 var require_minor = __commonJS({
-  "../node_modules/semver/functions/minor.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/minor.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var minor = (a, loose) => new SemVer(a, loose).minor;
@@ -17927,9 +17927,9 @@ var require_minor = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/patch.js
+// ../../xtrm-tools/node_modules/semver/functions/patch.js
 var require_patch = __commonJS({
-  "../node_modules/semver/functions/patch.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/patch.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var patch = (a, loose) => new SemVer(a, loose).patch;
@@ -17937,9 +17937,9 @@ var require_patch = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/prerelease.js
+// ../../xtrm-tools/node_modules/semver/functions/prerelease.js
 var require_prerelease = __commonJS({
-  "../node_modules/semver/functions/prerelease.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/prerelease.js"(exports2, module2) {
     "use strict";
     var parse4 = require_parse();
     var prerelease = (version3, options) => {
@@ -17950,9 +17950,9 @@ var require_prerelease = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/compare.js
+// ../../xtrm-tools/node_modules/semver/functions/compare.js
 var require_compare = __commonJS({
-  "../node_modules/semver/functions/compare.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/compare.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var compare = (a, b, loose) => new SemVer(a, loose).compare(new SemVer(b, loose));
@@ -17960,9 +17960,9 @@ var require_compare = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/rcompare.js
+// ../../xtrm-tools/node_modules/semver/functions/rcompare.js
 var require_rcompare = __commonJS({
-  "../node_modules/semver/functions/rcompare.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/rcompare.js"(exports2, module2) {
     "use strict";
     var compare = require_compare();
     var rcompare = (a, b, loose) => compare(b, a, loose);
@@ -17970,9 +17970,9 @@ var require_rcompare = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/compare-loose.js
+// ../../xtrm-tools/node_modules/semver/functions/compare-loose.js
 var require_compare_loose = __commonJS({
-  "../node_modules/semver/functions/compare-loose.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/compare-loose.js"(exports2, module2) {
     "use strict";
     var compare = require_compare();
     var compareLoose = (a, b) => compare(a, b, true);
@@ -17980,9 +17980,9 @@ var require_compare_loose = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/compare-build.js
+// ../../xtrm-tools/node_modules/semver/functions/compare-build.js
 var require_compare_build = __commonJS({
-  "../node_modules/semver/functions/compare-build.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/compare-build.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var compareBuild = (a, b, loose) => {
@@ -17994,9 +17994,9 @@ var require_compare_build = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/sort.js
+// ../../xtrm-tools/node_modules/semver/functions/sort.js
 var require_sort = __commonJS({
-  "../node_modules/semver/functions/sort.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/sort.js"(exports2, module2) {
     "use strict";
     var compareBuild = require_compare_build();
     var sort = (list, loose) => list.sort((a, b) => compareBuild(a, b, loose));
@@ -18004,9 +18004,9 @@ var require_sort = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/rsort.js
+// ../../xtrm-tools/node_modules/semver/functions/rsort.js
 var require_rsort = __commonJS({
-  "../node_modules/semver/functions/rsort.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/rsort.js"(exports2, module2) {
     "use strict";
     var compareBuild = require_compare_build();
     var rsort = (list, loose) => list.sort((a, b) => compareBuild(b, a, loose));
@@ -18014,9 +18014,9 @@ var require_rsort = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/gt.js
+// ../../xtrm-tools/node_modules/semver/functions/gt.js
 var require_gt = __commonJS({
-  "../node_modules/semver/functions/gt.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/gt.js"(exports2, module2) {
     "use strict";
     var compare = require_compare();
     var gt = (a, b, loose) => compare(a, b, loose) > 0;
@@ -18024,9 +18024,9 @@ var require_gt = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/lt.js
+// ../../xtrm-tools/node_modules/semver/functions/lt.js
 var require_lt = __commonJS({
-  "../node_modules/semver/functions/lt.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/lt.js"(exports2, module2) {
     "use strict";
     var compare = require_compare();
     var lt = (a, b, loose) => compare(a, b, loose) < 0;
@@ -18034,9 +18034,9 @@ var require_lt = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/eq.js
+// ../../xtrm-tools/node_modules/semver/functions/eq.js
 var require_eq = __commonJS({
-  "../node_modules/semver/functions/eq.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/eq.js"(exports2, module2) {
     "use strict";
     var compare = require_compare();
     var eq = (a, b, loose) => compare(a, b, loose) === 0;
@@ -18044,9 +18044,9 @@ var require_eq = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/neq.js
+// ../../xtrm-tools/node_modules/semver/functions/neq.js
 var require_neq = __commonJS({
-  "../node_modules/semver/functions/neq.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/neq.js"(exports2, module2) {
     "use strict";
     var compare = require_compare();
     var neq = (a, b, loose) => compare(a, b, loose) !== 0;
@@ -18054,9 +18054,9 @@ var require_neq = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/gte.js
+// ../../xtrm-tools/node_modules/semver/functions/gte.js
 var require_gte = __commonJS({
-  "../node_modules/semver/functions/gte.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/gte.js"(exports2, module2) {
     "use strict";
     var compare = require_compare();
     var gte = (a, b, loose) => compare(a, b, loose) >= 0;
@@ -18064,9 +18064,9 @@ var require_gte = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/lte.js
+// ../../xtrm-tools/node_modules/semver/functions/lte.js
 var require_lte = __commonJS({
-  "../node_modules/semver/functions/lte.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/lte.js"(exports2, module2) {
     "use strict";
     var compare = require_compare();
     var lte = (a, b, loose) => compare(a, b, loose) <= 0;
@@ -18074,9 +18074,9 @@ var require_lte = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/cmp.js
+// ../../xtrm-tools/node_modules/semver/functions/cmp.js
 var require_cmp = __commonJS({
-  "../node_modules/semver/functions/cmp.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/cmp.js"(exports2, module2) {
     "use strict";
     var eq = require_eq();
     var neq = require_neq();
@@ -18124,9 +18124,9 @@ var require_cmp = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/coerce.js
+// ../../xtrm-tools/node_modules/semver/functions/coerce.js
 var require_coerce = __commonJS({
-  "../node_modules/semver/functions/coerce.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/coerce.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var parse4 = require_parse();
@@ -18170,9 +18170,9 @@ var require_coerce = __commonJS({
   }
 });
 
-// ../node_modules/semver/internal/lrucache.js
+// ../../xtrm-tools/node_modules/semver/internal/lrucache.js
 var require_lrucache = __commonJS({
-  "../node_modules/semver/internal/lrucache.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/internal/lrucache.js"(exports2, module2) {
     "use strict";
     var LRUCache = class {
       constructor() {
@@ -18208,9 +18208,9 @@ var require_lrucache = __commonJS({
   }
 });
 
-// ../node_modules/semver/classes/range.js
+// ../../xtrm-tools/node_modules/semver/classes/range.js
 var require_range = __commonJS({
-  "../node_modules/semver/classes/range.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/classes/range.js"(exports2, module2) {
     "use strict";
     var SPACE_CHARACTERS = /\s+/g;
     var Range = class _Range {
@@ -18585,9 +18585,9 @@ var require_range = __commonJS({
   }
 });
 
-// ../node_modules/semver/classes/comparator.js
+// ../../xtrm-tools/node_modules/semver/classes/comparator.js
 var require_comparator = __commonJS({
-  "../node_modules/semver/classes/comparator.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/classes/comparator.js"(exports2, module2) {
     "use strict";
     var ANY = /* @__PURE__ */ Symbol("SemVer ANY");
     var Comparator = class _Comparator {
@@ -18698,9 +18698,9 @@ var require_comparator = __commonJS({
   }
 });
 
-// ../node_modules/semver/functions/satisfies.js
+// ../../xtrm-tools/node_modules/semver/functions/satisfies.js
 var require_satisfies = __commonJS({
-  "../node_modules/semver/functions/satisfies.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/functions/satisfies.js"(exports2, module2) {
     "use strict";
     var Range = require_range();
     var satisfies = (version3, range, options) => {
@@ -18715,9 +18715,9 @@ var require_satisfies = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/to-comparators.js
+// ../../xtrm-tools/node_modules/semver/ranges/to-comparators.js
 var require_to_comparators = __commonJS({
-  "../node_modules/semver/ranges/to-comparators.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/to-comparators.js"(exports2, module2) {
     "use strict";
     var Range = require_range();
     var toComparators = (range, options) => new Range(range, options).set.map((comp) => comp.map((c) => c.value).join(" ").trim().split(" "));
@@ -18725,9 +18725,9 @@ var require_to_comparators = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/max-satisfying.js
+// ../../xtrm-tools/node_modules/semver/ranges/max-satisfying.js
 var require_max_satisfying = __commonJS({
-  "../node_modules/semver/ranges/max-satisfying.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/max-satisfying.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var Range = require_range();
@@ -18754,9 +18754,9 @@ var require_max_satisfying = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/min-satisfying.js
+// ../../xtrm-tools/node_modules/semver/ranges/min-satisfying.js
 var require_min_satisfying = __commonJS({
-  "../node_modules/semver/ranges/min-satisfying.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/min-satisfying.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var Range = require_range();
@@ -18783,9 +18783,9 @@ var require_min_satisfying = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/min-version.js
+// ../../xtrm-tools/node_modules/semver/ranges/min-version.js
 var require_min_version = __commonJS({
-  "../node_modules/semver/ranges/min-version.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/min-version.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var Range = require_range();
@@ -18842,9 +18842,9 @@ var require_min_version = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/valid.js
+// ../../xtrm-tools/node_modules/semver/ranges/valid.js
 var require_valid2 = __commonJS({
-  "../node_modules/semver/ranges/valid.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/valid.js"(exports2, module2) {
     "use strict";
     var Range = require_range();
     var validRange = (range, options) => {
@@ -18858,9 +18858,9 @@ var require_valid2 = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/outside.js
+// ../../xtrm-tools/node_modules/semver/ranges/outside.js
 var require_outside = __commonJS({
-  "../node_modules/semver/ranges/outside.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/outside.js"(exports2, module2) {
     "use strict";
     var SemVer = require_semver();
     var Comparator = require_comparator();
@@ -18927,9 +18927,9 @@ var require_outside = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/gtr.js
+// ../../xtrm-tools/node_modules/semver/ranges/gtr.js
 var require_gtr = __commonJS({
-  "../node_modules/semver/ranges/gtr.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/gtr.js"(exports2, module2) {
     "use strict";
     var outside = require_outside();
     var gtr = (version3, range, options) => outside(version3, range, ">", options);
@@ -18937,9 +18937,9 @@ var require_gtr = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/ltr.js
+// ../../xtrm-tools/node_modules/semver/ranges/ltr.js
 var require_ltr = __commonJS({
-  "../node_modules/semver/ranges/ltr.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/ltr.js"(exports2, module2) {
     "use strict";
     var outside = require_outside();
     var ltr = (version3, range, options) => outside(version3, range, "<", options);
@@ -18947,9 +18947,9 @@ var require_ltr = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/intersects.js
+// ../../xtrm-tools/node_modules/semver/ranges/intersects.js
 var require_intersects = __commonJS({
-  "../node_modules/semver/ranges/intersects.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/intersects.js"(exports2, module2) {
     "use strict";
     var Range = require_range();
     var intersects = (r1, r2, options) => {
@@ -18961,9 +18961,9 @@ var require_intersects = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/simplify.js
+// ../../xtrm-tools/node_modules/semver/ranges/simplify.js
 var require_simplify = __commonJS({
-  "../node_modules/semver/ranges/simplify.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/simplify.js"(exports2, module2) {
     "use strict";
     var satisfies = require_satisfies();
     var compare = require_compare();
@@ -19011,9 +19011,9 @@ var require_simplify = __commonJS({
   }
 });
 
-// ../node_modules/semver/ranges/subset.js
+// ../../xtrm-tools/node_modules/semver/ranges/subset.js
 var require_subset = __commonJS({
-  "../node_modules/semver/ranges/subset.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/ranges/subset.js"(exports2, module2) {
     "use strict";
     var Range = require_range();
     var Comparator = require_comparator();
@@ -19173,9 +19173,9 @@ var require_subset = __commonJS({
   }
 });
 
-// ../node_modules/semver/index.js
+// ../../xtrm-tools/node_modules/semver/index.js
 var require_semver2 = __commonJS({
-  "../node_modules/semver/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/semver/index.js"(exports2, module2) {
     "use strict";
     var internalRe = require_re();
     var constants = require_constants();
@@ -19268,9 +19268,9 @@ var require_semver2 = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/identity.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS({
-  "../node_modules/yaml/dist/nodes/identity.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/identity.js"(exports2) {
     "use strict";
     var ALIAS = /* @__PURE__ */ Symbol.for("yaml.alias");
     var DOC = /* @__PURE__ */ Symbol.for("yaml.document");
@@ -19325,9 +19325,9 @@ var require_identity = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/visit.js
+// ../../xtrm-tools/node_modules/yaml/dist/visit.js
 var require_visit = __commonJS({
-  "../node_modules/yaml/dist/visit.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/visit.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var BREAK = /* @__PURE__ */ Symbol("break visit");
@@ -19345,17 +19345,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path47) {
-      const ctrl = callVisitor(key, node, visitor, path47);
+    function visit_(key, node, visitor, path48) {
+      const ctrl = callVisitor(key, node, visitor, path48);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path47, ctrl);
-        return visit_(key, ctrl, visitor, path47);
+        replaceNode(key, path48, ctrl);
+        return visit_(key, ctrl, visitor, path48);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path47 = Object.freeze(path47.concat(node));
+          path48 = Object.freeze(path48.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path47);
+            const ci = visit_(i, node.items[i], visitor, path48);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -19366,13 +19366,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path47 = Object.freeze(path47.concat(node));
-          const ck = visit_("key", node.key, visitor, path47);
+          path48 = Object.freeze(path48.concat(node));
+          const ck = visit_("key", node.key, visitor, path48);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path47);
+          const cv = visit_("value", node.value, visitor, path48);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -19393,17 +19393,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path47) {
-      const ctrl = await callVisitor(key, node, visitor, path47);
+    async function visitAsync_(key, node, visitor, path48) {
+      const ctrl = await callVisitor(key, node, visitor, path48);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path47, ctrl);
-        return visitAsync_(key, ctrl, visitor, path47);
+        replaceNode(key, path48, ctrl);
+        return visitAsync_(key, ctrl, visitor, path48);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path47 = Object.freeze(path47.concat(node));
+          path48 = Object.freeze(path48.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path47);
+            const ci = await visitAsync_(i, node.items[i], visitor, path48);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -19414,13 +19414,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path47 = Object.freeze(path47.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path47);
+          path48 = Object.freeze(path48.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path48);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path47);
+          const cv = await visitAsync_("value", node.value, visitor, path48);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -19447,23 +19447,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path47) {
+    function callVisitor(key, node, visitor, path48) {
       if (typeof visitor === "function")
-        return visitor(key, node, path47);
+        return visitor(key, node, path48);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path47);
+        return visitor.Map?.(key, node, path48);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path47);
+        return visitor.Seq?.(key, node, path48);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path47);
+        return visitor.Pair?.(key, node, path48);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path47);
+        return visitor.Scalar?.(key, node, path48);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path47);
+        return visitor.Alias?.(key, node, path48);
       return void 0;
     }
-    function replaceNode(key, path47, node) {
-      const parent = path47[path47.length - 1];
+    function replaceNode(key, path48, node) {
+      const parent = path48[path48.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -19483,9 +19483,9 @@ var require_visit = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/doc/directives.js
+// ../../xtrm-tools/node_modules/yaml/dist/doc/directives.js
 var require_directives = __commonJS({
-  "../node_modules/yaml/dist/doc/directives.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/doc/directives.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var visit = require_visit();
@@ -19654,9 +19654,9 @@ var require_directives = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/doc/anchors.js
+// ../../xtrm-tools/node_modules/yaml/dist/doc/anchors.js
 var require_anchors = __commonJS({
-  "../node_modules/yaml/dist/doc/anchors.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/doc/anchors.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var visit = require_visit();
@@ -19724,9 +19724,9 @@ var require_anchors = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/doc/applyReviver.js
+// ../../xtrm-tools/node_modules/yaml/dist/doc/applyReviver.js
 var require_applyReviver = __commonJS({
-  "../node_modules/yaml/dist/doc/applyReviver.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/doc/applyReviver.js"(exports2) {
     "use strict";
     function applyReviver(reviver, obj, key, val) {
       if (val && typeof val === "object") {
@@ -19774,9 +19774,9 @@ var require_applyReviver = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/toJS.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/toJS.js
 var require_toJS = __commonJS({
-  "../node_modules/yaml/dist/nodes/toJS.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/toJS.js"(exports2) {
     "use strict";
     var identity = require_identity();
     function toJS(value, arg, ctx) {
@@ -19804,9 +19804,9 @@ var require_toJS = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/Node.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/Node.js
 var require_Node = __commonJS({
-  "../node_modules/yaml/dist/nodes/Node.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/Node.js"(exports2) {
     "use strict";
     var applyReviver = require_applyReviver();
     var identity = require_identity();
@@ -19845,9 +19845,9 @@ var require_Node = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/Alias.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/Alias.js
 var require_Alias = __commonJS({
-  "../node_modules/yaml/dist/nodes/Alias.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/Alias.js"(exports2) {
     "use strict";
     var anchors = require_anchors();
     var visit = require_visit();
@@ -19961,9 +19961,9 @@ var require_Alias = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/Scalar.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/Scalar.js
 var require_Scalar = __commonJS({
-  "../node_modules/yaml/dist/nodes/Scalar.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/Scalar.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Node = require_Node();
@@ -19991,9 +19991,9 @@ var require_Scalar = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/doc/createNode.js
+// ../../xtrm-tools/node_modules/yaml/dist/doc/createNode.js
 var require_createNode = __commonJS({
-  "../node_modules/yaml/dist/doc/createNode.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/doc/createNode.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var identity = require_identity();
@@ -20066,17 +20066,17 @@ var require_createNode = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/Collection.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/Collection.js
 var require_Collection = __commonJS({
-  "../node_modules/yaml/dist/nodes/Collection.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/Collection.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path47, value) {
+    function collectionFromPath(schema, path48, value) {
       let v = value;
-      for (let i = path47.length - 1; i >= 0; --i) {
-        const k = path47[i];
+      for (let i = path48.length - 1; i >= 0; --i) {
+        const k = path48[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -20095,7 +20095,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path47) => path47 == null || typeof path47 === "object" && !!path47[Symbol.iterator]().next().done;
+    var isEmptyPath = (path48) => path48 == null || typeof path48 === "object" && !!path48[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -20125,11 +20125,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path47, value) {
-        if (isEmptyPath(path47))
+      addIn(path48, value) {
+        if (isEmptyPath(path48))
           this.add(value);
         else {
-          const [key, ...rest] = path47;
+          const [key, ...rest] = path48;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -20143,8 +20143,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path47) {
-        const [key, ...rest] = path47;
+      deleteIn(path48) {
+        const [key, ...rest] = path48;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -20158,8 +20158,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path47, keepScalar) {
-        const [key, ...rest] = path47;
+      getIn(path48, keepScalar) {
+        const [key, ...rest] = path48;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -20177,8 +20177,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path47) {
-        const [key, ...rest] = path47;
+      hasIn(path48) {
+        const [key, ...rest] = path48;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -20188,8 +20188,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path47, value) {
-        const [key, ...rest] = path47;
+      setIn(path48, value) {
+        const [key, ...rest] = path48;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -20209,9 +20209,9 @@ var require_Collection = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/stringify/stringifyComment.js
+// ../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyComment.js
 var require_stringifyComment = __commonJS({
-  "../node_modules/yaml/dist/stringify/stringifyComment.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyComment.js"(exports2) {
     "use strict";
     var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
     function indentComment(comment, indent) {
@@ -20226,9 +20226,9 @@ var require_stringifyComment = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/stringify/foldFlowLines.js
+// ../../xtrm-tools/node_modules/yaml/dist/stringify/foldFlowLines.js
 var require_foldFlowLines = __commonJS({
-  "../node_modules/yaml/dist/stringify/foldFlowLines.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/stringify/foldFlowLines.js"(exports2) {
     "use strict";
     var FOLD_FLOW = "flow";
     var FOLD_BLOCK = "block";
@@ -20362,9 +20362,9 @@ ${indent}${text.slice(fold + 1, end2)}`;
   }
 });
 
-// ../node_modules/yaml/dist/stringify/stringifyString.js
+// ../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyString.js
 var require_stringifyString = __commonJS({
-  "../node_modules/yaml/dist/stringify/stringifyString.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyString.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var foldFlowLines = require_foldFlowLines();
@@ -20645,9 +20645,9 @@ ${indent}`);
   }
 });
 
-// ../node_modules/yaml/dist/stringify/stringify.js
+// ../../xtrm-tools/node_modules/yaml/dist/stringify/stringify.js
 var require_stringify = __commonJS({
-  "../node_modules/yaml/dist/stringify/stringify.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/stringify/stringify.js"(exports2) {
     "use strict";
     var anchors = require_anchors();
     var identity = require_identity();
@@ -20769,9 +20769,9 @@ ${ctx.indent}${str}`;
   }
 });
 
-// ../node_modules/yaml/dist/stringify/stringifyPair.js
+// ../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyPair.js
 var require_stringifyPair = __commonJS({
-  "../node_modules/yaml/dist/stringify/stringifyPair.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyPair.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -20902,9 +20902,9 @@ ${ctx.indent}`;
   }
 });
 
-// ../node_modules/yaml/dist/log.js
+// ../../xtrm-tools/node_modules/yaml/dist/log.js
 var require_log = __commonJS({
-  "../node_modules/yaml/dist/log.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/log.js"(exports2) {
     "use strict";
     var node_process = require("process");
     function debug(logLevel, ...messages) {
@@ -20924,9 +20924,9 @@ var require_log = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/merge.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/merge.js
 var require_merge = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/merge.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/merge.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -20984,9 +20984,9 @@ var require_merge = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/addPairToJSMap.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/addPairToJSMap.js
 var require_addPairToJSMap = __commonJS({
-  "../node_modules/yaml/dist/nodes/addPairToJSMap.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/addPairToJSMap.js"(exports2) {
     "use strict";
     var log = require_log();
     var merge2 = require_merge();
@@ -21048,9 +21048,9 @@ var require_addPairToJSMap = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/Pair.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/Pair.js
 var require_Pair = __commonJS({
-  "../node_modules/yaml/dist/nodes/Pair.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/Pair.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var stringifyPair = require_stringifyPair();
@@ -21088,9 +21088,9 @@ var require_Pair = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/stringify/stringifyCollection.js
+// ../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyCollection.js
 var require_stringifyCollection = __commonJS({
-  "../node_modules/yaml/dist/stringify/stringifyCollection.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyCollection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var stringify2 = require_stringify();
@@ -21239,9 +21239,9 @@ ${indent}${end}`;
   }
 });
 
-// ../node_modules/yaml/dist/nodes/YAMLMap.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/YAMLMap.js
 var require_YAMLMap = __commonJS({
-  "../node_modules/yaml/dist/nodes/YAMLMap.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/YAMLMap.js"(exports2) {
     "use strict";
     var stringifyCollection = require_stringifyCollection();
     var addPairToJSMap = require_addPairToJSMap();
@@ -21383,9 +21383,9 @@ var require_YAMLMap = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/common/map.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/common/map.js
 var require_map = __commonJS({
-  "../node_modules/yaml/dist/schema/common/map.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/common/map.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var YAMLMap = require_YAMLMap();
@@ -21405,9 +21405,9 @@ var require_map = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/nodes/YAMLSeq.js
+// ../../xtrm-tools/node_modules/yaml/dist/nodes/YAMLSeq.js
 var require_YAMLSeq = __commonJS({
-  "../node_modules/yaml/dist/nodes/YAMLSeq.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/nodes/YAMLSeq.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var stringifyCollection = require_stringifyCollection();
@@ -21521,9 +21521,9 @@ var require_YAMLSeq = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/common/seq.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/common/seq.js
 var require_seq = __commonJS({
-  "../node_modules/yaml/dist/schema/common/seq.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/common/seq.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var YAMLSeq = require_YAMLSeq();
@@ -21543,9 +21543,9 @@ var require_seq = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/common/string.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/common/string.js
 var require_string = __commonJS({
-  "../node_modules/yaml/dist/schema/common/string.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/common/string.js"(exports2) {
     "use strict";
     var stringifyString = require_stringifyString();
     var string4 = {
@@ -21562,9 +21562,9 @@ var require_string = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/common/null.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/common/null.js
 var require_null = __commonJS({
-  "../node_modules/yaml/dist/schema/common/null.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/common/null.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var nullTag = {
@@ -21580,9 +21580,9 @@ var require_null = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/core/bool.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/core/bool.js
 var require_bool = __commonJS({
-  "../node_modules/yaml/dist/schema/core/bool.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/core/bool.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var boolTag = {
@@ -21604,9 +21604,9 @@ var require_bool = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/stringify/stringifyNumber.js
+// ../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyNumber.js
 var require_stringifyNumber = __commonJS({
-  "../node_modules/yaml/dist/stringify/stringifyNumber.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyNumber.js"(exports2) {
     "use strict";
     function stringifyNumber({ format, minFractionDigits, tag, value }) {
       if (typeof value === "bigint")
@@ -21631,9 +21631,9 @@ var require_stringifyNumber = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/core/float.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/core/float.js
 var require_float = __commonJS({
-  "../node_modules/yaml/dist/schema/core/float.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/core/float.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var stringifyNumber = require_stringifyNumber();
@@ -21677,9 +21677,9 @@ var require_float = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/core/int.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/core/int.js
 var require_int = __commonJS({
-  "../node_modules/yaml/dist/schema/core/int.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/core/int.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -21722,9 +21722,9 @@ var require_int = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/core/schema.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/core/schema.js
 var require_schema = __commonJS({
-  "../node_modules/yaml/dist/schema/core/schema.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/core/schema.js"(exports2) {
     "use strict";
     var map2 = require_map();
     var _null4 = require_null();
@@ -21750,9 +21750,9 @@ var require_schema = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/json/schema.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/json/schema.js
 var require_schema2 = __commonJS({
-  "../node_modules/yaml/dist/schema/json/schema.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/json/schema.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var map2 = require_map();
@@ -21817,9 +21817,9 @@ var require_schema2 = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/binary.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/binary.js
 var require_binary = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/binary.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/binary.js"(exports2) {
     "use strict";
     var node_buffer = require("buffer");
     var Scalar = require_Scalar();
@@ -21883,9 +21883,9 @@ var require_binary = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/pairs.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/pairs.js
 var require_pairs = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/pairs.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/pairs.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -21961,9 +21961,9 @@ ${cn.comment}` : item.comment;
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/omap.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/omap.js
 var require_omap = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/omap.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/omap.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var toJS = require_toJS();
@@ -22039,9 +22039,9 @@ var require_omap = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/bool.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/bool.js
 var require_bool2 = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/bool.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/bool.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     function boolStringify({ value, source }, ctx) {
@@ -22071,9 +22071,9 @@ var require_bool2 = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/float.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/float.js
 var require_float2 = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/float.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/float.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var stringifyNumber = require_stringifyNumber();
@@ -22120,9 +22120,9 @@ var require_float2 = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/int.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/int.js
 var require_int2 = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/int.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/int.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -22199,9 +22199,9 @@ var require_int2 = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/set.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/set.js
 var require_set = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/set.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/set.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -22288,9 +22288,9 @@ var require_set = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
 var require_timestamp = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     function parseSexagesimal(str, asBigInt) {
@@ -22376,9 +22376,9 @@ var require_timestamp = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/yaml-1.1/schema.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/schema.js
 var require_schema3 = __commonJS({
-  "../node_modules/yaml/dist/schema/yaml-1.1/schema.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/yaml-1.1/schema.js"(exports2) {
     "use strict";
     var map2 = require_map();
     var _null4 = require_null();
@@ -22420,9 +22420,9 @@ var require_schema3 = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/tags.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/tags.js
 var require_tags = __commonJS({
-  "../node_modules/yaml/dist/schema/tags.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/tags.js"(exports2) {
     "use strict";
     var map2 = require_map();
     var _null4 = require_null();
@@ -22514,9 +22514,9 @@ var require_tags = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/schema/Schema.js
+// ../../xtrm-tools/node_modules/yaml/dist/schema/Schema.js
 var require_Schema = __commonJS({
-  "../node_modules/yaml/dist/schema/Schema.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/schema/Schema.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var map2 = require_map();
@@ -22546,9 +22546,9 @@ var require_Schema = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/stringify/stringifyDocument.js
+// ../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyDocument.js
 var require_stringifyDocument = __commonJS({
-  "../node_modules/yaml/dist/stringify/stringifyDocument.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/stringify/stringifyDocument.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var stringify2 = require_stringify();
@@ -22626,9 +22626,9 @@ var require_stringifyDocument = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/doc/Document.js
+// ../../xtrm-tools/node_modules/yaml/dist/doc/Document.js
 var require_Document = __commonJS({
-  "../node_modules/yaml/dist/doc/Document.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/doc/Document.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var Collection = require_Collection();
@@ -22704,9 +22704,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path47, value) {
+      addIn(path48, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path47, value);
+          this.contents.addIn(path48, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -22781,14 +22781,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path47) {
-        if (Collection.isEmptyPath(path47)) {
+      deleteIn(path48) {
+        if (Collection.isEmptyPath(path48)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path47) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path48) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -22803,10 +22803,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path47, keepScalar) {
-        if (Collection.isEmptyPath(path47))
+      getIn(path48, keepScalar) {
+        if (Collection.isEmptyPath(path48))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path47, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path48, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -22817,10 +22817,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path47) {
-        if (Collection.isEmptyPath(path47))
+      hasIn(path48) {
+        if (Collection.isEmptyPath(path48))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path47) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path48) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -22837,13 +22837,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path47, value) {
-        if (Collection.isEmptyPath(path47)) {
+      setIn(path48, value) {
+        if (Collection.isEmptyPath(path48)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path47), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path48), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path47, value);
+          this.contents.setIn(path48, value);
         }
       }
       /**
@@ -22935,9 +22935,9 @@ var require_Document = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/errors.js
+// ../../xtrm-tools/node_modules/yaml/dist/errors.js
 var require_errors2 = __commonJS({
-  "../node_modules/yaml/dist/errors.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/errors.js"(exports2) {
     "use strict";
     var YAMLError = class extends Error {
       constructor(name, pos, code, message) {
@@ -23000,9 +23000,9 @@ ${pointer}
   }
 });
 
-// ../node_modules/yaml/dist/compose/resolve-props.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/resolve-props.js
 var require_resolve_props = __commonJS({
-  "../node_modules/yaml/dist/compose/resolve-props.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/resolve-props.js"(exports2) {
     "use strict";
     function resolveProps(tokens, { flow, indicator, next, offset, onError, parentIndent, startOnNewline }) {
       let spaceBefore = false;
@@ -23134,9 +23134,9 @@ var require_resolve_props = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/util-contains-newline.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/util-contains-newline.js
 var require_util_contains_newline = __commonJS({
-  "../node_modules/yaml/dist/compose/util-contains-newline.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/util-contains-newline.js"(exports2) {
     "use strict";
     function containsNewline(key) {
       if (!key)
@@ -23176,9 +23176,9 @@ var require_util_contains_newline = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/util-flow-indent-check.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/util-flow-indent-check.js
 var require_util_flow_indent_check = __commonJS({
-  "../node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports2) {
     "use strict";
     var utilContainsNewline = require_util_contains_newline();
     function flowIndentCheck(indent, fc, onError) {
@@ -23194,9 +23194,9 @@ var require_util_flow_indent_check = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/util-map-includes.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/util-map-includes.js
 var require_util_map_includes = __commonJS({
-  "../node_modules/yaml/dist/compose/util-map-includes.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/util-map-includes.js"(exports2) {
     "use strict";
     var identity = require_identity();
     function mapIncludes(ctx, items, search) {
@@ -23210,9 +23210,9 @@ var require_util_map_includes = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/resolve-block-map.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/resolve-block-map.js
 var require_resolve_block_map = __commonJS({
-  "../node_modules/yaml/dist/compose/resolve-block-map.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/resolve-block-map.js"(exports2) {
     "use strict";
     var Pair = require_Pair();
     var YAMLMap = require_YAMLMap();
@@ -23318,9 +23318,9 @@ var require_resolve_block_map = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/resolve-block-seq.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/resolve-block-seq.js
 var require_resolve_block_seq = __commonJS({
-  "../node_modules/yaml/dist/compose/resolve-block-seq.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/resolve-block-seq.js"(exports2) {
     "use strict";
     var YAMLSeq = require_YAMLSeq();
     var resolveProps = require_resolve_props();
@@ -23369,9 +23369,9 @@ var require_resolve_block_seq = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/resolve-end.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/resolve-end.js
 var require_resolve_end = __commonJS({
-  "../node_modules/yaml/dist/compose/resolve-end.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/resolve-end.js"(exports2) {
     "use strict";
     function resolveEnd(end, offset, reqSpace, onError) {
       let comment = "";
@@ -23412,9 +23412,9 @@ var require_resolve_end = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/resolve-flow-collection.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/resolve-flow-collection.js
 var require_resolve_flow_collection = __commonJS({
-  "../node_modules/yaml/dist/compose/resolve-flow-collection.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/resolve-flow-collection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -23606,9 +23606,9 @@ var require_resolve_flow_collection = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/compose-collection.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/compose-collection.js
 var require_compose_collection = __commonJS({
-  "../node_modules/yaml/dist/compose/compose-collection.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/compose-collection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -23671,9 +23671,9 @@ var require_compose_collection = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/resolve-block-scalar.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/resolve-block-scalar.js
 var require_resolve_block_scalar = __commonJS({
-  "../node_modules/yaml/dist/compose/resolve-block-scalar.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/resolve-block-scalar.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     function resolveBlockScalar(ctx, scalar, onError) {
@@ -23854,9 +23854,9 @@ var require_resolve_block_scalar = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/resolve-flow-scalar.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/resolve-flow-scalar.js
 var require_resolve_flow_scalar = __commonJS({
-  "../node_modules/yaml/dist/compose/resolve-flow-scalar.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/resolve-flow-scalar.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var resolveEnd = require_resolve_end();
@@ -24074,9 +24074,9 @@ var require_resolve_flow_scalar = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/compose-scalar.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/compose-scalar.js
 var require_compose_scalar = __commonJS({
-  "../node_modules/yaml/dist/compose/compose-scalar.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/compose-scalar.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -24155,9 +24155,9 @@ var require_compose_scalar = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/util-empty-scalar-position.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/util-empty-scalar-position.js
 var require_util_empty_scalar_position = __commonJS({
-  "../node_modules/yaml/dist/compose/util-empty-scalar-position.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/util-empty-scalar-position.js"(exports2) {
     "use strict";
     function emptyScalarPosition(offset, before, pos) {
       if (before) {
@@ -24185,9 +24185,9 @@ var require_util_empty_scalar_position = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/compose-node.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/compose-node.js
 var require_compose_node = __commonJS({
-  "../node_modules/yaml/dist/compose/compose-node.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/compose-node.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var identity = require_identity();
@@ -24291,9 +24291,9 @@ var require_compose_node = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/compose-doc.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/compose-doc.js
 var require_compose_doc = __commonJS({
-  "../node_modules/yaml/dist/compose/compose-doc.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/compose-doc.js"(exports2) {
     "use strict";
     var Document = require_Document();
     var composeNode = require_compose_node();
@@ -24334,9 +24334,9 @@ var require_compose_doc = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/compose/composer.js
+// ../../xtrm-tools/node_modules/yaml/dist/compose/composer.js
 var require_composer = __commonJS({
-  "../node_modules/yaml/dist/compose/composer.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/compose/composer.js"(exports2) {
     "use strict";
     var node_process = require("process");
     var directives = require_directives();
@@ -24542,9 +24542,9 @@ ${end.comment}` : end.comment;
   }
 });
 
-// ../node_modules/yaml/dist/parse/cst-scalar.js
+// ../../xtrm-tools/node_modules/yaml/dist/parse/cst-scalar.js
 var require_cst_scalar = __commonJS({
-  "../node_modules/yaml/dist/parse/cst-scalar.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/parse/cst-scalar.js"(exports2) {
     "use strict";
     var resolveBlockScalar = require_resolve_block_scalar();
     var resolveFlowScalar = require_resolve_flow_scalar();
@@ -24727,9 +24727,9 @@ var require_cst_scalar = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/parse/cst-stringify.js
+// ../../xtrm-tools/node_modules/yaml/dist/parse/cst-stringify.js
 var require_cst_stringify = __commonJS({
-  "../node_modules/yaml/dist/parse/cst-stringify.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/parse/cst-stringify.js"(exports2) {
     "use strict";
     var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
@@ -24788,9 +24788,9 @@ var require_cst_stringify = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/parse/cst-visit.js
+// ../../xtrm-tools/node_modules/yaml/dist/parse/cst-visit.js
 var require_cst_visit = __commonJS({
-  "../node_modules/yaml/dist/parse/cst-visit.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/parse/cst-visit.js"(exports2) {
     "use strict";
     var BREAK = /* @__PURE__ */ Symbol("break visit");
     var SKIP = /* @__PURE__ */ Symbol("skip children");
@@ -24803,9 +24803,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path47) => {
+    visit.itemAtPath = (cst, path48) => {
       let item = cst;
-      for (const [field, index] of path47) {
+      for (const [field, index] of path48) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -24814,23 +24814,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path47) => {
-      const parent = visit.itemAtPath(cst, path47.slice(0, -1));
-      const field = path47[path47.length - 1][0];
+    visit.parentCollection = (cst, path48) => {
+      const parent = visit.itemAtPath(cst, path48.slice(0, -1));
+      const field = path48[path48.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path47, item, visitor) {
-      let ctrl = visitor(item, path47);
+    function _visit(path48, item, visitor) {
+      let ctrl = visitor(item, path48);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path47.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path48.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -24841,18 +24841,18 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path47);
+            ctrl = ctrl(item, path48);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path47) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path48) : ctrl;
     }
     exports2.visit = visit;
   }
 });
 
-// ../node_modules/yaml/dist/parse/cst.js
+// ../../xtrm-tools/node_modules/yaml/dist/parse/cst.js
 var require_cst = __commonJS({
-  "../node_modules/yaml/dist/parse/cst.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/parse/cst.js"(exports2) {
     "use strict";
     var cstScalar = require_cst_scalar();
     var cstStringify = require_cst_stringify();
@@ -24952,9 +24952,9 @@ var require_cst = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/parse/lexer.js
+// ../../xtrm-tools/node_modules/yaml/dist/parse/lexer.js
 var require_lexer = __commonJS({
-  "../node_modules/yaml/dist/parse/lexer.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/parse/lexer.js"(exports2) {
     "use strict";
     var cst = require_cst();
     function isEmpty(ch) {
@@ -25541,9 +25541,9 @@ var require_lexer = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/parse/line-counter.js
+// ../../xtrm-tools/node_modules/yaml/dist/parse/line-counter.js
 var require_line_counter = __commonJS({
-  "../node_modules/yaml/dist/parse/line-counter.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/parse/line-counter.js"(exports2) {
     "use strict";
     var LineCounter = class {
       constructor() {
@@ -25572,9 +25572,9 @@ var require_line_counter = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/parse/parser.js
+// ../../xtrm-tools/node_modules/yaml/dist/parse/parser.js
 var require_parser = __commonJS({
-  "../node_modules/yaml/dist/parse/parser.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/parse/parser.js"(exports2) {
     "use strict";
     var node_process = require("process");
     var cst = require_cst();
@@ -26146,14 +26146,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs42 = this.flowScalar(this.type);
+              const fs43 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map2.items.push({ start, key: fs42, sep: [] });
+                map2.items.push({ start, key: fs43, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs42);
+                this.stack.push(fs43);
               } else {
-                Object.assign(it, { key: fs42, sep: [] });
+                Object.assign(it, { key: fs43, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -26281,13 +26281,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs42 = this.flowScalar(this.type);
+              const fs43 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs42, sep: [] });
+                fc.items.push({ start: [], key: fs43, sep: [] });
               else if (it.sep)
-                this.stack.push(fs42);
+                this.stack.push(fs43);
               else
-                Object.assign(it, { key: fs42, sep: [] });
+                Object.assign(it, { key: fs43, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -26446,9 +26446,9 @@ var require_parser = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/public-api.js
+// ../../xtrm-tools/node_modules/yaml/dist/public-api.js
 var require_public_api = __commonJS({
-  "../node_modules/yaml/dist/public-api.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/public-api.js"(exports2) {
     "use strict";
     var composer = require_composer();
     var Document = require_Document();
@@ -26543,9 +26543,9 @@ var require_public_api = __commonJS({
   }
 });
 
-// ../node_modules/yaml/dist/index.js
+// ../../xtrm-tools/node_modules/yaml/dist/index.js
 var require_dist3 = __commonJS({
-  "../node_modules/yaml/dist/index.js"(exports2) {
+  "../../xtrm-tools/node_modules/yaml/dist/index.js"(exports2) {
     "use strict";
     var composer = require_composer();
     var Document = require_Document();
@@ -26595,9 +26595,9 @@ var require_dist3 = __commonJS({
   }
 });
 
-// ../node_modules/esprima/dist/esprima.js
+// ../../xtrm-tools/node_modules/esprima/dist/esprima.js
 var require_esprima = __commonJS({
-  "../node_modules/esprima/dist/esprima.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/esprima/dist/esprima.js"(exports2, module2) {
     "use strict";
     (function webpackUniversalModuleDefinition(root, factory) {
       if (typeof exports2 === "object" && typeof module2 === "object")
@@ -32831,9 +32831,9 @@ var require_esprima = __commonJS({
   }
 });
 
-// ../node_modules/array-timsort/src/index.js
+// ../../xtrm-tools/node_modules/array-timsort/src/index.js
 var require_src2 = __commonJS({
-  "../node_modules/array-timsort/src/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/array-timsort/src/index.js"(exports2, module2) {
     "use strict";
     var DEFAULT_MIN_MERGE = 32;
     var DEFAULT_MIN_GALLOPING = 7;
@@ -33547,9 +33547,9 @@ var require_src2 = __commonJS({
   }
 });
 
-// node_modules/comment-json/src/common.js
+// ../../xtrm-tools/cli/node_modules/comment-json/src/common.js
 var require_common = __commonJS({
-  "node_modules/comment-json/src/common.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/comment-json/src/common.js"(exports2, module2) {
     "use strict";
     var PREFIX_BEFORE = "before";
     var PREFIX_AFTER_PROP = "after-prop";
@@ -33892,9 +33892,9 @@ var require_common = __commonJS({
   }
 });
 
-// node_modules/comment-json/src/array.js
+// ../../xtrm-tools/cli/node_modules/comment-json/src/array.js
 var require_array = __commonJS({
-  "node_modules/comment-json/src/array.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/comment-json/src/array.js"(exports2, module2) {
     "use strict";
     var { sort } = require_src2();
     var {
@@ -34076,9 +34076,9 @@ var require_array = __commonJS({
   }
 });
 
-// node_modules/comment-json/src/parse.js
+// ../../xtrm-tools/cli/node_modules/comment-json/src/parse.js
 var require_parse2 = __commonJS({
-  "node_modules/comment-json/src/parse.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/comment-json/src/parse.js"(exports2, module2) {
     "use strict";
     var esprima = require_esprima();
     var {
@@ -34414,9 +34414,9 @@ var require_parse2 = __commonJS({
   }
 });
 
-// node_modules/comment-json/src/stringify.js
+// ../../xtrm-tools/cli/node_modules/comment-json/src/stringify.js
 var require_stringify2 = __commonJS({
-  "node_modules/comment-json/src/stringify.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/comment-json/src/stringify.js"(exports2, module2) {
     "use strict";
     var {
       PREFIX_BEFORE_ALL,
@@ -34659,9 +34659,9 @@ var require_stringify2 = __commonJS({
   }
 });
 
-// node_modules/comment-json/src/index.js
+// ../../xtrm-tools/cli/node_modules/comment-json/src/index.js
 var require_src3 = __commonJS({
-  "node_modules/comment-json/src/index.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/comment-json/src/index.js"(exports2, module2) {
     "use strict";
     var { parse: parse4, tokenize } = require_parse2();
     var stringify2 = require_stringify2();
@@ -34697,7 +34697,7 @@ var require_src3 = __commonJS({
   }
 });
 
-// ../node_modules/chalk/source/vendor/ansi-styles/index.js
+// ../../xtrm-tools/node_modules/chalk/source/vendor/ansi-styles/index.js
 function assembleStyles() {
   const codes = /* @__PURE__ */ new Map();
   for (const [groupName, group] of Object.entries(styles)) {
@@ -34814,7 +34814,7 @@ function assembleStyles() {
 }
 var ANSI_BACKGROUND_OFFSET, wrapAnsi16, wrapAnsi256, wrapAnsi16m, styles, modifierNames, foregroundColorNames, backgroundColorNames, colorNames, ansiStyles, ansi_styles_default;
 var init_ansi_styles = __esm({
-  "../node_modules/chalk/source/vendor/ansi-styles/index.js"() {
+  "../../xtrm-tools/node_modules/chalk/source/vendor/ansi-styles/index.js"() {
     "use strict";
     ANSI_BACKGROUND_OFFSET = 10;
     wrapAnsi16 = (offset = 0) => (code) => `\x1B[${code + offset}m`;
@@ -34889,7 +34889,7 @@ var init_ansi_styles = __esm({
   }
 });
 
-// ../node_modules/chalk/source/vendor/supports-color/index.js
+// ../../xtrm-tools/node_modules/chalk/source/vendor/supports-color/index.js
 function hasFlag(flag, argv = globalThis.Deno ? globalThis.Deno.args : import_node_process7.default.argv) {
   const prefix = flag.startsWith("-") ? "" : flag.length === 1 ? "-" : "--";
   const position = argv.indexOf(prefix + flag);
@@ -35007,7 +35007,7 @@ function createSupportsColor(stream, options = {}) {
 }
 var import_node_process7, import_node_os6, import_node_tty, env2, flagForceColor, supportsColor, supports_color_default;
 var init_supports_color = __esm({
-  "../node_modules/chalk/source/vendor/supports-color/index.js"() {
+  "../../xtrm-tools/node_modules/chalk/source/vendor/supports-color/index.js"() {
     "use strict";
     import_node_process7 = __toESM(require("process"), 1);
     import_node_os6 = __toESM(require("os"), 1);
@@ -35026,7 +35026,7 @@ var init_supports_color = __esm({
   }
 });
 
-// ../node_modules/chalk/source/utilities.js
+// ../../xtrm-tools/node_modules/chalk/source/utilities.js
 function stringReplaceAll(string4, substring, replacer) {
   let index = string4.indexOf(substring);
   if (index === -1) {
@@ -35056,18 +35056,18 @@ function stringEncaseCRLFWithFirstIndex(string4, prefix, postfix, index) {
   return returnValue;
 }
 var init_utilities = __esm({
-  "../node_modules/chalk/source/utilities.js"() {
+  "../../xtrm-tools/node_modules/chalk/source/utilities.js"() {
     "use strict";
   }
 });
 
-// ../node_modules/chalk/source/index.js
+// ../../xtrm-tools/node_modules/chalk/source/index.js
 function createChalk(options) {
   return chalkFactory(options);
 }
 var stdoutColor, stderrColor, GENERATOR, STYLER, IS_EMPTY, levelMapping, styles2, applyOptions, chalkFactory, getModelAnsi, usedModels, proto, createStyler, createBuilder, applyStyle, chalk, chalkStderr, source_default;
 var init_source = __esm({
-  "../node_modules/chalk/source/index.js"() {
+  "../../xtrm-tools/node_modules/chalk/source/index.js"() {
     "use strict";
     init_ansi_styles();
     init_supports_color();
@@ -35217,7 +35217,7 @@ var init_source = __esm({
   }
 });
 
-// ../node_modules/ansi-regex/index.js
+// ../../xtrm-tools/node_modules/ansi-regex/index.js
 function ansiRegex({ onlyFirst = false } = {}) {
   const ST = "(?:\\u0007|\\u001B\\u005C|\\u009C)";
   const osc = `(?:\\u001B\\][\\s\\S]*?${ST})`;
@@ -35226,12 +35226,12 @@ function ansiRegex({ onlyFirst = false } = {}) {
   return new RegExp(pattern, onlyFirst ? void 0 : "g");
 }
 var init_ansi_regex = __esm({
-  "../node_modules/ansi-regex/index.js"() {
+  "../../xtrm-tools/node_modules/ansi-regex/index.js"() {
     "use strict";
   }
 });
 
-// ../node_modules/strip-ansi/index.js
+// ../../xtrm-tools/node_modules/strip-ansi/index.js
 function stripAnsi(string4) {
   if (typeof string4 !== "string") {
     throw new TypeError(`Expected a \`string\`, got \`${typeof string4}\``);
@@ -35243,17 +35243,17 @@ function stripAnsi(string4) {
 }
 var regex;
 var init_strip_ansi = __esm({
-  "../node_modules/strip-ansi/index.js"() {
+  "../../xtrm-tools/node_modules/strip-ansi/index.js"() {
     "use strict";
     init_ansi_regex();
     regex = ansiRegex();
   }
 });
 
-// ../node_modules/get-east-asian-width/lookup-data.js
+// ../../xtrm-tools/node_modules/get-east-asian-width/lookup-data.js
 var ambiguousRanges, fullwidthRanges, halfwidthRanges, narrowRanges, wideRanges;
 var init_lookup_data = __esm({
-  "../node_modules/get-east-asian-width/lookup-data.js"() {
+  "../../xtrm-tools/node_modules/get-east-asian-width/lookup-data.js"() {
     "use strict";
     ambiguousRanges = [161, 161, 164, 164, 167, 168, 170, 170, 173, 174, 176, 180, 182, 186, 188, 191, 198, 198, 208, 208, 215, 216, 222, 225, 230, 230, 232, 234, 236, 237, 240, 240, 242, 243, 247, 250, 252, 252, 254, 254, 257, 257, 273, 273, 275, 275, 283, 283, 294, 295, 299, 299, 305, 307, 312, 312, 319, 322, 324, 324, 328, 331, 333, 333, 338, 339, 358, 359, 363, 363, 462, 462, 464, 464, 466, 466, 468, 468, 470, 470, 472, 472, 474, 474, 476, 476, 593, 593, 609, 609, 708, 708, 711, 711, 713, 715, 717, 717, 720, 720, 728, 731, 733, 733, 735, 735, 768, 879, 913, 929, 931, 937, 945, 961, 963, 969, 1025, 1025, 1040, 1103, 1105, 1105, 8208, 8208, 8211, 8214, 8216, 8217, 8220, 8221, 8224, 8226, 8228, 8231, 8240, 8240, 8242, 8243, 8245, 8245, 8251, 8251, 8254, 8254, 8308, 8308, 8319, 8319, 8321, 8324, 8364, 8364, 8451, 8451, 8453, 8453, 8457, 8457, 8467, 8467, 8470, 8470, 8481, 8482, 8486, 8486, 8491, 8491, 8531, 8532, 8539, 8542, 8544, 8555, 8560, 8569, 8585, 8585, 8592, 8601, 8632, 8633, 8658, 8658, 8660, 8660, 8679, 8679, 8704, 8704, 8706, 8707, 8711, 8712, 8715, 8715, 8719, 8719, 8721, 8721, 8725, 8725, 8730, 8730, 8733, 8736, 8739, 8739, 8741, 8741, 8743, 8748, 8750, 8750, 8756, 8759, 8764, 8765, 8776, 8776, 8780, 8780, 8786, 8786, 8800, 8801, 8804, 8807, 8810, 8811, 8814, 8815, 8834, 8835, 8838, 8839, 8853, 8853, 8857, 8857, 8869, 8869, 8895, 8895, 8978, 8978, 9312, 9449, 9451, 9547, 9552, 9587, 9600, 9615, 9618, 9621, 9632, 9633, 9635, 9641, 9650, 9651, 9654, 9655, 9660, 9661, 9664, 9665, 9670, 9672, 9675, 9675, 9678, 9681, 9698, 9701, 9711, 9711, 9733, 9734, 9737, 9737, 9742, 9743, 9756, 9756, 9758, 9758, 9792, 9792, 9794, 9794, 9824, 9825, 9827, 9829, 9831, 9834, 9836, 9837, 9839, 9839, 9886, 9887, 9919, 9919, 9926, 9933, 9935, 9939, 9941, 9953, 9955, 9955, 9960, 9961, 9963, 9969, 9972, 9972, 9974, 9977, 9979, 9980, 9982, 9983, 10045, 10045, 10102, 10111, 11094, 11097, 12872, 12879, 57344, 63743, 65024, 65039, 65533, 65533, 127232, 127242, 127248, 127277, 127280, 127337, 127344, 127373, 127375, 127376, 127387, 127404, 917760, 917999, 983040, 1048573, 1048576, 1114109];
     fullwidthRanges = [12288, 12288, 65281, 65376, 65504, 65510];
@@ -35263,10 +35263,10 @@ var init_lookup_data = __esm({
   }
 });
 
-// ../node_modules/get-east-asian-width/utilities.js
+// ../../xtrm-tools/node_modules/get-east-asian-width/utilities.js
 var isInRange;
 var init_utilities2 = __esm({
-  "../node_modules/get-east-asian-width/utilities.js"() {
+  "../../xtrm-tools/node_modules/get-east-asian-width/utilities.js"() {
     "use strict";
     isInRange = (ranges, codePoint) => {
       let low = 0;
@@ -35287,7 +35287,7 @@ var init_utilities2 = __esm({
   }
 });
 
-// ../node_modules/get-east-asian-width/lookup.js
+// ../../xtrm-tools/node_modules/get-east-asian-width/lookup.js
 function findWideFastPathRange(ranges) {
   let fastPathStart = ranges[0];
   let fastPathEnd = ranges[1];
@@ -35306,7 +35306,7 @@ function findWideFastPathRange(ranges) {
 }
 var minimumAmbiguousCodePoint, maximumAmbiguousCodePoint, minimumFullWidthCodePoint, maximumFullWidthCodePoint, minimumHalfWidthCodePoint, maximumHalfWidthCodePoint, minimumNarrowCodePoint, maximumNarrowCodePoint, minimumWideCodePoint, maximumWideCodePoint, commonCjkCodePoint, wideFastPathStart, wideFastPathEnd, isAmbiguous, isFullWidth, isWide;
 var init_lookup = __esm({
-  "../node_modules/get-east-asian-width/lookup.js"() {
+  "../../xtrm-tools/node_modules/get-east-asian-width/lookup.js"() {
     "use strict";
     init_lookup_data();
     init_utilities2();
@@ -35346,7 +35346,7 @@ var init_lookup = __esm({
   }
 });
 
-// ../node_modules/get-east-asian-width/index.js
+// ../../xtrm-tools/node_modules/get-east-asian-width/index.js
 function validate(codePoint) {
   if (!Number.isSafeInteger(codePoint)) {
     throw new TypeError(`Expected a code point, got \`${typeof codePoint}\`.`);
@@ -35360,15 +35360,15 @@ function eastAsianWidth(codePoint, { ambiguousAsWide = false } = {}) {
   return 1;
 }
 var init_get_east_asian_width = __esm({
-  "../node_modules/get-east-asian-width/index.js"() {
+  "../../xtrm-tools/node_modules/get-east-asian-width/index.js"() {
     "use strict";
     init_lookup();
   }
 });
 
-// node_modules/dotenv/package.json
+// ../../xtrm-tools/cli/node_modules/dotenv/package.json
 var require_package = __commonJS({
-  "node_modules/dotenv/package.json"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/dotenv/package.json"(exports2, module2) {
     module2.exports = {
       name: "dotenv",
       version: "16.6.1",
@@ -35434,12 +35434,12 @@ var require_package = __commonJS({
   }
 });
 
-// node_modules/dotenv/lib/main.js
+// ../../xtrm-tools/cli/node_modules/dotenv/lib/main.js
 var require_main = __commonJS({
-  "node_modules/dotenv/lib/main.js"(exports2, module2) {
+  "../../xtrm-tools/cli/node_modules/dotenv/lib/main.js"(exports2, module2) {
     "use strict";
-    var fs42 = require("fs");
-    var path47 = require("path");
+    var fs43 = require("fs");
+    var path48 = require("path");
     var os10 = require("os");
     var crypto4 = require("crypto");
     var packageJson = require_package();
@@ -35547,7 +35547,7 @@ var require_main = __commonJS({
       if (options && options.path && options.path.length > 0) {
         if (Array.isArray(options.path)) {
           for (const filepath of options.path) {
-            if (fs42.existsSync(filepath)) {
+            if (fs43.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -35555,15 +35555,15 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path47.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path48.resolve(process.cwd(), ".env.vault");
       }
-      if (fs42.existsSync(possibleVaultPath)) {
+      if (fs43.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path47.join(os10.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path48.join(os10.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -35580,7 +35580,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path47.resolve(process.cwd(), ".env");
+      const dotenvPath = path48.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -35604,13 +35604,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path48 of optionPaths) {
+      for (const path49 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs42.readFileSync(path48, { encoding }));
+          const parsed = DotenvModule.parse(fs43.readFileSync(path49, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path48} ${e.message}`);
+            _debug(`Failed to load ${path49} ${e.message}`);
           }
           lastError = e;
         }
@@ -35625,7 +35625,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative = path47.relative(process.cwd(), filePath);
+            const relative = path48.relative(process.cwd(), filePath);
             shortPaths.push(relative);
           } catch (e) {
             if (debug) {
@@ -35725,9 +35725,9 @@ var require_main = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/src/debug.js
+// ../../xtrm-tools/node_modules/cli-table3/src/debug.js
 var require_debug2 = __commonJS({
-  "../node_modules/cli-table3/src/debug.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/src/debug.js"(exports2, module2) {
     "use strict";
     var messages = [];
     var level = 0;
@@ -35753,9 +35753,9 @@ var require_debug2 = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/node_modules/ansi-regex/index.js
+// ../../xtrm-tools/node_modules/cli-table3/node_modules/ansi-regex/index.js
 var require_ansi_regex = __commonJS({
-  "../node_modules/cli-table3/node_modules/ansi-regex/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/node_modules/ansi-regex/index.js"(exports2, module2) {
     "use strict";
     module2.exports = ({ onlyFirst = false } = {}) => {
       const pattern = [
@@ -35767,18 +35767,18 @@ var require_ansi_regex = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/node_modules/strip-ansi/index.js
+// ../../xtrm-tools/node_modules/cli-table3/node_modules/strip-ansi/index.js
 var require_strip_ansi = __commonJS({
-  "../node_modules/cli-table3/node_modules/strip-ansi/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/node_modules/strip-ansi/index.js"(exports2, module2) {
     "use strict";
     var ansiRegex2 = require_ansi_regex();
     module2.exports = (string4) => typeof string4 === "string" ? string4.replace(ansiRegex2(), "") : string4;
   }
 });
 
-// ../node_modules/cli-table3/node_modules/is-fullwidth-code-point/index.js
+// ../../xtrm-tools/node_modules/cli-table3/node_modules/is-fullwidth-code-point/index.js
 var require_is_fullwidth_code_point = __commonJS({
-  "../node_modules/cli-table3/node_modules/is-fullwidth-code-point/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/node_modules/is-fullwidth-code-point/index.js"(exports2, module2) {
     "use strict";
     var isFullwidthCodePoint = (codePoint) => {
       if (Number.isNaN(codePoint)) {
@@ -35809,9 +35809,9 @@ var require_is_fullwidth_code_point = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/node_modules/emoji-regex/index.js
+// ../../xtrm-tools/node_modules/cli-table3/node_modules/emoji-regex/index.js
 var require_emoji_regex = __commonJS({
-  "../node_modules/cli-table3/node_modules/emoji-regex/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/node_modules/emoji-regex/index.js"(exports2, module2) {
     "use strict";
     module2.exports = function() {
       return /\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62(?:\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67|\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74|\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73)\uDB40\uDC7F|\uD83D\uDC68(?:\uD83C\uDFFC\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68\uD83C\uDFFB|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFF\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB-\uDFFE])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFE\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB-\uDFFD])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFD\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB\uDFFC])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\u200D(?:\u2764\uFE0F\u200D(?:\uD83D\uDC8B\u200D)?\uD83D\uDC68|(?:\uD83D[\uDC68\uDC69])\u200D(?:\uD83D\uDC66\u200D\uD83D\uDC66|\uD83D\uDC67\u200D(?:\uD83D[\uDC66\uDC67]))|\uD83D\uDC66\u200D\uD83D\uDC66|\uD83D\uDC67\u200D(?:\uD83D[\uDC66\uDC67])|(?:\uD83D[\uDC68\uDC69])\u200D(?:\uD83D[\uDC66\uDC67])|[\u2695\u2696\u2708]\uFE0F|\uD83D[\uDC66\uDC67]|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|(?:\uD83C\uDFFB\u200D[\u2695\u2696\u2708]|\uD83C\uDFFF\u200D[\u2695\u2696\u2708]|\uD83C\uDFFE\u200D[\u2695\u2696\u2708]|\uD83C\uDFFD\u200D[\u2695\u2696\u2708]|\uD83C\uDFFC\u200D[\u2695\u2696\u2708])\uFE0F|\uD83C\uDFFB\u200D(?:\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C[\uDFFB-\uDFFF])|(?:\uD83E\uDDD1\uD83C\uDFFB\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1|\uD83D\uDC69\uD83C\uDFFC\u200D\uD83E\uDD1D\u200D\uD83D\uDC69)\uD83C\uDFFB|\uD83E\uDDD1(?:\uD83C\uDFFF\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1(?:\uD83C[\uDFFB-\uDFFF])|\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1)|(?:\uD83E\uDDD1\uD83C\uDFFE\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1|\uD83D\uDC69\uD83C\uDFFF\u200D\uD83E\uDD1D\u200D(?:\uD83D[\uDC68\uDC69]))(?:\uD83C[\uDFFB-\uDFFE])|(?:\uD83E\uDDD1\uD83C\uDFFC\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1|\uD83D\uDC69\uD83C\uDFFD\u200D\uD83E\uDD1D\u200D\uD83D\uDC69)(?:\uD83C[\uDFFB\uDFFC])|\uD83D\uDC69(?:\uD83C\uDFFE\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB-\uDFFD\uDFFF])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFC\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB\uDFFD-\uDFFF])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFB\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFC-\uDFFF])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFD\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\u200D(?:\u2764\uFE0F\u200D(?:\uD83D\uDC8B\u200D(?:\uD83D[\uDC68\uDC69])|\uD83D[\uDC68\uDC69])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFF\u200D(?:\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD]))|\uD83D\uDC69\u200D\uD83D\uDC69\u200D(?:\uD83D\uDC66\u200D\uD83D\uDC66|\uD83D\uDC67\u200D(?:\uD83D[\uDC66\uDC67]))|(?:\uD83E\uDDD1\uD83C\uDFFD\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1|\uD83D\uDC69\uD83C\uDFFE\u200D\uD83E\uDD1D\u200D\uD83D\uDC69)(?:\uD83C[\uDFFB-\uDFFD])|\uD83D\uDC69\u200D\uD83D\uDC66\u200D\uD83D\uDC66|\uD83D\uDC69\u200D\uD83D\uDC69\u200D(?:\uD83D[\uDC66\uDC67])|(?:\uD83D\uDC41\uFE0F\u200D\uD83D\uDDE8|\uD83D\uDC69(?:\uD83C\uDFFF\u200D[\u2695\u2696\u2708]|\uD83C\uDFFE\u200D[\u2695\u2696\u2708]|\uD83C\uDFFC\u200D[\u2695\u2696\u2708]|\uD83C\uDFFB\u200D[\u2695\u2696\u2708]|\uD83C\uDFFD\u200D[\u2695\u2696\u2708]|\u200D[\u2695\u2696\u2708])|(?:(?:\u26F9|\uD83C[\uDFCB\uDFCC]|\uD83D\uDD75)\uFE0F|\uD83D\uDC6F|\uD83E[\uDD3C\uDDDE\uDDDF])\u200D[\u2640\u2642]|(?:\u26F9|\uD83C[\uDFCB\uDFCC]|\uD83D\uDD75)(?:\uD83C[\uDFFB-\uDFFF])\u200D[\u2640\u2642]|(?:\uD83C[\uDFC3\uDFC4\uDFCA]|\uD83D[\uDC6E\uDC71\uDC73\uDC77\uDC81\uDC82\uDC86\uDC87\uDE45-\uDE47\uDE4B\uDE4D\uDE4E\uDEA3\uDEB4-\uDEB6]|\uD83E[\uDD26\uDD37-\uDD39\uDD3D\uDD3E\uDDB8\uDDB9\uDDCD-\uDDCF\uDDD6-\uDDDD])(?:(?:\uD83C[\uDFFB-\uDFFF])\u200D[\u2640\u2642]|\u200D[\u2640\u2642])|\uD83C\uDFF4\u200D\u2620)\uFE0F|\uD83D\uDC69\u200D\uD83D\uDC67\u200D(?:\uD83D[\uDC66\uDC67])|\uD83C\uDFF3\uFE0F\u200D\uD83C\uDF08|\uD83D\uDC15\u200D\uD83E\uDDBA|\uD83D\uDC69\u200D\uD83D\uDC66|\uD83D\uDC69\u200D\uD83D\uDC67|\uD83C\uDDFD\uD83C\uDDF0|\uD83C\uDDF4\uD83C\uDDF2|\uD83C\uDDF6\uD83C\uDDE6|[#\*0-9]\uFE0F\u20E3|\uD83C\uDDE7(?:\uD83C[\uDDE6\uDDE7\uDDE9-\uDDEF\uDDF1-\uDDF4\uDDF6-\uDDF9\uDDFB\uDDFC\uDDFE\uDDFF])|\uD83C\uDDF9(?:\uD83C[\uDDE6\uDDE8\uDDE9\uDDEB-\uDDED\uDDEF-\uDDF4\uDDF7\uDDF9\uDDFB\uDDFC\uDDFF])|\uD83C\uDDEA(?:\uD83C[\uDDE6\uDDE8\uDDEA\uDDEC\uDDED\uDDF7-\uDDFA])|\uD83E\uDDD1(?:\uD83C[\uDFFB-\uDFFF])|\uD83C\uDDF7(?:\uD83C[\uDDEA\uDDF4\uDDF8\uDDFA\uDDFC])|\uD83D\uDC69(?:\uD83C[\uDFFB-\uDFFF])|\uD83C\uDDF2(?:\uD83C[\uDDE6\uDDE8-\uDDED\uDDF0-\uDDFF])|\uD83C\uDDE6(?:\uD83C[\uDDE8-\uDDEC\uDDEE\uDDF1\uDDF2\uDDF4\uDDF6-\uDDFA\uDDFC\uDDFD\uDDFF])|\uD83C\uDDF0(?:\uD83C[\uDDEA\uDDEC-\uDDEE\uDDF2\uDDF3\uDDF5\uDDF7\uDDFC\uDDFE\uDDFF])|\uD83C\uDDED(?:\uD83C[\uDDF0\uDDF2\uDDF3\uDDF7\uDDF9\uDDFA])|\uD83C\uDDE9(?:\uD83C[\uDDEA\uDDEC\uDDEF\uDDF0\uDDF2\uDDF4\uDDFF])|\uD83C\uDDFE(?:\uD83C[\uDDEA\uDDF9])|\uD83C\uDDEC(?:\uD83C[\uDDE6\uDDE7\uDDE9-\uDDEE\uDDF1-\uDDF3\uDDF5-\uDDFA\uDDFC\uDDFE])|\uD83C\uDDF8(?:\uD83C[\uDDE6-\uDDEA\uDDEC-\uDDF4\uDDF7-\uDDF9\uDDFB\uDDFD-\uDDFF])|\uD83C\uDDEB(?:\uD83C[\uDDEE-\uDDF0\uDDF2\uDDF4\uDDF7])|\uD83C\uDDF5(?:\uD83C[\uDDE6\uDDEA-\uDDED\uDDF0-\uDDF3\uDDF7-\uDDF9\uDDFC\uDDFE])|\uD83C\uDDFB(?:\uD83C[\uDDE6\uDDE8\uDDEA\uDDEC\uDDEE\uDDF3\uDDFA])|\uD83C\uDDF3(?:\uD83C[\uDDE6\uDDE8\uDDEA-\uDDEC\uDDEE\uDDF1\uDDF4\uDDF5\uDDF7\uDDFA\uDDFF])|\uD83C\uDDE8(?:\uD83C[\uDDE6\uDDE8\uDDE9\uDDEB-\uDDEE\uDDF0-\uDDF5\uDDF7\uDDFA-\uDDFF])|\uD83C\uDDF1(?:\uD83C[\uDDE6-\uDDE8\uDDEE\uDDF0\uDDF7-\uDDFB\uDDFE])|\uD83C\uDDFF(?:\uD83C[\uDDE6\uDDF2\uDDFC])|\uD83C\uDDFC(?:\uD83C[\uDDEB\uDDF8])|\uD83C\uDDFA(?:\uD83C[\uDDE6\uDDEC\uDDF2\uDDF3\uDDF8\uDDFE\uDDFF])|\uD83C\uDDEE(?:\uD83C[\uDDE8-\uDDEA\uDDF1-\uDDF4\uDDF6-\uDDF9])|\uD83C\uDDEF(?:\uD83C[\uDDEA\uDDF2\uDDF4\uDDF5])|(?:\uD83C[\uDFC3\uDFC4\uDFCA]|\uD83D[\uDC6E\uDC71\uDC73\uDC77\uDC81\uDC82\uDC86\uDC87\uDE45-\uDE47\uDE4B\uDE4D\uDE4E\uDEA3\uDEB4-\uDEB6]|\uD83E[\uDD26\uDD37-\uDD39\uDD3D\uDD3E\uDDB8\uDDB9\uDDCD-\uDDCF\uDDD6-\uDDDD])(?:\uD83C[\uDFFB-\uDFFF])|(?:\u26F9|\uD83C[\uDFCB\uDFCC]|\uD83D\uDD75)(?:\uD83C[\uDFFB-\uDFFF])|(?:[\u261D\u270A-\u270D]|\uD83C[\uDF85\uDFC2\uDFC7]|\uD83D[\uDC42\uDC43\uDC46-\uDC50\uDC66\uDC67\uDC6B-\uDC6D\uDC70\uDC72\uDC74-\uDC76\uDC78\uDC7C\uDC83\uDC85\uDCAA\uDD74\uDD7A\uDD90\uDD95\uDD96\uDE4C\uDE4F\uDEC0\uDECC]|\uD83E[\uDD0F\uDD18-\uDD1C\uDD1E\uDD1F\uDD30-\uDD36\uDDB5\uDDB6\uDDBB\uDDD2-\uDDD5])(?:\uD83C[\uDFFB-\uDFFF])|(?:[\u231A\u231B\u23E9-\u23EC\u23F0\u23F3\u25FD\u25FE\u2614\u2615\u2648-\u2653\u267F\u2693\u26A1\u26AA\u26AB\u26BD\u26BE\u26C4\u26C5\u26CE\u26D4\u26EA\u26F2\u26F3\u26F5\u26FA\u26FD\u2705\u270A\u270B\u2728\u274C\u274E\u2753-\u2755\u2757\u2795-\u2797\u27B0\u27BF\u2B1B\u2B1C\u2B50\u2B55]|\uD83C[\uDC04\uDCCF\uDD8E\uDD91-\uDD9A\uDDE6-\uDDFF\uDE01\uDE1A\uDE2F\uDE32-\uDE36\uDE38-\uDE3A\uDE50\uDE51\uDF00-\uDF20\uDF2D-\uDF35\uDF37-\uDF7C\uDF7E-\uDF93\uDFA0-\uDFCA\uDFCF-\uDFD3\uDFE0-\uDFF0\uDFF4\uDFF8-\uDFFF]|\uD83D[\uDC00-\uDC3E\uDC40\uDC42-\uDCFC\uDCFF-\uDD3D\uDD4B-\uDD4E\uDD50-\uDD67\uDD7A\uDD95\uDD96\uDDA4\uDDFB-\uDE4F\uDE80-\uDEC5\uDECC\uDED0-\uDED2\uDED5\uDEEB\uDEEC\uDEF4-\uDEFA\uDFE0-\uDFEB]|\uD83E[\uDD0D-\uDD3A\uDD3C-\uDD45\uDD47-\uDD71\uDD73-\uDD76\uDD7A-\uDDA2\uDDA5-\uDDAA\uDDAE-\uDDCA\uDDCD-\uDDFF\uDE70-\uDE73\uDE78-\uDE7A\uDE80-\uDE82\uDE90-\uDE95])|(?:[#\*0-9\xA9\xAE\u203C\u2049\u2122\u2139\u2194-\u2199\u21A9\u21AA\u231A\u231B\u2328\u23CF\u23E9-\u23F3\u23F8-\u23FA\u24C2\u25AA\u25AB\u25B6\u25C0\u25FB-\u25FE\u2600-\u2604\u260E\u2611\u2614\u2615\u2618\u261D\u2620\u2622\u2623\u2626\u262A\u262E\u262F\u2638-\u263A\u2640\u2642\u2648-\u2653\u265F\u2660\u2663\u2665\u2666\u2668\u267B\u267E\u267F\u2692-\u2697\u2699\u269B\u269C\u26A0\u26A1\u26AA\u26AB\u26B0\u26B1\u26BD\u26BE\u26C4\u26C5\u26C8\u26CE\u26CF\u26D1\u26D3\u26D4\u26E9\u26EA\u26F0-\u26F5\u26F7-\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\u2712\u2714\u2716\u271D\u2721\u2728\u2733\u2734\u2744\u2747\u274C\u274E\u2753-\u2755\u2757\u2763\u2764\u2795-\u2797\u27A1\u27B0\u27BF\u2934\u2935\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299]|\uD83C[\uDC04\uDCCF\uDD70\uDD71\uDD7E\uDD7F\uDD8E\uDD91-\uDD9A\uDDE6-\uDDFF\uDE01\uDE02\uDE1A\uDE2F\uDE32-\uDE3A\uDE50\uDE51\uDF00-\uDF21\uDF24-\uDF93\uDF96\uDF97\uDF99-\uDF9B\uDF9E-\uDFF0\uDFF3-\uDFF5\uDFF7-\uDFFF]|\uD83D[\uDC00-\uDCFD\uDCFF-\uDD3D\uDD49-\uDD4E\uDD50-\uDD67\uDD6F\uDD70\uDD73-\uDD7A\uDD87\uDD8A-\uDD8D\uDD90\uDD95\uDD96\uDDA4\uDDA5\uDDA8\uDDB1\uDDB2\uDDBC\uDDC2-\uDDC4\uDDD1-\uDDD3\uDDDC-\uDDDE\uDDE1\uDDE3\uDDE8\uDDEF\uDDF3\uDDFA-\uDE4F\uDE80-\uDEC5\uDECB-\uDED2\uDED5\uDEE0-\uDEE5\uDEE9\uDEEB\uDEEC\uDEF0\uDEF3-\uDEFA\uDFE0-\uDFEB]|\uD83E[\uDD0D-\uDD3A\uDD3C-\uDD45\uDD47-\uDD71\uDD73-\uDD76\uDD7A-\uDDA2\uDDA5-\uDDAA\uDDAE-\uDDCA\uDDCD-\uDDFF\uDE70-\uDE73\uDE78-\uDE7A\uDE80-\uDE82\uDE90-\uDE95])\uFE0F|(?:[\u261D\u26F9\u270A-\u270D]|\uD83C[\uDF85\uDFC2-\uDFC4\uDFC7\uDFCA-\uDFCC]|\uD83D[\uDC42\uDC43\uDC46-\uDC50\uDC66-\uDC78\uDC7C\uDC81-\uDC83\uDC85-\uDC87\uDC8F\uDC91\uDCAA\uDD74\uDD75\uDD7A\uDD90\uDD95\uDD96\uDE45-\uDE47\uDE4B-\uDE4F\uDEA3\uDEB4-\uDEB6\uDEC0\uDECC]|\uD83E[\uDD0F\uDD18-\uDD1F\uDD26\uDD30-\uDD39\uDD3C-\uDD3E\uDDB5\uDDB6\uDDB8\uDDB9\uDDBB\uDDCD-\uDDCF\uDDD1-\uDDDD])/g;
@@ -35819,9 +35819,9 @@ var require_emoji_regex = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/node_modules/string-width/index.js
+// ../../xtrm-tools/node_modules/cli-table3/node_modules/string-width/index.js
 var require_string_width = __commonJS({
-  "../node_modules/cli-table3/node_modules/string-width/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/node_modules/string-width/index.js"(exports2, module2) {
     "use strict";
     var stripAnsi2 = require_strip_ansi();
     var isFullwidthCodePoint = require_is_fullwidth_code_point();
@@ -35856,9 +35856,9 @@ var require_string_width = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/src/utils.js
+// ../../xtrm-tools/node_modules/cli-table3/src/utils.js
 var require_utils4 = __commonJS({
-  "../node_modules/cli-table3/src/utils.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/src/utils.js"(exports2, module2) {
     "use strict";
     var stringWidth2 = require_string_width();
     function codeRegex(capture) {
@@ -36159,9 +36159,9 @@ var require_utils4 = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/styles.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/styles.js
 var require_styles = __commonJS({
-  "../node_modules/@colors/colors/lib/styles.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/styles.js"(exports2, module2) {
     "use strict";
     var styles4 = {};
     module2["exports"] = styles4;
@@ -36227,9 +36227,9 @@ var require_styles = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/system/has-flag.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/system/has-flag.js
 var require_has_flag = __commonJS({
-  "../node_modules/@colors/colors/lib/system/has-flag.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/system/has-flag.js"(exports2, module2) {
     "use strict";
     module2.exports = function(flag, argv) {
       argv = argv || process.argv;
@@ -36241,9 +36241,9 @@ var require_has_flag = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/system/supports-colors.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/system/supports-colors.js
 var require_supports_colors = __commonJS({
-  "../node_modules/@colors/colors/lib/system/supports-colors.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/system/supports-colors.js"(exports2, module2) {
     "use strict";
     var os10 = require("os");
     var hasFlag2 = require_has_flag();
@@ -36337,9 +36337,9 @@ var require_supports_colors = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/custom/trap.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/custom/trap.js
 var require_trap = __commonJS({
-  "../node_modules/@colors/colors/lib/custom/trap.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/custom/trap.js"(exports2, module2) {
     "use strict";
     module2["exports"] = function runTheTrap(text, options) {
       var result = "";
@@ -36407,9 +36407,9 @@ var require_trap = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/custom/zalgo.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/custom/zalgo.js
 var require_zalgo = __commonJS({
-  "../node_modules/@colors/colors/lib/custom/zalgo.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/custom/zalgo.js"(exports2, module2) {
     "use strict";
     module2["exports"] = function zalgo(text, options) {
       text = text || "   he is here   ";
@@ -36595,9 +36595,9 @@ var require_zalgo = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/maps/america.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/maps/america.js
 var require_america = __commonJS({
-  "../node_modules/@colors/colors/lib/maps/america.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/maps/america.js"(exports2, module2) {
     "use strict";
     module2["exports"] = function(colors) {
       return function(letter, i, exploded) {
@@ -36615,9 +36615,9 @@ var require_america = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/maps/zebra.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/maps/zebra.js
 var require_zebra = __commonJS({
-  "../node_modules/@colors/colors/lib/maps/zebra.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/maps/zebra.js"(exports2, module2) {
     "use strict";
     module2["exports"] = function(colors) {
       return function(letter, i, exploded) {
@@ -36627,9 +36627,9 @@ var require_zebra = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/maps/rainbow.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/maps/rainbow.js
 var require_rainbow = __commonJS({
-  "../node_modules/@colors/colors/lib/maps/rainbow.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/maps/rainbow.js"(exports2, module2) {
     "use strict";
     module2["exports"] = function(colors) {
       var rainbowColors = ["red", "yellow", "green", "blue", "magenta"];
@@ -36644,9 +36644,9 @@ var require_rainbow = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/maps/random.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/maps/random.js
 var require_random = __commonJS({
-  "../node_modules/@colors/colors/lib/maps/random.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/maps/random.js"(exports2, module2) {
     "use strict";
     module2["exports"] = function(colors) {
       var available = [
@@ -36675,9 +36675,9 @@ var require_random = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/lib/colors.js
+// ../../xtrm-tools/node_modules/@colors/colors/lib/colors.js
 var require_colors = __commonJS({
-  "../node_modules/@colors/colors/lib/colors.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/lib/colors.js"(exports2, module2) {
     "use strict";
     var colors = {};
     module2["exports"] = colors;
@@ -36820,18 +36820,18 @@ var require_colors = __commonJS({
   }
 });
 
-// ../node_modules/@colors/colors/safe.js
+// ../../xtrm-tools/node_modules/@colors/colors/safe.js
 var require_safe = __commonJS({
-  "../node_modules/@colors/colors/safe.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/@colors/colors/safe.js"(exports2, module2) {
     "use strict";
     var colors = require_colors();
     module2["exports"] = colors;
   }
 });
 
-// ../node_modules/cli-table3/src/cell.js
+// ../../xtrm-tools/node_modules/cli-table3/src/cell.js
 var require_cell = __commonJS({
-  "../node_modules/cli-table3/src/cell.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/src/cell.js"(exports2, module2) {
     "use strict";
     var { info, debug } = require_debug2();
     var utils = require_utils4();
@@ -37204,9 +37204,9 @@ var require_cell = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/src/layout-manager.js
+// ../../xtrm-tools/node_modules/cli-table3/src/layout-manager.js
 var require_layout_manager = __commonJS({
-  "../node_modules/cli-table3/src/layout-manager.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/src/layout-manager.js"(exports2, module2) {
     "use strict";
     var { warn: warn2, debug } = require_debug2();
     var Cell = require_cell();
@@ -37442,9 +37442,9 @@ var require_layout_manager = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/src/table.js
+// ../../xtrm-tools/node_modules/cli-table3/src/table.js
 var require_table = __commonJS({
-  "../node_modules/cli-table3/src/table.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/src/table.js"(exports2, module2) {
     "use strict";
     var debug = require_debug2();
     var utils = require_utils4();
@@ -37537,18 +37537,18 @@ var require_table = __commonJS({
   }
 });
 
-// ../node_modules/cli-table3/index.js
+// ../../xtrm-tools/node_modules/cli-table3/index.js
 var require_cli_table3 = __commonJS({
-  "../node_modules/cli-table3/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-table3/index.js"(exports2, module2) {
     "use strict";
     module2.exports = require_table();
   }
 });
 
-// ../node_modules/emoji-regex/index.mjs
+// ../../xtrm-tools/node_modules/emoji-regex/index.mjs
 var emoji_regex_default;
 var init_emoji_regex = __esm({
-  "../node_modules/emoji-regex/index.mjs"() {
+  "../../xtrm-tools/node_modules/emoji-regex/index.mjs"() {
     "use strict";
     emoji_regex_default = () => {
       return /[#*0-9]\uFE0F?\u20E3|[\xA9\xAE\u203C\u2049\u2122\u2139\u2194-\u2199\u21A9\u21AA\u231A\u231B\u2328\u23CF\u23ED-\u23EF\u23F1\u23F2\u23F8-\u23FA\u24C2\u25AA\u25AB\u25B6\u25C0\u25FB\u25FC\u25FE\u2600-\u2604\u260E\u2611\u2614\u2615\u2618\u2620\u2622\u2623\u2626\u262A\u262E\u262F\u2638-\u263A\u2640\u2642\u2648-\u2653\u265F\u2660\u2663\u2665\u2666\u2668\u267B\u267E\u267F\u2692\u2694-\u2697\u2699\u269B\u269C\u26A0\u26A7\u26AA\u26B0\u26B1\u26BD\u26BE\u26C4\u26C8\u26CF\u26D1\u26E9\u26F0-\u26F5\u26F7\u26F8\u26FA\u2702\u2708\u2709\u270F\u2712\u2714\u2716\u271D\u2721\u2733\u2734\u2744\u2747\u2757\u2763\u27A1\u2934\u2935\u2B05-\u2B07\u2B1B\u2B1C\u2B55\u3030\u303D\u3297\u3299]\uFE0F?|[\u261D\u270C\u270D](?:\uD83C[\uDFFB-\uDFFF]|\uFE0F)?|[\u270A\u270B](?:\uD83C[\uDFFB-\uDFFF])?|[\u23E9-\u23EC\u23F0\u23F3\u25FD\u2693\u26A1\u26AB\u26C5\u26CE\u26D4\u26EA\u26FD\u2705\u2728\u274C\u274E\u2753-\u2755\u2795-\u2797\u27B0\u27BF\u2B50]|\u26D3\uFE0F?(?:\u200D\uD83D\uDCA5)?|\u26F9(?:\uD83C[\uDFFB-\uDFFF]|\uFE0F)?(?:\u200D[\u2640\u2642]\uFE0F?)?|\u2764\uFE0F?(?:\u200D(?:\uD83D\uDD25|\uD83E\uDE79))?|\uD83C(?:[\uDC04\uDD70\uDD71\uDD7E\uDD7F\uDE02\uDE37\uDF21\uDF24-\uDF2C\uDF36\uDF7D\uDF96\uDF97\uDF99-\uDF9B\uDF9E\uDF9F\uDFCD\uDFCE\uDFD4-\uDFDF\uDFF5\uDFF7]\uFE0F?|[\uDF85\uDFC2\uDFC7](?:\uD83C[\uDFFB-\uDFFF])?|[\uDFC4\uDFCA](?:\uD83C[\uDFFB-\uDFFF])?(?:\u200D[\u2640\u2642]\uFE0F?)?|[\uDFCB\uDFCC](?:\uD83C[\uDFFB-\uDFFF]|\uFE0F)?(?:\u200D[\u2640\u2642]\uFE0F?)?|[\uDCCF\uDD8E\uDD91-\uDD9A\uDE01\uDE1A\uDE2F\uDE32-\uDE36\uDE38-\uDE3A\uDE50\uDE51\uDF00-\uDF20\uDF2D-\uDF35\uDF37-\uDF43\uDF45-\uDF4A\uDF4C-\uDF7C\uDF7E-\uDF84\uDF86-\uDF93\uDFA0-\uDFC1\uDFC5\uDFC6\uDFC8\uDFC9\uDFCF-\uDFD3\uDFE0-\uDFF0\uDFF8-\uDFFF]|\uDDE6\uD83C[\uDDE8-\uDDEC\uDDEE\uDDF1\uDDF2\uDDF4\uDDF6-\uDDFA\uDDFC\uDDFD\uDDFF]|\uDDE7\uD83C[\uDDE6\uDDE7\uDDE9-\uDDEF\uDDF1-\uDDF4\uDDF6-\uDDF9\uDDFB\uDDFC\uDDFE\uDDFF]|\uDDE8\uD83C[\uDDE6\uDDE8\uDDE9\uDDEB-\uDDEE\uDDF0-\uDDF7\uDDFA-\uDDFF]|\uDDE9\uD83C[\uDDEA\uDDEC\uDDEF\uDDF0\uDDF2\uDDF4\uDDFF]|\uDDEA\uD83C[\uDDE6\uDDE8\uDDEA\uDDEC\uDDED\uDDF7-\uDDFA]|\uDDEB\uD83C[\uDDEE-\uDDF0\uDDF2\uDDF4\uDDF7]|\uDDEC\uD83C[\uDDE6\uDDE7\uDDE9-\uDDEE\uDDF1-\uDDF3\uDDF5-\uDDFA\uDDFC\uDDFE]|\uDDED\uD83C[\uDDF0\uDDF2\uDDF3\uDDF7\uDDF9\uDDFA]|\uDDEE\uD83C[\uDDE8-\uDDEA\uDDF1-\uDDF4\uDDF6-\uDDF9]|\uDDEF\uD83C[\uDDEA\uDDF2\uDDF4\uDDF5]|\uDDF0\uD83C[\uDDEA\uDDEC-\uDDEE\uDDF2\uDDF3\uDDF5\uDDF7\uDDFC\uDDFE\uDDFF]|\uDDF1\uD83C[\uDDE6-\uDDE8\uDDEE\uDDF0\uDDF7-\uDDFB\uDDFE]|\uDDF2\uD83C[\uDDE6\uDDE8-\uDDED\uDDF0-\uDDFF]|\uDDF3\uD83C[\uDDE6\uDDE8\uDDEA-\uDDEC\uDDEE\uDDF1\uDDF4\uDDF5\uDDF7\uDDFA\uDDFF]|\uDDF4\uD83C\uDDF2|\uDDF5\uD83C[\uDDE6\uDDEA-\uDDED\uDDF0-\uDDF3\uDDF7-\uDDF9\uDDFC\uDDFE]|\uDDF6\uD83C\uDDE6|\uDDF7\uD83C[\uDDEA\uDDF4\uDDF8\uDDFA\uDDFC]|\uDDF8\uD83C[\uDDE6-\uDDEA\uDDEC-\uDDF4\uDDF7-\uDDF9\uDDFB\uDDFD-\uDDFF]|\uDDF9\uD83C[\uDDE6\uDDE8\uDDE9\uDDEB-\uDDED\uDDEF-\uDDF4\uDDF7\uDDF9\uDDFB\uDDFC\uDDFF]|\uDDFA\uD83C[\uDDE6\uDDEC\uDDF2\uDDF3\uDDF8\uDDFE\uDDFF]|\uDDFB\uD83C[\uDDE6\uDDE8\uDDEA\uDDEC\uDDEE\uDDF3\uDDFA]|\uDDFC\uD83C[\uDDEB\uDDF8]|\uDDFD\uD83C\uDDF0|\uDDFE\uD83C[\uDDEA\uDDF9]|\uDDFF\uD83C[\uDDE6\uDDF2\uDDFC]|\uDF44(?:\u200D\uD83D\uDFEB)?|\uDF4B(?:\u200D\uD83D\uDFE9)?|\uDFC3(?:\uD83C[\uDFFB-\uDFFF])?(?:\u200D(?:[\u2640\u2642]\uFE0F?(?:\u200D\u27A1\uFE0F?)?|\u27A1\uFE0F?))?|\uDFF3\uFE0F?(?:\u200D(?:\u26A7\uFE0F?|\uD83C\uDF08))?|\uDFF4(?:\u200D\u2620\uFE0F?|\uDB40\uDC67\uDB40\uDC62\uDB40(?:\uDC65\uDB40\uDC6E\uDB40\uDC67|\uDC73\uDB40\uDC63\uDB40\uDC74|\uDC77\uDB40\uDC6C\uDB40\uDC73)\uDB40\uDC7F)?)|\uD83D(?:[\uDC3F\uDCFD\uDD49\uDD4A\uDD6F\uDD70\uDD73\uDD76-\uDD79\uDD87\uDD8A-\uDD8D\uDDA5\uDDA8\uDDB1\uDDB2\uDDBC\uDDC2-\uDDC4\uDDD1-\uDDD3\uDDDC-\uDDDE\uDDE1\uDDE3\uDDE8\uDDEF\uDDF3\uDDFA\uDECB\uDECD-\uDECF\uDEE0-\uDEE5\uDEE9\uDEF0\uDEF3]\uFE0F?|[\uDC42\uDC43\uDC46-\uDC50\uDC66\uDC67\uDC6B-\uDC6D\uDC72\uDC74-\uDC76\uDC78\uDC7C\uDC83\uDC85\uDC8F\uDC91\uDCAA\uDD7A\uDD95\uDD96\uDE4C\uDE4F\uDEC0\uDECC](?:\uD83C[\uDFFB-\uDFFF])?|[\uDC6E-\uDC71\uDC73\uDC77\uDC81\uDC82\uDC86\uDC87\uDE45-\uDE47\uDE4B\uDE4D\uDE4E\uDEA3\uDEB4\uDEB5](?:\uD83C[\uDFFB-\uDFFF])?(?:\u200D[\u2640\u2642]\uFE0F?)?|[\uDD74\uDD90](?:\uD83C[\uDFFB-\uDFFF]|\uFE0F)?|[\uDC00-\uDC07\uDC09-\uDC14\uDC16-\uDC25\uDC27-\uDC3A\uDC3C-\uDC3E\uDC40\uDC44\uDC45\uDC51-\uDC65\uDC6A\uDC79-\uDC7B\uDC7D-\uDC80\uDC84\uDC88-\uDC8E\uDC90\uDC92-\uDCA9\uDCAB-\uDCFC\uDCFF-\uDD3D\uDD4B-\uDD4E\uDD50-\uDD67\uDDA4\uDDFB-\uDE2D\uDE2F-\uDE34\uDE37-\uDE41\uDE43\uDE44\uDE48-\uDE4A\uDE80-\uDEA2\uDEA4-\uDEB3\uDEB7-\uDEBF\uDEC1-\uDEC5\uDED0-\uDED2\uDED5-\uDED8\uDEDC-\uDEDF\uDEEB\uDEEC\uDEF4-\uDEFC\uDFE0-\uDFEB\uDFF0]|\uDC08(?:\u200D\u2B1B)?|\uDC15(?:\u200D\uD83E\uDDBA)?|\uDC26(?:\u200D(?:\u2B1B|\uD83D\uDD25))?|\uDC3B(?:\u200D\u2744\uFE0F?)?|\uDC41\uFE0F?(?:\u200D\uD83D\uDDE8\uFE0F?)?|\uDC68(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:\uDC8B\u200D\uD83D)?\uDC68|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDC68\uDC69]\u200D\uD83D(?:\uDC66(?:\u200D\uD83D\uDC66)?|\uDC67(?:\u200D\uD83D[\uDC66\uDC67])?)|[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC66(?:\u200D\uD83D\uDC66)?|\uDC67(?:\u200D\uD83D[\uDC66\uDC67])?)|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3]))|\uD83C(?:\uDFFB(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:\uDC8B\u200D\uD83D)?\uDC68\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC68\uD83C[\uDFFC-\uDFFF])|\uD83E(?:[\uDD1D\uDEEF]\u200D\uD83D\uDC68\uD83C[\uDFFC-\uDFFF]|[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3])))?|\uDFFC(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:\uDC8B\u200D\uD83D)?\uDC68\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC68\uD83C[\uDFFB\uDFFD-\uDFFF])|\uD83E(?:[\uDD1D\uDEEF]\u200D\uD83D\uDC68\uD83C[\uDFFB\uDFFD-\uDFFF]|[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3])))?|\uDFFD(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:\uDC8B\u200D\uD83D)?\uDC68\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC68\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF])|\uD83E(?:[\uDD1D\uDEEF]\u200D\uD83D\uDC68\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF]|[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3])))?|\uDFFE(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:\uDC8B\u200D\uD83D)?\uDC68\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC68\uD83C[\uDFFB-\uDFFD\uDFFF])|\uD83E(?:[\uDD1D\uDEEF]\u200D\uD83D\uDC68\uD83C[\uDFFB-\uDFFD\uDFFF]|[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3])))?|\uDFFF(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:\uDC8B\u200D\uD83D)?\uDC68\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC68\uD83C[\uDFFB-\uDFFE])|\uD83E(?:[\uDD1D\uDEEF]\u200D\uD83D\uDC68\uD83C[\uDFFB-\uDFFE]|[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3])))?))?|\uDC69(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:\uDC8B\u200D\uD83D)?[\uDC68\uDC69]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC66(?:\u200D\uD83D\uDC66)?|\uDC67(?:\u200D\uD83D[\uDC66\uDC67])?|\uDC69\u200D\uD83D(?:\uDC66(?:\u200D\uD83D\uDC66)?|\uDC67(?:\u200D\uD83D[\uDC66\uDC67])?))|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3]))|\uD83C(?:\uDFFB(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:[\uDC68\uDC69]|\uDC8B\u200D\uD83D[\uDC68\uDC69])\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC69\uD83C[\uDFFC-\uDFFF])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3]|\uDD1D\u200D\uD83D[\uDC68\uDC69]\uD83C[\uDFFC-\uDFFF]|\uDEEF\u200D\uD83D\uDC69\uD83C[\uDFFC-\uDFFF])))?|\uDFFC(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:[\uDC68\uDC69]|\uDC8B\u200D\uD83D[\uDC68\uDC69])\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC69\uD83C[\uDFFB\uDFFD-\uDFFF])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3]|\uDD1D\u200D\uD83D[\uDC68\uDC69]\uD83C[\uDFFB\uDFFD-\uDFFF]|\uDEEF\u200D\uD83D\uDC69\uD83C[\uDFFB\uDFFD-\uDFFF])))?|\uDFFD(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:[\uDC68\uDC69]|\uDC8B\u200D\uD83D[\uDC68\uDC69])\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC69\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3]|\uDD1D\u200D\uD83D[\uDC68\uDC69]\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF]|\uDEEF\u200D\uD83D\uDC69\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF])))?|\uDFFE(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:[\uDC68\uDC69]|\uDC8B\u200D\uD83D[\uDC68\uDC69])\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC69\uD83C[\uDFFB-\uDFFD\uDFFF])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3]|\uDD1D\u200D\uD83D[\uDC68\uDC69]\uD83C[\uDFFB-\uDFFD\uDFFF]|\uDEEF\u200D\uD83D\uDC69\uD83C[\uDFFB-\uDFFD\uDFFF])))?|\uDFFF(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D\uD83D(?:[\uDC68\uDC69]|\uDC8B\u200D\uD83D[\uDC68\uDC69])\uD83C[\uDFFB-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83D\uDC69\uD83C[\uDFFB-\uDFFE])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3]|\uDD1D\u200D\uD83D[\uDC68\uDC69]\uD83C[\uDFFB-\uDFFE]|\uDEEF\u200D\uD83D\uDC69\uD83C[\uDFFB-\uDFFE])))?))?|\uDD75(?:\uD83C[\uDFFB-\uDFFF]|\uFE0F)?(?:\u200D[\u2640\u2642]\uFE0F?)?|\uDE2E(?:\u200D\uD83D\uDCA8)?|\uDE35(?:\u200D\uD83D\uDCAB)?|\uDE36(?:\u200D\uD83C\uDF2B\uFE0F?)?|\uDE42(?:\u200D[\u2194\u2195]\uFE0F?)?|\uDEB6(?:\uD83C[\uDFFB-\uDFFF])?(?:\u200D(?:[\u2640\u2642]\uFE0F?(?:\u200D\u27A1\uFE0F?)?|\u27A1\uFE0F?))?)|\uD83E(?:[\uDD0C\uDD0F\uDD18-\uDD1F\uDD30-\uDD34\uDD36\uDD77\uDDB5\uDDB6\uDDBB\uDDD2\uDDD3\uDDD5\uDEC3-\uDEC5\uDEF0\uDEF2-\uDEF8](?:\uD83C[\uDFFB-\uDFFF])?|[\uDD26\uDD35\uDD37-\uDD39\uDD3C-\uDD3E\uDDB8\uDDB9\uDDCD\uDDCF\uDDD4\uDDD6-\uDDDD](?:\uD83C[\uDFFB-\uDFFF])?(?:\u200D[\u2640\u2642]\uFE0F?)?|[\uDDDE\uDDDF](?:\u200D[\u2640\u2642]\uFE0F?)?|[\uDD0D\uDD0E\uDD10-\uDD17\uDD20-\uDD25\uDD27-\uDD2F\uDD3A\uDD3F-\uDD45\uDD47-\uDD76\uDD78-\uDDB4\uDDB7\uDDBA\uDDBC-\uDDCC\uDDD0\uDDE0-\uDDFF\uDE70-\uDE7C\uDE80-\uDE8A\uDE8E-\uDEC2\uDEC6\uDEC8\uDECD-\uDEDC\uDEDF-\uDEEA\uDEEF]|\uDDCE(?:\uD83C[\uDFFB-\uDFFF])?(?:\u200D(?:[\u2640\u2642]\uFE0F?(?:\u200D\u27A1\uFE0F?)?|\u27A1\uFE0F?))?|\uDDD1(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\uD83C[\uDF3E\uDF73\uDF7C\uDF84\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3\uDE70]|\uDD1D\u200D\uD83E\uDDD1|\uDDD1\u200D\uD83E\uDDD2(?:\u200D\uD83E\uDDD2)?|\uDDD2(?:\u200D\uD83E\uDDD2)?))|\uD83C(?:\uDFFB(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D(?:\uD83D\uDC8B\u200D)?\uD83E\uDDD1\uD83C[\uDFFC-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF84\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83E\uDDD1\uD83C[\uDFFC-\uDFFF])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3\uDE70]|\uDD1D\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFF]|\uDEEF\u200D\uD83E\uDDD1\uD83C[\uDFFC-\uDFFF])))?|\uDFFC(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D(?:\uD83D\uDC8B\u200D)?\uD83E\uDDD1\uD83C[\uDFFB\uDFFD-\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF84\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83E\uDDD1\uD83C[\uDFFB\uDFFD-\uDFFF])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3\uDE70]|\uDD1D\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFF]|\uDEEF\u200D\uD83E\uDDD1\uD83C[\uDFFB\uDFFD-\uDFFF])))?|\uDFFD(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D(?:\uD83D\uDC8B\u200D)?\uD83E\uDDD1\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF84\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83E\uDDD1\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3\uDE70]|\uDD1D\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFF]|\uDEEF\u200D\uD83E\uDDD1\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF])))?|\uDFFE(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D(?:\uD83D\uDC8B\u200D)?\uD83E\uDDD1\uD83C[\uDFFB-\uDFFD\uDFFF]|\uD83C[\uDF3E\uDF73\uDF7C\uDF84\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFD\uDFFF])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3\uDE70]|\uDD1D\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFF]|\uDEEF\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFD\uDFFF])))?|\uDFFF(?:\u200D(?:[\u2695\u2696\u2708]\uFE0F?|\u2764\uFE0F?\u200D(?:\uD83D\uDC8B\u200D)?\uD83E\uDDD1\uD83C[\uDFFB-\uDFFE]|\uD83C[\uDF3E\uDF73\uDF7C\uDF84\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D(?:[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uDC30\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFE])|\uD83E(?:[\uDDAF\uDDBC\uDDBD](?:\u200D\u27A1\uFE0F?)?|[\uDDB0-\uDDB3\uDE70]|\uDD1D\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFF]|\uDEEF\u200D\uD83E\uDDD1\uD83C[\uDFFB-\uDFFE])))?))?|\uDEF1(?:\uD83C(?:\uDFFB(?:\u200D\uD83E\uDEF2\uD83C[\uDFFC-\uDFFF])?|\uDFFC(?:\u200D\uD83E\uDEF2\uD83C[\uDFFB\uDFFD-\uDFFF])?|\uDFFD(?:\u200D\uD83E\uDEF2\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF])?|\uDFFE(?:\u200D\uD83E\uDEF2\uD83C[\uDFFB-\uDFFD\uDFFF])?|\uDFFF(?:\u200D\uD83E\uDEF2\uD83C[\uDFFB-\uDFFE])?))?)/g;
@@ -37556,7 +37556,7 @@ var init_emoji_regex = __esm({
   }
 });
 
-// ../node_modules/string-width/index.js
+// ../../xtrm-tools/node_modules/string-width/index.js
 function stringWidth(string4, options = {}) {
   if (typeof string4 !== "string" || string4.length === 0) {
     return 0;
@@ -37603,7 +37603,7 @@ function stringWidth(string4, options = {}) {
 }
 var segmenter, defaultIgnorableCodePointRegex;
 var init_string_width = __esm({
-  "../node_modules/string-width/index.js"() {
+  "../../xtrm-tools/node_modules/string-width/index.js"() {
     "use strict";
     init_strip_ansi();
     init_get_east_asian_width();
@@ -37613,7 +37613,7 @@ var init_string_width = __esm({
   }
 });
 
-// ../node_modules/widest-line/index.js
+// ../../xtrm-tools/node_modules/widest-line/index.js
 function widestLine(string4) {
   let lineWidth = 0;
   for (const line of string4.split("\n")) {
@@ -37622,15 +37622,15 @@ function widestLine(string4) {
   return lineWidth;
 }
 var init_widest_line = __esm({
-  "../node_modules/widest-line/index.js"() {
+  "../../xtrm-tools/node_modules/widest-line/index.js"() {
     "use strict";
     init_string_width();
   }
 });
 
-// ../node_modules/cli-boxes/boxes.json
+// ../../xtrm-tools/node_modules/cli-boxes/boxes.json
 var require_boxes = __commonJS({
-  "../node_modules/cli-boxes/boxes.json"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-boxes/boxes.json"(exports2, module2) {
     module2.exports = {
       single: {
         topLeft: "\u250C",
@@ -37716,9 +37716,9 @@ var require_boxes = __commonJS({
   }
 });
 
-// ../node_modules/cli-boxes/index.js
+// ../../xtrm-tools/node_modules/cli-boxes/index.js
 var require_cli_boxes = __commonJS({
-  "../node_modules/cli-boxes/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/cli-boxes/index.js"(exports2, module2) {
     "use strict";
     var cliBoxes2 = require_boxes();
     module2.exports = cliBoxes2;
@@ -37726,7 +37726,7 @@ var require_cli_boxes = __commonJS({
   }
 });
 
-// ../node_modules/camelcase/index.js
+// ../../xtrm-tools/node_modules/camelcase/index.js
 function camelCase(input, options) {
   if (!(typeof input === "string" || Array.isArray(input))) {
     throw new TypeError("Expected the input to be `string | string[]`");
@@ -37765,7 +37765,7 @@ function camelCase(input, options) {
 }
 var UPPERCASE, LOWERCASE, LEADING_CAPITAL, IDENTIFIER, SEPARATORS, LEADING_SEPARATORS, SEPARATORS_AND_IDENTIFIER, NUMBERS_AND_IDENTIFIER, preserveCamelCase, preserveConsecutiveUppercase, postProcess;
 var init_camelcase = __esm({
-  "../node_modules/camelcase/index.js"() {
+  "../../xtrm-tools/node_modules/camelcase/index.js"() {
     "use strict";
     UPPERCASE = /[\p{Lu}]/u;
     LOWERCASE = /[\p{Ll}]/u;
@@ -37814,9 +37814,9 @@ var init_camelcase = __esm({
   }
 });
 
-// ../node_modules/ansi-align/node_modules/ansi-regex/index.js
+// ../../xtrm-tools/node_modules/ansi-align/node_modules/ansi-regex/index.js
 var require_ansi_regex2 = __commonJS({
-  "../node_modules/ansi-align/node_modules/ansi-regex/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ansi-align/node_modules/ansi-regex/index.js"(exports2, module2) {
     "use strict";
     module2.exports = ({ onlyFirst = false } = {}) => {
       const pattern = [
@@ -37828,18 +37828,18 @@ var require_ansi_regex2 = __commonJS({
   }
 });
 
-// ../node_modules/ansi-align/node_modules/strip-ansi/index.js
+// ../../xtrm-tools/node_modules/ansi-align/node_modules/strip-ansi/index.js
 var require_strip_ansi2 = __commonJS({
-  "../node_modules/ansi-align/node_modules/strip-ansi/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ansi-align/node_modules/strip-ansi/index.js"(exports2, module2) {
     "use strict";
     var ansiRegex2 = require_ansi_regex2();
     module2.exports = (string4) => typeof string4 === "string" ? string4.replace(ansiRegex2(), "") : string4;
   }
 });
 
-// ../node_modules/ansi-align/node_modules/is-fullwidth-code-point/index.js
+// ../../xtrm-tools/node_modules/ansi-align/node_modules/is-fullwidth-code-point/index.js
 var require_is_fullwidth_code_point2 = __commonJS({
-  "../node_modules/ansi-align/node_modules/is-fullwidth-code-point/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ansi-align/node_modules/is-fullwidth-code-point/index.js"(exports2, module2) {
     "use strict";
     var isFullwidthCodePoint = (codePoint) => {
       if (Number.isNaN(codePoint)) {
@@ -37870,9 +37870,9 @@ var require_is_fullwidth_code_point2 = __commonJS({
   }
 });
 
-// ../node_modules/ansi-align/node_modules/emoji-regex/index.js
+// ../../xtrm-tools/node_modules/ansi-align/node_modules/emoji-regex/index.js
 var require_emoji_regex2 = __commonJS({
-  "../node_modules/ansi-align/node_modules/emoji-regex/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ansi-align/node_modules/emoji-regex/index.js"(exports2, module2) {
     "use strict";
     module2.exports = function() {
       return /\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62(?:\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67|\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74|\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73)\uDB40\uDC7F|\uD83D\uDC68(?:\uD83C\uDFFC\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68\uD83C\uDFFB|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFF\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB-\uDFFE])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFE\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB-\uDFFD])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFD\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB\uDFFC])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\u200D(?:\u2764\uFE0F\u200D(?:\uD83D\uDC8B\u200D)?\uD83D\uDC68|(?:\uD83D[\uDC68\uDC69])\u200D(?:\uD83D\uDC66\u200D\uD83D\uDC66|\uD83D\uDC67\u200D(?:\uD83D[\uDC66\uDC67]))|\uD83D\uDC66\u200D\uD83D\uDC66|\uD83D\uDC67\u200D(?:\uD83D[\uDC66\uDC67])|(?:\uD83D[\uDC68\uDC69])\u200D(?:\uD83D[\uDC66\uDC67])|[\u2695\u2696\u2708]\uFE0F|\uD83D[\uDC66\uDC67]|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|(?:\uD83C\uDFFB\u200D[\u2695\u2696\u2708]|\uD83C\uDFFF\u200D[\u2695\u2696\u2708]|\uD83C\uDFFE\u200D[\u2695\u2696\u2708]|\uD83C\uDFFD\u200D[\u2695\u2696\u2708]|\uD83C\uDFFC\u200D[\u2695\u2696\u2708])\uFE0F|\uD83C\uDFFB\u200D(?:\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C[\uDFFB-\uDFFF])|(?:\uD83E\uDDD1\uD83C\uDFFB\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1|\uD83D\uDC69\uD83C\uDFFC\u200D\uD83E\uDD1D\u200D\uD83D\uDC69)\uD83C\uDFFB|\uD83E\uDDD1(?:\uD83C\uDFFF\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1(?:\uD83C[\uDFFB-\uDFFF])|\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1)|(?:\uD83E\uDDD1\uD83C\uDFFE\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1|\uD83D\uDC69\uD83C\uDFFF\u200D\uD83E\uDD1D\u200D(?:\uD83D[\uDC68\uDC69]))(?:\uD83C[\uDFFB-\uDFFE])|(?:\uD83E\uDDD1\uD83C\uDFFC\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1|\uD83D\uDC69\uD83C\uDFFD\u200D\uD83E\uDD1D\u200D\uD83D\uDC69)(?:\uD83C[\uDFFB\uDFFC])|\uD83D\uDC69(?:\uD83C\uDFFE\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB-\uDFFD\uDFFF])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFC\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB\uDFFD-\uDFFF])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFB\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFC-\uDFFF])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFD\u200D(?:\uD83E\uDD1D\u200D\uD83D\uDC68(?:\uD83C[\uDFFB\uDFFC\uDFFE\uDFFF])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\u200D(?:\u2764\uFE0F\u200D(?:\uD83D\uDC8B\u200D(?:\uD83D[\uDC68\uDC69])|\uD83D[\uDC68\uDC69])|\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD])|\uD83C\uDFFF\u200D(?:\uD83C[\uDF3E\uDF73\uDF93\uDFA4\uDFA8\uDFEB\uDFED]|\uD83D[\uDCBB\uDCBC\uDD27\uDD2C\uDE80\uDE92]|\uD83E[\uDDAF-\uDDB3\uDDBC\uDDBD]))|\uD83D\uDC69\u200D\uD83D\uDC69\u200D(?:\uD83D\uDC66\u200D\uD83D\uDC66|\uD83D\uDC67\u200D(?:\uD83D[\uDC66\uDC67]))|(?:\uD83E\uDDD1\uD83C\uDFFD\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1|\uD83D\uDC69\uD83C\uDFFE\u200D\uD83E\uDD1D\u200D\uD83D\uDC69)(?:\uD83C[\uDFFB-\uDFFD])|\uD83D\uDC69\u200D\uD83D\uDC66\u200D\uD83D\uDC66|\uD83D\uDC69\u200D\uD83D\uDC69\u200D(?:\uD83D[\uDC66\uDC67])|(?:\uD83D\uDC41\uFE0F\u200D\uD83D\uDDE8|\uD83D\uDC69(?:\uD83C\uDFFF\u200D[\u2695\u2696\u2708]|\uD83C\uDFFE\u200D[\u2695\u2696\u2708]|\uD83C\uDFFC\u200D[\u2695\u2696\u2708]|\uD83C\uDFFB\u200D[\u2695\u2696\u2708]|\uD83C\uDFFD\u200D[\u2695\u2696\u2708]|\u200D[\u2695\u2696\u2708])|(?:(?:\u26F9|\uD83C[\uDFCB\uDFCC]|\uD83D\uDD75)\uFE0F|\uD83D\uDC6F|\uD83E[\uDD3C\uDDDE\uDDDF])\u200D[\u2640\u2642]|(?:\u26F9|\uD83C[\uDFCB\uDFCC]|\uD83D\uDD75)(?:\uD83C[\uDFFB-\uDFFF])\u200D[\u2640\u2642]|(?:\uD83C[\uDFC3\uDFC4\uDFCA]|\uD83D[\uDC6E\uDC71\uDC73\uDC77\uDC81\uDC82\uDC86\uDC87\uDE45-\uDE47\uDE4B\uDE4D\uDE4E\uDEA3\uDEB4-\uDEB6]|\uD83E[\uDD26\uDD37-\uDD39\uDD3D\uDD3E\uDDB8\uDDB9\uDDCD-\uDDCF\uDDD6-\uDDDD])(?:(?:\uD83C[\uDFFB-\uDFFF])\u200D[\u2640\u2642]|\u200D[\u2640\u2642])|\uD83C\uDFF4\u200D\u2620)\uFE0F|\uD83D\uDC69\u200D\uD83D\uDC67\u200D(?:\uD83D[\uDC66\uDC67])|\uD83C\uDFF3\uFE0F\u200D\uD83C\uDF08|\uD83D\uDC15\u200D\uD83E\uDDBA|\uD83D\uDC69\u200D\uD83D\uDC66|\uD83D\uDC69\u200D\uD83D\uDC67|\uD83C\uDDFD\uD83C\uDDF0|\uD83C\uDDF4\uD83C\uDDF2|\uD83C\uDDF6\uD83C\uDDE6|[#\*0-9]\uFE0F\u20E3|\uD83C\uDDE7(?:\uD83C[\uDDE6\uDDE7\uDDE9-\uDDEF\uDDF1-\uDDF4\uDDF6-\uDDF9\uDDFB\uDDFC\uDDFE\uDDFF])|\uD83C\uDDF9(?:\uD83C[\uDDE6\uDDE8\uDDE9\uDDEB-\uDDED\uDDEF-\uDDF4\uDDF7\uDDF9\uDDFB\uDDFC\uDDFF])|\uD83C\uDDEA(?:\uD83C[\uDDE6\uDDE8\uDDEA\uDDEC\uDDED\uDDF7-\uDDFA])|\uD83E\uDDD1(?:\uD83C[\uDFFB-\uDFFF])|\uD83C\uDDF7(?:\uD83C[\uDDEA\uDDF4\uDDF8\uDDFA\uDDFC])|\uD83D\uDC69(?:\uD83C[\uDFFB-\uDFFF])|\uD83C\uDDF2(?:\uD83C[\uDDE6\uDDE8-\uDDED\uDDF0-\uDDFF])|\uD83C\uDDE6(?:\uD83C[\uDDE8-\uDDEC\uDDEE\uDDF1\uDDF2\uDDF4\uDDF6-\uDDFA\uDDFC\uDDFD\uDDFF])|\uD83C\uDDF0(?:\uD83C[\uDDEA\uDDEC-\uDDEE\uDDF2\uDDF3\uDDF5\uDDF7\uDDFC\uDDFE\uDDFF])|\uD83C\uDDED(?:\uD83C[\uDDF0\uDDF2\uDDF3\uDDF7\uDDF9\uDDFA])|\uD83C\uDDE9(?:\uD83C[\uDDEA\uDDEC\uDDEF\uDDF0\uDDF2\uDDF4\uDDFF])|\uD83C\uDDFE(?:\uD83C[\uDDEA\uDDF9])|\uD83C\uDDEC(?:\uD83C[\uDDE6\uDDE7\uDDE9-\uDDEE\uDDF1-\uDDF3\uDDF5-\uDDFA\uDDFC\uDDFE])|\uD83C\uDDF8(?:\uD83C[\uDDE6-\uDDEA\uDDEC-\uDDF4\uDDF7-\uDDF9\uDDFB\uDDFD-\uDDFF])|\uD83C\uDDEB(?:\uD83C[\uDDEE-\uDDF0\uDDF2\uDDF4\uDDF7])|\uD83C\uDDF5(?:\uD83C[\uDDE6\uDDEA-\uDDED\uDDF0-\uDDF3\uDDF7-\uDDF9\uDDFC\uDDFE])|\uD83C\uDDFB(?:\uD83C[\uDDE6\uDDE8\uDDEA\uDDEC\uDDEE\uDDF3\uDDFA])|\uD83C\uDDF3(?:\uD83C[\uDDE6\uDDE8\uDDEA-\uDDEC\uDDEE\uDDF1\uDDF4\uDDF5\uDDF7\uDDFA\uDDFF])|\uD83C\uDDE8(?:\uD83C[\uDDE6\uDDE8\uDDE9\uDDEB-\uDDEE\uDDF0-\uDDF5\uDDF7\uDDFA-\uDDFF])|\uD83C\uDDF1(?:\uD83C[\uDDE6-\uDDE8\uDDEE\uDDF0\uDDF7-\uDDFB\uDDFE])|\uD83C\uDDFF(?:\uD83C[\uDDE6\uDDF2\uDDFC])|\uD83C\uDDFC(?:\uD83C[\uDDEB\uDDF8])|\uD83C\uDDFA(?:\uD83C[\uDDE6\uDDEC\uDDF2\uDDF3\uDDF8\uDDFE\uDDFF])|\uD83C\uDDEE(?:\uD83C[\uDDE8-\uDDEA\uDDF1-\uDDF4\uDDF6-\uDDF9])|\uD83C\uDDEF(?:\uD83C[\uDDEA\uDDF2\uDDF4\uDDF5])|(?:\uD83C[\uDFC3\uDFC4\uDFCA]|\uD83D[\uDC6E\uDC71\uDC73\uDC77\uDC81\uDC82\uDC86\uDC87\uDE45-\uDE47\uDE4B\uDE4D\uDE4E\uDEA3\uDEB4-\uDEB6]|\uD83E[\uDD26\uDD37-\uDD39\uDD3D\uDD3E\uDDB8\uDDB9\uDDCD-\uDDCF\uDDD6-\uDDDD])(?:\uD83C[\uDFFB-\uDFFF])|(?:\u26F9|\uD83C[\uDFCB\uDFCC]|\uD83D\uDD75)(?:\uD83C[\uDFFB-\uDFFF])|(?:[\u261D\u270A-\u270D]|\uD83C[\uDF85\uDFC2\uDFC7]|\uD83D[\uDC42\uDC43\uDC46-\uDC50\uDC66\uDC67\uDC6B-\uDC6D\uDC70\uDC72\uDC74-\uDC76\uDC78\uDC7C\uDC83\uDC85\uDCAA\uDD74\uDD7A\uDD90\uDD95\uDD96\uDE4C\uDE4F\uDEC0\uDECC]|\uD83E[\uDD0F\uDD18-\uDD1C\uDD1E\uDD1F\uDD30-\uDD36\uDDB5\uDDB6\uDDBB\uDDD2-\uDDD5])(?:\uD83C[\uDFFB-\uDFFF])|(?:[\u231A\u231B\u23E9-\u23EC\u23F0\u23F3\u25FD\u25FE\u2614\u2615\u2648-\u2653\u267F\u2693\u26A1\u26AA\u26AB\u26BD\u26BE\u26C4\u26C5\u26CE\u26D4\u26EA\u26F2\u26F3\u26F5\u26FA\u26FD\u2705\u270A\u270B\u2728\u274C\u274E\u2753-\u2755\u2757\u2795-\u2797\u27B0\u27BF\u2B1B\u2B1C\u2B50\u2B55]|\uD83C[\uDC04\uDCCF\uDD8E\uDD91-\uDD9A\uDDE6-\uDDFF\uDE01\uDE1A\uDE2F\uDE32-\uDE36\uDE38-\uDE3A\uDE50\uDE51\uDF00-\uDF20\uDF2D-\uDF35\uDF37-\uDF7C\uDF7E-\uDF93\uDFA0-\uDFCA\uDFCF-\uDFD3\uDFE0-\uDFF0\uDFF4\uDFF8-\uDFFF]|\uD83D[\uDC00-\uDC3E\uDC40\uDC42-\uDCFC\uDCFF-\uDD3D\uDD4B-\uDD4E\uDD50-\uDD67\uDD7A\uDD95\uDD96\uDDA4\uDDFB-\uDE4F\uDE80-\uDEC5\uDECC\uDED0-\uDED2\uDED5\uDEEB\uDEEC\uDEF4-\uDEFA\uDFE0-\uDFEB]|\uD83E[\uDD0D-\uDD3A\uDD3C-\uDD45\uDD47-\uDD71\uDD73-\uDD76\uDD7A-\uDDA2\uDDA5-\uDDAA\uDDAE-\uDDCA\uDDCD-\uDDFF\uDE70-\uDE73\uDE78-\uDE7A\uDE80-\uDE82\uDE90-\uDE95])|(?:[#\*0-9\xA9\xAE\u203C\u2049\u2122\u2139\u2194-\u2199\u21A9\u21AA\u231A\u231B\u2328\u23CF\u23E9-\u23F3\u23F8-\u23FA\u24C2\u25AA\u25AB\u25B6\u25C0\u25FB-\u25FE\u2600-\u2604\u260E\u2611\u2614\u2615\u2618\u261D\u2620\u2622\u2623\u2626\u262A\u262E\u262F\u2638-\u263A\u2640\u2642\u2648-\u2653\u265F\u2660\u2663\u2665\u2666\u2668\u267B\u267E\u267F\u2692-\u2697\u2699\u269B\u269C\u26A0\u26A1\u26AA\u26AB\u26B0\u26B1\u26BD\u26BE\u26C4\u26C5\u26C8\u26CE\u26CF\u26D1\u26D3\u26D4\u26E9\u26EA\u26F0-\u26F5\u26F7-\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\u2712\u2714\u2716\u271D\u2721\u2728\u2733\u2734\u2744\u2747\u274C\u274E\u2753-\u2755\u2757\u2763\u2764\u2795-\u2797\u27A1\u27B0\u27BF\u2934\u2935\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299]|\uD83C[\uDC04\uDCCF\uDD70\uDD71\uDD7E\uDD7F\uDD8E\uDD91-\uDD9A\uDDE6-\uDDFF\uDE01\uDE02\uDE1A\uDE2F\uDE32-\uDE3A\uDE50\uDE51\uDF00-\uDF21\uDF24-\uDF93\uDF96\uDF97\uDF99-\uDF9B\uDF9E-\uDFF0\uDFF3-\uDFF5\uDFF7-\uDFFF]|\uD83D[\uDC00-\uDCFD\uDCFF-\uDD3D\uDD49-\uDD4E\uDD50-\uDD67\uDD6F\uDD70\uDD73-\uDD7A\uDD87\uDD8A-\uDD8D\uDD90\uDD95\uDD96\uDDA4\uDDA5\uDDA8\uDDB1\uDDB2\uDDBC\uDDC2-\uDDC4\uDDD1-\uDDD3\uDDDC-\uDDDE\uDDE1\uDDE3\uDDE8\uDDEF\uDDF3\uDDFA-\uDE4F\uDE80-\uDEC5\uDECB-\uDED2\uDED5\uDEE0-\uDEE5\uDEE9\uDEEB\uDEEC\uDEF0\uDEF3-\uDEFA\uDFE0-\uDFEB]|\uD83E[\uDD0D-\uDD3A\uDD3C-\uDD45\uDD47-\uDD71\uDD73-\uDD76\uDD7A-\uDDA2\uDDA5-\uDDAA\uDDAE-\uDDCA\uDDCD-\uDDFF\uDE70-\uDE73\uDE78-\uDE7A\uDE80-\uDE82\uDE90-\uDE95])\uFE0F|(?:[\u261D\u26F9\u270A-\u270D]|\uD83C[\uDF85\uDFC2-\uDFC4\uDFC7\uDFCA-\uDFCC]|\uD83D[\uDC42\uDC43\uDC46-\uDC50\uDC66-\uDC78\uDC7C\uDC81-\uDC83\uDC85-\uDC87\uDC8F\uDC91\uDCAA\uDD74\uDD75\uDD7A\uDD90\uDD95\uDD96\uDE45-\uDE47\uDE4B-\uDE4F\uDEA3\uDEB4-\uDEB6\uDEC0\uDECC]|\uD83E[\uDD0F\uDD18-\uDD1F\uDD26\uDD30-\uDD39\uDD3C-\uDD3E\uDDB5\uDDB6\uDDB8\uDDB9\uDDBB\uDDCD-\uDDCF\uDDD1-\uDDDD])/g;
@@ -37880,9 +37880,9 @@ var require_emoji_regex2 = __commonJS({
   }
 });
 
-// ../node_modules/ansi-align/node_modules/string-width/index.js
+// ../../xtrm-tools/node_modules/ansi-align/node_modules/string-width/index.js
 var require_string_width2 = __commonJS({
-  "../node_modules/ansi-align/node_modules/string-width/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ansi-align/node_modules/string-width/index.js"(exports2, module2) {
     "use strict";
     var stripAnsi2 = require_strip_ansi2();
     var isFullwidthCodePoint = require_is_fullwidth_code_point2();
@@ -37917,9 +37917,9 @@ var require_string_width2 = __commonJS({
   }
 });
 
-// ../node_modules/ansi-align/index.js
+// ../../xtrm-tools/node_modules/ansi-align/index.js
 var require_ansi_align = __commonJS({
-  "../node_modules/ansi-align/index.js"(exports2, module2) {
+  "../../xtrm-tools/node_modules/ansi-align/index.js"(exports2, module2) {
     "use strict";
     var stringWidth2 = require_string_width2();
     function ansiAlign2(text, opts) {
@@ -37969,7 +37969,7 @@ var require_ansi_align = __commonJS({
   }
 });
 
-// ../node_modules/ansi-styles/index.js
+// ../../xtrm-tools/node_modules/ansi-styles/index.js
 function assembleStyles2() {
   const codes = /* @__PURE__ */ new Map();
   for (const [groupName, group] of Object.entries(styles3)) {
@@ -38086,7 +38086,7 @@ function assembleStyles2() {
 }
 var ANSI_BACKGROUND_OFFSET2, wrapAnsi162, wrapAnsi2562, wrapAnsi16m2, styles3, modifierNames2, foregroundColorNames2, backgroundColorNames2, colorNames2, ansiStyles2, ansi_styles_default2;
 var init_ansi_styles2 = __esm({
-  "../node_modules/ansi-styles/index.js"() {
+  "../../xtrm-tools/node_modules/ansi-styles/index.js"() {
     "use strict";
     ANSI_BACKGROUND_OFFSET2 = 10;
     wrapAnsi162 = (offset = 0) => (code) => `\x1B[${code + offset}m`;
@@ -38161,13 +38161,13 @@ var init_ansi_styles2 = __esm({
   }
 });
 
-// ../node_modules/wrap-ansi/index.js
+// ../../xtrm-tools/node_modules/wrap-ansi/index.js
 function wrapAnsi(string4, columns2, options) {
   return String(string4).normalize().replaceAll("\r\n", "\n").split("\n").map((line) => exec2(line, columns2, options)).join("\n");
 }
 var ESCAPES, END_CODE, ANSI_ESCAPE_BELL, ANSI_CSI, ANSI_OSC, ANSI_SGR_TERMINATOR, ANSI_ESCAPE_LINK, wrapAnsiCode, wrapAnsiHyperlink, wordLengths, wrapWord, stringVisibleTrimSpacesRight, exec2;
 var init_wrap_ansi = __esm({
-  "../node_modules/wrap-ansi/index.js"() {
+  "../../xtrm-tools/node_modules/wrap-ansi/index.js"() {
     "use strict";
     init_string_width();
     init_strip_ansi();
@@ -38325,7 +38325,7 @@ var init_wrap_ansi = __esm({
   }
 });
 
-// ../node_modules/boxen/index.js
+// ../../xtrm-tools/node_modules/boxen/index.js
 var boxen_exports = {};
 __export(boxen_exports, {
   _borderStyles: () => import_cli_boxes2.default,
@@ -38358,7 +38358,7 @@ function boxen(text, options) {
 }
 var import_node_process8, import_cli_boxes, import_ansi_align, import_cli_boxes2, NEWLINE, PAD, NONE, terminalColumns, getObject, getBorderWidth, getBorderChars, makeTitle, makeContentText, boxContent, sanitizeOptions, formatTitle, determineDimensions, isHex, isColorValid, getColorFunction, getBGColorFunction;
 var init_boxen = __esm({
-  "../node_modules/boxen/index.js"() {
+  "../../xtrm-tools/node_modules/boxen/index.js"() {
     "use strict";
     import_node_process8 = __toESM(require("process"), 1);
     init_string_width();
@@ -38617,9 +38617,9 @@ var init_boxen = __esm({
 
 // src/index.ts
 var import_node_fs12 = require("fs");
-var import_node_path30 = require("path");
+var import_node_path31 = require("path");
 
-// ../node_modules/commander/esm.mjs
+// ../../xtrm-tools/node_modules/commander/esm.mjs
 var import_index = __toESM(require_commander(), 1);
 var {
   program,
@@ -38636,7 +38636,7 @@ var {
   Help
 } = import_index.default;
 
-// ../node_modules/kleur/index.mjs
+// ../../xtrm-tools/node_modules/kleur/index.mjs
 var FORCE_COLOR;
 var NODE_DISABLE_COLORS;
 var NO_COLOR;
@@ -39139,7 +39139,7 @@ var import_node_path3 = __toESM(require("path"), 1);
 var import_fs_extra3 = __toESM(require_lib(), 1);
 var import_node_path2 = __toESM(require("path"), 1);
 
-// ../node_modules/zod/v4/classic/external.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
   $brand: () => $brand,
@@ -39382,7 +39382,7 @@ __export(external_exports, {
   xor: () => xor
 });
 
-// ../node_modules/zod/v4/core/index.js
+// ../../xtrm-tools/node_modules/zod/v4/core/index.js
 var core_exports2 = {};
 __export(core_exports2, {
   $ZodAny: () => $ZodAny,
@@ -39661,7 +39661,7 @@ __export(core_exports2, {
   version: () => version
 });
 
-// ../node_modules/zod/v4/core/core.js
+// ../../xtrm-tools/node_modules/zod/v4/core/core.js
 var _a;
 var NEVER = /* @__PURE__ */ Object.freeze({
   status: "aborted"
@@ -39738,7 +39738,7 @@ function config(newConfig) {
   return globalConfig;
 }
 
-// ../node_modules/zod/v4/core/util.js
+// ../../xtrm-tools/node_modules/zod/v4/core/util.js
 var util_exports = {};
 __export(util_exports, {
   BIGINT_FORMAT_RANGES: () => BIGINT_FORMAT_RANGES,
@@ -39905,10 +39905,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path47) {
-  if (!path47)
+function getElementAtPath(obj, path48) {
+  if (!path48)
     return obj;
-  return path47.reduce((acc, key) => acc?.[key], obj);
+  return path48.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -40317,11 +40317,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path47, issues) {
+function prefixIssues(path48, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path47);
+    iss.path.unshift(path48);
     return iss;
   });
 }
@@ -40434,7 +40434,7 @@ var Class = class {
   }
 };
 
-// ../node_modules/zod/v4/core/errors.js
+// ../../xtrm-tools/node_modules/zod/v4/core/errors.js
 var initializer = (inst, def) => {
   inst.name = "$ZodError";
   Object.defineProperty(inst, "_zod", {
@@ -40468,16 +40468,16 @@ function flattenError(error51, mapper = (issue2) => issue2.message) {
 }
 function formatError(error51, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error52, path47 = []) => {
+  const processError = (error52, path48 = []) => {
     for (const issue2 of error52.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path47, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path48, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path47, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path48, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path47, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path48, ...issue2.path]);
       } else {
-        const fullpath = [...path47, ...issue2.path];
+        const fullpath = [...path48, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -40504,17 +40504,17 @@ function formatError(error51, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error51, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error52, path47 = []) => {
+  const processError = (error52, path48 = []) => {
     var _a3, _b;
     for (const issue2 of error52.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path47, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path48, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path47, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path48, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path47, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path48, ...issue2.path]);
       } else {
-        const fullpath = [...path47, ...issue2.path];
+        const fullpath = [...path48, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -40546,8 +40546,8 @@ function treeifyError(error51, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path47 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path47) {
+  const path48 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path48) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -40573,7 +40573,7 @@ function prettifyError(error51) {
   return lines.join("\n");
 }
 
-// ../node_modules/zod/v4/core/parse.js
+// ../../xtrm-tools/node_modules/zod/v4/core/parse.js
 var _parse = (_Err) => (schema, value, _ctx, _params) => {
   const ctx = _ctx ? { ..._ctx, async: false } : { async: false };
   const result = schema._zod.run({ value, issues: [] }, ctx);
@@ -40661,7 +40661,7 @@ var _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
 };
 var safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync($ZodRealError);
 
-// ../node_modules/zod/v4/core/regexes.js
+// ../../xtrm-tools/node_modules/zod/v4/core/regexes.js
 var regexes_exports = {};
 __export(regexes_exports, {
   base64: () => base64,
@@ -40820,7 +40820,7 @@ var sha512_hex = /^[0-9a-fA-F]{128}$/;
 var sha512_base64 = /* @__PURE__ */ fixedBase64(86, "==");
 var sha512_base64url = /* @__PURE__ */ fixedBase64url(86);
 
-// ../node_modules/zod/v4/core/checks.js
+// ../../xtrm-tools/node_modules/zod/v4/core/checks.js
 var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   var _a3;
   inst._zod ?? (inst._zod = {});
@@ -41368,7 +41368,7 @@ var $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (ins
   };
 });
 
-// ../node_modules/zod/v4/core/doc.js
+// ../../xtrm-tools/node_modules/zod/v4/core/doc.js
 var Doc = class {
   constructor(args = []) {
     this.content = [];
@@ -41404,14 +41404,14 @@ var Doc = class {
   }
 };
 
-// ../node_modules/zod/v4/core/versions.js
+// ../../xtrm-tools/node_modules/zod/v4/core/versions.js
 var version = {
   major: 4,
   minor: 4,
   patch: 3
 };
 
-// ../node_modules/zod/v4/core/schemas.js
+// ../../xtrm-tools/node_modules/zod/v4/core/schemas.js
 var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a3;
   inst ?? (inst = {});
@@ -43504,7 +43504,7 @@ function handleRefineResult(result, payload, input, inst) {
   }
 }
 
-// ../node_modules/zod/v4/locales/index.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/index.js
 var locales_exports = {};
 __export(locales_exports, {
   ar: () => ar_default,
@@ -43561,7 +43561,7 @@ __export(locales_exports, {
   zhTW: () => zh_TW_default
 });
 
-// ../node_modules/zod/v4/locales/ar.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ar.js
 var error = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0641", verb: "\u0623\u0646 \u064A\u062D\u0648\u064A" },
@@ -43668,7 +43668,7 @@ function ar_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/az.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/az.js
 var error2 = () => {
   const Sizable = {
     string: { unit: "simvol", verb: "olmal\u0131d\u0131r" },
@@ -43774,7 +43774,7 @@ function az_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/be.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/be.js
 function getBelarusianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -43931,7 +43931,7 @@ function be_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/bg.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/bg.js
 var error4 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0430", verb: "\u0434\u0430 \u0441\u044A\u0434\u044A\u0440\u0436\u0430" },
@@ -44052,7 +44052,7 @@ function bg_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ca.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ca.js
 var error5 = () => {
   const Sizable = {
     string: { unit: "car\xE0cters", verb: "contenir" },
@@ -44161,7 +44161,7 @@ function ca_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/cs.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/cs.js
 var error6 = () => {
   const Sizable = {
     string: { unit: "znak\u016F", verb: "m\xEDt" },
@@ -44273,7 +44273,7 @@ function cs_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/da.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/da.js
 var error7 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "havde" },
@@ -44389,7 +44389,7 @@ function da_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/de.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/de.js
 var error8 = () => {
   const Sizable = {
     string: { unit: "Zeichen", verb: "zu haben" },
@@ -44498,7 +44498,7 @@ function de_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/el.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/el.js
 var error9 = () => {
   const Sizable = {
     string: { unit: "\u03C7\u03B1\u03C1\u03B1\u03BA\u03C4\u03AE\u03C1\u03B5\u03C2", verb: "\u03BD\u03B1 \u03AD\u03C7\u03B5\u03B9" },
@@ -44608,7 +44608,7 @@ function el_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/en.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/en.js
 var error10 = () => {
   const Sizable = {
     string: { unit: "characters", verb: "to have" },
@@ -44721,7 +44721,7 @@ function en_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/eo.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/eo.js
 var error11 = () => {
   const Sizable = {
     string: { unit: "karaktrojn", verb: "havi" },
@@ -44831,7 +44831,7 @@ function eo_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/es.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/es.js
 var error12 = () => {
   const Sizable = {
     string: { unit: "caracteres", verb: "tener" },
@@ -44964,7 +44964,7 @@ function es_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/fa.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/fa.js
 var error13 = () => {
   const Sizable = {
     string: { unit: "\u06A9\u0627\u0631\u0627\u06A9\u062A\u0631", verb: "\u062F\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u062F" },
@@ -45079,7 +45079,7 @@ function fa_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/fi.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/fi.js
 var error14 = () => {
   const Sizable = {
     string: { unit: "merkki\xE4", subject: "merkkijonon" },
@@ -45192,7 +45192,7 @@ function fi_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/fr.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/fr.js
 var error15 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -45318,7 +45318,7 @@ function fr_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/fr-CA.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/fr-CA.js
 var error16 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -45426,7 +45426,7 @@ function fr_CA_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/he.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/he.js
 var error17 = () => {
   const TypeNames = {
     string: { label: "\u05DE\u05D7\u05E8\u05D5\u05D6\u05EA", gender: "f" },
@@ -45621,7 +45621,7 @@ function he_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/hr.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/hr.js
 var error18 = () => {
   const Sizable = {
     string: { unit: "znakova", verb: "imati" },
@@ -45744,7 +45744,7 @@ function hr_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/hu.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/hu.js
 var error19 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "legyen" },
@@ -45853,7 +45853,7 @@ function hu_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/hy.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/hy.js
 function getArmenianPlural(count, one, many) {
   return Math.abs(count) === 1 ? one : many;
 }
@@ -46001,7 +46001,7 @@ function hy_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/id.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/id.js
 var error21 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "memiliki" },
@@ -46108,7 +46108,7 @@ function id_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/is.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/is.js
 var error22 = () => {
   const Sizable = {
     string: { unit: "stafi", verb: "a\xF0 hafa" },
@@ -46218,7 +46218,7 @@ function is_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/it.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/it.js
 var error23 = () => {
   const Sizable = {
     string: { unit: "caratteri", verb: "avere" },
@@ -46327,7 +46327,7 @@ function it_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ja.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ja.js
 var error24 = () => {
   const Sizable = {
     string: { unit: "\u6587\u5B57", verb: "\u3067\u3042\u308B" },
@@ -46435,7 +46435,7 @@ function ja_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ka.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ka.js
 var error25 = () => {
   const Sizable = {
     string: { unit: "\u10E1\u10D8\u10DB\u10D1\u10DD\u10DA\u10DD", verb: "\u10E3\u10DC\u10D3\u10D0 \u10E8\u10D4\u10D8\u10EA\u10D0\u10D5\u10D3\u10D4\u10E1" },
@@ -46548,7 +46548,7 @@ function ka_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/km.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/km.js
 var error26 = () => {
   const Sizable = {
     string: { unit: "\u178F\u17BD\u17A2\u1780\u17D2\u179F\u179A", verb: "\u1782\u17BD\u179A\u1798\u17B6\u1793" },
@@ -46659,12 +46659,12 @@ function km_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/kh.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/kh.js
 function kh_default() {
   return km_default();
 }
 
-// ../node_modules/zod/v4/locales/ko.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ko.js
 var error27 = () => {
   const Sizable = {
     string: { unit: "\uBB38\uC790", verb: "to have" },
@@ -46776,7 +46776,7 @@ function ko_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/lt.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/lt.js
 var capitalizeFirstCharacter = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
@@ -46980,7 +46980,7 @@ function lt_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/mk.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/mk.js
 var error29 = () => {
   const Sizable = {
     string: { unit: "\u0437\u043D\u0430\u0446\u0438", verb: "\u0434\u0430 \u0438\u043C\u0430\u0430\u0442" },
@@ -47090,7 +47090,7 @@ function mk_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ms.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ms.js
 var error30 = () => {
   const Sizable = {
     string: { unit: "aksara", verb: "mempunyai" },
@@ -47198,7 +47198,7 @@ function ms_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/nl.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/nl.js
 var error31 = () => {
   const Sizable = {
     string: { unit: "tekens", verb: "heeft" },
@@ -47309,7 +47309,7 @@ function nl_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/no.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/no.js
 var error32 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "\xE5 ha" },
@@ -47418,7 +47418,7 @@ function no_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ota.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ota.js
 var error33 = () => {
   const Sizable = {
     string: { unit: "harf", verb: "olmal\u0131d\u0131r" },
@@ -47528,7 +47528,7 @@ function ota_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ps.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ps.js
 var error34 = () => {
   const Sizable = {
     string: { unit: "\u062A\u0648\u06A9\u064A", verb: "\u0648\u0644\u0631\u064A" },
@@ -47643,7 +47643,7 @@ function ps_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/pl.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/pl.js
 var error35 = () => {
   const Sizable = {
     string: { unit: "znak\xF3w", verb: "mie\u0107" },
@@ -47753,7 +47753,7 @@ function pl_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/pt.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/pt.js
 var error36 = () => {
   const Sizable = {
     string: { unit: "caracteres", verb: "ter" },
@@ -47862,7 +47862,7 @@ function pt_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ro.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ro.js
 var error37 = () => {
   const Sizable = {
     string: { unit: "caractere", verb: "s\u0103 aib\u0103" },
@@ -47982,7 +47982,7 @@ function ro_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ru.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ru.js
 function getRussianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -48139,7 +48139,7 @@ function ru_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/sl.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/sl.js
 var error39 = () => {
   const Sizable = {
     string: { unit: "znakov", verb: "imeti" },
@@ -48249,7 +48249,7 @@ function sl_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/sv.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/sv.js
 var error40 = () => {
   const Sizable = {
     string: { unit: "tecken", verb: "att ha" },
@@ -48360,7 +48360,7 @@ function sv_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ta.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ta.js
 var error41 = () => {
   const Sizable = {
     string: { unit: "\u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0B95\u0BCD\u0B95\u0BB3\u0BCD", verb: "\u0B95\u0BCA\u0BA3\u0BCD\u0B9F\u0BBF\u0BB0\u0BC1\u0B95\u0BCD\u0B95 \u0BB5\u0BC7\u0BA3\u0BCD\u0B9F\u0BC1\u0BAE\u0BCD" },
@@ -48471,7 +48471,7 @@ function ta_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/th.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/th.js
 var error42 = () => {
   const Sizable = {
     string: { unit: "\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23", verb: "\u0E04\u0E27\u0E23\u0E21\u0E35" },
@@ -48582,7 +48582,7 @@ function th_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/tr.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/tr.js
 var error43 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "olmal\u0131" },
@@ -48688,7 +48688,7 @@ function tr_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/uk.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/uk.js
 var error44 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0456\u0432", verb: "\u043C\u0430\u0442\u0438\u043C\u0435" },
@@ -48797,12 +48797,12 @@ function uk_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/ua.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ua.js
 function ua_default() {
   return uk_default();
 }
 
-// ../node_modules/zod/v4/locales/ur.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/ur.js
 var error45 = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0648\u0641", verb: "\u06C1\u0648\u0646\u0627" },
@@ -48913,7 +48913,7 @@ function ur_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/uz.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/uz.js
 var error46 = () => {
   const Sizable = {
     string: { unit: "belgi", verb: "bo\u2018lishi kerak" },
@@ -49024,7 +49024,7 @@ function uz_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/vi.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/vi.js
 var error47 = () => {
   const Sizable = {
     string: { unit: "k\xFD t\u1EF1", verb: "c\xF3" },
@@ -49133,7 +49133,7 @@ function vi_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/zh-CN.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/zh-CN.js
 var error48 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u7B26", verb: "\u5305\u542B" },
@@ -49243,7 +49243,7 @@ function zh_CN_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/zh-TW.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/zh-TW.js
 var error49 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u5143", verb: "\u64C1\u6709" },
@@ -49351,7 +49351,7 @@ function zh_TW_default() {
   };
 }
 
-// ../node_modules/zod/v4/locales/yo.js
+// ../../xtrm-tools/node_modules/zod/v4/locales/yo.js
 var error50 = () => {
   const Sizable = {
     string: { unit: "\xE0mi", verb: "n\xED" },
@@ -49459,7 +49459,7 @@ function yo_default() {
   };
 }
 
-// ../node_modules/zod/v4/core/registries.js
+// ../../xtrm-tools/node_modules/zod/v4/core/registries.js
 var _a2;
 var $output = /* @__PURE__ */ Symbol("ZodOutput");
 var $input = /* @__PURE__ */ Symbol("ZodInput");
@@ -49509,7 +49509,7 @@ function registry() {
 (_a2 = globalThis).__zod_globalRegistry ?? (_a2.__zod_globalRegistry = registry());
 var globalRegistry = globalThis.__zod_globalRegistry;
 
-// ../node_modules/zod/v4/core/api.js
+// ../../xtrm-tools/node_modules/zod/v4/core/api.js
 // @__NO_SIDE_EFFECTS__
 function _string(Class2, params) {
   return new Class2({
@@ -50548,7 +50548,7 @@ function _stringFormat(Class2, format, fnOrRegex, _params = {}) {
   return inst;
 }
 
-// ../node_modules/zod/v4/core/to-json-schema.js
+// ../../xtrm-tools/node_modules/zod/v4/core/to-json-schema.js
 function initializeContext(params) {
   let target = params?.target ?? "draft-2020-12";
   if (target === "draft-4")
@@ -50907,7 +50907,7 @@ var createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) =
   return finalize(ctx, schema);
 };
 
-// ../node_modules/zod/v4/core/json-schema-processors.js
+// ../../xtrm-tools/node_modules/zod/v4/core/json-schema-processors.js
 var formatMap = {
   guid: "uuid",
   url: "uri",
@@ -51451,7 +51451,7 @@ function toJSONSchema(input, params) {
   return finalize(ctx, input);
 }
 
-// ../node_modules/zod/v4/core/json-schema-generator.js
+// ../../xtrm-tools/node_modules/zod/v4/core/json-schema-generator.js
 var JSONSchemaGenerator = class {
   /** @deprecated Access via ctx instead */
   get metadataRegistry() {
@@ -51526,10 +51526,10 @@ var JSONSchemaGenerator = class {
   }
 };
 
-// ../node_modules/zod/v4/core/json-schema.js
+// ../../xtrm-tools/node_modules/zod/v4/core/json-schema.js
 var json_schema_exports = {};
 
-// ../node_modules/zod/v4/classic/schemas.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/schemas.js
 var schemas_exports2 = {};
 __export(schemas_exports2, {
   ZodAny: () => ZodAny,
@@ -51700,7 +51700,7 @@ __export(schemas_exports2, {
   xor: () => xor
 });
 
-// ../node_modules/zod/v4/classic/checks.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/checks.js
 var checks_exports2 = {};
 __export(checks_exports2, {
   endsWith: () => _endsWith,
@@ -51734,7 +51734,7 @@ __export(checks_exports2, {
   uppercase: () => _uppercase
 });
 
-// ../node_modules/zod/v4/classic/iso.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/iso.js
 var iso_exports = {};
 __export(iso_exports, {
   ZodISODate: () => ZodISODate,
@@ -51775,7 +51775,7 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
-// ../node_modules/zod/v4/classic/errors.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/errors.js
 var initializer2 = (inst, issues) => {
   $ZodError.init(inst, issues);
   inst.name = "ZodError";
@@ -51815,7 +51815,7 @@ var ZodRealError = /* @__PURE__ */ $constructor("ZodError", initializer2, {
   Parent: Error
 });
 
-// ../node_modules/zod/v4/classic/parse.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/parse.js
 var parse2 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
@@ -51829,7 +51829,7 @@ var safeDecode2 = /* @__PURE__ */ _safeDecode(ZodRealError);
 var safeEncodeAsync2 = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
 var safeDecodeAsync2 = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 
-// ../node_modules/zod/v4/classic/schemas.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/schemas.js
 var _installedGroups = /* @__PURE__ */ new WeakMap();
 function _installLazyMethods(inst, group, methods) {
   const proto2 = Object.getPrototypeOf(inst);
@@ -53119,7 +53119,7 @@ function preprocess(fn, schema) {
   });
 }
 
-// ../node_modules/zod/v4/classic/compat.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/compat.js
 var ZodIssueCode = {
   invalid_type: "invalid_type",
   too_big: "too_big",
@@ -53145,7 +53145,7 @@ var ZodFirstPartyTypeKind;
 /* @__PURE__ */ (function(ZodFirstPartyTypeKind2) {
 })(ZodFirstPartyTypeKind || (ZodFirstPartyTypeKind = {}));
 
-// ../node_modules/zod/v4/classic/from-json-schema.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/from-json-schema.js
 var z = {
   ...schemas_exports2,
   ...checks_exports2,
@@ -53239,13 +53239,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path47 = ref.slice(1).split("/").filter(Boolean);
-  if (path47.length === 0) {
+  const path48 = ref.slice(1).split("/").filter(Boolean);
+  if (path48.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path47[0] === defsKey) {
-    const key = path47[1];
+  if (path48[0] === defsKey) {
+    const key = path48[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -53625,7 +53625,7 @@ function fromJSONSchema(schema, params) {
   return convertSchema(normalized, ctx);
 }
 
-// ../node_modules/zod/v4/classic/coerce.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/coerce.js
 var coerce_exports = {};
 __export(coerce_exports, {
   bigint: () => bigint3,
@@ -53650,7 +53650,7 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
-// ../node_modules/zod/v4/classic/external.js
+// ../../xtrm-tools/node_modules/zod/v4/classic/external.js
 config(en_default());
 
 // src/core/pack-metadata.ts
@@ -53714,6 +53714,24 @@ async function detectDirectChildSkill(dirPath) {
   }
   return !await hasFile(dirPath, PACK_FILE_NAME);
 }
+async function readSkillFrontmatterName(skillFilePath) {
+  let content;
+  try {
+    content = await import_fs_extra4.default.readFile(skillFilePath, "utf8");
+  } catch {
+    return null;
+  }
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fm) {
+    return null;
+  }
+  const nameLine = fm[1].split(/\r?\n/).find((line) => /^name\s*:/.test(line));
+  if (!nameLine) {
+    return null;
+  }
+  const raw = nameLine.replace(/^name\s*:/, "").trim().replace(/^["']|["']$/g, "").trim();
+  return raw || null;
+}
 async function discoverDirectSkills(root) {
   const childDirectories = await listDirectChildDirectories(root);
   const discoveredSkills = [];
@@ -53722,7 +53740,8 @@ async function discoverDirectSkills(root) {
     if (!await detectDirectChildSkill(skillPath)) {
       continue;
     }
-    discoveredSkills.push({ name: childDirectory, path: skillPath });
+    const frontmatterName = await readSkillFrontmatterName(import_node_path3.default.join(skillPath, SKILL_FILE_NAME));
+    discoveredSkills.push({ name: childDirectory, runtimeName: frontmatterName ?? childDirectory, path: skillPath });
   }
   return discoveredSkills;
 }
@@ -53916,13 +53935,13 @@ async function collectEnabledPackSkills(skillsRoot, enabledPackNames) {
 function assertNoRuntimeCollisions(runtime, skills) {
   const firstSeenByName = /* @__PURE__ */ new Map();
   for (const skill of sortByName(skills)) {
-    const firstPath = firstSeenByName.get(skill.name);
+    const firstPath = firstSeenByName.get(skill.runtimeName);
     if (firstPath) {
       throw new Error(
-        `Duplicate skill name '${skill.name}' for runtime '${runtime}' (first: ${firstPath}, duplicate: ${skill.path}).`
+        `Duplicate skill name '${skill.runtimeName}' for runtime '${runtime}' (first: ${firstPath}, duplicate: ${skill.path}).`
       );
     }
-    firstSeenByName.set(skill.name, skill.path);
+    firstSeenByName.set(skill.runtimeName, skill.path);
   }
 }
 async function selectRuntimeSkills(runtime, skillsRoot) {
@@ -53944,7 +53963,7 @@ async function buildRuntimeTempView(runtime, skillsRoot, selectedSkills) {
   const tempRoot = import_node_path4.default.join(activeParentRoot, `${runtime}.tmp-${(0, import_node_crypto.randomUUID)()}`);
   await import_fs_extra6.default.ensureDir(tempRoot);
   for (const skill of selectedSkills) {
-    const linkPath = import_node_path4.default.join(tempRoot, skill.name);
+    const linkPath = import_node_path4.default.join(tempRoot, skill.runtimeName);
     const relativeTarget = import_node_path4.default.relative(tempRoot, skill.path);
     await import_fs_extra6.default.symlink(relativeTarget, linkPath);
   }
@@ -54007,7 +54026,7 @@ async function rebuildRuntimeActiveView(runtime, skillsRoot) {
     runtime,
     enabledPackCount: selection.enabledPacks.length,
     discoveredSkillCount: selection.skills.length,
-    symlinkNames: selection.skills.map((skill) => skill.name)
+    symlinkNames: selection.skills.map((skill) => skill.runtimeName)
   };
 }
 async function rebuildAllRuntimeActiveViews(skillsRoot) {
@@ -54034,7 +54053,7 @@ async function rebuildAllRuntimeActiveViews(skillsRoot) {
     runtime: "claude",
     enabledPackCount: mergedEnabledPacks.length,
     discoveredSkillCount: mergedSkills.length,
-    symlinkNames: mergedSkills.map((skill) => skill.name)
+    symlinkNames: mergedSkills.map((skill) => skill.runtimeName)
   }];
 }
 
@@ -56235,7 +56254,7 @@ function createPiCommand() {
 
 // src/commands/init.ts
 var import_path15 = __toESM(require("path"), 1);
-var import_fs_extra23 = __toESM(require_lib(), 1);
+var import_fs_extra24 = __toESM(require_lib(), 1);
 var import_prompts3 = __toESM(require_prompts3(), 1);
 var import_child_process5 = require("child_process");
 
@@ -56847,63 +56866,144 @@ async function getManagedAgentSkillNames(repoRoot) {
   return /* @__PURE__ */ new Set();
 }
 
+// src/core/service-skills-ensure.ts
+var import_node_child_process6 = require("child_process");
+var import_node_path9 = __toESM(require("path"), 1);
+var import_fs_extra15 = __toESM(require_lib(), 1);
+var PACKS_REL = import_node_path9.default.join(".xtrm", "skills", "user", "packs");
+var MIGRATOR_REL = import_node_path9.default.join(".xtrm", "skills", "default", "service-skills", "scripts", "layout_migrator.py");
+async function packsWithRegistry(projectRoot) {
+  const packsRoot = import_node_path9.default.join(projectRoot, PACKS_REL);
+  if (!await import_fs_extra15.default.pathExists(packsRoot)) {
+    return [];
+  }
+  const entries = await import_fs_extra15.default.readdir(packsRoot, { withFileTypes: true });
+  const packs = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const packPath = import_node_path9.default.join(packsRoot, entry.name);
+    const hasUmbrellaRegistry = await import_fs_extra15.default.pathExists(import_node_path9.default.join(packPath, "service-skills", "service-registry.json"));
+    const hasFlatRegistry = await import_fs_extra15.default.pathExists(import_node_path9.default.join(packPath, "service-registry.json"));
+    if (hasUmbrellaRegistry || hasFlatRegistry) {
+      packs.push(entry.name);
+    }
+  }
+  return packs.sort((a, b) => a.localeCompare(b));
+}
+async function hasServiceRegistry(projectRoot) {
+  if ((await packsWithRegistry(projectRoot)).length > 0) {
+    return true;
+  }
+  return await import_fs_extra15.default.pathExists(import_node_path9.default.join(projectRoot, "service-registry.json")) || await import_fs_extra15.default.pathExists(import_node_path9.default.join(projectRoot, ".claude", "skills", "service-registry.json"));
+}
+async function ensureServiceSkills(projectRoot, opts) {
+  const notes = [];
+  const migratedPacks = [];
+  const packs = await packsWithRegistry(projectRoot);
+  const applicable = packs.length > 0 || await hasServiceRegistry(projectRoot);
+  if (!applicable) {
+    return { applicable: false, migratedPacks, alreadyCurrent: true, notes };
+  }
+  const migrator = import_node_path9.default.join(projectRoot, MIGRATOR_REL);
+  if (!await import_fs_extra15.default.pathExists(migrator)) {
+    notes.push("service-skills machinery not installed yet \u2014 skills must be installed (xt update) before migration.");
+    return { applicable: true, migratedPacks, alreadyCurrent: true, notes };
+  }
+  if (!opts.apply) {
+    notes.push(`service-skills migration available (dry-run) for pack(s): ${packs.join(", ") || "(root/legacy registry)"}.`);
+    return { applicable: true, migratedPacks, alreadyCurrent: true, notes };
+  }
+  const repoName = import_node_path9.default.basename(projectRoot);
+  const targetPacks = packs.length > 0 ? packs : [""];
+  for (const pack of targetPacks) {
+    const run5 = (0, import_node_child_process6.spawnSync)("python3", [migrator, repoName], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      // Pass the project root explicitly (the CLI knows it) so the migrator never
+      // depends on a git checkout; scope to the pack being migrated.
+      env: {
+        ...process.env,
+        CLAUDE_PROJECT_DIR: projectRoot,
+        ...pack ? { XTRM_PACK: pack } : {}
+      }
+    });
+    const output = `${run5.stdout ?? ""}${run5.stderr ?? ""}`;
+    if (run5.status === 2) {
+      notes.push(`service-skills: pack '${pack}' migration refused \u2014 ${(run5.stderr ?? "").trim()}`);
+      continue;
+    }
+    const lines = output.split("\n");
+    if (lines.some((line) => line.startsWith("migrated:"))) {
+      migratedPacks.push(pack || repoName);
+    }
+    for (const line of lines) {
+      if (line.startsWith("migrated:") || line.startsWith("umbrella:") || line.startsWith("registry:") || line.includes("WARNING")) {
+        notes.push(`service-skills: ${line.trim()}`);
+      }
+    }
+  }
+  return { applicable: true, migratedPacks, alreadyCurrent: migratedPacks.length === 0, notes };
+}
+
 // src/core/init-verification.ts
 var import_child_process4 = require("child_process");
-var import_fs_extra16 = __toESM(require_lib(), 1);
+var import_fs_extra17 = __toESM(require_lib(), 1);
 var import_os3 = __toESM(require("os"), 1);
 var import_path10 = __toESM(require("path"), 1);
 
 // src/core/skills-runtime-views.ts
-var import_fs_extra15 = __toESM(require_lib(), 1);
-var import_node_path9 = __toESM(require("path"), 1);
-var CLAUDE_POINTER_TARGET = import_node_path9.default.join("..", ".xtrm", "skills", "active");
+var import_fs_extra16 = __toESM(require_lib(), 1);
+var import_node_path10 = __toESM(require("path"), 1);
+var CLAUDE_POINTER_TARGET = import_node_path10.default.join("..", ".xtrm", "skills", "active");
 var PI_SKILLS_ENTRY = "../.xtrm/skills/active";
 async function readSymlinkTarget(linkPath) {
-  const stat = await import_fs_extra15.default.lstat(linkPath).catch(() => null);
+  const stat = await import_fs_extra16.default.lstat(linkPath).catch(() => null);
   if (!stat?.isSymbolicLink()) {
     return null;
   }
-  return import_fs_extra15.default.readlink(linkPath);
+  return import_fs_extra16.default.readlink(linkPath);
 }
 async function listRuntimeEntries(runtimeRoot) {
-  const stat = await import_fs_extra15.default.lstat(runtimeRoot).catch(() => null);
+  const stat = await import_fs_extra16.default.lstat(runtimeRoot).catch(() => null);
   if (!stat?.isDirectory()) {
     return [];
   }
-  const names = (await import_fs_extra15.default.readdir(runtimeRoot)).sort((a, b) => a.localeCompare(b));
+  const names = (await import_fs_extra16.default.readdir(runtimeRoot)).sort((a, b) => a.localeCompare(b));
   return names;
 }
 async function hasOnlyValidSymlinkEntries(runtimeRoot, names) {
   for (const name of names) {
-    const entryPath = import_node_path9.default.join(runtimeRoot, name);
-    const stat = await import_fs_extra15.default.lstat(entryPath).catch(() => null);
+    const entryPath = import_node_path10.default.join(runtimeRoot, name);
+    const stat = await import_fs_extra16.default.lstat(entryPath).catch(() => null);
     if (!stat?.isSymbolicLink()) {
       return false;
     }
-    const linkTarget = await import_fs_extra15.default.readlink(entryPath);
-    const resolvedTarget = import_node_path9.default.resolve(import_node_path9.default.dirname(entryPath), linkTarget);
-    if (!await import_fs_extra15.default.pathExists(resolvedTarget)) {
+    const linkTarget = await import_fs_extra16.default.readlink(entryPath);
+    const resolvedTarget = import_node_path10.default.resolve(import_node_path10.default.dirname(entryPath), linkTarget);
+    if (!await import_fs_extra16.default.pathExists(resolvedTarget)) {
       return false;
     }
   }
   return true;
 }
 async function hasPiSkillsPointer(projectRoot) {
-  const settingsPath = import_node_path9.default.join(projectRoot, ".pi", "settings.json");
-  const exists = await import_fs_extra15.default.pathExists(settingsPath);
+  const settingsPath = import_node_path10.default.join(projectRoot, ".pi", "settings.json");
+  const exists = await import_fs_extra16.default.pathExists(settingsPath);
   if (!exists) {
     return false;
   }
-  const settings = await import_fs_extra15.default.readJson(settingsPath).catch(() => ({}));
+  const settings = await import_fs_extra16.default.readJson(settingsPath).catch(() => ({}));
   return Array.isArray(settings.skills) && settings.skills.includes(PI_SKILLS_ENTRY);
 }
 async function checkRuntimeSkillsViews(projectRoot) {
-  const activeRoot = import_node_path9.default.join(projectRoot, ".xtrm", "skills", "active");
+  const activeRoot = import_node_path10.default.join(projectRoot, ".xtrm", "skills", "active");
   const activeEntries = await listRuntimeEntries(activeRoot);
   const activeReady = activeEntries.length > 0 && await hasOnlyValidSymlinkEntries(activeRoot, activeEntries);
-  const claudePointerReady = await readSymlinkTarget(import_node_path9.default.join(projectRoot, ".claude", "skills")) === CLAUDE_POINTER_TARGET;
+  const claudePointerReady = await readSymlinkTarget(import_node_path10.default.join(projectRoot, ".claude", "skills")) === CLAUDE_POINTER_TARGET;
   const piPointerReady = await hasPiSkillsPointer(projectRoot);
-  const hasDeprecatedAgentsSkillsPath = await import_fs_extra15.default.pathExists(import_node_path9.default.join(projectRoot, ".agents", "skills"));
+  const hasDeprecatedAgentsSkillsPath = await import_fs_extra16.default.pathExists(import_node_path10.default.join(projectRoot, ".agents", "skills"));
   return {
     activeReady,
     claudePointerReady,
@@ -56951,7 +57051,7 @@ function hasXtrmHookCommand(hooks) {
 }
 function readClaudeSettingsVerification(settingsPath) {
   try {
-    const settings = import_fs_extra16.default.readJsonSync(settingsPath);
+    const settings = import_fs_extra17.default.readJsonSync(settingsPath);
     const hooks = settings.hooks ?? {};
     const hooksEvents = Object.keys(hooks).length;
     const hookCommands = countHookCommands(hooks);
@@ -56982,7 +57082,7 @@ function verifyClaudeRuntime(projectRoot) {
     settingsPath: projectSettingsPath
   };
   for (const settingsPath of candidatePaths) {
-    if (!import_fs_extra16.default.pathExistsSync(settingsPath)) {
+    if (!import_fs_extra17.default.pathExistsSync(settingsPath)) {
       continue;
     }
     const result = readClaudeSettingsVerification(settingsPath);
@@ -56997,7 +57097,7 @@ function verifyClaudeRuntime(projectRoot) {
 }
 async function verifyPiRuntime(projectRoot) {
   const sourceDir = resolveManagedPiExtensionsSourceDir();
-  if (!sourceDir || !await import_fs_extra16.default.pathExists(sourceDir)) {
+  if (!sourceDir || !await import_fs_extra17.default.pathExists(sourceDir)) {
     return {
       extensions: [],
       packages: [],
@@ -57013,13 +57113,13 @@ async function verifyPiRuntime(projectRoot) {
   return await inventoryPiRuntime(sourceDir, sourceDir);
 }
 function verifyProjectBootstrap(projectRoot) {
-  const beadsInitialized = import_fs_extra16.default.pathExistsSync(import_path10.default.join(projectRoot, ".beads"));
+  const beadsInitialized = import_fs_extra17.default.pathExistsSync(import_path10.default.join(projectRoot, ".beads"));
   const gnStatus = (0, import_child_process4.spawnSync)("gitnexus", ["status"], { cwd: projectRoot, encoding: "utf8", timeout: 5e3 });
   const gnText = `${gnStatus.stdout ?? ""}
 ${gnStatus.stderr ?? ""}`.toLowerCase();
   const gitnexusIndexed = gnStatus.status === 0 && !gnText.includes("stale") && !gnText.includes("not indexed") && !gnText.includes("missing");
-  const agentsMd = import_fs_extra16.default.pathExistsSync(import_path10.default.join(projectRoot, "AGENTS.md"));
-  const claudeMd = import_fs_extra16.default.pathExistsSync(import_path10.default.join(projectRoot, "CLAUDE.md"));
+  const agentsMd = import_fs_extra17.default.pathExistsSync(import_path10.default.join(projectRoot, "AGENTS.md"));
+  const claudeMd = import_fs_extra17.default.pathExistsSync(import_path10.default.join(projectRoot, "CLAUDE.md"));
   const instructionHeaders = agentsMd || claudeMd;
   return { beadsInitialized, gitnexusIndexed, instructionHeaders };
 }
@@ -57116,12 +57216,12 @@ function renderVerificationSummary(result) {
 }
 
 // src/core/project-mcp-sync.ts
-var import_fs_extra17 = __toESM(require_lib(), 1);
-var import_node_path10 = __toESM(require("path"), 1);
+var import_fs_extra18 = __toESM(require_lib(), 1);
+var import_node_path11 = __toESM(require("path"), 1);
 var CORE_MCP_CONFIG_FILE = "claude.mcp.json";
 var PI_CORE_MCP_CONFIG_FILE = "pi.mcp.json";
 var PROJECT_MCP_FILE = ".mcp.json";
-var PI_PROJECT_MCP_FILE = import_node_path10.default.join(".pi", "mcp.json");
+var PI_PROJECT_MCP_FILE = import_node_path11.default.join(".pi", "mcp.json");
 function sanitizeServerConfig(server) {
   const entries = Object.entries(server).filter(([key]) => !key.startsWith("_"));
   return Object.fromEntries(entries);
@@ -57172,10 +57272,10 @@ function getMissingEnvWarnings(servers) {
 }
 async function syncProjectMcpConfig(projectRoot, options = {}) {
   const { dryRun = false, preserveExistingFile = false } = options;
-  const xtrmConfigDir = import_node_path10.default.join(projectRoot, ".xtrm", "config");
-  const coreConfigPath = import_node_path10.default.join(xtrmConfigDir, CORE_MCP_CONFIG_FILE);
-  const targetMcpPath = import_node_path10.default.join(projectRoot, PROJECT_MCP_FILE);
-  if (!await import_fs_extra17.default.pathExists(coreConfigPath)) {
+  const xtrmConfigDir = import_node_path11.default.join(projectRoot, ".xtrm", "config");
+  const coreConfigPath = import_node_path11.default.join(xtrmConfigDir, CORE_MCP_CONFIG_FILE);
+  const targetMcpPath = import_node_path11.default.join(projectRoot, PROJECT_MCP_FILE);
+  if (!await import_fs_extra18.default.pathExists(coreConfigPath)) {
     return {
       addedServers: [],
       missingEnvWarnings: [`canonical MCP config not found at ${coreConfigPath}`],
@@ -57185,10 +57285,10 @@ async function syncProjectMcpConfig(projectRoot, options = {}) {
       mcpPath: targetMcpPath
     };
   }
-  const coreConfig = await import_fs_extra17.default.readJson(coreConfigPath);
+  const coreConfig = await import_fs_extra18.default.readJson(coreConfigPath);
   const optionalConfig = { mcpServers: {} };
   const canonicalServers = mergeCanonicalServers(readMcpServers(coreConfig), readMcpServers(optionalConfig));
-  const hasExistingMcp = await import_fs_extra17.default.pathExists(targetMcpPath);
+  const hasExistingMcp = await import_fs_extra18.default.pathExists(targetMcpPath);
   if (hasExistingMcp && preserveExistingFile) {
     return {
       addedServers: [],
@@ -57200,7 +57300,7 @@ async function syncProjectMcpConfig(projectRoot, options = {}) {
     };
   }
   const missingEnvWarnings = getMissingEnvWarnings(canonicalServers);
-  const existingConfig = hasExistingMcp ? await import_fs_extra17.default.readJson(targetMcpPath) : {};
+  const existingConfig = hasExistingMcp ? await import_fs_extra18.default.readJson(targetMcpPath) : {};
   const existingServers = existingConfig.mcpServers && typeof existingConfig.mcpServers === "object" ? existingConfig.mcpServers : {};
   const addedServers = Object.keys(canonicalServers).filter((name) => !(name in existingServers));
   const mergedServers = {
@@ -57213,7 +57313,7 @@ async function syncProjectMcpConfig(projectRoot, options = {}) {
   };
   const wroteFile = addedServers.length > 0 || !hasExistingMcp;
   if (!dryRun && wroteFile) {
-    await import_fs_extra17.default.writeJson(targetMcpPath, mergedConfig, { spaces: 2 });
+    await import_fs_extra18.default.writeJson(targetMcpPath, mergedConfig, { spaces: 2 });
   }
   return {
     addedServers,
@@ -57226,10 +57326,10 @@ async function syncProjectMcpConfig(projectRoot, options = {}) {
 }
 async function syncPiMcpConfig(projectRoot, options = {}) {
   const { dryRun = false } = options;
-  const xtrmConfigDir = import_node_path10.default.join(projectRoot, ".xtrm", "config");
-  const coreConfigPath = import_node_path10.default.join(xtrmConfigDir, PI_CORE_MCP_CONFIG_FILE);
-  const targetMcpPath = import_node_path10.default.join(projectRoot, PI_PROJECT_MCP_FILE);
-  if (!await import_fs_extra17.default.pathExists(coreConfigPath)) {
+  const xtrmConfigDir = import_node_path11.default.join(projectRoot, ".xtrm", "config");
+  const coreConfigPath = import_node_path11.default.join(xtrmConfigDir, PI_CORE_MCP_CONFIG_FILE);
+  const targetMcpPath = import_node_path11.default.join(projectRoot, PI_PROJECT_MCP_FILE);
+  if (!await import_fs_extra18.default.pathExists(coreConfigPath)) {
     return {
       addedServers: [],
       missingEnvWarnings: [`canonical MCP config not found at ${coreConfigPath}`],
@@ -57239,11 +57339,11 @@ async function syncPiMcpConfig(projectRoot, options = {}) {
       mcpPath: targetMcpPath
     };
   }
-  const coreConfig = await import_fs_extra17.default.readJson(coreConfigPath);
+  const coreConfig = await import_fs_extra18.default.readJson(coreConfigPath);
   const canonicalServers = readMcpServers(coreConfig);
   const missingEnvWarnings = getMissingEnvWarnings(canonicalServers);
-  const hasExistingMcp = await import_fs_extra17.default.pathExists(targetMcpPath);
-  const existingConfig = hasExistingMcp ? await import_fs_extra17.default.readJson(targetMcpPath) : {};
+  const hasExistingMcp = await import_fs_extra18.default.pathExists(targetMcpPath);
+  const existingConfig = hasExistingMcp ? await import_fs_extra18.default.readJson(targetMcpPath) : {};
   const existingServers = existingConfig.mcpServers && typeof existingConfig.mcpServers === "object" ? existingConfig.mcpServers : {};
   const addedServers = Object.keys(canonicalServers).filter((name) => !(name in existingServers));
   const mergedServers = {
@@ -57256,8 +57356,8 @@ async function syncPiMcpConfig(projectRoot, options = {}) {
   };
   const wroteFile = addedServers.length > 0 || !hasExistingMcp;
   if (!dryRun && wroteFile) {
-    await import_fs_extra17.default.ensureDir(import_node_path10.default.dirname(targetMcpPath));
-    await import_fs_extra17.default.writeJson(targetMcpPath, mergedConfig, { spaces: 2 });
+    await import_fs_extra18.default.ensureDir(import_node_path11.default.dirname(targetMcpPath));
+    await import_fs_extra18.default.writeJson(targetMcpPath, mergedConfig, { spaces: 2 });
   }
   return {
     addedServers,
@@ -57272,17 +57372,17 @@ async function syncPiMcpConfig(projectRoot, options = {}) {
 // src/core/context.ts
 var import_os4 = __toESM(require("os"), 1);
 var import_path11 = __toESM(require("path"), 1);
-var import_fs_extra18 = __toESM(require_lib(), 1);
+var import_fs_extra19 = __toESM(require_lib(), 1);
 
-// node_modules/conf/dist/source/index.js
+// ../../xtrm-tools/cli/node_modules/conf/dist/source/index.js
 var import_node_util2 = require("util");
 var import_node_process6 = __toESM(require("process"), 1);
 var import_node_fs4 = __toESM(require("fs"), 1);
-var import_node_path14 = __toESM(require("path"), 1);
+var import_node_path15 = __toESM(require("path"), 1);
 var import_node_crypto4 = __toESM(require("crypto"), 1);
 var import_node_assert = __toESM(require("assert"), 1);
 
-// ../node_modules/dot-prop/index.js
+// ../../xtrm-tools/node_modules/dot-prop/index.js
 var isObject2 = (value) => {
   const type = typeof value;
   return value !== null && (type === "object" || type === "function");
@@ -57293,12 +57393,12 @@ var disallowedKeys = /* @__PURE__ */ new Set([
   "constructor"
 ]);
 var digits = new Set("0123456789");
-function getPathSegments(path47) {
+function getPathSegments(path48) {
   const parts = [];
   let currentSegment = "";
   let currentPart = "start";
   let isIgnoring = false;
-  for (const character of path47) {
+  for (const character of path48) {
     switch (character) {
       case "\\": {
         if (currentPart === "index") {
@@ -57420,11 +57520,11 @@ function assertNotStringIndex(object2, key) {
     throw new Error("Cannot use string index");
   }
 }
-function getProperty(object2, path47, value) {
-  if (!isObject2(object2) || typeof path47 !== "string") {
+function getProperty(object2, path48, value) {
+  if (!isObject2(object2) || typeof path48 !== "string") {
     return value === void 0 ? object2 : value;
   }
-  const pathArray = getPathSegments(path47);
+  const pathArray = getPathSegments(path48);
   if (pathArray.length === 0) {
     return value;
   }
@@ -57444,12 +57544,12 @@ function getProperty(object2, path47, value) {
   }
   return object2 === void 0 ? value : object2;
 }
-function setProperty(object2, path47, value) {
-  if (!isObject2(object2) || typeof path47 !== "string") {
+function setProperty(object2, path48, value) {
+  if (!isObject2(object2) || typeof path48 !== "string") {
     return object2;
   }
   const root = object2;
-  const pathArray = getPathSegments(path47);
+  const pathArray = getPathSegments(path48);
   for (let index = 0; index < pathArray.length; index++) {
     const key = pathArray[index];
     assertNotStringIndex(object2, key);
@@ -57462,11 +57562,11 @@ function setProperty(object2, path47, value) {
   }
   return root;
 }
-function deleteProperty(object2, path47) {
-  if (!isObject2(object2) || typeof path47 !== "string") {
+function deleteProperty(object2, path48) {
+  if (!isObject2(object2) || typeof path48 !== "string") {
     return false;
   }
-  const pathArray = getPathSegments(path47);
+  const pathArray = getPathSegments(path48);
   for (let index = 0; index < pathArray.length; index++) {
     const key = pathArray[index];
     assertNotStringIndex(object2, key);
@@ -57480,11 +57580,11 @@ function deleteProperty(object2, path47) {
     }
   }
 }
-function hasProperty(object2, path47) {
-  if (!isObject2(object2) || typeof path47 !== "string") {
+function hasProperty(object2, path48) {
+  if (!isObject2(object2) || typeof path48 !== "string") {
     return false;
   }
-  const pathArray = getPathSegments(path47);
+  const pathArray = getPathSegments(path48);
   if (pathArray.length === 0) {
     return false;
   }
@@ -57497,44 +57597,44 @@ function hasProperty(object2, path47) {
   return true;
 }
 
-// ../node_modules/env-paths/index.js
-var import_node_path11 = __toESM(require("path"), 1);
+// ../../xtrm-tools/node_modules/env-paths/index.js
+var import_node_path12 = __toESM(require("path"), 1);
 var import_node_os5 = __toESM(require("os"), 1);
 var import_node_process = __toESM(require("process"), 1);
 var homedir5 = import_node_os5.default.homedir();
 var tmpdir = import_node_os5.default.tmpdir();
 var { env } = import_node_process.default;
 var macos = (name) => {
-  const library = import_node_path11.default.join(homedir5, "Library");
+  const library = import_node_path12.default.join(homedir5, "Library");
   return {
-    data: import_node_path11.default.join(library, "Application Support", name),
-    config: import_node_path11.default.join(library, "Preferences", name),
-    cache: import_node_path11.default.join(library, "Caches", name),
-    log: import_node_path11.default.join(library, "Logs", name),
-    temp: import_node_path11.default.join(tmpdir, name)
+    data: import_node_path12.default.join(library, "Application Support", name),
+    config: import_node_path12.default.join(library, "Preferences", name),
+    cache: import_node_path12.default.join(library, "Caches", name),
+    log: import_node_path12.default.join(library, "Logs", name),
+    temp: import_node_path12.default.join(tmpdir, name)
   };
 };
 var windows = (name) => {
-  const appData = env.APPDATA || import_node_path11.default.join(homedir5, "AppData", "Roaming");
-  const localAppData = env.LOCALAPPDATA || import_node_path11.default.join(homedir5, "AppData", "Local");
+  const appData = env.APPDATA || import_node_path12.default.join(homedir5, "AppData", "Roaming");
+  const localAppData = env.LOCALAPPDATA || import_node_path12.default.join(homedir5, "AppData", "Local");
   return {
     // Data/config/cache/log are invented by me as Windows isn't opinionated about this
-    data: import_node_path11.default.join(localAppData, name, "Data"),
-    config: import_node_path11.default.join(appData, name, "Config"),
-    cache: import_node_path11.default.join(localAppData, name, "Cache"),
-    log: import_node_path11.default.join(localAppData, name, "Log"),
-    temp: import_node_path11.default.join(tmpdir, name)
+    data: import_node_path12.default.join(localAppData, name, "Data"),
+    config: import_node_path12.default.join(appData, name, "Config"),
+    cache: import_node_path12.default.join(localAppData, name, "Cache"),
+    log: import_node_path12.default.join(localAppData, name, "Log"),
+    temp: import_node_path12.default.join(tmpdir, name)
   };
 };
 var linux = (name) => {
-  const username = import_node_path11.default.basename(homedir5);
+  const username = import_node_path12.default.basename(homedir5);
   return {
-    data: import_node_path11.default.join(env.XDG_DATA_HOME || import_node_path11.default.join(homedir5, ".local", "share"), name),
-    config: import_node_path11.default.join(env.XDG_CONFIG_HOME || import_node_path11.default.join(homedir5, ".config"), name),
-    cache: import_node_path11.default.join(env.XDG_CACHE_HOME || import_node_path11.default.join(homedir5, ".cache"), name),
+    data: import_node_path12.default.join(env.XDG_DATA_HOME || import_node_path12.default.join(homedir5, ".local", "share"), name),
+    config: import_node_path12.default.join(env.XDG_CONFIG_HOME || import_node_path12.default.join(homedir5, ".config"), name),
+    cache: import_node_path12.default.join(env.XDG_CACHE_HOME || import_node_path12.default.join(homedir5, ".cache"), name),
     // https://wiki.debian.org/XDGBaseDirectorySpecification#state
-    log: import_node_path11.default.join(env.XDG_STATE_HOME || import_node_path11.default.join(homedir5, ".local", "state"), name),
-    temp: import_node_path11.default.join(tmpdir, username, name)
+    log: import_node_path12.default.join(env.XDG_STATE_HOME || import_node_path12.default.join(homedir5, ".local", "state"), name),
+    temp: import_node_path12.default.join(tmpdir, username, name)
   };
 };
 function envPaths(name, { suffix = "nodejs" } = {}) {
@@ -57553,17 +57653,17 @@ function envPaths(name, { suffix = "nodejs" } = {}) {
   return linux(name);
 }
 
-// ../node_modules/atomically/dist/index.js
+// ../../xtrm-tools/node_modules/atomically/dist/index.js
 var import_node_events = require("events");
 var import_node_fs3 = require("fs");
-var import_node_path13 = __toESM(require("path"), 1);
+var import_node_path14 = __toESM(require("path"), 1);
 var import_node_stream = require("stream");
 
-// ../node_modules/stubborn-fs/dist/index.js
+// ../../xtrm-tools/node_modules/stubborn-fs/dist/index.js
 var import_node_fs2 = __toESM(require("fs"), 1);
 var import_node_util = require("util");
 
-// ../node_modules/stubborn-utils/dist/attemptify_async.js
+// ../../xtrm-tools/node_modules/stubborn-utils/dist/attemptify_async.js
 var attemptifyAsync = (fn, options) => {
   const { onError } = options;
   return function attemptified(...args) {
@@ -57572,7 +57672,7 @@ var attemptifyAsync = (fn, options) => {
 };
 var attemptify_async_default = attemptifyAsync;
 
-// ../node_modules/stubborn-utils/dist/attemptify_sync.js
+// ../../xtrm-tools/node_modules/stubborn-utils/dist/attemptify_sync.js
 var attemptifySync = (fn, options) => {
   const { onError } = options;
   return function attemptified(...args) {
@@ -57585,10 +57685,10 @@ var attemptifySync = (fn, options) => {
 };
 var attemptify_sync_default = attemptifySync;
 
-// ../node_modules/stubborn-utils/dist/constants.js
+// ../../xtrm-tools/node_modules/stubborn-utils/dist/constants.js
 var RETRY_INTERVAL = 250;
 
-// ../node_modules/stubborn-utils/dist/retryify_async.js
+// ../../xtrm-tools/node_modules/stubborn-utils/dist/retryify_async.js
 var retryifyAsync = (fn, options) => {
   const { isRetriable } = options;
   return function retryified(options2) {
@@ -57614,7 +57714,7 @@ var retryifyAsync = (fn, options) => {
 };
 var retryify_async_default = retryifyAsync;
 
-// ../node_modules/stubborn-utils/dist/retryify_sync.js
+// ../../xtrm-tools/node_modules/stubborn-utils/dist/retryify_sync.js
 var retryifySync = (fn, options) => {
   const { isRetriable } = options;
   return function retryified(options2) {
@@ -57637,10 +57737,10 @@ var retryifySync = (fn, options) => {
 };
 var retryify_sync_default = retryifySync;
 
-// ../node_modules/stubborn-fs/dist/constants.js
+// ../../xtrm-tools/node_modules/stubborn-fs/dist/constants.js
 var import_node_process2 = __toESM(require("process"), 1);
 
-// ../node_modules/stubborn-fs/dist/handlers.js
+// ../../xtrm-tools/node_modules/stubborn-fs/dist/handlers.js
 var Handlers = {
   /* API */
   isChangeErrorOk: (error51) => {
@@ -57674,7 +57774,7 @@ var Handlers = {
 };
 var handlers_default = Handlers;
 
-// ../node_modules/stubborn-fs/dist/constants.js
+// ../../xtrm-tools/node_modules/stubborn-fs/dist/constants.js
 var ATTEMPTIFY_CHANGE_ERROR_OPTIONS = {
   onError: handlers_default.onChangeError
 };
@@ -57686,7 +57786,7 @@ var RETRYIFY_OPTIONS = {
   isRetriable: handlers_default.isRetriableError
 };
 
-// ../node_modules/stubborn-fs/dist/index.js
+// ../../xtrm-tools/node_modules/stubborn-fs/dist/index.js
 var FS = {
   attempt: {
     /* ASYNC */
@@ -57732,7 +57832,7 @@ var FS = {
 };
 var dist_default = FS;
 
-// ../node_modules/atomically/dist/constants.js
+// ../../xtrm-tools/node_modules/atomically/dist/constants.js
 var import_node_process3 = __toESM(require("process"), 1);
 var DEFAULT_ENCODING = "utf8";
 var DEFAULT_FILE_MODE = 438;
@@ -57745,7 +57845,7 @@ var IS_POSIX = !!import_node_process3.default.getuid;
 var IS_USER_ROOT2 = import_node_process3.default.getuid ? !import_node_process3.default.getuid() : false;
 var LIMIT_BASENAME_LENGTH = 128;
 
-// ../node_modules/atomically/dist/utils/lang.js
+// ../../xtrm-tools/node_modules/atomically/dist/utils/lang.js
 var isException = (value) => {
   return value instanceof Error && "code" in value;
 };
@@ -57756,18 +57856,18 @@ var isUndefined = (value) => {
   return value === void 0;
 };
 
-// ../node_modules/atomically/dist/utils/temp.js
-var import_node_path12 = __toESM(require("path"), 1);
+// ../../xtrm-tools/node_modules/atomically/dist/utils/temp.js
+var import_node_path13 = __toESM(require("path"), 1);
 
-// ../node_modules/when-exit/dist/node/interceptor.js
+// ../../xtrm-tools/node_modules/when-exit/dist/node/interceptor.js
 var import_node_process5 = __toESM(require("process"), 1);
 
-// ../node_modules/when-exit/dist/node/constants.js
+// ../../xtrm-tools/node_modules/when-exit/dist/node/constants.js
 var import_node_process4 = __toESM(require("process"), 1);
 var IS_LINUX = import_node_process4.default.platform === "linux";
 var IS_WINDOWS = import_node_process4.default.platform === "win32";
 
-// ../node_modules/when-exit/dist/node/signals.js
+// ../../xtrm-tools/node_modules/when-exit/dist/node/signals.js
 var Signals = ["SIGHUP", "SIGINT", "SIGTERM"];
 if (!IS_WINDOWS) {
   Signals.push("SIGALRM", "SIGABRT", "SIGVTALRM", "SIGXCPU", "SIGXFSZ", "SIGUSR2", "SIGTRAP", "SIGSYS", "SIGQUIT", "SIGIOT");
@@ -57777,7 +57877,7 @@ if (IS_LINUX) {
 }
 var signals_default = Signals;
 
-// ../node_modules/when-exit/dist/node/interceptor.js
+// ../../xtrm-tools/node_modules/when-exit/dist/node/interceptor.js
 var Interceptor = class {
   /* CONSTRUCTOR */
   constructor() {
@@ -57818,11 +57918,11 @@ var Interceptor = class {
 };
 var interceptor_default = new Interceptor();
 
-// ../node_modules/when-exit/dist/node/index.js
+// ../../xtrm-tools/node_modules/when-exit/dist/node/index.js
 var whenExit = interceptor_default.register;
 var node_default = whenExit;
 
-// ../node_modules/atomically/dist/utils/temp.js
+// ../../xtrm-tools/node_modules/atomically/dist/utils/temp.js
 var Temp = {
   /* VARIABLES */
   store: {},
@@ -57862,7 +57962,7 @@ var Temp = {
     }
   },
   truncate: (filePath) => {
-    const basename2 = import_node_path12.default.basename(filePath);
+    const basename2 = import_node_path13.default.basename(filePath);
     if (basename2.length <= LIMIT_BASENAME_LENGTH)
       return filePath;
     const truncable = /^(\.?)(.*?)((?:\.[^.]+)?(?:\.tmp-\d{10}[a-f0-9]{6})?)$/.exec(basename2);
@@ -57875,7 +57975,7 @@ var Temp = {
 node_default(Temp.purgeSyncAll);
 var temp_default = Temp;
 
-// ../node_modules/atomically/dist/index.js
+// ../../xtrm-tools/node_modules/atomically/dist/index.js
 function writeFileSync2(filePath, data, options = DEFAULT_WRITE_OPTIONS) {
   if (isString(options))
     return writeFileSync2(filePath, data, { encoding: options });
@@ -57904,7 +58004,7 @@ function writeFileSync2(filePath, data, options = DEFAULT_WRITE_OPTIONS) {
       }
     }
     if (!filePathExists) {
-      const parentPath = import_node_path13.default.dirname(filePath);
+      const parentPath = import_node_path14.default.dirname(filePath);
       dist_default.attempt.mkdirSync(parentPath, {
         mode: DEFAULT_FOLDER_MODE,
         recursive: true
@@ -57953,11 +58053,11 @@ function writeFileSync2(filePath, data, options = DEFAULT_WRITE_OPTIONS) {
   }
 }
 
-// node_modules/conf/dist/source/index.js
+// ../../xtrm-tools/cli/node_modules/conf/dist/source/index.js
 var import_ajv = __toESM(require_ajv(), 1);
 var import_ajv_formats = __toESM(require_dist2(), 1);
 
-// ../node_modules/mimic-fn/index.js
+// ../../xtrm-tools/node_modules/mimic-fn/index.js
 var copyProperty = (to, from, property, ignoreNonConfigurable) => {
   if (property === "length" || property === "prototype") {
     return;
@@ -58002,7 +58102,7 @@ function mimicFunction(to, from, { ignoreNonConfigurable = false } = {}) {
   return to;
 }
 
-// ../node_modules/debounce-fn/index.js
+// ../../xtrm-tools/node_modules/debounce-fn/index.js
 var debounceFn = (inputFunction, options = {}) => {
   if (typeof inputFunction !== "function") {
     throw new TypeError(`Expected the first argument to be a function, got \`${typeof inputFunction}\``);
@@ -58067,10 +58167,10 @@ var debounceFn = (inputFunction, options = {}) => {
 };
 var debounce_fn_default = debounceFn;
 
-// node_modules/conf/dist/source/index.js
+// ../../xtrm-tools/cli/node_modules/conf/dist/source/index.js
 var import_semver = __toESM(require_semver2(), 1);
 
-// ../node_modules/uint8array-extras/index.js
+// ../../xtrm-tools/node_modules/uint8array-extras/index.js
 var objectToString = Object.prototype.toString;
 function isUint8Array(value) {
   return value && objectToString.call(value) === "[object Uint8Array]";
@@ -58109,7 +58209,7 @@ function stringToUint8Array(string4) {
 }
 var byteToHexLookupTable = Array.from({ length: 256 }, (_, index) => index.toString(16).padStart(2, "0"));
 
-// node_modules/conf/dist/source/index.js
+// ../../xtrm-tools/cli/node_modules/conf/dist/source/index.js
 var Ajv = import_ajv.default.default;
 var ajvFormats = import_ajv_formats.default.default;
 var encryptionAlgorithm = "aes-256-cbc";
@@ -58187,7 +58287,7 @@ var Conf = class {
     this.events = new EventTarget();
     this.#encryptionKey = options.encryptionKey;
     const fileExtension = options.fileExtension ? `.${options.fileExtension}` : "";
-    this.path = import_node_path14.default.resolve(options.cwd, `${options.configName ?? "config"}${fileExtension}`);
+    this.path = import_node_path15.default.resolve(options.cwd, `${options.configName ?? "config"}${fileExtension}`);
     const fileStore = this.store;
     const store = Object.assign(createPlainObject(), options.defaults, fileStore);
     this._validate(store);
@@ -58392,7 +58492,7 @@ var Conf = class {
     throw new Error("Config schema violation: " + errors.join("; "));
   }
   _ensureDirectory() {
-    import_node_fs4.default.mkdirSync(import_node_path14.default.dirname(this.path), { recursive: true });
+    import_node_fs4.default.mkdirSync(import_node_path15.default.dirname(this.path), { recursive: true });
   }
   _write(value) {
     let data = this._serialize(value);
@@ -58531,7 +58631,7 @@ async function getContext(options = {}) {
   const selectedPaths = candidates.map((c) => c.path);
   if (createMissingDirs) {
     for (const target of selectedPaths) {
-      await import_fs_extra18.default.ensureDir(target);
+      await import_fs_extra19.default.ensureDir(target);
     }
   }
   return {
@@ -58547,23 +58647,23 @@ function resetContext() {
 
 // src/core/diff.ts
 var import_path14 = require("path");
-var import_fs_extra20 = __toESM(require_lib(), 1);
+var import_fs_extra21 = __toESM(require_lib(), 1);
 
 // src/utils/hash.ts
 var import_crypto = require("crypto");
-var import_fs_extra19 = __toESM(require_lib(), 1);
+var import_fs_extra20 = __toESM(require_lib(), 1);
 var import_path12 = require("path");
 async function hashFile3(filePath) {
-  const content = await import_fs_extra19.default.readFile(filePath);
+  const content = await import_fs_extra20.default.readFile(filePath);
   return (0, import_crypto.createHash)("md5").update(content).digest("hex");
 }
 async function hashDirectory(dirPath) {
-  if (!await import_fs_extra19.default.pathExists(dirPath)) return "";
-  const stats = await import_fs_extra19.default.stat(dirPath);
+  if (!await import_fs_extra20.default.pathExists(dirPath)) return "";
+  const stats = await import_fs_extra20.default.stat(dirPath);
   if (!stats.isDirectory()) {
     return hashFile3(dirPath);
   }
-  const children = await import_fs_extra19.default.readdir(dirPath);
+  const children = await import_fs_extra20.default.readdir(dirPath);
   const childHashes = await Promise.all(
     children.sort().map(async (child) => {
       const h = await hashDirectory((0, import_path12.join)(dirPath, child));
@@ -58573,11 +58673,11 @@ async function hashDirectory(dirPath) {
   return (0, import_crypto.createHash)("md5").update(childHashes.join("|")).digest("hex");
 }
 async function getNewestMtime(targetPath) {
-  if (!await import_fs_extra19.default.pathExists(targetPath)) return 0;
-  const stats = await import_fs_extra19.default.stat(targetPath);
+  if (!await import_fs_extra20.default.pathExists(targetPath)) return 0;
+  const stats = await import_fs_extra20.default.stat(targetPath);
   let maxTime = 0;
   if (stats.isDirectory()) {
-    const children = await import_fs_extra19.default.readdir(targetPath);
+    const children = await import_fs_extra20.default.readdir(targetPath);
     for (const child of children) {
       const childTime = await getNewestMtime((0, import_path12.join)(targetPath, child));
       if (childTime > maxTime) maxTime = childTime;
@@ -58637,8 +58737,8 @@ function detectAdapter(systemRoot) {
 // src/core/diff.ts
 var IGNORED_ITEMS = /* @__PURE__ */ new Set(["__pycache__", ".DS_Store", "Thumbs.db", ".gitkeep", "node_modules"]);
 var PruneModeReadError = class extends Error {
-  constructor(path47) {
-    super(`Cannot read ${path47} in prune mode \u2014 aborting to prevent accidental deletion`);
+  constructor(path48) {
+    super(`Cannot read ${path48} in prune mode \u2014 aborting to prevent accidental deletion`);
     this.name = "PruneModeReadError";
   }
 };
@@ -58656,8 +58756,8 @@ async function calculateDiff(repoRoot, systemRoot, pruneMode = false) {
   const manifestPath = (0, import_path14.join)(systemRoot, ".jaggers-sync-manifest.json");
   let installedHashes = null;
   try {
-    if (await import_fs_extra20.default.pathExists(manifestPath)) {
-      const manifest = await import_fs_extra20.default.readJson(manifestPath);
+    if (await import_fs_extra21.default.pathExists(manifestPath)) {
+      const manifest = await import_fs_extra21.default.readJson(manifestPath);
       if (manifest.fileHashes && typeof manifest.fileHashes === "object") {
         installedHashes = manifest.fileHashes;
       }
@@ -58666,8 +58766,8 @@ async function calculateDiff(repoRoot, systemRoot, pruneMode = false) {
   }
   if (isAgentsSkills) {
     const repoPath = (0, import_path14.join)(repoRoot, "skills");
-    if (!await import_fs_extra20.default.pathExists(repoPath)) return changeSet;
-    const items = (await import_fs_extra20.default.readdir(repoPath)).filter((i) => !IGNORED_ITEMS.has(i));
+    if (!await import_fs_extra21.default.pathExists(repoPath)) return changeSet;
+    const items = (await import_fs_extra21.default.readdir(repoPath)).filter((i) => !IGNORED_ITEMS.has(i));
     changeSet.skills.total = items.length;
     for (const item of items) {
       await compareItem("skills", item, (0, import_path14.join)(repoPath, item), (0, import_path14.join)(systemRoot, item), changeSet, pruneMode, installedHashes);
@@ -58679,8 +58779,8 @@ async function calculateDiff(repoRoot, systemRoot, pruneMode = false) {
   for (const category of folders) {
     const repoPath = (0, import_path14.join)(repoRoot, category);
     const systemPath = (0, import_path14.join)(systemRoot, category);
-    if (!await import_fs_extra20.default.pathExists(repoPath)) continue;
-    const items = (await import_fs_extra20.default.readdir(repoPath)).filter((i) => !IGNORED_ITEMS.has(i));
+    if (!await import_fs_extra21.default.pathExists(repoPath)) continue;
+    const items = (await import_fs_extra21.default.readdir(repoPath)).filter((i) => !IGNORED_ITEMS.has(i));
     changeSet[category].total = items.length;
     for (const item of items) {
       await compareItem(
@@ -58701,7 +58801,7 @@ async function calculateDiff(repoRoot, systemRoot, pruneMode = false) {
     if (name === "settings.json" && adapter !== null) continue;
     const itemRepoPath = (0, import_path14.join)(repoRoot, paths.repo);
     const itemSystemPath = (0, import_path14.join)(systemRoot, paths.sys);
-    if (await import_fs_extra20.default.pathExists(itemRepoPath)) {
+    if (await import_fs_extra21.default.pathExists(itemRepoPath)) {
       await compareItem("config", name, itemRepoPath, itemSystemPath, changeSet, false, installedHashes);
     }
   }
@@ -58709,7 +58809,7 @@ async function calculateDiff(repoRoot, systemRoot, pruneMode = false) {
 }
 async function compareItem(category, item, repoPath, systemPath, changeSet, pruneMode = false, installedHashes = null) {
   const cat = changeSet[category];
-  if (!await import_fs_extra20.default.pathExists(systemPath)) {
+  if (!await import_fs_extra21.default.pathExists(systemPath)) {
     cat.missing.push(item);
     return;
   }
@@ -58746,9 +58846,9 @@ async function compareItem(category, item, repoPath, systemPath, changeSet, prun
 }
 
 // src/core/bd-auto-stage-patch.ts
-var import_node_child_process6 = require("child_process");
-var import_fs_extra21 = __toESM(require_lib(), 1);
-var import_node_path15 = __toESM(require("path"), 1);
+var import_node_child_process7 = require("child_process");
+var import_fs_extra22 = __toESM(require_lib(), 1);
+var import_node_path16 = __toESM(require("path"), 1);
 var import_yaml = __toESM(require_dist3(), 1);
 var STAGE_COMMAND = "git add -f .beads/issues.jsonl 2>/dev/null || true";
 var STAGE_BLOCK = `# --- BEGIN XTRM bd auto-stage snapshot ---
@@ -58763,19 +58863,19 @@ function parseYamlObject(raw) {
   return parsed;
 }
 async function ensureExportGitAddDisabled(repoRoot, apply) {
-  const beadsDir = import_node_path15.default.join(repoRoot, ".beads");
-  if (!await import_fs_extra21.default.pathExists(beadsDir)) return { changed: false, state: "not-applicable" };
-  const configPath = import_node_path15.default.join(beadsDir, "config.yaml");
-  const raw = await import_fs_extra21.default.pathExists(configPath) ? await import_fs_extra21.default.readFile(configPath, "utf8") : "";
+  const beadsDir = import_node_path16.default.join(repoRoot, ".beads");
+  if (!await import_fs_extra22.default.pathExists(beadsDir)) return { changed: false, state: "not-applicable" };
+  const configPath = import_node_path16.default.join(beadsDir, "config.yaml");
+  const raw = await import_fs_extra22.default.pathExists(configPath) ? await import_fs_extra22.default.readFile(configPath, "utf8") : "";
   const config3 = parseYamlObject(raw);
   if (config3["export.git-add"] === false) return { changed: false, state: "already-disabled" };
   if (!apply) return { changed: true, state: "updated" };
-  await import_fs_extra21.default.ensureDir(beadsDir);
-  await import_fs_extra21.default.writeFile(configPath, import_yaml.default.stringify({ ...config3, "export.git-add": false }), "utf8");
+  await import_fs_extra22.default.ensureDir(beadsDir);
+  await import_fs_extra22.default.writeFile(configPath, import_yaml.default.stringify({ ...config3, "export.git-add": false }), "utf8");
   return { changed: true, state: "updated" };
 }
 function gitOutput(repoRoot, args) {
-  const result = (0, import_node_child_process6.spawnSync)("git", args, {
+  const result = (0, import_node_child_process7.spawnSync)("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe",
@@ -58788,10 +58888,10 @@ function resolveHookPath(repoRoot) {
   const hooksPath = gitOutput(repoRoot, ["config", "--get", "core.hooksPath"]);
   const normalizedHooksPath = hooksPath?.replace(/\\/g, "/").replace(/\/$/, "");
   if (hooksPath) {
-    const hooksDir = import_node_path15.default.isAbsolute(hooksPath) ? hooksPath : import_node_path15.default.join(repoRoot, hooksPath);
-    const hookPath = import_node_path15.default.join(hooksDir, "pre-commit");
+    const hooksDir = import_node_path16.default.isAbsolute(hooksPath) ? hooksPath : import_node_path16.default.join(repoRoot, hooksPath);
+    const hookPath = import_node_path16.default.join(hooksDir, "pre-commit");
     if (normalizedHooksPath && (normalizedHooksPath === ".beads/hooks" || normalizedHooksPath.endsWith("/.beads/hooks"))) {
-      if (import_fs_extra21.default.existsSync(hookPath)) return { hookPath };
+      if (import_fs_extra22.default.existsSync(hookPath)) return { hookPath };
       return {
         warning: `core.hooksPath points at ${hooksPath}, but no pre-commit hook exists there`
       };
@@ -58800,18 +58900,18 @@ function resolveHookPath(repoRoot) {
   }
   const gitCommonDirRaw = gitOutput(repoRoot, ["rev-parse", "--git-common-dir"]);
   if (!gitCommonDirRaw) return { warning: "could not resolve git hooks directory" };
-  const gitCommonDir = import_node_path15.default.isAbsolute(gitCommonDirRaw) ? gitCommonDirRaw : import_node_path15.default.join(repoRoot, gitCommonDirRaw);
-  return { hookPath: import_node_path15.default.join(gitCommonDir, "hooks", "pre-commit") };
+  const gitCommonDir = import_node_path16.default.isAbsolute(gitCommonDirRaw) ? gitCommonDirRaw : import_node_path16.default.join(repoRoot, gitCommonDirRaw);
+  return { hookPath: import_node_path16.default.join(gitCommonDir, "hooks", "pre-commit") };
 }
 async function ensureStageShim(repoRoot, apply) {
-  if (!await import_fs_extra21.default.pathExists(import_node_path15.default.join(repoRoot, ".beads"))) {
+  if (!await import_fs_extra22.default.pathExists(import_node_path16.default.join(repoRoot, ".beads"))) {
     return { changed: false, state: "not-applicable", warnings: [] };
   }
   const resolved = resolveHookPath(repoRoot);
   if (!resolved.hookPath) {
     return { changed: false, state: "misconfigured-hooks-path", warnings: [resolved.warning ?? "could not resolve git hooks directory"] };
   }
-  const existing = await import_fs_extra21.default.pathExists(resolved.hookPath) ? await import_fs_extra21.default.readFile(resolved.hookPath, "utf8") : "";
+  const existing = await import_fs_extra22.default.pathExists(resolved.hookPath) ? await import_fs_extra22.default.readFile(resolved.hookPath, "utf8") : "";
   if (existing.includes(STAGE_COMMAND)) {
     return { changed: false, state: "already-present", hookPath: resolved.hookPath, warnings: [] };
   }
@@ -58819,10 +58919,10 @@ async function ensureStageShim(repoRoot, apply) {
     return { changed: true, state: "updated", hookPath: resolved.hookPath, warnings: [] };
   }
   const base = existing.trim().length > 0 ? existing.replace(/\s*$/, "\n\n") : "#!/usr/bin/env sh\n";
-  await import_fs_extra21.default.ensureDir(import_node_path15.default.dirname(resolved.hookPath));
-  await import_fs_extra21.default.writeFile(resolved.hookPath, `${base}${STAGE_BLOCK}
+  await import_fs_extra22.default.ensureDir(import_node_path16.default.dirname(resolved.hookPath));
+  await import_fs_extra22.default.writeFile(resolved.hookPath, `${base}${STAGE_BLOCK}
 `, "utf8");
-  await import_fs_extra21.default.chmod(resolved.hookPath, 493);
+  await import_fs_extra22.default.chmod(resolved.hookPath, 493);
   return { changed: true, state: "updated", hookPath: resolved.hookPath, warnings: [] };
 }
 async function ensureBdAutoStagePatch(repoRoot, apply) {
@@ -58844,15 +58944,15 @@ function summarizeBdAutoStagePatch(result) {
 }
 
 // src/core/dependency-maintenance.ts
-var import_node_child_process7 = require("child_process");
-var import_fs_extra22 = __toESM(require_lib(), 1);
-var import_node_path16 = __toESM(require("path"), 1);
+var import_node_child_process8 = require("child_process");
+var import_fs_extra23 = __toESM(require_lib(), 1);
+var import_node_path17 = __toESM(require("path"), 1);
 var TOOLS = [
   { id: "bd", cli: "bd", packageName: "@beads/bd", versionArgs: ["--version"] },
   { id: "gitnexus", cli: "gitnexus", packageName: "gitnexus", versionArgs: ["--version"] }
 ];
 function run2(command, args, cwd, timeout = 1e4) {
-  return (0, import_node_child_process7.spawnSync)(command, args, {
+  return (0, import_node_child_process8.spawnSync)(command, args, {
     cwd,
     encoding: "utf8",
     stdio: "pipe",
@@ -58920,7 +59020,7 @@ function upgradeTool(tool, cwd) {
   return refreshed ? checkTool(refreshed, cwd) : { ...tool, state: "updated" };
 }
 function runBdDoctor(repoRoot, apply) {
-  if (!import_fs_extra22.default.pathExistsSync(import_node_path16.default.join(repoRoot, ".beads"))) return { state: "skipped", message: "no .beads directory" };
+  if (!import_fs_extra23.default.pathExistsSync(import_node_path17.default.join(repoRoot, ".beads"))) return { state: "skipped", message: "no .beads directory" };
   const args = apply ? ["doctor", "--fix", "--yes"] : ["doctor", "--dry-run"];
   const result = run2("bd", args, repoRoot, 3e4);
   if (result.error) return { state: "failed", message: result.error.message };
@@ -59000,8 +59100,8 @@ function parseComposeServices(content) {
   return [...services];
 }
 async function detectProjectFeatures(projectRoot) {
-  const hasTypeScript = await import_fs_extra23.default.pathExists(import_path15.default.join(projectRoot, "tsconfig.json"));
-  const hasPython = await import_fs_extra23.default.pathExists(import_path15.default.join(projectRoot, "pyproject.toml")) || await import_fs_extra23.default.pathExists(import_path15.default.join(projectRoot, "setup.py")) || await import_fs_extra23.default.pathExists(import_path15.default.join(projectRoot, "requirements.txt"));
+  const hasTypeScript = await import_fs_extra24.default.pathExists(import_path15.default.join(projectRoot, "tsconfig.json"));
+  const hasPython = await import_fs_extra24.default.pathExists(import_path15.default.join(projectRoot, "pyproject.toml")) || await import_fs_extra24.default.pathExists(import_path15.default.join(projectRoot, "setup.py")) || await import_fs_extra24.default.pathExists(import_path15.default.join(projectRoot, "requirements.txt"));
   const composeCandidates = [
     "docker-compose.yml",
     "docker-compose.yaml",
@@ -59011,16 +59111,16 @@ async function detectProjectFeatures(projectRoot) {
   const dockerServices = /* @__PURE__ */ new Set();
   for (const composeFile of composeCandidates) {
     const composePath = import_path15.default.join(projectRoot, composeFile);
-    if (!await import_fs_extra23.default.pathExists(composePath)) continue;
+    if (!await import_fs_extra24.default.pathExists(composePath)) continue;
     try {
-      const content = await import_fs_extra23.default.readFile(composePath, "utf8");
+      const content = await import_fs_extra24.default.readFile(composePath, "utf8");
       for (const service of parseComposeServices(content)) {
         dockerServices.add(service);
       }
     } catch {
     }
   }
-  const hasDockerfile = await import_fs_extra23.default.pathExists(import_path15.default.join(projectRoot, "Dockerfile"));
+  const hasDockerfile = await import_fs_extra24.default.pathExists(import_path15.default.join(projectRoot, "Dockerfile"));
   if (hasDockerfile && dockerServices.size === 0) {
     dockerServices.add(import_path15.default.basename(projectRoot));
   }
@@ -59057,24 +59157,22 @@ async function injectProjectInstructionHeaders(projectRoot) {
   console.log(kleur_default.bold("Injecting xtrm agent instruction headers..."));
   for (const target of targets) {
     const templatePath = import_path15.default.join(getInstructionsDir(), target.template);
-    if (!await import_fs_extra23.default.pathExists(templatePath)) {
+    if (!await import_fs_extra24.default.pathExists(templatePath)) {
       console.log(kleur_default.yellow(`  \u26A0 Missing template: ${target.template}`));
       continue;
     }
-    const template = await import_fs_extra23.default.readFile(templatePath, "utf8");
+    const template = await import_fs_extra24.default.readFile(templatePath, "utf8");
     const outputPath = import_path15.default.join(projectRoot, target.output);
-    const existing = await import_fs_extra23.default.pathExists(outputPath) ? await import_fs_extra23.default.readFile(outputPath, "utf8") : "";
+    const existing = await import_fs_extra24.default.pathExists(outputPath) ? await import_fs_extra24.default.readFile(outputPath, "utf8") : "";
     const next = upsertManagedBlock(existing, template);
     if (next === existing) {
       console.log(kleur_default.dim(`  \u2713 ${target.output} already up to date`));
       continue;
     }
-    await import_fs_extra23.default.writeFile(outputPath, next.endsWith("\n") ? next : `${next}
+    await import_fs_extra24.default.writeFile(outputPath, next.endsWith("\n") ? next : `${next}
 `, "utf8");
     console.log(`${kleur_default.green("  \u2713")} updated ${target.output}`);
   }
-}
-async function installServiceSkillHooks(_projectRoot) {
 }
 async function runPreflight(projectRoot, opts) {
   let repoRoot;
@@ -59105,7 +59203,7 @@ async function runPreflight(projectRoot, opts) {
     }
   } catch {
   }
-  const needsBdInit = !await import_fs_extra23.default.pathExists(import_path15.default.join(projectRoot, ".beads"));
+  const needsBdInit = !await import_fs_extra24.default.pathExists(import_path15.default.join(projectRoot, ".beads"));
   const gitnexusStatus = (0, import_child_process5.spawnSync)("gitnexus", ["status"], {
     cwd: projectRoot,
     encoding: "utf8",
@@ -59168,7 +59266,10 @@ async function runProjectBootstrap(projectRoot, isGitRepo) {
   if (isGitRepo) {
     await runGitNexusInitForProject(projectRoot);
   }
-  await installServiceSkillHooks(projectRoot);
+  const serviceSkills = await ensureServiceSkills(projectRoot, { apply: true });
+  for (const note of serviceSkills.notes) {
+    console.log(`  ${note}`);
+  }
 }
 function hasInteractiveTTY2() {
   return Boolean(process.stdout.isTTY && process.stdin.isTTY);
@@ -59273,7 +59374,7 @@ async function runProjectInit(opts = {}) {
   });
   const userXtrmDir = ctx.targets[0];
   const registryPath = import_path15.default.join(packageRoot, ".xtrm", "registry.json");
-  const registry2 = await import_fs_extra23.default.readJson(registryPath);
+  const registry2 = await import_fs_extra24.default.readJson(registryPath);
   const registryInstallStats = await installFromRegistry({
     packageRoot,
     registry: registry2,
@@ -59423,7 +59524,7 @@ ${status.stderr || ""}`.toLowerCase();
   if (analyze.status === 0) {
     const gitnexusPollutionPath = import_path15.default.join(projectRoot, ".xtrm", "skills", "active", "gitnexus");
     try {
-      import_fs_extra23.default.removeSync(gitnexusPollutionPath);
+      import_fs_extra24.default.removeSync(gitnexusPollutionPath);
     } catch {
     }
     console.log(kleur_default.green("  \u2713 GitNexus index updated"));
@@ -59449,11 +59550,11 @@ var import_prompts4 = __toESM(require_prompts3(), 1);
 
 // src/core/sync-executor.ts
 var import_path18 = __toESM(require("path"), 1);
-var import_fs_extra26 = __toESM(require_lib(), 1);
+var import_fs_extra27 = __toESM(require_lib(), 1);
 
 // src/utils/atomic-config.ts
 var import_node_crypto5 = require("crypto");
-var import_fs_extra24 = __toESM(require_lib(), 1);
+var import_fs_extra25 = __toESM(require_lib(), 1);
 var import_comment_json = __toESM(require_src3(), 1);
 var PROTECTED_KEYS = [
   "permissions.allow",
@@ -59681,20 +59782,20 @@ async function atomicWrite(filePath, data, options = {}) {
     } else {
       content = JSON.stringify(data, null, 2);
     }
-    await import_fs_extra24.default.writeFile(tempFilePath, content, "utf8");
-    const tempStats = await import_fs_extra24.default.stat(tempFilePath);
+    await import_fs_extra25.default.writeFile(tempFilePath, content, "utf8");
+    const tempStats = await import_fs_extra25.default.stat(tempFilePath);
     if (tempStats.size === 0) {
       throw new Error("Temporary file is empty - write failed");
     }
-    if (backupOnSuccess && await import_fs_extra24.default.pathExists(filePath)) {
+    if (backupOnSuccess && await import_fs_extra25.default.pathExists(filePath)) {
       const backupPath = `${filePath}${backupSuffix}`;
-      await import_fs_extra24.default.copy(filePath, backupPath);
+      await import_fs_extra25.default.copy(filePath, backupPath);
     }
-    await import_fs_extra24.default.rename(tempFilePath, filePath);
+    await import_fs_extra25.default.rename(tempFilePath, filePath);
   } catch (error51) {
     try {
-      if (await import_fs_extra24.default.pathExists(tempFilePath)) {
-        await import_fs_extra24.default.unlink(tempFilePath);
+      if (await import_fs_extra25.default.pathExists(tempFilePath)) {
+        await import_fs_extra25.default.unlink(tempFilePath);
       }
     } catch (cleanupError) {
     }
@@ -59703,10 +59804,10 @@ async function atomicWrite(filePath, data, options = {}) {
 }
 async function safeReadConfig(filePath) {
   try {
-    if (!await import_fs_extra24.default.pathExists(filePath)) {
+    if (!await import_fs_extra25.default.pathExists(filePath)) {
       return {};
     }
-    const content = await import_fs_extra24.default.readFile(filePath, "utf8");
+    const content = await import_fs_extra25.default.readFile(filePath, "utf8");
     try {
       return (0, import_comment_json.parse)(content);
     } catch (parseError) {
@@ -59844,12 +59945,12 @@ var ENV_EXAMPLE_FILE = import_path17.default.join(CONFIG_DIR, ".env.example");
 var execAsync = (0, import_util3.promisify)(import_child_process6.exec);
 
 // src/core/rollback.ts
-var import_fs_extra25 = __toESM(require_lib(), 1);
+var import_fs_extra26 = __toESM(require_lib(), 1);
 async function createBackup(filePath) {
   const timestamp = Date.now();
   const backupPath = `${filePath}.backup-${timestamp}`;
-  if (await import_fs_extra25.default.pathExists(filePath)) {
-    await import_fs_extra25.default.copy(filePath, backupPath);
+  if (await import_fs_extra26.default.pathExists(filePath)) {
+    await import_fs_extra26.default.copy(filePath, backupPath);
   }
   return {
     originalPath: filePath,
@@ -59858,12 +59959,12 @@ async function createBackup(filePath) {
   };
 }
 async function restoreBackup(backup) {
-  if (await import_fs_extra25.default.pathExists(backup.backupPath)) {
-    await import_fs_extra25.default.move(backup.backupPath, backup.originalPath, { overwrite: true });
+  if (await import_fs_extra26.default.pathExists(backup.backupPath)) {
+    await import_fs_extra26.default.move(backup.backupPath, backup.originalPath, { overwrite: true });
   }
 }
 async function cleanupBackup(backup) {
-  await import_fs_extra25.default.remove(backup.backupPath);
+  await import_fs_extra26.default.remove(backup.backupPath);
 }
 
 // src/core/sync-executor.ts
@@ -59886,8 +59987,8 @@ var SAFE_GIT_BASH_ALLOWLIST = [
   "Bash(git fetch:*)"
 ];
 async function normalizeLegacyBashAllowlist(settingsPath, isDryRun) {
-  if (!await import_fs_extra26.default.pathExists(settingsPath)) return false;
-  const settings = await import_fs_extra26.default.readJson(settingsPath);
+  if (!await import_fs_extra27.default.pathExists(settingsPath)) return false;
+  const settings = await import_fs_extra27.default.readJson(settingsPath);
   const allow = settings?.permissions?.allow;
   if (!Array.isArray(allow)) return false;
   const hasLegacy = allow.some(
@@ -59906,7 +60007,7 @@ async function normalizeLegacyBashAllowlist(settingsPath, isDryRun) {
     return true;
   }
   settings.permissions.allow = filteredAllow;
-  await import_fs_extra26.default.writeJson(settingsPath, settings, { spaces: 2 });
+  await import_fs_extra27.default.writeJson(settingsPath, settings, { spaces: 2 });
   console.log(kleur_default.dim("      (Replaced legacy Bash(bd:*)/Bash(git:*) allowlist entries)"));
   return true;
 }
@@ -59933,7 +60034,7 @@ async function filterHooksByInstalledScripts(hooksConfig) {
         if (typeof command !== "string" || !command.trim()) continue;
         const scriptPath = extractHookCommandPath(command);
         if (!scriptPath) continue;
-        if (await import_fs_extra26.default.pathExists(scriptPath)) {
+        if (await import_fs_extra27.default.pathExists(scriptPath)) {
           keptInner.push(inner);
         }
       }
@@ -59971,9 +60072,9 @@ async function executeSync(repoRoot, systemRoot, changeSet, mode, actionType, is
             const dest = import_path18.default.join(systemRoot, category, itemToDelete);
             console.log(kleur_default.red(`  [x] PRUNING ${category}/${itemToDelete}`));
             if (!isDryRun) {
-              if (await import_fs_extra26.default.pathExists(dest)) {
+              if (await import_fs_extra27.default.pathExists(dest)) {
                 backups.push(await createBackup(dest));
-                await import_fs_extra26.default.remove(dest);
+                await import_fs_extra27.default.remove(dest);
               }
             }
             count++;
@@ -59989,14 +60090,14 @@ async function executeSync(repoRoot, systemRoot, changeSet, mode, actionType, is
           src = import_path18.default.join(repoRoot, "config", "settings.json");
           dest = import_path18.default.join(systemRoot, "settings.json");
           console.log(kleur_default.gray(`  --> config/settings.json`));
-          if (!isDryRun && await import_fs_extra26.default.pathExists(dest)) {
+          if (!isDryRun && await import_fs_extra27.default.pathExists(dest)) {
             backups.push(await createBackup(dest));
           }
-          const repoConfig = await import_fs_extra26.default.readJson(src);
+          const repoConfig = await import_fs_extra27.default.readJson(src);
           let finalRepoConfig = resolveConfigPaths(repoConfig, systemRoot);
           const hooksSrc = import_path18.default.join(repoRoot, "config", "hooks.json");
-          if (await import_fs_extra26.default.pathExists(hooksSrc)) {
-            const hooksRaw = await import_fs_extra26.default.readJson(hooksSrc);
+          if (await import_fs_extra27.default.pathExists(hooksSrc)) {
+            const hooksRaw = await import_fs_extra27.default.readJson(hooksSrc);
             const hooksAdapted = await filterHooksByInstalledScripts(adapter.adaptHooksConfig(hooksRaw));
             if (hooksAdapted.hooks) {
               finalRepoConfig.hooks = hooksAdapted.hooks;
@@ -60006,8 +60107,8 @@ async function executeSync(repoRoot, systemRoot, changeSet, mode, actionType, is
               finalRepoConfig.statusLine = hooksAdapted.statusLine;
             }
           }
-          if (import_fs_extra26.default.existsSync(dest)) {
-            const localConfig = await import_fs_extra26.default.readJson(dest);
+          if (import_fs_extra27.default.existsSync(dest)) {
+            const localConfig = await import_fs_extra27.default.readJson(dest);
             const resolvedLocalConfig = resolveConfigPaths(localConfig, systemRoot);
             if (mode === "prune") {
               if (localConfig.mcpServers && finalRepoConfig.mcpServers) {
@@ -60036,8 +60137,8 @@ async function executeSync(repoRoot, systemRoot, changeSet, mode, actionType, is
             await normalizeLegacyBashAllowlist(dest, isDryRun);
           } else {
             if (!isDryRun) {
-              await import_fs_extra26.default.ensureDir(import_path18.default.dirname(dest));
-              await import_fs_extra26.default.writeJson(dest, finalRepoConfig, { spaces: 2 });
+              await import_fs_extra27.default.ensureDir(import_path18.default.dirname(dest));
+              await import_fs_extra27.default.writeJson(dest, finalRepoConfig, { spaces: 2 });
             }
             console.log(kleur_default.green(`      (Created new configuration)`));
           }
@@ -60054,24 +60155,24 @@ async function executeSync(repoRoot, systemRoot, changeSet, mode, actionType, is
           dest = import_path18.default.join(systemPath, item);
         }
         console.log(kleur_default.gray(`  ${actionType === "backport" ? "<--" : "-->"} ${category}/${item}`));
-        if (!isDryRun && actionType === "sync" && await import_fs_extra26.default.pathExists(dest)) {
+        if (!isDryRun && actionType === "sync" && await import_fs_extra27.default.pathExists(dest)) {
           backups.push(await createBackup(dest));
         }
         if (mode === "symlink" && actionType === "sync" && category !== "config") {
           if (!isDryRun) {
             if (process.platform === "win32") {
               console.log(kleur_default.yellow("  \u26A0 Symlinks require Developer Mode on Windows \u2014 falling back to copy."));
-              await import_fs_extra26.default.remove(dest);
-              await import_fs_extra26.default.copy(src, dest);
+              await import_fs_extra27.default.remove(dest);
+              await import_fs_extra27.default.copy(src, dest);
             } else {
-              await import_fs_extra26.default.remove(dest);
-              await import_fs_extra26.default.ensureSymlink(src, dest);
+              await import_fs_extra27.default.remove(dest);
+              await import_fs_extra27.default.ensureSymlink(src, dest);
             }
           }
         } else {
           if (!isDryRun) {
-            await import_fs_extra26.default.remove(dest);
-            await import_fs_extra26.default.copy(src, dest);
+            await import_fs_extra27.default.remove(dest);
+            await import_fs_extra27.default.copy(src, dest);
           }
         }
         if (!isDryRun && actionType === "sync") {
@@ -60082,8 +60183,8 @@ async function executeSync(repoRoot, systemRoot, changeSet, mode, actionType, is
     }
     if (!isDryRun && actionType === "sync") {
       const manifestPath = import_path18.default.join(systemRoot, ".jaggers-sync-manifest.json");
-      const existing = await import_fs_extra26.default.pathExists(manifestPath) ? await import_fs_extra26.default.readJson(manifestPath) : {};
-      await import_fs_extra26.default.writeJson(manifestPath, {
+      const existing = await import_fs_extra27.default.pathExists(manifestPath) ? await import_fs_extra27.default.readJson(manifestPath) : {};
+      await import_fs_extra27.default.writeJson(manifestPath, {
         ...existing,
         lastSync: (/* @__PURE__ */ new Date()).toISOString(),
         repoRoot,
@@ -60124,20 +60225,20 @@ async function executeSyncAgentsSkills(repoRoot, systemRoot, changeSet, mode, ac
       const dest = actionType === "backport" ? import_path18.default.join(repoSkillsPath, item) : import_path18.default.join(systemRoot, item);
       console.log(kleur_default.gray(`  ${actionType === "backport" ? "<--" : "-->"} ${item}`));
       if (!isDryRun) {
-        if (await import_fs_extra26.default.pathExists(dest)) backups.push(await createBackup(dest));
-        await import_fs_extra26.default.ensureDir(import_path18.default.dirname(dest));
+        if (await import_fs_extra27.default.pathExists(dest)) backups.push(await createBackup(dest));
+        await import_fs_extra27.default.ensureDir(import_path18.default.dirname(dest));
         if (mode === "symlink" && actionType === "sync") {
           if (process.platform === "win32") {
             console.log(kleur_default.yellow("  \u26A0 Symlinks require Developer Mode on Windows \u2014 falling back to copy."));
-            await import_fs_extra26.default.remove(dest);
-            await import_fs_extra26.default.copy(src, dest);
+            await import_fs_extra27.default.remove(dest);
+            await import_fs_extra27.default.copy(src, dest);
           } else {
-            await import_fs_extra26.default.remove(dest);
-            await import_fs_extra26.default.ensureSymlink(src, dest);
+            await import_fs_extra27.default.remove(dest);
+            await import_fs_extra27.default.ensureSymlink(src, dest);
           }
         } else {
-          await import_fs_extra26.default.remove(dest);
-          await import_fs_extra26.default.copy(src, dest);
+          await import_fs_extra27.default.remove(dest);
+          await import_fs_extra27.default.copy(src, dest);
         }
       }
       count++;
@@ -60228,7 +60329,7 @@ function getManifestPath(projectDir) {
 }
 
 // src/commands/status.ts
-var import_fs_extra27 = __toESM(require_lib(), 1);
+var import_fs_extra28 = __toESM(require_lib(), 1);
 var import_path20 = __toESM(require("path"), 1);
 function formatTargetLabel(target) {
   const normalized = target.replace(/\\/g, "/").toLowerCase();
@@ -60254,7 +60355,7 @@ function createStatusCommand() {
     const candidates = getCandidatePaths();
     const targets = [];
     for (const c of candidates) {
-      if (await import_fs_extra27.default.pathExists(c.path)) targets.push(c.path);
+      if (await import_fs_extra28.default.pathExists(c.path)) targets.push(c.path);
     }
     if (targets.length === 0) {
       console.log(kleur_default.yellow("\n  No xtrm environments found (.xtrm target missing)\n"));
@@ -60265,8 +60366,8 @@ function createStatusCommand() {
       const manifestPath = getManifestPath(target);
       let lastSync = null;
       try {
-        if (await import_fs_extra27.default.pathExists(manifestPath)) {
-          const manifest = await import_fs_extra27.default.readJson(manifestPath);
+        if (await import_fs_extra28.default.pathExists(manifestPath)) {
+          const manifest = await import_fs_extra28.default.readJson(manifestPath);
           if (manifest.lastSync) lastSync = manifest.lastSync;
         }
       } catch {
@@ -60521,7 +60622,7 @@ function createHelpCommand() {
 }
 
 // src/commands/clean.ts
-var import_fs_extra28 = __toESM(require_lib(), 1);
+var import_fs_extra29 = __toESM(require_lib(), 1);
 var import_path21 = __toESM(require("path"), 1);
 var import_os7 = require("os");
 var CANONICAL_HOOKS = /* @__PURE__ */ new Set([
@@ -60560,15 +60661,15 @@ async function cleanHooks(dryRun) {
   const hooksDir = import_path21.default.join((0, import_os7.homedir)(), ".claude", "hooks");
   const removed = [];
   const cache = [];
-  if (!await import_fs_extra28.default.pathExists(hooksDir)) {
+  if (!await import_fs_extra29.default.pathExists(hooksDir)) {
     return { removed, cache };
   }
-  const entries = await import_fs_extra28.default.readdir(hooksDir);
+  const entries = await import_fs_extra29.default.readdir(hooksDir);
   for (const entry of entries) {
     if (IGNORED_ITEMS2.has(entry)) {
       if (!dryRun) {
         const fullPath2 = import_path21.default.join(hooksDir, entry);
-        await import_fs_extra28.default.remove(fullPath2);
+        await import_fs_extra29.default.remove(fullPath2);
       }
       cache.push(entry);
       continue;
@@ -60577,10 +60678,10 @@ async function cleanHooks(dryRun) {
       continue;
     }
     const fullPath = import_path21.default.join(hooksDir, entry);
-    const stat = await import_fs_extra28.default.stat(fullPath);
+    const stat = await import_fs_extra29.default.stat(fullPath);
     if (stat.isFile() || stat.isDirectory() && IGNORED_ITEMS2.has(entry)) {
       if (!dryRun) {
-        await import_fs_extra28.default.remove(fullPath);
+        await import_fs_extra29.default.remove(fullPath);
       }
       removed.push(entry);
     }
@@ -60592,47 +60693,47 @@ async function cleanSkills(dryRun) {
   const skillsRoot = import_path21.default.join((0, import_os7.homedir)(), ".xtrm", "skills");
   for (const runtime of ACTIVE_SKILLS_RUNTIMES) {
     const activeRoot = import_path21.default.join(skillsRoot, "active", runtime);
-    if (!await import_fs_extra28.default.pathExists(activeRoot)) {
+    if (!await import_fs_extra29.default.pathExists(activeRoot)) {
       continue;
     }
-    const entries = await import_fs_extra28.default.readdir(activeRoot);
+    const entries = await import_fs_extra29.default.readdir(activeRoot);
     for (const entry of entries) {
       if (IGNORED_ITEMS2.has(entry)) {
         continue;
       }
       const entryPath = import_path21.default.join(activeRoot, entry);
-      const stat = await import_fs_extra28.default.lstat(entryPath).catch(() => null);
+      const stat = await import_fs_extra29.default.lstat(entryPath).catch(() => null);
       if (!stat) {
         continue;
       }
       if (!stat.isSymbolicLink()) {
         if (!dryRun) {
-          await import_fs_extra28.default.remove(entryPath);
+          await import_fs_extra29.default.remove(entryPath);
         }
         removed.push(`active/${runtime}/${entry} (non-symlink)`);
         continue;
       }
-      const linkTarget = await import_fs_extra28.default.readlink(entryPath).catch(() => null);
+      const linkTarget = await import_fs_extra29.default.readlink(entryPath).catch(() => null);
       if (!linkTarget) {
         if (!dryRun) {
-          await import_fs_extra28.default.remove(entryPath);
+          await import_fs_extra29.default.remove(entryPath);
         }
         removed.push(`active/${runtime}/${entry} (broken-link)`);
         continue;
       }
       const resolvedTarget = import_path21.default.resolve(import_path21.default.dirname(entryPath), linkTarget);
-      if (!await import_fs_extra28.default.pathExists(resolvedTarget)) {
+      if (!await import_fs_extra29.default.pathExists(resolvedTarget)) {
         if (!dryRun) {
-          await import_fs_extra28.default.remove(entryPath);
+          await import_fs_extra29.default.remove(entryPath);
         }
         removed.push(`active/${runtime}/${entry} (dangling)`);
       }
     }
   }
   const legacyAgentsSkills = import_path21.default.join((0, import_os7.homedir)(), ".agents", "skills");
-  if (await import_fs_extra28.default.pathExists(legacyAgentsSkills)) {
+  if (await import_fs_extra29.default.pathExists(legacyAgentsSkills)) {
     if (!dryRun) {
-      await import_fs_extra28.default.remove(legacyAgentsSkills);
+      await import_fs_extra29.default.remove(legacyAgentsSkills);
     }
     removed.push(".agents/skills (deprecated)");
   }
@@ -60641,12 +60742,12 @@ async function cleanSkills(dryRun) {
 async function cleanOrphanedHookEntries(dryRun, repoRoot) {
   const settingsPath = import_path21.default.join((0, import_os7.homedir)(), ".claude", "settings.json");
   const removed = [];
-  if (!await import_fs_extra28.default.pathExists(settingsPath)) {
+  if (!await import_fs_extra29.default.pathExists(settingsPath)) {
     return removed;
   }
   let settings = {};
   try {
-    settings = await import_fs_extra28.default.readJson(settingsPath);
+    settings = await import_fs_extra29.default.readJson(settingsPath);
   } catch {
     return removed;
   }
@@ -60664,8 +60765,8 @@ async function cleanOrphanedHookEntries(dryRun, repoRoot) {
   if (repoRoot) {
     const hooksJsonPath = import_path21.default.join(repoRoot, "config", "hooks.json");
     try {
-      if (await import_fs_extra28.default.pathExists(hooksJsonPath)) {
-        const hooksJson = await import_fs_extra28.default.readJson(hooksJsonPath);
+      if (await import_fs_extra29.default.pathExists(hooksJsonPath)) {
+        const hooksJson = await import_fs_extra29.default.readJson(hooksJsonPath);
         for (const [event, entries] of Object.entries(hooksJson.hooks ?? {})) {
           for (const entry of entries) {
             const script = entry.script;
@@ -60727,7 +60828,7 @@ async function cleanOrphanedHookEntries(dryRun, repoRoot) {
     }
   }
   if (modified && !dryRun) {
-    await import_fs_extra28.default.writeJson(settingsPath, settings, { spaces: 2 });
+    await import_fs_extra29.default.writeJson(settingsPath, settings, { spaces: 2 });
   }
   return removed;
 }
@@ -60820,40 +60921,40 @@ function createCleanCommand() {
 }
 
 // src/commands/end.ts
-var import_node_child_process8 = require("child_process");
+var import_node_child_process9 = require("child_process");
 var import_node_fs5 = require("fs");
-var import_node_path17 = require("path");
+var import_node_path18 = require("path");
 function git(args, cwd) {
-  const r = (0, import_node_child_process8.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process9.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 function bd(args, cwd) {
-  const r = (0, import_node_child_process8.spawnSync)("bd", args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process9.spawnSync)("bd", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
 function npm(args, cwd) {
-  const r = (0, import_node_child_process8.spawnSync)("npm", args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process9.spawnSync)("npm", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 function resolveMainRepoRoot(cwd) {
   const commonDirResult = git(["rev-parse", "--git-common-dir"], cwd);
   if (commonDirResult.ok && commonDirResult.out) {
-    const commonDir = (0, import_node_path17.isAbsolute)(commonDirResult.out) ? commonDirResult.out : (0, import_node_path17.resolve)(cwd, commonDirResult.out);
-    return commonDir.endsWith("/.git") || commonDir.endsWith("\\.git") ? (0, import_node_path17.dirname)(commonDir) : commonDir;
+    const commonDir = (0, import_node_path18.isAbsolute)(commonDirResult.out) ? commonDirResult.out : (0, import_node_path18.resolve)(cwd, commonDirResult.out);
+    return commonDir.endsWith("/.git") || commonDir.endsWith("\\.git") ? (0, import_node_path18.dirname)(commonDir) : commonDir;
   }
   const fallback = git(["rev-parse", "--show-toplevel"], cwd);
   return fallback.ok && fallback.out ? fallback.out : cwd;
 }
 function clearStatuslineClaim(repoRoot) {
   try {
-    const claimFile = (0, import_node_path17.join)(repoRoot, ".xtrm", "statusline-claim");
+    const claimFile = (0, import_node_path18.join)(repoRoot, ".xtrm", "statusline-claim");
     if ((0, import_node_fs5.existsSync)(claimFile)) (0, import_node_fs5.unlinkSync)(claimFile);
   } catch {
   }
 }
 function cleanupWorktreePath(worktreePath, repoRoot) {
   const warnings = [];
-  const removeResult = (0, import_node_child_process8.spawnSync)(
+  const removeResult = (0, import_node_child_process9.spawnSync)(
     "git",
     ["worktree", "remove", worktreePath, "--force"],
     { cwd: repoRoot, encoding: "utf8", stdio: "pipe" }
@@ -60862,7 +60963,7 @@ function cleanupWorktreePath(worktreePath, repoRoot) {
     const errorText = (removeResult.stderr ?? "").trim();
     if (errorText) warnings.push(errorText);
   }
-  const pruneResult = (0, import_node_child_process8.spawnSync)("git", ["worktree", "prune", "--expire", "now"], {
+  const pruneResult = (0, import_node_child_process9.spawnSync)("git", ["worktree", "prune", "--expire", "now"], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe"
@@ -61008,16 +61109,16 @@ function findBeadsSymlinkIntroductions(cwd, upstream) {
       const match = line.match(/^:[0-9]{6} ([0-9]{6}) [0-9a-f]{7,40} [0-9a-f]{7,40} ([A-Z]+(?:[0-9]+)?)\t(.+)$/);
       if (!match) return [];
       const destinationMode = match[1];
-      const path47 = match[3];
+      const path48 = match[3];
       if (destinationMode !== "120000") return [];
-      return guardedPrefixes.some((p) => path47.startsWith(p)) ? [path47] : [];
+      return guardedPrefixes.some((p) => path48.startsWith(p)) ? [path48] : [];
     })
   )];
 }
 function printBeadsSymlinkGuardError(paths, upstream) {
   console.error(kleur_default.red("\n  \u2717 Refusing to push: guarded-path symlink mode change detected\n"));
-  for (const path47 of paths) {
-    console.error(kleur_default.red(`    ${path47}`));
+  for (const path48 of paths) {
+    console.error(kleur_default.red(`    ${path48}`));
   }
   const affectedPrefixes = [...new Set(paths.map((p) => p.split("/")[0] + "/"))];
   const restoreTargets = affectedPrefixes.join(" ");
@@ -61191,7 +61292,7 @@ function createEndCommand() {
     console.log(kleur_default.dim("  Creating PR..."));
     const prArgs = ["pr", "create", "--title", prTitle, "--body", prBody];
     if (opts.draft) prArgs.push("--draft");
-    const prResult = (0, import_node_child_process8.spawnSync)("gh", prArgs, { cwd, encoding: "utf8", stdio: "pipe" });
+    const prResult = (0, import_node_child_process9.spawnSync)("gh", prArgs, { cwd, encoding: "utf8", stdio: "pipe" });
     if (prResult.status !== 0) {
       console.error(kleur_default.red(`
   \u2717 PR creation failed:
@@ -61241,11 +61342,11 @@ function createEndCommand() {
 }
 
 // src/commands/worktree.ts
-var import_node_child_process9 = require("child_process");
+var import_node_child_process10 = require("child_process");
 var import_node_fs6 = require("fs");
-var import_node_path18 = require("path");
+var import_node_path19 = require("path");
 function git2(args, cwd) {
-  const r = (0, import_node_child_process9.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process10.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return {
     ok: r.status === 0,
     out: (r.stdout ?? "").trim(),
@@ -61298,7 +61399,7 @@ function detectNestedParents(paths) {
   for (const childPath of sorted) {
     for (const parentPath of sorted) {
       if (childPath === parentPath) continue;
-      if (childPath.startsWith(`${parentPath}${import_node_path18.sep}`)) {
+      if (childPath.startsWith(`${parentPath}${import_node_path19.sep}`)) {
         nested.set(childPath, parentPath);
         break;
       }
@@ -61319,14 +61420,14 @@ function listXtWorktrees(repoRoot) {
   }));
   for (const wt of worktrees) {
     try {
-      const metaFile = (0, import_node_fs6.existsSync)((0, import_node_path18.join)(wt.path, ".xtrm", "session-meta.json")) ? (0, import_node_path18.join)(wt.path, ".xtrm", "session-meta.json") : (0, import_node_path18.join)(wt.path, ".session-meta.json");
+      const metaFile = (0, import_node_fs6.existsSync)((0, import_node_path19.join)(wt.path, ".xtrm", "session-meta.json")) ? (0, import_node_path19.join)(wt.path, ".xtrm", "session-meta.json") : (0, import_node_path19.join)(wt.path, ".session-meta.json");
       const raw = (0, import_node_fs6.readFileSync)(metaFile, "utf8");
       const meta3 = JSON.parse(raw);
       wt.runtime = meta3.runtime;
       wt.launchedAt = meta3.launchedAt;
     } catch {
     }
-    const logR = (0, import_node_child_process9.spawnSync)("git", ["log", "-1", "--format=%ci%s", "HEAD"], {
+    const logR = (0, import_node_child_process10.spawnSync)("git", ["log", "-1", "--format=%ci%s", "HEAD"], {
       cwd: wt.path,
       encoding: "utf8",
       stdio: "pipe"
@@ -61342,15 +61443,15 @@ function listXtWorktrees(repoRoot) {
   return worktrees;
 }
 function getManagedWorktreeRoot(repoRoot) {
-  return (0, import_node_path18.join)(repoRoot, ".xtrm", "worktrees");
+  return (0, import_node_path19.join)(repoRoot, ".xtrm", "worktrees");
 }
 function listOrphanManagedDirs(repoRoot) {
   const managedRoot = getManagedWorktreeRoot(repoRoot);
   if (!(0, import_node_fs6.existsSync)(managedRoot)) return [];
-  const activePaths = new Set(parseGitWorktreeList(repoRoot).map((wt) => (0, import_node_path18.resolve)(wt.path)));
+  const activePaths = new Set(parseGitWorktreeList(repoRoot).map((wt) => (0, import_node_path19.resolve)(wt.path)));
   const orphans = [];
   for (const entry of (0, import_node_fs6.readdirSync)(managedRoot)) {
-    const fullPath = (0, import_node_path18.join)(managedRoot, entry);
+    const fullPath = (0, import_node_path19.join)(managedRoot, entry);
     let isDirectory = false;
     try {
       isDirectory = (0, import_node_fs6.statSync)(fullPath).isDirectory();
@@ -61358,7 +61459,7 @@ function listOrphanManagedDirs(repoRoot) {
       continue;
     }
     if (!isDirectory) continue;
-    if (!activePaths.has((0, import_node_path18.resolve)(fullPath))) {
+    if (!activePaths.has((0, import_node_path19.resolve)(fullPath))) {
       orphans.push(fullPath);
     }
   }
@@ -61373,7 +61474,7 @@ function runGitWorktreePrune(repoRoot) {
 }
 function isMergedIntoMain(branch, repoRoot) {
   const branchShort = branch.replace("refs/heads/", "");
-  const r = (0, import_node_child_process9.spawnSync)("git", ["branch", "--merged", "origin/main", "--list", branchShort], {
+  const r = (0, import_node_child_process10.spawnSync)("git", ["branch", "--merged", "origin/main", "--list", branchShort], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe"
@@ -61382,7 +61483,7 @@ function isMergedIntoMain(branch, repoRoot) {
 }
 function getPrStatus(branch, repoRoot) {
   const branchShort = branch.replace("refs/heads/", "");
-  const r = (0, import_node_child_process9.spawnSync)("gh", ["pr", "list", "--head", branchShort, "--state", "all", "--json", "state,url", "--limit", "1"], {
+  const r = (0, import_node_child_process10.spawnSync)("gh", ["pr", "list", "--head", branchShort, "--state", "all", "--json", "state,url", "--limit", "1"], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe"
@@ -61408,8 +61509,8 @@ function removeWorktreeEntry(repoRoot, worktreePath) {
 function getRepoRoot(cwd) {
   const commonDirResult = git2(["rev-parse", "--git-common-dir"], cwd);
   if (commonDirResult.ok && commonDirResult.out) {
-    const commonDir = (0, import_node_path18.isAbsolute)(commonDirResult.out) ? commonDirResult.out : (0, import_node_path18.resolve)(cwd, commonDirResult.out);
-    return commonDir.endsWith("/.git") || commonDir.endsWith("\\.git") ? (0, import_node_path18.dirname)(commonDir) : commonDir;
+    const commonDir = (0, import_node_path19.isAbsolute)(commonDirResult.out) ? commonDirResult.out : (0, import_node_path19.resolve)(cwd, commonDirResult.out);
+    return commonDir.endsWith("/.git") || commonDir.endsWith("\\.git") ? (0, import_node_path19.dirname)(commonDir) : commonDir;
   }
   const fallback = git2(["rev-parse", "--show-toplevel"], cwd);
   return fallback.ok && fallback.out ? fallback.out : cwd;
@@ -61601,7 +61702,7 @@ function createWorktreeCommand() {
 }
 function clearStatuslineClaim2(repoRoot) {
   try {
-    const claimFile = (0, import_node_path18.join)(repoRoot, ".xtrm", "statusline-claim");
+    const claimFile = (0, import_node_path19.join)(repoRoot, ".xtrm", "statusline-claim");
     if ((0, import_node_fs6.existsSync)(claimFile)) (0, import_node_fs6.unlinkSync)(claimFile);
   } catch {
   }
@@ -61609,7 +61710,7 @@ function clearStatuslineClaim2(repoRoot) {
 
 // src/commands/attach.ts
 var import_prompts5 = __toESM(require_prompts3(), 1);
-var import_node_child_process10 = require("child_process");
+var import_node_child_process11 = require("child_process");
 function createAttachCommand() {
   return new Command("attach").description("Re-attach to an existing xt worktree and resume the Claude or Pi session").argument("[name]", 'Worktree slug or branch name to attach to (e.g. "abc1" or "xt/abc1")').action(async (name) => {
     const repoRoot = getRepoRoot(process.cwd());
@@ -61672,7 +61773,7 @@ function createAttachCommand() {
         console.log(kleur_default.dim(`  warning: pi launch preflight failed (${message})`));
       }
     }
-    const result = (0, import_node_child_process10.spawnSync)(runtime, resumeArgs, {
+    const result = (0, import_node_child_process11.spawnSync)(runtime, resumeArgs, {
       cwd: target.path,
       stdio: "inherit"
     });
@@ -61694,11 +61795,11 @@ async function pickRuntime() {
 }
 
 // src/commands/docs.ts
-var import_fs_extra31 = __toESM(require_lib(), 1);
+var import_fs_extra32 = __toESM(require_lib(), 1);
 var import_path24 = __toESM(require("path"), 1);
 
 // src/utils/docs-scanner.ts
-var import_fs_extra29 = __toESM(require_lib(), 1);
+var import_fs_extra30 = __toESM(require_lib(), 1);
 var import_path22 = __toESM(require("path"), 1);
 function parseFrontmatter(content) {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -61741,7 +61842,7 @@ async function scanDocFiles(repoRoot, options = {}) {
   const { dir, pattern, filter, recursive = true } = options;
   let gitignorePatterns = [];
   try {
-    const raw = await import_fs_extra29.default.readFile(import_path22.default.join(repoRoot, ".gitignore"), "utf8");
+    const raw = await import_fs_extra30.default.readFile(import_path22.default.join(repoRoot, ".gitignore"), "utf8");
     gitignorePatterns = parseGitignorePatterns(raw);
   } catch {
   }
@@ -61750,7 +61851,7 @@ async function scanDocFiles(repoRoot, options = {}) {
   async function walk2(dirPath) {
     let entries;
     try {
-      entries = await import_fs_extra29.default.readdir(dirPath, { withFileTypes: true });
+      entries = await import_fs_extra30.default.readdir(dirPath, { withFileTypes: true });
     } catch {
       return;
     }
@@ -61769,8 +61870,8 @@ async function scanDocFiles(repoRoot, options = {}) {
       if (pattern && !entry.name.includes(pattern)) continue;
       let docEntry;
       try {
-        const stat = await import_fs_extra29.default.stat(fullPath);
-        const content = await import_fs_extra29.default.readFile(fullPath, "utf8");
+        const stat = await import_fs_extra30.default.stat(fullPath);
+        const content = await import_fs_extra30.default.readFile(fullPath, "utf8");
         const frontmatter = parseFrontmatter(content);
         if (filter && (!frontmatter || frontmatter[filter.field] !== filter.value)) continue;
         docEntry = {
@@ -61799,13 +61900,13 @@ async function scanDocFiles(repoRoot, options = {}) {
 }
 
 // src/utils/docs-cache.ts
-var import_fs_extra30 = __toESM(require_lib(), 1);
+var import_fs_extra31 = __toESM(require_lib(), 1);
 var import_path23 = __toESM(require("path"), 1);
 var CACHE_PATH = import_path23.default.join(".xtrm", "cache", "docs-list.json");
 var DEFAULT_TTL_MS = 6e4;
 async function readCache(repoRoot) {
   try {
-    const raw = await import_fs_extra30.default.readFile(import_path23.default.join(repoRoot, CACHE_PATH), "utf8");
+    const raw = await import_fs_extra31.default.readFile(import_path23.default.join(repoRoot, CACHE_PATH), "utf8");
     const parsed = JSON.parse(raw);
     parsed.entries = parsed.entries.map((e) => ({
       ...e,
@@ -61818,13 +61919,13 @@ async function readCache(repoRoot) {
 }
 async function writeCache(repoRoot, entries) {
   const cachePath = import_path23.default.join(repoRoot, CACHE_PATH);
-  await import_fs_extra30.default.ensureDir(import_path23.default.dirname(cachePath));
+  await import_fs_extra31.default.ensureDir(import_path23.default.dirname(cachePath));
   const cache = {
     timestamp: Date.now(),
     repoRoot,
     entries
   };
-  await import_fs_extra30.default.writeFile(cachePath, JSON.stringify(cache, null, 2), "utf8");
+  await import_fs_extra31.default.writeFile(cachePath, JSON.stringify(cache, null, 2), "utf8");
 }
 function isCacheValid(cache, entries, ttlMs = DEFAULT_TTL_MS) {
   if (Date.now() - cache.timestamp > ttlMs) return false;
@@ -61835,16 +61936,16 @@ function isCacheValid(cache, entries, ttlMs = DEFAULT_TTL_MS) {
 }
 
 // src/commands/docs-cross-check-gh.ts
-var import_node_child_process11 = require("child_process");
+var import_node_child_process12 = require("child_process");
 function isGhAvailable() {
-  return (0, import_node_child_process11.spawnSync)("gh", ["--version"], { stdio: "pipe", encoding: "utf8" }).status === 0;
+  return (0, import_node_child_process12.spawnSync)("gh", ["--version"], { stdio: "pipe", encoding: "utf8" }).status === 0;
 }
 function fetchRecentPrs(repoRoot, days) {
   if (!isGhAvailable()) {
     console.log(kleur_default.yellow("  \u26A0 gh CLI not found \u2014 skipping PR data (install gh to enable cross-check)"));
     return [];
   }
-  const r = (0, import_node_child_process11.spawnSync)("gh", [
+  const r = (0, import_node_child_process12.spawnSync)("gh", [
     "pr",
     "list",
     "--state",
@@ -61874,11 +61975,11 @@ function fetchRecentPrs(repoRoot, days) {
 }
 
 // src/commands/docs-cross-check-bd.ts
-var import_node_child_process12 = require("child_process");
+var import_node_child_process13 = require("child_process");
 var _bdAvailable = null;
 function isBdAvailable() {
   if (_bdAvailable !== null) return _bdAvailable;
-  const r = (0, import_node_child_process12.spawnSync)("bd", ["--version"], { stdio: "pipe", encoding: "utf8" });
+  const r = (0, import_node_child_process13.spawnSync)("bd", ["--version"], { stdio: "pipe", encoding: "utf8" });
   _bdAvailable = r.status === 0;
   return _bdAvailable;
 }
@@ -61890,7 +61991,7 @@ function fetchClosedBdIssues(days) {
     logBdWarning("fetchClosedBdIssues: bd CLI not available, skipping issue fetch");
     return [];
   }
-  const r = (0, import_node_child_process12.spawnSync)("bd", [
+  const r = (0, import_node_child_process13.spawnSync)("bd", [
     "query",
     `status=closed AND updated>${days}d`,
     "--json"
@@ -62035,8 +62136,8 @@ var REQUIRED_FIELDS = /* @__PURE__ */ new Set(["title", "type", "status", "updat
 async function collectDocFiles(repoRoot, filterPattern) {
   const candidates = [];
   const docsDir = import_path24.default.join(repoRoot, "docs");
-  if (await import_fs_extra31.default.pathExists(docsDir)) {
-    const entries = await import_fs_extra31.default.readdir(docsDir);
+  if (await import_fs_extra32.default.pathExists(docsDir)) {
+    const entries = await import_fs_extra32.default.readdir(docsDir);
     for (const entry of entries) {
       if (entry.endsWith(".md")) candidates.push(import_path24.default.join(docsDir, entry));
     }
@@ -62049,8 +62150,8 @@ async function collectDocFiles(repoRoot, filterPattern) {
     }
     let entry;
     try {
-      const stat = await import_fs_extra31.default.stat(filePath);
-      const content = await import_fs_extra31.default.readFile(filePath, "utf8");
+      const stat = await import_fs_extra32.default.stat(filePath);
+      const content = await import_fs_extra32.default.readFile(filePath, "utf8");
       const frontmatter = parseFrontmatter(content);
       entry = {
         filePath,
@@ -62258,7 +62359,7 @@ function createDocsCommand() {
       const docContents = /* @__PURE__ */ new Map();
       for (const doc of docEntries) {
         try {
-          const content = await import_fs_extra31.default.readFile(doc.filePath, "utf8");
+          const content = await import_fs_extra32.default.readFile(doc.filePath, "utf8");
           docContents.set(doc.relativePath, content);
         } catch {
         }
@@ -62305,7 +62406,7 @@ function createDocsCommand() {
         if (!fm || !fm[field]) {
           if (opts.fix && field === "updated_at") {
             try {
-              const content = await import_fs_extra31.default.readFile(entry.filePath, "utf8");
+              const content = await import_fs_extra32.default.readFile(entry.filePath, "utf8");
               const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
               let fixed;
               if (content.startsWith("---")) {
@@ -62318,7 +62419,7 @@ updated_at: ${today}
 
 ${content}`;
               }
-              await import_fs_extra31.default.writeFile(entry.filePath, fixed, "utf8");
+              await import_fs_extra32.default.writeFile(entry.filePath, fixed, "utf8");
               autoFixed.push(`${rel}: added updated_at: ${today}`);
             } catch {
               findings.push({ severity: "error", file: rel, message: `Missing required field: ${field}` });
@@ -62354,7 +62455,7 @@ ${content}`;
         });
       }
       try {
-        const content = await import_fs_extra31.default.readFile(entry.filePath, "utf8");
+        const content = await import_fs_extra32.default.readFile(entry.filePath, "utf8");
         const linkRe = /\[([^\]]+)\]\(([^)]+)\)/g;
         let m;
         while ((m = linkRe.exec(content)) !== null) {
@@ -62417,23 +62518,23 @@ ${content}`;
 }
 
 // src/commands/memory.ts
-var import_node_child_process13 = require("child_process");
+var import_node_child_process14 = require("child_process");
 var import_node_fs7 = require("fs");
-var import_node_path19 = require("path");
+var import_node_path20 = require("path");
 function createMemoryCommand() {
   return new Command("memory").description("Manage project memory (.xtrm/memory.md)").addCommand(createMemoryUpdateCommand());
 }
 function createMemoryUpdateCommand() {
   return new Command("update").description("Run memory-processor specialist to synthesize bd memories into .xtrm/memory.md").option("--dry-run", "Report only \u2014 do not modify memories or write memory.md", false).option("--no-beads", "Skip creating a tracking bead for this run", false).action(async (opts) => {
     const cwd = process.cwd();
-    const check2 = (0, import_node_child_process13.spawnSync)("specialists", ["--version"], { encoding: "utf8", stdio: "pipe" });
+    const check2 = (0, import_node_child_process14.spawnSync)("specialists", ["--version"], { encoding: "utf8", stdio: "pipe" });
     if (check2.status !== 0) {
       console.error(kleur_default.red(
         "\n  \u2717 specialists CLI not found.\n  Install with: npm install -g @jaggerxtrm/specialists\n"
       ));
       process.exit(1);
     }
-    const list = (0, import_node_child_process13.spawnSync)("specialists", ["list", "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const list = (0, import_node_child_process14.spawnSync)("specialists", ["list", "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (list.status === 0) {
       try {
         const specialists = JSON.parse(list.stdout);
@@ -62449,7 +62550,7 @@ function createMemoryUpdateCommand() {
     const prompt = opts.dryRun ? "Dry run: classify all memories and show the full report. Do not call bd forget or write .xtrm/memory.md." : "Run the full memory processor workflow.";
     const args = ["run", "memory-processor", "--prompt", prompt];
     if (!opts.beads) args.push("--no-beads");
-    const memPath = (0, import_node_path19.join)(cwd, ".xtrm", "memory.md");
+    const memPath = (0, import_node_path20.join)(cwd, ".xtrm", "memory.md");
     const spinnerText = opts.dryRun ? "Analyzing memories..." : `${(0, import_node_fs7.existsSync)(memPath) ? "Updating" : "Creating"} .xtrm/memory.md...`;
     console.log(kleur_default.bold(`
   xt memory update${opts.dryRun ? " (dry run)" : ""}
@@ -62457,7 +62558,7 @@ function createMemoryUpdateCommand() {
     console.log(kleur_default.dim(`  ${spinnerText}
 `));
     const exitCode = await new Promise((resolve4) => {
-      const proc = (0, import_node_child_process13.spawn)("specialists", args, { cwd, stdio: "inherit" });
+      const proc = (0, import_node_child_process14.spawn)("specialists", args, { cwd, stdio: "inherit" });
       proc.on("close", (code) => resolve4(code ?? 0));
     });
     if (exitCode !== 0) {
@@ -62468,39 +62569,39 @@ function createMemoryUpdateCommand() {
 }
 
 // src/commands/merge.ts
-var import_node_child_process14 = require("child_process");
+var import_node_child_process15 = require("child_process");
 var import_node_fs8 = require("fs");
-var import_node_path20 = require("path");
+var import_node_path21 = require("path");
 function createMergeCommand() {
   return new Command("merge").description("Drain the xt worktree PR merge queue via the xt-merge specialist").option("--dry-run", "List queue and CI status without merging", false).option("-y, --yes", "Skip confirmation prompt", false).option("--no-beads", "Skip creating a tracking bead for this run", false).action(async (opts) => {
     const cwd = process.cwd();
-    const gitCheck = (0, import_node_child_process14.spawnSync)("git", ["rev-parse", "--git-dir"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const gitCheck = (0, import_node_child_process15.spawnSync)("git", ["rev-parse", "--git-dir"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (gitCheck.status !== 0) {
       console.error(kleur_default.red("\n  \u2717 Not inside a git repository.\n"));
       process.exit(1);
     }
-    const ghAuth = (0, import_node_child_process14.spawnSync)("gh", ["auth", "status"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const ghAuth = (0, import_node_child_process15.spawnSync)("gh", ["auth", "status"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (ghAuth.status !== 0) {
       console.error(kleur_default.red(
         "\n  \u2717 gh is not authenticated.\n  Run: gh auth login\n"
       ));
       process.exit(1);
     }
-    const dirty = (0, import_node_child_process14.spawnSync)("git", ["status", "--porcelain", "--", ":!.beads/", ":!.specialists/"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const dirty = (0, import_node_child_process15.spawnSync)("git", ["status", "--porcelain", "--", ":!.beads/", ":!.specialists/"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (dirty.stdout.trim().length > 0) {
       console.error(kleur_default.yellow(
         '\n  \u26A0 Uncommitted changes detected.\n  The rebase cascade will check out other branches \u2014 a dirty tree\n  will either fail or carry changes onto the wrong branch.\n\n  Stash first:  git stash push -m "xt-merge cascade stash"\n  Then re-run:  xt merge\n'
       ));
       process.exit(1);
     }
-    const check2 = (0, import_node_child_process14.spawnSync)("specialists", ["--version"], { encoding: "utf8", stdio: "pipe" });
+    const check2 = (0, import_node_child_process15.spawnSync)("specialists", ["--version"], { encoding: "utf8", stdio: "pipe" });
     if (check2.status !== 0) {
       console.error(kleur_default.red(
         "\n  \u2717 specialists CLI not found.\n  Install with: npm install -g @jaggerxtrm/specialists\n"
       ));
       process.exit(1);
     }
-    const list = (0, import_node_child_process14.spawnSync)("specialists", ["list", "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const list = (0, import_node_child_process15.spawnSync)("specialists", ["list", "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (list.status === 0) {
       try {
         const specialists = JSON.parse(list.stdout);
@@ -62530,7 +62631,7 @@ function createMergeCommand() {
     console.log(kleur_default.bold(`
   xt merge${opts.dryRun ? " (dry run)" : ""}
 `));
-    const jobsDir = (0, import_node_path20.join)(cwd, ".specialists", "jobs");
+    const jobsDir = (0, import_node_path21.join)(cwd, ".specialists", "jobs");
     let jobsBefore;
     try {
       jobsBefore = new Set(
@@ -62539,7 +62640,7 @@ function createMergeCommand() {
     } catch {
       jobsBefore = /* @__PURE__ */ new Set();
     }
-    const runProc = (0, import_node_child_process14.spawn)("specialists", args, { cwd, detached: true, stdio: "ignore" });
+    const runProc = (0, import_node_child_process15.spawn)("specialists", args, { cwd, detached: true, stdio: "ignore" });
     runProc.unref();
     const jobId = await (async () => {
       const deadline = Date.now() + 15e3;
@@ -62558,19 +62659,19 @@ function createMergeCommand() {
       console.error(kleur_default.red("\n  \u2717 Timed out waiting for xt-merge job to start.\n"));
       process.exit(1);
     }
-    const feed = (0, import_node_child_process14.spawnSync)("specialists", ["feed", "--job", jobId, "--follow"], { cwd, stdio: "inherit" });
+    const feed = (0, import_node_child_process15.spawnSync)("specialists", ["feed", "--job", jobId, "--follow"], { cwd, stdio: "inherit" });
     if (feed.status !== 0) {
       process.exit(feed.status ?? 1);
     }
-    const result = (0, import_node_child_process14.spawnSync)("specialists", ["result", jobId, "--wait"], { cwd, stdio: "inherit" });
+    const result = (0, import_node_child_process15.spawnSync)("specialists", ["result", jobId, "--wait"], { cwd, stdio: "inherit" });
     process.exit(result.status ?? 0);
   });
 }
 
 // src/commands/debug.ts
-var import_node_child_process15 = require("child_process");
+var import_node_child_process16 = require("child_process");
 var import_node_fs9 = require("fs");
-var import_node_path21 = require("path");
+var import_node_path22 = require("path");
 var committedLabel = (outcome) => outcome === "error" ? "ACMT-" : "ACMT+";
 var committedColor = (s) => s === "ACMT-" ? kleur_default.red(s) : kleur_default.cyan(s);
 var KIND_LABELS = {
@@ -62667,14 +62768,14 @@ function buildDetail(event) {
   }
   if (event.kind === "tool.call") {
     if (d?.cmd) parts.push(kleur_default.dim(d.cmd.slice(0, 72)));
-    if (d?.file) parts.push(kleur_default.dim((0, import_node_path21.basename)(d.file)));
+    if (d?.file) parts.push(kleur_default.dim((0, import_node_path22.basename)(d.file)));
     if (d?.pattern) parts.push(kleur_default.dim(`/${d.pattern}/`));
     if (d?.url) parts.push(kleur_default.dim(d.url.slice(0, 72)));
     if (d?.query) parts.push(kleur_default.dim(d.query.slice(0, 72)));
     if (d?.prompt) parts.push(kleur_default.dim(d.prompt.slice(0, 72)));
   } else {
     if (event.issue_id) parts.push(kleur_default.yellow(event.issue_id));
-    if (d?.file) parts.push(kleur_default.dim((0, import_node_path21.basename)(d.file)));
+    if (d?.file) parts.push(kleur_default.dim((0, import_node_path22.basename)(d.file)));
     if (d?.reason_code) parts.push(kleur_default.dim(`[${d.reason_code}]`));
     if (event.worktree) parts.push(kleur_default.dim(`wt:${event.worktree}`));
   }
@@ -62691,8 +62792,8 @@ function formatLine(event, colorMap) {
 function findDbPath(cwd) {
   let dir = cwd;
   for (let i = 0; i < 10; i++) {
-    if ((0, import_node_fs9.existsSync)((0, import_node_path21.join)(dir, ".beads"))) return (0, import_node_path21.join)(dir, ".xtrm", "debug.db");
-    const parent = (0, import_node_path21.join)(dir, "..");
+    if ((0, import_node_fs9.existsSync)((0, import_node_path22.join)(dir, ".beads"))) return (0, import_node_path22.join)(dir, ".xtrm", "debug.db");
+    const parent = (0, import_node_path22.join)(dir, "..");
     if (parent === dir) break;
     dir = parent;
   }
@@ -62713,7 +62814,7 @@ function buildWhere(opts, base) {
 }
 function queryEvents(dbPath, where, limit) {
   const sql = `SELECT id,ts,session_id,runtime,worktree,kind,tool_name,outcome,issue_id,duration_ms,data FROM events${where ? ` WHERE ${where}` : ""} ORDER BY id ASC LIMIT ${limit}`;
-  const result = (0, import_node_child_process15.spawnSync)("sqlite3", [dbPath, "-json", sql], {
+  const result = (0, import_node_child_process16.spawnSync)("sqlite3", [dbPath, "-json", sql], {
     stdio: ["pipe", "pipe", "pipe"],
     encoding: "utf8",
     timeout: 5e3
@@ -62767,11 +62868,11 @@ function createDebugCommand() {
 }
 
 // src/commands/report.ts
-var import_fs_extra32 = __toESM(require_lib(), 1);
+var import_fs_extra33 = __toESM(require_lib(), 1);
 var import_path25 = __toESM(require("path"), 1);
-var import_node_child_process16 = require("child_process");
+var import_node_child_process17 = require("child_process");
 function run3(cmd, args, cwd) {
-  const r = (0, import_node_child_process16.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process17.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
 function detectDefaultBranch(cwd) {
@@ -62896,17 +62997,17 @@ function parseNumber(value) {
 }
 function collectSpecialistJobs(cwd, sessionStartMs) {
   const jobsDir = import_path25.default.join(cwd, ".specialists", "jobs");
-  if (!import_fs_extra32.default.pathExistsSync(jobsDir)) return [];
+  if (!import_fs_extra33.default.pathExistsSync(jobsDir)) return [];
   const jobs = [];
   try {
-    const entries = import_fs_extra32.default.readdirSync(jobsDir);
+    const entries = import_fs_extra33.default.readdirSync(jobsDir);
     for (const entry of entries) {
       const jobDir = import_path25.default.join(jobsDir, entry);
-      if (!import_fs_extra32.default.statSync(jobDir).isDirectory()) continue;
+      if (!import_fs_extra33.default.statSync(jobDir).isDirectory()) continue;
       const statusFile = import_path25.default.join(jobDir, "status.json");
-      if (!import_fs_extra32.default.pathExistsSync(statusFile)) continue;
+      if (!import_fs_extra33.default.pathExistsSync(statusFile)) continue;
       try {
-        const data = JSON.parse(import_fs_extra32.default.readFileSync(statusFile, "utf8"));
+        const data = JSON.parse(import_fs_extra33.default.readFileSync(statusFile, "utf8"));
         const startedAtMs = parseNumber(data.started_at_ms) ?? 0;
         if (startedAtMs > 0 && startedAtMs < sessionStartMs) continue;
         const elapsedSeconds = parseNumber(data.elapsed_s) ?? (() => {
@@ -63108,28 +63209,28 @@ async function generateReport(cwd) {
     memories
   });
   const reportsDir = import_path25.default.join(cwd, ".xtrm", "reports");
-  await import_fs_extra32.default.ensureDir(reportsDir);
+  await import_fs_extra33.default.ensureDir(reportsDir);
   const filename = `${date5}-${sessionHash}.md`;
   const filePath = import_path25.default.join(reportsDir, filename);
-  await import_fs_extra32.default.writeFile(filePath, skeleton, "utf8");
+  await import_fs_extra33.default.writeFile(filePath, skeleton, "utf8");
   return filePath;
 }
 async function showReport(cwd, target) {
   const reportsDir = import_path25.default.join(cwd, ".xtrm", "reports");
-  if (!await import_fs_extra32.default.pathExists(reportsDir)) {
+  if (!await import_fs_extra33.default.pathExists(reportsDir)) {
     console.error(kleur_default.red("\n  No reports found at .xtrm/reports/\n"));
     process.exit(1);
   }
   let filePath;
   if (target) {
-    if (await import_fs_extra32.default.pathExists(target)) {
+    if (await import_fs_extra33.default.pathExists(target)) {
       filePath = target;
     } else {
       const candidate = import_path25.default.join(reportsDir, target.endsWith(".md") ? target : `${target}.md`);
-      if (await import_fs_extra32.default.pathExists(candidate)) {
+      if (await import_fs_extra33.default.pathExists(candidate)) {
         filePath = candidate;
       } else {
-        const files = (await import_fs_extra32.default.readdir(reportsDir)).filter((f) => f.endsWith(".md") && f.includes(target));
+        const files = (await import_fs_extra33.default.readdir(reportsDir)).filter((f) => f.endsWith(".md") && f.includes(target));
         if (files.length === 0) {
           console.error(kleur_default.red(`
   No report matching "${target}"
@@ -63140,14 +63241,14 @@ async function showReport(cwd, target) {
       }
     }
   } else {
-    const files = (await import_fs_extra32.default.readdir(reportsDir)).filter((f) => f.endsWith(".md")).sort();
+    const files = (await import_fs_extra33.default.readdir(reportsDir)).filter((f) => f.endsWith(".md")).sort();
     if (files.length === 0) {
       console.error(kleur_default.red("\n  No reports found\n"));
       process.exit(1);
     }
     filePath = import_path25.default.join(reportsDir, files[files.length - 1]);
   }
-  const content = await import_fs_extra32.default.readFile(filePath, "utf8");
+  const content = await import_fs_extra33.default.readFile(filePath, "utf8");
   const rel = import_path25.default.relative(cwd, filePath);
   console.log(kleur_default.dim(`
   ${rel}
@@ -63156,11 +63257,11 @@ async function showReport(cwd, target) {
 }
 async function listReports(cwd) {
   const reportsDir = import_path25.default.join(cwd, ".xtrm", "reports");
-  if (!await import_fs_extra32.default.pathExists(reportsDir)) {
+  if (!await import_fs_extra33.default.pathExists(reportsDir)) {
     console.log(kleur_default.dim("\n  No reports directory at .xtrm/reports/\n"));
     return;
   }
-  const files = (await import_fs_extra32.default.readdir(reportsDir)).filter((f) => f.endsWith(".md")).sort();
+  const files = (await import_fs_extra33.default.readdir(reportsDir)).filter((f) => f.endsWith(".md")).sort();
   if (files.length === 0) {
     console.log(kleur_default.dim("\n  No reports found\n"));
     return;
@@ -63170,7 +63271,7 @@ async function listReports(cwd) {
 `));
   for (const file2 of files) {
     const filePath = import_path25.default.join(reportsDir, file2);
-    const content = await import_fs_extra32.default.readFile(filePath, "utf8");
+    const content = await import_fs_extra33.default.readFile(filePath, "utf8");
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
     let summary = "";
     if (fmMatch) {
@@ -63188,10 +63289,10 @@ async function listReports(cwd) {
 async function diffReports(cwd, a, b) {
   const reportsDir = import_path25.default.join(cwd, ".xtrm", "reports");
   const resolve4 = async (ref) => {
-    if (await import_fs_extra32.default.pathExists(ref)) return ref;
+    if (await import_fs_extra33.default.pathExists(ref)) return ref;
     const candidate = import_path25.default.join(reportsDir, ref.endsWith(".md") ? ref : `${ref}.md`);
-    if (await import_fs_extra32.default.pathExists(candidate)) return candidate;
-    const files = (await import_fs_extra32.default.readdir(reportsDir)).filter((f) => f.endsWith(".md") && f.includes(ref));
+    if (await import_fs_extra33.default.pathExists(candidate)) return candidate;
+    const files = (await import_fs_extra33.default.readdir(reportsDir)).filter((f) => f.endsWith(".md") && f.includes(ref));
     if (files.length > 0) return import_path25.default.join(reportsDir, files[files.length - 1]);
     console.error(kleur_default.red(`  No report matching "${ref}"`));
     process.exit(1);
@@ -63230,9 +63331,9 @@ function createReportCommand() {
 }
 
 // src/commands/skills.ts
-var import_fs_extra33 = __toESM(require_lib(), 1);
+var import_fs_extra34 = __toESM(require_lib(), 1);
 var import_node_os7 = __toESM(require("os"), 1);
-var import_node_path22 = __toESM(require("path"), 1);
+var import_node_path23 = __toESM(require("path"), 1);
 var PACK_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 function resolveScope(opts) {
   if (opts.global && opts.local) {
@@ -63257,7 +63358,7 @@ function resolveTargetRuntimes(opts) {
 }
 async function readStateOrDefault(skillsRoot) {
   const statePath = resolveStateFilePath(skillsRoot);
-  if (!await import_fs_extra33.default.pathExists(statePath)) {
+  if (!await import_fs_extra34.default.pathExists(statePath)) {
     return createDefaultSkillsState();
   }
   return readSkillsState(skillsRoot);
@@ -63402,14 +63503,14 @@ async function mutatePacks(opts) {
   };
 }
 async function writePackSkillsMetadata(pack) {
-  const metadataPath = import_node_path22.default.join(pack.path, PACK_FILE_NAME);
-  const metadata = await import_fs_extra33.default.readJson(metadataPath);
+  const metadataPath = import_node_path23.default.join(pack.path, PACK_FILE_NAME);
+  const metadata = await import_fs_extra34.default.readJson(metadataPath);
   const discoveredSkills = pack.skills.map((skill) => skill.name).sort((a, b) => a.localeCompare(b));
-  await import_fs_extra33.default.writeJson(metadataPath, {
+  await import_fs_extra34.default.writeJson(metadataPath, {
     ...metadata,
     skills: discoveredSkills
   }, { spaces: 2 });
-  await import_fs_extra33.default.appendFile(metadataPath, "\n");
+  await import_fs_extra34.default.appendFile(metadataPath, "\n");
 }
 async function syncPackMetadataToFilesystem(skillsRoot, packArg) {
   const [optionalPacks, userPacks] = await Promise.all([
@@ -63439,12 +63540,12 @@ async function createUserPack(skillsRoot, packName) {
   if (allPackNames.includes(packName)) {
     throw new Error(`Pack '${packName}' already exists.`);
   }
-  const packRoot = import_node_path22.default.join(resolveUserPacksRoot(skillsRoot), packName);
-  if (await import_fs_extra33.default.pathExists(packRoot)) {
+  const packRoot = import_node_path23.default.join(resolveUserPacksRoot(skillsRoot), packName);
+  if (await import_fs_extra34.default.pathExists(packRoot)) {
     throw new Error(`Pack path already exists: ${packRoot}`);
   }
-  await import_fs_extra33.default.ensureDir(packRoot);
-  const metadataPath = import_node_path22.default.join(packRoot, PACK_FILE_NAME);
+  await import_fs_extra34.default.ensureDir(packRoot);
+  const metadataPath = import_node_path23.default.join(packRoot, PACK_FILE_NAME);
   const metadata = {
     schemaVersion: "1",
     name: packName,
@@ -63452,8 +63553,8 @@ async function createUserPack(skillsRoot, packName) {
     description: "User-created skill pack",
     skills: []
   };
-  await import_fs_extra33.default.writeJson(metadataPath, metadata, { spaces: 2 });
-  await import_fs_extra33.default.appendFile(metadataPath, "\n");
+  await import_fs_extra34.default.writeJson(metadataPath, metadata, { spaces: 2 });
+  await import_fs_extra34.default.appendFile(metadataPath, "\n");
   return { path: packRoot, metadataPath };
 }
 function createSkillsCommand() {
@@ -63464,7 +63565,7 @@ function createSkillsCommand() {
       const scopeRoot = await resolveScopeRoot(scope);
       const skillsRoot = resolveSkillsRoot(scopeRoot);
       const runtimes = resolveTargetRuntimes(opts);
-      if (!await import_fs_extra33.default.pathExists(skillsRoot)) {
+      if (!await import_fs_extra34.default.pathExists(skillsRoot)) {
         const empty = {
           scope,
           skillsRoot,
@@ -63622,9 +63723,9 @@ function createSkillsCommand() {
 }
 
 // src/commands/claude-sync.ts
-var import_fs_extra34 = __toESM(require_lib(), 1);
-var import_node_path23 = __toESM(require("path"), 1);
-var import_node_child_process17 = require("child_process");
+var import_fs_extra35 = __toESM(require_lib(), 1);
+var import_node_path24 = __toESM(require("path"), 1);
+var import_node_child_process18 = require("child_process");
 var SENTINEL_RE = /<!-- XTRM-MANAGED:(\S+) start v=(\S+) -->\n([\s\S]*?)\n<!-- XTRM-MANAGED:\1 end -->/g;
 function parseFrontmatter2(text) {
   if (!text.startsWith("---\n")) {
@@ -63663,9 +63764,9 @@ function parseFrontmatter2(text) {
 function findTemplatesDir() {
   let dir = __dirname;
   for (let i = 0; i < 8; i++) {
-    const candidate = import_node_path23.default.join(dir, "templates", "claude-md-fragments");
-    if (import_fs_extra34.default.existsSync(candidate)) return candidate;
-    const parent = import_node_path23.default.dirname(dir);
+    const candidate = import_node_path24.default.join(dir, "templates", "claude-md-fragments");
+    if (import_fs_extra35.default.existsSync(candidate)) return candidate;
+    const parent = import_node_path24.default.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
@@ -63674,9 +63775,9 @@ function findTemplatesDir() {
 function loadFragments() {
   const dir = process.env.XTRM_FRAGMENTS_DIR ?? findTemplatesDir();
   const map2 = /* @__PURE__ */ new Map();
-  for (const file2 of import_fs_extra34.default.readdirSync(dir)) {
+  for (const file2 of import_fs_extra35.default.readdirSync(dir)) {
     if (!file2.endsWith(".md")) continue;
-    const text = import_fs_extra34.default.readFileSync(import_node_path23.default.join(dir, file2), "utf8");
+    const text = import_fs_extra35.default.readFileSync(import_node_path24.default.join(dir, file2), "utf8");
     const { frontmatter, body } = parseFrontmatter2(text);
     const name = String(frontmatter.name ?? file2.replace(/\.md$/, ""));
     const version3 = String(frontmatter.version ?? "0.0.0");
@@ -63712,17 +63813,17 @@ function renderFragmentBody(frag, ctx) {
   return out;
 }
 function detectRepoContext(cwd) {
-  let repoName = import_node_path23.default.basename(cwd);
+  let repoName = import_node_path24.default.basename(cwd);
   try {
-    const top = (0, import_node_child_process17.execSync)("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    if (top) repoName = import_node_path23.default.basename(top);
+    const top = (0, import_node_child_process18.execSync)("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (top) repoName = import_node_path24.default.basename(top);
   } catch {
   }
   let repoStats = "";
-  const metaPath = import_node_path23.default.join(cwd, ".gitnexus", "meta.json");
-  if (import_fs_extra34.default.existsSync(metaPath)) {
+  const metaPath = import_node_path24.default.join(cwd, ".gitnexus", "meta.json");
+  if (import_fs_extra35.default.existsSync(metaPath)) {
     try {
-      const meta3 = JSON.parse(import_fs_extra34.default.readFileSync(metaPath, "utf8"));
+      const meta3 = JSON.parse(import_fs_extra35.default.readFileSync(metaPath, "utf8"));
       const s = meta3.stats ?? {};
       const symbols = s.nodes ?? s.symbols ?? s.symbol_count ?? "?";
       const rels = s.edges ?? s.relationships ?? s.relationship_count ?? "?";
@@ -63801,8 +63902,8 @@ function describeDrift(d) {
   }
 }
 function resolveClaudeMd(cwd) {
-  const p = import_node_path23.default.join(cwd, "CLAUDE.md");
-  if (!import_fs_extra34.default.existsSync(p)) {
+  const p = import_node_path24.default.join(cwd, "CLAUDE.md");
+  if (!import_fs_extra35.default.existsSync(p)) {
     throw new Error(`CLAUDE.md not found at ${p}`);
   }
   return p;
@@ -63810,7 +63911,7 @@ function resolveClaudeMd(cwd) {
 function createClaudeSyncCommand() {
   const cmd = new Command("claude-sync").description("Sync managed CLAUDE.md fragments (XTRM-MANAGED:* sentinels)").option("--check", "Report drift between CLAUDE.md sentinels and canonical fragments (exit 1 on drift)").option("--apply", "Rewrite managed sections from canonical fragments").option("--accept-overwrite", "Required with --apply to confirm overwrite of managed sections").option("--list", "List known canonical fragments + versions").option("--add <fragment>", "Append sentinels for <fragment> to end of CLAUDE.md (use when migrating)").option("--json", "Emit machine-readable JSON (with --check or --list)").option("--cwd <path>", "Operate on CLAUDE.md in this directory (default: process.cwd())").option("--repo-name <name>", "Override repo name for gitnexus template substitution").option("--repo-stats <stats>", "Override repo stats for gitnexus template substitution").action(async (opts) => {
     const fragments = loadFragments();
-    const cwd = import_node_path23.default.resolve(opts.cwd ?? process.cwd());
+    const cwd = import_node_path24.default.resolve(opts.cwd ?? process.cwd());
     if (opts.list) {
       if (opts.json) {
         const out = [...fragments.values()].map((f) => ({
@@ -63830,7 +63931,7 @@ function createClaudeSyncCommand() {
       return;
     }
     const claudeMd = resolveClaudeMd(cwd);
-    const content = import_fs_extra34.default.readFileSync(claudeMd, "utf8");
+    const content = import_fs_extra35.default.readFileSync(claudeMd, "utf8");
     const detected = detectRepoContext(cwd);
     const ctx = {
       repo_name: opts.repoName ?? detected.repo_name,
@@ -63854,8 +63955,8 @@ ${body}
 <!-- XTRM-MANAGED:${frag.name} end -->
 `;
       const next = content.replace(/\n*$/, "\n") + block;
-      import_fs_extra34.default.writeFileSync(claudeMd, next, "utf8");
-      console.log(kleur_default.green(`\u2713 Appended ${frag.name} v${frag.version} to ${import_node_path23.default.relative(cwd, claudeMd)}`));
+      import_fs_extra35.default.writeFileSync(claudeMd, next, "utf8");
+      console.log(kleur_default.green(`\u2713 Appended ${frag.name} v${frag.version} to ${import_node_path24.default.relative(cwd, claudeMd)}`));
       return;
     }
     if (opts.apply) {
@@ -63865,12 +63966,12 @@ ${body}
       }
       const next = applyDrift(content, fragments, ctx);
       if (next === content) {
-        console.log(kleur_default.green(`\u2713 Already canonical: ${import_node_path23.default.relative(cwd, claudeMd)}`));
+        console.log(kleur_default.green(`\u2713 Already canonical: ${import_node_path24.default.relative(cwd, claudeMd)}`));
         return;
       }
-      import_fs_extra34.default.writeFileSync(claudeMd, next, "utf8");
+      import_fs_extra35.default.writeFileSync(claudeMd, next, "utf8");
       const drift2 = checkDrift2(content, fragments, ctx);
-      console.log(kleur_default.green(`\u2713 Updated ${import_node_path23.default.relative(cwd, claudeMd)} (${drift2.length} section${drift2.length === 1 ? "" : "s"})`));
+      console.log(kleur_default.green(`\u2713 Updated ${import_node_path24.default.relative(cwd, claudeMd)} (${drift2.length} section${drift2.length === 1 ? "" : "s"})`));
       for (const d of drift2) console.log(`  ${describeDrift(d)}`);
       return;
     }
@@ -63900,10 +64001,10 @@ ${body}
       return;
     }
     if (drift.length === 0) {
-      console.log(kleur_default.green(`\u2713 Clean: ${import_node_path23.default.relative(cwd, claudeMd)}  (${sections.length} managed section${sections.length === 1 ? "" : "s"})`));
+      console.log(kleur_default.green(`\u2713 Clean: ${import_node_path24.default.relative(cwd, claudeMd)}  (${sections.length} managed section${sections.length === 1 ? "" : "s"})`));
       return;
     }
-    console.log(kleur_default.yellow(`! Drift in ${import_node_path23.default.relative(cwd, claudeMd)}:
+    console.log(kleur_default.yellow(`! Drift in ${import_node_path24.default.relative(cwd, claudeMd)}:
 `));
     for (const d of drift) console.log(`  ${describeDrift(d)}`);
     console.log(kleur_default.dim(`
@@ -63914,31 +64015,31 @@ Run: xt claude-sync --apply --accept-overwrite`));
 }
 
 // src/commands/doctor.ts
-var import_fs_extra36 = __toESM(require_lib(), 1);
-var import_node_path25 = __toESM(require("path"), 1);
-var import_node_child_process18 = require("child_process");
+var import_fs_extra37 = __toESM(require_lib(), 1);
+var import_node_path26 = __toESM(require("path"), 1);
+var import_node_child_process19 = require("child_process");
 var import_cli_table3 = __toESM(require_cli_table3(), 1);
 
 // src/core/beads-shared-server.ts
-var import_fs_extra35 = __toESM(require_lib(), 1);
-var import_node_path24 = __toESM(require("path"), 1);
+var import_fs_extra36 = __toESM(require_lib(), 1);
+var import_node_path25 = __toESM(require("path"), 1);
 var import_yaml2 = __toESM(require_dist3(), 1);
 async function hasBeadsDir(repoRoot) {
-  return import_fs_extra35.default.pathExists(import_node_path24.default.join(repoRoot, ".beads"));
+  return import_fs_extra36.default.pathExists(import_node_path25.default.join(repoRoot, ".beads"));
 }
 async function ensureBeadsSharedServerEnabled(repoRoot, apply) {
-  const beadsDir = import_node_path24.default.join(repoRoot, ".beads");
-  if (!await import_fs_extra35.default.pathExists(beadsDir)) return { changed: false, state: "not-applicable" };
-  const configPath = import_node_path24.default.join(beadsDir, "config.yaml");
-  const raw = await import_fs_extra35.default.pathExists(configPath) ? await import_fs_extra35.default.readFile(configPath, "utf8") : "";
+  const beadsDir = import_node_path25.default.join(repoRoot, ".beads");
+  if (!await import_fs_extra36.default.pathExists(beadsDir)) return { changed: false, state: "not-applicable" };
+  const configPath = import_node_path25.default.join(beadsDir, "config.yaml");
+  const raw = await import_fs_extra36.default.pathExists(configPath) ? await import_fs_extra36.default.readFile(configPath, "utf8") : "";
   const rawParsed = raw.trim() ? import_yaml2.default.parse(raw) : {};
   const parsed = rawParsed && typeof rawParsed === "object" && !Array.isArray(rawParsed) ? rawParsed : {};
   const dolt = parsed.dolt ?? {};
   if (dolt["shared-server"] === true) return { changed: false, state: "enabled" };
   if (!apply) return { changed: true, state: "updated" };
   const next = { ...parsed, dolt: { ...dolt, "shared-server": true } };
-  await import_fs_extra35.default.ensureDir(beadsDir);
-  await import_fs_extra35.default.writeFile(configPath, import_yaml2.default.stringify(next));
+  await import_fs_extra36.default.ensureDir(beadsDir);
+  await import_fs_extra36.default.writeFile(configPath, import_yaml2.default.stringify(next));
   return { changed: true, state: "updated" };
 }
 
@@ -63960,7 +64061,7 @@ ${kleur_default.bold(`\u2500\u2500 ${label} ${line}`)}`);
 function runSelfCheck(cwd) {
   const cliEntry = process.argv[1];
   if (!cliEntry) return null;
-  const result = (0, import_node_child_process18.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
+  const result = (0, import_node_child_process19.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -63973,8 +64074,8 @@ function runSelfCheck(cwd) {
 }
 function checkClaudeMdFragments(cwd) {
   section2("CLAUDE.md fragments");
-  const claudeMd = import_node_path25.default.join(cwd, "CLAUDE.md");
-  if (!import_fs_extra36.default.existsSync(claudeMd)) {
+  const claudeMd = import_node_path26.default.join(cwd, "CLAUDE.md");
+  if (!import_fs_extra37.default.existsSync(claudeMd)) {
     warn("No CLAUDE.md in this directory \u2014 skipping fragment check");
     return true;
   }
@@ -64018,8 +64119,8 @@ async function listDefaultSkillNames(skillsRoot) {
   return (await discoverDefaultSkills(skillsRoot)).map((skill) => skill.name);
 }
 async function listHookFileNames(hooksRoot) {
-  if (!await import_fs_extra36.default.pathExists(hooksRoot)) return [];
-  const entries = await import_fs_extra36.default.readdir(hooksRoot, { withFileTypes: true });
+  if (!await import_fs_extra37.default.pathExists(hooksRoot)) return [];
+  const entries = await import_fs_extra37.default.readdir(hooksRoot, { withFileTypes: true });
   return entries.filter((entry) => entry.isFile()).map((entry) => entry.name).sort((a, b) => a.localeCompare(b));
 }
 function assetStatusFromDrift(relativePath, drift) {
@@ -64035,7 +64136,7 @@ async function toRows(registry2, cwd, surface, drift) {
   const expected = /* @__PURE__ */ new Set();
   const rows = [];
   for (const filePath of Object.keys(asset.files).sort((a, b) => a.localeCompare(b))) {
-    const relativePath = import_node_path25.default.posix.join(stripXtrmPrefix3(asset.source_dir), filePath);
+    const relativePath = import_node_path26.default.posix.join(stripXtrmPrefix3(asset.source_dir), filePath);
     expected.add(relativePath);
     rows.push({
       name: relativePath,
@@ -64043,9 +64144,9 @@ async function toRows(registry2, cwd, surface, drift) {
       status: assetStatusFromDrift(relativePath, drift)
     });
   }
-  const discovered = surface === "skills" ? await listDefaultSkillNames(import_node_path25.default.join(cwd, ".xtrm", "skills")) : await listHookFileNames(import_node_path25.default.join(cwd, asset.source_dir));
+  const discovered = surface === "skills" ? await listDefaultSkillNames(import_node_path26.default.join(cwd, ".xtrm", "skills")) : await listHookFileNames(import_node_path26.default.join(cwd, asset.source_dir));
   for (const name of discovered) {
-    const relativePath = surface === "skills" ? import_node_path25.default.posix.join(stripXtrmPrefix3(asset.source_dir), name, "SKILL.md") : import_node_path25.default.posix.join(stripXtrmPrefix3(asset.source_dir), name);
+    const relativePath = surface === "skills" ? import_node_path26.default.posix.join(stripXtrmPrefix3(asset.source_dir), name, "SKILL.md") : import_node_path26.default.posix.join(stripXtrmPrefix3(asset.source_dir), name);
     if (expected.has(relativePath)) continue;
     rows.push({
       name: relativePath,
@@ -64056,29 +64157,29 @@ async function toRows(registry2, cwd, surface, drift) {
   return rows.sort((a, b) => a.path.localeCompare(b.path));
 }
 async function loadRegistry(cwd) {
-  return import_fs_extra36.default.readJson(import_node_path25.default.join(cwd, ".xtrm", "registry.json"));
+  return import_fs_extra37.default.readJson(import_node_path26.default.join(cwd, ".xtrm", "registry.json"));
 }
 async function resolveDoctorCwd(optsCwd) {
-  const cwd = optsCwd ? import_node_path25.default.resolve(optsCwd) : await findProjectRoot();
-  const registryPath = import_node_path25.default.join(cwd, ".xtrm", "registry.json");
-  if (!await import_fs_extra36.default.pathExists(registryPath)) {
+  const cwd = optsCwd ? import_node_path26.default.resolve(optsCwd) : await findProjectRoot();
+  const registryPath = import_node_path26.default.join(cwd, ".xtrm", "registry.json");
+  if (!await import_fs_extra37.default.pathExists(registryPath)) {
     throw new Error(`Not inside an xtrm project: ${cwd}`);
   }
   return cwd;
 }
 async function readSpecialistsSkillNames(repoPath) {
-  const skillsRoot = import_node_path25.default.join(repoPath, "config", "skills");
-  if (!await import_fs_extra36.default.pathExists(skillsRoot)) return [];
-  const entries = await import_fs_extra36.default.readdir(skillsRoot, { withFileTypes: true });
+  const skillsRoot = import_node_path26.default.join(repoPath, "config", "skills");
+  if (!await import_fs_extra37.default.pathExists(skillsRoot)) return [];
+  const entries = await import_fs_extra37.default.readdir(skillsRoot, { withFileTypes: true });
   const names = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    if (await import_fs_extra36.default.pathExists(import_node_path25.default.join(skillsRoot, entry.name, "SKILL.md"))) names.push(entry.name);
+    if (await import_fs_extra37.default.pathExists(import_node_path26.default.join(skillsRoot, entry.name, "SKILL.md"))) names.push(entry.name);
   }
   return names.sort((a, b) => a.localeCompare(b));
 }
 async function detectDuplicateCanonicalNames(cwd) {
-  const localSkills = await discoverDefaultSkills(import_node_path25.default.join(cwd, ".xtrm", "skills"));
+  const localSkills = await discoverDefaultSkills(import_node_path26.default.join(cwd, ".xtrm", "skills"));
   const localNames = new Set(localSkills.map((skill) => skill.name));
   const repoPath = process.env.SPECIALISTS_REPO_PATH;
   if (!repoPath) return [];
@@ -64175,7 +64276,7 @@ function createDoctorCommand() {
   return new Command("doctor").description("Health check for the xtrm-managed surfaces of the current project").option("--cwd <path>", "Operate on this directory (default: process.cwd())").option("--json", "Output machine-readable JSON", false).option("--check-drift", "Exit non-zero on any drift, missing, extra, or duplicate").action(async (opts) => {
     const cwd = await resolveDoctorCwd(opts.cwd);
     const registry2 = await loadRegistry(cwd);
-    const drift = await checkDrift(import_node_path25.default.join(cwd, ".xtrm", "registry.json"), import_node_path25.default.join(cwd, ".xtrm"));
+    const drift = await checkDrift(import_node_path26.default.join(cwd, ".xtrm", "registry.json"), import_node_path26.default.join(cwd, ".xtrm"));
     const runtimeView = await checkRuntimeSkillsViews(cwd);
     const duplicates = await detectDuplicateCanonicalNames(cwd);
     const sharedBeadsServerState = await hasBeadsDir(cwd) ? (await ensureBeadsSharedServerEnabled(cwd, false)).state : "not-applicable";
@@ -64207,16 +64308,16 @@ ${kleur_default.bold("xt doctor")}
 }
 
 // src/commands/update.ts
-var import_node_child_process20 = require("child_process");
-var import_node_path27 = __toESM(require("path"), 1);
-var import_fs_extra39 = __toESM(require_lib(), 1);
+var import_node_child_process21 = require("child_process");
+var import_node_path28 = __toESM(require("path"), 1);
+var import_fs_extra40 = __toESM(require_lib(), 1);
 
 // src/core/repo-discovery.ts
-var import_fs_extra37 = __toESM(require_lib(), 1);
-var import_node_path26 = __toESM(require("path"), 1);
+var import_fs_extra38 = __toESM(require_lib(), 1);
+var import_node_path27 = __toESM(require("path"), 1);
 var SKIP_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".worktrees", "worktrees"]);
 var XTRM_DIR = ".xtrm";
-var REGISTRY_MARKER = import_node_path26.default.join(XTRM_DIR, "registry.json");
+var REGISTRY_MARKER = import_node_path27.default.join(XTRM_DIR, "registry.json");
 async function scanXtrmRepos(rootDir) {
   const managed = /* @__PURE__ */ new Set();
   const incomplete = /* @__PURE__ */ new Set();
@@ -64227,27 +64328,27 @@ async function scanXtrmRepos(rootDir) {
   };
 }
 async function walk(currentDir, managed, incomplete) {
-  const xtrmPath = import_node_path26.default.join(currentDir, XTRM_DIR);
-  if (await import_fs_extra37.default.pathExists(xtrmPath)) {
-    const registryPath = import_node_path26.default.join(currentDir, REGISTRY_MARKER);
-    if (await import_fs_extra37.default.pathExists(registryPath)) {
+  const xtrmPath = import_node_path27.default.join(currentDir, XTRM_DIR);
+  if (await import_fs_extra38.default.pathExists(xtrmPath)) {
+    const registryPath = import_node_path27.default.join(currentDir, REGISTRY_MARKER);
+    if (await import_fs_extra38.default.pathExists(registryPath)) {
       managed.add(currentDir);
     } else {
       incomplete.add(currentDir);
     }
   }
-  const entries = await import_fs_extra37.default.readdir(currentDir, { withFileTypes: true }).catch(() => []);
+  const entries = await import_fs_extra38.default.readdir(currentDir, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (SKIP_DIRS.has(entry.name)) continue;
-    await walk(import_node_path26.default.join(currentDir, entry.name), managed, incomplete);
+    await walk(import_node_path27.default.join(currentDir, entry.name), managed, incomplete);
   }
 }
 
 // src/commands/install.ts
-var import_fs_extra38 = __toESM(require_lib(), 1);
+var import_fs_extra39 = __toESM(require_lib(), 1);
 var import_path26 = __toESM(require("path"), 1);
-var import_node_child_process19 = require("child_process");
+var import_node_child_process20 = require("child_process");
 function printNextSteps() {
   const d = (s) => kleur_default.dim(s);
   const b = (s) => kleur_default.bold(s);
@@ -64292,7 +64393,7 @@ async function runMachineBootstrap(opts = {}) {
   await runMachineBootstrapPhase({ dryRun: false });
 }
 function getProjectRoot2() {
-  const gitResult = (0, import_node_child_process19.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
+  const gitResult = (0, import_node_child_process20.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
     cwd: process.cwd(),
     encoding: "utf8",
     stdio: "pipe"
@@ -64331,7 +64432,7 @@ async function runInstall(opts = {}) {
   });
   const userXtrmDir = ctx.targets[0];
   const registryPath = import_path26.default.join(packageRoot, ".xtrm", "registry.json");
-  const registry2 = await import_fs_extra38.default.readJson(registryPath);
+  const registry2 = await import_fs_extra39.default.readJson(registryPath);
   console.log(kleur_default.bold("\n  \u2699  xtrm install (.xtrm registry scaffold)"));
   console.log(kleur_default.dim(`  \u2022 registry: ${registryPath}`));
   console.log(kleur_default.dim(`  \u2022 target: ${userXtrmDir}`));
@@ -64410,29 +64511,29 @@ async function runInstall(opts = {}) {
 
 // src/commands/update.ts
 async function resolveTargetRepos(opts) {
-  if (opts.repo) return { targets: [import_node_path27.default.resolve(opts.repo)], incomplete: [] };
+  if (opts.repo) return { targets: [import_node_path28.default.resolve(opts.repo)], incomplete: [] };
   if (opts.allRepos) {
     const roots = ["~/dev", "~/projects"].map((p) => p.replace(/^~/, process.env.HOME ?? ""));
-    const scans = await Promise.all(roots.map((root) => scanXtrmRepos(import_node_path27.default.resolve(root)).catch(() => ({ managed: [], incomplete: [] }))));
+    const scans = await Promise.all(roots.map((root) => scanXtrmRepos(import_node_path28.default.resolve(root)).catch(() => ({ managed: [], incomplete: [] }))));
     return {
       targets: [...new Set(scans.flatMap((scan) => scan.managed))],
       incomplete: [...new Set(scans.flatMap((scan) => scan.incomplete))]
     };
   }
   if (opts.root) {
-    const scan = await scanXtrmRepos(import_node_path27.default.resolve(opts.root));
+    const scan = await scanXtrmRepos(import_node_path28.default.resolve(opts.root));
     return { targets: scan.managed, incomplete: scan.incomplete };
   }
   return { targets: [process.cwd()], incomplete: [] };
 }
 function getCurrentPackageRegistryPath() {
-  return import_node_path27.default.join(resolvePackageRoot2(), ".xtrm", "registry.json");
+  return import_node_path28.default.join(resolvePackageRoot2(), ".xtrm", "registry.json");
 }
 async function updateRepo(repoRoot, opts) {
   const registryPath = getCurrentPackageRegistryPath();
-  const userXtrmDir = import_node_path27.default.join(repoRoot, ".xtrm");
+  const userXtrmDir = import_node_path28.default.join(repoRoot, ".xtrm");
   try {
-    if (!await import_fs_extra39.default.pathExists(registryPath)) {
+    if (!await import_fs_extra40.default.pathExists(registryPath)) {
       return { repo: repoRoot, status: "failed", reason: `missing package registry at ${registryPath}` };
     }
     const drift = await checkDrift(registryPath, userXtrmDir);
@@ -64451,9 +64552,6 @@ async function updateRepo(repoRoot, opts) {
         maintenance: maintenancePlan
       };
     }
-    if (!hasChanges) {
-      return { repo: repoRoot, status: "already-current", maintenance: maintenancePlan };
-    }
     if (registryChanges) {
       await runInstall({
         force: true,
@@ -64465,12 +64563,17 @@ async function updateRepo(repoRoot, opts) {
         strictRegistry: isStrictRegistryMode(opts)
       });
     }
+    const serviceSkills = await ensureServiceSkills(repoRoot, { apply: true });
+    if (!hasChanges && serviceSkills.alreadyCurrent) {
+      return { repo: repoRoot, status: "already-current", maintenance: maintenancePlan };
+    }
     const appliedPatch = hasBeads ? await ensureBdAutoStagePatch(repoRoot, true) : bdPatch;
     const maintenance = await runDependencyMaintenance(repoRoot, true);
+    const serviceSkillsReason = serviceSkills.migratedPacks.length > 0 ? `, service-skills migrated: ${serviceSkills.migratedPacks.join(",")}` : "";
     return {
       repo: repoRoot,
       status: "refreshed",
-      reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}`,
+      reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}${serviceSkillsReason}`,
       maintenance
     };
   } catch (error51) {
@@ -64518,7 +64621,7 @@ function commitAllReposPatch(repoRoot) {
   return { ok: true, message: `committed ${hash2.stdout.trim()}` };
 }
 function spawnGit(repoRoot, args) {
-  return (0, import_node_child_process20.spawnSync)("git", args, {
+  return (0, import_node_child_process21.spawnSync)("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe",
@@ -64576,23 +64679,23 @@ function createUpdateCommand() {
 
 // src/commands/release.ts
 var import_node_fs11 = require("fs");
-var import_node_child_process22 = require("child_process");
-var import_node_path29 = __toESM(require("path"), 1);
+var import_node_child_process23 = require("child_process");
+var import_node_path30 = __toESM(require("path"), 1);
 
 // src/core/xt-reports.ts
 var import_node_fs10 = require("fs");
-var import_node_child_process21 = require("child_process");
-var import_node_path28 = __toESM(require("path"), 1);
+var import_node_child_process22 = require("child_process");
+var import_node_path29 = __toESM(require("path"), 1);
 var DEFAULT_CAP_BYTES = 5e4;
 var REPORT_DIR = ".xtrm/reports";
 function getCommitDate(ref, cwd) {
-  return (0, import_node_child_process21.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
+  return (0, import_node_child_process22.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
     cwd,
     encoding: "utf8"
   }).trim();
 }
 function listReportFiles(rootDir) {
-  return (0, import_node_fs10.readdirSync)(import_node_path28.default.join(rootDir, REPORT_DIR)).filter((entry) => entry.endsWith(".md")).sort().map((entry) => import_node_path28.default.join(REPORT_DIR, entry));
+  return (0, import_node_fs10.readdirSync)(import_node_path29.default.join(rootDir, REPORT_DIR)).filter((entry) => entry.endsWith(".md")).sort().map((entry) => import_node_path29.default.join(REPORT_DIR, entry));
 }
 function isDateInRange(date5, since, to) {
   return date5 >= since && date5 <= to;
@@ -64602,11 +64705,11 @@ function listXtReports(options) {
   const sinceDate = getCommitDate(options.since, rootDir);
   const toDate = getCommitDate(options.to, rootDir);
   return listReportFiles(rootDir).map((relativePath) => {
-    const file2 = import_node_path28.default.basename(relativePath);
+    const file2 = import_node_path29.default.basename(relativePath);
     const date5 = file2.slice(0, 10);
     return { file: relativePath, date: date5, bytes: 0, content: "" };
   }).filter((report) => isDateInRange(report.date, sinceDate, toDate)).map((report) => {
-    const content = (0, import_node_fs10.readFileSync)(import_node_path28.default.join(rootDir, report.file), "utf8");
+    const content = (0, import_node_fs10.readFileSync)(import_node_path29.default.join(rootDir, report.file), "utf8");
     return {
       ...report,
       bytes: Buffer.byteLength(content, "utf8"),
@@ -64655,7 +64758,7 @@ var RELEASE_SCOPE_PATTERNS = [
   /^dist(?:\/|$)/
 ];
 function run4(cmd, args, cwd) {
-  const result = (0, import_node_child_process22.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_node_child_process23.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? "",
@@ -64668,7 +64771,7 @@ function getLatestTag(cwd) {
   return "HEAD~1";
 }
 function getPackageVersion(cwd) {
-  return JSON.parse((0, import_node_fs11.readFileSync)(import_node_path29.default.join(cwd, "cli", "package.json"), "utf8")).version;
+  return JSON.parse((0, import_node_fs11.readFileSync)(import_node_path30.default.join(cwd, "cli", "package.json"), "utf8")).version;
 }
 function getReleaseTag(cwd) {
   return `v${getPackageVersion(cwd)}`;
@@ -64910,7 +65013,7 @@ async function printBanner(version3) {
 // src/index.ts
 var version2 = "0.0.0";
 try {
-  version2 = JSON.parse((0, import_node_fs12.readFileSync)((0, import_node_path30.resolve)(__dirname, "../package.json"), "utf8")).version;
+  version2 = JSON.parse((0, import_node_fs12.readFileSync)((0, import_node_path31.resolve)(__dirname, "../package.json"), "utf8")).version;
 } catch {
 }
 var program2 = new Command();
