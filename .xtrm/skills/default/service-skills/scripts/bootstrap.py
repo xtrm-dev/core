@@ -124,7 +124,8 @@ def get_service_skill_dir(service_id: str, project_root: str | None = None) -> P
     root: str = project_root if project_root is not None else (os.environ.get("CLAUDE_PROJECT_DIR") or get_project_root())
     pack = get_pack_path(root)
     base = pack if pack is not None else _packs_root(root)
-    return base / service_id
+    # New layout: services live under the per-repo umbrella (<pack>/service-skills/services/).
+    return base / "service-skills" / "services" / service_id
 
 
 def get_service_skill_path_str(service_id: str, project_root: str | None = None) -> str:

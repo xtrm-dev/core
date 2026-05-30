@@ -708,7 +708,7 @@
           "version": "0.8.1"
         },
         "service-skills/install/install-service-skills.py": {
-          "hash": "631d7dc22e46b3e94bfc2da9ee359fdc9d5118d43f29255cf06d777416b8f6cd",
+          "hash": "8382d651969a778774af3fc8850365b45cdda36ad2d18c97db3adf124e8a144a",
           "version": "0.8.1"
         },
         "service-skills/install/service-skills-readme.md": {
@@ -748,7 +748,7 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/bootstrap.py": {
-          "hash": "47a4ed2bc91f70d01a2192ba0399da9f9b18d611227f74df34378ca2dea4fb16",
+          "hash": "389149e7f98ab9e13b4b808dbd98cb7b26fb279b5fc7443a5a8c4f7fe22a1c90",
           "version": "0.8.1"
         },
         "service-skills/scripts/cataloger.py": {
@@ -763,8 +763,12 @@
           "hash": "1bf89bfe4ce1b1f6d251504683935c7caf30828d94c7c1afd271b9228d257632",
           "version": "0.8.1"
         },
+        "service-skills/scripts/layout_migrator.py": {
+          "hash": "6f04e2517fd63c80f6f2ef79221506f4fece00457a367dc5b6e4c7ce4531347c",
+          "version": "0.8.1"
+        },
         "service-skills/scripts/scaffolder.py": {
-          "hash": "6f63b7e932ed41fd611f3b6e414ab001f67e0b949c879eea73de2be6b17d816b",
+          "hash": "689bd65bfd8d42dccdcd05c9e9cdaff4e50e3c06da7258363172145c4e6981a7",
           "version": "0.8.1"
         },
         "service-skills/scripts/scope.py": {
