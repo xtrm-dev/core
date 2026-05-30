@@ -68,6 +68,27 @@ You:  [Catalog shows db-expert matches]
       [Apply Senior Database Engineer persona and expertise]
 ```
 
+### 2.5 Navigate with the Graph, Not Just Globs
+
+The registry maps a service to its territory **globs** — enough to *find* the skill, but
+not to understand how the service connects to others. Once an expert is active, navigate
+with the **GitNexus knowledge graph** for anything cross-cutting:
+
+| Question | Use |
+|---|---|
+| "What else breaks if I change this symbol?" | `gitnexus impact <symbol> --direction upstream` |
+| "Who calls / is called by this?" | `gitnexus context <symbol>` |
+| "Which service owns this execution flow?" | `gitnexus query "<concept>"` (process-grouped) |
+| "Trace the full flow end to end" | `READ gitnexus://repo/<repo>/process/<name>` |
+
+This matters when a task spans services: the registry tells you *which* skills exist; the
+graph tells you which ones a change actually **touches**. Cross-service drift signals in a
+service's SKILL.md (and in `drift_detector.py` output) come from this same graph.
+
+**Fallback:** if no GitNexus index is present, fall back to the registry territory globs
+and the `cross_territory` hints in drift output — navigation still works, just without
+blast-radius precision. The graph is an enhancement, never a hard dependency.
+
 ### 3. Handle Missing Experts
 
 If no registered expert covers the user's need:
