@@ -87,6 +87,32 @@ source code. Use **Serena LSP tools exclusively** — never read entire files.
 
 **Do NOT read entire files.** Map first → read only the symbols you need.
 
+#### GitNexus Graph Protocol (use FIRST for flows + blast radius)
+
+Before Serena symbol-reads, use the knowledge graph to discover *how the service hangs
+together* — this is what grounds the **Data Flows**, **Failure Modes**, and
+**Cross-Service Health Check** sections in reality rather than guesswork:
+
+| What you need | GitNexus tool |
+|---|---|
+| Producer→transformer→sink data paths | `gitnexus query "<service concept>"` → process-grouped flows |
+| Callers/callees/flows for a symbol | `gitnexus context <symbol>` |
+| Blast radius of a symbol (cross-service reach) | `gitnexus impact <symbol> --direction upstream` |
+| Whole-service execution traces | `READ gitnexus://repo/<repo>/process/<name>` |
+
+Use `impact` to find which *other* services this one can break — that populates the
+**Cross-Service Health Check**. Use `query`/process traces to draw **Data Flows** (the
+contract marks Data Flows as `graph-derived`). Fall back to Serena for body-level detail.
+
+#### Section contract (SSOT)
+
+The generated SKILL.md's sections, order, and the `<!-- SEMANTIC_START/END -->` protected
+region are defined by `references/service_skill_contract.json`. Do not invent, drop, or
+reorder headings — the scaffolder and the drift-sync specialist both validate against it.
+To upgrade an *existing* pre-devops skill to the current section set, run
+`updating-service-skills/scripts/skill_migrator.py <SKILL.md>` (idempotent; preserves the
+semantic block).
+
 #### Required Research Sections
 
 **Container & Runtime**
@@ -115,6 +141,18 @@ source code. Use **Serena LSP tools exclusively** — never read entire files.
 - `search_for_pattern("logger.info|logging.info")` → `info` patterns
 - `search_for_pattern("logger.error|logger.warning")` → `error/warning`
 - `search_for_pattern("logger.critical|panic!")` → `critical`
+
+**Cross-Service Health Check** (devops, runnable) — provide a real command/script block
+that checks this service against its dependents and shared infra. Use
+`gitnexus impact <entrypoint> --direction upstream` to learn which services depend on it,
+then write a check that actually exercises that boundary (not just a container ping). If a
+runnable check can't be verified yet, mark it `[PENDING RESEARCH - not runnable yet]`
+rather than shipping a fake green check.
+
+**Deploy & Runbook** (devops) — capture deploy context, rollback path, and a pointer to
+any runbook: how the service is released, how to deploy it safely, and how to revert. This
+is the per-service operational knowledge the devops agent relies on — don't leave it as a
+bare placeholder if the information exists in compose/CI/docs.
 
 ---
 
@@ -364,7 +402,10 @@ A skill is **complete** (not a draft) when ALL of these are true:
 - [ ] `db_helper.py`: example queries against real tables with correct column names
 - [ ] At least one specialist script for the service type
 - [ ] All function names consistent between definition and call sites
-- [ ] Troubleshooting table has ≥5 rows from real failure modes
+- [ ] Failure Modes table (symptom/cause/fix) has ≥5 rows from real exception handlers
+- [ ] Cross-Service Health Check is runnable (or explicitly marked not-yet-runnable)
+- [ ] Deploy & Runbook section filled from compose/CI/docs (no bare placeholder)
+- [ ] Section order matches `references/service_skill_contract.json`
 - [ ] All docker compose commands verified against actual config
 - [ ] All scripts support `--json` flag
 - [ ] `scripts/Makefile` generated with standard targets: `health`, `health-json`, `data`, `data-json`, `logs`, `errors`, `db`
