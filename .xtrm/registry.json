@@ -748,7 +748,7 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/bootstrap.py": {
-          "hash": "389149e7f98ab9e13b4b808dbd98cb7b26fb279b5fc7443a5a8c4f7fe22a1c90",
+          "hash": "b5af56879ffe70e826b5fd24ba795de4ff5f1912ad0631604da6bcd7045b38ec",
           "version": "0.8.1"
         },
         "service-skills/scripts/cataloger.py": {
@@ -764,7 +764,7 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/layout_migrator.py": {
-          "hash": "6f04e2517fd63c80f6f2ef79221506f4fece00457a367dc5b6e4c7ce4531347c",
+          "hash": "6fcce2229a4ba84d2bb83ed431bb63c268e37851a257596da641a3b597fe45e3",
           "version": "0.8.1"
         },
         "service-skills/scripts/scaffolder.py": {
