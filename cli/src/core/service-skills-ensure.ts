@@ -1,3 +1,4 @@
+// nosemgrep: javascript.lang.security.detect-child-process.detect-child-process -- runs the vendored python migrator; args are project-derived (basename + constant path + readdir pack name), never user-controllable.
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'fs-extra';
@@ -88,6 +89,7 @@ export async function ensureServiceSkills(
   const repoName = path.basename(projectRoot);
   const targetPacks = packs.length > 0 ? packs : [''];
   for (const pack of targetPacks) {
+    // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
     const run = spawnSync('python3', [migrator, repoName], {
       cwd: projectRoot,
       encoding: 'utf8',
