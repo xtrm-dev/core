@@ -115,30 +115,6 @@
           "hash": "1b212a0a59f8162587a681b16e20af5bd793e4f6c7fb7c7af2d32a7deef553fb",
           "version": "0.8.1"
         },
-        "creating-service-skills/references/script_quality_standards.md": {
-          "hash": "964476a17aea08505edddae1616899ebcc9f6f1f990e060cf37c1676a7f54b7c",
-          "version": "0.8.1"
-        },
-        "creating-service-skills/references/service_skill_system_guide.md": {
-          "hash": "72504d474d9b9cc1550ceb97dd16fc02900666803d523840d7eb31ee0ad52755",
-          "version": "0.8.1"
-        },
-        "creating-service-skills/scripts/bootstrap.py": {
-          "hash": "417f55fb147697b934ce65e51f28932fcb27c03ee4bb3c28b772cf41437a8d9c",
-          "version": "0.8.1"
-        },
-        "creating-service-skills/scripts/deep_dive.py": {
-          "hash": "e27f4e0b0307888e2377b8d62b0a8e86fc0d177f3ac8f1d82ab75ec1fc72e63a",
-          "version": "0.8.1"
-        },
-        "creating-service-skills/scripts/scaffolder.py": {
-          "hash": "0f74c7dc47497e1f046c784b740d4d141c4401031ab4309983d16c9b8cd5548e",
-          "version": "0.8.1"
-        },
-        "creating-service-skills/SKILL.md": {
-          "hash": "38801ee1f92d2ed6b0ca9306495f1a4106676bc5a5c89c6d15c2710593fade24",
-          "version": "0.8.1"
-        },
         "deepwiki/SKILL.md": {
           "hash": "cd0dadf31266cdf2ecbe9c129357133f105078d93e9c714d929378feaf3c4e63",
           "version": "0.8.1"
@@ -608,7 +584,7 @@
           "version": "0.8.1"
         },
         "planning/SKILL.md": {
-          "hash": "8f291501256c0125418373ef0904a9dd33d92b93ebba67fa8391fb76fdc823f5",
+          "hash": "b02da9548702f9256c0b4938490dad86a8898bbe72e2152d22999a02b3f608a8",
           "version": "0.8.1"
         },
         "premortem/SKILL.md": {
@@ -679,14 +655,6 @@
           "hash": "7a128078b5bbfaa12c1c2b2ed7d993e8264aa2431747a972cd50b5f680a5ff35",
           "version": "0.8.1"
         },
-        "scoping-service-skills/scripts/scope.py": {
-          "hash": "f1b38f1e080276dd12191f4924395a4f53c7d2fbdcc5d88dc16b8e83a04c9906",
-          "version": "0.8.1"
-        },
-        "scoping-service-skills/SKILL.md": {
-          "hash": "4fbfba50ffaa8fd42227bdc3e64bfede9c09c2b4fec894f9500299a2f14317ef",
-          "version": "0.8.1"
-        },
         "security-pipeline/scripts/security-bootstrap.sh": {
           "hash": "af7df42cf57ba2cf9ac787cbbb7a0e34640a23619fcf11d45619481580e0ef06",
           "version": "0.8.1"
@@ -731,32 +699,88 @@
           "hash": "e4efc20d218e6f6689725a4a9aca37958384216ba080bf89ba2307cd529d6dc2",
           "version": "0.8.1"
         },
-        "service-skills-set/git-hooks/doc_reminder.py": {
+        "service-skills/install/git-hooks/doc_reminder.py": {
           "hash": "90d33305dcc8fcc73bae2f9ad7390be118617743dbb38808d61710dc1662879b",
           "version": "0.8.1"
         },
-        "service-skills-set/git-hooks/skill_staleness.py": {
+        "service-skills/install/git-hooks/skill_staleness.py": {
           "hash": "39d1ac16dee329bab34a646216e2d851856a07d53f6c0f909709fe217f2ba22f",
           "version": "0.8.1"
         },
-        "service-skills-set/install-service-skills.py": {
-          "hash": "4a12967d14d214bea5f347167ac60907c9714db882e7a9efef718764976410b1",
+        "service-skills/install/install-service-skills.py": {
+          "hash": "3b15b589cf7182b94ae521482cac64a6c1ffac0d7493fe6c7c6d67f207a94790",
           "version": "0.8.1"
         },
-        "service-skills-set/README.md": {
-          "hash": "07bb676a19c7bd1b3a6b50651a688816117dff8cff0c152dcc45fb7468988fd7",
+        "service-skills/install/service-skills-readme.md": {
+          "hash": "b6c8cb3872cf3a35558b00e5cc042ce7e03faa06ed27739cc576db741bc50935",
           "version": "0.8.1"
         },
-        "service-skills-set/service-registry.json": {
-          "hash": "ffee34d71d46e325bfc205e8e7bfba1165b7781495624f868c590e8da681bf32",
-          "version": "0.8.1"
-        },
-        "service-skills-set/service-skills-readme.md": {
-          "hash": "2bb1cdabc22ff346c0218152169b5ca7202d9ab9fdb2877f09e2dddf05fb0621",
-          "version": "0.8.1"
-        },
-        "service-skills-set/settings.json": {
+        "service-skills/install/settings.json": {
           "hash": "c5a9cb6df7f77b7a12a98663971cccdae0940a477e5023933afb7bb38b7e3621",
+          "version": "0.8.1"
+        },
+        "service-skills/references/creating.md": {
+          "hash": "a63854ebb8474ab4e929a56d6ec3cf6de2259534722ff225d8c646a141e92a97",
+          "version": "0.8.1"
+        },
+        "service-skills/references/routing.md": {
+          "hash": "29cb67a259344dfd3b5cae9a55b50d4c72bde2d25cbfd45c88702a0064095a91",
+          "version": "0.8.1"
+        },
+        "service-skills/references/script_quality_standards.md": {
+          "hash": "964476a17aea08505edddae1616899ebcc9f6f1f990e060cf37c1676a7f54b7c",
+          "version": "0.8.1"
+        },
+        "service-skills/references/service_skill_contract.json": {
+          "hash": "8df02e365d539651f4cff1f8999407c1be2c5a2f895a9f14c9efc65af87855d5",
+          "version": "0.8.1"
+        },
+        "service-skills/references/system-guide.md": {
+          "hash": "14b162ab8dfdc15a27988eb180558dd345182425563dde8833b7cfc3abe3ee66",
+          "version": "0.8.1"
+        },
+        "service-skills/references/updating.md": {
+          "hash": "1818fb9411a82f8fd34aa0300378cf28718171547f54f4131dad55bdb21e8767",
+          "version": "0.8.1"
+        },
+        "service-skills/references/using.md": {
+          "hash": "0782fede47b663839834c6e2f7ce151e1ea9ac9ef59c8c01254c523812d86783",
+          "version": "0.8.1"
+        },
+        "service-skills/scripts/bootstrap.py": {
+          "hash": "18cb2e3548ff1cafa96ae28210023fb20a67255a09efe947b4a739d844ecf2a8",
+          "version": "0.8.1"
+        },
+        "service-skills/scripts/cataloger.py": {
+          "hash": "99e6784bb682598a38dfdaea2137dfa2091c977ca127dbb3f4be9523d71868e8",
+          "version": "0.8.1"
+        },
+        "service-skills/scripts/deep_dive.py": {
+          "hash": "fb28936c7c690566960b63bab419a54588fe55495f009da00b5b153e77f42597",
+          "version": "0.8.1"
+        },
+        "service-skills/scripts/drift_detector.py": {
+          "hash": "ff51d88765751ce2190e0021b0836e390bec770aa2bb702317bdc8268a7f60b4",
+          "version": "0.8.1"
+        },
+        "service-skills/scripts/scaffolder.py": {
+          "hash": "78b553d5da5d81f318d7ede5686b8a026ea56d9c924c46d5311e3679e3856f8e",
+          "version": "0.8.1"
+        },
+        "service-skills/scripts/scope.py": {
+          "hash": "8009d07d85d8730ebdc71cf46d0e409bb583fd98bf28d482c1e226e4b4bc023f",
+          "version": "0.8.1"
+        },
+        "service-skills/scripts/skill_activator.py": {
+          "hash": "0e0dc7f15357580f0914f1dde7b00dbc3f757b16dba4623d9c7d8b303815b267",
+          "version": "0.8.1"
+        },
+        "service-skills/scripts/skill_migrator.py": {
+          "hash": "d874fbc829e4da6c4f47526f9d2f914aad9d3e5e1c1a51347b2b38c0211e3c29",
+          "version": "0.8.1"
+        },
+        "service-skills/SKILL.md": {
+          "hash": "125f466f6639a632699ed0b51254f0761629f2f2a4e1c150063fa4f46b7f5b1d",
           "version": "0.8.1"
         },
         "session-close-report/SKILL.md": {
@@ -848,7 +872,7 @@
           "version": "0.8.1"
         },
         "specialists-creator/SKILL.md": {
-          "hash": "f8951e41b20d03a1a5cb71cd79fc7a17f525aba7005cce893d2a4524fc5a169e",
+          "hash": "f84c22e11e08f83ab73c7f3d52df3b071037600740352713d1494f57799b679e",
           "version": "0.8.1"
         },
         "sync-docs/references/doc-structure.md": {
@@ -892,7 +916,7 @@
           "version": "0.8.1"
         },
         "test-planning/SKILL.md": {
-          "hash": "aecc048749a0dcbe9115d87c0a01729a7c7ca51dbb5ea8b8a25a35638f88c4ac",
+          "hash": "277313a117dbed9f885b309d48515c417332951841b0a681b6a9d66ed7ba7cec",
           "version": "0.8.1"
         },
         "update-specialists/SKILL.md": {
@@ -901,14 +925,6 @@
         },
         "update-xt/SKILL.md": {
           "hash": "5084adcb414209503e2d7d723bc98ca2ed36562b708e75bc7d766e0609c2bf56",
-          "version": "0.8.1"
-        },
-        "updating-service-skills/scripts/drift_detector.py": {
-          "hash": "d5e7d7b5054bdce8d12b46f6b7bf74a5fd0c7118c50f07c71f46016e9fb8ff3a",
-          "version": "0.8.1"
-        },
-        "updating-service-skills/SKILL.md": {
-          "hash": "5b60d48463deef56ecd5198ef6d1f58120682438d64bf3db30b41ba6516a1ede",
           "version": "0.8.1"
         },
         "using-kpi/SKILL.md": {
@@ -925,18 +941,6 @@
         },
         "using-script-specialists/SKILL.md": {
           "hash": "b73f6113a76c598cd6cf4fc9a910df0ca6cedba5e8280b0028df1ca2fe86187d",
-          "version": "0.8.1"
-        },
-        "using-service-skills/scripts/cataloger.py": {
-          "hash": "99e6784bb682598a38dfdaea2137dfa2091c977ca127dbb3f4be9523d71868e8",
-          "version": "0.8.1"
-        },
-        "using-service-skills/scripts/skill_activator.py": {
-          "hash": "0e0dc7f15357580f0914f1dde7b00dbc3f757b16dba4623d9c7d8b303815b267",
-          "version": "0.8.1"
-        },
-        "using-service-skills/SKILL.md": {
-          "hash": "3ca830174c3bf13ce573443618b43c5b03575f0cd13660c3206dd3eae21c39a7",
           "version": "0.8.1"
         },
         "using-specialists-auto/SKILL.md": {
