@@ -178,35 +178,81 @@ def install_git_hooks(project_root: Path) -> None:
     print(f"{GREEN}  ✓{NC} activated in .git/hooks/")
 
 
+def _packs_with_registry(project_root: Path) -> list[Path]:
+    """Packs that carry a service registry (umbrella or legacy flat location)."""
+    packs_root = project_root / ".xtrm" / "skills" / "user" / "packs"
+    if not packs_root.exists():
+        return []
+    out = []
+    for pack in sorted(p for p in packs_root.iterdir() if p.is_dir()):
+        if (pack / "service-skills" / "service-registry.json").exists() or (pack / "service-registry.json").exists():
+            out.append(pack)
+    return out
+
+
+def _pack_registry(pack: Path) -> Path | None:
+    new = pack / "service-skills" / "service-registry.json"
+    old = pack / "service-registry.json"
+    return new if new.exists() else (old if old.exists() else None)
+
+
+def run_layout_migration(project_root: Path) -> None:
+    """One-time flat -> umbrella layout migration per pack (idempotent). Runs BEFORE
+    content migration so heading upgrades land on the new on-disk layout."""
+    print("\n── Layout migration ────────────────────")
+    migrator = project_root / ".claude" / "skills" / "service-skills" / "scripts" / "layout_migrator.py"
+    packs = _packs_with_registry(project_root)
+    if not migrator.exists() or not packs:
+        print(f"{YELLOW}  ○{NC} nothing to migrate (no packs or migrator)")
+        return
+    moved = 0
+    for pack in packs:
+        env = {**os.environ, "XTRM_PACK": pack.name}
+        r = subprocess.run(["python3", str(migrator), project_root.name],
+                           cwd=str(project_root), env=env, capture_output=True, text=True, check=False)
+        if r.returncode == 2:
+            print(f"{YELLOW}  ⚠{NC} pack '{pack.name}': {r.stderr.strip()}")
+            continue
+        if any(line.startswith("migrated:") for line in r.stdout.splitlines()):
+            moved += 1
+            print(f"{GREEN}  ✓{NC} pack '{pack.name}' migrated to umbrella layout")
+    if moved == 0:
+        print(f"{GREEN}  ✓{NC} all packs already on umbrella layout")
+
+
 def migrate_existing_skills(project_root: Path) -> None:
     """Upgrade already-installed per-service SKILL.md files to the current canonical
     section set (adds missing devops headings in contract order, preserves the
     SEMANTIC block, idempotent). Safe no-op when nothing needs upgrading."""
     print("\n── Migrate existing skills ─────────────")
     migrator = project_root / ".claude" / "skills" / "service-skills" / "scripts" / "skill_migrator.py"
-    registry = project_root / ".claude" / "skills" / "service-registry.json"
-    if not migrator.exists() or not registry.exists():
+    packs = _packs_with_registry(project_root)
+    if not migrator.exists() or not packs:
         print(f"{YELLOW}  ○{NC} nothing to migrate (no registry or migrator)")
         return
-    try:
-        services = json.loads(registry.read_text(encoding="utf-8")).get("services", {})
-    except json.JSONDecodeError:
-        print(f"{YELLOW}  ○{NC} registry malformed; skipping migration")
-        return
     changed = 0
-    for service_id, info in services.items():
-        skill_rel = info.get("skill_path")
-        if not skill_rel:
+    for pack in packs:
+        registry = _pack_registry(pack)
+        if registry is None:
             continue
-        skill_md = project_root / skill_rel
-        if not skill_md.exists():
+        try:
+            services = json.loads(registry.read_text(encoding="utf-8")).get("services", {})
+        except json.JSONDecodeError:
+            print(f"{YELLOW}  ○{NC} registry malformed in pack '{pack.name}'; skipping")
             continue
-        r = subprocess.run(["python3", str(migrator), str(skill_md)],
-                           capture_output=True, text=True, check=False)
-        # migrator prints "migrated: <path>" when it added sections, "unchanged: <path>" otherwise
-        if r.returncode == 0 and r.stdout.strip().startswith("migrated:"):
-            changed += 1
-            print(f"{GREEN}  ✓{NC} upgraded {service_id} → devops sections")
+        for service_id, info in services.items():
+            skill_rel = info.get("skill_path")
+            if not skill_rel:
+                continue
+            skill_md = project_root / skill_rel
+            if not skill_md.exists():
+                continue
+            r = subprocess.run(["python3", str(migrator), str(skill_md)],
+                               capture_output=True, text=True, check=False)
+            # migrator prints "migrated: <path>" when it added sections, "unchanged: <path>" otherwise
+            if r.returncode == 0 and r.stdout.strip().startswith("migrated:"):
+                changed += 1
+                print(f"{GREEN}  ✓{NC} upgraded {service_id} → devops sections")
     if changed == 0:
         print(f"{GREEN}  ✓{NC} all service skills already current")
 
@@ -244,6 +290,7 @@ def main() -> None:
     install_skills(project_root)
     install_settings(project_root)
     install_git_hooks(project_root)
+    run_layout_migration(project_root)   # flat -> umbrella (moves files) — must precede content migration
     migrate_existing_skills(project_root)
     generate_umbrellas(project_root)
 
