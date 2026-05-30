@@ -9,6 +9,7 @@ The skeleton contains [PENDING RESEARCH] markers for the agent to fill in Phase 
 Output location: .xtrm/skills/user/packs/<pack>/<service-id>/
 """
 
+import json
 import re
 import shutil
 import sys
@@ -18,6 +19,8 @@ script_dir = Path(__file__).parent
 sys.path.insert(0, str(script_dir))
 
 from bootstrap import RootResolutionError, get_pack_path, get_project_root, register_service  # noqa: E402
+
+CONTRACT_PATH = Path(__file__).parent.parent / "references" / "service_skill_contract.json"
 
 SERVICE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-_]{0,63}$")
 
@@ -47,6 +50,15 @@ OFFICIAL_DOCS: dict[str, tuple[str, str]] = {
     "aiohttp": ("aiohttp", "https://docs.aiohttp.org/"),
     "httpx": ("HTTPX", "https://www.python-httpx.org/"),
 }
+
+
+def load_contract() -> dict:
+    return json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+
+
+def get_canonical_headings() -> list[str]:
+    contract = load_contract()
+    return [entry["heading"] for entry in contract["canonical_headings"]]
 
 
 def validate_service_id(service_id: str) -> None:
@@ -122,7 +134,34 @@ def write_skill_md(service_id: str, config: dict, skill_dir: Path) -> None:
     name = service_id.replace("-", " ").replace("_", " ").title()
     persona = f"{name} Expert"
     docs_section = ""
+    canonical_headings = get_canonical_headings()
+    canonical_sections: dict[str, str] = {
+        "Service Overview": f"[PENDING RESEARCH] Describe what this service does, its role in the system,\nand whether it runs continuously, as a one-shot job, or on a schedule.\n\n**Persona**: {persona}",
+        "Architecture": f"[PENDING RESEARCH]\n\n**Entry Point**: [Verify in Dockerfile CMD and docker-compose `command:` field]\n**Container Name**: {service_id}\n**Restart Policy**: [PENDING RESEARCH]\n\n**Primary Modules**:\n- [PENDING RESEARCH] List key modules after reading the source tree\n\n**Dependencies**: [PENDING RESEARCH] PostgreSQL? Redis? External APIs?",
+        "CRITICAL REQUIREMENTS": "[PENDING RESEARCH] Add any mandatory patterns, initialization calls, or\ninvariants that must not be violated when modifying this service.",
+        "Data Flows": "[PENDING RESEARCH] Trace the primary data paths through the service. Use gitnexus process/query graph traces to map producer → transformer → sink paths, then confirm with symbol references.",
+        "Database Interactions": "[PENDING RESEARCH]\n\n| Table | Operation | Timestamp Column | Stale Threshold |\n|-------|-----------|-----------------|-----------------|\n| [table] | INSERT/SELECT | [col] | [N min] |",
+        "Cross-Service Health Check": "[PENDING RESEARCH] Provide a runnable command or script block that checks this service against dependent services and shared infra.\n\n```bash\n# Replace with service-specific runnable check\npython3 .claude/skills/{service_id}/scripts/health_probe.py --json\n```",
+        "Common Operations": "### Service Management\n\n```bash\n# Start the service\ndocker compose up -d {service_id}\n\n# Check logs\ndocker logs {service_id} --tail 50\n\n# Restart\ndocker compose restart {service_id}\n```\n\n### Data Inspection\n\n- **Health check**: `python3 .claude/skills/{service_id}/scripts/health_probe.py`\n- **Log analysis**: `python3 .claude/skills/{service_id}/scripts/log_hunter.py`\n- **Data explorer**: `python3 .claude/skills/{service_id}/scripts/data_explorer.py`",
+        "Failure Modes": "[PENDING RESEARCH] Fill with symptom/cause/fix rows from exception handlers and code comments. This section supersedes Troubleshooting Guide.\n\n| Symptom | Cause | Fix |\n|---------|-------|-----|\n| [what you see] | [root cause] | [exact command or code fix] |\n\nMinimum 5 rows required.",
+        "Deploy & Runbook": "[PENDING RESEARCH] Document deploy context, rollback path, and pointer to runbook/runbooks if the service has one. Include what changed, how to deploy safely, and how to revert.",
+        "Semantic Deep Dive (Human/Agent Refined)": "[PENDING RESEARCH] Add deep operational knowledge after Phase 2 deep dive.",
+        "Scripts": "- `scripts/health_probe.py` — Container status + table freshness check\n- `scripts/log_hunter.py` — Service-specific log pattern analysis\n- `scripts/data_explorer.py` — Safe database inspection (read-only)",
+        "References": f"{docs_section}\n- `references/deep_dive.md` — Detailed Phase 2 research notes\n- `references/architecture_ssot.md` — Architecture SSOT (link from project SSOT if available)",
+    }
 
+    semantic_block = "## Semantic Deep Dive (Human/Agent Refined)\n\n[PENDING RESEARCH] Add deep operational knowledge after Phase 2 deep dive."
+    rendered_sections = []
+    for heading in canonical_headings:
+        if heading == "Semantic Deep Dive (Human/Agent Refined)":
+            # Emit the protected region at its canonical contract position
+            # (after Deploy & Runbook, before Scripts), not at a hardcoded index.
+            rendered_sections.append(f"<!-- SEMANTIC_START -->\n{semantic_block}\n\n<!-- SEMANTIC_END -->")
+        else:
+            body = canonical_sections.get(heading, "[PENDING RESEARCH]")
+            rendered_sections.append(f"## {heading}\n\n{body}")
+
+    sections_md = "\n\n".join(rendered_sections)
     content = f"""---
 name: {service_id}
 description: >-
@@ -133,91 +172,7 @@ allowed-tools: Bash(python3 *), Read, Grep, Glob
 
 # {name}
 
-## Service Overview
-
-[PENDING RESEARCH] Describe what this service does, its role in the system,
-and whether it runs continuously, as a one-shot job, or on a schedule.
-
-**Persona**: {persona}
-
-## Architecture
-
-[PENDING RESEARCH]
-
-**Entry Point**: [Verify in Dockerfile CMD and docker-compose `command:` field]
-**Container Name**: {service_id}
-**Restart Policy**: [PENDING RESEARCH]
-
-**Primary Modules**:
-- [PENDING RESEARCH] List key modules after reading the source tree
-
-**Dependencies**: [PENDING RESEARCH] PostgreSQL? Redis? External APIs?
-
-## ⚠️ CRITICAL REQUIREMENTS
-
-[PENDING RESEARCH] Add any mandatory patterns, initialization calls, or
-invariants that must not be violated when modifying this service.
-
-## Data Flows
-
-[PENDING RESEARCH] Trace the primary data paths through the service.
-
-## Database Interactions
-
-[PENDING RESEARCH]
-
-| Table | Operation | Timestamp Column | Stale Threshold |
-|-------|-----------|-----------------|-----------------|
-| [table] | INSERT/SELECT | [col] | [N min] |
-
-## Common Operations
-
-### Service Management
-
-```bash
-# Start the service
-docker compose up -d {service_id}
-
-# Check logs
-docker logs {service_id} --tail 50
-
-# Restart
-docker compose restart {service_id}
-```
-
-### Data Inspection
-
-- **Health check**: `python3 .claude/skills/{service_id}/scripts/health_probe.py`
-- **Log analysis**: `python3 .claude/skills/{service_id}/scripts/log_hunter.py`
-- **Data explorer**: `python3 .claude/skills/{service_id}/scripts/data_explorer.py`
-
-## Troubleshooting Guide
-
-[PENDING RESEARCH] Fill from exception handlers and code comments.
-
-| Symptom | Likely Cause | Resolution |
-|---------|-------------|------------|
-| [what you see] | [root cause] | [exact command to fix] |
-
-Minimum 5 rows required.
-
-<!-- SEMANTIC_START -->
-## Semantic Deep Dive (Human/Agent Refined)
-
-[PENDING RESEARCH] Add deep operational knowledge after Phase 2 deep dive.
-
-<!-- SEMANTIC_END -->
-
-## Scripts
-
-- `scripts/health_probe.py` — Container status + table freshness check
-- `scripts/log_hunter.py` — Service-specific log pattern analysis
-- `scripts/data_explorer.py` — Safe database inspection (read-only)
-
-## References
-{docs_section}
-- `references/deep_dive.md` — Detailed Phase 2 research notes
-- `references/architecture_ssot.md` — Architecture SSOT (link from project SSOT if available)
+{sections_md}
 
 ---
 
