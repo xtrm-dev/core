@@ -11,11 +11,14 @@ Usage:
   python3 deep_dive.py template
 """
 
+import json
 import sys
 from pathlib import Path
 
 script_dir = Path(__file__).parent
 sys.path.insert(0, str(script_dir))
+
+CONTRACT_PATH = Path(__file__).parent.parent / "references" / "service_skill_contract.json"
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +56,10 @@ SERVICE_TYPES: dict[str, dict] = {
         "health": "token_presence + last_run_recency",
     },
 }
+
+
+def load_contract() -> dict:
+    return json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
 
 def classify_service(directory: Path) -> dict:
@@ -105,16 +112,28 @@ def classify_service(directory: Path) -> dict:
 
 def print_deep_dive_questions(service_type: str) -> None:
     """
-    Print the full Phase 2 research agenda for the given service type.
+    Print Phase 2 research agenda for given service type.
 
-    The agent answers every question using Serena LSP tools — NOT raw file reads.
+    Use gitnexus process/query graph discovery first, then Serena tools to
+    confirm symbol-level details and failure paths.
     """
+    contract = load_contract()
+    canonical_headings = [entry["heading"] for entry in contract["canonical_headings"]]
     print(
         f"""
 === Phase 2 Deep Dive: {service_type} ===
 
-IMPORTANT — Use Serena LSP tools for all code exploration:
+Phase 1/2 discovery path:
+1. Use gitnexus query/process graph first to map service boundaries, data flow, and likely callers.
+2. Use Serena tools to inspect symbols only after graph clues narrow scope.
+3. Keep output aligned to canonical SKILL.md headings: {", ".join(canonical_headings)}
 
+GitNexus-first checks:
+  - query: service name, container name, data tables, external deps
+  - process graph: producer → transformer → sink traces for Data Flows
+  - symbol refs: confirm handlers, queries, and failure sites
+
+Serena follow-up tools:
   | Task                       | Tool                                               |
   |----------------------------|----------------------------------------------------|
   | Map module structure       | get_symbols_overview(depth=1)                      |
