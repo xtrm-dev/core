@@ -78,7 +78,7 @@ def _services_table(services: dict[str, dict[str, Any]]) -> str:
         synced = info.get("last_sync", "never")
         ref = info.get("last_sync_ref", "")
         freshness = synced if not ref else f"{synced} @ {ref[:8]}"
-        rows.append(f"| `{sid}` | {container} | `{territory}` | [`{skill}`]({skill}) | {freshness} |")
+        rows.append(f"| `{sid}` | {container} | `{territory}` | [SKILL.md]({skill}) | {freshness} |")
     return "\n".join(rows)
 
 
