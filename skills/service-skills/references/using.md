@@ -122,3 +122,9 @@ Read-only — no write access:
 
 - `/creating-service-skills` — Scaffold new expert personas
 - `/updating-service-skills` — Sync skills when implementation drifts
+
+---
+
+## Per-repo umbrella (load first for cross-service tasks)
+
+Each repo has a generated umbrella skill `<repo>-services` at `.xtrm/skills/user/packs/<pack>/service-skills/SKILL.md` — the service map + cross-service health story. When a task spans services, load the umbrella first; it links every per-service skill. It is regenerated from the registry (`umbrella_generator.py`); only its `<!-- SEMANTIC_START -->` block is hand-edited.

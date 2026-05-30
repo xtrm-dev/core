@@ -143,6 +143,14 @@ def get_service_skill_path_str(service_id: str, project_root: str | None = None)
         return str(skill_md).replace(os.sep, "/")
 
 
+def get_umbrella_dir(project_root: str | None = None) -> Path | None:
+    """Resolve the per-repo umbrella directory ``<pack>/service-skills`` (absolute),
+    or None if no pack is resolvable. The umbrella SKILL.md (``<repo>-services``) and
+    the relocated registry live here under the new layout."""
+    pack = get_pack_path(project_root)
+    return None if pack is None else pack / "service-skills"
+
+
 def _select_pack_registry(pack_registries: list[Path], project_root: str) -> Path:
     active_pack = get_pack_path(project_root)
     if active_pack is not None:
@@ -180,6 +188,12 @@ def get_registry_path(project_root: str | None = None) -> Path:
     legacy = root / ".claude" / "skills" / "service-registry.json"
     if legacy.exists():
         return legacy
+
+    # New layout (umbrella-owned registry) takes precedence over the flat pack-root
+    # location during the .3→.4 transition; child .4's migrator relocates the file.
+    umbrella_registries = sorted(root.glob(".xtrm/skills/user/packs/*/service-skills/service-registry.json"))
+    if umbrella_registries:
+        return _select_pack_registry(umbrella_registries, project_root)
 
     pack_registries = sorted(root.glob(".xtrm/skills/user/packs/*/service-registry.json"))
     if pack_registries:

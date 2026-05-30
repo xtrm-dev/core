@@ -19,6 +19,7 @@ Idempotent. Safe to re-run.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -210,6 +211,32 @@ def migrate_existing_skills(project_root: Path) -> None:
         print(f"{GREEN}  ✓{NC} all service skills already current")
 
 
+def generate_umbrellas(project_root: Path) -> None:
+    """Generate/refresh the per-repo umbrella SKILL.md (name: <repo>-services) for
+    each pack that has a service-registry.json. The umbrella's service table is
+    derived from the registry; its SEMANTIC block is preserved across regen.
+    Idempotent — prints only when a file actually changes."""
+    print("\n── Umbrella ────────────────────────────")
+    generator = project_root / ".claude" / "skills" / "service-skills" / "scripts" / "umbrella_generator.py"
+    packs_root = project_root / ".xtrm" / "skills" / "user" / "packs"
+    if not generator.exists() or not packs_root.exists():
+        print(f"{YELLOW}  ○{NC} nothing to generate (no generator or packs)")
+        return
+    repo_name = project_root.name
+    wrote = 0
+    for pack in sorted(p for p in packs_root.iterdir() if p.is_dir()):
+        if not (pack / "service-registry.json").exists() and not (pack / "service-skills" / "service-registry.json").exists():
+            continue
+        env = {**os.environ, "XTRM_PACK": pack.name}
+        r = subprocess.run(["python3", str(generator), repo_name],
+                           cwd=str(project_root), env=env, capture_output=True, text=True, check=False)
+        if r.returncode == 0 and r.stdout.strip().startswith("generated:"):
+            wrote += 1
+            print(f"{GREEN}  ✓{NC} umbrella refreshed for pack '{pack.name}' → {repo_name}-services")
+    if wrote == 0:
+        print(f"{GREEN}  ✓{NC} all umbrellas already current")
+
+
 def main() -> None:
     project_root = get_project_root()
     print(f"Installing into: {project_root}")
@@ -218,6 +245,7 @@ def main() -> None:
     install_settings(project_root)
     install_git_hooks(project_root)
     migrate_existing_skills(project_root)
+    generate_umbrellas(project_root)
 
     print(f"\n{GREEN}Done.{NC}")
     print(f"  Hooks active: SessionStart (catalog) · PreToolUse (skill activator) · PostToolUse (drift) · pre-commit · pre-push")

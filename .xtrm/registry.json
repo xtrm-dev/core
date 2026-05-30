@@ -708,7 +708,7 @@
           "version": "0.8.1"
         },
         "service-skills/install/install-service-skills.py": {
-          "hash": "a2e525b09885cfaa4a51aa9528fcf32425a94c3b2c424fe7cf69ebf038959806",
+          "hash": "631d7dc22e46b3e94bfc2da9ee359fdc9d5118d43f29255cf06d777416b8f6cd",
           "version": "0.8.1"
         },
         "service-skills/install/service-skills-readme.md": {
@@ -744,11 +744,11 @@
           "version": "0.8.1"
         },
         "service-skills/references/using.md": {
-          "hash": "9f35e88d28117649f5ffb1a92c309d4249005fac14ed29fa6054d49e7b72ef17",
+          "hash": "98f452c8a537f054ad057759e370ed17d6991b2c2e1ecb07919d415bcbd1d3cb",
           "version": "0.8.1"
         },
         "service-skills/scripts/bootstrap.py": {
-          "hash": "eaa76fe09670ef8e8f5c40dbaa8c55f607522be46f338d9cc5f40fe22024a1df",
+          "hash": "47a4ed2bc91f70d01a2192ba0399da9f9b18d611227f74df34378ca2dea4fb16",
           "version": "0.8.1"
         },
         "service-skills/scripts/cataloger.py": {
@@ -779,8 +779,12 @@
           "hash": "d874fbc829e4da6c4f47526f9d2f914aad9d3e5e1c1a51347b2b38c0211e3c29",
           "version": "0.8.1"
         },
+        "service-skills/scripts/umbrella_generator.py": {
+          "hash": "6c9ac7ffc8298663f1db6a76c9cb8842d3428ea58f2f7ce0d44242fb94ee1437",
+          "version": "0.8.1"
+        },
         "service-skills/SKILL.md": {
-          "hash": "125f466f6639a632699ed0b51254f0761629f2f2a4e1c150063fa4f46b7f5b1d",
+          "hash": "51c89385d6380d9eb4d5fb9eae74a57939f072ceaac347bc7ee48b772aea1385",
           "version": "0.8.1"
         },
         "session-close-report/SKILL.md": {
