@@ -69,6 +69,18 @@ Using the registry output, reason about which service(s) the task involves. Matc
 - Config file or directory mentioned (`routes.yml` → traefik, `prometheus.yml` → prometheus)
 - Container name mentioned (`infra-*`)
 
+**Refine with the graph when the symbol/flow is ambiguous.** Territory globs route by file
+path; when a task names a *symbol* or *behavior* rather than a path, confirm ownership with
+GitNexus before committing the scope (the `scope.py` footer prints these when an index exists):
+
+```bash
+gitnexus query "<task concept>" --repo <name>      # which execution flow / service owns it
+gitnexus impact <symbol> --direction upstream       # if the change reaches multiple services, scope them all
+```
+
+If a service's `Last sync` (shown by `scope.py`) is far behind, treat its SKILL.md as
+possibly stale and lean on the graph + source over the doc. With no index, route by globs.
+
 ---
 
 ### Step 4 — Output XML Scope Block
