@@ -104,7 +104,9 @@ A skill is **complete** only when:
 - No `[PENDING RESEARCH]` markers remain
 - `health_probe.py` queries real tables with correct stale thresholds
 - `log_hunter.py` patterns sourced from actual codebase error strings
-- Troubleshooting table has ≥5 rows from real failure modes
+- Failure Modes table (symptom/cause/fix) has ≥5 rows from real exception handlers
+- Cross-Service Health Check + Deploy & Runbook sections present (per the section contract)
+- Section order matches `creating-service-skills/references/service_skill_contract.json`
 - All scripts support `--json` output
 - `PreToolUse` skill activator hook confirmed in `.claude/settings.json`
 - Service territory globs verified in `.claude/skills/service-registry.json`
@@ -201,11 +203,20 @@ python3 .claude/skills/updating-service-skills/scripts/drift_detector.py scan
       "territory": ["src/auth/**/*.py"],
       "skill_path": ".claude/skills/auth-service/SKILL.md",
       "description": "JWT authentication and session management",
-      "last_sync": "2026-02-23T19:00:00Z"
+      "last_sync": "2026-02-23T19:00:00Z",
+      "last_sync_ref": "0d241bc1"
     }
   }
 }
 ```
+
+> `drift_detector.py scan` is **gitnexus-default**: it measures the committed range since
+> `last_sync_ref` (set by `sync` alongside `last_sync`) and tiers each drift
+> (`tier_source`/`gitnexus_status`), falling back to mtime (`tier=unknown`) when no index is
+> present. Installing/upgrading via `install-service-skills.py` runs the idempotent
+> `skill_migrator.py` over existing per-service SKILL.md files to add any missing devops
+> sections (Cross-Service Health Check, Failure Modes, Deploy & Runbook) without touching
+> human content.
 
 The `territory` globs determine which file paths trigger drift detection and skill auto-activation.
 
