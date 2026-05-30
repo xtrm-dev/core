@@ -16,10 +16,10 @@ import json
 import sys
 from pathlib import Path
 
-BOOTSTRAP_DIR = Path(__file__).parent.parent.parent / "creating-service-skills" / "scripts"
-sys.path.insert(0, str(BOOTSTRAP_DIR))
+# bootstrap.py is a sibling in this consolidated scripts/ dir (no cross-skill hop).
+sys.path.insert(0, str(Path(__file__).parent))
 
-from bootstrap import RootResolutionError, get_project_root, load_registry  # noqa: E402  # type: ignore[import-not-found]
+from bootstrap import RootResolutionError, get_project_root, get_service_skill_path_str, load_registry  # noqa: E402  # type: ignore[import-not-found]
 
 
 def match_territory(file_path: str, territory: list[str], project_root: Path) -> bool:
@@ -82,8 +82,10 @@ def find_service_for_command(command: str, services: dict) -> tuple[str, dict] |
     return None
 
 
-def build_context(service_id: str, data: dict) -> str:
-    skill_path = data.get("skill_path", f".claude/skills/{service_id}/SKILL.md")
+def build_context(service_id: str, data: dict, project_root: Path) -> str:
+    # Registry skill_path is the SSOT; the fallback resolves under .xtrm (never
+    # .claude/skills, which is an often-empty Claude view for per-service skills).
+    skill_path = data.get("skill_path") or get_service_skill_path_str(service_id, str(project_root))
     desc = data.get("description", "")
     desc_line = f"\n  What it covers: {desc}" if desc else ""
 
@@ -140,7 +142,7 @@ def main() -> None:
         output = {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
-                "additionalContext": build_context(service_id, service_data),
+                "additionalContext": build_context(service_id, service_data, project_root),
             }
         }
         print(json.dumps(output))

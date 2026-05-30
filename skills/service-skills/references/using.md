@@ -2,6 +2,8 @@
 # Using Service Skills
 
 > Detailed **discover / activate** flow for the `service-skills` router.
+>
+> **Path model:** `.claude/skills/<service>/SKILL.md` shown below is the **Claude-Code view** (a symlink). The canonical home for per-service skills is under `.xtrm/skills/user/packs/<pack>/` — scripts resolve it via `bootstrap.get_service_skill_path_str`. Machinery scripts live at `.claude/skills/service-skills/scripts/` (the active view of this skill).
 
 ## Role: The Concierge
 
@@ -39,7 +41,7 @@ When a user asks about a service or starts a related task, check whether a
 If no catalog was injected (e.g. first run, no services registered), generate one:
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/using-service-skills/scripts/cataloger.py"
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/cataloger.py"
 ```
 
 ### 2. Activate an Expert Persona
@@ -101,7 +103,7 @@ The catalog injection is not handled by skill frontmatter hooks. Configure it in
     "SessionStart": [{
       "hooks": [{
         "type": "command",
-        "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/using-service-skills/scripts/cataloger.py\""
+        "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/cataloger.py\""
       }]
     }]
   }

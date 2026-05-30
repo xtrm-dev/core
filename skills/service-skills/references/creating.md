@@ -2,6 +2,8 @@
 # Creating Service Skills
 
 > Detailed **create** flow for the `service-skills` router. Invoked via `/service-skills` (create) or `/creating-service-skills` muscle-memory.
+>
+> **Path model:** `.claude/skills/<service>/SKILL.md` shown below is the **Claude-Code view** (a symlink). The canonical home for per-service skills is under `.xtrm/skills/user/packs/<pack>/` — scripts resolve it via `bootstrap.get_service_skill_path_str`. Machinery scripts live at `.claude/skills/service-skills/scripts/` (the active view of this skill).
 
 ## Role: The Architect
 
@@ -25,11 +27,11 @@ technologies and auto-populates official documentation links.
 
 ```bash
 # Create a skeleton for a service
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/creating-service-skills/scripts/scaffolder.py" \
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/scaffolder.py" \
   create <service-id> <territory-path> "<description>"
 
 # Example
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/creating-service-skills/scripts/scaffolder.py" \
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/scaffolder.py" \
   create auth-service src/auth/ "JWT authentication and session management"
 ```
 
@@ -45,14 +47,14 @@ The skeleton creates at `.claude/skills/<service-id>/`:
 Classify the service type to determine which specialist script to add:
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/creating-service-skills/scripts/deep_dive.py" \
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/deep_dive.py" \
   classify <territory-path>
 ```
 
 Print the full Phase 2 research agenda:
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/creating-service-skills/scripts/deep_dive.py" \
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/deep_dive.py" \
   questions <service-type>
 ```
 
@@ -346,7 +348,7 @@ Check `.claude/settings.json` contains a `PreToolUse` entry:
 "PreToolUse": [{
   "matcher": "Read|Write|Edit|Glob|Grep|Bash",
   "hooks": [{"type": "command",
-    "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/using-service-skills/scripts/skill_activator.py\""}]
+    "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/skill_activator.py\""}]
 }]
 ```
 
@@ -355,7 +357,7 @@ If missing, run the installer again or add it manually.
 ### Verify the service is registered
 
 ```bash
-python3 .claude/skills/using-service-skills/scripts/cataloger.py
+python3 .claude/skills/service-skills/scripts/cataloger.py
 ```
 
 The service should appear in the output catalog. If not, the territory may not

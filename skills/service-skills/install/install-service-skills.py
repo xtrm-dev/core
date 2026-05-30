@@ -38,17 +38,17 @@ TRINITY = ["creating-service-skills", "using-service-skills", "updating-service-
 SETTINGS_HOOKS = {
     "SessionStart": [
         {"hooks": [{"type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/using-service-skills/scripts/cataloger.py\""}]}
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/cataloger.py\""}]}
     ],
     "PreToolUse": [
         {"matcher": "Read|Write|Edit|Glob|Grep|Bash|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
          "hooks": [{"type": "command",
-             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/using-service-skills/scripts/skill_activator.py\""}]}
+             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/skill_activator.py\""}]}
     ],
     "PostToolUse": [
         {"matcher": "Write|Edit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
          "hooks": [{"type": "command",
-             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/updating-service-skills/scripts/drift_detector.py\" check-hook",
+             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/drift_detector.py\" check-hook",
              "timeout": 10}]}
     ]
 }
@@ -182,7 +182,7 @@ def migrate_existing_skills(project_root: Path) -> None:
     section set (adds missing devops headings in contract order, preserves the
     SEMANTIC block, idempotent). Safe no-op when nothing needs upgrading."""
     print("\n── Migrate existing skills ─────────────")
-    migrator = project_root / ".claude" / "skills" / "updating-service-skills" / "scripts" / "skill_migrator.py"
+    migrator = project_root / ".claude" / "skills" / "service-skills" / "scripts" / "skill_migrator.py"
     registry = project_root / ".claude" / "skills" / "service-registry.json"
     if not migrator.exists() or not registry.exists():
         print(f"{YELLOW}  ○{NC} nothing to migrate (no registry or migrator)")
