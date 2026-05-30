@@ -253,27 +253,35 @@ if __name__ == "__main__":
 
 def run_gitnexus_json(args: list[str], timeout: float = 2.0) -> dict[str, Any] | list[Any] | None:
     try:
-        cmd = ["npx", "gitnexus", *args, "--json"]
+        cmd = ["npx", "gitnexus", *args]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     except Exception:
         return None
     if result.returncode != 0:
         return None
+    stdout = result.stdout.strip()
+    if not stdout:
+        return {}
     try:
-        return json.loads(result.stdout.strip() or "null")
+        return json.loads(stdout)
     except json.JSONDecodeError:
-        return None
+        return {"output": stdout}
+
+
+def _gitnexus_repo_name(project_root: str | None = None) -> str:
+    root = Path(project_root or get_project_root())
+    return root.name
 
 
 def is_gitnexus_available(timeout: float = 2.0) -> tuple[bool, str]:
     if os.environ.get("GITNEXUS_DISABLE"):
         return False, "disabled by GITNEXUS_DISABLE"
     try:
-        probe = run_gitnexus_json(["detect_changes", "--scope", "unstaged"], timeout=timeout)
+        probe = run_gitnexus_json(["detect_changes", "--scope", "unstaged", "--repo", _gitnexus_repo_name()], timeout=timeout)
     except Exception as exc:
         return False, str(exc)
     if probe is None:
-        return False, "unreachable or stale index"
+        return False, "cli_error"
     if isinstance(probe, dict) and probe.get("warning"):
         return False, str(probe.get("warning"))
     return True, "ok"
