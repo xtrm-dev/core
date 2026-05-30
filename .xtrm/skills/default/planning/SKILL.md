@@ -35,8 +35,8 @@ enough for any agent or human to work independently.
 Phase 1  Clarify intent          → understand what, why, constraints
 Phase 2  Explore codebase        → GitNexus + Serena, read-only
 Phase 3  Structure the plan      → phases, deps, CoT reasoning
-Phase 4  Create bd issues        → epic + tasks, rich descriptions
-Phase 5  test-planning           → companion test issues per layer
+Phase 4  Create bd issues        → epic + tasks with logs + validation contracts
+Phase 5  test-planning           → companion test, smoke, and E2E issues per layer
 Phase 6  Handoff                 → claim first issue, ready to build
 ```
 
@@ -151,7 +151,9 @@ Think through the plan before writing any bd commands. Use structured CoT:
 3. What are the dependencies? (what must be done before X can start?)
 4. What can run in parallel? (independent tasks → no deps between them)
 5. What are the risks? (complex areas, unclear spec, risky refactors)
-6. What is the blast-radius summary from GitNexus? (direct callers, affected processes, risk level)
+6. What logs/telemetry are required so agents and humans can debug the work later?
+7. What smoke/E2E checks prove the integrated behavior works, not just the unit seam?
+8. What is the blast-radius summary from GitNexus? (direct callers, affected processes, risk level)
 </thinking>
 
 <plan>
@@ -170,6 +172,23 @@ Think through the plan before writing any bd commands. Use structured CoT:
 - Prefer tasks completable in one session (1-4 hours of focused work)
 - If a task has 5+ unrelated deliverables → split it
 - If two tasks always ship together → merge them
+
+### Mandatory observability + validation planning
+
+Every implementation plan must include a logging/telemetry contract and an integration validation contract. Do this during planning, not as a reviewer afterthought.
+
+**Logging / telemetry contract (write into `CONSTRAINTS`, `VALIDATION`, or `OUTPUT`):**
+- What events must be logged or emitted, and at which boundaries: start/end, decision points, external calls, retries, failures, fallbacks, cleanup.
+- Required format: follow the repo's existing structured log format first; otherwise require consistent fields such as `timestamp`, `level`, `component`, `event`, `bead/job/session/request id`, `action`, `outcome`, `duration_ms`, and redacted error context.
+- Where the evidence is visible: log file, stdout/stderr, trace JSONL, metrics endpoint, Prometheus/Grafana label, specialist/job feed, or CI artifact.
+- What must never be logged: secrets, tokens, credentials, raw PII, or full unredacted payloads.
+- How an automated run can self-check it: a grep/query/assertion command or expected artifact path.
+
+**Smoke / E2E contract (write into `VALIDATION`):**
+- Unit/type checks are not enough for user-facing, shell, boundary, deploy, agent, hook, MCP, or workflow changes.
+- Include at least one smoke check that exercises the integrated path end-to-end enough to catch wiring failures.
+- Include E2E or live-contract checks for critical paths when the system boundary is available. If not available, document the fallback and create a follow-up test bead.
+- Name the specialist gate that will run it (`test-runner` for suites/check interpretation; reviewer consumes the evidence). Do not treat `pyright`, `tsc`, or lint alone as the test gate.
 
 ---
 
@@ -216,12 +235,15 @@ bd create \
 - <Sequencing rules across children>
 - <API / wire-format / migration compatibility requirements>
 - <Branch / merge / release-gate rules>
+- <Epic-level logging/telemetry convention and artifact/query location expected from children>
 
 ## VALIDATION
 
 - [ ] <Observable criterion 1>
 - [ ] <Observable criterion 2>
 - [ ] <Test suite green / drift checks clean / smoke pass>
+- [ ] <Smoke/E2E evidence covers the critical integrated path>
+- [ ] <Required logs/telemetry emitted in the planned format and location>
 
 ## OUTPUT
 
@@ -264,16 +286,19 @@ bd create \
 - <Hard rule: API compatibility, error-text backward-compat, migration safety>
 - <Style / pattern: follow existing convention in <file>>
 - <Do-not-touch boundary outside SCOPE>
+- <Logging/telemetry contract: events, fields/format, emission points, redaction rules, and artifact/query path>
 
 ## VALIDATION
 
 - [ ] <Lint / typecheck / unit test for this surface>
 - [ ] <Regression test for the specific failure mode being fixed>
-- [ ] <Integration / smoke check if applicable>
+- [ ] <Smoke check that exercises the integrated user/agent/workflow path>
+- [ ] <E2E or live-contract check for critical boundary paths, or documented fallback + follow-up bead>
+- [ ] <Log/telemetry evidence is emitted in the required format and can be found by the named command/query>
 
 ## OUTPUT
 
-<What the executing specialist hands back: changed files list, verification evidence (command output / test pass summary), residual risks. This is what `bd show <id>` will surface to reviewer at gate.>
+<What the executing specialist hands back: changed files list, verification evidence (command output / smoke/E2E/test summary), log/telemetry artifact paths or sample lines, residual risks. This is what `bd show <id>` will surface to reviewer at gate.>
 
 ## APPROACH NOTES
 
@@ -373,13 +398,16 @@ After the implementation issues are created, invoke **test-planning**:
 ```
 
 test-planning will:
-1. Classify each implementation issue by layer (core / boundary / shell)
-2. Pick the right testing strategy per layer
-3. Create companion test issues batched by layer and phase
-4. Gate next-phase issues on test completion
+1. Classify each implementation issue by layer (core / boundary / shell / operational)
+2. Pick the right testing strategy per layer, including smoke/E2E and live-contract checks
+3. Require log/telemetry assertions where debugging or autonomous self-checking depends on them
+4. Create companion test issues batched by layer and phase
+5. Gate next-phase issues on test completion when the risk warrants it
 
 **When to call it:**
 - Always after creating an epic with 3+ implementation tasks
+- When creating any agent/workflow/devops/deploy/hook/MCP task that needs smoke/E2E evidence
+- Inside a specialist chain after implementation when the executor/debugger discovered what actually changed and tests now need to be written or corrected
 - When closing an implementation issue (test-planning checks for gaps)
 - When you realize tests weren't planned upfront
 
@@ -387,6 +415,7 @@ test-planning will:
 - Core layer: "transforms", "computes", "parses", "validates", no HTTP/DB/filesystem
 - Boundary layer: "API", "endpoint", "client", "query", "fetch", URLs, ports
 - Shell layer: "CLI command", "subcommand", "orchestrates", "wires together"
+- Operational layer: "deploy", "hook", "agent chain", "devops", "telemetry", "metrics", "logs", "runbook", "health check"
 
 ---
 
@@ -495,7 +524,7 @@ Before presenting the plan to the user:
 - [ ] No task is more than "one session" of work (split if needed)
 - [ ] GitNexus evidence captured (query/context/impact) or fallback path explicitly stated
 - [ ] If refactor scope exists, rename/extract safety checks were included in plan
-- [ ] test-planning was invoked (or scheduled as next step)
+- [ ] test-planning was invoked (or scheduled as next step), including smoke/E2E and log/telemetry requirements
 - [ ] First implementation issue is ready to claim
 
 If any issue description is empty or just restates the title — it's not ready.
