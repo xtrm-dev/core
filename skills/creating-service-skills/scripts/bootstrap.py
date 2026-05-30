@@ -251,9 +251,21 @@ if __name__ == "__main__":
         print(f"Unknown command: {command}")
         sys.exit(1)
 
-def run_gitnexus_json(args: list[str], timeout: float = 2.0) -> dict[str, Any] | list[Any] | None:
+def _gitnexus_repo_name(project_root: str | None = None) -> str:
+    root = Path(project_root or get_project_root())
+    return os.environ.get("GITNEXUS_REPO") or root.name
+
+
+def _gitnexus_tool_name(args: list[str]) -> str | None:
+    return args[0] if args and args[0] in {"detect_changes", "impact", "query", "context"} else None
+
+
+def run_gitnexus_json(args: list[str], timeout: float = 2.0, repo_name: str | None = None) -> dict[str, Any] | list[Any] | None:
     try:
         cmd = ["npx", "gitnexus", *args]
+        tool_name = _gitnexus_tool_name(args)
+        if tool_name and "--repo" not in args:
+            cmd.extend(["--repo", repo_name or _gitnexus_repo_name()])
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     except Exception:
         return None
@@ -268,16 +280,11 @@ def run_gitnexus_json(args: list[str], timeout: float = 2.0) -> dict[str, Any] |
         return {"output": stdout}
 
 
-def _gitnexus_repo_name(project_root: str | None = None) -> str:
-    root = Path(project_root or get_project_root())
-    return root.name
-
-
 def is_gitnexus_available(timeout: float = 2.0) -> tuple[bool, str]:
     if os.environ.get("GITNEXUS_DISABLE"):
         return False, "disabled by GITNEXUS_DISABLE"
     try:
-        probe = run_gitnexus_json(["detect_changes", "--scope", "unstaged", "--repo", _gitnexus_repo_name()], timeout=timeout)
+        probe = run_gitnexus_json(["detect_changes", "--scope", "unstaged"], timeout=timeout)
     except Exception as exc:
         return False, str(exc)
     if probe is None:
