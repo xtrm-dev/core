@@ -40,7 +40,7 @@
       "error_message": "Significant refactor of ",
       "file": ".xtrm/memory.md",
       "root_cause": "7 lines replaced/restructured",
-      "fix": "Rewrote 11→13 lines (7 removed)",
+      "fix": "Rewrote 11\u219213 lines (7 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -719,6 +719,24 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-05-27T17:10:00Z"
+    },
+    {
+      "id": "bug-039",
+      "timestamp": "2026-05-30T00:00:00Z",
+      "error_message": "gitnexus enrichment never runs: detect_changes called with appended --json (rejected by gitnexus 1.6.4: \"unknown option '--json'\") and without --repo (shared multi-repo index requires it). run_gitnexus_json returns None -> is_gitnexus_available always False -> every drift scan silently falls back to mtime-only.",
+      "file": "skills/updating-service-skills/scripts/drift_detector.py, skills/creating-service-skills/scripts/bootstrap.py",
+      "root_cause": "gitnexus CLI surface changed (v1.6.4): detect_changes has no --json flag and requires --repo in a multi-repo global index. Scripts written against an older CLI contract.",
+      "fix": "PENDING (bead xtrm-tkqjn.2): drop --json, pass --repo <name>, use --scope compare --base-ref <last_sync_ref>; parse human output or use structured/MCP path. detect_changes default output is human text in 1.6.4.",
+      "tags": [
+        "gitnexus",
+        "drift-detector",
+        "service-skills",
+        "cli-drift",
+        "silent-fallback"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-30T00:00:00Z"
     }
   ]
 }
