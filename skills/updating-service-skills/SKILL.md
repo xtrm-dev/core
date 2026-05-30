@@ -42,11 +42,33 @@ Use '/updating-service-skills' to sync the Database Expert documentation.
 
 ## Manual Sync Process
 
-### Step 1 — Scan for all drift
+> **Cadence:** the automatic sync pipeline runs **post-merge on master only** (not on
+> feature-branch merges) — that is the single canonical point where the code is final.
+> Drift is measured semantically since the service's `last_sync_ref`, not by file mtime alone.
+
+### Step 1 — Scan for all drift (gitnexus-default)
 
 ```bash
 python3 "$CLAUDE_PROJECT_DIR/.claude/skills/updating-service-skills/scripts/drift_detector.py" scan
 ```
+
+`scan` uses **gitnexus by default**: a cheap mtime walk pre-filters candidates, then a
+committed-range gitnexus `compare` (`last_sync_ref..HEAD`) tiers each drift. Every line
+carries explicit provenance — **read the tier before doing any work**:
+
+```
+Found 1 drifted service(s):
+  db-expert: src/db/users.ts (last sync: 2026-05-01T..Z)
+    gitnexus_status=ok tier_source=gitnexus tier=high symbols=… processes=… cross_territory=…
+```
+
+- `tier_source=gitnexus tier=cosmetic` → no semantic change; **fast-path to
+  audited-and-unchanged**, just re-`sync`. Do not rewrite prose.
+- `tier=medium|high` → real change; proceed to triage below.
+- `tier_source=mtime` / `gitnexus_status=absent|no_ref|cli_error` → the graph could not
+  rule on it (no index / no `last_sync_ref` / CLI error). `tier=unknown` means **fall back
+  to manual inspection** — the fallback is visible, never silent. (`--no-gitnexus` forces
+  mtime-only.)
 
 ### Step 2 — Read the current skill
 
@@ -54,23 +76,44 @@ python3 "$CLAUDE_PROJECT_DIR/.claude/skills/updating-service-skills/scripts/drif
 Read: .claude/skills/<service-id>/SKILL.md
 ```
 
-### Step 3 — Analyze changes using Serena tools
+The skill's section structure is defined by the canonical contract
+`creating-service-skills/references/service_skill_contract.json` (SSOT). If the file
+predates the devops sections (no `Cross-Service Health Check` / `Failure Modes` /
+`Deploy & Runbook`), run the **migrator** first to add the missing skeleton without
+touching human content:
 
-Use Serena LSP tools (not raw file reads) to understand what changed:
+```bash
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/updating-service-skills/scripts/skill_migrator.py" \
+  .claude/skills/<service-id>/SKILL.md
+```
+
+It inserts missing canonical sections in contract order, preserves the
+`<!-- SEMANTIC_START/END -->` block byte-for-byte, and is idempotent.
+
+### Step 3 — Triage semantically with gitnexus first
+
+Lead with the graph, not raw file reads. Use the tier/symbols/processes from Step 1, then
+confirm with gitnexus and only drop to Serena for body-level detail:
 
 ```
-get_symbols_overview(<modified-file>, depth=1)
-find_symbol(<changed-function>, include_body=True)
-search_for_pattern("<new-pattern>")
+gitnexus detect_changes --scope compare --base-ref <last_sync_ref> --repo <name>   # what changed
+gitnexus impact <symbol> --direction upstream                                       # blast radius
+gitnexus context <symbol>                                                           # callers/callees/flows
+# then, only if needed:
+serena find_symbol(<changed-function>, include_body=True)
 ```
+
+Decide whether the SKILL.md text **contradicts** current code. Drift is a trigger, not a
+verdict — either rewrite the affected section or justify leaving it (cite the cosmetic tier).
 
 ### Step 4 — Update the skill documentation
 
-- Add new patterns or conventions discovered
-- Update Failure Modes table if new exception handlers added
-- Update log patterns in `scripts/log_hunter.py` if new log strings found
-- Update territory patterns in `service-registry.json` if scope expanded
-- Preserve `<!-- SEMANTIC_START --> ... <!-- SEMANTIC_END -->` blocks
+- Update the **Failure Modes** (symptom/cause/fix) table when new exception handlers appear.
+- Refresh **Data Flows** from the gitnexus process/query graph when producer→sink paths change.
+- Update **Cross-Service Health Check** / **Deploy & Runbook** when ops surface changes.
+- Update log patterns in `scripts/log_hunter.py` if new log strings found.
+- Update `territory` / sync fields in `service-registry.json` if scope expanded.
+- **Preserve `<!-- SEMANTIC_START --> ... <!-- SEMANTIC_END -->` blocks verbatim.**
 
 ### Step 5 — Mark as synced
 
@@ -79,26 +122,29 @@ python3 "$CLAUDE_PROJECT_DIR/.claude/skills/updating-service-skills/scripts/drif
   sync <service-id>
 ```
 
+`sync` stamps both `last_sync` (timestamp) and `last_sync_ref` (current `HEAD`) so the next
+`scan` measures the committed range since this point.
+
 ---
 
 ## Drift Scenarios
 
 ### New error pattern added to codebase
 
-1. `search_for_pattern("raise.*New.*Error|logger.error.*new")` to find it
+1. `gitnexus detect_changes --scope compare --base-ref <last_sync_ref> --repo <name>` to see the changed symbols, then `gitnexus context <handler>` for the flow
 2. Add to `scripts/log_hunter.py` PATTERNS list with correct severity
-3. Update Troubleshooting table in SKILL.md
+3. Update the **Failure Modes** (symptom/cause/fix) table in SKILL.md
 
 ### Territory expanded (new directory added)
 
 1. Check if current glob patterns in `service-registry.json` cover new files
 2. If not, update `territory` array in `service-registry.json`
-3. Sync timestamp
+3. `sync` (re-stamps `last_sync` + `last_sync_ref`)
 
 ### Major refactor changes conventions
 
-1. `get_symbols_overview` on all changed files
-2. Rewrite relevant Guidelines section in SKILL.md
+1. `gitnexus impact <symbol> --direction upstream` to scope the blast radius; `get_symbols_overview` only on the files it flags
+2. Rewrite the relevant SKILL.md sections (Architecture / Data Flows)
 3. Update health_probe.py if table structure or ports changed
 
 ---
