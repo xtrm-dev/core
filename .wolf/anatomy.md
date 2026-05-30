@@ -1289,3 +1289,4 @@
 > Manual note 2026-05-19: `packages/pi-extensions/extensions/sp-terminal-overlay/index.ts` makes `/sp-ps` and `/xtrm-ps` snapshot-only by stripping `--follow`/`-f`; `/sp-feed` remains streaming.
 > Manual note 2026-05-21: CHANGELOG.md and docs/pi-extensions.md document @jaggerxtrm/pi-extensions 0.7.22/0.7.23 serena-pool release and follow-up cleanup/tracing.
 > Manual note 2026-05-21: xtrm-ui local marker experiment uses `›` for tool-row summaries in format.ts/index.ts; Pi agent npm store installed from packages/pi-extensions for testing.
+> Manual note 2026-05-30: planning/test-planning skills now require planner-authored logging/telemetry contracts plus smoke/E2E validation contracts for agent/workflow/devops changes.
