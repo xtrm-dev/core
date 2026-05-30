@@ -60,14 +60,32 @@ def main() -> None:
 
     for service_id, info in services.items():
         territories = ", ".join(info.get("territory", [])) or "—"
+        synced = info.get("last_sync", "never")
+        sync_ref = info.get("last_sync_ref", "")
+        freshness = synced if not sync_ref else f"{synced} @ {sync_ref[:8]}"
         print(f"\n[{service_id}]")
         print(f"  Container  : {info.get('container', 'unknown')}")
         print(f"  Territory  : {territories}")
         print(f"  Skill      : {info.get('skill_path', 'unknown')}")
+        print(f"  Last sync  : {freshness}")
         print(f"  Description: {info.get('description', '—')}")
 
     print("\n" + "─" * 60)
     print("Map the task description to the service(s) above, then load their skills.")
+
+    # GitNexus is the graph layer that turns territory globs into real ownership:
+    # use it to confirm which service owns an execution flow before routing, and to
+    # see blast radius across services. Registry globs are the fallback when absent.
+    gitnexus_present = any(
+        (parent / ".gitnexus").exists()
+        for parent in [registry_path.parent, *registry_path.parents]
+    )
+    if gitnexus_present:
+        print("GitNexus index detected — refine routing with the graph:")
+        print('  gitnexus query "<task concept>" --repo <name>     # which flow/service owns this')
+        print("  gitnexus impact <symbol> --direction upstream      # cross-service blast radius")
+    else:
+        print("No GitNexus index — routing by territory globs only (graph refinement unavailable).")
 
 
 if __name__ == "__main__":
