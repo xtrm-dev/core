@@ -177,6 +177,39 @@ def install_git_hooks(project_root: Path) -> None:
     print(f"{GREEN}  ✓{NC} activated in .git/hooks/")
 
 
+def migrate_existing_skills(project_root: Path) -> None:
+    """Upgrade already-installed per-service SKILL.md files to the current canonical
+    section set (adds missing devops headings in contract order, preserves the
+    SEMANTIC block, idempotent). Safe no-op when nothing needs upgrading."""
+    print("\n── Migrate existing skills ─────────────")
+    migrator = project_root / ".claude" / "skills" / "updating-service-skills" / "scripts" / "skill_migrator.py"
+    registry = project_root / ".claude" / "skills" / "service-registry.json"
+    if not migrator.exists() or not registry.exists():
+        print(f"{YELLOW}  ○{NC} nothing to migrate (no registry or migrator)")
+        return
+    try:
+        services = json.loads(registry.read_text(encoding="utf-8")).get("services", {})
+    except json.JSONDecodeError:
+        print(f"{YELLOW}  ○{NC} registry malformed; skipping migration")
+        return
+    changed = 0
+    for service_id, info in services.items():
+        skill_rel = info.get("skill_path")
+        if not skill_rel:
+            continue
+        skill_md = project_root / skill_rel
+        if not skill_md.exists():
+            continue
+        r = subprocess.run(["python3", str(migrator), str(skill_md)],
+                           capture_output=True, text=True, check=False)
+        # migrator prints "migrated: <path>" when it added sections, "unchanged: <path>" otherwise
+        if r.returncode == 0 and r.stdout.strip().startswith("migrated:"):
+            changed += 1
+            print(f"{GREEN}  ✓{NC} upgraded {service_id} → devops sections")
+    if changed == 0:
+        print(f"{GREEN}  ✓{NC} all service skills already current")
+
+
 def main() -> None:
     project_root = get_project_root()
     print(f"Installing into: {project_root}")
@@ -184,6 +217,7 @@ def main() -> None:
     install_skills(project_root)
     install_settings(project_root)
     install_git_hooks(project_root)
+    migrate_existing_skills(project_root)
 
     print(f"\n{GREEN}Done.{NC}")
     print(f"  Hooks active: SessionStart (catalog) · PreToolUse (skill activator) · PostToolUse (drift) · pre-commit · pre-push")
