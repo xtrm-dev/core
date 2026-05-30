@@ -50,7 +50,7 @@
       "source": "devops-required"
     },
     {
-      "heading": "[SEMANTIC] Deep Dive",
+      "heading": "Semantic Deep Dive (Human/Agent Refined)",
       "required": true,
       "source": "semantic"
     },
@@ -66,9 +66,10 @@
     }
   ],
   "semantic_marker": {
-    "marker": "[SEMANTIC]",
-    "meaning": "Section content is agent-refined, not scaffold-derived",
-    "placement": "heading-prefix"
+    "start_marker": "<!-- SEMANTIC_START -->",
+    "end_marker": "<!-- SEMANTIC_END -->",
+    "region_heading": "Semantic Deep Dive (Human/Agent Refined)",
+    "preservation": "content between start_marker and end_marker is preserved verbatim across scaffold regeneration, drift sync, and migration (.12)"
   },
   "heading_rules": {
     "canonical_order": true,
