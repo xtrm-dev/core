@@ -177,15 +177,11 @@ Classify before writing scripts. The service type determines which scripts to wr
         └── state_inspector.py      # Read state file, compute lag
 ```
 
-Agent mirrors — always sync after creating or updating skills:
-
-```bash
-for d in .claude/skills/my-*/; do
-  svc=$(basename "$d")
-  cp -r "$d" ".agent/skills/$svc/"
-  cp -r "$d" ".gemini/skills/$svc/"
-done
-```
+> **Runtime views are managed, not hand-synced.** Per-runtime skill views
+> (`.claude/skills`, `.agent/skills`, `.gemini/skills`, `.qwen/skills`) are derived
+> from `.xtrm/skills/default` + `.xtrm/skills/user/packs` and rebuilt by
+> `xt update --apply` (or `xt init`). Never `cp` skills into them by hand — that
+> drifts from what the materializer produces.
 
 ---
 
@@ -230,7 +226,6 @@ A skill is **complete** (not draft) when all of the following are true:
 - [ ] At least one specialist script exists if the service has unique inspectable state
 - [ ] The Troubleshooting table has ≥5 rows based on real failure modes
 - [ ] All CLI commands in SKILL.md are verified against the actual docker-compose config
-- [ ] Scripts have been synced to `.agent/skills/` and `.gemini/skills/` mirrors
 
 ---
 
@@ -279,6 +274,5 @@ Do not duplicate or reinterpret the section contract in prose. Read `references/
 | Use port 5432 in host scripts | Container-internal port is unreachable from host; scripts silently hang |
 | Write `health_probe.py` without fix commands | Agent sees a failure but has no recovery path |
 | Leave `[PENDING RESEARCH]` markers | The skill is unusable — an agent acting on incomplete info may apply wrong fixes |
-| Forget to sync to `.agent/` and `.gemini/` | Other agent runtimes use stale or missing skills |
 | Use `r"ERROR"` as a log pattern | Matches variable names, comments, thousands of false positives |
 | Hardcode table names without verifying | `SELECT tablename FROM pg_tables WHERE schemaname='public'` first |
