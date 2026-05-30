@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """
-Cataloger — SessionStart hook for using-service-skills.
+Cataloger — SessionStart hook for the service-skills system.
 
-Reads .claude/skills/service-registry.json and prints a lightweight XML
-service catalog block (~150 tokens) to stdout. The SessionStart hook
-injects this as additional context so Claude knows which expert personas
-are available without loading full skill bodies (Progressive Disclosure).
+Reads the service registry (resolved via bootstrap — under .xtrm packs, with a
+legacy Claude-view fallback) and prints a lightweight XML service catalog block
+(~150 tokens) to stdout. The SessionStart hook injects this as additional
+context so Claude knows which expert personas are available without loading full
+skill bodies (Progressive Disclosure).
 
-Configured in .claude/settings.json:
+Configured in .claude/settings.json (the command path is the Claude-Code VIEW —
+$CLAUDE_PROJECT_DIR/.claude/skills resolves through the active symlink to the
+machinery skill):
   "SessionStart": [{"hooks": [{"type": "command",
-    "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/skills/using-service-skills/scripts/cataloger.py\\""}]}]
+    "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/cataloger.py\\""}]}]
 
-Output format:
+Output format (per-service Path resolves under .xtrm packs, not .claude/skills):
   <project_service_catalog>
   Available expert personas:
-  - db-expert: SQL & schema expert (Path: .claude/skills/db-expert/SKILL.md)
+  - db-expert: SQL & schema expert (Path: .xtrm/skills/user/packs/<pack>/db-expert/SKILL.md)
   </project_service_catalog>
   <instruction>To activate an expert, read its SKILL.md from the provided path.</instruction>
 """
@@ -22,11 +25,10 @@ Output format:
 import sys
 from pathlib import Path
 
-# Bootstrap lives in creating-service-skills — shared utility
-BOOTSTRAP_DIR = Path(__file__).parent.parent.parent / "creating-service-skills" / "scripts"
-sys.path.insert(0, str(BOOTSTRAP_DIR))
+# bootstrap.py is a sibling in this consolidated scripts/ dir (no cross-skill hop).
+sys.path.insert(0, str(Path(__file__).parent))
 
-from bootstrap import RootResolutionError, list_services  # noqa: E402
+from bootstrap import RootResolutionError, get_service_skill_path_str, list_services  # noqa: E402
 
 
 def generate_catalog() -> str:
@@ -51,7 +53,11 @@ def generate_catalog() -> str:
 
     for service_id, data in sorted(services.items()):
         description = data.get("description", data.get("name", service_id))
-        skill_path = data.get("skill_path", f".claude/skills/{service_id}/SKILL.md")
+        # Registry skill_path is the SSOT; fallback resolves under .xtrm.
+        try:
+            skill_path = data.get("skill_path") or get_service_skill_path_str(service_id)
+        except RootResolutionError:
+            skill_path = data.get("skill_path", f"{service_id}/SKILL.md")
         lines.append(f"- {service_id}: {description} (Path: {skill_path})")
 
     lines.append("</project_service_catalog>")

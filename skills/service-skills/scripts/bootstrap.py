@@ -5,10 +5,16 @@ Bootstrap module for Service Skill Trinity.
 Provides root-discovery and registry CRUD operations shared across all
 service-skill workflow scripts. All scripts in the trinity import from here.
 
+Path model: the canonical home for service skills + registry is under .xtrm
+(``.xtrm/skills/user/packs/<pack>/...``). ``.claude/skills`` is a Claude-Code
+VIEW only — kept solely as a legacy READ fallback for pre-migration installs.
+No code path EMITS a ``.claude/skills`` path for cross-tool consumption; use the
+resolver helpers (get_service_skill_dir / get_service_skill_path_str) instead.
+
 Registry resolution order:
   1) $SERVICE_REGISTRY_PATH override
   2) <root>/service-registry.json
-  3) <root>/.claude/skills/service-registry.json
+  3) <root>/.claude/skills/service-registry.json   (legacy Claude-view read; back-compat)
   4) <root>/.xtrm/skills/user/packs/*/service-registry.json
 
 For pack glob, first hit wins after disambiguation:
@@ -105,6 +111,38 @@ def get_pack_path(project_root: str | None = None) -> Path | None:
     return None
 
 
+def get_service_skill_dir(service_id: str, project_root: str | None = None) -> Path:
+    """Resolve a service's skill-package directory (absolute, under .xtrm — never .claude).
+
+    Single source of truth for *where a service skill lives*. Today that is
+    ``<pack>/<service_id>`` under ``.xtrm/skills/user/packs``. Child .4 (layout
+    migrator) re-points this to ``<pack>/service-skills/services/<service_id>``;
+    every emitter (scaffolder bodies, activator/cataloger fallbacks, registry
+    skill_path) routes through here, so they all follow automatically — no
+    emitter hardcodes a path.
+    """
+    root: str = project_root if project_root is not None else (os.environ.get("CLAUDE_PROJECT_DIR") or get_project_root())
+    pack = get_pack_path(root)
+    base = pack if pack is not None else _packs_root(root)
+    return base / service_id
+
+
+def get_service_skill_path_str(service_id: str, project_root: str | None = None) -> str:
+    """Project-relative POSIX path to a service's SKILL.md.
+
+    Used for the registry ``skill_path`` and for injected "Read <path>" prompts.
+    Resolves under ``.xtrm``; falls back to an absolute path only if the skill
+    dir is somehow outside the project root. Never emits ``.claude/skills``.
+    """
+    root: str = project_root if project_root is not None else (os.environ.get("CLAUDE_PROJECT_DIR") or get_project_root())
+    skill_md = get_service_skill_dir(service_id, root) / "SKILL.md"
+    try:
+        rel = skill_md.resolve(strict=False).relative_to(Path(root).resolve())
+        return str(rel).replace(os.sep, "/")
+    except ValueError:
+        return str(skill_md).replace(os.sep, "/")
+
+
 def _select_pack_registry(pack_registries: list[Path], project_root: str) -> Path:
     active_pack = get_pack_path(project_root)
     if active_pack is not None:
@@ -136,6 +174,9 @@ def get_registry_path(project_root: str | None = None) -> Path:
     if preferred.exists():
         return preferred
 
+    # legacy Claude-view read: only honored if a pre-migration registry still
+    # sits here. New installs live under .xtrm packs (glob below). Read-only
+    # back-compat — nothing writes here.
     legacy = root / ".claude" / "skills" / "service-registry.json"
     if legacy.exists():
         return legacy

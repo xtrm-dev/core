@@ -2,6 +2,8 @@
 # Updating Service Skills
 
 > Detailed **update / drift-sync** flow for the `service-skills` router.
+>
+> **Path model:** `.claude/skills/<service>/SKILL.md` shown below is the **Claude-Code view** (a symlink). The canonical home for per-service skills is under `.xtrm/skills/user/packs/<pack>/` — scripts resolve it via `bootstrap.get_service_skill_path_str`. Machinery scripts live at `.claude/skills/service-skills/scripts/` (the active view of this skill).
 
 ## Role: The Librarian
 
@@ -35,7 +37,7 @@ Use '/updating-service-skills' to sync the Database Expert documentation.
 ### Step 1 — Scan for all drift (gitnexus-default)
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/updating-service-skills/scripts/drift_detector.py" scan
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/drift_detector.py" scan
 ```
 
 `scan` uses **gitnexus by default**: a cheap mtime walk pre-filters candidates, then a
@@ -69,7 +71,7 @@ predates the devops sections (no `Cross-Service Health Check` / `Failure Modes` 
 touching human content:
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/updating-service-skills/scripts/skill_migrator.py" \
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/skill_migrator.py" \
   .claude/skills/<service-id>/SKILL.md
 ```
 
@@ -104,7 +106,7 @@ verdict — either rewrite the affected section or justify leaving it (cite the 
 ### Step 5 — Mark as synced
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/updating-service-skills/scripts/drift_detector.py" \
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/drift_detector.py" \
   sync <service-id>
 ```
 

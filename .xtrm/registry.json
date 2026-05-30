@@ -708,23 +708,23 @@
           "version": "0.8.1"
         },
         "service-skills/install/install-service-skills.py": {
-          "hash": "3b15b589cf7182b94ae521482cac64a6c1ffac0d7493fe6c7c6d67f207a94790",
+          "hash": "a2e525b09885cfaa4a51aa9528fcf32425a94c3b2c424fe7cf69ebf038959806",
           "version": "0.8.1"
         },
         "service-skills/install/service-skills-readme.md": {
-          "hash": "b6c8cb3872cf3a35558b00e5cc042ce7e03faa06ed27739cc576db741bc50935",
+          "hash": "7b38afa0c855839fed2af1a607c5b891f00e8cf7c420711ce4dfe5a2a8732925",
           "version": "0.8.1"
         },
         "service-skills/install/settings.json": {
-          "hash": "c5a9cb6df7f77b7a12a98663971cccdae0940a477e5023933afb7bb38b7e3621",
+          "hash": "dd832d6f054bda8e82b389b257d923944761f4c28d09ba8b28c7e7196784a657",
           "version": "0.8.1"
         },
         "service-skills/references/creating.md": {
-          "hash": "a63854ebb8474ab4e929a56d6ec3cf6de2259534722ff225d8c646a141e92a97",
+          "hash": "a83beb006a82fcceb7b9dd1e604010006af6af34660bf0d910d286d9e41e365b",
           "version": "0.8.1"
         },
         "service-skills/references/routing.md": {
-          "hash": "29cb67a259344dfd3b5cae9a55b50d4c72bde2d25cbfd45c88702a0064095a91",
+          "hash": "df5cb6072d9aaf439c33af3cacb14347dec6a09d98822a4ffad7c74d4c842c54",
           "version": "0.8.1"
         },
         "service-skills/references/script_quality_standards.md": {
@@ -740,19 +740,19 @@
           "version": "0.8.1"
         },
         "service-skills/references/updating.md": {
-          "hash": "1818fb9411a82f8fd34aa0300378cf28718171547f54f4131dad55bdb21e8767",
+          "hash": "d3e47581fd82ce2b360c39d7d212850ec4d89460a59d95f382d531cc93289468",
           "version": "0.8.1"
         },
         "service-skills/references/using.md": {
-          "hash": "0782fede47b663839834c6e2f7ce151e1ea9ac9ef59c8c01254c523812d86783",
+          "hash": "9f35e88d28117649f5ffb1a92c309d4249005fac14ed29fa6054d49e7b72ef17",
           "version": "0.8.1"
         },
         "service-skills/scripts/bootstrap.py": {
-          "hash": "18cb2e3548ff1cafa96ae28210023fb20a67255a09efe947b4a739d844ecf2a8",
+          "hash": "eaa76fe09670ef8e8f5c40dbaa8c55f607522be46f338d9cc5f40fe22024a1df",
           "version": "0.8.1"
         },
         "service-skills/scripts/cataloger.py": {
-          "hash": "99e6784bb682598a38dfdaea2137dfa2091c977ca127dbb3f4be9523d71868e8",
+          "hash": "9728570197cb260832a77c7b9775cf38bec285362e0e0734b45890b33c0d28fb",
           "version": "0.8.1"
         },
         "service-skills/scripts/deep_dive.py": {
@@ -760,11 +760,11 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/drift_detector.py": {
-          "hash": "ff51d88765751ce2190e0021b0836e390bec770aa2bb702317bdc8268a7f60b4",
+          "hash": "1bf89bfe4ce1b1f6d251504683935c7caf30828d94c7c1afd271b9228d257632",
           "version": "0.8.1"
         },
         "service-skills/scripts/scaffolder.py": {
-          "hash": "78b553d5da5d81f318d7ede5686b8a026ea56d9c924c46d5311e3679e3856f8e",
+          "hash": "6f63b7e932ed41fd611f3b6e414ab001f67e0b949c879eea73de2be6b17d816b",
           "version": "0.8.1"
         },
         "service-skills/scripts/scope.py": {
@@ -772,7 +772,7 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/skill_activator.py": {
-          "hash": "0e0dc7f15357580f0914f1dde7b00dbc3f757b16dba4623d9c7d8b303815b267",
+          "hash": "15ac29dcb27dbe996a86aed83ac68d2c28bbc7f7d2b0abade9bfc239871676d4",
           "version": "0.8.1"
         },
         "service-skills/scripts/skill_migrator.py": {

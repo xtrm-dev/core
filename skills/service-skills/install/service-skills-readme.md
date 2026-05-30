@@ -1,5 +1,7 @@
 # Service Skills
 
+> **Path model:** the canonical home for per-service skills is `.xtrm/skills/user/packs/<pack>/<service>/`; `.claude/skills/<service>/` is a Claude-Code **view** (symlink). Scripts resolve real paths via `bootstrap` (`get_service_skill_path_str`) — they never hardcode `.claude/skills`. The machinery skill itself is at `.claude/skills/service-skills/` (active view) ↔ `.xtrm/skills/default/service-skills/`.
+
 A system that gives Claude persistent, project-specific operational knowledge about your Docker services. Instead of re-explaining your architecture every session, each service has a dedicated skill package that Claude loads on demand.
 
 ---
@@ -66,7 +68,7 @@ The skill runs a **mandatory three-phase workflow**:
 ### Phase 1 — Automated Skeleton
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/creating-service-skills/scripts/scaffolder.py" \
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/scaffolder.py" \
   create <service-id> <territory-path> "<description>"
 ```
 
@@ -180,13 +182,13 @@ To sync:
 To mark a service as synced after manual update:
 
 ```bash
-python3 .claude/skills/updating-service-skills/scripts/drift_detector.py sync <service-id>
+python3 .claude/skills/service-skills/scripts/drift_detector.py sync <service-id>
 ```
 
 To scan all services for drift:
 
 ```bash
-python3 .claude/skills/updating-service-skills/scripts/drift_detector.py scan
+python3 .claude/skills/service-skills/scripts/drift_detector.py scan
 ```
 
 ---
