@@ -118,7 +118,7 @@ def _resolve_base_ref(base_ref: str | None, project_root: str) -> str | None:
 def _gitnexus_compare(base_ref: str | None, repo_name: str, timeout: float = 2.0) -> tuple[str, list[str]]:
     if not base_ref:
         return "no_ref", []
-    output = run_gitnexus_json(["detect_changes", "--scope", "compare", "--base-ref", base_ref, "--repo", repo_name], timeout=timeout)
+    output = run_gitnexus_json(["detect_changes", "--scope", "compare", "--base-ref", base_ref], timeout, repo_name)
     if output is None:
         return "cli_error", []
     lines = _normalize_detect_output(output)

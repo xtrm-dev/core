@@ -33,7 +33,7 @@ def test_scan_committed_change_uses_gitnexus_and_sets_tier_source(tmp_path: Path
     file_path.write_text("alpha drift", encoding="utf-8")
     file_path.touch()
     monkeypatch.setattr(drift_detector, "is_gitnexus_available", lambda timeout=2.0: (True, "ok"))
-    monkeypatch.setattr(drift_detector, "run_gitnexus_json", lambda args, timeout=2.0: {"output": f"changed: {file_path.relative_to(tmp_path)}"})
+    monkeypatch.setattr(drift_detector, "run_gitnexus_json", lambda args, timeout=2.0, repo_name=None: {"output": f"changed: {file_path.relative_to(tmp_path)}"})
     monkeypatch.setattr(drift_detector, "_git_diff_files", lambda project_root, base_ref: [str(file_path.relative_to(tmp_path))])
     result = drift_detector.scan_drift(str(tmp_path), use_gitnexus=True)
     assert result[0]["gitnexus_status"] == "ok"
@@ -88,7 +88,7 @@ def test_scan_cli_error_labels_fallback(tmp_path: Path, monkeypatch):
     file_path.write_text("alpha drift", encoding="utf-8")
     file_path.touch()
     monkeypatch.setattr(drift_detector, "is_gitnexus_available", lambda timeout=2.0: (True, "ok"))
-    monkeypatch.setattr(drift_detector, "run_gitnexus_json", lambda args, timeout=2.0: None)
+    monkeypatch.setattr(drift_detector, "run_gitnexus_json", lambda args, timeout=2.0, repo_name=None: None)
     result = drift_detector.scan_drift(str(tmp_path), use_gitnexus=True)
     assert result[0]["gitnexus_status"] == "cli_error"
     assert result[0]["tier_source"] == "mtime"
