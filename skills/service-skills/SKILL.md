@@ -119,6 +119,26 @@ All machinery scripts live together under `scripts/` (no cross-skill imports):
 Install machinery (hooks + settings + git-hooks) lives under `install/`; see
 [install/service-skills-readme.md](install/service-skills-readme.md).
 
+`umbrella_generator.py` renders the per-repo umbrella (below).
+
+---
+
+## Per-Repo Umbrella (generated)
+
+Each repo gets **one** umbrella skill — `name: <repo>-services` — at
+`.xtrm/skills/user/packs/<pack>/service-skills/SKILL.md`. It is **generated from
+`service-registry.json`** (service table + cross-service health + navigation) so it
+can never drift from the registered services. The human cross-service narrative lives
+in a `<!-- SEMANTIC_START -->` / `<!-- SEMANTIC_END -->` block preserved verbatim across
+regeneration — edit only there.
+
+```bash
+python3 scripts/umbrella_generator.py <repo-name>   # regenerate (idempotent)
+```
+
+`install-service-skills.py` regenerates the umbrella on install/upgrade. Load the
+umbrella first when a task spans services; it links each per-service skill.
+
 ---
 
 ## Installation
