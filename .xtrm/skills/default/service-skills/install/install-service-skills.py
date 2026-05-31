@@ -28,9 +28,10 @@ GREEN  = "\033[0;32m"
 YELLOW = "\033[1;33m"
 NC     = "\033[0m"
 
-MARKER_DOC       = "# [jaggers] doc-reminder"
-MARKER_STALENESS = "# [jaggers] skill-staleness"
-MARKER_CHAIN     = "# [jaggers] chain-githooks"
+MARKER_DOC        = "# [jaggers] doc-reminder"
+MARKER_STALENESS  = "# [jaggers] skill-staleness"
+MARKER_DRIFT_SWEEP = "# [jaggers] drift-sweep"
+MARKER_CHAIN      = "# [jaggers] chain-githooks"
 
 
 def get_project_root() -> Path:
@@ -47,11 +48,13 @@ def install_git_hooks(project_root: Path) -> None:
     print("\n── Git hooks ───────────────────────────")
     doc_script      = GIT_HOOKS / "doc_reminder.py"
     staleness_script = GIT_HOOKS / "skill_staleness.py"
+    drift_script    = GIT_HOOKS / "post_merge_drift_sweep.py"
 
     pre_commit = project_root / ".githooks" / "pre-commit"
     pre_push   = project_root / ".githooks" / "pre-push"
+    post_merge = project_root / ".githooks" / "post-merge"
 
-    for hp in (pre_commit, pre_push):
+    for hp in (pre_commit, pre_push, post_merge):
         if not hp.exists():
             hp.parent.mkdir(parents=True, exist_ok=True)
             hp.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
@@ -62,6 +65,11 @@ def install_git_hooks(project_root: Path) -> None:
          f"\n{MARKER_DOC}\nif command -v python3 &>/dev/null && [ -f \"{doc_script}\" ]; then\n    python3 \"{doc_script}\" || true\nfi\n"),
         (pre_push, MARKER_STALENESS,
          f"\n{MARKER_STALENESS}\nif command -v python3 &>/dev/null && [ -f \"{staleness_script}\" ]; then\n    python3 \"{staleness_script}\" || true\nfi\n"),
+        # post-merge drift sweep (xtrm-jcmub): on a default-branch merge, scan for
+        # service-skills drift since each service's last_sync_ref and surface it +
+        # drop a pending marker. Non-blocking; the script self-gates on branch/registry.
+        (post_merge, MARKER_DRIFT_SWEEP,
+         f"\n{MARKER_DRIFT_SWEEP}\nif command -v python3 &>/dev/null && [ -f \"{drift_script}\" ]; then\n    python3 \"{drift_script}\" || true\nfi\n"),
     ]
 
     for hook_path, marker, snippet in snippets:
@@ -92,7 +100,7 @@ def install_git_hooks(project_root: Path) -> None:
 
     for hooks_dir in activation_targets:
         hooks_dir.mkdir(parents=True, exist_ok=True)
-        for name, source_hook in (("pre-commit", pre_commit), ("pre-push", pre_push)):
+        for name, source_hook in (("pre-commit", pre_commit), ("pre-push", pre_push), ("post-merge", post_merge)):
             target_hook = hooks_dir / name
             if not target_hook.exists():
                 target_hook.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
@@ -221,6 +229,15 @@ def generate_umbrellas(project_root: Path) -> None:
 
 def main() -> None:
     project_root = get_project_root()
+
+    # `--hooks-only`: wire the service-skills git hooks (incl. the post-merge drift
+    # sweep) and exit. This is the entry point `xt update`/`ensureServiceSkills` calls
+    # so the post-merge drift automation (xtrm-jcmub) auto-installs on the foolproof
+    # path, without running the full migration again.
+    if "--hooks-only" in sys.argv[1:]:
+        install_git_hooks(project_root)
+        return
+
     print(f"Installing into: {project_root}")
 
     # Skills are delivered by `xt update`; Claude hooks ship via the global

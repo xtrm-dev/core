@@ -703,12 +703,16 @@
           "hash": "90d33305dcc8fcc73bae2f9ad7390be118617743dbb38808d61710dc1662879b",
           "version": "0.8.2"
         },
+        "service-skills/install/git-hooks/post_merge_drift_sweep.py": {
+          "hash": "acffe494f6fcbdba21590f64981f1135287932bebf2d8dc439001e579bb5df37",
+          "version": "0.8.2"
+        },
         "service-skills/install/git-hooks/skill_staleness.py": {
           "hash": "39d1ac16dee329bab34a646216e2d851856a07d53f6c0f909709fe217f2ba22f",
           "version": "0.8.2"
         },
         "service-skills/install/install-service-skills.py": {
-          "hash": "3ba1449871b0847e92132ddc8e4d98d8fcde6487d0b3cef31c96e90efe078c11",
+          "hash": "7fae9df312614b019504a5a01160f2d0416b537db5871c090d478ffb71599468",
           "version": "0.8.2"
         },
         "service-skills/install/service-skills-readme.md": {
@@ -740,7 +744,7 @@
           "version": "0.8.2"
         },
         "service-skills/references/updating.md": {
-          "hash": "f96212f143ac088d526b7e86ef8559aa65b9b2b32dcde7226889ea261e71906f",
+          "hash": "52732a836de877af20213aa7093e8bda637d037c427bbacf48959e52ad2fcb28",
           "version": "0.8.2"
         },
         "service-skills/references/using.md": {

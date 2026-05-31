@@ -56901,6 +56901,7 @@ var import_node_path9 = __toESM(require("path"), 1);
 var import_fs_extra15 = __toESM(require_lib(), 1);
 var PACKS_REL = import_node_path9.default.join(".xtrm", "skills", "user", "packs");
 var MIGRATOR_REL = import_node_path9.default.join(".xtrm", "skills", "default", "service-skills", "scripts", "layout_migrator.py");
+var INSTALLER_REL = import_node_path9.default.join(".xtrm", "skills", "default", "service-skills", "install", "install-service-skills.py");
 async function packsWithRegistry(projectRoot) {
   const packsRoot = import_node_path9.default.join(projectRoot, PACKS_REL);
   if (!await import_fs_extra15.default.pathExists(packsRoot)) {
@@ -56973,7 +56974,22 @@ async function ensureServiceSkills(projectRoot, opts) {
       }
     }
   }
+  await ensurePostMergeDriftHook(projectRoot, notes);
   return { applicable: true, migratedPacks, alreadyCurrent: migratedPacks.length === 0, notes };
+}
+async function ensurePostMergeDriftHook(projectRoot, notes) {
+  const installer = import_node_path9.default.join(projectRoot, INSTALLER_REL);
+  if (!await import_fs_extra15.default.pathExists(installer)) {
+    return;
+  }
+  const run5 = (0, import_node_child_process6.spawnSync)("python3", [installer, "--hooks-only"], {
+    cwd: projectRoot,
+    encoding: "utf8",
+    env: { ...process.env, CLAUDE_PROJECT_DIR: projectRoot }
+  });
+  if (run5.status !== 0) {
+    notes.push(`service-skills: post-merge drift hook wiring skipped \u2014 ${(run5.stderr ?? "").trim() || "installer error"}`);
+  }
 }
 
 // src/core/init-verification.ts

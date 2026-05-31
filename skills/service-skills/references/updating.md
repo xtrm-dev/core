@@ -39,9 +39,20 @@ Use '/updating-service-skills' to sync the Database Expert documentation.
 
 ## Manual Sync Process
 
-> **Cadence:** the automatic sync pipeline runs **post-merge on master only** (not on
+> **Cadence:** drift is reconciled **post-merge on the default branch only** (not on
 > feature-branch merges) — that is the single canonical point where the code is final.
 > Drift is measured semantically since the service's `last_sync_ref`, not by file mtime alone.
+>
+> **Automatic backstop (xtrm-jcmub).** A managed `post-merge` git hook
+> (`post_merge_drift_sweep.py`) is wired into every service-registry repo on the
+> foolproof path (`xt update --apply` / `xt init`, via the service-skills installer's
+> `--hooks-only` step). On a default-branch merge it runs the scan below, and on drift
+> it prints a notice and drops a pending marker at `.xtrm/.service-skills-drift-pending`.
+> The hook only **surfaces** drift — it never auto-runs a model-backed specialist — so
+> reconcile by running `/updating-service-skills` (the `service-skills-sync` specialist),
+> which syncs the drifted SKILL.md and advances `last_sync_ref`. The in-session
+> PostToolUse nudge is the proactive signal; this post-merge sweep is the guaranteed
+> backstop so drift can no longer accumulate silently.
 
 ### Step 1 — Scan for all drift (gitnexus-default)
 
