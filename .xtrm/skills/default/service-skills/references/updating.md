@@ -26,6 +26,15 @@ File 'src/db/users.ts' was modified.
 Use '/updating-service-skills' to sync the Database Expert documentation.
 ```
 
+> **Hook wiring is mandatory, not optional, and automatic.** The
+> `SessionStart` (cataloger), `PreToolUse` (skill_activator) and `PostToolUse`
+> (drift_detector) hooks are the system — without them the umbrella and per-service
+> skills exist but never fire. They ship via the canonical `.xtrm/config/hooks.json`
+> and are wired into the consumer's `.claude/settings.json` automatically on every
+> `xt update --apply` (and `xt init`), idempotently. A repo that migrated to v2 but
+> whose hooks were never wired (the historical dormant-hooks failure, xtrm-0p7bp)
+> self-heals on the next `xt update --apply` — no manual settings edit required.
+
 ---
 
 ## Manual Sync Process

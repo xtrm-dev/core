@@ -156,6 +156,69 @@ export async function runClaudeRuntimeSyncPhase(opts: ClaudeRuntimeSyncOptions):
     };
 }
 
+export interface ReconcileProjectHooksResult {
+    settingsPath: string;
+    changed: boolean;
+    hooksEntries: number;
+}
+
+/**
+ * Reconcile a project's .claude/settings.json hooks section against the canonical
+ * .xtrm/config/hooks.json, idempotently.
+ *
+ * `xt update --apply` copies the canonical hooks.json into the consumer's .xtrm but
+ * skips the heavy claude-runtime-sync phase, so newly-added xtrm-managed hooks (e.g.
+ * the service-skills SessionStart/PreToolUse/PostToolUse hooks shipped in 0.8.2) never
+ * reach the consumer's settings.json and stay dormant (xtrm-0p7bp). This focused
+ * reconciler wires them on every apply: it preserves all non-hook settings keys
+ * (permissions/model/skillSuggestions/etc.), is a quiet no-op when the wired hooks
+ * already match canonical, and does NOT perform the npm-version check or global
+ * statusLine side effects that runClaudeRuntimeSyncPhase does — so it is cheap to run
+ * per-repo across a fleet update.
+ */
+export async function reconcileProjectClaudeHooks(
+    repoRoot: string,
+    opts: { dryRun?: boolean } = {},
+): Promise<ReconcileProjectHooksResult> {
+    const { dryRun = false } = opts;
+    const packageRoot = await resolvePackageRoot();
+    const hooksConfigPath = path.join(packageRoot, '.xtrm', 'config', 'hooks.json');
+    const settingsTemplatePath = path.join(packageRoot, '.xtrm', 'config', 'settings.json');
+    // repoRoot is the xt-managed project root; segments are literals — not user-controlled.
+    const settingsPath = path.join(repoRoot, '.claude', 'settings.json'); // nosemgrep
+
+    const hooksConfig = await fs.readJson(hooksConfigPath) as NativeHooksConfig;
+    const projectHooksDir = path.join(repoRoot, '.xtrm', 'hooks'); // nosemgrep
+    const generatedHooks = resolveHooksForProjectRuntime(hooksConfig.hooks ?? {}, projectHooksDir);
+    const generatedStatusLine = resolveStatusLineForProjectRuntime(hooksConfig.statusLine, projectHooksDir);
+    const hooksEntries = countHookEntries(generatedHooks);
+
+    const hasExistingSettings = await fs.pathExists(settingsPath);
+    const existingSettings = hasExistingSettings ? await readSettings(settingsPath) : {};
+    const baseSettings = hasExistingSettings ? existingSettings : await readBaseSettings(settingsTemplatePath);
+
+    // Idempotency: skip the write entirely when the wired hooks already match canonical.
+    const hooksAlreadyCurrent = hasExistingSettings
+        && JSON.stringify(existingSettings.hooks ?? {}) === JSON.stringify(generatedHooks);
+    if (hooksAlreadyCurrent) {
+        return { settingsPath, changed: false, hooksEntries };
+    }
+
+    if (dryRun) {
+        return { settingsPath, changed: true, hooksEntries };
+    }
+
+    const mergedSettings: ClaudeSettings = { ...baseSettings, hooks: generatedHooks };
+    if (generatedStatusLine && !mergedSettings.statusLine) {
+        mergedSettings.statusLine = generatedStatusLine;
+    }
+
+    await fs.ensureDir(path.dirname(settingsPath));
+    await fs.writeJson(settingsPath, mergedSettings, { spaces: 2 });
+
+    return { settingsPath, changed: true, hooksEntries };
+}
+
 /**
  * Wire ~/.xtrm/hooks/statusline.mjs into ~/.claude/settings.json as the statusLine command.
  * Runs on every Claude runtime sync (global and project-level) to keep the global setting current.

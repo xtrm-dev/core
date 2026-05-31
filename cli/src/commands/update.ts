@@ -12,6 +12,7 @@ import { ensureBeadsSharedServerEnabled, hasBeadsDir } from '../core/beads-share
 import { ensureBdAutoStagePatch, summarizeBdAutoStagePatch } from '../core/bd-auto-stage-patch.js';
 import { printDependencyMaintenanceSummary, runDependencyMaintenance, type DependencyMaintenanceSummary } from '../core/dependency-maintenance.js';
 import { ensureServiceSkills } from '../core/service-skills-ensure.js';
+import { reconcileProjectClaudeHooks } from '../core/claude-runtime-sync.js';
 
 type UpdateStatus = 'refreshed' | 'already-current' | 'failed' | 'skipped' | 'incomplete';
 
@@ -110,7 +111,16 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
         // repo that is on the OLD service layout (which xt update otherwise misses).
         const serviceSkills = await ensureServiceSkills(repoRoot, { apply: true });
 
-        if (!hasChanges && serviceSkills.alreadyCurrent) {
+        // Reconcile .claude/settings.json hooks against canonical hooks.json on every
+        // apply. runInstall is invoked with skipClaudeRuntimeSync (and is not invoked at
+        // all when no registry files drifted), so newly-added xtrm-managed hooks — e.g.
+        // the service-skills activation/cataloger/drift hooks shipped in 0.8.2 — would
+        // otherwise stay dormant in existing consumers (xtrm-0p7bp). This is idempotent:
+        // a no-op when the wired hooks already match canonical, so already-current repos
+        // self-heal without churn.
+        const hookSync = await reconcileProjectClaudeHooks(repoRoot, { dryRun: false });
+
+        if (!hasChanges && serviceSkills.alreadyCurrent && !hookSync.changed) {
             return { repo: repoRoot, status: 'already-current', maintenance: maintenancePlan };
         }
 
@@ -120,10 +130,11 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
         const serviceSkillsReason = serviceSkills.migratedPacks.length > 0
             ? `, service-skills migrated: ${serviceSkills.migratedPacks.join(',')}`
             : '';
+        const hookSyncReason = hookSync.changed ? ', claude hooks rewired' : '';
         return {
             repo: repoRoot,
             status: 'refreshed',
-            reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}${serviceSkillsReason}`,
+            reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}${serviceSkillsReason}${hookSyncReason}`,
             maintenance,
         };
     } catch (error) {

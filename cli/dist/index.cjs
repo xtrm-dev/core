@@ -38940,6 +38940,35 @@ async function runClaudeRuntimeSyncPhase(opts) {
     wroteSettings: true
   };
 }
+async function reconcileProjectClaudeHooks(repoRoot, opts = {}) {
+  const { dryRun = false } = opts;
+  const packageRoot = await resolvePackageRoot();
+  const hooksConfigPath = import_path2.default.join(packageRoot, ".xtrm", "config", "hooks.json");
+  const settingsTemplatePath = import_path2.default.join(packageRoot, ".xtrm", "config", "settings.json");
+  const settingsPath = import_path2.default.join(repoRoot, ".claude", "settings.json");
+  const hooksConfig = await import_fs_extra2.default.readJson(hooksConfigPath);
+  const projectHooksDir = import_path2.default.join(repoRoot, ".xtrm", "hooks");
+  const generatedHooks = resolveHooksForProjectRuntime(hooksConfig.hooks ?? {}, projectHooksDir);
+  const generatedStatusLine = resolveStatusLineForProjectRuntime(hooksConfig.statusLine, projectHooksDir);
+  const hooksEntries = countHookEntries(generatedHooks);
+  const hasExistingSettings = await import_fs_extra2.default.pathExists(settingsPath);
+  const existingSettings = hasExistingSettings ? await readSettings(settingsPath) : {};
+  const baseSettings = hasExistingSettings ? existingSettings : await readBaseSettings(settingsTemplatePath);
+  const hooksAlreadyCurrent = hasExistingSettings && JSON.stringify(existingSettings.hooks ?? {}) === JSON.stringify(generatedHooks);
+  if (hooksAlreadyCurrent) {
+    return { settingsPath, changed: false, hooksEntries };
+  }
+  if (dryRun) {
+    return { settingsPath, changed: true, hooksEntries };
+  }
+  const mergedSettings = { ...baseSettings, hooks: generatedHooks };
+  if (generatedStatusLine && !mergedSettings.statusLine) {
+    mergedSettings.statusLine = generatedStatusLine;
+  }
+  await import_fs_extra2.default.ensureDir(import_path2.default.dirname(settingsPath));
+  await import_fs_extra2.default.writeJson(settingsPath, mergedSettings, { spaces: 2 });
+  return { settingsPath, changed: true, hooksEntries };
+}
 async function ensureGlobalStatusLine() {
   const homeDir = import_os.default.homedir();
   const statuslineHookPath = import_path2.default.join(homeDir, ".xtrm", "hooks", "statusline.mjs");
@@ -64564,16 +64593,18 @@ async function updateRepo(repoRoot, opts) {
       });
     }
     const serviceSkills = await ensureServiceSkills(repoRoot, { apply: true });
-    if (!hasChanges && serviceSkills.alreadyCurrent) {
+    const hookSync = await reconcileProjectClaudeHooks(repoRoot, { dryRun: false });
+    if (!hasChanges && serviceSkills.alreadyCurrent && !hookSync.changed) {
       return { repo: repoRoot, status: "already-current", maintenance: maintenancePlan };
     }
     const appliedPatch = hasBeads ? await ensureBdAutoStagePatch(repoRoot, true) : bdPatch;
     const maintenance = await runDependencyMaintenance(repoRoot, true);
     const serviceSkillsReason = serviceSkills.migratedPacks.length > 0 ? `, service-skills migrated: ${serviceSkills.migratedPacks.join(",")}` : "";
+    const hookSyncReason = hookSync.changed ? ", claude hooks rewired" : "";
     return {
       repo: repoRoot,
       status: "refreshed",
-      reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}${serviceSkillsReason}`,
+      reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}${serviceSkillsReason}${hookSyncReason}`,
       maintenance
     };
   } catch (error51) {
