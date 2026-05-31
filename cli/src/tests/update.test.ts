@@ -3,13 +3,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkDriftMock, runInstallMock, assureXtManagedPiPackagesMock, resolvePackageRootMock, ensureBdAutoStagePatchMock, runDependencyMaintenanceMock } = vi.hoisted(() => ({
+const { checkDriftMock, runInstallMock, assureXtManagedPiPackagesMock, resolvePackageRootMock, ensureBdAutoStagePatchMock, runDependencyMaintenanceMock, ensureServiceSkillsMock, reconcileProjectClaudeHooksMock } = vi.hoisted(() => ({
   checkDriftMock: vi.fn(),
   runInstallMock: vi.fn(),
   assureXtManagedPiPackagesMock: vi.fn(),
   resolvePackageRootMock: vi.fn(),
   ensureBdAutoStagePatchMock: vi.fn(),
   runDependencyMaintenanceMock: vi.fn(),
+  ensureServiceSkillsMock: vi.fn(),
+  reconcileProjectClaudeHooksMock: vi.fn(),
 }));
 
 vi.mock('../core/drift.js', () => ({
@@ -37,6 +39,14 @@ vi.mock('../core/bd-auto-stage-patch.js', () => ({
 vi.mock('../core/dependency-maintenance.js', () => ({
   runDependencyMaintenance: runDependencyMaintenanceMock,
   printDependencyMaintenanceSummary: vi.fn(),
+}));
+
+vi.mock('../core/service-skills-ensure.js', () => ({
+  ensureServiceSkills: ensureServiceSkillsMock,
+}));
+
+vi.mock('../core/claude-runtime-sync.js', () => ({
+  reconcileProjectClaudeHooks: reconcileProjectClaudeHooksMock,
 }));
 
 import { createUpdateCommand } from '../commands/update.js';
@@ -69,6 +79,10 @@ beforeEach(() => {
     bdDoctor: { state: 'checked' },
     gitnexusIndex: { state: 'current' },
   });
+  ensureServiceSkillsMock.mockReset();
+  ensureServiceSkillsMock.mockResolvedValue({ applicable: false, migratedPacks: [], alreadyCurrent: true, notes: [] });
+  reconcileProjectClaudeHooksMock.mockReset();
+  reconcileProjectClaudeHooksMock.mockResolvedValue({ settingsPath: '', changed: false, hooksEntries: 0 });
 });
 
 afterEach(() => {
@@ -192,6 +206,34 @@ describe('xtrm update', () => {
     expect(result.logs.join('\n')).toContain(repoA);
     expect(result.logs.join('\n')).toContain(repoB);
     expect(result.logs.join('\n')).toContain(repoC);
+  });
+
+  it('apply reconciles claude settings hooks even when the registry is already current', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    const repo = writeRepo(tmpDir, 'repo-a');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
+
+    await runUpdateCli(['--apply', '--repo', repo]);
+
+    // Reconcile must run on apply regardless of registry drift, so newly-shipped
+    // xtrm-managed hooks (service-skills) reach existing consumers (xtrm-0p7bp).
+    expect(reconcileProjectClaudeHooksMock).toHaveBeenCalledWith(repo, { dryRun: false });
+    expect(runInstallMock).not.toHaveBeenCalled();
+  });
+
+  it('apply self-heals a dormant repo: hook rewiring alone flips already-current to refreshed', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    const repo = writeRepo(tmpDir, 'repo-a');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
+    reconcileProjectClaudeHooksMock.mockResolvedValue({ settingsPath: '', changed: true, hooksEntries: 3 });
+
+    const result = await runUpdateCli(['--apply', '--repo', repo]);
+
+    const out = result.logs.join('\n');
+    expect(out).toContain('refreshed');
+    expect(out).toContain('claude hooks rewired');
   });
 
   it('json output is valid JSON', async () => {
