@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Skills: `planning` and `test-planning` now require explicit logging/telemetry contracts plus smoke/E2E validation for agent, workflow, devops, hook, MCP, deploy, shell, and boundary changes. `test-planning` also documents specialist-chain test-authoring mode and concrete `test-runner` command contracts for autonomous QA loops. (xtrm-tkqjn.11, PR #270)
+- Specialists authoring docs: `specialists-creator` now documents `output_file` and `notes_mode` behavior for handoff files, including `final-only` pipeline output mode. (unitAI-f58ma)
+
 ## [v0.8.1] — 2026-05-27
 
 Patch release for the post-v0.8.0 CLI maintenance surface and Pi compact UI polish. The root `xtrm-tools`, `xtrm-cli`, and `@jaggerxtrm/pi-extensions` workspaces share version 0.8.1; publish root `xtrm-tools` and the Pi extensions package from the same release commit/tag.
