@@ -12,13 +12,15 @@ import fs from 'fs-extra';
  * the registry, generate the umbrella). It is a no-op in repos with no
  * service-registry, and idempotent on already-migrated repos.
  *
- * Hooks are NOT wired here — they ship via the global service-skills Claude/Pi
- * policies and are registry-gated at runtime. This module only owns the data
- * migration.
+ * Claude/Pi activation hooks ship via the global service-skills policies and are
+ * reconciled into settings.json by claude-runtime-sync (xtrm-0p7bp). This module
+ * owns the data migration AND wires the local git post-merge drift sweep (the
+ * post-merge reconciliation trigger, xtrm-jcmub) on the same foolproof path.
  */
 
 const PACKS_REL = path.join('.xtrm', 'skills', 'user', 'packs');
 const MIGRATOR_REL = path.join('.xtrm', 'skills', 'default', 'service-skills', 'scripts', 'layout_migrator.py');
+const INSTALLER_REL = path.join('.xtrm', 'skills', 'default', 'service-skills', 'install', 'install-service-skills.py');
 
 export interface ServiceSkillsEnsureResult {
   /** Whether the repo has a service-registry (i.e. service-skills apply here). */
@@ -117,5 +119,31 @@ export async function ensureServiceSkills(
     }
   }
 
+  // Wire the local git post-merge drift sweep (xtrm-jcmub) on the foolproof path.
+  // Registry-gated (we only reach here when applicable). Idempotent — marker-guarded
+  // installer; a no-op on repos that already have it. Never fails the update.
+  await ensurePostMergeDriftHook(projectRoot, notes);
+
   return { applicable: true, migratedPacks, alreadyCurrent: migratedPacks.length === 0, notes };
+}
+
+/**
+ * Install the service-skills git hooks (including the post-merge drift sweep) via the
+ * vendored installer's `--hooks-only` mode. Best-effort and idempotent: any failure is
+ * recorded as a note and never aborts `xt update`.
+ */
+async function ensurePostMergeDriftHook(projectRoot: string, notes: string[]): Promise<void> {
+  const installer = path.join(projectRoot, INSTALLER_REL);
+  if (!await fs.pathExists(installer)) {
+    return;
+  }
+  // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
+  const run = spawnSync('python3', [installer, '--hooks-only'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_PROJECT_DIR: projectRoot },
+  });
+  if (run.status !== 0) {
+    notes.push(`service-skills: post-merge drift hook wiring skipped — ${(run.stderr ?? '').trim() || 'installer error'}`);
+  }
 }
