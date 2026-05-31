@@ -9,10 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [v0.8.2] — 2026-05-31
 
+Service Skills v2: the five separate service-skills (`creating-`, `scoping-`, `updating-`, `using-service-skills` + the `service-skills-set` bundle) are consolidated into **one umbrella `service-skills` skill**, with a per-repo generated `<repo>-services` umbrella and a hard-cut layout migrator. Upgrading is foolproof — a normal `xt update --apply` (or `xt init`) auto-migrates any old-layout pack and self-wires the Claude hooks; repos without a service-registry are unaffected. Publish root `xtrm-tools` from this release commit/tag.
+
+### `xtrm-tools` v0.8.2 — 2026-05-31
+
+#### Added
+
+- **Foolproof service-skills migration**: `xt update --apply` and `xt init` now run `ensureServiceSkills` — registry-gated and idempotent, it delivers the consolidated `service-skills` machinery, auto-migrates old-layout packs to the v2 umbrella (`…/service-skills/services/<svc>/`), relocates + rewrites the registry under `.xtrm`, generates the per-repo `<repo>-services` umbrella, and demotes stale shadow registries. No manual scripts, nothing to guess. (xtrm-u54wt.4)
+- Service-skills Claude hooks (SessionStart cataloger · PreToolUse activator · PostToolUse drift) now ship via a global `service-skills` policy, registry-gated so they no-op in repos with no service-registry. (xtrm-u54wt.3)
+
+#### Changed
+
+- **Service Skills consolidated to one umbrella skill**: `service-skills` (router `SKILL.md` + `references/` + `scripts/` + `install/` + `tests/`) replaces the four trinity skills and the `service-skills-set` bundle. Per-service skills live at `packs/<pack>/service-skills/services/<svc>/`; all paths resolve via `bootstrap.py` helpers; `.claude/skills` is a Claude view only. (epic xtrm-b86y5)
+- Runtime skills materializer now keys the runtime skill name on the SKILL.md frontmatter `name`, not the directory name — fixing a hard duplicate-name collision between the per-repo umbrella dir and the `service-skills` machinery skill that previously threw during `xt update`. (xtrm-u54wt.1)
+- Umbrella service-registry now wins resolution precedence over stale root/legacy `.claude` registries, and the layout migrator demotes shadowing registries so a migrated repo can't be re-shadowed. (xtrm-u54wt.2)
+- Pi `service-skills` extension retargeted to the v2 umbrella paths + registry. (xtrm-u54wt.5)
+- `install-service-skills.py` is now a thin, runtime-agnostic manual fallback (layout migration + git-hook install) rather than a broken Trinity copy; the README centers installation on `xt update --apply`. (xtrm-u54wt.6, .7)
 - Skills: `planning` and `test-planning` now require explicit logging/telemetry contracts plus smoke/E2E validation for agent, workflow, devops, hook, MCP, deploy, shell, and boundary changes. `test-planning` also documents specialist-chain test-authoring mode and concrete `test-runner` command contracts for autonomous QA loops. (xtrm-tkqjn.11, PR #270)
 - Specialists authoring docs: `specialists-creator` now documents `output_file` and `notes_mode` behavior for handoff files, including `final-only` pipeline output mode. (unitAI-f58ma)
+- Vendored specialists-owned skills refreshed to the `@jaggerxtrm/specialists` **v3.17.0** release (`resolved_sha` 4de671aa); asset-contract verified against the released contract. (xtrm-xli5l)
+
+#### Removed
+
+- Dead trinity installer module (`cli/src/commands/install-service-skills.ts`) and its stale migration tests, which expected the pre-v2 split layout. (xtrm-u54wt.8)
 
 ## [v0.8.1] — 2026-05-27
 
