@@ -53,14 +53,17 @@ function assertNoRuntimeCollisions(runtime: SkillsRuntime, skills: readonly Disc
   const firstSeenByName = new Map<string, string>();
 
   for (const skill of sortByName(skills)) {
-    const firstPath = firstSeenByName.get(skill.name);
+    // Collision + active-view identity use the RUNTIME name (frontmatter `name:`),
+    // not the directory name, so e.g. a pack umbrella dir `service-skills` declaring
+    // `name: <repo>-services` does not collide with the default `service-skills` skill.
+    const firstPath = firstSeenByName.get(skill.runtimeName);
     if (firstPath) {
       throw new Error(
-        `Duplicate skill name '${skill.name}' for runtime '${runtime}' (first: ${firstPath}, duplicate: ${skill.path}).`,
+        `Duplicate skill name '${skill.runtimeName}' for runtime '${runtime}' (first: ${firstPath}, duplicate: ${skill.path}).`,
       );
     }
 
-    firstSeenByName.set(skill.name, skill.path);
+    firstSeenByName.set(skill.runtimeName, skill.path);
   }
 }
 
@@ -96,7 +99,7 @@ async function buildRuntimeTempView(
   await fs.ensureDir(tempRoot);
 
   for (const skill of selectedSkills) {
-    const linkPath = path.join(tempRoot, skill.name);
+    const linkPath = path.join(tempRoot, skill.runtimeName);
     const relativeTarget = path.relative(tempRoot, skill.path);
     await fs.symlink(relativeTarget, linkPath);
   }
@@ -179,7 +182,7 @@ export async function rebuildRuntimeActiveView(
     runtime,
     enabledPackCount: selection.enabledPacks.length,
     discoveredSkillCount: selection.skills.length,
-    symlinkNames: selection.skills.map(skill => skill.name),
+    symlinkNames: selection.skills.map(skill => skill.runtimeName),
   };
 }
 
@@ -215,6 +218,6 @@ export async function rebuildAllRuntimeActiveViews(skillsRoot: string): Promise<
     runtime: 'claude',
     enabledPackCount: mergedEnabledPacks.length,
     discoveredSkillCount: mergedSkills.length,
-    symlinkNames: mergedSkills.map((skill) => skill.name),
+    symlinkNames: mergedSkills.map((skill) => skill.runtimeName),
   }];
 }

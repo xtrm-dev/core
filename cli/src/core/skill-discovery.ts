@@ -12,7 +12,14 @@ import {
 import { diffPackMetadataSkills, readPackMetadata, type PackMetadataMismatch } from './pack-metadata.js';
 
 export type DiscoveredSkill = {
+  /** Filesystem directory name — the identity used for PACK.json metadata invariants. */
   readonly name: string;
+  /** Runtime skill name from SKILL.md frontmatter `name:` (falls back to the dir name).
+   *  Used for runtime materialization + duplicate detection so a pack skill whose
+   *  directory differs from its declared name (e.g. the per-repo umbrella dir
+   *  `service-skills` declaring `name: <repo>-services`) does not collide with a
+   *  default skill of the same directory name. */
+  readonly runtimeName: string;
   readonly path: string;
 };
 
@@ -71,6 +78,28 @@ export async function detectDirectChildSkill(dirPath: string): Promise<boolean> 
   return !await hasFile(dirPath, PACK_FILE_NAME);
 }
 
+/** Extract the `name:` value from a SKILL.md YAML frontmatter block, or null if absent.
+ *  Manual parse (no YAML dep, matching the rest of the CLI). Only the first `---`…`---`
+ *  block is considered; the value may be quoted. */
+async function readSkillFrontmatterName(skillFilePath: string): Promise<string | null> {
+  let content: string;
+  try {
+    content = await fs.readFile(skillFilePath, 'utf8');
+  } catch {
+    return null;
+  }
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fm) {
+    return null;
+  }
+  const nameLine = fm[1].split(/\r?\n/).find(line => /^name\s*:/.test(line));
+  if (!nameLine) {
+    return null;
+  }
+  const raw = nameLine.replace(/^name\s*:/, '').trim().replace(/^["']|["']$/g, '').trim();
+  return raw || null;
+}
+
 export async function discoverDirectSkills(root: string): Promise<DiscoveredSkill[]> {
   const childDirectories = await listDirectChildDirectories(root);
   const discoveredSkills: DiscoveredSkill[] = [];
@@ -81,7 +110,8 @@ export async function discoverDirectSkills(root: string): Promise<DiscoveredSkil
       continue;
     }
 
-    discoveredSkills.push({ name: childDirectory, path: skillPath });
+    const frontmatterName = await readSkillFrontmatterName(path.join(skillPath, SKILL_FILE_NAME));
+    discoveredSkills.push({ name: childDirectory, runtimeName: frontmatterName ?? childDirectory, path: skillPath });
   }
 
   return discoveredSkills;

@@ -1,58 +1,32 @@
 #!/usr/bin/env python3
 """
-Install the Service Skill Trinity into the current project.
+Manual service-skills migration + git-hook installer.
 
-Run from inside your target project directory:
-    python3 /path/to/jaggers-agent-tools/project-skills/install-service-skills.py
+> NORMAL PATH: `xt update --apply` (or `xt init`) auto-detects a service-registry and
+> runs this same migration — you usually do NOT need to run this script. The Claude
+> SessionStart/PreToolUse/PostToolUse hooks ship via the global service-skills policy
+> (registry-gated), and the skills themselves are delivered by `xt update`. This
+> script is the runtime-agnostic manual fallback.
 
-Installs:
-  .claude/skills/creating-service-skills/   — scaffold new service skills
-  .claude/skills/using-service-skills/      — session-start catalog injection
-  .claude/skills/updating-service-skills/   — drift detection on file writes
-  .claude/skills/scoping-service-skills/    — task intake and service routing
-  .claude/settings.json                     — SessionStart + PostToolUse hooks
-  .githooks/pre-commit                      — doc-reminder (non-blocking)
-  .githooks/pre-push                        — skill-staleness (non-blocking)
-  .git/hooks/pre-commit + pre-push          — activated
-
-Idempotent. Safe to re-run.
+Run from inside your target project directory. It is idempotent and only:
+  - migrates the pack to the v2 umbrella layout (layout_migrator)
+  - upgrades per-service SKILL.md to the current section contract (skill_migrator)
+  - (re)generates the per-repo umbrella (umbrella_generator)
+  - installs the non-blocking git pre-commit/pre-push doc + staleness reminders
 """
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).parent.resolve()            # project-skills/service-skills-set/
-REPO_ROOT  = SCRIPT_DIR.parent.parent.resolve()         # jaggers-agent-tools/
-SKILLS_SRC = SCRIPT_DIR / ".claude"                     # service-skills-set/.claude/<skill>/
-GIT_HOOKS  = SKILLS_SRC / "git-hooks"                   # service-skills-set/.claude/git-hooks/
+SCRIPT_DIR = Path(__file__).parent.resolve()            # skills/service-skills/install/
+GIT_HOOKS  = SCRIPT_DIR / "git-hooks"                   # install/git-hooks/
 
 GREEN  = "\033[0;32m"
 YELLOW = "\033[1;33m"
 NC     = "\033[0m"
-
-TRINITY = ["creating-service-skills", "using-service-skills", "updating-service-skills", "scoping-service-skills"]
-
-SETTINGS_HOOKS = {
-    "SessionStart": [
-        {"hooks": [{"type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/cataloger.py\""}]}
-    ],
-    "PreToolUse": [
-        {"matcher": "Read|Write|Edit|Glob|Grep|Bash|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
-         "hooks": [{"type": "command",
-             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/skill_activator.py\""}]}
-    ],
-    "PostToolUse": [
-        {"matcher": "Write|Edit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
-         "hooks": [{"type": "command",
-             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/drift_detector.py\" check-hook",
-             "timeout": 10}]}
-    ]
-}
 
 MARKER_DOC       = "# [jaggers] doc-reminder"
 MARKER_STALENESS = "# [jaggers] skill-staleness"
@@ -63,48 +37,10 @@ def get_project_root() -> Path:
     try:
         r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
                            capture_output=True, text=True, check=True, timeout=5)
-        root = Path(r.stdout.strip())
-        if root == REPO_ROOT:
-            print("Error: run this from inside your TARGET project, not jaggers-agent-tools itself.")
-            sys.exit(1)
-        return root
+        return Path(r.stdout.strip())
     except subprocess.CalledProcessError:
         print("Error: not inside a git repository.")
         sys.exit(1)
-
-
-def install_skills(project_root: Path) -> None:
-    print("\n── Skills ──────────────────────────────")
-    for skill in TRINITY:
-        src  = SKILLS_SRC / skill
-        dest = project_root / ".claude" / "skills" / skill
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(src, dest, ignore=shutil.ignore_patterns("*.Zone.Identifier"))
-        print(f"{GREEN}  ✓{NC} .claude/skills/{skill}/")
-
-
-def install_settings(project_root: Path) -> None:
-    print("\n── settings.json ───────────────────────")
-    path = project_root / ".claude" / "settings.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    existing = {}
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
-
-    hooks = existing.setdefault("hooks", {})
-    for event, config in SETTINGS_HOOKS.items():
-        if event not in hooks:
-            hooks[event] = config
-            print(f"{GREEN}  ✓{NC} added hook: {event}")
-        else:
-            print(f"{YELLOW}  ○{NC} hook already present: {event} (not overwritten)")
-
-    path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
 
 
 def install_git_hooks(project_root: Path) -> None:
@@ -287,15 +223,16 @@ def main() -> None:
     project_root = get_project_root()
     print(f"Installing into: {project_root}")
 
-    install_skills(project_root)
-    install_settings(project_root)
+    # Skills are delivered by `xt update`; Claude hooks ship via the global
+    # service-skills policy. This manual fallback only migrates + installs git hooks.
     install_git_hooks(project_root)
     run_layout_migration(project_root)   # flat -> umbrella (moves files) — must precede content migration
     migrate_existing_skills(project_root)
     generate_umbrellas(project_root)
 
     print(f"\n{GREEN}Done.{NC}")
-    print(f"  Hooks active: SessionStart (catalog) · PreToolUse (skill activator) · PostToolUse (drift) · pre-commit · pre-push")
+    print("  Migration applied. Claude hooks are wired globally via the service-skills policy")
+    print("  (run `xt update --apply` for the normal, foolproof path).")
 
 
 if __name__ == "__main__":

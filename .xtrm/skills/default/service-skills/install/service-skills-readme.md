@@ -43,16 +43,40 @@ A system that gives Claude persistent, project-specific operational knowledge ab
 
 ---
 
-## Installation
+## Installation & migration (foolproof — no manual scripts)
 
-Run once, from inside your target project directory:
+From inside your target project, run your normal update:
 
 ```bash
 cd ~/projects/my-project
-python3 /path/to/jaggers-agent-tools/project-skills/service-skills-set/install-service-skills.py
+xt update --apply
 ```
 
-This installs the three workflow skills, wires `settings.json` hooks, and activates git hooks. Idempotent — safe to re-run after updates.
+That's the whole thing. `xt update --apply` (and `xt init`) is **registry-gated and
+idempotent**:
+
+- delivers/updates the single `service-skills` machinery skill,
+- **auto-migrates** any old-layout pack to the v2 umbrella layout (moves per-service
+  skills under `…/service-skills/services/`, relocates + rewrites the registry to
+  `.xtrm`, generates the per-repo `<repo>-services` umbrella, demotes any stale
+  root/legacy registry),
+- and the Claude hooks (SessionStart catalog · PreToolUse activator · PostToolUse
+  drift) are wired automatically via the global service-skills policy — they no-op in
+  repos with no service-registry.
+
+There is **nothing to guess and no script to remember**. Repos without a
+service-registry are completely unaffected. Re-running is a safe no-op.
+
+> **Migrating an existing (pre-v2) repo:** just run `xt update --apply`. It detects the
+> old flat layout and migrates in place. If a per-service `SKILL.md` already exists at
+> the target with divergent content, the migrator **refuses that service and reports it**
+> (no data loss) — resolve it and re-run.
+
+**Manual fallback** (runtime-agnostic, only if you can't use `xt`):
+
+```bash
+python3 .xtrm/skills/default/service-skills/install/install-service-skills.py
+```
 
 ---
 

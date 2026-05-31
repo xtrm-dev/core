@@ -180,18 +180,14 @@ def get_registry_path(project_root: str | None = None) -> Path:
 
     root = Path(project_root)
     preferred = root / "service-registry.json"
-    if preferred.exists():
-        return preferred
 
-    # legacy Claude-view read: only honored if a pre-migration registry still
-    # sits here. New installs live under .xtrm packs (glob below). Read-only
-    # back-compat — nothing writes here.
-    legacy = root / ".claude" / "skills" / "service-registry.json"
-    if legacy.exists():
-        return legacy
-
-    # New layout (umbrella-owned registry) takes precedence over the flat pack-root
-    # location during the .3→.4 transition; child .4's migrator relocates the file.
+    # Precedence — the canonical .xtrm umbrella location wins, so a stale root or
+    # legacy .claude registry can NEVER shadow a migrated repo (the bug that made
+    # market-data's migration not stick):
+    #   1) umbrella-owned registry           (post-migration canonical)
+    #   2) flat pack-root registry           (pre-migration .xtrm layout)
+    #   3) <root>/service-registry.json      (legacy back-compat)
+    #   4) .claude/skills/service-registry.json  (legacy Claude-view back-compat)
     umbrella_registries = sorted(root.glob(".xtrm/skills/user/packs/*/service-skills/service-registry.json"))
     if umbrella_registries:
         return _select_pack_registry(umbrella_registries, project_root)
@@ -199,6 +195,13 @@ def get_registry_path(project_root: str | None = None) -> Path:
     pack_registries = sorted(root.glob(".xtrm/skills/user/packs/*/service-registry.json"))
     if pack_registries:
         return _select_pack_registry(pack_registries, project_root)
+
+    if preferred.exists():
+        return preferred
+
+    legacy = root / ".claude" / "skills" / "service-registry.json"
+    if legacy.exists():
+        return legacy
 
     return preferred
 

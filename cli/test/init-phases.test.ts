@@ -148,6 +148,11 @@ vi.mock('child_process', () => ({
 }));
 
 function setupSpawnSync(projectRoot: string, calls: string[]): void {
+    // Tracks whether `gitnexus analyze` has already run. The gitnexus init phase
+    // analyzes first; the later dependency-maintenance phase (Phase 8) re-checks the
+    // index — once analyzed it must report fresh, otherwise the mock would trigger a
+    // spurious second analyze that the real (stateful) index never would.
+    let gitnexusAnalyzed = false;
     mocked.spawnSync.mockImplementation((command: string, args: string[] = [], options: any = {}) => {
         const key = `${command} ${args.join(' ')}`.trim();
 
@@ -156,7 +161,9 @@ function setupSpawnSync(projectRoot: string, calls: string[]): void {
         }
 
         if (key === 'gitnexus status') {
-            return { status: 1, stdout: 'not indexed', stderr: '' };
+            return gitnexusAnalyzed
+                ? { status: 0, stdout: 'indexed', stderr: '' }
+                : { status: 1, stdout: 'not indexed', stderr: '' };
         }
 
         if (key === 'gitnexus --version') {
@@ -169,12 +176,24 @@ function setupSpawnSync(projectRoot: string, calls: string[]): void {
 
         if (key === 'gitnexus analyze') {
             calls.push('gitnexus analyze');
+            gitnexusAnalyzed = true;
             return { status: 0, stdout: 'indexed', stderr: '' };
         }
 
         if (key === 'bd init') {
             calls.push('bd init');
             return { status: 0, stdout: 'initialized', stderr: '' };
+        }
+
+        // Dependency-maintenance probes (machine-bootstrap inventoryDeps + Phase 8
+        // dependency-maintenance). Generic so adding/removing a managed dep never
+        // re-breaks this mock. installed === latest === 1.0.0 keeps every tool in the
+        // 'current' state, so no npm-install update path is triggered.
+        if (args.length === 1 && (args[0] === '--version' || args[0] === 'version')) {
+            return { status: 0, stdout: '1.0.0\n', stderr: '' };
+        }
+        if (command === 'npm' && args[0] === 'view' && args[args.length - 1] === 'version') {
+            return { status: 0, stdout: '1.0.0\n', stderr: '' };
         }
 
         throw new Error(`Unexpected spawnSync call: ${key} cwd=${options?.cwd ?? ''}`);

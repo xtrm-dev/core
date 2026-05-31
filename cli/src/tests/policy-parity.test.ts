@@ -104,11 +104,20 @@ describe('matcher macro expansion parity', () => {
 // ── File existence ────────────────────────────────────────────────────────────
 
 describe('referenced files exist', () => {
-  // Resolve templated hook root commands to repo-relative script paths.
-  const resolveCommand = (command: string): string =>
-    command
-      .replace(/^node\s+\$\{[A-Z_]+\}\//, '')
-      .replace(/^python3\s+\$\{[A-Z_]+\}\//, '');
+  // Resolve a hook command to the repo-relative path of the script it runs.
+  const resolveCommand = (command: string): string => {
+    let raw = command.replace(/^(node|python3)\s+/, '');
+    // The script path is the first quoted segment (it may carry trailing args)…
+    const quoted = raw.match(/^"([^"]+)"/) ?? raw.match(/^'([^']+)'/);
+    raw = quoted ? quoted[1] : raw.split(/\s+/)[0];
+    // …plugin-root commands resolve relative to repo root…
+    raw = raw.replace(/^\$\{[A-Z_]+\}\//, '');
+    // …and project-runtime service-skills commands resolve to the repo source mirror
+    // (the scripts live at .xtrm/skills/default in the repo; .claude/skills is the
+    // per-consumer-project runtime view).
+    raw = raw.replace(/^\$CLAUDE_PROJECT_DIR\/\.claude\/skills\/service-skills\//, '.xtrm/skills/default/service-skills/');
+    return raw;
+  };
 
   const allHooks = policies.flatMap(({ file, policy }) =>
     (policy.claude?.hooks ?? []).map(hook => ({ file, command: hook.command })),

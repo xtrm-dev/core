@@ -98,3 +98,24 @@ class TestMigratePack(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDemoteShadowingRegistries(unittest.TestCase):
+    def test_removes_symlink_warns_real(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            # root registry as a stale symlink -> should be removed
+            (root / ".xtrm/skills/user/packs/p/service-skills").mkdir(parents=True)
+            target = root / ".xtrm/skills/user/packs/p/service-skills/service-registry.json"
+            target.write_text("{}", encoding="utf-8")
+            link = root / "service-registry.json"
+            link.symlink_to(target)
+            # legacy as a REAL file -> should be warned, not deleted
+            legacy = root / ".claude/skills/service-registry.json"
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text("{}", encoding="utf-8")
+            notes = lm.demote_shadowing_registries(root)
+            self.assertFalse(link.exists() or link.is_symlink())  # symlink removed
+            self.assertTrue(legacy.exists())                       # real file preserved
+            self.assertTrue(any("removed stale root" in n for n in notes))
+            self.assertTrue(any("WARNING" in n and "legacy" in n for n in notes))
