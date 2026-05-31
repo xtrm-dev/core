@@ -116,6 +116,27 @@ def migrate_pack(project_root: Path, pack: Path, repo_name: str) -> dict[str, An
     }
 
 
+def demote_shadowing_registries(project_root: Path) -> list[str]:
+    """Remove/flag the stale repo-root + legacy `.claude/skills` registries that
+    would otherwise SHADOW the migrated umbrella registry. Symlinks (stale pointers)
+    are removed; real files are left in place but reported so nothing is silently
+    lost. Returns human-readable notes."""
+    notes: list[str] = []
+    for label, candidate in (
+        ("root", project_root / "service-registry.json"),
+        ("legacy", project_root / ".claude" / "skills" / "service-registry.json"),
+    ):
+        if candidate.is_symlink():
+            candidate.unlink()
+            notes.append(f"removed stale {label} registry symlink: {candidate}")
+        elif candidate.exists():
+            notes.append(
+                f"WARNING: real {label} registry still present at {candidate} — the umbrella "
+                f"registry is now canonical; review and remove this duplicate manually"
+            )
+    return notes
+
+
 def main() -> None:
     args = sys.argv[1:]
     project_root_str = os.environ.get("CLAUDE_PROJECT_DIR")
@@ -147,6 +168,8 @@ def main() -> None:
         print(f"{prefix}: {sid} ({outcome})")
     print(f"registry: {result['registry']}")
     print(f"umbrella: {'written' if result['umbrella_written'] else 'unchanged'}")
+    for note in demote_shadowing_registries(project_root):
+        print(note)
     sys.exit(0)
 
 

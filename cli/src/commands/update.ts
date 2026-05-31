@@ -11,6 +11,7 @@ import { isStrictRegistryMode, runInstall } from './install.js';
 import { ensureBeadsSharedServerEnabled, hasBeadsDir } from '../core/beads-shared-server.js';
 import { ensureBdAutoStagePatch, summarizeBdAutoStagePatch } from '../core/bd-auto-stage-patch.js';
 import { printDependencyMaintenanceSummary, runDependencyMaintenance, type DependencyMaintenanceSummary } from '../core/dependency-maintenance.js';
+import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 
 type UpdateStatus = 'refreshed' | 'already-current' | 'failed' | 'skipped' | 'incomplete';
 
@@ -91,10 +92,6 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
             };
         }
 
-        if (!hasChanges) {
-            return { repo: repoRoot, status: 'already-current', maintenance: maintenancePlan };
-        }
-
         if (registryChanges) {
             await runInstall({
                 force: true,
@@ -107,13 +104,26 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
             });
         }
 
+        // Foolproof service-skills migration: runs AFTER skills install so the latest
+        // migrator is present. Registry-gated + idempotent — a no-op in non-service
+        // repos and on already-migrated ones, but it still migrates a package-current
+        // repo that is on the OLD service layout (which xt update otherwise misses).
+        const serviceSkills = await ensureServiceSkills(repoRoot, { apply: true });
+
+        if (!hasChanges && serviceSkills.alreadyCurrent) {
+            return { repo: repoRoot, status: 'already-current', maintenance: maintenancePlan };
+        }
+
         const appliedPatch = hasBeads ? await ensureBdAutoStagePatch(repoRoot, true) : bdPatch;
         const maintenance = await runDependencyMaintenance(repoRoot, true);
 
+        const serviceSkillsReason = serviceSkills.migratedPacks.length > 0
+            ? `, service-skills migrated: ${serviceSkills.migratedPacks.join(',')}`
+            : '';
         return {
             repo: repoRoot,
             status: 'refreshed',
-            reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}`,
+            reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}${serviceSkillsReason}`,
             maintenance,
         };
     } catch (error) {

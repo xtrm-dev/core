@@ -13,6 +13,7 @@ Must be fast: pure file I/O + string matching, no subprocess.
 
 import fnmatch
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -109,9 +110,14 @@ def main() -> None:
     tool_name = data.get("tool_name", "")
     tool_input = data.get("tool_input", {})
 
+    # This hook fires in EVERY repo (registry-gated at runtime), so stay cheap:
+    # prefer $CLAUDE_PROJECT_DIR and avoid the git subprocess on the hot path.
+    project_root_str = os.environ.get("CLAUDE_PROJECT_DIR")
     try:
-        project_root = Path(get_project_root())
-        services = load_registry().get("services", {})
+        if not project_root_str:
+            project_root_str = get_project_root()
+        project_root = Path(project_root_str)
+        services = load_registry(project_root_str).get("services", {})
     except (RootResolutionError, Exception):
         sys.exit(0)
 

@@ -15,6 +15,7 @@ import {
 } from '../core/registry-scaffold.js';
 import { runPluginEraCleanup } from '../core/plugin-era-cleanup.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
+import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { inventoryDeps, renderBootstrapPlan, runMachineBootstrapPhase, type BootstrapPlan } from '../core/machine-bootstrap.js';
 import { runInitVerification, renderVerificationSummary } from '../core/init-verification.js';
 import { assertRuntimeSkillsViews } from '../core/skills-runtime-views.js';
@@ -498,9 +499,6 @@ export function deepMergeHooks(existing: Record<string, any>, incoming: Record<s
     return result;
 }
 
-async function installServiceSkillHooks(_projectRoot: string): Promise<void> {
-    // service-skills hooks are opt-in via `xt install service-skills`, not auto-wired on init.
-}
 
 // ─── Inventory types ──────────────────────────────────────────────────────────
 
@@ -644,7 +642,11 @@ async function runProjectBootstrap(projectRoot: string, isGitRepo: boolean): Pro
     if (isGitRepo) {
         await runGitNexusInitForProject(projectRoot);
     }
-    await installServiceSkillHooks(projectRoot);
+    // Foolproof, registry-gated service-skills migration (no-op in non-service repos).
+    const serviceSkills = await ensureServiceSkills(projectRoot, { apply: true });
+    for (const note of serviceSkills.notes) {
+        console.log(`  ${note}`);
+    }
     // Note: ensureAgentsSkillsSymlink runs in Phase 6b (before gitnexus init)
 }
 

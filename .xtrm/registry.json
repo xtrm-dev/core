@@ -708,11 +708,11 @@
           "version": "0.8.1"
         },
         "service-skills/install/install-service-skills.py": {
-          "hash": "8382d651969a778774af3fc8850365b45cdda36ad2d18c97db3adf124e8a144a",
+          "hash": "3ba1449871b0847e92132ddc8e4d98d8fcde6487d0b3cef31c96e90efe078c11",
           "version": "0.8.1"
         },
         "service-skills/install/service-skills-readme.md": {
-          "hash": "7b38afa0c855839fed2af1a607c5b891f00e8cf7c420711ce4dfe5a2a8732925",
+          "hash": "46a2b378bab1fd9a43d30c93c05c69a45280f1606afa5ce17241058cbb279b27",
           "version": "0.8.1"
         },
         "service-skills/install/settings.json": {
@@ -748,7 +748,7 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/bootstrap.py": {
-          "hash": "389149e7f98ab9e13b4b808dbd98cb7b26fb279b5fc7443a5a8c4f7fe22a1c90",
+          "hash": "b5af56879ffe70e826b5fd24ba795de4ff5f1912ad0631604da6bcd7045b38ec",
           "version": "0.8.1"
         },
         "service-skills/scripts/cataloger.py": {
@@ -764,7 +764,7 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/layout_migrator.py": {
-          "hash": "6f04e2517fd63c80f6f2ef79221506f4fece00457a367dc5b6e4c7ce4531347c",
+          "hash": "6fcce2229a4ba84d2bb83ed431bb63c268e37851a257596da641a3b597fe45e3",
           "version": "0.8.1"
         },
         "service-skills/scripts/scaffolder.py": {
@@ -776,7 +776,7 @@
           "version": "0.8.1"
         },
         "service-skills/scripts/skill_activator.py": {
-          "hash": "15ac29dcb27dbe996a86aed83ac68d2c28bbc7f7d2b0abade9bfc239871676d4",
+          "hash": "b76f7861dacf302f9d958202e8dd60bf54ad1265d098e5f3072423beac0a25a2",
           "version": "0.8.1"
         },
         "service-skills/scripts/skill_migrator.py": {
@@ -1296,7 +1296,7 @@
           "version": "0.8.1"
         },
         "hooks.json": {
-          "hash": "b884687cc391b7178f0e87c01a608bba387abb53edf91351d64d930bcb16adf1",
+          "hash": "3ea1432dc7baeed6a9bc8b6a43712f8bd6e3de275f0f6d1175399f83035c4060",
           "version": "0.8.1"
         },
         "instructions/agents-top.md": {

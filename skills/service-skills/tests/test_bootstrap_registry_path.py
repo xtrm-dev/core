@@ -14,12 +14,34 @@ def test_pack_only_registry(tmp_path: Path):
     assert get_registry_path(str(tmp_path)) == reg
 
 
-def test_root_wins_over_pack(tmp_path: Path):
+def test_canonical_xtrm_wins_over_root_legacy_shadow(tmp_path: Path):
+    # Shadow fix (xtrm-u54wt #2): the canonical .xtrm registry must win over a stale
+    # repo-root / legacy .claude registry, so a migrated repo never gets shadowed.
     root_reg = tmp_path / "service-registry.json"
     root_reg.write_text("{}")
+    legacy_reg = tmp_path / ".claude/skills/service-registry.json"
+    legacy_reg.parent.mkdir(parents=True)
+    legacy_reg.write_text("{}")
     pack_reg = tmp_path / ".xtrm/skills/user/packs/mercury/service-registry.json"
     pack_reg.parent.mkdir(parents=True)
     pack_reg.write_text("{}")
+    assert get_registry_path(str(tmp_path)) == pack_reg
+
+
+def test_umbrella_registry_wins_over_everything(tmp_path: Path):
+    umbrella_reg = tmp_path / ".xtrm/skills/user/packs/mercury/service-skills/service-registry.json"
+    umbrella_reg.parent.mkdir(parents=True)
+    umbrella_reg.write_text("{}")
+    flat_reg = tmp_path / ".xtrm/skills/user/packs/mercury/service-registry.json"
+    flat_reg.write_text("{}")
+    root_reg = tmp_path / "service-registry.json"
+    root_reg.write_text("{}")
+    assert get_registry_path(str(tmp_path)) == umbrella_reg
+
+
+def test_root_used_only_when_no_xtrm_registry(tmp_path: Path):
+    root_reg = tmp_path / "service-registry.json"
+    root_reg.write_text("{}")
     assert get_registry_path(str(tmp_path)) == root_reg
 
 

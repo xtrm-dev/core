@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
   discoverDefaultSkills,
+  discoverDirectSkills,
   discoverTierPacks,
   validateSkillsInvariants,
 } from '../src/core/skill-discovery.js';
@@ -176,5 +177,55 @@ describe('skills-discovery', () => {
       ),
       { numRuns: 40 },
     );
+  });
+});
+
+describe('frontmatter runtimeName (collision fix — xtrm-u54wt #1)', () => {
+  async function createSkillWithFrontmatter(parentDir: string, dirName: string, declaredName: string): Promise<void> {
+    const skillDir = path.join(parentDir, dirName);
+    await fs.ensureDir(skillDir);
+    await fs.writeFile(
+      path.join(skillDir, 'SKILL.md'),
+      `---\nname: ${declaredName}\ndescription: x\n---\n\n# ${declaredName}\n`,
+      'utf8',
+    );
+  }
+
+  it('runtimeName comes from frontmatter name, name stays the directory', async () => {
+    const skillsRoot = await createTempSkillsRoot();
+    const defaultRoot = path.join(skillsRoot, 'default');
+    await fs.ensureDir(defaultRoot);
+    // dir 'service-skills' but declares a different runtime name
+    await createSkillWithFrontmatter(defaultRoot, 'service-skills', 'service-skills');
+    await createSkillWithFrontmatter(defaultRoot, 'planning', 'planning');
+    const skills = await discoverDefaultSkills(skillsRoot);
+    const byDir = Object.fromEntries(skills.map(s => [s.name, s.runtimeName]));
+    expect(byDir['service-skills']).toBe('service-skills');
+    expect(byDir['planning']).toBe('planning');
+  });
+
+  it('falls back to directory name when no frontmatter name', async () => {
+    const skillsRoot = await createTempSkillsRoot();
+    const defaultRoot = path.join(skillsRoot, 'default');
+    await fs.ensureDir(defaultRoot);
+    await createSkill(defaultRoot, 'legacy-skill'); // helper writes no frontmatter
+    const skills = await discoverDefaultSkills(skillsRoot);
+    expect(skills.find(s => s.name === 'legacy-skill')?.runtimeName).toBe('legacy-skill');
+  });
+
+  it('umbrella dir `service-skills` declaring `<repo>-services` does NOT collide with default `service-skills`', async () => {
+    const skillsRoot = await createTempSkillsRoot();
+    const defaultRoot = path.join(skillsRoot, 'default');
+    const packRoot = path.join(skillsRoot, 'user', 'packs', 'market-data');
+    await fs.ensureDir(defaultRoot);
+    await fs.ensureDir(packRoot);
+    await createSkillWithFrontmatter(defaultRoot, 'service-skills', 'service-skills'); // machinery
+    await createSkillWithFrontmatter(packRoot, 'service-skills', 'market-data-services'); // umbrella
+    const machinery = (await discoverDirectSkills(defaultRoot)).find(s => s.name === 'service-skills');
+    const umbrella = (await discoverDirectSkills(packRoot)).find(s => s.name === 'service-skills');
+    // same directory name, DIFFERENT runtime names -> no collision in the materializer's name map
+    expect(machinery?.runtimeName).toBe('service-skills');
+    expect(umbrella?.runtimeName).toBe('market-data-services');
+    expect(machinery?.runtimeName).not.toBe(umbrella?.runtimeName);
   });
 });
