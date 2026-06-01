@@ -52,7 +52,12 @@ def update_sync_time(service_id: str, project_root: str | None = None) -> bool:
         return False
     registry["services"][service_id]["last_sync"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     try:
-        registry["services"][service_id]["last_sync_ref"] = _git_head(project_root)
+        # Resolve the root the same way load_registry does. On the CLI path
+        # (`drift_detector.py sync <id>`) project_root is None; passing that straight to
+        # _git_head ran `git -C None ...`, which raised and silently stored an empty ref —
+        # so scan could never tier semantically (no_ref -> mtime fallback) for any service.
+        resolved_root = project_root if project_root is not None else get_project_root()
+        registry["services"][service_id]["last_sync_ref"] = _git_head(resolved_root)
     except Exception:
         registry["services"][service_id]["last_sync_ref"] = ""
     try:

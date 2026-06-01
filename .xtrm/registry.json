@@ -764,7 +764,7 @@
           "version": "0.8.2"
         },
         "service-skills/scripts/drift_detector.py": {
-          "hash": "1bf89bfe4ce1b1f6d251504683935c7caf30828d94c7c1afd271b9228d257632",
+          "hash": "29c231ccdb9aab034934d0a5f81a58e7867c970d369b023a9150917b2e7bcd7a",
           "version": "0.8.2"
         },
         "service-skills/scripts/layout_migrator.py": {
