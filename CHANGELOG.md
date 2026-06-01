@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.3] — 2026-06-01
+
+Service-skills reliability hardening: makes the v2 drift/sync machinery actually fire in consumers and tier drift **semantically** instead of silently degrading to mtime. The critical fix (lg9km) repairs `drift_detector sync` so it stamps `last_sync_ref` — without it semantic tiering was dead in every consumer. Plus the dormant-hooks reconcile on `xt update`, post-merge drift automation, and gitnexus-mandatory librarian verdicts. Publish root `xtrm-tools` from this release commit/tag.
+
+### `xtrm-tools` v0.8.3 — 2026-06-01
+
+#### Fixed
+
+- **`drift_detector.py sync` now stamps `last_sync_ref` to HEAD.** The CLI path (`drift_detector.py sync <id>`) passed `project_root=None` straight to `_git_head` → `git -C None …` raised → `last_sync_ref` was always `""`, forcing `gitnexus_status=no_ref` → mtime fallback for *every* service permanently. Semantic drift tiering over the committed range `last_sync_ref..HEAD` now works for all service repos — the mechanical root of the long-standing mtime-fallback behavior. (xtrm-lg9km, #277)
+- **`xt update --apply` now wires xtrm-managed hooks into the consumer's existing `.claude/settings.json`** via a focused, idempotent `reconcileProjectClaudeHooks`. Previously the settings-hooks reconcile was skipped on update (only reached when `registryChanges>0`), so the 0.8.2 service-skills hooks (SessionStart cataloger · PreToolUse activator · PostToolUse drift) stayed **dormant** in existing consumers. A hook-only change now flips already-current → refreshed; non-hook keys (model/permissions) are preserved. (xtrm-0p7bp, #274)
+
+#### Added
+
+- **Post-merge drift automation.** A managed `post-merge` git hook (`post_merge_drift_sweep.py`) is wired on the foolproof path (`xt update --apply` / `xt init`, via the installer's `--hooks-only` mode). On a default-branch merge it runs a cost-bounded `scan_drift` since each service's `last_sync_ref`, surfaces drift, and drops a pending marker at `.xtrm/.service-skills-drift-pending`. It never auto-runs a model-backed specialist — reconcile stays agent-driven via `/updating-service-skills`. (xtrm-jcmub, #275)
+
+#### Changed
+
+- **Service-skills librarian: gitnexus-mandatory triage + verdict taxonomy.** String-only "unchanged" verdicts are forbidden: `audited-and-unchanged` now requires a cited gitnexus signal; a `drift_detector` tooling failure means *repair gitnexus then re-triage* (never grep-only); a genuine gitnexus outage downgrades to the weaker `synced (string-level only)` verdict. Updated `references/updating.md` (Step-1 fallback + new Verdict Taxonomy section + mandatory Verdict/Triage output lines) and the cross-repo `service-skills-sync` specialist contract. (xtrm-q7436, #276)
+
 ## [v0.8.2] — 2026-05-31
 
 Service Skills v2: the five separate service-skills (`creating-`, `scoping-`, `updating-`, `using-service-skills` + the `service-skills-set` bundle) are consolidated into **one umbrella `service-skills` skill**, with a per-repo generated `<repo>-services` umbrella and a hard-cut layout migrator. Upgrading is foolproof — a normal `xt update --apply` (or `xt init`) auto-migrates any old-layout pack and self-wires the Claude hooks; repos without a service-registry are unaffected. Publish root `xtrm-tools` from this release commit/tag.
