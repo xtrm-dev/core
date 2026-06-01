@@ -51,7 +51,7 @@ Use this checklist to validate **all project skills and hooks** in a real projec
 Project skills covered:
 - `quality-gates` (unified Python + TypeScript)
 - `tdd-guard`
-- `service-skills-set`
+- `service-skills`
 
 Serena edit-tool matchers covered:
 - `mcp__serena__rename_symbol`
@@ -75,11 +75,11 @@ Serena edit-tool matchers covered:
 - [ ] In target repo, run:
   - [ ] `xtrm install project quality-gates`
   - [ ] `xtrm install project tdd-guard`
-  - [ ] `xtrm install project service-skills-set`
+  - [ ] `xtrm install project service-skills`
 - [ ] Confirm installed docs exist:
   - [ ] `.claude/docs/quality-gates-readme.md`
   - [ ] `.claude/docs/tdd-guard-readme.md`
-  - [ ] `.claude/docs/service-skills-set-readme.md`
+  - [ ] `.claude/docs/service-skills-readme.md`
 
 ---
 
@@ -88,7 +88,7 @@ Serena edit-tool matchers covered:
 - [ ] Open `.claude/settings.json` and verify these hook entries exist:
   - [ ] `PostToolUse` matcher for `quality-gates` includes all Serena tool names.
   - [ ] `PreToolUse` matcher for `tdd-guard` includes all Serena tool names.
-  - [ ] `PreToolUse` and `PostToolUse` matchers for `service-skills-set` include all Serena tool names.
+  - [ ] `PreToolUse` and `PostToolUse` matchers for `service-skills` include all Serena tool names.
 - [ ] Confirm bridge script exists:
   - [ ] `.claude/hooks/tdd-guard-pretool-bridge.cjs`
 
