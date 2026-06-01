@@ -185,11 +185,11 @@ Owned by the [specialists repo](https://github.com/Jaggerxtrm/specialists) and v
 
 | Skill | Primary Use |
 |---|---|
-| `using-service-skills` | Service catalog discovery and expert activation |
-| `creating-service-skills` | Generate operational service skill packages |
-| `updating-service-skills` | Sync expert persona documentation |
-| `scoping-service-skills` | Task intake and service routing |
-| `service-skills-set` | Service skill installation and management |
+| `service-skills` | Consolidated router for per-service expert personas: discovery + activation, creation, drift-sync, and task routing |
+
+> **v2 (epic `xtrm-b86y5`):** the former quartet (`creating`/`updating`/`scoping`/`using-service-skills`) plus the `service-skills-set` bundle are now **one** skill at `skills/service-skills/` — router `SKILL.md` + `references/{creating,updating,using,routing,system-guide}.md`, co-located `scripts/` (drift_detector, cataloger, skill_activator, umbrella_generator, layout_migrator, …), and `install/`. Per-repo service skills live at `.xtrm/skills/user/packs/<pack>/service-skills/services/<svc>/` under a generated `<repo>-services` umbrella.
+>
+> Service skills are the **per-service knowledge substrate** consumed by the future devops/AgentOps work (epics `unitAI-eoqxp` / `unitAI-60w93`): health-check + failure-mode tables feed the RCA loop, and the drift machinery is slated to emit telemetry per the forensic contract (bead `unitAI-60w93.1`).
 
 ### Utility Skills
 
