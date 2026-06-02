@@ -117,7 +117,10 @@ def main() -> int:
         return 0
 
     try:
-        drift = scan_drift(project_root=str(root))
+        # Surface-only: the post-merge sweep just needs to DETECT drift and drop a marker;
+        # semantic tiering is the librarian's job (/updating-service-skills). Force the cheap
+        # mtime path so a default-branch merge can never trigger gitnexus fan-out (xtrm-08i0b).
+        drift = scan_drift(project_root=str(root), use_gitnexus=False)
     except Exception:
         return 0
 

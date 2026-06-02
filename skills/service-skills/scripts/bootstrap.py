@@ -319,18 +319,56 @@ def _gitnexus_tool_name(args: list[str]) -> str | None:
     return args[0] if args and args[0] in {"detect_changes", "impact", "query", "context"} else None
 
 
-def run_gitnexus_json(args: list[str], timeout: float = 2.0, repo_name: str | None = None) -> dict[str, Any] | list[Any] | None:
+def _kill_process_tree(proc: "subprocess.Popen") -> None:
+    """Reap the WHOLE process group started by Popen(start_new_session=True), then wait.
+
+    `npx gitnexus` spawns a child `node` that loads the repo graph into memory; a plain
+    subprocess kill only signals the direct `npx` pid, leaving the `node` grandchild
+    orphaned and still resident. Over an unbounded candidate set those orphans OOM the
+    host (xtrm-08i0b). Killing the session/process group guarantees nothing lingers.
+    """
+    import os
+    import signal
     try:
-        cmd = ["npx", "gitnexus", *args]
-        tool_name = _gitnexus_tool_name(args)
-        if tool_name and "--repo" not in args:
-            cmd.extend(["--repo", repo_name or _gitnexus_repo_name()])
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    try:
+        proc.wait(timeout=2)
+    except Exception:
+        pass
+
+
+def run_gitnexus_json(args: list[str], timeout: float = 2.0, repo_name: str | None = None) -> dict[str, Any] | list[Any] | None:
+    cmd = ["npx", "gitnexus", *args]
+    tool_name = _gitnexus_tool_name(args)
+    if tool_name and "--repo" not in args:
+        cmd.extend(["--repo", repo_name or _gitnexus_repo_name()])
+    # Run in its own session (process group) so a timeout — or any failure — lets us reap
+    # the full tree, not just the npx pid (xtrm-08i0b). Without this, a slow/hung gitnexus
+    # leaves a resident node process behind on every call.
+    proc = None
+    stdout = ""
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True
+        )
+        try:
+            stdout, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(proc)
+            return None
+        if proc.returncode != 0:
+            return None
     except Exception:
         return None
-    if result.returncode != 0:
-        return None
-    stdout = result.stdout.strip()
+    finally:
+        if proc is not None and proc.poll() is None:
+            _kill_process_tree(proc)
+    stdout = (stdout or "").strip()
     if not stdout:
         return {}
     try:
