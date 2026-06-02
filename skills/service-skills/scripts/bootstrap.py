@@ -29,7 +29,6 @@ import os
 import re
 import subprocess  # nosec B404
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -240,12 +239,20 @@ def register_service(
     registry = load_registry(project_root)
     if "services" not in registry:
         registry["services"] = {}
+    # Registration is CATALOGUING, not a verified sync. Deliberately do NOT stamp
+    # ``last_sync`` here: claiming "synced as of now" without auditing the SKILL.md
+    # against code is the exact "timestamp-only sync without evidence" anti-pattern the
+    # librarian's own prompt forbids — and when done in bulk it set every service's
+    # last_sync=now with no last_sync_ref, so the drift scan's mtime pre-filter returned
+    # 0 candidates and masked real drift (xtrm-008tr). Only a verified audit
+    # (drift_detector.update_sync_time) may stamp last_sync, and it stamps last_sync_ref
+    # atomically alongside. A catalogued-but-never-synced service is surfaced as drift by
+    # scan_drift (needs initial verified sync) rather than appearing falsely clean.
     registry["services"][service_id] = {
         "name": name,
         "territory": territory,
         "skill_path": skill_path,
         "description": description,
-        "last_sync": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     save_registry(registry, project_root)
 
