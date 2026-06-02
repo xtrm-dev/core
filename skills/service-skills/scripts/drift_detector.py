@@ -8,7 +8,7 @@ from typing import Any, cast
 
 # bootstrap.py is a sibling in this consolidated scripts/ dir (no cross-skill hop).
 sys.path.insert(0, str(Path(__file__).parent))
-from bootstrap import RootResolutionError, find_service_for_path, get_project_root, get_registry_path, get_service, is_gitnexus_available, load_registry, run_gitnexus_json, save_registry  # type: ignore[import-not-found]  # noqa: E402
+from bootstrap import RootResolutionError, _gitnexus_repo_name, find_service_for_path, get_project_root, get_registry_path, get_service, is_gitnexus_available, load_registry, run_gitnexus_json, save_registry  # type: ignore[import-not-found]  # noqa: E402
 
 # Hard cap on per-item gitnexus enrichment: beyond this many drifted candidates the scan
 # falls back to mtime instead of fanning out a gitnexus subprocess per file (which OOMs the
@@ -194,16 +194,22 @@ def scan_drift(project_root: str | None = None, enrich_with_gitnexus: bool = Fal
     drifted = []
     for service_id, service in registry.get("services", {}).items():
         last_sync_str = service.get("last_sync", "")
-        if not last_sync_str:
-            continue
         try:
-            sync_time = datetime.fromisoformat(last_sync_str.replace("Z", "+00:00"))
+            sync_time = datetime.fromisoformat(last_sync_str.replace("Z", "+00:00")) if last_sync_str else None
         except ValueError:
-            continue
+            sync_time = None
+        # A service with no (or unparseable, e.g. the "never" sentinel) last_sync has been
+        # CATALOGUED but never verified-synced. Surface its WHOLE territory as drift (needs an
+        # initial verified sync) instead of skipping — skipping is exactly how a bulk
+        # timestamp-less catalog masked real drift: the mtime pre-filter returned 0 and every
+        # service looked clean (xtrm-008tr). Compare against the epoch so every tracked file
+        # counts; the git-tracked filter + enrichment cap below keep the candidate set bounded.
+        never_synced = sync_time is None
+        floor = sync_time if sync_time is not None else datetime.fromtimestamp(0, tz=timezone.utc)
         for pattern in service.get("territory", []):
             for fp in root.glob(pattern):
-                if fp.is_file() and datetime.fromtimestamp(fp.stat().st_mtime, tz=timezone.utc) > sync_time:
-                    drifted.append({"service_id": service_id, "service_name": service.get("name", service_id), "file_path": str(fp.relative_to(root)), "last_sync": last_sync_str, "last_sync_ref": _service_last_sync_ref(service)})
+                if fp.is_file() and datetime.fromtimestamp(fp.stat().st_mtime, tz=timezone.utc) > floor:
+                    drifted.append({"service_id": service_id, "service_name": service.get("name", service_id), "file_path": str(fp.relative_to(root)), "last_sync": last_sync_str, "last_sync_ref": _service_last_sync_ref(service), "never_synced": never_synced})
     if not drifted:
         return []
     # Respect .gitignore: drop candidates that are not git-tracked (build/vendor/cache trees
@@ -238,7 +244,7 @@ def scan_drift(project_root: str | None = None, enrich_with_gitnexus: bool = Fal
     out = []
     for item in drifted:
         try:
-            out.append(_enrich_item(item, project_root, Path(project_root).name, item.get("last_sync_ref")))
+            out.append(_enrich_item(item, project_root, _gitnexus_repo_name(project_root), item.get("last_sync_ref")))
         except Exception as exc:
             item["gitnexus_status"] = "cli_error"
             item["tier_source"] = "mtime"

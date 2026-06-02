@@ -65,6 +65,10 @@ def test_run_gitnexus_json_omits_json_flag_and_uses_repo(tmp_path: Path, monkeyp
 
     monkeypatch.setattr(bootstrap.subprocess, "Popen", FakeProc)
     monkeypatch.setattr(bootstrap, "get_project_root", lambda: str(tmp_path))
+    # Isolate from the repo-name resolver: _gitnexus_repo_name now shells out via
+    # subprocess.run (git --git-common-dir, xtrm-vvhfs), which would collide with the
+    # FakeProc Popen stub. This test only asserts run_gitnexus_json's flag/-repo wiring.
+    monkeypatch.setattr(bootstrap, "_gitnexus_repo_name", lambda project_root=None: "mock-repo")
     assert bootstrap.run_gitnexus_json(["detect_changes", "--scope", "unstaged"]) == {"output": "No changes detected"}
     assert "--json" not in captured["cmd"]
     assert "--repo" in captured["cmd"]

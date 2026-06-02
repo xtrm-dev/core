@@ -29,7 +29,6 @@ import os
 import re
 import subprocess  # nosec B404
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -240,12 +239,20 @@ def register_service(
     registry = load_registry(project_root)
     if "services" not in registry:
         registry["services"] = {}
+    # Registration is CATALOGUING, not a verified sync. Deliberately do NOT stamp
+    # ``last_sync`` here: claiming "synced as of now" without auditing the SKILL.md
+    # against code is the exact "timestamp-only sync without evidence" anti-pattern the
+    # librarian's own prompt forbids — and when done in bulk it set every service's
+    # last_sync=now with no last_sync_ref, so the drift scan's mtime pre-filter returned
+    # 0 candidates and masked real drift (xtrm-008tr). Only a verified audit
+    # (drift_detector.update_sync_time) may stamp last_sync, and it stamps last_sync_ref
+    # atomically alongside. A catalogued-but-never-synced service is surfaced as drift by
+    # scan_drift (needs initial verified sync) rather than appearing falsely clean.
     registry["services"][service_id] = {
         "name": name,
         "territory": territory,
         "skill_path": skill_path,
         "description": description,
-        "last_sync": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     save_registry(registry, project_root)
 
@@ -311,8 +318,36 @@ if __name__ == "__main__":
         sys.exit(1)
 
 def _gitnexus_repo_name(project_root: str | None = None) -> str:
+    """Resolve the repo label gitnexus indexed under — the MAIN worktree's basename.
+
+    In a linked git worktree ``get_project_root()`` returns the worktree dir, whose basename
+    (e.g. ``market-data-uh1r-service-skills-sync``) gitnexus has NOT indexed; injecting it as
+    ``--repo`` makes every gitnexus call fail → drift silently degrades to mtime-only tiering.
+    The service-skills-sync librarian ALWAYS runs in such an auto-provisioned worktree, so it
+    would otherwise never get semantic enrichment. ``git rev-parse --git-common-dir`` points at
+    the shared (main) ``.git``; its parent is the indexed checkout (xtrm-vvhfs). Falls back to the
+    local basename on any git failure. ``GITNEXUS_REPO`` still wins when explicitly set.
+    """
+    env = os.environ.get("GITNEXUS_REPO")
+    if env:
+        return env
     root = Path(project_root or get_project_root())
-    return os.environ.get("GITNEXUS_REPO") or root.name
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=True, timeout=5,
+        )
+        common = result.stdout.strip()
+        if common:
+            common_path = Path(common)
+            if not common_path.is_absolute():
+                common_path = root / common_path
+            main_root = common_path.resolve().parent
+            if main_root.name:
+                return main_root.name
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return root.name
 
 
 def _gitnexus_tool_name(args: list[str]) -> str | None:
