@@ -8,7 +8,7 @@ from typing import Any, cast
 
 # bootstrap.py is a sibling in this consolidated scripts/ dir (no cross-skill hop).
 sys.path.insert(0, str(Path(__file__).parent))
-from bootstrap import RootResolutionError, find_service_for_path, get_project_root, get_registry_path, get_service, is_gitnexus_available, load_registry, run_gitnexus_json, save_registry  # type: ignore[import-not-found]  # noqa: E402
+from bootstrap import RootResolutionError, _gitnexus_repo_name, find_service_for_path, get_project_root, get_registry_path, get_service, is_gitnexus_available, load_registry, run_gitnexus_json, save_registry  # type: ignore[import-not-found]  # noqa: E402
 
 # Hard cap on per-item gitnexus enrichment: beyond this many drifted candidates the scan
 # falls back to mtime instead of fanning out a gitnexus subprocess per file (which OOMs the
@@ -238,7 +238,7 @@ def scan_drift(project_root: str | None = None, enrich_with_gitnexus: bool = Fal
     out = []
     for item in drifted:
         try:
-            out.append(_enrich_item(item, project_root, Path(project_root).name, item.get("last_sync_ref")))
+            out.append(_enrich_item(item, project_root, _gitnexus_repo_name(project_root), item.get("last_sync_ref")))
         except Exception as exc:
             item["gitnexus_status"] = "cli_error"
             item["tier_source"] = "mtime"
