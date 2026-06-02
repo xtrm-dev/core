@@ -24,10 +24,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
+
+# A legacy in-body reference: ".claude/skills/<segment>" where <segment> is a service-id
+# (self-ref) or a registry 'container' name (container-named self/cross-ref). The trailing
+# "/scripts/...", "/SKILL.md", or nothing (e.g. `make -C .claude/skills/<seg>`) is preserved.
+_CLAUDE_SKILLS_REF = re.compile(r"\.claude/skills/([a-z0-9][a-z0-9_-]*)")
 
 # Sibling imports (consolidated scripts/ dir).
 sys.path.insert(0, str(Path(__file__).parent))
@@ -55,6 +61,42 @@ def _new_skill_path_str(project_root: Path, pack: Path, service_id: str) -> str:
         return str(new_md).replace(os.sep, "/")
 
 
+def _new_skill_dir_str(project_root: Path, pack: Path, service_id: str) -> str:
+    """Project-relative POSIX path to a service's NEW skill *directory* (no /SKILL.md), used
+    as the rewrite target for legacy in-body ``.claude/skills/<alias>`` references."""
+    new_dir = pack / "service-skills" / "services" / service_id
+    try:
+        return str(new_dir.resolve(strict=False).relative_to(project_root.resolve())).replace(os.sep, "/")
+    except ValueError:
+        return str(new_dir).replace(os.sep, "/")
+
+
+def _rewrite_claude_refs(body: str, new_dir_for: Any) -> tuple[str, int, set[str]]:
+    """Rewrite legacy ``.claude/skills/<alias>`` refs in a moved SKILL.md body to the new
+    ``.xtrm/.../service-skills/services/<service-id>`` dir.
+
+    ``new_dir_for(alias)`` returns the new dir path for a known alias, or ``None`` to leave the
+    ref untouched (and report it as unmapped). The migrator MOVES SKILL.md bodies verbatim, so
+    self-refs (``.claude/skills/<service-id>/scripts/...``, ``make -C .claude/skills/<container>``)
+    and umbrella cross-refs are left pointing at the dead flat path unless rewritten here
+    (xtrm-8ike5). Returns ``(new_body, rewritten_count, unmapped_segments)``.
+    """
+    unmapped: set[str] = set()
+    rewrites = 0
+
+    def _repl(m: "re.Match[str]") -> str:
+        nonlocal rewrites
+        alias = m.group(1)
+        new_dir = new_dir_for(alias)
+        if new_dir is None:
+            unmapped.add(alias)
+            return m.group(0)
+        rewrites += 1
+        return new_dir
+
+    return _CLAUDE_SKILLS_REF.sub(_repl, body), rewrites, unmapped
+
+
 def migrate_pack(project_root: Path, pack: Path, repo_name: str) -> dict[str, Any]:
     """Migrate one pack. Returns a result dict with per-service outcomes.
 
@@ -72,6 +114,28 @@ def migrate_pack(project_root: Path, pack: Path, repo_name: str) -> dict[str, An
         return {"pack": pack.name, "status": "no-registry", "services": {}}
     registry: dict[str, Any] = json.loads(reg_src.read_text(encoding="utf-8"))
     services: dict[str, Any] = registry.get("services", {})
+
+    # Alias map for in-body ref rewriting: every legacy ".claude/skills/<segment>" segment is
+    # either a service-id (self-ref / umbrella cross-ref) or a service's registry 'container'
+    # name (container-named self-ref). Map both to the service-id so the new dir resolves.
+    alias_to_service: dict[str, str] = {}
+    for sid, info in services.items():
+        alias_to_service[sid] = sid
+        container = info.get("container")
+        if isinstance(container, str) and container:
+            alias_to_service.setdefault(container, sid)
+    _dir_cache: dict[str, str] = {}
+
+    def _new_dir_for(alias: str) -> str | None:
+        sid = alias_to_service.get(alias)
+        if sid is None:
+            return None
+        if sid not in _dir_cache:
+            _dir_cache[sid] = _new_skill_dir_str(project_root, pack, sid)
+        return _dir_cache[sid]
+
+    refs_rewritten = 0
+    stale_refs: set[str] = set()
 
     outcomes: dict[str, str] = {}
     for service_id, info in services.items():
@@ -98,6 +162,19 @@ def migrate_pack(project_root: Path, pack: Path, repo_name: str) -> dict[str, An
 
         info["skill_path"] = _new_skill_path_str(project_root, pack, service_id)
 
+        # Rewrite legacy in-body ".claude/skills/<alias>/..." refs in the moved SKILL.md so
+        # Data-Inspection / Diagnostic-Scripts / `make -C` blocks point at the new services/
+        # path instead of the dead flat one (xtrm-8ike5). Idempotent: a re-run finds no
+        # ".claude/skills" refs and is a no-op.
+        moved_md = new_dir / "SKILL.md"
+        if moved_md.exists():
+            body = moved_md.read_text(encoding="utf-8")
+            rewritten, n, unmapped = _rewrite_claude_refs(body, _new_dir_for)
+            if n:
+                moved_md.write_text(rewritten, encoding="utf-8")
+                refs_rewritten += n
+            stale_refs |= unmapped
+
     # Relocate the registry under the umbrella with rewritten skill_paths.
     umbrella_dir.mkdir(parents=True, exist_ok=True)
     new_registry.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
@@ -113,6 +190,8 @@ def migrate_pack(project_root: Path, pack: Path, repo_name: str) -> dict[str, An
         "services": outcomes,
         "umbrella_written": umbrella_changed,
         "registry": str(new_registry),
+        "refs_rewritten": refs_rewritten,
+        "stale_refs": sorted(stale_refs),
     }
 
 
@@ -168,6 +247,14 @@ def main() -> None:
         print(f"{prefix}: {sid} ({outcome})")
     print(f"registry: {result['registry']}")
     print(f"umbrella: {'written' if result['umbrella_written'] else 'unchanged'}")
+    if result.get("refs_rewritten"):
+        print(f"refs: rewrote {result['refs_rewritten']} legacy .claude/skills path(s) in SKILL.md bodies")
+    for seg in result.get("stale_refs", []):
+        print(
+            f"WARNING: unmapped .claude/skills/{seg} ref left as-is "
+            f"(no matching service-id or registry container) — review manually",
+            file=sys.stderr,
+        )
     for note in demote_shadowing_registries(project_root):
         print(note)
     sys.exit(0)
