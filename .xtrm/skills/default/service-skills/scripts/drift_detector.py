@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,11 @@ from typing import Any, cast
 # bootstrap.py is a sibling in this consolidated scripts/ dir (no cross-skill hop).
 sys.path.insert(0, str(Path(__file__).parent))
 from bootstrap import RootResolutionError, find_service_for_path, get_project_root, get_registry_path, get_service, is_gitnexus_available, load_registry, run_gitnexus_json, save_registry  # type: ignore[import-not-found]  # noqa: E402
+
+# Hard cap on per-item gitnexus enrichment: beyond this many drifted candidates the scan
+# falls back to mtime instead of fanning out a gitnexus subprocess per file (which OOMs the
+# host on a broad/unfiltered territory — xtrm-08i0b). Override via DRIFT_MAX_ENRICH.
+MAX_ENRICH_CANDIDATES = int(os.environ.get("DRIFT_MAX_ENRICH", "200"))
 
 def check_drift(file_path: str, project_root: str | None = None) -> dict:
     if project_root is None:
@@ -91,6 +97,24 @@ def _git_head(project_root: str) -> str:
     import subprocess
     result = subprocess.run(["git", "-C", project_root, "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
     return result.stdout.strip()
+
+
+def _git_tracked_files(project_root: str) -> set[str] | None:
+    """Set of git-tracked file paths (relative, POSIX), or None if git is unavailable.
+
+    Territory globs match the FILESYSTEM, so build/vendor/cache trees (rust ``target/``,
+    ``__pycache__``, ``node_modules``) get swept into the drift candidate set even though
+    they are gitignored. Filtering candidates to tracked files is the primary defense
+    against the OOM fan-out (xtrm-08i0b)."""
+    import subprocess
+    try:
+        result = subprocess.run(["git", "-C", project_root, "ls-files", "-z"],
+                                capture_output=True, text=True, check=False, timeout=10)
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    return {p for p in result.stdout.split("\0") if p}
 
 
 def _git_diff_files(project_root: str, base_ref: str | None) -> list[str]:
@@ -182,6 +206,21 @@ def scan_drift(project_root: str | None = None, enrich_with_gitnexus: bool = Fal
                     drifted.append({"service_id": service_id, "service_name": service.get("name", service_id), "file_path": str(fp.relative_to(root)), "last_sync": last_sync_str, "last_sync_ref": _service_last_sync_ref(service)})
     if not drifted:
         return []
+    # Respect .gitignore: drop candidates that are not git-tracked (build/vendor/cache trees
+    # swept in by filesystem globs) before any gitnexus enrichment (xtrm-08i0b).
+    tracked = _git_tracked_files(project_root)
+    if tracked is not None:
+        drifted = [d for d in drifted if d["file_path"] in tracked]
+        if not drifted:
+            return []
+    # Hard cap: an unbounded candidate set fans out one gitnexus subprocess per file and OOMs
+    # the host. Beyond the cap, fall back to mtime and warn loudly (xtrm-08i0b).
+    if use_gitnexus and len(drifted) > MAX_ENRICH_CANDIDATES:
+        print(f"drift_detector: {len(drifted)} drifted candidates exceed "
+              f"DRIFT_MAX_ENRICH={MAX_ENRICH_CANDIDATES}; skipping gitnexus enrichment "
+              f"(mtime-only). Narrow the service territory globs or raise DRIFT_MAX_ENRICH.",
+              file=sys.stderr)
+        use_gitnexus = False
     if not use_gitnexus:
         for item in drifted:
             item["gitnexus_status"] = "disabled"

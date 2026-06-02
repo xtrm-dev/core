@@ -48,16 +48,24 @@ def test_root_used_only_when_no_xtrm_registry(tmp_path: Path):
 def test_run_gitnexus_json_omits_json_flag_and_uses_repo(tmp_path: Path, monkeypatch):
     captured = {}
 
-    class Result:
+    class FakeProc:
+        # gitnexus now runs via Popen(start_new_session=True) so a timeout can reap the
+        # whole process group (xtrm-08i0b); the mock mirrors that surface.
         returncode = 0
-        stdout = "No changes detected\n"
 
-    def fake_run(cmd, capture_output, text, timeout, check):
-        captured["cmd"] = cmd
-        return Result()
+        def __init__(self, cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["start_new_session"] = kwargs.get("start_new_session")
 
-    monkeypatch.setattr(bootstrap.subprocess, "run", fake_run)
+        def communicate(self, timeout=None):
+            return ("No changes detected\n", "")
+
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", FakeProc)
     monkeypatch.setattr(bootstrap, "get_project_root", lambda: str(tmp_path))
     assert bootstrap.run_gitnexus_json(["detect_changes", "--scope", "unstaged"]) == {"output": "No changes detected"}
     assert "--json" not in captured["cmd"]
     assert "--repo" in captured["cmd"]
+    assert captured["start_new_session"] is True
