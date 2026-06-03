@@ -71,6 +71,39 @@ def _new_skill_dir_str(project_root: Path, pack: Path, service_id: str) -> str:
         return str(new_dir).replace(os.sep, "/")
 
 
+def _sync_pack_json(pack: Path) -> str | None:
+    """Sync ``PACK.json`` ``skills[]`` to the post-migration filesystem (xtrm-x8b5g).
+
+    The active-view materializer validates a pack's ``PACK.json`` ``skills[]`` against the
+    filesystem: an entry is a *direct child dir of the pack that contains a SKILL.md* (dir name
+    is the identity). After migration the moved per-service dirs live under
+    ``service-skills/services/`` (no longer direct children) and the new ``service-skills``
+    umbrella is a direct child — so a stale ``PACK.json`` lists ghost services (metadata-only) and
+    omits the umbrella (filesystem-only), tripping ``PACK_METADATA_MISMATCH`` which BLOCKS the
+    active-view rebuild. Recompute ``skills[]`` from the filesystem (idempotent). Returns a note,
+    or None when there is no ``PACK.json`` or it is already in sync.
+    """
+    pack_json = pack / "PACK.json"
+    if not pack_json.exists():
+        return None
+    try:
+        data = json.loads(pack_json.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    fs_skills = sorted(
+        child.name for child in pack.iterdir()
+        if child.is_dir() and (child / "SKILL.md").exists()
+    )
+    if data.get("skills") == fs_skills:
+        return None
+    data["skills"] = fs_skills
+    try:
+        pack_json.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        return None
+    return f"pack-json: synced PACK.json skills -> {', '.join(fs_skills) or '(none)'}"
+
+
 def _rewrite_claude_refs(body: str, new_dir_for: Any) -> tuple[str, int, set[str]]:
     """Rewrite legacy ``.claude/skills/<alias>`` refs in a moved SKILL.md body to the new
     ``.xtrm/.../service-skills/services/<service-id>`` dir.
@@ -184,6 +217,10 @@ def migrate_pack(project_root: Path, pack: Path, repo_name: str) -> dict[str, An
     # Generate the umbrella (preserves any existing SEMANTIC block).
     umbrella_changed = write_umbrella(umbrella_dir / "SKILL.md", registry, repo_name)
 
+    # Sync PACK.json AFTER the umbrella exists + services have moved, so the recomputed
+    # skills[] reflects the final layout (umbrella in, ghost services out) — xtrm-x8b5g.
+    pack_json_note = _sync_pack_json(pack)
+
     return {
         "pack": pack.name,
         "status": "ok",
@@ -192,6 +229,7 @@ def migrate_pack(project_root: Path, pack: Path, repo_name: str) -> dict[str, An
         "registry": str(new_registry),
         "refs_rewritten": refs_rewritten,
         "stale_refs": sorted(stale_refs),
+        "pack_json_note": pack_json_note,
     }
 
 
@@ -247,6 +285,8 @@ def main() -> None:
         print(f"{prefix}: {sid} ({outcome})")
     print(f"registry: {result['registry']}")
     print(f"umbrella: {'written' if result['umbrella_written'] else 'unchanged'}")
+    if result.get("pack_json_note"):
+        print(result["pack_json_note"])
     if result.get("refs_rewritten"):
         print(f"refs: rewrote {result['refs_rewritten']} legacy .claude/skills path(s) in SKILL.md bodies")
     for seg in result.get("stale_refs", []):

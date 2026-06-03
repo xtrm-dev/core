@@ -56974,6 +56974,15 @@ async function ensureServiceSkills(projectRoot, opts) {
       }
     }
   }
+  if (migratedPacks.length > 0) {
+    try {
+      const skillsRoot = import_node_path9.default.join(projectRoot, ".xtrm", "skills");
+      const views = await rebuildAllRuntimeActiveViews(skillsRoot);
+      notes.push(`service-skills: active view rebuilt after migration (${views[0]?.discoveredSkillCount ?? 0} skills).`);
+    } catch (error51) {
+      notes.push(`service-skills: active-view rebuild after migration skipped \u2014 ${error51 instanceof Error ? error51.message : String(error51)}`);
+    }
+  }
   await ensurePostMergeDriftHook(projectRoot, notes);
   return { applicable: true, migratedPacks, alreadyCurrent: migratedPacks.length === 0, notes };
 }
