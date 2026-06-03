@@ -179,6 +179,45 @@ def _service_last_sync_ref(service: dict[str, Any]) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def territory_gitignore_report(project_root: str | None = None) -> list[dict]:
+    """Per (service, territory pattern), report filesystem-glob matches that are NOT git-tracked
+    — i.e. gitignored build/vendor/cache files a glob sweeps in (xtrm-br179).
+
+    Read-only. Returns one entry per pattern with a nonzero ignored-delta (empty if git is
+    unavailable or no registry). These files are already dropped at scan time by the
+    ``_git_tracked_files`` filter (xtrm-08i0b), so this is an advisory lint: a flagged pattern is
+    matching the filesystem rather than git and should be narrowed (e.g. ``dir/**/*`` ->
+    ``dir/**/*.py``) so the territory tracks only real source.
+    """
+    if project_root is None:
+        try:
+            project_root = get_project_root()
+        except RootResolutionError:
+            return []
+    project_root = cast(str, project_root)
+    root = Path(project_root)
+    if not get_registry_path(project_root).exists():
+        return []
+    tracked = _git_tracked_files(project_root)
+    if tracked is None:
+        return []
+    registry = load_registry(project_root)
+    report: list[dict] = []
+    for service_id, service in registry.get("services", {}).items():
+        for pattern in service.get("territory", []):
+            fs = [str(p.relative_to(root)) for p in root.glob(pattern) if p.is_file()]
+            if not fs:
+                continue
+            ignored = sorted(f for f in fs if f not in tracked)
+            if ignored:
+                report.append({
+                    "service_id": service_id, "pattern": pattern, "fs": len(fs),
+                    "tracked": len(fs) - len(ignored), "ignored": len(ignored),
+                    "samples": ignored[:3],
+                })
+    return report
+
+
 def scan_drift(project_root: str | None = None, enrich_with_gitnexus: bool = False, use_gitnexus: bool = True) -> list[dict]:
     if project_root is None:
         try:
@@ -216,7 +255,15 @@ def scan_drift(project_root: str | None = None, enrich_with_gitnexus: bool = Fal
     # swept in by filesystem globs) before any gitnexus enrichment (xtrm-08i0b).
     tracked = _git_tracked_files(project_root)
     if tracked is not None:
+        before = len(drifted)
         drifted = [d for d in drifted if d["file_path"] in tracked]
+        dropped = before - len(drifted)
+        if dropped:
+            # Advisory: a territory glob is matching gitignored build/vendor/cache files. They are
+            # safely excluded here (xtrm-08i0b), but the pattern should be narrowed (xtrm-br179).
+            print(f"drift_detector: dropped {dropped} gitignored candidate(s) swept in by territory "
+                  f"globs; run 'drift_detector.py validate-territories' to find which to narrow.",
+                  file=sys.stderr)
         if not drifted:
             return []
     # Hard cap: an unbounded candidate set fans out one gitnexus subprocess per file and OOMs
@@ -267,6 +314,21 @@ def main() -> None:
         print(r["message"] if r.get("drift") else f"No drift: {r.get('reason', 'OK')}")
     elif cmd == "sync" and len(args) > 1:
         sys.exit(0 if update_sync_time(args[1]) else 1)
+    elif cmd == "validate-territories":
+        report = territory_gitignore_report()
+        if not report:
+            print("Territory validation: no gitignored files swept in by any territory glob "
+                  "(or git/registry unavailable).")
+            return
+        total = sum(r["ignored"] for r in report)
+        print(f"Territory validation: {len(report)} pattern(s) sweep in {total} gitignored file(s). "
+              "These are dropped at scan time but indicate the glob should be narrowed:")
+        for r in report:
+            print(f"  [{r['service_id']}] '{r['pattern']}': {r['fs']} fs / {r['tracked']} tracked / "
+                  f"{r['ignored']} ignored")
+            print(f"      e.g. {r['samples']}")
+        print("Tip: narrow recursive globs (e.g. 'dir/**/*' -> 'dir/**/*.py') so the territory "
+              "tracks only real source.")
     elif cmd == "scan":
         d = scan_drift(enrich_with_gitnexus=enrich, use_gitnexus=not no_gitnexus)
         if not d:
