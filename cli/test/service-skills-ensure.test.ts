@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureServiceSkills, hasServiceRegistry } from '../src/core/service-skills-ensure.js';
+import { setRuntimeEnabledPacks } from '../src/core/skills-state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPTS_SRC = path.resolve(__dirname, '..', '..', 'skills', 'service-skills', 'scripts');
@@ -70,6 +71,43 @@ describe('ensureServiceSkills — foolproof registry-gated migration (xtrm-u54wt
     expect(second.applicable).toBe(true);
     expect(second.alreadyCurrent).toBe(true);
     expect(second.migratedPacks).toEqual([]);
+  });
+
+  it('syncs PACK.json and rebuilds the active view (umbrella) after migration (xtrm-x8b5g)', async () => {
+    const repo = await makeRepo();
+    await seedFlatPack(repo, ['serving-mcp-tools', 'db-expert']);
+    const skillsRoot = path.join(repo, '.xtrm', 'skills');
+    const pack = path.join(skillsRoot, 'user', 'packs', 'market-data');
+    // a regular (non-service) skill that must survive in PACK.json
+    await fs.ensureDir(path.join(pack, 'using-tdd-guard'));
+    await fs.writeFile(path.join(pack, 'using-tdd-guard', 'SKILL.md'), '# tdd\n', 'utf8');
+    // a STALE PACK.json: lists the flat services + regular, omits the umbrella
+    await fs.writeJson(path.join(pack, 'PACK.json'), {
+      schemaVersion: '1', name: 'market-data', version: '1.0.0',
+      description: 'User-created skill pack',
+      skills: ['db-expert', 'serving-mcp-tools', 'using-tdd-guard'],
+    }, { spaces: 2 });
+    await setRuntimeEnabledPacks(skillsRoot, 'claude', ['market-data']);
+
+    const result = await ensureServiceSkills(repo, { apply: true });
+    expect(result.migratedPacks).toContain('market-data');
+
+    // Part 1: PACK.json synced to the post-migration filesystem — ghost services dropped,
+    // 'service-skills' umbrella added, regular skill kept.
+    const packJson = await fs.readJson(path.join(pack, 'PACK.json'));
+    expect(packJson.skills).toEqual(['service-skills', 'using-tdd-guard']);
+
+    // Part 2: the active view is rebuilt after migration — both the regular pack skill and
+    // the generated '<repo>-services' umbrella now appear as symlinks. They would be absent if
+    // the rebuild were skipped on a migration-only pass (the bug). The umbrella's runtime name
+    // derives from the repo basename, so read it from the generated frontmatter.
+    const active = path.join(skillsRoot, 'active');
+    expect((await fs.lstat(path.join(active, 'using-tdd-guard'))).isSymbolicLink()).toBe(true);
+    const umbrellaName = (await fs.readFile(path.join(pack, 'service-skills', 'SKILL.md'), 'utf8'))
+      .match(/^name:\s*(.+)$/m)?.[1]?.trim();
+    expect(umbrellaName).toBeTruthy();
+    expect((await fs.lstat(path.join(active, umbrellaName!))).isSymbolicLink()).toBe(true);
+    expect(result.notes.some(n => n.includes('active view rebuilt'))).toBe(true);
   });
 
   it('dry-run does not migrate', async () => {
