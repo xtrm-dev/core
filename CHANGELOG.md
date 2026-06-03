@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.4] — 2026-06-03
+
+Service-skills field-hardening: the v2 drift/sync machinery met real consumer repos (mercury-market-data) and this release fixes the adaptation gaps that surfaced — an unbounded gitnexus fan-out that could OOM the host, a worktree-blind gitnexus label that silenced the librarian's semantic tiering, a registration path that faked `last_sync` and masked drift, a layout migration that left dead `.claude/skills` refs, and territory globs that quietly swept gitignored build trees. Reference docs are also reconciled to the consolidated v2 skill. Publish root `xtrm-tools` from this release commit/tag.
+
+### `xtrm-tools` v0.8.4 — 2026-06-03
+
+#### Fixed
+
+- **`drift_detector` enrichment is bounded and the gitnexus subprocess tree is reaped.** `scan_drift` fanned out one `npx gitnexus` subprocess per drifted file with no cap, and a plain kill left the `node` grandchild resident — an unfiltered/broad territory (real incident: 4991 candidates) could OOM the host. Candidates are now filtered to git-tracked files first, capped at `DRIFT_MAX_ENRICH` (default 200) with an mtime fallback beyond it, and gitnexus runs in its own process group so a timeout/failure kills the whole tree. The post-merge sweep forces the cheap mtime path. (xtrm-08i0b, #280)
+- **gitnexus `--repo` resolves to the main-worktree label, not the worktree dir.** In an sp-auto-provisioned linked worktree, `_gitnexus_repo_name()` returned the worktree basename (which gitnexus never indexed) → `--repo` injection failed → drift silently degraded to mtime-only. Since the `service-skills-sync` librarian *always* runs in a worktree, it never got semantic enrichment. Now resolved via `git rev-parse --git-common-dir`; a second hardcoded site in `scan_drift` is fixed too. (xtrm-vvhfs, #281)
+- **Registration no longer fakes a sync; never-synced services surface as drift.** `register_service` stamped `last_sync=now` with no `last_sync_ref`; done in bulk this set every service's `last_sync` to now so the mtime pre-filter returned 0 candidates and masked real drift. Registration is now catalogue-only — only a verified audit (`update_sync_time`) stamps `last_sync` + `last_sync_ref` atomically — and `scan_drift` surfaces a catalogued-but-never-synced service's whole territory as drift (needs initial sync) instead of skipping it. (xtrm-008tr, #281)
+- **`layout_migrator` rewrites legacy in-body `.claude/skills/<alias>` references.** The migrator moves each `SKILL.md` verbatim, so self/cross refs kept pointing at the dead flat path. They are now rewritten to the new `.xtrm/.../service-skills/services/<service-id>` dir (alias = service-id or registry `container`); unmapped segments are left intact and reported. (xtrm-8ike5, #281)
+
+#### Added
+
+- **`drift_detector.py validate-territories`** — a read-only lint that reports territory globs sweeping in gitignored build/vendor/cache files (`git ls-files` delta per pattern), with a narrow-the-glob tip. `scan_drift` also emits a one-line advisory when it drops gitignored candidates. The danger was already removed by the #280 git-tracked filter; this surfaces the sloppy patterns so they get tightened. (xtrm-br179, #282)
+
+#### Changed
+
+- **Reference docs reconciled to the consolidated v2 `service-skills` skill** (`docs/skills.md`, `docs/project-skills.md`, `docs/testing.md`) — the old five-skill trinity framing is replaced with the single umbrella skill + a forward pointer to the devops system. (xtrm-060ov, #278)
+
 ## [v0.8.3] — 2026-06-01
 
 Service-skills reliability hardening: makes the v2 drift/sync machinery actually fire in consumers and tier drift **semantically** instead of silently degrading to mtime. The critical fix (lg9km) repairs `drift_detector sync` so it stamps `last_sync_ref` — without it semantic tiering was dead in every consumer. Plus the dormant-hooks reconcile on `xt update`, post-merge drift automation, and gitnexus-mandatory librarian verdicts. Publish root `xtrm-tools` from this release commit/tag.
