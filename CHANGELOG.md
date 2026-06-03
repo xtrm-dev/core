@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.5] — 2026-06-03
+
+Service-skills migration now *sticks* in a consumer. Repos migrated to the v2 umbrella layout on 0.8.2–0.8.4 could end up without the `service-skills` skill in their active view; this release heals them on the next `xt update --apply`. Publish root `xtrm-tools` from this release commit/tag.
+
+### `xtrm-tools` v0.8.5 — 2026-06-03
+
+#### Fixed
+
+- **`layout_migrator` syncs `PACK.json` after migration.** Moving per-service dirs into `service-skills/services/` and generating the `<repo>-services` umbrella left `PACK.json` listing the now-nested services and omitting the umbrella → `PACK_METADATA_MISMATCH`, which blocked the active-view rebuild invariant. `PACK.json` `skills[]` is now recomputed from the filesystem (direct-child dirs containing `SKILL.md`) — umbrella in, ghost services out, regular skills kept; idempotent. (xtrm-x8b5g, #284)
+- **Active view is rebuilt after a migration.** `xt update` only rebuilt the runtime active view when registry files drifted, and `xt init` rebuilds *before* the migration step — so a migration-only pass (2nd apply, or a package-current repo on the old layout) migrated the data but left `.xtrm/skills/active` frozen, and the consumer never saw the new `service-skills` machinery + `<repo>-services` umbrella. `ensureServiceSkills` now forces `rebuildAllRuntimeActiveViews` after a migration (best-effort, idempotent) so both `init` and `update` reflect the new layout. (xtrm-x8b5g, #284)
+
 ## [v0.8.4] — 2026-06-03
 
 Service-skills field-hardening: the v2 drift/sync machinery met real consumer repos (mercury-market-data) and this release fixes the adaptation gaps that surfaced — an unbounded gitnexus fan-out that could OOM the host, a worktree-blind gitnexus label that silenced the librarian's semantic tiering, a registration path that faked `last_sync` and masked drift, a layout migration that left dead `.claude/skills` refs, and territory globs that quietly swept gitignored build trees. Reference docs are also reconciled to the consolidated v2 skill. Publish root `xtrm-tools` from this release commit/tag.
