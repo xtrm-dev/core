@@ -292,6 +292,10 @@ Enable with `xt skills enable <pack-name>`.
 | `docs list` | Inventory markdown docs with summaries, filters, and JSON output |
 | `docs cross-check` | Validate docs against recent PR activity and closed bd issues |
 | `debug` | Watch xtrm hook and bd lifecycle events in real time |
+| `spec draft` | Scaffold a `spec.yaml` from a feature description (PRD intake; xtrm-ai9xl MVP1) |
+| `spec validate` | Run all gates against a `spec.yaml`; structured `--json` report |
+
+> **`/create-spec` deprecation:** any slash-command intake surface must produce a `spec.yaml` only and route the rest of the lifecycle through `xt spec`. See [docs/migration/create-spec-deprecation.md](docs/migration/create-spec-deprecation.md).
 
 ### Flags
 
