@@ -294,6 +294,12 @@ Enable with `xt skills enable <pack-name>`.
 | `debug` | Watch xtrm hook and bd lifecycle events in real time |
 | `spec draft` | Scaffold a `spec.yaml` from a feature description (PRD intake; xtrm-ai9xl MVP1) |
 | `spec validate` | Run all gates against a `spec.yaml`; structured `--json` report |
+| `spec doctor` | Probe deployed planning + test-planning skills against the xt spec apply capability matrix |
+| `spec apply` | Transform a validated `spec.yaml` into a planner bead + dispatch the planner specialist; `--check-only` runs probe + validate only; `--dry-run` prints the XML; `--reconcile` writes planner output back to `spec.yaml.links` |
+| `spec status` | Compare `spec.yaml.links` against current bd state; reports drift (orphan_link, new_child, cycle); exit 0/1/2 |
+| `spec archive` | Snapshot a completed spec; refuses unless epic + children closed (+ review evidence for high/critical); see `docs/specs/ARCHIVE-GATE.md` |
+
+> **`xt spec apply` composition gate:** apply produces planner input, dispatches, then **stops** at a printed `sp chain review <epic>` handoff. It never invokes `sp chain approve` and never claims tasks — that's the operator's call, guarded by a test (`cli/src/tests/spec-no-bypass.test.ts`).
 
 > **`/create-spec` deprecation:** any slash-command intake surface must produce a `spec.yaml` only and route the rest of the lifecycle through `xt spec`. See [docs/migration/create-spec-deprecation.md](docs/migration/create-spec-deprecation.md).
 
