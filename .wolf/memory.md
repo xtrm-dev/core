@@ -125,3 +125,8 @@
 - 2026-05-27: xtrm-h9hqg added bd auto-stage patch plumbing: cli/src/core/bd-auto-stage-patch.ts flips export.git-add=false and appends an idempotent pre-commit shim respecting core.hooksPath; xt init/update now report patch and dependency maintenance summaries.
 - 2026-05-27: xtrm-h9hqg dist smoke found bd v1.0.3 legitimately sets core.hooksPath=.beads/hooks; treat it as valid when .beads/hooks/pre-commit exists and only warn when the target hook file is missing.
 - 2026-05-30: planning/test-planning skills require log/telemetry contracts and smoke/E2E command evidence in bead planning; test-planning can run inside specialist chains after executor/debugger work to produce test-writing and test-runner contracts.
+- 2026-06-06: xtrm-eg5nb shrank beads-gate memoryPromptMessage to one line; Stop memory gate still uses `memory-gate-done:<sessionId>` ack with saved and nothing-novel forms.
+- 2026-06-06: Local fleet sweep normalized 19 non-worktree hook copies under ~/dev and ~/projects; skipped 19 transient .worktrees copies to avoid mutating active specialist/worktree sessions.
+- 2026-06-06: agent-docs-maintainer skill added to keep CLAUDE.md/AGENTS.md as compact routing docs: audit first, replace CLI dumps with skill/--help pointers, use CLAUDE vs AGENTS templates, and validate line/command/code-fence bloat.
+- 2026-06-06: CLAUDE.md compacted from 635 to 146 lines using agent-docs-maintainer; it now points to skills/CLI help instead of embedding bd/bv/sp/GitNexus manuals.
+- 2026-06-06: Agent-docs cleanup should preserve essential commands (bd ready/list/show, sp list/ps/feed/result, GitNexus impact/detect_changes, validation) and remove only full manuals/dumps.

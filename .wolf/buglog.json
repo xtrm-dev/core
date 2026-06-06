@@ -737,6 +737,42 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-30T00:00:00Z"
+    },
+    {
+      "id": "bug-040",
+      "timestamp": "2026-06-05T23:31:08.434959+00:00",
+      "error_message": "Python re.sub replacement interpreted JS \\n as an actual newline during fleet memoryPromptMessage sweep",
+      "file": ".xtrm/hooks/beads-gate-messages.mjs",
+      "root_cause": "Used re.sub with a replacement string containing backslash escapes; re.sub processes replacement escapes, turning the intended JS source \\n into a literal newline inside the template literal.",
+      "fix": "Re-ran normalization with pattern.subn(lambda _m: replacement, ...) so the replacement is inserted literally; verified all non-worktree hook files contain the intended one-line source and smoke output matches.",
+      "tags": [
+        "python",
+        "regex",
+        "sweep",
+        "beads-gate-messages"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T23:31:08.435044+00:00"
+    },
+    {
+      "id": "bug-041",
+      "timestamp": "2026-06-05T23:31:08.435048+00:00",
+      "error_message": "OpenWolf buglog append code treated .wolf/buglog.json as a list and overwrote the structured {version, bugs} object with a one-entry array",
+      "file": ".wolf/buglog.json",
+      "root_cause": "The append helper fell back to [] when the parsed JSON was not a list, losing existing structured bug entries on write.",
+      "fix": "Restored .wolf/buglog.json from HEAD and appended new entries to the data[\"bugs\"] array while preserving version and existing bug history.",
+      "tags": [
+        "openwolf",
+        "buglog",
+        "json-shape",
+        "data-loss-prevention"
+      ],
+      "related_bugs": [
+        "bug-040"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T23:31:08.435053+00:00"
     }
   ]
 }

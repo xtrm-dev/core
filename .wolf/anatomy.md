@@ -1,4 +1,9 @@
 # anatomy.md
+> Manual note 2026-06-06: CLAUDE.md compact guide was rebalanced to keep an essential command surface (bd/sp/GitNexus/validation) while avoiding full CLI manuals.
+> Manual note 2026-06-06: CLAUDE.md was compacted with agent-docs-maintainer into a 146-line routing guide for xtrm-tools.
+> Manual note 2026-06-06: xtrm-j27c3 adds .xtrm/skills/default/agent-docs-maintainer with templates and audit_agent_docs.py for compact CLAUDE.md/AGENTS.md cleanup.
+> Manual note 2026-06-06: Local fleet sweep updated non-worktree .xtrm/hooks/beads-gate-messages.mjs copies under ~/dev and ~/projects to the compact memory gate prompt; transient .worktrees copies were intentionally skipped.
+> Manual note 2026-06-06: xtrm-eg5nb shrank .xtrm/hooks/beads-gate-messages.mjs memoryPromptMessage to a single-line Stop-hook ack prompt while preserving saved/nothing-novel bd kv forms.
 > Manual note 2026-05-27: xtrm-h9hqg adds cli/src/core/bd-auto-stage-patch.ts and dependency-maintenance.ts; xt init/update now patch bd export.git-add/pre-commit shim and report bd/gitnexus maintenance.
 > Manual note 2026-05-15: xtrm-ewou reconciles #257 worktree bootstrap guidance onto main; clean worktrees omit node_modules/.venv and users should run repo bootstrap.
 > Manual note 2026-05-13: xtrm-krk0 clears OSV by removing unused @artale/pi-procs/tdd-guard deps, making cli/vitest.config.ts load tdd-guard-vitest optionally, pinning Vite for pnpm, and refreshing lockfiles/dist.
