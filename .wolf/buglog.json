@@ -827,6 +827,23 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-07T00:39:34.483776+00:00"
+    },
+    {
+      "id": "bug-045",
+      "timestamp": "2026-06-07T01:29:55.400750+00:00",
+      "error_message": "xt update --apply --root ~/dev exited non-zero during fleet refresh because vaultctl bd doctor could not open Dolt database vaultctl on 127.0.0.1:3308",
+      "file": "/tmp/xt-update-dev.log",
+      "root_cause": "Fleet update applied/checked repos under ~/dev, but dependency maintenance in ~/dev/vaultctl hit a Dolt server/database mismatch; bd doctor --fix failed to create/open the expected vaultctl database. Four ~/dev repos also remain incomplete because they lack .xtrm/registry.json.",
+      "fix": "Recorded partial fleet update result. Manual follow-up: run bd dolt status/bootstrap/doctor in ~/dev/vaultctl and initialize or intentionally skip incomplete repos missing .xtrm/registry.json.",
+      "tags": [
+        "xt-update",
+        "bd-doctor",
+        "dolt",
+        "fleet-refresh"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-07T01:29:55.400830+00:00"
     }
   ]
 }
