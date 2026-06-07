@@ -3,7 +3,7 @@
   "source": {
     "kind": "ref",
     "ref": "master",
-    "resolved_sha": "4de671aa3bb33f47d0ac627383f33a8c3390b68e",
+    "resolved_sha": "3deb623228ad5ab58053a52c434632430c58fb9b",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },

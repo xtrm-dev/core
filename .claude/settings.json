@@ -2,6 +2,7 @@
   "hooks": {
     "SessionStart": [
       {
+        "script": "beads-compact-restore.mjs",
         "hooks": [
           {
             "type": "command",
@@ -19,17 +20,12 @@
           },
           {
             "type": "command",
-            "command": "node \"/home/dawid/dev/xtrm-tools/.xtrm/hooks/xtrm-session-logger.mjs\"",
-            "timeout": 3000
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/cataloger.py\""
+          },
           {
             "type": "command",
-            "command": "node .claude/hooks/specialists-session-start.mjs"
+            "command": "node \"/home/dawid/dev/xtrm-tools/.xtrm/hooks/xtrm-session-logger.mjs\"",
+            "timeout": 3000
           }
         ]
       }
@@ -51,12 +47,31 @@
         ]
       },
       {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/dawid/dev/xtrm-tools/.xtrm/hooks/specialists-agent-guard.mjs\"",
+            "timeout": 2000
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
             "command": "node \"/home/dawid/dev/xtrm-tools/.xtrm/hooks/beads-commit-gate.mjs\"",
             "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Write|Edit|Glob|Grep|Bash|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/skill_activator.py\""
           }
         ]
       }
@@ -98,29 +113,21 @@
         ]
       },
       {
+        "matcher": "Write|Edit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/skills/service-skills/scripts/drift_detector.py\" check-hook",
+            "timeout": 10000
+          }
+        ]
+      },
+      {
         "hooks": [
           {
             "type": "command",
             "command": "node \"/home/dawid/dev/xtrm-tools/.xtrm/hooks/xtrm-tool-logger.mjs\"",
             "timeout": 3000
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/specialists-complete.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/specialists-memory-cache-sync.mjs"
           }
         ]
       }
@@ -143,22 +150,12 @@
     ],
     "PreCompact": [
       {
+        "script": "beads-compact-save.mjs",
         "hooks": [
           {
             "type": "command",
             "command": "node \"/home/dawid/dev/xtrm-tools/.xtrm/hooks/beads-compact-save.mjs\"",
             "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/specialists-complete.mjs"
           }
         ]
       }
