@@ -29,7 +29,7 @@ describe('spec v1 schema', () => {
     });
 
     it('JSON Schema compiles under ajv strict mode', () => {
-        const ajv = new Ajv({ strict: true, allErrors: true });
+        const ajv = new Ajv({ strict: true });
         const compiled = ajv.compile(toJSONSchemaV1());
         expect(typeof compiled).toBe('function');
     });
@@ -46,7 +46,7 @@ describe('spec v1 schema', () => {
     });
 
     it('EXAMPLE.yaml also validates against generated JSON Schema (ajv)', () => {
-        const ajv = new Ajv({ strict: true, allErrors: true });
+        const ajv = new Ajv({ strict: true });
         const validate = ajv.compile(toJSONSchemaV1());
         const parsed = parseYaml(readFileSync(examplePath, 'utf8'));
         const ok = validate(parsed);

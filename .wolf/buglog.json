@@ -809,6 +809,24 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-06-07T00:35:01.558751+00:00"
+    },
+    {
+      "id": "bug-044",
+      "timestamp": "2026-06-07T00:39:34.483728+00:00",
+      "error_message": "pre-push security hooks blocked release branch: semgrep Ajv allErrors:true in spec-schema tests and osv vulnerable hono in cli/.pi/npm package-lock",
+      "file": "cli/src/tests/spec-schema.test.ts",
+      "root_cause": "Branch included xt spec test code using Ajv allErrors:true, which triggers the security audit rule; the local ignored Pi npm lock also pinned vulnerable hono 4.12.18 used by hook scanning.",
+      "fix": "Removed allErrors:true from spec schema tests and refreshed the local cli/.pi/npm lockfile to hono 4.12.23 so pre-push security checks no longer flag the branch/worktree.",
+      "tags": [
+        "pre-push",
+        "semgrep",
+        "osv",
+        "ajv",
+        "hono"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-07T00:39:34.483776+00:00"
     }
   ]
 }
