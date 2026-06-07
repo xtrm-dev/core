@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../cli/src/spec/schema.json
+schema_version: 1
+id: auth-refresh-hardening
+title: Auth refresh hardening
+status: draft
+scrutiny: high
+
+problem: >
+  Transient refresh failures bubble up as login errors with no retry, even
+  though the underlying token store is healthy on retry. Users hit the failure
+  path daily; support cost is rising.
+
+success:
+  - One transient refresh failure is absorbed by a bounded retry
+  - Final failure surfaces a clear, actionable message to the user
+  - No regression in steady-state login latency p95
+
+scope:
+  include:
+    - src/auth/refresh.ts
+    - src/cli/login.ts
+  exclude:
+    - storage migration
+    - auth provider redesign
+
+non_goals:
+  - Redesign of the auth protocol
+  - Changes to the token storage format
+
+constraints:
+  - Preserve existing token format on the wire
+  - Keep CLI flags stable; no new required flags
+  - Log a structured `auth_refresh_attempt` event per attempt with outcome
+
+requirements:
+  - id: R1
+    story: User survives one transient refresh failure without re-login
+    behavior: Retry once after bounded backoff (max 500ms)
+    acceptance:
+      - Refresh succeeds after one injected transient failure
+      - Final failure after retry surfaces a named error code
+    layer_hint: shell
+    priority: 1
+    risks:
+      - Session state divergence under concurrent refresh
+  - id: R2
+    story: Operator can observe retry behavior via logs
+    behavior: Emit a structured event per attempt and per final outcome
+    acceptance:
+      - Each attempt produces one log line with attempt index and outcome
+      - Final outcome line carries total elapsed ms
+    layer_hint: operational
+    priority: 2
+
+validation:
+  - kind: unit
+    target: refresh retry state machine
+  - kind: integration
+    target: login CLI exit code and stderr on final failure
+  - kind: telemetry
+    target: auth_refresh_attempt log event presence and field shape
+
+dependencies:
+  - from: R2
+    requires: R1
+
+open_questions: []
+
+links:
+  parent_epic: null
+  planner_bead: null
+  epic: null
+  children: []
+  test_issues: []

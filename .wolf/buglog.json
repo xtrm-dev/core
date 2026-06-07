@@ -737,6 +737,96 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-30T00:00:00Z"
+    },
+    {
+      "id": "bug-040",
+      "timestamp": "2026-06-05T23:31:08.434959+00:00",
+      "error_message": "Python re.sub replacement interpreted JS \\n as an actual newline during fleet memoryPromptMessage sweep",
+      "file": ".xtrm/hooks/beads-gate-messages.mjs",
+      "root_cause": "Used re.sub with a replacement string containing backslash escapes; re.sub processes replacement escapes, turning the intended JS source \\n into a literal newline inside the template literal.",
+      "fix": "Re-ran normalization with pattern.subn(lambda _m: replacement, ...) so the replacement is inserted literally; verified all non-worktree hook files contain the intended one-line source and smoke output matches.",
+      "tags": [
+        "python",
+        "regex",
+        "sweep",
+        "beads-gate-messages"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T23:31:08.435044+00:00"
+    },
+    {
+      "id": "bug-041",
+      "timestamp": "2026-06-05T23:31:08.435048+00:00",
+      "error_message": "OpenWolf buglog append code treated .wolf/buglog.json as a list and overwrote the structured {version, bugs} object with a one-entry array",
+      "file": ".wolf/buglog.json",
+      "root_cause": "The append helper fell back to [] when the parsed JSON was not a list, losing existing structured bug entries on write.",
+      "fix": "Restored .wolf/buglog.json from HEAD and appended new entries to the data[\"bugs\"] array while preserving version and existing bug history.",
+      "tags": [
+        "openwolf",
+        "buglog",
+        "json-shape",
+        "data-loss-prevention"
+      ],
+      "related_bugs": [
+        "bug-040"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T23:31:08.435053+00:00"
+    },
+    {
+      "id": "bug-042",
+      "timestamp": "2026-06-06T23:22:30.114672+00:00",
+      "error_message": "agent-docs-maintainer sweep copied Python __pycache__ artifacts into every target skill directory after running py_compile on the source skill",
+      "file": ".xtrm/skills/default/agent-docs-maintainer/scripts/__pycache__",
+      "root_cause": "The sweep snapshotted the live skill directory after validation had generated __pycache__; copytree then propagated the runtime artifact to target repos.",
+      "fix": "Removed __pycache__ from all target repos and source, regenerated registry, and changed verification to exclude __pycache__/registry-excluded eval artifacts. Future sweeps should snapshot after deleting runtime artifacts or ignore __pycache__ during copy.",
+      "tags": [
+        "skill-sweep",
+        "python",
+        "pycache",
+        "runtime-artifact"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-06T23:22:30.114706+00:00"
+    },
+    {
+      "id": "bug-043",
+      "timestamp": "2026-06-07T00:35:01.558706+00:00",
+      "error_message": "npm test failed in pi-runtime ensureAlwaysGlobalPiPackages tests: expected install calls but got [] when globally installed Pi npm packages existed on developer machine",
+      "file": "cli/src/core/pi-runtime.ts",
+      "root_cause": "ensureAlwaysGlobalPiPackages always resolved the real global npm root, so tests using a temporary agentDir falsely considered packages present when the developer machine already had the managed Pi packages installed globally.",
+      "fix": "Added an optional npmRootDir parameter; production calls still auto-resolve by default, while tests pass null to isolate temporary agent directories from host global npm state.",
+      "tags": [
+        "test",
+        "pi-runtime",
+        "global-npm-root",
+        "host-state"
+      ],
+      "related_bugs": [
+        "bug-006"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-06-07T00:35:01.558751+00:00"
+    },
+    {
+      "id": "bug-044",
+      "timestamp": "2026-06-07T00:39:34.483728+00:00",
+      "error_message": "pre-push security hooks blocked release branch: semgrep Ajv allErrors:true in spec-schema tests and osv vulnerable hono in cli/.pi/npm package-lock",
+      "file": "cli/src/tests/spec-schema.test.ts",
+      "root_cause": "Branch included xt spec test code using Ajv allErrors:true, which triggers the security audit rule; the local ignored Pi npm lock also pinned vulnerable hono 4.12.18 used by hook scanning.",
+      "fix": "Removed allErrors:true from spec schema tests and refreshed the local cli/.pi/npm lockfile to hono 4.12.23 so pre-push security checks no longer flag the branch/worktree.",
+      "tags": [
+        "pre-push",
+        "semgrep",
+        "osv",
+        "ajv",
+        "hono"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-07T00:39:34.483776+00:00"
     }
   ]
 }

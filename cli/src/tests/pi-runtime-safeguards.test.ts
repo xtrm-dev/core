@@ -204,6 +204,7 @@ describe('pi runtime safeguards', () => {
         installCalls.push(piPackageId);
         return { status: 0, stdout: '', stderr: '' };
       },
+      null,
     );
 
     const expectedPackageIds = getXtManagedPiPackages().map(pkg => pkg.id);
@@ -262,6 +263,7 @@ describe('pi runtime safeguards', () => {
         installCalls.push(piPackageId);
         return { status: 0, stdout: '', stderr: '' };
       },
+      null,
     );
 
     expect(installCalls).toEqual(projectPackageIds);

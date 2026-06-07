@@ -703,14 +703,15 @@ export async function ensureAlwaysGlobalPiPackages(
     log?: (message: string) => void,
     agentDir: string = PI_AGENT_DIR,
     installRunner: PiPackageInstallRunner = runPiPackageInstall,
+    npmRootDir?: string | null,
 ): Promise<{ installed: string[]; failed: string[] }> {
     const installed: string[] = [];
     const failed: string[] = [];
 
-    const npmRootDir = await resolveGlobalNpmRootDir();
+    const resolvedNpmRootDir = npmRootDir === undefined ? await resolveGlobalNpmRootDir() : npmRootDir;
 
     for (const pkg of getXtManagedPiPackages()) {
-        if (await isPackagePresentInPiAgent(agentDir, pkg.id, npmRootDir ?? undefined)) {
+        if (await isPackagePresentInPiAgent(agentDir, pkg.id, resolvedNpmRootDir ?? undefined)) {
             continue;
         }
 
