@@ -8,7 +8,10 @@ This file is a compact routing guide for Claude Code sessions in `xtrm-tools`. I
 
 ## Non-negotiable rules
 
-- Use beads for tracking. Claim before edits: `bd update <id> --claim`.
+- Use beads as the authoritative issue tracker and normal work lifecycle. Inspect/claim/close with `bd` before and after edits.
+- To proceed on any non-trivial or multi-step Claude Code work, use Claude Code task planning features (TaskCreate/TodoWrite-style when available) alongside normal bead operations. The local plan must mirror the active bead scope and never replace beads for ownership, dependencies, memory gates, or closure.
+- Specialists are a normal operational surface here. Before specialist work, check `sp --help` and `sp list` / `specialists list` so you know the available roles and current CLI shape.
+- For documentation, service understanding, and project/service context, use the canonical service-skills skill set (`/scope`, `/using-service-skills`) as the primary knowledge substrate.
 - Never commit while a bead claim is open. Close the bead and satisfy memory ack first.
 - Before editing an existing function, class, or method, run GitNexus impact analysis.
 - Before committing, run `gitnexus_detect_changes()` for scope verification.
@@ -35,7 +38,7 @@ For full xtrm/beads workflow details, load `/using-xtrm` and use `bd --help`, `b
 | Specialist orchestration | latest `/using-specialists-*`, prefer `/using-specialists-v3`; `sp --help` / `specialists --help` |
 | Planning feature/epic work | `/planning` plus `/test-planning` |
 | Tests and quality workflow | `/using-quality-gates`, `/using-tdd`, `/test-planning` |
-| Docs sync | `/sync-docs` |
+| Docs sync | `/sync-docs`; use the canonical service-skills skill set for project/service context |
 | Release | `/releasing` |
 | Session close / PR flow | `/xt-end`, `/session-close-report`, `/xt-merge` |
 | Skill creation/update | `/skill-creator` |
@@ -105,8 +108,9 @@ Keep only the commands an agent needs without another manual. Use `--help` for f
 
 ## Claude Code notes
 
-- Prefer Serena symbol tools for code reading/editing: overview → symbol body → targeted replacement.
-- Use GitNexus for unfamiliar flows before grepping large trees.
+- For non-trivial or multi-step Claude Code work, create and maintain a small internal task plan before proceeding; keep it synchronized with the active bead and clear/complete it as work progresses.
+- For service/documentation context, route through `/scope` and the canonical service-skills skill set first.
+- Use GitNexus for unfamiliar code execution flows before grepping large trees.
 - Use `structured_return` for tests, builds, lint, typecheck, and other quality commands.
 - Use `process` for long-running servers/watchers/log tails.
 - Do not create markdown TODO lists for work tracking; use `bd` issues.

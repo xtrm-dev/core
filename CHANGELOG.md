@@ -11,11 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`agent-docs-maintainer` skill** — compact `CLAUDE.md`/`AGENTS.md` audit and template guidance for keeping agent docs as routing docs, preserving beads, specialists, GitNexus, task planning, and canonical service-skills requirements without embedding full CLI manuals. (xtrm-ot9cy, xtrm-v8oa1)
+
 - **`xt spec` command family** — PRD-level intake CLI that compiles `spec.yaml` artifacts into planner-bead input for the specialists pipeline. Six subcommands: `xt spec draft <desc>` (templated yaml scaffold), `xt spec validate <path>` (8-gate validator with `--json`), `xt spec doctor` (runtime readiness probe against deployed planning + test-planning skills), `xt spec apply <path>` (emit planner bead with `<change-contract>` XML + dispatch planner; `--check-only`, `--dry-run`, `--reconcile`), `xt spec status <path>` (drift detection vs bd state), `xt spec archive <path>` (7-gate refusal + immutable snapshot). Apply is runtime-gated on the readiness probe — refuses with exit 65 until deployed skills carry the bd-native primitives owned by `~/dev/specialists`. Composition gate (`sp chain review/approve`) stays the operator's call; a guard test fails the suite if `sp chain approve` or `bd update --claim` ever leaks into the spec code paths. (xtrm-ai9xl)
 - **`docs/specs/` reference set** — `SCHEMA.md`, `EXAMPLE.yaml`, `VALIDATE-JSON.md`, `CHANGE-CONTRACT-SHAPE.md`, `ARCHIVE-GATE.md`, `UPSTREAM-DEPENDENCIES.md`. (xtrm-ai9xl)
 - **`docs/migration/create-spec-deprecation.md`** — preemptive contract for any future `/create-spec` slash command: yaml-only output, no bd writes, 2-release grace. (xtrm-ai9xl.6)
 
 ### Changed
+
+- **Managed xtrm agent instruction templates** now use compact session-start guidance, explicitly call out Claude TaskCreate/TodoWrite-style planning where applicable, and add catch-up hygiene for handoff beads, recent reports/PRs, issue triage, and service-skills freshness. (xtrm-ycpjr, xtrm-gk0oi, xtrm-h5i5v)
 
 - **`XTRM-GUIDE.md` CLI table** now lists every `xt spec` subcommand plus the composition-gate non-feature note and the `/create-spec` deprecation pointer. (xtrm-ai9xl)
 

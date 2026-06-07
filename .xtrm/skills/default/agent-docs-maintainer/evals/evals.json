@@ -14,7 +14,7 @@
     {
       "id": 3,
       "prompt": "Create a new CLAUDE.md for a repo with service skills and GitNexus enabled.",
-      "expected_output": "Uses the compact template, includes GitNexus/Serena Claude notes, and routes service work through /scope or using-service-skills."
+      "expected_output": "Uses the compact template, includes GitNexus safety notes, and routes service/project context through /scope or using-service-skills."
     }
   ]
 }

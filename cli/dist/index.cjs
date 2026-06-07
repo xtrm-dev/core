@@ -60336,12 +60336,12 @@ function installPiPackageWithFallback(piPackageId, log, installRunner = runPiPac
     retriedWithNpmjs: true
   };
 }
-async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall) {
+async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, npmRootDir) {
   const installed = [];
   const failed = [];
-  const npmRootDir = await resolveGlobalNpmRootDir();
+  const resolvedNpmRootDir = npmRootDir === void 0 ? await resolveGlobalNpmRootDir() : npmRootDir;
   for (const pkg of getXtManagedPiPackages()) {
-    if (await isPackagePresentInPiAgent(agentDir, pkg.id, npmRootDir ?? void 0)) {
+    if (await isPackagePresentInPiAgent(agentDir, pkg.id, resolvedNpmRootDir ?? void 0)) {
       continue;
     }
     if (dryRun) {

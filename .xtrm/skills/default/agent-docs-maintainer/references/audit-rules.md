@@ -39,3 +39,9 @@ Every cleaned agent doc should have:
 - essential commands: enough for safe work inspection/claim/delegation/validation/close, not a full manual
 - current gotchas
 - references
+
+## Managed xtrm block source
+
+The bd/bv/xtrm top blocks in `CLAUDE.md` and `AGENTS.md` are managed content. Durable edits belong in the canonical xtrm instruction templates for the current installation/package, then `xt update --apply` regenerates project copies.
+
+Do not hard-code machine-specific template paths in user-facing docs: installation layouts differ. The GitNexus block is regenerated separately by GitNexus hooks.

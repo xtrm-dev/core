@@ -16,7 +16,7 @@ MANAGED_MARKERS = {
     "beads": ("<!-- BEGIN BEADS INTEGRATION -->", None),
 }
 COMMAND_RE = re.compile(
-    r"(^|\s)(bd|bv|xt|sp|specialists|gitnexus|serena|npm|pnpm|uv|pytest|ruff|mypy|git|gh|docker|docker\s+compose|alembic)\s+[\w./:-]",
+    r"(^|\s)(bd|bv|xt|sp|specialists|gitnexus|npm|pnpm|uv|pytest|ruff|mypy|git|gh|docker|docker\s+compose|alembic)\s+[\w./:-]",
     re.MULTILINE,
 )
 STALE_TERMS = (

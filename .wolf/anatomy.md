@@ -1,4 +1,11 @@
 # anatomy.md
+> Manual note 2026-06-07: managed claude/agents top templates now include compact session catch-up hygiene (handoff beads, xt reports, recent PRs, bd list, issue-triage, service-skills freshness) and explicit Claude TaskCreate/TodoWrite-style planning wording.
+> Manual note 2026-06-06: xtrm managed instruction templates slimmed at the canonical install/package template source plus tracked project mirrors; project CLAUDE/AGENTS generated blocks should not be edited as durable source.
+> Manual note 2026-06-06: latest agent-docs-maintainer sweep propagated canonical service-skills-only docs/context guidance to 21 local repos and removed generated __pycache__ artifacts after validation.
+> Manual note 2026-06-06: CLAUDE.md now requires TaskCreate/TodoWrite-style planning alongside bead operations, explicit sp help/list awareness, and canonical service-skills-first docs/context usage.
+> Manual note 2026-06-06: TaskCreate/TodoWrite-style local task planning is now documented as required for non-trivial Claude Code work, subordinate to beads.
+> Manual note 2026-06-06: agent-docs-maintainer TaskCreate/beads guidance was manually swept to 21 non-worktree xtrm repos under ~/dev and ~/projects; registry entries updated where registry.json exists.
+> Manual note 2026-06-06: CLAUDE.md now explicitly allows Claude Code internal task planning alongside authoritative beads tracking.
 > Manual note 2026-06-06: CLAUDE.md compact guide was rebalanced to keep an essential command surface (bd/sp/GitNexus/validation) while avoiding full CLI manuals.
 > Manual note 2026-06-06: CLAUDE.md was compacted with agent-docs-maintainer into a 146-line routing guide for xtrm-tools.
 > Manual note 2026-06-06: xtrm-j27c3 adds .xtrm/skills/default/agent-docs-maintainer with templates and audit_agent_docs.py for compact CLAUDE.md/AGENTS.md cleanup.

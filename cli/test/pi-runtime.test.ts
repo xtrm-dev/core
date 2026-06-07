@@ -116,7 +116,7 @@ describe('ensureAlwaysGlobalPiPackages', () => {
         const result = await ensureAlwaysGlobalPiPackages(false, undefined, agentDir, (piPackageId) => {
             installOrder.push(piPackageId);
             return { status: 0, stdout: '', stderr: '' };
-        });
+        }, null);
 
         const expectedPackageIds = getXtManagedPiPackages().map(pkg => pkg.id);
         expect(installOrder).toEqual(expectedPackageIds);

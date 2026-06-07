@@ -773,6 +773,42 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-06-05T23:31:08.435053+00:00"
+    },
+    {
+      "id": "bug-042",
+      "timestamp": "2026-06-06T23:22:30.114672+00:00",
+      "error_message": "agent-docs-maintainer sweep copied Python __pycache__ artifacts into every target skill directory after running py_compile on the source skill",
+      "file": ".xtrm/skills/default/agent-docs-maintainer/scripts/__pycache__",
+      "root_cause": "The sweep snapshotted the live skill directory after validation had generated __pycache__; copytree then propagated the runtime artifact to target repos.",
+      "fix": "Removed __pycache__ from all target repos and source, regenerated registry, and changed verification to exclude __pycache__/registry-excluded eval artifacts. Future sweeps should snapshot after deleting runtime artifacts or ignore __pycache__ during copy.",
+      "tags": [
+        "skill-sweep",
+        "python",
+        "pycache",
+        "runtime-artifact"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-06T23:22:30.114706+00:00"
+    },
+    {
+      "id": "bug-043",
+      "timestamp": "2026-06-07T00:35:01.558706+00:00",
+      "error_message": "npm test failed in pi-runtime ensureAlwaysGlobalPiPackages tests: expected install calls but got [] when globally installed Pi npm packages existed on developer machine",
+      "file": "cli/src/core/pi-runtime.ts",
+      "root_cause": "ensureAlwaysGlobalPiPackages always resolved the real global npm root, so tests using a temporary agentDir falsely considered packages present when the developer machine already had the managed Pi packages installed globally.",
+      "fix": "Added an optional npmRootDir parameter; production calls still auto-resolve by default, while tests pass null to isolate temporary agent directories from host global npm state.",
+      "tags": [
+        "test",
+        "pi-runtime",
+        "global-npm-root",
+        "host-state"
+      ],
+      "related_bugs": [
+        "bug-006"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-06-07T00:35:01.558751+00:00"
     }
   ]
 }

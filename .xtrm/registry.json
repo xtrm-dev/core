@@ -112,23 +112,23 @@
       "install_mode": "copy",
       "files": {
         "agent-docs-maintainer/references/agents-template.md": {
-          "hash": "a93039bbf73089163a008f1722d4c8278364fb4c82b6b449852ff4a880b2cd3a",
+          "hash": "228291320aff1c2343bba4ece17afab46b453ce0727595037df2a0a6f9bd1028",
           "version": "0.8.5"
         },
         "agent-docs-maintainer/references/audit-rules.md": {
-          "hash": "8c9892eee4e8a821f938171c129e45c98167fae8a09ea7da9622399662c73aaf",
+          "hash": "c49636d42514bb05c41e9a0a121a5426bc59fe262dc971d0067c14002877fd30",
           "version": "0.8.5"
         },
         "agent-docs-maintainer/references/claude-template.md": {
-          "hash": "e53db33a970512c8451516b90ed9620ab5b135e055b5098c2434573cd58944c9",
+          "hash": "505600482bcd7328e5fbdbdff882ab7c077f0c9b7350de1fbb1d7603f1775522",
           "version": "0.8.5"
         },
         "agent-docs-maintainer/scripts/audit_agent_docs.py": {
-          "hash": "c6a29f33cde20e5ac14a326d01d9d7dff250f1dc2a40590b7de6889de01e1a44",
+          "hash": "62c44bfc8e379ae6391a38c413f0ee7063f9728a2fd4808a85b618901e53efc7",
           "version": "0.8.5"
         },
         "agent-docs-maintainer/SKILL.md": {
-          "hash": "103bbfc8c0aec46c4b7e67939e106cd5b53060fe445eefc560f166d13c398a44",
+          "hash": "d83da5fb723e51612c20e469c15358c67deb60ed7aba9899ecb7261f17f892af",
           "version": "0.8.5"
         },
         "clean-code/SKILL.md": {
@@ -1324,11 +1324,11 @@
           "version": "0.8.5"
         },
         "instructions/agents-top.md": {
-          "hash": "91799b9def6f317a32f41a35c70d63725283febdc080ab0da76eb31b1528bf29",
+          "hash": "cddfdf1346c908fb665d8a0a0288a81aa506b0ef671a6dea5c363033d0758c32",
           "version": "0.8.5"
         },
         "instructions/claude-top.md": {
-          "hash": "1d8ef30c1e2c1899f2c58e0b0eced0c9bb66665d9cfa7f57eab8172807959ff5",
+          "hash": "baf969e03167f9dba696713fc3707256c5a2caf731cb79526ccd3df4dc6c423d",
           "version": "0.8.5"
         },
         "pi.mcp.json": {
