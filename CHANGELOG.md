@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.9.0] — 2026-06-07
+
 ### Added
 
 - **`agent-docs-maintainer` skill** — compact `CLAUDE.md`/`AGENTS.md` audit and template guidance for keeping agent docs as routing docs, preserving beads, specialists, GitNexus, task planning, and canonical service-skills requirements without embedding full CLI manuals. (xtrm-ot9cy, xtrm-v8oa1)
