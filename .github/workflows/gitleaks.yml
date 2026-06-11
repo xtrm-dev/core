@@ -19,7 +19,7 @@ permissions:
 jobs:
   gitleaks:
     name: Gitleaks scan
-    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","xtrm-tools"]') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","core"]') }}
     timeout-minutes: 15
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
