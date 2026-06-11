@@ -844,6 +844,26 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-07T01:29:55.400830+00:00"
+    },
+    {
+      "id": "bug-046",
+      "timestamp": "2026-06-11T04:34:53.268483Z",
+      "error_message": "agent-docs-maintainer reported generic-boilerplate agent docs as clean and recommended trimming useful Stack Overview prose due universal line caps",
+      "file": ".xtrm/skills/default/agent-docs-maintainer/scripts/audit_agent_docs.py",
+      "root_cause": "The audit only used global line/command/bloat counters and stale-term constants; it did not model repo identity before managed blocks, split substantive overview prose from routing boilerplate, or allow per-repo stale terms.",
+      "fix": "Added repo identity detection, split size budgets, command-section classification, per-repo .xtrm/agent-docs.toml stale_terms, Stack Overview references, and pytest coverage.",
+      "tags": [
+        "agent-docs-maintainer",
+        "repo-identity",
+        "docs-bloat",
+        "skills",
+        "xtrm-jdn8e"
+      ],
+      "related_bugs": [
+        "xtrm-jdn8e"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-06-11T04:34:53.268483Z"
     }
   ]
 }

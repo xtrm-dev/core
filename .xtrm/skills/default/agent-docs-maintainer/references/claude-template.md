@@ -3,8 +3,10 @@
 ```md
 # <Project> — Claude Code Guide
 
-## Project summary
+## Project summary / Stack overview
 <2-5 lines: what this repo is, main runtime/language/package, current architecture in plain terms.>
+
+If a short summary is not enough for a fresh agent to understand the repo, add a Stack Overview before managed blocks. Use `references/stack-overview-template.md` for role, what runs here, public surface, sibling stacks, operational entry points, data flow, and what is not in this repo.
 
 ## Non-negotiable rules
 - Claim a bead before edits: `bd update <id> --claim`.

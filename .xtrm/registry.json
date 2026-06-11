@@ -112,23 +112,27 @@
       "install_mode": "copy",
       "files": {
         "agent-docs-maintainer/references/agents-template.md": {
-          "hash": "228291320aff1c2343bba4ece17afab46b453ce0727595037df2a0a6f9bd1028",
+          "hash": "3782e8389f689e4786418920f997010af3fbe11bf616615e707154b5423e65c5",
           "version": "0.9.0"
         },
         "agent-docs-maintainer/references/audit-rules.md": {
-          "hash": "c49636d42514bb05c41e9a0a121a5426bc59fe262dc971d0067c14002877fd30",
+          "hash": "db39cd9c881b756f83fd27276f183404405983482072b24bb7bd1e7414d5ed98",
           "version": "0.9.0"
         },
         "agent-docs-maintainer/references/claude-template.md": {
-          "hash": "505600482bcd7328e5fbdbdff882ab7c077f0c9b7350de1fbb1d7603f1775522",
+          "hash": "566e27d7a9968219f8d39d8fd6142f91dc3ceac042d7be3ca0df0ca810bfe06d",
+          "version": "0.9.0"
+        },
+        "agent-docs-maintainer/references/stack-overview-template.md": {
+          "hash": "63d398ae553b62fa737eee54707c446d77a163235dc028e098626066313723e6",
           "version": "0.9.0"
         },
         "agent-docs-maintainer/scripts/audit_agent_docs.py": {
-          "hash": "62c44bfc8e379ae6391a38c413f0ee7063f9728a2fd4808a85b618901e53efc7",
+          "hash": "ffd6ebd0ac2ed3b447672641088fc8d2115d43fcd1b48677d55cdf0d1ef8a5e2",
           "version": "0.9.0"
         },
         "agent-docs-maintainer/SKILL.md": {
-          "hash": "d83da5fb723e51612c20e469c15358c67deb60ed7aba9899ecb7261f17f892af",
+          "hash": "9496f8cbe8cd4024abf280edaedfd1ed5bff2c65dacfd13cce8c03ea075ef55f",
           "version": "0.9.0"
         },
         "clean-code/SKILL.md": {
