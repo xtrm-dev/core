@@ -1,3 +1,4 @@
+> Manual note 2026-06-11: xtrm-jdn8e updates agent-docs-maintainer to audit repo identity before managed blocks, split routing-vs-identity line budgets, support .xtrm/agent-docs.toml stale_terms, and ship stack-overview template/tests.
 # anatomy.md
 > Manual note 2026-06-07: managed claude/agents top templates now include compact session catch-up hygiene (handoff beads, xt reports, recent PRs, bd list, issue-triage, service-skills freshness) and explicit Claude TaskCreate/TodoWrite-style planning wording.
 > Manual note 2026-06-06: xtrm managed instruction templates slimmed at the canonical install/package template source plus tracked project mirrors; project CLAUDE/AGENTS generated blocks should not be edited as durable source.

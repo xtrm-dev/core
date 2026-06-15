@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "Audit CLAUDE.md and AGENTS.md in this repo and propose a compact rewrite plan without editing files.",
-      "expected_output": "Reports line counts, bloat causes, stale/duplicate sections, and a section-by-section rewrite plan."
+      "expected_output": "Reports line counts, repo-identity status, bloat causes, stale/duplicate sections, and a section-by-section rewrite plan."
     },
     {
       "id": 2,
@@ -15,6 +15,16 @@
       "id": 3,
       "prompt": "Create a new CLAUDE.md for a repo with service skills and GitNexus enabled.",
       "expected_output": "Uses the compact template, includes GitNexus safety notes, and routes service/project context through /scope or using-service-skills."
+    },
+    {
+      "id": 4,
+      "prompt": "Audit six sibling repos whose CLAUDE.md files begin with identical xtrm managed boilerplate and no explanation of what each repo owns.",
+      "expected_output": "Flags missing repo identity before managed blocks and recommends adding a Stack Overview / Repo Identity section instead of reporting the docs as clean."
+    },
+    {
+      "id": 5,
+      "prompt": "Review a 450-line CLAUDE.md where the first 140 lines are a current Stack Overview and the remaining content is compact routing guidance.",
+      "expected_output": "Does not recommend trimming the valuable Stack Overview just because total lines exceed 300; applies line-budget warnings to routing/managed boilerplate separately."
     }
   ]
 }

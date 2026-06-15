@@ -3,8 +3,10 @@
 ```md
 # <Project> — Agent Guide
 
-## Project summary
+## Project summary / Stack overview
 <2-5 lines for any agent/runtime. Avoid Claude-only tool names here.>
+
+If a short summary is not enough for a fresh agent to understand the repo, add a Stack Overview before managed blocks. Use `references/stack-overview-template.md` for role, what runs here, public surface, sibling stacks, operational entry points, data flow, and what is not in this repo.
 
 ## Operating rules
 - Use beads as the authoritative issue tracker; claim before edits and close before commit.

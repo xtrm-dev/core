@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`agent-docs-maintainer` skill** now treats repo identity as a first-class audit requirement: docs that lead with managed xtrm/GitNexus/beads boilerplate are flagged, routing/managed line budgets are scored separately from substantive Stack Overview prose, concise operational-entry command lists are no longer treated as CLI manual bloat, and stale-term checks can be extended per repo with `.xtrm/agent-docs.toml`. (xtrm-jdn8e)
+
 ## [v0.9.0] — 2026-06-07
 
 ### Added
