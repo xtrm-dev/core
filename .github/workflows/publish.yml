@@ -11,7 +11,7 @@ jobs:
       specialists_ref: ${{ steps.resolve.outputs.specialists_ref }}
     steps:
       - name: Checkout xtrm-tools
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Resolve specialists ref from manifest
         id: resolve
@@ -46,10 +46,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout specialists source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: Jaggerxtrm/specialists
           ref: ${{ needs.resolve_ref.outputs.specialists_ref }}
@@ -65,7 +65,7 @@ jobs:
           echo "SPECIALISTS_REPO_PATH=$GITHUB_WORKSPACE/specialists-src" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'

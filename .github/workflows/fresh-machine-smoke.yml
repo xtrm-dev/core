@@ -30,15 +30,15 @@ jobs:
 
     steps:
       - name: Checkout xtrm-tools
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Use Node.js 22.x
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22.x
 
       - name: Use Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -65,7 +65,7 @@ jobs:
 
       - name: Checkout specialists source
         if: ${{ inputs.specialists_tarball_url == '' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: Jaggerxtrm/specialists
           ref: ${{ inputs.specialists_ref }}
