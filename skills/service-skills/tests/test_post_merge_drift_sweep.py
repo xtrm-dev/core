@@ -75,6 +75,91 @@ def test_default_branch_drift_writes_marker_and_notice(tmp_path: Path, monkeypat
     assert "service-skills drift detected" in out
 
 
+def test_drift_default_opt_in_disabled_skips_auto_reconcile(tmp_path: Path, monkeypatch, capsys):
+    _write_root_registry(tmp_path)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    monkeypatch.delenv("XTRM_AUTO_RECONCILE_DRIFT", raising=False)
+    monkeypatch.setattr(sweep, "_current_branch", lambda root: "main")
+    monkeypatch.setattr(sweep, "_default_branch", lambda root: "main")
+    rc = sweep.main()
+    assert rc == 0
+    assert (tmp_path / MARKER_REL).exists()
+    out = capsys.readouterr().out
+    assert "auto-reconcile skipped" in out
+    assert "opt-in disabled" in out
+
+
+def test_drift_opt_in_no_sp_on_path_skips_auto_reconcile(tmp_path: Path, monkeypatch, capsys):
+    _write_root_registry(tmp_path)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    monkeypatch.setenv("XTRM_AUTO_RECONCILE_DRIFT", "1")
+    monkeypatch.setattr(sweep, "_current_branch", lambda root: "main")
+    monkeypatch.setattr(sweep, "_default_branch", lambda root: "main")
+    monkeypatch.setattr(sweep.shutil, "which", lambda name: None)
+    rc = sweep.main()
+    assert rc == 0
+    assert (tmp_path / MARKER_REL).exists()
+    out = capsys.readouterr().out
+    assert "auto-reconcile skipped" in out
+    assert "`sp` not on PATH" in out
+
+
+def test_drift_opt_in_sp_success_logs_ok(tmp_path: Path, monkeypatch, capsys):
+    _write_root_registry(tmp_path)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    monkeypatch.setenv("XTRM_AUTO_RECONCILE_DRIFT", "1")
+    monkeypatch.setattr(sweep, "_current_branch", lambda root: "main")
+    monkeypatch.setattr(sweep, "_default_branch", lambda root: "main")
+    monkeypatch.setattr(sweep, "_resolve_pack", lambda root: "testpack")
+    monkeypatch.setattr(sweep.shutil, "which", lambda name: "/usr/bin/sp")
+
+    class _Result:
+        returncode = 0
+        stdout = json.dumps({
+            "success": True,
+            "output": "{}",
+            "parsed_json": {"summary": {}, "services": [], "actions": []},
+            "meta": {"trace_id": "deadbeef-trace"},
+        })
+        stderr = ""
+
+    monkeypatch.setattr(sweep, "_run_sp_subprocess", lambda *a, **kw: _Result())
+
+    rc = sweep.main()
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "auto-reconcile via sp script service-skills-sync" in out
+    assert "deadbeef-trace" in out
+    runlog = tmp_path / sweep.RUNLOG_REL
+    assert runlog.exists()
+    assert "OK" in runlog.read_text()
+
+
+def test_drift_opt_in_sp_failure_keeps_marker(tmp_path: Path, monkeypatch, capsys):
+    _write_root_registry(tmp_path)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    monkeypatch.setenv("XTRM_AUTO_RECONCILE_DRIFT", "1")
+    monkeypatch.setattr(sweep, "_current_branch", lambda root: "main")
+    monkeypatch.setattr(sweep, "_default_branch", lambda root: "main")
+    monkeypatch.setattr(sweep, "_resolve_pack", lambda root: "testpack")
+    monkeypatch.setattr(sweep.shutil, "which", lambda name: "/usr/bin/sp")
+
+    class _FailResult:
+        returncode = 0
+        stdout = json.dumps({"success": False, "error": "boom", "error_type": "test"})
+        stderr = ""
+
+    monkeypatch.setattr(sweep, "_run_sp_subprocess", lambda *a, **kw: _FailResult())
+
+    rc = sweep.main()
+    assert rc == 0
+    # Marker stays so operator/agent can pick up.
+    assert (tmp_path / MARKER_REL).exists()
+    out = capsys.readouterr().out
+    assert "auto-reconcile skipped" in out
+    assert "success=false" in out
+
+
 def test_default_branch_no_drift_is_silent(tmp_path: Path, monkeypatch, capsys):
     # Registry with a service whose territory matches nothing → no drift.
     (tmp_path / "service-registry.json").write_text(
