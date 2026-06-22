@@ -136,3 +136,48 @@ def test_json_shape_snapshot(tmp_path, monkeypatch, capsys):
         "reconciled_count",
         "status",
     ]
+
+
+def test_escaped_skill_path_fails_without_write(tmp_path, monkeypatch):
+    source_path = tmp_path / "src/alpha.py"
+    escaped_path = tmp_path.parent / "escape.md"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("print('alpha')\n", encoding="utf-8")
+    escaped_path.write_text("outside\n", encoding="utf-8")
+    monkeypatch.setattr(reconcile, "get_project_root", lambda: str(tmp_path))
+    monkeypatch.setattr(reconcile, "load_registry", lambda root: {"services": {"alpha": {"skill_path": "../escape.md"}}})
+    monkeypatch.setattr(reconcile, "scan_drift", lambda *args, **kwargs: [{"service_id": "alpha", "file_path": "src/alpha.py"}])
+    monkeypatch.setattr(reconcile, "call_nano_gpt", lambda prompt, api_key: pytest.fail("API should not be called"))
+
+    result = reconcile.reconcile(reconcile.ReconcileOptions(False, None, "key", None))
+
+    assert result["status"] == "partial"
+    assert result["reconciled_count"] == 0
+    assert "skill_path escapes project root" in result["failed"][0]["error"]
+    assert escaped_path.read_text(encoding="utf-8") == "outside\n"
+
+
+def test_invalid_nano_gpt_url_fails_at_startup(monkeypatch, capsys):
+    monkeypatch.setenv("NANO_GPT_API_KEY", "key")
+    monkeypatch.setenv("NANO_GPT_API_URL", "http://evil.com/x")
+    monkeypatch.setattr(reconcile, "reconcile", lambda options: pytest.fail("reconcile should not run"))
+
+    exit_code = reconcile.main(["--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["status"] == "failed"
+    assert "NANO_GPT_API_URL must use https" in payload["failed"][0]["error"]
+
+
+def test_nano_gpt_url_rejects_secret_query_params():
+    with pytest.raises(ValueError, match="secret query"):
+        reconcile.validate_nano_gpt_url("https://nano-gpt.com/api?api_key=secret")
+
+
+def test_redact_exception_masks_bearer_and_api_key():
+    error = reconcile.redact_exception(RuntimeError("failed Bearer secret-token api-secret"), "api-secret")
+
+    assert "secret-token" not in error
+    assert "api-secret" not in error
+    assert "Bearer [REDACTED]" in error

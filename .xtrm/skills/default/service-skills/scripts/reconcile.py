@@ -13,13 +13,16 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).parent))
 from bootstrap import get_project_root, get_registry_path, load_registry, save_registry  # type: ignore[import-not-found]  # noqa: E402
 from drift_detector import scan_drift  # type: ignore[import-not-found]  # noqa: E402
 
-NANO_GPT_URL = os.environ.get("NANO_GPT_API_URL", "https://nano-gpt.com/api/v1/chat/completions")
+DEFAULT_NANO_GPT_URL = "https://nano-gpt.com/api/v1/chat/completions"
 NANO_GPT_MODEL = os.environ.get("NANO_GPT_MODEL", "gpt-4o-mini")
+ALLOWED_NANO_GPT_HOSTS = {"nano-gpt.com"}
+SECRET_QUERY_PARAMS = {"api_key", "key", "token"}
 TOKEN_CHARS = 4
 
 
@@ -59,6 +62,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def build_prompt(drift: dict[str, Any], current_skill: str, source_evidence: str) -> str:
+    """Trust model: source files come from the repo (trusted but commit-reviewed); LLM output is treated as PR-reviewed (human approves auto-PR)."""
     citations = {
         "symbols": drift.get("symbols", []),
         "processes": drift.get("processes", []),
@@ -97,13 +101,37 @@ def parse_llm_response(payload: dict[str, Any]) -> LlmResult:
     return LlmResult(content=content.strip() + "\n", tokens=total_tokens if isinstance(total_tokens, int) else 0)
 
 
+def get_nano_gpt_url() -> str:
+    return os.environ.get("NANO_GPT_API_URL", DEFAULT_NANO_GPT_URL)
+
+
+def validate_nano_gpt_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError("NANO_GPT_API_URL must use https")
+    if parsed.hostname not in ALLOWED_NANO_GPT_HOSTS:
+        raise ValueError("NANO_GPT_API_URL host must be nano-gpt.com")
+    query_keys = {key.lower() for key in parse_qs(parsed.query)}
+    if query_keys & SECRET_QUERY_PARAMS:
+        raise ValueError("NANO_GPT_API_URL must not contain secret query parameters")
+    return url
+
+
+def redact_exception(exc: Exception, api_key: str | None = None) -> str:
+    message = f"{type(exc).__name__}: {str(exc)[:200]}"
+    message = re.sub(r"Bearer\s+\S+", "Bearer [REDACTED]", message)
+    if api_key:
+        message = message.replace(api_key, "[REDACTED]")
+    return message
+
+
 def call_nano_gpt(prompt: str, api_key: str) -> LlmResult:
     try:
         import httpx  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError("httpx is required for reconcile.py") from exc
     response = httpx.post(
-        NANO_GPT_URL,
+        validate_nano_gpt_url(get_nano_gpt_url()),
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={"model": NANO_GPT_MODEL, "messages": [{"role": "user", "content": prompt}]},
         timeout=120,
@@ -125,15 +153,19 @@ def current_head(project_root: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def find_skill_path(drift: dict[str, Any], registry: dict[str, Any]) -> str | None:
+def find_skill_path(drift: dict[str, Any], registry: dict[str, Any], project_root: Path) -> str | None:
     skill_path = drift.get("skill_path")
-    if isinstance(skill_path, str) and skill_path:
-        return skill_path
-    service_id = drift.get("service_id")
-    service = registry.get("services", {}).get(service_id) if isinstance(service_id, str) else None
-    if isinstance(service, dict) and isinstance(service.get("skill_path"), str):
-        return service["skill_path"]
-    return None
+    if not isinstance(skill_path, str) or not skill_path:
+        service_id = drift.get("service_id")
+        service = registry.get("services", {}).get(service_id) if isinstance(service_id, str) else None
+        skill_path = service.get("skill_path") if isinstance(service, dict) else None
+    if not isinstance(skill_path, str) or not skill_path:
+        return None
+    resolved_root = project_root.resolve()
+    resolved_skill_path = (project_root / skill_path).resolve()
+    if not resolved_skill_path.is_relative_to(resolved_root):
+        raise ValueError(f"skill_path escapes project root: {skill_path}")
+    return skill_path
 
 
 def bump_last_sync_ref(project_root: Path, new_ref: str, dry_run: bool) -> str | None:
@@ -176,7 +208,7 @@ def reconcile(options: ReconcileOptions) -> dict[str, Any]:
     }
     for drift in selected:
         try:
-            skill_path_value = find_skill_path(drift, registry)
+            skill_path_value = find_skill_path(drift, registry, project_root)
             if not skill_path_value:
                 raise ValueError(f"missing skill_path for {drift.get('service_id', 'unknown')}")
             skill_path = project_root / skill_path_value
@@ -198,7 +230,7 @@ def reconcile(options: ReconcileOptions) -> dict[str, Any]:
             result["reconciled_count"] += 1
         except Exception as exc:
             result["status"] = "partial"
-            result["failed"].append({"file_path": drift.get("file_path"), "error": str(exc)})
+            result["failed"].append({"file_path": drift.get("file_path"), "error": redact_exception(exc, options.api_key)})
     if result["reconciled_count"] and not (options.dry_run or result["status"] == "partial"):
         result["last_sync_ref_old"] = bump_last_sync_ref(project_root, result["last_sync_ref_new"], options.dry_run)
     return result
@@ -211,10 +243,11 @@ def main(argv: list[str] | None = None) -> int:
         print("NANO_GPT_API_KEY is required for reconcile.py", file=sys.stderr)
         return 2
     try:
+        validate_nano_gpt_url(get_nano_gpt_url())
         options = ReconcileOptions(args.dry_run, args.max_files, api_key, parse_cost_limit(os.environ.get("XTRM_AUTO_RECONCILE_COST_LIMIT_TOKENS")))
         output = reconcile(options)
     except Exception as exc:
-        output = {"status": "failed", "drift_count": 0, "reconciled_count": 0, "failed": [{"file_path": None, "error": str(exc)}], "cost_tokens": 0, "last_sync_ref_old": None, "last_sync_ref_new": ""}
+        output = {"status": "failed", "drift_count": 0, "reconciled_count": 0, "failed": [{"file_path": None, "error": redact_exception(exc, api_key)}], "cost_tokens": 0, "last_sync_ref_old": None, "last_sync_ref_new": ""}
     print(json.dumps(output, sort_keys=True) if args.json else json.dumps(output, indent=2, sort_keys=True))
     return 0 if output["status"] == "success" else 1
 
