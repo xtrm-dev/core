@@ -36,6 +36,16 @@ The reconcile script lives in the consumer repo at
 
 ## Per-repo enablement
 
+### 0. Vendor the reconcile script (do this first)
+
+The reusable workflow runs `python3 .xtrm/skills/default/service-skills/scripts/reconcile.py` against the consumer repo's working tree. Make sure that file is present and current before opting in:
+
+```sh
+xt update --apply
+```
+
+If the consumer repo's `.xtrm/skills/default/service-skills/scripts/` only contains `drift_detector.py` (older snapshot), Step 1+ will succeed but the auto-reconcile job will exit 2 with `No such file or directory`. Re-run `xt update --apply` whenever `xtrm-tools` ships changes to that directory.
+
 ### 1. Configure the API key secret
 
 ```sh
