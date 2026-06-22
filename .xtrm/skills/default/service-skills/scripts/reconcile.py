@@ -250,7 +250,15 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         output = {"status": "failed", "drift_count": 0, "reconciled_count": 0, "failed": [{"file_path": None, "error": redact_exception(exc, api_key)}], "cost_tokens": 0, "last_sync_ref_old": None, "last_sync_ref_new": ""}
     print(json.dumps(output, sort_keys=True) if args.json else json.dumps(output, indent=2, sort_keys=True))
-    return 0 if output["status"] == "success" else 1
+    # Exit 0 when the program achieved useful work (full or partial reconcile).
+    # status field in the JSON carries the quality signal. Workflow gates on
+    # status + reconciled_count to decide auto-PR; downstream shell scripts
+    # that only check $? still get a clean signal for "anything reconciled".
+    if output["status"] == "success":
+        return 0
+    if output["status"] == "partial" and int(output.get("reconciled_count", 0) or 0) > 0:
+        return 0
+    return 1
 
 
 if __name__ == "__main__":
