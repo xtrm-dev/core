@@ -728,7 +728,7 @@
           "version": "0.9.0"
         },
         "service-skills/install/git-hooks/post_merge_drift_sweep.py": {
-          "hash": "836bdb22c47887ca808a4f53232a9153cefcab01ca4203dd40b7c6bda88a8691",
+          "hash": "a3ddf2f1dc84950c58cd0bf893b499e1c6e87be83fed8578730125b001b7e602",
           "version": "0.9.0"
         },
         "service-skills/install/git-hooks/skill_staleness.py": {
@@ -793,6 +793,10 @@
         },
         "service-skills/scripts/layout_migrator.py": {
           "hash": "8f98fb15f7feffd8de7e58491aee17b195bd82e8413bc2525ca416835e8cd38f",
+          "version": "0.9.0"
+        },
+        "service-skills/scripts/reconcile.py": {
+          "hash": "327ca6f12d696a92715c7efc22d19da9bd115fcf3077ba740b18a086a3d89f1e",
           "version": "0.9.0"
         },
         "service-skills/scripts/scaffolder.py": {
