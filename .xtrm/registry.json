@@ -607,6 +607,10 @@
           "hash": "a437a67e7ae741b2ceaee35740a535a65e8f8aadf14d479d378616c7ccc46232",
           "version": "0.9.0"
         },
+        "multiplexing/SKILL.md": {
+          "hash": "3f49f5c5d4c9d627eb1d654bf5460378025622e320103504f840058dd5488d7f",
+          "version": "0.9.0"
+        },
         "planning/SKILL.md": {
           "hash": "b02da9548702f9256c0b4938490dad86a8898bbe72e2152d22999a02b3f608a8",
           "version": "0.9.0"
@@ -728,7 +732,7 @@
           "version": "0.9.0"
         },
         "service-skills/install/git-hooks/post_merge_drift_sweep.py": {
-          "hash": "836bdb22c47887ca808a4f53232a9153cefcab01ca4203dd40b7c6bda88a8691",
+          "hash": "a3ddf2f1dc84950c58cd0bf893b499e1c6e87be83fed8578730125b001b7e602",
           "version": "0.9.0"
         },
         "service-skills/install/git-hooks/skill_staleness.py": {
@@ -793,6 +797,10 @@
         },
         "service-skills/scripts/layout_migrator.py": {
           "hash": "8f98fb15f7feffd8de7e58491aee17b195bd82e8413bc2525ca416835e8cd38f",
+          "version": "0.9.0"
+        },
+        "service-skills/scripts/reconcile.py": {
+          "hash": "327ca6f12d696a92715c7efc22d19da9bd115fcf3077ba740b18a086a3d89f1e",
           "version": "0.9.0"
         },
         "service-skills/scripts/scaffolder.py": {
@@ -909,6 +917,18 @@
         },
         "specialists-creator/SKILL.md": {
           "hash": "f84c22e11e08f83ab73c7f3d52df3b071037600740352713d1494f57799b679e",
+          "version": "0.9.0"
+        },
+        "sre-triage/scripts/alert_history.py": {
+          "hash": "b212bb8dad1ec0ae2db97824d4f72ece15db079bddfde466e230ef1e852bd0d3",
+          "version": "0.9.0"
+        },
+        "sre-triage/scripts/alert_investigator.py": {
+          "hash": "a950e1e0745766abe0f8acb9bd457b7ba08672628e21a82e091601f86e25fe85",
+          "version": "0.9.0"
+        },
+        "sre-triage/SKILL.md": {
+          "hash": "f9328ec682414e64304c75d38eddafe9014c23fb4334a16398ed0eaa64827bd2",
           "version": "0.9.0"
         },
         "sync-docs/references/doc-structure.md": {
