@@ -30,6 +30,14 @@ on:
         description: 'Run service-skills auto-reconcile and open a PR when drift exists'
         type: boolean
         default: false
+      nano-gpt-model:
+        description: 'nano-gpt model id for reconcile.py (NANO_GPT_MODEL). Must match an exact id from the nano-gpt /v1/models catalog. Subscription-covered example: moonshotai/kimi-k2.6:thinking'
+        type: string
+        default: 'moonshotai/kimi-k2.6:thinking'
+      nano-gpt-api-url:
+        description: 'nano-gpt chat-completions endpoint (NANO_GPT_API_URL). Override only to switch base path (e.g. /api/subscription/v1). Hostname is locked to nano-gpt.com.'
+        type: string
+        default: 'https://nano-gpt.com/api/v1/chat/completions'
     secrets:
       nano-gpt-api-key:
         description: 'nano-gpt API key for service-skills auto-reconcile'
@@ -187,6 +195,8 @@ jobs:
         id: reconcile
         env:
           NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
+          NANO_GPT_MODEL: ${{ inputs['nano-gpt-model'] }}
+          NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
         run: |
           set +e
           if [ -z "$NANO_GPT_API_KEY" ]; then
