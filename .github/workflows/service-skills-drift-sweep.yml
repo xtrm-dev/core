@@ -160,8 +160,9 @@ jobs:
 
   auto-reconcile:
     needs: drift-sweep
-    if: needs['drift-sweep'].outputs['drift-count'] != '0' && inputs['reconcile-enabled']
+    if: needs['drift-sweep'].outputs['drift-count'] != '0' && inputs['reconcile-enabled'] && !startsWith(github.event.pull_request.head.ref, 'xtrm-auto-reconcile/') && github.event.pull_request.user.login != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    # Accepted blast radius: checkout pulls trusted post-merge main; pip install is now pinned (FIX A); reconcile.py is in-repo. Future hardening: split into read-only reconcile + write-only PR open. Tracked under xtrm-pm5d8 follow-up.
     permissions:
       contents: write
       pull-requests: write
@@ -193,7 +194,7 @@ jobs:
             echo 'status=missing_secret' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          python3 -m pip install --disable-pip-version-check --no-input httpx
+          python3 -m pip install --disable-pip-version-check --no-input httpx==0.28.1
           install_status=$?
           if [ "$install_status" -ne 0 ]; then
             echo "::warning::service-skills auto-reconcile skipped because httpx install failed with exit $install_status; Phase A drift comment behavior preserved"
@@ -241,7 +242,7 @@ jobs:
 
       - name: Open auto-reconcile PR
         if: steps.reconcile.outputs.status == 'success' && steps.reconcile.outputs.reconciled_count != '0'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7 — pinned to SHA per ossf scorecard
         with:
           branch: xtrm-auto-reconcile/${{ github.sha }}
           commit-message: 'chore(service-skills): auto-reconcile drift [skip ci]'
