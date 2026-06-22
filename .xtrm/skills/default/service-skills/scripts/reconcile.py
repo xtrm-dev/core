@@ -130,11 +130,12 @@ def call_nano_gpt(prompt: str, api_key: str) -> LlmResult:
         import httpx  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError("httpx is required for reconcile.py") from exc
+    timeout = int(os.environ.get("NANO_GPT_TIMEOUT_SECONDS", "300"))
     response = httpx.post(
         validate_nano_gpt_url(get_nano_gpt_url()),
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={"model": NANO_GPT_MODEL, "messages": [{"role": "user", "content": prompt}]},
-        timeout=120,
+        timeout=timeout,
     )
     response.raise_for_status()
     return parse_llm_response(response.json())

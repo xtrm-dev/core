@@ -235,7 +235,10 @@ jobs:
           result = json.load(open('/tmp/reconcile-result.json'))
           status = result.get('status', 'unknown')
           reconciled_count = int(result.get('reconciled_count', 0) or 0)
-          if status == 'success' and reconciled_count > 0:
+          if status in ('success', 'partial') and reconciled_count > 0:
+              if status == 'partial':
+                  failed = result.get('failed') or []
+                  print(f"::notice::service-skills auto-reconcile partial: reconciled {reconciled_count} file(s); {len(failed)} failed (auto-PR will open with the reconciled subset; failed files stay as drift for the next merge)")
               raise SystemExit(0)
           reason = 'cost cap hit' if status == 'cost_cap_hit' else f'status={status}, reconciled_count={reconciled_count}'
           print(f"::warning::service-skills auto-reconcile produced no PR because {reason}; Phase A drift comment behavior preserved")
@@ -253,7 +256,7 @@ jobs:
           retention-days: 7
 
       - name: Build auto-PR body
-        if: steps.reconcile.outputs.status == 'success' && steps.reconcile.outputs.reconciled_count != '0'
+        if: (steps.reconcile.outputs.status == 'success' || steps.reconcile.outputs.status == 'partial') && steps.reconcile.outputs.reconciled_count != '0'
         run: |
           {
             echo '## Auto-reconcile summary'
@@ -268,7 +271,7 @@ jobs:
           } > /tmp/reconcile-pr-body.md
 
       - name: Open auto-reconcile PR
-        if: steps.reconcile.outputs.status == 'success' && steps.reconcile.outputs.reconciled_count != '0'
+        if: (steps.reconcile.outputs.status == 'success' || steps.reconcile.outputs.status == 'partial') && steps.reconcile.outputs.reconciled_count != '0'
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7 — pinned to SHA per ossf scorecard
         with:
           branch: xtrm-auto-reconcile/${{ github.sha }}
