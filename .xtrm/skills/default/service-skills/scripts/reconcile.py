@@ -163,7 +163,7 @@ def update_yaml_registry(project_root: Path, new_ref: str) -> None:
 def reconcile(options: ReconcileOptions) -> dict[str, Any]:
     project_root = Path(get_project_root())
     registry = load_registry(str(project_root))
-    drifted = scan_drift(str(project_root), enrich_with_gitnexus=True, use_gitnexus=True)
+    drifted = scan_drift(str(project_root), enrich_with_gitnexus=False, use_gitnexus=False)
     selected = drifted[: options.max_files] if options.max_files is not None else drifted
     result: dict[str, Any] = {
         "status": "success",
