@@ -9,9 +9,8 @@ name: Service-Skills Drift Sweep
 #         pull-requests: write
 #
 # Triggers on the CALLER side (typical: pull_request.closed + merged true).
-# Phase A: detect-only; on drift, post a sticky comment on the merged PR with
-# the summary and the reconcile instruction. Phase B (sp script auto-reconcile
-# on the runner) is tracked under xtrm-lwpcn.
+# Default behavior remains detect-only; on drift, post a sticky comment on the merged PR with
+# the summary and the reconcile instruction. Optional reconcile mode opens an auto-PR.
 
 on:
   workflow_call:
@@ -27,6 +26,18 @@ on:
         description: 'Marker used to find/update an existing comment on the PR'
         type: string
         default: '<!-- service-skills-drift-sweep -->'
+      reconcile-enabled:
+        description: 'Run service-skills auto-reconcile and open a PR when drift exists'
+        type: boolean
+        default: false
+    secrets:
+      nano-gpt-api-key:
+        description: 'nano-gpt API key for service-skills auto-reconcile'
+        required: false
+
+concurrency:
+  group: service-skills-drift-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   drift-sweep:
@@ -34,6 +45,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    outputs:
+      drift-count: ${{ steps.drift.outputs.drift_count }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -97,6 +110,17 @@ jobs:
           PY
           cat /tmp/drift-summary.md
 
+      - name: Upload drift artifacts
+        if: steps.drift.outputs.drift_count != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-skills-drift
+          path: |
+            /tmp/drift.json
+            /tmp/drift-summary.md
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Find existing drift-sweep comment
         id: find_comment
         if: steps.drift.outputs.drift_count != '0' && github.event_name == 'pull_request'
@@ -120,3 +144,108 @@ jobs:
         run: |
           echo "::warning::service-skills drift detected (${{ steps.drift.outputs.drift_count }} file(s)) — caller event was '${{ github.event_name }}', no PR to comment on. See run summary."
           cat /tmp/drift-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Annotate reconcile disabled
+        if: steps.drift.outputs.drift_count != '0' && inputs['reconcile-enabled'] == false
+        run: echo "::notice::service-skills auto-reconcile disabled; Phase A drift comment behavior preserved"
+
+      - name: Annotate reconcile missing secret
+        if: steps.drift.outputs.drift_count != '0' && inputs['reconcile-enabled']
+        env:
+          NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
+        run: |
+          if [ -z "$NANO_GPT_API_KEY" ]; then
+            echo "::warning::service-skills auto-reconcile skipped because nano-gpt-api-key secret is absent; Phase A drift comment behavior preserved"
+          fi
+
+  auto-reconcile:
+    needs: drift-sweep
+    if: needs['drift-sweep'].outputs['drift-count'] != '0' && inputs['reconcile-enabled']
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Download drift artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: service-skills-drift
+          path: /tmp/service-skills-drift
+
+      - name: Reconcile drift
+        id: reconcile
+        env:
+          NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
+        run: |
+          set +e
+          if [ -z "$NANO_GPT_API_KEY" ]; then
+            echo "::warning::service-skills auto-reconcile skipped because nano-gpt-api-key secret is absent; Phase A drift comment behavior preserved"
+            echo 'status=missing_secret' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 -m pip install --disable-pip-version-check --no-input httpx
+          install_status=$?
+          if [ "$install_status" -ne 0 ]; then
+            echo "::warning::service-skills auto-reconcile skipped because httpx install failed with exit $install_status; Phase A drift comment behavior preserved"
+            echo 'status=failed' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 .xtrm/skills/default/service-skills/scripts/reconcile.py --json > /tmp/reconcile-result.json
+          reconcile_status=$?
+          if [ "$reconcile_status" -ne 0 ]; then
+            echo "::warning::service-skills auto-reconcile skipped because reconcile.py exited $reconcile_status; Phase A drift comment behavior preserved"
+            echo 'status=failed' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 - <<'PYOUT' >> "$GITHUB_OUTPUT"
+          import json
+          result = json.load(open('/tmp/reconcile-result.json'))
+          print(f"status={result.get('status', 'unknown')}")
+          print(f"reconciled_count={result.get('reconciled_count', 0)}")
+          PYOUT
+          python3 - <<'PYANN'
+          import json
+          result = json.load(open('/tmp/reconcile-result.json'))
+          status = result.get('status', 'unknown')
+          reconciled_count = int(result.get('reconciled_count', 0) or 0)
+          if status == 'success' and reconciled_count > 0:
+              raise SystemExit(0)
+          reason = 'cost cap hit' if status == 'cost_cap_hit' else f'status={status}, reconciled_count={reconciled_count}'
+          print(f"::warning::service-skills auto-reconcile produced no PR because {reason}; Phase A drift comment behavior preserved")
+          PYANN
+
+      - name: Build auto-PR body
+        if: steps.reconcile.outputs.status == 'success' && steps.reconcile.outputs.reconciled_count != '0'
+        run: |
+          {
+            echo '## Auto-reconcile summary'
+            echo
+            echo '```json'
+            python3 -m json.tool /tmp/reconcile-result.json
+            echo '```'
+            echo
+            echo '## Drift findings'
+            echo
+            cat /tmp/service-skills-drift/drift-summary.md
+          } > /tmp/reconcile-pr-body.md
+
+      - name: Open auto-reconcile PR
+        if: steps.reconcile.outputs.status == 'success' && steps.reconcile.outputs.reconciled_count != '0'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: xtrm-auto-reconcile/${{ github.sha }}
+          commit-message: 'chore(service-skills): auto-reconcile drift [skip ci]'
+          title: 'auto-reconcile: service-skills drift post-merge'
+          body-path: /tmp/reconcile-pr-body.md
+          labels: auto-reconcile, service-skills
+          delete-branch: true
