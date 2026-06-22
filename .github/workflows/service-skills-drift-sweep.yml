@@ -1,0 +1,122 @@
+name: Service-Skills Drift Sweep
+
+# Reusable workflow — call from a consumer repo with:
+#   jobs:
+#     drift:
+#       uses: xtrm-dev/core/.github/workflows/service-skills-drift-sweep.yml@main
+#       permissions:
+#         contents: read
+#         pull-requests: write
+#
+# Triggers on the CALLER side (typical: pull_request.closed + merged true).
+# Phase A: detect-only; on drift, post a sticky comment on the merged PR with
+# the summary and the reconcile instruction. Phase B (sp script auto-reconcile
+# on the runner) is tracked under xtrm-lwpcn.
+
+on:
+  workflow_call:
+    inputs:
+      scripts-path:
+        description: 'Path to drift_detector.py relative to repo root'
+        type: string
+        default: '.xtrm/skills/default/service-skills/scripts'
+      python-version:
+        type: string
+        default: '3.11'
+      comment-marker:
+        description: 'Marker used to find/update an existing comment on the PR'
+        type: string
+        default: '<!-- service-skills-drift-sweep -->'
+
+jobs:
+  drift-sweep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Detect drift
+        id: drift
+        env:
+          SCRIPTS_PATH: ${{ inputs.scripts-path }}
+          COMMENT_MARKER: ${{ inputs.comment-marker }}
+        run: |
+          set -e
+          if [ ! -f "$SCRIPTS_PATH/drift_detector.py" ]; then
+            echo "::notice::no drift_detector at $SCRIPTS_PATH — skipping (repo not bootstrapped for service-skills)"
+            echo "drift_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          export PYTHONPATH="$PWD/$SCRIPTS_PATH:$PYTHONPATH"
+          python3 - <<'PY' > /tmp/drift.json
+          import json, sys
+          try:
+              from drift_detector import scan_drift
+              d = scan_drift(use_gitnexus=False)
+          except Exception as exc:
+              print(f"drift_detector failed: {exc}", file=sys.stderr)
+              d = []
+          json.dump(d, sys.stdout)
+          PY
+          drift_count=$(python3 -c 'import json; print(len(json.load(open("/tmp/drift.json"))))')
+          echo "drift_count=$drift_count" >> "$GITHUB_OUTPUT"
+          if [ "$drift_count" = "0" ]; then
+            echo "::notice::no service-skills drift detected"
+            exit 0
+          fi
+          python3 - <<'PY' > /tmp/drift-summary.md
+          import json, os
+          d = json.load(open("/tmp/drift.json"))
+          services = sorted({i["service_id"] for i in d})
+          print(os.environ["COMMENT_MARKER"])
+          print()
+          print(f"## ⚠ Service-skills drift detected post-merge")
+          print()
+          print(f"**{len(d)} file(s) drifted** across {len(services)} service(s): `{', '.join(services)}`")
+          print()
+          print("**Action**: run `/updating-service-skills` (service-skills-sync specialist) to reconcile SKILL.md content and advance `last_sync_ref`.")
+          print()
+          print("<details><summary>Drifted files</summary>")
+          print()
+          for i in d[:40]:
+              print(f"- `[{i['service_id']}]` `{i['file_path']}` (last sync: {i.get('last_sync', '?')})")
+          if len(d) > 40:
+              print(f"- … and {len(d) - 40} more")
+          print()
+          print("</details>")
+          PY
+          cat /tmp/drift-summary.md
+
+      - name: Find existing drift-sweep comment
+        id: find_comment
+        if: steps.drift.outputs.drift_count != '0' && github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: ${{ inputs.comment-marker }}
+
+      - name: Comment on merged PR
+        if: steps.drift.outputs.drift_count != '0' && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find_comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: /tmp/drift-summary.md
+          edit-mode: replace
+
+      - name: Annotate workflow on drift (also for push events)
+        if: steps.drift.outputs.drift_count != '0' && github.event_name != 'pull_request'
+        run: |
+          echo "::warning::service-skills drift detected (${{ steps.drift.outputs.drift_count }} file(s)) — caller event was '${{ github.event_name }}', no PR to comment on. See run summary."
+          cat /tmp/drift-summary.md >> "$GITHUB_STEP_SUMMARY"
