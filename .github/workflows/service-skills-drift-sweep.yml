@@ -201,10 +201,16 @@ jobs:
             echo 'status=failed' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          python3 .xtrm/skills/default/service-skills/scripts/reconcile.py --json > /tmp/reconcile-result.json
+          python3 .xtrm/skills/default/service-skills/scripts/reconcile.py --json > /tmp/reconcile-result.json 2> /tmp/reconcile-stderr.log
           reconcile_status=$?
           if [ "$reconcile_status" -ne 0 ]; then
             echo "::warning::service-skills auto-reconcile skipped because reconcile.py exited $reconcile_status; Phase A drift comment behavior preserved"
+            echo "::group::reconcile.py stdout JSON"
+            cat /tmp/reconcile-result.json || echo '(stdout JSON file missing)'
+            echo "::endgroup::"
+            echo "::group::reconcile.py stderr"
+            cat /tmp/reconcile-stderr.log || echo '(stderr log missing)'
+            echo "::endgroup::"
             echo 'status=failed' >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -224,6 +230,17 @@ jobs:
           reason = 'cost cap hit' if status == 'cost_cap_hit' else f'status={status}, reconciled_count={reconciled_count}'
           print(f"::warning::service-skills auto-reconcile produced no PR because {reason}; Phase A drift comment behavior preserved")
           PYANN
+
+      - name: Upload reconcile diagnostic artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-skills-reconcile-result
+          path: |
+            /tmp/reconcile-result.json
+            /tmp/reconcile-stderr.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build auto-PR body
         if: steps.reconcile.outputs.status == 'success' && steps.reconcile.outputs.reconciled_count != '0'
