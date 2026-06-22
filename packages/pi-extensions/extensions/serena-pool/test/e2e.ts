@@ -8,21 +8,25 @@
  *
  * Requires: `uvx` on PATH (the real Serena spawn path is exercised).
  *
- * Five scenarios:
+ * Six scenarios:
  *   1. cold start         — clean slate → spawn, port listens, state written
  *   2. warm reuse         — second call → same pid, same state
  *   3. dead recovery      — kill Serena → next call spawns fresh
  *   4. synthetic orphans  — fake state pointing at a detached `sleep` group
  *                           with dead leader → cleanup kills group members
  *   5. concurrent spawn   — 5 parallel calls → exactly one Serena alive
+ *   6. cwd-race           — stale ctx.cwd (parent repo) vs live process.cwd()
+ *                           (linked worktree) → daemon binds to the worktree,
+ *                           no orphan against the parent. Uses real
+ *                           `git worktree add`.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import {
+import registerSerenaPool, {
   ensureSerenaForRoot,
   STATE_DIR,
   __internals as I,
@@ -81,6 +85,29 @@ async function withTestRoot(fn: (root: string, port: number) => Promise<void>): 
     killSerenaForPort(port);
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+function git(cwd: string, args: string[]): void {
+  const r = spawnSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (r.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed in ${cwd}: ${(r.stderr || "").trim()}`);
+  }
+}
+
+type SessionStartCtx = { cwd?: string };
+type SessionStartHandler = (event: unknown, ctx: SessionStartCtx) => Promise<void>;
+
+/** Register the extension against a fake pi and capture its session_start handler. */
+function captureSessionStartHandler(): SessionStartHandler {
+  let captured: SessionStartHandler | null = null;
+  const fakePi = {
+    on(event: string, handler: SessionStartHandler) {
+      if (event === "session_start") captured = handler;
+    },
+  };
+  registerSerenaPool(fakePi as never);
+  if (!captured) throw new Error("registerSerenaPool did not register a session_start handler");
+  return captured;
 }
 
 async function test1_coldStart(): Promise<void> {
@@ -197,6 +224,77 @@ async function test5_concurrentSpawn(): Promise<void> {
   });
 }
 
+async function test6_cwdRace(): Promise<void> {
+  header("6. cwd-race (stale ctx.cwd resolves to live worktree)");
+  // Reproduce KAN-110-A: registerSerenaPool fires session_start with a ctx.cwd
+  // captured stale as the parent repo, while pi's LIVE process.cwd() is the
+  // linked worktree the session is actually running in. Uses a REAL
+  // `git worktree add` (not a bare mkdtemp) so git's worktree semantics are
+  // exercised end-to-end.
+  const tmpBase = mkdtempSync(join(tmpdir(), "serena-pool-race-"));
+  const parent = join(tmpBase, "parent");
+  const worktreeAbs = join(tmpBase, "wt");
+  mkdirSync(parent, { recursive: true });
+
+  const spawnedPorts: number[] = [];
+  const prevCwd = process.cwd();
+  const prevEnvPort = process.env.SERENA_MCP_PORT;
+  try {
+    cleanState();
+    git(parent, ["init", "-q"]);
+    git(parent, ["config", "user.email", "serena-pool-e2e@xtrm.local"]);
+    git(parent, ["config", "user.name", "serena-pool e2e"]);
+    git(parent, ["commit", "--allow-empty", "-q", "-m", "init"]);
+    // REAL linked worktree — git creates worktreeAbs.
+    git(parent, ["worktree", "add", "-q", worktreeAbs]);
+
+    const parentReal = realpathSync(parent);
+    const worktreeReal = realpathSync(worktreeAbs);
+    const expectedPort = I.hashToPort(worktreeReal);
+    const parentPort = I.hashToPort(parentReal);
+    spawnedPorts.push(expectedPort, parentPort);
+    assert(
+      expectedPort !== parentPort,
+      `worktree port (${expectedPort}) differs from parent port (${parentPort})`,
+    );
+
+    // Simulate the race: pi's LIVE cwd is the worktree (launcher guarantee),
+    // but ctx.cwd was captured stale as the parent repo.
+    process.chdir(worktreeReal);
+    const handler = captureSessionStartHandler();
+    await handler({}, { cwd: parentReal });
+
+    const state = I.readState(expectedPort);
+    assert(state != null, "state written at the worktree's port (not the parent's)");
+    assert(
+      state != null && state.projectRoot === worktreeReal,
+      `daemon --project === worktree root (got ${state?.projectRoot})`,
+    );
+    assert(
+      state != null && state.projectRoot !== parentReal,
+      "daemon --project is NOT the stale parent repo",
+    );
+    assert(state != null && I.isPidAlive(state.pid), "spawned Serena pid alive");
+
+    // No orphan daemon bound to the stale parent's port.
+    const orphan = I.readState(parentPort);
+    assert(orphan == null, "no daemon state written against the stale parent port");
+
+    // Env wiring reflects the worktree port.
+    assert(
+      process.env.SERENA_MCP_PORT === String(expectedPort),
+      `SERENA_MCP_PORT wired to worktree port ${expectedPort}`,
+    );
+  } finally {
+    for (const p of spawnedPorts) killSerenaForPort(p);
+    try { process.chdir(prevCwd); } catch { /* ignore */ }
+    try { git(parent, ["worktree", "remove", "--force", worktreeAbs]); } catch { /* parent may be gone */ }
+    rmSync(tmpBase, { recursive: true, force: true });
+    if (prevEnvPort === undefined) delete process.env.SERENA_MCP_PORT;
+    else process.env.SERENA_MCP_PORT = prevEnvPort;
+  }
+}
+
 async function main(): Promise<void> {
   console.log("serena-pool e2e driver\n");
   if (!preflight()) process.exit(2);
@@ -207,6 +305,7 @@ async function main(): Promise<void> {
     test3_deadDaemonRecovery,
     test4_syntheticOrphanCleanup,
     test5_concurrentSpawn,
+    test6_cwdRace,
   ];
 
   for (const t of tests) {
