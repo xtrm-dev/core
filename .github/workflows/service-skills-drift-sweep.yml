@@ -54,6 +54,10 @@ on:
         description: 'nano-gpt model id (NANO_GPT_MODEL). Specialist consumes this under the hood. Subscription-covered example: moonshotai/kimi-k2.6:thinking'
         type: string
         default: 'moonshotai/kimi-k2.6:thinking'
+      specialists-model:
+        description: 'Provider-prefixed model id passed to sp script --model (specialist v1.6.0 has model:null and requires explicit override). Format: <provider>/<model-id>.'
+        type: string
+        default: 'nano-gpt/moonshotai/kimi-k2.6:thinking'
       nano-gpt-api-url:
         description: 'nano-gpt chat-completions endpoint (NANO_GPT_API_URL). Override only to switch base path. Hostname locked to nano-gpt.com.'
         type: string
@@ -279,6 +283,7 @@ jobs:
           NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
           CLAUDE_PROJECT_DIR: ${{ github.workspace }}
           SPECIALISTS_PACK: ${{ inputs['specialists-pack'] }}
+          SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
         run: |
           set +e
           if [ -z "$NANO_GPT_API_KEY" ]; then
@@ -291,6 +296,7 @@ jobs:
             --vars "repo=$GITHUB_REPOSITORY" \
             --vars "pack=$SPECIALISTS_PACK" \
             --vars "cwd=$PWD" \
+            --model "$SPECIALISTS_MODEL" \
             --json \
             --allow-write-capable \
             --allow-skills \
