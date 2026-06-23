@@ -46,6 +46,10 @@ on:
         description: 'Bun runtime version. @jaggerxtrm/specialists ships as a #!/usr/bin/env bun bundle, so bun must be on PATH. Pin per Phase C policy.'
         type: string
         default: '1.3.12'
+      beads-version:
+        description: 'Exact @beads/bd npm version. service-skills-sync declares bd in capabilities.external_commands; specialist pre-run validation rejects without it on PATH.'
+        type: string
+        default: '1.0.5'
       runs-on-reconcile:
         description: 'JSON string for runs-on of the auto-reconcile job. Defaults to ubuntu-latest for back-compat. Self-hosted callers pass e.g. ''["self-hosted","infra"]''.'
         type: string
@@ -250,7 +254,7 @@ jobs:
           SP_INSTALL_DIR="${RUNNER_TEMP:-/tmp}/sp-install-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-0}"
           rm -rf "$SP_INSTALL_DIR"
           mkdir -p "$SP_INSTALL_DIR"
-          (cd "$SP_INSTALL_DIR" && npm init -y >/dev/null 2>&1 && npm i --no-audit --no-fund "$target") 2> /tmp/sp-install-stderr.log
+          (cd "$SP_INSTALL_DIR" && npm init -y >/dev/null 2>&1 && npm i --no-audit --no-fund "$target" "@beads/bd@${{ inputs['beads-version'] }}") 2> /tmp/sp-install-stderr.log
           npm_status=$?
           if [ "$npm_status" -ne 0 ]; then
             echo "::warning::specialists install failed (exit $npm_status); falling back to Phase B reconcile.py"
