@@ -26,15 +26,21 @@ This skill is the first materialization of the `devops-sre` / monitor role from 
 xtrm devops canon (`~/dev/xtrm/docs/devops/devops-system.md` §5.1). The future
 `sre.specialist.json` inherits this body as its standing prompt.
 
-> **Examples below use a generic `example-project` placeholder name** — concrete
-> alert/container/feed names like `svc-data-feed`, `ExampleProjectFeedStarved`,
-> `example-feeds`, the `example_project_` tool prefix, and any
-> `~/projects/example-project/...` path are **illustrative**, not literal. In a
-> real project, replace them with your own conventions (discover the actual
-> mcpq tool prefix via `mcpq prometheus list-tools`). The methodology, the
-> `mcpq` invocation pattern, the universal PromQL probes (`up == 0`,
-> `ALERTS{alertstate="firing"}`, `node_*`, `container_*`), and the status taxonomy
-> are universal and need no replacement.
+> **Project-bound names vs. universal methodology.** The examples below use a
+> placeholder project (`example-project`, `example_project_*` mcpq tool prefix,
+> `~/projects/example-project/...`). These bindings are **not portable** —
+> discover yours before running anything:
+> - **mcpq tool prefix**: `mcpq prometheus list-tools` → find the
+>   `<prefix>_execute_query` tool. Your prefix is almost never `example_project`.
+> - **Container → repo routing**: read `infra/scripts/service-map.json`.
+>   Container-name prefixes (`svc-*`, `feed-*`, `infra-*`, ...) are **project
+>   topology, not a standard** — never assume them; read the file.
+> - **Feed / alert / service names**: read `service-map.json` and your own alert
+>   definitions; substitute them into the PromQL below.
+>
+> The methodology itself is universal and needs no replacement: the `mcpq`
+> invocation pattern, the PromQL probes (`up == 0`, `ALERTS{alertstate="firing"}`,
+> `node_*`, `container_*`), and the status taxonomy. Only the *names* change.
 
 ## Trigger
 
@@ -81,9 +87,11 @@ operator SLO is minutes (`svc-data-feed`, `svc-snapshot-feed`,
 but do not mark the stack degraded solely because a daily or hourly feed is
 older than 600s. Use feed-specific alerts/runbooks for those cadences.
 
-Container → repo attribution comes from the regexes in `infra/scripts/service-map.json`
-(e.g. `svc-*` → market-data, `feed-*` → example-feeds, `example_econ_*` → example-economic,
-`treasury-*` / `example-fiscal-*` → example-treasury, `infra-*` → infra).
+Container → repo attribution comes from the regexes in your project's
+`infra/scripts/service-map.json`. **Do not assume prefixes are standard** — they
+are project topology (in one project `svc-*` might map to a data repo and
+`infra-*` to the infra repo; yours will differ). Open that file and read the
+actual mappings before attributing containers.
 
 **Fallback when mcpq is unreachable** — if both `mcpq` calls return errors
 mentioning `docker exec ... exited` or `connection refused`, the sidecars are
@@ -309,11 +317,11 @@ ls .xtrm/skills/user/packs/*/service-skills/services/
 
 # 2. For a container name like `infra-traefik`, the service-id is the
 #    longest matching prefix or exact match against a directory name above.
-#    (For Example Project today: `infra-*` → infra pack, `svc-*` → market-data,
-#    `feed-*` → example-feeds, `example_econ_*` → example-economic, `treasury-*` →
-#    example-treasury, `example_project_website*` → website. Cross-repo containers' service
-#    skills live in those sibling repos — `cd ~/projects/example-project/<repo>` then
-#    repeat the `ls`.)
+#    (Routing is project topology, not a standard: read
+#    `infra/scripts/service-map.json` for the real prefix → repo mappings rather
+#    than assuming prefixes like `svc-*` or `infra-*`. Cross-repo containers'
+#    service skills live in sibling repos — `cd ~/projects/<your-project>/<repo>`
+#    then repeat the `ls`.)
 
 # 3. Read the matched skill to adopt expert persona:
 Read: .xtrm/skills/user/packs/<pack>/service-skills/services/<service-id>/SKILL.md
