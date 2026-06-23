@@ -300,41 +300,49 @@ jobs:
           # Derive baseUrl from the nano-gpt-api-url input: strip the
           # /chat/completions tail to get the v1 root that pi uses.
           base_url="${NANO_GPT_API_URL%/chat/completions}"
-          python3 - <<PY
+          # Strip 'nano-gpt/' provider prefix if caller passed it; pi resolves
+          # the bare model id within the provider's models[] list.
+          raw_model="${{ inputs['specialists-model'] }}"
+          model_id="${raw_model#nano-gpt/}"
+          export PI_PROVIDER_BASE="$base_url"
+          export PI_PROVIDER_MODEL="$model_id"
+          python3 - <<'PY'
           import json, os, pathlib
-          home = pathlib.Path(os.environ['HOME'])
-          base = "${base_url}"
-          key  = os.environ['NANO_GPT_API_KEY']
-          entry = {
+          home   = pathlib.Path(os.environ['HOME'])
+          base   = os.environ['PI_PROVIDER_BASE']
+          model  = os.environ['PI_PROVIDER_MODEL']
+          key    = os.environ['NANO_GPT_API_KEY']
+          model_entry = {
+              'id': model,
+              'name': model.split('/')[-1],
+              'reasoning': model.endswith(':thinking'),
+              'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0},
+              'contextWindow': 256000,
+              'maxTokens': 65536,
+          }
+          provider_entry = {
               'baseUrl': base,
               'apiKey': key,
               'api': 'openai-completions',
               'authHeader': True,
-              'models': {},
+              'models': [model_entry],
           }
-          # models.json (provider registry; what 'pi --provider nano-gpt' resolves)
-          models_path = home / '.pi' / 'agent' / 'models.json'
-          models_path.parent.mkdir(parents=True, exist_ok=True)
-          models = {}
-          if models_path.exists():
-              try: models = json.loads(models_path.read_text())
-              except Exception: models = {}
-          models.setdefault('providers', {})['nano-gpt'] = {'baseUrl': base, 'apiKey': key}
-          models_path.write_text(json.dumps(models, indent=2))
-          # auth.json (api-key auth for pi providers — same nano-gpt entry shape)
-          auth_path = home / '.pi' / 'agent' / 'auth.json'
-          auth = {}
-          if auth_path.exists():
-              try: auth = json.loads(auth_path.read_text())
-              except Exception: auth = {}
-          auth.setdefault('providers', {})['nano-gpt'] = entry
-          auth_path.write_text(json.dumps(auth, indent=2))
-          # chmod 600 to keep secret out of world-readable space
-          for p in (models_path, auth_path):
-              p.chmod(0o600)
-          print(f"wrote {models_path} + {auth_path} with nano-gpt provider")
+          for fname in ('models.json', 'auth.json'):
+              path = home / '.pi' / 'agent' / fname
+              path.parent.mkdir(parents=True, exist_ok=True)
+              try:
+                  data = json.loads(path.read_text()) if path.exists() else {}
+              except Exception:
+                  data = {}
+              data.setdefault('providers', {})['nano-gpt'] = provider_entry
+              path.write_text(json.dumps(data, indent=2))
+              path.chmod(0o600)
+              print(f"wrote {path}")
+          print(f"nano-gpt provider configured: baseUrl={base} model={model}")
           PY
-          echo "::notice::pi nano-gpt provider configured (baseUrl=$base_url)"
+          echo "::notice::pi nano-gpt provider configured (baseUrl=$base_url, model=$model_id)"
+          # Surface config shape (no secrets) so the next failure mode is easy to RCA.
+          python3 -c "import json; d=json.load(open('$HOME/.pi/agent/models.json')); p=d['providers']['nano-gpt']; print('config check — provider keys:', sorted(p.keys()), 'models count:', len(p.get('models',[])), 'first model id:', p['models'][0]['id'] if p.get('models') else None)"
 
       - name: Configure specialist model override (global user.json)
         if: steps.install_specialists.outputs.installed == 'true'
