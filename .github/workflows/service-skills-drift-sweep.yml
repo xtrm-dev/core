@@ -286,7 +286,18 @@ jobs:
           # throws SpecialistMissingModelError BEFORE --model from `sp script` is read
           # (xtrm-d8r36.5 smoke v5 RCA). Fix: seed the global user override layer.
           mkdir -p "$HOME/.config/specialists"
-          [ -f "$HOME/.config/specialists/user.json" ] || echo '{}' > "$HOME/.config/specialists/user.json"
+          # sp init --global seeds every shipped specialist with inherit defaults
+          # (init.ts:906-944, idempotent). Required because sp edit --global --set
+          # rejects names absent from the global file (edit.ts:739,755).
+          "$SP_BIN" init --global > /tmp/sp-init-stdout.log 2> /tmp/sp-init-stderr.log
+          init_status=$?
+          if [ "$init_status" -ne 0 ]; then
+            echo "::warning::sp init --global failed (exit $init_status); specialist path will fall back"
+            echo "::group::sp init stderr"
+            tail -30 /tmp/sp-init-stderr.log 2>/dev/null
+            echo "::endgroup::"
+            exit 0
+          fi
           "$SP_BIN" edit --global --set "service-skills-sync.execution.model" "$SPECIALISTS_MODEL" 2> /tmp/sp-edit-stderr.log
           edit_status=$?
           if [ "$edit_status" -ne 0 ]; then
