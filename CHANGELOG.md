@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Service-skills Phase B auto-reconcile pipeline (xtrm-pm5d8 / epic xtrm-lwpcn).** Reusable workflow `xtrm-dev/core/.github/workflows/service-skills-drift-sweep.yml@main` now ships a second job, `auto-reconcile`, that calls an LLM to rewrite drifted `SKILL.md` files and opens an auto-PR. Opt in per-repo with new caller input `reconcile-enabled: true` + secret `nano-gpt-api-key`; default behavior unchanged (Phase A detect+comment only). New inputs `nano-gpt-model` (default `moonshotai/kimi-k2.6:thinking`, subscription-covered) and `nano-gpt-api-url` (default `https://nano-gpt.com/api/v1/chat/completions`, hostname locked to `nano-gpt.com`). Workflow concurrency group `service-skills-drift-${{ github.ref }}` with `cancel-in-progress: false` queues successive merges. Anti-loop guard skips runs from `xtrm-auto-reconcile/*` branches or `github-actions[bot]` actor. (xtrm-pm5d8 / PRs #300, #301, #305, #307, #308, #309, #310, #311)
+- **`.xtrm/skills/default/service-skills/scripts/reconcile.py`** — new zero-install Python reconciler that ships in the service-skills skill pack. Reads `NANO_GPT_API_KEY` (required), `NANO_GPT_MODEL`, `NANO_GPT_API_URL`, `NANO_GPT_TIMEOUT_SECONDS` (default 300), `XTRM_AUTO_RECONCILE_COST_LIMIT_TOKENS`. CLI flags `--json`, `--dry-run`, `--max-files N`. Exit codes: 0 success / partial-with-reconciled, 1 failed / partial-with-zero, 2 missing API key. 13 unit tests. (xtrm-pm5d8.1)
+- **`docs/service-skills-auto-reconcile.md`** — per-repo enablement guide with Step 0 (`xt update --apply`), secret setup, caller workflow template, failure-mode + troubleshooting matrices. (xtrm-pm5d8.7 / PRs #303, #304)
+
 ### Changed
 
 - **`agent-docs-maintainer` skill** now treats repo identity as a first-class audit requirement: docs that lead with managed xtrm/GitNexus/beads boilerplate are flagged, routing/managed line budgets are scored separately from substantive Stack Overview prose, concise operational-entry command lists are no longer treated as CLI manual bloat, and stale-term checks can be extended per repo with `.xtrm/agent-docs.toml`. (xtrm-jdn8e)
