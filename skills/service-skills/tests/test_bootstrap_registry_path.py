@@ -45,6 +45,58 @@ def test_root_used_only_when_no_xtrm_registry(tmp_path: Path):
     assert get_registry_path(str(tmp_path)) == root_reg
 
 
+def test_xtrm_pack_env_selects_umbrella_pack(tmp_path: Path, monkeypatch):
+    # xtrm-5bnfk: with multiple packs present under the umbrella layout, $XTRM_PACK
+    # must steer get_registry_path to that pack's umbrella registry (not just the
+    # alphabetically-first one). Pre-fix, _select_pack_registry only matched the
+    # flat <pack>/service-registry.json layout, so umbrella registries fell
+    # through to sorted()[0] and silently picked the wrong pack.
+    for pack in ("infra", "darth-feedor"):
+        reg = tmp_path / f".xtrm/skills/user/packs/{pack}/service-skills/service-registry.json"
+        reg.parent.mkdir(parents=True)
+        reg.write_text("{}")
+    monkeypatch.setenv("XTRM_PACK", "infra")
+    chosen = get_registry_path(str(tmp_path))
+    assert chosen == tmp_path / ".xtrm/skills/user/packs/infra/service-skills/service-registry.json"
+
+
+def test_scope_find_registry_resolves_canonical_pack(tmp_path: Path, monkeypatch):
+    # xtrm-5bnfk: scope.py previously had its own resolver that only knew
+    # .claude/skills/service-registry.json — it never found the canonical
+    # .xtrm/skills/user/packs/<pack>/service-skills/service-registry.json,
+    # so on mercury-infra the specialist's pre-script always reported
+    # 'No drift detected' even when drift existed. The fix delegates
+    # scope.find_registry() to bootstrap.get_registry_path().
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import scope as scope_mod
+    canonical = tmp_path / ".xtrm/skills/user/packs/infra/service-skills/service-registry.json"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("{}")
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    monkeypatch.delenv("XTRM_PACK", raising=False)
+    monkeypatch.delenv("SERVICE_REGISTRY_PATH", raising=False)
+    assert scope_mod.find_registry() == canonical
+
+
+def test_scope_find_registry_returns_none_when_absent(tmp_path: Path, monkeypatch):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import scope as scope_mod
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    monkeypatch.delenv("XTRM_PACK", raising=False)
+    monkeypatch.delenv("SERVICE_REGISTRY_PATH", raising=False)
+    assert scope_mod.find_registry() is None
+
+
+def test_scope_find_registry_honours_env_override(tmp_path: Path, monkeypatch):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import scope as scope_mod
+    custom = tmp_path / "custom-registry.json"
+    custom.write_text("{}")
+    monkeypatch.setenv("SERVICE_REGISTRY_PATH", str(custom))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    assert scope_mod.find_registry() == custom
+
+
 def test_run_gitnexus_json_omits_json_flag_and_uses_repo(tmp_path: Path, monkeypatch):
     captured = {}
 

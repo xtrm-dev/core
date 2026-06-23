@@ -607,6 +607,10 @@
           "hash": "a437a67e7ae741b2ceaee35740a535a65e8f8aadf14d479d378616c7ccc46232",
           "version": "0.9.0"
         },
+        "multiplexing/SKILL.md": {
+          "hash": "3f49f5c5d4c9d627eb1d654bf5460378025622e320103504f840058dd5488d7f",
+          "version": "0.9.0"
+        },
         "planning/SKILL.md": {
           "hash": "b02da9548702f9256c0b4938490dad86a8898bbe72e2152d22999a02b3f608a8",
           "version": "0.9.0"
@@ -776,7 +780,7 @@
           "version": "0.9.0"
         },
         "service-skills/scripts/bootstrap.py": {
-          "hash": "93d0485546394587c8d53b67fe5e1d0376503cadec676e123d186785c9758304",
+          "hash": "f59ba1dfa2ede3f6e6880679bbb355f23dc49c59e656801d1bfe386a4137a53c",
           "version": "0.9.0"
         },
         "service-skills/scripts/cataloger.py": {
@@ -804,7 +808,7 @@
           "version": "0.9.0"
         },
         "service-skills/scripts/scope.py": {
-          "hash": "8009d07d85d8730ebdc71cf46d0e409bb583fd98bf28d482c1e226e4b4bc023f",
+          "hash": "b59634db12d797e4830a5796cdc0f571d3afe306751a5b086b1926cdd1fc6842",
           "version": "0.9.0"
         },
         "service-skills/scripts/skill_activator.py": {
@@ -913,6 +917,18 @@
         },
         "specialists-creator/SKILL.md": {
           "hash": "f84c22e11e08f83ab73c7f3d52df3b071037600740352713d1494f57799b679e",
+          "version": "0.9.0"
+        },
+        "sre-triage/scripts/alert_history.py": {
+          "hash": "b212bb8dad1ec0ae2db97824d4f72ece15db079bddfde466e230ef1e852bd0d3",
+          "version": "0.9.0"
+        },
+        "sre-triage/scripts/alert_investigator.py": {
+          "hash": "a950e1e0745766abe0f8acb9bd457b7ba08672628e21a82e091601f86e25fe85",
+          "version": "0.9.0"
+        },
+        "sre-triage/SKILL.md": {
+          "hash": "f9328ec682414e64304c75d38eddafe9014c23fb4334a16398ed0eaa64827bd2",
           "version": "0.9.0"
         },
         "sync-docs/references/doc-structure.md": {
