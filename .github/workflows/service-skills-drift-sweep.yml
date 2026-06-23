@@ -38,6 +38,10 @@ on:
         description: 'Service-skills pack name passed to the specialist (script_template var $pack). Override only for non-default packs.'
         type: string
         default: 'default'
+      bun-version:
+        description: 'Bun runtime version. @jaggerxtrm/specialists ships as a #!/usr/bin/env bun bundle, so bun must be on PATH. Pin per Phase C policy.'
+        type: string
+        default: '1.3.12'
       runs-on-reconcile:
         description: 'JSON string for runs-on of the auto-reconcile job. Defaults to ubuntu-latest for back-compat. Self-hosted callers pass e.g. ''["self-hosted","infra"]''.'
         type: string
@@ -205,6 +209,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ inputs['bun-version'] }}
 
       - name: Download drift artifacts
         uses: actions/download-artifact@v4
