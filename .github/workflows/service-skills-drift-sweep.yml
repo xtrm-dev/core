@@ -272,7 +272,32 @@ jobs:
           installed_ver=$("$SP_BIN_DIR/sp" --version 2>/dev/null | head -1)
           echo "::notice::specialists installed at $SP_INSTALL_DIR: $installed_ver"
           echo "install_dir=$SP_INSTALL_DIR" >> "$GITHUB_OUTPUT"
+          echo "sp_bin=$SP_BIN_DIR/sp" >> "$GITHUB_OUTPUT"
           echo 'installed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Configure specialist model override (global user.json)
+        if: steps.install_specialists.outputs.installed == 'true'
+        env:
+          SP_BIN: ${{ steps.install_specialists.outputs.sp_bin }}
+          SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
+        run: |
+          set +e
+          # service-skills-sync v1.6.0 sets execution.model:null; SpecialistLoader.get
+          # throws SpecialistMissingModelError BEFORE --model from `sp script` is read
+          # (xtrm-d8r36.5 smoke v5 RCA). Fix: seed the global user override layer.
+          mkdir -p "$HOME/.config/specialists"
+          [ -f "$HOME/.config/specialists/user.json" ] || echo '{}' > "$HOME/.config/specialists/user.json"
+          "$SP_BIN" edit --global --set "service-skills-sync.execution.model" "$SPECIALISTS_MODEL" 2> /tmp/sp-edit-stderr.log
+          edit_status=$?
+          if [ "$edit_status" -ne 0 ]; then
+            echo "::warning::sp edit --global failed (exit $edit_status); specialist path will fall back"
+            echo "::group::sp edit stderr"
+            tail -30 /tmp/sp-edit-stderr.log 2>/dev/null
+            echo "::endgroup::"
+            exit 0
+          fi
+          echo "::notice::seeded global override: service-skills-sync.execution.model=$SPECIALISTS_MODEL"
+          "$SP_BIN" edit --global --get "service-skills-sync.execution.model" 2>&1 | head -3
 
       - name: Reconcile drift (specialist path)
         id: reconcile
