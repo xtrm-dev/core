@@ -225,7 +225,7 @@ jobs:
           name: service-skills-drift
           path: /tmp/service-skills-drift
 
-      - name: Install specialists (pinned)
+      - name: Install specialists (pinned, isolated)
         id: install_specialists
         env:
           SPECIALISTS_VERSION: ${{ inputs['specialists-version'] }}
@@ -239,20 +239,35 @@ jobs:
             target="@jaggerxtrm/specialists@${SPECIALISTS_VERSION}"
             echo "::notice::installing specialists from npm: $target"
           fi
-          npm i -g "$target"
+          # Per-job tmpdir install — no global namespace, immune to persistent-runner
+          # state leaks (xtrm-d8r36.5 smoke v3 hit ENOTDIR rename on a prior global
+          # install of the same package). RUNNER_TEMP is wiped between jobs on ephemeral
+          # runners and stable per-run on persistent ones.
+          SP_INSTALL_DIR="${RUNNER_TEMP:-/tmp}/sp-install-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-0}"
+          rm -rf "$SP_INSTALL_DIR"
+          mkdir -p "$SP_INSTALL_DIR"
+          (cd "$SP_INSTALL_DIR" && npm init -y >/dev/null 2>&1 && npm i --no-audit --no-fund "$target") 2> /tmp/sp-install-stderr.log
           npm_status=$?
           if [ "$npm_status" -ne 0 ]; then
             echo "::warning::specialists install failed (exit $npm_status); falling back to Phase B reconcile.py"
+            echo "::group::npm install stderr"
+            tail -50 /tmp/sp-install-stderr.log 2>/dev/null || echo '(stderr missing)'
+            echo "::endgroup::"
             echo 'installed=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if ! command -v sp >/dev/null 2>&1; then
-            echo "::warning::sp CLI not on PATH after install; falling back to Phase B reconcile.py"
+          SP_BIN_DIR="$SP_INSTALL_DIR/node_modules/.bin"
+          if [ ! -x "$SP_BIN_DIR/sp" ]; then
+            echo "::warning::sp not found at $SP_BIN_DIR/sp after install; falling back to Phase B reconcile.py"
+            ls -la "$SP_BIN_DIR" 2>&1 | head -20
             echo 'installed=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          installed_ver=$(sp --version 2>/dev/null | head -1)
-          echo "::notice::specialists installed: $installed_ver"
+          # Persist PATH addition for subsequent steps via $GITHUB_PATH.
+          echo "$SP_BIN_DIR" >> "$GITHUB_PATH"
+          installed_ver=$("$SP_BIN_DIR/sp" --version 2>/dev/null | head -1)
+          echo "::notice::specialists installed at $SP_INSTALL_DIR: $installed_ver"
+          echo "install_dir=$SP_INSTALL_DIR" >> "$GITHUB_OUTPUT"
           echo 'installed=true' >> "$GITHUB_OUTPUT"
 
       - name: Reconcile drift (specialist path)
