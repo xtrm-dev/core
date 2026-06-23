@@ -333,6 +333,7 @@ jobs:
             exit 0
           fi
           sp script service-skills-sync \
+            --template-field script_template \
             --vars "repo=$GITHUB_REPOSITORY" \
             --vars "pack=$SPECIALISTS_PACK" \
             --vars "cwd=$PWD" \
