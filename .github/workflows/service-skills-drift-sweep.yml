@@ -244,6 +244,8 @@ jobs:
         env:
           SPECIALISTS_VERSION: ${{ inputs['specialists-version'] }}
           SPECIALISTS_GIT_REF: ${{ inputs['specialists-git-ref'] }}
+          BEADS_VERSION: ${{ inputs['beads-version'] }}
+          PI_VERSION: ${{ inputs['pi-version'] }}
         run: |
           set +e
           if [ -n "$SPECIALISTS_GIT_REF" ]; then
@@ -260,7 +262,7 @@ jobs:
           SP_INSTALL_DIR="${RUNNER_TEMP:-/tmp}/sp-install-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-0}"
           rm -rf "$SP_INSTALL_DIR"
           mkdir -p "$SP_INSTALL_DIR"
-          (cd "$SP_INSTALL_DIR" && npm init -y >/dev/null 2>&1 && npm i --no-audit --no-fund "$target" "@beads/bd@${{ inputs['beads-version'] }}" "@earendil-works/pi-coding-agent@${{ inputs['pi-version'] }}") 2> /tmp/sp-install-stderr.log
+          (cd "$SP_INSTALL_DIR" && npm init -y >/dev/null 2>&1 && npm i --no-audit --no-fund "$target" "@beads/bd@$BEADS_VERSION" "@earendil-works/pi-coding-agent@$PI_VERSION") 2> /tmp/sp-install-stderr.log
           npm_status=$?
           if [ "$npm_status" -ne 0 ]; then
             echo "::warning::specialists install failed (exit $npm_status); falling back to Phase B reconcile.py"
@@ -290,6 +292,7 @@ jobs:
         env:
           NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
           NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
+          SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
         run: |
           set +e
           if [ -z "$NANO_GPT_API_KEY" ]; then
@@ -302,8 +305,7 @@ jobs:
           base_url="${NANO_GPT_API_URL%/chat/completions}"
           # Strip 'nano-gpt/' provider prefix if caller passed it; pi resolves
           # the bare model id within the provider's models[] list.
-          raw_model="${{ inputs['specialists-model'] }}"
-          model_id="${raw_model#nano-gpt/}"
+          model_id="${SPECIALISTS_MODEL#nano-gpt/}"
           export PI_PROVIDER_BASE="$base_url"
           export PI_PROVIDER_MODEL="$model_id"
           python3 - <<'PY'
