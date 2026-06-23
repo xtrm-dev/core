@@ -796,7 +796,7 @@
           "version": "0.9.0"
         },
         "service-skills/scripts/reconcile.py": {
-          "hash": "327ca6f12d696a92715c7efc22d19da9bd115fcf3077ba740b18a086a3d89f1e",
+          "hash": "6c5ca668672868720ff36db5d318d28defc08d16e6d6a8ae465a245e61ccb729",
           "version": "0.9.0"
         },
         "service-skills/scripts/scaffolder.py": {
@@ -965,6 +965,34 @@
         },
         "update-xt/SKILL.md": {
           "hash": "5084adcb414209503e2d7d723bc98ca2ed36562b708e75bc7d766e0609c2bf56",
+          "version": "0.9.0"
+        },
+        "updating-dependencies/schemas/dependency_update_case.schema.json": {
+          "hash": "2f29b206593219548c7b8481c3d1d041861bc943a383e6ef15dab1cd8cbb2827",
+          "version": "0.9.0"
+        },
+        "updating-dependencies/schemas/upgrade_dossier.schema.json": {
+          "hash": "19486d8b0c9563fa63d389e66b2b7df2876e7a0113b9302bd44bdb8ac649de12",
+          "version": "0.9.0"
+        },
+        "updating-dependencies/SKILL.md": {
+          "hash": "0121ffef95ea24ef4dc3edad69d3e8d5b42d2e53b9928bbee6c54d3cc101b4f8",
+          "version": "0.9.0"
+        },
+        "updating-dependencies/templates/post-deploy-watch-spec.md": {
+          "hash": "692e1f6bb929888ca89284a14d2536f133edade463c9a773f16b68d9bf2f50e6",
+          "version": "0.9.0"
+        },
+        "updating-dependencies/templates/pr-comment.md": {
+          "hash": "bd87a587dba75c7fb231fb931f51270720680af5a2de29b83f08b3593dceaf61",
+          "version": "0.9.0"
+        },
+        "updating-dependencies/templates/research-matrix.md": {
+          "hash": "967b63ac9f436528babf2216d64e3cfa075f6c2f2126b4561f345d5bdf81855a",
+          "version": "0.9.0"
+        },
+        "updating-dependencies/templates/upgrade-dossier.md": {
+          "hash": "425edebf079810d359e72643ba8820a62beaf7bfd0051e4216e1dd5c56354815",
           "version": "0.9.0"
         },
         "using-kpi/SKILL.md": {
