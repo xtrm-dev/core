@@ -37,4 +37,18 @@ jobs:
           osv-scanner --version
 
       - name: Scan
-        run: osv-scanner scan source --recursive .
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            set +e
+            osv-scanner scan source --recursive .
+            status=$?
+            set -e
+            if [[ "$status" -ne 0 ]]; then
+              echo "::warning::OSV findings detected on PR; advisory by default. Dependency-review verdicts decide whether a bump is SECURITY_FORCED."
+            fi
+            exit 0
+          fi
+
+          osv-scanner scan source --recursive .

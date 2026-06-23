@@ -1,0 +1,86 @@
+name: dep-review
+description: >-
+  Deterministic dependency-bump review from the updating-dependencies capability.
+  Runs the inspector (scripts/dep-inspect.mjs at the pinned action ref) to emit a
+  dependency_update_case.json, then posts a verdict PR comment + label. Advisory
+  by default; FAILS the check only on SECURITY_FORCED / BLOCKED (policy §4.1).
+  No LLM, no API key, no mutation beyond comment + label.
+author: xtrm
+
+inputs:
+  token:
+    description: GitHub token with issues:write/pull-requests:write for PR comment + label. Defaults to github.token when omitted.
+    default: ''
+  package-name:
+    description: Package being bumped. If omitted, parsed from pr-title.
+    default: ''
+  ecosystem:
+    description: Package ecosystem (npm | pypi | ...). Default npm.
+    default: npm
+  from-version:
+    description: Current version. If omitted, parsed from pr-title.
+    default: ''
+  to-version:
+    description: Target version. If omitted, parsed from pr-title.
+    default: ''
+  runtime-reachable:
+    description: Runtime-reachability hint (yes|no|unknown). Drives the CVSS>=9 SECURITY_FORCED rule.
+    default: unknown
+  manifest-path:
+    description: Path to manifest (package.json) for direct/transitive + scope classification.
+    default: package.json
+  pr-title:
+    description: Pull-request title (for auto-detect). If omitted, github.event.pull_request.title is used.
+    default: ''
+  affected-services:
+    description: Comma-separated affected service names.
+    default: ''
+  advisories-json:
+    description: Optional JSON array of advisory objects for deterministic tests/manual overrides. Normally omitted; OSV lookup is used.
+    default: ''
+
+outputs:
+  verdict:
+    description: Dependency review verdict
+    value: ${{ steps.review.outputs.verdict }}
+  label:
+    description: Dependency review label
+    value: ${{ steps.review.outputs.label }}
+  case-path:
+    description: Path to dependency_update_case.json artifact
+    value: ${{ steps.review.outputs.case-path }}
+  comment-path:
+    description: Path to rendered PR comment artifact
+    value: ${{ steps.review.outputs.comment-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout xtrm-tools at the pinned action ref (inspector source)
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        repository: ${{ github.action_repository }}
+        ref: ${{ github.action_ref }}
+        path: _xt-src
+        persist-credentials: false
+
+    - name: Run deterministic dependency review
+      id: review
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token || github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_REPO: ${{ github.repository }}
+        PACKAGE_NAME: ${{ inputs.package-name }}
+        ECOSYSTEM: ${{ inputs.ecosystem }}
+        FROM_VERSION: ${{ inputs.from-version }}
+        TO_VERSION: ${{ inputs.to-version }}
+        RUNTIME_REACHABLE: ${{ inputs.runtime-reachable }}
+        MANIFEST_PATH: ${{ inputs.manifest-path }}
+        PR_TITLE: ${{ inputs.pr-title || github.event.pull_request.title }}
+        AFFECTED_SERVICES: ${{ inputs.affected-services }}
+        ADVISORIES_JSON: ${{ inputs.advisories-json }}
+        INSPECTOR_PATH: ${{ github.workspace }}/_xt-src/scripts/dep-inspect.mjs
+        TEMPLATE_PATH: ${{ github.workspace }}/_xt-src/.xtrm/skills/default/updating-dependencies/templates/pr-comment.md
+        REVIEW_SCRIPT: ${{ github.action_path }}/review.mjs
+      run: node "$REVIEW_SCRIPT"

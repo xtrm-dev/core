@@ -371,6 +371,8 @@ export const __internals = {
   getProcessStartTime,
   findProcessesByPgid,
   getRepoRoot,
+  isInsideGitRepo,
+  resolveSessionCwd,
   readState,
   writeState,
   removeState,
@@ -379,9 +381,51 @@ export const __internals = {
 };
 export type { PoolState };
 
+/** True when `cwd` is inside a git work tree (cheap synchronous probe). */
+function isInsideGitRepo(cwd: string): boolean {
+  try {
+    return (
+      execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() === "true"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the cwd to bind the Serena daemon to.
+ *
+ * Why: pi's ctx.cwd is captured at session_start emission and can be a stale
+ * snapshot — most notably the parent repo when session_start fires before
+ * pi's own cwd has settled into the linked worktree the session actually runs
+ * in. The launcher (cli worktree-session) spawns pi with `cwd: worktreePath`,
+ * so `process.cwd()` is the live ground truth. The old `ctx?.cwd ??
+ * process.cwd()` form silently trusted a stale ctx.cwd because `??` only
+ * falls through on nullish — never when ctx.cwd is present-but-wrong. That
+ * produced a wrong hashToPort → daemon bound to the parent repo's --project →
+ * the next correct-cwd session found no listener on its expected port and
+ * spawned a SECOND daemon, leaving the first as an orphan (KAN-110-A).
+ *
+ * Resolution: when ctx.cwd and the live cwd disagree, trust the live cwd only
+ * if it is itself inside a git work tree — so we never bind the daemon to an
+ * unrelated process.cwd() (e.g. a test runner in /tmp). getRepoRoot then maps
+ * the worktree cwd to its true toplevel via `git rev-parse --show-toplevel`,
+ * which already returns the linked-worktree root, not the common dir.
+ */
+function resolveSessionCwd(ctxCwd: string | undefined): string {
+  const procCwd = process.cwd();
+  if (!ctxCwd) return procCwd;
+  if (ctxCwd === procCwd) return ctxCwd;
+  return isInsideGitRepo(procCwd) ? procCwd : ctxCwd;
+}
+
 export default function registerSerenaPool(pi: ExtensionAPI) {
   pi.on("session_start", async (_event: unknown, ctx: any) => {
-    const cwd: string = ctx?.cwd ?? process.cwd();
+    const cwd: string = resolveSessionCwd(ctx?.cwd);
     let projectRoot: string;
     try {
       projectRoot = getRepoRoot(cwd);
