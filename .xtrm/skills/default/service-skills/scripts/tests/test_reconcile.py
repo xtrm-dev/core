@@ -138,6 +138,39 @@ def test_json_shape_snapshot(tmp_path, monkeypatch, capsys):
     ]
 
 
+def test_bump_last_sync_ref_also_bumps_timestamp_xtrm_qxu4y(tmp_path, monkeypatch):
+    """Regression: bump_last_sync_ref MUST bump both last_sync_ref AND last_sync.
+
+    Without the timestamp bump, scan_drift's mtime comparison kept tripping on
+    just-merged files (xtrm-qxu4y).
+    """
+    captured = {}
+
+    def fake_load(_root):
+        return {
+            "services": {
+                "alpha": {"last_sync": "2026-06-22T00:00:00Z", "last_sync_ref": "old-sha"},
+                "beta": {"last_sync": "2026-06-22T00:00:00Z", "last_sync_ref": "old-sha"},
+            }
+        }
+
+    def fake_save(registry, _root):
+        captured["registry"] = registry
+
+    monkeypatch.setattr(reconcile, "load_registry", fake_load)
+    monkeypatch.setattr(reconcile, "save_registry", fake_save)
+    monkeypatch.setattr(reconcile, "update_yaml_registry", lambda *a, **kw: None)
+
+    old_ref = reconcile.bump_last_sync_ref(tmp_path, "new-sha", dry_run=False)
+
+    assert old_ref == "old-sha"
+    for service in captured["registry"]["services"].values():
+        assert service["last_sync_ref"] == "new-sha"
+        # New timestamp must be different from the stored old one (i.e. bumped).
+        assert service["last_sync"] != "2026-06-22T00:00:00Z"
+        assert service["last_sync"].endswith("Z")
+
+
 def test_escaped_skill_path_fails_without_write(tmp_path, monkeypatch):
     source_path = tmp_path / "src/alpha.py"
     escaped_path = tmp_path.parent / "escape.md"

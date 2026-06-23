@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -170,6 +171,11 @@ def find_skill_path(drift: dict[str, Any], registry: dict[str, Any], project_roo
 
 
 def bump_last_sync_ref(project_root: Path, new_ref: str, dry_run: bool) -> str | None:
+    # Mirrors drift_detector.update_sync_time: bump BOTH last_sync_ref (SHA) AND
+    # last_sync (ISO timestamp). scan_drift compares file mtime against last_sync
+    # — bumping only the ref left the timestamp at the old value, so post-merge
+    # source file mtimes triggered drift on every subsequent merge (xtrm-qxu4y).
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     registry = load_registry(str(project_root))
     services = registry.get("services", {})
     old_refs = [service.get("last_sync_ref") for service in services.values() if isinstance(service, dict)]
@@ -177,20 +183,23 @@ def bump_last_sync_ref(project_root: Path, new_ref: str, dry_run: bool) -> str |
     for service in services.values():
         if isinstance(service, dict):
             service["last_sync_ref"] = new_ref
+            service["last_sync"] = now_iso
     if not dry_run:
         save_registry(registry, str(project_root))
-        update_yaml_registry(project_root, new_ref)
+        update_yaml_registry(project_root, new_ref, now_iso)
     return old_ref
 
 
-def update_yaml_registry(project_root: Path, new_ref: str) -> None:
+def update_yaml_registry(project_root: Path, new_ref: str, new_sync_iso: str | None = None) -> None:
     for name in ("service-registry.yml", "service-registry.yaml"):
         path = project_root / name
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
-        updated = re.sub(r"(last_sync_ref:\s*)[^\n]*", rf"\g<1>{new_ref}", text)
-        atomic_write(path, updated)
+        text = re.sub(r"(last_sync_ref:\s*)[^\n]*", rf"\g<1>{new_ref}", text)
+        if new_sync_iso is not None:
+            text = re.sub(r"(last_sync:\s*)[^\n]*", rf"\g<1>{new_sync_iso}", text)
+        atomic_write(path, text)
 
 
 def reconcile(options: ReconcileOptions) -> dict[str, Any]:
