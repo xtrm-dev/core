@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`agent-docs-maintainer` skill** now treats repo identity as a first-class audit requirement: docs that lead with managed xtrm/GitNexus/beads boilerplate are flagged, routing/managed line budgets are scored separately from substantive Stack Overview prose, concise operational-entry command lists are no longer treated as CLI manual bloat, and stale-term checks can be extended per repo with `.xtrm/agent-docs.toml`. (xtrm-jdn8e)
 
+### Fixed
+
+- **`serena-pool`: cwd-race in `registerSerenaPool` (KAN-110, PR #306).** `registerSerenaPool` resolved the repo root via `ctx?.cwd ?? process.cwd()`, where `??` short-circuits on any truthy value — including a stale `ctx.cwd` pointing to the parent repo when `session_start` fires before pi's cwd settles into the linked worktree. Wrong cwd → wrong `hashToPort` → daemon bound to the parent `--project` → the next session with the correct cwd spawns a second daemon and orphans the first. Fixed by `resolveSessionCwd`, which reconciles `ctx.cwd` with the live `process.cwd()`: on disagreement it trusts `process.cwd()` only when that path is itself inside a git work-tree (`isInsideGitRepo` probe), so an unrelated cwd (e.g. a test runner in `/tmp`) never wins. The cli worktree-session launcher guarantees `process.cwd() === worktreePath` at `session_start`, making this the authoritative source. New `test6_cwdRace` uses a real `git worktree add` to assert daemon `--project` === worktree root and no orphan state on the parent port; all 6 e2e tests green (27/27 assertions). (KAN-110, authored by Rico1109)
+
 ## [v0.9.0] — 2026-06-07
 
 ### Added
