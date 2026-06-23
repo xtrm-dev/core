@@ -138,6 +138,40 @@ def test_json_shape_snapshot(tmp_path, monkeypatch, capsys):
     ]
 
 
+def test_max_files_truncation_marks_partial_and_lists_deferred_xtrm_vlxug(tmp_path, monkeypatch):
+    """Regression: --max-files < drift_count must mark status=partial AND list
+    the un-processed entries in failed[], so bump_last_sync_ref is skipped and
+    the deferred drift stays visible to the next scan_drift (xtrm-vlxug)."""
+    skill_path = tmp_path / "skills/alpha/SKILL.md"
+    source_path = tmp_path / "src/alpha.py"
+    skill_path.parent.mkdir(parents=True)
+    source_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Alpha\nold\n", encoding="utf-8")
+    source_path.write_text("print('alpha')\n", encoding="utf-8")
+
+    drifts = [
+        {"service_id": "alpha", "file_path": "src/alpha.py", "skill_path": "skills/alpha/SKILL.md"},
+        {"service_id": "beta", "file_path": "src/beta.py", "skill_path": "skills/beta/SKILL.md"},
+        {"service_id": "gamma", "file_path": "src/gamma.py", "skill_path": "skills/gamma/SKILL.md"},
+    ]
+    monkeypatch.setattr(reconcile, "get_project_root", lambda: str(tmp_path))
+    monkeypatch.setattr(reconcile, "load_registry", lambda root: {"services": {d["service_id"]: {"skill_path": d["skill_path"]} for d in drifts}})
+    monkeypatch.setattr(reconcile, "scan_drift", lambda *args, **kwargs: drifts)
+    monkeypatch.setattr(reconcile, "current_head", lambda root: "new-sha")
+    monkeypatch.setattr(reconcile, "call_nano_gpt", lambda prompt, api_key: reconcile.LlmResult("# Updated\n", 10))
+    monkeypatch.setattr(reconcile, "bump_last_sync_ref", lambda *a, **kw: pytest.fail("bump_last_sync_ref MUST NOT be called when --max-files truncates the drift set"))
+
+    result = reconcile.reconcile(reconcile.ReconcileOptions(False, 1, "key", None))
+
+    assert result["status"] == "partial"
+    assert result["reconciled_count"] == 1
+    # The 2 truncated services must appear in failed[] with a deferred marker.
+    deferred = [f for f in result["failed"] if "deferred" in f.get("error", "")]
+    assert len(deferred) == 2
+    deferred_paths = sorted(f["file_path"] for f in deferred)
+    assert deferred_paths == ["src/beta.py", "src/gamma.py"]
+
+
 def test_bump_last_sync_ref_also_bumps_timestamp_xtrm_qxu4y(tmp_path, monkeypatch):
     """Regression: bump_last_sync_ref MUST bump both last_sync_ref AND last_sync.
 

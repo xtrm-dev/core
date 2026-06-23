@@ -207,8 +207,14 @@ def reconcile(options: ReconcileOptions) -> dict[str, Any]:
     registry = load_registry(str(project_root))
     drifted = scan_drift(str(project_root), enrich_with_gitnexus=False, use_gitnexus=False)
     selected = drifted[: options.max_files] if options.max_files is not None else drifted
+    truncated = len(selected) < len(drifted)
     result: dict[str, Any] = {
-        "status": "success",
+        # If --max-files truncated the drift list, the un-processed entries are
+        # deferred — call the run partial so bump_last_sync_ref is skipped and
+        # those services stay visible to the next scan_drift. Without this, all
+        # services' last_sync gets stamped to now and the deferred drift is
+        # silently masked (xtrm-vlxug, codex on mercury-infra PR #137).
+        "status": "partial" if truncated else "success",
         "drift_count": len(drifted),
         "reconciled_count": 0,
         "failed": [],
@@ -216,6 +222,12 @@ def reconcile(options: ReconcileOptions) -> dict[str, Any]:
         "last_sync_ref_old": None,
         "last_sync_ref_new": current_head(project_root),
     }
+    if truncated:
+        for skipped in drifted[len(selected):]:
+            result["failed"].append({
+                "file_path": skipped.get("file_path"),
+                "error": f"deferred: --max-files={options.max_files} truncated this entry",
+            })
     for drift in selected:
         try:
             skill_path_value = find_skill_path(drift, registry, project_root)
