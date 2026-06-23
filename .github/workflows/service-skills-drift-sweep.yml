@@ -31,9 +31,13 @@ on:
         type: boolean
         default: false
       specialists-version:
-        description: 'Exact @jaggerxtrm/specialists npm version used by the auto-reconcile job. Bump via PR — never use latest/main per Phase C pinning policy (xtrm-d8r36.2).'
+        description: 'Exact @jaggerxtrm/specialists npm version used by the auto-reconcile job. Ignored when specialists-git-ref is set. Bump via PR — never use latest/main per Phase C pinning policy (xtrm-d8r36.2).'
         type: string
         default: '3.17.0'
+      specialists-git-ref:
+        description: 'Optional pin to a github:xtrm-dev/specialists#<sha-or-ref>. When set, overrides specialists-version (used while waiting on a registry publish — xtrm-d8r36.7). Empty string disables.'
+        type: string
+        default: ''
       specialists-pack:
         description: 'Service-skills pack name passed to the specialist (script_template var $pack). Override only for non-default packs.'
         type: string
@@ -225,9 +229,17 @@ jobs:
         id: install_specialists
         env:
           SPECIALISTS_VERSION: ${{ inputs['specialists-version'] }}
+          SPECIALISTS_GIT_REF: ${{ inputs['specialists-git-ref'] }}
         run: |
           set +e
-          npm i -g "@jaggerxtrm/specialists@${SPECIALISTS_VERSION}"
+          if [ -n "$SPECIALISTS_GIT_REF" ]; then
+            target="github:xtrm-dev/specialists#${SPECIALISTS_GIT_REF}"
+            echo "::notice::installing specialists from git ref: $target (specialists-version=$SPECIALISTS_VERSION ignored)"
+          else
+            target="@jaggerxtrm/specialists@${SPECIALISTS_VERSION}"
+            echo "::notice::installing specialists from npm: $target"
+          fi
+          npm i -g "$target"
           npm_status=$?
           if [ "$npm_status" -ne 0 ]; then
             echo "::warning::specialists install failed (exit $npm_status); falling back to Phase B reconcile.py"
@@ -240,7 +252,7 @@ jobs:
             exit 0
           fi
           installed_ver=$(sp --version 2>/dev/null | head -1)
-          echo "::notice::specialists installed: $installed_ver (pinned $SPECIALISTS_VERSION)"
+          echo "::notice::specialists installed: $installed_ver"
           echo 'installed=true' >> "$GITHUB_OUTPUT"
 
       - name: Reconcile drift (specialist path)
@@ -266,6 +278,8 @@ jobs:
             --vars "cwd=$PWD" \
             --json \
             --allow-write-capable \
+            --allow-skills \
+            --allow-local-scripts \
             > /tmp/reconcile-result.json 2> /tmp/reconcile-stderr.log
           sp_status=$?
           if [ "$sp_status" -ne 0 ]; then
