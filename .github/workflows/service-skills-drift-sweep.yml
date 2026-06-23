@@ -30,17 +30,29 @@ on:
         description: 'Run service-skills auto-reconcile and open a PR when drift exists'
         type: boolean
         default: false
+      specialists-version:
+        description: 'Exact @jaggerxtrm/specialists npm version used by the auto-reconcile job. Bump via PR — never use latest/main per Phase C pinning policy (xtrm-d8r36.2).'
+        type: string
+        default: '3.17.0'
+      specialists-pack:
+        description: 'Service-skills pack name passed to the specialist (script_template var $pack). Override only for non-default packs.'
+        type: string
+        default: 'default'
+      runs-on-reconcile:
+        description: 'JSON string for runs-on of the auto-reconcile job. Defaults to ubuntu-latest for back-compat. Self-hosted callers pass e.g. ''["self-hosted","infra"]''.'
+        type: string
+        default: '"ubuntu-latest"'
       nano-gpt-model:
-        description: 'nano-gpt model id for reconcile.py (NANO_GPT_MODEL). Must match an exact id from the nano-gpt /v1/models catalog. Subscription-covered example: moonshotai/kimi-k2.6:thinking'
+        description: 'nano-gpt model id (NANO_GPT_MODEL). Specialist consumes this under the hood. Subscription-covered example: moonshotai/kimi-k2.6:thinking'
         type: string
         default: 'moonshotai/kimi-k2.6:thinking'
       nano-gpt-api-url:
-        description: 'nano-gpt chat-completions endpoint (NANO_GPT_API_URL). Override only to switch base path (e.g. /api/subscription/v1). Hostname is locked to nano-gpt.com.'
+        description: 'nano-gpt chat-completions endpoint (NANO_GPT_API_URL). Override only to switch base path. Hostname locked to nano-gpt.com.'
         type: string
         default: 'https://nano-gpt.com/api/v1/chat/completions'
     secrets:
       nano-gpt-api-key:
-        description: 'nano-gpt API key for service-skills auto-reconcile'
+        description: 'nano-gpt API key for service-skills auto-reconcile (used by service-skills-sync specialist)'
         required: false
 
 concurrency:
@@ -169,8 +181,12 @@ jobs:
   auto-reconcile:
     needs: drift-sweep
     if: needs['drift-sweep'].outputs['drift-count'] != '0' && inputs['reconcile-enabled'] && !startsWith(github.event.pull_request.head.ref, 'xtrm-auto-reconcile/') && github.event.pull_request.user.login != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    # Accepted blast radius: checkout pulls trusted post-merge main; pip install is now pinned (FIX A); reconcile.py is in-repo. Future hardening: split into read-only reconcile + write-only PR open. Tracked under xtrm-pm5d8 follow-up.
+    runs-on: ${{ fromJSON(inputs['runs-on-reconcile']) }}
+    # Phase C (xtrm-d8r36): reconcile path now runs the service-skills-sync specialist
+    # via @jaggerxtrm/specialists npm package — same code that runs locally under
+    # /updating-service-skills. SSOT lives in specialists. Phase B reconcile.py kept
+    # as in-repo fallback only when sp install/run fails; scheduled for removal in C.6
+    # after smoke (xtrm-d8r36.5) is green on at least one consumer repo.
     permissions:
       contents: write
       pull-requests: write
@@ -185,14 +201,112 @@ jobs:
         with:
           python-version: ${{ inputs.python-version }}
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Download drift artifacts
         uses: actions/download-artifact@v4
         with:
           name: service-skills-drift
           path: /tmp/service-skills-drift
 
-      - name: Reconcile drift
+      - name: Install specialists (pinned)
+        id: install_specialists
+        env:
+          SPECIALISTS_VERSION: ${{ inputs['specialists-version'] }}
+        run: |
+          set +e
+          npm i -g "@jaggerxtrm/specialists@${SPECIALISTS_VERSION}"
+          npm_status=$?
+          if [ "$npm_status" -ne 0 ]; then
+            echo "::warning::specialists install failed (exit $npm_status); falling back to Phase B reconcile.py"
+            echo 'installed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! command -v sp >/dev/null 2>&1; then
+            echo "::warning::sp CLI not on PATH after install; falling back to Phase B reconcile.py"
+            echo 'installed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          installed_ver=$(sp --version 2>/dev/null | head -1)
+          echo "::notice::specialists installed: $installed_ver (pinned $SPECIALISTS_VERSION)"
+          echo 'installed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Reconcile drift (specialist path)
         id: reconcile
+        if: steps.install_specialists.outputs.installed == 'true'
+        env:
+          NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
+          NANO_GPT_MODEL: ${{ inputs['nano-gpt-model'] }}
+          NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
+          CLAUDE_PROJECT_DIR: ${{ github.workspace }}
+          SPECIALISTS_PACK: ${{ inputs['specialists-pack'] }}
+        run: |
+          set +e
+          if [ -z "$NANO_GPT_API_KEY" ]; then
+            echo "::warning::service-skills auto-reconcile skipped because nano-gpt-api-key secret is absent; Phase A drift comment behavior preserved"
+            echo 'status=missing_secret' >> "$GITHUB_OUTPUT"
+            echo 'path=specialist' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sp script service-skills-sync \
+            --vars "repo=$GITHUB_REPOSITORY" \
+            --vars "pack=$SPECIALISTS_PACK" \
+            --vars "cwd=$PWD" \
+            --json \
+            --allow-write-capable \
+            > /tmp/reconcile-result.json 2> /tmp/reconcile-stderr.log
+          sp_status=$?
+          if [ "$sp_status" -ne 0 ]; then
+            echo "::warning::sp script service-skills-sync exited $sp_status; trying Phase B fallback"
+            echo "::group::sp stdout JSON"
+            cat /tmp/reconcile-result.json || echo '(stdout JSON missing)'
+            echo "::endgroup::"
+            echo "::group::sp stderr"
+            cat /tmp/reconcile-stderr.log || echo '(stderr missing)'
+            echo "::endgroup::"
+            echo 'status=failed' >> "$GITHUB_OUTPUT"
+            echo 'path=specialist' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # specialist returns JSON {summary, services, actions}; derive a reconciled_count
+          # by counting non-empty edits in services[].edits or actions[]. Tolerant parser.
+          python3 - <<'PYOUT' >> "$GITHUB_OUTPUT"
+          import json, sys
+          try:
+              r = json.load(open('/tmp/reconcile-result.json'))
+          except Exception as e:
+              print('status=parse_error'); print('reconciled_count=0'); print('path=specialist'); sys.exit(0)
+          actions = r.get('actions') or []
+          services = r.get('services') or []
+          # reconciled = count of services with edits applied OR explicit synced verdicts
+          reconciled = 0
+          for s in services:
+              if isinstance(s, dict):
+                  if s.get('edits') or s.get('verdict','').startswith('synced'):
+                      reconciled += 1
+          # fallback: action items with type containing 'edit' or 'sync'
+          if reconciled == 0:
+              reconciled = sum(1 for a in actions if isinstance(a, dict) and any(k in str(a.get('type','')).lower() for k in ('edit','sync','reconcile')))
+          status = 'success' if reconciled > 0 else (r.get('summary',{}).get('status') or 'unknown') if isinstance(r.get('summary'), dict) else 'unknown'
+          print(f'status={status}')
+          print(f'reconciled_count={reconciled}')
+          print('path=specialist')
+          PYOUT
+          # Surface JSON to step summary for operator visibility
+          {
+            echo '### service-skills-sync result (specialist path)'
+            echo ''
+            echo '```json'
+            python3 -m json.tool /tmp/reconcile-result.json 2>/dev/null || cat /tmp/reconcile-result.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Reconcile drift (Phase B fallback — reconcile.py)
+        id: reconcile_fallback
+        if: steps.install_specialists.outputs.installed != 'true' || steps.reconcile.outputs.status == 'failed' || steps.reconcile.outputs.status == 'parse_error'
         env:
           NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
           NANO_GPT_MODEL: ${{ inputs['nano-gpt-model'] }}
@@ -200,28 +314,28 @@ jobs:
         run: |
           set +e
           if [ -z "$NANO_GPT_API_KEY" ]; then
-            echo "::warning::service-skills auto-reconcile skipped because nano-gpt-api-key secret is absent; Phase A drift comment behavior preserved"
+            echo "::warning::Phase B fallback also skipped: nano-gpt-api-key secret absent"
             echo 'status=missing_secret' >> "$GITHUB_OUTPUT"
+            echo 'path=fallback' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "::warning::Falling back to Phase B reconcile.py (specialist path unavailable). File follow-up bead in xtrm-dev/specialists if this recurs."
           python3 -m pip install --disable-pip-version-check --no-input httpx==0.28.1
-          install_status=$?
-          if [ "$install_status" -ne 0 ]; then
-            echo "::warning::service-skills auto-reconcile skipped because httpx install failed with exit $install_status; Phase A drift comment behavior preserved"
+          if [ $? -ne 0 ]; then
             echo 'status=failed' >> "$GITHUB_OUTPUT"
+            echo 'path=fallback' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           python3 .xtrm/skills/default/service-skills/scripts/reconcile.py --json > /tmp/reconcile-result.json 2> /tmp/reconcile-stderr.log
-          reconcile_status=$?
-          if [ "$reconcile_status" -ne 0 ]; then
-            echo "::warning::service-skills auto-reconcile skipped because reconcile.py exited $reconcile_status; Phase A drift comment behavior preserved"
+          if [ $? -ne 0 ]; then
             echo "::group::reconcile.py stdout JSON"
-            cat /tmp/reconcile-result.json || echo '(stdout JSON file missing)'
+            cat /tmp/reconcile-result.json || echo '(missing)'
             echo "::endgroup::"
             echo "::group::reconcile.py stderr"
-            cat /tmp/reconcile-stderr.log || echo '(stderr log missing)'
+            cat /tmp/reconcile-stderr.log || echo '(missing)'
             echo "::endgroup::"
             echo 'status=failed' >> "$GITHUB_OUTPUT"
+            echo 'path=fallback' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           python3 - <<'PYOUT' >> "$GITHUB_OUTPUT"
@@ -229,20 +343,28 @@ jobs:
           result = json.load(open('/tmp/reconcile-result.json'))
           print(f"status={result.get('status', 'unknown')}")
           print(f"reconciled_count={result.get('reconciled_count', 0)}")
+          print('path=fallback')
           PYOUT
-          python3 - <<'PYANN'
-          import json
-          result = json.load(open('/tmp/reconcile-result.json'))
-          status = result.get('status', 'unknown')
-          reconciled_count = int(result.get('reconciled_count', 0) or 0)
-          if status in ('success', 'partial') and reconciled_count > 0:
-              if status == 'partial':
-                  failed = result.get('failed') or []
-                  print(f"::notice::service-skills auto-reconcile partial: reconciled {reconciled_count} file(s); {len(failed)} failed (auto-PR will open with the reconciled subset; failed files stay as drift for the next merge)")
-              raise SystemExit(0)
-          reason = 'cost cap hit' if status == 'cost_cap_hit' else f'status={status}, reconciled_count={reconciled_count}'
-          print(f"::warning::service-skills auto-reconcile produced no PR because {reason}; Phase A drift comment behavior preserved")
-          PYANN
+
+      - name: Resolve effective reconcile outputs
+        id: rx
+        if: always()
+        run: |
+          # Specialist path wins when it produced a non-zero count; otherwise fallback.
+          if [ "${{ steps.reconcile.outputs.path }}" = "specialist" ] && [ "${{ steps.reconcile.outputs.reconciled_count }}" != "0" ] && [ -n "${{ steps.reconcile.outputs.reconciled_count }}" ]; then
+            echo "status=${{ steps.reconcile.outputs.status }}" >> "$GITHUB_OUTPUT"
+            echo "reconciled_count=${{ steps.reconcile.outputs.reconciled_count }}" >> "$GITHUB_OUTPUT"
+            echo "path=specialist" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=${{ steps.reconcile_fallback.outputs.status }}" >> "$GITHUB_OUTPUT"
+            echo "reconciled_count=${{ steps.reconcile_fallback.outputs.reconciled_count }}" >> "$GITHUB_OUTPUT"
+            echo "path=${{ steps.reconcile_fallback.outputs.path || 'specialist' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Annotate reconcile path
+        if: always()
+        run: |
+          echo "::notice::reconcile path used: ${{ steps.rx.outputs.path }} (status=${{ steps.rx.outputs.status }}, reconciled_count=${{ steps.rx.outputs.reconciled_count }})"
 
       - name: Upload reconcile diagnostic artifacts
         if: always()
@@ -256,13 +378,13 @@ jobs:
           retention-days: 7
 
       - name: Build auto-PR body
-        if: (steps.reconcile.outputs.status == 'success' || steps.reconcile.outputs.status == 'partial') && steps.reconcile.outputs.reconciled_count != '0'
+        if: (steps.rx.outputs.status == 'success' || steps.rx.outputs.status == 'partial') && steps.rx.outputs.reconciled_count != '0'
         run: |
           {
-            echo '## Auto-reconcile summary'
+            echo "## Auto-reconcile summary (path: ${{ steps.rx.outputs.path }})"
             echo
             echo '```json'
-            python3 -m json.tool /tmp/reconcile-result.json
+            python3 -m json.tool /tmp/reconcile-result.json 2>/dev/null || cat /tmp/reconcile-result.json
             echo '```'
             echo
             echo '## Drift findings'
@@ -271,7 +393,7 @@ jobs:
           } > /tmp/reconcile-pr-body.md
 
       - name: Open auto-reconcile PR
-        if: (steps.reconcile.outputs.status == 'success' || steps.reconcile.outputs.status == 'partial') && steps.reconcile.outputs.reconciled_count != '0'
+        if: (steps.rx.outputs.status == 'success' || steps.rx.outputs.status == 'partial') && steps.rx.outputs.reconciled_count != '0'
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7 — pinned to SHA per ossf scorecard
         with:
           branch: xtrm-auto-reconcile/${{ github.sha }}
