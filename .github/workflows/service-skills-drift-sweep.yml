@@ -285,6 +285,57 @@ jobs:
           echo "sp_bin=$SP_BIN_DIR/sp" >> "$GITHUB_OUTPUT"
           echo 'installed=true' >> "$GITHUB_OUTPUT"
 
+      - name: Configure pi nano-gpt provider
+        if: steps.install_specialists.outputs.installed == 'true'
+        env:
+          NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
+          NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
+        run: |
+          set +e
+          if [ -z "$NANO_GPT_API_KEY" ]; then
+            echo "::notice::no nano-gpt-api-key secret; skipping pi provider config (specialist path will fail with missing key, fallback will run)"
+            exit 0
+          fi
+          mkdir -p "$HOME/.pi/agent"
+          # Derive baseUrl from the nano-gpt-api-url input: strip the
+          # /chat/completions tail to get the v1 root that pi uses.
+          base_url="${NANO_GPT_API_URL%/chat/completions}"
+          python3 - <<PY
+          import json, os, pathlib
+          home = pathlib.Path(os.environ['HOME'])
+          base = "${base_url}"
+          key  = os.environ['NANO_GPT_API_KEY']
+          entry = {
+              'baseUrl': base,
+              'apiKey': key,
+              'api': 'openai-completions',
+              'authHeader': True,
+              'models': {},
+          }
+          # models.json (provider registry; what 'pi --provider nano-gpt' resolves)
+          models_path = home / '.pi' / 'agent' / 'models.json'
+          models_path.parent.mkdir(parents=True, exist_ok=True)
+          models = {}
+          if models_path.exists():
+              try: models = json.loads(models_path.read_text())
+              except Exception: models = {}
+          models.setdefault('providers', {})['nano-gpt'] = {'baseUrl': base, 'apiKey': key}
+          models_path.write_text(json.dumps(models, indent=2))
+          # auth.json (api-key auth for pi providers — same nano-gpt entry shape)
+          auth_path = home / '.pi' / 'agent' / 'auth.json'
+          auth = {}
+          if auth_path.exists():
+              try: auth = json.loads(auth_path.read_text())
+              except Exception: auth = {}
+          auth.setdefault('providers', {})['nano-gpt'] = entry
+          auth_path.write_text(json.dumps(auth, indent=2))
+          # chmod 600 to keep secret out of world-readable space
+          for p in (models_path, auth_path):
+              p.chmod(0o600)
+          print(f"wrote {models_path} + {auth_path} with nano-gpt provider")
+          PY
+          echo "::notice::pi nano-gpt provider configured (baseUrl=$base_url)"
+
       - name: Configure specialist model override (global user.json)
         if: steps.install_specialists.outputs.installed == 'true'
         env:
