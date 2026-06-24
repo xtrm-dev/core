@@ -423,17 +423,22 @@ jobs:
             echo 'path=specialist' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # specialist returns JSON {summary, services, actions}; derive a reconciled_count
-          # by counting non-empty edits in services[].edits or actions[]. Tolerant parser.
+          # sp script wraps the specialist's JSON output under .parsed_json:
+          #   {success, output (raw str), parsed_json: {summary, services[], actions[]}, meta}
+          # Read services/actions/summary from parsed_json with a top-level fallback so
+          # legacy payloads (or any future un-nested shape) still parse. xtrm-n02m4 RCA.
           python3 - <<'PYOUT' >> "$GITHUB_OUTPUT"
           import json, sys
           try:
               r = json.load(open('/tmp/reconcile-result.json'))
           except Exception as e:
               print('status=parse_error'); print('reconciled_count=0'); print('path=specialist'); sys.exit(0)
-          actions = r.get('actions') or []
-          services = r.get('services') or []
+          payload = r.get('parsed_json') if isinstance(r.get('parsed_json'), dict) else r
+          actions = payload.get('actions') or []
+          services = payload.get('services') or []
           # reconciled = count of services with edits applied OR explicit synced verdicts
+          # (a 'synced (audited-and-unchanged)' verdict still bumps last_sync_ref in the
+          # registry, so peter-evans has a real diff to PR even when no SKILL.md changed).
           reconciled = 0
           for s in services:
               if isinstance(s, dict):
@@ -442,7 +447,8 @@ jobs:
           # fallback: action items with type containing 'edit' or 'sync'
           if reconciled == 0:
               reconciled = sum(1 for a in actions if isinstance(a, dict) and any(k in str(a.get('type','')).lower() for k in ('edit','sync','reconcile')))
-          status = 'success' if reconciled > 0 else (r.get('summary',{}).get('status') or 'unknown') if isinstance(r.get('summary'), dict) else 'unknown'
+          summary = payload.get('summary') if isinstance(payload.get('summary'), dict) else {}
+          status = 'success' if reconciled > 0 else (summary.get('status') or 'unknown')
           print(f'status={status}')
           print(f'reconciled_count={reconciled}')
           print('path=specialist')
