@@ -607,6 +607,10 @@
           "hash": "a437a67e7ae741b2ceaee35740a535a65e8f8aadf14d479d378616c7ccc46232",
           "version": "0.9.0"
         },
+        "multiplexing/SKILL.md": {
+          "hash": "03bd9524c61ca85ce3e777c649e78f1c276bad6436c0098d509620a95fa60a2c",
+          "version": "0.9.0"
+        },
         "planning/SKILL.md": {
           "hash": "b02da9548702f9256c0b4938490dad86a8898bbe72e2152d22999a02b3f608a8",
           "version": "0.9.0"
