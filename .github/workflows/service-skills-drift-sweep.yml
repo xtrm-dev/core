@@ -66,6 +66,10 @@ on:
         description: 'Provider-prefixed model id passed to sp script --model (specialist v1.6.0 has model:null and requires explicit override). Format: <provider>/<model-id>. Default avoids the :thinking variant to stay under the specialist 120s no-activity stall_timeout (xtrm-efa2a).'
         type: string
         default: 'nano-gpt/moonshotai/kimi-k2.6'
+      specialists-stall-timeout-ms:
+        description: 'Override for service-skills-sync.execution.stall_timeout_ms. Upstream specialist default of 120000 fires on real-drift workloads (xtrm-efa2a market-data run 28118772361 stalled at 120s even with the non-:thinking model). 600000 (10min) accommodates the multi-phase Serena+gitnexus tool-call architecture. Pre-step seeds this via sp edit --global; codex-side default bump tracked separately.'
+        type: number
+        default: 600000
       nano-gpt-api-url:
         description: 'nano-gpt chat-completions endpoint (NANO_GPT_API_URL). Override only to switch base path. Hostname locked to nano-gpt.com.'
         type: string
@@ -351,6 +355,7 @@ jobs:
         env:
           SP_BIN: ${{ steps.install_specialists.outputs.sp_bin }}
           SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
+          SPECIALISTS_STALL_TIMEOUT_MS: ${{ inputs['specialists-stall-timeout-ms'] }}
         run: |
           set +e
           # service-skills-sync v1.6.0 sets execution.model:null; SpecialistLoader.get
@@ -379,7 +384,21 @@ jobs:
             exit 0
           fi
           echo "::notice::seeded global override: service-skills-sync.execution.model=$SPECIALISTS_MODEL"
+          # xtrm-efa2a: upstream stall_timeout_ms=120000 fires on real-drift work even
+          # without :thinking. Bump it in the global override layer; non-fatal if the
+          # edit fails (we keep the model seed and let the run try).
+          "$SP_BIN" edit --global --set "service-skills-sync.execution.stall_timeout_ms" "$SPECIALISTS_STALL_TIMEOUT_MS" 2> /tmp/sp-edit-stall-stderr.log
+          stall_edit_status=$?
+          if [ "$stall_edit_status" -ne 0 ]; then
+            echo "::warning::sp edit --global --set stall_timeout_ms=$SPECIALISTS_STALL_TIMEOUT_MS failed (exit $stall_edit_status); specialist will use upstream default 120000ms"
+            echo "::group::sp edit stall_timeout_ms stderr"
+            tail -30 /tmp/sp-edit-stall-stderr.log 2>/dev/null
+            echo "::endgroup::"
+          else
+            echo "::notice::seeded global override: service-skills-sync.execution.stall_timeout_ms=$SPECIALISTS_STALL_TIMEOUT_MS"
+          fi
           "$SP_BIN" edit --global --get "service-skills-sync.execution.model" 2>&1 | head -3
+          "$SP_BIN" edit --global --get "service-skills-sync.execution.stall_timeout_ms" 2>&1 | head -3
 
       - name: Reconcile drift (specialist path)
         id: reconcile
