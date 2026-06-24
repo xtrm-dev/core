@@ -154,9 +154,15 @@ def get_umbrella_dir(project_root: str | None = None) -> Path | None:
 def _select_pack_registry(pack_registries: list[Path], project_root: str) -> Path:
     active_pack = get_pack_path(project_root)
     if active_pack is not None:
-        active_candidate = active_pack / "service-registry.json"
-        if active_candidate in pack_registries:
-            return active_candidate
+        active_resolved = active_pack.resolve()
+        # Match either the umbrella layout (<pack>/service-skills/service-registry.json)
+        # or the pre-umbrella flat layout (<pack>/service-registry.json).
+        for candidate in pack_registries:
+            try:
+                if active_resolved in candidate.resolve().parents:
+                    return candidate
+            except OSError:
+                continue
 
     chosen = sorted(pack_registries)[0]
     if len(pack_registries) > 1:

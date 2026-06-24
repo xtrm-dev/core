@@ -776,7 +776,7 @@
           "version": "0.9.0"
         },
         "service-skills/scripts/bootstrap.py": {
-          "hash": "93d0485546394587c8d53b67fe5e1d0376503cadec676e123d186785c9758304",
+          "hash": "f59ba1dfa2ede3f6e6880679bbb355f23dc49c59e656801d1bfe386a4137a53c",
           "version": "0.9.0"
         },
         "service-skills/scripts/cataloger.py": {
@@ -804,7 +804,7 @@
           "version": "0.9.0"
         },
         "service-skills/scripts/scope.py": {
-          "hash": "8009d07d85d8730ebdc71cf46d0e409bb583fd98bf28d482c1e226e4b4bc023f",
+          "hash": "b59634db12d797e4830a5796cdc0f571d3afe306751a5b086b1926cdd1fc6842",
           "version": "0.9.0"
         },
         "service-skills/scripts/skill_activator.py": {
