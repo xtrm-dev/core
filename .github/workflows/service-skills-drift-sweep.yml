@@ -31,11 +31,11 @@ on:
         type: boolean
         default: false
       specialists-version:
-        description: 'Exact @jaggerxtrm/specialists npm version used by the auto-reconcile job. Ignored when specialists-git-ref is set. Bump via PR — never use latest/main per Phase C pinning policy (xtrm-d8r36.2).'
+        description: 'Exact @jaggerxtrm/specialists npm version used by the auto-reconcile job. Ignored when specialists-git-ref is set. Bump via PR — never use latest/main per Phase C pinning policy (xtrm-d8r36.2). 3.18.0 is the first registry release shipping service-skills-sync@1.6.0 (requires_worktree:false + script_template); earlier 3.17.x shipped v1.2.0 which is not CI-invocable.'
         type: string
-        default: '3.17.0'
+        default: '3.18.0'
       specialists-git-ref:
-        description: 'Optional pin to a github:xtrm-dev/specialists#<sha-or-ref>. When set, overrides specialists-version (used while waiting on a registry publish — xtrm-d8r36.7). Empty string disables.'
+        description: 'Optional escape hatch: pin to github:xtrm-dev/specialists#<sha-or-ref> instead of the npm registry. Originally added during xtrm-d8r36.7 while waiting for a registry release with service-skills-sync >=1.5; the 3.18.0 default makes this unnecessary for normal use, but the hook is retained for unblock-before-publish scenarios. Empty string disables.'
         type: string
         default: ''
       specialists-pack:
