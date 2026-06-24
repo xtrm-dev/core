@@ -59,13 +59,13 @@ on:
         type: string
         default: '"ubuntu-latest"'
       nano-gpt-model:
-        description: 'nano-gpt model id (NANO_GPT_MODEL). Specialist consumes this under the hood. Subscription-covered example: moonshotai/kimi-k2.6:thinking'
+        description: 'nano-gpt model id (NANO_GPT_MODEL). Specialist consumes this under the hood. The :thinking variant has long quiet reasoning phases that exceed the specialist 120s no-activity stall_timeout on real-drift workloads (xtrm-efa2a) — default switched to the non-thinking model.'
         type: string
-        default: 'moonshotai/kimi-k2.6:thinking'
+        default: 'moonshotai/kimi-k2.6'
       specialists-model:
-        description: 'Provider-prefixed model id passed to sp script --model (specialist v1.6.0 has model:null and requires explicit override). Format: <provider>/<model-id>.'
+        description: 'Provider-prefixed model id passed to sp script --model (specialist v1.6.0 has model:null and requires explicit override). Format: <provider>/<model-id>. Default avoids the :thinking variant to stay under the specialist 120s no-activity stall_timeout (xtrm-efa2a).'
         type: string
-        default: 'nano-gpt/moonshotai/kimi-k2.6:thinking'
+        default: 'nano-gpt/moonshotai/kimi-k2.6'
       nano-gpt-api-url:
         description: 'nano-gpt chat-completions endpoint (NANO_GPT_API_URL). Override only to switch base path. Hostname locked to nano-gpt.com.'
         type: string
