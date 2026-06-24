@@ -410,6 +410,12 @@ jobs:
           CLAUDE_PROJECT_DIR: ${{ github.workspace }}
           SPECIALISTS_PACK: ${{ inputs['specialists-pack'] }}
           SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
+          # GITHUB_TOKEN is exposed to the specialist's bash tool so it can use
+          # gh/git to commit & push directly (xtrm-vu2ro Path B prereq). When the
+          # specialist's system_prompt gains a "create branch + open PR" phase
+          # upstream, the env is already wired here — no further xtrm-tools edit
+          # needed at that point.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           if [ -z "$NANO_GPT_API_KEY" ]; then
@@ -445,14 +451,55 @@ jobs:
           # sp script wraps the specialist's JSON output under .parsed_json:
           #   {success, output (raw str), parsed_json: {summary, services[], actions[]}, meta}
           # Read services/actions/summary from parsed_json with a top-level fallback so
-          # legacy payloads (or any future un-nested shape) still parse. xtrm-n02m4 RCA.
+          # legacy payloads still parse (xtrm-n02m4 RCA).
+          #
+          # xtrm-23qsu: kimi-k2.6 sometimes prefixes prose ("Now that I have...") before
+          # the required JSON object after long tool-using sessions, so sp returns
+          # success=false / error_type=invalid_json with no parsed_json. Tolerant
+          # fallback: scan r.output for the largest balanced {...} that loads as a dict
+          # AND has the expected service-skills-sync schema (summary/services/actions),
+          # treat that as the payload, and mark tolerant_rescue=true so the wrapper
+          # surfaces a notice + lets downstream gates pass.
           python3 - <<'PYOUT' >> "$GITHUB_OUTPUT"
           import json, sys
+          def extract_largest_json_object(text):
+              if not isinstance(text, str) or '{' not in text:
+                  return None
+              best, best_len = None, 0
+              for start, ch in enumerate(text):
+                  if ch != '{':
+                      continue
+                  depth = 0
+                  for end in range(start, len(text)):
+                      c = text[end]
+                      if c == '{': depth += 1
+                      elif c == '}':
+                          depth -= 1
+                          if depth == 0:
+                              candidate = text[start:end+1]
+                              if len(candidate) <= best_len:
+                                  break
+                              try:
+                                  obj = json.loads(candidate)
+                              except Exception:
+                                  break
+                              if isinstance(obj, dict) and any(k in obj for k in ('services','actions','summary')):
+                                  best, best_len = obj, len(candidate)
+                              break
+              return best
           try:
               r = json.load(open('/tmp/reconcile-result.json'))
-          except Exception as e:
-              print('status=parse_error'); print('reconciled_count=0'); print('path=specialist'); sys.exit(0)
-          payload = r.get('parsed_json') if isinstance(r.get('parsed_json'), dict) else r
+          except Exception:
+              print('status=parse_error'); print('reconciled_count=0'); print('path=specialist'); print('tolerant_rescue=false'); sys.exit(0)
+          rescue = False
+          if isinstance(r.get('parsed_json'), dict):
+              payload = r['parsed_json']
+          else:
+              recovered = extract_largest_json_object(r.get('output')) if r.get('error_type') == 'invalid_json' else None
+              if isinstance(recovered, dict):
+                  payload, rescue = recovered, True
+              else:
+                  payload = r
           actions = payload.get('actions') or []
           services = payload.get('services') or []
           # reconciled = count of services with edits applied OR explicit synced verdicts
@@ -471,7 +518,11 @@ jobs:
           print(f'status={status}')
           print(f'reconciled_count={reconciled}')
           print('path=specialist')
+          print(f'tolerant_rescue={"true" if rescue else "false"}')
           PYOUT
+          if [ "$(grep -c '^tolerant_rescue=true' "$GITHUB_OUTPUT" 2>/dev/null || true)" -gt 0 ]; then
+            echo "::notice::tolerant parser rescued JSON from model prose prefix (xtrm-23qsu) — proceeding with extracted payload"
+          fi
           # Surface JSON to step summary for operator visibility
           {
             echo '### service-skills-sync result (specialist path)'
@@ -543,6 +594,25 @@ jobs:
         run: |
           echo "::notice::reconcile path used: ${{ steps.rx.outputs.path }} (status=${{ steps.rx.outputs.status }}, reconciled_count=${{ steps.rx.outputs.reconciled_count }})"
 
+      - name: Detect uncommitted specialist edits (xtrm-vu2ro safety net)
+        id: detect_edits
+        if: always()
+        run: |
+          # xtrm-vu2ro: when the parser fails (xtrm-23qsu, or any future shape
+          # drift) the specialist may still have applied real Serena edits to
+          # the working tree before the wrapper rejected its JSON output. peter-
+          # evans/create-pull-request is gated on parser-derived reconciled_count
+          # today, so those edits would be lost on the ephemeral runner. Probe
+          # git status here and let downstream gates fire on the disk truth.
+          if git -C "$GITHUB_WORKSPACE" status --porcelain | grep -q . ; then
+            echo 'has_edits=true' >> "$GITHUB_OUTPUT"
+            count=$(git -C "$GITHUB_WORKSPACE" status --porcelain | wc -l | tr -d ' ')
+            echo "::notice::specialist applied $count uncommitted file change(s); PR will open even if parser failed"
+            git -C "$GITHUB_WORKSPACE" status --porcelain | head -30
+          else
+            echo 'has_edits=false' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload reconcile diagnostic artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -555,14 +625,37 @@ jobs:
           retention-days: 7
 
       - name: Build auto-PR body
-        if: (steps.rx.outputs.status == 'success' || steps.rx.outputs.status == 'partial') && steps.rx.outputs.reconciled_count != '0'
+        if: |
+          ((steps.rx.outputs.status == 'success' || steps.rx.outputs.status == 'partial') && steps.rx.outputs.reconciled_count != '0')
+          || steps.detect_edits.outputs.has_edits == 'true'
         run: |
+          # Three trigger cases for the auto-PR:
+          #   (a) parser-clean specialist result (status=success/partial, count>0)
+          #   (b) parser-clean fallback result   (same shape, path=fallback)
+          #   (c) parser failed but specialist applied real edits on disk (xtrm-vu2ro)
+          parser_ok='${{ (steps.rx.outputs.status == 'success' || steps.rx.outputs.status == 'partial') && steps.rx.outputs.reconciled_count != '0' }}'
           {
-            echo "## Auto-reconcile summary (path: ${{ steps.rx.outputs.path }})"
-            echo
-            echo '```json'
-            python3 -m json.tool /tmp/reconcile-result.json 2>/dev/null || cat /tmp/reconcile-result.json
-            echo '```'
+            if [ "$parser_ok" = "true" ]; then
+              echo "## Auto-reconcile summary (path: ${{ steps.rx.outputs.path }})"
+              echo
+              echo '```json'
+              python3 -m json.tool /tmp/reconcile-result.json 2>/dev/null || cat /tmp/reconcile-result.json
+              echo '```'
+            else
+              echo "## Auto-reconcile (parser failed — recovered edits from disk; xtrm-vu2ro safety net)"
+              echo
+              echo "The wrapper could not parse the specialist's final output (\`status=${{ steps.rx.outputs.status }}\`, \`reconciled_count=${{ steps.rx.outputs.reconciled_count }}\`), but the specialist had already applied edits to the working tree before failing. Opening this PR so the work is reviewable instead of lost on the ephemeral runner."
+              echo
+              echo "See workflow run logs + the uploaded \`service-skills-reconcile-result\` artifact for the raw sp output."
+              echo
+              echo '<details><summary>Raw reconcile-result.json (first 2KB)</summary>'
+              echo
+              echo '```json'
+              head -c 2048 /tmp/reconcile-result.json 2>/dev/null || echo '(missing)'
+              echo
+              echo '```'
+              echo '</details>'
+            fi
             echo
             echo '## Drift findings'
             echo
@@ -570,7 +663,9 @@ jobs:
           } > /tmp/reconcile-pr-body.md
 
       - name: Open auto-reconcile PR
-        if: (steps.rx.outputs.status == 'success' || steps.rx.outputs.status == 'partial') && steps.rx.outputs.reconciled_count != '0'
+        if: |
+          ((steps.rx.outputs.status == 'success' || steps.rx.outputs.status == 'partial') && steps.rx.outputs.reconciled_count != '0')
+          || steps.detect_edits.outputs.has_edits == 'true'
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7 — pinned to SHA per ossf scorecard
         with:
           branch: xtrm-auto-reconcile/${{ github.sha }}
