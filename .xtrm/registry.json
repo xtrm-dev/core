@@ -919,6 +919,18 @@
           "hash": "f84c22e11e08f83ab73c7f3d52df3b071037600740352713d1494f57799b679e",
           "version": "0.9.0"
         },
+        "sre-triage/scripts/alert_history.py": {
+          "hash": "b33d60299ad2995a213c0147cfab375ec3bce5a86ad8a8c2e6f4ee2a5670b43c",
+          "version": "0.9.0"
+        },
+        "sre-triage/scripts/alert_investigator.py": {
+          "hash": "24b79c241cb629bd1ee964db9e5d5762cc1e12dca97e31204d4a3de864501695",
+          "version": "0.9.0"
+        },
+        "sre-triage/SKILL.md": {
+          "hash": "9a2d6ac4bbe0c8e03c4667127aeff2d7d1db287df7c45a0e28bb45cd0d1299f0",
+          "version": "0.9.0"
+        },
         "sync-docs/references/doc-structure.md": {
           "hash": "bd30ca7777262b582c95d72a9507ad307aad21b806594ee98d855449763a6247",
           "version": "0.9.0"
