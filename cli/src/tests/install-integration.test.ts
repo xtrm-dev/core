@@ -66,7 +66,7 @@ function expectedCommand(commandTemplate: string, hooksRoot: string): string {
 }
 
 describe('xtrm install integration', () => {
-  it('fresh install scaffolds .xtrm and writes absolute hook commands to settings.json', async () => {
+  it('fresh install scaffolds .xtrm and writes portable $CLAUDE_PROJECT_DIR hook commands to settings.json', async () => {
     await runInstallCli(['--yes']);
 
     expect(fs.pathExistsSync(path.join(tmpDir, '.xtrm', 'hooks'))).toBe(true);
@@ -89,7 +89,9 @@ describe('xtrm install integration', () => {
     };
     const hooksConfig = readHooksConfig();
 
-    const hooksRoot = path.join(tmpDir, '.xtrm', 'hooks');
+    // Per-project settings.json references $CLAUDE_PROJECT_DIR (expanded by Claude Code at
+    // runtime) instead of an absolute path, so the committed file is portable across machines.
+    const hooksRoot = '$CLAUDE_PROJECT_DIR/.xtrm/hooks';
     for (const [eventName, definitions] of Object.entries(hooksConfig.hooks)) {
       const wrappers = settings.hooks[eventName] ?? [];
       expect(wrappers.length).toBe(definitions.length);

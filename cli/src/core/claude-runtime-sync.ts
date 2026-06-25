@@ -7,6 +7,14 @@ import { t } from '../utils/theme.js';
 
 declare const __dirname: string;
 
+/**
+ * Hook-command path prefix for per-project settings.json. Claude Code expands
+ * $CLAUDE_PROJECT_DIR to the project root at runtime, so committed settings.json stays
+ * portable across machines and checkout locations. Do NOT replace with an absolute path:
+ * a baked-in absolute path breaks hooks for every other developer who pulls the repo.
+ */
+const PROJECT_HOOKS_DIR_REF = '$CLAUDE_PROJECT_DIR/.xtrm/hooks';
+
 interface NativeHooksConfig {
     hooks: Record<string, HookWrapper[]>;
     statusLine?: {
@@ -75,7 +83,13 @@ export async function runClaudeRuntimeSyncPhase(opts: ClaudeRuntimeSyncOptions):
     const settingsTemplatePath = path.join(packageRoot, '.xtrm', 'config', 'settings.json');
 
     const hooksConfig = await fs.readJson(hooksConfigPath) as NativeHooksConfig;
-    const projectHooksDir = path.join(repoRoot, '.xtrm', 'hooks');
+    // Per-project settings.json must reference $CLAUDE_PROJECT_DIR so the generated file
+    // is portable: it is committed and shared across machines/checkout locations, and an
+    // absolute path baked in here breaks every other developer's hooks. Only the global
+    // (~/.claude/settings.json) install keeps an absolute path, since it is per-machine.
+    const projectHooksDir = isGlobal
+        ? path.join(repoRoot, '.xtrm', 'hooks')
+        : PROJECT_HOOKS_DIR_REF;
     const generatedHooks = resolveHooksForProjectRuntime(hooksConfig.hooks ?? {}, projectHooksDir);
     const generatedStatusLine = resolveStatusLineForProjectRuntime(hooksConfig.statusLine, projectHooksDir);
 
@@ -188,7 +202,9 @@ export async function reconcileProjectClaudeHooks(
     const settingsPath = path.join(repoRoot, '.claude', 'settings.json'); // nosemgrep
 
     const hooksConfig = await fs.readJson(hooksConfigPath) as NativeHooksConfig;
-    const projectHooksDir = path.join(repoRoot, '.xtrm', 'hooks'); // nosemgrep
+    // Always per-project (xt update --apply across a fleet): reference $CLAUDE_PROJECT_DIR
+    // so the reconciled settings.json stays portable across machines and checkouts.
+    const projectHooksDir = PROJECT_HOOKS_DIR_REF;
     const generatedHooks = resolveHooksForProjectRuntime(hooksConfig.hooks ?? {}, projectHooksDir);
     const generatedStatusLine = resolveStatusLineForProjectRuntime(hooksConfig.statusLine, projectHooksDir);
     const hooksEntries = countHookEntries(generatedHooks);

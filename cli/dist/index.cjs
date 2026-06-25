@@ -44623,6 +44623,7 @@ var import_fs_extra2 = __toESM(require_lib(), 1);
 var import_os = __toESM(require("os"), 1);
 var import_path2 = __toESM(require("path"), 1);
 var import_child_process = require("child_process");
+var PROJECT_HOOKS_DIR_REF = "$CLAUDE_PROJECT_DIR/.xtrm/hooks";
 function renderClaudeRuntimePlanSummary() {
   console.log(kleur_default.bold("\n  Claude Runtime Sync"));
   console.log(`${kleur_default.cyan("  \u2022")}  read canonical hooks: .xtrm/config/hooks.json`);
@@ -44638,7 +44639,7 @@ async function runClaudeRuntimeSyncPhase(opts) {
   const hooksConfigPath = import_path2.default.join(packageRoot, ".xtrm", "config", "hooks.json");
   const settingsTemplatePath = import_path2.default.join(packageRoot, ".xtrm", "config", "settings.json");
   const hooksConfig = await import_fs_extra2.default.readJson(hooksConfigPath);
-  const projectHooksDir = import_path2.default.join(repoRoot, ".xtrm", "hooks");
+  const projectHooksDir = isGlobal ? import_path2.default.join(repoRoot, ".xtrm", "hooks") : PROJECT_HOOKS_DIR_REF;
   const generatedHooks = resolveHooksForProjectRuntime(hooksConfig.hooks ?? {}, projectHooksDir);
   const generatedStatusLine = resolveStatusLineForProjectRuntime(hooksConfig.statusLine, projectHooksDir);
   const settingsPath = isGlobal ? import_path2.default.join(import_os.default.homedir(), ".claude", "settings.json") : import_path2.default.join(repoRoot, ".claude", "settings.json");
@@ -44707,7 +44708,7 @@ async function reconcileProjectClaudeHooks(repoRoot, opts = {}) {
   const settingsTemplatePath = import_path2.default.join(packageRoot, ".xtrm", "config", "settings.json");
   const settingsPath = import_path2.default.join(repoRoot, ".claude", "settings.json");
   const hooksConfig = await import_fs_extra2.default.readJson(hooksConfigPath);
-  const projectHooksDir = import_path2.default.join(repoRoot, ".xtrm", "hooks");
+  const projectHooksDir = PROJECT_HOOKS_DIR_REF;
   const generatedHooks = resolveHooksForProjectRuntime(hooksConfig.hooks ?? {}, projectHooksDir);
   const generatedStatusLine = resolveStatusLineForProjectRuntime(hooksConfig.statusLine, projectHooksDir);
   const hooksEntries = countHookEntries(generatedHooks);
