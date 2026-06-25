@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `@jaggerxtrm/pi-extensions` v0.9.1
+
+#### Fixed
+
+- **`xtrm-ui` no longer compacts read/inspect tool results into the model's context.** In `pi`, the value a `tool_result` hook returns *replaces* the model-facing content — it is not a display-only transform. For Serena/GitNexus read tools (`read_file`, `find_symbol`, `find_referencing_symbols`, `get_symbols_overview`, `search_for_pattern`, `find_file`, `list_dir`, `read_memory`, the JetBrains equivalents, and `gitnexus_query`/`context`/`impact`/`detect_changes`) the compactor replaced the payload with a one-line `· N lines` / `· N results` summary — the full text survived only in `details.xtrmOriginalText` for the interactive TUI expand view, so any pi agent that loads Serena via `pi-serena-tools` was blind on reads. A new `PAYLOAD_TOOLS` allow-list short-circuits the `tool_result` handler (`return undefined`) so these pass through verbatim regardless of the `compactExternalToolResults` pref; mutation/no-payload tools keep their compact one-line summaries. `pi-serena-compact` is deliberately a `tool_result` no-op ("xtrm-ui owns external tool compaction globally") and is intentionally untouched. (xtrm-ikg38)
+
 ### Changed
 
 - **Service-skills reusable workflow is now provider-agnostic (xtrm-g5hk2).** `service-skills-drift-sweep.yml` accepts new generic inputs `provider-name` (default `nano-gpt`), `provider-api` (default `openai-completions`), `provider-base-url` (default `https://nano-gpt.com/api/v1`), `provider-model` (default `moonshotai/kimi-k2.6`), and a new generic secret `provider-api-key`. The pi provider config step now writes `providers[<provider-name>] = {baseUrl, apiKey, api, authHeader, models:[…]}` dynamically; the `sp script --model` arg is constructed as `<provider-name>/<provider-model>`. External callers can target any openai-compatible provider (openrouter, vllm, etc) via `provider-*`. The legacy inputs (`nano-gpt-model`, `nano-gpt-api-url`, `specialists-model`) and legacy secret (`nano-gpt-api-key`) are retained as deprecated aliases that emit `::warning::` lines when used — the `provider-*` form wins when both are set. The Phase B fallback (`reconcile.py`) remains nano-gpt-only and is skipped with a clear notice when `provider-name` is anything else; the specialist path is the only supported route for non-nano-gpt providers. Discovered while authoring the `setup-service-skills-sync` skill (xtrm-d8r36 follow-up). (xtrm-g5hk2)
