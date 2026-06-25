@@ -122,12 +122,12 @@ jobs:
       drift-count: ${{ steps.drift.outputs.drift_count }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ inputs.python-version }}
 
@@ -185,7 +185,7 @@ jobs:
 
       - name: Upload drift artifacts
         if: steps.drift.outputs.drift_count != '0'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: service-skills-drift
           path: |
@@ -197,7 +197,7 @@ jobs:
       - name: Find existing drift-sweep comment
         id: find_comment
         if: steps.drift.outputs.drift_count != '0' && github.event_name == 'pull_request'
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-author: 'github-actions[bot]'
@@ -205,7 +205,7 @@ jobs:
 
       - name: Comment on merged PR
         if: steps.drift.outputs.drift_count != '0' && github.event_name == 'pull_request'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           comment-id: ${{ steps.find_comment.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
@@ -246,17 +246,17 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ inputs.python-version }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # @earendil-works/pi-coding-agent (the pi binary sp spawns) requires
           # node >= 22.19. Bumped from 20 in xtrm-d8r36.5 smoke v9.
@@ -268,7 +268,7 @@ jobs:
           bun-version: ${{ inputs['bun-version'] }}
 
       - name: Download drift artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: service-skills-drift
           path: /tmp/service-skills-drift
@@ -752,7 +752,7 @@ jobs:
 
       - name: Upload reconcile diagnostic artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: service-skills-reconcile-result
           path: |
@@ -803,7 +803,7 @@ jobs:
         if: |
           ((steps.rx.outputs.status == 'success' || steps.rx.outputs.status == 'partial') && steps.rx.outputs.reconciled_count != '0')
           || steps.detect_edits.outputs.has_edits == 'true'
-        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7 — pinned to SHA per ossf scorecard
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1 — pinned to SHA per ossf scorecard
         with:
           branch: xtrm-auto-reconcile/${{ github.sha }}
           commit-message: 'chore(service-skills): auto-reconcile drift [skip ci]'
