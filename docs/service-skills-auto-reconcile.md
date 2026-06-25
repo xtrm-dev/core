@@ -49,10 +49,12 @@ If the consumer repo's `.xtrm/skills/default/service-skills/scripts/` only conta
 ### 1. Configure the API key secret
 
 ```sh
-gh secret set NANO_GPT_API_KEY --repo <org>/<repo>
+gh secret set PROVIDER_API_KEY --repo <org>/<repo>
 ```
 
-The secret name is fixed — the workflow forwards it as `nano-gpt-api-key`.
+The secret is forwarded to the workflow as `provider-api-key`. The legacy
+secret name `nano-gpt-api-key` is still accepted (see "Multi-provider support"
+below).
 
 ### 2. Add (or update) the caller workflow
 
@@ -76,8 +78,31 @@ jobs:
     with:
       reconcile-enabled: true  # opt in to Phase B
     secrets:
-      nano-gpt-api-key: ${{ secrets.NANO_GPT_API_KEY }}
+      provider-api-key: ${{ secrets.PROVIDER_API_KEY }}
 ```
+
+### Multi-provider support
+
+The workflow is provider-agnostic. By default it targets `nano-gpt`
+(`moonshotai/kimi-k2.6`); to target a different OpenAI-compatible provider
+override the `provider-*` inputs:
+
+```yaml
+    with:
+      reconcile-enabled: true
+      provider-name: openrouter
+      provider-base-url: https://openrouter.ai/api/v1
+      provider-model: anthropic/claude-sonnet-4.6
+      # provider-api defaults to 'openai-completions' (covers openrouter, vllm, etc)
+    secrets:
+      provider-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+```
+
+The legacy inputs (`nano-gpt-model`, `nano-gpt-api-url`, `specialists-model`)
+and legacy secret (`nano-gpt-api-key`) still work but emit deprecation warnings.
+Note: the Phase B fallback (`reconcile.py`) is **nano-gpt-only**; when
+`provider-name` is anything else, Phase B is skipped and the specialist path
+is the only route.
 
 Pin `@main` for "always latest" or to a specific commit SHA for stability.
 
@@ -98,7 +123,11 @@ secret can stay configured.
 | Knob | Where | Default |
 |---|---|---|
 | Opt in / out | caller workflow `with.reconcile-enabled` | `false` |
-| API key | repo secret `NANO_GPT_API_KEY` | unset |
+| API key | repo secret forwarded as `provider-api-key` (or legacy `nano-gpt-api-key`) | unset |
+| Provider key | input `provider-name` | `nano-gpt` |
+| Provider api adapter | input `provider-api` | `openai-completions` |
+| Provider base URL | input `provider-base-url` | `https://nano-gpt.com/api/v1` |
+| Provider model | input `provider-model` | `moonshotai/kimi-k2.6` |
 | Token cost cap | env `XTRM_AUTO_RECONCILE_COST_LIMIT_TOKENS` on the auto-reconcile job | unset (no cap) |
 | Drift detector source path | input `scripts-path` | `.xtrm/skills/default/service-skills/scripts` |
 | Sticky-comment marker | input `comment-marker` | `<!-- service-skills-drift-sweep -->` |
@@ -120,7 +149,7 @@ of these conditions hold:
 | Condition | Annotation in workflow logs |
 |---|---|
 | `reconcile-enabled: false` | "auto-reconcile disabled; Phase A drift comment behavior preserved" |
-| `NANO_GPT_API_KEY` absent | "skipped because nano-gpt-api-key secret is absent" |
+| Both `provider-api-key` and `nano-gpt-api-key` absent | "skipped because neither provider-api-key nor nano-gpt-api-key secret is set" |
 | `pip install httpx==0.28.1` fails | "skipped because httpx install failed with exit N" |
 | `reconcile.py` exits non-zero | "skipped because reconcile.py exited N" |
 | `status != success` or `reconciled_count == 0` | "produced no PR because <reason>" |
