@@ -58,25 +58,54 @@ on:
         description: 'JSON string for runs-on of the auto-reconcile job. Defaults to ubuntu-latest for back-compat. Self-hosted callers pass e.g. ''["self-hosted","infra"]''.'
         type: string
         default: '"ubuntu-latest"'
-      nano-gpt-model:
-        description: 'nano-gpt model id (NANO_GPT_MODEL). Specialist consumes this under the hood. The :thinking variant has long quiet reasoning phases that exceed the specialist 120s no-activity stall_timeout on real-drift workloads (xtrm-efa2a) — default switched to the non-thinking model.'
+      # Provider-agnostic inputs (xtrm-g5hk2). pi-coding-agent supports
+      # anthropic / openai / openrouter / nano-gpt / etc; this workflow's
+      # specialist path is fully parameterized. Set provider-* to use a
+      # non-nano-gpt provider; leave them at their nano-gpt defaults to keep
+      # the legacy behavior. The deprecated nano-gpt-* inputs below remain
+      # as aliases for external callers that have not migrated yet — when
+      # both forms are set the provider-* form wins and a warning is logged.
+      provider-name:
+        description: 'pi provider key (registry slot in ~/.pi/agent/models.json providers[*]). Examples: nano-gpt, openrouter, openai, anthropic. Determines the prefix on the --model arg passed to sp script (<provider-name>/<provider-model>).'
+        type: string
+        default: 'nano-gpt'
+      provider-api:
+        description: 'pi provider api adapter. openai-completions covers any OpenAI-compatible /chat/completions endpoint (nano-gpt, openrouter, vLLM, llama.cpp). Use anthropic / openrouter / etc when targeting a non-OAI-shaped provider.'
+        type: string
+        default: 'openai-completions'
+      provider-base-url:
+        description: 'Provider v1 root URL (NO /chat/completions tail; pi appends it). Hostname is trusted because callers pin per-repo via reusable workflow inputs.'
+        type: string
+        default: 'https://nano-gpt.com/api/v1'
+      provider-model:
+        description: 'Bare model id within provider.models[]. Combined with provider-name to form the sp script --model arg. The :thinking variant has long quiet reasoning phases that exceed the specialist 120s no-activity stall_timeout on real-drift workloads (xtrm-efa2a) — default switched to the non-thinking model.'
         type: string
         default: 'moonshotai/kimi-k2.6'
-      specialists-model:
-        description: 'Provider-prefixed model id passed to sp script --model (specialist v1.6.0 has model:null and requires explicit override). Format: <provider>/<model-id>. Default avoids the :thinking variant to stay under the specialist 120s no-activity stall_timeout (xtrm-efa2a).'
-        type: string
-        default: 'nano-gpt/moonshotai/kimi-k2.6'
       specialists-stall-timeout-ms:
         description: 'Override for service-skills-sync.execution.stall_timeout_ms. Upstream specialist default of 120000 fires on real-drift workloads (xtrm-efa2a market-data run 28118772361 stalled at 120s even with the non-:thinking model). 600000 (10min) accommodates the multi-phase Serena+gitnexus tool-call architecture. Pre-step seeds this via sp edit --global; codex-side default bump tracked separately.'
         type: number
         default: 600000
-      nano-gpt-api-url:
-        description: 'nano-gpt chat-completions endpoint (NANO_GPT_API_URL). Override only to switch base path. Hostname locked to nano-gpt.com.'
+      # ─── Deprecated nano-gpt-* aliases (xtrm-g5hk2) ─────────────────────
+      # Kept so external callers (mercury-infra, market-data) keep working
+      # while they migrate to provider-*. Remove after the migration window.
+      nano-gpt-model:
+        description: 'DEPRECATED — use provider-model. Legacy nano-gpt model id. When set and provider-model is at its default, this overrides provider-model and the Phase B fallback NANO_GPT_MODEL env.'
         type: string
-        default: 'https://nano-gpt.com/api/v1/chat/completions'
+        default: ''
+      specialists-model:
+        description: 'DEPRECATED — derived from provider-name/provider-model. When set, this exact string overrides the constructed --model arg for sp script. Format: <provider>/<model-id>.'
+        type: string
+        default: ''
+      nano-gpt-api-url:
+        description: 'DEPRECATED — use provider-base-url. Legacy nano-gpt chat-completions endpoint. When set, the trailing /chat/completions is stripped and used as provider-base-url. Also threaded through to Phase B fallback (reconcile.py) which remains nano-gpt-only.'
+        type: string
+        default: ''
     secrets:
+      provider-api-key:
+        description: 'Provider API key for service-skills auto-reconcile (used by service-skills-sync specialist). Wins over nano-gpt-api-key when both are set.'
+        required: false
       nano-gpt-api-key:
-        description: 'nano-gpt API key for service-skills auto-reconcile (used by service-skills-sync specialist)'
+        description: 'DEPRECATED — use provider-api-key. Legacy nano-gpt API key. Still consumed by the Phase B fallback (reconcile.py is nano-gpt-only).'
         required: false
 
 concurrency:
@@ -196,10 +225,11 @@ jobs:
       - name: Annotate reconcile missing secret
         if: steps.drift.outputs.drift_count != '0' && inputs['reconcile-enabled']
         env:
+          PROVIDER_API_KEY: ${{ secrets['provider-api-key'] }}
           NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
         run: |
-          if [ -z "$NANO_GPT_API_KEY" ]; then
-            echo "::warning::service-skills auto-reconcile skipped because nano-gpt-api-key secret is absent; Phase A drift comment behavior preserved"
+          if [ -z "$PROVIDER_API_KEY" ] && [ -z "$NANO_GPT_API_KEY" ]; then
+            echo "::warning::service-skills auto-reconcile skipped because neither provider-api-key nor nano-gpt-api-key secret is set; Phase A drift comment behavior preserved"
           fi
 
   auto-reconcile:
@@ -242,6 +272,69 @@ jobs:
         with:
           name: service-skills-drift
           path: /tmp/service-skills-drift
+
+      # xtrm-g5hk2: collapse provider-* + legacy nano-gpt-* into one effective
+      # set of outputs. provider-* wins when set; legacy is a fallback so external
+      # callers don't break. Subsequent steps read steps.resolve_provider.outputs.*.
+      - name: Resolve provider config
+        id: resolve_provider
+        env:
+          IN_PROVIDER_NAME: ${{ inputs['provider-name'] }}
+          IN_PROVIDER_API: ${{ inputs['provider-api'] }}
+          IN_PROVIDER_BASE_URL: ${{ inputs['provider-base-url'] }}
+          IN_PROVIDER_MODEL: ${{ inputs['provider-model'] }}
+          IN_NANO_GPT_MODEL: ${{ inputs['nano-gpt-model'] }}
+          IN_NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
+          IN_SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
+          IN_PROVIDER_API_KEY: ${{ secrets['provider-api-key'] }}
+          IN_NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
+        run: |
+          set -e
+          # base_url: legacy input is the /chat/completions URL; strip the tail.
+          # provider-base-url is already the v1 root.
+          if [ -n "$IN_NANO_GPT_API_URL" ]; then
+            echo "::warning::nano-gpt-api-url is deprecated; pass provider-base-url instead (xtrm-g5hk2)"
+            base_url="${IN_NANO_GPT_API_URL%/chat/completions}"
+          else
+            base_url="$IN_PROVIDER_BASE_URL"
+          fi
+          # model: legacy input overrides only when set.
+          if [ -n "$IN_NANO_GPT_MODEL" ]; then
+            echo "::warning::nano-gpt-model is deprecated; pass provider-model instead (xtrm-g5hk2)"
+            model_id="$IN_NANO_GPT_MODEL"
+          else
+            model_id="$IN_PROVIDER_MODEL"
+          fi
+          # full --model arg passed to sp script. Legacy callers may pass the
+          # full <provider>/<model> string via specialists-model; respect that.
+          if [ -n "$IN_SPECIALISTS_MODEL" ]; then
+            echo "::warning::specialists-model is deprecated; derived from provider-name/provider-model (xtrm-g5hk2)"
+            sp_model="$IN_SPECIALISTS_MODEL"
+          else
+            sp_model="${IN_PROVIDER_NAME}/${model_id}"
+          fi
+          # api-key: explicit precedence — provider wins, legacy second.
+          if [ -n "$IN_PROVIDER_API_KEY" ]; then
+            key_source='provider-api-key'
+            has_key='true'
+          elif [ -n "$IN_NANO_GPT_API_KEY" ]; then
+            echo "::warning::nano-gpt-api-key is deprecated; set provider-api-key instead (xtrm-g5hk2)"
+            key_source='nano-gpt-api-key'
+            has_key='true'
+          else
+            key_source='none'
+            has_key='false'
+          fi
+          {
+            echo "provider_name=$IN_PROVIDER_NAME"
+            echo "provider_api=$IN_PROVIDER_API"
+            echo "provider_base_url=$base_url"
+            echo "provider_model=$model_id"
+            echo "sp_model=$sp_model"
+            echo "key_source=$key_source"
+            echo "has_key=$has_key"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::provider config resolved: name=$IN_PROVIDER_NAME api=$IN_PROVIDER_API model=$sp_model key_source=$key_source"
 
       - name: Install specialists (pinned, isolated)
         id: install_specialists
@@ -291,33 +384,40 @@ jobs:
           echo "sp_bin=$SP_BIN_DIR/sp" >> "$GITHUB_OUTPUT"
           echo 'installed=true' >> "$GITHUB_OUTPUT"
 
-      - name: Configure pi nano-gpt provider
+      - name: Configure pi LLM provider
         if: steps.install_specialists.outputs.installed == 'true'
         env:
+          # xtrm-g5hk2: provider-agnostic. The pi models.json providers[] slot,
+          # api adapter, base URL, and model id all come from resolve_provider.
+          # API key precedence (provider > legacy) also handled there.
+          PROVIDER_NAME: ${{ steps.resolve_provider.outputs.provider_name }}
+          PROVIDER_API: ${{ steps.resolve_provider.outputs.provider_api }}
+          PROVIDER_BASE_URL: ${{ steps.resolve_provider.outputs.provider_base_url }}
+          PROVIDER_MODEL: ${{ steps.resolve_provider.outputs.provider_model }}
+          PROVIDER_API_KEY: ${{ secrets['provider-api-key'] }}
           NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
-          NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
-          SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
         run: |
           set +e
-          if [ -z "$NANO_GPT_API_KEY" ]; then
-            echo "::notice::no nano-gpt-api-key secret; skipping pi provider config (specialist path will fail with missing key, fallback will run)"
+          # Resolve effective key in-shell so we never echo the secret to env logs.
+          if [ -n "$PROVIDER_API_KEY" ]; then
+            api_key="$PROVIDER_API_KEY"
+          else
+            api_key="$NANO_GPT_API_KEY"
+          fi
+          if [ -z "$api_key" ]; then
+            echo "::notice::no provider-api-key / nano-gpt-api-key secret; skipping pi provider config (specialist path will fail with missing key, fallback will run)"
             exit 0
           fi
           mkdir -p "$HOME/.pi/agent"
-          # Derive baseUrl from the nano-gpt-api-url input: strip the
-          # /chat/completions tail to get the v1 root that pi uses.
-          base_url="${NANO_GPT_API_URL%/chat/completions}"
-          # Strip 'nano-gpt/' provider prefix if caller passed it; pi resolves
-          # the bare model id within the provider's models[] list.
-          model_id="${SPECIALISTS_MODEL#nano-gpt/}"
-          export PI_PROVIDER_BASE="$base_url"
-          export PI_PROVIDER_MODEL="$model_id"
+          export PI_API_KEY="$api_key"
           python3 - <<'PY'
           import json, os, pathlib
-          home   = pathlib.Path(os.environ['HOME'])
-          base   = os.environ['PI_PROVIDER_BASE']
-          model  = os.environ['PI_PROVIDER_MODEL']
-          key    = os.environ['NANO_GPT_API_KEY']
+          home     = pathlib.Path(os.environ['HOME'])
+          provider = os.environ['PROVIDER_NAME']
+          api      = os.environ['PROVIDER_API']
+          base     = os.environ['PROVIDER_BASE_URL']
+          model    = os.environ['PROVIDER_MODEL']
+          key      = os.environ['PI_API_KEY']
           model_entry = {
               'id': model,
               'name': model.split('/')[-1],
@@ -329,7 +429,7 @@ jobs:
           provider_entry = {
               'baseUrl': base,
               'apiKey': key,
-              'api': 'openai-completions',
+              'api': api,
               'authHeader': True,
               'models': [model_entry],
           }
@@ -340,21 +440,21 @@ jobs:
                   data = json.loads(path.read_text()) if path.exists() else {}
               except Exception:
                   data = {}
-              data.setdefault('providers', {})['nano-gpt'] = provider_entry
+              data.setdefault('providers', {})[provider] = provider_entry
               path.write_text(json.dumps(data, indent=2))
               path.chmod(0o600)
               print(f"wrote {path}")
-          print(f"nano-gpt provider configured: baseUrl={base} model={model}")
+          print(f"{provider} provider configured: api={api} baseUrl={base} model={model}")
           PY
-          echo "::notice::pi nano-gpt provider configured (baseUrl=$base_url, model=$model_id)"
+          echo "::notice::pi $PROVIDER_NAME provider configured (api=$PROVIDER_API, baseUrl=$PROVIDER_BASE_URL, model=$PROVIDER_MODEL)"
           # Surface config shape (no secrets) so the next failure mode is easy to RCA.
-          python3 -c "import json; d=json.load(open('$HOME/.pi/agent/models.json')); p=d['providers']['nano-gpt']; print('config check — provider keys:', sorted(p.keys()), 'models count:', len(p.get('models',[])), 'first model id:', p['models'][0]['id'] if p.get('models') else None)"
+          PROVIDER_NAME="$PROVIDER_NAME" python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.pi/agent/models.json'))); p=d['providers'][os.environ['PROVIDER_NAME']]; print('config check — provider keys:', sorted(p.keys()), 'models count:', len(p.get('models',[])), 'first model id:', p['models'][0]['id'] if p.get('models') else None)"
 
       - name: Configure specialist model override (global user.json)
         if: steps.install_specialists.outputs.installed == 'true'
         env:
           SP_BIN: ${{ steps.install_specialists.outputs.sp_bin }}
-          SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
+          SPECIALISTS_MODEL: ${{ steps.resolve_provider.outputs.sp_model }}
           SPECIALISTS_STALL_TIMEOUT_MS: ${{ inputs['specialists-stall-timeout-ms'] }}
         run: |
           set +e
@@ -404,12 +504,14 @@ jobs:
         id: reconcile
         if: steps.install_specialists.outputs.installed == 'true'
         env:
+          # xtrm-g5hk2: provider-agnostic. SPECIALISTS_MODEL is the constructed
+          # <provider>/<model> arg; the api key is resolved here so we accept
+          # either secret without leaking it into env logs.
+          PROVIDER_API_KEY: ${{ secrets['provider-api-key'] }}
           NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
-          NANO_GPT_MODEL: ${{ inputs['nano-gpt-model'] }}
-          NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
           CLAUDE_PROJECT_DIR: ${{ github.workspace }}
           SPECIALISTS_PACK: ${{ inputs['specialists-pack'] }}
-          SPECIALISTS_MODEL: ${{ inputs['specialists-model'] }}
+          SPECIALISTS_MODEL: ${{ steps.resolve_provider.outputs.sp_model }}
           # GITHUB_TOKEN is exposed to the specialist's bash tool so it can use
           # gh/git to commit & push directly (xtrm-vu2ro Path B prereq). When the
           # specialist's system_prompt gains a "create branch + open PR" phase
@@ -418,8 +520,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          if [ -z "$NANO_GPT_API_KEY" ]; then
-            echo "::warning::service-skills auto-reconcile skipped because nano-gpt-api-key secret is absent; Phase A drift comment behavior preserved"
+          if [ -z "$PROVIDER_API_KEY" ] && [ -z "$NANO_GPT_API_KEY" ]; then
+            echo "::warning::service-skills auto-reconcile skipped because no provider-api-key / nano-gpt-api-key secret is set; Phase A drift comment behavior preserved"
             echo 'status=missing_secret' >> "$GITHUB_OUTPUT"
             echo 'path=specialist' >> "$GITHUB_OUTPUT"
             exit 0
@@ -536,13 +638,48 @@ jobs:
         id: reconcile_fallback
         if: steps.install_specialists.outputs.installed != 'true' || steps.reconcile.outputs.status == 'failed' || steps.reconcile.outputs.status == 'parse_error'
         env:
-          NANO_GPT_API_KEY: ${{ secrets['nano-gpt-api-key'] }}
-          NANO_GPT_MODEL: ${{ inputs['nano-gpt-model'] }}
-          NANO_GPT_API_URL: ${{ inputs['nano-gpt-api-url'] }}
+          # xtrm-g5hk2: Phase B (reconcile.py) is nano-gpt-only — it hardcodes
+          # NANO_GPT_URL hostname and the openai-compat chat-completions shape.
+          # When provider-name is not nano-gpt, skip Phase B entirely (the
+          # specialist path is the only supported route for other providers).
+          # When it is nano-gpt, derive NANO_GPT_* from the resolved provider
+          # config so a caller that set only provider-* still gets a working
+          # fallback.
+          PROVIDER_NAME: ${{ steps.resolve_provider.outputs.provider_name }}
+          PROVIDER_MODEL: ${{ steps.resolve_provider.outputs.provider_model }}
+          PROVIDER_BASE_URL: ${{ steps.resolve_provider.outputs.provider_base_url }}
+          PROVIDER_API_KEY: ${{ secrets['provider-api-key'] }}
+          NANO_GPT_API_KEY_LEGACY: ${{ secrets['nano-gpt-api-key'] }}
+          NANO_GPT_MODEL_LEGACY: ${{ inputs['nano-gpt-model'] }}
+          NANO_GPT_API_URL_LEGACY: ${{ inputs['nano-gpt-api-url'] }}
         run: |
           set +e
+          if [ "$PROVIDER_NAME" != 'nano-gpt' ]; then
+            echo "::warning::Phase B fallback skipped: reconcile.py is nano-gpt-only and provider-name=$PROVIDER_NAME. Specialist path is the only route for non-nano-gpt providers."
+            echo 'status=skipped_non_nano_gpt' >> "$GITHUB_OUTPUT"
+            echo 'path=fallback' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Derive NANO_GPT_* from provider-* when legacy inputs unset.
+          if [ -n "$PROVIDER_API_KEY" ]; then
+            NANO_GPT_API_KEY="$PROVIDER_API_KEY"
+          else
+            NANO_GPT_API_KEY="$NANO_GPT_API_KEY_LEGACY"
+          fi
+          export NANO_GPT_API_KEY
+          if [ -n "$NANO_GPT_MODEL_LEGACY" ]; then
+            export NANO_GPT_MODEL="$NANO_GPT_MODEL_LEGACY"
+          else
+            export NANO_GPT_MODEL="$PROVIDER_MODEL"
+          fi
+          if [ -n "$NANO_GPT_API_URL_LEGACY" ]; then
+            export NANO_GPT_API_URL="$NANO_GPT_API_URL_LEGACY"
+          else
+            # provider-base-url is the /v1 root; reconcile.py expects the chat-completions URL.
+            export NANO_GPT_API_URL="${PROVIDER_BASE_URL}/chat/completions"
+          fi
           if [ -z "$NANO_GPT_API_KEY" ]; then
-            echo "::warning::Phase B fallback also skipped: nano-gpt-api-key secret absent"
+            echo "::warning::Phase B fallback also skipped: no provider-api-key / nano-gpt-api-key secret"
             echo 'status=missing_secret' >> "$GITHUB_OUTPUT"
             echo 'path=fallback' >> "$GITHUB_OUTPUT"
             exit 0
