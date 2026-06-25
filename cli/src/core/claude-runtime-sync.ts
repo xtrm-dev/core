@@ -83,6 +83,25 @@ export async function runClaudeRuntimeSyncPhase(opts: ClaudeRuntimeSyncOptions):
         ? path.join(os.homedir(), '.claude', 'settings.json')
         : path.join(repoRoot, '.claude', 'settings.json');
 
+    // xtrm-il7ov: every xtrm-managed hook references <projectRoot>/.xtrm/hooks/ —
+    // they are project-scoped by definition. A global install must NOT replace the
+    // user's ~/.claude/settings.json hooks section with paths that hardcode the
+    // current repo, or every previously-configured global hook (PreCompact bd prime,
+    // SessionStart context-mode-cache-heal, etc.) gets wiped and project hooks fire
+    // twice. Refresh the statusLine wiring (separate concern, already idempotent)
+    // and return early without touching hooks.
+    if (isGlobal) {
+        console.log(t.muted('  ↻ Global install: skipping hook sync (project .claude/settings.json owns hooks)'));
+        console.log(t.label(`  • global settings preserved: ${settingsPath}`));
+        await ensureGlobalStatusLine();
+        return {
+            settingsPath,
+            hooksEventsWritten: 0,
+            hooksEntriesWritten: 0,
+            wroteSettings: false,
+        };
+    }
+
     const hasExistingSettings = await fs.pathExists(settingsPath);
     const baseSettings = await readBaseSettings(settingsTemplatePath);
     const existingSettings = hasExistingSettings ? await readSettings(settingsPath) : {};

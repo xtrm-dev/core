@@ -44642,6 +44642,17 @@ async function runClaudeRuntimeSyncPhase(opts) {
   const generatedHooks = resolveHooksForProjectRuntime(hooksConfig.hooks ?? {}, projectHooksDir);
   const generatedStatusLine = resolveStatusLineForProjectRuntime(hooksConfig.statusLine, projectHooksDir);
   const settingsPath = isGlobal ? import_path2.default.join(import_os.default.homedir(), ".claude", "settings.json") : import_path2.default.join(repoRoot, ".claude", "settings.json");
+  if (isGlobal) {
+    console.log(t.muted("  \u21BB Global install: skipping hook sync (project .claude/settings.json owns hooks)"));
+    console.log(t.label(`  \u2022 global settings preserved: ${settingsPath}`));
+    await ensureGlobalStatusLine();
+    return {
+      settingsPath,
+      hooksEventsWritten: 0,
+      hooksEntriesWritten: 0,
+      wroteSettings: false
+    };
+  }
   const hasExistingSettings = await import_fs_extra2.default.pathExists(settingsPath);
   const baseSettings = await readBaseSettings(settingsTemplatePath);
   const existingSettings = hasExistingSettings ? await readSettings(settingsPath) : {};
