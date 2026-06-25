@@ -44371,7 +44371,7 @@ __export(reconcile_exports, {
 async function reconcile(specPath, state, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process25.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process24.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) {
     return { ok: false, error: `sp result failed: ${r.stderr || r.stdout}` };
   }
@@ -44411,7 +44411,7 @@ function extractPlannerResult(parsed) {
 async function validateIdsExist(ids, bdBin) {
   const orphans = [];
   for (const id of ids) {
-    const r = (0, import_node_child_process25.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
+    const r = (0, import_node_child_process24.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
     if (r.status !== 0) orphans.push(id);
   }
   return orphans;
@@ -44436,11 +44436,11 @@ async function writeLinksInPlace(specPath, links) {
 function sidecarPathFromSpec(specPath) {
   return import_node_path35.default.join(import_node_path35.default.dirname(specPath), ".apply-state.json");
 }
-var import_node_child_process25, import_fs_extra45, import_node_path35, import_yaml5;
+var import_node_child_process24, import_fs_extra45, import_node_path35, import_yaml5;
 var init_reconcile = __esm({
   "src/spec/reconcile.ts"() {
     "use strict";
-    import_node_child_process25 = require("child_process");
+    import_node_child_process24 = require("child_process");
     import_fs_extra45 = __toESM(require_lib(), 1);
     import_node_path35 = __toESM(require("path"), 1);
     import_yaml5 = __toESM(require_dist3(), 1);
@@ -44502,6 +44502,7 @@ var import_node_path7 = __toESM(require("path"), 1);
 // src/utils/repo-root.ts
 var import_fs_extra = __toESM(require_lib(), 1);
 var import_path = __toESM(require("path"), 1);
+var import_child_process = require("child_process");
 async function walkUp(startDir, predicate) {
   let dir = import_path.default.resolve(startDir);
   while (true) {
@@ -44581,6 +44582,30 @@ async function findProjectRoot() {
   }
   return process.cwd();
 }
+function resolveMainProjectRoot(cwd = process.cwd()) {
+  const commonRaw = (0, import_child_process.spawnSync)("git", ["rev-parse", "--git-common-dir"], {
+    cwd,
+    encoding: "utf8",
+    stdio: "pipe"
+  });
+  if (commonRaw.status === 0) {
+    const commonDir = (commonRaw.stdout ?? "").trim();
+    if (commonDir) {
+      const absCommon = import_path.default.isAbsolute(commonDir) ? commonDir : import_path.default.join(cwd, commonDir);
+      return import_path.default.dirname(absCommon);
+    }
+  }
+  const top = (0, import_child_process.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
+    cwd,
+    encoding: "utf8",
+    stdio: "pipe"
+  });
+  if (top.status === 0) {
+    const topDir = (top.stdout ?? "").trim();
+    if (topDir) return topDir;
+  }
+  return cwd;
+}
 
 // src/utils/theme.ts
 init_kleur();
@@ -44622,7 +44647,7 @@ init_kleur();
 var import_fs_extra2 = __toESM(require_lib(), 1);
 var import_os = __toESM(require("os"), 1);
 var import_path2 = __toESM(require("path"), 1);
-var import_child_process = require("child_process");
+var import_child_process2 = require("child_process");
 function renderClaudeRuntimePlanSummary() {
   console.log(kleur_default.bold("\n  Claude Runtime Sync"));
   console.log(`${kleur_default.cyan("  \u2022")}  read canonical hooks: .xtrm/config/hooks.json`);
@@ -44871,7 +44896,7 @@ async function resolvePackageRoot() {
 function warnIfOutdated() {
   try {
     const localPkg = JSON.parse(import_fs_extra2.default.readFileSync(import_path2.default.resolve(__dirname, "../package.json"), "utf8"));
-    const result = (0, import_child_process.spawnSync)("npm", ["show", "xtrm-tools", "version", "--json"], {
+    const result = (0, import_child_process2.spawnSync)("npm", ["show", "xtrm-tools", "version", "--json"], {
       encoding: "utf8",
       stdio: "pipe",
       timeout: 5e3
@@ -59966,7 +59991,7 @@ async function ensureAgentsSkillsSymlink(projectRoot, options = {}) {
 }
 
 // src/core/pi-runtime.ts
-var import_child_process2 = require("child_process");
+var import_child_process3 = require("child_process");
 var import_fs_extra8 = __toESM(require_lib(), 1);
 init_kleur();
 var import_path4 = __toESM(require("path"), 1);
@@ -60009,7 +60034,7 @@ var PI_AGENT_DIR = process.env.PI_AGENT_DIR || import_path4.default.join((0, imp
 var PI_MCP_ADAPTER_OVERRIDE_DIR = import_path4.default.join(PI_AGENT_DIR, "extensions", "pi-mcp-adapter");
 var PI_MCP_ADAPTER_REQUIRED_ENTRY = "commands.js";
 async function resolveGlobalNpmRootDir() {
-  const result = (0, import_child_process2.spawnSync)("npm", ["root", "-g"], { encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_child_process3.spawnSync)("npm", ["root", "-g"], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) return null;
   const npmRootDir = (result.stdout ?? "").trim();
   return npmRootDir.length > 0 ? npmRootDir : null;
@@ -60035,7 +60060,7 @@ function runExternalPiToolPatch(pkgRoot, dryRun, log) {
     log?.(`[DRY RUN] node ${scriptPath}`);
     return;
   }
-  const result = (0, import_child_process2.spawnSync)("node", [scriptPath], { encoding: "utf8" });
+  const result = (0, import_child_process3.spawnSync)("node", [scriptPath], { encoding: "utf8" });
   if (result.status !== 0) {
     const stderr = (result.stderr ?? "").trim();
     if (stderr) log?.(`external tool patch failed: ${stderr}`);
@@ -60077,7 +60102,7 @@ function getXtManagedPiPackages() {
   return [PROJECT_EXTENSION_PACKAGE, ...MANAGED_PACKAGES];
 }
 function getInstalledPiPackages() {
-  const result = (0, import_child_process2.spawnSync)("pi", ["list"], { encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_child_process3.spawnSync)("pi", ["list"], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) return [];
   const output = result.stdout;
   const packages = [];
@@ -60247,7 +60272,7 @@ async function getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir
 }
 var PI_PACKAGE_VERSION_LOOKUP_TIMEOUT_MS = 5e3;
 async function getExpectedPiPackageVersion(npmPackageName) {
-  const result = (0, import_child_process2.spawnSync)("npm", ["view", npmPackageName, "version", "--registry", NPMJS_REGISTRY_URL], {
+  const result = (0, import_child_process3.spawnSync)("npm", ["view", npmPackageName, "version", "--registry", NPMJS_REGISTRY_URL], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: PI_PACKAGE_VERSION_LOOKUP_TIMEOUT_MS
@@ -60293,7 +60318,7 @@ async function isPackagePresentInPiAgent(agentDir, piPackageId, npmRootDir) {
 }
 var NPMJS_REGISTRY_URL = "https://registry.npmjs.org";
 function runPiPackageInstall(piPackageId, env3) {
-  const installResult = (0, import_child_process2.spawnSync)("pi", ["install", piPackageId], {
+  const installResult = (0, import_child_process3.spawnSync)("pi", ["install", piPackageId], {
     stdio: "pipe",
     encoding: "utf8",
     env: env3
@@ -61139,7 +61164,7 @@ async function confirmDestructiveAction(opts) {
 }
 
 // src/core/machine-bootstrap.ts
-var import_child_process3 = require("child_process");
+var import_child_process4 = require("child_process");
 var import_node_path6 = __toESM(require("path"), 1);
 init_kleur();
 var OFFICIAL_CLAUDE_PLUGINS = ["serena", "context7"];
@@ -61260,7 +61285,7 @@ var FALLBACK_BIN_DIRS = [
   }
 })();
 function checkDep(dep) {
-  const result = (0, import_child_process3.spawnSync)(dep.cli, [dep.versionFlag], {
+  const result = (0, import_child_process4.spawnSync)(dep.cli, [dep.versionFlag], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5e3
@@ -61347,7 +61372,7 @@ function executeBootstrap(plan, opts = {}) {
     for (const step of steps) {
       const cmd = step.sudo && process.platform !== "darwin" ? "sudo" : step.cmd;
       const args = step.sudo && process.platform !== "darwin" ? [step.cmd, ...step.args] : step.args;
-      const r = (0, import_child_process3.spawnSync)(cmd, args, { stdio: "inherit" });
+      const r = (0, import_child_process4.spawnSync)(cmd, args, { stdio: "inherit" });
       if (r.status !== 0) {
         ok2 = false;
         break;
@@ -61398,7 +61423,7 @@ function normalizePluginName(name) {
   return atIndex === -1 ? trimmed : trimmed.slice(0, atIndex);
 }
 function readInstalledOfficialPlugins() {
-  const listResult = (0, import_child_process3.spawnSync)("claude", ["plugin", "list", "--json"], {
+  const listResult = (0, import_child_process4.spawnSync)("claude", ["plugin", "list", "--json"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 1e4
@@ -61426,14 +61451,14 @@ function readInstalledOfficialPlugins() {
   return installedNames;
 }
 function ensureOfficialMarketplace() {
-  const listResult = (0, import_child_process3.spawnSync)("claude", ["plugin", "marketplace", "list"], {
+  const listResult = (0, import_child_process4.spawnSync)("claude", ["plugin", "marketplace", "list"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 1e4
   });
   const output = listResult.stdout ?? "";
   if (output.includes(OFFICIAL_MARKETPLACE)) return;
-  (0, import_child_process3.spawnSync)("claude", [
+  (0, import_child_process4.spawnSync)("claude", [
     "plugin",
     "marketplace",
     "add",
@@ -61441,12 +61466,12 @@ function ensureOfficialMarketplace() {
   ], { stdio: "inherit", timeout: 12e4 });
 }
 function tryInstallOfficialPlugin(pluginName) {
-  const directInstall = (0, import_child_process3.spawnSync)("claude", ["plugin", "install", pluginName, "--scope", "user"], { stdio: "inherit" });
+  const directInstall = (0, import_child_process4.spawnSync)("claude", ["plugin", "install", pluginName, "--scope", "user"], { stdio: "inherit" });
   if (directInstall.status === 0) {
     return true;
   }
   const marketplaceQualified = `${pluginName}@${OFFICIAL_MARKETPLACE}`;
-  const marketplaceInstall = (0, import_child_process3.spawnSync)("claude", ["plugin", "install", marketplaceQualified, "--scope", "user"], { stdio: "inherit" });
+  const marketplaceInstall = (0, import_child_process4.spawnSync)("claude", ["plugin", "install", marketplaceQualified, "--scope", "user"], { stdio: "inherit" });
   return marketplaceInstall.status === 0;
 }
 function ensureOfficialPlugins(dryRun) {
@@ -62065,7 +62090,7 @@ init_kleur();
 var import_path15 = __toESM(require("path"), 1);
 var import_fs_extra24 = __toESM(require_lib(), 1);
 var import_prompts3 = __toESM(require_prompts3(), 1);
-var import_child_process5 = require("child_process");
+var import_child_process6 = require("child_process");
 
 // src/core/registry-scaffold.ts
 init_kleur();
@@ -62784,7 +62809,7 @@ async function ensurePostMergeDriftHook(projectRoot, notes) {
 }
 
 // src/core/init-verification.ts
-var import_child_process4 = require("child_process");
+var import_child_process5 = require("child_process");
 var import_fs_extra17 = __toESM(require_lib(), 1);
 init_kleur();
 var import_os3 = __toESM(require("os"), 1);
@@ -62951,7 +62976,7 @@ async function verifyPiRuntime(projectRoot) {
 }
 function verifyProjectBootstrap(projectRoot) {
   const beadsInitialized = import_fs_extra17.default.pathExistsSync(import_path10.default.join(projectRoot, ".beads"));
-  const gnStatus = (0, import_child_process4.spawnSync)("gitnexus", ["status"], { cwd: projectRoot, encoding: "utf8", timeout: 5e3 });
+  const gnStatus = (0, import_child_process5.spawnSync)("gitnexus", ["status"], { cwd: projectRoot, encoding: "utf8", timeout: 5e3 });
   const gnText = `${gnStatus.stdout ?? ""}
 ${gnStatus.stderr ?? ""}`.toLowerCase();
   const gitnexusIndexed = gnStatus.status === 0 && !gnText.includes("stale") && !gnText.includes("not indexed") && !gnText.includes("missing");
@@ -65043,7 +65068,7 @@ async function runPreflight(projectRoot, opts) {
   } catch {
   }
   const needsBdInit = !await import_fs_extra24.default.pathExists(import_path15.default.join(projectRoot, ".beads"));
-  const gitnexusStatus = (0, import_child_process5.spawnSync)("gitnexus", ["status"], {
+  const gitnexusStatus = (0, import_child_process6.spawnSync)("gitnexus", ["status"], {
     cwd: projectRoot,
     encoding: "utf8",
     timeout: 5e3
@@ -65151,7 +65176,7 @@ async function resolveInitProjectRoot(yes) {
     initial: 0
   });
   if (action === "git-init") {
-    const initResult = (0, import_child_process5.spawnSync)("git", ["init"], {
+    const initResult = (0, import_child_process6.spawnSync)("git", ["init"], {
       cwd,
       encoding: "utf8",
       timeout: 1e4
@@ -65286,7 +65311,7 @@ async function runProjectInit(opts = {}) {
 }
 async function runBdInitForProject(projectRoot) {
   console.log(kleur_default.bold("Running beads initialization (bd init)..."));
-  const result = (0, import_child_process5.spawnSync)("bd", ["init"], {
+  const result = (0, import_child_process6.spawnSync)("bd", ["init"], {
     cwd: projectRoot,
     encoding: "utf8",
     timeout: 15e3
@@ -65321,7 +65346,7 @@ ${result.stderr || ""}`.toLowerCase();
   }
 }
 async function runGitNexusInitForProject(projectRoot) {
-  const gitnexusCheck = (0, import_child_process5.spawnSync)("gitnexus", ["--version"], {
+  const gitnexusCheck = (0, import_child_process6.spawnSync)("gitnexus", ["--version"], {
     cwd: projectRoot,
     encoding: "utf8",
     timeout: 5e3
@@ -65331,7 +65356,7 @@ async function runGitNexusInitForProject(projectRoot) {
     console.log(kleur_default.dim("    Install with: npm install -g gitnexus"));
     return;
   }
-  const hasCommits = (0, import_child_process5.spawnSync)("git", ["rev-parse", "HEAD"], {
+  const hasCommits = (0, import_child_process6.spawnSync)("git", ["rev-parse", "HEAD"], {
     cwd: projectRoot,
     encoding: "utf8",
     timeout: 5e3
@@ -65342,7 +65367,7 @@ async function runGitNexusInitForProject(projectRoot) {
     return;
   }
   console.log(kleur_default.bold("Checking GitNexus index status..."));
-  const status = (0, import_child_process5.spawnSync)("gitnexus", ["status"], {
+  const status = (0, import_child_process6.spawnSync)("gitnexus", ["status"], {
     cwd: projectRoot,
     encoding: "utf8",
     timeout: 1e4
@@ -65355,7 +65380,7 @@ ${status.stderr || ""}`.toLowerCase();
     return;
   }
   console.log(kleur_default.bold("Running GitNexus indexing (gitnexus analyze)..."));
-  const analyze = (0, import_child_process5.spawnSync)("gitnexus", ["analyze"], {
+  const analyze = (0, import_child_process6.spawnSync)("gitnexus", ["analyze"], {
     cwd: projectRoot,
     encoding: "utf8",
     timeout: 12e4
@@ -65374,7 +65399,7 @@ ${status.stderr || ""}`.toLowerCase();
   console.log(kleur_default.yellow(`  \u26A0 gitnexus analyze exited with code ${analyze.status}`));
 }
 function getProjectRoot() {
-  const result = (0, import_child_process5.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
+  const result = (0, import_child_process6.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     timeout: 5e3
   });
@@ -65771,7 +65796,7 @@ var ConfigAdapter = class {
 };
 
 // src/utils/sync-mcp-cli.ts
-var import_child_process6 = require("child_process");
+var import_child_process7 = require("child_process");
 var import_util3 = require("util");
 init_kleur();
 
@@ -65785,7 +65810,7 @@ var ENV_FILE = import_path17.default.join(CONFIG_DIR, ".env");
 var ENV_EXAMPLE_FILE = import_path17.default.join(CONFIG_DIR, ".env.example");
 
 // src/utils/sync-mcp-cli.ts
-var execAsync = (0, import_util3.promisify)(import_child_process6.exec);
+var execAsync = (0, import_util3.promisify)(import_child_process7.exec);
 
 // src/core/rollback.ts
 var import_fs_extra26 = __toESM(require_lib(), 1);
@@ -70167,7 +70192,7 @@ ${kleur_default.bold("xt doctor")}
 
 // src/commands/update.ts
 init_kleur();
-var import_node_child_process21 = require("child_process");
+var import_node_child_process20 = require("child_process");
 var import_node_path28 = __toESM(require("path"), 1);
 var import_fs_extra40 = __toESM(require_lib(), 1);
 
@@ -70208,7 +70233,6 @@ async function walk(currentDir, managed, incomplete) {
 init_kleur();
 var import_fs_extra39 = __toESM(require_lib(), 1);
 var import_path26 = __toESM(require("path"), 1);
-var import_node_child_process20 = require("child_process");
 function printNextSteps() {
   const d = (s) => kleur_default.dim(s);
   const b = (s) => kleur_default.bold(s);
@@ -70253,12 +70277,7 @@ async function runMachineBootstrap(opts = {}) {
   await runMachineBootstrapPhase({ dryRun: false });
 }
 function getProjectRoot2() {
-  const gitResult = (0, import_node_child_process20.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    stdio: "pipe"
-  });
-  return gitResult.status === 0 ? (gitResult.stdout ?? "").trim() : process.cwd();
+  return resolveMainProjectRoot(process.cwd());
 }
 function isStrictRegistryMode(opts) {
   return opts.strictRegistry ?? process.env.XTRM_STRICT_REGISTRY === "1";
@@ -70384,7 +70403,7 @@ async function resolveTargetRepos(opts) {
     const scan = await scanXtrmRepos(import_node_path28.default.resolve(opts.root));
     return { targets: scan.managed, incomplete: scan.incomplete };
   }
-  return { targets: [process.cwd()], incomplete: [] };
+  return { targets: [resolveMainProjectRoot(process.cwd())], incomplete: [] };
 }
 function getCurrentPackageRegistryPath() {
   return import_node_path28.default.join(resolvePackageRoot2(), ".xtrm", "registry.json");
@@ -70483,7 +70502,7 @@ function commitAllReposPatch(repoRoot) {
   return { ok: true, message: `committed ${hash2.stdout.trim()}` };
 }
 function spawnGit(repoRoot, args) {
-  return (0, import_node_child_process21.spawnSync)("git", args, {
+  return (0, import_node_child_process20.spawnSync)("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe",
@@ -70542,17 +70561,17 @@ function createUpdateCommand() {
 // src/commands/release.ts
 init_kleur();
 var import_node_fs11 = require("fs");
-var import_node_child_process23 = require("child_process");
+var import_node_child_process22 = require("child_process");
 var import_node_path30 = __toESM(require("path"), 1);
 
 // src/core/xt-reports.ts
 var import_node_fs10 = require("fs");
-var import_node_child_process22 = require("child_process");
+var import_node_child_process21 = require("child_process");
 var import_node_path29 = __toESM(require("path"), 1);
 var DEFAULT_CAP_BYTES = 5e4;
 var REPORT_DIR = ".xtrm/reports";
 function getCommitDate(ref, cwd) {
-  return (0, import_node_child_process22.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
+  return (0, import_node_child_process21.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
     cwd,
     encoding: "utf8"
   }).trim();
@@ -70621,7 +70640,7 @@ var RELEASE_SCOPE_PATTERNS = [
   /^dist(?:\/|$)/
 ];
 function run4(cmd, args, cwd) {
-  const result = (0, import_node_child_process23.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_node_child_process22.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? "",
@@ -71474,7 +71493,7 @@ function renderHuman2(report) {
 init_kleur();
 var import_fs_extra46 = __toESM(require_lib(), 1);
 var import_node_path36 = __toESM(require("path"), 1);
-var import_node_child_process26 = require("child_process");
+var import_node_child_process25 = require("child_process");
 var import_yaml6 = __toESM(require_dist3(), 1);
 
 // src/spec/xml.ts
@@ -71545,10 +71564,10 @@ function toChangeContractNode({ spec, effectiveScrutiny }) {
 }
 
 // src/spec/dispatch.ts
-var import_node_child_process24 = require("child_process");
+var import_node_child_process23 = require("child_process");
 function dispatchPlanner(plannerBeadId, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
-  const r = (0, import_node_child_process24.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
+  const r = (0, import_node_child_process23.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
     encoding: "utf8"
   });
   if (r.status !== 0) {
@@ -71729,7 +71748,7 @@ function createSpecApplyCommand() {
 }
 function bdCreatePlannerBead(args) {
   const bd2 = process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process26.spawnSync)(
+  const r = (0, import_node_child_process25.spawnSync)(
     bd2,
     ["create", "--type", "task", "--priority", "1", "--title", args.title, "--description", args.description, "--json"],
     { encoding: "utf8" }
@@ -71752,7 +71771,7 @@ var import_node_path37 = __toESM(require("path"), 1);
 var import_yaml7 = __toESM(require_dist3(), 1);
 
 // src/spec/drift.ts
-var import_node_child_process27 = require("child_process");
+var import_node_child_process26 = require("child_process");
 async function computeStatus(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const epic = spec.links.epic ?? null;
@@ -71802,7 +71821,7 @@ async function computeStatus(spec, opts = {}) {
   };
 }
 function bdShow(bd2, id) {
-  const r = (0, import_node_child_process27.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process26.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout);
@@ -71811,7 +71830,7 @@ function bdShow(bd2, id) {
   }
 }
 function bdChildrenDiff(bd2, epic, knownChildren) {
-  const r = (0, import_node_child_process27.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process26.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -71822,7 +71841,7 @@ function bdChildrenDiff(bd2, epic, knownChildren) {
   }
 }
 function bdCycles(bd2, epic) {
-  const r = (0, import_node_child_process27.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process26.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -71889,7 +71908,7 @@ var import_node_path38 = __toESM(require("path"), 1);
 var import_yaml8 = __toESM(require_dist3(), 1);
 
 // src/spec/archive-gate.ts
-var import_node_child_process28 = require("child_process");
+var import_node_child_process27 = require("child_process");
 async function checkArchiveGate(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const failures = [];
@@ -71934,7 +71953,7 @@ async function checkArchiveGate(spec, opts = {}) {
   return { ok: failures.length === 0, failures };
 }
 function bdStatus(bd2, id) {
-  const r = (0, import_node_child_process28.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process27.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout).status ?? null;
@@ -71943,7 +71962,7 @@ function bdStatus(bd2, id) {
   }
 }
 function bdKv(bd2, key) {
-  const r = (0, import_node_child_process28.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
+  const r = (0, import_node_child_process27.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
   if (r.status !== 0) return null;
   const value = r.stdout.trim();
   return value.length > 0 ? value : null;

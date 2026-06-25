@@ -13,6 +13,7 @@ import { ensureBdAutoStagePatch, summarizeBdAutoStagePatch } from '../core/bd-au
 import { printDependencyMaintenanceSummary, runDependencyMaintenance, type DependencyMaintenanceSummary } from '../core/dependency-maintenance.js';
 import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { reconcileProjectClaudeHooks } from '../core/claude-runtime-sync.js';
+import { resolveMainProjectRoot } from '../utils/repo-root.js';
 
 type UpdateStatus = 'refreshed' | 'already-current' | 'failed' | 'skipped' | 'incomplete';
 
@@ -53,7 +54,11 @@ async function resolveTargetRepos(opts: Pick<UpdateOpts, 'root' | 'repo' | 'allR
         const scan = await scanXtrmRepos(path.resolve(opts.root));
         return { targets: scan.managed, incomplete: scan.incomplete };
     }
-    return { targets: [process.cwd()], incomplete: [] };
+    // xtrm-6ofgm: default to the MAIN checkout, not a worktree dir. When invoked
+    // from .xtrm/worktrees/<name>/, process.cwd() is the worktree path; baking
+    // that into hook command strings in .claude/settings.json crashes every hook
+    // once the worktree is removed.
+    return { targets: [resolveMainProjectRoot(process.cwd())], incomplete: [] };
 }
 
 function getCurrentPackageRegistryPath(): string {
