@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`xt install --global` no longer clobbers global hooks (xtrm-il7ov, P0).** `runClaudeRuntimeSyncPhase` now early-returns when invoked with `isGlobal: true`: the `~/.claude/settings.json` `hooks` section is left intact and only `ensureGlobalStatusLine()` runs. Every xtrm-managed hook command references `<projectRoot>/.xtrm/hooks/` and is project-scoped by definition; replacing the global `hooks` section with project-hardcoded paths previously wiped hand-configured user hooks (PreCompact `bd prime`, SessionStart `context-mode-cache-heal.mjs`) and caused project hooks to fire twice. Source fix applied in `cli/src/core/claude-runtime-sync.ts` and `cli/dist/index.cjs` rebuilt so the behavior is actually active in the CLI bundle. Two regression tests added in `cli/src/tests/claude-runtime-sync-global-guard.test.ts`. (xtrm-il7ov)
+
 ### Changed
 
 - **Service-skills reusable workflow actions bumped to Node 24 LTS metadata (xtrm-oafcs).** `.github/workflows/service-skills-drift-sweep.yml` updated to `actions/checkout@v5`, `actions/setup-python@v6`, `actions/setup-node@v5`, `actions/upload-artifact@v5`, `actions/download-artifact@v5`, `peter-evans/find-comment@v4`, `peter-evans/create-or-update-comment@v5`, and `peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1` (v8.1.1, SHA-pinned). Clears the Node-20-deprecation warnings GitHub emits on ubuntu-24.04 runners (surfaced from market-data fan-out smoke run 28108345620). (xtrm-oafcs)
