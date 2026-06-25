@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Pre-container cleanup: `service-skills-drift-sweep.yml` deprecated for Mercury, `setup-service-skills-sync` skill removed (xtrm-n0nmv).** The containerized `mercury-devops-collaborator` design (`xtrm-dev/xtrm:docs/devops/mercury-devops-collaborator.md`) supersedes the CI-driven service-skills-sync flow for Mercury repos. The reusable workflow now carries a deprecation preamble at the top: kept for non-Mercury ecosystem consumers, no active maintenance for Mercury. The default-skill `setup-service-skills-sync` (which taught operators how to wire the CI caller) is removed entirely; it was untracked source material on the local clone, never shipped via npm. Supersession notes added to closed beads `xtrm-oafcs` (Node 24 bumps for the runner that's no longer used) and `xtrm-92wx3` (reconcile.py vendoring to Mercury siblings — Phase B fallback path retired). (xtrm-n0nmv)
+
 ### Fixed
 
 - **`xt install --global` no longer clobbers global hooks (xtrm-il7ov, P0).** `runClaudeRuntimeSyncPhase` now early-returns when invoked with `isGlobal: true`: the `~/.claude/settings.json` `hooks` section is left intact and only `ensureGlobalStatusLine()` runs. Every xtrm-managed hook command references `<projectRoot>/.xtrm/hooks/` and is project-scoped by definition; replacing the global `hooks` section with project-hardcoded paths previously wiped hand-configured user hooks (PreCompact `bd prime`, SessionStart `context-mode-cache-heal.mjs`) and caused project hooks to fire twice. Source fix applied in `cli/src/core/claude-runtime-sync.ts` and `cli/dist/index.cjs` rebuilt so the behavior is actually active in the CLI bundle. Two regression tests added in `cli/src/tests/claude-runtime-sync-global-guard.test.ts`. (xtrm-il7ov)
