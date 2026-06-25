@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
+import { spawnSync } from 'child_process';
 
 declare const __dirname: string;
 
@@ -113,4 +114,47 @@ export async function findProjectRoot(): Promise<string> {
   }
 
   return process.cwd();
+}
+
+/**
+ * Resolves the MAIN checkout root for `xt install` / `xt update` / `xt claude`
+ * defaults — never the worktree dir, even when invoked from one (xtrm-6ofgm).
+ *
+ * `git rev-parse --git-common-dir` returns the path to the shared `.git`
+ * directory: in a normal checkout it points at `<root>/.git`; in a linked
+ * worktree it points at `<main>/.git`. The main checkout is therefore the
+ * parent of the common dir.
+ *
+ * Without this, `xt update --apply` run from `.xtrm/worktrees/<name>/`
+ * resolves cwd → worktree path → bakes the worktree path into hook command
+ * strings in `.claude/settings.json`. Worktrees are ephemeral; their paths
+ * vanish and every hook then crashes with MODULE_NOT_FOUND when Claude
+ * opens from the main checkout.
+ *
+ * Falls back to `git rev-parse --show-toplevel` (correct for non-worktree
+ * checkouts) and finally to `cwd` if not inside a git repo at all.
+ */
+export function resolveMainProjectRoot(cwd: string = process.cwd()): string {
+  const commonRaw = spawnSync('git', ['rev-parse', '--git-common-dir'], {
+    cwd, encoding: 'utf8', stdio: 'pipe',
+  });
+  if (commonRaw.status === 0) {
+    const commonDir = (commonRaw.stdout ?? '').trim();
+    if (commonDir) {
+      // commonDir is `git rev-parse --git-common-dir` output (trusted git CLI),
+      // not user input.
+      // nosemgrep
+      const absCommon = path.isAbsolute(commonDir) ? commonDir : path.join(cwd, commonDir);
+      // <main>/.git → parent is <main>. Walk one level up regardless of trailing slash.
+      return path.dirname(absCommon);
+    }
+  }
+  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd, encoding: 'utf8', stdio: 'pipe',
+  });
+  if (top.status === 0) {
+    const topDir = (top.stdout ?? '').trim();
+    if (topDir) return topDir;
+  }
+  return cwd;
 }

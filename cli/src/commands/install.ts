@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import fs from 'fs-extra';
 import path from 'path';
-import { spawnSync } from 'node:child_process';
+import { resolveMainProjectRoot } from '../utils/repo-root.js';
 import { getContext } from '../core/context.js';
 import { t } from '../utils/theme.js';
 import { runPiInstall } from './pi-install.js';
@@ -117,10 +117,9 @@ export async function runMachineBootstrap(opts: { yes?: boolean } = {}): Promise
 }
 
 function getProjectRoot(): string {
-    const gitResult = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-        cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe',
-    });
-    return gitResult.status === 0 ? (gitResult.stdout ?? '').trim() : process.cwd();
+    // xtrm-6ofgm: must resolve the MAIN checkout, not the worktree dir, so
+    // hook command paths in .claude/settings.json never bake a worktree path.
+    return resolveMainProjectRoot(process.cwd());
 }
 
 export function isStrictRegistryMode(opts: { strictRegistry?: boolean }): boolean {
