@@ -1363,6 +1363,33 @@ function withXtrmToolDetails(details: unknown, sourceText: string, toolName: str
 
 const XTRM_BUILTIN_TOOLS = new Set(["bash", "read", "edit", "write", "find", "grep", "ls"]);
 
+// Tools whose RESULT PAYLOAD the model needs verbatim in context. In pi, a tool_result
+// hook's return value REPLACES the model-facing content (not just the TUI render), so
+// compacting these blinds headless agents/specialists — they have no row to expand and
+// would receive only "· N lines" / "· N results". Mutation/no-payload tools are still
+// summarized below, preserving most of the token savings.
+const PAYLOAD_TOOLS = new Set<string>([
+  // Serena reads / inspection
+  "read_file",
+  "find_symbol",
+  "find_referencing_symbols",
+  "get_symbols_overview",
+  "search_for_pattern",
+  "find_file",
+  "list_dir",
+  "read_memory",
+  // JetBrains backend equivalents
+  "jet_brains_find_symbol",
+  "jet_brains_find_referencing_symbols",
+  "jet_brains_get_symbols_overview",
+  "jet_brains_type_hierarchy",
+  // GitNexus reads (same blindness risk)
+  "gitnexus_query",
+  "gitnexus_context",
+  "gitnexus_impact",
+  "gitnexus_detect_changes",
+]);
+
 function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): void {
   const activeToolCalls = new Map<string, string>();
 
@@ -1413,6 +1440,9 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       trackToolCallEnd(event.toolCallId);
       return undefined;
     }
+    // Never compact read/inspect tools: the hook return replaces model-facing content,
+    // so summarizing these would blind headless agents/specialists (no row to expand).
+    if (PAYLOAD_TOOLS.has(event.toolName)) return undefined;
     if (!getPrefs().compactExternalToolResults) return undefined;
 
     const text = getTextContent({ content: event.content as Array<{ type: string; text?: string }> });

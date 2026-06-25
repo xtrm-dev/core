@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `@jaggerxtrm/pi-extensions` v0.9.1
+
+#### Fixed
+
+- **`xtrm-ui` no longer compacts read/inspect tool results into the model's context.** In `pi`, the value a `tool_result` hook returns *replaces* the model-facing content — it is not a display-only transform. For Serena/GitNexus read tools (`read_file`, `find_symbol`, `find_referencing_symbols`, `get_symbols_overview`, `search_for_pattern`, `find_file`, `list_dir`, `read_memory`, the JetBrains equivalents, and `gitnexus_query`/`context`/`impact`/`detect_changes`) the compactor replaced the payload with a one-line `· N lines` / `· N results` summary, blinding headless agents and specialists on the `pi` runtime (they have no TUI row to expand). A new `PAYLOAD_TOOLS` allow-list short-circuits the `tool_result` handler so these pass through verbatim regardless of the `compactExternalToolResults` pref; mutation/no-payload tools keep their compact one-line summaries. Read-tool rows now render full output in the interactive `pi` TUI. (xtrm-ikg38)
+
 ## [v0.9.0] — 2026-06-07
 
 ### Added
