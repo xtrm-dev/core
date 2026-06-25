@@ -1,5 +1,11 @@
 name: Service-Skills Drift Sweep
 
+# DEPRECATED for Mercury (2026-06-26):
+# Mercury service-skills-sync moves to the containerized devops-bot
+# (see xtrm-dev/xtrm:docs/devops/mercury-devops-collaborator.md).
+# This reusable workflow is KEPT for non-Mercury ecosystem consumers
+# who still want a CI-driven path. No active maintenance for Mercury.
+#
 # Reusable workflow — call from a consumer repo with:
 #   jobs:
 #     drift:
