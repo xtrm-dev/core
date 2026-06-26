@@ -96,3 +96,20 @@ hooks/tsconfig-cache.json
 
 # Beads / Dolt files (added by bd init)
 .beads/proxieddb/
+
+# Local agent/runtime dotfile artifacts (generated per checkout, not source)
+.claude/settings.json
+.claude/service-registry.json
+.pi/
+.serena/
+.wolf/
+.mcp.json
+.zed/
+.codex
+.smoke-test
+.specialists/executor-result.md
+.beads/interactions.jsonl
+
+# Nested tool runtime folders
+cli/.pi/
+packages/*/.serena/
