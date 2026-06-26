@@ -90,7 +90,7 @@
   "overrides": {
     "fast-uri": "3.1.2",
     "@aws-sdk/xml-builder": "3.972.22",
-    "vite": "8.0.12"
+    "vite": "8.0.16"
   },
   "pi": {
     "extensions": [
@@ -107,7 +107,7 @@
   },
   "pnpm": {
     "overrides": {
-      "vite": "8.0.12"
+      "vite": "8.0.16"
     }
   }
 }
