@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `@jaggerxtrm/pi-extensions` v0.9.1
+
+#### Fixed
+
+- **`xtrm-ui` no longer compacts read/inspect tool results into the model's context.** In `pi`, the value a `tool_result` hook returns *replaces* the model-facing content — it is not a display-only transform. For Serena/GitNexus read tools (`read_file`, `find_symbol`, `find_referencing_symbols`, `get_symbols_overview`, `search_for_pattern`, `find_file`, `list_dir`, `read_memory`, the JetBrains equivalents, and `gitnexus_query`/`context`/`impact`/`detect_changes`) the compactor replaced the payload with a one-line `· N lines` / `· N results` summary — the full text survived only in `details.xtrmOriginalText` for the interactive TUI expand view, so any pi agent that loads Serena via `pi-serena-tools` was blind on reads. A new `PAYLOAD_TOOLS` allow-list short-circuits the `tool_result` handler (`return undefined`) so these pass through verbatim regardless of the `compactExternalToolResults` pref; mutation/no-payload tools keep their compact one-line summaries. `pi-serena-compact` is deliberately a `tool_result` no-op ("xtrm-ui owns external tool compaction globally") and is intentionally untouched. (xtrm-ikg38)
+
 ### Changed
 
 - **Pre-container cleanup: `service-skills-drift-sweep.yml` deprecated for Mercury, `setup-service-skills-sync` skill removed (xtrm-n0nmv).** The containerized `mercury-devops-collaborator` design (`xtrm-dev/xtrm:docs/devops/mercury-devops-collaborator.md`) supersedes the CI-driven service-skills-sync flow for Mercury repos. The reusable workflow now carries a deprecation preamble at the top: kept for non-Mercury ecosystem consumers, no active maintenance for Mercury. The default-skill `setup-service-skills-sync` (which taught operators how to wire the CI caller) is removed entirely; it was untracked source material on the local clone, never shipped via npm. Supersession notes added to closed beads `xtrm-oafcs` (Node 24 bumps for the runner that's no longer used) and `xtrm-92wx3` (reconcile.py vendoring to Mercury siblings — Phase B fallback path retired). (xtrm-n0nmv)
