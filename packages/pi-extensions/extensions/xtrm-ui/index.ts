@@ -1365,9 +1365,13 @@ const XTRM_BUILTIN_TOOLS = new Set(["bash", "read", "edit", "write", "find", "gr
 
 // Tools whose RESULT PAYLOAD the model needs verbatim in context. In pi, a tool_result
 // hook's return value REPLACES the model-facing content (not just the TUI render), so
-// compacting these blinds headless agents/specialists — they have no row to expand and
-// would receive only "· N lines" / "· N results". Mutation/no-payload tools are still
-// summarized below, preserving most of the token savings.
+// compacting these would replace the model-facing payload with "· N lines" / "· N results"
+// for every pi surface that loads xtrm-ui — interactive sessions (where the human can
+// expand the TUI row but the model cannot) and any headless pi run that doesn't pass
+// --no-extensions. Specialists are unaffected: they run with --no-extensions and never
+// load xtrm-ui (selectively re-attach only quality-gates / service-skills / pi-gitnexus /
+// pi-serena-tools). Mutation/no-payload tools are still summarized below, preserving
+// most of the token savings.
 const PAYLOAD_TOOLS = new Set<string>([
   // Serena reads / inspection
   "read_file",
