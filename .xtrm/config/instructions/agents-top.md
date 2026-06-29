@@ -30,6 +30,7 @@ Use these as the minimal operational surface; use `--help` for full syntax.
 - `bd update <id> --claim`, `bd remember "<insight>"`, `bd close <id> --reason="..."`
 - `bv --robot-triage --format toon`, `bv --robot-next` — never bare `bv`
 - `xt report list` / latest report file, `xt update --apply`, `xt end`
+- `xt worktree --help` — PR/branch/restart audit primitives (`audit-prs`, `branch-gc`, `restart-audit`); pair with specialists `doctor --pr-drift` / `doctor --reap-dead-jobs`. Details: `/using-xtrm`.
 - `gh pr list --state merged --limit 5` or equivalent host CLI when PR context matters
 - `sp --help`, `sp list` / `specialists list`, `sp ps`, `sp feed <job-id>`, `sp result <job-id>`
 

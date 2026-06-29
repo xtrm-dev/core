@@ -105,6 +105,22 @@ bd recall "quality-check-runs-twice-..."
 
 ---
 
+## PR / branch / restart audit primitives
+
+`xt worktree` exposes durable PR drift, branch GC, and restart audit primitives that downstream agents (Mercury devops collaborator, specialists orchestrators) compose instead of reimplementing inline `gh`/`git` bash.
+
+| Command | Use when | Composes with |
+|---|---|---|
+| `xt worktree audit-prs [--json]` | You want a structured report of every xt worktree's PR merge-state (`clean` / `needs-rebase` / `conflicted` / `blocked` / `stale` / `unknown`) without modifying branches | Specialists `doctor --pr-drift` consumes the same `gh pr view` shape; `sp ps --needs-attention` filters jobs whose PR is non-clean |
+| `xt worktree branch-gc [--prefix xt/] [--apply --yes] [--json]` | Stale `feature/<bead>-executor\|debugger\|reviewer` or `xt/*` branches need cleanup after merge; default is dry-run, `--apply` deletes only merged/closed PR branches | Run after `/xt-end` / `/xt-merge` to drop the merged branch trail; pairs with specialists chain-cleanup after reviewer PASS |
+| `xt worktree restart-audit [--prefix xt/] [--json]` | Container/host restarted; you need a startup/cron-safe audit of orphaned worktree dirs, branch/worktree drift, and PR-attention candidates | Pairs with specialists `doctor --reap-dead-jobs` — worktree-side orphans (this) + job-side orphans (specialists) cover both axes of a restart-recovery sweep |
+
+Safety: all three are read-only by default. `branch-gc` requires explicit `--apply --yes` to delete. Auto-rebase / force-push is never performed — conflict states are reported, never hand-resolved.
+
+`--json` output on all three includes structured fields (repo, branch, pr_url/pr_number, merge_state, action, outcome, duration_ms, redacted error) so cron and Mercury infra can consume them without parsing human output.
+
+---
+
 ## Prompt Shaping (silent, before every non-trivial task)
 
 | Task type | Apply |
