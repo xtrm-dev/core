@@ -66463,6 +66463,12 @@ function createHelpCommand() {
       "    a ready-to-run resume hint.",
       "  xt worktree doctor",
       "    Diagnose nested/prunable/orphaned worktree state and show cleanup commands.",
+      "  xt worktree audit-prs [--json]",
+      "    Audit PR merge-state for xt worktrees; reports needs-rebase/conflicts/blocked states without modifying branches.",
+      "  xt worktree branch-gc [--prefix xt/] [--apply --yes] [--json]",
+      "    Dry-run branch cleanup for managed PR branches; deletes only closed/merged PR branches when --apply is explicit.",
+      "  xt worktree restart-audit [--prefix xt/] [--json]",
+      "    Startup/cron-safe audit of orphaned dirs, branch/worktree drift, PR attention, and cleanup suggestions.",
       "  xt worktree clean [--orphans] [--dry-run] [--yes/-y]",
       "    Remove merged worktrees; with --orphans also prune stale metadata and orphan dirs.",
       "  xt worktree remove <name> [--yes/-y]",
@@ -67353,21 +67359,477 @@ function isMergedIntoMain(branch, repoRoot) {
   });
   return (r.stdout ?? "").includes(branchShort);
 }
+function normalizeBranchName(branch) {
+  return branch.replace("refs/heads/", "");
+}
+function redactGhError(value) {
+  return value.replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[redacted-token]").replace(/(token|authorization|password)=([^\s]+)/gi, "$1=[redacted]").trim().slice(0, 500);
+}
+function remediationFor(classification) {
+  switch (classification) {
+    case "no-pr":
+      return "open a PR or skip PR drift remediation for this branch";
+    case "clean":
+      return "no PR drift remediation needed";
+    case "needs-rebase":
+      return "rebase branch onto the PR base and push with --force-with-lease";
+    case "conflicted":
+      return "manual conflict resolution required before rebase/merge can continue";
+    case "blocked":
+      return "inspect GitHub checks/review/draft status before merge or rebase automation";
+    case "closed":
+      return "PR is closed or merged; branch may be eligible for cleanup after local checks";
+    case "unknown":
+      return "retry gh PR status lookup or inspect the PR manually";
+  }
+}
+function classifyPrStatus(state, mergeStateStatus, mergeable) {
+  const normalizedState = state?.toUpperCase() ?? null;
+  if (!normalizedState) return "no-pr";
+  if (normalizedState === "CLOSED" || normalizedState === "MERGED") return "closed";
+  if (normalizedState !== "OPEN") return "unknown";
+  const mergeState = mergeStateStatus?.toUpperCase() ?? null;
+  switch (mergeState) {
+    case "CLEAN":
+    case "HAS_HOOKS":
+      return "clean";
+    case "BEHIND":
+      return "needs-rebase";
+    case "DIRTY":
+      return "conflicted";
+    case "BLOCKED":
+    case "DRAFT":
+    case "UNSTABLE":
+      return "blocked";
+  }
+  const normalizedMergeable = mergeable?.toUpperCase() ?? null;
+  if (normalizedMergeable === "MERGEABLE") return "clean";
+  if (normalizedMergeable === "CONFLICTING") return "conflicted";
+  return "unknown";
+}
+function resolveBaseSha(repoRoot, baseRefName) {
+  if (!baseRefName) return null;
+  const refResult = git2(["rev-parse", `origin/${baseRefName}`], repoRoot);
+  return refResult.ok && refResult.out ? refResult.out : null;
+}
+function buildPrStatus(branch, pr, repoRoot, error51) {
+  const branchShort = normalizeBranchName(branch);
+  if (error51) {
+    return {
+      component: "xt.pr_status",
+      branch: branchShort,
+      state: null,
+      merge_state: null,
+      classification: "unknown",
+      outcome: "error",
+      remediation: remediationFor("unknown"),
+      error: error51
+    };
+  }
+  if (!pr) {
+    return {
+      component: "xt.pr_status",
+      branch: branchShort,
+      state: null,
+      merge_state: null,
+      classification: "no-pr",
+      outcome: "no_pr",
+      remediation: remediationFor("no-pr")
+    };
+  }
+  const state = pr.state?.toUpperCase() ?? null;
+  const mergeState = pr.mergeStateStatus?.toUpperCase() ?? null;
+  const classification = classifyPrStatus(state, mergeState, pr.mergeable);
+  const baseSha = pr.baseRefOid ?? resolveBaseSha(repoRoot, pr.baseRefName);
+  return {
+    component: "xt.pr_status",
+    branch: branchShort,
+    state,
+    merge_state: mergeState,
+    classification,
+    outcome: "ok",
+    ...pr.url ? { pr_url: pr.url } : {},
+    ...typeof pr.number === "number" ? { pr_number: pr.number } : {},
+    ...pr.headRefOid ? { head_sha: pr.headRefOid } : {},
+    ...baseSha ? { base_sha: baseSha } : {},
+    ...pr.baseRefName ? { base_ref: pr.baseRefName } : {},
+    remediation: remediationFor(classification)
+  };
+}
 function getPrStatus(branch, repoRoot) {
-  const branchShort = branch.replace("refs/heads/", "");
-  const r = (0, import_node_child_process10.spawnSync)("gh", ["pr", "list", "--head", branchShort, "--state", "all", "--json", "state,url", "--limit", "1"], {
+  const branchShort = normalizeBranchName(branch);
+  const r = (0, import_node_child_process10.spawnSync)("gh", [
+    "pr",
+    "list",
+    "--head",
+    branchShort,
+    "--state",
+    "all",
+    "--json",
+    "state,url,number,mergeStateStatus,mergeable,headRefOid,baseRefName",
+    "--limit",
+    "1"
+  ], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe"
   });
-  if (r.status !== 0) return "unknown";
+  if (r.status !== 0) {
+    return buildPrStatus(branchShort, null, repoRoot, redactGhError(r.stderr || "gh pr list failed"));
+  }
   try {
     const data = JSON.parse(r.stdout ?? "[]");
-    if (data.length === 0) return "no PR";
-    return `${data[0].state.toLowerCase()} (${data[0].url})`;
-  } catch {
-    return "unknown";
+    if (!Array.isArray(data) || data.length === 0) return buildPrStatus(branchShort, null, repoRoot);
+    return buildPrStatus(branchShort, data[0] ?? null, repoRoot);
+  } catch (error51) {
+    const message = error51 instanceof Error ? error51.message : String(error51);
+    return buildPrStatus(branchShort, null, repoRoot, redactGhError(message));
   }
+}
+function suggestedActionFor(status) {
+  switch (status.classification) {
+    case "no-pr":
+      return "open PR if this branch is still active";
+    case "clean":
+      return "no operator action required";
+    case "needs-rebase":
+      return "rebase branch onto the PR base, then push with --force-with-lease";
+    case "conflicted":
+      return "operator must resolve conflicts manually";
+    case "blocked":
+      return "operator must inspect blocked checks/reviews/draft state";
+    case "closed":
+      return "review for safe worktree cleanup";
+    case "unknown":
+      return "operator must inspect PR status manually";
+  }
+}
+function suggestionCommandFor(repoRoot, status) {
+  const branch = status.branch;
+  const prRef = status.pr_number ? String(status.pr_number) : status.pr_url;
+  switch (status.classification) {
+    case "needs-rebase": {
+      const baseRef = status.base_ref ?? "main";
+      return `git -C ${repoRoot} checkout ${branch} && git -C ${repoRoot} rebase origin/${baseRef} && git -C ${repoRoot} push --force-with-lease`;
+    }
+    case "conflicted":
+    case "blocked":
+      return prRef ? `gh pr view ${prRef} --web` : `gh pr list --head ${branch} --state all`;
+    case "closed":
+      return "xt worktree clean --dry-run";
+    case "unknown":
+      return `gh pr list --head ${branch} --state all --json state,url,number,mergeStateStatus,mergeable`;
+    case "no-pr":
+      return `gh pr create --head ${branch}`;
+    case "clean":
+      return "none";
+  }
+}
+function emptyPrAuditSummary() {
+  return {
+    "no-pr": 0,
+    clean: 0,
+    "needs-rebase": 0,
+    conflicted: 0,
+    blocked: 0,
+    closed: 0,
+    unknown: 0
+  };
+}
+function auditWorktreePrs(repoRoot, checkedAtMs = Date.now()) {
+  const findings = listXtWorktrees(repoRoot).map((wt) => {
+    const status = getPrStatus(wt.branch, repoRoot);
+    return {
+      component: "xt.pr_audit.finding",
+      repo: repoRoot,
+      branch: status.branch,
+      ...status.pr_url ? { pr_url: status.pr_url } : {},
+      ...typeof status.pr_number === "number" ? { pr_number: status.pr_number } : {},
+      state: status.state,
+      merge_state: status.merge_state,
+      classification: status.classification,
+      outcome: status.outcome,
+      suggested_action: suggestedActionFor(status),
+      suggestion_command: suggestionCommandFor(repoRoot, status),
+      checked_at_ms: checkedAtMs,
+      ...status.error ? { error: status.error } : {}
+    };
+  });
+  const summary = emptyPrAuditSummary();
+  for (const finding of findings) {
+    summary[finding.classification] += 1;
+  }
+  return {
+    component: "xt.pr_audit",
+    repo: repoRoot,
+    checked_at_ms: checkedAtMs,
+    findings,
+    summary
+  };
+}
+function isAttentionFinding(finding) {
+  return ["needs-rebase", "conflicted", "blocked", "unknown"].includes(finding.classification);
+}
+function printPrAuditHuman(report) {
+  console.log(t.bold("\n  xt worktree PR audit\n"));
+  console.log(kleur_default.dim(`  repo: ${report.repo}`));
+  console.log(kleur_default.dim(`  checked_at_ms: ${report.checked_at_ms}`));
+  console.log(kleur_default.dim(`  worktrees checked: ${report.findings.length}`));
+  const attention = report.findings.filter(isAttentionFinding);
+  console.log(kleur_default.dim(`  operator attention: ${attention.length}`));
+  if (report.findings.length === 0) {
+    console.log(kleur_default.dim("\n  No xt worktrees found\n"));
+    return;
+  }
+  for (const finding of report.findings) {
+    const marker = isAttentionFinding(finding) ? kleur_default.yellow("!") : kleur_default.green("\u2713");
+    const pr = finding.pr_url ? ` ${kleur_default.dim(finding.pr_url)}` : "";
+    console.log(`
+  ${marker} ${kleur_default.bold(finding.branch)} ${finding.classification}${pr}`);
+    if (finding.merge_state) console.log(kleur_default.dim(`    merge_state: ${finding.merge_state}`));
+    console.log(kleur_default.dim(`    action: ${finding.suggested_action}`));
+    console.log(kleur_default.dim(`    command: ${finding.suggestion_command}`));
+    if (finding.error) console.log(kleur_default.dim(`    error: ${finding.error}`));
+  }
+  console.log("");
+}
+function normalizeBranchGcPrefixes(input) {
+  const prefixes = (input ?? "xt/").split(",").map((prefix) => prefix.trim()).filter(Boolean).map((prefix) => prefix.endsWith("/") || prefix.endsWith("*") ? prefix.replace(/\*$/, "") : `${prefix}/`);
+  return prefixes.length > 0 ? [...new Set(prefixes)] : ["xt/"];
+}
+function listManagedBranches(repoRoot, prefixes) {
+  const branches = git2(["for-each-ref", "--format=%(refname:short)", "refs/heads"], repoRoot);
+  if (!branches.ok) return [];
+  return branches.out.split("\n").map((line) => line.trim()).filter(Boolean).filter((branch) => prefixes.some((prefix) => branch.startsWith(prefix))).sort();
+}
+function checkedOutBranches(repoRoot) {
+  return new Set(parseGitWorktreeList(repoRoot).map((wt) => wt.branch ? normalizeBranchName(wt.branch) : null).filter((branch) => Boolean(branch)));
+}
+function branchGcReason(status, isCheckedOut) {
+  if (isCheckedOut) return "branch is checked out in a worktree; remove/finish the worktree first";
+  if (status.state === "MERGED") return "PR is merged";
+  if (status.state === "CLOSED") return "PR is closed";
+  switch (status.classification) {
+    case "closed":
+      return "PR is safely closed";
+    case "no-pr":
+      return "no PR found for branch";
+    case "unknown":
+      return status.error ? `unknown PR state: ${status.error}` : "unknown PR state";
+    case "clean":
+    case "needs-rebase":
+    case "conflicted":
+    case "blocked":
+      return `PR is active (${status.classification})`;
+  }
+}
+function buildBranchGcFinding(repoRoot, branch, status, checkedAtMs, isCheckedOut) {
+  const shouldDelete = !isCheckedOut && (status.state === "MERGED" || status.state === "CLOSED" || status.classification === "closed");
+  return {
+    component: "xt.branch_gc.finding",
+    repo: repoRoot,
+    branch,
+    pr_state: status.state,
+    classification: status.classification,
+    action: shouldDelete ? "delete" : "skip",
+    reason: branchGcReason(status, isCheckedOut),
+    outcome: shouldDelete ? "dry_run" : "skipped",
+    checked_at_ms: checkedAtMs,
+    ...shouldDelete ? { command: `git -C ${repoRoot} branch -D ${branch}` } : {},
+    ...status.pr_url ? { pr_url: status.pr_url } : {},
+    ...typeof status.pr_number === "number" ? { pr_number: status.pr_number } : {},
+    ...status.error ? { error: status.error } : {}
+  };
+}
+function summarizeBranchGc(findings) {
+  return {
+    delete: findings.filter((finding) => finding.action === "delete").length,
+    skip: findings.filter((finding) => finding.action === "skip").length,
+    deleted: findings.filter((finding) => finding.outcome === "deleted").length,
+    failed: findings.filter((finding) => finding.outcome === "failed").length
+  };
+}
+function planBranchGc(repoRoot, prefixes, checkedAtMs = Date.now()) {
+  const checkedOut = checkedOutBranches(repoRoot);
+  const findings = listManagedBranches(repoRoot, prefixes).map((branch) => {
+    const status = getPrStatus(branch, repoRoot);
+    return buildBranchGcFinding(repoRoot, branch, status, checkedAtMs, checkedOut.has(branch));
+  });
+  return {
+    component: "xt.branch_gc",
+    repo: repoRoot,
+    checked_at_ms: checkedAtMs,
+    mode: "dry_run",
+    prefixes,
+    findings,
+    summary: summarizeBranchGc(findings)
+  };
+}
+function applyBranchGc(report) {
+  const findings = report.findings.map((finding) => {
+    if (finding.action !== "delete") return finding;
+    const result = git2(["branch", "-D", finding.branch], report.repo);
+    if (result.ok) {
+      return { ...finding, outcome: "deleted" };
+    }
+    return {
+      ...finding,
+      outcome: "failed",
+      error: redactGhError(result.err || `failed to delete ${finding.branch}`)
+    };
+  });
+  return {
+    ...report,
+    mode: "apply",
+    findings,
+    summary: summarizeBranchGc(findings)
+  };
+}
+function printBranchGcHuman(report) {
+  console.log(t.bold("\n  xt worktree branch GC\n"));
+  console.log(kleur_default.dim(`  repo: ${report.repo}`));
+  console.log(kleur_default.dim(`  mode: ${report.mode}`));
+  console.log(kleur_default.dim(`  prefixes: ${report.prefixes.join(", ")}`));
+  console.log(kleur_default.dim(`  branches checked: ${report.findings.length}`));
+  console.log(kleur_default.dim(`  delete candidates: ${report.summary.delete}`));
+  if (report.findings.length === 0) {
+    console.log(kleur_default.dim("\n  No managed branches found\n"));
+    return;
+  }
+  for (const finding of report.findings) {
+    const marker = finding.action === "delete" ? kleur_default.yellow("delete") : kleur_default.dim("skip");
+    const outcome = finding.outcome === "dry_run" ? "dry-run" : finding.outcome;
+    console.log(`
+  ${marker} ${kleur_default.bold(finding.branch)} ${kleur_default.dim(`(${outcome})`)}`);
+    console.log(kleur_default.dim(`    pr_state: ${finding.pr_state ?? "null"} classification: ${finding.classification}`));
+    console.log(kleur_default.dim(`    reason: ${finding.reason}`));
+    if (finding.command) console.log(kleur_default.dim(`    command: ${finding.command}`));
+    if (finding.error) console.log(kleur_default.dim(`    error: ${finding.error}`));
+  }
+  if (report.mode === "dry_run" && report.summary.delete > 0) {
+    console.log(kleur_default.yellow("\n  Dry run \u2014 no branches deleted. Re-run with --apply --yes to delete candidates.\n"));
+  } else {
+    console.log("");
+  }
+}
+function emptyRestartAuditSummary() {
+  return {
+    "orphaned-managed-dir": 0,
+    "prunable-worktree": 0,
+    "branch-without-worktree": 0,
+    "pr-attention": 0,
+    "closed-pr-branch": 0
+  };
+}
+function restartAuditFinding(repoRoot, checkedAtMs, finding) {
+  return {
+    component: "xt.restart_audit.finding",
+    repo: repoRoot,
+    checked_at_ms: checkedAtMs,
+    ...finding
+  };
+}
+function isPrAttentionClassification(classification) {
+  return ["needs-rebase", "conflicted", "blocked", "unknown"].includes(classification);
+}
+function restartAudit(repoRoot, prefixes, checkedAtMs = Date.now()) {
+  const findings = [];
+  const worktrees = listXtWorktrees(repoRoot);
+  const worktreeByBranch = /* @__PURE__ */ new Map();
+  for (const wt of worktrees) {
+    const branch = normalizeBranchName(wt.branch);
+    worktreeByBranch.set(branch, wt);
+    if (wt.prunable) {
+      findings.push(restartAuditFinding(repoRoot, checkedAtMs, {
+        worktree_path: wt.path,
+        branch,
+        pr_classification: null,
+        finding_kind: "prunable-worktree",
+        suggested_action: "prune stale git worktree metadata after verifying no active session owns it",
+        suggestion_command: `git -C ${repoRoot} worktree prune --expire now`
+      }));
+    }
+  }
+  for (const orphanPath of listOrphanManagedDirs(repoRoot)) {
+    findings.push(restartAuditFinding(repoRoot, checkedAtMs, {
+      worktree_path: orphanPath,
+      branch: null,
+      pr_classification: null,
+      finding_kind: "orphaned-managed-dir",
+      suggested_action: "inspect orphaned managed directory, then run orphan cleanup if safe",
+      suggestion_command: "xt worktree clean --orphans --dry-run"
+    }));
+  }
+  for (const branch of listManagedBranches(repoRoot, prefixes)) {
+    const status = getPrStatus(branch, repoRoot);
+    const wt = worktreeByBranch.get(branch);
+    const baseFields = {
+      worktree_path: wt?.path ?? null,
+      branch,
+      pr_classification: status.classification,
+      ...status.pr_url ? { pr_url: status.pr_url } : {},
+      ...typeof status.pr_number === "number" ? { pr_number: status.pr_number } : {},
+      ...status.error ? { error: status.error } : {}
+    };
+    if (!wt) {
+      findings.push(restartAuditFinding(repoRoot, checkedAtMs, {
+        ...baseFields,
+        finding_kind: "branch-without-worktree",
+        suggested_action: "inspect branch owner/state; if PR is closed, branch-gc can propose cleanup",
+        suggestion_command: `xt worktree branch-gc --prefix ${prefixes.join(",")} --json`
+      }));
+    }
+    if (isPrAttentionClassification(status.classification)) {
+      findings.push(restartAuditFinding(repoRoot, checkedAtMs, {
+        ...baseFields,
+        finding_kind: "pr-attention",
+        suggested_action: suggestedActionFor(status),
+        suggestion_command: suggestionCommandFor(repoRoot, status)
+      }));
+    }
+    if (status.classification === "closed") {
+      findings.push(restartAuditFinding(repoRoot, checkedAtMs, {
+        ...baseFields,
+        finding_kind: "closed-pr-branch",
+        suggested_action: wt ? "PR is closed; finish/remove the worktree before branch cleanup" : "PR is closed; branch-gc can propose safe local branch cleanup",
+        suggestion_command: wt ? "xt worktree clean --dry-run" : `xt worktree branch-gc --prefix ${prefixes.join(",")} --json`
+      }));
+    }
+  }
+  const summary = emptyRestartAuditSummary();
+  for (const finding of findings) {
+    summary[finding.finding_kind] += 1;
+  }
+  return {
+    component: "xt.restart_audit",
+    repo: repoRoot,
+    checked_at_ms: checkedAtMs,
+    prefixes,
+    findings,
+    summary
+  };
+}
+function printRestartAuditHuman(report) {
+  console.log(t.bold("\n  xt worktree restart audit\n"));
+  console.log(kleur_default.dim(`  repo: ${report.repo}`));
+  console.log(kleur_default.dim(`  checked_at_ms: ${report.checked_at_ms}`));
+  console.log(kleur_default.dim(`  prefixes: ${report.prefixes.join(", ")}`));
+  console.log(kleur_default.dim(`  findings: ${report.findings.length}`));
+  if (report.findings.length === 0) {
+    console.log(t.success("\n  \u2713 No restart reconciliation findings\n"));
+    return;
+  }
+  for (const finding of report.findings) {
+    console.log(`
+  ${kleur_default.yellow("!")} ${kleur_default.bold(finding.finding_kind)}`);
+    console.log(kleur_default.dim(`    branch: ${finding.branch ?? "null"}`));
+    console.log(kleur_default.dim(`    worktree_path: ${finding.worktree_path ?? "null"}`));
+    console.log(kleur_default.dim(`    pr_classification: ${finding.pr_classification ?? "null"}`));
+    console.log(kleur_default.dim(`    action: ${finding.suggested_action}`));
+    console.log(kleur_default.dim(`    command: ${finding.suggestion_command}`));
+    if (finding.error) console.log(kleur_default.dim(`    error: ${finding.error}`));
+  }
+  console.log("");
 }
 function removeWorktreeEntry(repoRoot, worktreePath) {
   const remove = git2(["worktree", "remove", worktreePath, "--force"], repoRoot);
@@ -67420,6 +67882,45 @@ function createWorktreeCommand() {
       console.log("");
     }
   });
+  cmd.command("audit-prs").description("Audit xt worktree PR merge-state and operator attention items (audit-only)").option("--json", "Print machine-readable audit report", false).action((opts) => {
+    const repoRoot = getRepoRoot(process.cwd());
+    const report = auditWorktreePrs(repoRoot);
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    printPrAuditHuman(report);
+  });
+  cmd.command("branch-gc").description("Dry-run or apply deletion of managed branches whose PRs are closed or merged").option("--prefix <prefixes>", "Comma-separated managed branch prefixes (default: xt/)", "xt/").option("--apply", "Delete candidates (default is dry-run)", false).option("-y, --yes", "Skip confirmation prompt with --apply", false).option("--json", "Print machine-readable branch GC report", false).action(async (opts) => {
+    const repoRoot = getRepoRoot(process.cwd());
+    const prefixes = normalizeBranchGcPrefixes(opts.prefix);
+    let report = planBranchGc(repoRoot, prefixes);
+    if (opts.apply && report.summary.delete > 0) {
+      const doDelete = await confirmDestructiveAction({
+        yes: opts.yes,
+        message: `Delete ${report.summary.delete} managed branch(es)?`,
+        initial: false
+      });
+      if (doDelete) {
+        report = applyBranchGc(report);
+      }
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    printBranchGcHuman(report);
+  });
+  cmd.command("restart-audit").description("Restart-safe audit of managed worktrees, branches, and PR drift (audit-only)").option("--prefix <prefixes>", "Comma-separated managed branch prefixes (default: xt/)", "xt/").option("--json", "Print machine-readable restart audit report", false).action((opts) => {
+    const repoRoot = getRepoRoot(process.cwd());
+    const prefixes = normalizeBranchGcPrefixes(opts.prefix);
+    const report = restartAudit(repoRoot, prefixes);
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    printRestartAuditHuman(report);
+  });
   cmd.command("doctor").description("Diagnose stale/nested/orphaned worktree state and suggest remediation").action(() => {
     const repoRoot = getRepoRoot(process.cwd());
     const xtWorktrees = listXtWorktrees(repoRoot);
@@ -67459,7 +67960,7 @@ function createWorktreeCommand() {
     const repoRoot = getRepoRoot(process.cwd());
     const worktrees = listXtWorktrees(repoRoot);
     const merged = worktrees.filter(
-      (wt) => isMergedIntoMain(wt.branch, repoRoot) || getPrStatus(wt.branch, repoRoot).startsWith("merged")
+      (wt) => isMergedIntoMain(wt.branch, repoRoot) || getPrStatus(wt.branch, repoRoot).state === "MERGED"
     );
     const orphanDirs = opts.orphans ? listOrphanManagedDirs(repoRoot) : [];
     if (merged.length === 0 && orphanDirs.length === 0 && !opts.orphans) {
