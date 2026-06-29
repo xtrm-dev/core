@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `xtrm-cli`
+
+#### Added
+
+- **`xt worktree` durable PR/worktree drift primitives (xtrm-lk4on).** Added structured PR merge-state classification (`clean`, `needs-rebase`, `conflicted`, `blocked`, `closed`, `unknown`), `xt worktree audit-prs [--json]` for operator/bot PR attention reports, `xt worktree branch-gc [--prefix xt/] [--apply --yes] [--json]` with dry-run-by-default local branch cleanup for closed/merged PR branches, and `xt worktree restart-audit [--prefix xt/] [--json]` for startup/cron-safe reconciliation of orphaned managed dirs, branch/worktree drift, PR attention, and cleanup suggestions. All new surfaces emit structured JSON with `component`, `repo`, branch/PR fields, classification/action/outcome, `checked_at_ms`, and redacted error details; destructive branch deletion requires explicit apply/confirmation and skips open/unknown/no-PR/checked-out branches. Covered by mocked `gh` tests plus temp-repo fake-gh smoke validation.
+
 ### `@jaggerxtrm/pi-extensions` v0.9.1
 
 #### Fixed
