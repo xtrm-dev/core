@@ -82,6 +82,7 @@ Keep only the commands an agent needs without another manual. Use `--help` for f
 - `bv --robot-triage --format toon` / `bv --robot-next` — ranked work selection; never run bare `bv`.
 - `xt update --apply` — refresh xtrm-managed assets in a repo.
 - `xt end` — close worktree session / PR flow when appropriate.
+- `xt worktree audit-prs --json`, `branch-gc --json`, `restart-audit --json` — PR drift, safe branch-GC dry run, and restart/handoff hygiene.
 
 ### Specialists
 
