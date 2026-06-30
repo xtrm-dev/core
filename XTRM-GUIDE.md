@@ -285,6 +285,9 @@ Enable with `xt skills enable <pack-name>`.
 | `pi` | Launch Pi in a sandboxed worktree |
 | `end` | Close worktree session: rebase, push, PR, cleanup |
 | `worktree list` | List all active worktrees |
+| `worktree audit-prs` | Read-only PR drift audit for xt worktree PRs (`needs-rebase`, conflicts, blocked/closed/merged states; JSON available) |
+| `worktree branch-gc` | Safe branch cleanup for merged/closed managed PR branches; dry-run by default, `--apply --yes` required to delete |
+| `worktree restart-audit` | Read-only restart/handoff audit for orphaned dirs, branches without worktrees, and PR attention findings |
 | `worktree clean` | Remove stale/merged worktrees |
 | `worktree remove` | Remove a specific worktree |
 | `docs` | Documentation inspection and drift-check suite (`xtrm docs --help`) |

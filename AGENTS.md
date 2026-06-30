@@ -148,6 +148,9 @@ bv --robot-insights | jq '.Cycles'               # Circular deps — must fix
 - `xt claude` — launch Claude Code in a sandboxed worktree
 - `xt pi` — launch Pi in a sandboxed worktree
 - `xt end` — close session: commit / push / PR / cleanup
+- `xt worktree audit-prs --json` — read-only PR drift / needs-rebase audit before merge queues
+- `xt worktree branch-gc --prefix xt/ --json` — dry-run merged/closed branch cleanup; add `--apply --yes` only when deletion is intended
+- `xt worktree restart-audit --json` — read-only restart/handoff hygiene audit for orphaned dirs, branch/worktree drift, and PR attention
 <!-- xtrm:end -->
 
 <!-- gitnexus:start -->
