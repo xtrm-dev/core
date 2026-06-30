@@ -53,10 +53,15 @@ Use these as the minimal operational surface; use `--help` for full syntax.
 - Before commit or handoff, verify affected scope.
 - Prefer targeted symbol/file reads and precise edits over whole-tree dumps.
 
+## Context and output management
+
+- Use context-mode automatically to keep command/file output compact: `ctx_execute` for logs, tests, large command output, and structured data processing; `ctx_execute_file` for deriving facts from files without dumping contents; `ctx_batch_execute` for multi-command research; `ctx_search` for previously indexed material.
+- Use normal read/edit tools only when exact file text is needed for a patch. Do not `cat`/dump large outputs into the conversation when a context-mode tool can summarize or index them.
+- Use background process tooling for long-running servers, watchers, and log tails instead of shell backgrounding.
+
 ## Quality gates
 
 - Run targeted tests/build/typecheck relevant to changed files.
-- Use background process tooling for long-running servers, watchers, and log tails.
 - Fix quality failures before commit.
 
 ## Worktree sessions
