@@ -128,7 +128,7 @@ jobs:
       drift-count: ${{ steps.drift.outputs.drift_count }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -191,7 +191,7 @@ jobs:
 
       - name: Upload drift artifacts
         if: steps.drift.outputs.drift_count != '0'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: service-skills-drift
           path: |
@@ -252,7 +252,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -262,7 +262,7 @@ jobs:
           python-version: ${{ inputs.python-version }}
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           # @earendil-works/pi-coding-agent (the pi binary sp spawns) requires
           # node >= 22.19. Bumped from 20 in xtrm-d8r36.5 smoke v9.
@@ -274,7 +274,7 @@ jobs:
           bun-version: ${{ inputs['bun-version'] }}
 
       - name: Download drift artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: service-skills-drift
           path: /tmp/service-skills-drift
@@ -758,7 +758,7 @@ jobs:
 
       - name: Upload reconcile diagnostic artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: service-skills-reconcile-result
           path: |
