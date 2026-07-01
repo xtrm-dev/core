@@ -6,9 +6,12 @@ on:
   pull_request:
     branches: [ main, master ]
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","xtrm-tools"]') }}
 
     strategy:
       matrix:
