@@ -1,0 +1,112 @@
+{
+  "content_sha256": "52c1c3ff4c572ba9369b99cfcc3e2fb28d43ce46aefaa4f53f9eb1002769fe41",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-23T03:44:33Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-r1ed7.1",
+        "issue_id": "xtrm-r1ed7.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-r1ed7.4",
+      "source_field": "dependencies",
+      "target": "xtrm-r1ed7.1",
+      "target_present_in_snapshot": true,
+      "target_title": "v0 updating-dependencies skill package (SKILL.md + 4 templates + 2 schemas)",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-r1ed7.4"
+      }
+    ],
+    "id": "xtrm-r1ed7"
+  },
+  "issues": {
+    "xtrm-r1ed7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-23T01:41:39Z",
+        "created_by": "dawid",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nDependency bumps are too noisy and too expensive to handle ad hoc. Across the xtrm ecosystem, every Dependabot/Renovate PR or lockfile/security workflow touch risks a disproportionate amount of operator time on scanners that block merges on ambiguous or low-risk cases, stale transitive lockfile entries, CI payload gates that fail for harness reasons, and toolchain micro-debugging instead of real risk reasoning. There is no repeatable capability that turns a dependency bump into an evidence-backed decision an agent can make consistently.\n\nThis epic builds that capability in its natural home — xtrm-tools — so it ships to every repo via `xt update`. Design decisions are locked in `~/dev/xtrm/docs/devops/dependency-bump-policy.md` (bead `unitAI-3v5sn`, specialists DB); the exhaustive spec is `~/dev/xtrm/docs/devops/dependencies-updating.md`.\n\n## SUCCESS\n\nA v0 `updating-dependencies` skill package is shipped in `.xtrm/skills/default/`, a deterministic inspector emits a stable `dependency_update_case.json`, and a minimal-permission GitHub Action wraps them to comment a verdict + label on dependency PRs. An agent (or human) invoking the skill on a real bump produces a consistent upgrade dossier and a verdict from the taxonomy, without inventing the process. The specialists repo adopts the output via its own CI-adoption epic (cross-linked).\n\n## SCOPE\n\nxtrm-tools repository, under `.xtrm/skills/default/updating-dependencies/` (skill, templates, schemas), and a new inspector + Action surface (location TBD by C1/D1 — likely `cli/` or a dedicated `packages/dep-inspect/`). May touch `xt update` asset contracts if new shippable files are added. Does NOT touch specialists workflow YAMLs (that is the specialists adoption epic) and does NOT modify deployer/SRE specialists (delivery boundary per spec §3).\n\n## NON_GOALS\n\n- Not a DevOps monolith: no auto-deploy, auto-rollback, or incident handling (spec §2).\n- Not replacing SCA/SBOM/Dependabot/OSV/Snyk — consuming them (spec §2).\n- No `xt dep` CLI command in this epic (deferred to v3+ after real cases prove the primitives, spec §17).\n- No deployer/SRE specialist modifications; integration is via substrate issue + evidence refs (spec §3, §13).\n- No lowering of security gates blindly — advisory/blocking split is evidence-based (policy doc §4).\n\n## CONSTRAINTS\n\n- Deterministic-first: anything computable (direct/transitive, prod/dev, release age, advisory match, usage) MUST come from parsers/scanners/registry metadata, not LLM invention (spec §6).\n- Delivery boundary: capability prepares case + may propose patch/comment; deployer decides delivery; SRE observes post-deploy (spec §3).\n- Skill must be rigid: specify inputs, source matrix tiers, verdict taxonomy with decision rules, cooldown policy, GitHub-Actions special case, required outputs — no free-form agent process invention (spec §8).\n- v0 cooldown default = 7 days; bypass only via SECURITY_FORCED (policy doc §4.1).\n- GitHub Action wrapper v1 permissions: read-only + PR comment only; no aggressive auto-mutation (spec §16).\n- Telemetry/logging: inspector emits structured JSON (`dependency_update_case.json`, schema `xtrm.dependency_update_case.v0`); Action run produces a stable PR comment artifact and a machine-readable verdict label. No secrets/tokens in any emitted artifact.\n- One branch per issue; PR workflow; no direct commits to default branch.\n\n## VALIDATION\n\n- [ ] v0 skill package present: SKILL.md + templates/{upgrade-dossier,pr-comment,research-matrix,post-deploy-watch-spec}.md + schemas/{dependency_update_case,upgrade_dossier}.schema.json\n- [ ] Skill invokes cleanly on a sample bump and produces a dossier with all stable sections + a verdict from the taxonomy\n- [ ] Inspector produces valid `dependency_update_case.json` (passes its JSON schema) from a sample PR diff/lockfile\n- [ ] Action wrapper posts a PR comment with verdict + label on a test dependency PR; no write beyond comment\n- [ ] Asset contract / `xt update` picks up the new skill so it installs into a target repo\n- [ ] Smoke: end-to-end on one real Dependabot PR in a scratch repo (case → skill dossier → PR comment)\n- [ ] No secrets/tokens present in any emitted artifact (grep check)\n\n## OUTPUT\n\nShipped skill package + inspector + Action in xtrm-tools; version-tagged release that `xt update` can promote. Each child bead hands back changed-file lists, schema validation evidence, and the scratch-repo smoke result. Residual risks (ecosystem cooldown tuning, tarball diff depth) documented as follow-ups.\n\n## REFERENCES\n\n- `~/dev/xtrm/docs/devops/dependency-bump-policy.md` — decision layer (locked D1–D4, advisory/blocking policy, phased board)\n- `~/dev/xtrm/docs/devops/dependencies-updating.md` — exhaustive spec (§1–21)\n- specialists bead `unitAI-3v5sn` (design bead, specialists DB) — discovered this capability\n- specialists CI-adoption epic (to be created, specialists DB) — consumes inspector/Action for osv/payload rework\n- PR #152 (specialists) — concrete failure-mode evidence",
+        "id": "xtrm-r1ed7",
+        "issue_type": "epic",
+        "priority": 1,
+        "status": "open",
+        "title": "updating-dependencies capability v0→v1.5: deterministic dep-bump skill + inspector + PR Action",
+        "updated_at": "2026-06-23T01:41:39Z"
+      }
+    },
+    "xtrm-r1ed7.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-23T01:44:14Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-23T03:44:13Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-r1ed7",
+            "issue_id": "xtrm-r1ed7.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-06-23T03:44:33Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-r1ed7.1",
+            "issue_id": "xtrm-r1ed7.4",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nService skills have no standard place to record runtime-critical deps, fragile deps, canonical post-bump tests, and post-deploy watch signals. Without it, the dependency capability cannot look up service-specific impact and must reason in the abstract (spec §12). This task adds the standard section and seeds it where it matters.\n\n## SUCCESS\n\nA documented `## Dependency Surface` section template is part of the service-skill convention, and the most critical service skills in the ecosystem have a seeded section. The dependency skill/inspector can look up tests, watch signals, and failure modes per service.\n\n## SCOPE\n\nxtrm-tools service-skill conventions + seeding. Adds the section schema (Package Managers & Lockfiles / Runtime-Critical / Build-Test-CI / GitHub Actions / Container-Base Image / Known Fragile / Historical Migration Notes / Canonical Tests After Dep Updates / Post-Deploy Watch Signals / Missing Signals) per spec §12. Librarian/service-skills-sync proposes updates when drift is found. Lower priority than B/C1/D1.\n\n## NON_GOALS\n\n- No backfilling every service skill — seed the critical ones only; rest via drift-driven proposals.\n- No changes to deployer/SRE specialists.\n- No automated test generation.\n\n## CONSTRAINTS\n\n- Section must be proposal-driven: the dependency skill proposes a patch/follow-up when it finds drift, not in-place indiscriminate edits (spec §12).\n- Keep sections accurate and dated; avoid stale migration notes.\n- Follow existing service-skill authoring conventions.\n\n## VALIDATION\n\n- [ ] Section template documented in the service-skill convention\n- [ ] At least the top critical service skills seeded\n- [ ] service-skills-sync/librarian can propose Dependency Surface updates from a dependency case\n- [ ] Smoke: a bump touching a seeded service reads tests + watch signals from the section\n\n## OUTPUT\n\nSection template + seeded skills + a sample proposal from a dependency case.\n\n## REFERENCES\n\n- `~/dev/xtrm/docs/devops/dependencies-updating.md` §12 (service-skills integration)\n- Depends on B (xtrm-r1ed7.1) for the skill that consumes the section",
+        "id": "xtrm-r1ed7.4",
+        "issue_type": "task",
+        "priority": 3,
+        "status": "open",
+        "title": "Dependency Surface section rollout across service-skills",
+        "updated_at": "2026-06-23T04:21:24Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-23T03:44:13Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-r1ed7",
+        "issue_id": "xtrm-r1ed7.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-r1ed7.4",
+      "source_field": "dependencies",
+      "target": "xtrm-r1ed7",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-r1ed7",
+  "root_title": "updating-dependencies capability v0→v1.5: deterministic dep-bump skill + inspector + PR Action",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

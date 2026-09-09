@@ -1,0 +1,813 @@
+{
+  "bd_version": "bd version 1.2.2 (source-v65: board-audit-staging/pr-639-1596648-071700@7fcf4e1634bf)",
+  "diagnostics": {
+    "derived_dotted_parent_links": [
+      {
+        "child": "xtrm-xr9b.4",
+        "parent": "xtrm-xr9b"
+      }
+    ],
+    "unknown_parent_refs": [],
+    "unpackaged_selected_ids": []
+  },
+  "generated_at": "2026-09-09T05:17:05.364871+00:00",
+  "packages": [
+    {
+      "content_sha256": "fcd1654c4ef23cde853a794bd8afa98b7b8174271a39bc239bfb353cc3b47218",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-0g6za__include-the-smith-into-the-vendored-extensions-by-the-xtrm-stack.json",
+      "issue_count": 1,
+      "root_id": "xtrm-0g6za",
+      "selected_issue_count": 1,
+      "title": "Include the smith into the vendored extensions by the xtrm stack"
+    },
+    {
+      "content_sha256": "f2bb3b7bd2861f7ae2f5c1f0795d355b42622835602c30f9d23135bd0b2eb125",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-0hxwf__skill-devops-host-administration-without-root-four-evidenced-findings-looking-for-a-home.json",
+      "issue_count": 1,
+      "root_id": "xtrm-0hxwf",
+      "selected_issue_count": 1,
+      "title": "skill(devops): host administration without root — four evidenced findings looking for a home"
+    },
+    {
+      "content_sha256": "7d14731dc4d7277ac66fc0c7b819c3b93850a1b8f0b6048b816e0fcccff27682",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-0kgm__fix-tests-install-integration-flake-hooks-json-mutated-to-non-array-by-concurrent-test.json",
+      "issue_count": 1,
+      "root_id": "xtrm-0kgm",
+      "selected_issue_count": 1,
+      "title": "fix(tests): install-integration flake — hooks.json mutated to non-array by concurrent test"
+    },
+    {
+      "content_sha256": "5000b83545e6338e647fadde07930853ee2af87348c79534acd2c2468ea71689",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-0nurk__fix-stale-go-specific-bd-preflight-configuration-in-core.json",
+      "issue_count": 1,
+      "root_id": "xtrm-0nurk",
+      "selected_issue_count": 1,
+      "title": "Fix stale Go-specific bd preflight configuration in core"
+    },
+    {
+      "content_sha256": "c767ed074b3f6dbed1d3ecc9976c69ab8760693de3182f84c799500f996655ae",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-148eh__runtime-inject-top-files-instead-of-static-per-project-render.json",
+      "issue_count": 1,
+      "root_id": "xtrm-148eh",
+      "selected_issue_count": 1,
+      "title": "runtime-inject -top files instead of static per-project render"
+    },
+    {
+      "content_sha256": "6b00dfe9f8529c3e8fc2464f646813158d8d477e4cacc9cf68044a50b94d9c91",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-16al__epic-project-utils-system-typed-utility-scripts-manifest-and-process-manager.json",
+      "issue_count": 1,
+      "root_id": "xtrm-16al",
+      "selected_issue_count": 1,
+      "title": "[epic] Project utils system: typed utility scripts, manifest, and process manager"
+    },
+    {
+      "content_sha256": "bb189b0179d344af04253a2016e34102cdbcfdafbb06217cc4f67db9b6f6cbb5",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-1ek54__seconder-review-pr4-final-branch-integration.json",
+      "issue_count": 1,
+      "root_id": "xtrm-1ek54",
+      "selected_issue_count": 1,
+      "title": "Seconder review: PR4 final branch integration"
+    },
+    {
+      "content_sha256": "c9510bc2142424ea3a0ed41178445d9bd7e4188bc18286589bbf23891d2218e4",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-1fwl6__run-and-monitor-alpine-pre-release-global-surface-gate.json",
+      "issue_count": 1,
+      "root_id": "xtrm-1fwl6",
+      "selected_issue_count": 1,
+      "title": "run and monitor Alpine pre-release global-surface gate"
+    },
+    {
+      "content_sha256": "cf757526df3268fb1e97622f938c2ee4379265e841d0a9b716d7ca8ad5089e35",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-24gjf__design-specialists-consuming-service-skills-when-a-registry-is-present.json",
+      "issue_count": 1,
+      "root_id": "xtrm-24gjf",
+      "selected_issue_count": 1,
+      "title": "Design: specialists consuming service-skills when a registry is present"
+    },
+    {
+      "content_sha256": "86527bf93988da964197fb3abdd0649d9139cf2a340e0c86b2c91ccbbbcfe003",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-2azdj__xt-models-openrouter-backed-benchmark-rank-compare-recommend-cli.json",
+      "issue_count": 11,
+      "root_id": "xtrm-2azdj",
+      "selected_issue_count": 11,
+      "title": "xt models: OpenRouter-backed benchmark rank/compare/recommend CLI"
+    },
+    {
+      "content_sha256": "368bafd4194474aacb9d23c17be2b4d6f5f9f324c4d877d7cb10c9766de40c6c",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-33ih0__chore-repo-add-an-asset-permission-normalisation-target-to-dev-core.json",
+      "issue_count": 1,
+      "root_id": "xtrm-33ih0",
+      "selected_issue_count": 1,
+      "title": "chore(repo): add an asset-permission normalisation target to dev/core"
+    },
+    {
+      "content_sha256": "a9e6158e8adc08300a838fa98e1f1a679589bb46196176724c6c957a23764485",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-3yne6__runownedlegacycleanup-is-documented-in-repair-transaction-md-but-does-not-exist-in-cli-src.json",
+      "issue_count": 1,
+      "root_id": "xtrm-3yne6",
+      "selected_issue_count": 1,
+      "title": "runOwnedLegacyCleanup is documented in repair-transaction.md but does not exist in cli/src"
+    },
+    {
+      "content_sha256": "1651571adf80d3d705eb8f0c237ba951bf4a1c94d12f507aecbc5b7c0d7eebaf",
+      "context_only_issue_count": 1,
+      "file": "work-packages/xtrm-4ih7b__pi-extension-cold-start-latency-audit-fixes.json",
+      "issue_count": 3,
+      "root_id": "xtrm-4ih7b",
+      "selected_issue_count": 2,
+      "title": "Pi extension cold-start latency audit & fixes"
+    },
+    {
+      "content_sha256": "6a1e5ab4f804de0eb966b1790b60c5e4c5fdb8429cbadca60e0c8af0850a5197",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-56flm__epic-service-skills-reframe-deterministic-verifier-evidence-first-retrieval.json",
+      "issue_count": 13,
+      "root_id": "xtrm-56flm",
+      "selected_issue_count": 13,
+      "title": "Epic: service-skills reframe — deterministic verifier + evidence-first retrieval"
+    },
+    {
+      "content_sha256": "1e4eef91cec52d2ec331de15a0addf5321c8a737205eae2bffb8af032ee805a2",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-5a9ts__changelog-document-pr-306-kan-110-a-serena-pool-cwd-race.json",
+      "issue_count": 1,
+      "root_id": "xtrm-5a9ts",
+      "selected_issue_count": 1,
+      "title": "CHANGELOG: document PR #306 KAN-110-A serena-pool cwd-race"
+    },
+    {
+      "content_sha256": "1b7050b80798e92df076f3c6809e888ab7ddfbe60f3d3c9db5f65b6fafea6c9b",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-6bkdz__epic-hook-runtime-migration-parity-for-role-worktrees.json",
+      "issue_count": 1,
+      "root_id": "xtrm-6bkdz",
+      "selected_issue_count": 1,
+      "title": "Epic: hook runtime migration parity for role worktrees"
+    },
+    {
+      "content_sha256": "26f3f80a197847bd891369864ae7661b1457b75a43b23bf0f341d3f96b78965e",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-71jss__session-handoff-2026-06-25-pane-3-codex-closeout-xtrm-efa2a-1-xtrm-vu2ro-1-staged-locally.json",
+      "issue_count": 1,
+      "root_id": "xtrm-71jss",
+      "selected_issue_count": 1,
+      "title": "Session handoff 2026-06-25: pane 3 codex closeout — xtrm-efa2a.1 + xtrm-vu2ro.1 staged locally"
+    },
+    {
+      "content_sha256": "ec3fdb72d75dba8dd328a7271012a11dad2757f825d268cbc64ad790efb6a35c",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-77t9q__design-low-impact-beads-status-ui-for-pi-and-claude.json",
+      "issue_count": 2,
+      "root_id": "xtrm-77t9q",
+      "selected_issue_count": 2,
+      "title": "Design low-impact beads status UI for Pi and Claude"
+    },
+    {
+      "content_sha256": "1ea84a269b3c10153f76c91aa1ef5c4345daab4db997bfcd7db0978709880aae",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-7vd4n__forced-skill-context-smoke.json",
+      "issue_count": 1,
+      "root_id": "xtrm-7vd4n",
+      "selected_issue_count": 1,
+      "title": "FORCED SKILL CONTEXT SMOKE"
+    },
+    {
+      "content_sha256": "eed4a77f1421eaf95f2d30ff38e17bc2052547be0c46a706e734b2e3fd6502d6",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-8rgp9__harden-malformed-pi-settings-cleanup-diagnostics.json",
+      "issue_count": 1,
+      "root_id": "xtrm-8rgp9",
+      "selected_issue_count": 1,
+      "title": "Harden malformed Pi settings cleanup diagnostics"
+    },
+    {
+      "content_sha256": "adc3cea2b81dea23e224c384336b6fbe43debffd60d8240b2a2d389676f96504",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-99dcc__integrate-archon-yaml-dag-runner-with-xt-merge-xtmux-specialists-coordination-stack.json",
+      "issue_count": 1,
+      "root_id": "xtrm-99dcc",
+      "selected_issue_count": 1,
+      "title": "Integrate Archon (YAML DAG runner) with xt-merge / xtmux / specialists coordination stack"
+    },
+    {
+      "content_sha256": "ee4a14a482d20c1b9ca54ec9c70c022c5beb6fe346fec45db7c4ee19ad712a1d",
+      "context_only_issue_count": 1,
+      "file": "work-packages/xtrm-9xg2__epic-harden-xtrm-tools-specialists-release-contract.json",
+      "issue_count": 7,
+      "root_id": "xtrm-9xg2",
+      "selected_issue_count": 6,
+      "title": "Epic: harden xtrm-tools ↔ specialists release contract"
+    },
+    {
+      "content_sha256": "afede05ceda1f43e27f71dff3c76b4f0ef5ad7401162930d10b93695d1dd9dd4",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-a3mn__surface-gitnexus-index-as-agent-ready-codebase-maps.json",
+      "issue_count": 1,
+      "root_id": "xtrm-a3mn",
+      "selected_issue_count": 1,
+      "title": "Surface GitNexus index as agent-ready codebase maps"
+    },
+    {
+      "content_sha256": "63e784298edd41d8d23b135394cd5aec929be90a0de72c1b022fb972d9799a4c",
+      "context_only_issue_count": 1,
+      "file": "work-packages/xtrm-a4eef__debugger-profile-and-bound-claude-statusline-cpu-bursts.json",
+      "issue_count": 2,
+      "root_id": "xtrm-a4eef",
+      "selected_issue_count": 1,
+      "title": "debugger: profile and bound Claude statusline CPU bursts"
+    },
+    {
+      "content_sha256": "76f0565aa3f3fdde3fcab1f3c7382c357b272d6e716921bb7574e5ed2f9a4815",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-bg5yg__add-pi-extension-latency-isolation-smoke-for-xtrm-ui-and-xtmux.json",
+      "issue_count": 1,
+      "root_id": "xtrm-bg5yg",
+      "selected_issue_count": 1,
+      "title": "Add pi extension latency isolation smoke for xtrm-ui and xtmux"
+    },
+    {
+      "content_sha256": "d53519083f173151f3eee6d7c3d951491da84c976569b3d230a4562893ceaefe",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-bkqd7__test-bead.json",
+      "issue_count": 1,
+      "root_id": "xtrm-bkqd7",
+      "selected_issue_count": 1,
+      "title": "test bead"
+    },
+    {
+      "content_sha256": "8f1d85010431bd55a961ba9a39bedc93f0937b62967303e5c113ecbed75c3e4f",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-bkzr6__bd-auto-backup-fails-on-every-write-dolt-shared-server-cannot-mkdir-under-home-jagger.json",
+      "issue_count": 1,
+      "root_id": "xtrm-bkzr6",
+      "selected_issue_count": 1,
+      "title": "bd auto-backup fails on every write: Dolt shared server cannot mkdir under /home/jagger"
+    },
+    {
+      "content_sha256": "c6806d4fa0d9f831acb6c4855b5fa5be716b7ad0f5e76bccc178c9352f2b57fb",
+      "context_only_issue_count": 2,
+      "file": "work-packages/xtrm-bq7yd__epic-global-skills-hooks-migration-default-payloads-move-from-per-repo-to-xtrm.json",
+      "issue_count": 3,
+      "root_id": "xtrm-bq7yd",
+      "selected_issue_count": 1,
+      "title": "[epic] Global skills + hooks migration: default payloads move from per-repo to ~/.xtrm"
+    },
+    {
+      "content_sha256": "a5d23462e712a2d76a610f7f1ebefadcda16c41cb89c7164c5335f93a75dfbc7",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-c0igm__bug-make-forced-migration-restore-rollback-atomic.json",
+      "issue_count": 1,
+      "root_id": "xtrm-c0igm",
+      "selected_issue_count": 1,
+      "title": "bug: make forced migration restore rollback-atomic"
+    },
+    {
+      "content_sha256": "e45aa426ea536d78b82ee8823ce94a0f31cda6250c53be11dd44cad22651da20",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-c4fqp__session-handoff-2026-06-23-pick-up-next-priorities.json",
+      "issue_count": 1,
+      "root_id": "xtrm-c4fqp",
+      "selected_issue_count": 1,
+      "title": "Session handoff 2026-06-23: pick up next priorities"
+    },
+    {
+      "content_sha256": "6749e3fd4a5e2916982e76d1691373ceecd6605c00ea36ee856d5e01f773c6aa",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-cfidk__tune-xtrm-ui-compact-shell-rows.json",
+      "issue_count": 1,
+      "root_id": "xtrm-cfidk",
+      "selected_issue_count": 1,
+      "title": "Tune xtrm-ui compact shell rows"
+    },
+    {
+      "content_sha256": "cb77f6a586d8e7eddff9076229248adc048181cc65bd38c927738f2e3a92c382",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-dhvqz__apply-xtmux-j46-topology-context-readiness-callouts-to-canonical-multiplexing-skills-release.json",
+      "issue_count": 1,
+      "root_id": "xtrm-dhvqz",
+      "selected_issue_count": 1,
+      "title": "Apply xtmux-j46 topology/context/readiness callouts to canonical multiplexing skills + release"
+    },
+    {
+      "content_sha256": "30905f1b8cfaf4e3f0020408943f0235fda8810a4e2e99561b63ead9d0fefaf4",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-drdg6__session-handoff-2026-06-03-service-skills-field-hardening-shipped-0-8-30-8-5-design-paused.json",
+      "issue_count": 1,
+      "root_id": "xtrm-drdg6",
+      "selected_issue_count": 1,
+      "title": "Session handoff 2026-06-03: service-skills field-hardening shipped (0.8.3→0.8.5), design paused"
+    },
+    {
+      "content_sha256": "2f659cd05b3c0ff991250f646dfae5747fb0ba2e96f626aa245bcd705a5b432d",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-drkk__add-triaging-skill-bd-graph-rewiring-cluster-detection-via-specialists.json",
+      "issue_count": 1,
+      "root_id": "xtrm-drkk",
+      "selected_issue_count": 1,
+      "title": "Add triaging skill: bd graph rewiring + cluster detection via specialists"
+    },
+    {
+      "content_sha256": "40c9cf393e51eefa9755316822dc3c786772c8b35c5cb662384bd272d4009751",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-dv3kv__core-stop-hook-xtmux-auto-monitor-drain-stop-mjs-needs-tmux-env-propagation.json",
+      "issue_count": 1,
+      "root_id": "xtrm-dv3kv",
+      "selected_issue_count": 1,
+      "title": "core: Stop hook xtmux/auto-monitor-drain-stop.mjs needs TMUX env propagation"
+    },
+    {
+      "content_sha256": "65b898f4fc5fb661676266359cd4eb7068421c558796f07a9449e237c6593f42",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-dxq9v__beads-dolt-db-dangling-chunk-reference-blocks-bd-dolt-push-core.json",
+      "issue_count": 1,
+      "root_id": "xtrm-dxq9v",
+      "selected_issue_count": 1,
+      "title": "beads dolt db: dangling chunk reference blocks bd dolt push (core)"
+    },
+    {
+      "content_sha256": "a999189288c1aaad176bfd1e118ce586b3a5e11ec9313a843884a9f7311af071",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-ecdys__bare-alpine-install-process-investigation-full-runtime-bootstrap-broad-tests.json",
+      "issue_count": 1,
+      "root_id": "xtrm-ecdys",
+      "selected_issue_count": 1,
+      "title": "Bare Alpine install-process investigation: full runtime bootstrap + broad tests"
+    },
+    {
+      "content_sha256": "9859fe5867a922ec47be5fd1f85db03c73db1dab93ba0c0c9d0eeea1213a8304",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-eqamf__read-only-contract.json",
+      "issue_count": 1,
+      "root_id": "xtrm-eqamf",
+      "selected_issue_count": 1,
+      "title": "READ-ONLY CONTRACT:"
+    },
+    {
+      "content_sha256": "3462657d5db812707b10086e758bbc8d389a3a7dbce6a4be367be7cd2123714d",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-eu6va__repair-v0-10-5-registry-version-drift-after-release.json",
+      "issue_count": 1,
+      "root_id": "xtrm-eu6va",
+      "selected_issue_count": 1,
+      "title": "Repair v0.10.5 registry version drift after release"
+    },
+    {
+      "content_sha256": "0a75fff16d8e93faaf8bdf88f1e170224cc4aeb1613c5996cf4a8182f588135d",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-f3sp8__fix-tests-pi-runtime-copy-integration-exceeds-30s-under-load.json",
+      "issue_count": 1,
+      "root_id": "xtrm-f3sp8",
+      "selected_issue_count": 1,
+      "title": "fix(tests): pi-runtime copy integration exceeds 30s under load"
+    },
+    {
+      "content_sha256": "4c557f022f4ed3a1b3c9d6163ad41afff212fa4b4b06a908c86b755d63f330a3",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-hf37h__chore-gitnexus-point-gitnexus-at-a-shared-parent-repo-index-instead-of-one-per-worktree.json",
+      "issue_count": 1,
+      "root_id": "xtrm-hf37h",
+      "selected_issue_count": 1,
+      "title": "chore(gitnexus): point GitNexus at a shared parent-repo index instead of one per worktree"
+    },
+    {
+      "content_sha256": "443fa1e0b53eb0ac80e95ee814dcfaa3fc0081981506540104ca9fbda4cb67f4",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-hndwr__xt-log-unified-runtime-observability-across-sp-forensic-xt-debug-xtmux.json",
+      "issue_count": 12,
+      "root_id": "xtrm-hndwr",
+      "selected_issue_count": 12,
+      "title": "xt log: unified runtime observability across sp forensic, xt debug, xtmux"
+    },
+    {
+      "content_sha256": "6a4be6e06fb735337d24e65afcca5d89aa2c2194f7e115fc86da91b5f8a9e34d",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-j8kcj__release-pi-extensions-mandatory-rules-and-stronger-tool-routing.json",
+      "issue_count": 7,
+      "root_id": "xtrm-j8kcj",
+      "selected_issue_count": 7,
+      "title": "Release Pi extensions, mandatory rules, and stronger tool routing"
+    },
+    {
+      "content_sha256": "52e604b4ac3d24fcbaf8299e89e0319a4a67a38b5fb97b4a7fa012f8c8a343c8",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-kvsrd__audit-sprint-wave-2-cross-repo-contracts-integration-suite-p2-01-p2-02.json",
+      "issue_count": 1,
+      "root_id": "xtrm-kvsrd",
+      "selected_issue_count": 1,
+      "title": "audit sprint wave 2: cross-repo contracts + integration suite (P2-01 + P2-02)"
+    },
+    {
+      "content_sha256": "bb669189e8e7eaf6d032e0d59053b1bd6a26ff61da4c1e9455ad42df598117df",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-l7tkx__session-handoff-2026-06-26-pre-container-cleanup-container-design-pivot.json",
+      "issue_count": 1,
+      "root_id": "xtrm-l7tkx",
+      "selected_issue_count": 1,
+      "title": "Session handoff 2026-06-26: pre-container cleanup + container-design pivot"
+    },
+    {
+      "content_sha256": "733d8f0c261462d2fb8dd4a270c3a7a9aa217096b5131876fa752d33a2931eff",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-l9l86__beads-dolt-upgrade-fix-dangling-chunk-sync-dolt-2-1-10-2-2-3-bd-1-1-0-1-2-1.json",
+      "issue_count": 1,
+      "root_id": "xtrm-l9l86",
+      "selected_issue_count": 1,
+      "title": "Beads/Dolt upgrade: fix dangling-chunk sync (dolt 2.1.10->2.2.3+, bd 1.1.0->1.2.1)"
+    },
+    {
+      "content_sha256": "e40666738b105c8c1466ad4eb3eee917a1634e0c0bc8eb686e99300732b56904",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-ma1je__xtrm-ui-external-tool-badge-restore-exact-pre-change-chip-dark-text-on-static-kind-bg-new-layout.json",
+      "issue_count": 1,
+      "root_id": "xtrm-ma1je",
+      "selected_issue_count": 1,
+      "title": "xtrm-ui: external tool badge — restore exact pre-change chip (dark text on static kind bg), new layout only"
+    },
+    {
+      "content_sha256": "2e3bce1b875ed3d915c03f1dacbae6084657a5b0dd8a6d90edd6945b762769ca",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-mk488__ponytail-cleanup-repository-line-count-reduction.json",
+      "issue_count": 13,
+      "root_id": "xtrm-mk488",
+      "selected_issue_count": 13,
+      "title": "Ponytail cleanup: repository line-count reduction"
+    },
+    {
+      "content_sha256": "28779dbfd12627519343f5f0e029d0b950e6f2fa55ba1a3eb8da5b2bd9f1e70f",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-mm19b__read-only-contract.json",
+      "issue_count": 1,
+      "root_id": "xtrm-mm19b",
+      "selected_issue_count": 1,
+      "title": "READ-ONLY CONTRACT:"
+    },
+    {
+      "content_sha256": "1b3a30b702464e41f8da7ce070de2c8a859bc0e1ce41500254dc044cabcc447a",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-mp0f2__session-handoff-2026-06-11-agent-docs-audit-identity-hook-follow-ups.json",
+      "issue_count": 1,
+      "root_id": "xtrm-mp0f2",
+      "selected_issue_count": 1,
+      "title": "Session handoff 2026-06-11: agent docs audit identity + hook follow-ups"
+    },
+    {
+      "content_sha256": "48042527a06c62b4887ff1b045a155192eb3d60259acaaca90cd79bc4da471e9",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-n74m8__remove-stale-pre-v2-service-skills-trinity-creating-scoping-updating-using-service-skills-linger.json",
+      "issue_count": 1,
+      "root_id": "xtrm-n74m8",
+      "selected_issue_count": 1,
+      "title": "Remove stale pre-v2 service-skills trinity (creating/scoping/updating/using-service-skills) lingering in consumers"
+    },
+    {
+      "content_sha256": "84d8b23850ccd8411ac63447801b9c02bab5559e17c4aaa74503756d28683424",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-ns250__memory-retirement-core-side-stop-gate-loader-export.json",
+      "issue_count": 1,
+      "root_id": "xtrm-ns250",
+      "selected_issue_count": 1,
+      "title": "Memory retirement: core-side Stop gate + loader + export"
+    },
+    {
+      "content_sha256": "82b02064e493102c4d90c59aee13b1a5fc9ad935f60c25037b3bf117ee312564",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-o6xqg__bug-serialize-concurrent-global-skill-mutations.json",
+      "issue_count": 1,
+      "root_id": "xtrm-o6xqg",
+      "selected_issue_count": 1,
+      "title": "bug: serialize concurrent global-skill mutations"
+    },
+    {
+      "content_sha256": "4f3ca77930236c34eea1b38cb2bb849df38d06905ba1b9f97ca9cab764d4a59c",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-osoxx__bug-xt-worktree-reap-holds-squash-merged-worktrees-forever-predicate-has-no-patch-equivalence-te.json",
+      "issue_count": 1,
+      "root_id": "xtrm-osoxx",
+      "selected_issue_count": 1,
+      "title": "[bug] xt worktree reap holds squash-merged worktrees forever — predicate has no patch-equivalence test"
+    },
+    {
+      "content_sha256": "7940ec1ba5787bc616c9a7016b8868e23cfb5d5db168b08ccf49760e53cf1ace",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-ozknq__make-codex-a-first-class-runtime-across-the-xtrm-stack.json",
+      "issue_count": 6,
+      "root_id": "xtrm-ozknq",
+      "selected_issue_count": 6,
+      "title": "Make Codex a first-class runtime across the XTRM stack"
+    },
+    {
+      "content_sha256": "642f80bfcea564b421786bde3b68afafa049816a77247e3e7a32b7615f22535f",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-p72bo__phase-a-reusable-github-action-detect-drift-comment-on-merged-pr.json",
+      "issue_count": 1,
+      "root_id": "xtrm-p72bo",
+      "selected_issue_count": 1,
+      "title": "Phase A: reusable GitHub Action — detect drift, comment on merged PR"
+    },
+    {
+      "content_sha256": "720d7a4b3c725aecc6f782f83f7f6073350432661270982a43b78c71e2de376e",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-p7gv__create-specialists-q-a-knowledge-base-pattern-memory.json",
+      "issue_count": 1,
+      "root_id": "xtrm-p7gv",
+      "selected_issue_count": 1,
+      "title": "Create specialists Q&A knowledge base (pattern memory)"
+    },
+    {
+      "content_sha256": "b96bcf5b607bc66b140f4e8b3bce57795d1edc6b634dc30739f6d37309af1bf0",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-pan6c__roll-out-bd-auto-stage-patch-across-dev-and-projects.json",
+      "issue_count": 1,
+      "root_id": "xtrm-pan6c",
+      "selected_issue_count": 1,
+      "title": "Roll out bd auto-stage patch across ~/dev and ~/projects"
+    },
+    {
+      "content_sha256": "74132a847dd73e97ed633ed64c01873bce82658c07ab3d0209a6fc617a7039cd",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-ptw5a__improve-bd-management-guidance-using-xtrm-additions-claude-md-edits-planning-skill-excerpts.json",
+      "issue_count": 1,
+      "root_id": "xtrm-ptw5a",
+      "selected_issue_count": 1,
+      "title": "Improve bd management guidance: using-xtrm additions, CLAUDE.md edits, planning-skill excerpts"
+    },
+    {
+      "content_sha256": "95e1e89164ccf08ae48743fb8b63154fb5b3d9d4286b3a28b94ce8ad3c60bda1",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-qstt__auto-generate-pr-descriptions-from-bead-git-diff.json",
+      "issue_count": 1,
+      "root_id": "xtrm-qstt",
+      "selected_issue_count": 1,
+      "title": "Auto-generate PR descriptions from bead + git diff"
+    },
+    {
+      "content_sha256": "71d2f1f648ec895ada6ffcef740f15fcb68c5a639ab991201a5e8811c5fb3264",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-qylnf__draft-xtrm-workboard-pi-extension-for-beads-specialists-graph.json",
+      "issue_count": 1,
+      "root_id": "xtrm-qylnf",
+      "selected_issue_count": 1,
+      "title": "draft: xtrm-workboard Pi extension for beads + specialists graph"
+    },
+    {
+      "content_sha256": "5e91cbe4403f4691f2e579f8ffc524331b1341694e6d484902821fb49904d08a",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-qz1px__require-test-22-x-3-11-ci-check-on-main-branch-protection.json",
+      "issue_count": 1,
+      "root_id": "xtrm-qz1px",
+      "selected_issue_count": 1,
+      "title": "require 'test (22.x, 3.11)' CI check on main branch protection"
+    },
+    {
+      "content_sha256": "52c1c3ff4c572ba9369b99cfcc3e2fb28d43ce46aefaa4f53f9eb1002769fe41",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-r1ed7__updating-dependencies-capability-v0v1-5-deterministic-dep-bump-skill-inspector-pr-action.json",
+      "issue_count": 2,
+      "root_id": "xtrm-r1ed7",
+      "selected_issue_count": 2,
+      "title": "updating-dependencies capability v0→v1.5: deterministic dep-bump skill + inspector + PR Action"
+    },
+    {
+      "content_sha256": "03f82dcfa03e945f355ef76111026ed5297df1a89fad5235e126cfbde05015af",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-rcbv__agent-memory-context-graphs-reasoning-traces-entity-extraction-pipeline.json",
+      "issue_count": 1,
+      "root_id": "xtrm-rcbv",
+      "selected_issue_count": 1,
+      "title": "Agent memory: context graphs, reasoning traces, entity extraction pipeline"
+    },
+    {
+      "content_sha256": "61c2dda072dc851d4c8947b1f435e7a09cc15fadae2ac3793512b65d3949a9eb",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-ro3xm__npm-pack-includes-gitignored-xtrm-skills-default-gitnexus-from-a-local-working-copy.json",
+      "issue_count": 1,
+      "root_id": "xtrm-ro3xm",
+      "selected_issue_count": 1,
+      "title": "npm pack includes gitignored .xtrm/skills/default/gitnexus from a local working copy"
+    },
+    {
+      "content_sha256": "c4ac1f72ae5164c0888155d03b8e56102e461aaa50aad208accf9a07f7418493",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-rp5ri__cleanup-xtrm-ui-deduplicate-themes-fix-isxtrmtheme-register-xtprompt-remove-dead-code.json",
+      "issue_count": 1,
+      "root_id": "xtrm-rp5ri",
+      "selected_issue_count": 1,
+      "title": "Cleanup xtrm-ui: deduplicate themes, fix isXtrmTheme, register xtprompt, remove dead code"
+    },
+    {
+      "content_sha256": "aaa386033c1c1b98b004ba51b4df8d8008e57c7617725c4bde7b47b8709062ef",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-ruqwz__installed-skill-roots-exceed-their-documented-budget-some-by-4x.json",
+      "issue_count": 1,
+      "root_id": "xtrm-ruqwz",
+      "selected_issue_count": 1,
+      "title": "installed skill roots exceed their documented budget, some by 4x"
+    },
+    {
+      "content_sha256": "15e288e5a4e763ed37ab3bd2485038af382ce12b51a48228fc136007d8d66958",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-s5ih5__fix-xt-install-global-must-not-overwrite-project-hooks-into-claude-settings-json.json",
+      "issue_count": 1,
+      "root_id": "xtrm-s5ih5",
+      "selected_issue_count": 1,
+      "title": "fix: xt install --global must not overwrite project hooks into ~/.claude/settings.json"
+    },
+    {
+      "content_sha256": "11b92fa27a53be6b468bee472338407633bc9401f42dc7af0667c48c2a19fb04",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-t2530__session-handoff-2026-06-04-smoke-test-xt-spec-e2e-produce-docs-xt-spec.json",
+      "issue_count": 1,
+      "root_id": "xtrm-t2530",
+      "selected_issue_count": 1,
+      "title": "Session handoff 2026-06-04: smoke-test xt spec e2e + produce docs/xt-spec/"
+    },
+    {
+      "content_sha256": "0ab004808266a9f88196a88082a117e09559f40746e97aac77719dd96d1678e3",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-tiqgx__core-raw-drift-detector-hook-in-claude-settings-json-lacks-f-guard.json",
+      "issue_count": 1,
+      "root_id": "xtrm-tiqgx",
+      "selected_issue_count": 1,
+      "title": "core: raw drift_detector hook in ~/.claude/settings.json lacks [-f] guard"
+    },
+    {
+      "content_sha256": "efe99de469720b3b0a7ab83510490371002358763aad13c8c61124166f9c9ec8",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-tjbcp__p0-first-class-xtmux-coordination-tools-in-pi.json",
+      "issue_count": 1,
+      "root_id": "xtrm-tjbcp",
+      "selected_issue_count": 1,
+      "title": "P0: first-class xtmux coordination tools in Pi"
+    },
+    {
+      "content_sha256": "7edefa1606f0e8fe3bd7cda990cffeb2b8e78cbe5935868203c4d43b370bc3b9",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-u22fw__session-handoff-2026-06-25-release-prep-docs-service-skills-follow-ups.json",
+      "issue_count": 1,
+      "root_id": "xtrm-u22fw",
+      "selected_issue_count": 1,
+      "title": "Session handoff 2026-06-25: release-prep/docs + service-skills follow-ups"
+    },
+    {
+      "content_sha256": "4ac5dfe8e551e76b15cf262eec7af6a8c47f0a00103efcff88cc96e332b8f859",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-vey5b__pr-review-gate-wave-2-pull-request-review-comment-trigger-cr-verdict-preservation.json",
+      "issue_count": 1,
+      "root_id": "xtrm-vey5b",
+      "selected_issue_count": 1,
+      "title": "pr-review-gate wave-2: pull_request_review_comment trigger + CR verdict preservation"
+    },
+    {
+      "content_sha256": "8916de59dd5bac9382e95ac98a3f5fb1d85120e9b920b10c86d6d9fc5d84aee5",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-wiy5n__epic-audit-reconcile-v0724-program-tracks-a-b.json",
+      "issue_count": 3,
+      "root_id": "xtrm-wiy5n",
+      "selected_issue_count": 3,
+      "title": "epic: audit-reconcile-v0724 program (Tracks A+B)"
+    },
+    {
+      "content_sha256": "f03ef80ed4df33448afa3b465ab1af8e406ff3faee932143ea572fa6e8ba1525",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-wwa3__surface-full-bd-command-surface-in-triage-skill-using-xtrm-using-specialists-docs-esp-dep-type-r.json",
+      "issue_count": 1,
+      "root_id": "xtrm-wwa3",
+      "selected_issue_count": 1,
+      "title": "Surface full bd command surface in triage skill + using-xtrm / using-specialists docs (esp. dep --type relationship types)"
+    },
+    {
+      "content_sha256": "84c7ddb277af633add363f64dcec741d4840805f96cdb518a8f5e4b671521e67",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-wwgx3__specialist-security-auditor.json",
+      "issue_count": 1,
+      "root_id": "xtrm-wwgx3",
+      "selected_issue_count": 1,
+      "title": "specialist:security-auditor"
+    },
+    {
+      "content_sha256": "d066584b6fdd124dcd3fd037cd0b2ba38654b23f81525e53aa7dd7a766c271c9",
+      "context_only_issue_count": 1,
+      "file": "work-packages/xtrm-x12p3__reduce-xtrm-loader-eager-first-turn-prompt-bloat.json",
+      "issue_count": 2,
+      "root_id": "xtrm-x12p3",
+      "selected_issue_count": 1,
+      "title": "Reduce xtrm-loader eager first-turn prompt bloat"
+    },
+    {
+      "content_sha256": "abbeca9d8e9aa3ab20b046c20cf251c65215f63bc23696f51a48f1ef48a7902a",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-x9wz8__the-smoke-container-is-a-release-gate-that-nothing-tells-anyone-to-run.json",
+      "issue_count": 1,
+      "root_id": "xtrm-x9wz8",
+      "selected_issue_count": 1,
+      "title": "the smoke container is a release gate that nothing tells anyone to run"
+    },
+    {
+      "content_sha256": "2774ceb6a40c95251f73304d6ba2fbdb5a0bd7762e83279d6d7573653afb0b79",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-xgsdc__specialist-test-runner.json",
+      "issue_count": 1,
+      "root_id": "xtrm-xgsdc",
+      "selected_issue_count": 1,
+      "title": "specialist:test-runner"
+    },
+    {
+      "content_sha256": "a61d62de59c361e0e5a7c1949f0f921538916a4ff1035b59687ff6333d40d74c",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-xl9p__feat-memory-gate-pretooluse-block-on-bd-close-compact-single-line-prompt.json",
+      "issue_count": 1,
+      "root_id": "xtrm-xl9p",
+      "selected_issue_count": 1,
+      "title": "feat(memory-gate): PreToolUse block on bd close — compact single-line prompt"
+    },
+    {
+      "content_sha256": "c128eeb33196cdcbbc9512ec72c5787dc747139a763003350fb99f686b79e678",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-y0tdg__repo-skills-layout-v2-migrate-wiring-completion.json",
+      "issue_count": 1,
+      "root_id": "xtrm-y0tdg",
+      "selected_issue_count": 1,
+      "title": "Repo skills layout v2 + migrate wiring completion"
+    },
+    {
+      "content_sha256": "5b06b0aeacb2b8505323846857c5101d3e6e84e19d73b80bc393405252ec56ac",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-y86om__serialize-or-isolate-claude-hook-config-in-install-integration-tests.json",
+      "issue_count": 1,
+      "root_id": "xtrm-y86om",
+      "selected_issue_count": 1,
+      "title": "Serialize or isolate Claude hook config in install integration tests"
+    },
+    {
+      "content_sha256": "7ebcff30f521f2632ef713362062eda44f58016b60cf7a545cbe1f2536db5003",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-y9amd__release-train-retire-xtrm-ext-src-decide-pi-extension-xtrm-pi-service-skills-future.json",
+      "issue_count": 1,
+      "root_id": "xtrm-y9amd",
+      "selected_issue_count": 1,
+      "title": "release-train: retire .xtrm/ext-src/ + decide pi-extension @xtrm/pi-service-skills future"
+    },
+    {
+      "content_sha256": "68ca9e108d55933811e9727b5d8183508507019fbb5b3a9e804e0657592f3e4c",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-yb0u__friction-dolt-server-crashed-mid-session-journal-corrupted-at-offset-73333475.json",
+      "issue_count": 1,
+      "root_id": "xtrm-yb0u",
+      "selected_issue_count": 1,
+      "title": "Friction: Dolt server crashed mid-session, journal corrupted at offset 73333475"
+    },
+    {
+      "content_sha256": "3b5d1746902d092953b19a4598514ce42338b1261932dd9ba9aa8736afe832b8",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-yep0f__tighten-gitnexus-compare-parser-per-service-base-ref-in-drift-detector.json",
+      "issue_count": 1,
+      "root_id": "xtrm-yep0f",
+      "selected_issue_count": 1,
+      "title": "Tighten gitnexus compare parser + per-service base_ref in drift_detector"
+    },
+    {
+      "content_sha256": "dd83384815a7c3db417a69f7fe3e483f6cf7dc604f5f814d429b6b24046d27e4",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-yk3q__add-token-cost-tracking-per-specialist-run.json",
+      "issue_count": 1,
+      "root_id": "xtrm-yk3q",
+      "selected_issue_count": 1,
+      "title": "Add token/cost tracking per specialist run"
+    },
+    {
+      "content_sha256": "ad85a0234018816ec6ab1ff2bbf56daaca72cb1ad382fbcf020c02ad7242b4b9",
+      "context_only_issue_count": 0,
+      "file": "work-packages/xtrm-z92xo__cleanup-xtrm-ui-deduplicate-themes-fix-isxtrmtheme-register-xtprompt-remove-dead-code.json",
+      "issue_count": 1,
+      "root_id": "xtrm-z92xo",
+      "selected_issue_count": 1,
+      "title": "Cleanup xtrm-ui: deduplicate themes, fix isXtrmTheme, register xtprompt, remove dead code"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "schema_version": "xtrm.board-audit.snapshot-manifest.v1",
+  "selection": {
+    "context_only_record_count": 6,
+    "requested_id": null,
+    "scope": "open",
+    "selected_record_count": 153
+  },
+  "source": {
+    "command": "bd export --all",
+    "raw_file": "raw-beads.jsonl",
+    "raw_record_count": 2253,
+    "raw_sha256": "2ba501a3b23efbebb19e0c9b4c5989e30c7b141376d7124ea9282be90dec1397"
+  }
+}

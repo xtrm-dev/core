@@ -1,0 +1,68 @@
+{
+  "content_sha256": "d53519083f173151f3eee6d7c3d951491da84c976569b3d230a4562893ceaefe",
+  "desired_issues": {
+    "xtrm-bkqd7": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-07-24T20:01:36Z",
+      "created_by": "t",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "NEW BODY\n## SCOPE\napi-gateway/x.go",
+      "id": "xtrm-bkqd7",
+      "issue_type": "task",
+      "owner": "t@t.com",
+      "priority": 2,
+      "status": "open",
+      "title": "test bead",
+      "updated_at": "2026-07-24T20:01:48Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-bkqd7"
+  },
+  "issues": {
+    "xtrm-bkqd7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T20:01:36Z",
+        "created_by": "t",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "NEW BODY\n## SCOPE\napi-gateway/x.go",
+        "id": "xtrm-bkqd7",
+        "issue_type": "task",
+        "owner": "t@t.com",
+        "priority": 2,
+        "status": "open",
+        "title": "test bead",
+        "updated_at": "2026-07-24T20:01:48Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-bkqd7",
+  "root_title": "test bead",
+  "roundtrip": {
+    "base_package_sha256": "d53519083f173151f3eee6d7c3d951491da84c976569b3d230a4562893ceaefe",
+    "base_record_sha256": {
+      "xtrm-bkqd7": "2dacce6fd671d4e2113209479739d8267632b9135ef49eb69a5dcc54ef22687a"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-09T05:17:07Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,81 @@
+{
+  "content_sha256": "84d8b23850ccd8411ac63447801b9c02bab5559e17c4aaa74503756d28683424",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-ns250"
+  },
+  "issues": {
+    "xtrm-ns250": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 5,
+        "comments": [
+          {
+            "author": "jaggerxtrm",
+            "created_at": "2026-09-09T04:06:12Z",
+            "id": "da77d13c-e0b3-55bf-9a6a-9dc2e5f23838",
+            "issue_id": "xtrm-ns250",
+            "text": "Inventory pass 1 (main tree, read-only): Stop gate = .xtrm/hooks/beads-memory-gate.mjs + beads-stop-gate.mjs + project-memory.mjs (+tests); enforce = packages/pi-extensions/extensions/beads/index.ts L9,L102-107 (memory-acked KV), L204-207 (gate text), L221-229 (memory-gate-done KV, memoryGateFired). DISCREPANCIES vs s9adh-J: (1) beads-close-memory-prompt.mjs NOT FOUND anywhere in core main tree — likely specialists-side, needs re-attribution. (2) xtrm-loader docstring says .xtrm/memory.md is NEVER injected by it — injection likely via project-memory.mjs/Claude hook; mapping that next. Next: full grep inventory, Dolt export, then sequential removal."
+          },
+          {
+            "author": "jaggerxtrm",
+            "created_at": "2026-09-09T04:07:10Z",
+            "id": "ec9da7e9-2a5e-5934-a5f8-2e233e5b2b40",
+            "issue_id": "xtrm-ns250",
+            "text": "True injection path: xtrm-loader injects ONLY memory-doctrine.md (before_agent_start); memory.md never injected, written by xt memory update (cli/src/commands/memory.ts); Claude side project-memory.mjs doctrine-only. Lane S5 unblocked for the stale comment fix."
+          },
+          {
+            "author": "jaggerxtrm",
+            "created_at": "2026-09-09T04:42:16Z",
+            "id": "2537b9b8-3adf-5362-92a9-628e511e9097",
+            "issue_id": "xtrm-ns250",
+            "text": "# Core bd-memory full inventory (explorer act:deada875-6a7, read-only, main tree)\n\n## 1. Stop-gate / KV-ack enforce\n- `.xtrm/hooks/beads-memory-gate.mjs:1-119` — Claude Stop hook. L27 `bd kv get memory-gate-done:<session>`, L37 clears done/claimed/closed-this-session, L113 `gate.memory.blocked`, L119 exit 2. DELETE FILE.\n- `.xtrm/hooks/beads-gate-messages.mjs:57-63` `memoryPromptMessage()` + `bd kv set memory-gate-done`. EDIT: delete §57-63 only.\n- `.xtrm/hooks/beads-claim-sync.mjs:4,106-116,123-124` — sets `closed-this-session:<id>` L116; L124 close-time reminder. EDIT: delete L4 comment, L106-121 block, simplify L123-125.\n- `.xtrm/hooks/README.md:29-30` documents `beads-close-memory-gate.mjs` (NOT IN TREE) + `beads-memory-gate.mjs`. EDIT.\n- `.xtrm/config/hooks.json:9` SessionStart `project-memory.mjs`; `:127-128` Stop `beads-memory-gate.mjs`. EDIT: delete both entries; regenerate via installer.\n- `packages/pi-extensions/extensions/beads/index.ts:9,101-107,145-151,187,200,204-207,213-252` — Pi KV gate (`memory-acked`, MEMORY_GATE_BLOCK, `triggerMemoryGateIfNeeded`, `session_shutdown` wiring). EDIT: delete memory-gate paths, keep claim/edit/commit gates.\n- Generated mirrors (regen, never hand-edit): `.xtrm/packages/pi-extensions/extensions/beads/index.ts`, `.xtrm/ext-src/beads/index.ts`.\n- Prompt fragments: `templates/claude-md-fragments/agent-pitfalls.md:15,18`, `CLAUDE.md:33,178`, `AGENTS.md:59`, `.xtrm/config/instructions/agent-contract.md:33`, `agents-top.md:32`, `claude-top.md:32`. EDIT source fragment + regenerate; never hand-edit generated CLAUDE.md.\n\n## 2. Loader + doctrine\n- `packages/pi-extensions/extensions/xtrm-loader/index.ts:13-26,30-44` — injects `memory-doctrine.md` at `before_agent_start`. EDIT: remove doctrine block; if empty, delete extension + deregister.\n"
+          },
+          {
+            "author": "jaggerxtrm",
+            "created_at": "2026-09-09T04:42:27Z",
+            "id": "78eefdaf-0b64-5a89-8e8e-8b2a64996b39",
+            "issue_id": "xtrm-ns250",
+            "text": "- `.xtrm/config/instructions/memory-doctrine.md:1-19` + `.xtrm/registry.json:994-997`. DELETE file + registry entry.\n- `.xtrm/hooks/project-memory.mjs:1-16` SessionStart injector. DELETE.\n- `policies/using-xtrm.json:3,11`, `policies/beads.json:3,28`, `policies/session-flow.json:3`. EDIT sources, regen via `scripts/compile-policies.mjs`.\n\n## 3. `xt memory` CLI + help\n- `cli/src/commands/memory.ts:7-74` (`memory update` → memory-processor). DELETE + unwire index.\n- `cli/src/commands/help.ts:32,71-73,162-163`; `end.ts:143`, `report.ts:81,355,384`, `debug.ts:54-55`, `install.ts:71`. EDIT each.\n- `cli/dist/index.cjs` — REGENERATE via build, never edit.\n\n## 4. memory.md + scaffold + cache-sync\n- `.xtrm/memory.md:1-14`. DELETE.\n- `cli/src/core/registry-scaffold.ts:44-53` USER_OWNED_PATHS. EDIT: remove `'memory.md'`.\n- `.xtrm/registry.json` entries `:41-44, :65-68, :93-96, :994-997`. REGENERATE (hash update), never hand-edit hashes.\n- `.xtrm/hooks/specialists/specialists-memory-cache-sync.mjs:1-57`. DELETE (confirm no other `memory sync` caller).\n\n## 5. Tests\n- DELETE: `.xtrm/hooks/project-memory.test.mjs`, `cli/test/hooks-integration.test.ts:62-88`, `cli/test/hooks.test.ts:486-588` skip block (+`:127-130` case if gate gone).\n- EDIT/UPDATE: `packages/pi-extensions/tests/xtrm-loader.test.ts`, `cli/test/extensions/xtrm-loader.test.ts`, `cli/test/extensions/beads.test.ts:114-115`, `beads-parity.test.ts:61-85`, `cli/src/tests/global-hooks-canonical.test.ts:10,32,47`, `registry-scaffold.test.ts:82-83,459-497`, `registry.test.ts:211`, `scripts/__tests__/dedupe-legacy-hooks.test.mjs`, `scripts/install-update-ux-smoke.mjs:136`.\n"
+          },
+          {
+            "author": "jaggerxtrm",
+            "created_at": "2026-09-09T04:42:28Z",
+            "id": "6628084b-4847-5756-a2f0-fb291e657c45",
+            "issue_id": "xtrm-ns250",
+            "text": "- KEEP: `packages/pi-extensions/tests/python-kernel.test.ts:315-328` (unrelated `preflight` naming).\n\n## 6. Docs\n- EDIT passages: `docs/hooks.md`, `docs/worktrees.md`, `docs/legacy-hook-duplication.md`, `docs/plans/cleanup.md`, `hook-to-pi-parity-spec.md`, `xtpi-worktree-first-flow.md`, `docs/proposals/using-specialists-v3-improvements-2026-05-09.md`. CHANGELOG: new retirement entry only.\n- `docs/design/memory-system-r6g.md`: OWNER DECISION = RETAIN as archive with retirement banner (reversible).\n\n## 7. Ordered removal plan (each step green)\n1. Disable Pi close-gate (beads/index.ts only) → closes succeed. Verify: beads ext tests.\n2. Remove Claude Stop gate (delete mjs + hooks.json:127 + gate-messages §57-63). Verify: hooks.test, global-hooks-canonical.\n3. Remove doctrine injection (project-memory.mjs + hooks.json:9 + loader block + doctrine md). Verify: project-memory/xtrm-loader/hooks-integration tests.\n4. Remove `xt memory` CLI (memory.ts + help/end/report/debug/install + rebuild dist). Verify: CLI tests + install-update-ux-smoke.\n5. Remove cache-sync + claim-sync memory arms. Verify: hook tests.\n6. Registry + scaffold + artifact (regen registry + policies + dist). Verify: registry tests, `xt update --check`, drift clean.\n7. Prompts + docs + tests sweep. Verify: full grep hits only r6g-history + CHANGELOG.\n\n## Export (DONE before any delete)\n- `~/bd-memory-export-20260909.json` — 818 keys, 400KB, full `bd memories --json` dump.\n"
+          }
+        ],
+        "created_at": "2026-09-09T04:05:36Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: bd memories retires in favor of our own system. Specialists side mapped (unitAI-s9adh, S0-S8); their S6-S7 park on core S0. Core-owned pieces unmapped and live: Stop-gate beads-memory-gate.mjs, memory-gate-done/claimed KV ack, beads-close-memory-prompt.mjs, xtrm-loader .xtrm/memory.md injection, xt memory update trigger, bd CLI memory commands, live-bead Dolt memory export (data preservation before any delete). SUCCESS: core inventory + sequential removal with tree green each step; S0 (Stop gate retired) announced to hint-lane to unblock their S6-S7; memory export landed before deletions. SCOPE: map then remove core bd-memory hooks/extension/gate/docs/tests; export live memories first. NON_GOALS: replacement memory system design; specialists-repo edits; deleting history docs. CONSTRAINTS: close flows must keep working at every step (gate removed before code it guards, per s9adh ordering); backup .xtrm/memory.md + export Dolt memories before delete; no origin-mutating actions without approval. VALIDATION: post-removal grep shows history-only hits; close-flow smoke green; lane confirms S6-S7 unblocked. OUTPUT: retired core memory stack + export artifact + handoff note. SCRUTINY: MEDIUM.",
+        "heartbeat_at": "2026-09-09T04:05:39Z",
+        "id": "xtrm-ns250",
+        "issue_type": "task",
+        "lease_expires_at": "2026-09-09T04:10:39Z",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "started_at": "2026-09-09T04:05:39Z",
+        "status": "in_progress",
+        "title": "Memory retirement: core-side Stop gate + loader + export",
+        "updated_at": "2026-09-09T04:05:39Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-ns250",
+  "root_title": "Memory retirement: core-side Stop gate + loader + export",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

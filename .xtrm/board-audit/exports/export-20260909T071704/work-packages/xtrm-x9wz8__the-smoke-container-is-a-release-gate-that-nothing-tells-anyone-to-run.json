@@ -1,0 +1,67 @@
+{
+  "content_sha256": "abbeca9d8e9aa3ab20b046c20cf251c65215f63bc23696f51a48f1ef48a7902a",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-28T00:59:34Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-wiy5n.4.32",
+        "issue_id": "xtrm-x9wz8",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-x9wz8",
+      "source_field": "dependencies",
+      "target": "xtrm-wiy5n.4.32",
+      "target_present_in_snapshot": true,
+      "target_title": "smoke container checks only project files; it verifies almost no global install surface",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-x9wz8"
+  },
+  "issues": {
+    "xtrm-x9wz8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-27T22:59:34Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-28T00:59:34Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-wiy5n.4.32",
+            "issue_id": "xtrm-x9wz8",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nscripts/smoke-container/README.md calls itself a 'Pre/post-release gate' and says: 'Run it twice\naround a coordinated release, once before publishing and once after. Both must PASS.'\n\nNothing else in the ecosystem says so. Measured 2026-07-27:\n\n  ~/.archon/workflows/xtrm/xtrm-release.yaml   0 references\n  docs/release.md                              0 references\n  ~/.xtrm/skills/default/releasing/SKILL.md    0 references\n  .github/                                     0 references\n  package.json                                 0 references\n  README.md, XTRM-GUIDE.md, CLAUDE.md, AGENTS.md  0 references\n  every global skill under ~/.xtrm/skills/default  0 references\n\nThe only mentions outside its own directory are 2 lines in\ndocs/design/audit-reconcile-v0724-epic-plan.md — a historical epic plan, not an operator runbook.\n\nSo the gate depends entirely on a human remembering a sentence in a README they would only read\nif they were already in that directory.\n\n## THIS IS NOT THE SAME AS THE OTHER SMOKE — do not confuse them\n\ndocs/release.md documents fresh-machine-smoke.yml, which IS a hard automated gate: publish.yml is\na 3-job DAG resolve_ref -> fresh_machine_smoke -> publish, and 'if smoke fails, publish never\nstarts'. That one is wired and enforced.\n\nThey test different things:\n  fresh-machine-smoke.yml   live npm install + xt init -y + sp init — can a fresh user bootstrap\n  smoke-container/verify.sh the GLOBAL install surface — claude/pi skill pointers, per-event hook\n                            coverage, --new-instance, pi packages, and drift-repair\n\nThe bootstrap gate would not have caught bead xtrm-wiy5n.4.25 or xtrm-wiy5n.4.27. The container\ngate is the one built to catch those, and it is the one nobody is told to run.\n\n## WHY IT MATTERS NOW\n\nBead xtrm-wiy5n.4.32 just made this container a genuinely good gate: 7 fault injections each\nprove one check, plus a drift-break-and-repair stage. A good gate that no runbook names is a gate\nthat will be skipped on the release after the person who built it stops paying attention.\n\n## SUCCESS\n\n- The release path names the container run, at the point where it must happen.\n- Choose ONE owner for that instruction and put it there: docs/release.md, the releasing skill,\n  or a node in the archon release workflow. Do not put it in three places that can drift apart.\n- The instruction states the known pre-release exception, so an operator does not 'fix' a gate\n  that is correctly reporting an unreleased fix.\n\n## NON_GOALS\n\nMaking the container run automatically in CI. It needs docker and several minutes; wiring it into\nevery push is not the ask. The ask is that the RELEASE PATH names it.",
+        "id": "xtrm-x9wz8",
+        "issue_type": "bug",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "the smoke container is a release gate that nothing tells anyone to run",
+        "updated_at": "2026-07-27T22:59:34Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-x9wz8",
+  "root_title": "the smoke container is a release gate that nothing tells anyone to run",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
