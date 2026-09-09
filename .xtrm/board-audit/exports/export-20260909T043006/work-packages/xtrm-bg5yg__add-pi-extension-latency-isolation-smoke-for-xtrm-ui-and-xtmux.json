@@ -1,0 +1,73 @@
+{
+  "content_sha256": "76f0565aa3f3fdde3fcab1f3c7382c357b272d6e716921bb7574e5ed2f9a4815",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-10T02:08:40Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-qti5z",
+        "issue_id": "xtrm-bg5yg",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-bg5yg",
+      "source_field": "dependencies",
+      "target": "xtrm-qti5z",
+      "target_present_in_snapshot": true,
+      "target_title": "Post-compaction: audit xtrm-ui tool rendering overhead and pi tool-call slowdown",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-bg5yg"
+  },
+  "issues": {
+    "xtrm-bg5yg": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-10T00:08:40Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-10T02:08:40Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-qti5z",
+            "issue_id": "xtrm-bg5yg",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Pi feels slow across tool calls and turn-end. We need a repeatable isolation smoke instead of judging by TUI feel. Current suspects include xtrm-ui rendering overhead, global raw extensions, and xtmux agent-state lifecycle hooks.\n\nSCOPE: Build or document a minimal timing procedure that compares: baseline/no relevant extensions, xtrm-ui enabled, xtmux-agent-state enabled, and both enabled. Include detection for raw global extensions under ~/.pi/agent/extensions because pi list only shows packages.\n\nSUCCESS: A command checklist or small script reports median timings for several simple bash/read/write/edit calls and turn-end latency. It must explicitly identify loaded packages and raw extension files, and include a verdict taxonomy: PASS/no evidence, SUSPECT/needs isolation, CONFIRMED/bottleneck.\n\nNON_GOALS: Do not benchmark model latency. Do not require external services. Do not permanently disable user extensions.\n\nCONSTRAINTS: Measurements must be cheap and reversible. Prefer env toggles or temporary extension renames over reinstalling packages. Preserve bd/security gates unless explicitly testing no-extension baseline.\n\nVALIDATION: Run at least one local sample and record medians. Verify the smoke catches the xtmux message_update/tool_execution_start issue or proves it resolved after debounce.\n\nOUTPUT: Script/checklist path plus sample output and recommended thresholds.",
+        "id": "xtrm-bg5yg",
+        "issue_type": "task",
+        "labels": [
+          "area:pi-extensions",
+          "area:xtmux",
+          "contract:ready",
+          "perf"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Add pi extension latency isolation smoke for xtrm-ui and xtmux",
+        "updated_at": "2026-07-10T00:08:40Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-bg5yg",
+  "root_title": "Add pi extension latency isolation smoke for xtrm-ui and xtmux",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

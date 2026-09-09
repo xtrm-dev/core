@@ -1,0 +1,140 @@
+{
+  "content_sha256": "30905f1b8cfaf4e3f0020408943f0235fda8810a4e2e99561b63ead9d0fefaf4",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-03T23:04:23Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-24gjf",
+        "issue_id": "xtrm-drdg6",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-drdg6",
+      "source_field": "dependencies",
+      "target": "xtrm-24gjf",
+      "target_present_in_snapshot": true,
+      "target_title": "Design: specialists consuming service-skills when a registry is present",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-03T23:04:24Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-n74m8",
+        "issue_id": "xtrm-drdg6",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-drdg6",
+      "source_field": "dependencies",
+      "target": "xtrm-n74m8",
+      "target_present_in_snapshot": true,
+      "target_title": "Remove stale pre-v2 service-skills trinity (creating/scoping/updating/using-service-skills) lingering in consumers",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-03T23:04:24Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-pan6c",
+        "issue_id": "xtrm-drdg6",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-drdg6",
+      "source_field": "dependencies",
+      "target": "xtrm-pan6c",
+      "target_present_in_snapshot": true,
+      "target_title": "Roll out bd auto-stage patch across ~/dev and ~/projects",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-04T05:05:59Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-t2530",
+        "issue_id": "xtrm-drdg6",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-drdg6",
+      "source_field": "dependencies",
+      "target": "xtrm-t2530",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-04: smoke-test xt spec e2e + produce docs/xt-spec/",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-drdg6"
+  },
+  "issues": {
+    "xtrm-drdg6": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "dawid",
+        "comment_count": 0,
+        "created_at": "2026-06-03T21:04:11Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-03T23:04:23Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-24gjf",
+            "issue_id": "xtrm-drdg6",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-03T23:04:24Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-n74m8",
+            "issue_id": "xtrm-drdg6",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-03T23:04:24Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-pan6c",
+            "issue_id": "xtrm-drdg6",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-04T05:05:59Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-t2530",
+            "issue_id": "xtrm-drdg6",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Handoff for the 2026-06-03 session. SSOT report: .xtrm/reports/2026-06-03-744db777.md — read it first (full summary, problems, open issues w/ context, ordered next priorities). This bead is the live pointer into the board.\n\nSuggested next priorities:\n1. xtrm-24gjf — paused design thread (specialists consuming service-skills + adopt/reconcile librarian split); precondition now cleared by x8b5g.\n2. xtrm-n74m8 — stale pre-v2 trinity cleanup (fleet-wide drift discovered this session).\n3. xtrm-pan6c — bd auto-stage rollout (standing P1).",
+        "id": "xtrm-drdg6",
+        "issue_type": "task",
+        "priority": 1,
+        "started_at": "2026-06-03T21:04:23Z",
+        "status": "open",
+        "title": "Session handoff 2026-06-03: service-skills field-hardening shipped (0.8.3→0.8.5), design paused",
+        "updated_at": "2026-06-04T03:54:19Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-drdg6",
+  "root_title": "Session handoff 2026-06-03: service-skills field-hardening shipped (0.8.3→0.8.5), design paused",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,114 @@
+{
+  "content_sha256": "1b3a30b702464e41f8da7ce070de2c8a859bc0e1ce41500254dc044cabcc447a",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-11T06:38:35Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-il7ov",
+        "issue_id": "xtrm-mp0f2",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-mp0f2",
+      "source_field": "dependencies",
+      "target": "xtrm-il7ov",
+      "target_present_in_snapshot": true,
+      "target_title": "P0: rebuild CLI dist — claude-runtime-sync fix not active until compiled",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-11T06:38:36Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-pan6c",
+        "issue_id": "xtrm-mp0f2",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-mp0f2",
+      "source_field": "dependencies",
+      "target": "xtrm-pan6c",
+      "target_present_in_snapshot": true,
+      "target_title": "Roll out bd auto-stage patch across ~/dev and ~/projects",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-11T06:38:36Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-s5ih5",
+        "issue_id": "xtrm-mp0f2",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-mp0f2",
+      "source_field": "dependencies",
+      "target": "xtrm-s5ih5",
+      "target_present_in_snapshot": true,
+      "target_title": "fix: xt install --global must not overwrite project hooks into ~/.claude/settings.json",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-mp0f2"
+  },
+  "issues": {
+    "xtrm-mp0f2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-11T04:38:31Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-11T06:38:35Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-il7ov",
+            "issue_id": "xtrm-mp0f2",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-11T06:38:36Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-pan6c",
+            "issue_id": "xtrm-mp0f2",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-11T06:38:36Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-s5ih5",
+            "issue_id": "xtrm-mp0f2",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Handoff for session ending 2026-06-11.\n\n**SSOT report:** `.xtrm/reports/2026-06-11-587292f3.md`\n\nRead the report first — it has the full summary, problems, open issues with context, and the ordered next-priority list. This bead is the live pointer into the board.\n\n**Suggested next priorities (from report §Suggested Next Priority):**\n1. xtrm-il7ov — P0 global-install hook-clobber source fix is still not in current branch/dist; verify/rebuild/close or implement.\n2. xtrm-s5ih5 — source-level global install hook-ownership fix remains the underlying behavior task; reconcile with xtrm-il7ov.\n3. xtrm-pan6c — after hook fixes are merged/released, roll out managed hook repairs across the local fleet with `xt update --apply`.\n\nAlso push/open PR for current branch `fix/xtrm-jdn8e-agent-docs-maintainer-identity` (commit `587292f3`) and remember there is related same-day work on branch `fix/xtrm-b5mzr-hook-reachability` that should be pushed/merged separately if not already handled.",
+        "id": "xtrm-mp0f2",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "open",
+        "title": "Session handoff 2026-06-11: agent docs audit identity + hook follow-ups",
+        "updated_at": "2026-06-11T04:38:31Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-mp0f2",
+  "root_title": "Session handoff 2026-06-11: agent docs audit identity + hook follow-ups",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

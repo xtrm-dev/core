@@ -1,0 +1,44 @@
+{
+  "content_sha256": "cb77f6a586d8e7eddff9076229248adc048181cc65bd38c927738f2e3a92c382",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-dhvqz"
+  },
+  "issues": {
+    "xtrm-dhvqz": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-14T19:01:35Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: the xtmux-j46 epic shipped new orchestrator-facing surfaces (xtmux topology --json, context --current --json, and readiness-gated handoff via --wait-ready). The /multiplexing and /multiplexing-team skills — the discovery surface where these change orchestrator/delegate behavior — did not mention them. The installed copies under ~/.xtrm/skills were patched directly (they regenerate on xt update), but the CANONICAL sources here in core were not, so the next release would overwrite the installed patch with the un-updated canonical text.\n\nSCOPE: .xtrm/skills/default/multiplexing/SKILL.md and .xtrm/skills/default/multiplexing-team/SKILL.md in this repo. Check whether either is vendor-tracked/hash-pinned before editing (see xtmux memories vendored-skill-files-in-core / skills-global-sync-lags-canonical) — if pinned, edit upstream and re-vendor rather than in place.\n\nCONTENT (compact, routing-oriented — mirror what was applied to ~/.xtrm/skills):\n- multiplexing (orchestrator): in the 'xtmux picker — operational assist' bullets, add (a) topology --json = the host→session→window→pane graph (xtrm.xtmux.topology.v1), stable $/@/% ids + geometry, read-only, no pane content, prefer over per-session list-panes scraping; (b) context --current --json = runtime-origin of the current pane (xtrm.runtime-origin.v1), use instead of inferring from mutable #S; (c) on the xtmux handoff bullet, note --wait-ready gates on per-instance readiness (agent.ready of the CURRENT instance), so you never inject into a freshly-launched agent, and a previous occupant's stale ready row does not count.\n- multiplexing-team (delegate): under rule 5 (do not prompt a working target), add that onward handoffs gate on --wait-ready (per-instance readiness, not a pane-scoped stale row), and that a delegate reports its own location precisely via context --current --json rather than #S.\n\nSUCCESS: both canonical skills mention topology/context/readiness where they change behavior; a release ships them so a fresh install carries the callouts (not just the transient ~/.xtrm patch).\nNON_GOALS: re-documenting the full contract surface (already in xtmux docs/json-command-api.md, docs/bridge.md, docs/agent-state-hooks.md).\nVALIDATION: skills edited; diff -q against the applied ~/.xtrm copies; release cut per the core release process.\nOUTPUT: changed skill files, release reference.",
+        "id": "xtrm-dhvqz",
+        "issue_type": "task",
+        "labels": [
+          "docs",
+          "skills"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "Apply xtmux-j46 topology/context/readiness callouts to canonical multiplexing skills + release",
+        "updated_at": "2026-07-14T19:01:35Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-dhvqz",
+  "root_title": "Apply xtmux-j46 topology/context/readiness callouts to canonical multiplexing skills + release",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

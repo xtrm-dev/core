@@ -1,0 +1,116 @@
+{
+  "content_sha256": "e45aa426ea536d78b82ee8823ce94a0f31cda6250c53be11dd44cad22651da20",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-23T04:30:27Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-6ofgm",
+        "issue_id": "xtrm-c4fqp",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-c4fqp",
+      "source_field": "dependencies",
+      "target": "xtrm-6ofgm",
+      "target_present_in_snapshot": true,
+      "target_title": "xt update --apply bakes worktree cwd into .claude/settings.json hook paths",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-23T04:30:26Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-il7ov",
+        "issue_id": "xtrm-c4fqp",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-c4fqp",
+      "source_field": "dependencies",
+      "target": "xtrm-il7ov",
+      "target_present_in_snapshot": true,
+      "target_title": "P0: rebuild CLI dist — claude-runtime-sync fix not active until compiled",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-23T04:30:27Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-p72bo",
+        "issue_id": "xtrm-c4fqp",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-c4fqp",
+      "source_field": "dependencies",
+      "target": "xtrm-p72bo",
+      "target_present_in_snapshot": true,
+      "target_title": "Phase A: reusable GitHub Action — detect drift, comment on merged PR",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-c4fqp"
+  },
+  "issues": {
+    "xtrm-c4fqp": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "dawid",
+        "comment_count": 0,
+        "created_at": "2026-06-23T02:27:06Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-23T04:30:27Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-6ofgm",
+            "issue_id": "xtrm-c4fqp",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-23T04:30:26Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-il7ov",
+            "issue_id": "xtrm-c4fqp",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-23T04:30:27Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-p72bo",
+            "issue_id": "xtrm-c4fqp",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Handoff for session ending 2026-06-23.\n\n**SSOT report:** `.xtrm/reports/2026-06-23-ffcd45c5.md`\n\nRead the report first — it has the full summary, problems, open issues with context, and the ordered next-priority list. This bead is the live pointer into the board.\n\n**Suggested next priorities (from report § Suggested Next Priority):**\n1. xtrm-il7ov — rebuild CLI dist for claude-runtime-sync fix (P0, mechanical, high leverage)\n2. xtrm-6ofgm — fix `xt update --apply` baking worktree cwd into hook paths (P0, real bug)\n3. Re-vendor reconcile.py to mercury-infra (cross-repo follow-up, pane 1 action) — PRs #310 + #311 not yet in consumer\n4. xtrm-p72bo — verify duplicate of closed Phase A (xtrm-g7j08), close-as-dup if confirmed",
+        "id": "xtrm-c4fqp",
+        "issue_type": "task",
+        "priority": 1,
+        "started_at": "2026-06-23T02:27:15Z",
+        "status": "open",
+        "title": "Session handoff 2026-06-23: pick up next priorities",
+        "updated_at": "2026-06-23T02:30:44Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-c4fqp",
+  "root_title": "Session handoff 2026-06-23: pick up next priorities",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

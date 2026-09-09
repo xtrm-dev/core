@@ -1,0 +1,138 @@
+{
+  "content_sha256": "7edefa1606f0e8fe3bd7cda990cffeb2b8e78cbe5935868203c4d43b370bc3b9",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-25T23:46:26Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-77rba",
+        "issue_id": "xtrm-u22fw",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-u22fw",
+      "source_field": "dependencies",
+      "target": "xtrm-77rba",
+      "target_present_in_snapshot": true,
+      "target_title": "CHANGELOG: dedupe entries for PR #306 (mine vs other-session sync)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-25T23:46:26Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-efa2a.1",
+        "issue_id": "xtrm-u22fw",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-u22fw",
+      "source_field": "dependencies",
+      "target": "xtrm-efa2a.1",
+      "target_present_in_snapshot": true,
+      "target_title": "[needs-codex] Bump service-skills-sync.execution.stall_timeout_ms default 120000 → 600000",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-26T01:50:53Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-l7tkx",
+        "issue_id": "xtrm-u22fw",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-u22fw",
+      "source_field": "dependencies",
+      "target": "xtrm-l7tkx",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-26: pre-container cleanup + container-design pivot",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-25T23:46:27Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-vu2ro.1",
+        "issue_id": "xtrm-u22fw",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-u22fw",
+      "source_field": "dependencies",
+      "target": "xtrm-vu2ro.1",
+      "target_present_in_snapshot": true,
+      "target_title": "[needs-codex] Extend service-skills-sync system_prompt with Phase 6 (specialist opens PR via gh CLI)",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-u22fw"
+  },
+  "issues": {
+    "xtrm-u22fw": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-25T21:44:56Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-25T23:46:26Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-77rba",
+            "issue_id": "xtrm-u22fw",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-25T23:46:26Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-efa2a.1",
+            "issue_id": "xtrm-u22fw",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-26T01:50:53Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-l7tkx",
+            "issue_id": "xtrm-u22fw",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-25T23:46:27Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-vu2ro.1",
+            "issue_id": "xtrm-u22fw",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Handoff for session ending 2026-06-25.\\n\\nSSOT report: .xtrm/reports/2026-06-25-4d5625ff.md\\n\\nRead the report first. It summarizes merged PRs #313/#317/#318, automerge/delete-branch repo settings, unresolved local untracked skill mirrors, and next priorities.\\n\\nSuggested next priorities:\\n1. xtrm-77rba — dedupe any remaining CHANGELOG PR #306 entries after the multi-session changelog reconciliation.\\n2. xtrm-efa2a.1 / xtrm-vu2ro.1 — verify whether in-progress service-skills-sync follow-ups are still live after PRs #324–#327.\\n3. PR hygiene — verify main after #318 merge and consider cleanup of local untracked .xtrm skill mirrors.",
+        "id": "xtrm-u22fw",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "open",
+        "title": "Session handoff 2026-06-25: release-prep/docs + service-skills follow-ups",
+        "updated_at": "2026-06-25T21:44:56Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-u22fw",
+  "root_title": "Session handoff 2026-06-25: release-prep/docs + service-skills follow-ups",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
