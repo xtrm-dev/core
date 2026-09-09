@@ -48,10 +48,8 @@ Use this checklist to validate **all project skills and hooks** in a real projec
 
 ## Scope
 
-Project skills covered:
-- `quality-gates` (unified Python + TypeScript)
-- `tdd-guard`
-- `service-skills`
+Default skills covered (nine universal v4 defaults — see `skills.md` §Universal defaults):
+- `using-xtrm`, `starting-and-resuming-work`, `multiplexing`, `planning`, `engineering-quality`, `using-specialists`, `gitnexus`, `skill-creator`, `find-skills`
 
 ---
 
@@ -60,7 +58,7 @@ Project skills covered:
 - [ ] `xtrm --version` returns expected release.
 - [ ] `claude --version` and `pi --version` are available.
 - [ ] `xtrm init -y` completes successfully in the target repo.
-- [ ] `xtrm skills list --global --json` includes `using-quality-gates`, `using-tdd`, and `service-skills`.
+- [ ] `xtrm skills list --global --json` includes the nine universal defaults (e.g. `engineering-quality`, `planning`, `gitnexus`).
 
 ---
 
@@ -69,26 +67,23 @@ Project skills covered:
 - [ ] In the target repo, run `xtrm init -y`.
 - [ ] Run `xtrm doctor` and resolve any reported hook, skill, or package drift.
 - [ ] Confirm runtime skill pointers exist:
-  - [ ] `.claude/skills/using-quality-gates`
-  - [ ] `.claude/skills/using-tdd`
-  - [ ] `.claude/skills/service-skills`
+  - [ ] `~/.claude/skills` points at the global active view (`~/.xtrm/skills/active/`)
+  - [ ] `.claude/skills` points at the composed project view (`.xtrm/skills/active/`)
 
 ---
 
 ## Hook Wiring Verification
 
-- [ ] Open `.claude/settings.json` and verify these hook entries exist:
-  - [ ] `PostToolUse` matcher for `quality-gates` includes native edit tools.
-  - [ ] `PreToolUse` matcher for `tdd-guard` includes native edit tools.
-  - [ ] `PreToolUse` and `PostToolUse` matchers for `service-skills` include native edit tools.
-- [ ] Confirm bridge script exists:
-  - [ ] `.claude/hooks/tdd-guard-pretool-bridge.cjs`
+- [ ] Open `~/.claude/settings.json` and verify these hook entries exist (see `hooks.md`):
+  - [ ] `PostToolUse` entries for `quality-check.cjs` (JS/TS) and `quality-check.py` (Python) on write/edit tools.
+  - [ ] `PostToolUse` entry for `beads-claim-sync.mjs` after Beads commands.
+  - [ ] `PostToolUse` entry for `gitnexus/gitnexus-hook.cjs` on search/read tools.
 
 ---
 
 ## Live Skill Tests
 
-### 1) Quality Gates (Unified)
+### 1) Quality Checks (quality-check hooks)
 
 **Python:**
 - [ ] Edit a Python file with a clear lint/type issue.
@@ -102,13 +97,11 @@ Project skills covered:
 - [ ] ESLint/Prettier autofix path works when configured.
 - [ ] Blocking behavior occurs for unresolved critical issues.
 
-### 2) TDD Guard
+### 2) TDD Discipline (engineering-quality)
 
-- [ ] PreToolUse gate blocks implementation attempts when tests are not in proper state.
-- [ ] `tdd-guard --prompt-check` still works for quick on/off prompts.
-- [ ] `tdd-guard --session-init` runs on session start.
-- [ ] **Non-code bypass check**: edit a `.md` file and confirm no false TDD block.
-- [ ] Code-file check: edit a `.ts`/`.py` file and confirm TDD guard still enforces.
+- [ ] `engineering-quality` testing reference governs test-first workflow for code edits.
+- [ ] **Non-code bypass check**: edit a `.md` file and confirm no false quality block.
+- [ ] Code-file check: edit a `.ts`/`.py` file and confirm quality-check hooks still enforce.
 
 ### 3) Service Skills Set
 
@@ -136,7 +129,7 @@ The release-contract gates enforce npm tarball integrity against the vendored sp
 - [ ] `npm run check:skills-ownership` — `docs/skills-ownership.json` declares all specialists-owned skills present in `.xtrm/skills/default/`.
 - [ ] `npm run check:specialists-vendor` — Vendored mirror matches upstream specialists (requires `SPECIALISTS_REPO_PATH` or falls back to GitHub checkout).
 - [ ] `npm run check:layout-guards` — No strays or nested folders under `.xtrm/skills/default/` (flat layout invariants).
-- [ ] `npm run check:payload-hygiene` — `npm pack --dry-run` blocks forbidden artifacts (`.xtrm/worktrees/`, `.pi/`, `.serena/`, `*.db`, absolute-path leaks).
+- [ ] `npm run check:payload-hygiene` — `npm pack --dry-run` blocks forbidden artifacts (managed worktree payloads, runtime/cache artifacts, `*.db`, absolute-path leaks).
 - [ ] `npm run check:registry-pack-parity` — `.xtrm/registry.json` matches what `npm pack` would ship.
 - [ ] `node scripts/verify-asset-contract.mjs` — SHA256 hash match per specialists' `dist/asset-contract.json` for all specialists-owned skills.
 
@@ -151,7 +144,7 @@ End-to-end validation on a clean ubuntu-latest runner:
 - [ ] `gh workflow run fresh-machine-smoke.yml` — Operator-triggered smoke test.
 - [ ] Assert: `xt init -y` completes all 5 phases (Machine → Claude → Pi → Project → Doctor).
 - [ ] Assert: `sp init` / `sp doctor` succeed after `sp` installs Bun runtime.
-- [ ] Assert: Three must-have specialists skills exist under `.xtrm/skills/default/` (`using-specialists`, `update-specialists`, `using-specialists-auto`).
+- [ ] Assert: Two must-have Specialists skills exist (`using-specialists` in global `default/`, `update-specialists` in `optional/xtrm-maintenance`).
 - [ ] Assert: No symlinks under `.xtrm/` (flat-active-view invariant).
 - [ ] Workflow triggered automatically in `publish.yml` via `workflow_call` before npm publish.
 
@@ -187,7 +180,7 @@ scripts/security-scan.sh
 ## Pass Criteria
 
 - [ ] All project skills execute their intended hooks.
-- [ ] No false-positive TDD block on markdown/non-code edits.
+- [ ] No false-positive quality block on markdown/non-code edits.
 - [ ] No missing hook script path errors.
 - [ ] Team can reproduce results on a clean machine following this guide.
 
