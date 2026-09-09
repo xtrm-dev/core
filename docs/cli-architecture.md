@@ -34,7 +34,7 @@ xt / xtrm
 ├── worktree / attach / end   worktree lifecycle and publication
 ├── merge                     Specialists-backed merge queue
 ├── topology                  current XTRM worker/runtime topology
-├── docs / memory / report    durable operator/reference surfaces
+├── docs / report         durable operator/reference surfaces
 ├── debug                     XTRM diagnostic/event tooling
 ├── spec                      structured planning/spec pipeline
 ├── release / migrate         release and one-time migration workflows

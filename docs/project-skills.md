@@ -29,8 +29,8 @@ updated_at: 2026-07-08
 
 After the global skills migration (Batches A–F, epic `xtrm-bq7yd`), per-repo skills contain only **residual state**:
 
-- User-authored packs (`.xtrm/skills/user/packs/`)
-- Service-skills output (`.xtrm/skills/user/packs/<repo>-services/`)
+- User-authored packs (`.xtrm/skills/<pack>/`)
+- Service-skills output (`.xtrm/skills/<repo>-services/`)
 - Composed active view (`.xtrm/skills/active/`)
 - Project delta state (`.xtrm/skills/state.json`)
 
@@ -168,7 +168,7 @@ Use assets from:
 
 ## Installer Expectations
 
-- `install-service-skills` tests and command paths should resolve assets from `.xtrm/skills/default/service-skills` (global)
+- `install-service-skills` tests and command paths should resolve assets from `skills/service-skills` (repo source)
 - Runtime activation targets composed project-local `.xtrm/skills/active/` through active skill links
 - Service-skills output lives at `.xtrm/skills/user/packs/<repo>-services/`
 

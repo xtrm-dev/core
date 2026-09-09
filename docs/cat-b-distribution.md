@@ -10,15 +10,10 @@ updated_at: 2026-05-13
 
 These skills stay canonical in `specialists` and ship as vendored copies at publish time:
 
-- `update-specialists`
-- `using-kpi`
-- `using-nodes`
-- `specialists-creator`
-- `using-specialists`
-- `using-specialists`
-- `using-specialists`
-- `using-specialists-auto`
-- `using-script-specialists`
+| Skill | Placement | Reason |
+|---|---|---|
+| `using-specialists` | `default` | Universal Specialists execution-backend doctrine used by ordinary XTRM agents. |
+| `update-specialists` | `optional/xtrm-maintenance` | Explicit distribution/runtime maintenance workflow. |
 
 Publish flow refreshes `~/.xtrm/skills/default/` (global SSOT) from `specialists` before registry generation. The publish workflow (`publish.yml`) additionally verifies the vendored mirror against the specialists-side `dist/asset-contract.json` (deterministic sha256 manifest) via `scripts/verify-asset-contract.mjs`, so drift between the npm tarball payload and the specialists release cannot ship. See [`release.md`](release.md) for the full gate chain.
 
@@ -39,10 +34,10 @@ Backup path is predictable:
 Recommended before migration:
 
 1. Copy `.claude/skills/` somewhere safe.
-2. Move hand-curated content into `.xtrm/skills/user/`.
+2. Move hand-curated content into `.xtrm/skills/<pack>/`.
 3. Re-run `xt init` or `xt update`.
 
-Post-migration, user-authored content belongs under `.xtrm/skills/user/` (project) or `~/.xtrm/skills/user/` (global), not under `.claude/skills/`.
+Post-migration, user-authored content belongs under `.xtrm/skills/<pack>/` (project) or `~/.xtrm/skills/<pack>/` (global), not under `.claude/skills/`.
 
 ## Windows stance
 
