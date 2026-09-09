@@ -1,0 +1,67 @@
+{
+  "content_sha256": "bb189b0179d344af04253a2016e34102cdbcfdafbb06217cc4f67db9b6f6cbb5",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-24T22:22:58Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.4",
+        "issue_id": "xtrm-1ek54",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-1ek54",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.4",
+      "target_present_in_snapshot": true,
+      "target_title": "PR4: dispatch integration + PreToolUse activator upgrade (retrieval + narrow blocking)",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-1ek54"
+  },
+  "issues": {
+    "xtrm-1ek54": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T20:22:59Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T22:22:58Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.4",
+            "issue_id": "xtrm-1ek54",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Review final branch feature/xtrm-56flm.4-dispatch-activator at 7bcc56b against parent xtrm-56flm.4 contract. Verify real PreToolUse Bash wiring, evidence attachment, promotion refusal/override/carryover, narrow block matrix, PR2 integration, v0.5.0 release metadata, and tests. Read-only review; report actionable findings with file:line evidence.",
+        "id": "xtrm-1ek54",
+        "issue_type": "task",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Seconder review: PR4 final branch integration",
+        "updated_at": "2026-07-24T20:22:59Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-1ek54",
+  "root_title": "Seconder review: PR4 final branch integration",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

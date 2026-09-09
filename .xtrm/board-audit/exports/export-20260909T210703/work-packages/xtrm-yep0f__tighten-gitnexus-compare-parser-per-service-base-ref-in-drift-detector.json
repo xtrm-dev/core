@@ -1,0 +1,66 @@
+{
+  "content_sha256": "3b5d1746902d092953b19a4598514ce42338b1261932dd9ba9aa8736afe832b8",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-30T04:21:44Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-tkqjn.2",
+        "issue_id": "xtrm-yep0f",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-yep0f",
+      "source_field": "dependencies",
+      "target": "xtrm-tkqjn.2",
+      "target_present_in_snapshot": true,
+      "target_title": "drift_detector.py: gitnexus-default scan + mtime pre-filter + fallback",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-yep0f"
+  },
+  "issues": {
+    "xtrm-yep0f": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-30T02:21:40Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-30T04:21:44Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-tkqjn.2",
+            "issue_id": "xtrm-yep0f",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Discovered during .2. Two quality gaps (not correctness): (1) _enrich_item parses detect_changes HUMAN output by line-substring match (item file_path in line) and uses processes=['compare-range'] placeholder — replace with real symbol/process extraction once a concrete gitnexus compare output sample exists (or switch to structured/MCP path). (2) base_ref uses item.get('last_sync_ref') which may be unset -> falls to HEAD^1 (single-commit); ensure scan populates each item's last_sync_ref from the per-service registry field so the full last_sync_ref..HEAD range is used. VALIDATION: with a real multi-commit drift + index, tiers reflect actual symbols/processes; range covers all commits since last_sync_ref.",
+        "id": "xtrm-yep0f",
+        "issue_type": "task",
+        "priority": 3,
+        "status": "open",
+        "title": "Tighten gitnexus compare parser + per-service base_ref in drift_detector",
+        "updated_at": "2026-05-30T02:21:40Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-yep0f",
+  "root_title": "Tighten gitnexus compare parser + per-service base_ref in drift_detector",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

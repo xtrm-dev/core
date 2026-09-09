@@ -1,0 +1,40 @@
+{
+  "content_sha256": "7ebcff30f521f2632ef713362062eda44f58016b60cf7a545cbe1f2536db5003",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-y9amd"
+  },
+  "issues": {
+    "xtrm-y9amd": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-25T15:40:55Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Followup from ext-src investigation (2026-07-25, ~/dev/xtrm branch xt/ext-src-invx read-only helper, report at /tmp/ext-src-report.md, also captured in ~/dev/xtrm bd memory 'ext-src-investigation-findings-report-at-tmp-ext').\n\n## Findings summary\n\n.xtrm/ext-src/ is vestigial pre-v0.7.8 dead code — DEPRECATED marker in docs/xtrm-directory.md:74,116,161, no writers in cli/src/, no readers at runtime. Consumer pi loads extensions via 'npm:@jaggerxtrm/pi-extensions' materialized into ~/.pi/agent/extensions/, not from .xtrm/ext-src/.\n\nThe pi-extension @xtrm/pi-service-skills is silently DORMANT on every consumer:\n- Canonical (post-v0.7.8) resolveSkillScript targets .claude/skills/service-skills/scripts/ + .xtrm/skills/default/service-skills/scripts/ — neither exists on any consumer (~/.xtrm/skills/default/ has no service-skills nor service-knowledge dir)\n- Both hook handlers return undefined when scripts not found → silent no-op\n- Actual scripts live in the pipx service_knowledge python package; extension has zero code path to reach them\n\nRename impact = zero runtime effect (extension is no-op before AND after).\n\n## Work items (release-train scope)\n\n### 1. Prune .xtrm/ext-src/ on 9 consumer repos\n\nConsumer copies enumerated at investigation time (2026-07-25):\n- ~/projects/mercury/{barchart-scraper,darth-feedor,economic-data,infra,platform,quant,treasury-cb,website}\n- ~/dev/transcriptoz\n\nApproach options:\n- Ship 'xt migrate ext-src' — proper migrator, idempotent rm-rf across .xtrm/ext-src/, one command per repo, could tail into 'xt update --apply'\n- One-shot script (bash loop over the list above)\n- Defer until each consumer naturally does xt update --apply which could also clean\n\nNOT to include: ~/dev/core/.xtrm/ext-src/ (this repo's own ext-src) — core is authoritative, prune here decoupled from the migrator ship\n\n### 2. Decide pi-extension @xtrm/pi-service-skills future\n\nTwo shapes (pick one):\n\n**Retire** (zero consumer impact)\n- Remove packages/pi-extensions/extensions/service-skills/\n- Drop from packages/pi-extensions/src/manifest.json 'active' list\n- Add to 'disabled' block with note (pattern: quality-gates, pi-serena-compact, gitnexus, serena)\n- No follow-up migrator needed (consumers pick it up on xt pi setup)\n\n**Rebuild** (revives the drift-injection + cataloger-injection UX on Pi sessions)\n- Rename extensions/service-skills → extensions/service-knowledge\n- Rename manifest.json id 'service-skills' → 'service-knowledge'\n- Update MACHINERY_SKILL constant to 'service-knowledge' (dual-name array optional for one-release backward-compat)\n- Add fallback in resolveSkillScript: when no on-disk script found, invoke 'python3 -m service_knowledge.scripts.<name>' (adjust the two SubprocessRunner.run() call sites to accept argv-array or resolve to that Python invocation)\n- Ship in next @jaggerxtrm/pi-extensions release\n\n## Coordinate with\n\n- Jira epic ISSUE-51 (mercuryintel.atlassian.net/browse/ISSUE-51) — bootstrap-remaining-mercury-repos (8 P0 bd issues open, one per repo)\n- xtrm-dev/infra bead infra-cwfj — duplicate/mirror of this bead scoped to infra's board\n- Package: ~/dev/xtrm/packages/service-knowledge/ v0.7.0\n- Recent shipped substrate: xtrm-dev/xtrm#21-#27, xtrm-dev/specialists#217, xtrm-dev/core#503\n\n## Timing\n\nDeferred until the current core sprint closes. No urgency: extension is dormant, ext-src is dead code, no user-facing pain today.",
+        "id": "xtrm-y9amd",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "release-train: retire .xtrm/ext-src/ + decide pi-extension @xtrm/pi-service-skills future",
+        "updated_at": "2026-07-25T15:40:55Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-y9amd",
+  "root_title": "release-train: retire .xtrm/ext-src/ + decide pi-extension @xtrm/pi-service-skills future",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

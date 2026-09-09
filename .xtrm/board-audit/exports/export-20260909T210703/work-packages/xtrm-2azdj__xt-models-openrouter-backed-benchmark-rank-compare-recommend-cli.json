@@ -1,0 +1,917 @@
+{
+  "content_sha256": "86527bf93988da964197fb3abdd0649d9139cf2a340e0c86b2c91ccbbbcfe003",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-2azdj.1"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.10"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.2"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.3"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.4"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.5"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.6"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.7"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.8"
+      },
+      {
+        "children": [],
+        "id": "xtrm-2azdj.9"
+      }
+    ],
+    "id": "xtrm-2azdj"
+  },
+  "issues": {
+    "xtrm-2azdj": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:02:11Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nChoosing which hosted/API model to assign to a role (specialist, pi session, or ad-hoc task) in the xtrm ecosystem is currently a guess — there is no CLI surface that shows independent quality/cost/speed data for the commercial models actually in play (GPT, Claude, Gemini, Grok, GLM, Kimi, Qwen served via API). A prior local-benchmark-runner idea (\"llmfit\") was rejected as not applicable to hosted/paid models — the right shape is a CLI that queries and caches an external leaderboard, not a thing that runs evals locally.\n\n## SUCCESS\n\n`xt models refresh` populates a local TTL cache from OpenRouter's public benchmarks endpoint. `xt models rank --capability <agentic|coding|reasoning>` and `xt models compare <slug> <slug> ...` read that cache and print separate per-capability indices plus pricing — never a single blended score. `xt models recommend --role <specialistName>` resolves a real specialist file under .specialists/user/, reads its declared execution.model, and reports how that model ranks against the cached leaderboard on the agentic index, naming a better-ranked alternative when one exists. All read commands work fully offline against the cache and fail with an actionable message (\"run xt models refresh\") when the cache is missing — only `refresh` touches the network.\n\n## SCOPE\n\n- New module: cli/src/utils/model-benchmarks.ts (or cli/src/core/, mirror npm-latest.ts's location convention) — OpenRouter fetch + TTL cache + types.\n- New command dir: cli/src/commands/models/{refresh,rank,compare,recommend}.ts + cli/src/commands/models.ts aggregator.\n- Wiring: cli/src/index.ts (one import + one program.addCommand line).\n- Tests: cli/src/tests/ companion units mirroring npm-latest.test.ts's DI style.\n\n## NON_GOALS\n\n- No Artificial Analysis integration, no LiteLLM catalog integration, no local/self-hosted benchmark runner (that's the rejected \"llmfit\" direction).\n- No change to `xt pi`'s existing stripping of --list-models (cli/src/commands/pi.ts:123).\n- No new \"manager/implementer/junior\" role vocabulary — recommend uses real specialist names only. Confirmed via exploration: this repo's only present specialist files are researcher, parallel-review, transcriber under .specialists/user/.\n- No new HTTP client dependency — use Node's built-in global fetch.\n\n## CONSTRAINTS\n\n- Follow cli/src/commands/spec/*.ts + spec.ts aggregator pattern (one file per verb, thin aggregator) — not worktree.ts's single-file style — since there are 4 verbs.\n- Cache convention: path.join(os.homedir(), '.xtrm', 'cache', 'model-benchmarks.json'), injectable cacheFile/now/fetch fn per cli/src/utils/npm-latest.ts:27-45, so tests never hit the network or a mocking library.\n- OPENROUTER_API_KEY read from env; no existing precedent in this repo for *_API_KEY handling, so this is the first instance — document the read clearly, never log the key value.\n- The exact JSON field names of GET https://openrouter.ai/api/v1/benchmarks (model_permaslug, agentic_index, coding_index, intelligence_index, pricing.prompt, pricing.completion) are ASSUMED from the user's design note, not yet verified against a live response or OpenRouter's published reference — the refresh task must confirm real field names before the cache type is finalized, and rank/compare/recommend tasks must treat the cache type as the source of truth rather than re-assuming field names independently.\n- Specialist execution.model strings (e.g. \"nano-gpt/deepseek/deepseek-v4-flash:thinking\") use a different naming scheme than OpenRouter's model_permaslug — recommend must handle a no-match case gracefully (clear message, non-zero-noise output) rather than crashing or silently returning nothing.\n- Logging/telemetry: no crash-worthy failures should print raw stack traces to the operator; cache read/write failures follow npm-latest.ts's best-effort-swallow pattern (never fail the calling command over a cache write failure). Network/auth failures from refresh must print a clear, actionable stderr message (missing API key, HTTP status, rate limit) — never a silent empty cache.\n\n## VALIDATION\n\n- [ ] `npm run build` clean, `npm test --workspace cli` green including new suites\n- [ ] Each read command (rank/compare/recommend) errors clearly and exits non-zero when the cache file is absent, telling the operator to run `xt models refresh`\n- [ ] refresh's fetch/cache logic is unit-tested via injected fetch/cacheFile/now (no real network call in tests), mirroring cli/src/tests/npm-latest.test.ts\n- [ ] Smoke: `node cli/dist/index.cjs models --help` (after build) shows all four verbs wired under the top-level program\n- [ ] No API key or token value ever appears in command output or logs\n\n## OUTPUT\n\nEpic close summary: list of merged PRs per child task, confirmation that `xt models refresh/rank/compare/recommend` all work against a real (or realistically faked) cache, and any residual risk around the assumed OpenRouter field names or the specialist-model-name matching heuristic in recommend.",
+        "id": "xtrm-2azdj",
+        "issue_type": "epic",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "xt models: OpenRouter-backed benchmark rank/compare/recommend CLI",
+        "updated_at": "2026-07-29T13:02:11Z"
+      }
+    },
+    "xtrm-2azdj.1": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:02:38Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:02:37Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.1",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 4,
+        "description": "## PROBLEM\n\nEvery read command (rank/compare/recommend) and the refresh command need a shared, testable data layer: types for the OpenRouter benchmark shape, a fetch function, and a TTL-cached read/write pair. Without a single module, each command would re-implement cache I/O and drift from the injectable-DI pattern this repo already uses for exactly this kind of thing.\n\n## SUCCESS\n\nA module exports: (1) a TypeScript type for one cached benchmark record and the on-disk cache shape (with fetchedAt), (2) defaultCacheFile() returning ~/.xtrm/cache/model-benchmarks.json, (3) a fetchBenchmarks(apiKey) function calling GET https://openrouter.ai/api/v1/benchmarks with the Bearer token, (4) readCache/writeCache mirroring npm-latest.ts's best-effort-swallow semantics, (5) a refreshBenchmarks(opts) orchestration function taking injectable {cacheFile, now, fetchFn, apiKey} exactly like npm-latest.ts's CheckOptions, so tests never touch the network.\n\n## SCOPE\n\nNew file cli/src/utils/model-benchmarks.ts (same directory as cli/src/utils/npm-latest.ts, mirror its shape). Do not touch cli/src/utils/npm-latest.ts itself except to read it as a reference.\n\n## NON_GOALS\n\n- No CLI wiring (commander commands) — that's the refresh/rank/compare/recommend tasks.\n- No retry/backoff logic beyond a single fetch attempt with a clear error on non-2xx — YAGNI until proven necessary.\n- No caching of partial/error responses.\n\n## CONSTRAINTS\n\n- Mirror cli/src/utils/npm-latest.ts:27-45 (CheckOptions shape, defaultCacheFile, readCache/writeCache try/catch-swallow pattern) and :112-164 (orchestration function signature/DI shape) as closely as the different data makes sense.\n- Use Node's built-in global `fetch` — no new dependency.\n- Read OPENROUTER_API_KEY from process.env; if absent, fetchBenchmarks must throw/return a clear typed error rather than making an unauthenticated request. Never log the key value anywhere (console, thrown error message, cache file).\n- The actual JSON field names returned by GET /api/v1/benchmarks are UNVERIFIED — this task must make one real call (locally, using a personal OPENROUTER_API_KEY, NOT committed anywhere) during implementation to confirm the response shape before finalizing the TypeScript type, then note the confirmed shape in the PR description / bead notes for downstream tasks (rank/compare/recommend) to rely on. If a real key isn't available at implementation time, model the type on the user's stated assumption (model_permaslug, agentic_index, coding_index, intelligence_index, pricing.prompt, pricing.completion) and flag the assumption explicitly rather than silently guessing further fields.\n- Cache write failures must never throw out of refreshBenchmarks (same best-effort semantics as npm-latest.ts:59-66).\n\n## VALIDATION\n\n- [ ] Unit tests inject cacheFile (tmp path via mkdtempSync), now (fixed clock), and fetchFn (fake) — no real HTTP call in tests, no HTTP-mocking library, mirroring cli/src/tests/npm-latest.test.ts's DI style exactly.\n- [ ] Test: cold cache (file absent) → refreshBenchmarks calls fetchFn and writes cache.\n- [ ] Test: fresh cache (within TTL) → does NOT call fetchFn (unless a --no-cache-equivalent force flag is passed at the orchestration layer, matching npm-latest.ts's noCache option shape).\n- [ ] Test: fetchFn throwing/rejecting → cache is left untouched, function surfaces a clear error, does not write garbage.\n- [ ] Test: missing OPENROUTER_API_KEY → clear typed error, no network call attempted.\n- [ ] `npm run build` and targeted `npm test --workspace cli -- model-benchmarks` green.\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/utils/npm-latest.ts (path.join/os.homedir cache path convention, CheckOptions DI shape, readCache/writeCache swallow pattern) — direct structural template, cite in the module's top comment if useful.\n- **Installed deps:** none needed.\n- **Stdlib:** Node global `fetch` (Node 18+, already the runtime baseline per npm-latest.ts having no HTTP client dep); node:fs/node:path/node:os per npm-latest.ts's existing imports.\n- **New dep candidate:** none — tiers 1-3 covered it.\n- **Roll it:** yes — this is a small, single-purpose module with no existing package that fits (OpenRouter has no official JS SDK for this endpoint).\n\n## OUTPUT\n\nChanged files (model-benchmarks.ts + its test file), confirmed real API response field names (or explicit note that they remain assumed pending a live key), test output showing all DI-based unit tests passing.",
+        "id": "xtrm-2azdj.1",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Benchmark cache module — OpenRouter fetch + TTL cache + types",
+        "updated_at": "2026-07-29T13:02:38Z"
+      }
+    },
+    "xtrm-2azdj.10": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:06:42Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:06:42Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.10",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:07:02Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.2",
+            "issue_id": "xtrm-2azdj.10",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-07-29T15:07:03Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.3",
+            "issue_id": "xtrm-2azdj.10",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-07-29T15:07:05Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.4",
+            "issue_id": "xtrm-2azdj.10",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-07-29T15:07:06Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.5",
+            "issue_id": "xtrm-2azdj.10",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-07-29T15:07:08Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.6",
+            "issue_id": "xtrm-2azdj.10",
+            "metadata": "{}",
+            "type": "validates"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Layer: shell\nStrategy: integration + smoke (function-level Commander invocation and/or subprocess against the built cli/dist), covering CLI wiring/orchestration as distinct from the pure logic already covered by xtrm-2azdj.7 (T1) and xtrm-2azdj.8 (T2).\nCovers: xtrm-2azdj.2 (refresh), xtrm-2azdj.3 (rank), xtrm-2azdj.4 (compare), xtrm-2azdj.5 (recommend), xtrm-2azdj.6 (aggregator/index.ts wiring)\n\nWhat implementation it covers: this is the first point where all four verbs are reachable together end-to-end through the real top-level `xt`/`xtrm` program, so it is the epic's integration proof — not just \"each command's action function returns the right string\" but \"the program actually routes `models <verb>` to the right handler with real commander option parsing and real (test-injected) I/O.\"\n\nTest file structure: cli/src/tests/models-cli-integration.test.ts, following whichever existing convention (function-level program invocation vs subprocess) cli/src/tests/worktree-pr-status.test.ts or an equivalent shell-layer test in this repo already uses for CLI-level coverage.\n\nAssertions required:\n- [ ] `models --help` (after wiring) lists all four verbs (refresh, rank, compare, recommend) with non-empty descriptions.\n- [ ] Top-level `--help` includes `models` in the command list (proves xtrm-2azdj.6's index.ts addition took effect).\n- [ ] `models refresh` end-to-end with an injected fake fetchFn writes the expected cache file to an injected tmp cacheFile path and prints a success message including model count.\n- [ ] `models refresh` with a fetchFn that rejects prints a clear stderr message and exits non-zero, and does not touch/corrupt any pre-existing cache file at the injected path.\n- [ ] `models rank --capability agentic` against a pre-seeded tmp cache file prints the expected sorted rows (reuses a small fixture cache, not live data).\n- [ ] `models rank` with no cache file present (fresh tmp dir, nothing seeded) → the documented \"run xt models refresh\" error and non-zero exit — proves the CLI layer surfaces xtrm-2azdj.1's missing-cache condition correctly, not just that the underlying function can detect it.\n- [ ] `models compare <a> <b>` and `models recommend --role <name>` each get at least one smoke-level happy-path invocation through the real CLI entry point (full assertion depth for their logic lives in T1/T3 — this bead only proves they're wired and reachable).\n- [ ] `--capability` with an invalid value is rejected by commander's own validation with a non-zero exit before any cache read is attempted.\n\nSmoke/E2E commands for test-runner:\n- Setup: `npm run build` (compiles cli/dist), create a tmp HOME/cache dir so no test writes into the real `~/.xtrm/cache/model-benchmarks.json`.\n- `node cli/dist/index.cjs models --help` — expect stdout lists refresh/rank/compare/recommend.\n- `node cli/dist/index.cjs --help` — expect stdout includes a `models` line.\n- Cleanup: remove the tmp HOME/cache dir; do not touch the operator's real `~/.xtrm/cache/`.\n\nFixture policy:\n- [ ] Every test uses an injected/tmp cache path and injected fetch/now — never the operator's real `~/.xtrm/cache/model-benchmarks.json`, never a real network call.\n- [ ] No shared state between tests — fresh tmp dir per test.\n\nAnti-pattern check:\n- [ ] Not over-mocked: only the true system boundary (fetch, cache file path) is faked; commander parsing and command dispatch run for real.\n\nCritical paths covered:\n- Missing-cache UX end-to-end (not just the pure-function level) — risk: xtrm-2azdj's SUCCESS criterion explicitly requires read commands to \"fail with an actionable message\" and only integration-level testing proves the CLI layer doesn't swallow or reformat that message incorrectly.\n- Aggregator wiring itself — risk: a typo in cli/src/index.ts's import or addCommand line (xtrm-2azdj.6) would otherwise go undetected by any of the per-verb unit tests, since those exercise the command factories directly rather than the assembled program.\n\nKnown deferred paths:\n- Full live end-to-end against the real OpenRouter API — deferred, see xtrm-2azdj.8 (T2)'s \"Known deferred paths\" for the same live-key limitation; no separate follow-up needed here since T2 already tracks it.\n\nDebuggability evidence required: refresh's failure-path stderr message content is asserted verbatim (or via substring match) so a future debugging session can grep for it; no other logging/telemetry contract applies to this CLI surface.\n\nDone when: all assertions pass via `npm test --workspace cli`, and the two named smoke commands both produce their expected output after a clean `npm run build`.",
+        "id": "xtrm-2azdj.10",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Test: xt models CLI — shell integration + smoke across all four verbs",
+        "updated_at": "2026-07-29T13:06:42Z"
+      }
+    },
+    "xtrm-2azdj.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:03:00Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:02:59Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:04:19Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.1",
+            "issue_id": "xtrm-2azdj.2",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nOperators and other commands need a single explicit, network-touching command that populates the local benchmark cache. Every other verb (rank/compare/recommend) must stay offline-safe, so the fetch has to live behind one dedicated command.\n\n## SUCCESS\n\n`xt models refresh` calls the Task A module's refresh function, writes ~/.xtrm/cache/model-benchmarks.json, and prints a confirmation with model count and fetchedAt timestamp. On failure (missing API key, HTTP error, network error) it prints a clear, actionable stderr message and exits non-zero without corrupting any existing cache.\n\n## SCOPE\n\nNew file cli/src/commands/models/refresh.ts exporting createModelsRefreshCommand(): Command. Depends on cli/src/utils/model-benchmarks.ts from Task A (xtrm-2azdj.1).\n\n## NON_GOALS\n\n- No --force/--no-cache flag design beyond what Task A's orchestration function already supports passing through — keep the CLI surface minimal (a single `xt models refresh` with no flags is enough for v1 unless Task A's DI options make a flag trivial to expose, in which case a `--force` bypass-cache flag is fine to add here).\n- No progress bar / spinner UI — a single before/after print is enough.\n\n## CONSTRAINTS\n\n- Never print the OPENROUTER_API_KEY value in any output path, including error messages.\n- Use the Task A module's exported functions directly — do not re-implement fetch or cache I/O in this file.\n- Follow commander command conventions used by sibling verb files under cli/src/commands/spec/*.ts (thin command file, logic delegated to a utils/core function).\n\n## VALIDATION\n\n- [ ] CLI integration test invokes the command's action with an injected fetch/cacheFile (same DI as Task A's tests) and asserts the cache file is written and a success message is printed.\n- [ ] Test: fetch failure path prints stderr message and process exits non-zero (or command throws in test harness convention used elsewhere in this repo — match existing pattern).\n- [ ] `npm run build` clean.\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/utils/model-benchmarks.ts (Task A) — this command is a thin wrapper around it.\n- **Installed deps:** commander (already a dependency, used by every other command file).\n- **Stdlib:** none new.\n- **New dep candidate:** none.\n- **Roll it:** N/A — pure CLI wiring over Task A's module.\n\n## OUTPUT\n\nNew refresh.ts file, its test file, confirmation the command runs end-to-end against an injected fake fetch and produces the expected cache file + console output.",
+        "id": "xtrm-2azdj.2",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "xt models refresh — fetch OpenRouter benchmarks into local cache",
+        "updated_at": "2026-07-29T13:03:00Z"
+      }
+    },
+    "xtrm-2azdj.3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:03:20Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:03:20Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.3",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:04:20Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.1",
+            "issue_id": "xtrm-2azdj.3",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nAn operator choosing a model for a task needs a ranked view by ONE capability at a time (agentic, coding, or reasoning) — never a blended single score, since a model strong at one axis can be weak at another and collapsing them hides that.\n\n## SUCCESS\n\n`xt models rank --capability <agentic|coding|reasoning>` reads the local cache (never fetches), sorts descending by the matching index field, and prints model_permaslug plus all three indices plus pricing per row, so the operator can see the other axes even while sorting by one. Output header shows cache age (e.g. \"cache: 2h old, fetched 2026-07-29T10:00Z\"). Missing cache file → clear stderr message \"no benchmark cache found — run `xt models refresh`\" and non-zero exit, never an empty/silent table.\n\n## SCOPE\n\nNew file cli/src/commands/models/rank.ts exporting createModelsRankCommand(): Command. Depends on the cache read function and types from cli/src/utils/model-benchmarks.ts (Task A, xtrm-2azdj.1). Pure formatting/sorting logic should be a plain exported function (e.g. rankModels(cache, capability)) separate from the commander action, so it's unit-testable without CLI invocation.\n\n## NON_GOALS\n\n- No pagination/--limit flag for v1 — print the full ranked list; add a limit flag later if the list becomes unwieldy.\n- No JSON output mode for v1 — human-readable table only, add --json later if a consumer needs it.\n\n## CONSTRAINTS\n\n- --capability accepts exactly agentic|coding|reasoning; reject any other value with a clear usage error (commander's built-in choices validation is sufficient — do not hand-roll validation).\n- Must never compute or print a single blended/composite score — only the three raw indices, one column each.\n- Follow the spec/*.ts thin-command-file convention: business logic (rankModels) is a plain function, not embedded in the .action() closure.\n\n## VALIDATION\n\n- [ ] Unit test for rankModels(cache, 'agentic') sorts correctly, ties broken deterministically (e.g. stable sort, no crash on equal indices).\n- [ ] Unit test: unknown capability value rejected before touching the cache.\n- [ ] Unit test: missing cache file → the documented error message and non-zero exit path (inject a nonexistent cacheFile path).\n- [ ] Cache-age header renders correctly given an injected `now` and a fixed fetchedAt.\n- [ ] `npm run build` clean.\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/utils/model-benchmarks.ts read/cache-shape from Task A.\n- **Installed deps:** commander (choices validation for --capability).\n- **Stdlib:** Array.prototype.sort.\n- **New dep candidate:** none — a hand-rolled column-aligned print (same style as npm-latest.ts's formatUpdateRows) covers table output; no table-formatting library needed.\n- **Roll it:** yes.\n\n## OUTPUT\n\nNew rank.ts + test file, sample output demonstrating the three-index-plus-pricing table and the staleness header.",
+        "id": "xtrm-2azdj.3",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "xt models rank — sort cached models by capability index",
+        "updated_at": "2026-07-29T13:03:20Z"
+      }
+    },
+    "xtrm-2azdj.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:03:37Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:03:37Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:04:21Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.1",
+            "issue_id": "xtrm-2azdj.4",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nOnce a shortlist of candidate models is known, the operator needs to see them side by side on every axis at once, rather than scanning a full ranked list for each one.\n\n## SUCCESS\n\n`xt models compare <slug-a> <slug-b> ...>` (2+ positional args) reads the local cache and prints a table with one row per named model showing agentic/coding/reasoning indices and pricing. A slug not found in the cache is reported by name in a clear warning line rather than silently omitted or crashing the whole command. Missing cache file → same clear error as rank (\"run xt models refresh\").\n\n## SCOPE\n\nNew file cli/src/commands/models/compare.ts exporting createModelsCompareCommand(): Command. Depends on cli/src/utils/model-benchmarks.ts (Task A, xtrm-2azdj.1). Pure logic as an exported function (e.g. compareModels(cache, slugs)) separate from the commander action, mirroring rank's split.\n\n## NON_GOALS\n\n- No fuzzy/partial slug matching for v1 — exact model_permaslug match only; unmatched slugs are reported, not guessed at.\n- No JSON output mode for v1 (same reasoning as rank).\n\n## CONSTRAINTS\n\n- Require at least 2 positional slug arguments (commander variadic argument with a minimum-count check); a single slug is arguably more naturally `rank`'s job, so compare should nudge the user rather than silently accept 1.\n- Never blend indices into one score, same rule as rank.\n- Follow the spec/*.ts thin-command-file convention (logic in a plain function, not the .action() closure).\n\n## VALIDATION\n\n- [ ] Unit test for compareModels with all slugs found — correct rows in input order.\n- [ ] Unit test: one unmatched slug among several found ones → warning line names it, other rows still render.\n- [ ] Unit test: missing cache file → documented error path.\n- [ ] `npm run build` clean.\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/utils/model-benchmarks.ts cache read/types (Task A); reuse rank.ts's column-print helper if one is factored out generically enough (check Task C's implementation before duplicating formatting code).\n- **Installed deps:** commander.\n- **Stdlib:** none new.\n- **New dep candidate:** none.\n- **Roll it:** yes.\n\n## OUTPUT\n\nNew compare.ts + test file, sample side-by-side output including one unmatched-slug warning case.",
+        "id": "xtrm-2azdj.4",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "xt models compare — side-by-side index/pricing table for named slugs",
+        "updated_at": "2026-07-29T13:03:37Z"
+      }
+    },
+    "xtrm-2azdj.5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 1,
+        "comments": [
+          {
+            "author": "jaggerxtrm",
+            "created_at": "2026-07-29T13:07:12Z",
+            "id": "ba9ed7c3-e17d-539e-bab3-64ebc529dbb4",
+            "issue_id": "xtrm-2azdj.5",
+            "text": "Test-planning (xtrm-2azdj.9) flags a precondition: the specialists directory path must be an injectable parameter (mirror cacheFile/now/fetchFn DI elsewhere in this epic), not a hard-coded '.specialists/user/' literal, so xtrm-2azdj.9's fixture-directory tests can run without touching the real repo tree. Add this to SCOPE/CONSTRAINTS during implementation."
+          }
+        ],
+        "created_at": "2026-07-29T13:04:00Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:04:00Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.5",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:04:23Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.1",
+            "issue_id": "xtrm-2azdj.5",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nSpecialist files under .specialists/user/*.specialist.json each hard-code an execution.model with no data-driven check that the choice is still a good one. There is no command that closes the loop between \"what model does this specialist use\" and \"how does that model actually rank.\"\n\n## SUCCESS\n\n`xt models recommend --role <name>` resolves .specialists/user/<name>.specialist.json (erroring clearly if the file doesn't exist — list available role names in the error), reads its execution.model, and attempts to match that string against the cached model_permaslug values. If matched: reports the model's agentic_index rank position (e.g. \"ranked 4th of 23 on agentic_index\") and names the top-ranked alternative if a meaningfully higher-ranked one exists. If NOT matched (naming schemes differ, e.g. \"nano-gpt/deepseek/deepseek-v4-flash:thinking\" vs OpenRouter's permaslug format): reports clearly that no direct match was found, and instead prints the current top-ranked models on agentic_index as a general reference — never crashes or silently returns nothing. Missing cache file → same clear error as rank/compare.\n\n## SCOPE\n\nNew file cli/src/commands/models/recommend.ts exporting createModelsRecommendCommand(): Command. Reads .specialists/user/*.specialist.json (parse `.specialist.execution.model`, per the shape confirmed in .specialists/user/researcher.specialist.json:18-20). Depends on cli/src/utils/model-benchmarks.ts (Task A, xtrm-2azdj.1). Matching/ranking logic as a plain exported function (e.g. recommendForRole(cache, specialistModel)) separate from file I/O and from the commander action.\n\n## NON_GOALS\n\n- No fuzzy/heuristic string-similarity matching algorithm for v1 — exact or simple normalized (case/whitespace) match only; log the no-match case honestly rather than building a matching engine now. Add fuzzy matching later only if the exact-match miss rate proves it's needed.\n- No writing back to the specialist file (no auto-update of execution.model) — recommend only reports, never mutates.\n- No capability-weight-per-role heuristic beyond agentic_index for v1, since specialist files don't currently declare a capability weighting themselves (confirmed: researcher/parallel-review/transcriber specialist.json files have no such field) — this is an explicit, intentional simplification, not an oversight.\n\n## CONSTRAINTS\n\n- --role value must resolve against real files in .specialists/user/ (confirmed present in this repo: researcher, parallel-review, transcriber) — never a hard-coded manager/implementer/junior list.\n- Never write to any .specialist.json file from this command.\n- Follow the spec/*.ts thin-command-file convention.\n\n## VALIDATION\n\n- [ ] Unit test: unknown --role name → error lists actual available role names read from .specialists/user/ at test time (inject a fixture directory, don't depend on this repo's live specialist set in the test).\n- [ ] Unit test: execution.model string that matches a cache entry → correct rank position and alternative-suggestion logic.\n- [ ] Unit test: execution.model string with no match → graceful fallback output (top agentic_index models), not a crash or empty output.\n- [ ] Unit test: missing cache file → documented error path.\n- [ ] `npm run build` clean.\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/utils/model-benchmarks.ts (Task A) for cache; existing pattern for reading a *.specialist.json file (check cli/src/commands/pi.ts's --role handling, e.g. around pi.ts:103-133, for how it currently locates/reads specialist files, and reuse that path-resolution helper if one already exists rather than re-deriving the .specialists/user/ path).\n- **Installed deps:** commander; JSON.parse via fs (no schema-validation library needed for a single known field read).\n- **Stdlib:** node:fs, node:path.\n- **New dep candidate:** none.\n- **Roll it:** yes.\n\n## OUTPUT\n\nNew recommend.ts + test file, sample output for both the matched and unmatched cases.",
+        "id": "xtrm-2azdj.5",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "xt models recommend --role — benchmark-check a specialist's declared model",
+        "updated_at": "2026-07-29T13:04:00Z"
+      }
+    },
+    "xtrm-2azdj.6": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:04:17Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:04:17Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.6",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:04:24Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.2",
+            "issue_id": "xtrm-2azdj.6",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-29T15:04:26Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.3",
+            "issue_id": "xtrm-2azdj.6",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-29T15:04:28Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.4",
+            "issue_id": "xtrm-2azdj.6",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-29T15:04:29Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.5",
+            "issue_id": "xtrm-2azdj.6",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 4,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nThe four verb commands (refresh/rank/compare/recommend) only become usable once they're aggregated under a single `xt models` command and registered on the top-level program, mirroring how spec's six verbs are aggregated.\n\n## SUCCESS\n\n`xt models --help` lists all four verbs with their descriptions. `xt models <verb> ...` dispatches correctly. `xt --help` shows `models` alongside the other top-level commands.\n\n## SCOPE\n\nNew file cli/src/commands/models.ts (aggregator, mirror cli/src/commands/spec.ts:1-19 exactly — import each createModels<Verb>Command, cmd.addCommand(...) for each, return the Command). Edit cli/src/index.ts: add one import line (mirror line 32's createSpecCommand import) and one program.addCommand(createModelsCommand()) line (mirror line 86).\n\n## NON_GOALS\n\n- No behavior changes to any other existing command in index.ts.\n- No reordering of the existing program.addCommand call sequence beyond appending the new line.\n\n## CONSTRAINTS\n\n- Must not touch any command file other than adding the two lines in index.ts and creating the new models.ts aggregator.\n- Run gitnexus_impact({target: \"index.ts's program\", direction: \"upstream\"}) equivalent sanity check (or manual read) before editing index.ts — this file is imported by every CLI invocation, so the diff must be exactly additive (import + addCommand line), never a reformat of surrounding lines.\n\n## VALIDATION\n\n- [ ] After `npm run build`, `node cli/dist/index.cjs models --help` lists refresh/rank/compare/recommend.\n- [ ] After `npm run build`, `node cli/dist/index.cjs --help` lists `models` in the top-level command list.\n- [ ] `git diff` on cli/src/index.ts shows only additive lines, no unrelated reformatting.\n- [ ] `npm test --workspace cli` still green (no regression in existing command tests).\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/commands/spec.ts (exact structural template for the aggregator).\n- **Installed deps:** commander.\n- **Stdlib:** none.\n- **New dep candidate:** none.\n- **Roll it:** N/A — pure wiring, no new logic.\n\n## OUTPUT\n\nNew models.ts aggregator, the two-line index.ts diff, smoke command output confirming both help trees render correctly.",
+        "id": "xtrm-2azdj.6",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Wire xt models aggregator command into the top-level CLI",
+        "updated_at": "2026-07-29T13:04:17Z"
+      }
+    },
+    "xtrm-2azdj.7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:05:34Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:05:34Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.7",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:06:54Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.3",
+            "issue_id": "xtrm-2azdj.7",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-07-29T15:06:56Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.4",
+            "issue_id": "xtrm-2azdj.7",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-07-29T15:06:57Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.5",
+            "issue_id": "xtrm-2azdj.7",
+            "metadata": "{}",
+            "type": "validates"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Layer: core\nStrategy: unit (example-based) + edge cases\nCovers: xtrm-2azdj.3 (rank), xtrm-2azdj.4 (compare), xtrm-2azdj.5 (recommend)\n\nWhat implementation it covers: the pure, non-CLI functions each verb factors out per its bead's SCOPE — rankModels(cache, capability), compareModels(cache, slugs), recommendForRole(cache, specialistModel). These take plain data in, return plain data/strings out, no file I/O, no network, no commander.\n\nTest file structure: cli/src/tests/models-rank.test.ts, models-compare.test.ts, models-recommend.test.ts (or a single models-core.test.ts if the three functions are small enough to share a file — match whatever granularity cli/src/tests/npm-latest.test.ts uses for a comparable module).\n\nAssertions required:\n- [ ] rankModels: sorts descending by the requested capability index; ties broken deterministically (stable order, no crash on equal values); rejects/errors on an unrecognized capability string before touching data.\n- [ ] rankModels: never emits a blended/composite score field — assert the output object/row only carries the three raw indices + pricing, never a computed average.\n- [ ] compareModels: all-slugs-found path returns rows in the same order as the input slugs (not cache iteration order).\n- [ ] compareModels: partially-unmatched-slugs path returns a distinguishable \"not found\" marker for the missing slug's row/warning, while still returning full rows for the found ones (does not throw, does not silently drop the whole request).\n- [ ] recommendForRole: exact/normalized match found → correct rank position computed against the full cache (e.g. \"4th of 23\"), and the alternative-suggestion logic only fires when a genuinely higher-ranked model exists (no suggestion when the current model is already top-ranked).\n- [ ] recommendForRole: no match found → returns the graceful fallback data (top N agentic_index entries) rather than throwing or returning empty/undefined.\n- [ ] Edge cases: empty cache (zero models) for all three functions — must return an empty-but-valid result / clear \"no data\" signal, not throw.\n- [ ] Edge cases: single-model cache for rank/recommend (rank position is trivially 1st of 1; no alternative to suggest).\n\nFixture policy:\n- [ ] No shared mutable state between tests — construct a fresh fake cache object per test.\n- [ ] Deterministic fixtures — hand-written small cache arrays (3-5 fake models with known index values), no reliance on real cached data or the live repo's specialist files.\n\nAnti-pattern check:\n- [ ] Not tautological: rank/compare/recommend expected outputs are computed independently in the test (e.g. by pre-sorting the fixture by hand), not derived from calling the function under test itself.\n- [ ] Not over-mocked: nothing here should mock internal collaborators — these are pure functions, call them directly.\n\nCritical paths covered:\n- Never-blend-scores invariant — risk: violating the epic's core design promise (separate capability axes) silently regresses to a misleading single score.\n- recommend's no-match fallback — risk: a naming-scheme mismatch between specialist execution.model strings and OpenRouter permaslugs is the expected common case (flagged in xtrm-2azdj.5's CONSTRAINTS), so this path WILL be hit in real usage and must never crash.\n\nKnown deferred paths:\n- Property-based/fuzz testing of arbitrary cache shapes — deferred, example-based fixtures are sufficient for v1 given the small, well-typed cache schema from xtrm-2azdj.1.\n\nDebuggability evidence required: none beyond standard test failure output — these are pure functions with no logging contract of their own.\n\nDone when: all assertions above pass in `npm test --workspace cli`, and removing any one of rank's sort-by-capability logic, compare's unmatched-slug handling, or recommend's fallback branch causes at least one test to fail (verify by temporarily reverting the relevant logic during test authoring).",
+        "id": "xtrm-2azdj.7",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Test: rank/compare/recommend core logic — unit tests",
+        "updated_at": "2026-07-29T13:05:34Z"
+      }
+    },
+    "xtrm-2azdj.8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:05:57Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:05:56Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.8",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:06:59Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.1",
+            "issue_id": "xtrm-2azdj.8",
+            "metadata": "{}",
+            "type": "validates"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Layer: boundary\nStrategy: DI-injected unit tests (repo convention, mirrors cli/src/tests/npm-latest.test.ts) as primary, plus one recorded-fixture contract test using a real captured OpenRouter response sample. Live tests against the real API are not run in CI (no committed OPENROUTER_API_KEY) — this is the documented live-first fallback.\nCovers: xtrm-2azdj.1\n\nWhat implementation it covers: fetchBenchmarks, readCache/writeCache, refreshBenchmarks orchestration in cli/src/utils/model-benchmarks.ts.\n\nTest file structure: cli/src/tests/model-benchmarks.test.ts, mirroring cli/src/tests/npm-latest.test.ts's pattern (inject cacheFile via mkdtempSync, now via fixed clock, fetchFn as a plain fake function — no HTTP-mocking library).\n\nAssertions required:\n- [ ] Cold cache (file absent) → refreshBenchmarks calls the injected fetchFn and writes the cache file with the fetched data + fetchedAt.\n- [ ] Fresh cache (within TTL) → does NOT call fetchFn; returns cached data as-is.\n- [ ] Expired cache → calls fetchFn again; on success, overwrites the cache entry and timestamp.\n- [ ] fetchFn throws/rejects → existing cache file (if any) is left untouched; refreshBenchmarks surfaces a clear typed error, does not write partial/garbage data.\n- [ ] Missing OPENROUTER_API_KEY (injected as absent) → clear typed error before any network attempt; fetchFn is never invoked in this path.\n- [ ] Cache write failure (e.g. unwritable directory) → does not throw out of refreshBenchmarks (best-effort-swallow semantics matching npm-latest.ts:59-66); caller still receives the freshly fetched data even though persistence failed.\n- [ ] Recorded-fixture contract check: a committed fixture file (e.g. cli/src/tests/fixtures/openrouter-benchmarks-sample.json) containing a real captured response shape (obtained manually during xtrm-2azdj.1 implementation with a personal API key, NOT a live call in the test itself) is parsed by the module's type/parsing logic and asserted to produce the expected typed cache entries — this catches drift between the assumed field names (model_permaslug, agentic_index, coding_index, intelligence_index, pricing.prompt, pricing.completion) and the module's actual parsing code, without requiring network access in CI.\n\nFixture policy:\n- [ ] No shared mutable state — each test gets its own mkdtempSync directory.\n- [ ] Deterministic `now` injection — no bare Date.now() in the test.\n\nAnti-pattern check:\n- [ ] Not over-mocked: fetchFn is a plain injected function per the module's own DI design (matches the repo's existing convention for exactly this kind of external call), not a patch of an internal collaborator.\n\nCritical paths covered:\n- Cache-miss vs cache-hit branching — risk: an off-by-one in TTL comparison silently causes either constant unnecessary network calls or permanently stale data.\n- API-key-absent short-circuit — risk: an unauthenticated request would either fail with a confusing error deep in the fetch call or, worse, silently succeed against a public/free endpoint with wrong data.\n- Recorded-fixture schema check — risk: this epic's rank/compare/recommend field-name assumptions were explicitly flagged as unverified in xtrm-2azdj's CONSTRAINTS; if the real API shape differs, this is the one test that would catch it before it reaches production.\n\nKnown deferred paths:\n- True live-network contract test (hitting the real OpenRouter endpoint) — deferred because no committed API key exists in this repo. Follow-up: if the team later adds a CI-safe test API key/secret, create a `@live`-tagged test that supersedes the recorded fixture as primary evidence (to be created — no bd issue yet, note this in xtrm-2azdj's epic notes at close).\n\nDebuggability evidence required: refreshBenchmarks failure paths should be catchable with the injected fetchFn's rejection reason surfacing unchanged in the thrown/returned error (test asserts the error message/type, not just \"it throws\").\n\nDone when: all assertions pass in `npm test --workspace cli`, and the recorded-fixture file is committed alongside the test.",
+        "id": "xtrm-2azdj.8",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Test: benchmark cache module — DI unit tests + recorded-fixture contract check",
+        "updated_at": "2026-07-29T13:05:57Z"
+      }
+    },
+    "xtrm-2azdj.9": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-29T13:06:41Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-29T15:06:40Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj",
+            "issue_id": "xtrm-2azdj.9",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-29T15:07:00Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-2azdj.5",
+            "issue_id": "xtrm-2azdj.9",
+            "metadata": "{}",
+            "type": "validates"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Layer: boundary (file I/O)\nStrategy: isolated tmp fixture directory (mkdtempSync + fake *.specialist.json files), not the live .specialists/user/ tree.\nCovers: xtrm-2azdj.5 (recommend --role)\n\nWhat implementation it covers: the filesystem-resolution half of xt models recommend — locating a role's *.specialist.json file, listing available role names on a miss, and parsing `.specialist.execution.model` out of the file — as distinct from xtrm-2azdj.7 (T1), which covers the pure recommendForRole matching/ranking logic given an already-extracted model string.\n\nPrecondition on xtrm-2azdj.5's implementation: the specialists directory path must be an injectable parameter (mirroring cacheFile/now/fetchFn injection elsewhere in this epic), not a hard-coded `.specialists/user/` literal — otherwise this test cannot run against a fixture directory without mutating the real repo tree. Flag this explicitly back on xtrm-2azdj.5 if not already covered by its CONSTRAINTS.\n\nTest file structure: cli/src/tests/models-recommend-resolve.test.ts.\n\nAssertions required:\n- [ ] Known role name (present in the injected fixture dir) → correct execution.model string extracted, matching the nested `.specialist.execution.model` shape confirmed in .specialists/user/researcher.specialist.json:18-20.\n- [ ] Unknown role name → error message lists the ACTUAL role names found in the injected fixture directory (e.g. 2 fake roles \"alpha\", \"beta\"), not a hard-coded list and not the live repo's real specialist names — proves the error path reads the directory at call time rather than using a stale/hard-coded list.\n- [ ] Malformed *.specialist.json (missing execution.model field, or invalid JSON) → clear error naming the offending file, not a raw JSON.parse stack trace surfaced to the operator.\n- [ ] Empty specialists directory (zero *.specialist.json files) → clear \"no specialist roles found\" message, not a confusing empty-array error.\n\nFixture policy:\n- [ ] Fixture directory created fresh per test via mkdtempSync with hand-written fake *.specialist.json files — never reads or depends on this repo's real .specialists/user/ contents, so the test stays stable if real specialist roles are added/removed/renamed later.\n\nAnti-pattern check:\n- [ ] Not tautological: the \"lists actual role names\" assertion checks against the specific fake names written into the fixture in that test, not a value derived from the same directory-listing call being tested.\n\nCritical paths covered:\n- Directory-read failure UX — risk: a raw stack trace or an empty silent result on a typo'd --role value is a worse operator experience than the epic's stated goal of listing real available names.\n- Malformed specialist file handling — risk: a corrupt or hand-edited specialist file elsewhere in the fleet must not crash the whole recommend command for every other role.\n\nKnown deferred paths: none — this is a small, fully-enumerable path set.\n\nDebuggability evidence required: none beyond the assertions above; no logging contract specific to this path.\n\nDone when: all assertions pass in `npm test --workspace cli`, and xtrm-2azdj.5's implementation confirms the specialists-directory path is injectable (add a note to xtrm-2azdj.5 if its current CONSTRAINTS don't already say so).",
+        "id": "xtrm-2azdj.9",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Test: recommend --role specialist-file resolution — isolated fixture directory",
+        "updated_at": "2026-07-29T13:06:41Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:02:37Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.1",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.1",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:06:42Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.10",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.10",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:07:02Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.2",
+        "issue_id": "xtrm-2azdj.10",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.10",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.2",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:07:03Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.3",
+        "issue_id": "xtrm-2azdj.10",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.10",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.3",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:07:05Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.4",
+        "issue_id": "xtrm-2azdj.10",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.10",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.4",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:07:06Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.5",
+        "issue_id": "xtrm-2azdj.10",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.10",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.5",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:07:08Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.6",
+        "issue_id": "xtrm-2azdj.10",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.10",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.6",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:19Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.1",
+        "issue_id": "xtrm-2azdj.2",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-2azdj.2",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:02:59Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.2",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:20Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.1",
+        "issue_id": "xtrm-2azdj.3",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-2azdj.3",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:03:20Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.3",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.3",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:21Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.1",
+        "issue_id": "xtrm-2azdj.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-2azdj.4",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:03:37Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.4",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:23Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.1",
+        "issue_id": "xtrm-2azdj.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-2azdj.5",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:00Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.5",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.5",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:24Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.2",
+        "issue_id": "xtrm-2azdj.6",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-2azdj.6",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.2",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:26Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.3",
+        "issue_id": "xtrm-2azdj.6",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-2azdj.6",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.3",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:28Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.4",
+        "issue_id": "xtrm-2azdj.6",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-2azdj.6",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.4",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:29Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.5",
+        "issue_id": "xtrm-2azdj.6",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-2azdj.6",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.5",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:04:17Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.6",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.6",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:05:34Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.7",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.7",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:06:54Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.3",
+        "issue_id": "xtrm-2azdj.7",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.7",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.3",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:06:56Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.4",
+        "issue_id": "xtrm-2azdj.7",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.7",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.4",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:06:57Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.5",
+        "issue_id": "xtrm-2azdj.7",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.7",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.5",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:05:56Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.8",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.8",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:06:59Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.1",
+        "issue_id": "xtrm-2azdj.8",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.8",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.1",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:06:40Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj",
+        "issue_id": "xtrm-2azdj.9",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-2azdj.9",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-29T15:07:00Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-2azdj.5",
+        "issue_id": "xtrm-2azdj.9",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "xtrm-2azdj.9",
+      "source_field": "dependencies",
+      "target": "xtrm-2azdj.5",
+      "type": "validates"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-2azdj",
+  "root_title": "xt models: OpenRouter-backed benchmark rank/compare/recommend CLI",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

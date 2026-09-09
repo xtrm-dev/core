@@ -1,0 +1,156 @@
+{
+  "content_sha256": "1651571adf80d3d705eb8f0c237ba951bf4a1c94d12f507aecbc5b7c0d7eebaf",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-4ih7b.1"
+      },
+      {
+        "children": [],
+        "id": "xtrm-4ih7b.2"
+      }
+    ],
+    "id": "xtrm-4ih7b"
+  },
+  "issues": {
+    "xtrm-4ih7b": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "close_reason": "Round 1 fixes verified; Round 2 xtrm-loader/xtrm-ui beads filed and left open.",
+        "closed_at": "2026-07-21T17:46:20Z",
+        "comment_count": 0,
+        "created_at": "2026-07-21T16:43:36Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nCold start of pi with all extensions enabled is ~45s, sometimes >90s timeout. With --no-extensions it is <2s. Each heavy extension alone adds 5-11s; costs compound because pi runs session_start handlers serially before the agent can respond.\n\nMeasured individually (pi --no-extensions --no-skills -e <path>):\n- xtrm-ui      11.4s   loadPrefs() walks session entries + full refresh() at session_start\n- beads         9.4s   multiple SubprocessRunner.run(\"bd\", ...) spawns per session_start\n- serena-pool   8.4s   ensureSerenaForRoot() synchronously boots/waits for Serena MCP daemon\n- xtrm-loader   5.9s   recursive fs walk of .claude/rules, .claude/skills, roadmap files\n- custom-footer 5.5s   spawns a child Node process (CACHE_REFRESH_SCRIPT, 10s timeout)\n\n## SUCCESS\n\nDefault-config pi cold start under ~10s for a trivial prompt, with no regression on real-work prompts that DO need serena/context.\n\n## SCOPE (round 1, lowest blast radius first)\n\n1. serena-pool: lazy-init on first serena tool call (tool_call handler gating on find_symbol/find_referencing_symbols/jet_brains_*/etc.), NOT at session_start. Most sessions never call serena.\n2. beads: batch the bd kv calls at session_start into one subprocess (or memoize the claim/closed/memory-gate markers in-process and clear on shutdown).\n3. custom-footer: inline the cache loader in-process; drop the Node subprocess spawn.\n\nDefer to a round 2 (separate bead):\n- xtrm-loader deferred fs walk\n- xtrm-ui session_start split\n\n## NON_GOALS\n\n- Do NOT change extension behavior, only load-time placement.\n- Do NOT remove extensions.\n- Do NOT touch the xt pi worktree flow itself.\n\n## CONSTRAINTS\n\n- Preserve all current extension functionality.\n- Each fix verified with before/after timing using the same isolation harness (pi --no-extensions --no-skills -e <path> -p 'hi').\n- File round-2 beads for xtrm-loader and xtrm-ui before closing this epic.",
+        "id": "xtrm-4ih7b",
+        "issue_type": "epic",
+        "labels": [
+          "audit",
+          "performance",
+          "ponytail"
+        ],
+        "notes": "VERIFIED: Round 1 implemented in packages/pi-extensions/extensions/{serena-pool,beads,custom-footer}. Isolation harness final samples (mean of 2): baseline 12.563s; serena-pool 11.042s; beads 13.887s; custom-footer 18.186s (host timing noisy; original audit samples were 14.607/18.144/20.653/20.613s). Canonical CLI typecheck passed. Full extension suite: 52 passed, 11 skipped. Serena E2E: 28 passed, 0 failed. CHANGELOG.md and docs/pi-extensions.md updated. Round 2 children left open: xtrm-4ih7b.1 (xtrm-ui), xtrm-4ih7b.2 (xtrm-loader).",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-21T17:23:23Z",
+        "status": "closed",
+        "title": "Pi extension cold-start latency audit & fixes",
+        "updated_at": "2026-07-21T17:46:20Z"
+      }
+    },
+    "xtrm-4ih7b.1": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-21T17:27:48Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-21T19:27:47Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-4ih7b",
+            "issue_id": "xtrm-4ih7b.1",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Split xtrm-ui session_start into the minimal context capture/preferences step and a deferred refresh so startup does not synchronously walk session entries and refresh the full UI. Preserve rendering behavior and verify with the same Pi isolation harness.",
+        "id": "xtrm-4ih7b.1",
+        "issue_type": "task",
+        "labels": [
+          "audit",
+          "performance",
+          "ponytail"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Round 2: split xtrm-ui session_start refresh",
+        "updated_at": "2026-07-21T17:27:48Z"
+      }
+    },
+    "xtrm-4ih7b.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-21T17:27:49Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-21T19:27:49Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-4ih7b",
+            "issue_id": "xtrm-4ih7b.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Defer xtrm-loader's recursive .claude/rules, .claude/skills, and roadmap filesystem walk out of session_start (for example via setImmediate) while preserving prompt/context behavior. Verify with the same Pi isolation harness and record before/after timing.",
+        "id": "xtrm-4ih7b.2",
+        "issue_type": "task",
+        "labels": [
+          "audit",
+          "performance",
+          "ponytail"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Round 2: defer xtrm-loader filesystem walk",
+        "updated_at": "2026-07-21T17:27:49Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-21T19:27:47Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-4ih7b",
+        "issue_id": "xtrm-4ih7b.1",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-4ih7b.1",
+      "source_field": "dependencies",
+      "target": "xtrm-4ih7b",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-21T19:27:49Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-4ih7b",
+        "issue_id": "xtrm-4ih7b.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-4ih7b.2",
+      "source_field": "dependencies",
+      "target": "xtrm-4ih7b",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-4ih7b",
+  "root_title": "Pi extension cold-start latency audit & fixes",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

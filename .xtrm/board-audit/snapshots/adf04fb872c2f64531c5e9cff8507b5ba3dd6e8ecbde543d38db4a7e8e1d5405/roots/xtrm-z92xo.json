@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-z92xo"],"open_issue_count":1,"root_id":"xtrm-z92xo","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"79a15bdac6295421bee6bbdad638449f552b8543eebfd61fd98a4b015bf2ed44","title":"Cleanup xtrm-ui: deduplicate themes, fix isXtrmTheme, register xtprompt, remove dead code"}

@@ -1,0 +1,114 @@
+{
+  "content_sha256": "48042527a06c62b4887ff1b045a155192eb3d60259acaaca90cd79bc4da471e9",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-03T22:07:59Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-x8b5g",
+        "issue_id": "xtrm-n74m8",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-n74m8",
+      "source_field": "dependencies",
+      "target": "xtrm-x8b5g",
+      "target_present_in_snapshot": true,
+      "target_title": "layout_migrator must update PACK.json + force active-view rebuild after service-skills migration",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:51:51Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-bq7yd",
+        "issue_id": "xtrm-n74m8",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-n74m8",
+      "source_field": "dependencies",
+      "target": "xtrm-bq7yd",
+      "target_present_in_snapshot": true,
+      "target_title": "[epic] Global skills + hooks migration: default payloads move from per-repo to ~/.xtrm",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-03T23:04:24Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-drdg6",
+        "issue_id": "xtrm-n74m8",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-n74m8",
+      "source_field": "dependencies",
+      "target": "xtrm-drdg6",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-03: service-skills field-hardening shipped (0.8.3→0.8.5), design paused",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-n74m8"
+  },
+  "issues": {
+    "xtrm-n74m8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-03T20:07:59Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-07-03T03:51:51Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-bq7yd",
+            "issue_id": "xtrm-n74m8",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-03T23:04:24Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-drdg6",
+            "issue_id": "xtrm-n74m8",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-03T22:07:59Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-x8b5g",
+            "issue_id": "xtrm-n74m8",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nThe service-skills v2 epic (xtrm-b86y5) consolidated the 5 separate skills (creating-/scoping-/updating-/using-service-skills + the service-skills-set bundle) into ONE 'service-skills' skill. But consumers that installed pre-v2 still carry the old trinity dirs under .xtrm/skills/default/ (and thus symlinked into .xtrm/skills/active/). Verified fleet-wide after the 0.8.5 propagation: every mercury repo's active view lists creating-service-skills, scoping-service-skills, updating-service-skills, using-service-skills alongside the new 'service-skills'. They are vestigial (no collision — distinct names) but dead weight + confusing, and drift from the v2 single-skill model.\n\n## OPEN QUESTIONS\n- Are these still shipped in the xtrm-tools package registry (i.e. re-installed on every xt update), or orphaned in consumer default/ from an old install? Check .xtrm/registry.json + docs/skills-ownership.json.\n- If orphaned: xt update/install copies new files but does not REMOVE files no longer in the registry → need an explicit prune step (registry-driven) or a one-time cleanup.\n\n## SCOPE\nxtrm-tools registry/install prune logic (cli/src/core/registry-scaffold.ts or skills-materializer); possibly a one-time cleanup in ensureServiceSkills. Consumer .xtrm/skills/default + active views.\n\n## SUCCESS\nConsumers' default/active views contain only the consolidated 'service-skills' (+ the per-repo umbrella), with the 4 stale trinity skills removed; idempotent; registry-gated.\n\n## NON_GOALS\n- No change to the consolidated service-skills content model.\n\n## VALIDATION\n- [ ] root-cause: registry-shipped vs orphaned\n- [ ] prune/cleanup removes the 4 stale skills from a consumer; re-running is a no-op\n- [ ] fleet re-propagation shows clean active views",
+        "id": "xtrm-n74m8",
+        "issue_type": "chore",
+        "priority": 2,
+        "status": "open",
+        "title": "Remove stale pre-v2 service-skills trinity (creating/scoping/updating/using-service-skills) lingering in consumers",
+        "updated_at": "2026-06-04T03:54:19Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-n74m8",
+  "root_title": "Remove stale pre-v2 service-skills trinity (creating/scoping/updating/using-service-skills) lingering in consumers",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

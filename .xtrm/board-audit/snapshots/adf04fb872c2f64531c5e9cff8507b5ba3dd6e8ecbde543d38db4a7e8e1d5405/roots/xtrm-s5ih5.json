@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-s5ih5"],"open_issue_count":1,"root_id":"xtrm-s5ih5","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"c7329711f63ad91d63e1477e82c837b81233f2e513821ecdfbde2de8da520cc1","title":"fix: xt install --global must not overwrite project hooks into ~/.claude/settings.json"}
