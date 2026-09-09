@@ -536,6 +536,10 @@
           "hash": "c7b4eb81f82232027045f1e28b3b413f1bc4f346327cb8298ad955feec505698",
           "version": "0.12.0"
         },
+        "research-methods/research/references/exa.md": {
+          "hash": "e270d4da0931e77e42b135e5e8a31783932afc04e9540c7da328f2d93c84e3aa",
+          "version": "0.12.0"
+        },
         "research-methods/research/references/fact-checking.md": {
           "hash": "33c638fde90cc1c426289c6f68b2bbabc01922d1dbefe5168278551804004e87",
           "version": "0.12.0"
@@ -545,7 +549,7 @@
           "version": "0.12.0"
         },
         "research-methods/research/SKILL.md": {
-          "hash": "d38be2446047ce0932d5c449d5b129668277b8b69c9c3f3cceace6e2d4a9461f",
+          "hash": "550827b281410125f743ef4625ff8b4717e039b1f3dbdf7805beb1caabf4c81f",
           "version": "0.12.0"
         },
         "security-ops/PACK.json": {
@@ -964,7 +968,7 @@
           "version": "0.12.0"
         },
         "claude.mcp.json": {
-          "hash": "20b811ccc82395f9f3cd9a45ef36b776c3382d553924ef34662dd817a0a1c197",
+          "hash": "7e5b2e83528599600b443e65d04545798c23b96ee24947b2c63c390297ed6fb1",
           "version": "0.12.0"
         },
         "claude.mcp.optional.json": {
@@ -996,7 +1000,7 @@
           "version": "0.12.0"
         },
         "pi.mcp.json": {
-          "hash": "fb7f018e15e0d04b46ca473994ea275b46ebb21d741ff59c90188e26be8fb2d2",
+          "hash": "0ea93ebc22c9fd5d36525b6ca37b37e515eaf0665f16ddd3a65cf0259f771278",
           "version": "0.12.0"
         },
         "pi/auth.json.template": {
@@ -1024,7 +1028,7 @@
           "version": "0.12.0"
         },
         "settings.json": {
-          "hash": "f1366a2009edb6050dab0dc5dc43fa70e96adf251befd1ddf0c42e1d42d5da56",
+          "hash": "f8d789373954e10c84029619213329fbf2e68b3117e490467383a5153f0e0453",
           "version": "0.12.0"
         }
       }
