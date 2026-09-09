@@ -1,3 +1,5 @@
+> **Retired 2026-09-09 (bd-memory retirement, bead xtrm-aemfv):** the bd-memory gate, `memory-acked`/`memory-gate-done` KV markers, `xt memory`, and `.xtrm/memory.md` are removed. Passages below describing them are a historical record — do not implement.
+
 # Legacy hook duplication after the global migration
 
 ## Symptom

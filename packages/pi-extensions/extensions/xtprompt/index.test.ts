@@ -61,7 +61,6 @@ for (const modulePath of [
   "../../src/extensions/service-skills.ts",
   "../../src/extensions/session-flow.ts",
   "../../src/extensions/sp-terminal-overlay.ts",
-  "../../src/extensions/xtrm-loader.ts",
   "../../src/extensions/xtrm-ui.ts",
 ]) {
   mock.module(modulePath, () => ({

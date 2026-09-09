@@ -32,7 +32,7 @@ The authoritative enrollment list is `src/manifest.json`. Notable active extensi
 - `xtrm-ui` — XTRM-owned Pi chrome, header, themes, editor density, and native/external tool presentation. Tool execution remains Pi-native and model-facing tool results are not rewritten by the UI. `custom-footer` is the sole footer/statusline owner. See [../../docs/xtrm-ui.md](../../docs/xtrm-ui.md).
 - `python-kernel` — persistent sequential `python` tool: variables, imports, functions, and cwd state survive across calls until reset. The current version also provides Python-backed skill imports, a stdlib prelude, bounded output/truncation behavior, and a kernel-side mutation audit seam. Requires `python3` on PATH. See [extensions/python-kernel/README.md](extensions/python-kernel/README.md).
 - `sp-terminal-overlay` — Specialist execution/feed overlays for operator-visible monitoring.
-- `beads`, `session-flow`, `xtrm-loader`, `read-line-numbers`, `compact-header`, `git-checkpoint`, and `xtprompt` — runtime/lifecycle and presentation helpers according to the current manifest.
+- `beads`, `session-flow`, `read-line-numbers`, `compact-header`, `git-checkpoint`, and `xtprompt` — runtime/lifecycle and presentation helpers according to the current manifest (`xtrm-loader` retired with the bd-memory retirement).
 
 ### Service knowledge is a separate managed package
 

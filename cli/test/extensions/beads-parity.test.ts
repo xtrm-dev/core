@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ExtensionHarness } from "./extension-harness";
 import beadsExtension from "../../../packages/pi-extensions/extensions/beads/index";
 import { SubprocessRunner } from "../../../packages/pi-extensions/src/core";
-import * as fs from "node:fs";
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
 	isToolCallEventType: (name: string, event: any) => event?.toolName === name,
@@ -24,10 +23,6 @@ vi.mock("../../../packages/pi-extensions/src/core", async () => {
 	};
 });
 
-vi.mock("node:fs", () => ({
-	existsSync: vi.fn(() => false),
-	unlinkSync: vi.fn(),
-}));
 
 describe("Pi beads extension parity", () => {
 	let harness: ExtensionHarness;
@@ -55,46 +50,25 @@ describe("Pi beads extension parity", () => {
 		});
 
 		expect(calls.some((a) => a[0] === "kv" && a[1] === "set" && a[2].startsWith("closed-this-session:"))).toBe(true);
-		expect(result?.content?.[1]?.text).toContain("Beads Memory Gate");
+		expect(result?.content?.[1]?.text).toContain("Work completed");
 	});
 
-	it("runs the memory gate once at session_shutdown (not agent_end) and stays silent", async () => {
+	it("runs no gate at session_shutdown or agent_end (memory gate retired)", async () => {
 		const calls: string[][] = [];
 		(SubprocessRunner.run as any).mockImplementation(async (_cmd: string, args: string[]) => {
 			calls.push(args);
-			if (args[0] === "kv" && args[1] === "get" && `${args[2]}`.startsWith("closed-this-session:")) {
-				return { code: 0, stdout: "xtrm-123\n", stderr: "" };
-			}
 			return { code: 1, stdout: "", stderr: "" };
 		});
 
 		beadsExtension(harness.pi);
 
-		// xtrm-64pl0: agent_end no longer runs the memory gate (was a duplicate per-turn check).
 		await harness.emit("agent_end", { messages: [] });
 		expect(calls).toHaveLength(0);
 
-		// session_shutdown is the single lifecycle check, and it stays silent (no ui.notify):
-		// the memory gate is injected into bd close tool_result content instead.
+		// session_shutdown no longer runs any gate: closes succeed without a memory ack.
 		await harness.emit("session_shutdown", {});
 		expect(harness.ctx.ui.notify).not.toHaveBeenCalled();
-		expect(calls.length).toBeGreaterThan(0);
+		expect(calls).toHaveLength(0);
 	});
 
-	it.skip("consumes .memory-gate-done marker and clears session markers (test environment issue)", async () => {
-		(fs.existsSync as any).mockReturnValue(true);
-		const calls: string[][] = [];
-		(SubprocessRunner.run as any).mockImplementation(async (_cmd: string, args: string[]) => {
-			calls.push(args);
-			return { code: 0, stdout: "", stderr: "" };
-		});
-
-		beadsExtension(harness.pi);
-		await harness.emit("agent_end", { messages: [] });
-
-		expect(fs.unlinkSync).toHaveBeenCalled();
-		expect(calls.some((a) => a[0] === "kv" && a[1] === "clear" && `${a[2]}`.startsWith("claimed:"))).toBe(true);
-		expect(calls.some((a) => a[0] === "kv" && a[1] === "clear" && `${a[2]}`.startsWith("closed-this-session:"))).toBe(true);
-		expect(harness.ctx.ui.notify).not.toHaveBeenCalled();
-	});
 });

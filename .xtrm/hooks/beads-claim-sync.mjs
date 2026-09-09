@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // beads-claim-sync — PostToolUse hook
 // bd update --claim → set kv claim
-// bd close         → set closed-this-session kv for memory gate
+// bd close         → clear statusline claim state
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
@@ -103,25 +103,13 @@ function main() {
     }
   }
 
-  // On bd close: mark closed-this-session for memory gate
+  // On bd close: clear claim state for statusline and emit a close notice.
   if (/\bbd\s+close\b/.test(command) && commandSucceeded(input)) {
-    const match = command.match(/\bbd\s+close\s+(\S+)/);
-    const closedIssueId = match?.[1];
-
     // Clear claim state for statusline — per-worktree file under main root.
     try { unlinkSync(join(resolveMainRoot(cwd), '.xtrm', resolveClaimFileName(cwd))); } catch { /* ok if missing */ }
 
-    // Mark this issue as closed this session (memory gate reads this)
-    if (closedIssueId) {
-      spawnSync('bd', ['kv', 'set', `closed-this-session:${sessionId}`, closedIssueId], {
-        cwd,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 5000,
-      });
-    }
-
     process.stdout.write(JSON.stringify({
-      additionalContext: `\n🔓 **Beads**: Issue closed. Evaluate insights, then acknowledge:\n  \`bd remember "<insight>"\` (or note "nothing to persist")`,
+      additionalContext: `\n✅ **Beads**: Issue closed.`,
     }));
     process.stdout.write('\n');
     process.exit(0);

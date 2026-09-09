@@ -159,7 +159,6 @@ If this is audit-only, stop here and report. In the report, include both:
 
 ```bash
 python3 "skills/sync-docs/scripts/doc_structure_analyzer.py" --fix
-python3 "skills/sync-docs/scripts/doc_structure_analyzer.py" --fix --bd-remember
 ```
 
 ### Create one docs scaffold

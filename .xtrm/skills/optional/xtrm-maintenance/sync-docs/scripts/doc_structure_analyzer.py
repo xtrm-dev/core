@@ -16,7 +16,6 @@ Usage:
   --root=<path>            Project root (default: auto-detect via .git)
   --readme-threshold=N     Line count that marks README as bloated (default: 200)
   --fix                    Auto-scaffold all MISSING docs/ files
-  --bd-remember            After --fix, persist a summary via bd remember
 """
 
 import sys
@@ -370,23 +369,10 @@ def scaffold_missing_docs(root: Path, gaps: list[dict]) -> list[str]:
     return created
 
 
-def bd_remember(insight: str, key: str, cwd: str) -> bool:
-    """Persist an insight via bd remember. Returns True on success."""
-    try:
-        result = subprocess.run(
-            ["bd", "remember", insight, "--key", key],
-            cwd=cwd, capture_output=True, text=True, timeout=8
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
-
-
 def main() -> None:
     root = find_project_root()
     threshold = 200
     fix_mode = False
-    remember_mode = False
 
     for arg in sys.argv[1:]:
         if arg.startswith("--root="):
@@ -398,8 +384,6 @@ def main() -> None:
                 pass
         elif arg == "--fix":
             fix_mode = True
-        elif arg == "--bd-remember":
-            remember_mode = True
 
     readme_result = analyze_readme(root, threshold)
     changelog_result = analyze_changelog(root)
@@ -467,25 +451,6 @@ def main() -> None:
                 "pre_fix_issues": summary_issues,
                 "fixed": summary_issues - post_fix_issues,
             }
-
-        # --bd-remember: persist a summary insight
-        all_fixed = created + schema_fixed
-        main_root = find_main_repo_root(root)
-        if remember_mode and all_fixed and (main_root / ".beads").exists():
-            parts = []
-            if created:
-                parts.append(f"created {len(created)} scaffold(s): {', '.join(Path(p).name for p in created)}")
-            if schema_fixed:
-                parts.append(f"added frontmatter to {len(schema_fixed)} existing file(s): {', '.join(Path(p).name for p in schema_fixed)}")
-            insight = (
-                f"sync-docs --fix: {'; '.join(parts)}. "
-                f"Fill in content and run validate_doc.py docs/ to confirm schema."
-            )
-            key = f"sync-docs-fix-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
-            ok = bd_remember(insight, key, str(main_root))
-            report["bd_remember"] = {"stored": ok, "key": key, "insight": insight}
-            if ok:
-                print(f"\n  Persisted to bd memory: {key}")
 
     print(json.dumps(report, indent=2))
     sys.exit(1 if summary_issues > 0 and not fix_mode else 0)

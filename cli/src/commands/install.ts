@@ -68,7 +68,7 @@ function printNextSteps(): void {
     console.log(`  bd ready                      ${d('show unblocked work; use bd search/show for targeted lookup')}`);
     console.log(`  bd update <id> --claim        ${d('claim tracked work before editing')}`);
     console.log(`  xt skills list --global --json ${d('inspect the active XTRM skill surface')}`);
-    console.log(`  bd close <id>                 ${d('close according to the installed memory/commit gates')}`);
+    console.log(`  bd close <id>                 ${d('close the claimed issue before committing')}`);
 
     console.log('');
     console.log(d('  Worktree workflow:'));

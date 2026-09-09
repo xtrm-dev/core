@@ -7,13 +7,13 @@ import { resolvePackageRoot } from '../core/registry-scaffold.js';
 // Pin the canonical hook template. The global-only hooks steady state (guard,
 // dedupe, machine-wide cleanup) treats every registration below as load-bearing:
 // a template regression that silently drops one would un-wire it everywhere.
-// This test exists so the 18-entry set is enforced by CI, not by memory.
+// This test exists so the 16-entry set is enforced by CI, not by memory.
 describe('canonical hook template (.xtrm/config/hooks.json)', () => {
   // Resolve the same way claude-runtime-sync does: the package root owns
   // .xtrm/registry.json, the template sits at .xtrm/config/hooks.json.
   const hooksPath = path.join(resolvePackageRoot(), '.xtrm', 'config', 'hooks.json');
 
-  it('contains every load-bearing canonical hook (18 entries across 5 events)', () => {
+  it('contains every load-bearing canonical hook (16 entries across 5 events)', () => {
     const config = fs.readJsonSync(hooksPath) as {
       hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ type?: string; command: string }> }>>;
     };
@@ -29,7 +29,6 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
     }
 
     const expected = [
-      'SessionStart:project-memory.mjs',
       'SessionStart:beads-compact-restore.mjs',
       'SessionStart:quality-check-env.mjs',
       'SessionStart:xtrm-session-logger.mjs',
@@ -44,7 +43,6 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
       'PostToolUse:gitnexus-hook.cjs',
       'PostToolUse:xtrm-tool-logger.mjs',
       'Stop:beads-stop-gate.mjs',
-      'Stop:beads-memory-gate.mjs',
       'Stop:inbox-reminder-stop.mjs',
       'PreCompact:beads-compact-save.mjs',
     ];

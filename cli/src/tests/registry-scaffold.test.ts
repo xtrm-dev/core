@@ -79,8 +79,8 @@ describe('registry-scaffold path helpers', () => {
     expect(isSkillsDefaultPath('config/settings.json')).toBe(false);
   });
 
-  it('isUserOwnedPath matches .xtrm/memory.md', () => {
-    expect(isUserOwnedPath('memory.md')).toBe(true);
+  it('isUserOwnedPath no longer matches retired .xtrm/memory.md', () => {
+    expect(isUserOwnedPath('memory.md')).toBe(false);
   });
 
   it('isUserOwnedPath matches files under .xtrm/skills/user/', () => {
@@ -456,12 +456,12 @@ describe('installFromRegistry', () => {
     const packageRoot = path.join(tempDir, 'pkg');
     const userXtrmDir = path.join(tempDir, 'user-xtrm');
 
-    const memorySource = path.join(packageRoot, '.xtrm', 'memory.md');
+    const userSkillSource = path.join(packageRoot, '.xtrm', 'skills', 'user', 'packs', 'local', 'PACK.json');
     const hookSource = path.join(packageRoot, '.xtrm', 'hooks', 'post-tool-use.mjs');
 
-    await fs.ensureDir(path.dirname(memorySource));
+    await fs.ensureDir(path.dirname(userSkillSource));
     await fs.ensureDir(path.dirname(hookSource));
-    await fs.writeFile(memorySource, 'generated memory\n', 'utf8');
+    await fs.writeFile(userSkillSource, '{}\n', 'utf8');
     await fs.writeFile(hookSource, 'export default {}\n', 'utf8');
 
     const registry = {
@@ -471,7 +471,7 @@ describe('installFromRegistry', () => {
           source_dir: '.xtrm',
           install_mode: 'copy' as const,
           files: {
-            'memory.md': { hash: 'memory-hash', version: '1.0.0' },
+            'skills/user/packs/local/PACK.json': { hash: 'user-skill-hash', version: '1.0.0' },
             'hooks/post-tool-use.mjs': { hash: 'hook-hash', version: '1.0.0' },
           },
         },
@@ -494,7 +494,7 @@ describe('installFromRegistry', () => {
     expect(result.expectedInstalls).toBe(1);
     expect(result.missingSourceSkipped).toBe(0);
     expect(await fs.pathExists(path.join(userXtrmDir, 'hooks', 'post-tool-use.mjs'))).toBe(true);
-    expect(await fs.pathExists(path.join(userXtrmDir, 'memory.md'))).toBe(false);
+    expect(await fs.pathExists(path.join(userXtrmDir, 'skills', 'user', 'packs', 'local', 'PACK.json'))).toBe(false);
   });
 
   it('seeds registry.json into the target .xtrm/ (xtrm-ya2i)', async () => {

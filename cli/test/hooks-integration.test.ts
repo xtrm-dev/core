@@ -58,41 +58,6 @@ function createFakeWhich(scriptBody: string): string {
   chmodSync(whichPath, 0o755);
   return binDir;
 }
-
-describe('project-memory.mjs integration', () => {
-  it('injects the canonical memory doctrine without the using-xtrm skill body (xtrm-3ljgz.3)', () => {
-    const projectDir = createTempProject('xtrm-hook-memory-');
-    const instructionsDir = path.join(projectDir, '.xtrm', 'config', 'instructions');
-    mkdirSync(instructionsDir, { recursive: true });
-    const doctrine = '# BD Memory Doctrine\n\nUse `bd memories <topic>` when history is relevant.';
-    writeFileSync(path.join(instructionsDir, 'memory-doctrine.md'), doctrine, 'utf8');
-    // A stale synthesized memory.md must not leak even when present.
-    writeFileSync(path.join(projectDir, '.xtrm', 'memory.md'), 'stale synthesized state', 'utf8');
-
-    try {
-      const result = invokeHook('project-memory.mjs', { cwd: projectDir });
-      expect(result.exitCode).toBe(0);
-      expect(String(parseHookOutput(result.stdout).hookSpecificOutput.additionalSystemPrompt)).toBe(doctrine.trim());
-      expect(result.stdout).not.toContain('stale synthesized state');
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
-  it('fails open when the memory doctrine is missing (memory.md alone is not injected)', () => {
-    const projectDir = createTempProject('xtrm-hook-memory-missing-');
-    mkdirSync(path.join(projectDir, '.xtrm'), { recursive: true });
-    writeFileSync(path.join(projectDir, '.xtrm', 'memory.md'), 'stale synthesized state', 'utf8');
-    try {
-      const result = invokeHook('project-memory.mjs', { cwd: projectDir });
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout.trim()).toBe('');
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-});
-
 describe('quality-check-env.mjs integration', () => {
   it('checks for tsc/eslint/ruff when quality-check hook is present', () => {
     const projectDir = createTempProject('xtrm-hook-qenv-present-');

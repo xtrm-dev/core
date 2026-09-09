@@ -11,7 +11,7 @@ Clearly distinguish verified facts, observations, assumptions, inferences, recom
 
 Up to two task systems coexist in this repo. Where the runtime exposes both, use both; do not substitute one for the other. On a runtime with no task tools, beads alone is correct and complete — do not invent or call a native task API the runtime does not expose.
 
-- **Beads (`bd`)** — top-level durable tracking, on every runtime. Authoritative for ownership, dependencies, cross-session memory, and closure. Read the rest of this file and use targeted lookup (`bd ready`, `bd search "<terms>"`, `bd show <id>`) before starting work; `bd prime` is opt-in diagnostic only. File, claim, and close work here.
+- **Beads (`bd`)** — top-level durable tracking, on every runtime. Authoritative for ownership, dependencies, and closure. Read the rest of this file and use targeted lookup (`bd ready`, `bd search "<terms>"`, `bd show <id>`) before starting work; `bd prime` is opt-in diagnostic only. File, claim, and close work here.
 - **The runtime's own task system, when the runtime has one** — this-session execution tracking. Use it to mirror the active bead and break it into smaller intermediate steps. Ephemeral; does not replace beads. Names differ per runtime; read the runtime's own tool list rather than assuming a name.
 
 Rule: on a runtime that exposes task tools, when you pick up a bead, create native tasks that track it — reference the bead ID in each task title (e.g. `N.N summary — status (worker %NNNN)`) — and add any smaller intermediate steps as native sub-tasks. Beads own the durable record; native tasks own the in-flight breakdown.
@@ -41,13 +41,13 @@ Example native task list mirroring beads:
 
 1. Read repo identity + non-negotiables at the top of the root agent guide first.
 2. Service/docs/project context: check `service-knowledge status` / `index stats` (rebuild when stale/absent), then `service-knowledge index query "<3-5 task terms>" --bundle`; read only the cited evidence. Skip repos without a service registry.
-3. Executable work: targeted Beads lookup (`bd ready`, `bd list --status=in_progress`, `bd search "<terms>"`, `bd show <id>`), then `bd update <id> --claim` before edits. `bd memories <topic>` / `bd recall <key>` only when history is relevant.
+3. Executable work: targeted Beads lookup (`bd ready`, `bd list --status=in_progress`, `bd search "<terms>"`, `bd show <id>`), then `bd update <id> --claim` before edits.
 4. Catch up: handoff/next-session beads, latest `xt report` handoffs, recent merged/closed PRs.
 5. If the runtime supports local task planning, use it for non-trivial work, synchronized with the active bead.
 
 ## Operating model
 
-- Beads owns durable work identity, dependencies, memory gates, and closure; runtime-local task plans are ephemeral execution tracking.
+- Beads owns durable work identity, dependencies, and closure; runtime-local task plans are ephemeral execution tracking.
 - For work another worker consumes, the Bead is the prompt: requirements live in the durable contract, not only in chat. A `contract:draft` item is not dispatchable.
 - Contract baseline: PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT; add SCRUTINY and rollout/rollback when they affect correctness.
 - Worker summaries are claims. Verify important ones against live code, tests, or runtime state.
@@ -56,7 +56,7 @@ Example native task list mirroring beads:
 
 ## Operating rules
 
-- Memory gate at close: `bd remember` when useful, then `bd kv set memory-acked:<id> saved:<key>` or `nothing novel:<reason>`, then `bd close <id> --reason="..."`.
+- No close-time memory gate: `bd close <id> --reason="..."` succeeds directly; the claim/edit/commit gates still guard edits and commits.
 - Before editing existing symbols run GitNexus impact (`gitnexus_impact`) when available; before commit, run `gitnexus_detect_changes`.
 - Ask before destructive, irreversible, production-impacting, or history-rewriting actions; skip repetitive "Proceed?" confirmations once scope is clear.
 - Run targeted tests/build/typecheck for changed files; fix quality failures before commit.

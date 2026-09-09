@@ -10,7 +10,6 @@ import qualityGatesExtension from "./extensions/quality-gates.ts";
 import readLineNumbersExtension from "./extensions/read-line-numbers.ts";
 import sessionFlowExtension from "./extensions/session-flow.ts";
 import spTerminalOverlayExtension from "./extensions/sp-terminal-overlay.ts";
-import xtrmLoaderExtension from "./extensions/xtrm-loader.ts";
 import xtrmUiExtension from "./extensions/xtrm-ui.ts";
 import xtpromptExtension from "./extensions/xtprompt.ts";
 
@@ -29,7 +28,6 @@ const availableManagedPiExtensions: readonly ManagedPiExtension[] = [
   { id: "read-line-numbers", register: readLineNumbersExtension },
   { id: "session-flow", register: sessionFlowExtension },
   { id: "sp-terminal-overlay", register: spTerminalOverlayExtension },
-  { id: "xtrm-loader", register: xtrmLoaderExtension },
   { id: "xtrm-ui", register: xtrmUiExtension },
   { id: "xtprompt", register: xtpromptExtension },
 ];

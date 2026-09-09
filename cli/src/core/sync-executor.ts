@@ -15,8 +15,6 @@ const SAFE_BD_BASH_ALLOWLIST = [
     'Bash(bd ready:*)',
     'Bash(bd stats:*)',
     'Bash(bd search:*)',
-    'Bash(bd memories:*)',
-    'Bash(bd recall:*)',
 ];
 const SAFE_GIT_BASH_ALLOWLIST = [
     'Bash(git status:*)',

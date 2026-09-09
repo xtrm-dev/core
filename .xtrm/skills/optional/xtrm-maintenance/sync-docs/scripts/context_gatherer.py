@@ -6,7 +6,6 @@ Collects:
   - Recent commits in a time window (not merges)
   - Changed files per commit
   - Recently closed bd issues
-  - bd memories
   - Docs drift report
 
 Outputs JSON to stdout. Safe to run in any project — degrades gracefully
@@ -240,26 +239,6 @@ def gather_bd_closed(cwd: str, git_since: str | None) -> list[dict]:
     return issues[:20]
 
 
-def gather_bd_memories(cwd: str) -> list[dict]:
-    """Read bd memories via bd kv list, filtering memory.* keys."""
-    out = run(["bd", "kv", "list"], cwd=cwd)
-    if not out:
-        return []
-
-    memories = []
-    for line in out.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("memory."):
-            continue
-        if " = " in stripped:
-            key, _, value = stripped.partition(" = ")
-            memories.append({"key": key.strip(), "value": value.strip()})
-        else:
-            memories.append({"key": stripped, "value": ""})
-
-    return memories[:20]
-
-
 def gather_docs_drift(root: Path) -> dict:
     """Run drift_detector.py and capture stale docs report."""
     detector = Path(__file__).parent / "drift_detector.py"
@@ -386,7 +365,6 @@ def main() -> None:
         "bd": {
             "available": bd_available and dolt_ready,
             "closed_issues": gather_bd_closed(bd_cwd, git_since) if dolt_ready else [],
-            "memories": gather_bd_memories(bd_cwd) if dolt_ready else [],
         },
         "git": {
             "commit_count": len(commits),

@@ -31,19 +31,14 @@
     },
     {
       "id": 2,
-      "prompt": "Run sync-docs --fix on this project and remember what you did with bd.",
-      "expected_output": "Runs doc_structure_analyzer.py --fix --bd-remember, creates scaffold files for any missing docs/ subsystems, persists a bd memory with the summary, then validates the created files with validate_doc.py.",
+      "prompt": "Run sync-docs --fix on this project and report what you did.",
+      "expected_output": "Runs doc_structure_analyzer.py --fix, creates scaffold files for any missing docs/ subsystems, reports the summary, then validates the created files with validate_doc.py.",
       "files": [],
       "assertions": [
         {
           "id": "ran-fix-flag",
           "description": "Ran doc_structure_analyzer.py with --fix flag",
           "check": "result.md shows the --fix command was executed"
-        },
-        {
-          "id": "ran-bd-remember",
-          "description": "Ran with --bd-remember or manually ran bd remember with a summary",
-          "check": "result.md shows bd remember was called and reports the memory key"
         },
         {
           "id": "scaffold-created",

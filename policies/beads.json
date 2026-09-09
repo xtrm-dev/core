@@ -1,6 +1,6 @@
 {
   "id": "beads",
-  "description": "Issue tracking enforcement — edit gate (claim required), commit gate (close before commit), stop gate (no unclosed claims), memory gate (persist insights), compact save/restore.",
+  "description": "Issue tracking enforcement \u2014 edit gate (claim required), commit gate (close before commit), stop gate (no unclosed claims), compact save/restore.",
   "version": "1",
   "runtime": "both",
   "order": 20,
@@ -24,11 +24,6 @@
         "timeout": 5000
       },
       {
-        "event": "Stop",
-        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-memory-gate.mjs",
-        "timeout": 8000
-      },
-      {
         "event": "PreCompact",
         "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-compact-save.mjs",
         "timeout": 5000
@@ -40,9 +35,7 @@
     "events": [
       "session_start",
       "tool_call",
-      "tool_result",
-      "agent_end",
-      "session_shutdown"
+      "tool_result"
     ]
   }
 }

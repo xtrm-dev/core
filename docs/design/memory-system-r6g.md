@@ -1,6 +1,6 @@
 # Memory System Evolution — r6g research
 
-**Status:** Design / research. Not a plan of record.
+**Status:** ARCHIVED — bd-memory retired 2026-09-09 (bead xtrm-aemfv). Retained as a design record; reversible: the research direction is preserved here even though the `bd memories` substrate, memory gate, `xt memory`, and `.xtrm/memory.md` are removed. Not a plan of record.
 **Author:** dispatched research worker (bead `xtmux-r6g.10`, worktree `core-r6g-w10`).
 **Date:** 2026-07-18.
 **Related:**

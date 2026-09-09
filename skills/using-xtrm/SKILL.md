@@ -18,7 +18,6 @@ priority: high
 
 ```bash
 bd prime                          # load workflow context + active claims
-bd memories <today's topic>       # retrieve relevant past context
 bv --robot-triage                 # graph-ranked picks, quick wins, unblock targets
 bd update <id> --claim            # claim before any edit
 ```
@@ -43,7 +42,6 @@ SQLite owns obligations and waits across restarts. Recover with `obligations lis
 
 | Situation | Action |
 |-----------|--------|
-| User prompt contains `?` | `bd memories <keywords>` before answering — check stored context first |
 | "What should I work on?" | `bv --robot-triage` — ranked picks with dependency context |
 | "What was I working on?" | `bd list --status=in_progress` |
 | Unfamiliar area of code | `gitnexus_query({query: "concept"})` before opening any file |
@@ -53,30 +51,6 @@ SQLite owns obligations and waits across restarts. Recover with `obligations lis
 | Reading code | `get_symbols_overview` → `find_symbol` — never read whole files |
 | Task is tests | use /test-planning
 | Task is docs updates | use /sync-docs
-| Session end (issue closed) | Memory gate fires — evaluate `bd remember` for each closed issue |
-
----
-
-## Handling `?` Prompts
-
-When the user's message contains a question, check stored context before answering:
-
-```bash
-bd memories <keywords from question>   # search project memory
-bd recall <key>                        # retrieve specific memory if key is known
-```
-
-Example — user asks *"why does the quality gate run twice?"*:
-```bash
-bd memories "quality gate"
-# → "quality-check.cjs and quality-check.py are separate hooks —
-#    JS/TS and Python each get their own PostToolUse pass"
-```
-
-If it's a code question, also run:
-```bash
-gitnexus_query({query: "<topic>"})     # find relevant execution flows
-```
 
 ---
 
@@ -102,14 +76,6 @@ gitnexus_query({query: "session claim enforcement"})
 gitnexus_context({name: "resolveClaimAndWorkState"})            # callers + callees
 get_symbols_overview("hooks/beads-gate-core.mjs")               # map the file
 find_symbol("resolveClaimAndWorkState", include_body=True)      # read only this
-```
-
-**Persisting an insight:**
-```bash
-bd remember "quality-check runs twice: separate .cjs (JS) and .py (Python) hooks"
-# retrievable next session:
-bd memories "quality check"
-bd recall "quality-check-runs-twice-..."
 ```
 
 ---

@@ -12,13 +12,6 @@ Rules learned the hard way across recent sessions. Each entry: short rule, why i
   bd create --parent unitAI-abc12 --title "..." --type task --priority 2
   ```
 
-- **Memory gate must ack BEFORE `bd close`.** `bd close` is blocked until `memory-acked:<id>` exists. Run `bd remember` (or decide nothing novel), then set the kv, then close. Each id in a batch needs its own ack.
-  ```bash
-  bd remember "<insight>"                                  # if novel
-  bd kv set "memory-acked:<id>" "saved:<key>"              # OR "nothing novel:<reason>"
-  bd close <id> --reason="..."
-  ```
-
 - **Never run bare `bv` — it opens a TUI and blocks the session.** Always use `--robot-*` flags.
   ```bash
   bv --robot-triage --format toon

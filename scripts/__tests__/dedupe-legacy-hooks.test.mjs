@@ -8,13 +8,13 @@ import path from 'node:path';
 // audit hashes files inside it. Point HOME at a throwaway tree with a stand-in global
 // install so the test does not depend on the machine running it having xtrm installed
 // — it passed on a dev box and failed on a clean CI runner (ENOENT on
-// ~/.xtrm/hooks/beads-memory-gate.mjs). os.homedir() reads $HOME on POSIX, and the
+// ~/.xtrm/hooks/beads-compact-save.mjs). os.homedir() reads $HOME on POSIX, and the
 // import must be dynamic so it happens after the assignment.
 const HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'dedupe-hooks-home-'));
 process.env.HOME = HOME;
 const GLOBAL_HOOKS = path.join(HOME, '.xtrm', 'hooks');
 await fs.mkdir(GLOBAL_HOOKS, { recursive: true });
-await fs.writeFile(path.join(GLOBAL_HOOKS, 'beads-memory-gate.mjs'), '// global beads-memory-gate\n');
+await fs.writeFile(path.join(GLOBAL_HOOKS, 'beads-compact-save.mjs'), '// global beads-compact-save\n');
 await fs.writeFile(path.join(GLOBAL_HOOKS, 'beads-stop-gate.mjs'), '// global beads-stop-gate\n');
 
 const { normaliseCommand, indexGlobal, pruneSettings, auditProject } = await import(
@@ -22,8 +22,8 @@ const { normaliseCommand, indexGlobal, pruneSettings, auditProject } = await imp
 );
 
 test('normalises project hook paths onto the global hooks dir', () => {
-  const cmd = normaliseCommand('node "/repo/.xtrm/hooks/beads-memory-gate.mjs"', '/repo');
-  assert.equal(cmd, `node "${GLOBAL_HOOKS}/beads-memory-gate.mjs"`);
+  const cmd = normaliseCommand('node "/repo/.xtrm/hooks/beads-compact-save.mjs"', '/repo');
+  assert.equal(cmd, `node "${GLOBAL_HOOKS}/beads-compact-save.mjs"`);
 });
 
 test('leaves commands that do not reference project hooks untouched', () => {
@@ -64,8 +64,8 @@ test('audit plans identical duplicates and preserves drift, uncovered and foreig
   await fs.mkdir(path.join(dir, '.claude'), { recursive: true });
 
   // matches the real global copy byte-for-byte -> safe duplicate
-  const canonical = await fs.readFile(path.join(GLOBAL_HOOKS, 'beads-memory-gate.mjs'));
-  await fs.writeFile(path.join(hooksDir, 'beads-memory-gate.mjs'), canonical);
+  const canonical = await fs.readFile(path.join(GLOBAL_HOOKS, 'beads-compact-save.mjs'));
+  await fs.writeFile(path.join(hooksDir, 'beads-compact-save.mjs'), canonical);
   // same name as a global hook but different bytes -> must be preserved
   await fs.writeFile(path.join(hooksDir, 'beads-stop-gate.mjs'), '// locally patched\n');
 
@@ -77,7 +77,7 @@ test('audit plans identical duplicates and preserves drift, uncovered and foreig
         Stop: [
           {
             hooks: [
-              { command: q('beads-memory-gate.mjs') },
+              { command: q('beads-compact-save.mjs') },
               { command: q('beads-stop-gate.mjs') },
               { command: q('not-in-global.mjs') },
               { command: 'python3 "$CLAUDE_PROJECT_DIR/mine.py"' },
@@ -93,7 +93,7 @@ test('audit plans identical duplicates and preserves drift, uncovered and foreig
       Stop: [
         {
           hooks: [
-            { command: `node "${GLOBAL_HOOKS}/beads-memory-gate.mjs"` },
+            { command: `node "${GLOBAL_HOOKS}/beads-compact-save.mjs"` },
             { command: `node "${GLOBAL_HOOKS}/beads-stop-gate.mjs"` },
           ],
         },
@@ -105,7 +105,7 @@ test('audit plans identical duplicates and preserves drift, uncovered and foreig
 
   assert.deepEqual(
     result.planned.map((p) => p.command),
-    [q('beads-memory-gate.mjs')],
+    [q('beads-compact-save.mjs')],
     'only the byte-identical, globally-covered hook is planned for removal',
   );
   assert.deepEqual(

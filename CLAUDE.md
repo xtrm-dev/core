@@ -15,13 +15,13 @@
 
 1. Read repo identity + non-negotiables at the top of the root agent guide first.
 2. Service/docs/project context: check `service-knowledge status` / `index stats` (rebuild when stale/absent), then `service-knowledge index query "<3-5 task terms>" --bundle`; read only the cited evidence. Skip repos without a service registry.
-3. Executable work: targeted Beads lookup (`bd ready`, `bd list --status=in_progress`, `bd search "<terms>"`, `bd show <id>`), then `bd update <id> --claim` before edits. `bd memories <topic>` / `bd recall <key>` only when history is relevant.
+3. Executable work: targeted Beads lookup (`bd ready`, `bd list --status=in_progress`, `bd search "<terms>"`, `bd show <id>`), then `bd update <id> --claim` before edits.
 4. Catch up: handoff/next-session beads, latest `xt report` handoffs, recent merged/closed PRs.
 5. If the runtime supports local task planning, use it for non-trivial work, synchronized with the active bead.
 
 ## Operating model
 
-- Beads owns durable work identity, dependencies, memory gates, and closure; runtime-local task plans are ephemeral execution tracking.
+- Beads owns durable work identity, dependencies, and closure; runtime-local task plans are ephemeral execution tracking.
 - For work another worker consumes, the Bead is the prompt: requirements live in the durable contract, not only in chat. A `contract:draft` item is not dispatchable.
 - Contract baseline: PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT; add SCRUTINY and rollout/rollback when they affect correctness.
 - Worker summaries are claims. Verify important ones against live code, tests, or runtime state.
@@ -30,7 +30,7 @@
 
 ## Operating rules
 
-- Memory gate at close: `bd remember` when useful, then `bd kv set memory-acked:<id> saved:<key>` or `nothing novel:<reason>`, then `bd close <id> --reason="..."`.
+- No close-time memory gate: `bd close <id> --reason="..."` succeeds directly; the claim/edit/commit gates still guard edits and commits.
 - Before editing existing symbols run GitNexus impact (`gitnexus_impact`) when available; before commit, run `gitnexus_detect_changes`.
 - Ask before destructive, irreversible, production-impacting, or history-rewriting actions; skip repetitive "Proceed?" confirmations once scope is clear.
 - Run targeted tests/build/typecheck for changed files; fix quality failures before commit.
@@ -81,7 +81,7 @@ Clearly distinguish verified facts, observations, assumptions, inferences, recom
 
 Two task systems coexist in this repo. Use both; do not substitute one for the other.
 
-- **Beads (`bd`)** — top-level durable tracking. Authoritative for ownership, dependencies, cross-session memory, and closure. Read the rest of this file and use targeted lookup (`bd ready`, `bd search "<terms>"`, `bd show <id>`) before starting work; `bd prime` is opt-in diagnostic only. File, claim, and close work here.
+- **Beads (`bd`)** — top-level durable tracking. Authoritative for ownership, dependencies, and closure. Read the rest of this file and use targeted lookup (`bd ready`, `bd search "<terms>"`, `bd show <id>`) before starting work; `bd prime` is opt-in diagnostic only. File, claim, and close work here.
 - **Native integrated task system** (`TaskCreate` / `TaskList` / `TaskGet` / `TaskUpdate` / `TaskExecute`) — this-session execution tracking. Use it to mirror the active bead and break it into smaller intermediate steps. Ephemeral; does not replace beads.
 
 Rule: when you pick up a bead, create native tasks that track it — reference the bead ID in each task title (e.g. `N.N summary — status (worker %NNNN)`) — and add any smaller intermediate steps as native sub-tasks. Beads own the durable record; native tasks own the in-flight breakdown.
@@ -105,10 +105,10 @@ This file is a compact routing guide for Claude Code sessions in `xtrm-tools`. I
 ## Non-negotiable rules
 
 - Use beads as the authoritative issue tracker and normal work lifecycle. Inspect/claim/close with `bd` before and after edits.
-- To proceed on any non-trivial or multi-step Claude Code work, use Claude Code task planning features (TaskCreate/TodoWrite-style when available) alongside normal bead operations. The local plan must mirror the active bead scope and never replace beads for ownership, dependencies, memory gates, or closure.
+- To proceed on any non-trivial or multi-step Claude Code work, use Claude Code task planning features (TaskCreate/TodoWrite-style when available) alongside normal bead operations. The local plan must mirror the active bead scope and never replace beads for ownership, dependencies, or closure.
 - Specialists are a normal operational surface here. Before specialist work, check `sp --help` and `sp list` / `specialists list` so you know the available roles and current CLI shape.
 - For documentation, service understanding, and project/service context, use the canonical service-skills skill set (`/scope`, `/using-service-skills`) as the primary knowledge substrate.
-- Never commit while a bead claim is open. Close the bead and satisfy memory ack first.
+- Never commit while a bead claim is open. Close the bead first.
 - Before editing an existing function, class, or method, run GitNexus impact analysis.
 - Before committing, run `gitnexus_detect_changes()` for scope verification.
 - Do not edit generated files directly unless the task is explicitly to update generated artifacts.
@@ -120,9 +120,8 @@ This file is a compact routing guide for Claude Code sessions in `xtrm-tools`. I
 ## Session start: targeted, not reconstructive
 
 1. `bd list --status=in_progress`, `bd ready`, `bd search "<terms>"`, `bd show <id>` — locate the relevant current work.
-2. `bd memories <topic>` — retrieve relevant memory only when prior history is materially relevant.
-3. `bv --robot-triage` or `bv --robot-next` — choose work when needed. Never run bare `bv`.
-4. `bd update <id> --claim` — claim before edits.
+2. `bv --robot-triage` or `bv --robot-next` — choose work when needed. Never run bare `bv`.
+3. `bd update <id> --claim` — claim before edits.
 
 `bd prime` is opt-in diagnostic only; invoke it explicitly when a full-context run helps.
 
@@ -173,9 +172,6 @@ Keep only the commands an agent needs without another manual. Use `--help` for f
 - `bd list --status=in_progress` — see active claims.
 - `bd show <id>` — inspect detail, deps, blockers, notes.
 - `bd update <id> --claim` — claim before edits.
-- `bd memories <topic>` / `bd recall <key>` — retrieve durable context.
-- `bd remember "<insight>"` — save durable context.
-- `bd kv set memory-acked:<id> saved:<key>` or `nothing novel:<reason>` — satisfy close-time memory gate.
 - `bd close <id> --reason="..."` — close before commit.
 - `bv --robot-triage --format toon` / `bv --robot-next` — ranked work selection; never run bare `bv`.
 - `xt update --apply` — refresh xtrm-managed assets in a repo.

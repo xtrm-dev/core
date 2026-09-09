@@ -53,11 +53,3 @@ export function stopBlockMessage(summary, claimed) {
     'Next steps:\n' + SESSION_CLOSE_PROTOCOL
   );
 }
-
-// ── Memory gate messages ─────────────────────────────────────────
-
-export function memoryPromptMessage(claimId, sessionId) {
-  const claim = claimId ? `${claimId} ` : '';
-  const ack = `bd kv set "memory-gate-done:${sessionId}"`;
-  return `● Memory gate: ${claim}closed. ack: \`${ack} "saved:<key>"\` | \`${ack} "nothing novel - <reason>"\`\n`;
-}
