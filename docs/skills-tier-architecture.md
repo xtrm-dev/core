@@ -53,7 +53,6 @@ See [docs/plans/global-skills-migration.md](plans/global-skills-migration.md) fo
 ~/.xtrm/skills/
 ├── default/                   # Tier 1: baseline skills (copied from xtrm package)
 │   ├── using-xtrm/SKILL.md
-│   ├── sync-docs/SKILL.md
 │   └── ...                    # ~30 skills
 │
 ├── optional/                  # Tier 2: managed optional packs
@@ -83,17 +82,14 @@ See [docs/plans/global-skills-migration.md](plans/global-skills-migration.md) fo
 
 ```
 .xtrm/skills/
-├── user/                      # Project user-authored packs
-│   ├── packs/
-│   │   └── <pack>/            # Project-specific packs
-│   │       ├── PACK.json
-│   │       └── <skill>/SKILL.md
-│   └── README.txt
+├── <pack>/                      # Project user-authored packs (flat v2 layout)
+│   ├── PACK.json
+│   └── <skill>/SKILL.md
 │
 ├── active/                    # Composed runtime view
 │   ├── using-xtrm -> ../../~/.xtrm/skills/default/using-xtrm
 │   ├── planning -> ../../~/.xtrm/skills/default/planning
-│   ├── my-project-pack -> ../user/packs/my-project-pack
+│   ├── my-project-pack -> ../my-project-pack
 │   └── ...                    # + service-skills output
 │
 ├── state.json                 # Project delta overrides on global state
@@ -251,13 +247,15 @@ Example:
 
 ```json
 {
-  "name": "code-quality",
-  "version": "1.0.0",
-  "description": "Code quality and linting skills",
-  "runtime": ["claude", "pi"],
-  "skills": ["using-quality-gates", "using-tdd", "security-pipeline"]
+  "schemaVersion": "1",
+  "name": "sre-ops",
+  "version": "2.0.0",
+  "description": "SRE operations: health triage, incidents, deploy verification, capacity and observability",
+  "skills": ["sre-ops"]
 }
 ```
+
+Shipped exemplar: `optional/sre-ops` (see `.xtrm/skills/optional/sre-ops/PACK.json`).
 
 ## Invariants
 

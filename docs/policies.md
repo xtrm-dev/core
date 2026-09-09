@@ -7,7 +7,7 @@ updated: 2026-05-15
 synced_at: 33c625c
 source_of_truth_for:
   - "policies/*.json"
-  - "hooks/hooks.json"
+  - ".xtrm/config/hooks.json"
 domain: [hooks, enforcement]
 updated_at: 2026-05-15
 ---
@@ -58,16 +58,14 @@ Other event groups retain the standard wrapper shape without the `script` field.
 
 | Policy | Runtime | Description |
 |---|---|---|
-| `using-xtrm.json` | both | Injects project memory without eagerly loading the using-xtrm skill |
 | `worktree-boundary.json` | claude | Blocks write/edit tools outside active `.xtrm/worktrees/<name>` |
 | `session-flow.json` | both | Claim sync + stop gate + worktree session end workflow |
-| `beads.json` | both | Edit/commit/memory/compact enforcement. Includes `PreCompact` (save) and `SessionStart` (restore) hooks for beads-compact state persistence. |
+| `beads.json` | both | Edit/commit/compact enforcement. Includes `PreCompact` (save) and `SessionStart` (restore) hooks for beads-compact state persistence. |
 | `quality-gates.json` | both | JS/TS + Python quality checks after mutating edits |
 | `quality-gates-env.json` | claude | Session-start check for required quality binaries |
 | `gitnexus.json` | claude | GitNexus augmentation for Bash/Grep/Read/Glob |
 | `xtrm-debug-logger.json` | claude | Session/tool lifecycle logging into `.xtrm/debug.db` |
 | `specialists-agent-guard.json` | claude | Blocks raw Agent tool calls when a using-specialists workflow is active — routes work through specialists CLI |
-| `service-skills.json` | pi | Service skill catalog + drift checks in Pi extension runtime. Resolves via composed active view (`.xtrm/skills/active/` → global + local). |
 
 ## Add / Update Workflow
 
