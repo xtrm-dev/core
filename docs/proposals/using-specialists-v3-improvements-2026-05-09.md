@@ -301,6 +301,8 @@ If a job exceeds 2× its typical duration, inspect with `sp feed <job-id>` befor
 
 ### A8. Memory-gate batch-close workflow
 
+> **Retired 2026-09-09 (bd-memory retirement, bead xtrm-aemfv):** the memory gate no longer exists; `bd close` succeeds without a memory ack. Preserved as history.
+
 Closing many beads at once requires per-id memory acks. The skill should document the loop pattern.
 
 ````markdown

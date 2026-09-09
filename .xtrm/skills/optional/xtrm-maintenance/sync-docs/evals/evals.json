@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "I just closed a bunch of bd issues this sprint and merged 3 PRs. The README.md is getting long — can you sync the docs and make sure everything's in order? Use sync-docs.",
+      "prompt": "I just closed a bunch of bd issues this sprint and merged 3 PRs. The README.md is getting long \u2014 can you sync the docs and make sure everything's in order? Use sync-docs.",
       "expected_output": "Runs context_gatherer.py and doc_structure_analyzer.py, reports what was found (closed issues, PRs, any drift), identifies README extraction candidates or MISSING docs/ files, and either fixes them or gives a clear plan with next steps.",
       "files": [],
       "assertions": [
@@ -31,19 +31,14 @@
     },
     {
       "id": 2,
-      "prompt": "Run sync-docs --fix on this project and remember what you did with bd.",
-      "expected_output": "Runs doc_structure_analyzer.py --fix --bd-remember, creates scaffold files for any missing docs/ subsystems, persists a bd memory with the summary, then validates the created files with validate_doc.py.",
+      "prompt": "Run sync-docs --fix on this project and report what you did.",
+      "expected_output": "Runs doc_structure_analyzer.py --fix, creates scaffold files for any missing docs/ subsystems, reports the summary, then validates the created files with validate_doc.py.",
       "files": [],
       "assertions": [
         {
           "id": "ran-fix-flag",
           "description": "Ran doc_structure_analyzer.py with --fix flag",
           "check": "result.md shows the --fix command was executed"
-        },
-        {
-          "id": "ran-bd-remember",
-          "description": "Ran with --bd-remember or manually ran bd remember with a summary",
-          "check": "result.md shows bd remember was called and reports the memory key"
         },
         {
           "id": "scaffold-created",
@@ -71,11 +66,11 @@
         {
           "id": "named-specific-sections",
           "description": "Named specific README sections with their suggested docs/ destination",
-          "check": "result.md lists at least 2 specific sections (e.g. '## Policy System → docs/policies.md') not just generic advice"
+          "check": "result.md lists at least 2 specific sections (e.g. '## Policy System \u2192 docs/policies.md') not just generic advice"
         },
         {
           "id": "actionable-report",
-          "description": "Report is actionable — tells user exactly what to do next, not just observations",
+          "description": "Report is actionable \u2014 tells user exactly what to do next, not just observations",
           "check": "result.md includes a prioritized list or clear next steps, not just 'the README could be shorter'"
         },
         {

@@ -173,7 +173,7 @@ The skeleton lists files. Add narrative:
   to the final pushed stack
 
 #### Documentation Updates
-List doc changes, skill updates, memory saves, CHANGELOG entries
+List doc changes, skill updates, CHANGELOG entries
 (see Step 5 — due-diligence sweep — and Step 6 — CHANGELOG sync).
 Delete if no doc work happened.
 
@@ -185,10 +185,6 @@ This is the most valuable handoff section. For each open issue:
 - Put the most actionable items first
 - If an issue listed earlier in the day was closed later, remove it from open
   issues and move it to Issues Closed with closure context
-
-#### Memories Saved
-List all `bd remember` calls made this session. If the skeleton missed any,
-add them. If none were saved, note why (nothing novel, or deferred).
 
 #### Suggested Next Priority
 Ordered list of 1-4 items with rationale for each. Based on:
@@ -226,10 +222,6 @@ how often it gets missed:
   APIs, or service ownership? If yes, run `/sync-docs` (or the
   `sync-docs` specialist) for any drifted doc. Skip if changes are
   pure-internal (refactors with no observable surface change).
-- **Memories**: every `bd close` should have triggered a memory-gate ack.
-  Run `bd memories <topic>` to confirm anything genuinely novel landed.
-  If you saw a real surprise but acked "nothing novel" out of haste,
-  go back and `bd remember` it now.
 - **CLAUDE.md / project guide**: did this session add or remove a
   service, change a key port, change a top-level workflow command, or
   change how tools are wired? If yes, append/correct in CLAUDE.md before
@@ -303,7 +295,7 @@ What counts as user-facing for `[Unreleased]`:
 
 What does NOT belong in `[Unreleased]`:
 - session reports themselves
-- skill or memory edits that only affect agents
+- skill edits that only affect agents
 - refactors with byte-identical observable behavior
 - per-issue notes that already live in beads
 
@@ -346,7 +338,7 @@ The reference is `~/projects/specialists/.xtrm/reports/2026-03-30-orchestration-
 Every report must match that level of detail. Specifically:
 
 - Step 0 cleanup performed before report generation; Step 8 verification clean.
-- Step 5 due-diligence sweep performed; service skills, docs, memories, CLAUDE.md, evidence, decisions, tests, and skill mirrors checked (or skipped with reason).
+- Step 5 due-diligence sweep performed; service skills, docs, CLAUDE.md, evidence, decisions, tests, and skill mirrors checked (or skipped with reason).
 - Step 6 CHANGELOG sync performed when user-facing changes shipped (or skip noted).
 - No empty `<!-- FILL -->` markers left in the final output
 - No duplicate same-day reports unless explicitly requested by the operator

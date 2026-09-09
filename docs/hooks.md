@@ -39,10 +39,10 @@ The current compiled configuration uses:
 
 | Event | Current purpose |
 |---|---|
-| `SessionStart` | memory/context restore, environment checks, session telemetry, stale-worktree reap |
+| `SessionStart` | claim/context restore, environment checks, session telemetry, stale-worktree reap |
 | `PreToolUse` | worktree and Beads mutation gates, Specialists Agent guard, commit gate |
 | `PostToolUse` | claim synchronization, quality checks, GitNexus enrichment, tool telemetry |
-| `Stop` | claim/memory gates and inbox/reply reminder |
+| `Stop` | claim gate and inbox/reply reminder |
 | `PreCompact` | durable claim save before context compaction |
 
 The compiled `.xtrm/config/hooks.json` is the definitive current event/matcher list.
@@ -53,7 +53,6 @@ The compiled `.xtrm/config/hooks.json` is the definitive current event/matcher l
 
 | Hook | Behavior |
 |---|---|
-| `project-memory.mjs` | injects current shared memory doctrine when available |
 | `beads-compact-restore.mjs` | restores claim/session continuity after resume/compaction |
 | `quality-check-env.mjs` | reports missing local quality-tool capability |
 | `xtrm-session-logger.mjs` | records session-start diagnostic telemetry |
@@ -83,7 +82,6 @@ The compiled `.xtrm/config/hooks.json` is the definitive current event/matcher l
 | Hook | Behavior |
 |---|---|
 | `beads-stop-gate.mjs` | reminds about unresolved claimed work |
-| `beads-memory-gate.mjs` | prompts bounded durable-memory capture after relevant closed work |
 | `inbox-reminder-stop.mjs` | prevents silent session exit when pending XTRM inbox/reply obligations remain |
 
 ### PreCompact

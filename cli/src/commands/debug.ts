@@ -51,8 +51,6 @@ const KIND_LABELS: Record<string, KindLabelDef> = {
   'gate.commit.allow':     { label: 'CMIT+', color: kleur.green  },
   'gate.commit.block':     { label: 'CMIT-', color: kleur.red    },
   'gate.stop.block':       { label: 'STOP-', color: kleur.red    },
-  'gate.memory.triggered': { label: 'MEMO-', color: kleur.yellow },
-  'gate.memory.acked':     { label: 'MEMO+', color: kleur.green  },
   'gate.worktree.block':   { label: 'WTRE-', color: kleur.red    },
   'bd.claimed':            { label: 'CLMD ', color: kleur.cyan   },
   'bd.closed':             { label: 'CLSD ', color: kleur.green  },

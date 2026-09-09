@@ -116,24 +116,6 @@ export function getTotalWork(cwd) {
 }
 
 /**
- * Get the closed-this-session issue ID for a session from bd kv.
- * Returns: issue ID string if set, '' if not set, null if bd kv unavailable.
- */
-export function getClosedThisSession(sessionId, cwd) {
-  try {
-    return execSync(`bd kv get "closed-this-session:${sessionId}"`, {
-      encoding: 'utf8',
-      cwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000,
-    }).trim();
-  } catch (err) {
-    if (err.status === 1) return ''; // key not found
-    return null;                     // bd kv unavailable
-  }
-}
-
-/**
  * If cwd is inside a .xtrm/worktrees/<name> directory, return the worktree root path.
  * Returns null if not in a worktree.
  */

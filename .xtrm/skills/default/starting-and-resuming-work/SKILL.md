@@ -22,8 +22,7 @@ Reconstruct reality from durable/live sources before making a new plan.
 2. Read the active or referenced bead contracts and their current states.
 3. Inspect recent relevant commits/PRs and validation when the task depends on them.
 4. Inspect active XTRM workers/jobs/topology when other agents may still own work.
-5. Retrieve relevant `bd memories` only when history will help locate a decision or trap.
-6. Compare inherited summaries with live state; correct stale claims before continuing.
+5. Compare inherited summaries with live state; correct stale claims before continuing.
 
 Useful surfaces include `bd prime`, `bd ready`, `bd show`, `bd list`, `xt topology`, and
 current runtime/worker status commands. Use live `--help` when exact syntax matters.

@@ -1,36 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "script": "beads-compact-restore.mjs",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/project-memory.mjs"
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-compact-restore.mjs",
-            "timeout": 5000
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/quality-check-env.mjs",
-            "timeout": 5000
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-session-logger.mjs",
-            "timeout": 3000
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/worktree-reap-sweep.mjs",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit",
@@ -124,12 +93,34 @@
           },
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-memory-gate.mjs",
-            "timeout": 8000
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/inbox-reminder-stop.mjs",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "script": "beads-compact-restore.mjs",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-compact-restore.mjs",
+            "timeout": 5000
           },
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/inbox-reminder-stop.mjs",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/quality-check-env.mjs",
+            "timeout": 5000
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-session-logger.mjs",
+            "timeout": 3000
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/worktree-reap-sweep.mjs",
             "timeout": 5000
           }
         ]

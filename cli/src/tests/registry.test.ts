@@ -199,16 +199,22 @@ describe('managed specialists hook payload', () => {
     const registeredHooks = Object.keys(registry.assets.hooks.files)
       .filter(file => file === 'specialists-agent-guard.mjs' || file.startsWith('specialists/'))
       .sort();
+    // The specialists/ subdir is absent when all of its hooks are retired.
+    let specialistFiles: string[] = [];
+    try {
+      specialistFiles = await fs.readdir(path.join(repoRoot, '.xtrm', 'hooks', 'specialists'));
+    } catch {
+      specialistFiles = [];
+    }
     const shippedHooks = [
       'specialists-agent-guard.mjs',
-      ...(await fs.readdir(path.join(repoRoot, '.xtrm', 'hooks', 'specialists')))
+      ...specialistFiles
         .filter(file => file.endsWith('.mjs'))
         .map(file => `specialists/${file}`),
     ].sort();
 
     expect(shippedHooks).toEqual([
       'specialists-agent-guard.mjs',
-      'specialists/specialists-memory-cache-sync.mjs',
     ]);
     expect(registeredHooks).toEqual(shippedHooks);
   });

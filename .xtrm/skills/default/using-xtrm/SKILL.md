@@ -121,13 +121,10 @@ Parallelism is useful only when ownership boundaries are real.
 If two workers would edit the same surface without a defined ordering/merge owner, do not
 parallelize them.
 
-## Memory and inherited context
+## Inherited context
 
-Use `bd memories <topic>` when prior project history is relevant. Memories are dated
-leads, never authority. Confirm anything actionable against live state. Do not search
-memory merely because a prompt contains a question mark.
-
-A handoff report, old bead note, worker result, or prior assistant summary is also a lead.
+A handoff report, old bead note, worker result, or prior assistant summary is a dated
+lead, never authority. Confirm anything actionable against live state.
 Re-derive expensive or irreversible facts before acting.
 
 ## Runtime enforcement

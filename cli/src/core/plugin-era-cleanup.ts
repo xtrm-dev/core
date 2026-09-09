@@ -62,6 +62,9 @@ const KNOWN_MARKETPLACES_FILE_ENTRY_DELETES: readonly JsonMapEntryDelete[] = [
   { parentKey: '', entryKey: LEGACY_MARKETPLACE_ID },
 ];
 
+// Retired extension ids stay in this set so stale global installs are still
+// cleaned: membership drives on-disk cleanup, not registration.
+// (xtrm-loader retired with the bd-memory retirement; manifest.json records it.)
 const XTRM_MANAGED_PI_EXTENSIONS = new Set([
   'beads',
   'session-flow',

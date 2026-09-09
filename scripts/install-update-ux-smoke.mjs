@@ -133,7 +133,6 @@ try {
   const tarballFiles = execFileSync('tar', ['-tf', tarball], { encoding: 'utf8' }).split('\n');
   for (const required of [
     'package/.xtrm/config/instructions/global-system-prompt.md',
-    'package/.xtrm/config/instructions/memory-doctrine.md',
     'package/packages/pi-extensions/extensions/python-kernel/index.ts',
     'package/packages/pi-extensions/extensions/python-kernel/package.json',
   ]) {

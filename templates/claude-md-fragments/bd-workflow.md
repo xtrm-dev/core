@@ -1,6 +1,6 @@
 ---
 name: bd-workflow
-version: 1.1.0
+version: 1.2.0
 description: targeted Beads workflow + XTRM lifecycle gates
 ---
 # XTRM Agent Workflow
@@ -20,7 +20,6 @@ bd show <id>
 bd update <id> --claim
 ```
 
-Use `bd memories <topic>` / `bd recall <key>` only when prior history is materially relevant.
 Use `bv --robot-triage --format toon` only when graph-aware prioritization is needed. Never run bare `bv` in an agent session.
 
 ## Active gates
@@ -30,7 +29,6 @@ Use `bv --robot-triage --format toon` only when graph-aware prioritization is ne
 | Edit | repository mutation without claimed work | claim an existing Bead before editing |
 | Commit | commit while claimed work is unresolved | close/acknowledge work first |
 | Stop | session attempts to end with unresolved claimed work | reconcile/close according to current runtime gate |
-| Memory | relevant closed work requires memory acknowledgement | `bd remember` when useful, or record a truthful nothing-novel acknowledgement |
 | Dispatch | another worker will consume `contract:draft` work | `/planning` → promote to a contract-quality ready Bead first |
 
 Hooks/extensions own deterministic enforcement. `/using-xtrm` owns judgment and routing.

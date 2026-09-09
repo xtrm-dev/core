@@ -111,7 +111,7 @@ describe.skip("Beads Extension (API mismatch - see xtrm-p3gk)", () => {
         }
 	});
 
-	it("should inject memory reminder on bd close", async () => {
+	it("should inject close notice on bd close", async () => {
 		(SubprocessRunner.run as any).mockResolvedValue({ code: 0, stdout: "", stderr: "" });
 
 		beadsExtension(harness.pi);
@@ -124,7 +124,7 @@ describe.skip("Beads Extension (API mismatch - see xtrm-p3gk)", () => {
 		});
 
 		expect(result.content).toHaveLength(2);
-		expect(result.content[1].text).toContain("Beads Insight");
+		expect(result.content[1].text).toContain("Work completed");
 	});
 
 	it("should auto-claim session on bd update --claim", async () => {

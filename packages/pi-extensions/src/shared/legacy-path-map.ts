@@ -12,7 +12,6 @@ export const LEGACY_PATH_MAPPINGS: readonly ExtensionPathMapping[] = [
   { extensionId: "quality-gates", legacyPath: ".xtrm/ext-src/quality-gates", newPath: "packages/pi-extensions/extensions/quality-gates" },
   { extensionId: "service-knowledge", legacyPath: ".xtrm/ext-src/service-knowledge", newPath: "packages/pi-extensions/extensions/service-knowledge", note: "relocated to xtrm repo package @jaggerxtrm/pi-service-knowledge (xtrm-6z6.5)" },
   { extensionId: "session-flow", legacyPath: ".xtrm/ext-src/session-flow", newPath: "packages/pi-extensions/extensions/session-flow" },
-  { extensionId: "xtrm-loader", legacyPath: ".xtrm/ext-src/xtrm-loader", newPath: "packages/pi-extensions/extensions/xtrm-loader" },
   { extensionId: "xtrm-ui", legacyPath: ".xtrm/ext-src/xtrm-ui", newPath: "packages/pi-extensions/extensions/xtrm-ui" },
   { extensionId: "pi-core-internal", legacyPath: ".xtrm/ext-src/core", newPath: "packages/pi-extensions/src/core" },
 ] as const;

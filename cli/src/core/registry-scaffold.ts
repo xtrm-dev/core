@@ -42,7 +42,6 @@ function formatMissingSources(missingSources: readonly string[]): string {
 }
 
 export const USER_OWNED_PATHS: readonly string[] = [
-    'memory.md',
     'skills/user/',
 ];
 

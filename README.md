@@ -226,7 +226,7 @@ XTRM currently uses deterministic runtime machinery for things such as:
 - Bead claim/edit/commit/stop lifecycle;
 - worktree boundaries and stale-worktree checks;
 - quality checks;
-- project-memory and compact/session restoration;
+- claim/compact/session restoration;
 - Specialist execution boundaries;
 - GitNexus enrichment;
 - pending coordination/reply reminders;

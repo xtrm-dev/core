@@ -5,7 +5,6 @@ Gather project context for documentation sync.
 Collects:
   - Recently closed bd issues (if .beads/ exists)
   - Recently merged PRs (via git log)
-  - bd memories persisted this cycle (bd kv list)
   - Stale docs/ files (via sync-docs drift_detector.py)
 
 Outputs JSON to stdout. Safe to run in any project — degrades gracefully
@@ -112,26 +111,6 @@ def gather_bd_closed(cwd: str) -> list[dict]:
     return issues[:20]
 
 
-def gather_bd_memories(cwd: str) -> list[dict]:
-    """Read bd memories via bd kv list, filtering memory.* keys."""
-    out = run(["bd", "kv", "list"], cwd=cwd)
-    if not out:
-        return []
-
-    memories = []
-    for line in out.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("memory."):
-            continue
-        if " = " in stripped:
-            key, _, value = stripped.partition(" = ")
-            memories.append({"key": key.strip(), "value": value.strip()})
-        else:
-            memories.append({"key": stripped, "value": ""})
-
-    return memories[:20]
-
-
 def gather_merged_prs(root: Path, since_n: int) -> list[dict]:
     """Get merged PRs from git log."""
     out = run(
@@ -224,7 +203,6 @@ def main() -> None:
         "project_root": str(root),
         "bd_available": bd_available,
         "bd_closed_issues": gather_bd_closed(bd_cwd) if dolt_ready else [],
-        "bd_memories": gather_bd_memories(bd_cwd) if dolt_ready else [],
         "merged_prs": gather_merged_prs(root, since_n),
         "recent_commits": gather_recent_commits(root, since_n),
         "docs_drift": gather_docs_drift(root, since_n),

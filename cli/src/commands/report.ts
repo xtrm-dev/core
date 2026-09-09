@@ -197,23 +197,6 @@ function collectSpecialistJobs(cwd: string, sessionStartMs: number): SpecialistJ
     return jobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
 }
 
-function collectMemories(cwd: string): Array<{ key: string; content: string }> {
-    // bd memories with no keyword returns recent — grab all
-    const r = run('bd', ['memories'], cwd);
-    if (!r.ok || !r.out) return [];
-
-    const memories: Array<{ key: string; content: string }> = [];
-    const lines = r.out.split('\n');
-    for (const line of lines) {
-        // Format: "key: content" or "### key\ncontent"
-        const match = line.match(/^### (.+)/) || line.match(/^([a-z0-9_-]+):\s+(.+)/i);
-        if (match) {
-            memories.push({ key: match[1], content: match[2] ?? '' });
-        }
-    }
-    return memories;
-}
-
 function buildSkeleton(opts: {
     date: string;
     branch: string;
@@ -224,7 +207,6 @@ function buildSkeleton(opts: {
     modifiedFiles: string[];
     deletedFiles: string[];
     specialistJobs: SpecialistJob[];
-    memories: Array<{ key: string; content: string }>;
 }): string {
     const lines: string[] = [];
 
@@ -352,7 +334,7 @@ function buildSkeleton(opts: {
     // Documentation Updates
     lines.push('## Documentation Updates');
     lines.push('');
-    lines.push('<!-- FILL: Any doc changes, memory updates, skill modifications, CHANGELOG entries. Delete if none. -->');
+    lines.push('<!-- FILL: Any doc changes, skill modifications, CHANGELOG entries. Delete if none. -->');
     lines.push('');
 
     // Open Issues with Context
@@ -369,19 +351,6 @@ function buildSkeleton(opts: {
     } else {
         lines.push('*No open issues.*');
     }
-    lines.push('');
-
-    // Memories Saved
-    lines.push('## Memories Saved');
-    lines.push('');
-    lines.push('| Key | Content |');
-    lines.push('|-----|---------|');
-    if (opts.memories.length > 0) {
-        for (const m of opts.memories) {
-            lines.push(`| ${m.key} | ${m.content} |`);
-        }
-    }
-    lines.push('<!-- FILL: List all memories saved this session via bd remember. If the skeleton missed any, add them. -->');
     lines.push('');
 
     // Suggested Next Priority
@@ -428,9 +397,6 @@ async function generateReport(cwd: string): Promise<string> {
     // Specialist data
     const specialistJobs = collectSpecialistJobs(cwd, sessionStartMs);
 
-    // Memories
-    const memories = collectMemories(cwd);
-
     // Build skeleton
     const skeleton = buildSkeleton({
         date,
@@ -442,7 +408,6 @@ async function generateReport(cwd: string): Promise<string> {
         modifiedFiles,
         deletedFiles,
         specialistJobs,
-        memories,
     });
 
     // Write to .xtrm/reports/

@@ -124,14 +124,6 @@ describe.skip('main-guard.mjs — MAIN_GUARD_PROTECTED_BRANCHES (removed)', () =
     }
   });
 
-  it('allows touch .beads/.memory-gate-done on protected branch', () => {
-    const r = runHook(
-      'main-guard.mjs',
-      { tool_name: 'Bash', tool_input: { command: 'touch .beads/.memory-gate-done' } },
-      { MAIN_GUARD_PROTECTED_BRANCHES: CURRENT_BRANCH },
-    );
-    expect(r.status).toBe(0);
-  });
 
   it('allows Bash when MAIN_GUARD_ALLOW_BASH=1 is set', () => {
     const r = runHook(
@@ -475,121 +467,6 @@ exit 1
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('src/a.ts');
       expect(r.stderr).toContain('xtrm finish');
-    } finally {
-      rmSync(fake.tempDir, { recursive: true, force: true });
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-});
-
-
-describe.skip('beads-memory-gate.mjs (test environment issue)', () => {
-  it('fails open (exit 0) when no .beads directory exists', () => {
-    const r = runHook('beads-memory-gate.mjs', { session_id: 'test', cwd: '/tmp' });
-    expect(r.status).toBe(0);
-  });
-
-  it('allows stop (exit 0) when marker file exists', () => {
-    const projectDir = mkdtempSync(path.join(os.tmpdir(), 'xtrm-memgate-'));
-    mkdirSync(path.join(projectDir, '.beads'));
-    writeFileSync(path.join(projectDir, '.beads', '.memory-gate-done'), '');
-    try {
-      const r = runHook('beads-memory-gate.mjs', { session_id: 'test', cwd: projectDir });
-      expect(r.status).toBe(0);
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
-  it('allows stop (exit 0) when no closed issues exist', () => {
-    const projectDir = mkdtempSync(path.join(os.tmpdir(), 'xtrm-memgate-'));
-    mkdirSync(path.join(projectDir, '.beads'));
-    const fake = withFakeBdDir(`#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$1" == "list" ]]; then
-  cat <<'EOF'
-
---------------------------------------------------------------------------------
-Total: 0 issues (0 open, 0 in progress)
-EOF
-  exit 0
-fi
-exit 1
-`);
-    try {
-      const r = runHook(
-        'beads-memory-gate.mjs',
-        { session_id: 'test', cwd: projectDir },
-        { PATH: `${fake.tempDir}:${process.env.PATH ?? ''}` },
-      );
-      expect(r.status).toBe(0);
-    } finally {
-      rmSync(fake.tempDir, { recursive: true, force: true });
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
-  it('allows stop (exit 0) when closed issues exist but no session claim', () => {
-    // New behaviour: closed issues alone don't trigger the gate — session must have a claim
-    const projectDir = mkdtempSync(path.join(os.tmpdir(), 'xtrm-memgate-'));
-    mkdirSync(path.join(projectDir, '.beads'));
-    const fake = withFakeBdDir(`#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$1" == "kv" && "$2" == "get" ]]; then
-  exit 1  # no claim stored
-fi
-if [[ "$1" == "list" ]]; then
-  cat <<'EOF'
-✓ issue-abc P2 Fix the thing
-
---------------------------------------------------------------------------------
-Total: 1 issues (0 open, 0 in progress, 1 closed)
-EOF
-  exit 0
-fi
-exit 1
-`);
-    try {
-      const r = runHook(
-        'beads-memory-gate.mjs',
-        { session_id: 'test', cwd: projectDir },
-        { PATH: `${fake.tempDir}:${process.env.PATH ?? ''}` },
-      );
-      expect(r.status).toBe(0);
-    } finally {
-      rmSync(fake.tempDir, { recursive: true, force: true });
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
-  it('blocks stop (exit 2) when session claim was closed this session', () => {
-    const projectDir = mkdtempSync(path.join(os.tmpdir(), 'xtrm-memgate-'));
-    mkdirSync(path.join(projectDir, '.beads'));
-    const fake = withFakeBdDir(`#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$1" == "kv" && "$2" == "get" ]]; then
-  echo "issue-abc"
-  exit 0
-fi
-if [[ "$1" == "list" ]]; then
-  cat <<'EOF'
-✓ issue-abc P2 Fix the thing
-
---------------------------------------------------------------------------------
-Total: 1 issues (0 open, 0 in progress, 1 closed)
-EOF
-  exit 0
-fi
-exit 1
-`);
-    try {
-      const r = runHook(
-        'beads-memory-gate.mjs',
-        { session_id: 'test', cwd: projectDir },
-        { PATH: `${fake.tempDir}:${process.env.PATH ?? ''}` },
-      );
-      expect(r.status).toBe(2);
-      expect(r.stderr).toContain('Memory gate');
     } finally {
       rmSync(fake.tempDir, { recursive: true, force: true });
       rmSync(projectDir, { recursive: true, force: true });

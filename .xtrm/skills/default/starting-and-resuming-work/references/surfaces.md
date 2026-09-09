@@ -128,7 +128,6 @@ bd update <id> --claim | --notes "..." | --status=blocked
 bd create --title=... --type=task --priority=2 [--parent <id>] [--deps "discovered-from:<id>"]
 bd dep add <issue> <depends-on> | bd dep tree <id>
 bd close <id> --reason="..."
-bd remember "<insight>" | bd memories <keyword> | bd recall <key>
 bd export --output .beads/issues.jsonl
 ```
 

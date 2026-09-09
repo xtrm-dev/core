@@ -9,8 +9,6 @@
       "Bash(bd ready:*)",
       "Bash(bd stats:*)",
       "Bash(bd search:*)",
-      "Bash(bd memories:*)",
-      "Bash(bd recall:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",

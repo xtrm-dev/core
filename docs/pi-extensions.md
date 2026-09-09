@@ -134,7 +134,7 @@ Operator-visible Specialist execution/feed overlays inside Pi.
 
 #### Other active manifest entries
 
-The current manifest also controls helpers such as `custom-footer`, `compact-header`, `git-checkpoint`, `xtrm-loader`, `xtprompt`, and `read-line-numbers`. Read `packages/pi-extensions/src/manifest.json` for the current authoritative enrollment state.
+The current manifest also controls helpers such as `custom-footer`, `compact-header`, `git-checkpoint`, `xtprompt`, and `read-line-numbers`. Read `packages/pi-extensions/src/manifest.json` for the current authoritative enrollment state (`xtrm-loader` retired with the bd-memory retirement).
 
 ## Retired / relocated surfaces
 

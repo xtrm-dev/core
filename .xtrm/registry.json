@@ -7,7 +7,7 @@
       "install_scope": "global",
       "files": {
         "beads-claim-sync.mjs": {
-          "hash": "14b3b19302b6764f7536e66967fd99cbc2f0824c41627c98ee2b8e47a8135d26",
+          "hash": "a28847e70da72215638be6166bc69235f87aa07f43bb74b7c65ceb400f51c090",
           "version": "0.12.0"
         },
         "beads-commit-gate.mjs": {
@@ -31,15 +31,11 @@
           "version": "0.12.0"
         },
         "beads-gate-messages.mjs": {
-          "hash": "941cb07e8e649c3a958c0d0604199b4cd105fadf238d9fda449fb41812fc8d9c",
+          "hash": "af41038a042fbb33150736dd1c8cfb91e232120945073571f39acab360d276c2",
           "version": "0.12.0"
         },
         "beads-gate-utils.mjs": {
-          "hash": "4bd24486e5e6ef65c79fbea6f4fb615b1cf0426e0adbb0ec4d540d609309225b",
-          "version": "0.12.0"
-        },
-        "beads-memory-gate.mjs": {
-          "hash": "c2c7875c85d2e174caceac0b2399dac485d50aa3ddfab5988a0410577b99585e",
+          "hash": "d2feba09c8c19422b771b860a5b442628c2db34be63d7e60de757b0cddaede83",
           "version": "0.12.0"
         },
         "beads-status-cache.mjs": {
@@ -62,14 +58,6 @@
           "hash": "c0060b8661872bfcebc71283d8ebd3985ac0396e158c3c88f02b8c0ad7e2ea55",
           "version": "0.12.0"
         },
-        "project-memory.mjs": {
-          "hash": "e3e8febfb5f47cf97d4666714d7a9b20667de0df96fc95ffb50f2545a7040059",
-          "version": "0.12.0"
-        },
-        "project-memory.test.mjs": {
-          "hash": "a3dfa64ea48eeb54c6910b4a28d3cad3cbdc1f0356d7b63a3e389e70d85913e8",
-          "version": "0.12.0"
-        },
         "quality-check-env.mjs": {
           "hash": "cb2c483ad0f23b48f5832c4abc62d3490d7e2d79a2ae0f880525952fbcbe3106",
           "version": "0.12.0"
@@ -83,15 +71,11 @@
           "version": "0.12.0"
         },
         "README.md": {
-          "hash": "5916b6b480c70dfbe67af09c4c14288f2d7f0397bcb407f9dea070d124f751fe",
+          "hash": "594b8ae341a3beaf1fcbd125f409be03dadf48dc6a1c1513f37b420f8e9acaae",
           "version": "0.12.0"
         },
         "specialists-agent-guard.mjs": {
           "hash": "ef4755858eae64e8a0830d1dcbaa4e08962d9ae107729d4797154acad687621c",
-          "version": "0.12.0"
-        },
-        "specialists/specialists-memory-cache-sync.mjs": {
-          "hash": "2c76e6dea71a0eaf3367656fcd9d0cd7aa5815e3cf87511e3dcee313f467f192",
           "version": "0.12.0"
         },
         "statusline.mjs": {
@@ -358,11 +342,11 @@
           "version": "0.12.0"
         },
         "starting-and-resuming-work/references/surfaces.md": {
-          "hash": "0670476a6afbafcfdd7184fd26f4c1d32163882733a22faa362baf2b832c7712",
+          "hash": "cb15d7ad2130a775233334d6f1860a7fcfadaf6f5e0d4fbb745d0ddfd85f40b7",
           "version": "0.12.0"
         },
         "starting-and-resuming-work/SKILL.md": {
-          "hash": "887e87dc4cd6c0ce38686ffe7f24df99b8bd13089d1825d065eeec2f99ba4517",
+          "hash": "47f081e1d01ca899d14ed0d2e78d5a9890c211b46f1aa94a1f9952e0c0990b79",
           "version": "0.12.0"
         },
         "using-specialists/references/bead-contracts.md": {
@@ -426,7 +410,7 @@
           "version": "0.12.0"
         },
         "using-xtrm/SKILL.md": {
-          "hash": "b40409dcd74a83c9327ca26550e799ce7f322cbe60ffb97eea27dbb503142dd6",
+          "hash": "3bf25fe8ca9f709f4bf29a5a7d16be494d7f17d3837d779b9b24f7af6d0d9a31",
           "version": "0.12.0"
         }
       }
@@ -857,7 +841,7 @@
           "version": "0.12.0"
         },
         "xtrm-maintenance/sync-docs/evals/evals.json": {
-          "hash": "3790cb952840849d762b74be66fabf91f745400f519524c9e234c258cc502c0c",
+          "hash": "51bc6d30e89e8c6a0af5356d8bbc2ab2c71d55822cfdee0bc94ab3402f57e117",
           "version": "0.12.0"
         },
         "xtrm-maintenance/sync-docs/references/doc-structure.md": {
@@ -873,11 +857,11 @@
           "version": "0.12.0"
         },
         "xtrm-maintenance/sync-docs/scripts/context_gatherer.py": {
-          "hash": "52a709949eece660ffd34fe809014b7114dffa986207d9097abb0ffaaee647fd",
+          "hash": "a18247b2f307c9df6268d6f4dda27d5a385e33dc745711912b483e6cf1c5e139",
           "version": "0.12.0"
         },
         "xtrm-maintenance/sync-docs/scripts/doc_structure_analyzer.py": {
-          "hash": "313c99ae326909892aa64213b7720a8bd5337bb1b02b6badc8ea53b3cea29cca",
+          "hash": "6dba384d0f64352bb397e5957a1743a091dc10c9ec09cb6d502a7e77e79b82cd",
           "version": "0.12.0"
         },
         "xtrm-maintenance/sync-docs/scripts/drift_detector.py": {
@@ -968,7 +952,7 @@
           "version": "0.12.0"
         },
         "claude.mcp.json": {
-          "hash": "7e5b2e83528599600b443e65d04545798c23b96ee24947b2c63c390297ed6fb1",
+          "hash": "4214ac8a6567a6059096d42fbd22029eb80a8aced828e562d24bb083e0a258a0",
           "version": "0.12.0"
         },
         "claude.mcp.optional.json": {
@@ -976,31 +960,27 @@
           "version": "0.12.0"
         },
         "hooks.json": {
-          "hash": "6593b00c25ce425897ab0b7d806a08f8c913bc3c5bc99fb00e7491c38f9f4f37",
+          "hash": "39aa2530a70bba202792967ba98b5e5df1f3d0919579f3e15f1bf786e8cef646",
           "version": "0.12.0"
         },
         "instructions/agent-contract.md": {
-          "hash": "f6e792452582f4c41435b311fdb9bd4af423e0f4a3902afe1b17e1d34126791b",
+          "hash": "45a601e7f013d419af109d481f22ef181ba12b992cca38f7b11485c5bb4f423c",
           "version": "0.12.0"
         },
         "instructions/agents-top.md": {
-          "hash": "3d4b900cea9711860d11ede79dffaa07766be952bc80b1e9ff9a49cb33b260f4",
+          "hash": "264bb2d393413deff6f5a3483d5d5c4a0db026eaa20b2fd3ed83e16ea1bf801c",
           "version": "0.12.0"
         },
         "instructions/claude-top.md": {
-          "hash": "5b1b64ff5e173e2e64e37317411091a87318cc03084245ef7287c67cef18b312",
+          "hash": "42531bc63a7a96975b208f7b6090da3f8610b6b35096937a355b77b1eb67bc4f",
           "version": "0.12.0"
         },
         "instructions/global-system-prompt.md": {
           "hash": "8f1237caa169d8a085cfd5a362c9dbfe05d495e606e12ec36bbb1fc81c8ec679",
           "version": "0.12.0"
         },
-        "instructions/memory-doctrine.md": {
-          "hash": "ab99551cf355b42e6f710f1e4a0380a697a7a59e241381e02d89c00d18c26325",
-          "version": "0.12.0"
-        },
         "pi.mcp.json": {
-          "hash": "0ea93ebc22c9fd5d36525b6ca37b37e515eaf0665f16ddd3a65cf0259f771278",
+          "hash": "da24e43fd9398ea9cfdd4f2ab3a31f666e8c4a2665c69f4d358c9aad654e9b9c",
           "version": "0.12.0"
         },
         "pi/auth.json.template": {
@@ -1028,7 +1008,7 @@
           "version": "0.12.0"
         },
         "settings.json": {
-          "hash": "f8d789373954e10c84029619213329fbf2e68b3117e490467383a5153f0e0453",
+          "hash": "e1c8f815409d2b44d7f20afd08b18e57b51fbdbb591c03447bb8a73ea0a1f5cf",
           "version": "0.12.0"
         }
       }

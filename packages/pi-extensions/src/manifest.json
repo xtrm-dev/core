@@ -1,17 +1,67 @@
 {
   "schema_version": "xtrm.pi-extension-manifest.v1",
   "active": [
-    { "id": "beads", "displayName": "beads", "required": true, "ownership": "xtrm" },
-    { "id": "compact-header", "displayName": "compact-header", "required": false, "ownership": "xtrm" },
-    { "id": "custom-footer", "displayName": "custom-footer", "required": true, "ownership": "xtrm" },
-    { "id": "git-checkpoint", "displayName": "git-checkpoint", "required": false, "ownership": "xtrm" },
-    { "id": "python-kernel", "displayName": "python-kernel", "required": false, "ownership": "xtrm", "description": "Persistent python3 kernel: skills-as-imports, prelude, output truncation, audit seam" },
-    { "id": "session-flow", "displayName": "session-flow", "required": true, "ownership": "xtrm" },
-    { "id": "sp-terminal-overlay", "displayName": "sp-terminal-overlay", "required": false, "ownership": "xtrm" },
-    { "id": "xtrm-loader", "displayName": "xtrm-loader", "required": true, "ownership": "xtrm" },
-    { "id": "xtrm-ui", "displayName": "xtrm-ui", "required": true, "ownership": "xtrm" },
-    { "id": "xtprompt", "displayName": "xtprompt", "required": false, "ownership": "xtrm" },
-    { "id": "read-line-numbers", "displayName": "read-line-numbers", "required": true, "ownership": "xtrm" }
+    {
+      "id": "beads",
+      "displayName": "beads",
+      "required": true,
+      "ownership": "xtrm"
+    },
+    {
+      "id": "compact-header",
+      "displayName": "compact-header",
+      "required": false,
+      "ownership": "xtrm"
+    },
+    {
+      "id": "custom-footer",
+      "displayName": "custom-footer",
+      "required": true,
+      "ownership": "xtrm"
+    },
+    {
+      "id": "git-checkpoint",
+      "displayName": "git-checkpoint",
+      "required": false,
+      "ownership": "xtrm"
+    },
+    {
+      "id": "python-kernel",
+      "displayName": "python-kernel",
+      "required": false,
+      "ownership": "xtrm",
+      "description": "Persistent python3 kernel: skills-as-imports, prelude, output truncation, audit seam"
+    },
+    {
+      "id": "session-flow",
+      "displayName": "session-flow",
+      "required": true,
+      "ownership": "xtrm"
+    },
+    {
+      "id": "sp-terminal-overlay",
+      "displayName": "sp-terminal-overlay",
+      "required": false,
+      "ownership": "xtrm"
+    },
+    {
+      "id": "xtrm-ui",
+      "displayName": "xtrm-ui",
+      "required": true,
+      "ownership": "xtrm"
+    },
+    {
+      "id": "xtprompt",
+      "displayName": "xtprompt",
+      "required": false,
+      "ownership": "xtrm"
+    },
+    {
+      "id": "read-line-numbers",
+      "displayName": "read-line-numbers",
+      "required": true,
+      "ownership": "xtrm"
+    }
   ],
   "disabled": {
     "quality-gates": "Hook-script lookup still targets .claude/hooks instead of the managed .xtrm/hooks layout.",
@@ -20,6 +70,7 @@
     "core": "Library source lives under src/core; it is not an extension directory.",
     "gitnexus": "Retired extension; functionality is provided by the npm:pi-gitnexus package.",
     "serena": "Retired extension; XTRM no longer manages Serena MCP integration.",
-    "service-knowledge": "Relocated to @jaggerxtrm/pi-service-knowledge (xtrm-6z6.5): co-locates with the service-knowledge Python package in the xtrm repo. See packages/service-knowledge-ext in xtrm."
+    "service-knowledge": "Relocated to @jaggerxtrm/pi-service-knowledge (xtrm-6z6.5): co-locates with the service-knowledge Python package in the xtrm repo. See packages/service-knowledge-ext in xtrm.",
+    "xtrm-loader": "Retired (bd-memory retirement): doctrine-only loader with no remaining injection behavior."
   }
 }

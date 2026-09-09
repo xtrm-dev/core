@@ -6,7 +6,6 @@ export default function (pi: ExtensionAPI) {
 	const getCwd = (ctx: any) => ctx.cwd || process.cwd();
 
 	let cachedSessionId: string | null = null;
-	let memoryGateFired = false;
 
 	// Resolve a stable session ID across event types.
 	const getSessionId = (ctx: any): string => {
@@ -54,17 +53,7 @@ export default function (pi: ExtensionAPI) {
 		return claim;
 	};
 
-	const getClosedThisSession = async (sessionId: string, cwd: string): Promise<string | null> => {
-		const result = await SubprocessRunner.run("bd", ["kv", "get", `closed-this-session:${sessionId}`], { cwd });
-		if (result.code !== 0) return null;
-		const issue = result.stdout.trim();
-		return issue.length > 0 ? issue : null;
-	};
 
-	const clearSessionMarkers = async (sessionId: string, cwd: string) => {
-		await SubprocessRunner.run("bd", ["kv", "clear", `claimed:${sessionId}`], { cwd });
-		await SubprocessRunner.run("bd", ["kv", "clear", `closed-this-session:${sessionId}`], { cwd });
-	};
 
 	// --- Claim-lookup cache (run-scoped) -----------------------------------------
 	// getActiveClaim spawns bd kv get (~850ms) + bd show (~300ms). Running these on EVERY
@@ -90,21 +79,6 @@ export default function (pi: ExtensionAPI) {
 	const stripQuoted = (command: string): string => command.replace(/'[^']*'|"[^"]*"/g, "");
 	const isSpecialistsSubprocessCommand = (commandUnquoted: string): boolean =>
 		/\bspecialists\s+(run|resume|result|feed|stop|status)\b/.test(commandUnquoted);
-
-	const getClosedIssueIdFromCommand = (commandUnquoted: string): string | null => {
-		const match = commandUnquoted.match(/\bbd\s+close\s+(\S+)/);
-		const issueId = match?.[1]?.trim();
-		if (!issueId || issueId.startsWith("-")) return null;
-		return issueId;
-	};
-
-	const hasIssueMemoryAck = async (issueId: string, cwd: string): Promise<boolean> => {
-		const result = await SubprocessRunner.run("bd", ["kv", "get", `memory-acked:${issueId}`], { cwd });
-		return result.code === 0 && result.stdout.trim().length > 0;
-	};
-
-	const closeMemoryBlockReason = (issueId: string): string =>
-		`MEMORY_GATE_BLOCK issue=${issueId} run="bd remember '<insight>' && bd kv set 'memory-acked:${issueId}' 'saved:<key>'" or="bd kv set 'memory-acked:${issueId}' 'nothing novel:<reason>'" then="bd close ${issueId} --reason='<reason>'"`;
 
 	pi.on("session_start", async (_event, ctx) => {
 		cachedSessionId = ctx?.sessionManager?.getSessionId?.() ?? ctx?.sessionId ?? ctx?.session_id ?? cachedSessionId;
@@ -140,17 +114,6 @@ export default function (pi: ExtensionAPI) {
 
 			if (isSpecialistsSubprocessCommand(commandUnquoted)) return undefined;
 
-			const closedIssueId = getClosedIssueIdFromCommand(commandUnquoted);
-			if (closedIssueId) {
-				const acked = await hasIssueMemoryAck(closedIssueId, cwd);
-				if (!acked) {
-					return {
-						block: true,
-						reason: closeMemoryBlockReason(closedIssueId),
-					};
-				}
-			}
-
 			if (/\bgit\s+commit\b/.test(commandUnquoted)) {
 				const claim = await getActiveClaimCached(sessionId, cwd);
 				if (claim) {
@@ -184,7 +147,6 @@ export default function (pi: ExtensionAPI) {
 			if (issueMatch) {
 				const issueId = issueMatch[1];
 				await SubprocessRunner.run("bd", ["kv", "set", `claimed:${sessionId}`, issueId], { cwd });
-				memoryGateFired = false;
 				invalidateClaimCache();
 				const claimNotice = `\n\n✅ **Beads**: Session \`${sessionId}\` claimed issue \`${issueId}\`. File edits are now unblocked.`;
 				return { content: [...event.content, { type: "text", text: claimNotice }] };
@@ -197,57 +159,15 @@ export default function (pi: ExtensionAPI) {
 
 			if (closedIssueId) {
 				await SubprocessRunner.run("bd", ["kv", "set", `closed-this-session:${sessionId}`, closedIssueId], { cwd });
-				memoryGateFired = false;
 				invalidateClaimCache();
 			}
 
-			const memoryGateText = closedIssueId
-				? `\n\n**Beads Memory Gate**: close-time memory ack verified for \`${closedIssueId}\` (\`memory-acked:${closedIssueId}\`).`
-				: `\n\n**Beads**: Work completed. Consider if this session produced insights worth persisting via \`bd remember\`.`;
-			return { content: [...event.content, { type: "text", text: memoryGateText }] };
+			const closeNotice = closedIssueId
+				? `\n\n**Beads**: Work completed for \`${closedIssueId}\`. File edits remain gated on an active claim.`
+				: `\n\n**Beads**: Work completed.`;
+			return { content: [...event.content, { type: "text", text: closeNotice }] };
 		}
 
-		return undefined;
-	});
-
-	// Memory gate: clean up session markers and check ack at session_shutdown.
-	// Memory gate prompt was already injected into bd close tool_result context (silent, agent-visible only).
-	// No UI notification — parity with Claude Stop hook {additionalContext} pattern.
-	const triggerMemoryGateIfNeeded = async (ctx: any) => {
-		const cwd = getCwd(ctx);
-		if (!EventAdapter.isBeadsProject(cwd)) return;
-		const sessionId = getSessionId(ctx);
-
-		const markerCheck = await SubprocessRunner.run("bd", ["kv", "get", `memory-gate-done:${sessionId}`], { cwd });
-		if (markerCheck.code === 0) {
-			await SubprocessRunner.run("bd", ["kv", "clear", `memory-gate-done:${sessionId}`], { cwd });
-			await clearSessionMarkers(sessionId, cwd);
-			memoryGateFired = false;
-			return;
-		}
-
-		if (memoryGateFired) return;
-
-		const closedIssueId = await getClosedThisSession(sessionId, cwd);
-		if (!closedIssueId) return;
-
-		const closeTimeAcked = await hasIssueMemoryAck(closedIssueId, cwd);
-		if (closeTimeAcked) {
-			await SubprocessRunner.run("bd", ["kv", "clear", `closed-this-session:${sessionId}`], { cwd });
-			memoryGateFired = false;
-			return;
-		}
-
-		memoryGateFired = true;
-		// No notify — memory gate was injected into bd close tool_result content (silent, agent-visible only).
-	};
-
-	// xtrm-64pl0: single lifecycle memory-gate check. Previously BOTH agent_end (every turn)
-	// and session_shutdown ran this, each spawning ~4 bd kv subprocesses. The authoritative
-	// memory safety is the bd-close block in tool_call above; this is end-of-session marker
-	// hygiene only, so it now runs once at session_shutdown.
-	pi.on("session_shutdown", async (_event, ctx) => {
-		await triggerMemoryGateIfNeeded(ctx);
 		return undefined;
 	});
 }
