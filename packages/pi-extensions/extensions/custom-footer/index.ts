@@ -11,7 +11,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { basename, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { SubprocessRunner } from "../../src/core";
@@ -123,15 +123,30 @@ export default function registerCustomFooter(pi: ExtensionAPI): void {
 
 	const loadCacheModule = async (): Promise<void> => {
 		if (cacheModule) return;
-		const root = await run("git", ["rev-parse", "--show-toplevel"]);
-		const projectRoot = root.code === 0 ? root.stdout.trim() : cwd();
-		const moduleUrl = pathToFileURL(join(projectRoot, CACHE_MODULE)).href;
-		try {
-			cacheModule = (await import(/* @vite-ignore */ moduleUrl)) as CacheModule;
+		const top = await run("git", ["rev-parse", "--show-toplevel"]);
+		const common = await run("git", ["rev-parse", "--git-common-dir"]);
+		const roots: string[] = [];
+		if (top.code === 0) roots.push(top.stdout.trim());
+		if (common.code === 0) {
+			// Linked worktrees: toplevel is the worktree itself (whose .xtrm/
+			// usually lacks hooks/) — fall back to the main checkout that owns
+			// the common git dir. Plain repos resolve to the same root twice.
+			const commonDir = resolve(cwd(), common.stdout.trim());
+			if (commonDir.endsWith(`${sep}.git`)) roots.push(dirname(commonDir));
+		}
+		roots.push(cwd());
+		for (const candidate of new Set(roots)) {
+			const moduleUrl = pathToFileURL(join(candidate, CACHE_MODULE)).href;
+			try {
+				cacheModule = (await import(/* @vite-ignore */ moduleUrl)) as CacheModule;
+				break;
+			} catch {
+				cacheModule = null;
+			}
+		}
+		if (cacheModule) {
 			mainRoot = cacheModule.resolveMainRoot(cwd());
 			beadsCache = cacheModule.readCache(mainRoot);
-		} catch {
-			cacheModule = null;
 		}
 	};
 
