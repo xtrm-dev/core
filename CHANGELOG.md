@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
-- bd-memory retirement (xtrm-aemfv): memory gate deleted on both runtimes (Pi `beads` close-block/shutdown check, Claude `beads-memory-gate.mjs` Stop hook), doctrine injection removed (`project-memory.mjs`, `xtrm-loader` extension deregistered, `memory-doctrine.md` deleted), `xt memory` CLI removed, memory cache-sync/claim-sync arms removed, `.xtrm/memory.md` deleted, registry/policies/dist regenerated. `bd close` succeeds without a memory ack; claim/edit/commit gates unchanged. Export: `bd-memory-export-20260909.json` (818 keys). Design record retained at `docs/design/memory-system-r6g.md`.
-
 ## [0.12.0] - 2026-09-04
 
 ### Added
