@@ -161,7 +161,7 @@ See [docs/xtrm-ui.md](docs/xtrm-ui.md).
 
 ### Persistent Python kernel
 
-The Pi extension package also ships `python-kernel`, a persistent sequential `python` tool. Variables, imports, and functions survive across calls until reset. The current implementation also supports Python-backed skills as importable kernel modules, a small standard-library prelude, bounded output/truncation behavior, and a mutation-audit seam.
+The Pi extension package also ships `python-kernel`, a persistent sequential `python` tool. Variables, imports, and functions survive across calls until reset. The current implementation also supports Python-backed skills as importable kernel modules (`skillbridge`), a small standard-library prelude, bounded output/truncation behavior, and a mutation-audit seam.
 
 The goal is the same as elsewhere in XTRM: do not make the worker reconstruct useful machinery repeatedly when a stable runtime primitive can provide it.
 
@@ -223,7 +223,8 @@ Skills teach procedures and judgment. Hooks/extensions enforce lifecycle rules. 
 
 XTRM currently uses deterministic runtime machinery for things such as:
 
-- Bead claim/edit/commit/stop lifecycle;
+- Bead claim/edit/commit lifecycle gates (claim/edit/commit enforced; close succeeds directly — no close-time memory gate);
+- global-first hooks posture: canonical hooks live globally and project writes already covered globally are skipped (no per-project hook duplication, no `bd-prime` permission grant);
 - worktree boundaries and stale-worktree checks;
 - quality checks;
 - claim/compact/session restoration;
@@ -285,6 +286,12 @@ mcpq <server> call <tool> ... --json
 ```
 
 Service-specific topology/runbook freshness belongs to the `service-knowledge` subsystem. Generic SRE reasoning should consume that knowledge, not duplicate it.
+
+## Research and Exa MCP
+
+Web research runs through the managed Exa MCP baseline, available in both the Claude-family config and the Pi config. The `research-methods` pack owns the research workflow; Exa auth prefers OAuth and secrets never belong in repository config.
+
+See [docs/mcp-servers.md](docs/mcp-servers.md).
 
 ## Durable board state
 
@@ -352,6 +359,7 @@ Use live `xt <command> --help`, `sp help`, and `specialists list --full` for exa
 | [docs/skills-v4-preservation-matrix.md](docs/skills-v4-preservation-matrix.md) | v3 → v4 capability disposition |
 | [docs/skills-ownership.md](docs/skills-ownership.md) | Core/Specialists skill ownership and vendoring |
 | [docs/hooks.md](docs/hooks.md) | deterministic hooks and event wiring |
+| [docs/mcp-servers.md](docs/mcp-servers.md) | managed MCP servers including Exa research |
 | [docs/policies.md](docs/policies.md) | policy compiler and runtime parity |
 | [docs/cli-architecture.md](docs/cli-architecture.md) | install/update/composition internals |
 | [docs/testing.md](docs/testing.md) | validation checklist |
