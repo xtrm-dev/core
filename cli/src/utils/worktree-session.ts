@@ -2170,16 +2170,6 @@ export function rollbackLauncherWorktree(mainRepoRoot: string, worktreePath: str
     }
 }
 
-function resolveStatuslineScript(worktreePath: string): string | null {
-    const localStatusline = path.join(worktreePath, '.xtrm', 'hooks', 'statusline.mjs');
-    if (existsSync(localStatusline)) return localStatusline;
-
-    const repoStatusline = path.join(worktreePath, 'hooks', 'statusline.mjs');
-    if (existsSync(repoStatusline)) return repoStatusline;
-
-    return null;
-}
-
 function ensureWorktreeSpecialists(worktreePath: string, mainRepoPath: string): void {
     const worktreeSpecialistsRoot = path.join(worktreePath, '.specialists');
     mkdirSync(worktreeSpecialistsRoot, { recursive: true });
@@ -2953,8 +2943,6 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // created worktree and its branch instead of leaving orphan state.
     try {
     if (runtime === 'claude') {
-        const claudeDir = path.join(worktreePath, '.claude');
-
         // 1. Rebuild generated runtime skills view and pointer inside worktree.
         try {
             if (shouldUseGlobalSkills(worktreePath) && !worktreeHasProjectUserPacks(worktreePath)) {
@@ -2984,25 +2972,8 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             if (structuredOutput) console.error(warning); else console.log(warning);
         }
 
-        // 3. Write settings.local.json with statusLine bound to this worktree's
-        //    hook script path so runtime UI stays available in sandbox sessions.
-        const localSettings: Record<string, unknown> = {};
-        const statuslinePath = resolveStatuslineScript(worktreePath);
-        if (statuslinePath) {
-            localSettings.statusLine = {
-                type: 'command',
-                command: `node ${JSON.stringify(statuslinePath)}`,
-                padding: 1,
-            };
-        }
-
-        const localSettingsPath = path.join(claudeDir, 'settings.local.json');
-        if (Object.keys(localSettings).length > 0) {
-            try {
-                mkdirSync(claudeDir, { recursive: true });
-                writeFileSync(localSettingsPath, JSON.stringify(localSettings, null, 2));
-            } catch { /* non-fatal */ }
-        }
+        // Statusline is owned globally (~/.xtrm/hooks/statusline.mjs via
+        // ensureGlobalStatusLine) — no worktree-local settings.local.json write.
     }
 
     if (runtime === 'pi') {
