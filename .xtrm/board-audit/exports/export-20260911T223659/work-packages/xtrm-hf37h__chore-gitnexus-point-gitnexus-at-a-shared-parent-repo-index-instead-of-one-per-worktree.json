@@ -1,0 +1,40 @@
+{
+  "content_sha256": "4c557f022f4ed3a1b3c9d6163ad41afff212fa4b4b06a908c86b755d63f330a3",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-hf37h"
+  },
+  "issues": {
+    "xtrm-hf37h": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-05T09:33:51Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Producer finding from xtrm-oentn (KAN-128) reap validation.\n\nEach worktree grows its own ~129 MB .gitnexus index. During the 2026-08-04 capacity P0, 102 abandoned worktrees held 11.8 GB of .gitnexus alone. xtrm does not create them (worktree creation touches .beads only — cli/src/utils/worktree-session.ts:1767-1779); GitNexus does, on first analyze inside the worktree.\n\nxt worktree reap now treats .gitnexus as a regenerable artifact and reclaims it, but that is symptom management: per capacity-reclaim rule 3, reclaim without a source fix is theatre, and regenerating a full index per worktree wastes CPU as well as disk.\n\nASK: evaluate pointing GitNexus at a shared parent-repo index (or a content-addressed cache keyed on the common git dir) so linked worktrees reuse one index.\n\nREFERENCE: xtrm-oentn scope item 6; incident bead mercury-market-data-9kjj4.",
+        "id": "xtrm-hf37h",
+        "issue_type": "chore",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "chore(gitnexus): point GitNexus at a shared parent-repo index instead of one per worktree",
+        "updated_at": "2026-08-05T09:33:51Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-hf37h",
+  "root_title": "chore(gitnexus): point GitNexus at a shared parent-repo index instead of one per worktree",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

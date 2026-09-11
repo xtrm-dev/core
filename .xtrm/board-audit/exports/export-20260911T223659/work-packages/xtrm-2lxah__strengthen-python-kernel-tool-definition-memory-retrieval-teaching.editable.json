@@ -1,0 +1,72 @@
+{
+  "content_sha256": "448b7616e773f32adf522eca6b17bc0b16986197722b40144b34cd45ee4fb872",
+  "desired_issues": {
+    "xtrm-2lxah": {
+      "_type": "issue",
+      "assignee": "jaggerxtrm",
+      "comment_count": 0,
+      "created_at": "2026-09-11T02:25:52Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "Tool description + promptGuidelines carry preflight triggers thinly. Add 0-commits guard, digest-never-corpus, and on-demand-per-file + load-once forensics rules so every Pi session including Specialist dispatches receives the doctrine via the extension. Globals (~/.pi APPEND_SYSTEM, ~/.claude CLAUDE.md) already precise; no change there.",
+      "id": "xtrm-2lxah",
+      "issue_type": "task",
+      "owner": "dawid.jgg@gmail.com",
+      "priority": 2,
+      "started_at": "2026-09-11T02:25:55Z",
+      "status": "open",
+      "title": "Strengthen python-kernel tool-definition memory-retrieval teaching",
+      "updated_at": "2026-09-11T14:20:07Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-2lxah"
+  },
+  "issues": {
+    "xtrm-2lxah": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-11T02:25:52Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Tool description + promptGuidelines carry preflight triggers thinly. Add 0-commits guard, digest-never-corpus, and on-demand-per-file + load-once forensics rules so every Pi session including Specialist dispatches receives the doctrine via the extension. Globals (~/.pi APPEND_SYSTEM, ~/.claude CLAUDE.md) already precise; no change there.",
+        "id": "xtrm-2lxah",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "started_at": "2026-09-11T02:25:55Z",
+        "status": "open",
+        "title": "Strengthen python-kernel tool-definition memory-retrieval teaching",
+        "updated_at": "2026-09-11T14:20:07Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-2lxah",
+  "root_title": "Strengthen python-kernel tool-definition memory-retrieval teaching",
+  "roundtrip": {
+    "base_package_sha256": "448b7616e773f32adf522eca6b17bc0b16986197722b40144b34cd45ee4fb872",
+    "base_record_sha256": {
+      "xtrm-2lxah": "7568e9e8700bef107f031af584151126b232714fe38f1a202747d61a72bc40cc"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-11T20:37:01Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

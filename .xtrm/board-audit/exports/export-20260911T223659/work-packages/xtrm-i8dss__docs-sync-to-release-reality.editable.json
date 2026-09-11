@@ -1,0 +1,68 @@
+{
+  "content_sha256": "ab5f3798380e8924d597433f0bc6a63781e4dc9580e7431fd3bb9882dbd1dd08",
+  "desired_issues": {
+    "xtrm-i8dss": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-09T18:49:27Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: Live operator-facing docs in /home/dawid/dev/core contradict shipped reality (memory retirement #639, Exa #636, serena strip #631, global hooks #630/#634, skills-v4 #621). A read-only audit produced 28 exact stale spots below — apply them.\nSUCCESS: All spots below fixed on branch docs/sync-release-reality, pushed to origin, targeted doc/test suites green. No merge (coordinator merges after review).\nSCOPE: These files only: docs/cli-architecture.md:37 (drop `/ memory` from tree); docs/policies.md:10 (`.xtrm/config/hooks.json`), :61 (delete using-xtrm row), :64 (drop `memory/`), :70 (delete service-skills row); docs/mcp.md (reconcile with mcp-servers.md v1.3.0: canonical sources, xt init sync, add exa row, reconcile optional table — or delete file in favor of mcp-servers.md if it adds nothing); docs/testing.md (replace retired skill IDs with nine v4 defaults per skills.md:47-59, quality-check hooks per hooks.md:70-78, engineering-quality for TDD, global ~/.claude/settings.json per #630); docs/cat-b-distribution.md:11-21 (two-row table per skills-ownership.md:27-30), :45 (flat .xtrm/skills/<pack>/); docs/skills-tier-architecture.md:56 (remove sync-docs line), :84-101 (flat layout), :252-259 (shipped pack exemplar); docs/project-skills.md:32-35 + :171 (flat layout paths); docs/todo.md:12,:15 (check off superseded); DELETE docs/skills-v4-causal-debugging-note.md after folding its content into engineering-quality/sre-ops references (v4 merged #621).\nNON_GOALS: No merge. No README (separate lane xtrm-8e6cw). No CHANGELOG. No bannered historical trees (design/, plans/, proposals/ — already correct).\nCONSTRAINTS: Branch docs/sync-release-reality ONLY from origin/main. Never push to main. Verify each fix against the cited live source (on-disk file or named doc section) before editing — if a cited source disagrees with the audit, flag and skip that spot. Keep edits minimal.\nVALIDATION: Targeted suites green (doc-related tests); final grep for serena/bd-prime/memory-gate/tdd-guard/using-specialists-auto in edited files returns nothing.\nOUTPUT: Pushed branch + per-spot report (fixed/skipped with reason).\nSCRUTINY: MEDIUM",
+      "id": "xtrm-i8dss",
+      "issue_type": "task",
+      "owner": "dawid.jgg@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "Docs sync to release reality",
+      "updated_at": "2026-09-09T18:49:27Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-i8dss"
+  },
+  "issues": {
+    "xtrm-i8dss": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-09T18:49:27Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Live operator-facing docs in /home/dawid/dev/core contradict shipped reality (memory retirement #639, Exa #636, serena strip #631, global hooks #630/#634, skills-v4 #621). A read-only audit produced 28 exact stale spots below — apply them.\nSUCCESS: All spots below fixed on branch docs/sync-release-reality, pushed to origin, targeted doc/test suites green. No merge (coordinator merges after review).\nSCOPE: These files only: docs/cli-architecture.md:37 (drop `/ memory` from tree); docs/policies.md:10 (`.xtrm/config/hooks.json`), :61 (delete using-xtrm row), :64 (drop `memory/`), :70 (delete service-skills row); docs/mcp.md (reconcile with mcp-servers.md v1.3.0: canonical sources, xt init sync, add exa row, reconcile optional table — or delete file in favor of mcp-servers.md if it adds nothing); docs/testing.md (replace retired skill IDs with nine v4 defaults per skills.md:47-59, quality-check hooks per hooks.md:70-78, engineering-quality for TDD, global ~/.claude/settings.json per #630); docs/cat-b-distribution.md:11-21 (two-row table per skills-ownership.md:27-30), :45 (flat .xtrm/skills/<pack>/); docs/skills-tier-architecture.md:56 (remove sync-docs line), :84-101 (flat layout), :252-259 (shipped pack exemplar); docs/project-skills.md:32-35 + :171 (flat layout paths); docs/todo.md:12,:15 (check off superseded); DELETE docs/skills-v4-causal-debugging-note.md after folding its content into engineering-quality/sre-ops references (v4 merged #621).\nNON_GOALS: No merge. No README (separate lane xtrm-8e6cw). No CHANGELOG. No bannered historical trees (design/, plans/, proposals/ — already correct).\nCONSTRAINTS: Branch docs/sync-release-reality ONLY from origin/main. Never push to main. Verify each fix against the cited live source (on-disk file or named doc section) before editing — if a cited source disagrees with the audit, flag and skip that spot. Keep edits minimal.\nVALIDATION: Targeted suites green (doc-related tests); final grep for serena/bd-prime/memory-gate/tdd-guard/using-specialists-auto in edited files returns nothing.\nOUTPUT: Pushed branch + per-spot report (fixed/skipped with reason).\nSCRUTINY: MEDIUM",
+        "id": "xtrm-i8dss",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Docs sync to release reality",
+        "updated_at": "2026-09-09T18:49:27Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-i8dss",
+  "root_title": "Docs sync to release reality",
+  "roundtrip": {
+    "base_package_sha256": "ab5f3798380e8924d597433f0bc6a63781e4dc9580e7431fd3bb9882dbd1dd08",
+    "base_record_sha256": {
+      "xtrm-i8dss": "ac0c5be05ec18279662ac469a2ce8776d643442fc4e50e4fab884c66e5e0ee5a"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-11T20:37:04Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

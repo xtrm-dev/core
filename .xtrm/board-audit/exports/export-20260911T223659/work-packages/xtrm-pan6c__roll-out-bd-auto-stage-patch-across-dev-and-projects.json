@@ -1,0 +1,162 @@
+{
+  "content_sha256": "b96bcf5b607bc66b140f4e8b3bce57795d1edc6b634dc30739f6d37309af1bf0",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-27T17:20:57Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-h9hqg",
+        "issue_id": "xtrm-pan6c",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-pan6c",
+      "source_field": "dependencies",
+      "target": "xtrm-h9hqg",
+      "target_present_in_snapshot": true,
+      "target_title": "P0: auto-apply bd auto-stage patch on xt init/update + verify dependency upgrades",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-03T23:04:24Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-drdg6",
+        "issue_id": "xtrm-pan6c",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-pan6c",
+      "source_field": "dependencies",
+      "target": "xtrm-drdg6",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-03: service-skills field-hardening shipped (0.8.3→0.8.5), design paused",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-27T17:22:20Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-fl4ki",
+        "issue_id": "xtrm-pan6c",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-pan6c",
+      "source_field": "dependencies",
+      "target": "xtrm-fl4ki",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-05-27: bd auto-stage patch rollout",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-11T06:38:36Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-mp0f2",
+        "issue_id": "xtrm-pan6c",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-pan6c",
+      "source_field": "dependencies",
+      "target": "xtrm-mp0f2",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-11: agent docs audit identity + hook follow-ups",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-04T05:06:00Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-t2530",
+        "issue_id": "xtrm-pan6c",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-pan6c",
+      "source_field": "dependencies",
+      "target": "xtrm-t2530",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-04: smoke-test xt spec e2e + produce docs/xt-spec/",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-pan6c"
+  },
+  "issues": {
+    "xtrm-pan6c": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-27T15:20:57Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-03T23:04:24Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-drdg6",
+            "issue_id": "xtrm-pan6c",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-27T17:22:20Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-fl4ki",
+            "issue_id": "xtrm-pan6c",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-27T17:20:57Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-h9hqg",
+            "issue_id": "xtrm-pan6c",
+            "metadata": "{}",
+            "type": "discovered-from"
+          },
+          {
+            "created_at": "2026-06-11T06:38:36Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-mp0f2",
+            "issue_id": "xtrm-pan6c",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-04T05:06:00Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-t2530",
+            "issue_id": "xtrm-pan6c",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Follow-up from xtrm-h9hqg. Implementation added `xt update --all-repos` with dry-run inventory and --apply per-repo commits, but this session intentionally did not mutate the whole local fleet after smoke. Next operator/agent should run `node cli/dist/index.cjs update --all-repos` first, inspect repos with third-party hooks or missing .beads/hooks/pre-commit, then run `--apply` only after reviewing risk. Expected commit per changed repo: `chore: apply bd auto-stage patch (xtrm-tools auto-applied)`. Capture results in bead notes.",
+        "id": "xtrm-pan6c",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "open",
+        "title": "Roll out bd auto-stage patch across ~/dev and ~/projects",
+        "updated_at": "2026-06-04T03:54:19Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-pan6c",
+  "root_title": "Roll out bd auto-stage patch across ~/dev and ~/projects",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

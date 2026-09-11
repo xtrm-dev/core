@@ -1,0 +1,105 @@
+{
+  "content_sha256": "5000b83545e6338e647fadde07930853ee2af87348c79534acd2c2468ea71689",
+  "desired_issues": {
+    "xtrm-0nurk": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-07-17T00:33:19Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-07-17T02:33:18Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "xtrm-dx5uu",
+          "issue_id": "xtrm-0nurk",
+          "metadata": "{}",
+          "type": "discovered-from"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "bd preflight --check in the TypeScript core/xtrm-cli repo currently runs go test, golangci-lint, gofmt, and checks cmd/bd/version.go. Replace the inherited/stale recipe with core npm workspace tests, typecheck, formatting, and relevant asset checks.",
+      "id": "xtrm-0nurk",
+      "issue_type": "chore",
+      "owner": "dawid.jgg@gmail.com",
+      "priority": 3,
+      "status": "open",
+      "title": "Fix stale Go-specific bd preflight configuration in core",
+      "updated_at": "2026-07-17T00:33:19Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-17T02:33:18Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-dx5uu",
+        "issue_id": "xtrm-0nurk",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-0nurk",
+      "source_field": "dependencies",
+      "target": "xtrm-dx5uu",
+      "target_present_in_snapshot": true,
+      "target_title": "Enable role-optional xt claude/pi launch flags (xtmux-r6g.6)",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-0nurk"
+  },
+  "issues": {
+    "xtrm-0nurk": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-17T00:33:19Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-17T02:33:18Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-dx5uu",
+            "issue_id": "xtrm-0nurk",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "bd preflight --check in the TypeScript core/xtrm-cli repo currently runs go test, golangci-lint, gofmt, and checks cmd/bd/version.go. Replace the inherited/stale recipe with core npm workspace tests, typecheck, formatting, and relevant asset checks.",
+        "id": "xtrm-0nurk",
+        "issue_type": "chore",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "Fix stale Go-specific bd preflight configuration in core",
+        "updated_at": "2026-07-17T00:33:19Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-0nurk",
+  "root_title": "Fix stale Go-specific bd preflight configuration in core",
+  "roundtrip": {
+    "base_package_sha256": "5000b83545e6338e647fadde07930853ee2af87348c79534acd2c2468ea71689",
+    "base_record_sha256": {
+      "xtrm-0nurk": "b36364228f2bbcb1fec47f78b3349968e79d19f6bea69ad58cd488c1832c624f"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-11T20:37:00Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

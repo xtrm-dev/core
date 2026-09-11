@@ -1,0 +1,43 @@
+{
+  "content_sha256": "733d8f0c261462d2fb8dd4a270c3a7a9aa217096b5131876fa752d33a2931eff",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-l9l86"
+  },
+  "issues": {
+    "xtrm-l9l86": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-08-14T01:30:06Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "User-approved 10-step plan: 1) quiesce writers on shared Dolt server; 2) save heads/config + consistent backup pre-upgrade; 3) NO GC for now; 4) upgrade Dolt to >=2.2.3 (or canary 2.3.0, rollout if healthy); 5) upgrade Beads 1.1.0->1.2.1; 6) verify dolt version/bd version/bd sync --help/bd doctor/bd dolt remote list/bd hooks list; 7) refresh hooks if needed; 8) with DB quiet retest specialists/unitAI: bd dolt commit + bd sync --json; 9) if passes: configure GitHub, verify refs/dolt/data, close BLOCKED_INTEGRITY; 10) only if real dangling-ref persists post-upgrade+quiescence: STOP, FSCK diagnose, no force-push, don't assume GC is repair.",
+        "id": "xtrm-l9l86",
+        "issue_type": "task",
+        "notes": "OUTCOME: dolt 2.2.3 (server+client, ~/.local/bin, old binary preserved at /usr/local/bin + ~/.local/bin/dolt-2.2.3.bak) + bd 1.2.1 (@beads/bd). Backup: /home/dawid/beads-upgrade-backup/shared-server-20260814-033420.tar (3.68GB). bd sync EXISTS in 1.2.1 (VERSION_SKEW resolved). Doctor 72 passed/0 errors. Dangling-chunk GONE (0 occurrences post-upgrade). Sync OK on core/B/12 migrated repos (refs advanced; core+B converged @ b5c5c518, 2103==2103). website: push no-advance (remote tip never merged into DB lineage; pass-2 seed df06f799; events working-set churn blocks the merge — dolt 2.2.3 server-path stomp-check; bd swallows as 'Pull complete'; needs operator clear: drop working-set events table, then pull+push). specialists/unitAI: bd sync GATES on 4 pending migrations (v61->v65, #4259) — designated-migrator decision (active worktree session 2782978 mid-migration). market-data needed BEADS_FSCK_TIMEOUT=900. website needed bd migrate --force (12 migrations, single clone).\nFAN-OUT IN FLIGHT: 5 parallel subagents verify/migrate GitHub Dolt sync across ~/projects/mercury + ~/dev. website FIXED (ref 86e25cf2, sync ok — raw dolt_push established remote main). Live writers noted: barchart-scraper worktree claude, infra claude, specialists x2 worktrees.\nFAN-OUT COMPLETE (5 subagents + coordinator): 17 repos synced to GitHub (core, B, terminal, terminalbeta, sierra-vps, treasury-cb, quant, transcriptoz, omni-search-engine, xzsc, xtrm, vaultctl, barchart-scraper, market-data[sync-ok, writer caveat], platform[MIGRATED], website, specialists[gate cleared]). Escalated: economic-data/infra/darth-feedor/second-mind (active writers, no mutation), console (smart-gate needs bd migrate approval), xtmux (divergence), second-mind.backup (dormant). Sanctioned events-drop applied: xtrm (+website earlier). Fresh dolt clone verifications confirmed refs==server main on xtrm/vaultctl/barchart-scraper.\nRETRY: economic-data writers quiesced -> sync verified ok (ref 26b49894). Total synced: 18. Still writer-locked: infra (claude 797877), darth-feedor (codex 2537429 deleted-worktree), second-mind (claude 1527938 + druk). console still needs bd migrate approval.\nALL RESOLVED: console (migrate + sync ok, ref 764efb0e, 1266 issues), xtmux (local canonical, ref 43fe5157, lineage preserved as refs/dolt/data-xtmux-github-lineage 949be954), infra (ref 5dc0632e, 956), darth-feedor (ref ff648bf6, 683), second-mind (ref 4394493e, 299). Remaining: second-mind.backup (dormant backup, deliberate). Total synced: 23 repos.",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 0,
+        "started_at": "2026-08-14T01:30:15Z",
+        "status": "in_progress",
+        "title": "Beads/Dolt upgrade: fix dangling-chunk sync (dolt 2.1.10->2.2.3+, bd 1.1.0->1.2.1)",
+        "updated_at": "2026-08-14T03:16:56Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-l9l86",
+  "root_title": "Beads/Dolt upgrade: fix dangling-chunk sync (dolt 2.1.10->2.2.3+, bd 1.1.0->1.2.1)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
