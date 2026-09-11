@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-rp5ri"],"open_issue_count":1,"root_id":"xtrm-rp5ri","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"a4f93c2eff8cb058b9889131e760527b2bac7a132d60799baaab60b4bcaf874d","title":"Cleanup xtrm-ui: deduplicate themes, fix isXtrmTheme, register xtprompt, remove dead code"}

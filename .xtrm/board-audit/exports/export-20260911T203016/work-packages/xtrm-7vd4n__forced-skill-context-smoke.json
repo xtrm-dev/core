@@ -1,0 +1,40 @@
+{
+  "content_sha256": "1ea84a269b3c10153f76c91aa1ef5c4345daab4db997bfcd7db0978709880aae",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-7vd4n"
+  },
+  "issues": {
+    "xtrm-7vd4n": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-14T12:19:17Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Do not call tools, read files, or invoke a skill command. If the complete explicit skill body was already injected into startup context, reply with exactly the startup proof token and nothing else.",
+        "id": "xtrm-7vd4n",
+        "issue_type": "task",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 4,
+        "status": "open",
+        "title": "FORCED SKILL CONTEXT SMOKE",
+        "updated_at": "2026-07-14T12:19:17Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-7vd4n",
+  "root_title": "FORCED SKILL CONTEXT SMOKE",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,66 @@
+{
+  "content_sha256": "15e288e5a4e763ed37ab3bd2485038af382ce12b51a48228fc136007d8d66958",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-11T06:38:36Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-mp0f2",
+        "issue_id": "xtrm-s5ih5",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-s5ih5",
+      "source_field": "dependencies",
+      "target": "xtrm-mp0f2",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-11: agent docs audit identity + hook follow-ups",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-s5ih5"
+  },
+  "issues": {
+    "xtrm-s5ih5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-10T14:59:03Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-11T06:38:36Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-mp0f2",
+            "issue_id": "xtrm-s5ih5",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "runClaudeRuntimeSyncPhase with isGlobal=true replaces the entire hooks section of ~/.claude/settings.json with project-scoped paths (hardcoded <projectRoot>/.xtrm/hooks/). This: (1) wipes hand-configured global hooks (PreCompact bd prime, SessionStart bd prime + context-mode-cache-heal), (2) duplicates every hook since project .claude/settings.json already has them, (3) hardcodes the current project path — breaks if run from any other project. Fix: early return when isGlobal=true, still calling ensureGlobalStatusLine() for statusLine wiring.",
+        "id": "xtrm-s5ih5",
+        "issue_type": "bug",
+        "priority": 1,
+        "status": "open",
+        "title": "fix: xt install --global must not overwrite project hooks into ~/.claude/settings.json",
+        "updated_at": "2026-06-10T14:59:03Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-s5ih5",
+  "root_title": "fix: xt install --global must not overwrite project hooks into ~/.claude/settings.json",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,40 @@
+{
+  "content_sha256": "c4ac1f72ae5164c0888155d03b8e56102e461aaa50aad208accf9a07f7418493",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-rp5ri"
+  },
+  "issues": {
+    "xtrm-rp5ri": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-07T00:25:31Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "A-F cleanup: (A) Remove duplicate extension themes dir, fix pi.themes path. (B) Add flattools variants to isXtrmTheme guard. (C) Remove pi-serena-compact from registry (passive, dead). (D) Register xtprompt (missing from registry). (E) Remove shortenHome dead export from format.ts. (F) Skip sub-pkg versions (noise).",
+        "id": "xtrm-rp5ri",
+        "issue_type": "task",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Cleanup xtrm-ui: deduplicate themes, fix isXtrmTheme, register xtprompt, remove dead code",
+        "updated_at": "2026-07-07T00:25:31Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-rp5ri",
+  "root_title": "Cleanup xtrm-ui: deduplicate themes, fix isXtrmTheme, register xtprompt, remove dead code",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

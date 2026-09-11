@@ -1,0 +1,41 @@
+{
+  "content_sha256": "adc3cea2b81dea23e224c384336b6fbe43debffd60d8240b2a2d389676f96504",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-99dcc"
+  },
+  "issues": {
+    "xtrm-99dcc": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-21T22:59:23Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nArchon (v0.6.0, YAML-DAG workflow engine) is now operational on the host and a validated FIFO PR merger draft (verified INERT without ARCHON_ALLOW_MERGE=1) has been prepared at ~/.archon/workflows/xtrm/xtrm-merge-fifo.yaml + scripts. Reference: /tmp/archon-merge-fifo-handoff.md.\n\nThe draft's own safety model is sound (env-guard + deterministic merge set from merge_queue.py + operator-approval + per-PR re-verify + abort-on-fail + captured SHAs for manual revert). But we already have overlapping surfaces:\n- xt-merge skill: FIFO merges queued xt-worktree PRs with rebase-cascade\n- xtmux: runtime identity + coordination + message-passing\n- specialists (sp): bounded expert judgment\n- beads: durable task state\n- Operator: production GO/NO-GO\n\nQuestion: which shape do we adopt for Archon, and how do the boundaries stay clean?\n\n## SUCCESS\n\nA written integration proposal + a validated audit-mode run + a decision on shape (invoked-tool vs replace vs specialist-embedded vs deploy-monitor-gated). No armed-merge run until (a) the queue is unblocked (blockers today: PRs 207-218, 293/294, 332/360/429) and (b) explicit operator sign-off on the shape.\n\n## SCOPE\n\n- Read/review ~/.archon/workflows/xtrm/*.yaml + scripts, confirm safety claims.\n- Run audit-mode from ~/dev/core, capture output.\n- Compare against xt-merge skill: which does the rebase-cascade, which is auditable/resumable/gated, when to invoke each.\n- Recommendation writeup on this bead.\n- File children beads for each decision that turns into work.\n\n## NON_GOALS\n\n- Do NOT set ARCHON_ALLOW_MERGE=1 without explicit operator approval on the integration shape.\n- Do NOT run archon setup (breaks Pi auth — use archon ai default pi …).\n- Do NOT enable enableExtensions on Archon's embedded pi (breaks multi-node runs; safe globally).\n- Do NOT duplicate xt-merge; either invoke it, replace it, or coexist with explicit boundaries.\n- Do NOT put mutations in prompt: nodes; hard gates stay bash: scripts.\n\n## CONSTRAINTS\n\n- Operator owns production GO/NO-GO — no auto-arming.\n- Read-only-first posture per bundle's docs/PRODUCTION_GUARDRAILS.md.\n- Mutations must be idempotent, aborting-on-fail, with captured rollback SHAs.\n- Archon = progression; xtmux = coordination; specialists = judgment; git/beads/jira = truth. Nest, don't overlap.\n\n## VALIDATION\n\n- [ ] Audit-mode run from ~/dev/core produces evidence + advisory + NO_GO preflight (proves inert)\n- [ ] Written proposal comparing invoked-tool / replace / specialist-embedded / deploy-monitor-gated shapes\n- [ ] Operator decision on shape recorded in this bead\n- [ ] Children beads filed for chosen shape's implementation\n\n## OUTPUT\n\nRecommendation writeup + audit-mode transcript + children beads.\n\n## REFERENCES\n\n- /tmp/archon-merge-fifo-handoff.md (12KB, self-contained handoff)\n- ~/.archon/workflows/xtrm/xtrm-merge-fifo.yaml (DAG)\n- ~/.archon/scripts/xtrm/merge_fifo_{preflight,execute}.py\n- ~/.claude/skills/xt-merge/SKILL.md (existing surface — for comparison)\n- ~/dev/archon-xtrm-local-bootstrap/**/docs/PRODUCTION_GUARDRAILS.md\n- xtrm-vtqlg (audit close-out epic — SEPARATE scope, not blocked by this)",
+        "id": "xtrm-99dcc",
+        "issue_type": "epic",
+        "notes": "## Integration recommendation (2026-07-22, from orchestrator review of the handoff)\n\n**Recommended shape: Archon-as-invoked-tool (option 1)**, NOT replace-xt-merge. Rationale:\n\n1. **xt-merge already has the rebase-cascade path** the Archon draft deliberately defers (v2). That capability is real value we shouldn't lose.\n2. **Archon's differentiators over xt-merge**: gated DAG + resumable + auditable persistence in ~/.archon/archon.db + human approval node + specialist judgment nodes optional. These fit CI-adjacent / post-deploy / multi-repo audit-trail use cases where xt-merge's shell-only shape is thinner.\n3. **Boundary that stays clean**:\n   - Operator-triggered fast FIFO merges of xt-worktree helper PRs → xt-merge (current pattern)\n   - Post-deploy / scheduled / audit-required FIFO merges → Archon workflow (invoked by orchestrator or a coordinator bead)\n   - Both write evidence to beads via message-send + notes\n4. **Specialist embedding**: yes, but ONLY at the assess node. Use sp reviewer/overthinker for deeper per-PR judgment via existing run-specialist-readonly.sh wrapper. Do NOT let a specialist run mutations — mutations stay in the bash: execute node behind the guard.\n5. **Deploy-monitor gating**: worth adopting once xtrm-deploy-observe-readonly's deploy-monitor-native lands. Merge-fifo consumes the verdict as a preflight input alongside merge_queue eligibility.\n\n**Immediate next actions (BEFORE armed run):**\n\n1. Prerequisite: the queue is currently BLOCKED (207-218 failing checks, 293/294 conflicts, 332/360/429 behind main). Remediation comes first:\n   - Use bundled archon-resolve-conflicts on 293/294 (in audit mode from ~/dev/core)\n   - Use bundled archon-smart-pr-review to triage 207-218 batch\n   - Update-branch or rebase 332/360/429\n2. Run audit mode from ~/dev/core: 'archon workflow run xtrm-merge-fifo --no-worktree \"integration audit\"'. Confirm evidence pipeline + NO_GO preflight without guard.\n3. Only after (1)+(2)+operator sign-off: single armed run in a controlled window.\n\n**Children to file (post-audit-mode + operator decision):**\n\n- Wire orchestrator invocation: coordinator bead 'run archon xtrm-merge-fifo in armed mode' documented in xtmux/coordinator flow (small doc PR).\n- Adopt xt-merge as the fast path in xt-worktree contexts (already done); document when to reach for Archon instead (docs PR).\n- Optional: enhance assess node to call sp reviewer for LARGE PRs (>N lines) — needs sp integration proof, small script.\n- Optional: build deploy-monitor-native prompt: node (per handoff §5) — unblocks bundle's deploy-observe workflow.\n\n**Explicit non-recommendations (don't do these):**\n\n- Do NOT replace xt-merge with Archon merge-fifo. Different use cases; keeping both is not duplication.\n- Do NOT let the LLM (assess node) expand the merge set. Deterministic merge_queue.py stays authoritative.\n- Do NOT ship a rebase-cascade variant of the Archon workflow until v2 justifies the added surface area — for now, per-PR re-verify + skip-if-conflicted is safer.\n\n**Scheduling note**: this bead is P2 and deliberately NOT parented to the audit close-out epic (xtrm-vtqlg). Different scope; not blocked by close-out; close-out not blocked by this. Revisit when queue is unblocked (Waves 7-9 will clear some of the audit-domain PRs; dependabot batch is separate).",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Integrate Archon (YAML DAG runner) with xt-merge / xtmux / specialists coordination stack",
+        "updated_at": "2026-07-21T23:00:09Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-99dcc",
+  "root_title": "Integrate Archon (YAML DAG runner) with xt-merge / xtmux / specialists coordination stack",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

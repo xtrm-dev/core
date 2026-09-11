@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-dv3kv"],"open_issue_count":1,"root_id":"xtrm-dv3kv","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"fefc2b6c48637cb0dc5e627ac1224e5d566308816053f78211e6397416a74381","title":"core: Stop hook xtmux/auto-monitor-drain-stop.mjs needs TMUX env propagation"}
