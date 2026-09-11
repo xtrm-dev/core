@@ -19,6 +19,7 @@ const BUDGETS = {
   gitnexus:                     120,
   'skill-creator':              180,
   'find-skills':                140,
+  'goal-prompt':                180,
 };
 
 let failed = false;
