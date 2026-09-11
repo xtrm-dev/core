@@ -77,6 +77,9 @@ interface LaunchHarness {
     listenersAfter: Record<string, number>;
     seededWorktreeCopy: boolean;
     branchPreExists: boolean;
+    /** Plant <worktree>/.xtrm/hooks/statusline.mjs at creation so the launch
+     * runs with a worktree-local hook script present (global-statusline regression). */
+    seedStatusline: boolean;
     oldSp: boolean;
     extraSkills: string[];
     roleSpecPaths?: string[];
@@ -210,6 +213,11 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
                 const wtPackDir = path.join(h.worktreePath, '.xtrm', 'skills', 'infra', PACK_NAME);
                 fs.ensureDirSync(wtPackDir);
                 fs.copyFileSync(packSkillFile, path.join(wtPackDir, 'SKILL.md'));
+            }
+            if (h.seedStatusline) {
+                const hookFile = path.join(h.worktreePath, '.xtrm', 'hooks', 'statusline.mjs');
+                fs.ensureDirSync(path.dirname(hookFile));
+                fs.writeFileSync(hookFile, '// statusline');
             }
             return { status: 0, stdout: '', stderr: '' };
         }
@@ -374,6 +382,7 @@ function harnessOpts(over: Partial<LaunchHarness> = {}): LaunchHarness {
         listenersAfter: { SIGINT: 0, SIGTERM: 0, SIGHUP: 0, exit: 0 },
         seededWorktreeCopy: true,
         branchPreExists: false,
+        seedStatusline: false,
         oldSp: false,
         extraSkills: [],
         role: 'sync-role',
@@ -753,6 +762,15 @@ describe('launchWorktreeSession claude role (launch-level, 751b/830)', () => {
         expect(r.error).toMatch(/must be tracked|absent from the worktree|does not contain/);
         expect(r.calls.worktreeRemoveCalls).toBeGreaterThan(0);
         expect(r.calls.branchDeleteCalls).toBeGreaterThan(0);
+    });
+
+    it('never writes worktree-local .claude/settings.local.json (global statusline owns UI)', async () => {
+        // seedStatusline plants a worktree-local hook script: pre-fix
+        // provisioning bound settings.local.json to it.
+        const r = await claudeLaunch({ role: 'NONE', seedStatusline: true });
+        expect(r.error).toMatch(/^exit:0/);
+        expect(fs.pathExistsSync(path.join(r.worktreePath, '.xtrm', 'hooks', 'statusline.mjs'))).toBe(true);
+        expect(fs.pathExistsSync(path.join(r.worktreePath, '.claude', 'settings.local.json'))).toBe(false);
     });
 
     describe('bare claude explicit permutations (SEC-03, exact)', () => {

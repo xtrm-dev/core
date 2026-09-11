@@ -19,7 +19,7 @@ updated_at: 2026-05-14
 |---|---|
 | [Quick Start](#quick-start) | `xt end` is the publish step for one worktree: it rebases the branch onto the current target branch, pushes it, opens th |
 | [What Happens on Launch](#what-happens-on-launch) | The port redirect in step 4 is written **before** `claude` launches, so `bd` never |
-| [Statusline Injection](#statusline-injection) | When launching a `claude` worktree session, `xt` injects a statusline configuration |
+| [Statusline Injection](#statusline-injection) | Worktree sessions use the global statusline, the launcher writes no worktree-local |
 | [Naming Convention](#naming-convention) | | Thing | Pattern | Example | |
 | [Re-attaching to a Session](#re-attaching-to-a-session) | When a Claude or Pi session closes unexpectedly, use `xt attach` to re-enter the worktree and resume the previous conver |
 | [Managing Worktrees](#managing-worktrees) | `xt worktree list` shows each worktree's runtime badge `[claude]`/`[pi]`, last activity timestamp, last commit message,  |
@@ -68,8 +68,7 @@ xt claude
   3. Remove worktree-local .beads/  (no symlink needed under bd 1.0.3+)
   4. Apply git update-index --skip-worktree to tracked .beads/* and .specialists/*
   5. Write session metadata → worktree/.session-meta.json  (runtime + launchedAt)
-  6. Inject statusline → worktree/.claude/settings.local.json
-  7. claude --dangerously-skip-permissions   (launched in worktree)
+  6. claude --dangerously-skip-permissions   (launched in worktree)
 ```
 
 Steps 3–4 replace the old dir-to-symlink model (removed in xtrm-cbjo). Modern bd
@@ -84,27 +83,12 @@ removing the symlink swap was critical.
 
 ## Statusline Injection
 
-When launching a `claude` worktree session, `xt` injects a statusline configuration
-into the worktree's `.claude/settings.local.json` before Claude starts:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "node /path/to/hooks/statusline.mjs",
-    "padding": 1
-  }
-}
-```
-
-The path to `statusline.mjs` is resolved in order:
-1. Plugin cache — `~/.claude/plugins/cache/.../hooks/statusline.mjs` (stays in sync with installed plugin version)
-2. Fallback — `~/.claude/hooks/statusline.mjs`
+Worktree sessions use the global statusline — `~/.xtrm/hooks/statusline.mjs`,
+installed by `ensureGlobalStatusLine`. The launcher writes no worktree-local
+`.claude/settings.local.json`, so a branch worktree can never carry a stale
+copy of the hook script path.
 
 This gives the worktree session the same beads/claim statusline as a main session.
-The settings file is written to `.claude/` inside the worktree, so it doesn't affect
-the main checkout. Failure to write the file is non-fatal — the session launches without
-a statusline rather than aborting.
 
 ## Naming Convention
 
