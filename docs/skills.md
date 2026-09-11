@@ -44,7 +44,7 @@ xt skills create-pack <name> --local    # .xtrm/skills/<name>/
 
 ## Universal defaults
 
-The v4 default set is intentionally nine skills:
+The v4 default set is intentionally ten skills:
 
 | Skill | Purpose |
 |---|---|
@@ -57,6 +57,7 @@ The v4 default set is intentionally nine skills:
 | `gitnexus` | code graph exploration, impact, debugging and review support |
 | `skill-creator` | skill authoring/evaluation discipline |
 | `find-skills` | discover/select additional skill capabilities when needed |
+| `goal-prompt` | single-issue goal-prompt transform with stop-predicate payloads |
 
 A specialized capability should not move into default merely because it is valuable. It
 belongs there only when ordinary XTRM work should pay its trigger/context cost by default.
