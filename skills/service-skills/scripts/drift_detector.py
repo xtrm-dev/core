@@ -235,6 +235,10 @@ def scan_drift(project_root: str | None = None, enrich_with_gitnexus: bool = Fal
         last_sync_str = service.get("last_sync", "")
         try:
             sync_time = datetime.fromisoformat(last_sync_str.replace("Z", "+00:00")) if last_sync_str else None
+            # Date-only strings (YYYY-MM-DD) yield tz-naive datetimes; normalize to UTC
+            # so the comparison against tz-aware mtime on line ~250 doesn't crash.
+            if sync_time is not None and sync_time.tzinfo is None:
+                sync_time = sync_time.replace(tzinfo=timezone.utc)
         except ValueError:
             sync_time = None
         # A service with no (or unparseable, e.g. the "never" sentinel) last_sync has been
