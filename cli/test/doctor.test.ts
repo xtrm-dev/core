@@ -3,6 +3,43 @@ import crypto from 'node:crypto';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
+const getPiDoctorReportMock = vi.hoisted(() => vi.fn());
+const checkUpdatesMock = vi.hoisted(() => vi.fn(() => []));
+const substrateVersionMock = vi.hoisted(() => vi.fn(() => ({ available: true, version: '0.0.0-doctor-stub', raw: 'sb 0.0.0-doctor-stub' })));
+const substrateDoctorMock = vi.hoisted(() => vi.fn(() => ({
+  ok: true,
+  payload: { schema: 'substrate-cli/v1', command: 'doctor', ok: true },
+  data: { dbPath: 'state.db', schemaHealthy: true, schemaError: null, projects: 1, link: { projectId: 'XTRM-1', source: 'env', gitRoot: '/repo' }, linkError: null, gitRoot: '/repo' },
+  raw: '{}',
+})));
+const setupCheckMock = vi.hoisted(() => vi.fn(() => ({
+  ok: true,
+  report: { ok: true, claude: [{ name: 'plugin-manifest', ok: true }], pi: [{ name: 'pi-extension', ok: true }], naming: { substratePlugins: [], beadsRemnants: [], duplicates: false }, enrollment: [{ name: 'sb-enrolled', ok: true }, { name: 'pi-enrolled', ok: true }, { name: 'claude-marketplace-enrolled', ok: true }, { name: 'claude-plugin-enrolled', ok: true }, { name: 'claude-strict-live', ok: true }, { name: 'beads-absent', ok: true }] },
+  raw: '{}',
+})));
+
+// This integration fixture is intentionally hermetic. The real doctor command
+// otherwise launches npm and sb subprocesses, which contend with the full
+// Vitest worker pool and make the existing 30s test budget load-sensitive.
+vi.mock('../src/core/pi-runtime.js', () => ({
+  getXtManagedPiPackageDoctorReport: getPiDoctorReportMock,
+}));
+vi.mock('../src/utils/npm-latest.js', () => ({
+  checkXtrmUpdates: checkUpdatesMock,
+  defaultCacheFile: vi.fn(() => '/tmp/xtrm-doctor-cache.json'),
+  formatUpdateRows: vi.fn(() => []),
+  updatesSummary: vi.fn(() => ''),
+}));
+vi.mock('../src/core/substrate.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/core/substrate.js')>('../src/core/substrate.js');
+  return {
+    ...actual,
+    getSbVersion: substrateVersionMock,
+    getSbDoctorJson: substrateDoctorMock,
+    runSetupCheck: setupCheckMock,
+  };
+});
+
 import { createDoctorCommand } from '../src/commands/doctor.js';
 
 let tmpDir: string;
@@ -84,6 +121,8 @@ beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-doctor-'));
   previousHome = process.env.HOME;
   process.env.HOME = path.join(tmpDir, 'home');
+  getPiDoctorReportMock.mockResolvedValue({ issues: [], missing: [], outdated: [], ok: [], hasIssues: false });
+  checkUpdatesMock.mockReturnValue([]);
 });
 
 afterEach(async () => {
@@ -106,6 +145,9 @@ describe('doctor command', () => {
     expect(parsed.catB.hooks.every((row: { status: string }) => row.status === 'in-sync')).toBe(true);
     expect(parsed.catB.runtimeView).toMatchObject({ activeReady: true, globalClaudePointerReady: true, globalPiPointerReady: true, projectClaudePointerState: 'ready', projectPiPointerState: 'ready', projectCodexPointerState: 'ready' });
     expect(parsed.catB.duplicates).toEqual([]);
+    // Substrate section (§41): version + doctor payload come from the stub.
+    expect(parsed.substrate).toMatchObject({ available: true, version: '0.0.0-doctor-stub', doctorOk: true });
+    expect(parsed.legacyMigration).toMatchObject({ beadsDirPresent: false, beadsHookRegistrations: 0, status: 'clean' });
   });
 
   it('doctor clean repo with no .beads passes', async () => {

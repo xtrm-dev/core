@@ -14,16 +14,70 @@ const CLI_BIN = path.join(__dirname, '../dist/index.cjs');
 // the operator's real global install. The subprocess inherits our env, so
 // setting HOME here propagates automatically.
 let __sandboxHome = '';
+let __sandboxBin = '';
+let __sandboxSubstrate = '';
 let __prevHome: string | undefined;
+let __prevPath: string | undefined;
+let __prevSubstrateDir: string | undefined;
 beforeAll(() => {
     __sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-init-cli-home-'));
+    __sandboxBin = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-init-cli-bin-'));
+    __sandboxSubstrate = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-init-cli-substrate-'));
     __prevHome = process.env.HOME;
+    __prevPath = process.env.PATH;
+    __prevSubstrateDir = process.env.XTRM_SUBSTRATE_DIR;
     process.env.HOME = __sandboxHome;
+    process.env.XTRM_SUBSTRATE_DIR = __sandboxSubstrate;
+    // Fixture substrate source: plan validates with one noop command, check
+    // reports the full six-item enrollment healthy. Exercises the real
+    // enrollment flow hermetically.
+    fs.mkdirSync(path.join(__sandboxSubstrate, 'integrations'), { recursive: true });
+    fs.writeFileSync(path.join(__sandboxSubstrate, 'package.json'), JSON.stringify({ name: '@xtrm/substrate', version: '0.0.0-test' }));
+    fs.writeFileSync(
+        path.join(__sandboxSubstrate, 'integrations', 'setup.ts'),
+        '#!/usr/bin/env node\n' +
+        'const args = process.argv.slice(2);\n' +
+        'const verb = args[0];\n' +
+        'const dirIdx = args.indexOf(\'--dir\');\n' +
+        'const dir = dirIdx >= 0 ? args[dirIdx + 1] : null;\n' +
+        'if (!dir) { process.stderr.write(\'--dir required\'); process.exit(2); }\n' +
+        'const ENROLL = [{name:\'sb-enrolled\',ok:true},{name:\'pi-enrolled\',ok:true},{name:\'claude-marketplace-enrolled\',ok:true},{name:\'claude-plugin-enrolled\',ok:true},{name:\'claude-strict-live\',ok:true},{name:\'beads-absent\',ok:true}];\n' +
+        'if (verb === \'plan\') { process.stdout.write(JSON.stringify({ surfaces: [], dir, commands: [{label:\'noop\',cmd:\'true\',args:[]}] })); }\n' +
+        'else if (verb === \'check\') { process.stdout.write(JSON.stringify({ ok: true, claude: [], pi: [], naming: { substratePlugins: [], beadsRemnants: [], duplicates: false }, enrollment: ENROLL })); }\n' +
+        'else { process.stderr.write(\'bad verb\'); process.exit(1); }\n',
+    );
+    // Keep init integration hermetic. The host may expose an incompatible
+    // legacy `sb`, which makes the installer attempt a network package install
+    // and turns this no-prompt test into a 120s timeout. A tiny executable
+    // satisfies the confirmed version/list probes without real subprocess
+    // contention; Substrate behavior is covered by the mocked unit tests.
+    const fakeCommands: Record<string, string> = {
+        sb: '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "sb 0.0.0-init-test"; elif [ "$1" = "doctor" ]; then if [ -f "${SB_STATE_FILE:-/nonexistent}" ]; then echo \'{"schema":"substrate-cli/v1","command":"doctor","ok":true,"data":{"dbPath":"x","schemaHealthy":true,"link":{"projectId":"XTRM-1","source":"link"}}}\'; else echo \'{"schema":"substrate-cli/v1","command":"doctor","ok":true,"data":{"dbPath":"x","schemaHealthy":true,"link":null,"linkError":"none"}}\'; fi; elif [ "$1" = "project" ]; then touch "${SB_STATE_FILE:-/nonexistent}"; if [ "$2" = "create" ]; then echo \'{"id":"prj_initcli"}\'; else echo ok; fi; else echo "{}"; fi\n',
+        pi: '#!/bin/sh\necho "pi 0.0.0-init-test"\n',
+        pnpm: '#!/bin/sh\necho "pnpm 0.0.0-init-test"\n',
+        deepwiki: '#!/bin/sh\necho "deepwiki 0.0.0-init-test"\n',
+        ctx7: '#!/bin/sh\necho "ctx7 0.0.0-init-test"\n',
+        // A ready status avoids invoking a real 120s GitNexus analyze during
+        // the --yes integration test. Other init behavior remains real.
+        gitnexus: '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "gitnexus 0.0.0-init-test"; elif [ "$1" = "status" ]; then echo "ready"; fi\n',
+    };
+    for (const [name, script] of Object.entries(fakeCommands)) {
+        const file = path.join(__sandboxBin, name);
+        fs.writeFileSync(file, script);
+        fs.chmodSync(file, 0o755);
+    }
+    process.env.PATH = `${__sandboxBin}${path.delimiter}${__prevPath ?? ''}`;
 });
 afterAll(() => {
     try { fs.rmSync(__sandboxHome, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { fs.rmSync(__sandboxBin, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { fs.rmSync(__sandboxSubstrate, { recursive: true, force: true }); } catch { /* ignore */ }
     if (__prevHome === undefined) delete process.env.HOME;
     else process.env.HOME = __prevHome;
+    if (__prevPath === undefined) delete process.env.PATH;
+    else process.env.PATH = __prevPath;
+    if (__prevSubstrateDir === undefined) delete process.env.XTRM_SUBSTRATE_DIR;
+    else process.env.XTRM_SUBSTRATE_DIR = __prevSubstrateDir;
 });
 
 function run(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number } = {}): { stdout: string; stderr: string; status: number; duration: number } {
@@ -114,8 +168,11 @@ describe('xt init dry-run mode', () => {
 
     it('xt init --dry-run does not prompt for confirmation', () => {
         const r = run(['init', '--dry-run'], { cwd: repoDir, timeout: 20000 });
-        // Should complete without waiting for user input
-        expect(r.duration).toBeLessThan(15000);
+        // A prompt would leave stdin waiting until the subprocess timeout.
+        // Assert successful completion instead of a brittle wall-clock bound;
+        // the runner's 20s timeout is intentionally below the CLI's 120s
+        // production timeout and preserves the no-prompt guarantee.
+        expect(r.status).toBe(0);
     });
 });
 
@@ -179,8 +236,8 @@ describe('xt init banner non-blocking', () => {
 
     it('xt init --dry-run completes without blocking on banner', () => {
         const r = run(['init', '--dry-run'], { cwd: repoDir, timeout: 20000 });
-        // Banner rendering should not wait on keypress
-        expect(r.duration).toBeLessThan(15000);
+        // Banner rendering should not wait on keypress. The subprocess timeout
+        // is the no-prompt guard; do not impose a host-load-sensitive duration.
         expect(r.status).toBe(0);
     });
 
@@ -196,11 +253,22 @@ describe('xt init banner non-blocking', () => {
         // a warm real HOME. 60s occasionally flaked; 120s covers observed
         // ~70s worst-case runs. Assertion is still "no interactive prompt".
         // (xtrm-qdsx / xtrm-x12p3)
-        const r = run(['init', '--yes'], { cwd: repoDir, timeout: 15000 });
+        // --sb-create-project exercises the explicit project flow: the fake
+        // sb answers create/link, so init links without prompting or failing.
+        const r = run(['init', '--yes', '--sb-create-project', 'T:InitCli'], { cwd: repoDir, timeout: 45000, env: { SB_STATE_FILE: path.join(repoDir, '.sb-state') } });
         // Should not hang on confirmation prompt
         const combined = r.stdout + r.stderr;
         expect(combined).not.toMatch(/press any key|continue\?/i);
+        expect(r.status).toBe(0);
+        expect(combined).toContain('created and linked');
     }, 120000);
+
+    it('xt init --yes fails closed without project flags when unlinked', () => {
+        const r = run(['init', '--yes'], { cwd: repoDir, timeout: 20000 });
+        expect(r.status).not.toBe(0);
+        const combined = r.stdout + r.stderr;
+        expect(combined).toMatch(/--sb-create-project/);
+    });
 });
 
 describe('xt init confirmation gate', () => {

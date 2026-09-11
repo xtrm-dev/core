@@ -15,6 +15,7 @@ import os from 'os';
 import path from 'path';
 import { t, sym } from '../utils/theme.js';
 import { inventoryDeps, type BootstrapPlan } from './machine-bootstrap.js';
+import { defaultStateDbPath, getSbProjectLink, getSbVersion, runSetupCheck } from './substrate.js';
 import { inventoryPiRuntime, resolveManagedPiExtensionsSourceDir, type PiRuntimePlan } from './pi-runtime.js';
 import { checkRuntimeSkillsViews } from './skills-runtime-views.js';
 
@@ -56,7 +57,7 @@ export interface VerificationResult {
         projectCodexPointerState: 'ready' | 'skipped' | 'missing';
     };
     projectBootstrap: {
-        beadsInitialized: boolean;
+        substrateReady: boolean;
         gitnexusIndexed: boolean;
         instructionHeaders: boolean;
     };
@@ -186,8 +187,21 @@ async function verifyPiRuntime(projectRoot: string): Promise<PiRuntimePlan> {
     return await inventoryPiRuntime(sourceDir, sourceDir);
 }
 
-function verifyProjectBootstrap(projectRoot: string): { beadsInitialized: boolean; gitnexusIndexed: boolean; instructionHeaders: boolean } {
-    const beadsInitialized = fs.pathExistsSync(path.join(projectRoot, '.beads'));
+function verifyProjectBootstrap(projectRoot: string, setupTs?: string, dir?: string): { substrateReady: boolean; gitnexusIndexed: boolean; instructionHeaders: boolean } {
+    // Substrate-first gate (replaces the old `.beads`-directory gate): sb
+    // answers `--version`, the ADR-grounded state.db exists, the checkout is
+    // linked to a project, AND setup enrollment health is green (contract
+    // #174: exit 0 with the exact six-item enrollment all ok). All four,
+    // fail-closed. setupTs pins the source this run enrolled: verification
+    // never re-resolves a conflicting ambient authority.
+    const link = getSbProjectLink(projectRoot);
+    // setupTs + dir pin the exact source this run enrolled (pair-checked
+    // by runSetupVerb: a setup.ts that does not belong to dir fails).
+    const enrollment = runSetupCheck({ cwd: projectRoot, setupTs, dir });
+    const substrateReady = getSbVersion().available
+        && fs.pathExistsSync(defaultStateDbPath())
+        && link.ok
+        && enrollment.ok;
 
     const gnStatus = spawnSync('gitnexus', ['status'], { cwd: projectRoot, encoding: 'utf8', timeout: 5000 });
     const gnText = `${gnStatus.stdout ?? ''}\n${gnStatus.stderr ?? ''}`.toLowerCase();
@@ -200,16 +214,16 @@ function verifyProjectBootstrap(projectRoot: string): { beadsInitialized: boolea
     const claudeMd = fs.pathExistsSync(path.join(projectRoot, 'CLAUDE.md'));
     const instructionHeaders = agentsMd || claudeMd;
 
-    return { beadsInitialized, gitnexusIndexed, instructionHeaders };
+    return { substrateReady, gitnexusIndexed, instructionHeaders };
 }
 
 // ── Full verification ─────────────────────────────────────────────────────────
 
-export async function runInitVerification(projectRoot: string): Promise<VerificationResult> {
+export async function runInitVerification(projectRoot: string, setupTs?: string, dir?: string): Promise<VerificationResult> {
     const machinePlan = verifyMachineBootstrap();
     const claudeResult = verifyClaudeRuntime(projectRoot);
     const piPlan = await verifyPiRuntime(projectRoot);
-    const projectResult = verifyProjectBootstrap(projectRoot);
+    const projectResult = verifyProjectBootstrap(projectRoot, setupTs, dir);
     const skillsRuntimeResult = await checkRuntimeSkillsViews(projectRoot);
 
     const allPassed =
@@ -222,7 +236,7 @@ export async function runInitVerification(projectRoot: string): Promise<Verifica
         skillsRuntimeResult.projectClaudePointerState !== 'missing' &&
         skillsRuntimeResult.projectPiPointerState !== 'missing' &&
         skillsRuntimeResult.projectCodexPointerState !== 'missing' &&
-        projectResult.beadsInitialized;
+        projectResult.substrateReady;
 
     return {
         machineBootstrap: {
@@ -307,7 +321,7 @@ export function renderVerificationSummary(result: VerificationResult): void {
 
     // Project bootstrap
     const pbParts: string[] = [];
-    if (!result.projectBootstrap.beadsInitialized) pbParts.push('beads');
+    if (!result.projectBootstrap.substrateReady) pbParts.push('substrate (sb + state.db + linked project + enrollment health)');
     if (!result.projectBootstrap.gitnexusIndexed) pbParts.push('gitnexus');
     if (!result.projectBootstrap.instructionHeaders) pbParts.push('headers');
     const pbIcon = pbParts.length === 0 ? sym.ok : sym.warn;

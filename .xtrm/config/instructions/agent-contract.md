@@ -15,22 +15,23 @@
 
 1. Read repo identity + non-negotiables at the top of the root agent guide first.
 2. Service/docs/project context: check `service-knowledge status` / `index stats` (rebuild when stale/absent), then `service-knowledge index query "<3-5 task terms>" --bundle`; read only the cited evidence. Skip repos without a service registry.
-3. Executable work: targeted Beads lookup (`bd ready`, `bd list --status=in_progress`, `bd search "<terms>"`, `bd show <id>`), then `bd update <id> --claim` before edits. `bd memories <topic>` / `bd recall <key>` only when history is relevant.
-4. Catch up: handoff/next-session beads, latest `xt report` handoffs, recent merged/closed PRs.
-5. If the runtime supports local task planning, use it for non-trivial work, synchronized with the active bead.
+3. Executable work: discover the ready Issue revision, validate readiness, then claim it (`sb issue claim`) before edits. Resume continuing work via `sb issue resume` — never reconstruct state from chat alone.
+4. Catch up: Journal handoff/checkpoint refs, latest `xt report` handoffs, recent merged/closed PRs.
+5. If the runtime supports local task planning, use it for non-trivial work, synchronized with the active Issue claim.
 
 ## Operating model
 
-- Beads owns durable work identity, dependencies, and closure; runtime-local task plans are ephemeral execution tracking.
-- For work another worker consumes, the Bead is the prompt: requirements live in the durable contract, not only in chat. A `contract:draft` item is not dispatchable.
+- Substrate owns durable work; Git owns code truth. A ready Issue revision is the executable contract; runtime-local task plans are ephemeral execution tracking.
+- For work another worker consumes, the Issue is the prompt: requirements live in the durable contract, not only in chat. A draft contract is not dispatchable.
 - Contract baseline: PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT; add SCRUTINY and rollout/rollback when they affect correctness.
 - Worker summaries are claims. Verify important ones against live code, tests, or runtime state.
+- Messages coordinate; the Journal preserves continuity; neither silently modifies the Issue contract. If executable authority changes, stop and revise the Issue through planning.
 - Prefer native/runtime communication surfaces over tmux scraping; `/multiplexing` owns send, reply, ownership, continuation, and handoff semantics.
 - Shape: work here when context suffices; native subagent for a bounded independent question; `xt pi|claude|codex` peers with `/multiplexing` for parallel ownership; `/using-specialists` for governed role lifecycles; a script or runtime primitive for deterministic transforms. Parallelize only when ownership boundaries are real.
 
 ## Operating rules
 
-- No close-time memory gate: `bd close <id> --reason="..."` succeeds directly; the claim/edit/commit gates still guard edits and commits.
+- Release authority on completion: close or release the claimed Issue through Substrate (see `sb help --json` for current lifecycle syntax); the claim/edit/commit gates still guard edits and commits.
 - Before editing existing symbols run GitNexus impact (`gitnexus_impact`) when available; before commit, run `gitnexus_detect_changes`.
 - Ask before destructive, irreversible, production-impacting, or history-rewriting actions; skip repetitive "Proceed?" confirmations once scope is clear.
 - Run targeted tests/build/typecheck for changed files; fix quality failures before commit.
@@ -51,10 +52,10 @@
 | Create or improve skills | `/skill-creator` |
 | Discover or import governed skills | `/find-skills` |
 
-Domain packs (`sre-ops`, `security-ops`, `research-methods`, `xtrm-development`, `xtrm-maintenance`) are optional; inspect `xt skills` rather than assuming they are active. Syntax per CLI: `bd --help`, `bv --robot-triage --format toon`, `xt --help`, `xtmux --help`, `sp --help`.
+Domain packs (`sre-ops`, `security-ops`, `research-methods`, `xtrm-development`, `xtrm-maintenance`) are optional; inspect `xt skills` rather than assuming they are active. Syntax per CLI: `sb --help`, `sb help --json`, `xt --help`, `xtmux --help`, `sp --help`.
 
 ## Rule conflict — TaskCreate / TodoWrite
 
-`bd prime` is an opt-in full-context diagnostic; it is never a session-start step. If that diagnostic reports *"Prohibited: Do NOT use TodoWrite, TaskCreate, or markdown files for task tracking"*, **this project overrides that line.** Runtime-local task planning coexists with beads — beads is the durable authority; local plans are ephemeral execution tracking. Do not create MEMORY.md files.
+Durable work lives in Substrate, not in chat task lists. Runtime-local task planning coexists with the Issue contract — the Issue is the durable authority; local plans are ephemeral execution tracking. Resume via the Resume Capsule (`sb issue resume`); never re-derive state from conversation history. Do not create MEMORY.md files.
 
 <!-- contract:end -->

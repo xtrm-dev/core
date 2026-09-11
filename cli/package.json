@@ -29,7 +29,8 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "start": "node dist/index.cjs"
+    "start": "node dist/index.cjs",
+    "postbuild": "node -e \"for (const f of ['dist/index.cjs']) { const fs = require('fs'); const lines = fs.readFileSync(f, 'utf8').split('\\n'); fs.writeFileSync(f, lines.map(l => l.replace(/[ \\t]+$/, '')).join('\\n')); }\""
   },
   "dependencies": {
     "boxen": "^8.0.1",

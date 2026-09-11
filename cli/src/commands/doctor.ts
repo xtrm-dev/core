@@ -11,6 +11,7 @@ import { discoverDefaultSkills, type DiscoveredSkill } from '../core/skill-disco
 import { ensureBeadsSharedServerEnabled, hasBeadsDir, type SharedBeadsServerState } from '../core/beads-shared-server.js';
 import { findProjectRoot } from '../utils/repo-root.js';
 import { applySettingsFixes, auditSettings, type SettingsAuditOutcome, type SettingsFinding } from '../core/settings-audit.js';
+import { defaultStateDbPath, getSbDoctorJson, getSbVersion, runSetupCheck, stateDbPresent, type SetupCheckReport } from '../core/substrate.js';
 import { checkXtrmUpdates, defaultCacheFile, formatUpdateRows, updatesSummary, type PackageStatus } from '../utils/npm-latest.js';
 
 interface CheckJson {
@@ -54,6 +55,36 @@ interface CatBJson {
   summary: { ok: number; warnings: number; errors: number };
 }
 
+interface SubstrateDoctorSection {
+  available: boolean;
+  version: string | null;
+  stateDb: string;
+  stateDbPresent: boolean;
+  doctorOk: boolean;
+  /** Interpreted `sb doctor --json` data keys (verified live `sb 0.1.0`). */
+  dbPath: string | null;
+  schemaHealthy: boolean | null;
+  projects: number | null;
+  projectLink: { projectId?: string; source?: string; gitRoot?: string } | null;
+  integrations: {
+    available: boolean;
+    ok: boolean | null;
+    claudeChecks: number;
+    piChecks: number;
+    duplicates: boolean | null;
+    /** Failing enrollment item names (contract #174 checks). */
+    enrollmentFailed: string[];
+  };
+  error?: string;
+}
+
+interface LegacyMigrationSection {
+  beadsDirPresent: boolean;
+  beadsHookRegistrations: number;
+  substrateRemnants: string[];
+  status: 'clean' | 'legacy migration required';
+}
+
 interface DoctorJson {
   catB: CatBJson;
   piPackages: XtManagedPiPackageDoctorReport;
@@ -61,6 +92,8 @@ interface DoctorJson {
     packages: Array<{ package: string; installed: string | null; latest: string | null; state: string; from_cache: boolean; cache_age_ms: number | null }>;
     cache_file: string;
   };
+  substrate: SubstrateDoctorSection;
+  legacyMigration: LegacyMigrationSection;
 }
 
 function ok(msg: string) { console.log(`  ${kleur.green('✓')} ${msg}`); }
@@ -102,7 +135,7 @@ function checkClaudeMdFragments(cwd: string): boolean {
   const drift = parsed.drift ?? [];
   if (sections.length === 0) {
     warn('CLAUDE.md has no XTRM-MANAGED sentinels — fragments not initialized');
-    fix('xt claude-sync --add bd-workflow  (and other fragments)');
+    fix('xt claude-sync --list  (pick a current fragment; bd-workflow is retired Beads doctrine)');
     return false;
   }
   const driftByName = new Map(drift.map(d => [d.name, d]));
@@ -350,6 +383,7 @@ const FINDING_LABEL: Record<SettingsFinding['kind'], string> = {
   'duplicate-registration': 'duplicate registration',
   'duplicate-of-global': 'duplicates global',
   'legacy-path': 'legacy path',
+  'legacy-beads-hook': 'legacy Beads hook',
   'dangling-reference': 'dangling reference',
   'orphaned-key': 'orphaned key',
 };
@@ -472,6 +506,128 @@ function createDoctorSettingsCommand(): Command {
     });
 }
 
+async function buildSubstrateSection(cwd: string): Promise<SubstrateDoctorSection> {
+  const version = getSbVersion();
+  const stateDb = defaultStateDbPath();
+  const present = stateDbPresent(stateDb);
+  const noIntegrations: SubstrateDoctorSection['integrations'] = { available: false, ok: null, claudeChecks: 0, piChecks: 0, duplicates: null, enrollmentFailed: [] };
+  if (!version.available) {
+    return {
+      available: false,
+      version: null,
+      stateDb,
+      stateDbPresent: present,
+      doctorOk: false,
+      dbPath: null,
+      schemaHealthy: null,
+      projects: null,
+      projectLink: null,
+      integrations: noIntegrations,
+      error: version.raw || 'sb CLI not found',
+    };
+  }
+  const doctor = getSbDoctorJson(cwd);
+  // A6 integration health (xtrm PR #168): fail-open, never crashes diagnosis.
+  let integrations: SubstrateDoctorSection['integrations'] = noIntegrations;
+  try {
+    const setup = runSetupCheck({ cwd });
+    const report: SetupCheckReport | null = setup.report;
+    integrations = {
+      available: true,
+      ok: setup.ok,
+      claudeChecks: report?.claude?.length ?? 0,
+      piChecks: report?.pi?.length ?? 0,
+      duplicates: report?.naming?.duplicates ?? null,
+      enrollmentFailed: (report?.enrollment ?? []).filter(e => !e.ok).map(e => e.name),
+    };
+  } catch {
+    integrations = noIntegrations;
+  }
+  return {
+    available: true,
+    version: version.version ?? null,
+    stateDb,
+    stateDbPresent: present,
+    doctorOk: doctor.ok,
+    dbPath: doctor.data?.dbPath ?? null,
+    schemaHealthy: doctor.data?.schemaHealthy ?? null,
+    projects: doctor.data?.projects ?? null,
+    projectLink: doctor.data?.link ?? null,
+    integrations,
+    ...(doctor.ok ? {} : { error: doctor.error ?? 'sb doctor --json rejected' }),
+  };
+}
+
+async function buildLegacyMigrationSection(cwd: string): Promise<LegacyMigrationSection> {
+  const beadsDirPresent = await hasBeadsDir(cwd);
+  let beadsHookRegistrations = 0;
+  let substrateRemnants: string[] = [];
+  try {
+    // Fail-open: settings audit failure must not crash the diagnosis.
+    const outcome = await auditSettings({ projectRoot: cwd, scope: 'all' });
+    beadsHookRegistrations = outcome.planned.filter(finding => finding.kind === 'legacy-beads-hook').length;
+  } catch {
+    beadsHookRegistrations = 0;
+  }
+  try {
+    // A6 naming probe (§7): stale beads plugin/marketplace/package remnants.
+    const setup = runSetupCheck({ cwd });
+    substrateRemnants = setup.report?.naming?.beadsRemnants ?? [];
+  } catch {
+    substrateRemnants = [];
+  }
+  const required = beadsDirPresent || beadsHookRegistrations > 0 || substrateRemnants.length > 0;
+  return {
+    beadsDirPresent,
+    beadsHookRegistrations,
+    substrateRemnants,
+    status: required ? 'legacy migration required' : 'clean',
+  };
+}
+
+function renderSubstrate(report: SubstrateDoctorSection): void {
+  section('Substrate');
+  if (!report.available) {
+    warn(`sb CLI not found${report.error ? ` (${report.error})` : ''}`);
+    fix('xt init --substrate-dir <checkout>  (enrolls sb + integrations from a local @xtrm/substrate source)');
+    return;
+  }
+  ok(`sb available${report.version ? ` (${report.version})` : ''}`);
+  if (report.stateDbPresent) ok(`state.db present (${report.stateDb})`);
+  else {
+    warn(`state.db missing (${report.stateDb})`);
+    fix('xt init  (initializes ~/.xtrm/state.db and links the checkout)');
+  }
+  if (report.doctorOk) {
+    ok(`sb doctor --json: healthy${report.projects !== null && report.projects !== undefined ? ` (${report.projects} project(s))` : ''}`);
+    if (report.projectLink?.projectId) ok(`linked project: ${report.projectLink.projectId} (via ${report.projectLink.source ?? 'unknown'})`);
+    else warn('no linked project for this checkout');
+  } else {
+    warn(`sb doctor --json rejected${report.error ? ` (${report.error})` : ''}`);
+    fix('sb doctor  (human-readable diagnosis)');
+  }
+  if (report.integrations.available) {
+    if (report.integrations.ok) ok(`integrations healthy (claude ${report.integrations.claudeChecks}, pi ${report.integrations.piChecks})`);
+    else warn('integration health check failed (claude plugin / pi extension)');
+    if (report.integrations.enrollmentFailed.length > 0) warn(`enrollment failing: ${report.integrations.enrollmentFailed.join(', ')}`);
+    if (report.integrations.duplicates) warn('duplicate substrate plugin registrations');
+  } else {
+    warn('integration health unavailable (@xtrm/substrate setup.ts not installed)');
+  }
+}
+
+function renderLegacyMigration(report: LegacyMigrationSection): void {
+  section('Legacy migration');
+  if (report.status === 'clean') {
+    ok('no legacy Beads machinery');
+    return;
+  }
+  if (report.beadsDirPresent) warn('legacy .beads workspace present — legacy migration required');
+  if (report.beadsHookRegistrations > 0) warn(`${report.beadsHookRegistrations} legacy Beads hook registration(s) — legacy migration required`);
+  if (report.substrateRemnants.length > 0) warn(`stale Beads plugin/marketplace remnant(s): ${report.substrateRemnants.join(', ')} — legacy migration required`);
+  fix('legacy .beads workspace blocks migration: automated Substrate migration ships with the A9 pipeline. Do NOT delete `.beads`. Upgrade xt, then re-run `xt update --apply`');
+}
+
 export function createDoctorCommand(): Command {
   const doctor = new Command('doctor')
     .description('Canonical diagnosis for xtrm-managed project and runtime surfaces')
@@ -490,6 +646,9 @@ export function createDoctorCommand(): Command {
       const catB = await buildCatBJson(registry, cwd, drift, runtimeView, duplicates, sharedBeadsServerState);
       const piPackages = await getXtManagedPiPackageDoctorReport();
       const updateStatuses = checkXtrmUpdates();
+      const substrate = await buildSubstrateSection(cwd);
+      const legacyMigration = await buildLegacyMigrationSection(cwd);
+      const legacyMigrationRequired = legacyMigration.status !== 'clean';
       const doctorJson: DoctorJson = {
         catB,
         piPackages,
@@ -504,11 +663,13 @@ export function createDoctorCommand(): Command {
           })),
           cache_file: defaultCacheFile(),
         },
+        substrate,
+        legacyMigration,
       };
 
       if (opts.json) {
         console.log(JSON.stringify(doctorJson, null, 2));
-        if (hasCatBIssues(catB) || (opts.checkDrift && piPackages.hasIssues)) process.exitCode = 1;
+        if (hasCatBIssues(catB) || legacyMigrationRequired || (opts.checkDrift && piPackages.hasIssues)) process.exitCode = 1;
         return;
       }
 
@@ -528,6 +689,8 @@ export function createDoctorCommand(): Command {
 
       const fragmentsOk = checkClaudeMdFragments(cwd);
       const piPackagesOk = renderXtManagedPiPackages(piPackages);
+      renderSubstrate(substrate);
+      renderLegacyMigration(legacyMigration);
       renderCatB(catB);
 
       section('Updates');
@@ -539,7 +702,10 @@ export function createDoctorCommand(): Command {
       else if (summary.notInstalled > 0) warn(`${summary.notInstalled} package(s) not installed globally`);
       else ok('xtrm-tools, xtmux, specialists all current');
 
-      const failed = !fragmentsOk || !piPackagesOk || piPackages.hasIssues || hasCatBIssues(catB);
+      // Substrate-unavailable warns but does not fail: the fleet is
+      // pre-Substrate (no sb binary ships yet) and doctor must stay usable
+      // there. Legacy machinery present fails — it is actionable via update.
+      const failed = !fragmentsOk || !piPackagesOk || piPackages.hasIssues || hasCatBIssues(catB) || legacyMigrationRequired;
       if (failed) {
         console.log('');
         console.log(`  ${kleur.yellow('○')} ${kleur.bold('Some checks failed')}  — follow the fix hints above`);

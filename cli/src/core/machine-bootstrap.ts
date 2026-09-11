@@ -27,6 +27,12 @@ export interface ManagedDependency {
     required: boolean;
     /** Install instructions per platform */
     install: PlatformInstall;
+    /**
+     * When set, the dep is never auto-installed: executeBootstrap prints
+     * this remediation and records failure instead of running install steps.
+     * Used while the package has no authorized distribution channel.
+     */
+    manualInstall?: string;
 }
 
 interface PlatformInstall {
@@ -48,49 +54,22 @@ const OFFICIAL_MARKETPLACE = 'claude-plugins-official';
 
 const MANAGED_DEPS: ManagedDependency[] = [
     {
-        id: 'bd',
-        cli: 'bd',
+        // Substrate-first (ADR section 40): `sb --version` is the
+        // availability/version gate. The legacy Beads-stack CLIs are no
+        // longer required deps and are never auto-installed or
+        // auto-uninstalled (ADR section 46). @xtrm/substrate is NOT published
+        // to npm and publication is unauthorized, so no install command can
+        // work — resolve from a local source instead (fail truthfully).
+        id: 'sb',
+        cli: 'sb',
         versionFlag: '--version',
-        displayName: 'beads (bd)',
-        description: 'git-backed issue tracker — workflow enforcement backend',
+        displayName: 'substrate (sb)',
+        description: 'durable work authority — issue/claim/journal backend',
         required: true,
         install: {
-            default: [{ cmd: 'npm', args: ['install', '-g', '@beads/bd'] }],
+            default: [],
         },
-    },
-    {
-        id: 'dolt',
-        cli: 'dolt',
-        versionFlag: 'version',
-        displayName: 'dolt',
-        description: 'SQL+git storage backend for beads',
-        required: true,
-        install: {
-            darwin: [{ cmd: 'brew', args: ['install', 'dolt'] }],
-            default: [
-                {
-                    cmd: 'bash',
-                    args: ['-c', 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'],
-                    sudo: true,
-                },
-            ],
-        },
-    },
-    {
-        id: 'bv',
-        cli: 'bv',
-        versionFlag: '--version',
-        displayName: 'bv',
-        description: 'graph-aware triage for beads issues',
-        required: true,
-        install: {
-            default: [
-                {
-                    cmd: 'bash',
-                    args: ['-c', 'curl -fsSL https://raw.githubusercontent.com/Jaggerxtrm/beads_viewer/main/scripts/install-bv.sh | bash'],
-                },
-            ],
-        },
+        manualInstall: 'sb is not published to npm: set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH); automated provisioning ships with the installer pipeline',
     },
     {
         id: 'oh-pi',
@@ -228,6 +207,11 @@ export function renderBootstrapPlan(plan: BootstrapPlan): void {
         if (installed) {
             const ver = version ? kleur.dim(` ${version}`) : '';
             console.log(`${icon} ${label}${ver}`);
+        } else if (dep.manualInstall) {
+            // No install command exists: explicit local-source requirement,
+            // counted as blocked — never a planned install.
+            console.log(`${kleur.red('  ✗')} ${label}${kleur.yellow('blocked — local source required')}${tag}`);
+            console.log(kleur.dim(`      ${dep.manualInstall}`));
         } else {
             console.log(`${icon} ${label}${kleur.white('will install')}${tag}`);
         }
@@ -236,17 +220,26 @@ export function renderBootstrapPlan(plan: BootstrapPlan): void {
     console.log(kleur.dim('  ' + '-'.repeat(50)));
 
     const { missingRequired, missingRecommended } = plan;
+    const blocked = missingRequired.filter(d => d.dep.manualInstall);
+    const installable = missingRequired.filter(d => !d.dep.manualInstall);
     if (missingRequired.length === 0 && missingRecommended.length === 0) {
         console.log(t.success('  All dependencies present.\n'));
     } else {
         const parts: string[] = [];
-        if (missingRequired.length > 0) {
-            parts.push(`${missingRequired.length} required`);
+        if (installable.length > 0) {
+            parts.push(`${installable.length} required`);
         }
         if (missingRecommended.length > 0) {
             parts.push(`${missingRecommended.length} recommended`);
         }
-        console.log(kleur.dim(`  ${parts.join(', ')} to install\n`));
+        if (parts.length > 0) {
+            console.log(kleur.dim(`  ${parts.join(', ')} to install`));
+        }
+        if (blocked.length > 0) {
+            console.log(kleur.red(`  ${blocked.length} blocked (local source required, not installable)\n`));
+        } else {
+            console.log('');
+        }
     }
 }
 
@@ -289,6 +282,13 @@ export function executeBootstrap(plan: BootstrapPlan, opts: ExecuteOpts = {}): B
     for (const status of toInstall) {
         const { dep } = status;
         const steps = getInstallSteps(dep);
+
+        if (dep.manualInstall) {
+            console.log(kleur.yellow(`  ⚠ ${dep.displayName} must be resolved manually: ${dep.manualInstall}`));
+            if (dryRun) result.skipped.push(dep.id);
+            else result.failed.push(dep.id);
+            continue;
+        }
 
         if (dryRun) {
             for (const step of steps) {
@@ -498,16 +498,8 @@ export async function runMachineBootstrapPhase(opts: { dryRun?: boolean } = {}):
 // These thin wrappers preserve the existing function signatures used across the
 // codebase so callers don't need immediate refactoring.
 
-export function isBeadsInstalled(): boolean {
-    return checkDep(MANAGED_DEPS.find(d => d.id === 'bd')!).installed;
-}
-
-export function isDoltInstalled(): boolean {
-    return checkDep(MANAGED_DEPS.find(d => d.id === 'dolt')!).installed;
-}
-
-export function isBvInstalled(): boolean {
-    return checkDep(MANAGED_DEPS.find(d => d.id === 'bv')!).installed;
+export function isSbInstalled(): boolean {
+    return checkDep(MANAGED_DEPS.find(d => d.id === 'sb')!).installed;
 }
 
 export function isDeepwikiInstalled(): boolean {

@@ -7,10 +7,35 @@ const getXtManagedPiPackageDoctorReportMock = vi.hoisted(() => vi.fn());
 const checkDriftMock = vi.hoisted(() => vi.fn());
 const checkRuntimeSkillsViewsMock = vi.hoisted(() => vi.fn());
 const discoverDefaultSkillsMock = vi.hoisted(() => vi.fn());
+const getSbVersionMock = vi.hoisted(() => vi.fn(() => ({ available: true, version: '0.1.0-stub', raw: 'sb 0.1.0-stub' })));
+const getSbDoctorJsonMock = vi.hoisted(() => vi.fn(() => ({
+  ok: true,
+  payload: { schema: 'substrate-cli/v1', command: 'doctor', ok: true },
+  data: { dbPath: 'state.db', schemaHealthy: true, schemaError: null, projects: 1, link: { projectId: 'XTRM-1', source: 'link' }, linkError: null, gitRoot: '/repo' },
+  raw: '{}',
+})));
+const runSetupCheckMock = vi.hoisted(() => vi.fn(() => ({
+  ok: true,
+  report: { ok: true, claude: [], pi: [], naming: { substratePlugins: [], beadsRemnants: [], duplicates: false }, enrollment: [{ name: 'sb-enrolled', ok: true }, { name: 'pi-enrolled', ok: true }, { name: 'claude-marketplace-enrolled', ok: true }, { name: 'claude-plugin-enrolled', ok: true }, { name: 'claude-strict-live', ok: true }, { name: 'beads-absent', ok: true }] },
+  raw: '{}',
+})));
 
 vi.mock('../core/pi-runtime.js', () => ({
   getXtManagedPiPackageDoctorReport: getXtManagedPiPackageDoctorReportMock,
 }));
+
+// Hermetic substrate boundary: the real doctor action otherwise spawns sb,
+// npm, and node subprocesses, which contend with the full Vitest worker pool
+// and make the 30s test budget load-sensitive.
+vi.mock('../core/substrate.js', async () => {
+  const actual = await vi.importActual<typeof import('../core/substrate.js')>('../core/substrate.js');
+  return {
+    ...actual,
+    getSbVersion: getSbVersionMock,
+    getSbDoctorJson: getSbDoctorJsonMock,
+    runSetupCheck: runSetupCheckMock,
+  };
+});
 
 vi.mock('../core/drift.js', () => ({
   checkDrift: checkDriftMock,
@@ -22,6 +47,14 @@ vi.mock('../core/skills-runtime-views.js', () => ({
 
 vi.mock('../core/skill-discovery.js', () => ({
   discoverDefaultSkills: discoverDefaultSkillsMock,
+}));
+
+// checkXtrmUpdates shells `npm view` per package (5s timeouts); hermetic.
+vi.mock('../utils/npm-latest.js', () => ({
+  checkXtrmUpdates: () => [],
+  defaultCacheFile: () => '/tmp/xtrm-doctor-cache.json',
+  formatUpdateRows: () => [],
+  updatesSummary: () => '',
 }));
 
 import { createDoctorCommand } from '../commands/doctor.js';

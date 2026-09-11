@@ -151,7 +151,7 @@ describe('runtime maintenance integration', { timeout: 120_000 }, () => {
   it('second install is idempotent and does not overwrite up-to-date files', async () => {
     await runInstallCli(['--yes']);
 
-    const targetFile = path.join(tmpDir, '.xtrm', 'hooks', 'beads-edit-gate.mjs');
+    const targetFile = path.join(tmpDir, '.xtrm', 'hooks', 'worktree-boundary.mjs');
     const before = fs.statSync(targetFile).mtimeMs;
 
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -165,14 +165,14 @@ describe('runtime maintenance integration', { timeout: 120_000 }, () => {
   it('drifted file is skipped without --force and overwritten with --force', async () => {
     await runInstallCli(['--yes']);
 
-    const driftedFile = path.join(tmpDir, '.xtrm', 'hooks', 'beads-edit-gate.mjs');
-    const upstreamFile = path.join(REPO_ROOT, '.xtrm', 'hooks', 'beads-edit-gate.mjs');
+    const driftedFile = path.join(tmpDir, '.xtrm', 'hooks', 'worktree-boundary.mjs');
+    const upstreamFile = path.join(REPO_ROOT, '.xtrm', 'hooks', 'worktree-boundary.mjs');
 
     fs.writeFileSync(driftedFile, '// user custom change\n', 'utf8');
 
     const noForceResult = await runInstallCli(['--yes']);
     expect(noForceResult.logs.some(line => line.includes('Drift detected'))).toBe(true);
-    expect(noForceResult.logs.some(line => line.includes('hooks/beads-edit-gate.mjs'))).toBe(true);
+    expect(noForceResult.logs.some(line => line.includes('hooks/worktree-boundary.mjs'))).toBe(true);
     expect(fs.readFileSync(driftedFile, 'utf8')).toBe('// user custom change\n');
 
     const forceResult = await runInstallCli(['--yes', '--force']);

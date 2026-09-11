@@ -5,6 +5,10 @@ import { appendHookLog, hashValue, resolveGlobalHooksConfigPath, resolveGlobalHo
 import { readGlobalHooksConfig, resolveHooksForGlobalRuntime, safeMergeOwnedHookSettings, type HookRuntimeSettingsShape } from './claude-runtime-sync.js';
 import { writeJsonAtomic } from '../utils/atomic-write.js';
 
+// SEAM (xtrm-6qu.6): Pi hook successors for the retired beads-* gates are
+// owned by the hook-successor bead. This reconciler stays generic — it merges
+// whatever the canonical template (.xtrm/config/hooks.json) declares, which no
+// longer includes beads-* hooks.
 export interface ReconcileGlobalPiHooksResult {
   readonly settingsPath: string;
   readonly changed: boolean;

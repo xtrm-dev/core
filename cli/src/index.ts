@@ -63,6 +63,9 @@ program
     .option('-y, --yes', 'Skip confirmation prompts', false)
     .option('--global', 'Install tooling to user-global scope instead of project-local', false)
     .option('--prune', 'Remove plugin-era artifacts (Claude plugin cache, stale settings keys)', false)
+    .option('--sb-project <id>', 'Link this checkout to an existing Substrate project during init')
+    .option('--sb-create-project <prefix:name>', 'Create a Substrate project and link it during init')
+    .option('--substrate-dir <path>', 'Authorized local @xtrm/substrate checkout for sb provision and integration enrollment')
     .action(async (opts) => {
         await runProjectInit(opts);
     });
