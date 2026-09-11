@@ -34,28 +34,31 @@ function suffixLines(file: string): number {
   return tail ? tail.split('\n').length : 0;
 }
 
-describe('agent-contract parity (ISSUE-136 + skills-v4)', () => {
-  it('canonical source exists and both managed tops embed it byte-for-byte', () => {
+describe('agent-contract parity (ISSUE-136 + skills-v4 + substrate doctrine)', () => {
+  it('canonical source exists and every managed copy embeds it byte-for-byte', () => {
     expect(fs.existsSync(CONTRACT)).toBe(true);
-    expect(section(AGENTS_TOP)).toBe(section(CLAUDE_TOP));
     expect(section(AGENTS_TOP)).toBe(section(CONTRACT));
+    expect(section(CLAUDE_TOP)).toBe(section(CONTRACT));
+    // ADR section 47: generated copies sync from the canonical source.
+    expect(section(ROOT_AGENTS)).toBe(section(CONTRACT));
+    expect(section(ROOT_CLAUDE)).toBe(section(CONTRACT));
   });
 
-  it('keeps session start targeted and bd prime opt-in only', () => {
-    for (const file of [CONTRACT, AGENTS_TOP, CLAUDE_TOP]) {
-      const text = fs.readFileSync(file, 'utf8');
+  it('keeps session start targeted and Substrate-native (no normative bd/bv)', () => {
+    for (const file of [CONTRACT, AGENTS_TOP, CLAUDE_TOP, ROOT_AGENTS, ROOT_CLAUDE]) {
+      const text = section(file);
       expect(text).toMatch(/targeted/i);
-      expect(text).toMatch(/bd (list|ready|search|show)/i);
-      expect(text).toMatch(/opt-in/i);
-      expect(text).not.toMatch(/bd ?prime.{0,60}auto-injected/i);
-      expect(text).not.toMatch(/auto-injected at session ?start/i);
-      expect(text).not.toMatch(/session ?start[^\n]{0,80}bd ?prime/i);
-      expect(text).not.toMatch(/^1\.\s*`bd prime`/m);
-      expect(text).not.toMatch(/run `bd ?prime` (at|before|during) session start/i);
+      expect(text).toMatch(/sb issue claim/i);
+      expect(text).toMatch(/sb issue resume/i);
+      expect(text).not.toMatch(/bd (list|ready|search|show|update|close|prime)/i);
+      expect(text).not.toMatch(/bd ?prime/i);
+      expect(text).not.toMatch(/\bbv\b/);
+      expect(text).not.toMatch(/\bbead\b/i);
+      expect(text).not.toMatch(/Beads owns/i);
     }
   });
 
-  it('root generated guides do not reintroduce mandatory bd prime outside the managed block', () => {
+  it('root guides do not reintroduce mandatory legacy diagnostics outside the managed block', () => {
     for (const file of [ROOT_AGENTS, ROOT_CLAUDE]) {
       const text = fs.readFileSync(file, 'utf8');
       expect(text).not.toMatch(/run `bd ?prime`[^\n]{0,100}(?:before starting work|at session start)/i);
@@ -80,12 +83,15 @@ describe('agent-contract parity (ISSUE-136 + skills-v4)', () => {
     }
   });
 
-  it('preserves Beads authority while allowing runtime-local execution tracking', () => {
+  it('declares Substrate authority while allowing runtime-local execution tracking', () => {
     const body = section(CONTRACT);
-    expect(body).toMatch(/Beads (owns|remains).*durable/i);
+    expect(body).toMatch(/Substrate owns durable work/i);
+    expect(body).toMatch(/Git owns code truth/i);
     expect(body).toMatch(/ephemeral execution tracking/i);
-    expect(body).toMatch(/Bead is the prompt/i);
-    expect(body).toMatch(/contract:draft.*not dispatchable/i);
+    expect(body).toMatch(/Issue is the prompt/i);
+    expect(body).toMatch(/not dispatchable/i);
+    expect(body).toMatch(/Journal preserves continuity/i);
+    expect(body).toMatch(/Resume Capsule/i);
   });
 
   it('does not reintroduce tmux-first coordination doctrine', () => {

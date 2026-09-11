@@ -8,11 +8,6 @@
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/worktree-boundary.mjs",
             "timeout": 2000
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-edit-gate.mjs",
-            "timeout": 5000
           }
         ]
       },
@@ -25,29 +20,20 @@
             "timeout": 2000
           }
         ]
-      },
+      }
+    ],
+    "Stop": [
       {
-        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-commit-gate.mjs",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/inbox-reminder-stop.mjs",
             "timeout": 5000
           }
         ]
       }
     ],
     "PostToolUse": [
-      {
-        "matcher": "Bash|execute_shell_command|bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-claim-sync.mjs",
-            "timeout": 5000
-          }
-        ]
-      },
       {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit",
         "hooks": [
@@ -83,31 +69,9 @@
         ]
       }
     ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-stop-gate.mjs",
-            "timeout": 5000
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/inbox-reminder-stop.mjs",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
-        "script": "beads-compact-restore.mjs",
         "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-compact-restore.mjs",
-            "timeout": 5000
-          },
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/quality-check-env.mjs",
@@ -121,18 +85,6 @@
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/worktree-reap-sweep.mjs",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "script": "beads-compact-save.mjs",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-compact-save.mjs",
             "timeout": 5000
           }
         ]

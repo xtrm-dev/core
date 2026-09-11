@@ -30,6 +30,26 @@ const allowlist = new Map([
     'packages/pi-extensions/.serena/.gitignore',
     'Pi extensions Serena ignore file intentionally excluded from npm pack.',
   ],
+  // Retired Beads hooks (A8 installer migration, bead xtrm-6qu.8): removed
+  // from the active install registry but kept on disk as inert porting
+  // sources. Disposition (port useful gates to the Substrate extension, then
+  // delete or explicitly adjudicate) is owned by xtrm-6qu.6, with final
+  // removal/adjudication gated on A9 cleanup and the A10 §59 definition of
+  // complete. Exact paths only — no globs, no broad beads exemption — so
+  // any future unmanaged file still fails this check.
+  ...[
+    '.xtrm/hooks/beads-claim-sync.mjs',
+    '.xtrm/hooks/beads-commit-gate.mjs',
+    '.xtrm/hooks/beads-compact-restore.mjs',
+    '.xtrm/hooks/beads-compact-save.mjs',
+    '.xtrm/hooks/beads-edit-gate.mjs',
+    '.xtrm/hooks/beads-gate-core.mjs',
+    '.xtrm/hooks/beads-gate-messages.mjs',
+    '.xtrm/hooks/beads-gate-utils.mjs',
+    '.xtrm/hooks/beads-status-cache.mjs',
+    '.xtrm/hooks/beads-status-cache.test.mjs',
+    '.xtrm/hooks/beads-stop-gate.mjs',
+  ].map((filePath) => [filePath, 'Retired Beads hook (xtrm-6qu.8): inert porting source pending xtrm-6qu.6 disposition; delete/adjudicate under A9 cleanup/A10 §59 gate.']),
 ]);
 
 function toPosix(value) {

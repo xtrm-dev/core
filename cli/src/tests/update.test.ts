@@ -9,7 +9,8 @@ const {
   assureXtManagedPiPackagesMock,
   runExternalPiToolPatchMock,
   resolvePackageRootMock,
-  ensureBdAutoStagePatchMock,
+  planSubstrateMigrationMock,
+  migrationBlockedReasonMock,
   runDependencyMaintenanceMock,
   ensureServiceSkillsMock,
   reconcileProjectClaudeHooksMock,
@@ -28,7 +29,12 @@ const {
   assureXtManagedPiPackagesMock: vi.fn(),
   runExternalPiToolPatchMock: vi.fn(),
   resolvePackageRootMock: vi.fn(),
-  ensureBdAutoStagePatchMock: vi.fn(),
+  planSubstrateMigrationMock: vi.fn(),
+  migrationBlockedReasonMock: vi.fn((plan: { needed: boolean; sbAvailable: boolean; reason: string }) => {
+    if (!plan.needed) return null;
+    const sbHint = plan.sbAvailable ? '' : ' Install @xtrm/substrate via `xt init` first, then';
+    return `legacy .beads workspace blocks \`xt update --apply\`: automated Substrate migration ships with the A9 pipeline. Do NOT delete \`.beads\` (irreversible work loss).${sbHint} Upgrade xt, then re-run \`xt update --apply\`.`;
+  }),
   runDependencyMaintenanceMock: vi.fn(),
   ensureServiceSkillsMock: vi.fn(),
   reconcileProjectClaudeHooksMock: vi.fn(),
@@ -61,9 +67,9 @@ vi.mock('../commands/install.js', () => ({
   isStrictRegistryMode: (opts: { strictRegistry?: boolean }) => opts.strictRegistry ?? process.env.XTRM_STRICT_REGISTRY === '1',
 }));
 
-vi.mock('../core/bd-auto-stage-patch.js', () => ({
-  ensureBdAutoStagePatch: ensureBdAutoStagePatchMock,
-  summarizeBdAutoStagePatch: (result: { config: string; hook: string }) => `bd export.git-add: ${result.config}, pre-commit shim: ${result.hook}`,
+vi.mock('../core/substrate-migration.js', () => ({
+  planSubstrateMigration: planSubstrateMigrationMock,
+  migrationBlockedReason: migrationBlockedReasonMock,
 }));
 
 vi.mock('../core/dependency-maintenance.js', () => ({
@@ -126,7 +132,8 @@ beforeEach(() => {
   assureXtManagedPiPackagesMock.mockReset();
   runExternalPiToolPatchMock.mockReset();
   resolvePackageRootMock.mockReset();
-  ensureBdAutoStagePatchMock.mockReset();
+  planSubstrateMigrationMock.mockReset();
+  migrationBlockedReasonMock.mockClear();
   runDependencyMaintenanceMock.mockReset();
   checkDriftMock.mockResolvedValue({ missing: ['asset.txt'], upToDate: [], drifted: [] });
   assureXtManagedPiPackagesMock.mockResolvedValue({
@@ -137,10 +144,10 @@ beforeEach(() => {
     refreshed: [],
     failed: [],
   });
-  ensureBdAutoStagePatchMock.mockResolvedValue({ changed: false, config: 'already-disabled', hook: 'already-present', warnings: [] });
+  planSubstrateMigrationMock.mockResolvedValue({ needed: false, hasBeads: false, alreadyMigrated: false, sbAvailable: false, reason: 'no .beads directory' });
   runDependencyMaintenanceMock.mockResolvedValue({
     tools: [],
-    bdDoctor: { state: 'checked' },
+    substrateDoctor: { state: 'checked' },
     gitnexusIndex: { state: 'current' },
   });
   ensureServiceSkillsMock.mockReset();
@@ -215,6 +222,21 @@ function writeRepo(root: string, name: string): string {
   return repo;
 }
 
+/** Deterministic fs snapshot (relative paths + file bytes) for zero-mutation proofs. */
+async function snapshotTree(root: string): Promise<Array<{ file: string; content: string }>> {
+  const out: Array<{ file: string; content: string }> = [];
+  async function walk(dir: string): Promise<void> {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile()) out.push({ file: path.relative(root, full), content: await fs.readFile(full, 'utf8') });
+    }
+  }
+  if (await fs.pathExists(root)) await walk(root);
+  return out;
+}
+
 describe('xtrm update', () => {
   it('dry-run reports changes when current package registry differs from old installed registry', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
@@ -242,14 +264,14 @@ describe('xtrm update', () => {
     expect(result.logs.join('\n')).not.toContain('already-current');
   });
 
-  it('dry-run reports refresh when only bd auto-stage patch is missing', async () => {
+  it('dry-run reports refresh when only substrate migration is pending', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
     const repo = writeRepo(tmpDir, 'repo-a');
     await fs.ensureDir(path.join(repo, '.beads'));
     resolvePackageRootMock.mockReturnValue(packageRoot);
     checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
-    ensureBdAutoStagePatchMock.mockResolvedValue({ changed: true, config: 'updated', hook: 'updated', warnings: [] });
+    planSubstrateMigrationMock.mockResolvedValue({ needed: true, hasBeads: true, alreadyMigrated: false, sbAvailable: true, reason: 'legacy .beads workspace pending Substrate import' });
 
     const result = await runUpdateCli(['--repo', repo]);
 
@@ -260,33 +282,155 @@ describe('xtrm update', () => {
       skipGlobalPiPackageAssurance: true,
       skipExternalPiToolPatch: true,
     }));
+    // dry-run never imports: the run stage stays untouched.
     expect(result.logs.join('\n')).toContain('refreshed');
-    expect(result.logs.join('\n')).toContain('bd export.git-add: updated');
+    expect(result.logs.join('\n')).toContain('substrate migration pending');
   });
 
-  it('apply patches bd auto-stage without running registry install when registry is current', async () => {
+  it('apply fails closed with zero mutation when migration is needed', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
     const repo = writeRepo(tmpDir, 'repo-a');
     await fs.ensureDir(path.join(repo, '.beads'));
-    await fs.writeFile(path.join(repo, '.beads', 'config.yaml'), 'dolt:\n  shared-server: true\n');
     resolvePackageRootMock.mockReturnValue(packageRoot);
     checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
-    ensureBdAutoStagePatchMock
-      .mockResolvedValueOnce({ changed: true, config: 'updated', hook: 'updated', warnings: [] })
-      .mockResolvedValueOnce({ changed: true, config: 'updated', hook: 'updated', warnings: [] });
-
+    planSubstrateMigrationMock.mockResolvedValue({ needed: true, hasBeads: true, alreadyMigrated: false, sbAvailable: true, reason: 'legacy .beads workspace pending Substrate import' });
+    const before = await snapshotTree(repo);
     const result = await runUpdateCli(['--apply', '--repo', repo]);
 
-    expect(runInstallMock).toHaveBeenCalledTimes(1);
-    expect(runInstallMock).toHaveBeenCalledWith(expect.objectContaining({
-      dryRun: false,
-      projectRoot: repo,
-      skipGlobalPiPackageAssurance: true,
-      skipExternalPiToolPatch: true,
+    // Amended A8/A9 contract: A8 never activates the import. Needed means
+    // fail-closed with remediation and zero mutation — A9 owns activation.
+    expect(result.exitCode).toBe(1);
+    expect(result.logs.join('\n')).toContain('failed');
+    expect(result.logs.join('\n')).toContain('substrate migration required');
+    expect(result.logs.join('\n')).toContain('A9 pipeline');
+    expect(runInstallMock).not.toHaveBeenCalled();
+    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
+    expect(await snapshotTree(repo)).toEqual(before);
+  });
+
+  it('apply aborts with zero mutation when migration is blocked (sb absent)', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const repo = writeRepo(tmpDir, 'repo-a');
+    await fs.ensureDir(path.join(repo, '.beads'));
+    await fs.writeFile(path.join(repo, '.xtrm', 'sentinel.txt'), 'untouched');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    planSubstrateMigrationMock.mockResolvedValue({ needed: true, hasBeads: true, alreadyMigrated: false, sbAvailable: false, reason: 'sb CLI not found' });
+
+    const before = await snapshotTree(repo);
+    const result = await runUpdateCli(['--apply', '--repo', repo]);
+
+    // ADR 43: blocked migration is a zero-mutation abort with remediation.
+    expect(result.exitCode).toBe(1);
+    expect(result.logs.join('\n')).toContain('failed');
+    expect(result.logs.join('\n')).toContain('substrate migration required');
+    expect(result.logs.join('\n')).toContain('xt init');
+    expect(runInstallMock).not.toHaveBeenCalled();
+    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
+    expect(logBootstrapTriggerMock).not.toHaveBeenCalled();
+    expect(ensureGlobalSkillsBootstrappedMock).not.toHaveBeenCalled();
+    expect(reconcileGlobalClaudeHooksMock).not.toHaveBeenCalled();
+    expect(reconcileGlobalPiHooksMock).not.toHaveBeenCalled();
+    expect(assureXtManagedPiPackagesMock).not.toHaveBeenCalled();
+    expect(runExternalPiToolPatchMock).not.toHaveBeenCalled();
+    expect(await snapshotTree(repo)).toEqual(before);
+    expect(await fs.readFile(path.join(repo, '.xtrm', 'sentinel.txt'), 'utf8')).toBe('untouched');
+  });
+
+  it('fail-closed remediation forbids deletion and points at A9 automation', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const repo = writeRepo(tmpDir, 'repo-a');
+    await fs.ensureDir(path.join(repo, '.beads'));
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    planSubstrateMigrationMock.mockResolvedValue({ needed: true, hasBeads: true, alreadyMigrated: false, sbAvailable: true, reason: 'legacy .beads workspace pending Substrate import' });
+
+    const before = await snapshotTree(repo);
+    const result = await runUpdateCli(['--apply', '--repo', repo]);
+
+    expect(result.exitCode).toBe(1);
+    const logs = result.logs.join('\n');
+    expect(logs).toContain('substrate migration required');
+    expect(logs).toContain('A9 pipeline');
+    expect(logs).toContain('Do NOT delete');
+    expect(logs).toContain('Upgrade xt');
+    expect(logs).not.toContain('bd export');
+    expect(runInstallMock).not.toHaveBeenCalled();
+    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
+    expect(await snapshotTree(repo)).toEqual(before);
+  });
+
+  it('fleet preflight aborts before globals when any repo is blocked', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const root = path.join(tmpDir, 'root');
+    const repoA = writeRepo(root, 'a');
+    const repoB = writeRepo(root, 'b');
+    await fs.ensureDir(path.join(repoA, '.beads'));
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    planSubstrateMigrationMock.mockImplementation(async (repo: string) => ({
+      needed: repo === repoA,
+      hasBeads: repo === repoA,
+      alreadyMigrated: false,
+      sbAvailable: false,
+      reason: 'sb CLI not found',
     }));
-    expect(ensureBdAutoStagePatchMock).toHaveBeenLastCalledWith(repo, true);
-    expect(result.logs.join('\n')).toContain('refreshed');
+
+    const beforeA = await snapshotTree(repoA);
+    const beforeB = await snapshotTree(repoB);
+    const result = await runUpdateCli(['--apply', '--root', root]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.logs.join('\n')).toContain(repoA);
+    expect(result.logs.join('\n')).toContain('substrate migration required');
+    expect(result.logs.join('\n')).toContain('not attempted');
+    // zero mutation fleet-wide: no per-repo work, no globals.
+    expect(runInstallMock).not.toHaveBeenCalled();
+    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
+    expect(ensureGlobalSkillsBootstrappedMock).not.toHaveBeenCalled();
+    expect(assureXtManagedPiPackagesMock).not.toHaveBeenCalled();
+    expect(runExternalPiToolPatchMock).not.toHaveBeenCalled();
+    expect(await snapshotTree(repoA)).toEqual(beforeA);
+    expect(await snapshotTree(repoB)).toEqual(beforeB);
+  });
+
+  it('fleet preflight covers incomplete repos carrying a board', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const root = path.join(tmpDir, 'root');
+    const repoA = writeRepo(root, 'a');
+    // incomplete: .xtrm/ without registry.json, but with a legacy board.
+    const repoB = path.join(root, 'b');
+    await fs.ensureDir(path.join(repoB, '.xtrm'));
+    await fs.ensureDir(path.join(repoB, '.beads'));
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    planSubstrateMigrationMock.mockImplementation(async (repo: string) => ({
+      needed: repo === repoB,
+      hasBeads: repo === repoB,
+      alreadyMigrated: false,
+      sbAvailable: true,
+      reason: 'legacy board',
+    }));
+
+    const beforeA = await snapshotTree(repoA);
+    const beforeB = await snapshotTree(repoB);
+    const result = await runUpdateCli(['--apply', '--root', root]);
+
+    // the incomplete board blocks the fleet; the managed repo is skipped.
+    expect(result.exitCode).toBe(1);
+    const logs = result.logs.join('\n');
+    expect(logs).toContain(repoB);
+    expect(logs).toContain('substrate migration required');
+    expect(logs).toContain('failed');
+    expect(logs).toContain('A9 pipeline');
+    expect(logs).toContain('Do NOT delete');
+    expect(runInstallMock).not.toHaveBeenCalled();
+    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
+    expect(assureXtManagedPiPackagesMock).not.toHaveBeenCalled();
+    expect(runExternalPiToolPatchMock).not.toHaveBeenCalled();
+    expect(await snapshotTree(repoA)).toEqual(beforeA);
+    expect(await snapshotTree(repoB)).toEqual(beforeB);
   });
 
   it('apply refreshes repo once when current package registry differs from old installed registry', async () => {
@@ -421,7 +565,8 @@ describe('xtrm update', () => {
       repos: [{
         repo,
         status: 'already-current',
-        maintenance: { tools: [], bdDoctor: { state: 'checked' }, gitnexusIndex: { state: 'current' } },
+        maintenance: { tools: [], substrateDoctor: { state: 'checked' }, gitnexusIndex: { state: 'current' } },
+        migration: { needed: false, status: 'planned', reason: 'no .beads directory' },
       }],
       packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [] },
       promptSync: { targets: [] },

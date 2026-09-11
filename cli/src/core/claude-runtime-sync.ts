@@ -340,6 +340,15 @@ function resolveHooksForProjectRuntime(hooks: Record<string, HookWrapper[]>, pro
     return resolveHooksForRuntime(hooks, normalizedHooksDir);
 }
 
+// SEAM (xtrm-6qu.6): the retired beads-* gates have no substrate-* successors
+// yet. Disposition per ADR section 54 — beads-edit-gate becomes
+// substrate-edit-gate, beads-commit-gate becomes the substrate
+// provenance/commit gate, beads-claim-sync becomes native session/claim
+// binding, beads-stop-gate becomes the Substrate continuity/active-work gate,
+// beads-compact-save/restore become Journal mechanical checkpoint / Resume
+// Capsule, beads-status-cache becomes a Substrate projection or is retired.
+// The canonical template (.xtrm/config/hooks.json) no longer wires beads-*
+// hooks; this resolver stays generic and wires whatever the template declares.
 function resolveHooksForRuntime(hooks: Record<string, HookWrapper[]>, hooksDir: string): Record<string, HookWrapper[]> {
     const rewrittenHooks: Record<string, HookWrapper[]> = {};
     for (const [eventName, wrappers] of Object.entries(hooks)) {

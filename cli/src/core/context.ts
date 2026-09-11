@@ -39,6 +39,24 @@ function getConfig(): Conf<ConfigShape> {
 }
 
 /**
+ * Default Conf store path without instantiating Conf — constructing it
+ * writes the file on first access, which would turn every read-only path
+ * (preflight, dry-run, fail-closed gates) into a HOME mutation.
+ * Unknown platforms fail open (assume present → old behavior).
+ */
+function defaultConfigFilePresent(): boolean {
+    try {
+        if (process.platform === 'win32') return true;
+        const dir = process.platform === 'darwin'
+            ? path.join(os.homedir(), 'Library', 'Preferences', 'xtrm-cli-nodejs')
+            : path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config'), 'xtrm-cli-nodejs');
+        return fs.pathExistsSync(path.join(dir, 'config.json'));
+    } catch {
+        return true;
+    }
+}
+
+/**
  * Returns install targets for registry-driven xtrm scaffold.
  * Primary target is .xtrm (project-local or ~/.xtrm for global installs).
  */
@@ -55,7 +73,9 @@ export function getCandidatePaths(isGlobal: boolean = false, projectRoot?: strin
 export async function getContext(options: GetContextOptions = {}): Promise<Context> {
     const { createMissingDirs = true, isGlobal = false, projectRoot } = options;
     const candidates = getCandidatePaths(isGlobal, projectRoot);
-    const activeConfig = getConfig();
+    // Read-only when the store file is absent: defaults without creating it.
+    // Mutation paths (createMissingDirs) keep the real store.
+    const activeConfig = defaultConfigFilePresent() || createMissingDirs ? getConfig() : null;
     const selectedPaths = candidates.map(c => c.path);
 
     if (createMissingDirs) {
@@ -66,7 +86,7 @@ export async function getContext(options: GetContextOptions = {}): Promise<Conte
 
     return {
         targets: selectedPaths,
-        syncMode: activeConfig.get('syncMode'),
+        syncMode: activeConfig?.get('syncMode') ?? 'copy',
         config: activeConfig,
     };
 }

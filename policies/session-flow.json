@@ -1,23 +1,11 @@
 {
   "id": "session-flow",
-  "description": "Claim sync (sets KV claim on bd update --claim, clears statusline state on close), stop gate (blocks agent stop with unclosed in_progress claim), xt end reminder when session ends in a worktree.",
+  "description": "RETIRED Beads session-flow wiring (claim sync on bd update --claim, stop gate); hook successors owned by xtrm-6qu.6 per ADR section 54.",
   "version": "1",
-  "runtime": "both",
+  "runtime": "pi",
   "order": 19,
   "claude": {
-    "hooks": [
-      {
-        "event": "PostToolUse",
-        "matcher": "Bash|execute_shell_command|bash",
-        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-claim-sync.mjs",
-        "timeout": 5000
-      },
-      {
-        "event": "Stop",
-        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/beads-stop-gate.mjs",
-        "timeout": 5000
-      }
-    ]
+    "hooks": []
   },
   "pi": {
     "extension": "packages/pi-extensions/extensions/session-flow/index.ts",

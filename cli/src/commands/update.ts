@@ -15,9 +15,8 @@ import { assureXtManagedPiPackages, runExternalPiToolPatch } from '../core/pi-ru
 import { printGlobalPromptSyncSummary, syncGlobalPrompts } from '../core/global-prompt-sync.js';
 import { scanXtrmRepos } from '../core/repo-discovery.js';
 import { isStrictRegistryMode, runInstall } from './install.js';
-import { ensureBeadsSharedServerEnabled, hasBeadsDir } from '../core/beads-shared-server.js';
-import { ensureBdAutoStagePatch, summarizeBdAutoStagePatch } from '../core/bd-auto-stage-patch.js';
 import { printDependencyMaintenanceSummary, runDependencyMaintenance, type DependencyMaintenanceSummary } from '../core/dependency-maintenance.js';
+import { migrationBlockedReason, planSubstrateMigration, type MigrationPlan } from '../core/substrate-migration.js';
 import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { ensureAgentsSkillsSymlink, ensureUserAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { reconcileProjectClaudeHooks } from '../core/claude-runtime-sync.js';
@@ -32,6 +31,11 @@ interface RepoUpdateResult {
     status: UpdateStatus;
     reason?: string;
     maintenance?: DependencyMaintenanceSummary;
+    migration?: {
+        needed: boolean;
+        status: string;
+        reason: string;
+    };
     piRuntime?: {
         changed: boolean;
         failed: string[];
@@ -102,6 +106,28 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
             return { repo: repoRoot, status: 'failed', reason: `missing package registry at ${registryPath}` };
         }
 
+        // ADR 43 gate FIRST (read-only): the migration decision precedes
+        // every mutation below — log trigger, global bootstrap, registry
+        // install, skills, hooks, maintenance, and staging. The gate sits
+        // here (not after the bootstrap block) so the per-repo blocked path
+        // is itself zero-mutation even if fleet preflight is ever bypassed.
+        const earlyMigrationPlan: MigrationPlan = await planSubstrateMigration(repoRoot);
+        // Amended A8/A9 contract: A8 never activates the legacy import.
+        // Any needed migration fails closed here with exact remediation.
+        // Import activation + verifier + cleanup are owned by xtrm-6qu.9.
+        if (opts.apply && earlyMigrationPlan.needed) {
+            const blocked = migrationBlockedReason(earlyMigrationPlan);
+            const gateMaintenance = await runDependencyMaintenance(repoRoot, false);
+            return {
+                repo: repoRoot,
+                status: 'failed',
+                reason: `substrate migration required: ${blocked ?? earlyMigrationPlan.reason}`,
+                maintenance: gateMaintenance,
+                migration: { needed: true, status: 'blocked', reason: blocked ?? earlyMigrationPlan.reason },
+                piRuntime: undefined,
+            };
+        }
+
         const pkgJson = await fs.readJson(path.join(packageRoot, 'package.json')) as { version?: string };
         if (opts.apply) {
             await logBootstrapTrigger({
@@ -122,18 +148,20 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
         }
 
         const drift = await checkDrift(registryPath, userXtrmDir, opts.apply ? getGlobalSkillsOverrideRoots(repoRoot) : undefined);
-        const hasBeads = await hasBeadsDir(repoRoot);
-        const sharedServer = hasBeads
-            ? await ensureBeadsSharedServerEnabled(repoRoot, false)
-            : { changed: false, state: 'not-applicable' as const };
-        const bdPatch = hasBeads
-            ? await ensureBdAutoStagePatch(repoRoot, false)
-            : { changed: false, config: 'not-applicable' as const, hook: 'not-applicable' as const, warnings: [] };
+        // Substrate migration owns legacy Beads state now (ADR section 42).
+        // Detection ran read-only above; application follows the gate below.
+        // No Beads-state maintenance runs in either mode.
+        const migrationPlan: MigrationPlan = earlyMigrationPlan;
         const maintenancePlan = await runDependencyMaintenance(repoRoot, false);
-        const maintenanceNeedsApply = maintenancePlan.bdDoctor.state === 'failed'
+        const maintenanceNeedsApply = maintenancePlan.substrateDoctor.state === 'failed'
             || maintenancePlan.gitnexusIndex.state === 'outdated'
             || maintenancePlan.tools.some(tool => tool.state === 'outdated' || tool.state === 'missing');
-        const registryChanges = drift.missing.length > 0 || drift.drifted.length > 0 || sharedServer.changed;
+        const registryChanges = drift.missing.length > 0 || drift.drifted.length > 0;
+        // migrationPending is always false here in apply mode: the ADR 43
+        // gate above already returned for needed migrations. It remains for
+        // dry-run display ('substrate migration pending', read-only).
+        const migrationPending = migrationPlan.needed && !opts.apply;
+        const migrationSummary = { needed: migrationPlan.needed, status: 'planned', reason: migrationPlan.reason };
         let installResult: Awaited<ReturnType<typeof runInstall>>;
         try {
             installResult = await runInstall({
@@ -161,7 +189,7 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
             : undefined;
         const runtimeChanged = piRuntimeResult?.changed ?? false;
         const runtimeFailed = piRuntimeResult?.failed ?? [];
-        const hasChanges = registryChanges || bdPatch.changed || maintenanceNeedsApply || runtimeChanged;
+        const hasChanges = registryChanges || migrationPending || maintenanceNeedsApply || runtimeChanged;
 
         if (!opts.apply) {
             return {
@@ -169,11 +197,13 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
                 status: hasChanges ? 'refreshed' : 'already-current',
                 reason: hasChanges
                     ? [
-                        `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(bdPatch)}`,
+                        `missing=${drift.missing.length}, drifted=${drift.drifted.length}`,
+                        migrationPending ? `substrate migration pending: ${migrationPlan.reason}` : '',
                         runtimeChanged ? 'Pi runtime repair pending' : '',
                     ].filter(Boolean).join(', ')
                     : undefined,
                 maintenance: maintenancePlan,
+                migration: migrationSummary,
                 piRuntime: piRuntimeResult,
             };
         }
@@ -197,6 +227,7 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
                 status: 'failed',
                 reason: `Pi reconciliation failed: ${runtimeFailed.join(', ')}`,
                 maintenance: maintenancePlan,
+                migration: migrationSummary,
                 piRuntime: piRuntimeResult,
             };
         }
@@ -206,11 +237,11 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
                 repo: repoRoot,
                 status: 'already-current',
                 maintenance: maintenancePlan,
+                migration: migrationSummary,
                 piRuntime: piRuntimeResult,
             };
         }
 
-        const appliedPatch = hasBeads ? await ensureBdAutoStagePatch(repoRoot, true) : bdPatch;
         const maintenance = await runDependencyMaintenance(repoRoot, true);
 
         // xtrm-utdq1: stage tracked modifications (hook-path rewrites, retired
@@ -223,14 +254,16 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
             : '';
         const hookSyncReason = hookSync.changed ? ', claude hooks rewired' : '';
         const runtimeReason = runtimeChanged ? ', Pi runtime repaired' : '';
+        const migrationReason = migrationSummary.needed ? `, substrate migration: ${migrationSummary.status}` : '';
         const stageReason = stageResult.filesStaged > 0
             ? `, ${stageResult.filesStaged} file(s) staged`
             : '';
         return {
             repo: repoRoot,
             status: 'refreshed',
-            reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}, ${summarizeBdAutoStagePatch(appliedPatch)}${runtimeReason}${serviceSkillsReason}${hookSyncReason}${stageReason}`,
+            reason: `missing=${drift.missing.length}, drifted=${drift.drifted.length}${migrationReason}${runtimeReason}${serviceSkillsReason}${hookSyncReason}${stageReason}`,
             maintenance,
+            migration: migrationSummary,
             piRuntime: piRuntimeResult,
         };
     } catch (error) {
@@ -284,7 +317,7 @@ function commitAllReposPatch(repoRoot: string): { ok: boolean; message: string }
     const add = spawnGit(repoRoot, ['add', '-A']);
     if (add.status !== 0) return { ok: false, message: `git add failed: ${(add.stderr || add.stdout || '').trim()}` };
 
-    const commit = spawnGit(repoRoot, ['commit', '-m', 'chore: apply bd auto-stage patch (xtrm-tools auto-applied)']);
+    const commit = spawnGit(repoRoot, ['commit', '-m', 'chore: apply substrate migration + registry refresh (xt update --apply)']);
     if (commit.status !== 0) return { ok: false, message: `git commit failed: ${(commit.stderr || commit.stdout || '').trim()}` };
     const hash = spawnGit(repoRoot, ['rev-parse', '--short', 'HEAD']);
     return { ok: true, message: `committed ${hash.stdout.trim()}` };
@@ -311,6 +344,28 @@ function printTable(rows: RepoUpdateResult[]): void {
     }
 }
 
+/**
+ * Fleet preflight (apply mode only, read-only): plan every target's AND
+ * every incomplete repo's migration BEFORE any global/repo mutation.
+ * Incomplete repos (`.xtrm/` without `registry.json`) are included because
+ * an incomplete repo can still carry a legacy `.beads` board. A single
+ * blocked repo aborts the whole run — global skills/hooks/package cutover
+ * must never strand a legacy board that cannot migrate (ADR 43).
+ */
+async function preflightFleetMigration(repos: string[]): Promise<Array<{ repo: string; blocked: string | null }>> {
+    const results: Array<{ repo: string; blocked: string | null }> = [];
+    for (const repo of repos) {
+        try {
+            const plan = await planSubstrateMigration(repo);
+            results.push({ repo, blocked: migrationBlockedReason(plan) });
+        } catch (error) {
+            // Fail-closed: an unreadable board blocks the fleet, never slips through.
+            results.push({ repo, blocked: `migration preflight failed: ${error instanceof Error ? error.message : String(error)}` });
+        }
+    }
+    return results;
+}
+
 export function createUpdateCommand(): Command {
     return new Command('update')
         .description('Routine refresh and repair for xtrm-managed files, runtimes, hooks, skills, and packages')
@@ -323,9 +378,46 @@ export function createUpdateCommand(): Command {
         .option('--json', 'Print JSON output', false)
         .action(async (opts) => {
             const typedOpts = opts as UpdateOpts;
-            const promptSync = await syncGlobalPrompts({ dryRun: !typedOpts.apply });
             const { targets, incomplete } = await resolveTargetRepos(typedOpts);
             const rows: RepoUpdateResult[] = [];
+            // Fleet gate BEFORE apply-mode globals (prompts, packages, hooks):
+            // zero global/repo/runtime mutation while any target is blocked.
+            // Incomplete repos are preflighted too: an incomplete `.xtrm/`
+            // repo can still carry a legacy `.beads` board.
+            if (typedOpts.apply) {
+                const preflightTargets = await preflightFleetMigration(targets);
+                const preflightIncomplete = await preflightFleetMigration(incomplete);
+                const blocked = [...preflightTargets, ...preflightIncomplete].filter(entry => entry.blocked);
+                if (blocked.length > 0) {
+                    const blockers = blocked.map(entry => entry.repo).join(', ');
+                    for (const repo of targets) {
+                        const hit = blocked.find(entry => entry.repo === repo);
+                        rows.push(hit
+                            ? { repo, status: 'failed', reason: `substrate migration required: ${hit.blocked}` }
+                            : { repo, status: 'skipped', reason: `not attempted: fleet preflight blocked by ${blockers}` });
+                    }
+                    for (const repo of incomplete) {
+                        const hit = blocked.find(entry => entry.repo === repo);
+                        rows.push(hit
+                            ? { repo, status: 'failed', reason: `substrate migration required: ${hit.blocked}` }
+                            : {
+                                repo,
+                                status: 'incomplete',
+                                reason: 'missing .xtrm/registry.json — run `xt init` to bootstrap or `xt update --apply --repo <path>` to repair',
+                            });
+                    }
+                    if (typedOpts.json) {
+                        // Same keys as the normal path (packages/promptSync null:
+                        // skipped stages), plus the abort cause.
+                        console.log(JSON.stringify({ repos: rows, packages: null, promptSync: null, fleetPreflightBlocked: blockers }, null, 2));
+                    } else {
+                        printTable(rows);
+                    }
+                    process.exitCode = 1;
+                    return;
+                }
+            }
+            const promptSync = await syncGlobalPrompts({ dryRun: !typedOpts.apply });
             for (const repo of targets) {
                 const row = await updateRepo(repo, typedOpts);
                 if (typedOpts.allRepos && typedOpts.apply && row.status === 'refreshed') {
@@ -348,8 +440,12 @@ export function createUpdateCommand(): Command {
                 });
             }
 
-            const packageAssurance = await assureXtManagedPiPackages(!Boolean(typedOpts.apply));
-            if (typedOpts.apply) runExternalPiToolPatch(resolvePackageRoot(), false);
+            // Post-loop globals stay behind the same gate: a migration-blocked
+            // row means a legacy board is stranded, so global package/tool
+            // cutover is skipped (report-only assurance instead of mutation).
+            const migrationStranded = rows.some(row => row.migration?.status === 'blocked');
+            const packageAssurance = await assureXtManagedPiPackages(!Boolean(typedOpts.apply) || migrationStranded);
+            if (typedOpts.apply && !migrationStranded) runExternalPiToolPatch(resolvePackageRoot(), false);
 
             if (opts.json) {
                 console.log(JSON.stringify({ repos: rows, packages: packageAssurance, promptSync }, null, 2));
@@ -362,7 +458,9 @@ export function createUpdateCommand(): Command {
                 printGlobalPromptSyncSummary(promptSync);
             }
 
-            if (rows.some(row => row.status === 'failed') || packageAssurance.failed.length > 0) {
+            // Blocked migrations map to 'failed' rows; 'incomplete' rows are
+            // also nonzero (a repo that cannot even be read is not success).
+            if (rows.some(row => row.status === 'failed' || row.status === 'incomplete') || packageAssurance.failed.length > 0) {
                 process.exitCode = 1;
             }
         });

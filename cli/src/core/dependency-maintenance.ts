@@ -1,12 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import fs from 'fs-extra';
-import path from 'node:path';
 import kleur from 'kleur';
+import { getSbDoctorJson, getSbVersion } from './substrate.js';
 
 export type MaintenanceState = 'current' | 'outdated' | 'missing' | 'unknown' | 'checked' | 'updated' | 'failed' | 'skipped';
 
 export interface ToolMaintenanceStatus {
-  id: 'bd' | 'gitnexus';
+  id: 'sb' | 'gitnexus';
   cli: string;
   packageName: string;
   installedVersion?: string;
@@ -18,7 +17,7 @@ export interface ToolMaintenanceStatus {
 
 export interface DependencyMaintenanceSummary {
   tools: ToolMaintenanceStatus[];
-  bdDoctor: {
+  substrateDoctor: {
     state: MaintenanceState;
     message?: string;
   };
@@ -29,7 +28,7 @@ export interface DependencyMaintenanceSummary {
 }
 
 const TOOLS = [
-  { id: 'bd' as const, cli: 'bd', packageName: '@beads/bd', versionArgs: ['--version'] },
+  { id: 'sb' as const, cli: 'sb', packageName: '@xtrm/substrate', versionArgs: ['--version'] },
   { id: 'gitnexus' as const, cli: 'gitnexus', packageName: 'gitnexus', versionArgs: ['--version'] },
 ];
 
@@ -81,7 +80,9 @@ function checkTool(tool: typeof TOOLS[number], cwd: string): ToolMaintenanceStat
     ? extractVersion(`${installed.stdout ?? ''}\n${installed.stderr ?? ''}`)
     : undefined;
 
-  const latestVersion = latestPackageVersion(tool.packageName, cwd);
+  // @xtrm/substrate is unpublished: never phone the npm registry for it
+  // (name leak + guaranteed lookup failure). Version truth comes from sb.
+  const latestVersion = tool.id === 'sb' ? undefined : latestPackageVersion(tool.packageName, cwd);
   const comparison = compareVersions(installedVersion, latestVersion);
 
   return {
@@ -102,6 +103,10 @@ function upgradeTool(tool: ToolMaintenanceStatus, cwd: string): ToolMaintenanceS
   if (tool.majorUpgrade) {
     return { ...tool, state: 'skipped', message: 'major upgrade requires operator confirmation' };
   }
+  if (tool.id === 'sb') {
+    // @xtrm/substrate is unpublished: never attempt `npm install -g`.
+    return { ...tool, state: 'failed', message: 'sb is not published to npm: set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH)' };
+  }
 
   const install = run('npm', ['install', '-g', tool.packageName], cwd, 120000);
   if (install.status !== 0) {
@@ -116,16 +121,15 @@ function upgradeTool(tool: ToolMaintenanceStatus, cwd: string): ToolMaintenanceS
   return refreshed ? checkTool(refreshed, cwd) : { ...tool, state: 'updated' };
 }
 
-function runBdDoctor(repoRoot: string, apply: boolean): DependencyMaintenanceSummary['bdDoctor'] {
-  if (!fs.pathExistsSync(path.join(repoRoot, '.beads'))) return { state: 'skipped', message: 'no .beads directory' };
-  const args = apply ? ['doctor', '--fix', '--yes'] : ['doctor', '--dry-run'];
-  const result = run('bd', args, repoRoot, 30000);
-  if (result.error) return { state: 'failed', message: result.error.message };
-  if (result.status === 0) return { state: apply ? 'updated' : 'checked' };
-  return {
-    state: 'failed',
-    message: `${result.stderr || result.stdout || `bd doctor exited ${result.status}`}`.trim(),
-  };
+function runSubstrateDoctor(repoRoot: string): DependencyMaintenanceSummary['substrateDoctor'] {
+  // Substrate-first gate (replaces the old Beads doctor gate): `sb doctor
+  // --json` is read-only, so apply/non-apply share the same exit-code gate.
+  // The payload is carried verbatim — schema interpretation is a marked seam
+  // for xtrm-6qu.9, never parsed here.
+  if (!getSbVersion().available) return { state: 'skipped', message: 'sb not installed' };
+  const doctor = getSbDoctorJson(repoRoot);
+  if (doctor.ok) return { state: 'checked' };
+  return { state: 'failed', message: doctor.error ?? 'sb doctor --json rejected' };
 }
 
 function runGitNexusStatus(repoRoot: string, apply: boolean): DependencyMaintenanceSummary['gitnexusIndex'] {
@@ -150,7 +154,7 @@ export async function runDependencyMaintenance(repoRoot: string, apply: boolean)
   const tools = apply ? checkedTools.map(tool => upgradeTool(tool, repoRoot)) : checkedTools;
   return {
     tools,
-    bdDoctor: runBdDoctor(repoRoot, apply),
+    substrateDoctor: runSubstrateDoctor(repoRoot),
     gitnexusIndex: runGitNexusStatus(repoRoot, apply),
   };
 }
@@ -165,6 +169,6 @@ export function printDependencyMaintenanceSummary(summary: DependencyMaintenance
     console.log(`  ${tool.id.padEnd(8)} ${tool.state.padEnd(8)} ${kleur.dim(versions)}${kleur.yellow(major)}`);
   }
 
-  console.log(`  ${'bd doctor'.padEnd(8)} ${summary.bdDoctor.state}${summary.bdDoctor.message ? kleur.dim(` — ${summary.bdDoctor.message}`) : ''}`);
+  console.log(`  ${'sb doctor'.padEnd(8)} ${summary.substrateDoctor.state}${summary.substrateDoctor.message ? kleur.dim(` — ${summary.substrateDoctor.message}`) : ''}`);
   console.log(`  ${'gitnexus'.padEnd(8)} ${summary.gitnexusIndex.state}${summary.gitnexusIndex.message ? kleur.dim(` — ${summary.gitnexusIndex.message}`) : ''}`);
 }

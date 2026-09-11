@@ -828,17 +828,23 @@ exit 0
 
 
 // ── hooks.json wiring ────────────────────────────────────────────────────────
-describe('hooks.json — beads-compact hooks wiring', () => {
-  it('wires beads-compact-save.mjs to PreCompact event', () => {
+// Substrate-first retirement: the compiled template wires no beads-* hooks.
+// Successors are owned by xtrm-6qu.6 (SEAM in cli/src/core/claude-runtime-sync.ts).
+describe('hooks.json — beads hooks retired', () => {
+  it('wires no beads-compact-save.mjs to any event', () => {
     const cfg = JSON.parse(readFileSync(path.join(__dirname, '../../config/hooks.json'), 'utf8'));
-    const preCompact: Array<{ script: string }> = cfg.hooks.PreCompact ?? [];
-    expect(preCompact.some((h) => h.script === 'beads-compact-save.mjs')).toBe(true);
+    const commands: string[] = Object.values(cfg.hooks)
+      .flat()
+      .flatMap((w: any) => (w.hooks ?? []).map((h: any) => h.command ?? ''));
+    expect(commands.some((c) => c.includes('beads-compact-save.mjs'))).toBe(false);
   });
 
-  it('wires beads-compact-restore.mjs to SessionStart event', () => {
+  it('wires no beads-compact-restore.mjs to any event', () => {
     const cfg = JSON.parse(readFileSync(path.join(__dirname, '../../config/hooks.json'), 'utf8'));
-    const sessionStart: Array<{ script: string }> = cfg.hooks.SessionStart ?? [];
-    expect(sessionStart.some((h) => h.script === 'beads-compact-restore.mjs')).toBe(true);
+    const commands: string[] = Object.values(cfg.hooks)
+      .flat()
+      .flatMap((w: any) => (w.hooks ?? []).map((h: any) => h.command ?? ''));
+    expect(commands.some((c) => c.includes('beads-compact-restore.mjs'))).toBe(false);
   });
 });
 

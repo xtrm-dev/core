@@ -38,10 +38,13 @@ export interface InstallOpts {
     backport?: boolean;
     global?: boolean;
     strictRegistry?: boolean;
+    sbProject?: string;
+    sbCreateProject?: string;
+    substrateDir?: string;
     projectRoot?: string;
     /** Override the resolved package root (source of .xtrm/registry.json + skills payload). Test hermetics; production callers omit this. */
     packageRoot?: string;
-    /** Skip machine bootstrap (beads/dolt/bv/deepwiki) — used by the init orchestrator which handles it in a dedicated phase. */
+    /** Skip machine bootstrap (sb/pi/pnpm/...) — used by the init orchestrator which handles it in a dedicated phase. */
     skipMachineBootstrap?: boolean;
     /** Skip Claude runtime sync (hooks/settings wiring). */
     skipClaudeRuntimeSync?: boolean;
@@ -64,11 +67,11 @@ function printNextSteps(): void {
     console.log(b('  Next steps\n'));
 
     console.log(d('  In your project:'));
-    console.log(`  xtrm init                     ${d('initialize Beads + code intelligence for this repo')}`);
-    console.log(`  bd ready                      ${d('show unblocked work; use bd search/show for targeted lookup')}`);
-    console.log(`  bd update <id> --claim        ${d('claim tracked work before editing')}`);
+    console.log(`  xtrm init                     ${d('initialize Substrate + code intelligence for this repo')}`);
+    console.log(`  sb --version                  ${d('verify the Substrate CLI')}`);
+    console.log(`  sb doctor                     ${d('check state.db health + project link')}`);
+    console.log(`  sb help --json                ${d('discover current command semantics; do not rely on stale copies')}`);
     console.log(`  xt skills list --global --json ${d('inspect the active XTRM skill surface')}`);
-    console.log(`  bd close <id>                 ${d('close the claimed issue before committing')}`);
 
     console.log('');
     console.log(d('  Worktree workflow:'));
@@ -80,7 +83,6 @@ function printNextSteps(): void {
 
     console.log('');
     console.log(d('  Reference:'));
-    console.log(`  bd prime                      ${d('optional full-context diagnostic; not a SessionStart requirement')}`);
     console.log(`  xtrm status                   ${d('check installed vs repo')}`);
     console.log(`  xtrm docs show                ${d('browse all documentation')}`);
     console.log('');
@@ -108,7 +110,7 @@ async function renderSummaryCard(stats: InstallStats, isDryRun: boolean): Promis
     }) + '\n');
 }
 
-export { isBeadsInstalled, isDoltInstalled, isDeepwikiInstalled, isBvInstalled } from '../core/machine-bootstrap.js';
+export { isSbInstalled, isDeepwikiInstalled } from '../core/machine-bootstrap.js';
 
 export async function runMachineBootstrap(opts: { yes?: boolean } = {}): Promise<void> {
     await runMachineBootstrapPhase({ dryRun: false });
