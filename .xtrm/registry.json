@@ -31,7 +31,7 @@
           "version": "0.12.0"
         },
         "beads-gate-messages.mjs": {
-          "hash": "af41038a042fbb33150736dd1c8cfb91e232120945073571f39acab360d276c2",
+          "hash": "606d339d8c39ac6efda0bbed5f2a87921197c74bbe770616ae5902257039ab96",
           "version": "0.12.0"
         },
         "beads-gate-utils.mjs": {
@@ -167,6 +167,26 @@
         },
         "gitnexus/SKILL.md": {
           "hash": "03953d8d199be148c0b005784d8a419630a7cc8bc2d825e54e6dffc44f595ade",
+          "version": "0.12.0"
+        },
+        "goal-prompt/references/output-shape.md": {
+          "hash": "65f906220c663ba38786ffbe08bec988d993a1a5837444504f74e4cda730329b",
+          "version": "0.12.0"
+        },
+        "goal-prompt/references/self-injection.md": {
+          "hash": "0dc762c3d0710d8c342307e35f6a492b3e3a4459306f3b8770ed020ff3f9b69d",
+          "version": "0.12.0"
+        },
+        "goal-prompt/references/stop-predicate.md": {
+          "hash": "d4c454a257c8bb555dc7553efeffa2b5ac771458cd4ad2066b95feeaaf1365df",
+          "version": "0.12.0"
+        },
+        "goal-prompt/scripts/self-inject.sh": {
+          "hash": "57fa228c8f6a7e90c1f09ad168cb962706099c8540b7a11cf36c99f8c8dc4968",
+          "version": "0.12.0"
+        },
+        "goal-prompt/SKILL.md": {
+          "hash": "0a98bec73ac88f09cf533274e9395414762c6fed93671e61000079ebd49be712",
           "version": "0.12.0"
         },
         "multiplexing/references/discovery-and-preflight.md": {
