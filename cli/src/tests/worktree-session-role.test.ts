@@ -608,6 +608,41 @@ describe('buildBareTmuxPlan', () => {
             '--', 'hi',
         ]);
     });
+
+    // XTRM-249. The flag must land before the `--` delimiter, or claude reads
+    // the entry as the positional prompt. `channels` is a decision handed in by
+    // the launcher, so the builder stays hermetic: no $HOME read, no flag.
+    it('emits --channels before the turn-1 delimiter when the launcher enables it', () => {
+        const plan = buildBareTmuxPlan({ ...WT,
+            runtime: 'claude',
+            sessionSlug: 'demo',
+            parentSessionId: '',
+            turn1Body: 'hi',
+            channels: true,
+        });
+
+        expect(plan.runtimeArgs).toEqual([
+            '--name', WT.sessionDisplayName,
+            '--dangerously-skip-permissions',
+            '--channels', 'plugin:specialists@xtrm',
+            '--', 'hi',
+        ]);
+    });
+
+    it('omits --channels when the launcher did not enable it, and always for pi', () => {
+        const off = buildBareTmuxPlan({ ...WT,
+            runtime: 'claude', sessionSlug: 'demo', parentSessionId: '', turn1Body: 'hi',
+        });
+        expect(off.runtimeArgs).not.toContain('--channels');
+
+        // pi has no --channels flag; passing the decision through must not
+        // produce one. Fail-soft is the whole contract here (XTRM-249).
+        const pi = buildBareTmuxPlan({ ...WT,
+            runtime: 'pi', sessionSlug: 'demo', parentSessionId: '', turn1Body: 'hi',
+            channels: true,
+        });
+        expect(pi.runtimeArgs).not.toContain('--channels');
+    });
 });
 
 describe('buildRoleTmuxPlan (pi runtime)', () => {

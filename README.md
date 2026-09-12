@@ -353,6 +353,7 @@ Use live `xt <command> --help`, `sp help`, and `specialists list --full` for exa
 | [XTRM-GUIDE.md](XTRM-GUIDE.md) | full architecture and workflow reference |
 | [docs/worktrees.md](docs/worktrees.md) | `xt` worktrees, attach/end/reap and isolation |
 | [docs/xt-pi-role.md](docs/xt-pi-role.md) | role launcher and Specialist behavior |
+| [docs/xt-claude-channels.md](docs/xt-claude-channels.md) | `xt claude` channel wake and the managed settings it needs |
 | [docs/xtrm-ui.md](docs/xtrm-ui.md) | XTRM Pi UI/themes/tool rendering |
 | [docs/pi-extensions.md](docs/pi-extensions.md) | Pi extension/runtime integration |
 | [docs/skills.md](docs/skills.md) | current skills-v4 catalog and tier model |

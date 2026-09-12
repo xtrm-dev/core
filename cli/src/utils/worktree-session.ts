@@ -1842,6 +1842,12 @@ interface CommonTmuxPlanArgs {
     explicitSkillPaths?: string[];
     /** Argv after `--` on the xt command line, already guard-checked. */
     passthrough?: string[];
+    /** Emit `--channels <SPECIALISTS_CHANNEL_ENTRY>` (claude only). Decided by
+     * the launcher, not here: the answer depends on the real filesystem
+     * (specialistsPluginInstalled reads $HOME) and a plan builder that reads
+     * $HOME is a plan builder whose argv depends on the machine it runs on.
+     * Undefined means no flag. XTRM-249. */
+    channels?: boolean;
 }
 
 /** Emit `--skill <path>` per unique skill, deduped by realpath. pi-only. */
@@ -1915,10 +1921,12 @@ function finalizeTmuxPlan(args: {
     model?: string;
     thinking?: string;
     passthrough?: string[];
+    channels?: boolean;
 }): TmuxLaunchPlan {
     const {
         runtime, sessionName, runtimeArgs, sessionDisplayName, agentTask, bead, role,
         parentSessionId, worktreePath, branchName, turn1Body, model, thinking, passthrough,
+        channels,
     } = args;
 
     // Launcher-owned session display name. Pushed first so nothing later in the
@@ -1931,14 +1939,14 @@ function finalizeTmuxPlan(args: {
     // own defaults when unset.
     if (model) runtimeArgs.push('--model', model);
 
-    // Channel wake: claude-only, and only when the specialists plugin is
-    // actually installed. Omitting the flag is always safe (the session falls
-    // back to the asyncRewake polling hook), so every negative answer here —
-    // no plugin, no manifest, unreadable manifest — just means "no flag".
-    // Never use --dangerously-load-development-channels: it prints an
-    // interactive confirmation dialog on every launch, which would block
-    // automated dispatch. XTRM-249.
-    if (runtime === 'claude' && specialistsPluginInstalled()) {
+    // Channel wake: claude-only, and only when the launcher decided the
+    // specialists plugin is installed. Omitting the flag is always safe (the
+    // session falls back to the asyncRewake polling hook), so every negative
+    // answer — no plugin, no manifest, unreadable manifest, not claude — just
+    // means "no flag". Never use --dangerously-load-development-channels: it
+    // prints an interactive confirmation dialog on every launch, which would
+    // block automated dispatch. XTRM-249.
+    if (runtime === 'claude' && channels) {
         runtimeArgs.push('--channels', SPECIALISTS_CHANNEL_ENTRY);
     }
 
@@ -1997,7 +2005,7 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
 }): TmuxLaunchPlan {
     const {
         runtime, sessionDisplayName, role, bead, parentSessionId, worktreePath, branchName,
-        turn1Body, modelOverride, thinkingOverride, explicitSkillPaths = [], passthrough,
+        turn1Body, modelOverride, thinkingOverride, explicitSkillPaths = [], passthrough, channels,
     } = args;
 
     // Include runtime in the session name so xt pi --role X --bead Y and
@@ -2072,6 +2080,7 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
         model,
         thinking: thinkingOverride ?? role.thinkingLevel,
         passthrough,
+        channels,
     });
 }
 
@@ -2090,6 +2099,7 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
     const {
         runtime, sessionDisplayName, sessionSlug, bead, parentSessionId, worktreePath,
         branchName, turn1Body, modelOverride, thinkingOverride, explicitSkillPaths = [], passthrough,
+        channels,
     } = args;
 
     const runtimeArgs: string[] = [];
@@ -2116,6 +2126,7 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
         model: modelOverride,
         thinking: thinkingOverride,
         passthrough,
+        channels,
     });
 }
 
@@ -3222,6 +3233,9 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const planCommon = {
         runtime, sessionDisplayName, bead, parentSessionId, worktreePath, branchName,
         turn1Body, modelOverride, thinkingOverride, explicitSkillPaths, passthrough,
+        // Filesystem-dependent, so it is resolved here and handed to the plan
+        // builders rather than probed inside them. XTRM-249.
+        channels: runtime === 'claude' && specialistsPluginInstalled(),
     };
     const plan = args.mode === 'role'
         ? buildRoleTmuxPlan({ ...planCommon, role: args.role })
