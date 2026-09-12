@@ -1,0 +1,40 @@
+{
+  "content_sha256": "d53519083f173151f3eee6d7c3d951491da84c976569b3d230a4562893ceaefe",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-bkqd7"
+  },
+  "issues": {
+    "xtrm-bkqd7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T20:01:36Z",
+        "created_by": "t",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "NEW BODY\n## SCOPE\napi-gateway/x.go",
+        "id": "xtrm-bkqd7",
+        "issue_type": "task",
+        "owner": "t@t.com",
+        "priority": 2,
+        "status": "open",
+        "title": "test bead",
+        "updated_at": "2026-07-24T20:01:48Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-bkqd7",
+  "root_title": "test bead",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

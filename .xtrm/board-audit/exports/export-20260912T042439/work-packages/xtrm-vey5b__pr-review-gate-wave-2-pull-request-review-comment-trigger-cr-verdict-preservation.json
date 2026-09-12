@@ -1,0 +1,45 @@
+{
+  "content_sha256": "4ac5dfe8e551e76b15cf262eec7af6a8c47f0a00103efcff88cc96e332b8f859",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-vey5b"
+  },
+  "issues": {
+    "xtrm-vey5b": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T21:44:18Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nTwo P2 correctness gaps in the canonical `pr-review-gate.yml` workflow, flagged by Codex during fanout PR review across 8 mercuryintelligence repos:\n\n1. **Missing `pull_request_review_comment` trigger.** The current trigger set (`pull_request` / `pull_request_review` / `issue_comment`) does NOT fire on inline diff comments made without a review submission. If a bot posts/edits/deletes an inline comment outside a review, the gate never re-runs on the PR merge ref — the check can stay green while an unresolved bot thread has been added.\n\n2. **Latest-review overwrite loses active CHANGES_REQUESTED.** Current logic keeps only the latest `submittedAt` review per bot. If a bot submits CHANGES_REQUESTED then later comments (COMMENTED with a newer timestamp), the CR verdict is overwritten and the gate turns green. GitHub's native branch-protection clears CR only on APPROVED or DISMISSED — we should mirror that.\n\nNeither manifests in Codex's current pattern (Codex bundles inline comments with review submissions; Codex state is always COMMENTED, never CR). Both are theoretical for Codex but real for CodeRabbit and future bots.\n\n## SUCCESS\nCanonical workflow at `skills/security-pipeline/templates/.github/workflows/pr-review-gate.yml` (+ the live version in `.github/workflows/`) fixes both gaps:\n- Add `pull_request_review_comment: types: [created, edited, deleted]` to triggers.\n- Preserve active CR: track per-bot \"latest blocking verdict\" — a CR stays active until an APPROVED or DISMISSED review supersedes it.\n\nFanout across the 16 already-live repos (core, specialists, infra, market-data + the 12 from this fanout wave).\n\n## NON_GOALS\n- Not urgent enough to hold the current fanout — merge the 12 first, apply this wave-2 improvement as a batch across all 16.\n- Do not change any other behavior (bot-typename check, pagination, workflow_dispatch, regex flag stripping — all stay).\n\n## CONSTRAINTS\n- Same file, byte-identical, in all repos post-wave-2.\n- Codex will re-review — expect potential wave-3 findings; that's the working-as-designed loop.\n\n## VALIDATION\n- 16 PRs opened + merged.\n- Codex threads resolved without dropping the two P2 improvements.\n",
+        "id": "xtrm-vey5b",
+        "issue_type": "task",
+        "labels": [
+          "ci",
+          "pr-review-gate",
+          "security-pipeline"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "pr-review-gate wave-2: pull_request_review_comment trigger + CR verdict preservation",
+        "updated_at": "2026-07-24T21:44:18Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-vey5b",
+  "root_title": "pr-review-gate wave-2: pull_request_review_comment trigger + CR verdict preservation",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

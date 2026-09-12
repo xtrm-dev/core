@@ -1,0 +1,43 @@
+{
+  "content_sha256": "e40666738b105c8c1466ad4eb3eee917a1634e0c0bc8eb686e99300732b56904",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-ma1je"
+  },
+  "issues": {
+    "xtrm-ma1je": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-08-12T05:29:06Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## CLARIFIED REQUIREMENT\n\nThe 'background' requested was the BADGE CHIP behind the tool name as it was before ANY modifications: dark text (\\x1b[38;2;3;8;12m) on the static per-kind colored background (serena cyan, gitnexus purple, ...). No phase color changing, plain and static. New layout only: no [] brackets, marker + chip + bold action.\n\n## CHANGES\n\n- Restore externalToolBadgeColor (chip: dark text on kind bg).\n- Header: '› <chip>Provider</chip> <action>' — chip static in every state, no brackets.\n- Remove phase machinery: ExternalToolState, externalToolStateBgToken, padToRenderWidth, theme import/themeLike/bgFn in patch; drop state+themeLike params from renderExternalToolLines/BackgroundLines. Keep the try/catch guard and version bump.\n- Tests: chip format assertions without brackets, static across lifecycle states.\n\n## VALIDATION\n\n- xtrm-ui tests green; tsc no new errors.",
+        "id": "xtrm-ma1je",
+        "issue_type": "task",
+        "notes": "Superseded direction: operator now wants NO chip — provider as plain fg text in gitnexus purple, uniform for all kinds (xtrm-mcayj).",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "started_at": "2026-08-12T05:29:13Z",
+        "status": "in_progress",
+        "title": "xtrm-ui: external tool badge — restore exact pre-change chip (dark text on static kind bg), new layout only",
+        "updated_at": "2026-08-23T03:15:40Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-ma1je",
+  "root_title": "xtrm-ui: external tool badge — restore exact pre-change chip (dark text on static kind bg), new layout only",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
