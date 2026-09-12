@@ -56,6 +56,18 @@ Create the policy file as root:
 }
 ```
 
+This file is host-wide policy. It applies to every Claude Code session for every
+user on the machine, not only to `xt claude` and not only to you. Install it
+only on a machine where that is acceptable. To undo it, remove the directory:
+
+```bash
+sudo rm -rf /etc/claude-code
+```
+
+Removing it returns the host to the default state described above: the policy
+gate goes back to passing, and the allowlist goes back to the server-fetched
+default that refuses this plugin.
+
 Two details that are easy to get wrong:
 
 - **`allowedChannelPlugins` holds objects, not strings.** The managed-settings
