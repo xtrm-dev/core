@@ -1,0 +1,68 @@
+{
+  "content_sha256": "fc83ca22012edc39ab80c982cf22651b28a0ef38d08114c11d27a3aa2103bb6b",
+  "desired_issues": {
+    "xtrm-2y8f8": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-09T22:53:38Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: #639 removed memory files from managed set; unverified whether updater classifies present-but-retired files as drifted (pruned with backup) or ignores them. SUCCESS: scratch-target test proves prune-or-leave for beads-memory-gate.mjs, project-memory.mjs, memory-doctrine.md, specialists-memory-cache-sync.mjs. SCOPE: read-only probe + report; fix only if leave. NON_GOALS: changing sync logic. CONSTRAINTS: scratch targets only. VALIDATION: observed updater output. OUTPUT: report on bead. SCRUTINY: LOW.",
+      "id": "xtrm-2y8f8",
+      "issue_type": "task",
+      "owner": "dawid.jgg@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "Verify updater prunes retired memory files on existing installs",
+      "updated_at": "2026-09-09T22:53:38Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-2y8f8"
+  },
+  "issues": {
+    "xtrm-2y8f8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-09T22:53:38Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: #639 removed memory files from managed set; unverified whether updater classifies present-but-retired files as drifted (pruned with backup) or ignores them. SUCCESS: scratch-target test proves prune-or-leave for beads-memory-gate.mjs, project-memory.mjs, memory-doctrine.md, specialists-memory-cache-sync.mjs. SCOPE: read-only probe + report; fix only if leave. NON_GOALS: changing sync logic. CONSTRAINTS: scratch targets only. VALIDATION: observed updater output. OUTPUT: report on bead. SCRUTINY: LOW.",
+        "id": "xtrm-2y8f8",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Verify updater prunes retired memory files on existing installs",
+        "updated_at": "2026-09-09T22:53:38Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-2y8f8",
+  "root_title": "Verify updater prunes retired memory files on existing installs",
+  "roundtrip": {
+    "base_package_sha256": "fc83ca22012edc39ab80c982cf22651b28a0ef38d08114c11d27a3aa2103bb6b",
+    "base_record_sha256": {
+      "xtrm-2y8f8": "978bad7e212dad79572cbe868b812f9ffae91d53000de91ca4e71fc1a426335f"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-12T00:44:25Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

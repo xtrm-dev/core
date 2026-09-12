@@ -1,0 +1,44 @@
+{
+  "content_sha256": "85c2a13739fa67becb07bd98a9b8cc743e0942c663ebd435a67fdb8c9bd65767",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-8hhns"
+  },
+  "issues": {
+    "xtrm-8hhns": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-12T00:40:50Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Core PR #649 CI red on Verify-dist-is-up-to-date: lane commit d434226e changed CLI src without rebuilding cli/dist. Regenerate cli/dist from current lane source so the dist check passes; verifier files (substrate-verify.ts + test) are unaffected and must not be modified.\nSUCCESS: cli/dist rebuilt via the repo-canonical build command; the dist-freshness check passes locally; lane HEAD amended or follow-up committed and force-pushed to PR #649; new head SHA reported on bead xtrm-pc7hs. CI dist job green (or verified-equivalent local check green if CI has not rerun yet).\nSCOPE: Lane xt/6qu9-core @ 4235ae5c in worktree /home/dawid/dev/core/.xtrm/worktrees/core-xt-pi-6qu9-core. Build + dist artifacts + lane commits only. Read the dist-check job definition first to run the exact check it runs.\nNON_GOALS: No source changes beyond what the build regenerates; no verifier edits; no PR merge (explicitly forbidden); no rebase (already on main 9e3d78dd).\nCONSTRAINTS: TMPDIR=/var/tmp, lane-owned scratch only. Use the repo's own build script (package.json) for the rebuild — no hand-edits to dist. Keep the same PR lineage (amend or stacked commit + force-with-lease push to xt/6qu9-core).\nVALIDATION: Local dist-freshness check green; git status shows only intended dist changes; 58/58 substrate suite still green after rebuild; PR #649 shows new head.\nOUTPUT: New head SHA on bead xtrm-pc7hs + executor report; coordinator relays SHA to epic coordinator.\nSCRUTINY: HIGH",
+        "heartbeat_at": "2026-09-12T00:40:57Z",
+        "id": "xtrm-8hhns",
+        "issue_type": "task",
+        "lease_expires_at": "2026-09-12T00:45:57Z",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "started_at": "2026-09-12T00:40:57Z",
+        "status": "in_progress",
+        "title": "xtrm-pc7hs rebuild cli/dist for PR 649",
+        "updated_at": "2026-09-12T00:40:57Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-8hhns",
+  "root_title": "xtrm-pc7hs rebuild cli/dist for PR 649",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

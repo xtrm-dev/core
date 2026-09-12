@@ -1,0 +1,90 @@
+{
+  "content_sha256": "26f3f80a197847bd891369864ae7661b1457b75a43b23bf0f341d3f96b78965e",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-26T01:50:22Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-efa2a.1",
+        "issue_id": "xtrm-71jss",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-71jss",
+      "source_field": "dependencies",
+      "target": "xtrm-efa2a.1",
+      "target_present_in_snapshot": true,
+      "target_title": "[needs-codex] Bump service-skills-sync.execution.stall_timeout_ms default 120000 → 600000",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-26T01:50:21Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-vu2ro.1",
+        "issue_id": "xtrm-71jss",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-71jss",
+      "source_field": "dependencies",
+      "target": "xtrm-vu2ro.1",
+      "target_present_in_snapshot": true,
+      "target_title": "[needs-codex] Extend service-skills-sync system_prompt with Phase 6 (specialist opens PR via gh CLI)",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-71jss"
+  },
+  "issues": {
+    "xtrm-71jss": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-25T23:50:08Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-26T01:50:22Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-efa2a.1",
+            "issue_id": "xtrm-71jss",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-26T01:50:21Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-vu2ro.1",
+            "issue_id": "xtrm-71jss",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Handoff for the pane-3 session ending 2026-06-25 (codex on specialists worktree).\n\n**SSOT report:** `xtrm-dev/specialists` `.xtrm/reports/2026-06-25-e0a56304.md`\n(committed locally to branch `fix/xtrm-efa2a-stall-timeout-default` — STRICTLY\nLOCAL, not pushed. If the report needs to be visible outside that worktree before\nthe branch merges, copy it to the master checkout's `.xtrm/reports/`.)\n\nRead the report first — it has the full summary, the container-model pivot, the\ngh-on-self-hosted fatal-gate finding, and the ordered next-priority list.\n\n**What landed (all LOCAL, nothing pushed/published/tagged):**\n- `222dd5ad` xtrm-efa2a.1: stall_timeout_ms 120000→600000 (specialist v1.6.1)\n- `2456ccb4` xtrm-vu2ro.1: Phase 6 self-open-PR + requires_worktree:true (specialist v1.6.2, reworked to container spec)\n- `e0a56304` design doc superseded to one-line pointer at mercury-devops-collaborator.md\n\n**Both beads KEPT OPEN (IN_PROGRESS).** Closing implies shipped; nothing shipped.\n\n**Suggested next priorities (from report §Suggested Next Priority):**\n1. Stand up mercury-devops container v0 (pane 1 owns; hard prereq for both beads)\n2. e2e smoke xtrm-efa2a.1 on a real consumer once container/host is ready\n3. e2e smoke xtrm-vu2ro.1 Phase 6 inside the container (branch naming, gh pr create, TRACE_ID body, bd-note-on-failure)\n4. Batch next npm release (3.18.0 → 3.19.0) only after smokes pass + operator schedules",
+        "id": "xtrm-71jss",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "open",
+        "title": "Session handoff 2026-06-25: pane 3 codex closeout — xtrm-efa2a.1 + xtrm-vu2ro.1 staged locally",
+        "updated_at": "2026-06-25T23:50:08Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-71jss",
+  "root_title": "Session handoff 2026-06-25: pane 3 codex closeout — xtrm-efa2a.1 + xtrm-vu2ro.1 staged locally",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

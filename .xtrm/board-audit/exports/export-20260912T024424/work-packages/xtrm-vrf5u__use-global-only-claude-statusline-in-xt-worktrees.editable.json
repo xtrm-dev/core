@@ -1,0 +1,76 @@
+{
+  "content_sha256": "62fa2b74b1f7d139578af99e06ee9533970ca15880612b375e452786b43400f0",
+  "desired_issues": {
+    "xtrm-vrf5u": {
+      "_type": "issue",
+      "assignee": "jaggerxtrm",
+      "comment_count": 0,
+      "created_at": "2026-09-11T01:12:32Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: xt claude writes <WORKTREE>/.claude/settings.local.json with a path to the branch's tracked .xtrm/hooks/statusline.mjs, which can be stale; current methodology is global-only and Claude inherits the global statusLine. SUCCESS: launcher no longer writes worktree settings.local.json statusLine; global setup remains via claude-runtime-sync ensureGlobalStatusLine; docs/worktrees.md accurately describes behavior; regression coverage prevents reintroduction. SCOPE: cli/src/utils/worktree-session.ts and docs/worktrees.md, plus focused test if existing suite supports it. NON_GOALS: change global sync; change hooks; alter other launcher overrides; no release. CONSTRAINTS: smallest diff; preserve skill/specialist scaffolding; global path remains ~/.xtrm/hooks/statusline.mjs; no merge without review. VALIDATION: targeted worktree/CLI tests, docs checks, source grep proves no local statusline write; report exact paths. OUTPUT: branch + PR ready for review. SCRUTINY: MEDIUM.",
+      "heartbeat_at": "2026-09-11T01:12:35Z",
+      "id": "xtrm-vrf5u",
+      "issue_type": "bug",
+      "lease_expires_at": "2026-09-11T01:17:35Z",
+      "owner": "dawid.jgg@gmail.com",
+      "priority": 1,
+      "started_at": "2026-09-11T01:12:35Z",
+      "status": "in_progress",
+      "title": "Use global-only Claude statusline in xt worktrees",
+      "updated_at": "2026-09-11T01:12:35Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-vrf5u"
+  },
+  "issues": {
+    "xtrm-vrf5u": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-11T01:12:32Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: xt claude writes <WORKTREE>/.claude/settings.local.json with a path to the branch's tracked .xtrm/hooks/statusline.mjs, which can be stale; current methodology is global-only and Claude inherits the global statusLine. SUCCESS: launcher no longer writes worktree settings.local.json statusLine; global setup remains via claude-runtime-sync ensureGlobalStatusLine; docs/worktrees.md accurately describes behavior; regression coverage prevents reintroduction. SCOPE: cli/src/utils/worktree-session.ts and docs/worktrees.md, plus focused test if existing suite supports it. NON_GOALS: change global sync; change hooks; alter other launcher overrides; no release. CONSTRAINTS: smallest diff; preserve skill/specialist scaffolding; global path remains ~/.xtrm/hooks/statusline.mjs; no merge without review. VALIDATION: targeted worktree/CLI tests, docs checks, source grep proves no local statusline write; report exact paths. OUTPUT: branch + PR ready for review. SCRUTINY: MEDIUM.",
+        "heartbeat_at": "2026-09-11T01:12:35Z",
+        "id": "xtrm-vrf5u",
+        "issue_type": "bug",
+        "lease_expires_at": "2026-09-11T01:17:35Z",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-11T01:12:35Z",
+        "status": "in_progress",
+        "title": "Use global-only Claude statusline in xt worktrees",
+        "updated_at": "2026-09-11T01:12:35Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-vrf5u",
+  "root_title": "Use global-only Claude statusline in xt worktrees",
+  "roundtrip": {
+    "base_package_sha256": "62fa2b74b1f7d139578af99e06ee9533970ca15880612b375e452786b43400f0",
+    "base_record_sha256": {
+      "xtrm-vrf5u": "d36c85e3f2533c4cedd2647bfc2d3ee69815fa7a7b882e493bc19b21dbc0c848"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-12T00:44:30Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

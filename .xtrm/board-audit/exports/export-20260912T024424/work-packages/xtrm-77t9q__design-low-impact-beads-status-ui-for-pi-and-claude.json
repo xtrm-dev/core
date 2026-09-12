@@ -1,0 +1,118 @@
+{
+  "content_sha256": "ec3fdb72d75dba8dd328a7271012a11dad2757f825d268cbc64ad790efb6a35c",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-13T06:59:47Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-77t9q.3",
+        "issue_id": "xtrm-77t9q.4",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-77t9q.4",
+      "source_field": "dependencies",
+      "target": "xtrm-77t9q.3",
+      "target_present_in_snapshot": true,
+      "target_title": "Release + fleet-ship shared beads-status cache module",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-77t9q.4"
+      }
+    ],
+    "id": "xtrm-77t9q"
+  },
+  "issues": {
+    "xtrm-77t9q": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-13T01:55:45Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nPi's current custom footer renders beads state as a fixed third line, loses titles when several issues are in progress, and provides no compact view of the active epic hierarchy. Claude's statusline needs equivalent state semantics without inheriting Pi's expandable TUI. Any refresh mechanism must avoid repeated expensive `bd` subprocesses across concurrent agent sessions.\n\n## SUCCESS\n\nA reviewed design specifies one-line compact status text, Pi-only expandable nested epic context, lightweight Claude statusline parity, and a measured refresh/materialization architecture. It decides whether state remains per-agent and event-driven or moves to a repository-scoped background materializer, including ownership, lifecycle, stale-state, concurrency, and cleanup behavior.\n\n## SCOPE\n\n- `packages/pi-extensions/extensions/custom-footer/`\n- `packages/pi-extensions/src/extensions/custom-footer.ts`\n- `cli/test/extensions/custom-footer-parity.test.ts`\n- `.xtrm/hooks/statusline.mjs` and its tests for Claude parity\n- `bd` JSON command contracts used for counts, active issues, parents, and epic descendants\n- Optional repository-scoped cache/materializer process design and cache-file contract\n- Cross-pane design review with `xt-design.1`\n\n## NON_GOALS\n\n- No implementation in this epic itself before child tasks and the architecture decision are approved.\n- No interactive issue mutation, claiming, closing, selection, or full board browser.\n- No direct reads from internal `.beads` database files or coupling to Dolt schema.\n- No always-on high-frequency polling.\n\n## CONSTRAINTS\n\n- Compact output is exactly one line and uses text for clarity, e.g. `12 open · 2 in progress · epic k2ufi (1/3 done)`.\n- Pi expansion shows complete active-epic descendant trees, including closed and arbitrarily nested children (`.1`, `.1.1`, `.1.1.1`), with compact status markers and titles.\n- Claude parity is statusline-only and intentionally lighter; it shares state semantics, not Pi TUI behavior.\n- Use supported `bd --json` command surfaces; never query `.beads` storage directly.\n- No subprocess or filesystem I/O from render functions.\n- Refreshes must be single-flight, debounced, cached, fail-soft, and cleaned up on session shutdown.\n- Local `bd` mutations should appear promptly; external-session changes may reconcile more slowly.\n- Current measurements in this repo: count by status ~179-233ms, active JSON ~210-273ms, direct children ~201-338ms, wildcard descendant query ~705-844ms.\n- If a shared materializer is selected, the design must name exactly who starts it, elects one owner, detects stale/dead owners, writes atomically, bounds resource use, and terminates it without leaking per-repo daemons.\n- No secrets, issue descriptions, or full bead payloads in telemetry or cache artifacts; retain only fields required to render.\n\n## VALIDATION\n\n- [ ] Design includes collapsed, expanded, multiple-epic, nested-child, zero-issue, and narrow-terminal examples.\n- [ ] Design compares per-agent event-driven refresh against a repository materializer using measured latency, CPU, subprocess, memory, and multi-session behavior.\n- [ ] The selected lifecycle has explicit startup, ownership, liveness, backoff, invalidation, and shutdown rules.\n- [ ] `bd` commands and parsed fields are documented with representative JSON fixtures.\n- [ ] Pi and Claude parity boundaries are explicit and reviewed with `xt-design.1`.\n- [ ] Child implementation and test beads are created only after the architecture decision.\n- [ ] Planned tests cover zero render-time I/O, refresh coalescing, stale cache fallback, nested hierarchy reconstruction, daemon cleanup if applicable, and Pi/Claude semantic parity.\n\n## OUTPUT\n\nAn approved architecture decision, compact/expanded UI specification, measured refresh budget, daemon verdict, Pi/Claude parity contract, and a dependency-wired set of implementation and validation child beads.",
+        "id": "xtrm-77t9q",
+        "issue_type": "epic",
+        "notes": "## Design peer review — 2026-07-13 (core:main / Opus 4.7)\n\n### Verdict: per-agent event-driven + shared repo-scoped cache file. NO daemon.\n\nThe shared materializer daemon is not justified. A shared **cache file** at `<mainRepoRoot>/.xtrm/cache/beads-status.json` gives ~80% of daemon benefit at ~10% of complexity, and eliminates every daemon-class failure mode we've been burned by before (serena-pool orphan cleanup, autoAugment bloat, stale pid across xt updates).\n\n### Architecture\n\n- **Cache file (shared across agents in a repo).**\n  Path: `<mainRepoRoot>/.xtrm/cache/beads-status.json` (mainRoot resolved via `git rev-parse --git-common-dir`, same helper statusline.mjs:139 already uses).\n  Schema (rendering fields only, no descriptions/payloads):\n  `{ ts, stale: bool, counts: { open, in_progress, blocked }, activeEpic: { id, title, closed, total } | null, activeIssues: [{ id, title, status }], descendants?: NestedTree }`.\n  Two TTLs: **5s** for compact fields, **30s** for `descendants` (only present when Pi expanded view is open).\n\n- **Single-flight lease.**\n  `<mainRepoRoot>/.xtrm/cache/beads-status.lock` (0600, wx-open). First agent detecting stale cache takes lease, spawns detached refresh child, drops lease. Existing statusline.mjs REFRESH_LOCK pattern generalized to a per-repo scope.\n\n- **Event-driven invalidation.**\n  bd `post-close` / `post-update` / `post-create` git hooks (already installed via bd hooks install) `touch <mainRoot>/.xtrm/cache/beads-status.invalidate`. Refresh trigger = `invalidate.mtime > cache.ts` OR `now - cache.ts > TTL`. Local mutations therefore appear on next render (<= 5s). External-session mutations reconcile via TTL only, matching the constraint.\n\n- **Query budget per refresh.**\n  Compact refresh: 3 fast queries (`bd list --status=... --json` × 2, `bd show <activeEpicId> --json`). Cost ~700ms warm. Runs in detached child, does not block render.\n  Expanded refresh (only when Pi footer is open on Ctrl+O): +1 wildcard descendants query (~800ms). Same detached child, single-flight.\n  Never done from render.\n\n- **Fail-soft.**\n  On subprocess timeout / bd error, keep prior cache and set `stale: true`. Render dims counts (italic) instead of showing \"no open issues\". Fixes today's Claude statusline symptom cleanly.\n\n- **Latency budget.**\n  Render <= 50ms (cache read only). Background refresh <= 2s (compact) / <= 3s (with descendants). Cross-agent latency to see external change <= 5s (compact) / <= 30s (expanded).\n\n### Pi/Claude parity boundary\n\n- Both runtimes consume the **same JSON cache**, run the same compact-line formatter → semantic parity by construction, not by mirrored code.\n- **Pi-only:** on Ctrl+O expand, if `descendants` is missing/stale, render skeleton \"loading epic tree…\" and trigger on-demand refresh; repaint on completion via existing `requestRender`.\n- **Claude:** statusline reads only compact fields. Never triggers descendants query. Implicit parity boundary — Claude just does not consume that field.\n\n### UI spec (one-line compact)\n\n- With active epic: `12 open · 2 in progress · epic k2ufi (1/3 done)`\n- No active epic, 1 claim: `12 open · ◐ y0tdg refactor skill layout`\n- Zero: `no open issues`\n- Stale: same text, italic + trailing `⋯` marker\n- Narrow terminal (< 60 cols): drop epic clause, keep counts\n\n### Pi expanded (Ctrl+O)\n\nCompact nested tree, indent-2 per level, one line per node:\n```\nepic k2ufi (1/3 done) — Inject specialists-rendered bead task\n  ◐ .1  claimed  Forward rendered role task…\n  ○ .2  open     Prove cross-runtime role prompt…\n  ✓ .3  closed   Wire /role primitive…\n    ✓ .3.1  closed  Adapter test coverage\n```\nCap total lines at N=50; overflow line `+M more (bd show <epic>)`.\n\n### Latency/resource budget (measured)\n\n- Render: 0 subprocess, <= 5ms cache read.\n- Refresh coincident cost with 8 agents: 1 lease-holder × ~2s bd cost + 7 no-op waiters. Compare daemon: 1 daemon × ~2s + 8 IPC reads. Cache-file approach dominates because it needs no live process to enforce single-flight.\n- Cache file size: bounded < 8 KB (50-node cap + no titles > 80 chars).\n- Zero background CPU when idle; refresh only fires on invalidate-file touch or TTL expiry during a render.\n\n### Missing risks (add to VALIDATION or CONSTRAINTS)\n\n1. **Worktree `.beads` symlink**: cache path MUST resolve via `git rev-parse --git-common-dir` in BOTH statusline.mjs and custom-footer, else per-worktree cache duplication + lock contention. statusline already has resolveMainRoot; custom-footer must be audited (memory `statusline-claim-path-fragility` documents the class).\n2. **`.xtrm/cache/` gitignore + xt clean coverage**: gitignore must cover it (verify), and `xt doctor --clean-cache` or `xt clean` should include it, else stale caches survive xt upgrades.\n3. **Cache schema version field**: `{ v: 1, ... }`. On mismatch, treat as stale and refresh. Prevents cross-version xt upgrade rendering garbage.\n4. **Descendants tree unbounded**: epics like xtrm-bq7yd had ~30 descendants across 4 nesting levels. Enforce N=50 cap in the refresh writer (not the renderer) so cache size is bounded even before render sees it.\n5. **`bd` shared-Dolt-server hard down**: refresh child gets non-zero exit; cache goes `stale: true` indefinitely. Render should show age when `now - ts > 10 × TTL` (e.g. `stale 3m`) so user knows to `bd doctor`.\n6. **Current Claude statusline 250ms `run()` timeout**: this is not a design issue — it is a symptom of using one timeout for both fast `git` and slow `bd`. Fix inside the implementation task: split into `runFast(250ms)` for git and `runSlow(2000ms)` for bd. Do NOT roll into the design decision.\n7. **bd post-hook invalidation coupling**: current bd hooks are shell scripts under `.beads/hooks/`. They must be updated by `xt install --apply` or `bd hooks install` to add the touch step. Guard against xt-uninstalled repos where the hook won't run — fallback is TTL-only, already covered.\n8. **Multi-runtime cache write races**: only the lease holder writes. Renders never write. Renderer never mutates cache mtime. Atomic write via `<tmp>-<pid>.json → rename(cache)`, same pattern statusline.mjs already uses.\n9. **Test surface**: zero-render-I/O (fixture cache → snapshot render), fail-soft (missing cache → skeleton), stale marker (aged cache → dim), lease contention (3 concurrent starts, exactly one refresh subprocess spawned), worktree cache-path convergence (main + linked worktree both read same file), Pi expansion refresh trigger (Ctrl+O with absent `descendants` fires on-demand refresh).\n\n### Simplification wins vs prior state\n\n- Drops per-agent duplicate refresh work (all agents in a repo share 1 refresh per TTL, not N).\n- Drops planned daemon entirely — no election, no orphan reap, no pid staleness, no `xt end` daemon-terminate step.\n- Cache is the boundary — no cross-runtime IPC contract to design; both runtimes just read JSON.\n- Fixes the visible `no open issues` bug as a side effect (via fail-soft + longer bd timeout).\n\n### Non-recommendations (explicitly rejected)\n\n- Repo-scoped daemon materializer: complexity/failure-mode budget not repaid by any measured win when a shared file already coalesces N agents into 1 refresh.\n- Direct `.beads` DB reads: violates constraint and couples to Dolt schema; also would require read-side lock coordination with the bd shared-server.\n- Always-on polling: violates NON_GOALS.",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Design low-impact beads status UI for Pi and Claude",
+        "updated_at": "2026-07-13T01:59:05Z"
+      }
+    },
+    "xtrm-77t9q.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-13T04:59:46Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-13T06:59:45Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-77t9q",
+            "issue_id": "xtrm-77t9q.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-13T06:59:47Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-77t9q.3",
+            "issue_id": "xtrm-77t9q.4",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nPi custom-footer surfaces unread xtmux messages per-pane via the pi-inbox-reply extension. Claude statusline has no equivalent — an agent-coordinator or operator working in a Claude pane cannot see at a glance whether the sibling pane has queued a message for them, and must poll manually via 'tmux-session-picker message-list --for $SID'. This is asymmetric UX.\n\n## SUCCESS\n- Claude statusline surfaces unread count for the current pane, prepended to line3.\n- Empty state (0 unread) renders nothing (no line noise).\n- Freshness marker for stale unacked messages (e.g. bold red '!' if oldest > 5 min).\n- Zero render-time subprocess: fetched in detached refresh, cached per-pane.\n- Fail-soft: TMUX absent, tmux-session-picker missing, or non-tmux invocation → no indicator, no crash.\n- No regression on the existing beads-status shared cache — this is a separate per-pane cache.\n\n## SCOPE\n- .xtrm/hooks/statusline.mjs (extend refresh + render)\n- .xtrm/hooks/statusline.test.mjs (fixture unread cache, verify prepend + fail-soft paths)\n- Optional new helper .xtrm/hooks/unread-cache.mjs if the surface warrants extraction\n\n## CONSTRAINTS\n- Per-pane cache path: <CACHE_DIR>/xtrm-sl-unread-<paneHash>.json where paneHash = md5(TMUX_PANE).slice(0,8).\n- Schema: { ts, count, oldestUnackedAtMs }.\n- TTL: 5s (align with existing statusline caches).\n- Query: tmux-session-picker unread-count --for $SID --pane $TMUX_PANE where $SID = 'tmux display-message -p #{session_id}'.\n- Runtime for tmux-session-picker call: warm ~110ms (measured 2026-07-13 on this machine — under detached refresh budget).\n- Render format: '✉ N · <rest of line3>'. Bold red '!' marker if age > 5 min.\n- No changes to Pi custom-footer or shared beads cache module.\n\n## VALIDATION\n- Test: fixture cache with count=3, oldest recent → line3 starts with '✉ 3 ·'.\n- Test: fixture cache with count=0 → no marker.\n- Test: TMUX env absent → no indicator, no throw.\n- Test: tmux-session-picker missing (PATH stripped) → no indicator, no throw.\n- Manual smoke: send a test message via message-send to current session, wait 5s, see counter increment.\n\n## OUTPUT\nExtended statusline + tests + optional helper module.\n\n## NOTES\n- Discovered during xtrm-77t9q.3 release-cut discussion after operator noticed Pi has this indicator via custom-footer but Claude does not (2026-07-13).\n- Defer to after xtrm-77t9q.3 (release cut) to keep MVP scope tight.",
+        "id": "xtrm-77t9q.4",
+        "issue_type": "feature",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "Unread-message indicator in Claude statusline (parity with Pi custom-footer)",
+        "updated_at": "2026-07-13T04:59:46Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-13T06:59:45Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-77t9q",
+        "issue_id": "xtrm-77t9q.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-77t9q.4",
+      "source_field": "dependencies",
+      "target": "xtrm-77t9q",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-77t9q",
+  "root_title": "Design low-impact beads status UI for Pi and Claude",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
