@@ -37,6 +37,11 @@ Claude Code refuses a channel entry that is not on an approved allowlist. The
 allowlist is a managed (host policy) setting. Without it, the flag is accepted,
 the session starts normally, and the channel is silently dropped.
 
+An unset `allowedChannelPlugins` does not mean "allow everything". It falls back
+to a default allowlist that Claude Code fetches from the server, and that list
+does not carry this plugin, so the default outcome on an unconfigured machine is
+a refusal rather than a pass.
+
 Create the policy file as root:
 
 | OS | Path |
