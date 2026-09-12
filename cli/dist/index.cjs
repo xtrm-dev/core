@@ -58290,13 +58290,6 @@ function rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, delete
     ));
   }
 }
-function resolveStatuslineScript(worktreePath) {
-  const localStatusline = import_node_path13.default.join(worktreePath, ".xtrm", "hooks", "statusline.mjs");
-  if ((0, import_node_fs2.existsSync)(localStatusline)) return localStatusline;
-  const repoStatusline = import_node_path13.default.join(worktreePath, "hooks", "statusline.mjs");
-  if ((0, import_node_fs2.existsSync)(repoStatusline)) return repoStatusline;
-  return null;
-}
 function ensureWorktreeSpecialists(worktreePath, mainRepoPath) {
   const worktreeSpecialistsRoot = import_node_path13.default.join(worktreePath, ".specialists");
   (0, import_node_fs2.mkdirSync)(worktreeSpecialistsRoot, { recursive: true });
@@ -58769,7 +58762,6 @@ async function launchWorktreeSession(opts) {
   }
   try {
     if (runtime === "claude") {
-      const claudeDir = import_node_path13.default.join(worktreePath, ".claude");
       try {
         if (shouldUseGlobalSkills(worktreePath) && !worktreeHasProjectUserPacks(worktreePath)) {
           verifyGlobalPointer();
@@ -58790,23 +58782,6 @@ async function launchWorktreeSession(opts) {
         const warning = kleur_default.dim(`  warning: could not provision specialist definitions (${message})`);
         if (structuredOutput) console.error(warning);
         else console.log(warning);
-      }
-      const localSettings = {};
-      const statuslinePath = resolveStatuslineScript(worktreePath);
-      if (statuslinePath) {
-        localSettings.statusLine = {
-          type: "command",
-          command: `node ${JSON.stringify(statuslinePath)}`,
-          padding: 1
-        };
-      }
-      const localSettingsPath = import_node_path13.default.join(claudeDir, "settings.local.json");
-      if (Object.keys(localSettings).length > 0) {
-        try {
-          (0, import_node_fs2.mkdirSync)(claudeDir, { recursive: true });
-          (0, import_node_fs2.writeFileSync)(localSettingsPath, JSON.stringify(localSettings, null, 2));
-        } catch {
-        }
       }
     }
     if (runtime === "pi") {
