@@ -58102,6 +58102,20 @@ function pushSkillArgs(runtimeArgs, skillPaths) {
     runtimeArgs.push("--skill", skill);
   }
 }
+var SPECIALISTS_CHANNEL_ENTRY = "plugin:specialists@xtrm";
+function specialistsPluginInstalled(homeDir = import_node_os7.default.homedir()) {
+  try {
+    const manifest = import_node_path13.default.join(homeDir, ".claude", "plugins", "installed_plugins.json");
+    const parsed = JSON.parse((0, import_node_fs2.readFileSync)(manifest, "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return false;
+    const plugins = parsed.plugins;
+    if (typeof plugins !== "object" || plugins === null) return false;
+    const entry = plugins["specialists@xtrm"];
+    return Array.isArray(entry) && entry.length > 0;
+  } catch {
+    return false;
+  }
+}
 function finalizeTmuxPlan(args) {
   const {
     runtime,
@@ -58117,10 +58131,14 @@ function finalizeTmuxPlan(args) {
     turn1Body,
     model,
     thinking,
-    passthrough
+    passthrough,
+    channels
   } = args;
   runtimeArgs.unshift("--name", sessionDisplayName);
   if (model) runtimeArgs.push("--model", model);
+  if (runtime === "claude" && channels) {
+    runtimeArgs.push("--channels", SPECIALISTS_CHANNEL_ENTRY);
+  }
   if (runtime === "pi" && thinking) runtimeArgs.push("--thinking", thinking);
   if (passthrough && passthrough.length > 0) {
     runtimeArgs.push(...passthrough);
@@ -58154,7 +58172,8 @@ function buildRoleTmuxPlan(args) {
     modelOverride,
     thinkingOverride,
     explicitSkillPaths = [],
-    passthrough
+    passthrough,
+    channels
   } = args;
   const roleSlug = slugifyForSession(role.name);
   const sessionName = bead ? `role-${runtime}-${roleSlug}-${slugifyForSession(bead)}` : `role-${runtime}-${roleSlug}`;
@@ -58187,7 +58206,8 @@ function buildRoleTmuxPlan(args) {
     turn1Body,
     model,
     thinking: thinkingOverride ?? role.thinkingLevel,
-    passthrough
+    passthrough,
+    channels
   });
 }
 function buildBareTmuxPlan(args) {
@@ -58203,7 +58223,8 @@ function buildBareTmuxPlan(args) {
     modelOverride,
     thinkingOverride,
     explicitSkillPaths = [],
-    passthrough
+    passthrough,
+    channels
   } = args;
   const runtimeArgs = [];
   if (runtime === "pi") {
@@ -58224,7 +58245,8 @@ function buildBareTmuxPlan(args) {
     turn1Body,
     model: modelOverride,
     thinking: thinkingOverride,
-    passthrough
+    passthrough,
+    channels
   });
 }
 function buildAgentEnv(paneOptions) {
@@ -58922,7 +58944,10 @@ async function launchTmuxSession(args) {
     modelOverride,
     thinkingOverride,
     explicitSkillPaths,
-    passthrough
+    passthrough,
+    // Filesystem-dependent, so it is resolved here and handed to the plan
+    // builders rather than probed inside them. XTRM-249.
+    channels: runtime === "claude" && specialistsPluginInstalled()
   };
   const plan = args.mode === "role" ? buildRoleTmuxPlan({ ...planCommon, role: args.role }) : buildBareTmuxPlan({ ...planCommon, sessionSlug });
   const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(" ");
@@ -59026,6 +59051,8 @@ async function launchTmuxSession(args) {
   for (const [k, v] of Object.entries(agentEnv)) {
     envArgs.push("-e", `${k}=${v}`);
   }
+  const substrateDir = process.env.XTRM_SUBSTRATE_DIR;
+  if (substrateDir) envArgs.push("-e", `XTRM_SUBSTRATE_DIR=${substrateDir}`);
   let runtimeBuffer = null;
   const cleanupOnSignal = () => {
     if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer);

@@ -1842,6 +1842,12 @@ interface CommonTmuxPlanArgs {
     explicitSkillPaths?: string[];
     /** Argv after `--` on the xt command line, already guard-checked. */
     passthrough?: string[];
+    /** Emit `--channels <SPECIALISTS_CHANNEL_ENTRY>` (claude only). Decided by
+     * the launcher, not here: the answer depends on the real filesystem
+     * (specialistsPluginInstalled reads $HOME) and a plan builder that reads
+     * $HOME is a plan builder whose argv depends on the machine it runs on.
+     * Undefined means no flag. XTRM-249. */
+    channels?: boolean;
 }
 
 /** Emit `--skill <path>` per unique skill, deduped by realpath. pi-only. */
@@ -1852,6 +1858,43 @@ function pushSkillArgs(runtimeArgs: string[], skillPaths: string[]): void {
         if (seen.has(identity)) continue;
         seen.add(identity);
         runtimeArgs.push('--skill', skill);
+    }
+}
+
+/**
+ * Channel entry id for the specialists Claude plugin (plugin name, then
+ * marketplace). XTRM-249. The plugin declares Claude Code's experimental
+ * `claude/channel` capability; with this entry passed to `claude --channels`,
+ * a settling specialist pushes `notifications/claude/channel` straight into
+ * the session instead of leaving it on the asyncRewake polling path.
+ */
+export const SPECIALISTS_CHANNEL_ENTRY = 'plugin:specialists@xtrm';
+
+/**
+ * True when the specialists plugin is installed for this user.
+ *
+ * Fail-soft by construction: a missing file, unreadable file, malformed JSON,
+ * or absent entry all return false and the launcher simply omits --channels.
+ * Claude Code gates channels on several client-side conditions (managed
+ * `channelsEnabled` / `allowedChannelPlugins` among them) and every one of them
+ * fails silently, so an unusable entry must never be fatal here — the flag is
+ * an accelerator for the wake path, not a launch requirement.
+ *
+ * Operators additionally need managed settings — see docs/xt-claude-channels.md.
+ */
+export function specialistsPluginInstalled(
+    homeDir: string = os.homedir(),
+): boolean {
+    try {
+        const manifest = path.join(homeDir, '.claude', 'plugins', 'installed_plugins.json');
+        const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf8'));
+        if (typeof parsed !== 'object' || parsed === null) return false;
+        const plugins = (parsed as { plugins?: unknown }).plugins;
+        if (typeof plugins !== 'object' || plugins === null) return false;
+        const entry = (plugins as Record<string, unknown>)['specialists@xtrm'];
+        return Array.isArray(entry) && entry.length > 0;
+    } catch {
+        return false;
     }
 }
 
@@ -1878,10 +1921,12 @@ function finalizeTmuxPlan(args: {
     model?: string;
     thinking?: string;
     passthrough?: string[];
+    channels?: boolean;
 }): TmuxLaunchPlan {
     const {
         runtime, sessionName, runtimeArgs, sessionDisplayName, agentTask, bead, role,
         parentSessionId, worktreePath, branchName, turn1Body, model, thinking, passthrough,
+        channels,
     } = args;
 
     // Launcher-owned session display name. Pushed first so nothing later in the
@@ -1893,6 +1938,17 @@ function finalizeTmuxPlan(args: {
     // Model: both runtimes accept --model <name>; pi and claude resolve their
     // own defaults when unset.
     if (model) runtimeArgs.push('--model', model);
+
+    // Channel wake: claude-only, and only when the launcher decided the
+    // specialists plugin is installed. Omitting the flag is always safe (the
+    // session falls back to the asyncRewake polling hook), so every negative
+    // answer — no plugin, no manifest, unreadable manifest, not claude — just
+    // means "no flag". Never use --dangerously-load-development-channels: it
+    // prints an interactive confirmation dialog on every launch, which would
+    // block automated dispatch. XTRM-249.
+    if (runtime === 'claude' && channels) {
+        runtimeArgs.push('--channels', SPECIALISTS_CHANNEL_ENTRY);
+    }
 
     // Thinking: pi-only. Claude has no --thinking flag; silently drop when
     // the target is claude (caller warns at CLI-level if user was explicit).
@@ -1949,7 +2005,7 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
 }): TmuxLaunchPlan {
     const {
         runtime, sessionDisplayName, role, bead, parentSessionId, worktreePath, branchName,
-        turn1Body, modelOverride, thinkingOverride, explicitSkillPaths = [], passthrough,
+        turn1Body, modelOverride, thinkingOverride, explicitSkillPaths = [], passthrough, channels,
     } = args;
 
     // Include runtime in the session name so xt pi --role X --bead Y and
@@ -2024,6 +2080,7 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
         model,
         thinking: thinkingOverride ?? role.thinkingLevel,
         passthrough,
+        channels,
     });
 }
 
@@ -2042,6 +2099,7 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
     const {
         runtime, sessionDisplayName, sessionSlug, bead, parentSessionId, worktreePath,
         branchName, turn1Body, modelOverride, thinkingOverride, explicitSkillPaths = [], passthrough,
+        channels,
     } = args;
 
     const runtimeArgs: string[] = [];
@@ -2068,6 +2126,7 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
         model: modelOverride,
         thinking: thinkingOverride,
         passthrough,
+        channels,
     });
 }
 
@@ -3174,6 +3233,9 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const planCommon = {
         runtime, sessionDisplayName, bead, parentSessionId, worktreePath, branchName,
         turn1Body, modelOverride, thinkingOverride, explicitSkillPaths, passthrough,
+        // Filesystem-dependent, so it is resolved here and handed to the plan
+        // builders rather than probed inside them. XTRM-249.
+        channels: runtime === 'claude' && specialistsPluginInstalled(),
     };
     const plan = args.mode === 'role'
         ? buildRoleTmuxPlan({ ...planCommon, role: args.role })
@@ -3301,6 +3363,15 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     for (const [k, v] of Object.entries(agentEnv)) {
         envArgs.push('-e', `${k}=${v}`);
     }
+
+    // A tmux session started by `new-session` inherits the tmux SERVER's
+    // environment, not this process's, so an operator's exported
+    // XTRM_SUBSTRATE_DIR never reached the launched runtime. Without it
+    // specialist_dispatch inside the session is refused outright with
+    // work_item_store_unavailable, so forward it explicitly. Absent or empty
+    // stays absent — substrate resolution has its own fallbacks. XTRM-249.
+    const substrateDir = process.env.XTRM_SUBSTRATE_DIR;
+    if (substrateDir) envArgs.push('-e', `XTRM_SUBSTRATE_DIR=${substrateDir}`);
 
     // Transport. The buffered handshake exists so a 50-1000KB role system
     // prompt never has to fit on a command line: tmux starts a consumer
