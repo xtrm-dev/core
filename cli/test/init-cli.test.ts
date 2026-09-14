@@ -52,7 +52,7 @@ beforeAll(() => {
     // satisfies the confirmed version/list probes without real subprocess
     // contention; Substrate behavior is covered by the mocked unit tests.
     const fakeCommands: Record<string, string> = {
-        sb: '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "sb 0.0.0-init-test"; elif [ "$1" = "doctor" ]; then if [ -f "${SB_STATE_FILE:-/nonexistent}" ]; then echo \'{"schema":"substrate-cli/v1","command":"doctor","ok":true,"data":{"dbPath":"x","schemaHealthy":true,"link":{"projectId":"XTRM-1","source":"link"}}}\'; else echo \'{"schema":"substrate-cli/v1","command":"doctor","ok":true,"data":{"dbPath":"x","schemaHealthy":true,"link":null,"linkError":"none"}}\'; fi; elif [ "$1" = "project" ]; then touch "${SB_STATE_FILE:-/nonexistent}"; if [ "$2" = "create" ]; then echo \'{"id":"prj_initcli"}\'; else echo ok; fi; else echo "{}"; fi\n',
+        sb: '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "sb 0.0.0-init-test"; elif [ "$1" = "init" ]; then touch "${SB_STATE_FILE:-/nonexistent}"; echo \'{"schema":"substrate-cli/v1","command":"init","ok":true,"data":{"project":{"id":"XTRM-1"}}}\' ; elif [ "$1" = "doctor" ]; then if [ -f "${SB_STATE_FILE:-/nonexistent}" ]; then echo \'{"schema":"substrate-cli/v1","command":"doctor","ok":true,"data":{"dbPath":"x","schemaHealthy":true,"link":{"projectId":"XTRM-1","source":"link"}}}\'; else echo \'{"schema":"substrate-cli/v1","command":"doctor","ok":true,"data":{"dbPath":"x","schemaHealthy":true,"link":null,"linkError":"none"}}\'; fi; elif [ "$1" = "project" ]; then touch "${SB_STATE_FILE:-/nonexistent}"; if [ "$2" = "create" ]; then echo \'{"id":"prj_initcli"}\'; else echo ok; fi; else echo "{}"; fi\n',
         pi: '#!/bin/sh\necho "pi 0.0.0-init-test"\n',
         pnpm: '#!/bin/sh\necho "pnpm 0.0.0-init-test"\n',
         deepwiki: '#!/bin/sh\necho "deepwiki 0.0.0-init-test"\n',
@@ -253,21 +253,22 @@ describe('xt init banner non-blocking', () => {
         // a warm real HOME. 60s occasionally flaked; 120s covers observed
         // ~70s worst-case runs. Assertion is still "no interactive prompt".
         // (xtrm-qdsx / xtrm-x12p3)
-        // --sb-create-project exercises the explicit project flow: the fake
-        // sb answers create/link, so init links without prompting or failing.
-        const r = run(['init', '--yes', '--sb-create-project', 'T:InitCli'], { cwd: repoDir, timeout: 45000, env: { SB_STATE_FILE: path.join(repoDir, '.sb-state') } });
+        // R4: no project flags exist. The fake sb answers `init --json`, so
+        // a fresh checkout onboards without prompting or failing.
+        const r = run(['init', '--yes'], { cwd: repoDir, timeout: 45000, env: { SB_STATE_FILE: path.join(repoDir, '.sb-state') } });
         // Should not hang on confirmation prompt
         const combined = r.stdout + r.stderr;
         expect(combined).not.toMatch(/press any key|continue\?/i);
         expect(r.status).toBe(0);
-        expect(combined).toContain('created and linked');
+        expect(combined).toContain('sb init');
     }, 120000);
 
-    it('xt init --yes fails closed without project flags when unlinked', () => {
-        const r = run(['init', '--yes'], { cwd: repoDir, timeout: 20000 });
-        expect(r.status).not.toBe(0);
+    it('xt init help exposes no project-identity flags (R4 normal UX)', () => {
+        const r = run(['init', '--help'], { cwd: repoDir, timeout: 20000 });
+        expect(r.status).toBe(0);
         const combined = r.stdout + r.stderr;
-        expect(combined).toMatch(/--sb-create-project/);
+        expect(combined).not.toContain('--sb-project');
+        expect(combined).not.toContain('--sb-create-project');
     });
 });
 

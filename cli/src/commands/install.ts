@@ -38,8 +38,6 @@ export interface InstallOpts {
     backport?: boolean;
     global?: boolean;
     strictRegistry?: boolean;
-    sbProject?: string;
-    sbCreateProject?: string;
     substrateDir?: string;
     projectRoot?: string;
     /** Override the resolved package root (source of .xtrm/registry.json + skills payload). Test hermetics; production callers omit this. */

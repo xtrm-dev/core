@@ -14,6 +14,8 @@ import {
   linkSbProject,
   parseSbEnvelope,
   resolveSbBin,
+  runSbInit,
+  runSbInitForProject,
   resolveSetupTs,
   runSetupCheck,
   runSetupPlan,
@@ -355,6 +357,78 @@ describe('project link state (via doctor data.link; no list verb exists)', () =>
     const info = getSbProjectLink(undefined, stubRunner({ doctor: { status: 0, stdout: JSON.stringify(noLink) } }));
     expect(info.ok).toBe(false);
     expect(info.projectId).toBeNull();
+  });
+});
+
+describe('sb init --json (R4 onboarding; Core invokes, Substrate owns identity)', () => {
+  const initOk = { schema: 'substrate-cli/v1', command: 'init', ok: true, data: { project: { id: 'XTRM-1' } } };
+  const routesFor = (init: { status: number | null; stdout?: string; stderr?: string }, doctorStdout: string) => ({
+    init,
+    doctor: { status: 0 as number | null, stdout: doctorStdout },
+  });
+
+  it('invokes exactly [init --json] and returns the observed doctor link id', () => {
+    const calls: string[][] = [];
+    const run: SbRunner = (args) => {
+      calls.push(args);
+      if (args[0] === 'init') return { status: 0, stdout: JSON.stringify(initOk), stderr: '' };
+      return { status: 0, stdout: JSON.stringify(healthyDoctorEnvelope), stderr: '' };
+    };
+    const info = runSbInitForProject('/repo', run);
+    expect(info).toEqual({ ok: true, projectId: 'XTRM-1' });
+    expect(calls[0]).toEqual(['init', '--json']);
+  });
+
+  it('returns the doctor-observed id, never the envelope data (non-fabrication)', () => {
+    const other = { schema: 'substrate-cli/v1', command: 'init', ok: true, data: { project: { id: 'prj_elsewhere' } } };
+    const run: SbRunner = (args) => {
+      if (args[0] === 'init') return { status: 0, stdout: JSON.stringify(other), stderr: '' };
+      return { status: 0, stdout: JSON.stringify(healthyDoctorEnvelope), stderr: '' };
+    };
+    // Doctor says XTRM-1; the envelope says prj_elsewhere. Core trusts the read surface.
+    expect(runSbInitForProject('/repo', run)).toEqual({ ok: true, projectId: 'XTRM-1' });
+  });
+
+  it('fails closed on nonzero exit with the store message verbatim', () => {
+    const run = stubRunner(routesFor(
+      { status: 1, stdout: '', stderr: 'sb: init exploded' },
+      JSON.stringify(healthyDoctorEnvelope),
+    ));
+    const info = runSbInitForProject('/repo', run);
+    expect(info.ok).toBe(false);
+    expect(info.projectId).toBeUndefined();
+    expect(info.error).toContain('sb: init exploded');
+  });
+
+  it('fails closed on unparseable stdout even with exit 0', () => {
+    const run = stubRunner(routesFor({ status: 0, stdout: 'not-json{{{', stderr: '' }, JSON.stringify(healthyDoctorEnvelope)));
+    expect(runSbInit('/repo', run).ok).toBe(false);
+    expect(runSbInit('/repo', run).error).toMatch(/unparseable/i);
+    expect(runSbInitForProject('/repo', run).ok).toBe(false);
+  });
+
+  it('fails closed when the envelope reports ok:false (e.g. pre-R2 sb)', () => {
+    const payload = { schema: 'substrate-cli/v1', command: 'init', ok: false, error: 'usage: sb init needs an R2-capable release' };
+    const run = stubRunner(routesFor({ status: 0, stdout: JSON.stringify(payload), stderr: '' }, JSON.stringify(healthyDoctorEnvelope)));
+    const info = runSbInitForProject('/repo', run);
+    expect(info.ok).toBe(false);
+    expect(info.error).toContain('R2-capable');
+  });
+
+  it('fails closed when the envelope carries no data object', () => {
+    const payload = { schema: 'substrate-cli/v1', command: 'init', ok: true };
+    const run = stubRunner(routesFor({ status: 0, stdout: JSON.stringify(payload), stderr: '' }, JSON.stringify(healthyDoctorEnvelope)));
+    expect(runSbInit('/repo', run).ok).toBe(false);
+  });
+
+  it('fails closed with a Core-authored message when init succeeds but nothing is linked', () => {
+    const noLink = { schema: 'substrate-cli/v1', command: 'doctor', ok: true, data: { dbPath: 'x', schemaHealthy: true, link: null, linkError: 'none' } };
+    const run = stubRunner(routesFor({ status: 0, stdout: JSON.stringify(initOk), stderr: '' }, JSON.stringify(noLink)));
+    const info = runSbInitForProject('/repo', run);
+    expect(info.ok).toBe(false);
+    expect(info.projectId).toBeUndefined();
+    expect(info.error).toContain('no Substrate project is linked');
+    expect(info.error).not.toContain('none');
   });
 });
 

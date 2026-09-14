@@ -197,8 +197,9 @@ function buildMinimalSkillsBackup(): Buffer {
     return zlib.gzipSync(Buffer.concat(chunks));
 }
 
-function setupSpawnSync(projectRoot: string, calls: string[], opts: { linked?: boolean } = {}): void {
+function setupSpawnSync(projectRoot: string, calls: string[], opts: { linked?: boolean; init?: 'ok' | 'fail-exit' | 'malformed' | 'ok-false' | 'ok-unlinked' } = {}): void {
     const initiallyLinked = opts.linked ?? true;
+    const initMode = opts.init ?? 'ok';
     // Stateful link: a successful link/create flips later doctor probes to
     // linked, mirroring the real sb store. Without this, Phase 7
     // re-verification would see a stale unlinked state.
@@ -243,6 +244,19 @@ function setupSpawnSync(projectRoot: string, calls: string[], opts: { linked?: b
             calls.push('gitnexus analyze');
             gitnexusAnalyzed = true;
             return { status: 0, stdout: 'indexed', stderr: '' };
+        }
+
+        // R4: Substrate onboarding owns creation/derivation/binding. A
+        // successful init on an unlinked checkout links it (mirrors the
+        // store); every failure shape fails closed without Core inventing
+        // identity.
+        if (key === 'sb init --json') {
+            calls.push('sb init --json');
+            if (initMode === 'fail-exit') return { status: 1, stdout: '', stderr: 'sb: init exploded' };
+            if (initMode === 'malformed') return { status: 0, stdout: 'not-json{{{', stderr: '' };
+            if (initMode === 'ok-false') return { status: 0, stdout: '{"schema":"substrate-cli/v1","command":"init","ok":false,"error":"sb init needs an R2-capable release"}', stderr: '' };
+            if (!initiallyLinked && initMode === 'ok') linkSucceeded = true;
+            return { status: 0, stdout: '{"schema":"substrate-cli/v1","command":"init","ok":true,"data":{"project":{"id":"XTRM-1"}}}', stderr: '' };
         }
 
         // Substrate-first project init: link state comes from doctor
@@ -484,10 +498,10 @@ describe('xtrm init phased orchestrator', () => {
         expect(runInstallSpy).not.toHaveBeenCalled();
         expect(calls).toEqual([
             'sb doctor --json',
-            'sb doctor --json',
             'setup.ts plan',
             'true',
             'setup.ts check',
+            'sb init --json',
             'sb doctor --json',
             'runMachineBootstrap',
             'runClaudeRuntimeSync',
@@ -540,107 +554,121 @@ describe('xtrm init phased orchestrator', () => {
         expect(mocked.runMachineBootstrap).toHaveBeenCalledWith({ dryRun: false });
     });
 
-    it('links an existing project with --sb-project when unlinked', async () => {
-        const calls: string[] = [];
-        setupSpawnSync(projectRoot, calls, { linked: false });
-
-        const { runProjectInit } = await import('../src/commands/init.js?t=sb-link-' + Date.now());
-        await runProjectInit({ yes: true, sbProject: 'XTRM-9' });
-
-        expect(calls).toContain('sb project link --project XTRM-9');
-        expect(logs.join('\n')).toContain('linked to Substrate project XTRM-9');
-        expect(process.exitCode ?? 0).toBe(0);
-    });
-
-    it('creates and links with --sb-create-project when unlinked', async () => {
-        const calls: string[] = [];
-        setupSpawnSync(projectRoot, calls, { linked: false });
-
-        const { runProjectInit } = await import('../src/commands/init.js?t=sb-create-' + Date.now());
-        await runProjectInit({ yes: true, sbCreateProject: 'X:Demo' });
-
-        expect(calls).toContain('sb project create --prefix X --name Demo');
-        // created id links explicitly: unambiguous in a non-empty store.
-        expect(calls).toContain('sb project link --project prj_fixture');
-        expect(logs.join('\n')).toContain('created and linked');
-        expect(process.exitCode ?? 0).toBe(0);
-    });
-
-    it('fails closed when unlinked, non-interactive, and no project flags', async () => {
+    it('initializes a fresh unlinked checkout via sb init with no prompt and no project flags', async () => {
         const calls: string[] = [];
         setupSpawnSync(projectRoot, calls, { linked: false });
         const previousExitCode = process.exitCode;
 
         try {
-            const { runProjectInit } = await import('../src/commands/init.js?t=sb-nolink-' + Date.now());
+            const { runProjectInit } = await import('../src/commands/init.js?t=sb-init-fresh-' + Date.now());
+            await runProjectInit({ yes: true });
+
+            expect(process.exitCode ?? 0).toBe(0);
+            // Contract order: enrollment provisions, then sb init onboards.
+            expect(calls.indexOf('setup.ts plan')).toBeLessThan(calls.indexOf('sb init --json'));
+            expect(logs.join('\n')).toContain('sb init');
+            // Core issues no project create|link of its own on any path.
+            expect(calls.filter(c => c.startsWith('sb project'))).toHaveLength(0);
+            // No identity prompt: a non-interactive run prompts nothing.
+            expect(mocked.prompts).not.toHaveBeenCalled();
+            // Onboarding verified, so setup continues.
+            expect(mocked.runMachineBootstrap).toHaveBeenCalledWith({ dryRun: false });
+        } finally {
+            process.exitCode = previousExitCode;
+        }
+    });
+
+    it('invokes sb init even when already linked (no cached-link shortcut)', async () => {
+        const calls: string[] = [];
+        setupSpawnSync(projectRoot, calls);
+        const previousExitCode = process.exitCode;
+
+        try {
+            const { runProjectInit } = await import('../src/commands/init.js?t=sb-init-linked-' + Date.now());
+            await runProjectInit({ yes: true });
+
+            expect(process.exitCode ?? 0).toBe(0);
+            expect(calls).toContain('sb init --json');
+            expect(mocked.runMachineBootstrap).toHaveBeenCalledWith({ dryRun: false });
+        } finally {
+            process.exitCode = previousExitCode;
+        }
+    });
+
+    it('fails closed when sb init exits nonzero (setup stops before machine bootstrap)', async () => {
+        const calls: string[] = [];
+        setupSpawnSync(projectRoot, calls, { linked: false, init: 'fail-exit' });
+        const previousExitCode = process.exitCode;
+
+        try {
+            const { runProjectInit } = await import('../src/commands/init.js?t=sb-init-fail-' + Date.now());
             await runProjectInit({ yes: true });
 
             expect(process.exitCode).toBe(1);
-            expect(logs.join('\n')).toContain('--sb-project');
-            expect(logs.join('\n')).toContain('--sb-create-project');
-            // pre-confirm gate: no phase runs, not even machine bootstrap.
+            expect(logs.join('\n')).toContain('sb init');
+            // Contract order: enrollment ran, init failed, later mutations stop.
+            expect(calls).toContain('setup.ts plan');
+            expect(calls).toContain('sb init --json');
             expect(mocked.runMachineBootstrap).not.toHaveBeenCalled();
             expect(mocked.runClaudeRuntimeSync).not.toHaveBeenCalled();
-            // and enrollment never shells its commands.
-            expect(calls.filter(c => c.startsWith('setup.ts'))).toHaveLength(0);
         } finally {
             process.exitCode = previousExitCode;
         }
     });
 
-    it('rejects malformed --sb-create-project values', async () => {
+    it('fails closed on a malformed sb init envelope', async () => {
         const calls: string[] = [];
-        setupSpawnSync(projectRoot, calls, { linked: false });
+        setupSpawnSync(projectRoot, calls, { linked: false, init: 'malformed' });
         const previousExitCode = process.exitCode;
 
         try {
-            const { runProjectInit } = await import('../src/commands/init.js?t=sb-badflag-' + Date.now());
-            await runProjectInit({ yes: true, sbCreateProject: 'no-colon-here' });
+            const { runProjectInit } = await import('../src/commands/init.js?t=sb-init-malformed-' + Date.now());
+            await runProjectInit({ yes: true });
 
             expect(process.exitCode).toBe(1);
-            expect(logs.join('\n')).toContain('PREFIX:Name');
-            expect(calls.filter(c => c.startsWith('sb project create'))).toHaveLength(0);
-        } finally {
-            process.exitCode = previousExitCode;
-        }
-    });
-
-    it('fails before mutations on malformed --sb-create-project', async () => {
-        const calls: string[] = [];
-        setupSpawnSync(projectRoot, calls, { linked: false });
-        const previousExitCode = process.exitCode;
-
-        try {
-            const { runProjectInit } = await import('../src/commands/init.js?t=sb-badflag35-' + Date.now());
-            await runProjectInit({ yes: true, sbCreateProject: 'no-colon-here' });
-
-            expect(process.exitCode).toBe(1);
-            expect(logs.join('\n')).toContain('PREFIX:Name');
-            expect(mocked.runMachineBootstrap).not.toHaveBeenCalled();
-            expect(mocked.runClaudeRuntimeSync).not.toHaveBeenCalled();
-            expect(calls.filter(c => c.startsWith('sb project create'))).toHaveLength(0);
-            // Phase 3.4 pure validation precedes enrollment: zero setup calls.
-            expect(calls.filter(c => c.startsWith('setup.ts'))).toHaveLength(0);
-        } finally {
-            process.exitCode = previousExitCode;
-        }
-    });
-
-    it('rejects conflicting --sb-project and --sb-create-project', async () => {
-        const calls: string[] = [];
-        setupSpawnSync(projectRoot, calls, { linked: false });
-        const previousExitCode = process.exitCode;
-
-        try {
-            const { runProjectInit } = await import('../src/commands/init.js?t=sb-both-' + Date.now());
-            await runProjectInit({ yes: true, sbProject: 'XTRM-9', sbCreateProject: 'X:Demo' });
-
-            expect(process.exitCode).toBe(1);
-            expect(logs.join('\n')).toContain('only one of');
+            expect(logs.join('\n')).toContain('unparseable');
+            expect(calls).toContain('sb init --json');
             expect(mocked.runMachineBootstrap).not.toHaveBeenCalled();
             expect(calls.filter(c => c.startsWith('sb project'))).toHaveLength(0);
-            // Phase 3.4 conflict check precedes enrollment: zero setup calls.
-            expect(calls.filter(c => c.startsWith('setup.ts'))).toHaveLength(0);
+        } finally {
+            process.exitCode = previousExitCode;
+        }
+    });
+
+    it('fails closed when sb init reports ok:false', async () => {
+        const calls: string[] = [];
+        setupSpawnSync(projectRoot, calls, { linked: false, init: 'ok-false' });
+        const previousExitCode = process.exitCode;
+
+        try {
+            const { runProjectInit } = await import('../src/commands/init.js?t=sb-init-okfalse-' + Date.now());
+            await runProjectInit({ yes: true });
+
+            expect(process.exitCode).toBe(1);
+            // The envelope error surfaces verbatim; nothing is invented.
+            expect(logs.join('\n')).toContain('R2-capable');
+            expect(calls).toContain('sb init --json');
+            expect(mocked.runMachineBootstrap).not.toHaveBeenCalled();
+            expect(calls.filter(c => c.startsWith('sb project'))).toHaveLength(0);
+        } finally {
+            process.exitCode = previousExitCode;
+        }
+    });
+
+    it('fails closed when sb init succeeds but nothing is linked', async () => {
+        const calls: string[] = [];
+        setupSpawnSync(projectRoot, calls, { linked: false, init: 'ok-unlinked' });
+        const previousExitCode = process.exitCode;
+
+        try {
+            const { runProjectInit } = await import('../src/commands/init.js?t=sb-init-nolink-' + Date.now());
+            await runProjectInit({ yes: true });
+
+            expect(process.exitCode).toBe(1);
+            expect(logs.join('\n')).toContain('no Substrate project is linked');
+            expect(calls).toContain('sb init --json');
+            expect(mocked.runMachineBootstrap).not.toHaveBeenCalled();
+            expect(mocked.runClaudeRuntimeSync).not.toHaveBeenCalled();
         } finally {
             process.exitCode = previousExitCode;
         }
@@ -654,7 +682,7 @@ describe('xtrm init phased orchestrator', () => {
 
         try {
             const { runProjectInit } = await import('../src/commands/init.js?t=sb-legacy-' + Date.now());
-            await runProjectInit({ yes: true, sbCreateProject: 'X:Demo' });
+            await runProjectInit({ yes: true });
 
             expect(process.exitCode).toBe(1);
             expect(logs.join('\n')).toContain('migration');
@@ -669,75 +697,30 @@ describe('xtrm init phased orchestrator', () => {
         }
     });
 
-    it('collects interactive identity intent before enrollment; skip cancels with zero setup calls', async () => {
+    it('issues no identity prompt on a fresh checkout (single confirm gate only)', async () => {
         const calls: string[] = [];
         setupSpawnSync(projectRoot, calls, { linked: false });
         const previousExitCode = process.exitCode;
-        mocked.prompts.mockResolvedValueOnce({ confirm: true }).mockResolvedValueOnce({ action: 'skip' });
+        mocked.prompts.mockResolvedValueOnce({ confirm: true });
         for (const stream of [process.stdin, process.stdout] as const) {
             Object.defineProperty(stream, 'isTTY', { value: true, configurable: true });
         }
 
         try {
-            const { runProjectInit } = await import('../src/commands/init.js?t=sb-interactive-skip-' + Date.now());
+            const { runProjectInit } = await import('../src/commands/init.js?t=sb-no-prompt-' + Date.now());
             await runProjectInit({});
 
-            expect(process.exitCode).toBe(1);
-            expect(logs.join('\n')).toContain('link later');
-            // cancellation precedes enrollment: zero setup + sb calls.
-            expect(calls.filter(c => c.startsWith('setup.ts'))).toHaveLength(0);
-            expect(calls.filter(c => c.startsWith('sb project'))).toHaveLength(0);
-            expect(mocked.runMachineBootstrap).not.toHaveBeenCalled();
+            // sb init onboards the fresh checkout; setup completes.
+            expect(process.exitCode ?? 0).toBe(0);
+            expect(calls).toContain('sb init --json');
+            // Exactly one prompt: the confirm gate. No id/prefix/name prompt.
+            expect(mocked.prompts).toHaveBeenCalledTimes(1);
+            expect(mocked.runMachineBootstrap).toHaveBeenCalled();
         } finally {
             process.exitCode = previousExitCode;
             for (const stream of [process.stdin, process.stdout] as const) {
                 Object.defineProperty(stream, 'isTTY', { value: false, configurable: true });
             }
-        }
-    });
-
-    it('fails closed when create returns no project id (never a bare link)', async () => {
-        const calls: string[] = [];
-        setupSpawnSync(projectRoot, calls, { linked: false });
-        const previousExitCode = process.exitCode;
-        const prevImpl = mocked.spawnSync.getMockImplementation();
-        mocked.spawnSync.mockImplementation((command: string, args: string[] = [], options: any = {}) => {
-            const key = `${command} ${args.join(' ')}`.trim();
-            if (key.startsWith('sb project create ')) {
-                calls.push(`${key} [no-id]`);
-                return { status: 0, stdout: 'created', stderr: '' };
-            }
-            return prevImpl!(command, args, options);
-        });
-
-        try {
-            const { runProjectInit } = await import('../src/commands/init.js?t=sb-noid-' + Date.now());
-            await runProjectInit({ yes: true, sbCreateProject: 'X:Demo' });
-
-            expect(process.exitCode).toBe(1);
-            expect(logs.join('\n')).toContain('no project id');
-            // created but never linked: zero link calls of any form.
-            expect(calls.filter(c => c.startsWith('sb project link'))).toHaveLength(0);
-        } finally {
-            process.exitCode = previousExitCode;
-        }
-    });
-
-    it('fails before mutations on nonexistent --sb-project', async () => {
-        const calls: string[] = [];
-        setupSpawnSync(projectRoot, calls, { linked: false });
-        const previousExitCode = process.exitCode;
-
-        try {
-            const { runProjectInit } = await import('../src/commands/init.js?t=sb-nolink35-' + Date.now());
-            await runProjectInit({ yes: true, sbProject: 'NOPE' });
-
-            expect(process.exitCode).toBe(1);
-            expect(logs.join('\n')).toContain('failed');
-            expect(mocked.runMachineBootstrap).not.toHaveBeenCalled();
-            expect(mocked.runClaudeRuntimeSync).not.toHaveBeenCalled();
-        } finally {
-            process.exitCode = previousExitCode;
         }
     });
 
