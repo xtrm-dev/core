@@ -18,6 +18,12 @@ import {
     parseLiveTmuxSessionListing,
     sanitizeRuntimeVersion,
 } from '../core/launch-outcome.js';
+import {
+    buildSessionIdentityEnv,
+    resolveCurrentTmuxSessionIdentity,
+    resolveTmuxSessionId,
+    XTRM_SESSION_ID_VAR,
+} from '../core/session-identity.js';
 
 /**
  * Hard ceiling for the turn-1 shell command length. tmux new-session refuses
@@ -1578,7 +1584,9 @@ export function buildBufferedRuntimeCommand(
         '}',
         'const payload = JSON.parse(raw)',
         "if (typeof payload.runtimeCmd !== 'string' || !['pi', 'claude'].includes(path.basename(payload.runtimeCmd)) || (!['pi', 'claude'].includes(payload.runtimeCmd) && !path.isAbsolute(payload.runtimeCmd)) || !Array.isArray(payload.runtimeArgs) || payload.runtimeArgs.some((arg) => typeof arg !== 'string')) process.exit(2)",
-        "const result = spawnSync(payload.runtimeCmd, payload.runtimeArgs, { stdio: 'inherit' })",
+        "const sessionEnv = payload.sessionEnv === undefined ? {} : payload.sessionEnv",
+        "if (typeof sessionEnv !== 'object' || sessionEnv === null || Array.isArray(sessionEnv) || Object.entries(sessionEnv).some(([k, v]) => typeof k !== 'string' || typeof v !== 'string' || !/^XTRM_[A-Z0-9_]+$/.test(k))) process.exit(2)",
+        "const result = spawnSync(payload.runtimeCmd, payload.runtimeArgs, { stdio: 'inherit', env: { ...process.env, ...sessionEnv } })",
         'if (result.error) throw result.error',
         'process.exit(result.status ?? 1)',
     ].join(';');
@@ -3092,9 +3100,15 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const runtimeCmd = runtime === 'claude' ? 'claude' : 'pi';
     const runtimeArgs = ['--name', worktreeName];
     if (runtime === 'claude') runtimeArgs.push('--dangerously-skip-permissions');
+    // XTRM-252.4: the same session identity the tmux path publishes. Inside
+    // tmux the current session is the launched session; outside tmux there
+    // is no session to observe and the variables stay absent (never
+    // fabricated) so X1 readers keep one absent-means-unknown rule.
+    const directSessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
+        env: { ...process.env, ...directSessionEnv },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3245,6 +3259,10 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const agentEnv = buildAgentEnv(plan.paneOptions);
 
     if (currentPaneMode) {
+        // XTRM-252.4: the current session is the launched session here, so
+        // both id and name are known pre-spawn and ride the spawn env next
+        // to the agent metadata. Unknown stays absent (never fabricated).
+        const sessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
         // Resolve the current pane id (the pane the launcher was invoked
         // from). All @agent_* pane options get written here; pi then runs
         // in this same pane with stdio inherited.
@@ -3285,7 +3303,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
-                env: { ...process.env, ...agentEnv },
+                env: { ...process.env, ...agentEnv, ...sessionEnv },
             });
             process.exit(runtimeResult.status ?? 0);
         }
@@ -3296,7 +3314,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
             stdio: 'inherit',
-            env: { ...process.env, ...agentEnv },
+            env: { ...process.env, ...agentEnv, ...sessionEnv },
         });
         const runtimeExit = new Promise<number>((resolve) => {
             runtimeProcess.once('error', () => resolve(1));
@@ -3357,10 +3375,15 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         plan.sessionName = suffixed;
     }
 
-    // Pass XTMUX_AGENT_* through to the new session's environment via -e so
-    // scripts/agent-state.sh (running inside the new pane) can pick them up.
+    // Pass XTMUX_AGENT_* plus the stable XTRM session identity through to
+    // the new session's environment via -e so scripts/agent-state.sh
+    // (running inside the new pane) can pick them up. The session name is
+    // launcher-computed hence known pre-spawn; the server-assigned session
+    // id is resolved post-creation and published via set-environment below
+    // (plus the role payload, which is handed over after creation too).
+    const newSessionIdentityEnv = buildSessionIdentityEnv({ sessionName: plan.sessionName });
     const envArgs: string[] = [];
-    for (const [k, v] of Object.entries(agentEnv)) {
+    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv })) {
         envArgs.push('-e', `${k}=${v}`);
     }
 
@@ -3412,6 +3435,13 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             runtimeCmdString,
         ], { stdio: 'pipe', encoding: 'utf8' });
         if (newSess.status !== 0) failNewSession((newSess.stderr ?? '').trim());
+        // Server-assigned id, now knowable: publish it onto the session
+        // environment so in-session readers observe the same identity the
+        // launcher holds. Absent when tmux cannot answer — never invented.
+        const bareSessionId = resolveTmuxSessionId(plan.sessionName);
+        if (bareSessionId) {
+            spawnSync('tmux', ['set-environment', '-t', plan.sessionName, XTRM_SESSION_ID_VAR, bareSessionId], { stdio: 'pipe' });
+        }
     } else {
         runtimeBuffer = createRuntimeBufferName();
         const newSess = spawnSync('tmux', [
@@ -3437,9 +3467,17 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             process.exit(1);
         }
 
+        // Same post-creation publication as the bare path; the payload is
+        // handed over after the session exists, so the consumer execs the
+        // runtime with the full identity already in its process env.
+        const roleSessionId = resolveTmuxSessionId(plan.sessionName);
+        if (roleSessionId) {
+            spawnSync('tmux', ['set-environment', '-t', plan.sessionName, XTRM_SESSION_ID_VAR, roleSessionId], { stdio: 'pipe' });
+        }
         const bufferedPayload = JSON.stringify({
             runtimeCmd: runtimeExecutable,
             runtimeArgs: plan.runtimeArgs,
+            sessionEnv: buildSessionIdentityEnv({ sessionId: roleSessionId, sessionName: plan.sessionName }),
         });
         const loaded = spawnSync('tmux', ['load-buffer', '-b', runtimeBuffer, '-'], {
             input: bufferedPayload,

@@ -31,7 +31,7 @@ import { calculateDiff } from '../core/diff.js';
 import { findRepoRoot } from '../utils/repo-root.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
 import { printDependencyMaintenanceSummary, runDependencyMaintenance } from '../core/dependency-maintenance.js';
-import { createSbProject, defaultStateDbPath, executePlanCommands, getSbProjectLink, getSbVersion, linkSbProject, parseCreateProjectFlag, resolveSubstrateSource, runSetupCheck, runSetupPlan } from '../core/substrate.js';
+import { defaultStateDbPath, executePlanCommands, getSbProjectLink, getSbVersion, resolveSubstrateSource, runSbInitForProject, runSetupCheck, runSetupPlan } from '../core/substrate.js';
 import { migrationBlockedReason, planSubstrateMigration } from '../core/substrate-migration.js';
 
 let cachedPackageRoot: string | undefined;
@@ -621,7 +621,7 @@ function renderInitPlan(inventory: InitInventory): void {
     // Phase 7: Project Bootstrap
     console.log(kleur.bold('\n  Project Bootstrap'));
     const projActions = [
-        needsSubstrateInit ? 'sb project create/link — resolve Substrate project + state.db' : null,
+        needsSubstrateInit ? 'sb init — initialize Substrate project + repository binding' : null,
         needsGitNexus ? 'gitnexus analyze — build code index' : null,
         'AGENTS.md + CLAUDE.md — workflow headers',
     ].filter(Boolean) as string[];
@@ -631,7 +631,7 @@ function renderInitPlan(inventory: InitInventory): void {
     if (substrateLink?.linked) {
         console.log(kleur.dim(`  ✓  linked to Substrate project ${substrateLink.projectId ?? ''}`));
     } else if (substrateLink) {
-        console.log(kleur.yellow('  ⚠  no Substrate project linked — non-interactive runs require --sb-project or --sb-create-project'));
+        console.log(kleur.yellow('  ⚠  no Substrate project linked — `xt init` runs `sb init` to initialize it'));
     }
 
     // Phase 8: Verification (implicit)
@@ -662,7 +662,7 @@ async function confirmInitPlan(yes: boolean): Promise<boolean> {
 // wiring.
 
 async function runProjectBootstrap(projectRoot: string, isGitRepo: boolean): Promise<{ substrateLinked: boolean }> {
-    // Atomicity: the link was resolved at Phase 3.5 before any mutation;
+    // Atomicity: the link was established at Phase 3.5b before any mutation;
     // re-verify here and fail closed (zero Phase 7 writes) on drift.
     if (isGitRepo) {
         const substrate = await runSubstrateInitForProject(projectRoot);
@@ -788,8 +788,6 @@ async function resolveInitProjectRoot(yes: boolean): Promise<{ projectRoot: stri
 //   9. Next Steps         — guidance based on verification result
 
 export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
-    // Run-local intent state: never leaks across concurrent calls.
-    let collectedIntent: CollectedProjectIntent | null = null;
     const { dryRun = false, yes = false } = opts;
     const effectiveYes = yes || process.argv.includes('--yes') || process.argv.includes('-y');
 
@@ -819,12 +817,12 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
         return;
     }
 
-    // ── Phase 3.4: migration detection + pure identity validation ─────────
-    // Read-only and mutation-free: a legacy board, conflicting flags, a
-    // malformed create value, or missing identity (non-interactive) fails
-    // here — before enrollment mutates npm/Pi/Claude state. Interactive
-    // runs proceed to the Phase 3.5 prompt. Mirrors resolveSubstrateProject
-    // without executing anything.
+    // ── Phase 3.4: migration detection ────────────────────────────────────
+    // Read-only and mutation-free: a legacy board fails here — before
+    // enrollment mutates npm/Pi/Claude state. Project identity is owned by
+    // Substrate (ADR §19): init never prompts for an id, prefix or name and
+    // accepts no identity flags. Onboarding runs at Phase 3.5b via
+    // `sb init --json`, which owns creation, derivation and binding.
     {
         const legacy = await planSubstrateMigration(projectRoot);
         if (legacy.needed) {
@@ -832,31 +830,6 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
             console.log(kleur.red(`  ✗ substrate migration required: ${blocked ?? legacy.reason}`));
             process.exitCode = 1;
             return;
-        }
-        const intentError = validateProjectIntent(opts);
-        if (intentError) {
-            console.log(kleur.red(`  ✗ ${intentError}`));
-            process.exitCode = 1;
-            return;
-        }
-        // Link state is read once: both gates below share one probe.
-        const preLink = !opts.sbProject && !opts.sbCreateProject ? getSbProjectLink(projectRoot) : null;
-        if (preLink && !preLink.ok && (effectiveYes || !hasInteractiveTTY())) {
-            console.log(kleur.red('  ✗ no Substrate project linked: re-run with --sb-project <id> to link, or --sb-create-project <PREFIX:Name> to create and link'));
-            process.exitCode = 1;
-            return;
-        }
-        // Interactive runs collect the operator's identity intent HERE, not
-        // after enrollment: cancellation can never leave a partial install.
-        // Semantic id existence still waits for sb at Phase 3.5b.
-        if (preLink && !preLink.ok) {
-            const intent = await promptProjectIntent();
-            if (!intent.ok) {
-                console.log(kleur.red(`  ✗ ${intent.error}`));
-                process.exitCode = 1;
-                return;
-            }
-            collectedIntent = intent.intent;
         }
     }
 
@@ -887,17 +860,22 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
         return;
     }
 
-    // ── Phase 3.5b: Substrate project resolution ────────────────────────────
-    // Invalid or missing identity fails here — after the operator confirmed,
-    // but before machine bootstrap, runtime sync, registry, and project
-    // bootstrap (all mutations). Interactive runs prompt here, not Phase 7.
+    // ── Phase 3.5b: Substrate onboarding via `sb init --json` ───────────────
+    // Runs after the operator confirmed but before machine bootstrap,
+    // runtime sync, registry, and project bootstrap (all mutations).
+    // Substrate owns onboarding end to end (ADR §19): Core invokes, then
+    // proves Project + repository initialization through the doctor link
+    // read surface. No prompts, no flags, no `project create|link` here.
     {
-        const project = await resolveSubstrateProject(projectRoot, opts, !effectiveYes && hasInteractiveTTY(), collectedIntent);
-        if (!project.linked) {
-            console.log(kleur.red('  ✗ Substrate project not resolved — init cannot complete Substrate-first setup.'));
+        console.log(kleur.bold('Initializing Substrate project (sb init)...'));
+        const project = runSbInitForProject(projectRoot);
+        if (!project.ok) {
+            console.log(kleur.red(`  ✗ ${project.error ?? 'sb init failed'} — init cannot complete Substrate-first setup.`));
+            console.log(kleur.dim('    Fix Substrate (upgrade to a release with `sb init`, or repair the store) and re-run xtrm init.'));
             process.exitCode = 1;
             return;
         }
+        console.log(kleur.dim(`  ✓ checkout initialized by sb init (Substrate project ${project.projectId})`));
     }
 
     // ── Phase 4: Machine Bootstrap ───────────────────────────────────────────
@@ -1004,7 +982,7 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
     // ── Phase 7: Project Bootstrap ───────────────────────────────────────────
     // Initialize the Substrate project, inject CLAUDE.md/AGENTS.md instruction
     // headers, and ensure the GitNexus code intelligence index is current.
-    // An unlinked project fails the run: §40 requires create-or-resolve.
+    // An unlinked project fails the run: §40 requires sb-init onboarding.
     const bootstrap = await runProjectBootstrap(projectRoot, isGitRepo);
     if (!bootstrap.substrateLinked) {
         console.log(kleur.red('  ✗ Substrate project not linked — init cannot complete Substrate-first setup.'));
@@ -1042,10 +1020,10 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
 }
 
 // Substrate-first project init (ADR section 40): sb --version gate, state.db
-// presence, then explicit create-or-resolve + link with verified flags
-// (`sb project create --prefix/--name`, `sb project link [--project]`).
-// No legacy Beads-stack state is created here: no workspace init, no Dolt
-// setup, no triage-tool install.
+// presence, then `sb init --json` onboarding with doctor-link verification.
+// Core never derives project identity and issues no `project create|link`
+// itself (ADR §19). No legacy Beads-stack state is created here: no
+// workspace init, no Dolt setup, no triage-tool install.
 /**
  * Enroll Substrate integrations from the authorized local source (contract
  * #174, A8 consumes — never invents — this surface). With an explicit
@@ -1139,232 +1117,9 @@ function reportEnrollmentHealth(report: { claude?: Array<{ name: string; ok: boo
     }
 }
 
-/**
- * Pure project-identity validation: no sb calls, no mutations. Shared by
- * the Phase 3.4 pre-enrollment gate and resolveSubstrateProject below.
- */
-function validateProjectIntent(opts: { sbProject?: string; sbCreateProject?: string }): string | null {
-    if (opts.sbProject && opts.sbCreateProject) {
-        return 'pass only one of --sb-project or --sb-create-project, not both';
-    }
-    if (opts.sbCreateProject && !parseCreateProjectFlag(opts.sbCreateProject)) {
-        return `--sb-create-project wants PREFIX:Name, got ${JSON.stringify(opts.sbCreateProject)}`;
-    }
-    return null;
-}
-
-/**
- * Resolve the Substrate project link BEFORE any mutation phase.
- * Runs at Phase 3.5 (after confirm, before machine bootstrap): flags and
- * interactive prompts are honored here so invalid or missing identity fails
- * before unrelated mutations. Project identity always comes from the
- * operator — init never invents it.
- */
-type CollectedProjectIntent =
-    | { kind: 'link'; projectId: string }
-    | { kind: 'create'; prefix: string; name: string };
-
-
-
-/**
- * Prompt the operator for project identity intent (no sb mutations: intent
- * only). Cancellation or empty values fail closed before enrollment.
- */
-async function promptProjectIntent(): Promise<{ ok: true; intent: CollectedProjectIntent } | { ok: false; error: string }> {
-    const { action } = await prompts({
-        type: 'select',
-        name: 'action',
-        message: 'No Substrate project is linked to this checkout.',
-        choices: [
-            { title: 'Create a new project', value: 'create' },
-            { title: 'Link an existing project', value: 'link' },
-            { title: 'Skip for now (fail init; link later with --sb-project)', value: 'skip' },
-        ],
-        initial: 0,
-    });
-    if (action === 'link') {
-        const { projectId } = await prompts({
-            type: 'text',
-            name: 'projectId',
-            message: 'Substrate project id to link:',
-        });
-        if (!projectId || !String(projectId).trim()) {
-            return { ok: false, error: 'no project id given; re-run with --sb-project <id>' };
-        }
-        return { ok: true, intent: { kind: 'link', projectId: String(projectId).trim() } };
-    }
-    if (action === 'create') {
-        const { prefix, name } = await prompts([
-            { type: 'text', name: 'prefix', message: 'Project prefix (e.g. PROOF):' },
-            { type: 'text', name: 'name', message: 'Project name:' },
-        ]);
-        const parsed = parseCreateProjectFlag(`${prefix ?? ''}:${name ?? ''}`);
-        if (!parsed) {
-            return { ok: false, error: 'prefix and name are both required; re-run with --sb-create-project <PREFIX:Name>' };
-        }
-        return { ok: true, intent: { kind: 'create', prefix: parsed.prefix, name: parsed.name } };
-    }
-    return { ok: false, error: 'init stopping unlinked — link later with `xt init --sb-project <id>`' };
-}
-
-async function resolveSubstrateProject(
-    projectRoot: string,
-    opts: { sbProject?: string; sbCreateProject?: string },
-    interactive: boolean,
-    preIntent: CollectedProjectIntent | null = null,
-): Promise<{ linked: boolean; projectId?: string }> {
-    const fail = (message: string): { linked: boolean } => {
-        console.log(kleur.red(`  ✗ ${message}`));
-        return { linked: false };
-    };
-
-    if (!getSbVersion().available) {
-        return fail('sb CLI not found; cannot resolve the Substrate project');
-    }
-
-    // The sb store cannot open without its parent dir; ensure it here so
-    // create/link attempts below don't fail on a missing directory.
-    // Authorized by the confirm gate above; Phase 7 re-verifies.
-    try {
-        await fs.ensureDir(path.dirname(defaultStateDbPath()));
-    } catch (error) {
-        return fail(`cannot prepare state.db directory (${error instanceof Error ? error.message : String(error)})`);
-    }
-
-    // No `project list` verb exists (only create|link|unlink) — link state
-    // comes from `sb doctor --json`.
-    const current = getSbProjectLink(projectRoot);
-    if (current.ok && current.projectId && !opts.sbProject && !opts.sbCreateProject) {
-        console.log(kleur.dim(`  ✓ checkout linked to Substrate project ${current.projectId} (via ${current.source ?? 'unknown'})`));
-        return { linked: true, projectId: current.projectId };
-    }
-
-    const intentError = validateProjectIntent(opts);
-    if (intentError) {
-        return fail(intentError);
-    }
-
-    if (opts.sbProject) {
-        const link = linkSbProject({ project: opts.sbProject, cwd: projectRoot });
-        if (link.ok) {
-            console.log(kleur.dim(`  ✓ checkout linked to Substrate project ${opts.sbProject}`));
-            return { linked: true, projectId: opts.sbProject };
-        }
-        return fail(`sb project link --project ${opts.sbProject} failed (${link.error ?? 'unknown error'})`);
-    }
-
-    if (opts.sbCreateProject) {
-        // Shape validated above (and at Phase 3.4); re-parse defensively.
-        const parsed = parseCreateProjectFlag(opts.sbCreateProject);
-        if (!parsed) {
-            return fail(`--sb-create-project wants PREFIX:Name, got ${JSON.stringify(opts.sbCreateProject)}`);
-        }
-        const created = createSbProject({ prefix: parsed.prefix, name: parsed.name, cwd: projectRoot });
-        if (!created.ok) {
-            return fail(`sb project create failed (${created.error ?? 'unknown error'})`);
-        }
-        // Never issue a bare link: without the created id the follow-up is
-        // ambiguous in a non-empty store. Fail closed instead.
-        if (!created.projectId) {
-            return fail('sb project create returned no project id; link explicitly with --sb-project <id>');
-        }
-        const link = linkSbProject({ project: created.projectId, cwd: projectRoot });
-        if (!link.ok) {
-            return fail(`project created but link failed (${link.error ?? 'unknown error'}); run sb project link manually`);
-        }
-        console.log(kleur.dim(`  ✓ created and linked Substrate project ${parsed.prefix} (${parsed.name})`));
-        return { linked: true };
-    }
-
-    if (!interactive) {
-        return fail('no Substrate project linked: re-run with --sb-project <id> to link, or --sb-create-project <PREFIX:Name> to create and link');
-    }
-
-    // Intent collected pre-enrollment at Phase 3.4 executes here with no
-    // second prompt. Fallback prompts below only fire if link state changed
-    // mid-run after 3.4 (defense in depth).
-    if (preIntent?.kind === 'link') {
-        const link = linkSbProject({ project: preIntent.projectId, cwd: projectRoot });
-        if (!link.ok) {
-            return fail(`sb project link failed (${link.error ?? 'unknown error'})`);
-        }
-        console.log(kleur.dim(`  ✓ checkout linked to Substrate project ${preIntent.projectId}`));
-        return { linked: true, projectId: preIntent.projectId };
-    }
-    if (preIntent?.kind === 'create') {
-        const created = createSbProject({ prefix: preIntent.prefix, name: preIntent.name, cwd: projectRoot });
-        if (!created.ok) {
-            return fail(`sb project create failed (${created.error ?? 'unknown error'})`);
-        }
-        if (!created.projectId) {
-            return fail('sb project create returned no project id; link explicitly with --sb-project <id>');
-        }
-        const link = linkSbProject({ project: created.projectId, cwd: projectRoot });
-        if (!link.ok) {
-            return fail(`project created but link failed (${link.error ?? 'unknown error'}); run sb project link manually`);
-        }
-        console.log(kleur.dim(`  ✓ created and linked Substrate project ${preIntent.prefix} (${preIntent.name})`));
-        return { linked: true };
-    }
-
-    const { action } = await prompts({
-        type: 'select',
-        name: 'action',
-        message: 'No Substrate project is linked to this checkout.',
-        choices: [
-            { title: 'Create a new project', value: 'create' },
-            { title: 'Link an existing project', value: 'link' },
-            { title: 'Skip for now (fail init; link later with --sb-project)', value: 'skip' },
-        ],
-        initial: 0,
-    });
-    if (action === 'link') {
-        const { projectId } = await prompts({
-            type: 'text',
-            name: 'projectId',
-            message: 'Substrate project id to link:',
-        });
-        if (!projectId || !String(projectId).trim()) {
-            return fail('no project id given; re-run with --sb-project <id>');
-        }
-        const link = linkSbProject({ project: String(projectId).trim(), cwd: projectRoot });
-        if (!link.ok) {
-            return fail(`sb project link failed (${link.error ?? 'unknown error'})`);
-        }
-        console.log(kleur.dim(`  ✓ checkout linked to Substrate project ${String(projectId).trim()}`));
-        return { linked: true, projectId: String(projectId).trim() };
-    }
-    if (action === 'create') {
-        const { prefix, name } = await prompts([
-            { type: 'text', name: 'prefix', message: 'Project prefix (e.g. PROOF):' },
-            { type: 'text', name: 'name', message: 'Project name:' },
-        ]);
-        const parsed = parseCreateProjectFlag(`${prefix ?? ''}:${name ?? ''}`);
-        if (!parsed) {
-            return fail('prefix and name are both required; re-run with --sb-create-project <PREFIX:Name>');
-        }
-        const created = createSbProject({ prefix: parsed.prefix, name: parsed.name, cwd: projectRoot });
-        if (!created.ok) {
-            return fail(`sb project create failed (${created.error ?? 'unknown error'})`);
-        }
-        // Never issue a bare link: without the created id the follow-up is
-        // ambiguous in a non-empty store. Fail closed instead.
-        if (!created.projectId) {
-            return fail('sb project create returned no project id; link explicitly with --sb-project <id>');
-        }
-        const link = linkSbProject({ project: created.projectId, cwd: projectRoot });
-        if (!link.ok) {
-            return fail(`project created but link failed (${link.error ?? 'unknown error'}); run sb project link manually`);
-        }
-        console.log(kleur.dim(`  ✓ created and linked Substrate project ${parsed.prefix} (${parsed.name})`));
-        return { linked: true };
-    }
-    console.log(kleur.yellow('  ⚠ init stopping unlinked — link later with `xt init --sb-project <id>`'));
-    return { linked: false };
-}
 
 // Substrate-first project verification (ADR section 40, Phase 7): re-check
-// the link resolved at Phase 3.5 (verified flags). Unlinked here means state
+// the link `sb init` established at Phase 3.5b. Unlinked here means state
 // changed mid-run — fail closed. No prompts, no creation at this stage.
 async function runSubstrateInitForProject(projectRoot: string): Promise<{ linked: boolean; projectId?: string }> {
     console.log(kleur.bold('Running Substrate initialization (sb project)...'));

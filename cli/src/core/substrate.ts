@@ -248,6 +248,97 @@ export function createSbProject(opts: { prefix: string; name: string; id?: strin
     return { ok: true, raw, projectId };
 }
 
+/** `sb init --json` data payload (R2 onboarding; XTRM-252.4 consumes).
+ *
+ * Core treats the envelope as the machine contract and proves Project +
+ * repository initialization through the verified `sb doctor --json` read
+ * surface — never by guessing R2's data keys and never by deriving project
+ * identity itself (ADR §19). */
+export interface SbInitData {
+    [key: string]: unknown;
+}
+
+export interface SbInitInfo {
+    /**
+     * True only when `sb init --json` exits 0 AND the envelope parses AND
+     * `ok` is true AND `data` is an object. Project/repository proof is a
+     * separate step (runSbInitForProject) via `sb doctor --json`.
+     */
+    ok: boolean;
+    /** Verbatim envelope (the machine contract). */
+    payload: SbEnvelope<SbInitData> | null;
+    /** Interpreted data; null unless the envelope parsed with an object body. */
+    data: SbInitData | null;
+    raw: string;
+    error?: string;
+}
+
+/**
+ * Invoke Substrate onboarding for the cwd checkout (`sb init --json`).
+ *
+ * Core consumes this verb; it never implements project identity policy
+ * (ADR §19) and never accepts an override as a persistent binding (ADR
+ * §91). A missing `init` verb (older `sb`), a nonzero exit, unparseable
+ * output, or `ok:false` all fail closed with the envelope error verbatim.
+ */
+export function runSbInit(cwd?: string, run: SbRunner = defaultSbRunner): SbInitInfo {
+    const result = run(['init', '--json'], { cwd, timeout: 60000 });
+    const raw = String(result.stdout ?? '');
+    const fail = (error: string): SbInitInfo => ({ ok: false, payload: null, data: null, raw, error });
+    const payload = parseSbEnvelope<SbInitData>(raw);
+    if (result.status !== 0) {
+        // The rejected envelope still names the cause (e.g. unknown verb on
+        // older sb releases); surface it verbatim instead of inventing one.
+        if (payload) {
+            return { ok: false, payload, data: null, raw, error: (payload.error || result.stderr || `sb init exited ${result.status}`).trim() };
+        }
+        return fail((result.stderr || result.error || `sb init exited ${result.status}`).trim());
+    }
+    if (!payload) return fail('sb init --json emitted unparseable JSON');
+    if (payload.ok !== true) {
+        return { ok: false, payload, data: null, raw, error: payload.error ?? 'sb init reported failure' };
+    }
+    const data = payload.data && typeof payload.data === 'object' ? payload.data as SbInitData : null;
+    if (!data) return { ok: false, payload, data: null, raw, error: 'sb init --json emitted no data object' };
+    return { ok: true, payload, data, raw };
+}
+
+export interface SbInitProjectInfo {
+    /**
+     * True only when `sb init --json` succeeds AND `sb doctor --json`
+     * afterwards resolves a linked project id for this checkout. The
+     * project id is always observed (doctor data.link), never synthesized.
+     */
+    ok: boolean;
+    projectId?: string;
+    error?: string;
+}
+
+/**
+ * Onboard via `sb init --json`, then prove Project + repository
+ * initialization through `sb doctor --json` data.link. Fails closed when
+ * init is unavailable, when its envelope is malformed or negative, or when
+ * no linked project is observable afterwards. Core issues no
+ * `project create|link` of its own on any path.
+ */
+export function runSbInitForProject(cwd?: string, run: SbRunner = defaultSbRunner): SbInitProjectInfo {
+    const init = runSbInit(cwd, run);
+    if (!init.ok) {
+        return { ok: false, error: init.error ?? 'sb init failed' };
+    }
+    const link = getSbProjectLink(cwd, run);
+    if (!link.ok || !link.projectId) {
+        // Core-authored message first: a bare store detail (e.g. linkError
+        // "none") alone would read as `✗ none`. Observed detail appends
+        // only when it carries information.
+        const detail = link.error && link.error.trim() && link.error.trim() !== 'none'
+            ? ` (substrate: ${link.error.trim()})`
+            : '';
+        return { ok: false, error: `sb init succeeded but no Substrate project is linked for this checkout${detail}` };
+    }
+    return { ok: true, projectId: link.projectId };
+}
+
 // NOTE (amended A8/A9 contract): the legacy import invocation surface was
 // removed from A8. Import activation, preservation verification, receipt
 // interpretation, and cleanup are owned by xtrm-6qu.9 (A9); A8 fails closed
