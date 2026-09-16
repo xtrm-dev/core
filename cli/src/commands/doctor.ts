@@ -12,6 +12,7 @@ import { ensureBeadsSharedServerEnabled, hasBeadsDir, type SharedBeadsServerStat
 import { findProjectRoot } from '../utils/repo-root.js';
 import { applySettingsFixes, auditSettings, type SettingsAuditOutcome, type SettingsFinding } from '../core/settings-audit.js';
 import { defaultStateDbPath, getSbDoctorJson, getSbVersion, runSetupCheck, stateDbPresent, type SetupCheckReport } from '../core/substrate.js';
+import { CLAUDE_CHANNEL_POLICY_JSON, defaultInstalledPluginsPath, defaultManagedSettingsPath, getClaudeChannelStatus, type ClaudeChannelStatus } from '../core/claude-channel-status.js';
 import { checkXtrmUpdates, defaultCacheFile, formatUpdateRows, updatesSummary, type PackageStatus } from '../utils/npm-latest.js';
 
 interface CheckJson {
@@ -94,6 +95,8 @@ interface DoctorJson {
   };
   substrate: SubstrateDoctorSection;
   legacyMigration: LegacyMigrationSection;
+  /** Advisory channel-wake state; never affects the exit code. */
+  claudeChannels: ClaudeChannelStatus;
 }
 
 function ok(msg: string) { console.log(`  ${kleur.green('✓')} ${msg}`); }
@@ -616,6 +619,32 @@ function renderSubstrate(report: SubstrateDoctorSection): void {
   }
 }
 
+function buildClaudeChannelsSection(): ClaudeChannelStatus {
+  // XT_CLAUDE_*_PATH are diagnosis/test hooks so hermetic tests never read
+  // /etc, /Library, or the developer's real ~/.claude.
+  return getClaudeChannelStatus({
+    managedSettingsPath: process.env.XT_CLAUDE_MANAGED_SETTINGS_PATH ?? defaultManagedSettingsPath(),
+    installedPluginsPath: process.env.XT_CLAUDE_INSTALLED_PLUGINS_PATH ?? defaultInstalledPluginsPath(),
+  });
+}
+
+function renderClaudeChannels(report: ClaudeChannelStatus): void {
+  section('Claude channels');
+  if (report.state === 'configured') {
+    ok('channel wake configured \u2014 launcher passes --channels and host policy admits it');
+    return;
+  }
+  if (report.state === 'not_applicable') {
+    ok('specialists plugin not installed \u2014 launcher omits --channels; channel wake not applicable');
+    return;
+  }
+  warn(report.detail);
+  console.log(kleur.dim(`  policy file (root-owned): ${report.managedSettingsPath}`));
+  for (const line of CLAUDE_CHANNEL_POLICY_JSON.split('\n')) console.log(`  ${line}`);
+  fix('install the policy file above as root \u2014 see docs/xt-claude-channels.md');
+  fix('authoritative 8-gate check: specialists doctor --channels');
+}
+
 function renderLegacyMigration(report: LegacyMigrationSection): void {
   section('Legacy migration');
   if (report.status === 'clean') {
@@ -649,6 +678,7 @@ export function createDoctorCommand(): Command {
       const substrate = await buildSubstrateSection(cwd);
       const legacyMigration = await buildLegacyMigrationSection(cwd);
       const legacyMigrationRequired = legacyMigration.status !== 'clean';
+      const claudeChannels = buildClaudeChannelsSection();
       const doctorJson: DoctorJson = {
         catB,
         piPackages,
@@ -665,6 +695,7 @@ export function createDoctorCommand(): Command {
         },
         substrate,
         legacyMigration,
+        claudeChannels,
       };
 
       if (opts.json) {
@@ -690,6 +721,7 @@ export function createDoctorCommand(): Command {
       const fragmentsOk = checkClaudeMdFragments(cwd);
       const piPackagesOk = renderXtManagedPiPackages(piPackages);
       renderSubstrate(substrate);
+      renderClaudeChannels(claudeChannels);
       renderLegacyMigration(legacyMigration);
       renderCatB(catB);
 
