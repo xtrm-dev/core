@@ -853,13 +853,14 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 		description:
 			"Execute Python code in a persistent interpreter. Variables, imports, and functions persist across calls until reset: true. Code runs with your user permissions and is not sandboxed — treat a cell like any shell command. Run shell commands with subprocess when needed; for a project's own tests, scripts, and CLIs use the project's documented environment instead." +
 			"\nPrelude pre-loaded: json, re, os, sys, subprocess, Path (from pathlib)." +
-			"\nPrelude function: preflight(repo, path, n=4) — file-scoped memory retrieval for one file: git log --follow with full bodies, pending diff --stat, bd memory keys; prints a bounded digest. Run it before editing a file, fixing a bug, or implementing, and whenever gitnexus flags a file/symbol as critical or medium impact." +
+			"\nPrelude function: preflight(repo, path, n=4) — file-scoped memory retrieval for one file: git log --follow with full bodies, pending diff --stat, bd memory keys; prints a bounded digest, never the raw corpus. Run it before editing a file, fixing a bug, or implementing, and whenever gitnexus flags a file/symbol as critical or medium impact. 0 commits means wrong path, not empty history." +
 			importableLine,
 
 		promptSnippet: "python - run code in a persistent kernel; state survives across calls",
 		promptGuidelines: [
 			"Use python for multi-step processing, parsing, aggregation, and fan-out: one cell replaces many round trips, and named variables persist across cells.",
-			"preflight(repo, path) is bound at boot: file-scoped memory retrieval (commits with bodies, pending diff, bd memory keys) before editing a flagged file; prints a digest, never the raw corpus.",
+			"preflight(repo, path) is bound at boot: file-scoped memory retrieval (commits with bodies, pending diff, bd memory keys) before editing a flagged file; prints a digest, never the raw corpus; 0 commits means wrong path.",
+			"Memory retrieval, not just compute: retrieve on demand per flagged file via preflight, never bulk; non-file forensics loads the corpus once into a named variable, then filters across cells.",
 			"python state persists across calls (variables, imports, functions); pass reset: true to clear it.",
 			"os.chdir() inside a cell persists; reset returns to the working directory.",
 			"Code runs with your user permissions and is not sandboxed; treat a cell like a shell command.",
