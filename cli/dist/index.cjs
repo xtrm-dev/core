@@ -68950,8 +68950,13 @@ function createAttachCommand() {
         process.exit(1);
       }
       resumeArgs = buildCodexResumeArgs(session.threadId, session.safetyProfile, session.profileName);
+    } else if (runtime === "claude") {
+      resumeArgs = ["--continue", "--dangerously-skip-permissions"];
+      if (specialistsPluginInstalled()) {
+        resumeArgs.push("--channels", SPECIALISTS_CHANNEL_ENTRY);
+      }
     } else {
-      resumeArgs = runtime === "claude" ? ["--continue", "--dangerously-skip-permissions"] : ["-c"];
+      resumeArgs = ["-c"];
     }
     console.log(t.bold(`
   Attaching to ${branch}`));

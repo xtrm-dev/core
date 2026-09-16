@@ -7,6 +7,7 @@ import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
+import { SPECIALISTS_CHANNEL_ENTRY, specialistsPluginInstalled } from '../utils/worktree-session.js';
 
 export function createAttachCommand(): Command {
     return new Command('attach')
@@ -78,10 +79,19 @@ export function createAttachCommand(): Command {
                     process.exit(1);
                 }
                 resumeArgs = buildCodexResumeArgs(session.threadId, session.safetyProfile, session.profileName);
+            } else if (runtime === 'claude') {
+                // Same channel wake path as the launch plans (XTRM-249, CORE-2283).
+                // A resumed session without it cannot be woken by a settling
+                // specialist and the coordinator has to poll. Fail-soft: a
+                // detection failure omits the flag and never blocks attach,
+                // because Claude Code drops an unusable entry silently anyway.
+                // CORE-2284.
+                resumeArgs = ['--continue', '--dangerously-skip-permissions'];
+                if (specialistsPluginInstalled()) {
+                    resumeArgs.push('--channels', SPECIALISTS_CHANNEL_ENTRY);
+                }
             } else {
-                resumeArgs = runtime === 'claude'
-                    ? ['--continue', '--dangerously-skip-permissions']
-                    : ['-c'];
+                resumeArgs = ['-c'];
             }
 
             console.log(t.bold(`\n  Attaching to ${branch}`));
