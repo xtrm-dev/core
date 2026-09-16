@@ -58894,7 +58894,12 @@ async function launchWorktreeSession(opts) {
   }
   const runtimeCmd = runtime === "claude" ? "claude" : "pi";
   const runtimeArgs = ["--name", worktreeName];
-  if (runtime === "claude") runtimeArgs.push("--dangerously-skip-permissions");
+  if (runtime === "claude") {
+    runtimeArgs.push("--dangerously-skip-permissions");
+    if (specialistsPluginInstalled()) {
+      runtimeArgs.push("--channels", SPECIALISTS_CHANNEL_ENTRY);
+    }
+  }
   const directSessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
   const launchResult = (0, import_node_child_process2.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
@@ -68950,8 +68955,13 @@ function createAttachCommand() {
         process.exit(1);
       }
       resumeArgs = buildCodexResumeArgs(session.threadId, session.safetyProfile, session.profileName);
+    } else if (runtime === "claude") {
+      resumeArgs = ["--continue", "--dangerously-skip-permissions"];
+      if (specialistsPluginInstalled()) {
+        resumeArgs.push("--channels", SPECIALISTS_CHANNEL_ENTRY);
+      }
     } else {
-      resumeArgs = runtime === "claude" ? ["--continue", "--dangerously-skip-permissions"] : ["-c"];
+      resumeArgs = ["-c"];
     }
     console.log(t.bold(`
   Attaching to ${branch}`));

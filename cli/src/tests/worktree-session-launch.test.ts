@@ -810,6 +810,52 @@ describe('launchWorktreeSession claude role (launch-level, 751b/830)', () => {
     });
 });
 
+describe('bare direct launch argv (CORE-2283)', () => {
+    // The DIRECT path is the one launch shape with no tmux plan: `xt claude
+    // <name>` carrying NONE of prompt/bead/model/thinking/skills/passthrough,
+    // attached, no --new-session. That is the exact condition set the launcher
+    // routes to spawnSync-in-terminal, so it needs its own argv assertion —
+    // the plan-builder tests cannot reach it.
+    async function directLaunch(home: { pluginInstalled: boolean }): Promise<LaunchHarness & LaunchResult> {
+        const h = harnessOpts({ runtime: 'claude' });
+        if (home.pluginInstalled) {
+            fs.ensureDirSync(path.join(h.homeRoot, '.claude', 'plugins'));
+            fs.writeFileSync(
+                path.join(h.homeRoot, '.claude', 'plugins', 'installed_plugins.json'),
+                JSON.stringify({ plugins: { 'specialists@xtrm': [{ version: '1.0.0' }] } }),
+            );
+        }
+        const result = await runLaunch(h, { name: 'demo', runtime: 'claude', attach: true, json: false });
+        return { ...h, ...result };
+    }
+
+    function directClaudeArgv(r: LaunchHarness & LaunchResult): string[] {
+        const call = r.callLog.find((c) => c.command === 'claude');
+        // Proves the run actually took the direct path: the harness records
+        // every spawnSync, and only this path spawns `claude`.
+        expect(call).toBeDefined();
+        expect(r.newSessionArgs).toBeNull();
+        return call?.argv ?? [];
+    }
+
+    it('passes --channels plugin:specialists@xtrm when the manifest lists specialists@xtrm', async () => {
+        const r = await directLaunch({ pluginInstalled: true });
+        const argv = directClaudeArgv(r);
+        expect(argv[0]).toBe('--name');
+        expect(argv).toContain('--dangerously-skip-permissions');
+        const at = argv.indexOf('--channels');
+        expect(at).toBeGreaterThan(-1);
+        expect(argv[at + 1]).toBe('plugin:specialists@xtrm');
+    });
+
+    it('omits --channels when no plugin manifest is installed (fail-soft)', async () => {
+        const r = await directLaunch({ pluginInstalled: false });
+        const argv = directClaudeArgv(r);
+        expect(argv).toContain('--dangerously-skip-permissions');
+        expect(argv).not.toContain('--channels');
+    });
+});
+
 describe('tmp-git guard predicate (fae security SEC-02)', () => {
     it('exempts only the EXACT temp root cwd; any other /tmp project fails closed', () => {
         const tmp = path.join(os.tmpdir(), 'TMPROOT');
