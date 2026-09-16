@@ -137,3 +137,5 @@ MCP server "plugin:specialists:specialists": Channel notifications skipped: plug
 
 When the policy file exists but omits `channelsEnabled`, the skip reason is
 `channels not enabled by org policy (set channelsEnabled: true in managed settings)`.
+
+`xt doctor` reports this host's channel-wake state in its advisory Claude-channels section; `specialists doctor --channels` remains the authoritative 8-gate check.
