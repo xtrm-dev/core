@@ -3099,7 +3099,16 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // is first; claude also needs its permission skip. xtrm-rhmm1.
     const runtimeCmd = runtime === 'claude' ? 'claude' : 'pi';
     const runtimeArgs = ['--name', worktreeName];
-    if (runtime === 'claude') runtimeArgs.push('--dangerously-skip-permissions');
+    if (runtime === 'claude') {
+        runtimeArgs.push('--dangerously-skip-permissions');
+        // Same channel wake path as the tmux plan builders. The direct spawn
+        // skipped it, so a bare `xt claude` ran with the asyncRewake polling
+        // path only and a settling specialist never pushed to the session.
+        // Fail-soft: detection failure omits the flag. XTRM-249 / CORE-2283.
+        if (specialistsPluginInstalled()) {
+            runtimeArgs.push('--channels', SPECIALISTS_CHANNEL_ENTRY);
+        }
+    }
     // XTRM-252.4: the same session identity the tmux path publishes. Inside
     // tmux the current session is the launched session; outside tmux there
     // is no session to observe and the variables stay absent (never
