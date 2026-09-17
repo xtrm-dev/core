@@ -66,7 +66,7 @@ interface LaunchHarness {
     calls: { branchDeleteCalls: number; worktreeRemoveCalls: number; worktreeCreateArgs: string; piSpawn: number; updateIndex: number; spCwdsHeartbeat: number };
     spCwds: string[];
     profileBefore: string[];
-    callLog: Array<{ command: string; argv: string[]; cwd: string }>;
+    callLog: Array<{ command: string; argv: string[]; cwd: string; env?: Record<string, string | undefined> }>;
     spViewCalls: Array<{ argv: string[]; cwd: string }>;
     envBefore: Record<string, string | undefined>;
     cwdBeforeOriginal: string;
@@ -101,7 +101,7 @@ interface LaunchResult {
     newSessionArgs: string[] | null;
     spCwds: string[];
     profileBefore: string[];
-    callLog: Array<{ command: string; argv: string[]; cwd: string }>;
+    callLog: Array<{ command: string; argv: string[]; cwd: string; env?: Record<string, string | undefined> }>;
     spViewCalls: Array<{ argv: string[]; cwd: string }>;
     envBefore: Record<string, string | undefined>;
     cwdBeforeOriginal: string;
@@ -157,13 +157,13 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
     let capturedPayload: { runtimeCmd?: string; runtimeArgs?: string[] } | null = null;
     let newSessionArgs: string[] | null = null;
     const spCwds: string[] = [];
-    const allCalls: Array<{ command: string; argv: string[]; cwd: string }> = [];
+    const allCalls: Array<{ command: string; argv: string[]; cwd: string; env?: Record<string, string | undefined> }> = [];
     const spViewCalls: Array<{ argv: string[]; cwd: string }> = [];
 
     const specPaths = h.roleSpecPaths ?? rolePathsFor(homeRoot);
     mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: Record<string, unknown> = {}) => {
         const joined = (args ?? []).join(' ');
-        allCalls.push({ command, argv: args ?? [], cwd: (mo.cwd as string | undefined) ?? process.cwd() });
+        allCalls.push({ command, argv: args ?? [], cwd: (mo.cwd as string | undefined) ?? process.cwd(), env: mo.env as Record<string, string | undefined> | undefined });
         if (command === 'sp' && args[0] === 'view') {
             spCwds.push((mo.cwd as string | undefined) ?? '');
             if (h.oldSp && args.includes('--surface')) {
@@ -853,6 +853,45 @@ describe('bare direct launch argv (CORE-2283)', () => {
         const argv = directClaudeArgv(r);
         expect(argv).toContain('--dangerously-skip-permissions');
         expect(argv).not.toContain('--channels');
+    });
+});
+
+describe('Substrate MCP env on claude launches (CORE-2290)', () => {
+    const KEYS = ['MCP_SDK_GENERATION', 'MCP_PROTOCOL_NEGOTIATION'] as const;
+    const saved = KEYS.map((k) => process.env[k]);
+    afterEach(() => {
+        KEYS.forEach((k, i) => {
+            if (saved[i] === undefined) delete process.env[k];
+            else process.env[k] = saved[i];
+        });
+    });
+
+    it('claudeMcpEnv defaults for claude, keeps explicit values, and is empty for other runtimes', async () => {
+        const { claudeMcpEnv } = await import('../utils/worktree-session.js');
+        expect(claudeMcpEnv('claude', {})).toEqual({ MCP_SDK_GENERATION: 'v2', MCP_PROTOCOL_NEGOTIATION: 'auto' });
+        expect(claudeMcpEnv('claude', { MCP_SDK_GENERATION: 'v3', MCP_PROTOCOL_NEGOTIATION: '  ' }))
+            .toEqual({ MCP_SDK_GENERATION: 'v3', MCP_PROTOCOL_NEGOTIATION: 'auto' });
+        expect(claudeMcpEnv('pi', {})).toEqual({});
+    });
+
+    it('direct launch spawns claude with both variables', async () => {
+        KEYS.forEach((k) => delete process.env[k]);
+        const h = harnessOpts({ runtime: 'claude' });
+        const r = await runLaunch(h, { name: 'demo', runtime: 'claude', attach: true, json: false });
+        const call = r.callLog.find((c) => c.command === 'claude');
+        expect(call).toBeDefined();
+        expect(call?.env).toMatchObject({ MCP_SDK_GENERATION: 'v2', MCP_PROTOCOL_NEGOTIATION: 'auto' });
+    });
+
+    it('tmux launch passes both variables to new-session with -e, preserving an exported value', async () => {
+        process.env.MCP_SDK_GENERATION = 'v9';
+        delete process.env.MCP_PROTOCOL_NEGOTIATION;
+        const h = harnessOpts({ runtime: 'claude' });
+        const r = await runLaunch(h, { name: 'demo', runtime: 'claude', attach: false, json: false });
+        const args = r.newSessionArgs ?? [];
+        expect(args).toContain('MCP_SDK_GENERATION=v9');
+        expect(args).toContain('MCP_PROTOCOL_NEGOTIATION=auto');
+        expect(args[args.indexOf('MCP_PROTOCOL_NEGOTIATION=auto') - 1]).toBe('-e');
     });
 });
 

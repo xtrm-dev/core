@@ -7,7 +7,7 @@ import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
-import { SPECIALISTS_CHANNEL_ENTRY, specialistsPluginInstalled } from '../utils/worktree-session.js';
+import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled } from '../utils/worktree-session.js';
 
 export function createAttachCommand(): Command {
     return new Command('attach')
@@ -107,10 +107,10 @@ export function createAttachCommand(): Command {
                 }
             }
 
-            const result = spawnSync(runtime, resumeArgs, {
-                cwd: target.path,
-                stdio: 'inherit',
-            });
+            // Substrate MCP needs these before the process starts; claude only. CORE-2290.
+            const result = spawnSync(runtime, resumeArgs, runtime === 'claude'
+                ? { cwd: target.path, stdio: 'inherit', env: { ...process.env, ...claudeMcpEnv(runtime) } }
+                : { cwd: target.path, stdio: 'inherit' });
 
             process.exit(result.status ?? 0);
         });
