@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-y86om"],"open_issue_count":1,"root_id":"xtrm-y86om","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"6ca87bc37d1680856e0a0ce2594fb09544d426e34383596a0d11d58bbb061fce","title":"Serialize or isolate Claude hook config in install integration tests"}

@@ -1,0 +1,299 @@
+{
+  "content_sha256": "c6806d4fa0d9f831acb6c4855b5fa5be716b7ad0f5e76bccc178c9352f2b57fb",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:51:52Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-9xg2.2",
+        "issue_id": "xtrm-bq7yd",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-bq7yd",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2.2",
+      "target_present_in_snapshot": true,
+      "target_title": "Add CI and pack guards for flat active skills layout",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:51:53Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-9xg2.3",
+        "issue_id": "xtrm-bq7yd",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-bq7yd",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2.3",
+      "target_present_in_snapshot": true,
+      "target_title": "Align xt doctor/update/init runtime checks with flat active view",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:51:51Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-n74m8",
+        "issue_id": "xtrm-bq7yd",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-bq7yd",
+      "source_field": "dependencies",
+      "target": "xtrm-n74m8",
+      "target_present_in_snapshot": true,
+      "target_title": "Remove stale pre-v2 service-skills trinity (creating/scoping/updating/using-service-skills) lingering in consumers",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-03T04:48:41Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-bq7yd.10",
+        "issue_id": "xtrm-bq7yd.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-bq7yd.5",
+      "source_field": "dependencies",
+      "target": "xtrm-bq7yd.10",
+      "target_present_in_snapshot": true,
+      "target_title": "Batch J: Global hooks migration — ~/.xtrm/hooks + ~/.claude/settings.json safe-merge with source tagging",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:51:42Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-bq7yd.3",
+        "issue_id": "xtrm-bq7yd.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-bq7yd.5",
+      "source_field": "dependencies",
+      "target": "xtrm-bq7yd.3",
+      "target_present_in_snapshot": true,
+      "target_title": "Batch C: Retire per-repo default/optional scaffold under XTRM_GLOBAL_SKILLS (breaking gate)",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:51:43Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-bq7yd.4",
+        "issue_id": "xtrm-bq7yd.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-bq7yd.5",
+      "source_field": "dependencies",
+      "target": "xtrm-bq7yd.4",
+      "target_present_in_snapshot": true,
+      "target_title": "Batch D: Runtime pointers global — ~/.claude/skills, ~/.pi/agent/skills, pi-runtime cleanup",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [],
+            "id": "xtrm-bq7yd.5.2"
+          }
+        ],
+        "id": "xtrm-bq7yd.5"
+      }
+    ],
+    "id": "xtrm-bq7yd"
+  },
+  "issues": {
+    "xtrm-bq7yd": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "close_reason": "Epic complete: 9 batches merged onto epic/xtrm-bq7yd-global-skills. Batches A(scaffold)/B(bootstrap)/D(runtime pointers)/C(retire per-repo)/J(global hooks)/E(migrate CLI)/F(scope flip)/G(dead-code)/H(docs). Batch I test-polish deferred to xtrm-bq7yd.12; security hardening deferred to xtrm-bq7yd.11. Ready for merge to main.",
+        "closed_at": "2026-07-08T14:38:26Z",
+        "comment_count": 0,
+        "created_at": "2026-07-03T01:46:03Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-03T03:51:52Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-9xg2.2",
+            "issue_id": "xtrm-bq7yd",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-07-03T03:51:53Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-9xg2.3",
+            "issue_id": "xtrm-bq7yd",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-07-03T03:51:51Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-n74m8",
+            "issue_id": "xtrm-bq7yd",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nDefault and optional **skill** payloads AND default **hook** payloads are currently copied per-repo into `<repo>/.xtrm/{skills/{default,optional},hooks}/` on every `xt init`/`xt update --apply`, and xtrm-owned hook entries are written into `<repo>/.claude/settings.json` on every reconcile. Users managing xtrm across 10+ repos hit N drift diffs, N update runs, N re-materialized symlink farms per skill release, AND N settings.json rewrites per hook release. Symlink management has broken twice already (PR #197 regression guard `check-skills-symlinks.mjs`). Hook wiring has its own outstanding safety concern (`xtrm-s5ih5`: `xt install --global must not overwrite project hooks in ~/.claude/settings.json`). Sibling project `@jaggerxtrm/specialists` cut over to a canonical-package model for specialists; we lag behind for skills and hooks.\n\n## SUCCESS\n\n- `~/.xtrm/skills/{default,optional,user,active}/` is the single source of truth for default + optional skills.\n- `~/.xtrm/hooks/` is the single source of truth for canonical hook payloads.\n- `~/.xtrm/config/hooks.json` holds canonical hook wiring globally.\n- New xtrm-tools installs no longer materialize `<repo>/.xtrm/skills/{default,optional}/` or `<repo>/.xtrm/hooks/*` (only project-scoped overrides remain per-repo).\n- `~/.claude/skills` and `~/.pi/agent/skills` are symlinks into `~/.xtrm/skills/active/`.\n- `~/.claude/settings.json.hooks` and `~/.pi/settings.json.hooks` receive xtrm-owned entries via safe-merge with per-entry source tagging (`_source: \"xtrm-global\"`, `_xtrm: {version, installedAt, hash}`) — non-xtrm keys never touched (subsumes `xtrm-s5ih5`).\n- Per-repo `<repo>/.xtrm/skills/user/`, `service-skills/`, and project-scoped hook payloads/entries continue to work unchanged.\n- `xt migrate all` cleanly removes per-repo default skills, per-repo global-covered hook payloads, and xtrm-owned hook entries from `<repo>/.claude/settings.json` — with SHA-verified equality + tarball backup + `--all-repos` batch mode + `--restore <backup>` reversal.\n- `xt update` in a fresh install pulls new defaults globally via `xt bootstrap` (or lazy self-heal) — no per-repo action required.\n- Every hook payload survives being wired globally: fast-fail guard at entry (`existsSync(cwd/.xtrm)` check) prevents side effects in non-xtrm sessions.\n- Zero regressions in current test suites.\n\n## SCOPE\n\nBounded surfaces affected (full file map in `/tmp/claude-1000/-home-dawid-dev-core/07e1094c-64b5-4516-9179-c11a451cf97e/scratchpad/skills-global-migration-plan.md` §6):\n\n**Skills**:\n- `cli/src/core/`: `skills-layout.ts`, `skills-runtime-views.ts`, `skills-materializer.ts`, `skills-scaffold.ts`, `skills-state.ts`, `skill-discovery.ts`, `registry-scaffold.ts`, `service-skills-ensure.ts`, `pi-runtime.ts`, `drift.ts`, new `global-skills-bootstrap.ts`.\n- `cli/src/commands/`: `install.ts`, `init.ts`, `update.ts`, `skills.ts`, `clean.ts`, `doctor.ts`, `worktree-*.ts`, new `bootstrap.ts`, new `migrate.ts`.\n- `cli/src/adapters/claude.ts` (skills capability path).\n\n**Hooks**:\n- `cli/src/core/claude-runtime-sync.ts:198-260` — extend `reconcileProjectClaudeHooks` and `ensureGlobalStatusLine` into full global-hook reconciler with source tagging.\n- New `cli/src/core/global-hooks-bootstrap.ts`.\n- New `cli/src/core/pi-runtime-hooks.ts` (Pi analog of the reconciler).\n- `.xtrm/hooks/`: audit every payload for fast-fail guard (`beads-*.mjs`, `quality-check.*`, `specialists-agent-guard.mjs`, `using-xtrm-reminder.mjs`, `worktree-boundary.mjs`, `xtrm-*-logger.mjs`, `gitnexus/`, `specialists/`).\n- `.xtrm/config/hooks.json` — canonical wiring stays authored in-repo; ships to `~/.xtrm/config/hooks.json` at bootstrap.\n- `policies/`: `service-skills.json`, `service-skills-claude.json` — hook commands resolve via the composed active view.\n\n**Shared / cross-cutting**:\n- `cli/src/utils/`: `worktree-session.ts`, `repo-root.ts`.\n- `scripts/`: `gen-registry.mjs` (add `install_scope` field to `skills`, `skills_optional`, `hooks`, `config`), `check-registry-pack-parity.mjs`, `check-skills-symlinks.mjs`, `check-layout-guards.mjs`, `verify-asset-contract.mjs`, `vendor-specialists-skills.mjs`, `verify-specialists-vendor.mjs`, `check-skills-ownership.mjs`, new `check:global-skills-parity`.\n- `packages/pi-extensions/`: `extensions/service-skills/index.ts`, `extensions/xtrm-loader/index.ts` + stale mirrors.\n- `.xtrm/skills/default/migrating-to-global/` — new skill.\n- `docs/`: `skills.md`, `skills-tier-architecture.md`, `skills-ownership.{json,md,release.json}`, `project-skills.md`, `service-skills-auto-reconcile.md`, `xtrm-directory.md`, `policies.md`, `cli-architecture.md`, `pi-extensions.md`, `hooks.md`, `plans/global-skills-hooks-migration.md` (new).\n- Root docs: `README.md`, `CLAUDE.md`, `XTRM-GUIDE.md`, `CHANGELOG.md`.\n- Tests: 28 skill test files + hook-reconciler and safe-merge tests (added in Batch J and Batch I).\n\n## NON_GOALS\n\n- Per-repo user packs (`.xtrm/skills/user/packs/`) migration — stays project-scoped.\n- Per-repo project-scoped hook payloads and settings.json entries — stay project-scoped.\n- Service-skills v2 machinery redesign — writes to per-repo `user/packs/<repo>-services/` unchanged.\n- Global specialists — specialists already migrated; no further work here.\n- Windows-specific dev-mode symlink workarounds.\n- Replacing hook resolution with pure package resolution à la specialists' `import.meta.url` — runtime hooks reference absolute paths (`~/.xtrm/hooks/*.mjs`) in settings.json.\n- Migrating settings.json fields other than `hooks` (permissions, model, statusLine handled by existing `ensureGlobalStatusLine`).\n- Refactoring the hook implementations themselves — payloads move as-is; only fast-fail guards added.\n- Migrating the ownership manifest to a runtime resolver — `docs/skills-ownership.json` stays authoring-time.\n\n## CONSTRAINTS\n\n- Sequencing: Batches A→B→{C, D, J}→E is hard-sequential (scaffold → bootstrap → per-repo retirement + hook wiring → migration cleanup). F can parallelize once A lands. G/H land after E. Rollout in three release phases: preview (feature-flagged `XTRM_GLOBAL_SKILLS=1` AND `XTRM_GLOBAL_HOOKS=1`) → default-on (opt-out `XTRM_LEGACY_SKILLS=1` / `XTRM_LEGACY_HOOKS=1`) → legacy code removal.\n- Wire-format compatibility: registry.json v1 schema stays; `skills`/`skills_optional`/`hooks`/`config` assets gain `install_scope: \"global\"|\"project\"`.\n- Migration destructive actions only when: global bootstrap done AND git-clean under `.xtrm/skills/default/` and `.xtrm/hooks/` AND (SHA-equality OR user-approved discard/relocate) AND for hook entries: `_source == \"xtrm-global\"` OR hash matches canonical AND global equivalent exists. Backup mandatory.\n- Runtime pointer assertions (`assertRuntimeSkillsViews`) migrate atomically with pointer emission.\n- **Safe-merge invariant for settings.json**: bytes outside the `hooks` field never change. `hooks` field changes only for entries owned by `xtrm-global` (source-tagged or hash-matched). This directly answers the `xtrm-s5ih5` concern.\n- Every hook payload gets a fast-fail guard at entry to survive being wired globally into non-xtrm sessions.\n- Logging: every install/update/bootstrap/migrate step logs to xtrm's structured format at `~/.xtrm/logs/skills-migration.jsonl` with `component: \"skills-bootstrap\"|\"hooks-bootstrap\"|\"skills-migrate\"|\"hooks-migrate\"|\"hooks-reconcile\"`. Never log absolute file contents or hook command strings that might carry sensitive paths; hash them.\n- Public CLI surface: `xt bootstrap`, `xt migrate [skills|hooks|all]`, `xt skills --global` (default flip). Backwards-compat: existing `xt update --apply` in unmigrated repos still succeeds with a nudge.\n\n## VALIDATION\n\n- [ ] Fresh install: `npm i -g @jaggerxtrm/xtrm-tools@<preview>` then `xt init` in a scratch repo → global `~/.xtrm/{skills/{default,optional,active},hooks,config/hooks.json}` populated, `~/.claude/skills` symlink created, `~/.claude/settings.json.hooks` receives xtrm-global entries, no per-repo copies.\n- [ ] `xt update --apply` in an unmigrated repo → composes global active + repo user, prints migration nudge, no destructive action.\n- [ ] `xt migrate all --dry-run` on 5 real repos (`vaultctl`, `transcriptoz`, `console`, `xtrm`, `specialists`) → clean verdict table for both skills and hooks, zero false-diverged.\n- [ ] `xt migrate all --apply` on same 5 → tarballs at `~/.xtrm/migration-backups/`, per-repo `default/optional/` gone, global-covered hook payloads gone, xtrm-global hook entries removed from `<repo>/.claude/settings.json`, foreign + user-authored entries preserved, `user/`+`service-skills/`+project hooks preserved, runtime pointers valid.\n- [ ] `xt migrate --restore <backup>` → repo returns to pre-migration state byte-identical.\n- [ ] All 28 skill test files + new hook-reconciler tests pass green.\n- [ ] `npm run check:registry-pack-parity`, `check:skills-symlinks`, `check:skills-ownership`, new `check:global-skills-parity`, new `check:hook-source-tagging` all green in `prepublishOnly`.\n- [ ] `xt doctor` on migrated repo reports clean; on unmigrated repo surfaces both pending migrations.\n- [ ] Smoke: `service-skills` cataloger + activator + drift-detector still fire in a repo with a live `service-registry.json`.\n- [ ] Smoke: `beads-*.mjs` fast-fail guard verified — running `node ~/.xtrm/hooks/beads-claim-sync.mjs` in a non-xtrm dir exits 0 with no side effects.\n- [ ] Safe-merge invariant: fixture `~/.claude/settings.json` with user-authored `permissions` block + user-authored `hooks` entry + orphaned xtrm-global entry → after `xt bootstrap`, permissions untouched, user-authored entry preserved, orphaned entry updated/removed.\n- [ ] xtrm-s5ih5 explicitly closed as validated by this epic.\n- [ ] Log evidence: `jq '.event' ~/.xtrm/logs/skills-migration.jsonl` returns `bootstrap.*`, `hook.reconcile.*`, `migrate.repo.*`, `migrate.skills.*`, `migrate.hooks.*` sequences.\n\n## OUTPUT\n\nAt epic close: PR chain (one per batch), demo run of full migration across the 5 fixture repos with backups uploaded to a release artifact, upgrade notes in `CHANGELOG.md`, `docs/plans/global-skills-hooks-migration.md` marked shipped, telemetry sample confirming migration audit log format matches contract, `xtrm-s5ih5` closed with pointer to Batch J's source-tagging design, residual-risk note enumerating repos on old xtrm-tools versions that haven't upgraded yet.\n\n## REFERENCES\n\n- Migration plan draft: `/tmp/claude-1000/-home-dawid-dev-core/07e1094c-64b5-4516-9179-c11a451cf97e/scratchpad/skills-global-migration-plan.md` (full architecture, batches, risks — updated to cover hooks).\n- Sibling precedent: `/home/dawid/dev/specialists` — canonical-asset-resolver (`src/specialist/canonical-asset-resolver.ts`), loader precedence (`src/specialist/loader.ts:130-192`), drift-detector (`src/specialist/drift-detector.ts`), prune-stale-defaults CLI (`src/cli/prune-stale-defaults.ts`).\n- Existing global-hook precedent in this repo: `cli/src/core/claude-runtime-sync.ts:245-260` (`ensureGlobalStatusLine`) — safe-merge pattern already used for statusline; Batch J generalizes it.\n- Prior art in this repo: `xtrm-9xg2.2` (flat active layout guards), `xtrm-9xg2.3` (runtime checks) — subsumed by this epic. `xtrm-s5ih5` — directly addressed by Batch J's source-tagging design.\n- Adjacent: `xtrm-n74m8` (stale pre-v2 service-skills trinity) — the migration skill can also nudge cleanup.\n\n## APPROACH NOTES\n\nRecon: three parallel Explore agents produced the impact map. Blast-radius summary: MEDIUM aggregate. Batch C (per-repo skills scaffold retirement) and Batch J (hook safe-merge into `~/.claude/settings.json`) are the two individually higher-risk tasks — both feature-flagged. Symbols with widest fan-out: `scaffoldSkillsDefaultFromPackage`, `installFromRegistry`, `ensureAgentsSkillsSymlink`, `reconcileProjectClaudeHooks`. None have HIGH/CRITICAL impact alone; aggregate risk comes from the coupled pointer + scaffold + registry + settings-merge retargeting.",
+        "id": "xtrm-bq7yd",
+        "issue_type": "epic",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-08T10:37:47Z",
+        "status": "closed",
+        "title": "[epic] Global skills + hooks migration: default payloads move from per-repo to ~/.xtrm",
+        "updated_at": "2026-07-08T14:38:26Z"
+      }
+    },
+    "xtrm-bq7yd.5": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "close_reason": "Batch E reviewer PARTIAL → fix loop landed; 10/10 tests pass",
+        "closed_at": "2026-07-08T12:50:59Z",
+        "comment_count": 0,
+        "created_at": "2026-07-03T01:49:01Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-03T03:49:01Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-bq7yd",
+            "issue_id": "xtrm-bq7yd.5",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-03T04:48:41Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-bq7yd.10",
+            "issue_id": "xtrm-bq7yd.5",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-03T03:51:42Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-bq7yd.3",
+            "issue_id": "xtrm-bq7yd.5",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-03T03:51:43Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-bq7yd.4",
+            "issue_id": "xtrm-bq7yd.5",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 3,
+        "dependent_count": 2,
+        "description": "## PROBLEM\nConsumer repos have <repo>/.xtrm/skills/{default,optional}/ + <repo>/.xtrm/hooks/ + xtrm-owned hook entries in <repo>/.claude/settings.json still materialized. Global paths (batches A-J) now serve them. Ship a safe migration.\n\n## SUCCESS\n- New xt migrate CLI: xt migrate [skills|hooks|all] [--dry-run|--apply] [--repo <path>] [--yes]\n- For each per-repo asset: SHA-verify hash against corresponding ~/.xtrm/ tree entry; delete if identical; on divergence keep-as-override in <repo>/.xtrm/skills/user/packs/local-legacy/<skill>/ (skills) or skip with warning (hooks).\n- Remove xtrm-owned settings.json entries (_source == 'xtrm-global' OR canonical hash match) only after confirming ~/.claude/settings.json (or ~/.pi/agent/settings.json) has the equivalent global-scope entry.\n- Tarball backup at ~/.xtrm/migration-backups/<repo>-<sha>-{skills,hooks}.tgz before every destructive step.\n- Idempotent: second run says 'already migrated'.\n\n## SCOPE\n- cli/src/commands/migrate.ts (NEW): 3 subcommands (skills/hooks/all), each: (a) sha-verify identity, (b) tarball backup, (c) delete, (d) log to ~/.xtrm/logs/skills-migration.jsonl.\n- cli/src/utils/known-repos.ts (NEW): read/write ~/.xtrm/known-repos.json.\n- cli/src/index.ts: register migrate command.\n- Tests: cli/src/tests/migrate.test.ts (integration).\n\n## NON_GOALS\n- xt migrate --restore <backup> (defer to xtrm-bq7yd.5.2 / follow-up)\n- Migration SKILL.md documenting workflow (defer to follow-up)\n- --all-repos glob support (defer to follow-up)\n\n## CONSTRAINTS\n- Reuse: cli/src/core/drift.ts SHA-256 engine; cli/src/core/global-skills-flag.ts + global-hooks-flag.ts; cli/src/core/skills-layout.ts::resolveGlobalSkillsRoot.\n- Dry-run is DEFAULT; require --apply for destructive.\n- Every destructive action logs backup path + files removed.\n- GitNexus impact pre-authorized: NEW code, no symbol modifications.\n\n## VALIDATION\n- cd cli && npm run typecheck && npm run build\n- cd cli && npx vitest run src/tests/migrate.test.ts\n- xt migrate --dry-run --repo <tmpdir> prints planned action without touching filesystem.\n\n## OUTPUT\nFiles touched, symbols added, test pass/fail.",
+        "id": "xtrm-bq7yd.5",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "\n\n### executor · kimi-k2.6:thinking · [turn 24 · WORKING]\n\nSession stalled: no activity for 120000ms\n\n_turn 24 · 196 to 3501 tok · 2026-07-08 11:55 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 1 · WORKING]\n\nI'll implement Batch E: the `xt migrate` CLI command for one-time per-repo cleanup of skills and hooks. Let me start by understanding\n\n_turn 1 · 30758 to 192 tok · 2026-07-08 12:02 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 2 · WORKING]\n\nGood. Now let me examine the existing core files I need to reuse:\n\n\n\n_turn 2 · 39875 to 172 tok · 2026-07-08 12:02 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 6 · WORKING]\n\nNow let me check the commands structure and see how to register a new command:\n\n\n\n_turn 6 · 45602 to 196 tok · 2026-07-08 12:02 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 8 · WORKING]\n\nGood. Now let me check for any existing migration-related code and the known-repos utility:\n\n\n\n_turn 8 · 47413 to 169 tok · 2026-07-08 12:03 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 10 · WORKING]\n\nNow I have enough context. Let me create the migrate command implementation. I'll start by creating the files:\n\n\n\n_turn 10 · 49863 to 782 tok · 2026-07-08 12:03 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 12 · WORKING]\n\nNow let me register the command in the main index.ts:\n\n\n\n_turn 12 · 55787 to 76 tok · 2026-07-08 12:05 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 14 · WORKING]\n\nNow let me create the test file:\n\n\n\n_turn 14 · 57361 to 2554 tok · 2026-07-08 12:06 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 15 · WORKING]\n\nNow let me build and run typecheck:\n\n\n\n_turn 15 · 59975 to 84 tok · 2026-07-08 12:06 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 23 · WORKING]\n\nTypecheck passes. Now let me build:\n\n\n\n_turn 23 · 64177 to 83 tok · 2026-07-08 12:08 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 25 · WORKING]\n\nAll tests pass. Now let me verify the command works in dry-run mode:\n\n\n\n_turn 25 · 64907 to 86 tok · 2026-07-08 12:09 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 47 · WORKING]\n\n## Summary\n\nShipped `xt migrate` CLI command for one-time per-repo cleanup of skills and hooks.\n\n## Status\nsuccess\n\n## Changes\n- `cli/src/commands/migrate.ts` (NEW): 532 lines\n  - `migrate` command with subcommands: `skills` | `hooks` | `all`\n  - SHA-256 verification against `~/.xtrm/` global tree\n  - Tarball backup at `~/.xtrm/migration-backups/<repo>-<timestamp>-{skills,hooks}.tgz`\n  - Delete identical per-repo assets; preserve diverged as override in `.xtrm/skills/user/packs/local-legacy/`\n  - Clean xtrm-owned entries from `.claude/settings.json` and `.pi/agent/settings.json`\n  - Log to `~/.xtrm/logs/skills-migration.jsonl`\n  - Idempotent: second run reports \"already migrated\"\n  - Dry-run default; `--apply` required for destructive actions\n  - `--repo <path>` to target specific repo; defaults to cwd\n\n- `cli/src/utils/known-repos.ts` (NEW): 85 lines\n  - `markRepoMigrated()`, `isRepoMigrated()`, `getKnownRepos()`\n  - Track migration state in `~/.xtrm/known-repos.json`\n\n- `cli/src/index.ts`: register migrate command\n\n- `cli/src/tests/migrate.test.ts` (NEW): 9 integration tests, all pass\n  - dry-run mode, apply mode, idempotence, diverged file preservation, logging, non-xtrm repo rejection\n\n## Verification\n- `npm run typecheck`: PASS\n- `npm run build`: PASS\n- `npx vitest run src/tests/migrate.test.ts`: 9/9 PASS\n- Manual dry-run test: PASS\n- Branch pushed: `feature/xtrm-bq7yd.5-executor`\n\n## Risks\n- Destructive operation: mitigated by `--apply` requirement, tarball backups, dry-run default\n- Semgrep finding in test file (execSync): marked with `nosemgrep` directive, args controlled by test code\n\n## Follow-ups\n- `xt migrate --restore <backup>` (deferred per spec)\n- Migration SKILL.md documentation (deferred per spec)\n- `--all-repos` glob support (deferred per spec)\n\n## Beads\n- Closed: `xtrm-bq7yd.5`\n\n## Machine-readable block\n```json\n{\n  \"summary\": \"Shipped xt migrate CLI for one-time per-repo skills/hooks cleanup with SHA verification, tarball backups, diverged file preservation, and idempotent execution.\",\n  \"status\": \"success\",\n  \"issues_closed\": [\n    \"xtrm-bq7yd.5\"\n  ],\n  \"issues_created\": [],\n  \"follow_ups\": [\n    \"xt migrate --restore <backup> (deferred per spec)\",\n    \"Migration SKILL.md documentation (deferred per spec)\",\n    \"--all-repos glob support (deferred per spec)\"\n  ],\n  \"risks\": [\n    \"Destructive operation mitigated by --apply requirement and tarball backups\",\n    \"Semgrep finding in test file (execSync) marked with nosemgrep directive\"\n  ],\n  \"verification\": [\n    \"npm run typecheck: PASS\",\n    \"npm run build: PASS\",\n    \"npx vitest run src/tests/migrate.test.ts: 9/9 PASS\",\n    \"Manual dry-run test: PASS\",\n    \"Branch pushed: feature/xtrm-bq7yd.5-executor\"\n  ],\n  \"files_changed\": [\n    \"cli/src/commands/migrate.ts\",\n    \"cli/src/utils/known-repos.ts\",\n    \"cli/src/index.ts\",\n    \"cli/src/tests/migrate.test.ts\",\n    \"cli/dist/index.cjs\",\n    \"cli/dist/index.cjs.map\"\n  ],\n  \"symbols_modified\": [\n    \"createMigrateCommand\",\n    \"migrateSkills\",\n    \"migrateHooks\",\n    \"verifySkillsIdentity\",\n    \"verifyHooksIdentity\",\n    \"createTarballBackup\",\n    \"markRepoMigrated\",\n    \"isRepoMigrated\",\n    \"cleanSettingsJsonEntries\"\n  ],\n  \"lint_pass\": true,\n  \"tests_pass\": true,\n  \"impact_report\": {\n    \"files_touched\": [\n      \"cli/src/commands/migrate.ts\",\n      \"cli/src/utils/known-repos.ts\",\n      \"cli/src/index.ts\",\n      \"cli/src/tests/migrate.test.ts\",\n      \"cli/dist/index.cjs\",\n      \"cli/dist/index.cjs.map\"\n    ],\n    \"symbols_analyzed\": [\n      \"createMigrateCommand\",\n      \"migrateSkills\",\n      \"migrateHooks\",\n      \"verifySkillsIdentity\",\n      \"verifyHooksIdentity\"\n    ],\n    \"highest_risk\": \"MEDIUM\",\n    \"tool_invocations\": 18\n  }\n}\n```\n\n_turn 47 · 70428 to 1142 tok · 2026-07-08 12:14 · git dd7fbebe_\n\n\n### executor · qwen3.5-397b-a17b-thinking · [turn 47 · WAITING]\n\n## Summary\n\nShipped `xt migrate` CLI command for one-time per-repo cleanup of skills and hooks.\n\n## Status\nsuccess\n\n## Changes\n- `cli/src/commands/migrate.ts` (NEW): 532 lines\n  - `migrate` command with subcommands: `skills` | `hooks` | `all`\n  - SHA-256 verification against `~/.xtrm/` global tree\n  - Tarball backup at `~/.xtrm/migration-backups/<repo>-<timestamp>-{skills,hooks}.tgz`\n  - Delete identical per-repo assets; preserve diverged as override in `.xtrm/skills/user/packs/local-legacy/`\n  - Clean xtrm-owned entries from `.claude/settings.json` and `.pi/agent/settings.json`\n  - Log to `~/.xtrm/logs/skills-migration.jsonl`\n  - Idempotent: second run reports \"already migrated\"\n  - Dry-run default; `--apply` required for destructive actions\n  - `--repo <path>` to target specific repo; defaults to cwd\n\n- `cli/src/utils/known-repos.ts` (NEW): 85 lines\n  - `markRepoMigrated()`, `isRepoMigrated()`, `getKnownRepos()`\n  - Track migration state in `~/.xtrm/known-repos.json`\n\n- `cli/src/index.ts`: register migrate command\n\n- `cli/src/tests/migrate.test.ts` (NEW): 9 integration tests, all pass\n  - dry-run mode, apply mode, idempotence, diverged file preservation, logging, non-xtrm repo rejection\n\n## Verification\n- `npm run typecheck`: PASS\n- `npm run build`: PASS\n- `npx vitest run src/tests/migrate.test.ts`: 9/9 PASS\n- Manual dry-run test: PASS\n- Branch pushed: `feature/xtrm-bq7yd.5-executor`\n\n## Risks\n- Destructive operation: mitigated by `--apply` requirement, tarball backups, dry-run default\n- Semgrep finding in test file (execSync): marked with `nosemgrep` directive, args controlled by test code\n\n## Follow-ups\n- `xt migrate --restore <backup>` (deferred per spec)\n- Migration SKILL.md documentation (deferred per spec)\n- `--all-repos` glob support (deferred per spec)\n\n## Beads\n- Closed: `xtrm-bq7yd.5`\n\n## Machine-readable block\n```json\n{\n  \"summary\": \"Shipped xt migrate CLI for one-time per-repo skills/hooks cleanup with SHA verification, tarball backups, diverged file preservation, and idempotent execution.\",\n  \"status\": \"success\",\n  \"issues_closed\": [\n    \"xtrm-bq7yd.5\"\n  ],\n  \"issues_created\": [],\n  \"follow_ups\": [\n    \"xt migrate --restore <backup> (deferred per spec)\",\n    \"Migration SKILL.md documentation (deferred per spec)\",\n    \"--all-repos glob support (deferred per spec)\"\n  ],\n  \"risks\": [\n    \"Destructive operation mitigated by --apply requirement and tarball backups\",\n    \"Semgrep finding in test file (execSync) marked with nosemgrep directive\"\n  ],\n  \"verification\": [\n    \"npm run typecheck: PASS\",\n    \"npm run build: PASS\",\n    \"npx vitest run src/tests/migrate.test.ts: 9/9 PASS\",\n    \"Manual dry-run test: PASS\",\n    \"Branch pushed: feature/xtrm-bq7yd.5-executor\"\n  ],\n  \"files_changed\": [\n    \"cli/src/commands/migrate.ts\",\n    \"cli/src/utils/known-repos.ts\",\n    \"cli/src/index.ts\",\n    \"cli/src/tests/migrate.test.ts\",\n    \"cli/dist/index.cjs\",\n    \"cli/dist/index.cjs.map\"\n  ],\n  \"symbols_modified\": [\n    \"createMigrateCommand\",\n    \"migrateSkills\",\n    \"migrateHooks\",\n    \"verifySkillsIdentity\",\n    \"verifyHooksIdentity\",\n    \"createTarballBackup\",\n    \"markRepoMigrated\",\n    \"isRepoMigrated\",\n    \"cleanSettingsJsonEntries\"\n  ],\n  \"lint_pass\": true,\n  \"tests_pass\": true,\n  \"impact_report\": {\n    \"files_touched\": [\n      \"cli/src/commands/migrate.ts\",\n      \"cli/src/utils/known-repos.ts\",\n      \"cli/src/index.ts\",\n      \"cli/src/tests/migrate.test.ts\",\n      \"cli/dist/index.cjs\",\n      \"cli/dist/index.cjs.map\"\n    ],\n    \"symbols_analyzed\": [\n      \"createMigrateCommand\",\n      \"migrateSkills\",\n      \"migrateHooks\",\n      \"verifySkillsIdentity\",\n      \"verifyHooksIdentity\"\n    ],\n    \"highest_risk\": \"MEDIUM\",\n    \"tool_invocations\": 18\n  }\n}\n```\n\n_turn 47 · 771039 ms · 70428 to 1142 tok · 2026-07-08 12:14 · git dd7fbebe_",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-08T10:36:54Z",
+        "status": "closed",
+        "title": "Batch E: Migration skill + xt migrate CLI (one-time per-repo cleanup for skills AND hooks)",
+        "updated_at": "2026-07-08T12:50:59Z"
+      }
+    },
+    "xtrm-bq7yd.5.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-08T12:15:52Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-08T14:15:52Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-bq7yd.5",
+            "issue_id": "xtrm-bq7yd.5.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nSeconder for Batch E executor f088f5. Files: cli/src/commands/migrate.ts (new), utils/known-repos.ts (new), commands/index.ts (register), tests/migrate.test.ts (new, 9/9 pass).\n\n## SUCCESS\nDual-verdict JSON.\n\n## SCOPE\ngit diff dd7fbebe..feature/xtrm-bq7yd.5-executor -- cli/\n\n## NON_GOALS\nNo tests, no security audit.\n\n## CONSTRAINTS\nBatch E is SCRUTINY:medium (new CLI + tarball backups + destructive delete gated on --apply). Focus on: dry-run default, backup atomicity, SHA-verify correctness, idempotence guard.\n\n## OUTPUT\nDual verdict JSON.",
+        "id": "xtrm-bq7yd.5.2",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Batch E seconder",
+        "updated_at": "2026-07-08T12:15:52Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:49:01Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-bq7yd",
+        "issue_id": "xtrm-bq7yd.5",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-bq7yd.5",
+      "source_field": "dependencies",
+      "target": "xtrm-bq7yd",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-08T14:15:52Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-bq7yd.5",
+        "issue_id": "xtrm-bq7yd.5.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-bq7yd.5.2",
+      "source_field": "dependencies",
+      "target": "xtrm-bq7yd.5",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-bq7yd",
+  "root_title": "[epic] Global skills + hooks migration: default payloads move from per-repo to ~/.xtrm",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

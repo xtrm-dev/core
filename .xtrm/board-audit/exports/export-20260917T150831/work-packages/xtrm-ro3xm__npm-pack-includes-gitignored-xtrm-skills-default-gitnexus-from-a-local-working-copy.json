@@ -1,0 +1,67 @@
+{
+  "content_sha256": "61c2dda072dc851d4c8947b1f435e7a09cc15fadae2ac3793512b65d3949a9eb",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-28T01:28:54Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-x9wz8",
+        "issue_id": "xtrm-ro3xm",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-ro3xm",
+      "source_field": "dependencies",
+      "target": "xtrm-x9wz8",
+      "target_present_in_snapshot": true,
+      "target_title": "the smoke container is a release gate that nothing tells anyone to run",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-ro3xm"
+  },
+  "issues": {
+    "xtrm-ro3xm": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-27T23:28:54Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-28T01:28:54Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-x9wz8",
+            "issue_id": "xtrm-ro3xm",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\npackage.json 'files' includes '.xtrm/skills/default' wholesale. npm pack honours 'files' and\n.npmignore, NOT .gitignore. So a directory that is gitignored but present on disk still gets\npacked.\n\n.xtrm/skills/default/gitnexus/ is gitignored at .gitignore:181 and is present in this working\ncopy (mtime 2026-07-13, 6 skill directories, 0 tracked files).\n\nResult, in this checkout:\n\n  npm run check:registry-pack-parity\n    Missing from npm pack: none\n    Missing from registry:\n    - .xtrm/skills/default/gitnexus/gitnexus-cli/SKILL.md\n    - ... 6 files\n\nVerified NOT caused by any current change: the same failure appears with the working registry\nedit stashed.\n\n## WHY CI IS GREEN\n\nCI packs from a fresh clone, where a gitignored directory does not exist. So the check passes\nthere and fails only on a developer or agent machine that has the local gitnexus skills.\n\n## ACTUAL RISK — narrow, but real\n\ncore and xtmux publish from CI, so they are safe today. specialists publishes LOCALLY\n(release_execute.py: 'run npm publish --access public locally'), so a local publish from a\npolluted tree would ship files the registry does not list. specialists does not currently have\nthis directory, which is the only reason it has not happened.\n\n## SUCCESS\n\n- npm pack never includes a path that .gitignore excludes, or the parity check explains the\n  difference instead of reporting a bare mismatch.\n- Simplest shape: add the same exclusion to the 'files' negations, next to the existing\n  '!**/__pycache__/**' entries.\n- A local 'npm pack' from a polluted working copy produces the same file list as a clean clone.\n\n## NON_GOALS\n\nRemoving the local gitnexus skills. They are deliberately gitignored and useful locally.\n\n## NOT A RELEASE BLOCKER\n\nRecorded during the 2026-07-27 release preparation. core publishes via CI; specialists lacks the\ndirectory. Verify the specialists tree is clean immediately before its local npm publish.",
+        "id": "xtrm-ro3xm",
+        "issue_type": "bug",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "npm pack includes gitignored .xtrm/skills/default/gitnexus from a local working copy",
+        "updated_at": "2026-07-27T23:28:54Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-ro3xm",
+  "root_title": "npm pack includes gitignored .xtrm/skills/default/gitnexus from a local working copy",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-yep0f"],"open_issue_count":1,"root_id":"xtrm-yep0f","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"a87967eaa738ef288a562acd48b3c909be4a1d93d2ecd238891bf2b89cd594e0","title":"Tighten gitnexus compare parser + per-service base_ref in drift_detector"}

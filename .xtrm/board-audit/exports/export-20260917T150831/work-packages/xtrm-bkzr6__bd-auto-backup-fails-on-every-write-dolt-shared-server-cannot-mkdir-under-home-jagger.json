@@ -1,0 +1,41 @@
+{
+  "content_sha256": "8f1d85010431bd55a961ba9a39bedc93f0937b62967303e5c113ecbed75c3e4f",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-bkzr6"
+  },
+  "issues": {
+    "xtrm-bkzr6": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "bd writes emit no auto-backup warning, and either a working backup destination is registered or auto-backup is explicitly disabled.",
+        "comment_count": 0,
+        "created_at": "2026-08-09T13:53:31Z",
+        "created_by": "you@example.com",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Every bd write prints: auto-backup failed: register backup remote: add backup backup_export: Error 1105: failed to create directory '<repo>/.beads/backup': mkdir /home/jagger: permission denied. Writes themselves succeed; the warning is cosmetic but fires constantly and pollutes agent output. Root cause is server-side: the shared Dolt server (pid 13623, user=jagger, root=/, HOME=/home/jagger) cannot create ANY directory under /home/jagger, including ones that already exist (.beads/backup exists, created Aug 2). 'bd backup init <path>' fails identically for /home/jagger/.beads/backups/core. Separately, the shared server's cwd is /home/jagger/projects/xtrm-tools/.beads/dolt — an abandoned pre-rename clone, not core. 0 backups registered; durability currently comes from the VPS origin remote only. Fix likely requires restarting the shared Dolt server from a correct data dir; deferred because a restart disrupts all beads lanes.",
+        "id": "xtrm-bkzr6",
+        "issue_type": "bug",
+        "owner": "you@example.com",
+        "priority": 3,
+        "status": "open",
+        "title": "bd auto-backup fails on every write: Dolt shared server cannot mkdir under /home/jagger",
+        "updated_at": "2026-08-09T13:53:31Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-bkzr6",
+  "root_title": "bd auto-backup fails on every write: Dolt shared server cannot mkdir under /home/jagger",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

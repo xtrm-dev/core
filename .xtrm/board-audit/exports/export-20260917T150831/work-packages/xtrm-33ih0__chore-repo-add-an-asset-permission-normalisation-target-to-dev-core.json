@@ -1,0 +1,68 @@
+{
+  "content_sha256": "368bafd4194474aacb9d23c17be2b4d6f5f9f324c4d877d7cb10c9766de40c6c",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-08-05T02:06:03Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-gvek4",
+        "issue_id": "xtrm-33ih0",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-33ih0",
+      "source_field": "dependencies",
+      "target": "xtrm-gvek4",
+      "target_present_in_snapshot": true,
+      "target_title": "skill(devops): author capacity-reclaim — third materialization of the devops-sre role, sibling to sre-triage and deploy-monitor",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-33ih0"
+  },
+  "issues": {
+    "xtrm-33ih0": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-05T00:06:03Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-05T02:06:03Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-gvek4",
+            "issue_id": "xtrm-33ih0",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\ndev/core has no permission normalisation target. Verified 2026-08-05 during xtrm-gvek4: `.xtrm/skills/default/capacity-reclaim/SKILL.md` landed mode 0600 in the orchestrator's checkout while `sre-triage` and `deploy-monitor` were 0664, and the orchestrator normalised it by hand post-merge.\n\nRoot cause is rule 10 of the skill the bead produced: git tracks only the executable bit, so a file's read mode is set by the umask of the shell that checks it out. The authoring `chmod 644` was a no-op on what git delivers. In the authoring worktree all three sibling skills read 0600, which confirms the mode is a property of the checkout, not of the repo.\n\nThe fault only hits files NEW to a given checkout — files already present keep their existing mode — which is why the tree looks correct until something new arrives.\n\n## SCOPE\n\nAdd a repo target (npm script and/or Makefile rule) that normalises xtrm-managed asset modes to the tree convention (0664 files, 0775 dirs) after checkout, pull, or `xt update --apply`.\n\nRule 11 from the same skill applies directly and is the main design constraint: the normaliser must cover the WHOLE asset tree, not the subset that failed first. `make alert-perms` in mercury/infra covered `prometheus/alerts/*.yml` only and silently did not cover `prometheus.yml`, `web.yml` or `alertmanager.yml` — a remediation narrower in scope than the fault it remediates. Do not repeat that shape here.\n\nRule 12 also applies: a target that must be run by hand is detection without disarming the producer. Consider wiring it to the operations that create the fault (post-merge/post-checkout hook, or the tail of `xt update --apply`) rather than leaving it as a command an operator must remember.\n\n## NON_GOALS\n\nDo not change any skill's content. Do not attempt to make git carry the mode — it cannot.\n\n## VALIDATION\n\nAfter a fresh clone or pull under `umask 077`, running the target leaves every xtrm-managed asset at the tree convention, and a check target fails when it does not.",
+        "id": "xtrm-33ih0",
+        "issue_type": "chore",
+        "notes": "Context from xt-end close of xtrm-gvek4: repo-wide worktree debt observed but NOT actioned (outside contract) — restart-audit reports 46 branch-without-worktree, 17 closed-pr-branch, 1 orphaned-managed-dir under xt/; branch-gc dry-run would delete 17 merged/closed branches. Separate hygiene concern from this bead's permission target; flagged for the operator, not filed as work.",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "chore(repo): add an asset-permission normalisation target to dev/core",
+        "updated_at": "2026-08-05T08:37:53Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-33ih0",
+  "root_title": "chore(repo): add an asset-permission normalisation target to dev/core",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

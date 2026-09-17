@@ -1,0 +1,703 @@
+{
+  "content_sha256": "ee4a14a482d20c1b9ca54ec9c70c022c5beb6fe346fec45db7c4ee19ad712a1d",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-08T17:37:43Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-sn9t",
+        "issue_id": "xtrm-4ud5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-4ud5",
+      "source_field": "dependencies",
+      "target": "xtrm-sn9t",
+      "target_present_in_snapshot": true,
+      "target_title": "CI: fresh-machine xt install/update smoke with packed specialists",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-08T17:39:00Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-02er",
+        "issue_id": "xtrm-9xg2",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-9xg2",
+      "source_field": "dependencies",
+      "target": "xtrm-02er",
+      "target_present_in_snapshot": true,
+      "target_title": "CI: enforce registry-to-npm-pack parity for managed assets",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-08T17:38:59Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-2yn4",
+        "issue_id": "xtrm-9xg2",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-9xg2",
+      "source_field": "dependencies",
+      "target": "xtrm-2yn4",
+      "target_present_in_snapshot": true,
+      "target_title": "CI: run release gates explicitly in npm publish workflow",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-08T17:39:00Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-sn9t",
+        "issue_id": "xtrm-9xg2",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-9xg2",
+      "source_field": "dependencies",
+      "target": "xtrm-sn9t",
+      "target_present_in_snapshot": true,
+      "target_title": "CI: fresh-machine xt install/update smoke with packed specialists",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:36Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2.1",
+        "issue_id": "xtrm-9xg2.2",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-9xg2.2",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2.1",
+      "target_present_in_snapshot": true,
+      "target_title": "Canonicalize hook and active-view terminology across docs and specialist assets",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:51:52Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-bq7yd",
+        "issue_id": "xtrm-9xg2.2",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-9xg2.2",
+      "source_field": "dependencies",
+      "target": "xtrm-bq7yd",
+      "target_present_in_snapshot": true,
+      "target_title": "[epic] Global skills + hooks migration: default payloads move from per-repo to ~/.xtrm",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:37Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2.1",
+        "issue_id": "xtrm-9xg2.3",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-9xg2.3",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2.1",
+      "target_present_in_snapshot": true,
+      "target_title": "Canonicalize hook and active-view terminology across docs and specialist assets",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-03T03:51:53Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-bq7yd",
+        "issue_id": "xtrm-9xg2.3",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-9xg2.3",
+      "source_field": "dependencies",
+      "target": "xtrm-bq7yd",
+      "target_present_in_snapshot": true,
+      "target_title": "[epic] Global skills + hooks migration: default payloads move from per-repo to ~/.xtrm",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:38Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2.1",
+        "issue_id": "xtrm-9xg2.5",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-9xg2.5",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2.1",
+      "target_present_in_snapshot": true,
+      "target_title": "Canonicalize hook and active-view terminology across docs and specialist assets",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-08T17:39:01Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-qtq9",
+        "issue_id": "xtrm-o0eu",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-o0eu",
+      "source_field": "dependencies",
+      "target": "xtrm-qtq9",
+      "target_present_in_snapshot": true,
+      "target_title": "Package: remove self-dependency and audit runtime dependencies",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-08T17:39:01Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-sn9t",
+        "issue_id": "xtrm-o0eu",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-o0eu",
+      "source_field": "dependencies",
+      "target": "xtrm-sn9t",
+      "target_present_in_snapshot": true,
+      "target_title": "CI: fresh-machine xt install/update smoke with packed specialists",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-4ud5"
+      },
+      {
+        "children": [],
+        "id": "xtrm-9xg2.2"
+      },
+      {
+        "children": [],
+        "id": "xtrm-9xg2.3"
+      },
+      {
+        "children": [],
+        "id": "xtrm-9xg2.4"
+      },
+      {
+        "children": [],
+        "id": "xtrm-9xg2.5"
+      },
+      {
+        "children": [],
+        "id": "xtrm-o0eu"
+      }
+    ],
+    "id": "xtrm-9xg2"
+  },
+  "issues": {
+    "xtrm-4ud5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-07T09:07:33Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-05-07T11:07:33Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "xtrm-9xg2",
+            "issue_id": "xtrm-4ud5",
+            "metadata": "{}",
+            "type": "parent"
+          },
+          {
+            "created_at": "2026-05-08T17:38:56Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-o0eu",
+            "issue_id": "xtrm-4ud5",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-08T17:37:43Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-sn9t",
+            "issue_id": "xtrm-4ud5",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "AUDIT FINDING: npm latest points to xtrm-tools@0.7.17 but historical 2.x versions exist through at least 2.4.6; current package self-dependency ^2.0.2 can pull bad stream. Need safe deprecation/migration.\\n\\nSUCCESS: Users are guided away from bad 2.x and toward canonical scoped package or fixed shim.\\n\\nACCEPTANCE:\\n- Confirm exact bad version range with npm view.\\n- Publish fixed scoped package and/or xtrm-tools shim first.\\n- Run fresh-machine smoke.\\n- npm deprecate xtrm-tools@2.x with clear message.\\n- Ensure latest dist-tag remains safe.\\n- Docs mention uninstall old global package if both scoped/unscoped bins conflict.",
+        "id": "xtrm-4ud5",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Release: deprecate bad xtrm-tools 2.x stream after scoped migration",
+        "updated_at": "2026-06-04T03:54:19Z"
+      }
+    },
+    "xtrm-9xg2": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "assignee": "dawid",
+        "close_reason": "Release-contract handshake operational: 4 target children closed (cvjg/nogp/sn9t/2yn4) + specialists side ye5s9 done. Remaining .2-.5 children + xtrm-4ud5/xtrm-o0eu are separate workstreams.",
+        "closed_at": "2026-05-13T18:08:43Z",
+        "comment_count": 0,
+        "created_at": "2026-05-06T09:32:01Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-05-08T17:39:00Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-02er",
+            "issue_id": "xtrm-9xg2",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-08T17:38:59Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-2yn4",
+            "issue_id": "xtrm-9xg2",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-08T17:39:00Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-sn9t",
+            "issue_id": "xtrm-9xg2",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "GOAL: Make xtrm-tools CI/CD contract-dependent on specialists before considering a monorepo. xtrm-tools owns the Category B filesystem payload users receive through xt install/update, so it must prove that payload matches the expected specialists package/source and works on a fresh machine.\\n\\nWHY: Fresh-machine failures showed xtrm-tools was the distribution choke point: using-specialists-v3 existed in specialists but was not vendored here; update-specialists source changed in specialists but mirror/registry required a separate xtrm-tools commit; npm latest lag means users do not receive pushed source fixes until xtrm-tools is released.\\n\\nSUCCESS: xtrm-tools CI fails on stale vendored specialists skills, stale .xtrm/registry.json, missing required default skills, invalid package payload, or fresh-machine xt doctor/update failures. Release pipeline records which specialists package/SHA generated the payload.\\n\\nSCOPE: xtrm-tools vendor script, registry generation, pack payload validation, fresh-machine smoke with packed xtrm-tools + specialists, release gate/version pin. Specialists owns its package payload/runtime contract in unitAI-ye5s9.\\n\\nNON_GOAL: Do not move to monorepo yet. This epic adds split-repo contract hardening first.",
+        "id": "xtrm-9xg2",
+        "issue_type": "epic",
+        "owner": "you@example.com",
+        "priority": 1,
+        "started_at": "2026-05-13T17:19:00Z",
+        "status": "closed",
+        "title": "Epic: harden xtrm-tools ↔ specialists release contract",
+        "updated_at": "2026-06-04T03:54:19Z"
+      }
+    },
+    "xtrm-9xg2.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-09T03:11:25Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-09T05:11:24Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2",
+            "issue_id": "xtrm-9xg2.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-05-09T05:11:36Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2.1",
+            "issue_id": "xtrm-9xg2.2",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-03T03:51:52Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-bq7yd",
+            "issue_id": "xtrm-9xg2.2",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 2,
+        "description": "PROBLEM: Stitch xtrm-9xg2.2 (CI + pack guards for flat active layout) INTO integration. Integration has all of: 9xg2.1 (terminology), 9xg2.3 (runtime alignment), j4f4 (skills-ownership manifest), 02er (registry-pack parity), etp4-via-Cluster-B (vendor freshness CI gate).\n\nCRITICAL CONSTRAINTS:\n1. Fork off integration/2026-05-09-orchestrator. Verify 'git log integration/2026-05-09-orchestrator..HEAD' empty before commits.\n2. PRESERVE all existing CI gates and scripts (check-skills-ownership, check-registry-pack-parity, check-specialists-vendor).\n3. ADD 9xg2.2 intent: scripts/check-layout-guards.mjs (NEW) enforces flat active layout (no .xtrm/skills/active/claude or active/pi tier). Pack must not include .xtrm/skills/active/**. CI fails on stale active tiers unless explicitly marked ignored/transient.\n4. Wire into ci.yml + prepublishOnly.\n\nSUCCESS: One commit on a branch off integration. Tests pass.\n\nSCOPE: scripts/check-layout-guards.mjs (NEW), package.json (npm script), .github/workflows/ci.yml (CI step).\n\nVALIDATION: 'npm run check:layout-guards' passes; 'npm test --workspace cli' regression count not worse than current 15 failed / 493 passed.\n\nOUTPUT: Branch + commit hash.",
+        "id": "xtrm-9xg2.2",
+        "issue_type": "task",
+        "labels": [
+          "ci",
+          "layout",
+          "packaging",
+          "skills"
+        ],
+        "notes": "Executor (job 571d78) success: scripts/check-layout-guards.mjs + CI wiring + docs. MEDIUM impact. Branch feature/xtrm-9xg2.2-executor preserved. Reviewer dispatch blocked by epic xtrm-9xg2 unmerged-siblings guard (--force-stale-base also failed). Operator: review chain branch + sp epic merge xtrm-9xg2.\n### Specialist Output — debugger (job da7f58) [WAITING — more output may follow]\n\n## Summary\nSymptom: missing guard for flat active skills layout. Need CI + prepublish enforcement. Preserve existing gates.\n\n## Status\nDone. One commit on branch `feature/xtrm-9xg2.2-debugger`.\n\n## Changes\n- `scripts/check-layout-guards.mjs` (new)\n  - Fails on stale refs:\n    - `.xtrm/skills/active/claude`\n    - `.xtrm/skills/active/pi`\n  - Fails if tracked files include `.xtrm/skills/active/**` (pack leak).\n  - Allows transient/ignored roots only.\n- `package.json`\n  - Added script: `check:layout-guards`\n  - Wired into `prepublishOnly` after existing guard chain.\n  - Preserved:\n    - `check:skills-ownership`\n    - `check:registry-pack-parity`\n    - `check:specialists-vendor`\n- `.github/workflows/ci.yml`\n  - Added CI step: `npm run check:layout-guards`\n  - Kept existing gate steps unchanged.\n\n## Verification\n- `npm run check:layout-guards` → **pass**\n- `npm test --workspace cli` → **fail**, `16 failed / 492 passed` (regression count worse vs target 15 failed baseline by +1).\n- `gitnexus_detect_changes()` run: low risk, changed files detected, no symbol/process impact reported.\n\n## Risks\n- Regression criterion not met (`16` failed > expected `<=15`).\n- Worktree has unrelated `.beads` unstaged deletions; not committed.\n\n## Follow-ups\n- Investigate one-extra failing test before merge gate.\n- Run on fresh integration branch if strict baseline enforcement required.\n\n## Beads\n- Claimed: `bd update xtrm-9xg22 --claim`\n- Commit made.\n- `bd close` not executed in this run.\n\n## Branch + Commit\n- Branch: `feature/xtrm-9xg2.2-debugger`\n- Commit: `1116f03`\n\n```json\n{\n  \"status\": \"partial\",\n  \"summary\": \"Added flat active layout guard script, wired CI and prepublish; guard passes; workspace tests at 16 failed (target baseline not met).\",\n  \"files_changed\": [\n    \"scripts/check-layout-guards.mjs\",\n    \"package.json\",\n    \".github/workflows/ci.yml\"\n  ],\n  \"follow_ups\": [\n    \"Resolve one additional failing cli workspace test to return to <=15 failed baseline.\",\n    \"Close bead after memory ack when environment allows.\"\n  ],\n  \"risks\": [\n    \"Regression threshold missed: 16 failed vs expected <=15.\",\n    \"Unrelated unstaged .beads deletions present in worktree.\"\n  ],\n  \"verification\": [\n    \"npm run check:layout-guards: pass\",\n    \"npm test --workspace cli: fail (16 failed, 492 passed)\",\n    \"gitnexus_detect_changes: low risk\"\n  ]\n}\n```\n\n---\ntimestamp=2026-05-09T07:14:15.947Z\nstatus=waiting\nprompt_hash=8f234dd4309f977e\ngit_sha=a28efb7ba061584eb2886c111d16a6df143e47e4\nelapsed_ms=209496\nmodel=openai-codex/gpt-5.3-codex\nbackend=openai-codex\n### Specialist Output — debugger (job da7f58) [WAITING — more output may follow]\n\n## Summary\nRan requested diff command. Failure list now 15, not 16. No new regressed test from 9xg2.2.\n\n## Status\nNo fixture update needed. No code change in this pass.\n\n## Changes\nNone.\n\n## Verification\nRan:\n```bash\nnpm test --workspace cli 2>&1 | grep \"FAIL \" | sort\n```\nResult: exactly 15 FAIL entries.\n\nCross-check full run:\n- `npm test --workspace cli --silent` → `15 failed / 493 passed` (matches baseline target).\n- No FAIL mentions `active/claude` or `active/pi`.\n- So no stale flat-layout fixture regression introduced by layout guard change.\n\n## Risks\nNone new. Existing 15 failures pre-existing baseline.\n\n## Follow-ups\nNone for this scope.\n\n## Beads\nBranch pushed:\n- `feature/xtrm-9xg2.2-debugger` (upstream set)\n\nNo new commit created (nothing to change).\n\n```json\n{\n  \"status\": \"success\",\n  \"summary\": \"Compared FAIL list; baseline remains 15 failed, so no new regression and no stale fixture update needed.\",\n  \"files_changed\": [],\n  \"follow_ups\": [],\n  \"risks\": [],\n  \"verification\": [\n    \"npm test --workspace cli 2>&1 | grep \\\"FAIL \\\" | sort\",\n    \"npm test --workspace cli --silent => 15 failed / 493 passed\"\n  ]\n}\n```\n\n---\ntimestamp=2026-05-09T07:18:00.333Z\nstatus=waiting\nprompt_hash=unknown\ngit_sha=a28efb7ba061584eb2886c111d16a6df143e47e4\nelapsed_ms=unknown\nmodel=gpt-5.3-codex\nbackend=openai-codex",
+        "priority": 2,
+        "status": "open",
+        "title": "Add CI and pack guards for flat active skills layout",
+        "updated_at": "2026-06-04T03:54:19Z"
+      }
+    },
+    "xtrm-9xg2.3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-09T03:11:25Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-09T05:11:25Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2",
+            "issue_id": "xtrm-9xg2.3",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-05-09T05:11:37Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2.1",
+            "issue_id": "xtrm-9xg2.3",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-03T03:51:53Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-bq7yd",
+            "issue_id": "xtrm-9xg2.3",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 2,
+        "description": "PROBLEM: Stitch xtrm-9xg2.3's flat-active-view alignment for xt doctor/update/init INTO integration. Integration already has sm1t (package-registry compare), 42in (strict mode), 19e5 (shared-dolt config) on update.ts/install.ts/doctor.ts.\n\nCRITICAL CONSTRAINTS:\n1. Fork off integration/2026-05-09-orchestrator. Verify with 'git log integration/2026-05-09-orchestrator..HEAD' empty before any commits.\n2. Integration's current state must be preserved verbatim:\n   - sm1t package-registry compare logic in update.ts\n   - 42in strict-mode (UpdateOpts.strictRegistry, isStrictRegistryMode)\n   - 19e5 shared-dolt config (beads-shared-server.ts, doctor's not-applicable handling)\n3. Add 9xg2.3's intent: align xt doctor/update/init runtime checks with FLAT .xtrm/skills/active view (no active/claude or active/pi tier). New file cli/test/skills-runtime-sync.test.ts. Touch cli/src/commands/clean.ts + init.ts + tests.\n4. Reference original feature/xtrm-9xg2.3-executor for symbol shapes. Re-implement on integration's current state.\n\nSUCCESS: Single commit on a branch off integration adding 9xg2.3's runtime alignment. Existing tests still pass + new skills-runtime-sync.test.ts passes.\n\nSCOPE: cli/src/commands/{clean,init}.ts, cli/src/tests/{doctor,update}.test.ts (additions), cli/test/{doctor,skills-runtime-sync}.test.ts (additions).\n\nNON_GOALS: Don't revert sm1t/42in/19e5.\n\nVALIDATION: 'npm test --workspace cli -- src/tests/update.test.ts test/doctor.test.ts test/skills-runtime-sync.test.ts' passes.\n\nOUTPUT: Branch + commit hash + test output.",
+        "id": "xtrm-9xg2.3",
+        "issue_type": "task",
+        "labels": [
+          "cli",
+          "doctor",
+          "skills",
+          "update"
+        ],
+        "notes": "Executor (job 4ea1d6) success: cli/src/commands/clean.ts, init.ts, doctor.test.ts, update.test.ts, doctor.test.ts, NEW skills-runtime-sync.test.ts. CRITICAL blast radius. Branch feature/xtrm-9xg2.3-executor preserved. Reviewer NOT run (epic-block). Operator: code review needed before merge.\n### Specialist Output — debugger (job b9cdff) [WAITING — more output may follow]\n\n## Summary\nIssue debug+fix done on branch off `integration/2026-05-09-orchestrator`. Kept integration changes intact (sm1t/42in/19e5). Applied flat active-view alignment.\n\n## Status\nPass\n\n## Changes\n- Branch: `fix/xtrm-9xg23-flat-active`\n- Commit: `f9aa6fb`\n- Files changed:\n  - `cli/src/commands/clean.ts`\n    - log text now points to flat `.xtrm/skills/active` (removed `{claude,pi}`)\n  - `cli/src/commands/init.ts`\n    - `runPreflight` now falls back when `findRepoRoot()` fails: `.catch(() => projectRoot)`\n    - activation success text now points to flat `.xtrm/skills/active`\n  - `cli/src/tests/doctor.test.ts`\n    - runtime mock includes `hasDeprecatedAgentsSkillsPath: false`\n    - JSON assertion checks `parsed.catB.runtimeView.hasDeprecatedAgentsSkillsPath === false`\n\nNote: `cli/test/skills-runtime-sync.test.ts` already contained legacy-active-subdirs invalid-state coverage in this integration state. No extra delta needed.\n\n## Verification\nCommand run:\n```bash\nnpm test --workspace cli -- src/tests/update.test.ts test/doctor.test.ts test/skills-runtime-sync.test.ts\n```\n\nResult:\n- `3 passed` test files\n- `13 passed` tests\n- includes `test/skills-runtime-sync.test.ts` pass\n\n## Risks\nLow. GitNexus impact:\n- `createCleanCommand` upstream risk LOW\n- `runProjectInit` upstream risk LOW\n\n## Follow-ups\nNone\n\n## Beads\n- Claimed: `bd update xtrm-9xg23 --claim`\n- Notes appended\n- Memory saved\n- Closed attempted\n- Pushed branch to origin\n\n```json\n{\n  \"status\": \"success\",\n  \"summary\": \"Aligned doctor/init/clean runtime checks and messaging to flat .xtrm/skills/active on integration baseline; targeted tests passed.\",\n  \"files_changed\": [\n    \"cli/src/commands/clean.ts\",\n    \"cli/src/commands/init.ts\",\n    \"cli/src/tests/doctor.test.ts\"\n  ],\n  \"follow_ups\": [],\n  \"risks\": [\n    \"Low blast radius per GitNexus upstream impact on createCleanCommand and runProjectInit.\"\n  ],\n  \"verification\": [\n    \"npm test --workspace cli -- src/tests/update.test.ts test/doctor.test.ts test/skills-runtime-sync.test.ts (pass: 3 files, 13 tests)\"\n  ],\n  \"branch\": \"fix/xtrm-9xg23-flat-active\",\n  \"commit\": \"f9aa6fb\"\n}\n```\n\n---\ntimestamp=2026-05-09T06:03:59.579Z\nstatus=waiting\nprompt_hash=c4298bde1e3b0946\ngit_sha=b37338ab53c2c4b715056f5cfbd53da9a138933a\nelapsed_ms=161450\nmodel=openai-codex/gpt-5.3-codex\nbackend=openai-codex",
+        "priority": 2,
+        "status": "open",
+        "title": "Align xt doctor/update/init runtime checks with flat active view",
+        "updated_at": "2026-06-04T03:54:19Z"
+      }
+    },
+    "xtrm-9xg2.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-09T03:11:26Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-09T05:11:25Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2",
+            "issue_id": "xtrm-9xg2.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-05-09T05:11:37Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2.2",
+            "issue_id": "xtrm-9xg2.4",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "## What implementation this covers\n\nCovers implementation issue xtrm-9xg2.2 (CI + pack guards for flat active layout).\n\n## Layer classification\n\nBoundary layer. This work validates filesystem/package/CI contracts at repo → packed artifact seam and at source-tree scan boundary.\n\n## Strategy chosen\n\nContract tests and smoke checks, live-first within local CI:\n- inspect real `npm pack` file list\n- run real source scan script against tracked files\n- assert approved ignore/transient paths are only exceptions\n\n## Test file structure\n\nPrefer one focused test surface plus one CI invocation:\n- script-level test under existing CLI/workflow test area if helper is scripted\n- workflow smoke step in `.github/workflows/ci.yml`\n- fixtures for allowlisted historical/transient paths if needed\n\n## What to assert\n\n- Packed tarball does not contain `.xtrm/skills/active/**`.\n- Guard fails on synthetic `active/claude` / `active/pi` references outside allowlist.\n- Guard passes for explicitly declared transient/historical paths only.\n- Guard output mentions canonical `.xtrm/skills/active` / `.xtrm/hooks/` contract.\n\n## Acceptance criteria\n\n- [ ] Boundary contract checks cover real pack output, not mocked file lists.\n- [ ] Source-scan regression case proves stale runtime-tier paths fail CI.\n- [ ] Allowlist behavior is asserted with concrete fixtures/examples.\n- [ ] Test docs/name reference xtrm-9xg2.2 and updated canonical layout.",
+        "id": "xtrm-9xg2.4",
+        "issue_type": "task",
+        "labels": [
+          "boundary",
+          "ci",
+          "testing"
+        ],
+        "priority": 2,
+        "status": "open",
+        "title": "Test: flat active layout CI guard and packed artifact contract",
+        "updated_at": "2026-06-04T03:54:22Z"
+      }
+    },
+    "xtrm-9xg2.5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-09T03:11:26Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-09T05:11:26Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2",
+            "issue_id": "xtrm-9xg2.5",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-05-09T05:11:38Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2.1",
+            "issue_id": "xtrm-9xg2.5",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-09T05:11:38Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-9xg2.3",
+            "issue_id": "xtrm-9xg2.5",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "## What implementation this covers\n\nCovers implementation issues xtrm-9xg2.1 and xtrm-9xg2.3 (canonical terminology + doctor/update/init flat-view runtime verification).\n\n## Layer classification\n\nShell layer. This work validates user-facing command output and end-to-end runtime wiring across init/doctor/update surfaces.\n\n## Strategy chosen\n\nCLI integration tests and smoke tests:\n- invoke real command constructors or CLI wrappers\n- assert runtime-view output/messages use flat active path only\n- verify failure text treats per-runtime tiers as legacy/invalid\n\n## Test file structure\n\nExtend existing shell-facing suites:\n- `cli/test/doctor.test.ts`\n- `cli/src/tests/update.test.ts`\n- `cli/test/skills-runtime-sync.test.ts`\n- add/adjust init or clean command assertions where message drift exists\n\n## What to assert\n\n- `xt doctor` JSON/text reports flat active view readiness only.\n- `xt update` smoke output and JSON continue working with canonical flat path wiring.\n- init/clean/user-facing strings no longer print `active/{claude,pi}`.\n- Legacy per-runtime directory scenarios are handled as invalid drift, not expected layout.\n\n## Acceptance criteria\n\n- [ ] Shell/integration coverage exercises doctor + update flat-layout behavior.\n- [ ] Regression assertions catch stale `active/claude` / `active/pi` wording in command output.\n- [ ] Tests reference xtrm-9xg2.1 and xtrm-9xg2.3.\n- [ ] Coverage keeps canonical `.xtrm/hooks/` verification intact while updating active-view expectations.",
+        "id": "xtrm-9xg2.5",
+        "issue_type": "task",
+        "labels": [
+          "cli",
+          "shell",
+          "testing"
+        ],
+        "priority": 2,
+        "status": "open",
+        "title": "Test: doctor/update/init flat active view shell smoke",
+        "updated_at": "2026-06-04T03:54:22Z"
+      }
+    },
+    "xtrm-o0eu": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-07T09:07:21Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-05-08T17:38:56Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-4ud5",
+            "issue_id": "xtrm-o0eu",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-07T11:07:20Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "xtrm-9xg2",
+            "issue_id": "xtrm-o0eu",
+            "metadata": "{}",
+            "type": "parent"
+          },
+          {
+            "created_at": "2026-05-08T17:39:01Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-qtq9",
+            "issue_id": "xtrm-o0eu",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-08T17:39:01Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-sn9t",
+            "issue_id": "xtrm-o0eu",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "AUDIT FINDING: xtrm-5ox1 found xtrm-tools has polluted historical 2.x versions while current latest is 0.7.17, and package self-depends on xtrm-tools ^2.0.2. Recommended direction: publish canonical scoped package @jaggerxtrm/xtrm with bins xt/xtrm, keep xtrm-tools as transition/shim, deprecate bad 2.x after smoke.\\n\\nSUCCESS: Package naming/versioning is clean, scoped, and migration-safe.\\n\\nACCEPTANCE:\\n- Verify npm ownership/access for @jaggerxtrm/xtrm, @jaggerxtrm/xtrm-tools, xtrm, xtrm-tools.\\n- Decide final canonical package name (recommended @jaggerxtrm/xtrm) and version line (recommended 0.8.0 until stable).\\n- Remove self-dependency xtrm-tools ^2.0.2.\\n- Publish/prepare scoped package with bins xt/xtrm.\\n- Publish xtrm-tools compatibility release or shim.\\n- Deprecate bad xtrm-tools 2.x versions after scoped smoke.\\n- Update docs, workflows, install commands, and specialists prerequisite messages.\\n- Fresh-machine smoke proves npm install -g @jaggerxtrm/xtrm works without repo clone.",
+        "id": "xtrm-o0eu",
+        "issue_type": "epic",
+        "owner": "you@example.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Rename: publish canonical @jaggerxtrm/xtrm package and migrate xtrm-tools",
+        "updated_at": "2026-06-04T03:54:19Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-07T11:07:33Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "xtrm-9xg2",
+        "issue_id": "xtrm-4ud5",
+        "metadata": "{}",
+        "type": "parent"
+      },
+      "source": "xtrm-4ud5",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2",
+      "type": "parent"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-08T17:38:56Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-o0eu",
+        "issue_id": "xtrm-4ud5",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-4ud5",
+      "source_field": "dependencies",
+      "target": "xtrm-o0eu",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:24Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2",
+        "issue_id": "xtrm-9xg2.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-9xg2.2",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:25Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2",
+        "issue_id": "xtrm-9xg2.3",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-9xg2.3",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:37Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2.2",
+        "issue_id": "xtrm-9xg2.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-9xg2.4",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2.2",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:25Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2",
+        "issue_id": "xtrm-9xg2.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-9xg2.4",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:38Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2.3",
+        "issue_id": "xtrm-9xg2.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-9xg2.5",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2.3",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-09T05:11:26Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-9xg2",
+        "issue_id": "xtrm-9xg2.5",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-9xg2.5",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-07T11:07:20Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "xtrm-9xg2",
+        "issue_id": "xtrm-o0eu",
+        "metadata": "{}",
+        "type": "parent"
+      },
+      "source": "xtrm-o0eu",
+      "source_field": "dependencies",
+      "target": "xtrm-9xg2",
+      "type": "parent"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-08T17:38:56Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-4ud5",
+        "issue_id": "xtrm-o0eu",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-o0eu",
+      "source_field": "dependencies",
+      "target": "xtrm-4ud5",
+      "type": "relates-to"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-9xg2",
+  "root_title": "Epic: harden xtrm-tools ↔ specialists release contract",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

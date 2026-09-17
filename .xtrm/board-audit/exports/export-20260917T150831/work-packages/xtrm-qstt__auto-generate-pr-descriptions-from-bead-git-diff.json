@@ -1,0 +1,41 @@
+{
+  "content_sha256": "95e1e89164ccf08ae48743fb8b63154fb5b3d9d4286b3a28b94ce8ad3c60bda1",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-qstt"
+  },
+  "issues": {
+    "xtrm-qstt": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-04-02T22:28:52Z",
+        "created_by": "you@example.com",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Research finding: 'Optio – Orchestrate AI coding agents in K8s to go from ticket to PR' got 87pts on HN — automated ticket→PR workflow is valuable.\n\n**Action items:**\n1. Enhance `xt end` to auto-generate PR description from:\n   - bd show <id> (title, description, acceptance criteria)\n   - git diff --stat (files changed)\n   - GitNexus detect_changes (affected symbols/flows)\n2. Auto-link beads issues in PR body: 'Closes bd-123'\n3. Auto-suggest reviewers based on file territory (service-registry.json)\n4. Add --dry-run to preview PR before creating\n5. Support GitHub, GitLab, Bitbucket via existing xt remote\n\n**Example output:**\n```\nxt end --pr\n# Creates PR with:\n# - Title from bead\n# - Description from bead + changes summary\n# - 'Closes bd-123' link\n# - Suggested reviewers: @dawid (specialists territory)\n```\n\n**Why this matters:** \n- Reduces friction from close→push→PR\n- Ensures PR descriptions have proper context\n- Auto-reviewer assignment speeds up merges\n\n**Source:** last30days research on AI coding agents (HN: Optio project)",
+        "id": "xtrm-qstt",
+        "issue_type": "feature",
+        "notes": "Release triage 2026-05-04: valuable roadmap work, but not required for the next patch release. Defer until after release-critical bugfix/docs/packaging items land.",
+        "owner": "you@example.com",
+        "priority": 3,
+        "status": "deferred",
+        "title": "Auto-generate PR descriptions from bead + git diff",
+        "updated_at": "2026-05-08T15:37:06Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-qstt",
+  "root_title": "Auto-generate PR descriptions from bead + git diff",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

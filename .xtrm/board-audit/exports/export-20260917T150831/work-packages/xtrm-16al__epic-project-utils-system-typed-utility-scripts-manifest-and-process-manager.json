@@ -1,0 +1,41 @@
+{
+  "content_sha256": "6b00dfe9f8529c3e8fc2464f646813158d8d477e4cacc9cf68044a50b94d9c91",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-16al"
+  },
+  "issues": {
+    "xtrm-16al": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-03-30T01:19:29Z",
+        "created_by": "you@example.com",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## Overview\n\nIntroduce a first-class `utils/` system to xtrm-tools — a set of typed, manifested utility scripts that specialists and orchestrators can invoke declaratively, plus an abstract process manager module for long-lived/background processes.\n\n## Architecture\n\nXtreme is the execution substrate (worktrees, process lifecycle, toolchain, hooks). This epic formalizes that role with concrete tooling.\n\n### Layer boundary (to document formally)\n\n- **Xtreme** = provisioning, worktrees, process lifecycle, session management, toolchain, shared scripts, pre/post hooks\n- **Specialist** = role logic, task execution, output, handoff — consumes Xtreme primitives\n\n## Planned sub-epics / bundles\n\n### 1. Utils folder + typed manifest (foundation)\n- `utils/manifest.json` schema: id, description, runtime, command, input, output, timeout, phase (pre/post/on-demand), failure_policy (blocking/advisory)\n- Every utility declares its contract; no ad-hoc scripts\n\n### 2. Utility script bundles (implement manifest contract)\n- **Core** — health-check, lint, type-check, format-check, test-smoke\n- **Validators** — schema-validator (JSON/YAML/specialist-output), config-validator (env, project config), policy-validator (naming, structure, ownership)\n- **Security** — secret-scan, dependency-vulnerability-check, unsafe-pattern-scan\n- **Git/change intelligence** — changed-files-analyzer (classifies by type), diff-risk-estimator (coupling + missing tests), branch-consistency-check\n- **Testing** — targeted-test-selector (runs tests covering changed files only), coverage-delta-check, flaky-test-detector\n- **Observability** — log-follow-helper, error-summarizer, incident-snapshot (processes + ports + logs + repo state bundle)\n- **Docker** — docker-health, docker-compose-validate, image-policy-check\n\n### 3. Specialist integration\n- Expose utils manifest to specialist YAML via `capabilities.utils[]`\n- Specialists declare which utils to run at which phase (pre/in/post)\n\n### 4. Abstract process manager module\n- Interface: start / stop / restart / status / logs / follow / cleanup\n- PNPM-backed as first implementation; interface-abstracted for future runtimes\n- Named processes, PID + log tracking, follow streaming, reattach to existing\n- Process policies: timeout, restart policy, blocking vs background classification\n- Automatic cleanup at job end\n- Enables specialists to launch dev servers, log tails, event streams, watchers — and human/agent operators to follow with `--follow`\n\n## Sequencing\n\n1. Architecture doc (formal Xtreme vs Specialist boundary)\n2. Utils manifest schema\n3. Core + Validator bundles (highest utility for specialists)\n4. Process manager (unlocks background process UX)\n5. Remaining bundles + specialist integration\n\n## Notes\n\nThis epic is intentionally coarse-grained. Each sub-item above becomes its own issue when the time comes to implement it. File this as a planning anchor — break it down before starting.",
+        "id": "xtrm-16al",
+        "issue_type": "epic",
+        "notes": "Release triage 2026-05-04: valuable roadmap work, but not required for the next patch release. Defer until after release-critical bugfix/docs/packaging items land.",
+        "owner": "you@example.com",
+        "priority": 3,
+        "status": "deferred",
+        "title": "[epic] Project utils system: typed utility scripts, manifest, and process manager",
+        "updated_at": "2026-05-08T15:37:05Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-16al",
+  "root_title": "[epic] Project utils system: typed utility scripts, manifest, and process manager",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

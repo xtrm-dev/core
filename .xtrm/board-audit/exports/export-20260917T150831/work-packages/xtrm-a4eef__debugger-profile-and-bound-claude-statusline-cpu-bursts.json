@@ -1,0 +1,94 @@
+{
+  "content_sha256": "63e784298edd41d8d23b135394cd5aec929be90a0de72c1b022fb972d9799a4c",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-a4eef.1"
+      }
+    ],
+    "id": "xtrm-a4eef"
+  },
+  "issues": {
+    "xtrm-a4eef": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "close_reason": "CI registry parity repaired; generated hook manifest updated and parity check passes.",
+        "closed_at": "2026-07-10T23:02:06Z",
+        "comment_count": 0,
+        "created_at": "2026-07-10T12:03:42Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\n`/home/dawid/.xtrm/hooks/statusline.mjs`, invoked as Claude Code's statusline provider, has shown transient 100%+ CPU bursts. Frequent concurrent session ticks amplify host load.\n\n## SUCCESS\n\nProfiled evidence identifies the hot operation. The statusline returns best-effort within 50 ms, serves a valid stale shared cache while refresh is slow, and prevents cross-session refresh stampedes. A persistent helper is permitted only if a lease-protected short-lived refresh cannot meet the contract.\n\n## SCOPE\n\n- `/home/dawid/.xtrm/hooks/statusline.mjs` and its tracked source counterpart\n- minimal test/benchmark support only when required\n- per-user cache/lock state under an appropriate runtime cache directory\n\n## NON_GOALS\n\n- no speculative rewrite\n- no broad Claude Code or beads redesign\n- no always-running daemon unless evidence proves it necessary\n\n## CONSTRAINTS\n\n- Collect supplied ps/perf evidence first when a live process is observable; record when unavailable\n- profile wall/CPU time, subprocesses, files read, and concurrency\n- renderer has a 50 ms budget and must not synchronously run slow work\n- cache writes atomic; corrupt/missing/unreadable cache safe; stale cache preferred to blocking\n- one refresh lease across sessions; no stampede\n- preserve useful output\n\n## VALIDATION\n\n- reproducible timing/CPU and slow-dependency tests\n- concurrent invocation test\n- cache corruption and stale fallback test\n- before/after `ps`/`perf` evidence when process availability permits\n\n## OUTPUT\n\nRoot-cause evidence, hot function, minimal diff, test commands/results, before/after measurements, and whether helper was needed.\n\nSCRUTINY: high",
+        "id": "xtrm-a4eef",
+        "issue_type": "bug",
+        "notes": "Profiled locally because no live statusline PID existed and perf is not installed: cold 391-545ms wall / 286-354ms CPU; five concurrent cold calls showed five Node processes at 54-64% CPU. Root cause: cache-miss path synchronously launches 5 Git plus Beads shell-outs via execSync; per-worktree cache lacks a refresh lease. Implemented cache-only renderer with detached lease-protected refresh, shared Beads cache, atomic cache writes, stale/fallback rendering, and 250ms background command caps. Active /home/dawid/.xtrm/hooks/statusline.mjs patched from source; source remains uncommitted pending operator publish instruction.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-10T12:03:47Z",
+        "status": "closed",
+        "title": "debugger: profile and bound Claude statusline CPU bursts",
+        "updated_at": "2026-07-10T23:02:06Z"
+      }
+    },
+    "xtrm-a4eef.1": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-10T12:04:04Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-10T14:04:03Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-a4eef",
+            "issue_id": "xtrm-a4eef.1",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nThe Claude statusline hook intermittently consumes a core. Root cause is unknown.\n\n## SUCCESS\n\nReproducible evidence names the hot function/operation and quantifies wall/CPU time, shell-outs, files read, and concurrent invocation behavior. It distinguishes live perf evidence from unavailable samples.\n\n## SCOPE\n\n- `.xtrm/hooks/statusline.mjs` and active `/home/dawid/.xtrm/hooks/statusline.mjs`\n- read-only process/perf/strace/time profiling\n- existing statusline tests or minimal non-mutating harness only\n\n## NON_GOALS\n\n- no source edits\n- no cache/helper implementation\n\n## CONSTRAINTS\n\n- READ_ONLY\n- first attempt supplied `ps` and `perf` only if a target PID exists; do not attach to unrelated process\n- test falsifiable candidates: bd/git shell-outs, parsing files, worktree scan, synchronous CPU loops\n- record exact commands, process availability, timing samples, and limitations\n\n## VALIDATION\n\n- identify source symbols and the call path\n- report at least five timing samples or explain why runtime cannot be reproduced\n\n## OUTPUT\n\nRoot-cause verdict with evidence, source locations, quantified measurements, proposed minimal fix shape, and whether persistent helper is actually needed.\n\nSCRUTINY: high",
+        "id": "xtrm-a4eef.1",
+        "issue_type": "task",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "debugger: collect statusline CPU root-cause evidence",
+        "updated_at": "2026-07-10T12:04:04Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-10T14:04:03Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-a4eef",
+        "issue_id": "xtrm-a4eef.1",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-a4eef.1",
+      "source_field": "dependencies",
+      "target": "xtrm-a4eef",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-a4eef",
+  "root_title": "debugger: profile and bound Claude statusline CPU bursts",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

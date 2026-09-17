@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-qstt"],"open_issue_count":1,"root_id":"xtrm-qstt","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"0e2c604c0aee0229c622d126d5c5302442a31d33cb6b6cbcc42ec1168c35dc65","title":"Auto-generate PR descriptions from bead + git diff"}

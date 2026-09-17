@@ -1,0 +1,41 @@
+{
+  "content_sha256": "c767ed074b3f6dbed1d3ecc9976c69ab8760693de3182f84c799500f996655ae",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-148eh"
+  },
+  "issues": {
+    "xtrm-148eh": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-15T09:26:26Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## Problem\n\nThe xtrm agent instruction top-templates (`.xtrm/config/instructions/{agents,claude}-top.md`) are the ONLY xtrm-managed context that did NOT migrate to the global asset model in the xtrm-bq7yd epic. Current flow:\n\n- **Source**: npm-installed package `<pkg>/.xtrm/config/instructions/*.md` (or dev-checkout via npm link)\n- **Injection**: `cli/src/commands/init.ts:injectProjectInstructionHeaders` reads templates, upserts marker-delimited block into per-project `CLAUDE.md` + `AGENTS.md` at `xt init` / `xt update --apply` time\n- **Runtime**: static per-project rendered file, native Claude/Pi read at session start\n- **Update propagation**: MANUAL per repo — every consumer must run `xt update --apply` to pick up template changes\n\nConsequences observed:\n- Fleet drift: consumer repos on this machine have -top blocks from various xtrm versions\n- `upsertManagedBlock` merge logic in init.ts is fiddly (~90 lines, greedy vs lazy regex, marker-collision edge cases documented in memory `upsertmanagedblock-in-cli-src-commands-init-ts-use`)\n- Two independent managed blocks in CLAUDE.md (xtrm + BEADS INTEGRATION from `bd setup claude`) — mix + collision surface\n- Asymmetric with skills (~/.xtrm/skills/default/, global) + hooks (~/.xtrm/hooks/, global) which DO propagate live\n\n## Design\n\nMove -top files to the global asset model. Runtime-inject on both runtimes.\n\n**Source**: `~/.xtrm/config/instructions/{agents,claude}-top.md` (canonical global; bootstrapped on `xt install` like ~/.xtrm/hooks/ was).\n\n**Claude injection**:\n- New hook `.xtrm/hooks/xtrm-instructions-reminder.mjs` (mirrors `using-xtrm-reminder.mjs` shape).\n- Wired to `SessionStart` (fresh session inject) + `PreCompact` (re-inject after context compaction loses systemPrompt).\n- Returns `hookSpecificOutput.additionalSystemPrompt` containing the claude-top.md body (frontmatter stripped).\n\n**Pi injection**:\n- Extend `packages/pi-extensions/extensions/xtrm-loader/index.ts before_agent_start` to read `~/.xtrm/config/instructions/agents-top.md` and prepend to systemPrompt alongside `.xtrm/memory.md`.\n\n**Deprecate per-project marker block**:\n- `injectProjectInstructionHeaders` becomes a no-op (or is deleted) — no more writes to consumer CLAUDE.md/AGENTS.md.\n- New `xt migrate instructions --apply` command: surgically remove existing `<!-- xtrm:start -->…<!-- xtrm:end -->` block from consumer CLAUDE.md/AGENTS.md. Idempotent, marker-scoped.\n- Consumer per-repo user content stays untouched.\n\n**Per-repo override slot** (new): `.xtrm/config/instructions/*.override.md` in the consumer repo. If present, appended after the global body. Solves the current escape hatch (edit outside marker block).\n\n## Blast radius (per gitnexus_impact model)\n\n- `cli/src/commands/init.ts`: delete `injectProjectInstructionHeaders` + call site (~50 lines removed)\n- `cli/src/core/global-assets-bootstrap.ts` (new? or extend existing): bootstrap `~/.xtrm/config/instructions/` from package on `xt install`\n- New: `.xtrm/hooks/xtrm-instructions-reminder.mjs`\n- `.xtrm/config/hooks.json`: wire the new hook for SessionStart + PreCompact\n- Extend `packages/pi-extensions/extensions/xtrm-loader/index.ts`: add -top inject\n- New: `cli/src/commands/migrate.ts` (or extend existing migrate command) — `xt migrate instructions --apply`\n- Tests: 10-15 new (bootstrap, hook fires, xtrm-loader inject, override slot, marker cleanup migrate)\n- Docs: `docs/instructions-runtime-inject.md` (new) + update `.xtrm/config/instructions/*.md` self-referential notes\n\nTotal ~200 LOC + tests.\n\n## Test surface\n\n- Bootstrap: fresh install populates `~/.xtrm/config/instructions/` from package\n- Claude hook: SessionStart returns additionalSystemPrompt matching source\n- Claude hook: PreCompact re-injects (returns additionalContext, not additionalSystemPrompt)\n- Pi loader: appended to systemPrompt after memory.md\n- Override slot: per-repo `.xtrm/config/instructions/*.override.md` appended after global body\n- `xt migrate instructions --apply` removes only the marker block, preserves user content\n- Idempotence: repeated migrate is no-op\n- Fail-open: missing source file → hook returns undefined (does not crash)\n\n## Migration path for existing consumers\n\n1. Upgrade xtrm package → picks up new code path\n2. `xt migrate instructions --apply` in each consumer repo → strips marker block\n3. Next session starts → runtime hook injects the live global body\n\nOptional: `xt update --apply` could auto-run the migrate step (with `--no-migrate-instructions` opt-out).\n\n## Rollback\n\nRevert commit. `injectProjectInstructionHeaders` is restored. Consumers who ran `xt migrate instructions --apply` need one `xt update --apply` to re-render the marker block.\n\n## Alternative considered\n\nKeep static render but symlink the source to `~/.xtrm/config/instructions/` — rejected because Claude Code caches CLAUDE.md aggressively and consumers still don't get updates without explicit action (some editor integrations reload on file change, most don't).\n\n## Related\n\n- Depends on / discovered-from: xtrm-bq7yd (global assets epic — this is the -top piece that was left out)\n- Related: xtrm-8zsi1 (xtrm-loader hook shape reference)\n- Related: xtrm-x12p3, xtrm-x12p3.1 (memory-processor + eager-load reduction — this is the -top instruction leg of the same story)\n- Related: xtrm-0p7bp (settings.json hook reconcile pattern — same runtime-vs-static tradeoff we solved for hooks)\n\n## Definition of done\n\n- ~/.xtrm/config/instructions/ auto-bootstrapped on xt install\n- Claude SessionStart + PreCompact hook injects live source\n- Pi xtrm-loader injects live source (alongside .xtrm/memory.md)\n- `xt migrate instructions --apply` strips consumer CLAUDE.md/AGENTS.md marker blocks\n- Per-repo override slot works\n- Smoke: fresh session on Claude sees new -top content, on Pi too\n- Fleet propagation verified: edit ~/.xtrm/config/instructions/*, next session both runtimes see it, zero `xt update` needed\n- Docs updated",
+        "id": "xtrm-148eh",
+        "issue_type": "feature",
+        "notes": "Follow-up subsumption: implementing this bead makes `using-xtrm-reminder.mjs` (Claude SessionStart hook that eager-loads using-xtrm SKILL.md body) redundant — because PR #422 commit 8da33192 already folded using-xtrm's session-start reflex + trigger patterns into agents-top.md / claude-top.md. Once xtrm-148eh's runtime-inject of -top hits Claude, using-xtrm-reminder can be deleted from the SessionStart wiring. Add to DoD: remove using-xtrm-reminder.mjs from .xtrm/config/hooks.json + delete the script + strip using-xtrm-reminder tests. This closes the Claude-side asymmetry noted in claude-top.md's Project intelligence pointer section.",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "runtime-inject -top files instead of static per-project render",
+        "updated_at": "2026-07-15T09:26:55Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-148eh",
+  "root_title": "runtime-inject -top files instead of static per-project render",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

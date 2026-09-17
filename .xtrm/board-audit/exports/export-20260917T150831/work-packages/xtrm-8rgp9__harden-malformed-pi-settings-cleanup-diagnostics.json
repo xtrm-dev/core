@@ -1,0 +1,67 @@
+{
+  "content_sha256": "eed4a77f1421eaf95f2d30ff38e17bc2052547be0c46a706e734b2e3fd6502d6",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-10T14:19:14Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-p55vr",
+        "issue_id": "xtrm-8rgp9",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-8rgp9",
+      "source_field": "dependencies",
+      "target": "xtrm-p55vr",
+      "target_present_in_snapshot": true,
+      "target_title": "Cleanup xtrm-ui theme identity and command surface",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-8rgp9"
+  },
+  "issues": {
+    "xtrm-8rgp9": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-10T12:19:14Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-10T14:19:14Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-p55vr",
+            "issue_id": "xtrm-8rgp9",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: pruneConflictingPiPackagesFromSettings currently suppresses malformed JSON parse errors and silently skips cleanup. This can hide configuration repair failures.\\n\\nSCOPE: cli/src/core/pi-runtime.ts cleanup reader and focused tests.\\n\\nSUCCESS: Malformed Pi settings are preserved and produce an actionable warning/error without changing package cleanup behavior.\\n\\nNON_GOALS: Do not alter valid settings migration semantics or global/project scope policy.\\n\\nCONSTRAINTS: Preserve dry-run non-write behavior.\\n\\nVALIDATION: Focused Pi runtime tests for malformed input and valid cleanup.\\n\\nOUTPUT: Minimal hardening diff and test evidence.",
+        "id": "xtrm-8rgp9",
+        "issue_type": "task",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "Harden malformed Pi settings cleanup diagnostics",
+        "updated_at": "2026-07-10T12:19:14Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-8rgp9",
+  "root_title": "Harden malformed Pi settings cleanup diagnostics",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

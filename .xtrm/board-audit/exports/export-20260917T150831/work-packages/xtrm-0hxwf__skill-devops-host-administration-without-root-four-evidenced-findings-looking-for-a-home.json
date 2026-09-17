@@ -1,0 +1,70 @@
+{
+  "content_sha256": "f2bb3b7bd2861f7ae2f5c1f0795d355b42622835602c30f9d23135bd0b2eb125",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-08-05T02:24:25Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-gvek4",
+        "issue_id": "xtrm-0hxwf",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-0hxwf",
+      "source_field": "dependencies",
+      "target": "xtrm-gvek4",
+      "target_present_in_snapshot": true,
+      "target_title": "skill(devops): author capacity-reclaim — third materialization of the devops-sre role, sibling to sre-triage and deploy-monitor",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-0hxwf"
+  },
+  "issues": {
+    "xtrm-0hxwf": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-05T00:24:25Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-05T02:24:25Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-gvek4",
+            "issue_id": "xtrm-0hxwf",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nFour findings from the 2026-08-04/05 capacity P0 are sysadmin-shaped rather than capacity-shaped. `capacity-reclaim` absorbed only the ones that touched reclaim; these four are evidenced, cost real time, and currently live nowhere except bead notes and an ad-hoc script in the operator's home directory.\n\nThey share one theme: **an agent operating on a host without root**. That is a different competence from \"is anything broken\" (`sre-triage`), \"is what we merged running\" (`deploy-monitor`), or \"what can I safely reclaim\" (`capacity-reclaim`).\n\n## EVIDENCE — all four from real failures, none invented\n\n1. **The unprivileged agency boundary.** User dawid has no passwordless sudo. This blocked work four separate times in one incident: two root-owned `rust_ingestor/target` dirs on disk, two root-owned cargo trees in tmpfs, the systemd timer install, and `chgrp 65534` on a credential file. Each time the correct move was to stop and hand the operator exact commands, not to work around it. An agent needs to recognise the wall on first contact and escalate with a precise, runnable command block — silently under-delivering a reclaim total is the failure mode.\n\n2. **systemd unit installation.** `install -m` never `cp -p` — a preserved mode is the umask fault in another costume. Dry-run before enable. Verify with `systemctl list-timers`, not with the absence of an error. Always print the undo command. This pattern exists today only in `~/install-runner-sweep-timer.sh`; nothing captures it.\n\n3. **journald readability.** `journalctl -u <unit>` returns \"No entries\" — not an error — unless the caller is in `adm` or `systemd-journal`. The unit had run fine (`Result=success`, `ExecMainStatus=0`); only the journal was unreadable. Cost a confused round trip. Fix is `sudo journalctl` or `usermod -aG systemd-journal`. Generalises: a read that returns empty because of group membership looks identical to a read that returns empty because nothing happened.\n\n4. **Container-versus-host identity.** Containers run as `nobody` (65534) against host-owned bind mounts. Host file modes govern what the container can read. Narrowing a credential file properly needs `chgrp 65534 && chmod 0640`, which requires root, so an unprivileged agent's only lever is world-read — a security trade-off it must surface rather than take silently.\n\n## ROUGH SCOPE — TBD, deliberately draft\n\nCandidate: a thin sibling skill, `host-admin-unprivileged` or similar, in `dev/core` at `.xtrm/skills/default/`, following the shape `deploy-monitor` sets (tight doctrine, ~175 lines, not a command lookup table).\n\nIt is NOT a general sysadmin skill. Users, networking, backups, package management have no verified evidence behind them from this incident, and inventing them is precisely the failure mode the `capacity-reclaim` contract was written to prevent. Four evidenced items is enough for a thin skill and not enough for a broad one.\n\n## WHY THIS IS DRAFT AND NOT READY\n\nThe same reason `xtrm-gvek4` sat in draft until its lanes finished: four findings from one incident is a thin base. Before promoting, either (a) wait for a second incident to exercise and extend them, or (b) audit the existing beads and service knowledge for other unprivileged-agency findings already recorded elsewhere. Promote only when the rule set is demonstrably not a sample of one.\n\nOpen question for whoever promotes it: does this belong as its own skill, or as a section inside `capacity-reclaim`? Rules 1, 8, 9, 10 and 11 of that skill already brush against it. Splitting has a real cost — two skills that both half-cover container-vs-host identity is worse than one that covers it fully. Decide that before writing a line.\n\n## REFERENCES\n\nIncident bead `mercury-market-data-9kjj4`. Skill bead `xtrm-gvek4` (capacity-reclaim, merged as PR #541). Lane beads `infra-2e7s`, `infra-j6x2`, `infra-hoky`, `infra-y435`. Script: `~/install-runner-sweep-timer.sh`.",
+        "id": "xtrm-0hxwf",
+        "issue_type": "feature",
+        "labels": [
+          "contract:draft"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "skill(devops): host administration without root — four evidenced findings looking for a home",
+        "updated_at": "2026-08-05T00:24:25Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-0hxwf",
+  "root_title": "skill(devops): host administration without root — four evidenced findings looking for a home",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,962 @@
+{
+  "content_sha256": "6a1e5ab4f804de0eb966b1790b60c5e4c5fdb8429cbadca60e0c8af0850a5197",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:19Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.1",
+        "issue_id": "xtrm-56flm.2",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.2",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.1",
+      "target_present_in_snapshot": true,
+      "target_title": "PR1: claim verifier foundations (advisory only, no behavior change)",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T05:54:08Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.6",
+        "issue_id": "xtrm-56flm.2",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.2",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.6",
+      "target_present_in_snapshot": true,
+      "target_title": "PR0: lift-and-shift service-skills → ~/dev/xtrm/packages/service-knowledge (invert vendor pipeline)",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T05:54:09Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.6",
+        "issue_id": "xtrm-56flm.3",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.3",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.6",
+      "target_present_in_snapshot": true,
+      "target_title": "PR0: lift-and-shift service-skills → ~/dev/xtrm/packages/service-knowledge (invert vendor pipeline)",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:20Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.1",
+        "issue_id": "xtrm-56flm.3",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-56flm.3",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.1",
+      "target_present_in_snapshot": true,
+      "target_title": "PR1: claim verifier foundations (advisory only, no behavior change)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T05:54:09Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.6",
+        "issue_id": "xtrm-56flm.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.4",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.6",
+      "target_present_in_snapshot": true,
+      "target_title": "PR0: lift-and-shift service-skills → ~/dev/xtrm/packages/service-knowledge (invert vendor pipeline)",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:22Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.1",
+        "issue_id": "xtrm-56flm.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.5",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.1",
+      "target_present_in_snapshot": true,
+      "target_title": "PR1: claim verifier foundations (advisory only, no behavior change)",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T05:54:10Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.6",
+        "issue_id": "xtrm-56flm.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.5",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.6",
+      "target_present_in_snapshot": true,
+      "target_title": "PR0: lift-and-shift service-skills → ~/dev/xtrm/packages/service-knowledge (invert vendor pipeline)",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T06:36:18Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.6",
+        "issue_id": "xtrm-56flm.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.7",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.6",
+      "target_present_in_snapshot": true,
+      "target_title": "PR0: lift-and-shift service-skills → ~/dev/xtrm/packages/service-knowledge (invert vendor pipeline)",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [],
+            "id": "xtrm-56flm.2.2"
+          },
+          {
+            "children": [],
+            "id": "xtrm-56flm.2.3"
+          },
+          {
+            "children": [],
+            "id": "xtrm-56flm.2.4"
+          },
+          {
+            "children": [],
+            "id": "xtrm-56flm.2.5"
+          },
+          {
+            "children": [],
+            "id": "xtrm-56flm.2.6"
+          }
+        ],
+        "id": "xtrm-56flm.2"
+      },
+      {
+        "children": [
+          {
+            "children": [],
+            "id": "xtrm-56flm.3.1"
+          },
+          {
+            "children": [],
+            "id": "xtrm-56flm.3.2"
+          }
+        ],
+        "id": "xtrm-56flm.3"
+      },
+      {
+        "children": [],
+        "id": "xtrm-56flm.4"
+      },
+      {
+        "children": [],
+        "id": "xtrm-56flm.5"
+      },
+      {
+        "children": [],
+        "id": "xtrm-56flm.7"
+      }
+    ],
+    "id": "xtrm-56flm"
+  },
+  "issues": {
+    "xtrm-56flm": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T02:28:57Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nTwo failure modes prove the current service-skills machinery ships operational-knowledge risk unchecked:\n\n1. **Blast radius on rewrite**: reconcile.py + service-skills-sync specialist generate rewritten SKILL.md and write immediately — no fact-check, no citation extraction, no completeness verification. A single specialist run recently shipped a SKILL section with invented redaction-key set, wrong redaction literal, mis-labeled metric-label set. Wrong SKILL becomes ground truth for every future session.\n\n2. **Consumption gap**: SKILLs are barely used. skill_activator.py fires a 'please read this' reminder AFTER the tool call the agent already committed to. Nothing in bead contracts, specialist prompts, or issue dispatch demands service context.\n\nResearch (~/dev/xtrm/docs/research/kb-knowledge-base-svc.md, 975 lines, cited SOTA + shipping systems) recommends two derived layers on top of existing SKILL.md/registry/machinery:\n- **Claim verifier**: deterministic Python between LLM output and any write/commit/PR; explicit gate lattice (INVALID / CONFLICT / EVIDENCE_RACE / INSUFFICIENT_EVIDENCE_HIGH_RISK / PASS_WITH_ADVISORIES / PASS); PASS != auto-merge on day one.\n- **Evidence-first retrieval**: per-repo SQLite FTS5 index + narrow read-only MCP tools; no answer() endpoint.\n\nGiven the scale + coherence of the reframe, machinery elevates to a first-class xtrm package: **service-knowledge**, home ~/dev/xtrm/packages/service-knowledge/. **Independent lifecycle**: its own CLI (`service-knowledge install|update|status|migrate|remove`) — NOT routed through `xt update --apply`. Rename from 'service-skills' → 'service-knowledge' reflects the reframe target.\n\n## SUCCESS\n\nAt epic close:\n- Auto-reconcile + specialist runs cannot ship SKILL with invented literals, wrong metric-label sets, invented env vars, or falsely-complete lists — verifier blocks BEFORE atomic_write.\n- Every bead touching a registered territory receives an evidence bundle at dispatch; Write/Edit in registered territory blocks when bundle can't be built.\n- SKILL.md remains authoring surface; registry stays source of truth.\n- Machinery ships as first-class xtrm package (service-knowledge v0.6.0) with own CLI, own release cadence, own CHANGELOG.\n- **vaultctl is a package dependency** (~/dev/vaultctl provides SQLite/FTS5/BM25 substrate — 897 LOC of proven store layer we don't rewrite). service-knowledge adds only the domain-specific extensions (items with kind=service|section|claim|probe|conflict, citations, retrieval_events, index_state).\n- **mercury-infra is the PoC consumer** (17 services, richest fixture set). 6 other service-hosting mercury repos adopt when operator triggers each — no forced-wave.\n- **~/dev/core and ~/dev/specialists are NOT consumers**. They are xtrm tooling repos, not service hosts. Nothing to index there.\n- Federated cross-repo query via ~/.xtrm/stack-registry.json enables devops-agent-dispatched-from-infra to touch sibling stacks without centralized DB.\n- 80-150-case labeled eval corpus + telemetry proves retrieval precision/recall, stale-claim escape rate, verifier FP/FN rates.\n\n## SCOPE\n\n**Package home**: ~/dev/xtrm/packages/service-knowledge/ — independent, own CLI, own versioning\n\n**Package CLI** (new):\n- `service-knowledge install` — first-time install in a consumer repo\n- `service-knowledge update` — pull latest package version into consumer\n- `service-knowledge status` — report installed version + index health + drift\n- `service-knowledge migrate` — rename/schema migration (used in PR0 for the service-skills → service-knowledge flip)\n- `service-knowledge remove` — uninstall (for consumer repos that deprecate)\n\n**Consumer path** (in each of 7 service-hosting mercury repos): .xtrm/skills/default/service-knowledge/ (renamed from service-skills/)\n\n**Per-repo derived index**: .xtrm/cache/service-knowledge.sqlite (NOT .beads/)\n\n**Cross-repo federation surface**: ~/.xtrm/stack-registry.json (user-scoped)\n\n**Consumer repos (7 service-hosting mercury only)**:\n- mercury-infra (PoC #1)\n- mercury-market-data\n- mercury-darth-feedor  \n- mercury-treasury-cb\n- mercury-quant\n- mercury-sierra-vps\n- mercury-website\n\n**NOT consumers**: ~/dev/core, ~/dev/specialists, ~/dev/xtrm, ~/dev/xtmux, ~/dev/vaultctl — xtrm tooling repos, no services to index.\n\n**Dependencies**:\n- vaultctl (as a Python package dep) — provides SQLite/FTS5/BM25/indexer/search/graph substrate\n\n**Docs home**: ~/dev/xtrm/docs/devops/service-knowledge.md\n\n## NON_GOALS\n\n- Not routed through `xt update --apply` — service-knowledge has its OWN CLI (`service-knowledge update`). Independent lifecycle.\n- ~/dev/core and ~/dev/specialists are NOT installed — they host xtrm tooling, not services\n- No new database service (Postgres, vector DB, external store)\n- No LLM in retrieval hot path or as gate arbiter; no LLM-panel majority vote\n- No auto-merge on PASS in initial rollout (canary decision in PR5b)\n- No single centralized ~/.xtrm/knowledge.sqlite union DB — federated over per-repo indexes\n- No embeddings (deferred until BM25 recall failure measured)\n- No replacement of registry, SKILL.md, or Dolt-backed bd memory\n- No general-purpose organizational KB, Slack connector, or auto-remediation\n- No simultaneous rewrite of all 17 shipped SKILLs — semantic-markers migration is progressive\n- No docs/ inside package on day one — add when first substantive doc lands\n- No forced-wave migration of 6 other mercury repos in PR0 — operator triggers each when ready\n- **Don't reimplement what vaultctl already ships**: schema.sql, indexer, search, BM25 tokenization, link resolution, in-degree graph, CLI-JSON scaffolding\n\n## CONSTRAINTS\n\n- Machinery lives in ~/dev/xtrm/packages/service-knowledge/; never migrate back to core.\n- Package has independent CLI, independent versioning, independent release. NOT bundled with any other xtrm package's update cadence.\n- Consumer set is ONLY service-hosting mercury repos. If a new mercury service-host repo lands, add to consumer list; core/specialists/tooling repos NEVER become consumers.\n- vaultctl is a hard dep; service-knowledge does not reimplement its store layer. Domain schema extensions attach on top.\n- Registry stays source of truth for service ↔ territory; index at .xtrm/cache/service-knowledge.sqlite is rebuildable projection.\n- Deterministic before LLM at every gate; LLM steps produce advisory output only.\n- Provenance model NOT ADD-only: active/superseded/invalidated + append-only history.\n- Semantic markers hard-protected everywhere.\n- Blocking hooks scoped tightly: Write/Edit registered territory + high-risk mutating Bash. Read/Glob/Grep never block.\n- Package versioning: v0.1.0 baseline after PR0; +minor per merged PR (PR1→v0.2.0, PR2→v0.3.0, PR3→v0.4.0, PR4→v0.5.0, PR5a→v0.6.0, PR5b→v0.7.0). Reserve v1.0.0 for canary auto-merge activation.\n- Logging/telemetry: every retrieval + verifier decision emits structured event to .xtrm/state/service-knowledge/events.jsonl. No secrets. No raw payloads.\n\n## VALIDATION\n\n- [ ] Package released at v0.6.0 (or v0.7.0 with PR5b)\n- [ ] `service-knowledge --help` works standalone; NOT routed through `xt update`\n- [ ] vaultctl imported as dep; service-knowledge stores 5-table extension (items/citations/conflicts/retrieval_events/index_state) as an attached DB or migration\n- [ ] All 7 mercury service-host repos CAN install (`service-knowledge install`); mercury-infra IS installed as wave-1\n- [ ] core + specialists + xtrm + xtmux + vaultctl are NOT installed (validation: `ls ~/dev/core/.xtrm/skills/default/service-knowledge/` returns 'not found')\n- [ ] Deterministic verifier catches all 3 failure classes from observed api-gateway/runners regression — golden fixture per class\n- [ ] reconcile.py refuses atomic_write on CONFLICT/INVALID; draft-only PR on INSUFFICIENT_EVIDENCE_HIGH_RISK\n- [ ] Every bead touching a registered territory attaches evidence_bundle_id + evidence_hash\n- [ ] Write/Edit in registered territory blocks when retrieval fails (with clear override path)\n- [ ] Federated query via ~/.xtrm/stack-registry.json returns ranked results across ≥2 stacks with per-repo provenance\n- [ ] Labeled eval corpus (≥80 cases): routing precision ≥ 0.8, retrieval precision@5 ≥ 0.6, stale-claim escape rate ≤ 0.05\n- [ ] Verifier FP ≤ 0.05, FN ≤ 0.10\n- [ ] Semantic-block protection: 100% preserved across every regeneration path\n- [ ] Post-merge reindex ≤ 60s on all 7 consumers\n- [ ] ~/dev/xtrm/docs/devops/service-knowledge.md links resolve\n\n## OUTPUT\n\nAt epic close, orchestrator publishes:\n- Per-PR summary (merged SHA, key changes, coverage delta, package version)\n- service-knowledge v0.6+ CHANGELOG\n- Verifier golden-fixture report + regression classes\n- Eval corpus stats\n- Retrieval telemetry snapshot (7d after PR4)\n- Federated-query smoke transcript (≥2 stacks)\n- Wave-1 install evidence (mercury-infra); wave-2..7 tracking issue for on-operator-trigger installs\n- Residual risks + follow-up beads (residual LLM critic if verifier FN > 0.10; session cache if activator latency > 200ms; centralized DB triggers; per-role ACL; remaining 8 claim types)\n- ~/dev/xtrm/docs/devops/service-knowledge.md updated with the shipped user manual\n\n## REFERENCES\n\n- ~/dev/xtrm/docs/research/kb-knowledge-base-svc.md — the 975-line deep research doc (§1-§7)\n- ~/dev/vaultctl/ — SQLite/FTS5/BM25 substrate package (dep)\n- ~/dev/xtrm/docs/devops/ — home for operator-facing service-knowledge docs\n- /tmp/deep-research-prompt-svc-skills.md — prompt that produced the research\n- ~/dev/core/docs/design/memory-system-r6g.md — adjacent design (shared plumbing: FTS5, provenance)\n- ~/dev/core/docs/service-skills-auto-reconcile.md — current Phase A + B runbook (migrates under the package)\n- Sibling bead xtrm-y0tdg (Repo skills layout v2) — layout concern, keep separate\n- Sibling bead infra-wtd1 (orphan-scan) — orphan-detection lane; ships in parallel; its service_skill_orphan_scan.py also moves into the package via PR0\n\n## EXECUTION MODEL\n\nAll 6 (or 7 with PR5b split) PRs dispatch via specialists per /multiplexing + /using-specialists:\n`sp run <specialist> --bead xtrm-56flm.N --worktree` on each. Parallelization:\n- Wave 1: PR0 (blocks all) — solo\n- Wave 2: PR1 || PR3 (both blocked-by PR0 only)\n- Wave 3: PR2 (blocked-by PR1) || PR4 (blocked-by PR3)\n- Wave 4: PR5a (blocked-by all impl) || PR5b (blocked-by PR5a for measurement inputs, else standalone)\n\nCoordinator dispatches, monitors panes per /multiplexing message-send + safe-send-pointer, applies gate5 (reviewer PASS + merge) per /using-specialists rule #9. Target: ship in ~3-4 days with 2-3 waves running concurrent workers.",
+        "id": "xtrm-56flm",
+        "issue_type": "epic",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Epic: service-skills reframe — deterministic verifier + evidence-first retrieval",
+        "updated_at": "2026-07-24T04:31:56Z"
+      }
+    },
+    "xtrm-56flm.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-07-24T02:31:07Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T04:31:07Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm",
+            "issue_id": "xtrm-56flm.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-24T04:35:19Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.1",
+            "issue_id": "xtrm-56flm.2",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-24T05:54:08Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.6",
+            "issue_id": "xtrm-56flm.2",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 2,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nEven with a working claim verifier (PR1), the auto-reconcile pipeline still ships whatever LLM output arrives — the verifier is advisory-only. The blast-radius fix requires the gate: reconcile.py must write to a candidate path FIRST, invoke the verifier, then act on the verdict. Only PASS and PASS_WITH_ADVISORIES may reach the canonical atomic_write. Same rule applies to the service-skills-sync specialist so local runs cannot bypass what CI enforces.\n\nResearch §2.7 rejects a naive 3-tier lattice (CONFLICT/INSUFFICIENT_EVIDENCE/PASS→auto-merge) as too aggressive for the first rollout. The recommended 6-tier lattice (INVALID/CONFLICT/EVIDENCE_RACE/INSUFFICIENT_EVIDENCE_HIGH_RISK/PASS_WITH_ADVISORIES/PASS) treats PASS as 'open PR, no auto-merge' by default; auto-merge is a separate later decision (PR5).\n\nResearch §2.8 rejects LLM-panel majority as a gate arbiter and recommends deterministic-first + LLM critic ONLY on residuals the deterministic verifier returned UNKNOWN on. The critic sees only the residual claim + type + relevant diff + small evidence bundle + reason UNKNOWN was returned; its verdict is advisory.\n\n## SUCCESS\n\n- reconcile.py generates candidate to a temp path (worktree or /tmp), invokes the PR1 verifier CLI, receives the manifest, computes gate per §2.7 lattice, and ONLY on PASS/PASS_WITH_ADVISORIES calls atomic_write.\n- Same entry point invoked from service-skills-sync specialist — no bypass path.\n- INVALID / CONFLICT: no write, no PR; report emitted.\n- EVIDENCE_RACE (source SHA changed mid-run): invalidate + retry the whole run.\n- INSUFFICIENT_EVIDENCE_HIGH_RISK: produce a draft PR clearly not-mergeable, or (local flow) refuse the write with an explicit override flag.\n- PASS_WITH_ADVISORIES: normal PR, no auto-merge, advisories rendered in the PR description.\n- PASS: normal PR, no auto-merge.\n- Residual critic pass: for claims the deterministic verifier returned UNKNOWN on and where risk >= medium, an LLM critic call runs with a bounded evidence bundle; its verdict is stored as advisory in the manifest and rendered in the PR description. Never used as a gate arbiter.\n- Verification report published as GHA artifact and check on every auto-reconcile PR; visible to human reviewers alongside the diff.\n\n## SCOPE\n\n- ~/dev/core/.claude/skills/service-skills/scripts/reconcile.py\n  - New helper: run_verifier(candidate_path, current_path, territory, refs) → manifest\n  - New helper: compute_gate(manifest) → GateVerdict enum\n  - New helper: run_residual_critic(unknown_claims, evidence_bundles, provider_client) → advisory annotations\n  - atomic_write is only called from the PASS/PASS_WITH_ADVISORIES branch\n- ~/dev/specialists/config/specialists/service-skills-sync.specialist.json\n  - task_template mandates invoking the same verifier entry point before any write\n  - specialist may not use --allow-unverified without an operator-recorded override reason (matches using-specialists rule #15 style)\n- ~/dev/core/.claude/skills/service-skills/scripts/verifier/__main__.py\n  - Add --gate-mode flag that returns the gate verdict + non-zero exit code on INVALID/CONFLICT (so CI can gate cleanly)\n- ~/dev/core/.github/workflows/service-skills-drift-sweep.yml\n  - Run verifier BEFORE peter-evans/create-pull-request; publish manifest.json as artifact; add a status check ('service-skills-verify')\n  - On INVALID/CONFLICT: fail the job (sticky comment only, no PR)\n  - On INSUFFICIENT_EVIDENCE_HIGH_RISK: open draft PR with 'do-not-merge' label\n- New: docs/service-skills-verifier-gate.md documenting the lattice + operator override path\n\n## NON_GOALS\n\n- No changes to the PR1 verifier module itself (extend via flags, not schema changes)\n- No FTS5 index integration (PR3)\n- No auto-merge enable — even PASS opens a normal PR\n- No changes to bead validator (PR4)\n- No new hook wiring\n- No security-auditor integration\n- No panel/multi-LLM vote\n\n## CONSTRAINTS\n\n- Verifier gate must run BEFORE atomic_write in every code path (auto-reconcile + specialist + manual CLI)\n- Residual critic call is bounded: max evidence bundle ≤ 4000 tokens per claim, max claims per run ≤ 12, hard cap 8000 tokens total per run (research §2.9)\n- Critic timeout: 60s per claim, 300s per run; on timeout the residual stays UNKNOWN and is rendered as caveat, not blocker\n- EVIDENCE_RACE detection: recompute source SHAs at start + end of verifier run; if changed → invalidate + retry once, then fail\n- Draft-PR path for INSUFFICIENT_EVIDENCE_HIGH_RISK: use 'draft: true' + 'do-not-merge' label; PR body prominently lists unverifiable claims\n- The specialist path may not fall back to writing without the verifier — no override flag exists in this PR; operator override is a follow-up bead if needed\n- Logging/telemetry: every gate decision emits one structured line: {timestamp, component=reconcile-gate, event=gate_decision, verdict, service_id, invalid_count, conflict_count, unknown_count, critic_calls, critic_tokens, duration_ms}. Grep 'component=reconcile-gate' finds all decisions in the audit trail.\n\n## VALIDATION\n\n- [ ] Unit tests for compute_gate() covering every lattice cell (INVALID/CONFLICT/EVIDENCE_RACE/INSUFFICIENT_EVIDENCE_HIGH_RISK/PASS_WITH_ADVISORIES/PASS)\n- [ ] Integration test: reconcile.py invoked on api-gateway regression fixture → gate=CONFLICT → no atomic_write called (mock filesystem or tmp dir)\n- [ ] Integration test: reconcile.py on a clean fixture → gate=PASS → atomic_write called exactly once with the candidate content\n- [ ] EVIDENCE_RACE test: simulate source SHA change mid-run → gate returns EVIDENCE_RACE → run retries → second run completes cleanly\n- [ ] service-skills-sync specialist smoke: dispatch against a synthetic bead + fixture, observe verifier invocation in the specialist log, verify no write on CONFLICT\n- [ ] GHA workflow smoke via workflow_dispatch: manifest.json published as artifact, 'service-skills-verify' check appears on the PR\n- [ ] Residual critic test: force UNKNOWN on one claim, mock the provider, verify the critic call is bounded (evidence tokens < 4000) and advisory-only (does not change verdict)\n- [ ] Reviewer sees on the PR: candidate diff, per-claim verdict, evidence path + line range, complete-set comparison for set_claims, residuals + critic advisory\n- [ ] Structured telemetry: grep 'component=reconcile-gate' in the artifact log returns one line per gate decision with correct fields\n\n## LIBRARIES\n\n- Reuse in repo: reconcile.py itself (extend, don't rewrite), verifier module from PR1, drift_detector.py refs helper\n- Installed deps: httpx (already in reconcile.py for the LLM provider call), tenacity if retry policy is needed (verify presence before adding)\n- Stdlib: hashlib for SHA re-check, tempfile for candidate path, subprocess if invoking verifier via CLI (prefer in-process import if module structure allows)\n- New dep candidate: none — critic uses the same provider client reconcile.py already has\n- Roll it: reuse existing tenacity if present, else stdlib retry loop with capped attempts\n\n## OUTPUT\n\n- Diff on reconcile.py (helper functions + gate branch)\n- Diff on service-skills-sync specialist definition\n- Diff on service-skills-drift-sweep.yml\n- New docs/service-skills-verifier-gate.md\n- pytest output (all green)\n- workflow_dispatch smoke transcript (or link to a test-branch run) showing manifest.json artifact + check\n- Sample PR description on a CONFLICT fixture (proves reviewer sees the residuals)\n- Sample telemetry lines from a passing + failing run\n\n## APPROACH NOTES\n\n- Prefer in-process import of the verifier module over subprocess where possible (avoids IPC + JSON round-trip); fall back to CLI only when the CI/hook context can't import the module.\n- The critic call MUST come from the same provider adapter reconcile.py already uses (nano-gpt / openrouter / etc.) — do not hard-code Anthropic or OpenAI.\n- The 'don't self-merge, keep bead open, escalate to operator' pattern from the successful infra-wtd1 dispatch applies here. Both PRs (core + specialists) open, linked to xtrm-56flm.2, wait for operator merge.\n- Cross-repo: specialist edit lives in ~/dev/specialists; open two PRs, link them in bead notes, ship the core PR first (verifier lives there).",
+        "id": "xtrm-56flm.2",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "PR2 implementation complete. PR: https://github.com/xtrm-dev/xtrm/pull/17 (branch feature/xtrm-56flm.2-reconcile-gate, commit 316666c, base main). v0.4.0: deterministic §2.7 6-tier gate in reconcile.py (gated_write — single write path, no override, specialist parity via unavoidable entry point), verifier --gate-mode, EVIDENCE_RACE retry-once, component=reconcile-gate telemetry, GHA workflow template, wheel-packaging fix for verifier schema. REVISION 3 honored: no LLM critic. 160 tests green (33 new gate tests). PR body is minimal (GitHub 500'd on rich-body create; created via REST). Bead stays IN_PROGRESS pending operator merge — NOT self-closed per session override.\n\n\n### executor · qwen3.8-max-preview · [turn 91 · WAITING]\n\n## Summary\n\nShipped PR2 — the deterministic §2.7 gate that makes the PR1 verifier **binding** on `reconcile.py`'s write path. The reconciler now writes the candidate to a temp path first, runs the verifier in-process, computes a 6-tier lattice verdict, and only calls `atomic_write` on `PASS`/`PASS_WITH_ADVISORIES`. REVISION 3 honored: **no LLM residual critic**. Specialist parity achieved by making `gated_write()` the single unavoidable write path (no override flag, no alternate path). Worked only in `~/dev/xtrm`; did not touch retired `~/dev/core` or `~/dev/specialists`.\n\n## Status\n**success** — PR #17 open on xtrm-dev/xtrm, MERGEABLE base=main, 160 tests green. Bead `xtrm-56flm.2` left **IN_PROGRESS** (not self-closed, per session override).\n\n## Changes\n- **`verifier/gate.py`** (new): `compute_gate(manifest, evidence_race=…) -> GateDecision` — full lattice (`EVIDENCE_RACE`>`INVALID`>`CONFLICT`>`INSUFFICIENT_EVIDENCE_HIGH_RISK`>`PASS_WITH_ADVISORIES`>`PASS`), `is_writable`/`blocks_pr`/`is_draft_pr`/`is_retryable`/`exit_code`, `corpus_fingerprint`/`source_fingerprint`.\n- **`reconcile.py`**: `run_verifier()` (in-process verify + SHA race fingerprinting), `gated_write()` (verify→gate→conditional write, retry-once on EVIDENCE_RACE, `component=reconcile-gate` telemetry to `.xtrm/state/service-knowledge/events.jsonl`). Loop routes every SKILL write through it. Removed pre-existing unused `get_registry_path` import.\n- **`verifier/__main__.py`**: `--gate-mode` → gate verdict (JSON `{gate,manifest}` / Markdown banner) + non-zero exit on `INVALID`/`CONFLICT`/`EVIDENCE_RACE`.\n- **`verifier/__init__.py`**: export gate symbols.\n- **GHA template** `packages/service-knowledge/.github/workflows/service-skills-drift-sweep.yml`: gate before `create-pull-request`, `manifest.json`+`report.md` artifact, `service-skills-verify` check, draft `do-not-merge` on high-risk.\n- **Packaging fix**: ship `scripts/verifier/schema/*.json` in wheel (latent PR1 gap activated by module-level import) — verified via clean-venv wheel install.\n- **Version**: v0.3.0→v0.4.0 in `pyproject.toml` + `VERSION` + `__init__.py`. **CHANGELOG** entry. **Docs** `docs/devops/service-knowledge-verifier-gate.md` + cross-link.\n- **Tests**: `test_gate.py` (21) + `test_gate_integration.py` (12).\n\n## Verification\n- `pytest` full package suite: **160 passed** (vaultctl venv). Gate-only: **33 passed**.\n- `api-gateway` CONFLICT → `atomic_write` never called; `runners` PASS → called exactly once with candidate content; EVIDENCE_RACE → retry → clean PASS; persistent race → fail after one retry (4 fingerprints).\n- `--gate-mode`: CONFLICT exit 1, PASS exit 0, advisory-mode (no flag) still exit 0.\n- Wheel build ships `manifest_schema.json`+`gate.py`; clean install runs gate end-to-end.\n- Telemetry sample (PASS): `{\"component\":\"reconcile-gate\",…,\"service_id\":\"runners\",\"verdict\":\"PASS\",\"critic_calls\":0,\"critic_tokens\":0}`; (CONFLICT): `…,\"service_id\":\"api-gateway\",\"conflict_count\":2,\"verdict\":\"CONFLICT\"}`.\n- ruff `E9,F,W6` clean; workflow YAML + pyproject TOML parse; no trailing-ws/EOF issues.\n\n## Risks\n- **Extractor heuristics fixture-tuned** (inherited from PR1): real SKILLs with high-risk `UNKNOWN` claims may hit `INSUFFICIENT_EVIDENCE_HIGH_RISK` and refuse the write — intended blast-radius protection, but may need more `set_claim` resolvers.\n- **PR #17 body is minimal** — GitHub returned HTTP 500 on rich-body GraphQL/REST creates; PR created via REST with a short body. Full detail lives in commit `316666c` + the gate doc. Orchestrator may enrich the body.\n- **`workflow_dispatch` + live specialist smoke not run** — need GitHub Actions / `sp` runtime absent from this worktree; covered by design + tests + workflow template.\n\n## Follow-ups\n- Residual LLM critic (only if measured verifier FN > 0.10) — `critic_calls`/`critic_tokens` schema reserved.\n- Operator override flag (rule-#15 style) if a force-write need arises — deliberately absent here.\n- Enrich PR #17 body; run `workflow_dispatch` smoke on a consumer repo post-merge.\n\n## Beads\n- `xtrm-56flm.2` noted with PR URL, **left IN_PROGRESS** (not closed, per override). Parent epic `xtrm-56flm`.\n\nDONE. PR: https://github.com/xtrm-dev/xtrm/pull/17. Bead xtrm-56flm.2 stays open pending operator merge.\n\n## Machine-readable block\n```json\n{\n  \"summary\": \"PR2: deterministic §2.7 6-tier verifier gate wired into reconcile.py (service-knowledge v0.4.0). gated_write() is the single unavoidable write path — candidate to temp first, in-process verify, compute_gate lattice, atomic_write only on PASS/PASS_WITH_ADVISORIES. EVIDENCE_RACE retry-once via source SHA fingerprinting. verifier CLI --gate-mode (non-zero exit on INVALID/CONFLICT/EVIDENCE_RACE). component=reconcile-gate telemetry to events.jsonl. GHA workflow template (manifest artifact + service-skills-verify check + draft do-not-merge PR). REVISION 3 honored: no LLM critic. Specialist parity via unavoidable entry point (no override flag, ~/dev/specialists untouched per session override). Fixed wheel packaging of verifier schema. 160 tests green (33 new).\",\n  \"status\": \"success\",\n  \"issues_closed\": [],\n  \"issues_created\": [],\n  \"follow_ups\": [\n    \"Residual LLM critic only if measured verifier false-negative rate > 0.10 (critic_calls/critic_tokens schema reserved, pinned 0)\",\n    \"Operator override flag (using-specialists rule #15 style) if a force-write need arises — deliberately absent in this PR\",\n    \"Enrich PR #17 body (GitHub 500'd on rich-body create; created via REST with minimal body)\",\n    \"Run workflow_dispatch smoke + live service-skills-sync specialist dispatch on a consumer repo post-merge (needs GHA/sp runtime)\",\n    \"Add set_claim resolvers for prose redaction-key/config sets to reduce INSUFFICIENT_EVIDENCE_HIGH_RISK refusals on real SKILLs\"\n  ],\n  \"risks\": [\n    \"Extractor heuristics are fixture-tuned (inherited from PR1); real SKILLs with high-risk UNKNOWN claims may refuse the write via INSUFFICIENT_EVIDENCE_HIGH_RISK — intended protection but may need more resolvers\",\n    \"PR #17 body is minimal due to GitHub HTTP 500 on rich-body PR creation; full detail in commit 316666c + docs/devops/service-knowledge-verifier-gate.md\",\n    \"workflow_dispatch and live specialist smoke not executed in this worktree (no GHA/sp runtime); covered by design, unit/integration tests, and the shipped workflow template\"\n  ],\n  \"verification\": [\n    \"pytest full package suite (vaultctl venv): 160 passed\",\n    \"pytest gate tests (test_gate.py + test_gate_integration.py): 33 passed\",\n    \"api-gateway CONFLICT fixture -> gated_write written=False, atomic_write never called, conflict_count=2\",\n    \"runners PASS fixture -> atomic_write called exactly once with candidate content; skill on disk == candidate\",\n    \"EVIDENCE_RACE simulated -> retry -> clean PASS + write; persistent race -> EVIDENCE_RACE, no write, 4 fingerprints (2 runs x start/end)\",\n    \"verifier --gate-mode: CONFLICT exit 1, PASS exit 0, markdown banner rendered; advisory mode (no flag) still exit 0\",\n    \"wheel build ships scripts/verifier/schema/manifest_schema.json + gate.py; clean-venv install imports reconcile and runs gate end-to-end\",\n    \"telemetry line grep-able by component=reconcile-gate with verdict/service_id/invalid_count/conflict_count/unknown_count/critic_calls/critic_tokens/duration_ms\",\n    \"ruff --select E9,F,W6 clean; workflow YAML + pyproject TOML parse; no trailing-ws/EOF-newline issues; all pre-commit + pre-push gates passed on push\"\n  ],\n  \"files_changed\": [\n    \"packages/service-knowledge/src/service_knowledge/scripts/verifier/gate.py\",\n    \"packages/service-knowledge/src/service_knowledge/scripts/reconcile.py\",\n    \"packages/service-knowledge/src/service_knowledge/scripts/verifier/__init__.py\",\n    \"packages/service-knowledge/src/service_knowledge/scripts/verifier/__main__.py\",\n    \"packages/service-knowledge/src/service_knowledge/scripts/verifier/tests/test_gate.py\",\n    \"packages/service-knowledge/src/service_knowledge/scripts/verifier/tests/test_gate_integration.py\",\n    \"packages/service-knowledge/.github/workflows/service-skills-drift-sweep.yml\",\n    \"packages/service-knowledge/pyproject.toml\",\n    \"packages/service-knowledge/CHANGELOG.md\",\n    \"packages/service-knowledge/src/service_knowledge/VERSION\",\n    \"packages/service-knowledge/src/service_knowledge/__init__.py\",\n    \"docs/devops/service-knowledge-verifier-gate.md\",\n    \"docs/devops/service-knowledge.md\"\n  ],\n  \"symbols_modified\": [\n    \"GateVerdict\",\n    \"GateDecision\",\n    \"compute_gate\",\n    \"corpus_fingerprint\",\n    \"source_fingerprint\",\n    \"WRITABLE_VERDICTS\",\n    \"BLOCKING_VERDICTS\",\n    \"run_verifier\",\n    \"gated_write\",\n    \"emit_gate_telemetry\",\n    \"gate_telemetry_path\",\n    \"reconcile\",\n    \"GATE_COMPONENT\",\n    \"GATE_EVENT\"\n  ],\n  \"lint_pass\": true,\n  \"tests_pass\": true,\n  \"impact_report\": {\n    \"files_touched\": [\n      \"packages/service-knowledge/src/service_knowledge/scripts/verifier/\",\n      \"packages/service-knowledge/src/service_knowledge/scripts/reconcile.py\",\n      \"packages/service-knowledge/.github/workflows/\",\n      \"packages/service-knowledge/pyproject.toml\",\n      \"packages/service-knowledge/CHANGELOG.md\",\n      \"docs/devops/\"\n    ],\n    \"symbols_analyzed\": [\n      \"reconcile\",\n      \"atomic_write\",\n      \"verify_candidate\",\n      \"compute_gate\",\n      \"gated_write\",\n      \"ClaimManifest\"\n    ],\n    \"highest_risk\": \"MEDIUM\",\n    \"tool_invocations\": 48\n  }\n}\n```\n\n_turn 91 · 1408272 ms · 751 to 2818 tok · 2026-07-24 19:57 · git d8645626_",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-24T19:25:20Z",
+        "status": "open",
+        "title": "PR2: deterministic gate in reconcile.py + specialist parity",
+        "updated_at": "2026-07-25T11:20:51Z"
+      }
+    },
+    "xtrm-56flm.2.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T19:35:31Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T21:35:30Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.2",
+            "issue_id": "xtrm-56flm.2.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nPR2 requires six-cell gate unit coverage plus CONFLICT/no-write, PASS/write, evidence-race retry, CLI gate-mode, telemetry, and workflow evidence tests grounded in the actual writer diff.\n## SUCCESS\nAdd only missing tests/fixtures needed to prove the contract; do not duplicate adequate writer coverage.\n## SCOPE\nExecutor workspace tests under packages/service-knowledge and test-only helpers if unavoidable.\n## NON_GOALS\nNo production behavior changes, unrelated coverage, or external repo edits.\n## CONSTRAINTS\nTest-first against actual diff; preserve api-gateway golden fixture; SCRUTINY: high.\n## VALIDATION\nTargeted pytest commands are named and all new tests fail without the gate behavior.\n## OUTPUT\nCommitted test diff or explicit no-change evidence plus exact commands.",
+        "id": "xtrm-56flm.2.2",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "test-engineer: complete reconcile gate coverage",
+        "updated_at": "2026-07-24T19:35:31Z"
+      }
+    },
+    "xtrm-56flm.2.3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T19:35:32Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T21:35:32Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.2",
+            "issue_id": "xtrm-56flm.2.3",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nThe final PR2 workspace needs independent execution and failure classification for targeted and package-wide checks.\n## SUCCESS\nRun exact pytest/ruff/type checks supplied by the writer/test-engineer and classify every failure as in-scope, pre-existing, or infrastructure.\n## SCOPE\nExecutor workspace for xtrm-56flm.2; packages/service-knowledge checks only.\n## NON_GOALS\nNo edits or broad repository test sweep.\n## CONSTRAINTS\nREAD_ONLY; capture concise command evidence including telemetry/artifact assertions; SCRUTINY: high.\n## VALIDATION\nCommands exit cleanly or failures have reproducible classification.\n## OUTPUT\nStructured test evidence for reviewer.",
+        "id": "xtrm-56flm.2.3",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "test-runner: verify reconcile gate",
+        "updated_at": "2026-07-24T19:35:32Z"
+      }
+    },
+    "xtrm-56flm.2.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T19:35:34Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T21:35:33Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.2",
+            "issue_id": "xtrm-56flm.2.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nPR2 processes LLM candidate files, source globs, filesystem writes, GitHub workflow inputs/artifacts, and specialist automation; trust-boundary regressions must be reviewed.\n## SUCCESS\nIdentify concrete path traversal, secret leakage, command injection, race, artifact, or PR-labeling risks, or confirm no findings.\n## SCOPE\nExecutor diff under packages/service-knowledge including Python, workflow YAML, installer/config assets.\n## NON_GOALS\nNo edits, exploits, dependency bumps, or external repo changes.\n## CONSTRAINTS\nLOW permission, scan-only, cite exact evidence; SCRUTINY: high.\n## VALIDATION\nThreat findings map source to sink and contract impact.\n## OUTPUT\nActionable security findings or clean verdict.",
+        "id": "xtrm-56flm.2.4",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "security-auditor: scan reconcile gate surfaces",
+        "updated_at": "2026-07-24T19:35:34Z"
+      }
+    },
+    "xtrm-56flm.2.5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T19:35:35Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T21:35:34Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.2",
+            "issue_id": "xtrm-56flm.2.5",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nProduction PR2 diff must not ship untracked TODO/FIXME/HACK/XXX/TEMP/WIP/NOTE(release) obligations.\n## SUCCESS\nReturn CLEAN or cite every new unstructured production marker.\n## SCOPE\nExecutor diff for xtrm-56flm.2.\n## NON_GOALS\nNo edits and no blocking on test/doc markers.\n## CONSTRAINTS\nREAD_ONLY; structured markers require a live bead; SCRUTINY: high.\n## VALIDATION\nScan cumulative diff against origin/main.\n## OUTPUT\nMachine-readable CLEAN / OBLIGATIONS_FOUND / BLOCKED verdict.",
+        "id": "xtrm-56flm.2.5",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "obligations-scanner: scan reconcile gate diff",
+        "updated_at": "2026-07-24T19:35:35Z"
+      }
+    },
+    "xtrm-56flm.2.6": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T19:35:36Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T21:35:35Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.2",
+            "issue_id": "xtrm-56flm.2.6",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nPR2 is release- and write-path-sensitive and needs final adversarial verification against the revised deterministic-only contract and QA evidence.\n## SUCCESS\nPASS only if candidate-before-write, six-tier lattice, one-retry evidence race, specialist/no-bypass path, workflow artifact/status/draft labeling, telemetry, v0.4.0 metadata, docs, and tests are complete.\n## SCOPE\nFinal executor workspace diff and all QA job evidence for xtrm-56flm.2.\n## NON_GOALS\nNo implementation edits, merge, or bead closure.\n## CONSTRAINTS\nEnforce REVISION 3 over stale residual-critic text; require no external repo edits; SCRUTINY: high.\n## VALIDATION\nInspect diff, tests, GitNexus scope, security/obligation findings, and PR readiness evidence.\n## OUTPUT\nPASS/PARTIAL/FAIL with Release Checklist and exact findings.",
+        "id": "xtrm-56flm.2.6",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "reviewer: gate reconcile PR2 release readiness",
+        "updated_at": "2026-07-24T19:35:36Z"
+      }
+    },
+    "xtrm-56flm.3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-07-24T02:32:24Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T04:32:24Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm",
+            "issue_id": "xtrm-56flm.3",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-24T04:35:20Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.1",
+            "issue_id": "xtrm-56flm.3",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-07-24T05:54:09Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.6",
+            "issue_id": "xtrm-56flm.3",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 2,
+        "description": "## PROBLEM\n\nRetrieval today = 'read the whole SKILL if you happen to notice the catalog'. Activator fires a reminder AFTER the tool call. Nothing at bead-validation, dispatch, incident routing, or PreToolUse actually surfaces service knowledge. SKILLs are barely used, wrong SKILLs slip through, agents rediscover the same context every session.\n\nResearch §3 recommends a per-repo SQLite FTS5 index + 5 narrow read-only MCP tools + interpretable ranking. But — **vaultctl already ships the SQLite/FTS5/BM25 substrate** (~/dev/vaultctl, 897 LOC in store/, proven, in production for the Obsidian vault). Rebuilding it from scratch is 90% of PR3's proposed scope AND already exists as a working library. Depend on it, don't rewrite it.\n\n**Ponytail cuts vs original PR3**:\n- Vaultctl provides: schema DDL scaffolding, FTS5 tokenization (unicode61), BM25 ranking, indexer, search, link-resolution graph, in-degree stats, CLI-JSON scaffolding — reuse via package dep, do not reimplement\n- Ship 3 MCP tools not 5: knowledge_search, knowledge_get, knowledge_evidence_for_files. Defer knowledge_probes + knowledge_conflicts as follow-ups (advisory extras, low value at MVP)\n\n## SUCCESS\n\n- vaultctl is a package dep of service-knowledge (declared in PR0).\n- service-knowledge extends vaultctl's schema with 5 domain tables: items(kind=service|section|claim|probe|conflict), citations, conflicts, retrieval_events, index_state. Attached via SQLite ATTACH DATABASE OR vaultctl migration extension (whichever vaultctl already supports — inspect first, else ATTACH).\n- Index builder ingests: registry entries → items rows; SKILL sections (parsed via Markdown AST) → items rows; claim manifests from PR1 (when present) → claims rows; extracted citations → citations rows; probe metadata from Cross-Service Health Check sections → items rows with kind=probe.\n- 3 read-only MCP tools registered: knowledge_search, knowledge_get, knowledge_evidence_for_files. Each returns evidence bundles per §3.2 (routing header + 3-7 top items + citations + verification/freshness + link to full skill). No answer() endpoint.\n- Ranking implemented per §3.5 as a Python wrapper over vaultctl.store.search: score = 0.40 T + 0.30 L + 0.15 I + 0.10 A + 0.05 F. L pulls BM25 rank from vaultctl. T/I/A/F computed on top. Post-rank penalties (conflicted-high-risk excluded, invalidated excluded, stale-high-risk −0.25, insufficient-evidence-high-risk −0.15, unverified −0.10).\n- Freshness F = exp(−ln(2) × changed_commits_since_ref / 20). Commits computed via drift_detector helpers.\n- Provenance: current_view mutable via status field on items rows; append-only history via retrieval_events. Claims flip to superseded/invalidated on source change; default retrieval excludes.\n- Cataloger reframed: 'Available operational knowledge sources' with per-service last_sync_ref + index_health + item count + verification coverage. Replaces 'Available expert personas'.\n- umbrella_generator emits index_state hash + generator_version + OKF-compatible per-item descriptions.\n- Index rebuild ≤ 60s on mercury-infra (17 services).\n\n## SCOPE\n\n- src/service_knowledge/index/  (NEW module)\n  - schema.py — 5-table domain extension (items/citations/conflicts/retrieval_events/index_state); ATTACH-based or migration-based\n  - builder.py — ingest registry + SKILL sections + claim manifests + citations + probes into vaultctl DB\n  - query.py — ranking wrapper over vaultctl.store.search: applies T/I/A/F/penalties on top of vaultctl's BM25 (L)\n  - bundle.py — evidence-bundle assembly per §3.2 (routing header + top items + freshness + citations + full-skill link)\n  - freshness.py — commit-based F signal via drift_detector helpers\n- src/service_knowledge/mcp/  (populated; scaffold shipped in PR0)\n  - knowledge_search.py, knowledge_get.py, knowledge_evidence_for_files.py — thin wrappers over query.py\n  - (knowledge_probes, knowledge_conflicts deferred to follow-up beads)\n- src/service_knowledge/scripts/cataloger.py — reframe: personas → knowledge sources + index health\n- src/service_knowledge/scripts/umbrella_generator.py — index_state hash + generator_version + OKF descriptions\n- CLI: `service-knowledge index build|query|stats|rebuild` under the package CLI (added in PR0; extended here)\n- Post-merge hook: extend an existing hook (or add small new one) to trigger rebuild after a merge in a consumer repo. Only if small (≤ 20 LOC); else defer wiring to PR4.\n- Documentation: ~/dev/xtrm/docs/devops/service-knowledge-index.md (schema extension, MCP tools, ranking formula, rebuild triggers)\n\n## NON_GOALS\n\n- Do NOT reimplement vaultctl's store layer, FTS5 setup, indexer core, BM25 ranking, tokenization, or link-resolution graph. All reused.\n- knowledge_probes + knowledge_conflicts MCP tools — deferred to follow-ups. Ship 3 tools, not 5.\n- No embeddings, no vector search, no sqlite-vec (deferred; measured trigger in PR5a)\n- No cross-repo aggregation, no federated query (deferred; matches per-repo shape only)\n- No write tools (knowledge_add/_update/_delete) — index is derived\n- No LLM reranker; no RRF (only justified with ≥2 retrievers)\n- No activator/hook behavior change (that's PR4)\n- No bead-validator integration (that's PR4)\n- No auto-remediation, no probe execution — probes indexed and returned, not executed\n\n## CONSTRAINTS\n\n- Storage: consumer-repo .xtrm/cache/service-knowledge.sqlite. Schema is vaultctl's tables + our 5 extension tables (ATTACH or migration hook).\n- Domain tables live in a namespace to avoid vaultctl schema collision (prefix table names sk_ OR use ATTACH aliasing).\n- Rebuild triggers: on-demand CLI (`service-knowledge index rebuild`), post-merge hook (if wired here), stale-detection on first tool call (rebuild if source SHA advanced past index_state.source_ref).\n- Rebuild ≤ 60s on mercury-infra baseline (17 services).\n- Ranking interpretable: T/I/A/F/penalties are Python; L is vaultctl's BM25. Weights + penalty magnitudes in a scripts/index/ranking.py constants file (operator tunable).\n- Evidence bundle max size: 8000 tokens serialized.\n- Provenance NOT ADD-only: status transitions active → superseded/invalidated; default retrieval filters non-active.\n- FTS5 tokenization: reuse vaultctl's (unicode61 remove_diacritics 2). If service-knowledge needs camelCase/snake_case splitting for compose service names + metric families, do it in ingestion (normalized copy in a searchable field) rather than tokenizer changes to vaultctl.\n- Never index secret values. Env var NAMES yes; values NO. .env files skipped. gitleaks patterns applied at ingestion.\n- Logging/telemetry: every query + rebuild → {timestamp, component=knowledge-index, event=query|rebuild, query_hash, service_ids_matched, top_score, candidate_count, duration_ms, source_ref} → .xtrm/state/service-knowledge/events.jsonl. No raw query text (hash only). Grep by component.\n\n## VALIDATION\n\n- [ ] vaultctl imported as dep; `pip show vaultctl` in package env\n- [ ] Schema extension: 5 domain tables exist in .xtrm/cache/service-knowledge.sqlite after first rebuild; naming does not collide with vaultctl tables\n- [ ] pytest src/service_knowledge/index/tests/ passes\n- [ ] Rebuild on mercury-infra service-registry (17 services) ≤ 60s\n- [ ] Ranking unit tests: 5-candidate fixture with controlled T/L/I/A/F values produces expected order\n- [ ] knowledge_search smoke: query 'discord webhook' on infra fixtures → returns alertmanager section as top hit with matched territory\n- [ ] knowledge_evidence_for_files smoke: pass ['alertmanager/**/*.yml'] → returns alertmanager bundle with routing header + top items + citations + freshness\n- [ ] knowledge_get smoke: fetch a specific item_id → returns full item + skill link\n- [ ] Cataloger new output ships; old under --legacy flag for one release cycle\n- [ ] Umbrella regenerates without corrupting SEMANTIC blocks (regression on all 17 mercury-infra SKILLs + other consumer repos when they install)\n- [ ] Ingestion filters: fixture with planted AWS key + redis URL with password → grep sqlite export → no secrets found\n- [ ] Telemetry: grep 'component=knowledge-index' finds ≥1 line per query + per rebuild\n- [ ] Post-merge rebuild (if wired here): leaves index_state.source_ref == HEAD\n\n## LIBRARIES\n\n- Reuse in repo: bootstrap.py, drift_detector.py (last_sync_ref + territory globs), verifier module from PR1 (claim ingestion), umbrella_generator.py OKF frontmatter patterns\n- **Package dep**: vaultctl (~/dev/vaultctl) — imports vaultctl.store.db, vaultctl.store.indexer, vaultctl.store.search, vaultctl.store.link_resolver, vaultctl.store.graph. Import surface documented in package README.\n- Installed deps: sqlite3 (stdlib), PyYAML (compose parsing — via PR1), markdown-it-py (via PR1)\n- Stdlib: sqlite3, hashlib, pathlib, json, subprocess (git commands for F signal)\n- New dep candidate: none. FTS5 is stdlib SQLite.\n- Roll it: NO for the store/FTS5/BM25 layer (vaultctl already ships it). YES for the tiny domain-specific ranking overlay + evidence-bundle assembly.\n\n## OUTPUT\n\n- File tree under src/service_knowledge/index/ + src/service_knowledge/mcp/ (3 tools)\n- pytest output\n- Rebuild timing on mercury-infra (target ≤ 60s)\n- Smoke output for all 3 MCP tools against live-ish fixtures\n- Cataloger before/after snippets\n- Umbrella regeneration diff on 17-service infra pack (proving SEMANTIC preservation)\n- Secret-scan validation on ingestion (grep sqlite dump)\n- Sample retrieval_events + index_state rows\n- ~/dev/xtrm/docs/devops/service-knowledge-index.md\n- Follow-up beads created: (a) knowledge_probes MCP tool, (b) knowledge_conflicts MCP tool\n\n## APPROACH NOTES\n\n- Dispatch via specialist chain: sp run executor --bead xtrm-56flm.3 --worktree. Coordinator monitors per /multiplexing. Parallelizable with PR1 (both blocked-by PR0 only).\n- FIRST work item after claim: read vaultctl.store schema + query API. The schema extension approach (ATTACH vs migration hook) depends on what vaultctl already supports. If vaultctl has a migration extension mechanism (schema.sql fixtures under some plugin path), use it. Else ATTACH DATABASE and cross-DB queries.\n- Vaultctl's link-resolution graph (in-degree, wikilink resolution) is useful for cross-service navigation — if any SKILL contains [[other-service]] references, those become graph edges for free.\n- The activator upgrade (reminder → real retrieval) is PR4. This PR ships the retrieval SURFACE; PR4 wires the DEMAND SIDE.\n- OKF envelope on ingested items — the frontmatter fields (title, description, tags, territory) come from the SKILL.md's YAML frontmatter directly.\n- Freshness F signal: commits touching the territory since source_ref (computable from drift_detector). No age-in-days per research §3.5.\n- 2 MCP tools deferred (knowledge_probes, knowledge_conflicts) are file-a-follow-up-bead-at-close deliverables. Not a scope creep — they're stubbed in the API surface docs as 'coming in follow-up'.",
+        "id": "xtrm-56flm.3",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "PR3 delivered for real: https://github.com/xtrm-dev/xtrm/pull/16. Required branch feature/xtrm-56flm.3-index-mcp pushed at 0cfe94b; PR was OPEN/MERGEABLE/CLEAN, then merged externally at 2026-07-24T19:17:34Z as d864562 while final publication review ran. Verification: 127 package tests pass; targeted Ruff pass on PR3 surfaces; security re-audit PASS after arbitrary-read/webhook fixes; obligations CLEAN; final reviewer PASS; net 49-file diff confined to packages/service-knowledge/** + docs/devops/**; follow-ups xtrm-56flm.3.1 and .2 created. Per operator instruction this core bead remains IN_PROGRESS; not self-closed.",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-24T15:08:28Z",
+        "status": "open",
+        "title": "PR3: per-repo FTS5 evidence index + 5 read-only MCP tools + cataloger reframe",
+        "updated_at": "2026-07-25T11:20:51Z"
+      }
+    },
+    "xtrm-56flm.3.1": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T17:33:55Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T19:33:54Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.3",
+            "issue_id": "xtrm-56flm.3.1",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nPR3 intentionally ships only three read-only MCP tools; operators still need a narrow surface to list applicable diagnostic probes and prerequisites without executing them.\n\n## SUCCESS\nknowledge_probes returns indexed probe metadata, prerequisites, provenance, freshness, and service routing using the existing service-knowledge index.\n\n## SCOPE\npackages/service-knowledge/src/service_knowledge/mcp/knowledge_probes.py plus focused tests and MCP registration.\n\n## NON_GOALS\nNo probe execution, remediation, write tools, or PR3 scope expansion.\n\n## CONSTRAINTS\nRead-only; reuse indexed probe items and existing bundle/provenance types; no new dependency.\n\n## VALIDATION\nFocused unit and MCP protocol tests; default tool list contains the new tool only after this follow-up lands.\n\n## OUTPUT\nImplementation commit, tests, and docs update.\n\nSCRUTINY: medium",
+        "id": "xtrm-56flm.3.1",
+        "issue_type": "feature",
+        "labels": [
+          "contract:draft",
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "knowledge_probes MCP tool (deferred from PR3)",
+        "updated_at": "2026-07-24T17:33:55Z"
+      }
+    },
+    "xtrm-56flm.3.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T17:33:56Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T19:33:56Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.3",
+            "issue_id": "xtrm-56flm.3.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nPR3 indexes conflict and provenance state but intentionally omits a dedicated read surface for service conflicts and stale claims.\n\n## SUCCESS\nknowledge_conflicts returns conflicts, stale/superseded/invalidated claim metadata, authority, citations, and service routing from the existing index.\n\n## SCOPE\npackages/service-knowledge/src/service_knowledge/mcp/knowledge_conflicts.py plus focused tests and MCP registration.\n\n## NON_GOALS\nNo conflict resolution, mutation, auto-remediation, or PR3 scope expansion.\n\n## CONSTRAINTS\nRead-only; reuse sk_conflicts/sk_items and existing provenance filters; no new dependency.\n\n## VALIDATION\nFocused unit and MCP protocol tests covering active, stale, superseded, and invalidated state.\n\n## OUTPUT\nImplementation commit, tests, and docs update.\n\nSCRUTINY: medium",
+        "id": "xtrm-56flm.3.2",
+        "issue_type": "feature",
+        "labels": [
+          "contract:draft",
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "knowledge_conflicts MCP tool (deferred from PR3)",
+        "updated_at": "2026-07-24T17:33:56Z"
+      }
+    },
+    "xtrm-56flm.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-07-24T02:35:05Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T04:35:05Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm",
+            "issue_id": "xtrm-56flm.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-24T04:35:21Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.3",
+            "issue_id": "xtrm-56flm.4",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-24T05:54:09Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.6",
+            "issue_id": "xtrm-56flm.4",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 2,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nThe retrieval surface (PR3) exists but nothing DEMANDS it. Beads still ship without evidence bundles; specialist dispatch still hands prompts without service context; skill_activator.py still injects reminders after the tool call. Result: the FTS5 index is a passive library, not the operational gate the reframe requires. Research §3.7 firing-points table: dispatch is the most important gate — a bead touching api-gateway/** must contain or reference the api-gateway evidence bundle, regardless of whether the model 'remembers' to read the SKILL.\n\nBlocking must be narrow (§3.7): Read/Glob/Grep never block; Write/Edit in registered territory blocks only when retrieval CAN'T build a bundle; high-risk mutating Bash blocks with conflict-check; everything else advisory. Overblocking pushes agents around the system.\n\n## SUCCESS\n\n- Bead contract validator (using-specialists rule #15 promotion gate, or wherever the equivalent lives in ~/dev/core) attaches on promotion: matched_services, evidence_bundle_id, evidence_hash, unresolved_conflicts. A bead touching a registered territory without a bundle CANNOT be promoted from contract:draft.\n- Specialist dispatch pipeline attaches the evidence bundle to the specialist's prompt at job start — via bead body (specialist reads via bd show) rather than injected env, so the specialist sees it in the same surface as the rest of the contract.\n- skill_activator.py upgraded: matcher unchanged (already correctly uses registry + territory); behavior replaced. Instead of injecting 'please read SKILL.md', it invokes knowledge_evidence_for_files with the file path being touched, receives an evidence bundle, and injects the bundle into the PreToolUse context. Session cache keyed by (service, source_ref) avoids re-fetch within the same session.\n- PreToolUse block matrix per §3.7:\n  - Read/Glob/Grep: evidence-inject, never block\n  - Write/Edit on registered territory: block only if retrieval fails (index broken, no bundle constructible)\n  - Bash read-only: evidence-inject, don't block\n  - Bash mutating (rm/mv/docker rm/systemctl/kubectl apply/gh pr merge etc.): bundle + conflict-check; block on conflicted-high-risk claim marked as prerequisite\n- PostToolUse: telemetry only (consumption, drift, reindex queue). No blocking.\n- Session-cache lifecycle: cache invalidates on git HEAD change; bounded ≤ 20 bundles per session.\n\n## SCOPE\n\n- ~/dev/core/.claude/skills/service-skills/scripts/skill_activator.py — upgrade behavior (matcher stays, output replaced)\n- ~/dev/core/.claude/skills/using-specialists/ — extend bead promotion check for evidence_bundle_id + evidence_hash + matched_services\n- ~/dev/core/mcp-tools/knowledge/ — extend query.py to accept session-cache-key + return cache metadata (no new tool, but the surface must support caching)\n- ~/dev/core/.claude/skills/service-skills/scripts/dispatch/  (NEW small module) — evidence-bundle-to-bead-body renderer\n- ~/dev/specialists/config/specialists/*.specialist.json — orchestrator/coordinator specialists get updated task_template referencing the evidence_bundle_id field\n- ~/.xtrm/hooks/ — if session-cache lives here or in a companion .mjs, update; else keep everything Python-side\n- Post-merge hook: wire index rebuild (if PR3 didn't already)\n- Bead validator: possibly a bd hook or a separate script invoked from bd create / bd set-state contract=ready — pick the smallest surface\n\n## NON_GOALS\n\n- No auto-remediation, no auto-merge behavior change (PR5)\n- No new MCP tools (PR3 already shipped them; this PR only calls them)\n- No embedding integration\n- No cross-repo query\n- No override-per-agent ACL (deferred; today all specialists get all bundles from their bead)\n- No 'read SKILL.md' fallback for backward-compat — the reminder is deleted in favor of real evidence injection\n- No blocking on Read/Glob/Grep — ever\n- No blocking on Bash read-only — ever\n\n## CONSTRAINTS\n\n- Blocking must fail LOUDLY with a specific message: which service, which territory, which bundle expected, why retrieval failed. Silent blocks train agents to ignore hooks.\n- Every block has an operator override path: OVERRIDE_KNOWLEDGE_BUNDLE=1 env, recorded in telemetry as an override event with reason (matches --allow-unready pattern in using-specialists rule #15).\n- Session cache: memory-only, per-Claude-Code session; do NOT persist to disk. Cache miss = fresh knowledge_evidence_for_files call.\n- Bundle attachment to bead body: use a well-defined marker block (e.g. <!-- knowledge:evidence:BUNDLE_ID -->…<!-- /knowledge:evidence -->) so downstream tooling can find, replace, or strip it.\n- Cache invalidation: on git HEAD change (post-commit / post-merge) OR on manual 'python3 -m index rebuild' — both signal knowledge_evidence_for_files to bypass cache next call.\n- Bead validator refuses promotion when: bead SCOPE references a registered territory AND no matched_services attached. Advisory warning when: matched_services attached but no evidence_bundle_id (index not yet built for this service).\n- Backward compat: existing beads (currently open) are NOT retroactively refused — the promotion gate applies to draft → ready transitions from the moment this PR merges. In-flight beads carry over.\n- Logging/telemetry: {timestamp, component=activator|dispatch|bead-validator, event, tool_name, service_ids, bundle_id, decision=inject|block|allow|override, override_reason?, duration_ms}. Grep by component. Override events extra-labeled for review.\n\n## VALIDATION\n\n- [ ] Unit tests for the block matrix: every (tool, territory-match, index-state) combination has an expected decision, tested\n- [ ] Activator integration test: PreToolUse on Write in api-gateway/** → bundle injected, no block, cache populated\n- [ ] Activator integration test: PreToolUse on Write in api-gateway/** with broken index → block with clear message\n- [ ] Bead promotion test: bd create with SCOPE touching a registered territory but no matched_services → bd set-state contract=ready refused with reason\n- [ ] Specialist dispatch smoke: create a bead with SCOPE api-gateway/**, promote (with matched_services attached), dispatch service-skills-sync → specialist sees the evidence bundle marker in bd show\n- [ ] Override path: OVERRIDE_KNOWLEDGE_BUNDLE=1 + Write → warns but proceeds; override event in telemetry\n- [ ] Session cache: 2× knowledge_evidence_for_files on same (service, source_ref) → second call hits cache, telemetry shows cache_hit=true\n- [ ] Cache invalidation: after git commit that touches the territory → next call bypasses cache\n- [ ] Regression: Read/Glob/Grep never block, even on broken index (only advisory)\n- [ ] Regression: existing in-flight beads (created before this PR) are not refused on promotion (backward compat)\n- [ ] Structured telemetry: grep 'decision=block' finds only Write/Edit/mutating-Bash; never finds Read/Glob/Grep\n\n## LIBRARIES\n\n- Reuse in repo: skill_activator.py (matcher stays), scripts/index/query.py (from PR3), using-specialists SKILL.md contract-promotion machinery\n- Installed deps: none new\n- Stdlib: os (env override), time (session TTL), functools.lru_cache-style bounded cache — actually use a plain dict + FIFO cap since lru_cache doesn't play well with per-session lifecycle\n- New dep candidate: none\n- Roll it: cache implementation is 20 LOC — roll it\n\n## OUTPUT\n\n- Diff on skill_activator.py (behavior replaced)\n- Diff on using-specialists promotion gate\n- New scripts/dispatch/ module for evidence-bundle-to-bead-body rendering\n- Diff on specialist task_templates\n- pytest output\n- Integration transcript: create → promote → dispatch → specialist reads bundle from bd show\n- Sample block message (proves it's actionable, not silent)\n- Sample override telemetry line\n\n## APPROACH NOTES\n\n- Session cache lifecycle: Claude Code hooks fire in short-lived Python processes, so the cache must span the process lifetime OR persist per-session-id. Simplest: per-invocation cache (no persistence) + rely on PR3's index being fast enough that a repeat call within seconds is cheap. Only build real persistence if measured latency demands.\n- Bead validator hook: check whether bd create / bd set-state fire pre-write hooks in this repo. If not, extend the validator invoked from bd promote (or add a wrapper). Do NOT retrofit every bd invocation.\n- The 'evidence bundle marker in bd body' pattern is analogous to how PR templates already work in this repo — reuse the marker pattern from CHANGELOG or PR body handling if one exists.\n- Specialist task_template updates should be minimal — just a line that says 'if the bead body contains an evidence bundle marker, treat it as authoritative context; do not re-fetch'.\n- Blocking must never fire on the bead-validator itself accidentally. Bead validator changes trigger a PreToolUse Write on bd-tracking files (.beads/*) — those must be exempt or the validator locks itself out.",
+        "id": "xtrm-56flm.4",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "CORRECTION to prior review note: missing command literals are (1) sp run or specialists run with --bead must attach the marker before job start, and (2) bd set-state BEAD contract=ready must be refused by a real installed/PreToolUse gate. Required tests must exercise those actual Bash command paths, not only the manual dispatch CLI.",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-24T19:22:03Z",
+        "status": "open",
+        "title": "PR4: dispatch integration + PreToolUse activator upgrade (retrieval + narrow blocking)",
+        "updated_at": "2026-07-25T11:20:52Z"
+      }
+    },
+    "xtrm-56flm.5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T02:35:06Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T04:35:06Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm",
+            "issue_id": "xtrm-56flm.5",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-24T04:35:22Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.1",
+            "issue_id": "xtrm-56flm.5",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-24T04:35:24Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.2",
+            "issue_id": "xtrm-56flm.5",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-24T04:35:25Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.3",
+            "issue_id": "xtrm-56flm.5",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-24T04:35:27Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.4",
+            "issue_id": "xtrm-56flm.5",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-24T05:54:10Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.6",
+            "issue_id": "xtrm-56flm.5",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 5,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nPR0-4 ship package + verifier + gate + index + dispatch integration. Without measurement, we cannot answer: does the verifier catch what it should? Is retrieval precision high enough? What's the stale-claim escape rate? Are agents actually consuming bundles?\n\nResearch §3.9 mandates a labeled eval corpus (80-150 cases from real closed issues / merged PRs / real alerts / incidents / drift history / diagnostic tasks) with a specific metric set. Research §3.7 requires retrieval telemetry (retrieval_events table) for ignored-activation rate, citation utilization rate, stale-claim escape rate. PR3 declared the table; this PR populates it with hooks and dashboards.\n\n**Ponytail split**: canary policy for future auto-merge is a decision doc, not code. Split into PR5b — unblocks separately when operator ratifies thresholds. This PR (PR5a) is shovel-ready measurement + alert-to-service surface.\n\n## SUCCESS\n\n- Labeled eval corpus at ~/dev/xtrm/packages/service-knowledge/eval/corpus/ with 80-150 cases across: closed bd issues (bug + feature), merged PRs with operational changes, real Prometheus alerts (from mercury-infra history), incident reports, drift history, diagnostic tasks, past questions that produced wrong commands or claims.\n- Each case labeled per §3.9: query_or_task, touched_paths, expected_services, required_evidence, forbidden_evidence, expected_probes, cross_repo_required, outcome.\n- Eval harness runs the corpus against the shipped system and emits the 12 metrics from §3.9.\n- Retrieval telemetry hooks emit to retrieval_events (PR3 table) on every knowledge_search/_get/_evidence_for_files call + on every activator invocation.\n- Weekly report at .beads/eval-reports/YYYY-WW.md (raw values, week-over-week delta, threshold status green/yellow/red, corpus expansion suggestions).\n- Alert-to-service routing tool (new small MCP wrapper): incident_routing takes an Alertmanager-shaped payload → knowledge_search → returns top-K service + runbook probes → evidence bundle. Advisory only.\n- Post-merge reindex hook completes on mercury-infra + any other consumer that has installed (from operator-triggered wave-2 installs) within the 60s budget from PR3.\n\n## SCOPE\n\n- NEW: src/service_knowledge/eval/\n  - corpus/*.json — labeled cases\n  - harness.py — runs the corpus, computes metrics\n  - metrics.py — metric definitions + aggregation\n  - reports/  — output artifacts\n- EXTEND: src/service_knowledge/index/query.py — telemetry emission on every query (PR3 declared the table; this PR populates it)\n- EXTEND: src/service_knowledge/scripts/skill_activator.py — telemetry on inject + block + override decisions (from PR4)\n- EXTEND: src/service_knowledge/scripts/verifier/ — FP/FN accounting hooks on golden-fixture runs\n- NEW: ~/dev/xtrm/packages/service-knowledge/.github/workflows/eval-weekly.yml — cron running eval harness, publishing report as artifact + sticky-commenting summary on a tracking issue\n- NEW: src/service_knowledge/mcp/incident_routing.py — thin wrapper over knowledge_search with alert-shape input\n- Post-merge reindex wiring for mercury-infra + wave-2 consumers (extend PR3's hook or add if not wired)\n\n## NON_GOALS\n\n- No auto-merge ENABLE in this PR — canary policy is PR5b\n- No embedding/vector rollout (metrics might trigger it — follow-up)\n- No cross-repo aggregation switch (metrics might trigger it — follow-up)\n- No new claim types in verifier (that's a PR1 follow-up if telemetry demands)\n- No new MCP tools beyond incident_routing wrapper\n- No security-auditor pipeline changes\n- No operator dashboard UI beyond CSV/Markdown reports + optional Grafana panels\n\n## CONSTRAINTS\n\n- Eval corpus MUST include the 3 regression cases from the observed api-gateway/runners specialist failure\n- Corpus cases MUST have permalinks to source artifacts (bd IDs, PR numbers, alert IDs, incident report paths)\n- Metric definitions match §3.9 exactly — same names, same semantics\n- Telemetry payloads: no PII, no raw query text (hash instead), no secret values per PR3 constraint\n- Weekly report includes raw metric values, week-over-week delta, threshold status, corpus expansion suggestions from unclassified failures\n- Alert-to-service tool must NOT trigger any mutation — advisory only until PR5b canary policy ships\n- Logging/telemetry (meta): eval harness emits {timestamp, component=eval-harness, event=run|metric_computed, corpus_version, case_count, per_metric_value, duration_ms} → historical reports at .beads/eval-reports/YYYY-WW.md\n\n## VALIDATION\n\n- [ ] Corpus assembled: ≥ 80 cases with full labels; provenance links resolve\n- [ ] Regression coverage: the 3 api-gateway failure classes appear in corpus and shipped verifier catches all 3\n- [ ] Eval harness end-to-end: `service-knowledge eval run --corpus corpus/` produces report at .beads/eval-reports/YYYY-WW.md with all 12 metrics\n- [ ] Baseline metrics measured and documented: routing precision ≥ 0.8, retrieval precision@5 ≥ 0.6, stale-claim escape rate ≤ 0.05, verifier FP ≤ 0.05, verifier FN ≤ 0.10 on corpus\n- [ ] Weekly workflow smoke via workflow_dispatch: report artifact + tracking-issue comment\n- [ ] Telemetry table populated: retrieval_events has rows after 1h of normal session activity (sqlite dump verify)\n- [ ] Alert-to-service smoke: synthetic Alertmanager payload → knowledge_search finds correct service + probes → evidence bundle returned\n- [ ] Post-merge reindex measured on mercury-infra + any wave-2 consumers; all ≤ 60s\n- [ ] Structured telemetry: grep 'component=eval-harness' finds one line per run + per metric\n\n## LIBRARIES\n\n- Reuse: index/query.py (PR3), verifier module (PR1), drift_detector.py, Prometheus scrape configs (for alert payload shape reference)\n- Installed deps: sqlite3 (stdlib), csv (stdlib)\n- Stdlib: statistics for aggregation, pathlib, json\n- New dep candidate: none — reports are Markdown/CSV\n- Roll it: aggregation is trivial; corpus is JSON\n\n## OUTPUT\n\n- Eval corpus tree with all cases labeled + provenance\n- Harness + metrics module\n- Weekly workflow YAML\n- Sample eval report (baseline week 0)\n- Alert-to-service smoke transcript\n- Metrics baseline dashboard link or CSV/MD path\n- 90-day telemetry retention plan (or 'inherits from .beads/ default')\n- Input into PR5b: baseline metrics that inform canary threshold decisions\n\n## APPROACH NOTES\n\n- Dispatch: sp run executor --bead xtrm-56flm.5 --worktree.\n- Parallelization: blocked-by PR0/PR1/PR2/PR3/PR4 — runs in wave-4 as the measurement layer that everything else feeds.\n- Corpus assembly: use gh + bd + Prometheus alertmanager API to bulk-extract raw material, then hand-label. Subset can be paired-labeled with LLM assist (operator reviews). One-time work.\n- The 3 regression cases from api-gateway are the anchor; every other case is bonus but the regression must land.\n- Alert-to-service is a natural fit for the Grafana Scenes incident dashboard from mercury-infra PR #234 — coordinate with operator on where the button/tool surfaces.\n- Weekly reports as bd sticky comments on a long-lived tracking issue (create at PR start) rather than individual issues — avoids issue-board pollution.",
+        "id": "xtrm-56flm.5",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "AMENDMENT (post-planning-review, 2026-07-24) — path + naming + storage overrides\n\nEvery path reference in the sections below uses the pre-lift-and-shift home (~/dev/core/.claude/skills/service-skills/... and .beads/service-knowledge.sqlite). Those are ALL superseded by:\n\n- Machinery home: ~/dev/xtrm/packages/service-knowledge/ (new xtrm package; owned + released independently)\n- Consumer path: .xtrm/skills/default/service-knowledge/ (renamed from ...service-skills/, vendored via xt update --apply)\n- ~/dev/core is a consumer of the package, no longer its home\n- Per-repo KB path: .xtrm/cache/service-knowledge.sqlite (NOT .beads/... — .beads/ is bd territory)\n- Package name in every constraint / doc / MCP tool registration: service-knowledge (not service-skills)\n- Federation: ~/.xtrm/stack-registry.json (user-scoped) is the sibling-repo discovery surface; federated query fans out to each per-repo .xtrm/cache/service-knowledge.sqlite\n\nThe move + rename + vendor inversion happens in PR0 (xtrm-56flm.6). This bead is BLOCKED on PR0. When PR0 lands, execute this bead against the new paths per the mapping above — the SCOPE / CONSTRAINTS / VALIDATION semantics are unchanged; only the path prefixes and package name change.\n\nSibling docs to keep in sync when executing:\n- ~/dev/xtrm/docs/devops/service-knowledge.md\n- ~/dev/xtrm/docs/research/kb-knowledge-base-svc.md (spec source; unchanged)\n- Package CHANGELOG.md (bump one minor version per merged PR: PR1→v0.2.0, PR2→v0.3.0, PR3→v0.4.0, PR4→v0.5.0, PR5→v0.6.0)",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "PR5a: eval corpus + telemetry dashboards + alert-to-service routing",
+        "updated_at": "2026-07-24T04:36:15Z"
+      }
+    },
+    "xtrm-56flm.7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-24T04:36:16Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-24T06:36:16Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm",
+            "issue_id": "xtrm-56flm.7",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-24T06:36:17Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.5",
+            "issue_id": "xtrm-56flm.7",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-07-24T06:36:18Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-56flm.6",
+            "issue_id": "xtrm-56flm.7",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 2,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nPR2 ships a 6-tier gate lattice where even PASS opens a normal PR (no auto-merge on day one). PR5a produces empirical measurement of verifier FP/FN + retrieval precision/recall + stale-claim escape rate + activator consumption + token cost.\n\nNeither PR decides which subset (if any) of PASS verdicts is safe to auto-merge. That's an operator decision requiring: (a) baseline data (from PR5a), (b) explicit threshold policy, (c) operator sign-off. This bead is that decision document + threshold ratification + tooling to enable the switch — NOT the switch itself.\n\n## SUCCESS\n\n- ~/dev/xtrm/docs/devops/service-knowledge-canary.md written: which claim classes MAY be auto-merged, under which measured conditions, with what override paths.\n- Threshold policy ratified with operator: 30d observation window with ≥ 200 verifier runs, verifier FP rate < 0.02, verifier FN rate < 0.05 on golden set + eval corpus, PLUS operator sign-off per this policy. Auto-merge limited to path/symbol/literal/env-var/image/config-value low-risk claim classes only (per research §5.1). Causal claims, procedure claims, security-posture claims, complete-set critical claims stay with review permanently.\n- `service-knowledge canary status` CLI subcommand reports: are we in observation window? current metric values vs thresholds? green/yellow/red? days remaining?\n- `service-knowledge canary enable --classes path,symbol,literal,env-var,image,config-value` gated by (a) all thresholds met (b) operator confirmation prompt (c) explicit override env for CI. Enabling flips a config flag read by reconcile.py at the moment atomic_write is about to happen.\n- Reserved package version v1.0.0 for the canary-enable moment (v0.7.0 ships this bead; v1.0.0 comes when operator flips the switch).\n\n## SCOPE\n\n- NEW: ~/dev/xtrm/docs/devops/service-knowledge-canary.md (the policy)\n- NEW: src/service_knowledge/canary/  (status + enable/disable subcommands + config flag)\n- EXTEND: src/service_knowledge/cli/  (canary subcommand tree under the package CLI)\n- EXTEND: src/service_knowledge/scripts/reconcile.py — read canary config flag at the atomic_write branch; auto-merge only when: flag=on AND verdict=PASS AND all claims in enabled classes\n- Config file: .xtrm/state/service-knowledge/canary.json (per-repo, gitignored, {enabled: bool, classes: [...], enabled_at: timestamp, enabled_by: str})\n\n## NON_GOALS\n\n- Does NOT enable auto-merge — only ships the mechanism + the policy + the ratification\n- Does not change the 6-tier lattice from PR2\n- Does not change verifier claim taxonomy from PR1\n- No auto-merge for causal / procedure / security-posture / complete-set-critical claim classes — ever, in this rollout\n- No cross-repo canary state (per-repo canary config only)\n\n## CONSTRAINTS\n\n- Canary CAN NOT be enabled without: (a) PR5a shipped, (b) 30d of measured data, (c) all threshold checks green, (d) operator confirmation on the CLI prompt.\n- Enable action logged loud: telemetry event {component=canary, event=enable, classes, enabled_by, thresholds_at_enable_time, git_commit} → append-only .xtrm/state/service-knowledge/canary.jsonl\n- Disable action equally loud + preserves history\n- Reconcile.py canary read must fail closed: if config file unreadable or invalid, treat as canary=off (no auto-merge). Never fail open on canary check.\n\n## VALIDATION\n\n- [ ] docs/devops/service-knowledge-canary.md landed + operator-ratified (operator sign-off recorded in bd notes)\n- [ ] `service-knowledge canary status` returns valid JSON with metric snapshot + threshold status\n- [ ] `service-knowledge canary enable` refuses when thresholds not met (fixture with fake bad metrics)\n- [ ] `service-knowledge canary enable` succeeds when thresholds met + operator confirms\n- [ ] reconcile.py smoke: canary=on + PASS + all claims in enabled classes → atomic_write + auto-merge\n- [ ] reconcile.py smoke: canary=on + PASS + at least one claim outside enabled classes → atomic_write + NORMAL PR (no auto-merge)\n- [ ] reconcile.py smoke: canary=off + PASS → normal PR (no auto-merge)\n- [ ] Fail-closed test: canary config file corrupted → reconcile.py treats as off\n- [ ] Telemetry: grep 'component=canary' finds enable/disable events with full context\n\n## LIBRARIES\n\n- Reuse: reconcile.py atomic_write branch, service-knowledge CLI framework, PR5a telemetry format\n- Installed deps: none new\n- Stdlib: json, pathlib\n- Roll it: canary logic is ~150 LOC\n\n## OUTPUT\n\n- docs/devops/service-knowledge-canary.md (the policy)\n- src/service_knowledge/canary/ module\n- CLI subcommand tree\n- reconcile.py canary-read diff\n- Operator ratification recorded in bd notes at close\n- Package version v0.7.0\n\n## APPROACH NOTES\n\n- Dispatch: sp run executor --bead xtrm-56flm.7 --worktree.\n- Parallelization: blocked-by PR5a (needs the measurement baseline). Runs in wave-4 alongside PR5a's tail.\n- The 'canary enable' is deliberately behind an operator confirmation prompt in the CLI — no CI-only path to flip auto-merge. If operator wants CI-only enable, that's a separate follow-up bead requiring explicit trust-boundary review.\n- v1.0.0 is reserved for the canary-enable moment. That is: when the operator actually flips the switch on the first low-risk claim class, cut v1.0.0 with a loud CHANGELOG entry.\n- If the eval corpus (PR5a) does not converge on the thresholds within 30d, the policy stays 'canary disabled' — no pressure to relax thresholds to hit them. Auto-merge is not the goal; safety is.",
+        "id": "xtrm-56flm.7",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "PR5b: canary policy for future auto-merge (decision doc + threshold ratification)",
+        "updated_at": "2026-07-24T04:36:16Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:31:07Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm",
+        "issue_id": "xtrm-56flm.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.2",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T21:35:30Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.2",
+        "issue_id": "xtrm-56flm.2.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.2.2",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T21:35:32Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.2",
+        "issue_id": "xtrm-56flm.2.3",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.2.3",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T21:35:33Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.2",
+        "issue_id": "xtrm-56flm.2.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.2.4",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T21:35:34Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.2",
+        "issue_id": "xtrm-56flm.2.5",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.2.5",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T21:35:35Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.2",
+        "issue_id": "xtrm-56flm.2.6",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.2.6",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.2",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:32:24Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm",
+        "issue_id": "xtrm-56flm.3",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.3",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T19:33:54Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.3",
+        "issue_id": "xtrm-56flm.3.1",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.3.1",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.3",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T19:33:56Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.3",
+        "issue_id": "xtrm-56flm.3.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.3.2",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.3",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:21Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.3",
+        "issue_id": "xtrm-56flm.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.4",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.3",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:05Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm",
+        "issue_id": "xtrm-56flm.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.4",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:24Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.2",
+        "issue_id": "xtrm-56flm.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.5",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.2",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:25Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.3",
+        "issue_id": "xtrm-56flm.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.5",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.3",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:27Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.4",
+        "issue_id": "xtrm-56flm.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.5",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.4",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T04:35:06Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm",
+        "issue_id": "xtrm-56flm.5",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.5",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T06:36:17Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm.5",
+        "issue_id": "xtrm-56flm.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-56flm.7",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm.5",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-24T06:36:16Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-56flm",
+        "issue_id": "xtrm-56flm.7",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-56flm.7",
+      "source_field": "dependencies",
+      "target": "xtrm-56flm",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-56flm",
+  "root_title": "Epic: service-skills reframe — deterministic verifier + evidence-first retrieval",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

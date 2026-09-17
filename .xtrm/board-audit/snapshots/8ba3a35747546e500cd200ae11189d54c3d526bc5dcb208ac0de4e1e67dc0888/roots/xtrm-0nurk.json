@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-0nurk"],"open_issue_count":1,"root_id":"xtrm-0nurk","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"b36364228f2bbcb1fec47f78b3349968e79d19f6bea69ad58cd488c1832c624f","title":"Fix stale Go-specific bd preflight configuration in core"}

@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-osoxx"],"open_issue_count":1,"root_id":"xtrm-osoxx","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"9fed5921fa59eeeeb5f9d7684231ee1275f0801429f3ae31437567fd58f611fe","title":"[bug] xt worktree reap holds squash-merged worktrees forever — predicate has no patch-equivalence test"}

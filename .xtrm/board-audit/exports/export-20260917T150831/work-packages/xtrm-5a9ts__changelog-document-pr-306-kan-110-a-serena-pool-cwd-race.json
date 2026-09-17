@@ -1,0 +1,39 @@
+{
+  "content_sha256": "1e4eef91cec52d2ec331de15a0addf5321c8a737205eae2bffb8af032ee805a2",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-5a9ts"
+  },
+  "issues": {
+    "xtrm-5a9ts": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-23T14:19:26Z",
+        "created_by": "dawid",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Document PR #306 (Rico, merged 2026-06-23 02:34Z) in [Unreleased]. User-facing because it's the host memory exhaustion fix complementary to specialists#150.",
+        "id": "xtrm-5a9ts",
+        "issue_type": "chore",
+        "priority": 2,
+        "status": "open",
+        "title": "CHANGELOG: document PR #306 KAN-110-A serena-pool cwd-race",
+        "updated_at": "2026-06-23T14:19:26Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-5a9ts",
+  "root_title": "CHANGELOG: document PR #306 KAN-110-A serena-pool cwd-race",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

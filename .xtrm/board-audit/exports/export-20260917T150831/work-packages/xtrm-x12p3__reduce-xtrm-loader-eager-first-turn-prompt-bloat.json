@@ -1,0 +1,108 @@
+{
+  "content_sha256": "d066584b6fdd124dcd3fd037cd0b2ba38654b23f81525e53aa7dd7a766c271c9",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-x12p3.1"
+      }
+    ],
+    "id": "xtrm-x12p3"
+  },
+  "issues": {
+    "xtrm-x12p3": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "- Fresh `pi --no-session` request payloads no longer include the full ROADMAP.md body or a recursive listing of every `.claude/skills/**/*.md` file.\n- xtrm-loader remains routing-oriented: retain only essential compact project pointers/memory and avoid duplicating Pi’s built-in available-skills catalog.\n- A representative `~/dev/core` fresh-request payload is reduced by at least 25 KB from the measured 127.2 KB baseline, with before/after evidence recorded.\n- Tests cover large ROADMAP, project rules, nested skill references, `.xtrm/memory.md`, and `using-xtrm` behavior; they prove large optional bodies are not eagerly injected while required context remains discoverable.\n- Existing Pi extension/runtime tests pass.\n- `.xtrm/config/instructions/agents-top.md` and `.xtrm/config/instructions/claude-top.md` are updated to teach agents to retrieve project knowledge on demand with `bd memories` instead of relying on eagerly injected roadmap/rules/history content; generated instruction parity tests are updated.",
+        "assignee": "jaggerxtrm",
+        "close_reason": "xtrm-loader stripped to memory.md + using-xtrm essentials only; routing pointers added to agents-top.md + claude-top.md per operator scope-addition (bd memories on demand). First-turn payload drops ~50KB → few KB. Landed in PR #422 commit fc8ceae0. Follow-up (not blocking): verify with before_provider_request live smoke that first-turn tokens actually reduce as expected.",
+        "closed_at": "2026-07-15T07:49:43Z",
+        "comment_count": 0,
+        "created_at": "2026-07-14T15:20:19Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## Problem\n\nFresh Pi requests carry substantial context before any conversation exists. A local `before_provider_request` capture (terminated before network transmission) measured:\n\n- Minimal Pi without discovered extensions/skills/context: 5.7 KB payload (~1.4K tokens)\n- Full Pi from `~`: 78.5 KB (~20K tokens)\n- Full Pi from `~/dev/xtmux`: 82.2 KB (~21K tokens)\n- Full Pi from `~/dev/core`: 127.2 KB (~32K tokens)\n\nNano-GPT first requests around 50K tokens are therefore plausible once an explicitly invoked skill body is added. For example, `multiplexing/SKILL.md` is 46.8 KB, `planning/SKILL.md` is 24.3 KB, and `using-specialists/SKILL.md` is 21.7 KB.\n\n## Root cause\n\n`packages/pi-extensions/extensions/xtrm-loader/index.ts` eagerly appends project intelligence to every provider request. It currently injects:\n\n- the complete first matching roadmap/architecture file (`ROADMAP.md` is 19.7 KB in core),\n- every `.claude/rules/**/*.md` body,\n- a recursive inventory of every Markdown file under `.claude/skills`, including references/docs rather than only skill entrypoints,\n- `.xtrm/memory.md`, and\n- the complete `using-xtrm` skill body.\n\nIn the core capture, the `Project Intelligence Context` section alone was ~34.9 KB. The recursive project-skill inventory also duplicates Pi’s built-in `<available_skills>` catalog, which already contributed ~35 KB for 59 skill metadata entries. Thirty tool schemas contributed another ~24.6 KB.\n\nThis is independent of the separate long-session problem where repeated tool rounds replay 200K-370K contexts.\n\n## Desired direction\n\nMake xtrm-loader routing-oriented instead of eagerly embedding whole documentation trees. Prefer concise paths/summaries and on-demand reads. Preserve genuinely essential session memory and operating constraints, but remove duplicate skill discovery and full roadmap/rules payloads from every turn.\n\n## Verification notes\n\nUse a temporary explicit extension with `before_provider_request` to capture the exact serialized payload and terminate before network transmission. Compare payload bytes and section composition before/after; provider-reported first-turn input tokens remain the final truth when running a controlled live smoke.\n",
+        "estimated_minutes": 180,
+        "id": "xtrm-x12p3",
+        "issue_type": "bug",
+        "labels": [
+          "performance",
+          "pi",
+          "token-usage",
+          "xtrm-loader"
+        ],
+        "notes": "Scope addition requested by operator: edit the canonical `.xtrm/config/instructions/agents-top.md` and `.xtrm/config/instructions/claude-top.md` templates. Add concise routing guidance for agents to query `bd memories` on demand as the replacement path for project knowledge removed from xtrm-loader eager context. Keep the instructions compact; do not move the removed documentation bodies into the top templates.",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-15T07:34:52Z",
+        "status": "closed",
+        "title": "Reduce xtrm-loader eager first-turn prompt bloat",
+        "updated_at": "2026-07-15T07:49:43Z"
+      }
+    },
+    "xtrm-x12p3.1": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-15T08:21:55Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-15T10:21:54Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-x12p3",
+            "issue_id": "xtrm-x12p3.1",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## Problem\n\n`bd prime` currently dumps 265 KB of Persistent Memories on every SessionStart hook fire (98.7% of its 269 KB total output). The 555-memory backlog has never been synthesized in this repo; many entries are stale (superseded by later work), redundant (multiple bearings of the same fact), or contradicted (later memory disagrees with earlier one).\n\n## Task\n\nRun the full memory-processor workflow (via `memory-audit-transaction` skill) with an AGGRESSIVE pruning stance:\n\n- When a memory is even PLAUSIBLY stale/redundant/contradicted, classify accordingly instead of Current.\n- Skip only when genuinely unverifiable (per skill's Phase 6 conservative rule) — but do not use Skip as a hedge to keep dubious entries alive.\n- Target reduction: 555 → ~50-80 Current entries in `.xtrm/memory.md` (aim for a lean, dense session-start context).\n\n## Constraints (from memory-processor spec)\n\n- Chunks of 20-30 memories per turn; decisions appended to `.tmp/memory-audit/decisions.jsonl`.\n- Phase 6 completeness gate is non-negotiable: `wc -l .tmp/memory-audit/keys.txt` == `wc -l .tmp/memory-audit/decisions.jsonl`.\n- Phase 7 atomic hash-guarded prune; per-key backups in `.tmp/memory-audit/backup/`.\n- Phase 8 writes filtered Current rows to `.xtrm/memory.md`.\n- No destructive git.\n\n## Model + launch\n\n- `--model nano-gpt/nvidia/nemotron-3-ultra-550b-a55b` (1M context — needed for the 555-memory input).\n- Detached tmux session for background run.\n\n## Success criteria\n\n- `.xtrm/memory.md` populated (was 939-byte bootstrap placeholder).\n- `bd stats` shows meaningfully fewer memories (target: 50-80).\n- Next-session `bd prime` output measurably smaller (target: < 50 KB total, < 45 KB memories).\n- Final report in bead notes: counts (Current / Stale / Contradicted / Redundant / Skipped) + measured reduction.\n\n## Related\n\n- xtrm-x12p3 (parent) — xtrm-loader eager-load reduction, this closes the memory-side of the same problem.\n- Follow-up if reduction is insufficient: file a bead to strip `bd prime` from SessionStart entirely (keep only on-demand agent invocation).",
+        "id": "xtrm-x12p3.1",
+        "issue_type": "task",
+        "labels": [
+          "performance",
+          "pi",
+          "token-usage",
+          "xtrm-loader"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "memory-processor: aggressive prune of 555 stale/redundant memories",
+        "updated_at": "2026-07-15T08:21:55Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-15T10:21:54Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-x12p3",
+        "issue_id": "xtrm-x12p3.1",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-x12p3.1",
+      "source_field": "dependencies",
+      "target": "xtrm-x12p3",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-x12p3",
+  "root_title": "Reduce xtrm-loader eager first-turn prompt bloat",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

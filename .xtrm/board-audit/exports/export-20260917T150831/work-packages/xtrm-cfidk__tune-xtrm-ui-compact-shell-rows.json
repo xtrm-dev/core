@@ -1,0 +1,66 @@
+{
+  "content_sha256": "6749e3fd4a5e2916982e76d1691373ceecd6605c00ea36ee856d5e01f773c6aa",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-13T08:53:19Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-36hgk",
+        "issue_id": "xtrm-cfidk",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-cfidk",
+      "source_field": "dependencies",
+      "target": "xtrm-36hgk",
+      "target_present_in_snapshot": true,
+      "target_title": "Make xtrm-ui external tool headers stable across running and completed states",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-cfidk"
+  },
+  "issues": {
+    "xtrm-cfidk": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-27T15:23:36Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-07-13T08:53:19Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-36hgk",
+            "issue_id": "xtrm-cfidk",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Adjust xtrm-ui compact mode wording/metadata: render shell command rows as bash:<command> instead of Ran <command>, increase compact allowance so one-line commands remain visible, and integrate payload size into compact metadata where available.",
+        "id": "xtrm-cfidk",
+        "issue_type": "task",
+        "priority": 2,
+        "status": "open",
+        "title": "Tune xtrm-ui compact shell rows",
+        "updated_at": "2026-05-27T15:23:36Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-cfidk",
+  "root_title": "Tune xtrm-ui compact shell rows",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
