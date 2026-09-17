@@ -31,7 +31,7 @@ import {
   type InvariantViolation,
   validateSkillsInvariants,
 } from '../core/skill-discovery.js';
-import { selectRuntimeSkills } from '../core/skills-materializer.js';
+import { materializeGlobalRuntimeViews, selectRuntimeSkills } from '../core/skills-materializer.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 
 type Scope = 'global' | 'local';
@@ -387,6 +387,9 @@ async function mutatePacks(opts: {
     // Reconcile owns the state write here (enabledPacks + managedLinks).
     await ensureAgentsSkillsSymlink(await findProjectRoot(), { state: nextState });
   } else {
+    // Materialize the user-scope views from the prospective state first, then
+    // commit enabledPacks — same ordering contract as local scope (xtrm-e7jzt.2).
+    await materializeGlobalRuntimeViews({ state: nextState });
     for (const runtime of runtimes) {
       await setRuntimeEnabledPacks(skillsRoot, runtime, nextEnabledPacks[runtime]);
     }

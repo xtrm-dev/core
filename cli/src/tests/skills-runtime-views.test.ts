@@ -23,8 +23,8 @@ describe('skills-runtime-views', () => {
     expect(getRuntimePointerTarget({ scope: 'project' })).toBe('real .claude/skills, .pi/skills, and .agents/skills directories');
   });
 
-  it('targets global default skills rather than retired active view', () => {
-    expect(getRuntimePointerTarget({ scope: 'global' })).toBe(path.join(os.homedir(), '.xtrm', 'skills', 'default'));
+  it('targets the composed global per-runtime view rather than the raw default tier', () => {
+    expect(getRuntimePointerTarget({ scope: 'global' })).toBe(path.join(os.homedir(), '.xtrm', 'skills', 'active', '<runtime>'));
   });
 
   it('accepts direct Claude, Pi, and Codex runtime directories with manifest-owned links and no Pi settings file', async () => {
@@ -93,6 +93,52 @@ describe('skills-runtime-views', () => {
       await fs.remove(runtimeLink);
       const missingLinkCheck = await checkRuntimeSkillsViews(projectRoot);
       expect(missingLinkCheck.projectClaudeSkillsReady).toBe(false);
+    } finally {
+      process.env.HOME = previousHome;
+    }
+  });
+
+  it('reports global pack activation drift and clears it after materialization', async () => {
+    const tempHome = await createTempDir();
+    const previousHome = process.env.HOME;
+    process.env.HOME = tempHome;
+
+    try {
+      const skillsRoot = path.join(tempHome, '.xtrm', 'skills');
+      const defaultSkill = path.join(skillsRoot, 'default', 'always-on');
+      await fs.ensureDir(defaultSkill);
+      await fs.writeFile(path.join(defaultSkill, 'SKILL.md'), '# always-on\n', 'utf8');
+
+      const packRoot = path.join(skillsRoot, 'optional', 'shipped-pack');
+      await fs.ensureDir(path.join(packRoot, 'shipped-skill'));
+      await fs.writeFile(path.join(packRoot, 'shipped-skill', 'SKILL.md'), '# shipped\n', 'utf8');
+      await fs.writeJson(path.join(packRoot, 'PACK.json'), {
+        schemaVersion: '1',
+        name: 'shipped-pack',
+        version: '1.0.0',
+        description: 'shipped',
+        skills: ['shipped-skill'],
+      });
+
+      await fs.writeJson(path.join(skillsRoot, 'state.json'), {
+        schemaVersion: '2',
+        enabledPacks: { claude: ['shipped-pack'], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+
+      // State says the pack is enabled but no runtime view exists yet.
+      const drifted = await checkRuntimeSkillsViews(tempHome);
+      expect(drifted.globalActivationReady).toBe(false);
+
+      const { materializeGlobalRuntimeViews } = await import('../core/skills-materializer.js');
+      await materializeGlobalRuntimeViews();
+
+      const healed = await checkRuntimeSkillsViews(tempHome);
+      expect(healed.globalActivationReady).toBe(true);
+      // Per-runtime scoping: the pack is materialized for claude only.
+      expect(await fs.pathExists(path.join(skillsRoot, 'active', 'claude', 'shipped-skill', 'SKILL.md'))).toBe(true);
+      expect(await fs.pathExists(path.join(skillsRoot, 'active', 'pi', 'shipped-skill'))).toBe(false);
+      expect(await fs.pathExists(path.join(skillsRoot, 'active', 'pi', 'always-on', 'SKILL.md'))).toBe(true);
     } finally {
       process.env.HOME = previousHome;
     }

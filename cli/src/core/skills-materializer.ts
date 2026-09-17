@@ -1,12 +1,17 @@
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import fs from 'fs-extra';
 import {
   type SkillsRuntime,
+  SKILLS_RUNTIMES,
   resolveActiveRuntimeRoot,
+  resolveGlobalRuntimePointer,
+  resolveGlobalRuntimeViewRoot,
+  resolveGlobalSkillsRoot,
 } from './skills-layout.js';
-import { discoverDefaultSkills, discoverTierPacks, type DiscoveredSkill } from './skill-discovery.js';
-import { readSkillsState } from './skills-state.js';
+import { discoverDefaultSkills, discoverRepoPacks, discoverTierPacks, type DiscoveredSkill } from './skill-discovery.js';
+import { assertSafeRuntimeLinkName, readSkillsState, type SkillsState } from './skills-state.js';
 
 export interface RuntimeSkillSelection {
   readonly runtime: SkillsRuntime;
@@ -266,4 +271,123 @@ export async function rebuildProjectActiveView(
 
 export async function rebuildAllRuntimeActiveViews(skillsRoot: string): Promise<RuntimeActiveViewResult[]> {
   return rebuildActiveViewInternal(skillsRoot);
+}
+
+export interface GlobalRuntimeViewResult {
+  readonly runtime: SkillsRuntime;
+  readonly viewRoot: string;
+  readonly pointerPath: string;
+  readonly pointerAdopted: boolean;
+  readonly skillNames: string[];
+}
+
+function isInside(child: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/** Default skills + skills of the packs globally enabled for one runtime, in
+ * the order they must appear in that runtime's user-scope view. */
+export async function selectGlobalRuntimeSkills(
+  runtime: SkillsRuntime,
+  skillsRoot: string,
+  state: Pick<SkillsState, 'enabledPacks'>,
+): Promise<DiscoveredSkill[]> {
+  const defaultSkills = await discoverDefaultSkills(skillsRoot);
+  const packs = new Map<string, DiscoveredSkill[]>();
+  for (const pack of [
+    ...(await discoverTierPacks(skillsRoot, 'optional')),
+    ...(await discoverRepoPacks(skillsRoot)),
+  ]) {
+    if (!packs.has(pack.name)) packs.set(pack.name, pack.skills);
+  }
+
+  const selected = [...defaultSkills];
+  for (const packName of state.enabledPacks[runtime] ?? []) {
+    const packSkills = packs.get(packName);
+    if (!packSkills) {
+      throw new Error(`Enabled pack '${packName}' was not found under ${skillsRoot}/optional or the global user packs.`);
+    }
+    selected.push(...packSkills);
+  }
+
+  const seen = new Map<string, string>();
+  for (const skill of selected) {
+    assertSafeRuntimeLinkName(skill.runtimeName);
+    const first = seen.get(skill.runtimeName);
+    if (first && first !== skill.path) {
+      throw new Error(`Cannot materialize skill '${skill.runtimeName}' for global ${runtime}: name collides (${first} vs ${skill.path}).`);
+    }
+    seen.set(skill.runtimeName, skill.path);
+  }
+  return selected;
+}
+
+async function ensureGlobalRuntimePointer(
+  runtime: SkillsRuntime,
+  viewRoot: string,
+): Promise<{ pointerPath: string; pointerAdopted: boolean }> {
+  const pointerPath = resolveGlobalRuntimePointer(runtime);
+  const label = `~/${path.relative(os.homedir(), pointerPath)}`;
+  const existing = await fs.lstat(pointerPath).catch(() => null);
+
+  if (existing && !existing.isSymbolicLink()) {
+    throw new Error(`Refusing to replace existing ${label}; move it aside and re-run, or pass --force.`);
+  }
+
+  if (existing?.isSymbolicLink()) {
+    const resolved = path.resolve(path.dirname(pointerPath), await fs.readlink(pointerPath));
+    if (resolved === path.resolve(viewRoot)) return { pointerPath, pointerAdopted: false };
+    // Adopt only xtrm-managed pointers (legacy default-tier pointer or an older view).
+    if (!isInside(resolved, resolveGlobalSkillsRoot())) {
+      throw new Error(`Refusing to replace foreign runtime skills symlink ${label} -> ${resolved}.`);
+    }
+    await fs.remove(pointerPath);
+  }
+
+  await fs.ensureDir(path.dirname(pointerPath));
+  await fs.symlink(path.resolve(viewRoot), pointerPath);
+  return { pointerPath, pointerAdopted: true };
+}
+
+/** Materialize the per-runtime user-scope views and point the runtime entry
+ * points at them. Rebuilt atomically; derives entirely from `state`, so it is
+ * safe to call on every enable/disable/install/update (xtrm-e7jzt.2). */
+export async function materializeGlobalRuntimeViews(options: {
+  readonly state?: SkillsState;
+  readonly runtimes?: readonly SkillsRuntime[];
+  readonly skillsRoot?: string;
+} = {}): Promise<GlobalRuntimeViewResult[]> {
+  const skillsRoot = options.skillsRoot ?? resolveGlobalSkillsRoot();
+  const state = options.state ?? await readSkillsState(skillsRoot);
+  const runtimes = options.runtimes ?? SKILLS_RUNTIMES;
+  const results: GlobalRuntimeViewResult[] = [];
+
+  for (const runtime of runtimes) {
+    const selected = await selectGlobalRuntimeSkills(runtime, skillsRoot, state);
+    const viewRoot = resolveGlobalRuntimeViewRoot(runtime);
+    const tempRoot = path.join(path.dirname(viewRoot), `${runtime}.tmp-${randomUUID()}`);
+    await fs.ensureDir(path.dirname(viewRoot));
+    await fs.remove(tempRoot);
+    await fs.ensureDir(tempRoot);
+
+    try {
+      const names = new Set<string>();
+      for (const skill of selected) {
+        if (names.has(skill.runtimeName)) continue;
+        names.add(skill.runtimeName);
+        // Relative targets: the view is renamed into place by atomicSwapDirectory
+        // and relative links stay valid inside ~/.xtrm/skills, which also keeps
+        // the global skills backup archive validation happy (xtrm-e7jzt.2).
+        await fs.symlink(path.relative(tempRoot, path.resolve(skill.path)), path.join(tempRoot, skill.runtimeName));
+      }
+      await atomicSwapDirectory(tempRoot, viewRoot);
+      const pointer = await ensureGlobalRuntimePointer(runtime, viewRoot);
+      results.push({ runtime, viewRoot, skillNames: [...names].sort((a, b) => a.localeCompare(b)), ...pointer });
+    } finally {
+      if (await fs.pathExists(tempRoot)) await fs.remove(tempRoot).catch(() => undefined);
+    }
+  }
+
+  return results;
 }

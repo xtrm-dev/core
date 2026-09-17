@@ -69,7 +69,7 @@ beforeEach(() => {
   fs.ensureDirSync(path.join(tmpDir, '.xtrm'));
   fs.writeJsonSync(path.join(tmpDir, '.xtrm', 'registry.json'), { version: '1', assets: {} }, { spaces: 2 });
   checkDriftMock.mockResolvedValue({ missing: [], upToDate: [], drifted: [] });
-  checkRuntimeSkillsViewsMock.mockResolvedValue({ activeReady: true, globalClaudePointerReady: true, globalPiPointerReady: true, projectClaudePointerState: 'ready', projectPiPointerState: 'ready', projectCodexPointerState: 'ready', hasDeprecatedAgentsSkillsPath: false });
+  checkRuntimeSkillsViewsMock.mockResolvedValue({ activeReady: true, globalClaudePointerReady: true, globalPiPointerReady: true, globalActivationReady: true, projectClaudePointerState: 'ready', projectPiPointerState: 'ready', projectCodexPointerState: 'ready', hasDeprecatedAgentsSkillsPath: false });
   discoverDefaultSkillsMock.mockResolvedValue([]);
   getXtManagedPiPackageDoctorReportMock.mockReset();
 });

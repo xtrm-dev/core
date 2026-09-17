@@ -63,6 +63,19 @@ export function resolveActiveRuntimeRoot(skillsRoot: string): string {
   return path.join(skillsRoot, 'active');
 }
 
+/** Composed user-scope runtime view for one runtime (xtrm-e7jzt.2).
+ * Generated state: rebuilt from default skills + globally enabled packs. */
+export function resolveGlobalRuntimeViewRoot(runtime: SkillsRuntime): string {
+  return path.join(resolveActiveRuntimeRoot(resolveGlobalSkillsRoot()), runtime);
+}
+
+/** User-scope runtime entry point the host runtime actually reads. */
+export function resolveGlobalRuntimePointer(runtime: SkillsRuntime): string {
+  if (runtime === 'claude') return path.join(os.homedir(), '.claude', 'skills');
+  if (runtime === 'pi') return path.join(os.homedir(), '.pi', 'agent', 'skills');
+  return path.join(os.homedir(), '.agents', 'skills');
+}
+
 export function resolveStateFilePath(skillsRoot: string): string {
   return path.join(skillsRoot, STATE_FILE_NAME);
 }

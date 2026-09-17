@@ -1,10 +1,10 @@
-import os from 'node:os';
 import path from 'node:path';
 import fs from 'fs-extra';
 import { SKILLS_RUNTIMES, resolveGlobalSkillsRoot, resolveSkillsRoot, resolveDefaultTierRoot } from './skills-layout.js';
 import { discoverTierPacks, validateSkillsInvariants } from './skill-discovery.js';
 import { readSkillsState, type SkillsState } from './skills-state.js';
 import { reconcileRuntimeLinks } from './skills-runtime-reconcile.js';
+import { materializeGlobalRuntimeViews } from './skills-materializer.js';
 
 export interface SkillsActivationResult {
   readonly activatedClaudeSkills: number;
@@ -25,23 +25,11 @@ export async function ensureSkillsSymlink(linkPath: string, symlinkTarget: strin
   await fs.symlink(symlinkTarget, linkPath);
 }
 
-export async function ensureUserAgentsSkillsSymlink(options: EnsureSkillsSymlinkOptions = {}): Promise<void> {
-  const target = resolveDefaultTierRoot(resolveGlobalSkillsRoot());
-  if (!await fs.pathExists(target)) throw new Error(`Global runtime skills root missing: ${target}`);
-  for (const [link, label] of [
-    [path.join(os.homedir(), '.claude', 'skills'), '~/.claude/skills'],
-    [path.join(os.homedir(), '.pi', 'agent', 'skills'), '~/.pi/agent/skills'],
-  ] as const) {
-    const existing = await fs.lstat(link).catch(() => null);
-    if (existing && !(existing.isSymbolicLink() && path.resolve(path.dirname(link), await fs.readlink(link)) === path.resolve(target))) {
-      if (!options.force) throw new Error(`Refusing to replace existing ${label}; pass --force.`);
-      await fs.remove(link);
-    }
-    if (!await fs.pathExists(link)) {
-      await fs.ensureDir(path.dirname(link));
-      await fs.symlink(target, link);
-    }
-  }
+export async function ensureUserAgentsSkillsSymlink(_options: EnsureSkillsSymlinkOptions = {}): Promise<void> {
+  // User-scope runtime entry points are symlinks to per-runtime composed views
+  // under ~/.xtrm/skills/active/, not to the installer-owned default tier, so
+  // globally enabled packs are actually loaded (xtrm-e7jzt.2).
+  await materializeGlobalRuntimeViews();
 }
 
 export async function ensureAgentsSkillsSymlink(projectRoot: string, options: EnsureRuntimeSkillsOptions = {}): Promise<SkillsActivationResult> {

@@ -133,7 +133,9 @@ describe('runtime maintenance integration', { timeout: 120_000 }, () => {
 
     const claudeLinkStat = fs.lstatSync(claudeSkillsPath);
     expect(claudeLinkStat.isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(claudeSkillsPath)).toBe(globalDefaultPath);
+    // User-scope pointers target the composed per-runtime view, not the raw
+    // installer-owned default tier (xtrm-e7jzt.2).
+    expect(fs.readlinkSync(claudeSkillsPath)).toBe(path.join(homeDir, '.xtrm', 'skills', 'active', 'claude'));
     expect(fs.pathExistsSync(globalDefaultPath)).toBe(true);
     expect(fs.lstatSync(path.join(tmpDir, '.claude', 'skills')).isDirectory()).toBe(true);
     expect(fs.lstatSync(path.join(tmpDir, '.pi', 'skills')).isDirectory()).toBe(true);

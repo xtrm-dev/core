@@ -201,7 +201,11 @@ describe('ensureGlobalSkillsBootstrapped safe-delete (xtrm-wiy5n.4.37)', () => {
             for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
                 const full = path.join(dir, entry.name);
                 const rel = path.relative(root, full).split(path.sep).join('/');
-                if (entry.isDirectory()) {
+                if (entry.isSymbolicLink()) {
+                    // Generated runtime views under active/ are symlinks; record the
+                    // link target instead of following it (xtrm-e7jzt.2).
+                    out[rel] = `symlink:${await fs.readlink(full)}`;
+                } else if (entry.isDirectory()) {
                     out[`${rel}/`] = 'dir';
                     await walk(full);
                 } else {
