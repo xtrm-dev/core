@@ -373,6 +373,94 @@ describe('xt skills JSON CLI integration', () => {
     }
   });
 
+  it('enables a globally-shipped pack with --local when the repo has no optional dir', () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-skills-shipped-pack-'));
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, '.git'), { recursive: true });
+
+      const homeSkillsRoot = path.join(tmpHome, '.xtrm', 'skills');
+      createSkill(path.join(homeSkillsRoot, 'default'), 'always-on');
+      createPack(path.join(homeSkillsRoot, 'optional'), 'shipped-pack', ['shipped-skill']);
+      writeJson(path.join(homeSkillsRoot, 'state.json'), {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+
+      const projectSkillsRoot = path.join(projectRoot, '.xtrm', 'skills');
+      writeJson(path.join(projectSkillsRoot, 'state.json'), {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+
+      const enabled = run(['skills', 'enable', 'shipped-pack', '--local', '--json'], {
+        cwd: projectRoot,
+        env: { HOME: tmpHome },
+      });
+      expect(enabled.status).toBe(0);
+
+      // The repo never grows an optional/ dir; the payload comes from global scope.
+      expect(fs.existsSync(path.join(projectSkillsRoot, 'optional'))).toBe(false);
+
+      for (const runtimeDir of ['.claude/skills', '.pi/skills', '.agents/skills']) {
+        const linkPath = path.join(projectRoot, runtimeDir, 'shipped-skill');
+        expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
+        expect(fs.realpathSync(linkPath)).toBe(
+          fs.realpathSync(path.join(homeSkillsRoot, 'optional', 'shipped-pack', 'shipped-skill')),
+        );
+      }
+
+      const state = JSON.parse(fs.readFileSync(path.join(projectSkillsRoot, 'state.json'), 'utf8')) as {
+        enabledPacks: Record<string, string[]>;
+      };
+      expect(state.enabledPacks.claude).toEqual(['shipped-pack']);
+      expect(state.enabledPacks.pi).toEqual(['shipped-pack']);
+      expect(state.enabledPacks.codex).toEqual(['shipped-pack']);
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves local state unchanged when activation fails', () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-skills-fail-atomic-'));
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, '.git'), { recursive: true });
+
+      const homeSkillsRoot = path.join(tmpHome, '.xtrm', 'skills');
+      createSkill(path.join(homeSkillsRoot, 'default'), 'always-on');
+      writeJson(path.join(homeSkillsRoot, 'state.json'), {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+
+      const projectSkillsRoot = path.join(projectRoot, '.xtrm', 'skills');
+      createPack(projectSkillsRoot, 'collide-pack', ['always-on']);
+      const statePath = path.join(projectSkillsRoot, 'state.json');
+      writeJson(statePath, {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+      const before = fs.readFileSync(statePath, 'utf8');
+
+      const enabled = run(['skills', 'enable', 'collide-pack', '--local', '--json'], {
+        cwd: projectRoot,
+        env: { HOME: tmpHome },
+      });
+
+      expect(enabled.status).toBe(1);
+      expect(enabled.stderr).toMatch(/collides with global default/i);
+      expect(fs.readFileSync(statePath, 'utf8')).toBe(before);
+      expect(fs.existsSync(path.join(projectRoot, '.claude', 'skills', 'always-on'))).toBe(false);
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it('disable --local on globally-enabled pack gives helpful error', () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-skills-disable-local-'));
 

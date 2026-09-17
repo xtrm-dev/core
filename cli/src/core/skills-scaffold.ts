@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 import { SKILLS_RUNTIMES, resolveGlobalSkillsRoot, resolveSkillsRoot, resolveDefaultTierRoot } from './skills-layout.js';
 import { discoverTierPacks, validateSkillsInvariants } from './skill-discovery.js';
-import { readSkillsState } from './skills-state.js';
+import { readSkillsState, type SkillsState } from './skills-state.js';
 import { reconcileRuntimeLinks } from './skills-runtime-reconcile.js';
 
 export interface SkillsActivationResult {
@@ -12,6 +12,7 @@ export interface SkillsActivationResult {
   readonly activatedCodexSkills: number;
 }
 interface EnsureSkillsSymlinkOptions { readonly force?: boolean }
+interface EnsureRuntimeSkillsOptions extends EnsureSkillsSymlinkOptions { readonly state?: SkillsState }
 type PointerScope = 'global' | 'project';
 
 export async function ensureSkillsSymlink(linkPath: string, symlinkTarget: string, label: string, _scope: PointerScope, _options: EnsureSkillsSymlinkOptions = {}): Promise<void> {
@@ -43,7 +44,7 @@ export async function ensureUserAgentsSkillsSymlink(options: EnsureSkillsSymlink
   }
 }
 
-export async function ensureAgentsSkillsSymlink(projectRoot: string, _options: EnsureSkillsSymlinkOptions = {}): Promise<SkillsActivationResult> {
+export async function ensureAgentsSkillsSymlink(projectRoot: string, options: EnsureRuntimeSkillsOptions = {}): Promise<SkillsActivationResult> {
   const skillsRoot = resolveSkillsRoot(projectRoot);
   const violations = await validateSkillsInvariants(skillsRoot);
   if (violations.length > 0) throw new Error(`Skills invariants failed. ${violations.map((v) => `${v.code}: ${v.message}`).join('; ')}`);
@@ -54,7 +55,9 @@ export async function ensureAgentsSkillsSymlink(projectRoot: string, _options: E
     ...(await discoverTierPacks(skillsRoot, 'optional')),
     ...(await discoverTierPacks(skillsRoot, 'user')),
   ];
-  const state = await readSkillsState(skillsRoot);
+  // Callers that are mid-mutation pass the prospective state so activation is
+  // materialized before enabledPacks is persisted (xtrm-e7jzt.1).
+  const state = options.state ?? await readSkillsState(skillsRoot);
   const results = [];
   for (const runtime of SKILLS_RUNTIMES) {
     results.push(await reconcileRuntimeLinks({

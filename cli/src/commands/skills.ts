@@ -287,13 +287,21 @@ function ensureValidPackName(name: string): void {
   }
 }
 
-async function resolveAvailablePackNames(skillsRoot: string): Promise<string[]> {
-  const [optionalPacks, userPacks] = await Promise.all([
-    discoverTierPacks(skillsRoot, 'optional'),
-    discoverRepoPacks(skillsRoot),
-  ]);
+/** Roots that contribute packs to enable/disable resolution: the active scope
+ * plus the global tier. Mirrors collectListState and the materializer so `list`
+ * can never advertise a pack that `enable` rejects (xtrm-e7jzt.1). */
+function resolvePackResolutionRoots(skillsRoot: string): string[] {
+  const roots = [skillsRoot, resolveSkillsRoot(os.homedir())].map(root => path.resolve(root));
+  return [...new Set(roots)];
+}
 
-  const names = [...optionalPacks, ...userPacks].map(pack => pack.name);
+async function resolveAvailablePackNames(skillsRoot: string): Promise<string[]> {
+  const packs = (await Promise.all(resolvePackResolutionRoots(skillsRoot).map(async (root) => [
+    ...(await discoverTierPacks(root, 'optional')),
+    ...(await discoverRepoPacks(root)),
+  ]))).flat();
+
+  const names = packs.map(pack => pack.name);
   return [...new Set(names)].sort((a, b) => a.localeCompare(b));
 }
 
@@ -312,7 +320,9 @@ async function resolveRequestedPacks(
     return [packArg];
   }
 
-  const defaultSkillNames = (await discoverDefaultSkills(skillsRoot)).map(skill => skill.name);
+  const defaultSkillNames = (await Promise.all(
+    resolvePackResolutionRoots(skillsRoot).map(root => discoverDefaultSkills(root)),
+  )).flat().map(skill => skill.name);
   if (defaultSkillNames.includes(packArg) && action === 'disable') {
     throw new Error(`Cannot disable '${packArg}' - it's a default skill, not a pack.`);
   }
@@ -346,6 +356,11 @@ async function mutatePacks(opts: {
 
   const requestedPacks = await resolveRequestedPacks(skillsRoot, packArg, action);
   const beforeState = await readSkillsState(skillsRoot);
+  const nextEnabledPacks: Record<SkillsRuntime, string[]> = {
+    claude: [...beforeState.enabledPacks.claude],
+    pi: [...beforeState.enabledPacks.pi],
+    codex: [...beforeState.enabledPacks.codex],
+  };
 
   for (const runtime of runtimes) {
     const current = new Set(beforeState.enabledPacks[runtime]);
@@ -362,11 +377,19 @@ async function mutatePacks(opts: {
       }
     }
 
-    await setRuntimeEnabledPacks(skillsRoot, runtime, [...current]);
+    nextEnabledPacks[runtime] = [...current];
   }
 
+  // Materialize before persisting: an activation that fails must not leave
+  // state.json claiming a pack is enabled with no links on disk (xtrm-e7jzt.1).
+  const nextState = { ...beforeState, enabledPacks: nextEnabledPacks };
   if (scope === 'local') {
-    await ensureAgentsSkillsSymlink(await findProjectRoot());
+    // Reconcile owns the state write here (enabledPacks + managedLinks).
+    await ensureAgentsSkillsSymlink(await findProjectRoot(), { state: nextState });
+  } else {
+    for (const runtime of runtimes) {
+      await setRuntimeEnabledPacks(skillsRoot, runtime, nextEnabledPacks[runtime]);
+    }
   }
 
   const afterState = await readSkillsState(skillsRoot);
