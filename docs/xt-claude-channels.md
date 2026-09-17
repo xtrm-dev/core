@@ -27,6 +27,43 @@ not the environment of the process that ran `tmux new-session`, so an exported
 `specialist_dispatch` inside the session was refused with
 `work_item_store_unavailable`.
 
+The same flag is added on every Claude launch path: the direct terminal
+launch (CORE-2283), tmux launches, and `xt attach` resume (CORE-2284).
+
+## Substrate MCP environment
+
+The Substrate MCP server accepts only the modern MCP protocol. Claude Code
+opens MCP connections at protocol `2025-11-25` unless both of these are set
+**before** the process starts:
+
+```
+MCP_SDK_GENERATION=v2
+MCP_PROTOCOL_NEGOTIATION=auto
+```
+
+Without them Substrate refuses the connection with `-32022` ("Unsupported
+protocol version: 2025-11-25"). The plugin skill still loads but its tools are
+silently absent, and Claude Code caches the failed connection for about 15
+minutes, so the failure looks intermittent. The substrate plugin's session-start
+hook can only warn ("Substrate MCP precondition unmet"): hooks run after the MCP
+client has already connected.
+
+For that reason the launcher sets both variables on every Claude launch path —
+direct launch, current-pane launch, tmux `new-session -e`, and `xt attach`
+resume. A value you already exported wins over the default. Pi and Codex
+launches are unchanged. Issue: CORE-2290.
+
+Scope and limits:
+
+- The variables switch Claude Code's MCP client for **every** MCP server in the
+  session, not only Substrate.
+- Sessions started with plain `claude` (not through `xt`) do not get them. Set
+  them in `~/.claude/settings.json` under `env`, or export them in your shell,
+  if those sessions need Substrate.
+- They are a workaround for the current Claude Code release. Remove the
+  defaults from `claudeMcpEnv()` in `cli/src/utils/worktree-session.ts` once
+  Claude Code negotiates the modern protocol by default.
+
 The launcher never passes `--dangerously-load-development-channels`. That flag
 prints an interactive confirmation dialog on every launch, which would block
 automated dispatch.
@@ -137,5 +174,12 @@ MCP server "plugin:specialists:specialists": Channel notifications skipped: plug
 
 When the policy file exists but omits `channelsEnabled`, the skip reason is
 `channels not enabled by org policy (set channelsEnabled: true in managed settings)`.
+
+Substrate connected when there is no "Substrate MCP precondition unmet" warning
+at session start and
+`~/.cache/claude-cli-nodejs/<cwd-slug>/mcp-logs-substrate/` logs
+`Successfully connected (transport: stdio)`. A log with
+`Unsupported protocol version: 2025-11-25` and `Connection failed (-32022)`
+means the environment above did not reach the session.
 
 `xt doctor` reports this host's channel-wake state in its advisory Claude-channels section; `specialists doctor --channels` remains the authoritative 8-gate check.
