@@ -143,4 +143,49 @@ describe('skills-runtime-views', () => {
       process.env.HOME = previousHome;
     }
   });
+
+  it('preserves non-skill default-tier entries and keeps them writable through the view', async () => {
+    const tempHome = await createTempDir();
+    const previousHome = process.env.HOME;
+    process.env.HOME = tempHome;
+
+    try {
+      const skillsRoot = path.join(tempHome, '.xtrm', 'skills');
+      const skillDir = path.join(skillsRoot, 'default', 'always-on');
+      await fs.ensureDir(skillDir);
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), '# always-on\n', 'utf8');
+
+      // Claude Desktop-style synced bundle: a container dir with nested skills,
+      // no SKILL.md at its own root, so skill discovery never sees it.
+      const bundle = path.join(skillsRoot, 'default', 'synced', 'bundle-1', 'docs');
+      await fs.ensureDir(bundle);
+      await fs.writeFile(path.join(bundle, 'SKILL.md'), '# docs\n', 'utf8');
+
+      await fs.writeJson(path.join(skillsRoot, 'state.json'), {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+
+      const { materializeGlobalRuntimeViews } = await import('../core/skills-materializer.js');
+      await materializeGlobalRuntimeViews();
+
+      for (const runtime of ['claude', 'pi', 'codex'] as const) {
+        const synced = path.join(skillsRoot, 'active', runtime, 'synced');
+        expect((await fs.lstat(synced)).isSymbolicLink()).toBe(true);
+        expect(await fs.pathExists(path.join(synced, 'bundle-1', 'docs', 'SKILL.md'))).toBe(true);
+      }
+
+      // A write through the user-scope pointer must land in the persistent tier...
+      const throughPointer = path.join(tempHome, '.claude', 'skills', 'synced', 'bundle-1', 'docs', 'new.md');
+      await fs.writeFile(throughPointer, 'payload', 'utf8');
+      expect(await fs.readFile(path.join(skillsRoot, 'default', 'synced', 'bundle-1', 'docs', 'new.md'), 'utf8')).toBe('payload');
+
+      // ...and survive a rebuild, which atomically swaps the generated view.
+      await materializeGlobalRuntimeViews();
+      expect(await fs.readFile(throughPointer, 'utf8')).toBe('payload');
+    } finally {
+      process.env.HOME = previousHome;
+    }
+  });
 });

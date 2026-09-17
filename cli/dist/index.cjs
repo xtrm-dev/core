@@ -55746,6 +55746,8 @@ async function materializeGlobalRuntimeViews(options = {}) {
   const skillsRoot = options.skillsRoot ?? resolveGlobalSkillsRoot();
   const state = options.state ?? await readSkillsState(skillsRoot);
   const runtimes = options.runtimes ?? SKILLS_RUNTIMES;
+  const defaultRoot = resolveDefaultTierRoot(skillsRoot);
+  const defaultEntries = await import_fs_extra12.default.readdir(defaultRoot).catch(() => []);
   const results = [];
   for (const runtime of runtimes) {
     const selected = await selectGlobalRuntimeSkills(runtime, skillsRoot, state);
@@ -55760,6 +55762,11 @@ async function materializeGlobalRuntimeViews(options = {}) {
         if (names.has(skill.runtimeName)) continue;
         names.add(skill.runtimeName);
         await import_fs_extra12.default.symlink(import_node_path12.default.relative(tempRoot, import_node_path12.default.resolve(skill.path)), import_node_path12.default.join(tempRoot, skill.runtimeName));
+      }
+      for (const entryName of defaultEntries) {
+        if (entryName.startsWith(".") || names.has(entryName)) continue;
+        names.add(entryName);
+        await import_fs_extra12.default.symlink(import_node_path12.default.relative(tempRoot, import_node_path12.default.join(defaultRoot, entryName)), import_node_path12.default.join(tempRoot, entryName));
       }
       await atomicSwapDirectory(tempRoot, viewRoot);
       const pointer = await ensureGlobalRuntimePointer(runtime, viewRoot);

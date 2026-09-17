@@ -6,6 +6,7 @@ import {
   type SkillsRuntime,
   SKILLS_RUNTIMES,
   resolveActiveRuntimeRoot,
+  resolveDefaultTierRoot,
   resolveGlobalRuntimePointer,
   resolveGlobalRuntimeViewRoot,
   resolveGlobalSkillsRoot,
@@ -361,6 +362,8 @@ export async function materializeGlobalRuntimeViews(options: {
   const skillsRoot = options.skillsRoot ?? resolveGlobalSkillsRoot();
   const state = options.state ?? await readSkillsState(skillsRoot);
   const runtimes = options.runtimes ?? SKILLS_RUNTIMES;
+  const defaultRoot = resolveDefaultTierRoot(skillsRoot);
+  const defaultEntries = await fs.readdir(defaultRoot).catch(() => [] as string[]);
   const results: GlobalRuntimeViewResult[] = [];
 
   for (const runtime of runtimes) {
@@ -380,6 +383,16 @@ export async function materializeGlobalRuntimeViews(options: {
         // and relative links stay valid inside ~/.xtrm/skills, which also keeps
         // the global skills backup archive validation happy (xtrm-e7jzt.2).
         await fs.symlink(path.relative(tempRoot, path.resolve(skill.path)), path.join(tempRoot, skill.runtimeName));
+      }
+      // The legacy pointer exposed the entire default tier, not just discovered
+      // skills: Claude Desktop's synced/ bundles, README, skills-lock. Mirror the
+      // remaining entries as symlinks so nothing that used to be visible
+      // disappears, and so writers keep landing in the persistent default tier
+      // instead of inside this generated view (xtrm-e7jzt.3).
+      for (const entryName of defaultEntries) {
+        if (entryName.startsWith('.') || names.has(entryName)) continue;
+        names.add(entryName);
+        await fs.symlink(path.relative(tempRoot, path.join(defaultRoot, entryName)), path.join(tempRoot, entryName));
       }
       await atomicSwapDirectory(tempRoot, viewRoot);
       const pointer = await ensureGlobalRuntimePointer(runtime, viewRoot);
