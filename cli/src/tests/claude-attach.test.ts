@@ -78,7 +78,11 @@ describe('xt attach Claude resume', () => {
         expect(mocked.spawnSync).toHaveBeenCalledWith(
             'claude',
             ['--continue', '--dangerously-skip-permissions', '--channels', 'plugin:specialists@xtrm'],
-            { cwd: worktree, stdio: 'inherit' },
+            expect.objectContaining({
+                cwd: worktree,
+                stdio: 'inherit',
+                env: expect.objectContaining({ MCP_SDK_GENERATION: 'v2', MCP_PROTOCOL_NEGOTIATION: 'auto' }),
+            }),
         );
         expect(claudeResumeArgs()).toContain('--channels');
     });
@@ -89,7 +93,11 @@ describe('xt attach Claude resume', () => {
         expect(mocked.spawnSync).toHaveBeenCalledWith(
             'claude',
             ['--continue', '--dangerously-skip-permissions'],
-            { cwd: worktree, stdio: 'inherit' },
+            expect.objectContaining({
+                cwd: worktree,
+                stdio: 'inherit',
+                env: expect.objectContaining({ MCP_SDK_GENERATION: 'v2', MCP_PROTOCOL_NEGOTIATION: 'auto' }),
+            }),
         );
         expect(claudeResumeArgs()).not.toContain('--channels');
     });

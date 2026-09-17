@@ -1879,6 +1879,39 @@ function pushSkillArgs(runtimeArgs: string[], skillPaths: string[]): void {
 export const SPECIALISTS_CHANNEL_ENTRY = 'plugin:specialists@xtrm';
 
 /**
+ * MCP client settings a Claude launch needs so the Substrate MCP server connects.
+ * Substrate accepts only the modern MCP protocol; Claude Code opens at
+ * 2025-11-25 unless these are set BEFORE the process starts, and then Substrate
+ * refuses with -32022 and its tools are silently absent. A plugin hook runs after
+ * the MCP client has connected, so only the launcher can set them. CORE-2290.
+ *
+ * Remove once Claude Code negotiates the modern protocol by default (specialists
+ * docs/claude-native-integration-spec-2026-09-09.md §R: verification controls for
+ * the current release, not permanent config).
+ */
+const CLAUDE_MCP_ENV_DEFAULTS: Readonly<Record<string, string>> = {
+    MCP_SDK_GENERATION: 'v2',
+    MCP_PROTOCOL_NEGOTIATION: 'auto',
+};
+
+/**
+ * Env to add to a runtime launch. Empty for non-claude runtimes. A value the
+ * operator already exported wins over the default, and it is returned explicitly
+ * so tmux `new-session -e` (which does not inherit this process's env) carries it.
+ */
+export function claudeMcpEnv(
+    runtime: string,
+    env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+    if (runtime !== 'claude') return {};
+    const out: Record<string, string> = {};
+    for (const [key, fallback] of Object.entries(CLAUDE_MCP_ENV_DEFAULTS)) {
+        out[key] = env[key]?.trim() || fallback;
+    }
+    return out;
+}
+
+/**
  * True when the specialists plugin is installed for this user.
  *
  * Fail-soft by construction: a missing file, unreadable file, malformed JSON,
@@ -3117,7 +3150,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...process.env, ...directSessionEnv },
+        env: { ...process.env, ...claudeMcpEnv(runtime), ...directSessionEnv },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3312,7 +3345,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
-                env: { ...process.env, ...agentEnv, ...sessionEnv },
+                env: { ...process.env, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv },
             });
             process.exit(runtimeResult.status ?? 0);
         }
@@ -3323,7 +3356,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
             stdio: 'inherit',
-            env: { ...process.env, ...agentEnv, ...sessionEnv },
+            env: { ...process.env, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv },
         });
         const runtimeExit = new Promise<number>((resolve) => {
             runtimeProcess.once('error', () => resolve(1));
@@ -3392,7 +3425,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // (plus the role payload, which is handed over after creation too).
     const newSessionIdentityEnv = buildSessionIdentityEnv({ sessionName: plan.sessionName });
     const envArgs: string[] = [];
-    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv })) {
+    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime) })) {
         envArgs.push('-e', `${k}=${v}`);
     }
 

@@ -58313,6 +58313,18 @@ function pushSkillArgs(runtimeArgs, skillPaths) {
   }
 }
 var SPECIALISTS_CHANNEL_ENTRY = "plugin:specialists@xtrm";
+var CLAUDE_MCP_ENV_DEFAULTS = {
+  MCP_SDK_GENERATION: "v2",
+  MCP_PROTOCOL_NEGOTIATION: "auto"
+};
+function claudeMcpEnv(runtime, env3 = process.env) {
+  if (runtime !== "claude") return {};
+  const out = {};
+  for (const [key, fallback] of Object.entries(CLAUDE_MCP_ENV_DEFAULTS)) {
+    out[key] = env3[key]?.trim() || fallback;
+  }
+  return out;
+}
 function specialistsPluginInstalled(homeDir = import_node_os7.default.homedir()) {
   try {
     const manifest = import_node_path14.default.join(homeDir, ".claude", "plugins", "installed_plugins.json");
@@ -59065,7 +59077,7 @@ async function launchWorktreeSession(opts) {
   const launchResult = (0, import_node_child_process2.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...process.env, ...directSessionEnv }
+    env: { ...process.env, ...claudeMcpEnv(runtime), ...directSessionEnv }
   });
   process.exit(launchResult.status ?? 0);
 }
@@ -59205,7 +59217,7 @@ async function launchTmuxSession(args) {
       const runtimeResult = (0, import_node_child_process2.spawnSync)(runtimeExecutable, plan.runtimeArgs, {
         cwd: worktreePath,
         stdio: "inherit",
-        env: { ...process.env, ...agentEnv, ...sessionEnv }
+        env: { ...process.env, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv }
       });
       process.exit(runtimeResult.status ?? 0);
     }
@@ -59213,7 +59225,7 @@ async function launchTmuxSession(args) {
     const runtimeProcess = (0, import_node_child_process2.spawn)(runtimeExecutable, plan.runtimeArgs, {
       cwd: worktreePath,
       stdio: "inherit",
-      env: { ...process.env, ...agentEnv, ...sessionEnv }
+      env: { ...process.env, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv }
     });
     const runtimeExit = new Promise((resolve6) => {
       runtimeProcess.once("error", () => resolve6(1));
@@ -59267,7 +59279,7 @@ async function launchTmuxSession(args) {
   }
   const newSessionIdentityEnv = buildSessionIdentityEnv({ sessionName: plan.sessionName });
   const envArgs = [];
-  for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv })) {
+  for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime) })) {
     envArgs.push("-e", `${k}=${v}`);
   }
   const substrateDir = process.env.XTRM_SUBSTRATE_DIR;
@@ -69085,10 +69097,7 @@ function createAttachCommand() {
         console.log(kleur_default.dim(`  warning: pi launch preflight failed (${message})`));
       }
     }
-    const result = (0, import_node_child_process16.spawnSync)(runtime, resumeArgs, {
-      cwd: target.path,
-      stdio: "inherit"
-    });
+    const result = (0, import_node_child_process16.spawnSync)(runtime, resumeArgs, runtime === "claude" ? { cwd: target.path, stdio: "inherit", env: { ...process.env, ...claudeMcpEnv(runtime) } } : { cwd: target.path, stdio: "inherit" });
     process.exit(result.status ?? 0);
   });
 }
