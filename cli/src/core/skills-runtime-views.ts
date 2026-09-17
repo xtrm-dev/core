@@ -1,13 +1,21 @@
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveDefaultTierRoot, resolveGlobalSkillsRoot, resolveSkillsRoot } from './skills-layout.js';
+import {
+  SKILLS_RUNTIMES,
+  resolveGlobalRuntimeViewRoot,
+  resolveGlobalSkillsRoot,
+  resolveSkillsRoot,
+  resolveStateFilePath,
+} from './skills-layout.js';
 import { readSkillsState } from './skills-state.js';
+import { selectGlobalRuntimeSkills } from './skills-materializer.js';
 
 export interface RuntimeViewCheckResult {
   readonly activeReady: boolean;
   readonly globalClaudePointerReady: boolean;
   readonly globalPiPointerReady: boolean;
+  readonly globalActivationReady: boolean;
   readonly projectClaudePointerState: 'ready' | 'skipped' | 'missing';
   readonly projectPiPointerState: 'ready' | 'skipped' | 'missing';
   readonly projectCodexPointerState: 'ready' | 'skipped' | 'missing';
@@ -19,13 +27,53 @@ export interface RuntimeViewCheckResult {
 type RuntimeScope = 'global' | 'project' | 'both';
 
 export function getRuntimePointerTarget(options: { scope: 'global' | 'project' }): string {
-  return options.scope === 'global' ? resolveDefaultTierRoot(resolveGlobalSkillsRoot()) : 'real .claude/skills, .pi/skills, and .agents/skills directories';
+  return options.scope === 'global'
+    ? path.join(resolveGlobalSkillsRoot(), 'active', '<runtime>')
+    : 'real .claude/skills, .pi/skills, and .agents/skills directories';
 }
 
 async function pointsTo(link: string, target: string): Promise<boolean> {
   const stat = await fs.lstat(link).catch(() => null);
   if (!stat?.isSymbolicLink()) return false;
   return path.resolve(path.dirname(link), await fs.readlink(link)) === path.resolve(target) && await fs.pathExists(target);
+}
+
+function isInside(child: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/** A user-scope runtime entry point is ready when it is an xtrm-managed symlink
+ * whose target exists inside the global skills root (legacy default-tier
+ * pointer or a generated per-runtime view) (xtrm-e7jzt.2). */
+async function pointsIntoGlobalSkillsRoot(link: string): Promise<boolean> {
+  const stat = await fs.lstat(link).catch(() => null);
+  if (!stat?.isSymbolicLink()) return false;
+  const resolved = path.resolve(path.dirname(link), await fs.readlink(link));
+  return isInside(resolved, resolveGlobalSkillsRoot()) && await fs.pathExists(resolved);
+}
+
+async function globalActivationReady(): Promise<boolean> {
+  const skillsRoot = resolveGlobalSkillsRoot();
+  if (!await fs.pathExists(resolveStateFilePath(skillsRoot))) return true;
+
+  try {
+    const state = await readSkillsState(skillsRoot);
+    for (const runtime of SKILLS_RUNTIMES) {
+      const expected = await selectGlobalRuntimeSkills(runtime, skillsRoot, state);
+      const viewRoot = resolveGlobalRuntimeViewRoot(runtime);
+      for (const skill of expected) {
+        const entryPath = path.join(viewRoot, skill.runtimeName);
+        const stat = await fs.lstat(entryPath).catch(() => null);
+        if (!stat?.isSymbolicLink()) return false;
+        const resolved = path.resolve(path.dirname(entryPath), await fs.readlink(entryPath));
+        if (resolved !== path.resolve(skill.path) || !await fs.pathExists(resolved)) return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function isRealDirectory(dir: string): Promise<boolean> {
@@ -48,9 +96,9 @@ async function managedEntries(projectRoot: string, runtime: 'claude' | 'pi' | 'c
 }
 
 export async function checkRuntimeSkillsViews(projectRoot: string): Promise<RuntimeViewCheckResult> {
-  const globalDefault = resolveDefaultTierRoot(resolveGlobalSkillsRoot());
-  const globalClaudePointerReady = await pointsTo(path.join(os.homedir(), '.claude', 'skills'), globalDefault);
-  const globalPiPointerReady = await pointsTo(path.join(os.homedir(), '.pi', 'agent', 'skills'), globalDefault);
+  const globalClaudePointerReady = await pointsIntoGlobalSkillsRoot(path.join(os.homedir(), '.claude', 'skills'));
+  const globalPiPointerReady = await pointsIntoGlobalSkillsRoot(path.join(os.homedir(), '.pi', 'agent', 'skills'));
+  const globalActivation = await globalActivationReady();
   const projectClaudeSkillsReady = await isRealDirectory(path.join(projectRoot, '.claude', 'skills')) && await managedEntries(projectRoot, 'claude');
   const projectPiSkillsReady = await isRealDirectory(path.join(projectRoot, '.pi', 'skills')) && await managedEntries(projectRoot, 'pi');
   const projectCodexSkillsReady = await isRealDirectory(path.join(projectRoot, '.agents', 'skills')) && await managedEntries(projectRoot, 'codex');
@@ -61,6 +109,7 @@ export async function checkRuntimeSkillsViews(projectRoot: string): Promise<Runt
     activeReady: projectClaudeSkillsReady && projectPiSkillsReady && projectCodexSkillsReady,
     globalClaudePointerReady,
     globalPiPointerReady,
+    globalActivationReady: globalActivation,
     projectClaudePointerState,
     projectPiPointerState,
     projectCodexPointerState,

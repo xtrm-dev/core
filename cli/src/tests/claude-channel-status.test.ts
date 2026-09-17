@@ -102,7 +102,7 @@ beforeEach(() => {
     delete process.env[key];
   }
   checkDriftMock.mockResolvedValue({ missing: [], upToDate: [], drifted: [] });
-  checkRuntimeSkillsViewsMock.mockResolvedValue({ activeReady: true, globalClaudePointerReady: true, globalPiPointerReady: true, projectClaudePointerState: 'ready', projectPiPointerState: 'ready', projectCodexPointerState: 'ready', hasDeprecatedAgentsSkillsPath: false });
+  checkRuntimeSkillsViewsMock.mockResolvedValue({ activeReady: true, globalClaudePointerReady: true, globalPiPointerReady: true, globalActivationReady: true, projectClaudePointerState: 'ready', projectPiPointerState: 'ready', projectCodexPointerState: 'ready', hasDeprecatedAgentsSkillsPath: false });
   discoverDefaultSkillsMock.mockResolvedValue([]);
   getXtManagedPiPackageDoctorReportMock.mockReset();
   getXtManagedPiPackageDoctorReportMock.mockResolvedValue({ issues: [], missing: [], outdated: [], ok: [], hasIssues: false });

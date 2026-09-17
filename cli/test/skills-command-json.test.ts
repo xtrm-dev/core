@@ -133,7 +133,10 @@ describe('xt skills JSON CLI integration', () => {
     expect(afterEnable.enabledPacks.pi).toEqual(['alpha-pack']);
     expect(afterEnable.enabledPacks.codex).toEqual(['alpha-pack']);
 
-    expect(fs.existsSync(path.join(skillsRoot, 'active'))).toBe(false);
+    const globalView = (runtime: string): string => path.join(skillsRoot, 'active', runtime);
+    expect(fs.existsSync(path.join(globalView('claude'), 'alpha-skill'))).toBe(true);
+    expect(fs.existsSync(path.join(globalView('pi'), 'alpha-skill'))).toBe(true);
+    expect(fs.existsSync(path.join(globalView('codex'), 'alpha-skill'))).toBe(true);
 
     const disablePiOnly = run(['skills', 'disable', 'alpha-pack', '--global', '--pi', '--json'], {
       env: { HOME: tmpHome },
@@ -147,7 +150,11 @@ describe('xt skills JSON CLI integration', () => {
     expect(afterDisablePiOnly.enabledPacks.pi).toEqual([]);
     expect(afterDisablePiOnly.enabledPacks.codex).toEqual(['alpha-pack']);
 
-    expect(fs.existsSync(path.join(skillsRoot, 'active'))).toBe(false);
+    // Per-runtime views must diverge: Pi drops the pack, Claude/Codex keep it.
+    expect(fs.existsSync(path.join(globalView('pi'), 'alpha-skill'))).toBe(false);
+    expect(fs.existsSync(path.join(globalView('claude'), 'alpha-skill'))).toBe(true);
+    expect(fs.existsSync(path.join(globalView('codex'), 'alpha-skill'))).toBe(true);
+    expect(fs.existsSync(path.join(globalView('pi'), 'always-on', 'SKILL.md'))).toBe(true);
   });
 
   it('disable all clears all runtimes atomically', () => {
@@ -187,7 +194,12 @@ describe('xt skills JSON CLI integration', () => {
     };
     expect(persistedState.enabledPacks).toEqual({ claude: [], pi: [], codex: [] });
 
-    expect(fs.existsSync(path.join(skillsRoot, 'active'))).toBe(false);
+    for (const runtime of ['claude', 'pi', 'codex']) {
+      const viewRoot = path.join(skillsRoot, 'active', runtime);
+      expect(fs.existsSync(path.join(viewRoot, 'always-on', 'SKILL.md'))).toBe(true);
+      expect(fs.existsSync(path.join(viewRoot, 'alpha-skill'))).toBe(false);
+      expect(fs.existsSync(path.join(viewRoot, 'beta-skill'))).toBe(false);
+    }
   });
 
   it('uses filesystem-authoritative skills from flat packs during enable', () => {
@@ -373,6 +385,94 @@ describe('xt skills JSON CLI integration', () => {
     }
   });
 
+  it('enables a globally-shipped pack with --local when the repo has no optional dir', () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-skills-shipped-pack-'));
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, '.git'), { recursive: true });
+
+      const homeSkillsRoot = path.join(tmpHome, '.xtrm', 'skills');
+      createSkill(path.join(homeSkillsRoot, 'default'), 'always-on');
+      createPack(path.join(homeSkillsRoot, 'optional'), 'shipped-pack', ['shipped-skill']);
+      writeJson(path.join(homeSkillsRoot, 'state.json'), {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+
+      const projectSkillsRoot = path.join(projectRoot, '.xtrm', 'skills');
+      writeJson(path.join(projectSkillsRoot, 'state.json'), {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+
+      const enabled = run(['skills', 'enable', 'shipped-pack', '--local', '--json'], {
+        cwd: projectRoot,
+        env: { HOME: tmpHome },
+      });
+      expect(enabled.status).toBe(0);
+
+      // The repo never grows an optional/ dir; the payload comes from global scope.
+      expect(fs.existsSync(path.join(projectSkillsRoot, 'optional'))).toBe(false);
+
+      for (const runtimeDir of ['.claude/skills', '.pi/skills', '.agents/skills']) {
+        const linkPath = path.join(projectRoot, runtimeDir, 'shipped-skill');
+        expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
+        expect(fs.realpathSync(linkPath)).toBe(
+          fs.realpathSync(path.join(homeSkillsRoot, 'optional', 'shipped-pack', 'shipped-skill')),
+        );
+      }
+
+      const state = JSON.parse(fs.readFileSync(path.join(projectSkillsRoot, 'state.json'), 'utf8')) as {
+        enabledPacks: Record<string, string[]>;
+      };
+      expect(state.enabledPacks.claude).toEqual(['shipped-pack']);
+      expect(state.enabledPacks.pi).toEqual(['shipped-pack']);
+      expect(state.enabledPacks.codex).toEqual(['shipped-pack']);
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves local state unchanged when activation fails', () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-skills-fail-atomic-'));
+
+    try {
+      fs.mkdirSync(path.join(projectRoot, '.git'), { recursive: true });
+
+      const homeSkillsRoot = path.join(tmpHome, '.xtrm', 'skills');
+      createSkill(path.join(homeSkillsRoot, 'default'), 'always-on');
+      writeJson(path.join(homeSkillsRoot, 'state.json'), {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+
+      const projectSkillsRoot = path.join(projectRoot, '.xtrm', 'skills');
+      createPack(projectSkillsRoot, 'collide-pack', ['always-on']);
+      const statePath = path.join(projectSkillsRoot, 'state.json');
+      writeJson(statePath, {
+        schemaVersion: '2',
+        enabledPacks: { claude: [], pi: [], codex: [] },
+        managedLinks: { claude: {}, pi: {}, codex: {} },
+      });
+      const before = fs.readFileSync(statePath, 'utf8');
+
+      const enabled = run(['skills', 'enable', 'collide-pack', '--local', '--json'], {
+        cwd: projectRoot,
+        env: { HOME: tmpHome },
+      });
+
+      expect(enabled.status).toBe(1);
+      expect(enabled.stderr).toMatch(/collides with global default/i);
+      expect(fs.readFileSync(statePath, 'utf8')).toBe(before);
+      expect(fs.existsSync(path.join(projectRoot, '.claude', 'skills', 'always-on'))).toBe(false);
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it('disable --local on globally-enabled pack gives helpful error', () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-skills-disable-local-'));
 
@@ -400,5 +500,89 @@ describe('xt skills JSON CLI integration', () => {
     } finally {
       fs.rmSync(projectRoot, { recursive: true, force: true });
     }
+  });
+
+  it('materializes user-scope runtime views on global enable and adopts legacy pointers', () => {
+    const homeSkillsRoot = path.join(tmpHome, '.xtrm', 'skills');
+    createSkill(path.join(homeSkillsRoot, 'default'), 'always-on');
+    createPack(path.join(homeSkillsRoot, 'optional'), 'shipped-pack', ['shipped-skill']);
+    const statePath = path.join(homeSkillsRoot, 'state.json');
+    writeJson(statePath, {
+      schemaVersion: '2',
+      enabledPacks: { claude: [], pi: [], codex: [] },
+      managedLinks: { claude: {}, pi: {}, codex: {} },
+    });
+
+    // Legacy install: user-scope pointers aimed straight at the default tier.
+    const legacyTarget = path.join(homeSkillsRoot, 'default');
+    fs.mkdirSync(path.join(tmpHome, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(tmpHome, '.pi', 'agent'), { recursive: true });
+    fs.symlinkSync(legacyTarget, path.join(tmpHome, '.claude', 'skills'));
+    fs.symlinkSync(legacyTarget, path.join(tmpHome, '.pi', 'agent', 'skills'));
+
+    const enabled = run(['skills', 'enable', 'shipped-pack', '--global', '--json'], { env: { HOME: tmpHome } });
+    expect(enabled.status).toBe(0);
+
+    for (const [runtime, pointer] of [
+      ['claude', path.join(tmpHome, '.claude', 'skills')],
+      ['pi', path.join(tmpHome, '.pi', 'agent', 'skills')],
+      ['codex', path.join(tmpHome, '.agents', 'skills')],
+    ] as const) {
+      expect(fs.readlinkSync(pointer)).toBe(path.join(homeSkillsRoot, 'active', runtime));
+      expect(fs.existsSync(path.join(pointer, 'always-on', 'SKILL.md'))).toBe(true);
+      expect(fs.existsSync(path.join(pointer, 'shipped-skill', 'SKILL.md'))).toBe(true);
+    }
+
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { enabledPacks: Record<string, string[]> };
+    expect(state.enabledPacks.claude).toEqual(['shipped-pack']);
+    expect(state.enabledPacks.pi).toEqual(['shipped-pack']);
+    expect(state.enabledPacks.codex).toEqual(['shipped-pack']);
+  });
+
+  it('removes only the disabled pack from global views', () => {
+    const homeSkillsRoot = path.join(tmpHome, '.xtrm', 'skills');
+    createSkill(path.join(homeSkillsRoot, 'default'), 'always-on');
+    createPack(path.join(homeSkillsRoot, 'optional'), 'shipped-pack', ['shipped-skill']);
+    const statePath = path.join(homeSkillsRoot, 'state.json');
+    writeJson(statePath, {
+      schemaVersion: '2',
+      enabledPacks: { claude: [], pi: [], codex: [] },
+      managedLinks: { claude: {}, pi: {}, codex: {} },
+    });
+
+    expect(run(['skills', 'enable', 'shipped-pack', '--global', '--json'], { env: { HOME: tmpHome } }).status).toBe(0);
+    const viewRoot = path.join(homeSkillsRoot, 'active', 'claude');
+    expect(fs.existsSync(path.join(viewRoot, 'shipped-skill'))).toBe(true);
+
+    const disabled = run(['skills', 'disable', 'shipped-pack', '--global', '--json'], { env: { HOME: tmpHome } });
+    expect(disabled.status).toBe(0);
+    expect(fs.existsSync(path.join(viewRoot, 'shipped-skill'))).toBe(false);
+    expect(fs.existsSync(path.join(viewRoot, 'always-on', 'SKILL.md'))).toBe(true);
+
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { enabledPacks: Record<string, string[]> };
+    expect(state.enabledPacks.claude).toEqual([]);
+    expect(state.enabledPacks.pi).toEqual([]);
+    expect(state.enabledPacks.codex).toEqual([]);
+  });
+
+  it('leaves global state unchanged when view activation fails', () => {
+    const homeSkillsRoot = path.join(tmpHome, '.xtrm', 'skills');
+    createSkill(path.join(homeSkillsRoot, 'default'), 'always-on');
+    createPack(path.join(homeSkillsRoot, 'optional'), 'shipped-pack', ['shipped-skill']);
+    const statePath = path.join(homeSkillsRoot, 'state.json');
+    writeJson(statePath, {
+      schemaVersion: '2',
+      enabledPacks: { claude: [], pi: [], codex: [] },
+      managedLinks: { claude: {}, pi: {}, codex: {} },
+    });
+    const before = fs.readFileSync(statePath, 'utf8');
+
+    // Foreign real directory at the user-scope entry point must fail closed.
+    fs.mkdirSync(path.join(tmpHome, '.claude', 'skills'), { recursive: true });
+
+    const enabled = run(['skills', 'enable', 'shipped-pack', '--global', '--json'], { env: { HOME: tmpHome } });
+    expect(enabled.status).toBe(1);
+    expect(enabled.stderr).toMatch(/Refusing to replace existing ~\/\.claude\/skills/);
+    expect(fs.readFileSync(statePath, 'utf8')).toBe(before);
   });
 });

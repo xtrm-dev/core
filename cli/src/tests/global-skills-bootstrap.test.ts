@@ -71,7 +71,11 @@ describe('global-skills-bootstrap', () => {
 
     const first = await ensureGlobalSkillsBootstrapped(pkgRoot);
     const activeRoot = path.join(fakeHome, '.xtrm', 'skills', 'active');
-    expect(await fs.pathExists(activeRoot)).toBe(false);
+    // Bootstrap composes the per-runtime user-scope views from the payload and
+    // the (currently empty) enabled-pack state (xtrm-e7jzt.2).
+    for (const runtime of ['claude', 'pi', 'codex']) {
+      expect(await fs.pathExists(path.join(activeRoot, runtime, 'default-skill', 'SKILL.md'))).toBe(true);
+    }
 
     await fs.ensureDir(activeRoot);
     await fs.writeFile(path.join(activeRoot, 'preserved.txt'), 'preserved', 'utf8');
@@ -129,7 +133,9 @@ describe('global-skills-bootstrap', () => {
     await fs.writeJson(path.join(pkgRoot, 'package.json'), { version: '10.0.0' });
     await expect(ensureGlobalSkillsBootstrapped(pkgRoot)).resolves.toEqual({ installedVersion: '10.0.0', changed: true });
     expect(await fs.pathExists(path.join(fakeHome, '.xtrm', 'skills', 'default', 'default-skill', 'SKILL.md'))).toBe(true);
-    expect(await fs.pathExists(activeRoot)).toBe(false);
+    // The stale ad-hoc entry at the active/ root is gone; the generated views remain.
+    expect(await fs.pathExists(path.join(activeRoot, 'default-skill'))).toBe(false);
+    expect(await fs.pathExists(path.join(activeRoot, 'claude', 'default-skill', 'SKILL.md'))).toBe(true);
   });
 
 });

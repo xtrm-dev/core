@@ -897,7 +897,7 @@ describe('installFromRegistry', () => {
 describe('ensureUserAgentsSkillsSymlink', () => {
   const itIfSymlinkSupported = process.platform === 'win32' ? it.skip : it;
 
-  itIfSymlinkSupported('wires home runtime pointers to global default skills', async () => {
+  itIfSymlinkSupported('wires home runtime pointers to the composed global per-runtime views', async () => {
     const tempHome = await createTempDir();
     const previousHome = process.env.HOME;
     process.env.HOME = tempHome;
@@ -908,8 +908,14 @@ describe('ensureUserAgentsSkillsSymlink', () => {
 
       await ensureUserAgentsSkillsSymlink();
 
-      expect(await fs.readlink(path.join(tempHome, '.claude', 'skills'))).toBe(globalDefaultRoot);
-      expect(await fs.readlink(path.join(tempHome, '.pi', 'agent', 'skills'))).toBe(globalDefaultRoot);
+      expect(await fs.readlink(path.join(tempHome, '.claude', 'skills'))).toBe(
+        path.join(tempHome, '.xtrm', 'skills', 'active', 'claude'),
+      );
+      expect(await fs.readlink(path.join(tempHome, '.pi', 'agent', 'skills'))).toBe(
+        path.join(tempHome, '.xtrm', 'skills', 'active', 'pi'),
+      );
+      // Default skills are composed into each view, not read through the pointer.
+      expect(await fs.pathExists(path.join(tempHome, '.claude', 'skills', 'alpha', 'SKILL.md'))).toBe(true);
     } finally {
       process.env.HOME = previousHome;
     }

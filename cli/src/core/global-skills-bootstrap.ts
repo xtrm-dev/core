@@ -5,7 +5,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 import { assertStagedTreeSafe, extractValidatedBackup, inspectBackupArchive } from './backup-archive.js';
 import { resolveGlobalSkillsRoot, resolveStateFilePath, SKILLS_STATE_SCHEMA_VERSION } from './skills-layout.js';
-import { atomicSwapDirectory } from './skills-materializer.js';
+import { atomicSwapDirectory, materializeGlobalRuntimeViews } from './skills-materializer.js';
 
 import {
   INSTALLER_MANIFEST_FILENAME,
@@ -251,6 +251,11 @@ export async function ensureGlobalSkillsBootstrapped(pkgRoot: string, opts: Boot
       installedAt: new Date().toISOString(),
     }, { spaces: 2 });
     await fs.appendFile(statePath, '\n');
+
+    // Rebuild the user-scope runtime views from the just-written state. The
+    // payload above may have changed and `active/` was removed, so pointers
+    // would otherwise dangle (xtrm-e7jzt.2).
+    await materializeGlobalRuntimeViews();
 
     await appendLog({
       timestamp: new Date().toISOString(),

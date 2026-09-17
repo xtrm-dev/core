@@ -272,6 +272,7 @@ function formatRuntimeView(check: RuntimeViewCheckResult): string {
     `activeReady=${check.activeReady}`,
     `globalClaudePointerReady=${check.globalClaudePointerReady}`,
     `globalPiPointerReady=${check.globalPiPointerReady}`,
+    `globalActivationReady=${check.globalActivationReady}`,
     `projectClaudePointerState=${check.projectClaudePointerState}`,
     `projectPiPointerState=${check.projectPiPointerState}`,
     `projectCodexPointerState=${check.projectCodexPointerState}`,
@@ -292,6 +293,7 @@ async function buildCatBJson(registry: RegistryManifest, cwd: string, drift: Dri
     !runtimeView.activeReady
     || !runtimeView.globalClaudePointerReady
     || !runtimeView.globalPiPointerReady
+    || !runtimeView.globalActivationReady
     || runtimeView.projectClaudePointerState === 'missing'
     || runtimeView.projectPiPointerState === 'missing'
     || runtimeView.projectCodexPointerState === 'missing'
@@ -325,6 +327,7 @@ function renderCatB(report: CatBJson): void {
   section('Cat B — Runtime view');
   console.log(`  ${formatRuntimeView(report.runtimeView)}`);
   console.log(`  ${report.runtimeView.globalClaudePointerReady && report.runtimeView.globalPiPointerReady ? kleur.green('✓') : kleur.yellow('○')} Global skills pointer: ${report.runtimeView.globalClaudePointerReady && report.runtimeView.globalPiPointerReady ? 'ok' : 'missing'}`);
+  console.log(`  ${report.runtimeView.globalActivationReady ? kleur.green('✓') : kleur.yellow('○')} Global pack activation: ${report.runtimeView.globalActivationReady ? 'materialized' : 'enabled packs missing from runtime views'}`);
   const projectPointerState = report.runtimeView.projectClaudePointerState === 'missing'
     || report.runtimeView.projectPiPointerState === 'missing'
     || report.runtimeView.projectCodexPointerState === 'missing'
@@ -376,6 +379,7 @@ function hasCatBIssues(report: CatBJson): boolean {
     || !report.runtimeView.activeReady
     || !report.runtimeView.globalClaudePointerReady
     || !report.runtimeView.globalPiPointerReady
+    || !report.runtimeView.globalActivationReady
     || report.runtimeView.projectClaudePointerState === 'missing'
     || report.runtimeView.projectPiPointerState === 'missing'
     || report.duplicates.length > 0;
