@@ -1,0 +1,317 @@
+{
+  "model": "jev-latest",
+  "cases": 8,
+  "errors": 0,
+  "agreement": 0.875,
+  "escalation_rate": 0.25,
+  "false_rewrite_rate": 0.0,
+  "total_input_tokens": 8412,
+  "total_output_tokens": 2533,
+  "total_latency_s": 2.82,
+  "rows": [
+    {
+      "id": "obvious-active-wrong-authority",
+      "expected": "ACTIVE_WRONG_AUTHORITY",
+      "path": "docs/legacy-beads-workflow.md",
+      "classification": "ACTIVE_WRONG_AUTHORITY",
+      "probabilities": {
+        "DEAD_ZERO_CONSUMER": 0.0,
+        "MIGRATION_INPUT": 0.0,
+        "UNKNOWN_REQUIRES_REVIEW": 0.0,
+        "INERT_PORTING_SOURCE": 0.0,
+        "ACTIVE_COMPATIBILITY": 0.0,
+        "GENERATED_COPY": 0.0,
+        "ACTIVE_WRONG_AUTHORITY": 1.0,
+        "HISTORICAL_RECORD": 0.0
+      },
+      "confidence": 1.0,
+      "nouls": {
+        "active_current_authority": 0.65,
+        "teaches_beads_as_current_authority": 0.81,
+        "semantic_rewrite_required": 0.93,
+        "active_runtime_dependency": 0.06,
+        "migration_evidence": 0.54,
+        "historical_only": 0.14,
+        "generated_copy": 0.06,
+        "likely_zero_consumer": 0.24,
+        "requires_human_review": 0.49,
+        "contradicts_current_substrate_doctrine": 0.81
+      },
+      "recommendation": "SEMANTIC_REWRITE",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1061,
+        "output_tokens": 318
+      },
+      "latency_s": 0.69,
+      "agree": true,
+      "error": null
+    },
+    {
+      "id": "obvious-historical-record",
+      "expected": "HISTORICAL_RECORD",
+      "path": "docs/adr/adr-0042-beads-backend.md",
+      "classification": "HISTORICAL_RECORD",
+      "probabilities": {
+        "DEAD_ZERO_CONSUMER": 0.01,
+        "HISTORICAL_RECORD": 0.99,
+        "UNKNOWN_REQUIRES_REVIEW": 0.0,
+        "ACTIVE_WRONG_AUTHORITY": 0.0,
+        "ACTIVE_COMPATIBILITY": 0.0,
+        "INERT_PORTING_SOURCE": 0.0,
+        "MIGRATION_INPUT": 0.0,
+        "GENERATED_COPY": 0.0
+      },
+      "confidence": 0.99,
+      "nouls": {
+        "active_current_authority": 0.04,
+        "teaches_beads_as_current_authority": 0.03,
+        "semantic_rewrite_required": 0.76,
+        "active_runtime_dependency": 0.06,
+        "migration_evidence": 0.53,
+        "historical_only": 0.93,
+        "generated_copy": 0.1,
+        "likely_zero_consumer": 0.86,
+        "requires_human_review": 0.23,
+        "contradicts_current_substrate_doctrine": 0.49
+      },
+      "recommendation": "PRESERVE",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1043,
+        "output_tokens": 316
+      },
+      "latency_s": 0.39,
+      "agree": true,
+      "error": null
+    },
+    {
+      "id": "migration-input",
+      "expected": "MIGRATION_INPUT",
+      "path": ".beads/issues.jsonl",
+      "classification": "MIGRATION_INPUT",
+      "probabilities": {
+        "ACTIVE_WRONG_AUTHORITY": 0.0,
+        "ACTIVE_COMPATIBILITY": 0.02,
+        "DEAD_ZERO_CONSUMER": 0.0,
+        "HISTORICAL_RECORD": 0.0,
+        "UNKNOWN_REQUIRES_REVIEW": 0.0,
+        "INERT_PORTING_SOURCE": 0.0,
+        "GENERATED_COPY": 0.0,
+        "MIGRATION_INPUT": 0.98
+      },
+      "confidence": 0.98,
+      "nouls": {
+        "active_current_authority": 0.41,
+        "teaches_beads_as_current_authority": 0.06,
+        "semantic_rewrite_required": 0.85,
+        "active_runtime_dependency": 0.42,
+        "migration_evidence": 0.95,
+        "historical_only": 0.22,
+        "generated_copy": 0.5,
+        "likely_zero_consumer": 0.05,
+        "requires_human_review": 0.56,
+        "contradicts_current_substrate_doctrine": 0.35
+      },
+      "recommendation": "REVIEW",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1035,
+        "output_tokens": 317
+      },
+      "latency_s": 0.27,
+      "agree": true,
+      "error": null
+    },
+    {
+      "id": "generated-mirror",
+      "expected": "GENERATED_COPY",
+      "path": ".xtrm/skills/default/using-specialists/SKILL.md",
+      "classification": "GENERATED_COPY",
+      "probabilities": {
+        "UNKNOWN_REQUIRES_REVIEW": 0.0,
+        "INERT_PORTING_SOURCE": 0.0,
+        "HISTORICAL_RECORD": 0.0,
+        "MIGRATION_INPUT": 0.0,
+        "ACTIVE_WRONG_AUTHORITY": 0.01,
+        "GENERATED_COPY": 0.98,
+        "ACTIVE_COMPATIBILITY": 0.01,
+        "DEAD_ZERO_CONSUMER": 0.0
+      },
+      "confidence": 0.98,
+      "nouls": {
+        "active_current_authority": 0.18,
+        "teaches_beads_as_current_authority": 0.05,
+        "semantic_rewrite_required": 0.77,
+        "active_runtime_dependency": 0.23,
+        "migration_evidence": 0.33,
+        "historical_only": 0.09,
+        "generated_copy": 0.98,
+        "likely_zero_consumer": 0.06,
+        "requires_human_review": 0.28,
+        "contradicts_current_substrate_doctrine": 0.12
+      },
+      "recommendation": "RESOLVE_CANONICAL_SOURCE",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1067,
+        "output_tokens": 315
+      },
+      "latency_s": 0.26,
+      "agree": true,
+      "error": null
+    },
+    {
+      "id": "active-compatibility",
+      "expected": "ACTIVE_COMPATIBILITY",
+      "path": "packages/pi-extensions/extensions/beads/index.ts",
+      "classification": "ACTIVE_COMPATIBILITY",
+      "probabilities": {
+        "ACTIVE_WRONG_AUTHORITY": 0.5,
+        "HISTORICAL_RECORD": 0.0,
+        "ACTIVE_COMPATIBILITY": 0.5,
+        "MIGRATION_INPUT": 0.0,
+        "DEAD_ZERO_CONSUMER": 0.0,
+        "GENERATED_COPY": 0.0,
+        "INERT_PORTING_SOURCE": 0.0,
+        "UNKNOWN_REQUIRES_REVIEW": 0.0
+      },
+      "confidence": 0.43,
+      "nouls": {
+        "active_current_authority": 0.92,
+        "teaches_beads_as_current_authority": 0.46,
+        "semantic_rewrite_required": 0.83,
+        "active_runtime_dependency": 0.92,
+        "migration_evidence": 0.68,
+        "historical_only": 0.05,
+        "generated_copy": 0.06,
+        "likely_zero_consumer": 0.04,
+        "requires_human_review": 0.52,
+        "contradicts_current_substrate_doctrine": 0.41
+      },
+      "recommendation": "REVIEW",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1063,
+        "output_tokens": 317
+      },
+      "latency_s": 0.3,
+      "agree": true,
+      "error": null
+    },
+    {
+      "id": "ambiguous-runtime-code",
+      "expected": "UNKNOWN_REQUIRES_REVIEW",
+      "path": "cli/src/core/claude-runtime-sync.ts",
+      "classification": "ACTIVE_COMPATIBILITY",
+      "probabilities": {
+        "MIGRATION_INPUT": 0.0,
+        "INERT_PORTING_SOURCE": 0.18,
+        "HISTORICAL_RECORD": 0.04,
+        "ACTIVE_COMPATIBILITY": 0.64,
+        "GENERATED_COPY": 0.0,
+        "UNKNOWN_REQUIRES_REVIEW": 0.0,
+        "ACTIVE_WRONG_AUTHORITY": 0.01,
+        "DEAD_ZERO_CONSUMER": 0.13
+      },
+      "confidence": 0.59,
+      "nouls": {
+        "active_current_authority": 0.48,
+        "teaches_beads_as_current_authority": 0.05,
+        "semantic_rewrite_required": 0.6,
+        "active_runtime_dependency": 0.09,
+        "migration_evidence": 0.77,
+        "historical_only": 0.39,
+        "generated_copy": 0.05,
+        "likely_zero_consumer": 0.62,
+        "requires_human_review": 0.39,
+        "contradicts_current_substrate_doctrine": 0.12
+      },
+      "recommendation": "PRESERVE_UNTIL_CUTOVER",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1055,
+        "output_tokens": 317
+      },
+      "latency_s": 0.32,
+      "agree": false,
+      "error": null
+    },
+    {
+      "id": "known-dead-asset",
+      "expected": "DEAD_ZERO_CONSUMER",
+      "path": "cli/src/core/beads-status-cache.ts",
+      "classification": "DEAD_ZERO_CONSUMER",
+      "probabilities": {
+        "MIGRATION_INPUT": 0.0,
+        "INERT_PORTING_SOURCE": 0.1,
+        "HISTORICAL_RECORD": 0.0,
+        "ACTIVE_COMPATIBILITY": 0.0,
+        "GENERATED_COPY": 0.0,
+        "UNKNOWN_REQUIRES_REVIEW": 0.0,
+        "ACTIVE_WRONG_AUTHORITY": 0.0,
+        "DEAD_ZERO_CONSUMER": 0.9
+      },
+      "confidence": 0.88,
+      "nouls": {
+        "active_current_authority": 0.14,
+        "teaches_beads_as_current_authority": 0.06,
+        "semantic_rewrite_required": 0.71,
+        "active_runtime_dependency": 0.06,
+        "migration_evidence": 0.73,
+        "historical_only": 0.83,
+        "generated_copy": 0.05,
+        "likely_zero_consumer": 0.94,
+        "requires_human_review": 0.22,
+        "contradicts_current_substrate_doctrine": 0.15
+      },
+      "recommendation": "ZERO_CONSUMER_PROOF_REQUIRED",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1049,
+        "output_tokens": 317
+      },
+      "latency_s": 0.27,
+      "agree": true,
+      "error": null
+    },
+    {
+      "id": "adversarial-filename-only",
+      "expected": "HISTORICAL_RECORD",
+      "path": "docs/retros/2025-beads-outage-retro.md",
+      "classification": "HISTORICAL_RECORD",
+      "probabilities": {
+        "UNKNOWN_REQUIRES_REVIEW": 0.0,
+        "MIGRATION_INPUT": 0.0,
+        "ACTIVE_COMPATIBILITY": 0.0,
+        "INERT_PORTING_SOURCE": 0.0,
+        "GENERATED_COPY": 0.0,
+        "DEAD_ZERO_CONSUMER": 0.0,
+        "HISTORICAL_RECORD": 1.0,
+        "ACTIVE_WRONG_AUTHORITY": 0.0
+      },
+      "confidence": 1.0,
+      "nouls": {
+        "active_current_authority": 0.06,
+        "teaches_beads_as_current_authority": 0.04,
+        "semantic_rewrite_required": 0.8,
+        "active_runtime_dependency": 0.05,
+        "migration_evidence": 0.12,
+        "historical_only": 0.91,
+        "generated_copy": 0.09,
+        "likely_zero_consumer": 0.85,
+        "requires_human_review": 0.35,
+        "contradicts_current_substrate_doctrine": 0.2
+      },
+      "recommendation": "PRESERVE",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1039,
+        "output_tokens": 316
+      },
+      "latency_s": 0.32,
+      "agree": true,
+      "error": null
+    }
+  ]
+}
