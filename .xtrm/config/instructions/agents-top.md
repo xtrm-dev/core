@@ -42,7 +42,7 @@
 | Need | Skill |
 |---|---|
 | XTRM doctrine, contracts, evidence, work shape | `/using-xtrm` |
-| Resume, takeover, context-pressure continuation | `/starting-and-resuming-work` |
+| Resume, takeover, context-pressure continuation | `/using-xtrm` (Continuity section + `references/continuity.md`) |
 | Peer and subagent coordination, replies, continuation | `/multiplexing` |
 | Contracts, decomposition, board triage, validation planning | `/planning` |
 | Debug, review, test, verify, reduce | `/engineering-quality` |

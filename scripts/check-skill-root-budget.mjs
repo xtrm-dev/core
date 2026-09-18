@@ -11,7 +11,6 @@ const skillsDir = path.join(repoRoot, '.xtrm', 'skills', 'default');
 
 const BUDGETS = {
   'using-xtrm':                 220,
-  'starting-and-resuming-work': 180,
   multiplexing:                 180,
   planning:                     180,
   'engineering-quality':        180,

@@ -17,5 +17,5 @@ participant.
 8. Do not merge/push/deploy/close parent-owned work unless the contract grants that
    authority.
 
-If context pressure becomes unsafe, follow `/starting-and-resuming-work` and leave a
+If context pressure becomes unsafe, follow `/using-xtrm` (Continuity) and leave a
 handoff that the parent or replacement worker can consume without this transcript.

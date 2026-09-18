@@ -49,7 +49,7 @@ Use this checklist to validate **all project skills and hooks** in a real projec
 ## Scope
 
 Default skills covered (nine universal v4 defaults — see `skills.md` §Universal defaults):
-- `using-xtrm`, `starting-and-resuming-work`, `multiplexing`, `planning`, `engineering-quality`, `using-specialists`, `gitnexus`, `skill-creator`, `find-skills`
+- `using-xtrm` (incl. continuity), `multiplexing`, `planning`, `engineering-quality`, `using-specialists`, `gitnexus`, `skill-creator`, `find-skills`
 
 ---
 
