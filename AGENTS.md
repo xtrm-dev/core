@@ -9,19 +9,18 @@ Clearly distinguish verified facts, observations, assumptions, inferences, recom
 
 ## Task Tracking (two-tier)
 
-Up to two task systems coexist in this repo. Where the runtime exposes both, use both; do not substitute one for the other. On a runtime with no task tools, beads alone is correct and complete — do not invent or call a native task API the runtime does not expose.
+Up to two task systems coexist in this repo. Where the runtime exposes both, use both; do not substitute one for the other. On a runtime with no task tools, Substrate alone is correct and complete — do not invent or call a native task API the runtime does not expose.
 
-- **Beads (`bd`)** — top-level durable tracking, on every runtime. Authoritative for ownership, dependencies, and closure. Read the rest of this file and use targeted lookup (`bd ready`, `bd search "<terms>"`, `bd show <id>`) before starting work; `bd prime` is opt-in diagnostic only. File, claim, and close work here.
-- **The runtime's own task system, when the runtime has one** — this-session execution tracking. Use it to mirror the active bead and break it into smaller intermediate steps. Ephemeral; does not replace beads. Names differ per runtime; read the runtime's own tool list rather than assuming a name.
+- **Substrate (`sb`)** — top-level durable tracking, on every runtime. Authoritative for ownership, dependencies, and closure. Discover the ready Issue revision, validate readiness, then claim it (`sb issue claim`) before edits; resume via `sb issue resume` (Resume Capsule). Journal owns continuity; explicit Closure owns completion. (`bd`/`bv` describe the retired Beads board — migration/history only.)
+- **The runtime's own task system, when the runtime has one** — this-session execution tracking. Use it to mirror the active Issue claim and break it into smaller intermediate steps. Ephemeral; does not replace Substrate. Names differ per runtime; read the runtime's own tool list rather than assuming a name.
 
-Rule: on a runtime that exposes task tools, when you pick up a bead, create native tasks that track it — reference the bead ID in each task title (e.g. `N.N summary — status (worker %NNNN)`) — and add any smaller intermediate steps as native sub-tasks. Beads own the durable record; native tasks own the in-flight breakdown.
+Rule: on a runtime that exposes task tools, when you pick up an Issue, create native tasks that track it — reference the Issue ref in each task title (e.g. `CORE-2295 summary — status`) — and add any smaller intermediate steps as native sub-tasks. Substrate owns the durable record; native tasks own the in-flight breakdown.
 
-Example native task list mirroring beads:
-- ◼ N.N smoke container global surface — BLOCKS RELEASE (worker %NNNN)
-- ◼ N.N status test flake under load (worker %NNNN)
+Example native task list mirroring Substrate:
+- ◼ CORE-2295 cutover slice — BLOCKS RELEASE
+- ◼ CORE-140 migration evidence — in progress
 - ◻ Pre-release smoke run against current main branches
-- ◻ Dispatch N.N stale doc metrics + N.N Claude inbox surface
-- ◻ Dispatch N.N, N.N, N.N remaining small beads
+- ◻ Dispatch remaining small Issues
 <!-- END INJECTED BLOCK -->
 
 <!-- xtrm:start -->
@@ -139,54 +138,56 @@ This project is indexed by GitNexus as **core** (15653 symbols, 31194 relationsh
 
 <!-- gitnexus:end -->
 
-<!-- BEGIN BEADS INTEGRATION -->
-## Issue Tracking with bd (beads)
+<!-- BEGIN BEADS INTEGRATION (RETIRED — Substrate is current authority; Beads references below are migration/history/compatibility only) -->
+## Issue Tracking with Substrate (`sb`)
 
-**IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
+**IMPORTANT**: This project uses **Substrate Issues** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods. `settled != published != closed`: a Specialist settlement is evidence; explicit Closure elsewhere is authority.
 
 ### Quick Start
 
-**Check for ready work:**
+**Find ready work and resume:**
 
 ```bash
-bd ready --json
+sb issue ready --json
+sb issue show <ref>
+sb issue resume <ref>   # Resume Capsule: revision + checkpoint + Journal delta
 ```
 
 **Create new issues:**
 
 ```bash
-bd create "Issue title" --description="Detailed context" -t bug|feature|task -p 0-4 --json
-bd create "Issue title" --description="What this issue is about" -p 1 --deps discovered-from:bd-123 --json
+sb issue create --project <project> --title "Title" --kind task --contract <file|json>
+sb issue create --project <project> --title "Title" --kind task --contract <file|json> --parent <ref>
 ```
 
-**Claim and update:**
+**Attest, claim, record:**
 
 ```bash
-bd update <id> --claim --json
-bd update bd-42 --priority 1 --json
+sb issue attest <ref> --outcome ready --policy <p> --attested-by <who>
+sb issue claim <ref> --holder <who>
+sb journal append <ref> --kind finding|decision|blocker|result
 ```
 
 **Complete work:**
 
 ```bash
-bd close bd-42 --reason "Completed" --json
+sb issue close <ref> --outcome <o> --reason "Done"
 ```
 
-### Issue Types
+### Issue Kinds
 
-- `bug` - Something broken
-- `feature` - New functionality
-- `task` - Work item (tests, docs, refactoring)
 - `epic` - Large feature with subtasks
-- `chore` - Maintenance (dependencies, tooling)
+- `task` - Work item (tests, docs, refactoring)
+- `bug` - Something broken
+- `decision` / `research` / `followup` - Scoped non-build work
 
-### Priorities
+### Readiness, Journal, Closure
 
-- `0` - Critical (security, data loss, broken builds)
-- `1` - High (major features, important bugs)
-- `2` - Medium (default, nice-to-have)
-- `3` - Low (polish, optimization)
-- `4` - Backlog (future ideas)
+- Draft Issues are not dispatchable: attest (`sb issue attest`) before claim.
+- Journal owns continuity (progress/decisions/findings/blockers/checkpoints/results); it never changes the contract.
+- New independently-durable work -> child Issue; otherwise a Journal entry.
+- Verify settlement + WorkReceipt/provenance, then close explicitly.
+- Historical `bd`/`bead_id` references are a compatibility alias at migration boundaries only.
 
 ## Specialists
 
@@ -195,7 +196,7 @@ Legacy `start_specialist` is deprecated and should be migrated to `specialists r
 
 **Core specialist commands (CLI-first in pi):**
 - `specialists list`
-- `specialists run <name> --bead <id>`
+- `specialists run <name> --bead <id>` (legacy alias for the bound Issue)
 - `specialists run <name> --prompt "..."`
 - `specialists feed -f` / `specialists feed <job-id>`
 - `specialists result <job-id>`
@@ -204,15 +205,15 @@ Legacy `start_specialist` is deprecated and should be migrated to `specialists r
 
 **Running specialists in background (recommended): use the process extension**
 - Tool actions: `process start`, `list`, `output`, `logs`, `kill`, `clear`
-- Example: `process start "specialists run explorer --bead unitAI-123" name="sp-explorer"`
+- Example: `process start "specialists run explorer --bead CORE-2295" name="sp-explorer"`
 - Useful commands: `/ps`, `/ps:pin`, `/ps:logs`, `/ps:kill`, `/ps:clear`, `/ps:dock`, `/ps:settings`
 - Benefits: unified log dock, follow mode, focus mode, file-based logs, friendly names, auto-cleanup
 
 **Canonical tracked flow**
-1. Create/claim bead issue
-2. Run specialist with `--bead <id>` (for long work, launch via `process start`)
+1. Attest + claim the Issue (`sb issue attest` / `sb issue claim`)
+2. Run specialist with `--bead <id>` (legacy alias for the bound Issue; for long work, launch via `process start`)
 3. Observe progress (`process output`/`process logs` or `specialists feed`)
-4. Read final output (`specialists result <job-id>`)
-5. Close/update bead with outcome
+4. Read final output (`specialists result <job-id>`); record a Journal result
+5. Verify settlement/provenance, then close the Issue explicitly (`sb issue close`)
 
 Add custom specialists to `.specialists/user/` to extend defaults.
