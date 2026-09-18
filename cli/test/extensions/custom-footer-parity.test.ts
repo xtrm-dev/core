@@ -23,10 +23,11 @@ vi.mock("../../../packages/pi-extensions/src/core", async () => {
 
 const repoRoot = join(import.meta.dirname, "../../..");
 
-// xtrm-64pl0: the footer is a pure cache reader. The expandable epic/parent tree, the
-// /beads command + Alt+G toggle, and all descendant/parent bd subprocesses were removed.
-// These tests cover what remains: timer hygiene, compact-formatter parity, no subprocess
-// on render/startup, and absence of the removed toggle UI.
+// Lane 1 (hook cleanup): the footer beads segment is severed
+// (BEADS_RETIRED_LANE1) — the footer renders git-only and never loads the
+// retired payload. These tests cover what remains: timer hygiene, git-only
+// render, no subprocess on render/startup, no-module path, and absence of
+// the removed toggle UI.
 describe("custom-footer shared beads cache", () => {
 	let handlers: Record<string, Function[]>;
 	let footerRenderer: any;
@@ -106,7 +107,7 @@ describe("custom-footer shared beads cache", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("renders the same compact formatter output as Claude from a fixture cache", async () => {
+	it("renders git-only with no beads segment even when a fixture cache exists", async () => {
 		beadsCache.writeCache(cacheRoot, {
 			counts: { open: 12, in_progress: 2, blocked: 0 },
 			activeIssues: [],
@@ -115,7 +116,19 @@ describe("custom-footer shared beads cache", () => {
 		await start();
 		const lines = footerRenderer.render(120);
 		expect(lines).toHaveLength(1);
-		expect(lines[0].replace(/\x1b\[[0-9;]*m/g, "")).toContain("o:12 p:2");
+		// Lane 1: beads severed — the retired payload cache must not leak into the line.
+		expect(lines[0].replace(/\x1b\[[0-9;]*m/g, "")).not.toContain("o:12 p:2");
+	});
+
+	it("no-module path: footer renders git-only without ever loading the cache module", async () => {
+		// Lane 1 proof: no beads payload import is attempted at startup.
+		beadsCache.writeCache(cacheRoot, {
+			counts: { open: 5, in_progress: 0, blocked: 0 }, activeIssues: [], activeEpic: null,
+		});
+		await start();
+		const lines = footerRenderer.render(100);
+		expect(lines).toHaveLength(1);
+		expect(lines[0].replace(/\x1b\[[0-9;]*m/g, "")).not.toContain("o:");
 	});
 
 	it("render performs no subprocess work", async () => {

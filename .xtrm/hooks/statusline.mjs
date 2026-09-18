@@ -1,20 +1,54 @@
 #!/usr/bin/env node
-// Claude Code statusLine for xt sessions. Rendering only reads bounded caches;
-// a detached, lease-protected refresh performs slow git + beads work.
-// Beads data comes from the repo-scoped shared cache in beads-status-cache.mjs
-// so N agents in the same repo collapse to one bd refresh per TTL.
+// Claude Code statusLine for xt sessions. Rendering only reads a bounded
+// git-status cache; a detached, lease-protected refresh performs slow git work.
+// Lane 1 (hook cleanup): beads counts were severed — no beads-status-cache
+// import, no bd subprocess, git-only line. The retired beads-status-cache.mjs
+// payload stays on disk until lane 2 but nothing live imports it.
 
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync,
          statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
-import { join, basename, relative } from 'node:path';
+import { spawn, execSync } from 'node:child_process';
+import { join, basename, relative, dirname, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import {
-  runFast, resolveMainRoot, readCache as readBeadsCache, isFresh, writeCache as writeBeadsCache,
-  takeLease as takeBeadsLease, releaseLease as releaseBeadsLease,
-  fetchCompact, cacheAge, TTL_COMPACT_MS,
-} from './beads-status-cache.mjs';
+// Lane 1: zero beads-status-cache.mjs imports. runFast + resolveMainRoot are
+// inlined below (pure git/fs helpers, no bd dependency).
+
+// Inlined lane-1 replacements for the retired beads-status-cache.mjs helpers.
+// Pure git/fs only — no bd subprocess, no beads cache paths.
+const GIT_TIMEOUT_MS = 250;
+function runFast(cwd, cmd, timeout = GIT_TIMEOUT_MS) {
+  try {
+    return execSync(cmd, { encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'pipe'], timeout }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function resolveMainRoot(cwd) {
+  const override = process.env.XTRM_BEADS_CACHE_ROOT;
+  if (override) return override;
+  let current = resolve(cwd);
+  while (true) {
+    const dotGit = join(current, '.git');
+    try {
+      const stat = statSync(dotGit);
+      if (stat.isDirectory()) return current;
+      if (stat.isFile()) {
+        const match = readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)$/m);
+        if (match) {
+          const gitDir = resolve(current, match[1].trim());
+          const marker = `${sep}.git${sep}worktrees${sep}`;
+          const markerIndex = gitDir.indexOf(marker);
+          return markerIndex >= 0 ? gitDir.slice(0, markerIndex) : current;
+        }
+      }
+    } catch {}
+    const parent = dirname(current);
+    if (parent === current) return resolve(cwd);
+    current = parent;
+  }
+}
 
 const CACHE_DIR = process.env.XTRM_STATUSLINE_CACHE_DIR ?? tmpdir();
 const GIT_CACHE_TTL = 5000;
@@ -143,14 +177,7 @@ function refresh(cwd) {
   try {
     const mainRoot = resolveMainRoot(cwd);
     writeGitCache(cacheFile(cwd), computeGit(cwd, mainRoot));
-    if (takeBeadsLease(mainRoot)) {
-      try {
-        const beads = fetchCompact(cwd);
-        writeBeadsCache(mainRoot, beads);
-      } finally {
-        releaseBeadsLease(mainRoot);
-      }
-    }
+    // Lane 1: no beads refresh — fetchCompact/writeBeadsCache severed.
   } finally {
     try { unlinkSync(REFRESH_LOCK); } catch {}
   }
@@ -164,7 +191,7 @@ function readEffortSetting() {
   }
 }
 
-function render(ctx, git, beadsCache, cwd) {
+function render(ctx, git) {
   const pct = ctx?.context_window?.used_percentage;
   const windowSize = ctx?.context_window?.context_window_size ?? 200000;
   const modelId = ctx?.model?.id ?? null;
@@ -181,10 +208,8 @@ function render(ctx, git, beadsCache, cwd) {
   const effort = ctx?.effort_level ?? ctx?.thinking_level ?? readEffortSetting();
   if (effort) modelStr += ` ${B}${effort}${B_}`;
 
-  const counts = beadsCache?.counts;
-  let beadsStr = '';
-  if (counts) beadsStr = ` o:${counts.open ?? 0} p:${counts.in_progress ?? 0}${counts.blocked ? ` b:${counts.blocked}` : ''}`;
-  process.stdout.write(`${head} ${D}${pctStr}/${formatTokens(windowSize)}${R} ${EXT}${modelStr}${R}${D}${beadsStr}${R}\n`);
+  // Lane 1: git-only line — no beads segment.
+  process.stdout.write(`${head} ${D}${pctStr}/${formatTokens(windowSize)}${R} ${EXT}${modelStr}${R}\n`);
 }
 
 if (process.argv[2] === '--refresh') {
@@ -197,11 +222,7 @@ if (process.argv[2] === '--refresh') {
   const gitCached = readGitCache(cacheFile(cwd));
   const git = gitCached?.data ?? fallbackGit(cwd);
 
-  const mainRoot = gitCached?.data?.mainRoot ?? resolveMainRoot(cwd);
-  const beadsCache = readBeadsCache(mainRoot);
-  const beadsFresh = isFresh(beadsCache);
+  render(ctx, git);
 
-  render(ctx, git, beadsCache, cwd);
-
-  if (!gitCached?.fresh || !beadsFresh) startRefresh(cwd, started);
+  if (!gitCached?.fresh) startRefresh(cwd, started);
 }
