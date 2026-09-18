@@ -382,7 +382,7 @@
           "version": "0.12.0"
         },
         "using-specialists/references/monitoring.md": {
-          "hash": "bc248d159087258e566029fc3fb0a9150ed43396af4cbc680e11c3564388fdc1",
+          "hash": "7f3386e644e2253cd651425ed82c2bd906bb36ddcb7cd0114ee9494654c84992",
           "version": "0.12.0"
         },
         "using-specialists/references/nodes.md": {
@@ -418,7 +418,7 @@
           "version": "0.12.0"
         },
         "using-specialists/SKILL.md": {
-          "hash": "3faf27cb4461a4c553d35d7f14195c4525ad478d0761324fdad0f27a93711fa2",
+          "hash": "bdcb884034b31bd3df6c470aee6acade6bcd2eef60acbd339340f28d758edf72",
           "version": "0.12.0"
         },
         "using-xtrm/references/continuity.md": {
@@ -1039,8 +1039,8 @@
     "digest": "git-blob-sha1",
     "source": {
       "kind": "ref",
-      "ref": "wip/SPECIALISTS-4200-native-first",
-      "resolved_sha": "163bb767d47d29aea15621b958f83363889e0b7a",
+      "ref": "master",
+      "resolved_sha": "5a661d168c1188dc326e966463986fd0e52905d1",
       "repo_path": "../specialists",
       "source_path": "config/skills"
     },

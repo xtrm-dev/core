@@ -3,8 +3,8 @@
   "digest": "git-blob-sha1",
   "source": {
     "kind": "ref",
-    "ref": "wip/SPECIALISTS-4200-native-first",
-    "resolved_sha": "163bb767d47d29aea15621b958f83363889e0b7a",
+    "ref": "master",
+    "resolved_sha": "5a661d168c1188dc326e966463986fd0e52905d1",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
