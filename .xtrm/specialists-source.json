@@ -3,8 +3,8 @@
   "digest": "git-blob-sha1",
   "source": {
     "kind": "ref",
-    "ref": "master",
-    "resolved_sha": "5d2f2907f49877f6c4dcf32de95e8cb945c067c7",
+    "ref": "wip/SPECIALISTS-4200-native-first",
+    "resolved_sha": "163bb767d47d29aea15621b958f83363889e0b7a",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
@@ -26,21 +26,21 @@
       "SKILL.md": "109fcbf874fc58baa93f8a0ebc942a2a1f34cd58"
     },
     "using-specialists": {
-      "references/bead-contracts.md": "1a5698a5869f55bc5531514142e58946acbd6278",
+      "references/bead-contracts.md": "be4d11d8000f93efb3bd244349f19b0d7ed4f1d2",
       "references/chain-recipes.md": "42f02267eed5fa18dc33b814a7b1c7a054fddb8c",
-      "references/dispatch-preconditions.md": "ce5e270d76e173cab628b2c5a9edf8d5df0a86f8",
+      "references/dispatch-preconditions.md": "43eccee9ceb86e6111d820d17681fbf7f317d604",
       "references/kpi.md": "93caf443c4f3d19f824b4ebbec133a902addb520",
       "references/merge-and-integration.md": "22ea211e322d971242110dc1ebfa65d6f1e31f68",
       "references/monitoring.md": "089ddb679fd644e32fd608d657807e04fd9d9efe",
       "references/nodes.md": "8f1ada01a2940601fe758757d0ab1bfe0a7b6e60",
-      "references/registry-and-locations.md": "f31b077ebf3f7faaefd5002f66e0b751e4547ce3",
-      "references/script-class.md": "795a05041a1c5676a82bb3fda0051d0e6608d82a",
+      "references/registry-and-locations.md": "e1fa2d44f6f06e0aeff94d772c3c8ff05bbc1d67",
+      "references/script-class.md": "243b58d36f26d2f775a63905763fb10d06b3b99a",
       "references/specialist-definitions.md": "e74d7104167cc73dc665a970705054f753d7a1f1",
       "scripts/specialist-definitions/audit-spec-uniformity.mjs": "72bc5772d8fc4f8afdd323668bac6db5ed75582c",
       "scripts/specialist-definitions/resolve-specialists-root.mjs": "6bd6a3593e4ce89f39a3024d35f7033e78858397",
       "scripts/specialist-definitions/scaffold-specialist.ts": "e993d46432492429b72ccac5ac498813026013af",
       "scripts/specialist-definitions/validate-specialist.ts": "19f298eae0e0dbc809d0fa6ac282bf204cec1d4c",
-      "SKILL.md": "704c7fad7afb0dd0a0500d76323cc929f5db026c"
+      "SKILL.md": "48ea750bc550de07407727e1bd29cecb2283fe94"
     }
   }
 }
