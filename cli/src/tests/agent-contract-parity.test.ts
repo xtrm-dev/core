@@ -69,11 +69,15 @@ describe('agent-contract parity (ISSUE-136 + skills-v4 + substrate doctrine)', (
   it('routes only through the skills-v4 universal surface', () => {
     const body = section(CONTRACT);
     for (const skill of [
-      '/using-xtrm', '/starting-and-resuming-work', '/multiplexing', '/planning',
+      '/using-xtrm', '/multiplexing', '/planning',
       '/engineering-quality', '/using-specialists', '/gitnexus', '/skill-creator', '/find-skills',
     ]) {
       expect(body).toContain(skill);
     }
+    // CORE-2304: continuity folded into /using-xtrm — the routing row points at
+    // the Continuity section, never at a retired second trigger.
+    expect(body).toContain('/using-xtrm');
+    expect(body).not.toContain('/starting-and-resuming-work');
     for (const retired of [
       '/test-planning', '/sync-docs', '/xt-end', '/session-close-report', '/xt-merge',
       '/using-quality-gates', '/using-tdd', '/gitnexus-debugging', '/gitnexus-exploring',

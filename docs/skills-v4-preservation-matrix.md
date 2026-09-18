@@ -25,8 +25,8 @@ preserved when they remain useful even if the old prompt/manual is rewritten.
 | `multiplexing-team` | absorbed | `multiplexing/references/*` | Team/worker/message/continuation doctrine unified under one coordination skill. |
 | `multiplexing-native-test` | absorbed | `multiplexing/references/*` | Proven native-transport doctrine promoted to first-class; experiment duplicate retired. |
 | `spec-dispatch` | absorbed | `planning` + `multiplexing`/`using-specialists` | Spec becomes durable contracts first; execution backend is then selected. |
-| `init-session` | absorbed/runtime-owned | `starting-and-resuming-work` + runtime hooks/CLI | Cold-start/claim/continuity mechanics are no longer a separate prompt. |
-| `session-close-report` | absorbed/runtime-owned | `starting-and-resuming-work`, `xtrm-maintenance` | Durable handoff/finalization replaces a separate report trigger. |
+| `init-session` | absorbed/runtime-owned | `/using-xtrm` continuity (was `starting-and-resuming-work`, folded CORE-2304) + runtime hooks/CLI | Cold-start/claim/continuity mechanics are no longer a separate prompt. |
+| `session-close-report` | absorbed/runtime-owned | `/using-xtrm` continuity (was `starting-and-resuming-work`, folded CORE-2304), `xtrm-maintenance` | Durable handoff/finalization replaces a separate report trigger. |
 | `xt-end` | absorbed | `xtrm-maintenance/references/finalize.md` + current repo workflow | Session finalization is maintenance/continuity behavior. |
 | `xt-merge` skill | runtime-owned / retired duplicate prompt | Core `xt merge` CLI + Specialists `config/specialists/xt-merge.specialist.json` | The CLI performs authority/preflight checks and dispatches the canonical `xt-merge` Specialist. No managed skill root is required. |
 | `xt-debugging` | absorbed | `engineering-quality` + `gitnexus` | Causal debugging and code-graph tracing are composed directly. |

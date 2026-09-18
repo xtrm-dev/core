@@ -60,10 +60,8 @@ OUTPUT       durable result expected from the worker
 Add `REFERENCES`, `LIBRARIES`, `SCRUTINY`, rollout/rollback, or telemetry requirements
 when they matter.
 
-A backlog idea may remain a draft Issue, but a draft is not dispatchable. It
-must still state a real problem and rough scope instead of pretending unknown details are
-known. Before another worker consumes it, ground current state and promote it to a real
-contract. `/planning` owns the detailed authoring procedure.
+A draft Issue is not dispatchable but must still state a real problem and rough scope.
+Ground current state and promote it before another worker consumes it (`/planning` owns procedure).
 
 ## How to engineer: smallest correct system change
 
@@ -107,21 +105,15 @@ deterministic mechanical transform or validation
   -> script/tool/runtime primitive rather than another reasoning agent
 ```
 
-Do not choose a bigger topology before you understand the work-list and overlap surface.
 Parallelism is useful only when ownership boundaries are real.
 
 ## Before handing work to another agent
 
-- Re-read the Issue (pinned revision) and current state.
-- Make the contract complete enough that the recipient does not need your hidden context.
-- State ownership and non-goals, especially for shared files/services.
-- Give exact validation/evidence expectations.
-- Choose a durable result location.
-- Make reply/decision expectations explicit through `/multiplexing` when coordination is
-  required.
-
-If two workers would edit the same surface without a defined ordering/merge owner, do not
-parallelize them.
+- Re-read the pinned Issue revision and current state; make the contract complete
+  enough that the recipient needs no hidden context.
+- State ownership and non-goals, exact validation/evidence, durable result location,
+  and reply expectations through `/multiplexing` when coordination is required.
+- Do not parallelize two workers on one surface without a defined ordering/merge owner.
 
 ## Inherited context
 
@@ -139,11 +131,42 @@ inbox reminders, logging, and other lifecycle behavior.
 Inspect the current runtime when exact behavior matters. Hooks/extensions are the
 enforcement plane; skills are the judgment/procedure plane.
 
+## Continuity: start, resume, hand off
+
+Continuity is first-class: a session ending is normal; work disappearing with it is a failure.
+Resume from durable Substrate state (Issue revision + checkpoint + Journal delta via
+`sb issue resume`), never from compacted chat memory. Checklists and exact mechanics live in
+`references/continuity.md`; command flags live in `references/surfaces.md` (`--help` wins on drift).
+
+- **Cold start / takeover:** identify repo + branch; read the pinned Issue contract
+  (revision + readiness/claim); check recent commits/PRs and live workers; correct
+  stale inherited summaries against live state before planning.
+- **Ownership map before edit/dispatch:** work item -> owner -> workspace/branch ->
+  expected output -> blocker/reply state. Resolve ambiguity first; duplicate agents
+  on one task are a race unless explicitly coordinated.
+- **Long work:** arm continuation before a long phase (native goal/loop, peer ownership,
+  Specialist job, monitor/wakeup, or human handoff). Verify the mechanism is armed.
+- **Context pressure:** stop new large work while the next coherent phase still fits;
+  persist facts/evidence, reconcile claim + branch + workers, record the next single
+  action, hand off through a supported mechanism, verify the successor can resume.
+- **Durable handoff:** contract revision + claim state, what changed + where,
+  validation run (incl. failures/skips), active workers + expected returns, pending
+  replies/decisions/blockers, re-verified facts, stale-assumption corrections,
+  next single action, deliberate non-actions. Chat summary alone is not a handoff.
+- **Stalled lanes:** distinguish still-computing / waiting-input / wakeup-not-armed /
+  crashed / completed-unconsumed / obsolete-ownership; coordinate via `/multiplexing`.
+- **Mechanics (Substrate-fidelity):** cut `sb journal checkpoint` with a real
+  `--mechanical` row at resumability boundaries; `sb issue note` annotates while
+  `sb journal append` records continuity (neither moves the revision); verify
+  coordinator provenance with `sb provenance trace` before consuming worker output;
+  close with `sb issue close --outcome … --reason … --result/--receipt/--validation`
+  citing settlement evidence (Closure is immutable; reopen on mistake, never rewrite).
+
 ## Route to the focused skill
 
 | Need | Skill |
 |---|---|
-| Cold start, takeover, context pressure, handoff, resume | `/starting-and-resuming-work` |
+| Cold start, takeover, context pressure, handoff, resume | `references/continuity.md` in this skill |
 | Coordinate peers/subagents and replies/wakeups | `/multiplexing` |
 | Build/promote contracts, decompose work, triage/test-plan | `/planning` |
 | Debug regressions, review, test, verify, reduce complexity | `/engineering-quality` |

@@ -91,7 +91,7 @@ Do not bundle unrelated cleanup into a bug fix merely because the area is alread
 - `/using-xtrm` owns system-wide work/contract/evidence rules.
 - `/gitnexus` provides code-graph evidence for call chains and blast radius.
 - `/planning` owns work contracts and test/evidence requirements before dispatch.
-- `/starting-and-resuming-work` owns continuity and handoff.
+- `/using-xtrm` (Continuity) owns continuity and handoff.
 - `/sre-ops` extends the same causal method into production observability and deployment
   reconstruction when that optional pack is enabled.
 

@@ -138,7 +138,7 @@
           "version": "0.12.0"
         },
         "engineering-quality/SKILL.md": {
-          "hash": "485757275a92bb9c3efdb4e58b84e9309d53ef57b5db7360d2661fd7bb625d86",
+          "hash": "d72f27f8d375a42cedf9bd4be3d98266ee0da0db94e62a579361a1df77da6e9b",
           "version": "0.12.0"
         },
         "find-skills/SKILL.md": {
@@ -174,7 +174,7 @@
           "version": "0.12.0"
         },
         "goal-prompt/references/self-injection.md": {
-          "hash": "0dc762c3d0710d8c342307e35f6a492b3e3a4459306f3b8770ed020ff3f9b69d",
+          "hash": "0b5efa6316601a88e570e6ce52e5d4d5a9f9fdf9583ef10fea41a4e3987f52df",
           "version": "0.12.0"
         },
         "goal-prompt/references/stop-predicate.md": {
@@ -250,7 +250,7 @@
           "version": "0.12.0"
         },
         "multiplexing/references/worker.md": {
-          "hash": "39f2c33f6b59d95160965f63e0ed10a501833a90edd0dc37cd0cf49e689c2979",
+          "hash": "8321020aeba1cdac3dbd607b34b72a838450f0b773af90ed945adde5345182f3",
           "version": "0.12.0"
         },
         "multiplexing/scripts/verify-deploy-applied.sh": {
@@ -286,7 +286,7 @@
           "version": "0.12.0"
         },
         "README.txt": {
-          "hash": "589836aa1223a3949491e504779852d6e3a84f5ec5df8f89456dfa160db0d8ea",
+          "hash": "8342d811627c6a2d70c0bad49dea6f30d072ce5047d9dc8bf80f7e94e34000dc",
           "version": "0.12.0"
         },
         "skill-creator/agents/analyzer.md": {
@@ -361,14 +361,6 @@
           "hash": "14ddfd5332e8e5f03565d0ec63c8764a201289c2c3424ad3a96a511f717c3606",
           "version": "0.12.0"
         },
-        "starting-and-resuming-work/references/surfaces.md": {
-          "hash": "d3419b144e9ad254c1300a4cf328032c1ba20a20823fa84567628a3f5792316a",
-          "version": "0.12.0"
-        },
-        "starting-and-resuming-work/SKILL.md": {
-          "hash": "884ef8dc3be8b08ae54486493be515ea4291ceae13caabcd9757d28e9ff7e5c0",
-          "version": "0.12.0"
-        },
         "using-specialists/references/bead-contracts.md": {
           "hash": "5d7dd4faf53be8f8867401c3de6881ede3cc9cb8a72fbc310c21ac77e8e695a9",
           "version": "0.12.0"
@@ -390,7 +382,7 @@
           "version": "0.12.0"
         },
         "using-specialists/references/monitoring.md": {
-          "hash": "7f3386e644e2253cd651425ed82c2bd906bb36ddcb7cd0114ee9494654c84992",
+          "hash": "bc248d159087258e566029fc3fb0a9150ed43396af4cbc680e11c3564388fdc1",
           "version": "0.12.0"
         },
         "using-specialists/references/nodes.md": {
@@ -426,11 +418,19 @@
           "version": "0.12.0"
         },
         "using-specialists/SKILL.md": {
-          "hash": "bdcb884034b31bd3df6c470aee6acade6bcd2eef60acbd339340f28d758edf72",
+          "hash": "3faf27cb4461a4c553d35d7f14195c4525ad478d0761324fdad0f27a93711fa2",
+          "version": "0.12.0"
+        },
+        "using-xtrm/references/continuity.md": {
+          "hash": "5fd6c04f502e13590ff1d40106873da8ecd0ff9e48a0d6c7f52421a00dcce677",
+          "version": "0.12.0"
+        },
+        "using-xtrm/references/surfaces.md": {
+          "hash": "d3419b144e9ad254c1300a4cf328032c1ba20a20823fa84567628a3f5792316a",
           "version": "0.12.0"
         },
         "using-xtrm/SKILL.md": {
-          "hash": "1df7dc0dacee5abc6ca06d4f83acd9622e320476abde2f1b8bc0e97a9631fe93",
+          "hash": "7a7e52f69fe7cb11235ece1d1b88a55eef5bba9693fe70490cf39f91eb9d02db",
           "version": "0.12.0"
         }
       }
@@ -984,15 +984,15 @@
           "version": "0.12.0"
         },
         "instructions/agent-contract.md": {
-          "hash": "39bd24c695037791e7034382418a0825b333da91b9c0ac8e7c7e7255f9275c1e",
+          "hash": "f23c490c26304824ab271a0c7a9b922637b668f85a70c45e3bf4f7a59a4b4947",
           "version": "0.12.0"
         },
         "instructions/agents-top.md": {
-          "hash": "ad8082206a0ca4899ce1fd8be358e87b0442dc8e494f608cb213d7e8906ffcb8",
+          "hash": "120870fd5f4fef6f25b0f5ff7eeecd0ca09aec985d8cfe577394e21551f0eab5",
           "version": "0.12.0"
         },
         "instructions/claude-top.md": {
-          "hash": "3c9a111394294ecce8d1ec4c3df7c5b1cc277a32511cb4154b9f9f9b4124dc49",
+          "hash": "99280d9e875bd254d840c3f844665c694d0a9c4cfccf56f3a495f7f93fabba66",
           "version": "0.12.0"
         },
         "instructions/global-system-prompt.md": {

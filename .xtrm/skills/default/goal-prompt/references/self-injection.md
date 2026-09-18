@@ -45,6 +45,6 @@ Same transport as peer-to-peer commanding (`/multiplexing`), different target
 ## Precedence with the skill
 
 The self-injection section belongs to this skill's payload contract; the tmux
-mechanics and continuation doctrine live with `/starting-and-resuming-work` and
+mechanics and continuation doctrine live with `/using-xtrm` (Continuity) and
 `/multiplexing`. This file duplicates neither — it documents the send-keys primitive
 this skill's payload is designed to survive.
