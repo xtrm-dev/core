@@ -22,10 +22,12 @@ it up without reconstructing your private context.
 
 ## The system contract
 
-1. **Live state wins.** Current code, CLI help, Beads state, runtime state, tests, and
+1. **Live state wins.** Current code, CLI help, Substrate Issue state, runtime state, tests, and
    external systems beat remembered commands, old reports, and model memory.
-2. **Beads owns durable work.** Use the board for work identity, contracts, dependencies,
-   progress, evidence, and handoff. Messages are coordination, not the source of truth.
+2. **Substrate owns durable work.** Use Issues for work identity, contracts, dependencies,
+   Journal continuity, provenance, and handoff. Messages are coordination, not the source of truth.
+   `settled != published != closed`: a Specialist settlement is evidence; explicit Closure
+   elsewhere is authority.
 3. **A dispatchable work item is a contract.** Do not hand another agent a title and
    expect it to infer the job.
 4. **XTRM is multi-agent by default, not delegation-by-default.** Use another worker when
@@ -36,11 +38,11 @@ it up without reconstructing your private context.
 6. **Continuity is part of execution.** If the work can outlive this context, arm or
    prepare continuation before the context becomes unreliable.
 7. **Debug causally.** For regressions, reconstruct symptom -> runtime/code path -> recent
-   change -> commit/PR/Bead/worker intent -> causal mechanism before proposing a fix.
+   change -> commit/PR/Issue/worker intent -> causal mechanism before proposing a fix.
 
 ## Contract quality applies to every worker
 
-The same quality floor applies whether a bead goes to a Specialist, an `xt` peer, a
+The same quality floor applies whether an Issue goes to a Specialist, an `xt` peer, a
 native subagent, a human, or a future ChainRun participant.
 
 A ready contract answers:
@@ -58,7 +60,7 @@ OUTPUT       durable result expected from the worker
 Add `REFERENCES`, `LIBRARIES`, `SCRUTINY`, rollout/rollback, or telemetry requirements
 when they matter.
 
-A backlog idea may be explicitly `contract:draft`, but a draft is not dispatchable. It
+A backlog idea may remain a draft Issue, but a draft is not dispatchable. It
 must still state a real problem and rough scope instead of pretending unknown details are
 known. Before another worker consumes it, ground current state and promote it to a real
 contract. `/planning` owns the detailed authoring procedure.
@@ -98,7 +100,7 @@ bounded independent question / fresh context helps
 long-lived peer, separate worktree, cross-agent collaboration
   -> xt pi|claude|codex + /multiplexing
 
-role-shaped tracked work with supervised evidence/review lifecycle
+role-shaped tracked work with native activation + settlement evidence lifecycle
   -> /using-specialists
 
 deterministic mechanical transform or validation
@@ -110,7 +112,7 @@ Parallelism is useful only when ownership boundaries are real.
 
 ## Before handing work to another agent
 
-- Re-read the bead and current state.
+- Re-read the Issue (pinned revision) and current state.
 - Make the contract complete enough that the recipient does not need your hidden context.
 - State ownership and non-goals, especially for shared files/services.
 - Give exact validation/evidence expectations.
@@ -123,7 +125,7 @@ parallelize them.
 
 ## Inherited context
 
-A handoff report, old bead note, worker result, or prior assistant summary is a dated
+A handoff report, old Journal note, worker result, or prior assistant summary is a dated
 lead, never authority. Confirm anything actionable against live state.
 Re-derive expensive or irreversible facts before acting.
 

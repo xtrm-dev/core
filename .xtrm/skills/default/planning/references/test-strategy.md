@@ -21,5 +21,5 @@ For operational or autonomous systems, include the telemetry needed for a future
 diagnose failure: event identity, correlation IDs, outcome/error, duration, and a query or
 artifact path. Never require secrets or raw sensitive payloads in logs.
 
-Do not create one test bead per implementation bead mechanically. Batch tests when they
+Do not create one test Issue per implementation Issue mechanically. Batch tests when they
 share a layer and ship/validate together.

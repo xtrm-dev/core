@@ -4,7 +4,7 @@ description: >
   Behavioral operating manual for an xtrm-equipped Claude Code session.
   Covers when to use which tool, how to handle questions and triggers,
   workflow examples, and skill routing. Reference material (hook list,
-  gate rules, full bd commands, git workflow) lives in CLAUDE.md.
+  gate rules, full sb commands, git workflow) lives in CLAUDE.md.
   Injected automatically at session start via additionalSystemPrompt.
 priority: high
 ---
@@ -17,12 +17,13 @@ priority: high
 ## Session Start
 
 ```bash
-bd prime                          # load workflow context + active claims
-bv --robot-triage                 # graph-ranked picks, quick wins, unblock targets
-bd update <id> --claim            # claim before any edit
+sb issue ready                       # claimable Issues
+sb issue show <ref>                  # contract + readiness
+sb issue claim <ref> --holder <who>  # claim before any edit
+sb issue resume <ref>                # Resume Capsule on takeover
 ```
 
-> Use `bv --robot-next` for the single top pick. Use `bv --robot-triage --format toon` to save context tokens. **Never run bare `bv` — it launches an interactive TUI.**
+> Resume from durable Substrate state, never from compacted chat memory. (`bd`/`bv` describe the retired Beads board — migration/history only.)
 
 ### Worktree dependency setup
 
@@ -30,9 +31,9 @@ bd update <id> --claim            # claim before any edit
 
 ## Multi-pane coordination
 
-Route orchestrators to `/multiplexing` and delegated panes to `/multiplexing-team`. A beaded `xtmux message-send` requires a reply unless it explicitly says `--expects-reply=false`.
+Route orchestrators to `/multiplexing` and delegated panes to `/multiplexing-team`. An Issue-bound `xtmux message-send` requires a reply unless it explicitly says `--expects-reply=false`.
 
-For reply-required inbound work, preserve the SQLite `messageKey`, acknowledge receipt, then use `message-reply --in-reply-to <messageKey>`; ack or a target/bead-matched send does not fulfil it. If the reply must also wake a pane, use confirmed `safe-send-pointer --reply-to <messageKey>` so fulfilment happens only after injection succeeds.
+For reply-required inbound work, preserve the SQLite `messageKey`, acknowledge receipt, then use `message-reply --in-reply-to <messageKey>`; ack or a target/Issue-matched send does not fulfil it. If the reply must also wake a pane, use confirmed `safe-send-pointer --reply-to <messageKey>` so fulfilment happens only after injection succeeds.
 
 SQLite owns obligations and waits across restarts. Recover with `obligations list`, `monitor-list`, and `message-status`; never create or delete runtime marker files. Runtime identities and ownership come from the invoking live tmux session/pane, not message text or caller-supplied metadata.
 
@@ -42,8 +43,8 @@ SQLite owns obligations and waits across restarts. Recover with `obligations lis
 
 | Situation | Action |
 |-----------|--------|
-| "What should I work on?" | `bv --robot-triage` — ranked picks with dependency context |
-| "What was I working on?" | `bd list --status=in_progress` |
+| "What should I work on?" | `sb issue ready` — claimable Issues with readiness context |
+| "What was I working on?" | `sb issue resume <ref>` — Resume Capsule (revision + Journal delta) |
 | Unfamiliar area of code | `gitnexus_query({query: "concept"})` before opening any file |
 | About to edit a symbol | `gitnexus_impact({target: "name", direction: "upstream"})` |
 | Before `git commit` | `gitnexus_detect_changes({scope: "staged"})` to verify scope |
@@ -58,23 +59,23 @@ SQLite owns obligations and waits across restarts. Recover with `obligations lis
 
 **Fixing a bug:**
 ```bash
-bd ready                                                        # find the issue
-bd update bd-xyz --claim                                        # claim it
+sb issue ready                              # find the Issue
+sb issue claim CORE-1 --holder <who>        # claim it (after attest)
 gitnexus_impact({target: "parseComposeServices", direction: "upstream"})
 # → 2 callers, LOW risk — safe to edit
-get_symbols_overview("hooks/init.ts")                           # map file
-find_symbol("parseComposeServices", include_body=True)          # read just this
-replace_symbol_body("parseComposeServices", newBody)            # Serena edit
-bd close bd-xyz --reason="Fix YAML parse edge case"            # close issue
-xt end                                                         # push, PR, merge, cleanup
+get_symbols_overview("hooks/init.ts")         # map file
+find_symbol("parseComposeServices", include_body=True)  # read just this
+replace_symbol_body("parseComposeServices", newBody)    # Serena edit
+sb issue close CORE-1 --outcome done --reason="Fix YAML parse edge case"  # close after verification
+xt end                                       # push, PR, merge, cleanup
 ```
 
 **Exploring unfamiliar code:**
 ```bash
 gitnexus_query({query: "session claim enforcement"})
-# → beads-gate-core.mjs, resolveClaimAndWorkState, decideCommitGate
+# → claim/edit/commit gates, resolveClaimAndWorkState, decideCommitGate
 gitnexus_context({name: "resolveClaimAndWorkState"})            # callers + callees
-get_symbols_overview("hooks/beads-gate-core.mjs")               # map the file
+get_symbols_overview("hooks/claim-gate-core.mjs")               # map the file
 find_symbol("resolveClaimAndWorkState", include_body=True)      # read only this
 ```
 
@@ -87,7 +88,7 @@ find_symbol("resolveClaimAndWorkState", include_body=True)      # read only this
 | Command | Use when | Composes with |
 |---|---|---|
 | `xt worktree audit-prs [--json]` | You want a structured report of every xt worktree's PR merge-state (`clean` / `needs-rebase` / `conflicted` / `blocked` / `stale` / `unknown`) without modifying branches | Specialists `doctor --pr-drift` consumes the same `gh pr view` shape; `sp ps --needs-attention` filters jobs whose PR is non-clean |
-| `xt worktree branch-gc [--prefix xt/] [--apply --yes] [--json]` | Stale `feature/<bead>-executor\|debugger\|reviewer` or `xt/*` branches need cleanup after merge; default is dry-run, `--apply` deletes only merged/closed PR branches | Run after `/xt-end` / `/xt-merge` to drop the merged branch trail; pairs with specialists chain-cleanup after reviewer PASS |
+| `xt worktree branch-gc [--prefix xt/] [--apply --yes] [--json]` | Stale `feature/<issue>-executor\|debugger\|reviewer` or `xt/*` branches need cleanup after merge; default is dry-run, `--apply` deletes only merged/closed PR branches | Run after `/xt-end` / `/xt-merge` to drop the merged branch trail; pairs with specialists chain-cleanup after reviewer PASS |
 | `xt worktree restart-audit [--prefix xt/] [--json]` | Container/host restarted; you need a startup/cron-safe audit of orphaned worktree dirs, branch/worktree drift, and PR-attention candidates | Pairs with specialists `doctor --reap-dead-jobs` — worktree-side orphans (this) + job-side orphans (specialists) cover both axes of a restart-recovery sweep |
 
 Safety: all three are read-only by default. `branch-gc` requires explicit `--apply --yes` to delete. Auto-rebase / force-push is never performed — conflict states are reported, never hand-resolved.

@@ -1,29 +1,24 @@
 ---
 name: agent-pitfalls
-version: 1.0.0
+version: 1.1.0
 description: Common pitfalls learned the hard way across recent sessions
 ---
 ## Common Pitfalls
 
 Rules learned the hard way across recent sessions. Each entry: short rule, why it matters, paste-ready command.
 
-- **Use `bd create --parent <epic-id>` for epic children.** Auto-names children `.1`, `.2`, … and adds the parent edge. Without it, children float orphaned and don't appear under `bd dep tree <epic>`.
+- **Use `sb issue create --parent <ref>` for epic children.** Without it, children float orphaned and don't appear under `sb issue tree`.
   ```bash
-  bd create --parent unitAI-abc12 --title "..." --type task --priority 2
+  sb issue create --project <id> --parent CORE-10 --title "..." --kind task --contract <file|json>
   ```
-
-- **Never run bare `bv` — it opens a TUI and blocks the session.** Always use `--robot-*` flags.
-  ```bash
-  bv --robot-triage --format toon
-  bv --robot-next
-  ```
+  (`bd create --parent` below describes the retired Beads board; use it only for migration/history work.)
 
 - **`sp stop` cleans `status.json`; `sp merge` then fails to resolve the chain.** Known limitation (unitAI-ofjvj, P0). For doc-only chains, fall back to manual merge — but accept that `tsc` and conflict-reporting gates are skipped.
   ```bash
   git merge --no-ff feature/<branch> -m "Merge feature/<branch>"
   ```
 
-- **`--worktree` and `--job` are mutually exclusive.** Use `--worktree` for the first executor; use `--job <exec-job>` for reviewer and fix passes — it reuses the workspace instead of provisioning a new one.
+- **`--worktree` and `--job` are mutually exclusive.** Use `--worktree` for the first executor; use `--job <exec-job>` for reviewer and fix passes — it reuses the workspace instead of provisioning a new one. (`--bead` is the legacy alias for the bound Issue.)
   ```bash
   sp run executor --worktree --bead <impl> --background
   sp run reviewer --bead <review> --job <exec-job> --keep-alive --background
@@ -35,27 +30,21 @@ Rules learned the hard way across recent sessions. Each entry: short rule, why i
   sp resume <job-id> "Reviewer PARTIAL. Fix only ..."
   ```
 
-- **`--context-depth` default is 3, not 1.** Chained specialists see own bead + predecessor + parent task. Reduce only with cause.
+- **`--context-depth` default is 3, not 1.** Chained specialists see own Issue + predecessor + parent task. Reduce only with cause.
   ```bash
   sp run executor --bead <id> --context-depth 2 --background    # explicit override
   ```
 
-- **`bd query` for SQL-like compound filters.** Beyond `bd ready` / `bd list`, use `bd query` for predicates.
+- **`sb issue relate --kind blocks` for sequencing.** Use `--kind relates_to` for non-blocking "see also" links; `--kind discovered_from|supersedes|duplicates` for the rest.
   ```bash
-  bd query "status=in_progress AND assignee=me"
-  bd query "type=bug AND priority<=1 AND status=open"
+  sb issue relate --from <child> --to <parent> --kind blocks
+  sb issue relate --from <a> --to <b> --kind relates_to
   ```
 
-- **`bd dep <blocker> --blocks <blocked>` is the reverse-direction shorthand of `bd dep add`.** `bd dep add A B` ⇒ A depends on B. `bd dep B --blocks A` is the same edge in blocker-first phrasing. Use `bd dep relate` for non-blocking "see also" links.
+- **A Specialist result is evidence, not Closure.** Read `sp result <job-id>` / the Journal result before resuming; verify, then close the Issue explicitly (`sb issue close`).
   ```bash
-  bd dep add child parent              # child depends on parent
-  bd dep parent --blocks child         # same edge, blocker-first phrasing
-  bd dep relate <a> <b>                # non-blocking link
-  ```
-
-- **Per-turn output auto-appends to bead notes for ALL specialists** (not just READ_ONLY). `bd show <bead-id>` reveals the full handoff with `[WAITING]` / `[DONE]` headers — read it before resuming, no need to scrape `sp result`.
-  ```bash
-  bd show <bead-id>                    # full transcript
+  sp result <job-id>                   # last turn
+  sb journal latest <ref>              # bounded Journal window
   ```
 
 - **GitNexus index goes stale on commit. Preserve embeddings explicitly when reanalyzing.** Running `npx gitnexus analyze` without `--embeddings` deletes any embeddings.

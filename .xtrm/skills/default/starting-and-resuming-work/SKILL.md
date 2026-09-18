@@ -19,13 +19,17 @@ with it is a failure.
 Reconstruct reality from durable/live sources before making a new plan.
 
 1. Identify the repository/worktree and current branch.
-2. Read the active or referenced bead contracts and their current states.
+2. Read the active or referenced Issue contracts (pinned revision) and their readiness/claim state.
 3. Inspect recent relevant commits/PRs and validation when the task depends on them.
 4. Inspect active XTRM workers/jobs/topology when other agents may still own work.
 5. Compare inherited summaries with live state; correct stale claims before continuing.
 
-Useful surfaces include `bd prime`, `bd ready`, `bd show`, `bd list`, `xt topology`, and
-current runtime/worker status commands. Use live `--help` when exact syntax matters.
+Useful surfaces include `sb issue ready`, `sb issue show <ref>`, `sb issue list`,
+`sb issue resume <ref>` (Resume Capsule), `sb journal show|latest <ref>`, `xt topology`,
+and current runtime/worker status commands. Use live `--help` when exact syntax matters.
+Resume from durable Substrate state (Issue revision + checkpoint + Journal delta), never
+from compacted chat memory. (`bd prime`/`bd ready`/`bd show` describe the retired Beads
+board; use them only for migration/history work.)
 
 Do not mechanically run every command. Ask what fact you need, then use the cheapest
 live source that answers it.
@@ -62,7 +66,7 @@ phase, stop starting new large work. Do this before summarization quality degrad
 context pressure detected
   -> finish or stop at a clean boundary
   -> persist current facts/evidence
-  -> reconcile bead + branch/worktree + running workers
+  -> reconcile Issue claim + branch/worktree + running workers
   -> record next single action and unresolved decisions
   -> hand off or compact through a supported mechanism
   -> verify the successor/continuation can actually resume
@@ -75,7 +79,7 @@ handoff still exists only in your head.
 
 A successor should not need your transcript. Persist:
 
-- the exact bead/work contract and current state;
+- the exact Issue contract (pinned revision) and readiness/claim state;
 - what changed and where the durable changes live;
 - validation already run, including failures and skipped checks;
 - active workers/jobs and what they are expected to return;
@@ -85,8 +89,8 @@ A successor should not need your transcript. Persist:
 - the next single action;
 - deliberate non-actions and why they remain deferred.
 
-Use bead notes, checked-in docs/reports when appropriate, commits/branches, and runtime
-state. A chat summary alone is not a handoff.
+Use Journal entries (`sb journal append|checkpoint`), checked-in docs/reports when
+appropriate, commits/branches, and runtime state. A chat summary alone is not a handoff.
 
 ## Resume from a handoff
 

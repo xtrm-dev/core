@@ -13,7 +13,9 @@ Before claiming completion:
 3. verify the original user-visible/runtime failure path when this was a bug;
 4. inspect unresolved reviewer/security/test findings;
 5. ensure the intended commit/build/deploy is the version actually being observed;
-6. update Beads/handoff evidence so another XTRM participant sees the same truth.
+6. update Journal/Closure evidence so another XTRM participant sees the same truth.
+Review evaluates the pinned Issue revision against Git diff, tests, runtime evidence,
+Specialist result, and WorkReceipt/provenance — never the worker summary alone.
 
 For regressions, a passing test is not sufficient if the causal chain is still unexplained.
 Record what introduced/exposed the problem and why the fix preserves the original valid

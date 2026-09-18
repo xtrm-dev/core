@@ -1,41 +1,42 @@
 ---
 name: bd-workflow
-version: 1.2.0
-description: targeted Beads workflow + XTRM lifecycle gates
+version: 2.0.0
+description: targeted Substrate workflow + XTRM lifecycle gates (bd-workflow name retained for compatibility)
 ---
 # XTRM Agent Workflow
 
 > Full reference: `/using-xtrm` skill (or `XTRM-GUIDE.md` where present).
-> `bd prime` is an opt-in full-context diagnostic only; it is not a required SessionStart step.
+> Substrate owns durable work; `bd`/`bv` below describe the retired Beads board (migration/history only).
 
 ## Session start
 
 Use targeted retrieval instead of a bulk context dump:
 
 ```bash
-bd list --status=in_progress
-bd ready
-bd search "<task terms>"
-bd show <id>
-bd update <id> --claim
+sb issue ready
+sb issue show <ref>
+sb issue list
+sb issue claim <ref> --holder <who>
+sb issue resume <ref>            # Resume Capsule: revision + checkpoint + Journal delta
+sb journal show <ref> | sb journal latest <ref>
 ```
 
-Use `bv --robot-triage --format toon` only when graph-aware prioritization is needed. Never run bare `bv` in an agent session.
+Resume from durable Substrate state, never from compacted chat memory.
 
 ## Active gates
 
 | Gate | Trigger | Required action |
 |---|---|---|
-| Edit | repository mutation without claimed work | claim an existing Bead before editing |
+| Edit | repository mutation without claimed work | claim an existing Issue (`sb issue claim`) before editing |
 | Commit | commit while claimed work is unresolved | close/acknowledge work first |
 | Stop | session attempts to end with unresolved claimed work | reconcile/close according to current runtime gate |
-| Dispatch | another worker will consume `contract:draft` work | `/planning` → promote to a contract-quality ready Bead first |
+| Dispatch | another worker will consume draft work | `/planning` → attest to a contract-quality ready Issue first |
 
 Hooks/extensions own deterministic enforcement. `/using-xtrm` owns judgment and routing.
 
 ## Durable work contract
 
-For work another worker may consume, the Bead is the prompt. Baseline contract fields:
+For work another worker may consume, the Issue (pinned revision) is the prompt. Baseline contract fields:
 
 ```text
 PROBLEM
@@ -52,11 +53,14 @@ Add `SCRUTINY` or other requirements when they materially affect correctness. Dr
 ## Dependencies and relationships
 
 ```bash
-bd dep add <issue> <depends-on>     # real blocking/sequencing dependency
-bd dep relate <a> <b>               # non-blocking related-work edge
-bd dep tree <id>
-bd blocked
+sb issue relate --from <a> --to <b> --kind blocks          # real blocking/sequencing dependency
+sb issue relate --from <a> --to <b> --kind relates_to      # non-blocking related-work edge
+sb issue tree [--root <ref>]
 ```
+
+New work discovered mid-execution: independently durable (assign/block/resume/review/close)
+-> child Issue (`sb issue create --parent <ref>`); otherwise a Journal entry on the owner.
+Never mutate the contract for routine progress.
 
 Do not use blocking edges merely to mean "related to".
 

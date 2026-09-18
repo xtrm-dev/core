@@ -16,7 +16,7 @@ Do not own:
 
 - specialist chain orchestration → `/using-specialists`;
 - governed ChainRun communication → XTRM Channels;
-- Beads acceptance/work authority;
+- Substrate Issue acceptance/work authority;
 - new agent runtime design;
 - provider-specific hidden IPC schemas beyond the installed adapters;
 - silent process spawning merely to make a message deliver.

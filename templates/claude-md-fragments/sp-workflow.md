@@ -1,7 +1,7 @@
 ---
 name: sp-workflow
-version: 1.0.0
-description: Specialists (sp) orchestration invariants — bead-first, worktree, review chain, merge
+version: 1.1.0
+description: Specialists (sp) orchestration invariants — Issue-first, worktree, review chain, merge
 ---
 # Specialists (sp) Workflow
 
@@ -9,11 +9,11 @@ description: Specialists (sp) orchestration invariants — bead-first, worktree,
 
 ## Hard Rules
 
-1. `--bead` is the prompt for tracked work — never `--prompt` to supplement.
+1. The bound Issue is the prompt for tracked work (`--bead` is the legacy alias) — never `--prompt` to supplement.
 2. Edit-capable specialists run with `--worktree` for the first implementation pass.
-3. Reviewer gets its own bead and reuses the executor workspace via `--job <exec-job>`.
+3. Reviewer gets its own Issue and reuses the executor workspace via `--job <exec-job>`.
 4. `--worktree` and `--job` are mutually exclusive.
-5. Use `--context-depth 2` for chained work (own bead + predecessor + parent task).
+5. Use `--context-depth 2` for chained work (own Issue + predecessor + parent task).
 6. Keep executor/debugger jobs alive through review with `--keep-alive` so they can be resumed.
 7. Merge specialist branches with `sp merge` or `sp epic merge`. Never manual `git merge`.
 8. Specialists must not perform destructive or irreversible actions — surface to the operator instead.
@@ -22,7 +22,7 @@ description: Specialists (sp) orchestration invariants — bead-first, worktree,
 
 ```bash
 sp list                                      # Specialist registry
-sp run <name> --bead <id> --background       # Bead-first dispatch (depth 3 default)
+sp run <name> --bead <id> --background       # Issue-first dispatch (depth 3 default; --bead is the legacy alias)
 sp run executor --worktree --bead <id> --background       # Edit-capable: auto-provisions worktree
 sp run reviewer --bead <id> --job <exec-job> --keep-alive --background
 sp ps [<job-id>]                             # Live job snapshot
@@ -36,7 +36,7 @@ sp stop <job-id>                             # Terminate
 ## Publication
 
 ```bash
-sp merge <chain-root-bead>                   # Standalone chain
+sp merge <chain-root-issue>                  # Standalone chain
 sp epic status <epic-id>                     # Epic readiness check
 sp epic merge <epic-id>                      # Multi-chain epic publication
 ```
@@ -47,6 +47,7 @@ sp epic merge <epic-id>                      # Multi-chain epic publication
 executor --worktree --bead impl
   -> waiting after turn
 reviewer --bead review --job <exec-job>
+(A Specialist result is evidence, not Closure: verify, then close the Issue explicitly.)
   -> PASS:    publish via sp merge / sp epic merge
   -> PARTIAL: sp resume <exec-job> "Fix only ..."  then re-review
   -> FAIL:    decide: resume, replace bead, or abandon

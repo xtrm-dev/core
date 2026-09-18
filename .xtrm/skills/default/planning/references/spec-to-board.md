@@ -11,7 +11,7 @@ For a large spec, audit report, or multi-repo goal:
 7. Put shared requirements on the nearest common parent instead of copying prose into
    every child.
 8. Attach test/operational evidence to the work that owns the behavior.
-9. Keep any human-facing plan document compact; Beads is execution truth.
+9. Keep any human-facing plan document compact; the Substrate Issue is execution truth.
 
 For very large or risky specs, use an independent read-only critique before materializing
 the board. The critic should verify claims against current source, challenge unnecessary

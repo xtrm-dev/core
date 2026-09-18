@@ -3,11 +3,11 @@
 Use this reference when this agent is a child/peer executing a contract for another XTRM
 participant.
 
-1. Resolve your durable bead/contract and current workspace before doing work.
+1. Resolve your durable Issue/contract (pinned revision + readiness/claim) and current workspace before doing work.
 2. Restate internally: success, scope, non-goals, validation, output, and parent/owner.
 3. Do not expand into sibling work without updating the durable contract or requesting a
    decision.
-4. Report material progress to the bead/artifact; send short status pointers through the
+4. Record material progress as Journal entries on the owning Issue; send short status pointers through the
    active native message channel.
 5. If blocked on a parent decision, send one correlated decision request and ensure a
    continuation/wakeup exists.

@@ -4,7 +4,7 @@ description: >
   Canonical XTRM multi-agent coordination doctrine. Use whenever two or more live agents,
   native subagents, or xt pi/claude/codex sessions collaborate, delegate, exchange
   decisions, wait on each other, or need continuation. Prefer each harness/runtime's
-  native SDK, agent, messaging, reply, and wakeup facilities; use XTRM/Beads for durable
+  native SDK, agent, messaging, reply, and wakeup facilities; use Substrate Issues for durable
   contracts and identity, and xtmux/tmux as observability or compatibility transport only
   where the active runtime still needs it. Replaces the older tmux-centric multiplexing
   protocol; the proven multiplexing-native-test direction is absorbed here as first-class
@@ -62,14 +62,16 @@ Every delegated lane gets a durable XTRM contract. The communication mechanism c
 coordination around that contract; it does not replace it.
 
 ```text
-bead/contract  = what the worker owns and how success is proven
+Issue/contract = what the worker owns and how success is proven (pinned revision + readiness)
 message        = status, pointer, decision, question, correction
 worker result  = evidence/claim to consume
 runtime state  = whether the worker is alive/waiting/done
 ```
 
-Long payloads belong in the bead, a durable artifact, or the worker result. Messages
-should point to them.
+Long payloads belong in the Issue, a durable artifact, or the worker result. Messages
+should point to them. Durable authority is Issue/Journal/Closure; messages are coordination;
+activation/attempt identity is execution identity; Git is code truth. Never treat pane
+identity, tmux lineage, or a message payload as work authority.
 
 ## Coordinator responsibilities
 

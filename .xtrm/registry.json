@@ -6,6 +6,50 @@
       "install_mode": "copy",
       "install_scope": "global",
       "files": {
+        "beads-claim-sync.mjs": {
+          "hash": "a28847e70da72215638be6166bc69235f87aa07f43bb74b7c65ceb400f51c090",
+          "version": "0.12.0"
+        },
+        "beads-commit-gate.mjs": {
+          "hash": "84a52001625c569d08cace34fa742338c80c19d73f507d7d308b4cbf3c9e13ce",
+          "version": "0.12.0"
+        },
+        "beads-compact-restore.mjs": {
+          "hash": "6ed590f3da0725328c9fc5502104bef76ae4acba2643b39771326ddc563fe95c",
+          "version": "0.12.0"
+        },
+        "beads-compact-save.mjs": {
+          "hash": "d83e77e9c88050663b1e7bc3fc9b1843268a0eb7b5c54f8990a44d6fef1f1c5b",
+          "version": "0.12.0"
+        },
+        "beads-edit-gate.mjs": {
+          "hash": "6ad0ed59d6d512881d2e9de33b8abf40a2ee4619e2d9960dcebdfff1b9170e95",
+          "version": "0.12.0"
+        },
+        "beads-gate-core.mjs": {
+          "hash": "a410303f8c44ac25c72ab7e0f13e6fa3b0a47c2b5ebf13cebe5184695517fec3",
+          "version": "0.12.0"
+        },
+        "beads-gate-messages.mjs": {
+          "hash": "606d339d8c39ac6efda0bbed5f2a87921197c74bbe770616ae5902257039ab96",
+          "version": "0.12.0"
+        },
+        "beads-gate-utils.mjs": {
+          "hash": "d2feba09c8c19422b771b860a5b442628c2db34be63d7e60de757b0cddaede83",
+          "version": "0.12.0"
+        },
+        "beads-status-cache.mjs": {
+          "hash": "776496f1ce0d71e9627288ebda924e6fec3d05752fb6fd3542dc50641827b1f7",
+          "version": "0.12.0"
+        },
+        "beads-status-cache.test.mjs": {
+          "hash": "5acab4b3335d373e371fb517e4f45f18ea7a82175a06fc3c161e490c7d69ba2f",
+          "version": "0.12.0"
+        },
+        "beads-stop-gate.mjs": {
+          "hash": "5f75d0dccd724dc30b67a9f964b47c94b457f9174806a4e5f1a9ee21b16e40e5",
+          "version": "0.12.0"
+        },
         "gitnexus/gitnexus-hook.cjs": {
           "hash": "d0f88b78c6723d6b6a45dbbd85e37d935bea4461046fd286d658951b16f68680",
           "version": "0.12.0"
@@ -78,7 +122,7 @@
           "version": "0.12.0"
         },
         "engineering-quality/references/review.md": {
-          "hash": "e7438b55de70ec07e1e025837242062cdc3a02e5ab4eb0b7549d087b892e5c1f",
+          "hash": "2d1ce01777895d7b7637445b9a5cc68a94e16e54b17607fc15ed28fb5a44a1fa",
           "version": "0.12.0"
         },
         "engineering-quality/references/testing.md": {
@@ -86,7 +130,7 @@
           "version": "0.12.0"
         },
         "engineering-quality/references/verification.md": {
-          "hash": "9b2e72f4f561ff70767efd242aec2a7a4ad01140a60cf898971ab7c2ac5004aa",
+          "hash": "9132097ffcbf51f398d9d7720d13be94f811531627baca830026a8ec8c92a967",
           "version": "0.12.0"
         },
         "engineering-quality/scripts/change-provenance.mjs": {
@@ -94,7 +138,7 @@
           "version": "0.12.0"
         },
         "engineering-quality/SKILL.md": {
-          "hash": "79e96acd480481b57c5e52d752a876bec198b99c9f92a86738b071b3e813751a",
+          "hash": "485757275a92bb9c3efdb4e58b84e9309d53ef57b5db7360d2661fd7bb625d86",
           "version": "0.12.0"
         },
         "find-skills/SKILL.md": {
@@ -158,15 +202,15 @@
           "version": "0.12.0"
         },
         "multiplexing/references/fleet-window-dispatch.md": {
-          "hash": "7d1577bdffeecbfd08b42eb7c4e4e9ce764015cd79acbde8a861c7cc41544f94",
+          "hash": "bd180ef1661fab709fd5d4bb1c9d050bbee1b7bb58892596afacb7730f86d7e7",
           "version": "0.12.0"
         },
         "multiplexing/references/handoff.md": {
-          "hash": "9f7cc3b64bb588480642e5a5c7a4508696a29581ccf07306deca4d3fd0a71b8e",
+          "hash": "852b46f70452a803bc1e0fe6f86eaf92ab6d7fde1e2bf86be3e027ed9574aa31",
           "version": "0.12.0"
         },
         "multiplexing/references/harnesses.md": {
-          "hash": "e022550b58f8170d35cbd138e10bc09af8338f46975a50a26229a154922a8798",
+          "hash": "2bfc75f360f17f31fe8254e98174462e28e233d9c7274a0d08a253844c2d953a",
           "version": "0.12.0"
         },
         "multiplexing/references/messaging-and-continuation.md": {
@@ -194,7 +238,7 @@
           "version": "0.12.0"
         },
         "multiplexing/references/scope.md": {
-          "hash": "b0b6bf374f38edbe823caadc6ebffd9dccd42dd45602300d0900034de2176463",
+          "hash": "1eb477c4f552d4ba1a24bc2fe4dadcd34c814a17bc5077eb54cb9596493c09d6",
           "version": "0.12.0"
         },
         "multiplexing/references/terminal-fallback.md": {
@@ -206,7 +250,7 @@
           "version": "0.12.0"
         },
         "multiplexing/references/worker.md": {
-          "hash": "e85309ec7e96e13f351f8fe53880858e3da66b5bd21bad37be3190013459bacb",
+          "hash": "39f2c33f6b59d95160965f63e0ed10a501833a90edd0dc37cd0cf49e689c2979",
           "version": "0.12.0"
         },
         "multiplexing/scripts/verify-deploy-applied.sh": {
@@ -214,15 +258,15 @@
           "version": "0.12.0"
         },
         "multiplexing/SKILL.md": {
-          "hash": "46d1604c6c4b00c064c73d0bba6fb5f47277a7f428bd925ac1db6d0a09f68388",
+          "hash": "e2fda094b28672bfa31c480317cd2442c177999dbdef87b0dce92130ccc38b40",
           "version": "0.12.0"
         },
         "planning/references/board-triage.md": {
-          "hash": "e6316f196a87243f7d7aab33f51481d06fcfc7e056105846729dc8a5184f30e2",
+          "hash": "e75e868b86975ec6eecc299b47799807fe05cf6b711848c29911776517bdd514",
           "version": "0.12.0"
         },
         "planning/references/contracts.md": {
-          "hash": "0f532cc9c29a5f0f0d13854b0df82f09d019f1fb71f8df45f2b1af81a22f1f0a",
+          "hash": "e7f895a24786dc14b1853400533714264fd0e3118095a03e2da87742240cf4d2",
           "version": "0.12.0"
         },
         "planning/references/premortem.md": {
@@ -230,15 +274,15 @@
           "version": "0.12.0"
         },
         "planning/references/spec-to-board.md": {
-          "hash": "37ac9298e249a45c5f50b9e3abee227b5c9fa1f4a9c17bd9cad21062fc74bb83",
+          "hash": "aff74aafb86a7823b92d899b6f0adf0a0e333faf979d8b7621a0117ff028ab58",
           "version": "0.12.0"
         },
         "planning/references/test-strategy.md": {
-          "hash": "2e27bb2a4b6efd09bc588ec36117f3d44a1e181dfd90ecd0ff1c39d2b9dec1ae",
+          "hash": "a492e407a6629f67e9d3eb55a09d25f5f9a225bcd605cc6236d26ec72fec9c58",
           "version": "0.12.0"
         },
         "planning/SKILL.md": {
-          "hash": "b877b0e6d9cb7db1302e601cf36ea0e96b3ddc03cdb36019a7c74a4ab9d73255",
+          "hash": "81527befceb5a114b244eb65554ffb552cbaa6a8d8d151e2f00dc90432df7617",
           "version": "0.12.0"
         },
         "README.txt": {
@@ -318,11 +362,11 @@
           "version": "0.12.0"
         },
         "starting-and-resuming-work/references/surfaces.md": {
-          "hash": "cb15d7ad2130a775233334d6f1860a7fcfadaf6f5e0d4fbb745d0ddfd85f40b7",
+          "hash": "d3419b144e9ad254c1300a4cf328032c1ba20a20823fa84567628a3f5792316a",
           "version": "0.12.0"
         },
         "starting-and-resuming-work/SKILL.md": {
-          "hash": "47f081e1d01ca899d14ed0d2e78d5a9890c211b46f1aa94a1f9952e0c0990b79",
+          "hash": "884ef8dc3be8b08ae54486493be515ea4291ceae13caabcd9757d28e9ff7e5c0",
           "version": "0.12.0"
         },
         "using-specialists/references/bead-contracts.md": {
@@ -386,7 +430,7 @@
           "version": "0.12.0"
         },
         "using-xtrm/SKILL.md": {
-          "hash": "3bf25fe8ca9f709f4bf29a5a7d16be494d7f17d3837d779b9b24f7af6d0d9a31",
+          "hash": "1df7dc0dacee5abc6ca06d4f83acd9622e320476abde2f1b8bc0e97a9631fe93",
           "version": "0.12.0"
         }
       }
@@ -936,19 +980,19 @@
           "version": "0.12.0"
         },
         "hooks.json": {
-          "hash": "39aa2530a70bba202792967ba98b5e5df1f3d0919579f3e15f1bf786e8cef646",
+          "hash": "7edb3987e57a2967f77fa15cc216ba1469628a8eb30d4ec19ec502a1323ca590",
           "version": "0.12.0"
         },
         "instructions/agent-contract.md": {
-          "hash": "45a601e7f013d419af109d481f22ef181ba12b992cca38f7b11485c5bb4f423c",
+          "hash": "39bd24c695037791e7034382418a0825b333da91b9c0ac8e7c7e7255f9275c1e",
           "version": "0.12.0"
         },
         "instructions/agents-top.md": {
-          "hash": "264bb2d393413deff6f5a3483d5d5c4a0db026eaa20b2fd3ed83e16ea1bf801c",
+          "hash": "ad8082206a0ca4899ce1fd8be358e87b0442dc8e494f608cb213d7e8906ffcb8",
           "version": "0.12.0"
         },
         "instructions/claude-top.md": {
-          "hash": "42531bc63a7a96975b208f7b6090da3f8610b6b35096937a355b77b1eb67bc4f",
+          "hash": "3c9a111394294ecce8d1ec4c3df7c5b1cc277a32511cb4154b9f9f9b4124dc49",
           "version": "0.12.0"
         },
         "instructions/global-system-prompt.md": {

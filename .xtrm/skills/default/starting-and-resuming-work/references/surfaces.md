@@ -7,7 +7,7 @@ Read this when you need exact flags. For orientation, SKILL.md is enough.
 - [xt — sessions, worktrees, topology](#xt)
 - [sp — specialists](#sp)
 - [xtmux — pane coordination](#xtmux)
-- [bd / bv — the work graph](#bd--bv)
+- [sb — the work graph (Substrate Issues)](#sb--the-work-graph-substrate-issues)
 - [Harness continuity primitives](#harness-continuity-primitives)
 - [Failure modes worth recognising](#failure-modes-worth-recognising)
 
@@ -22,17 +22,17 @@ Agent infrastructure: runtimes, skills, hooks, packages.
 | `xt claude [name]` | Launch a Claude session in a sandboxed worktree |
 | `xt pi [name]` | Launch a Pi session |
 | `xt codex [name]` | EXPERIMENTAL: Codex in an xt-owned worktree |
-| `xt topology` | Read-only projection joining panes, roles, specialist jobs, beads, worktrees, branches, PRs |
+| `xt topology` | Read-only projection joining panes, roles, specialist jobs, Issues, worktrees, branches, PRs |
 | `xt attach <name>` | Re-attach to an existing worktree and resume its session |
 | `xt end` | Close session: rebase, push, open PR, link beads, clean worktree |
 | `xt merge` | Drain the worktree PR merge queue via the xt-merge specialist |
 | `xt worktree` | Manage session worktrees |
 | `xt status` / `xt docs` / `xt memory` | Status+sync, doc drift checks, project memory |
 
-Common launch flags: `--bead <id>` (assigns the bead at launch), `--no-attach`, `--json`,
+Common launch flags: `--bead <id>` (legacy alias for the bound Issue; prefer `--issue`), `--no-attach`, `--json`,
 `--prompt "..."`, `--model <id>`.
 
-**`--bead` assigns the bead at launch.** The worker's own `bd update --claim` then fails
+**`--bead`/`--issue` binds the Issue at launch.** The worker's own `sb issue claim` then fails
 with "already claimed by <runtime>/<slug>" — that slug is the worker itself. It is not a
 conflict. Workers should verify the assignee matches their own runtime origin and
 proceed; agents have stopped dead on this.
@@ -47,7 +47,7 @@ destroy a live one's working tree.
 
 ## sp
 
-Project-scoped specialist agents, bead-first. `/using-specialists` is the doctrine; this
+Project-scoped specialist agents, Issue-first. `/using-specialists` is the doctrine; this
 is only the surface.
 
 ```
@@ -57,9 +57,9 @@ sp ps <job-id> --json                                                # status
 sp console                                                           # operator TUI
 ```
 
-- `--bead` is for tracked work; `--prompt` is for quick untracked work.
-- `chat` without `--bead` auto-creates an ephemeral tracked bead.
-- `--context-depth` defaults to 3 with `--bead`.
+- `--bead <id>` is a compatibility alias for the bound Issue; `--prompt` is for quick untracked work.
+- `chat` without an Issue auto-creates an ephemeral tracked Issue.
+- `--context-depth` defaults to 3 with a bound Issue.
 - `--no-beads` does **not** disable bead reading.
 - Output modes: default human, `--json` NDJSON event stream, `--raw` LLM text deltas.
 - MCP `use_specialist` runs in the foreground and returns the result directly.
@@ -71,7 +71,7 @@ sp console                                                           # operator 
 `xtmux mux-help` prints the coordination contract. The essentials:
 
 **Communication priority**
-1. **beads first** — durable task contract (`bd show <id>`)
+1. **Issue first** — durable task contract (`sb issue show <ref>`)
 2. **`/tmp` prompt-file second** — ephemeral constraints and meta-protocol
 3. **`send-keys` third** — single-line pointer only, never a payload
 
@@ -86,6 +86,7 @@ monitor-list --json / monitor-kill <id>
 **Safe handoff**
 ```
 handoff --target <pane> --bead <id> --note '...' [--prompt-file X --wait-ready 2m --monitor]
+(`--bead` here is the legacy alias for the bound Issue.)
 safe-send-pointer [--reply-to <messageKey>] <pane> 'read /tmp/file.md and follow it'
 ```
 Add `--yes` only after inspecting the printed command.
@@ -93,6 +94,7 @@ Add `--yes` only after inspecting the printed command.
 **Messages**
 ```
 message-send --to <session|pane> [--from x] [--bead id] [--expects-reply[=true|false]] --text <text>
+(`--bead` here is the legacy alias for the bound Issue.)
 message-list --unacked --expects-reply [--for <name>]
 message-reply --in-reply-to <messageKey> --text <text>
 message-ack        # receipt, NOT a reply
@@ -117,33 +119,30 @@ safe to kill blindly.
 
 ---
 
-## bd / bv
+## sb — the work graph (Substrate Issues)
 
-`bd prime` at session start (and after compaction) loads live workflow context. `bd` owns
-creating, claiming and closing; `bv` owns *what to work on*.
+`sb issue resume <ref>` (Resume Capsule) at session start reconstructs Issue revision +
+latest checkpoint + Journal delta + claim/blockers/provenance. `sb` owns
+creating, attesting, claiming and closing; the Journal owns continuity.
 
 ```
-bd ready | bd blocked | bd show <id> | bd search <text>
-bd update <id> --claim | --notes "..." | --status=blocked
-bd create --title=... --type=task --priority=2 [--parent <id>] [--deps "discovered-from:<id>"]
-bd dep add <issue> <depends-on> | bd dep tree <id>
-bd close <id> --reason="..."
-bd export --output .beads/issues.jsonl
+sb issue ready | sb issue show <ref> | sb issue list | sb issue tree
+sb issue claim <ref> --holder <who> | sb journal append <ref> --kind finding|decision|blocker
+sb issue create --project <id> --title <t> --kind task --contract <file|json> [--parent <ref>]
+sb issue relate --from <a> --to <b> --kind blocks|relates_to|discovered_from|supersedes|duplicates
+sb issue close <ref> --outcome <o> --reason <r>
+sb export project --project <id>
 ```
 
-`bv --robot-triage` is the entry point; `--robot-next`, `--robot-plan`, `--robot-insights`,
-`--robot-forecast`, `--robot-alerts`, `--robot-diff` cover the rest.
-**Use only `--robot-*` flags — bare `bv` opens an interactive TUI that blocks the session.**
+`sb issue ready` is the entry point for claimable work; `sb issue tree` shows hierarchy.
 
-Filing discovered work with `--deps "discovered-from:<id>"` and returning to the original
+Filing discovered work with `--kind discovered_from` relations and returning to the original
 task is how scope stays bounded. A newly found defect earns a place on the critical path
-only if it can actually break the thing you are protecting; everything else gets filed.
+only if it can actually break the thing you are protecting; everything else gets filed
+as a child/follow-up Issue only when independently durable, else a Journal entry.
 
-Practical notes: `bd export` and commit hooks can each exceed two minutes in a large repo
-— budget for it rather than backgrounding a dependent chain. `.beads/` may be
-`skip-worktree` in agent worktrees, so exports belong to the main checkout path. If a
-remote sync backend is broken, the JSONL export may be the only off-host copy of the
-board; treat it accordingly.
+`bd`/`bv` below describe the retired Beads board; use them only for migration/history
+work, never for current authority.
 
 ---
 
