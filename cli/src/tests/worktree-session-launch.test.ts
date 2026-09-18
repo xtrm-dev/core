@@ -206,7 +206,26 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
             branchDeleteCalls.push(1);
             return { status: 0, stdout: '', stderr: '' };
         }
+        if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') {
+            // Git-first path (CORE-2307): `git worktree add` creates the
+            // worktree directly. bd remains a recorded fallback only.
+            worktreeCreateArgs.push(['git', ...args]);
+            fs.ensureDirSync(h.worktreePath);
+            if (h.seedWorktreeCopy) {
+                const wtPackDir = path.join(h.worktreePath, '.xtrm', 'skills', 'infra', PACK_NAME);
+                fs.ensureDirSync(wtPackDir);
+                fs.copyFileSync(packSkillFile, path.join(wtPackDir, 'SKILL.md'));
+            }
+            if (h.seedStatusline) {
+                const hookFile = path.join(h.worktreePath, '.xtrm', 'hooks', 'statusline.mjs');
+                fs.ensureDirSync(path.dirname(hookFile));
+                fs.writeFileSync(hookFile, '// statusline');
+            }
+            return { status: 0, stdout: '', stderr: '' };
+        }
         if (command === 'bd' && args[0] === 'worktree') {
+            // bd fallback: legacy primary, now only a fallback. Recorded
+            // separately so tests can assert git-first ordering.
             worktreeCreateArgs.push(args);
             fs.ensureDirSync(h.worktreePath);
             if (h.seedWorktreeCopy) {
