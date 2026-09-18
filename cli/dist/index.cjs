@@ -71360,6 +71360,13 @@ async function hasBeadsDir(repoRoot) {
 async function ensureBeadsSharedServerEnabled(repoRoot, apply) {
   const beadsDir = import_node_path41.default.join(repoRoot, ".beads");
   if (!await import_fs_extra46.default.pathExists(beadsDir)) return { changed: false, state: "not-applicable" };
+  if (apply) {
+    const plan = await planSubstrateMigration(repoRoot);
+    if (plan.needed) {
+      const blocked = migrationBlockedReason(plan);
+      throw new Error(blocked ?? plan.reason);
+    }
+  }
   const configPath = import_node_path41.default.join(beadsDir, "config.yaml");
   const raw = await import_fs_extra46.default.pathExists(configPath) ? await import_fs_extra46.default.readFile(configPath, "utf8") : "";
   const rawParsed = raw.trim() ? import_yaml.default.parse(raw) : {};
