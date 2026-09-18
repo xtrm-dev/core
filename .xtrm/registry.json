@@ -6,50 +6,6 @@
       "install_mode": "copy",
       "install_scope": "global",
       "files": {
-        "beads-claim-sync.mjs": {
-          "hash": "a28847e70da72215638be6166bc69235f87aa07f43bb74b7c65ceb400f51c090",
-          "version": "0.12.0"
-        },
-        "beads-commit-gate.mjs": {
-          "hash": "84a52001625c569d08cace34fa742338c80c19d73f507d7d308b4cbf3c9e13ce",
-          "version": "0.12.0"
-        },
-        "beads-compact-restore.mjs": {
-          "hash": "6ed590f3da0725328c9fc5502104bef76ae4acba2643b39771326ddc563fe95c",
-          "version": "0.12.0"
-        },
-        "beads-compact-save.mjs": {
-          "hash": "d83e77e9c88050663b1e7bc3fc9b1843268a0eb7b5c54f8990a44d6fef1f1c5b",
-          "version": "0.12.0"
-        },
-        "beads-edit-gate.mjs": {
-          "hash": "6ad0ed59d6d512881d2e9de33b8abf40a2ee4619e2d9960dcebdfff1b9170e95",
-          "version": "0.12.0"
-        },
-        "beads-gate-core.mjs": {
-          "hash": "a410303f8c44ac25c72ab7e0f13e6fa3b0a47c2b5ebf13cebe5184695517fec3",
-          "version": "0.12.0"
-        },
-        "beads-gate-messages.mjs": {
-          "hash": "606d339d8c39ac6efda0bbed5f2a87921197c74bbe770616ae5902257039ab96",
-          "version": "0.12.0"
-        },
-        "beads-gate-utils.mjs": {
-          "hash": "d2feba09c8c19422b771b860a5b442628c2db34be63d7e60de757b0cddaede83",
-          "version": "0.12.0"
-        },
-        "beads-status-cache.mjs": {
-          "hash": "776496f1ce0d71e9627288ebda924e6fec3d05752fb6fd3542dc50641827b1f7",
-          "version": "0.12.0"
-        },
-        "beads-status-cache.test.mjs": {
-          "hash": "5acab4b3335d373e371fb517e4f45f18ea7a82175a06fc3c161e490c7d69ba2f",
-          "version": "0.12.0"
-        },
-        "beads-stop-gate.mjs": {
-          "hash": "5f75d0dccd724dc30b67a9f964b47c94b457f9174806a4e5f1a9ee21b16e40e5",
-          "version": "0.12.0"
-        },
         "gitnexus/gitnexus-hook.cjs": {
           "hash": "d0f88b78c6723d6b6a45dbbd85e37d935bea4461046fd286d658951b16f68680",
           "version": "0.12.0"
@@ -71,7 +27,7 @@
           "version": "0.12.0"
         },
         "README.md": {
-          "hash": "594b8ae341a3beaf1fcbd125f409be03dadf48dc6a1c1513f37b420f8e9acaae",
+          "hash": "c9aa369a03e006d88b4ad56c2570c323112d4035a78de43d4ec731b64feb0643",
           "version": "0.12.0"
         },
         "specialists-agent-guard.mjs": {
@@ -79,11 +35,11 @@
           "version": "0.12.0"
         },
         "statusline.mjs": {
-          "hash": "d53454330328a3e8bd9dbee2aa1ff27607f45a8089f61198c000743d8878b32d",
+          "hash": "09647458d826dd5a98e260d0a6eab268197218e5a2c9785b035d91501172908e",
           "version": "0.12.0"
         },
         "statusline.test.mjs": {
-          "hash": "47a2cc09495ff6fee7c2d30a6f1efafdf2bfeb5f97b87ae867f345dae9020d31",
+          "hash": "d43042f73800d3762b53cb4c4636a2d822bce6e26f991a893cc21f3d85d15627",
           "version": "0.12.0"
         },
         "worktree-boundary.mjs": {
@@ -95,15 +51,15 @@
           "version": "0.12.0"
         },
         "xtrm-logger.mjs": {
-          "hash": "865592b9490f47da087f09b872284b7d281a9333a4e2a51f40e0535cf6334854",
+          "hash": "b9ca315b8d0b714abba0b8ede3435be9cda8822d28a02fa2d8327990e98c5314",
           "version": "0.12.0"
         },
         "xtrm-session-logger.mjs": {
-          "hash": "50bcd95a80b5e2174e9ecc498813917910d31a4cf19d46f44f9534e9004e3c15",
+          "hash": "702f4b7a9e3d8160900e2a8c034744b4814b15645b852ee353b37be1bb02746e",
           "version": "0.12.0"
         },
         "xtrm-tool-logger.mjs": {
-          "hash": "e562a304a12561e76131838c6b4a6b34c31b8e792f06bcaa5f9d37fe9a3ede21",
+          "hash": "1f526d320ae85b8b6d27d767e01adfe3f8fbbd9af3b5ec39bb0380d6215844e4",
           "version": "0.12.0"
         }
       }

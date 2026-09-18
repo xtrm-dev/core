@@ -16,17 +16,16 @@ Hooks intercept specific events in the Claude Code lifecycle. Following architec
 
 **Trigger**: PostToolUse (Grep|Glob|Bash|Serena edit tools)
 
-## Issue Tracking Gates (retired — lane 1 severed)
+## Issue Tracking Gates (retired — lane 2 deleted)
 
 The `bd` (beads) issue-tracker gates are retired. The 11 `beads-*.mjs` payload
-files remain on disk until lane 2 (deletion) but nothing live imports them:
+files were deleted in lane 2; nothing live imports them:
 
-- `statusline.mjs` — git-only line; `beads-status-cache.mjs` import cut, no `bd` subprocess.
+- `statusline.mjs` — git-only line; no `bd` subprocess.
 - `xtrm-tool-logger.mjs` / `xtrm-session-logger.mjs` — `resolveCwd`/`resolveSessionId`
-  inlined; `beads-gate-utils.mjs` import cut.
+  inlined.
 - `xtrm-logger.mjs` — project anchor is `.xtrm/`, not `.beads/`; no `.beads` probe.
-- Pi `custom-footer` — beads segment severed (`BEADS_RETIRED_LANE1`); renders
-  git-only; the cache module is never loaded (no-module path).
+- Pi `custom-footer` — git-only footer; no beads segment, no cache module load.
 - `claude-runtime-sync.ts` — SEAM comment updated; canonical template
   (`.xtrm/config/hooks.json`) wires no `beads-*` hooks.
 

@@ -6,13 +6,13 @@ describe('hook entry source tagging', () => {
     const result = await safeMergeOwnedHookSettings({
       hooks: {
         PostToolUse: [
-          { matcher: 'Bash', hooks: [{ type: 'command', command: 'node "/tmp/global/beads-claim-sync.mjs"' }], _source: 'xtrm-global' },
+          { matcher: 'Bash', hooks: [{ type: 'command', command: 'node "/tmp/global/statusline.mjs"' }], _source: 'xtrm-global' },
           { matcher: 'foo', hooks: [{ type: 'command', command: 'my-tool' }] },
         ],
       },
     }, {
       PostToolUse: [
-        { matcher: 'Bash', hooks: [{ type: 'command', command: 'node "/tmp/next/beads-claim-sync.mjs"' }] },
+        { matcher: 'Bash', hooks: [{ type: 'command', command: 'node "/tmp/next/statusline.mjs"' }] },
       ],
     });
 
