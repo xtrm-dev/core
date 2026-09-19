@@ -1,0 +1,856 @@
+{
+  "content_sha256": "443fa1e0b53eb0ac80e95ee814dcfaa3fc0081981506540104ca9fbda4cb67f4",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-hndwr.1"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.10"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.11"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.12"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.2"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.3"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.4"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.6"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.7"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.8"
+      },
+      {
+        "children": [],
+        "id": "xtrm-hndwr.9"
+      }
+    ],
+    "id": "xtrm-hndwr"
+  },
+  "issues": {
+    "xtrm-hndwr": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:49:51Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nRuntime observability is split across three stores with three incompatible envelopes and three CLIs. Answering \\\"what happened to bead X / chain Y / session Z\\\" requires running sp log, xt debug, and xtmux log separately and merging by hand. Cross-store correlation exists via bead_id/session_id/host_id — xtmux even stamps host_id/runtime_origin into payloads specifically so specialists can join back — but nothing actually joins. Chain view is cut off at every layer boundary: sp log has trace_id/span_id/parent_span_id/chain_id/node_id/conversation_id; xt debug and xtmux have none of it. Operators reflexively expect \\`xt log\\` and it does not exist.\n\n## SUCCESS\n\n- \\`xt log\\` command answers cross-store queries in one call: \\`--bead\\`, \\`--session\\`, \\`--pane\\`, \\`--chain\\`, \\`--source specialists|xtmux|xtrm|all\\`, \\`--family\\`, \\`--severity\\`, \\`--since\\`, \\`--limit\\`, \\`--json\\`, \\`-f\\`.\n- All three producers (specialists, xt debug, xtmux) emit xtrm.forensic.v1 envelopes natively — same event_family/event_name taxonomy, same correlation block, same severity + redaction fields.\n- host_id join key surfaces xtmux pane/session events inside a specialist chain-view.\n- Retention/severity/redaction is one story across all three stores.\n- Backwards-compat: sp log, xt debug, xtmux log continue to work.\n\n## SCOPE\n\nCross-repo epic:\n- \\`jaggerxtrm/xtrm-tools\\` (core): new \\`xt log\\` command in cli/src/commands/, adapter layer in cli/src/observability/, xt debug emitter refactor.\n- \\`Jaggerxtrm/xtmux\\`: emitter refactor in src/cli-log.ts + domains/identity/, new forensic table (or dual-write into existing observability.db), preserve host_id/runtime_origin as first-class correlation.\n- \\`xtrm-dev/specialists\\`: type-only shim publish or vendor path for the forensic-v1 envelope so adapters have a single source of truth; no producer changes.\n\n## NON_GOALS\n\n- Do not migrate historical data. Backfill is a follow-up bead.\n- Do not build a UI. \\`xt log\\` is CLI-only.\n- Do not unify retention/rotation infrastructure in this epic; only document the residual gap.\n- Do not touch \\`sp log\\`, \\`xt debug\\`, \\`xtmux log\\` CLIs beyond keeping them working — they stay as-is.\n- Do not add a new observability store. Everything reads from the three existing DBs.\n- Do not depend on OpenTelemetry libraries — emit forensic-v1 natively; OTEL export is a future epic.\n\n## CONSTRAINTS\n\n- Sequencing: Phase A (viewer/projection) ships end-to-end before Phase B (native emitter migration) starts. Phase B replaces projection with passthrough at the end.\n- Envelope: xtrm.forensic.v1 as defined in specialists/src/specialist/forensic-events.ts is the single source of truth. Do not fork the schema.\n- Emitter refactors are additive during migration (dual-emit both legacy and forensic) — flip cutover only after adapters land.\n- Timestamps in unified view are t_unix_ms; adapters normalize from ISO/epoch as needed.\n- xt log auto-discovers all .specialists/db/observability.db under a parent dir, mirroring sp log's aggregation model.\n- Logging/telemetry contract for this epic itself: each phase's completion emits a xt debug event (\\`kind=xtrm.log-epic.<phase>-complete\\`) with children ids for audit trail.\n\n## VALIDATION\n\n- [ ] \\`xt log --bead <id>\\` returns rows from all three sources merged and sorted by t_unix_ms\n- [ ] \\`xt log --chain <id> --source specialists\\` returns identical rows to \\`sp log --limit N\\` for the corresponding job(s)\n- [ ] \\`xt log --pane <%id>\\` surfaces xtmux pane/session/agent_state events that xtmux log emits\n- [ ] \\`xt log -f\\` follows across all three sources with <1s latency after emission\n- [ ] Post Phase B: xtmux + xt debug producers emit xtrm.forensic.v1 events with valid event_family/event_name/correlation/severity/redaction\n- [ ] host_id from xtmux events joins into specialists chain-view (proven via one integration test that runs a specialist chain from a specific pane and cross-checks correlation)\n- [ ] \\`sp log\\`, \\`xt debug\\`, \\`xtmux log\\` behavior unchanged (regression: run existing test suites in each repo)\n- [ ] Cross-repo integration smoke: spawn a specialist chain via xt pi, tail \\`xt log -f --chain <id>\\` in parallel, verify events from all three producers appear in order\n\n## OUTPUT\n\nOrchestrator hands back at epic close: the xt log CLI surface + adapter layer + native emitters in xtmux and xt debug; cross-repo integration smoke transcript; updated docs (xt help, CLAUDE.md skill routing, using-specialists reference to xt log); follow-up beads for Phase C (chain-view tree renderer, retention unification, backfill).\n\n## REFERENCES\n\n- specialists/src/specialist/forensic-events.ts — canonical envelope\n- specialists/src/cli/log.ts — reader pattern for forensic events\n- xtrm-tools/cli/src/commands/debug.ts — xt debug reader, .xtrm/debug.db schema\n- xtmux/src/cli-log.ts — xtmux log reader/writer\n- xtmux/src/domains/identity/{runtime-context,host-id}.ts — join-key stamping\n- xtrm-tools/cli/src/commands/topology.ts — existing cross-source aggregation pattern",
+        "id": "xtrm-hndwr",
+        "issue_type": "epic",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "xt log: unified runtime observability across sp forensic, xt debug, xtmux",
+        "updated_at": "2026-08-20T05:49:51Z"
+      }
+    },
+    "xtrm-hndwr.1": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:51:23Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:51:23Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.1",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 3,
+        "description": "## PROBLEM\n\nxtrm-tools has no dependency on specialists. To read forensic events from any store we need the ForensicEvent type + family/name enumeration available in core without pulling specialists as a runtime dep. Adapters (A2/A3/A4) will each parse forensic JSON — they need one shared type declaration.\n\n## SUCCESS\n\n- cli/src/observability/forensic-schema.ts exports ForensicEvent, ForensicSeverity, ForensicRedaction, ForensicResource, ForensicCorrelation types matching xtrm.forensic.v1\n- FORENSIC_SCHEMA_VERSION constant = 'xtrm.forensic.v1'\n- Enumerations for known event_family values (job|control|error|git|command|review|chain|worktree|process_health|retry|compaction|model|mcp|turn|tool|xtrm|xtmux)\n- One helper: familyOf(event_name) fallback for unknown names\n- Zero runtime deps added\n\n## SCOPE\n\n- New file: cli/src/observability/forensic-schema.ts\n- New file: cli/src/observability/forensic-schema.test.ts\n- No changes to specialists repo (type mirror, not import)\n- No producer/reader wiring yet (that's A2-A6)\n\n## NON_GOALS\n\n- Do not publish an npm package. Vendor-mirror pattern with a comment linking back to specialists/src/specialist/forensic-events.ts as canonical.\n- Do not add Zod / runtime validation. Types + a lightweight sanity check are enough.\n- Do not import specialists.\n\n## CONSTRAINTS\n\n- Type shape MUST match specialists/src/specialist/forensic-events.ts exactly. Any drift is a bug.\n- Add a header comment naming the canonical file + line range + a check-drift script hook (validated in A6 or via check:forensic-shim script).\n- SCRUTINY: medium (public contract for all adapters).\n\n## VALIDATION\n\n- [ ] npm run build passes\n- [ ] Vitest: type-only assertions (satisfies) + one round-trip parse test with a real forensic JSON sample from specialists\n- [ ] Manual: jq a real event out of a .specialists/db/observability.db and confirm the shim accepts it\n- [ ] Log: 'component=forensic-shim event=schema-loaded outcome=ok version=xtrm.forensic.v1' emitted on first use (visible via xt debug)\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/utils/ (types already colocated), cli/src/commands/debug.ts (sqlite reader pattern for A2)\n- **Installed deps:** better-sqlite3 already present via debug command\n- **Stdlib:** node:test / node:assert for type sanity if vitest not wanted\n- **New dep candidate:** none — tiers 1-3 cover it\n- **Roll it:** yes — thin type declaration + 1 helper\n\n## OUTPUT\n\nExecutor hands back: forensic-schema.ts + tests + verification that a real forensic event parses; brief note on drift-check strategy (script or manual).",
+        "id": "xtrm-hndwr.1",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "A1: forensic-v1 envelope shim in xtrm-tools (single source of truth for adapters)",
+        "updated_at": "2026-08-20T05:51:23Z"
+      }
+    },
+    "xtrm-hndwr.10": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:53:39Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:53:39Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.10",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-20T05:53:39Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.8",
+            "issue_id": "xtrm-hndwr.10",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nXtmux currently emits flat-shape events. Per B1 taxonomy, teach every xtmux emit site to also write a xtrm.forensic.v1 envelope so a specialist chain-view can join across the pane/session layer via host_id.\n\n## SUCCESS\n\n- New table specialist_forensic_events (mirror the specialists schema; keep name distinct if xtmux prefers xtmux_forensic_events) written alongside the existing events row\n- Every emit site (agents.state, command, bridge, journal, pane, session, message, retention, monitor) writes BOTH the legacy row AND the forensic row during the dual-write window\n- host_id populated on every forensic event (source of truth: src/domains/identity/host-id.ts)\n- Legacy xtmux log surface unchanged — regression test suite passes\n- New table has indexes: (job_id, t), (event_family, event_name, t), (correlation.bead_id) for xt log filter performance\n- Feature flag: XTMUX_FORENSIC_EMIT=on|off (default on after B5 cutover; during migration off means legacy-only)\n\n## SCOPE\n\n- xtmux repo: src/cli-log.ts, src/domains/identity/, all src/domains/*/... call sites of the current event emit function\n- src/db/migrations/ — add new table migration\n- src/observability/ — new module for forensic envelope construction (mirror pattern from specialists/src/specialist/forensic-events.ts)\n- Tests in tests/unit/observability/ and tests/integration/\n\n## NON_GOALS\n\n- Do not remove legacy events table (Phase B5 handles cutover; retention/removal is Phase C).\n- Do not migrate historical events; new table starts empty at deploy time.\n- Do not change xtmux log CLI shape (it continues to read the legacy table until B5).\n\n## CONSTRAINTS\n\n- Dual-write must be atomic per emit call (single transaction). If forensic-write fails, log a diagnostic but DO NOT fail the legacy write.\n- host_id must never be missing; if identity module returns null, emit a stale_warning to xtmux log.\n- Latency budget: forensic emit adds <=1ms per event under load (measured by fixture bench).\n- Backwards-compat with response-episodes projection (recent xtmux #105) — do not disturb agent_turns or agent_episodes shape.\n- SCRUTINY: high (touches every emitter).\n\n## VALIDATION\n\n- [ ] Every emit call site verified with sp explorer sweep (proof no site left un-dual-written)\n- [ ] Vitest: forensic envelope for each family conforms to schema\n- [ ] Integration: run a live xtmux session, assert new table populated with events matching legacy table entries\n- [ ] Bench: measure emit latency before/after (target <1ms delta)\n- [ ] Regression: full xtmux test suite passes; xtmux log query returns identical results\n- [ ] Smoke: xt log --pane <%id> (via A5) returns xtmux forensic events\n\n## LIBRARIES\n\n- **Reuse in repo:** src/domains/identity/{host-id,runtime-context}.ts, existing sqlite writer, migration pattern from src/db/migrations/\n- **Installed deps:** better-sqlite3 (or xtmux's current sqlite binding)\n- **Stdlib:** n/a\n- **New dep candidate:** none\n- **Roll it:** yes — envelope construction is thin\n\n## OUTPUT\n\nNew forensic table + emitter changes + migration + tests + bench numbers + regression pass transcript. Cross-repo verification: xt log --source xtmux against the new table.",
+        "id": "xtrm-hndwr.10",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "B3: xtmux emitter refactor — dual-emit legacy + xtrm.forensic.v1",
+        "updated_at": "2026-08-20T05:53:39Z"
+      }
+    },
+    "xtrm-hndwr.11": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:53:39Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:53:39Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.11",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-20T05:53:39Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.9",
+            "issue_id": "xtrm-hndwr.11",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nSame shape as B3 but for xtrm-tools .xtrm/debug.db (Claude Code + Pi runtime + hooks). Per B2 taxonomy, teach every emit site to dual-write a xtrm.forensic.v1 envelope.\n\n## SUCCESS\n\n- New table forensic_events in .xtrm/debug.db alongside events\n- Every hook emit site writes both legacy row and forensic row\n- Correlation-block populated: session_id, bead_id, tool_name, runtime (claude-code|pi|codex)\n- Legacy xt debug CLI unchanged; regression suite passes\n- Feature flag: XTRM_DEBUG_FORENSIC_EMIT=on|off\n\n## SCOPE\n\n- xtrm-tools/core: cli/src/core/emit-event.ts (or wherever events flow), all hook payload writers under .xtrm/hooks/ that persist events\n- cli/src/commands/debug.ts — no change (still reads legacy table)\n- New migration for .xtrm/debug.db (or programmatic table create; check how xt debug bootstraps its DB)\n\n## NON_GOALS\n\n- Do not remove legacy events table (B5).\n- Do not migrate historical events.\n- Do not touch policies/*.json (hook wiring).\n\n## CONSTRAINTS\n\n- Dual-write atomic; legacy write is authoritative during migration.\n- SCRUTINY: high.\n\n## VALIDATION\n\n- [ ] Every emit site swept and verified dual-writing\n- [ ] Vitest: envelope conforms to schema\n- [ ] Integration: run a Claude Code session, assert forensic_events populated with matching entries\n- [ ] Regression: xt debug shows identical events; npm test --workspace cli passes\n- [ ] Smoke: xt log --source xtrm --bead <recent> returns forensic events\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/commands/debug.ts (existing schema), cli/src/core/ (emit utils)\n- **Installed deps:** better-sqlite3\n- **Stdlib:** n/a\n- **New dep candidate:** none\n- **Roll it:** yes\n\n## OUTPUT\n\nNew table + emitter changes + migration + tests + regression pass.",
+        "id": "xtrm-hndwr.11",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "B4: xt debug emitter refactor — dual-emit legacy + xtrm.forensic.v1",
+        "updated_at": "2026-08-20T05:53:39Z"
+      }
+    },
+    "xtrm-hndwr.12": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:53:40Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:53:40Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.12",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-20T05:54:10Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.10",
+            "issue_id": "xtrm-hndwr.12",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-20T05:54:10Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.11",
+            "issue_id": "xtrm-hndwr.12",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-20T05:53:40Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.6",
+            "issue_id": "xtrm-hndwr.12",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 3,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nOnce B3 + B4 land, xt debug and xtmux emit forensic-v1 natively. The projection code inside adapter-xtrm-debug.ts and adapter-xtmux.ts (A2/A3) becomes dead weight. Retire projection; switch adapters to read the new forensic tables directly (passthrough, like A4).\n\n## SUCCESS\n\n- adapter-xtrm-debug.ts reads .xtrm/debug.db forensic_events table directly, no projection\n- adapter-xtmux.ts reads xtmux forensic table directly, no projection\n- Legacy read path removed from both adapters (or kept behind a --legacy flag for one release, then removed)\n- xt log output identical before/after the switch (proven by golden-file comparison against a captured fixture)\n- Migration cutover doc: adapters check that forensic tables have >0 rows before flipping; fallback to projection with a stale_warning if not (transitional safety net)\n- xtmux + xt debug regression suites still pass — legacy tables and CLIs untouched (retention of legacy tables is Phase C)\n\n## SCOPE\n\n- xtrm-tools/core: cli/src/observability/adapter-xtrm-debug.ts, cli/src/observability/adapter-xtmux.ts, cli/src/commands/log.ts (source-selection may simplify)\n- Delete projection helpers no longer used\n- Tests: golden-file diff of merged xt log output before/after cutover\n\n## NON_GOALS\n\n- Do not delete legacy events tables from producers (Phase C).\n- Do not touch A4 (specialists) — it was already passthrough.\n- Do not remove --source flag; users still want per-source filtering.\n\n## CONSTRAINTS\n\n- Cutover MUST be reversible via a single feature flag XT_LOG_FORENSIC_READ=off (falls back to projection).\n- SCRUTINY: medium.\n- Log a cutover event via xt debug: 'kind=xtrm.log.cutover source=<xtmux|xtrm> mode=native'\n\n## VALIDATION\n\n- [ ] Vitest: forensic-native-read path returns identical rows to projection path for a fixture DB pair\n- [ ] Smoke: xt log --bead <recent> output identical before/after XT_LOG_FORENSIC_READ toggle\n- [ ] Regression: sp log, xt debug, xtmux log all still function\n- [ ] Integration: xt log -f --chain <id> during a live specialist run — no missing events\n\n## LIBRARIES\n\n- **Reuse in repo:** existing adapter files, forensic-schema.ts\n- **Installed deps:** better-sqlite3\n- **New dep candidate:** none\n- **Roll it:** yes — this is a simplification\n\n## OUTPUT\n\nSimplified adapters + cutover doc + golden-file test + regression transcript. Follow-up bead filed for Phase C (legacy table retention/removal).",
+        "id": "xtrm-hndwr.12",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "B5: retire projection adapters — A2/A3 become passthrough on native forensic tables",
+        "updated_at": "2026-08-20T05:53:40Z"
+      }
+    },
+    "xtrm-hndwr.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:51:24Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:51:24Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-20T05:51:24Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.1",
+            "issue_id": "xtrm-hndwr.2",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nxt debug persists events with flat kind strings (tool.call, gate.decision, bd.committed, session.*). The unified xt log reader needs these projected into forensic-v1 shape so they merge with sp/xtmux events using one filter set.\n\n## SUCCESS\n\n- cli/src/observability/adapter-xtrm-debug.ts exports readXtrmDebug(dbPath, filters) → ForensicEvent[]\n- Each kind maps to an event_family + event_name: tool.* → family='tool', name='tool.call.<phase>'; gate.* → family='control', name='control.gate.<decision>'; bd.* → family='bd' (new family), name='bd.<action>'; session.* → family='xtrm', name='xtrm.session.<phase>'.\n- correlation block populated: bead_id, session_id, tool_name where available\n- resource.participant_kind='claude-code' or 'pi' derived from event.runtime column\n- Timestamps normalized to t_unix_ms\n- severity: 'info' default; 'error' when outcome column indicates failure\n\n## SCOPE\n\n- New: cli/src/observability/adapter-xtrm-debug.ts (+ test)\n- No changes to xt debug producer / .xtrm/debug.db schema (that's B4)\n- Reuse the sqlite reader pattern from cli/src/commands/debug.ts:196\n\n## NON_GOALS\n\n- Do not backfill severity/redaction for historical events (they get 'info'/'clean' defaults).\n- Do not touch xt debug CLI output.\n\n## CONSTRAINTS\n\n- Read-only against .xtrm/debug.db. Never write.\n- Query must accept the same filter set the xt log CLI exposes (--bead, --session, --since, --limit).\n- Preserve id ordering as tiebreaker after t_unix_ms.\n- Logging: 'component=xtrm-debug-adapter event=read outcome=ok rows=<N> duration_ms=<...>' via xt debug (self-hosted).\n- SCRUTINY: medium.\n\n## VALIDATION\n\n- [ ] Vitest with a fixture .xtrm/debug.db → adapter returns valid ForensicEvent[] for each of tool/gate/bd/session kinds\n- [ ] Property: every returned event passes forensic-schema.ts type check\n- [ ] Filter round-trip: bead filter returns only rows with matching bead_id\n- [ ] Smoke: run against the live ~/dev/core/.xtrm/debug.db, spot-check 5 real events\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/commands/debug.ts (existing reader), cli/src/utils/ (helpers)\n- **Installed deps:** better-sqlite3\n- **Stdlib:** n/a\n- **New dep candidate:** none\n- **Roll it:** yes — thin projection\n\n## OUTPUT\n\nAdapter file + test + verification transcript on live .xtrm/debug.db + one-page mapping table (kind → family+name).",
+        "id": "xtrm-hndwr.2",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "A2: adapter — .xtrm/debug.db events → forensic-v1 view",
+        "updated_at": "2026-08-20T05:51:24Z"
+      }
+    },
+    "xtrm-hndwr.3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:51:24Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:51:24Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.3",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-20T05:51:24Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.1",
+            "issue_id": "xtrm-hndwr.3",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nXtmux persists events at $XDG_STATE_HOME/xtmux/observability.db and legacy events.jsonl with flat type strings (agents.state.*, command.*, bridge.*, journal.*). Unified xt log must include these so the tmux/pane layer is visible in a chain-view alongside specialist forensic events.\n\n## SUCCESS\n\n- cli/src/observability/adapter-xtmux.ts exports readXtmux(filters) → ForensicEvent[]\n- Auto-discovers the xtmux observability DB path from XDG_STATE_HOME (fallback ~/.local/state/xtmux/observability.db).\n- Maps types: agents.state.* → family='agent_state', name='agent_state.<state>'; command.* → family='command'; bridge.* → family='bridge'; journal.* → family='journal'.\n- correlation block: session_id (from tmux session), pane_id (%id), bead_id when present.\n- resource.host_id populated from xtmux host-id if surfaced; else omitted.\n- Timestamps normalized: ts_epoch (seconds) → t_unix_ms.\n\n## SCOPE\n\n- New: cli/src/observability/adapter-xtmux.ts (+ test)\n- Prefer SQLite reader over events.jsonl parser. Only fall back to jsonl when observability.db is absent.\n- No changes to xtmux producer (that's B3).\n\n## NON_GOALS\n\n- Do not shell out to \\`xtmux log query\\`. Read the DB directly for performance and to avoid CLI drift.\n- Do not attempt to parse rotated jsonl history in this task; only the primary file. Rotation-aware read is a follow-up.\n\n## CONSTRAINTS\n\n- Read-only. Never write to xtmux DB.\n- Handle missing DB gracefully (empty result, log a debug event, do not fail xt log).\n- SCRUTINY: medium.\n\n## VALIDATION\n\n- [ ] Vitest with fixture DB + fixture jsonl → adapter returns valid ForensicEvent[]\n- [ ] Missing DB path: returns [] and emits xt debug event 'source=xtmux status=absent'\n- [ ] Smoke: run against live ~/.local/state/xtmux/observability.db, spot-check agent_state transitions match \\`xtmux log query --limit 5\\`\n\n## LIBRARIES\n\n- **Reuse in repo:** better-sqlite3 reader pattern from cli/src/commands/debug.ts\n- **Installed deps:** better-sqlite3\n- **Stdlib:** node:fs, node:path for XDG discovery\n- **New dep candidate:** none\n- **Roll it:** yes\n\n## OUTPUT\n\nAdapter file + test + verification transcript on live DB + one-page mapping table.",
+        "id": "xtrm-hndwr.3",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "A3: adapter — xtmux observability.db + events.jsonl → forensic-v1 view",
+        "updated_at": "2026-08-20T05:51:24Z"
+      }
+    },
+    "xtrm-hndwr.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:51:25Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:51:25Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-20T05:51:25Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.1",
+            "issue_id": "xtrm-hndwr.4",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nSpecialists already writes xtrm.forensic.v1 events. The unified reader just needs to discover every .specialists/db/observability.db under a parent dir (mirroring sp log's aggregation) and stream events. No projection needed; passthrough.\n\n## SUCCESS\n\n- cli/src/observability/adapter-specialists.ts exports readSpecialists(cwdOrParent, filters) → ForensicEvent[]\n- Discovery mirrors specialists/src/cli/log.ts:135-167: from a repo root reads that repo; from a parent dir aggregates every child with .specialists/db/observability.db.\n- Passthrough: JSON.parse(event_json) is the ForensicEvent. No re-shaping.\n- Filters: jobId, beadId, chainId, since — mapped to SQL WHERE clauses per specialists reader pattern.\n- Repo name is tagged into resource.service_component or a diagnostic field so downstream can label origin.\n\n## SCOPE\n\n- New: cli/src/observability/adapter-specialists.ts (+ test)\n- No changes to specialists repo.\n- Reuse the discovery + WHERE-clause logic verbatim from specialists/src/cli/log.ts.\n\n## NON_GOALS\n\n- Do not import the specialists package. Duplicate the ~40 LOC of reader logic and tag the file with a comment linking back to canonical.\n- Do not add the runtime-vs-agent-internal filter — leave that to the xt log CLI in A5.\n\n## CONSTRAINTS\n\n- Reader must accept the same limit*4 over-fetch pattern from specialists for follow correctness.\n- SCRUTINY: medium.\n\n## VALIDATION\n\n- [ ] Vitest with fixture .specialists/db/observability.db → passthrough returns valid ForensicEvent[]\n- [ ] Cross-repo discovery test: seed 2 fake repo dirs under a tmpdir, verify both DBs are read\n- [ ] Smoke: run against ~/dev, expect all repos with specialists DBs to surface\n\n## LIBRARIES\n\n- **Reuse in repo:** better-sqlite3 (as in debug.ts)\n- **Installed deps:** better-sqlite3\n- **Stdlib:** node:fs (readdirSync/statSync), node:path\n- **New dep candidate:** none\n- **Roll it:** yes\n\n## OUTPUT\n\nAdapter file + test + verification transcript + note that logic was mirrored from specialists/src/cli/log.ts and both must stay in sync.",
+        "id": "xtrm-hndwr.4",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "A4: adapter — .specialists/db/observability.db → forensic-v1 passthrough with cross-repo aggregation",
+        "updated_at": "2026-08-20T05:51:25Z"
+      }
+    },
+    "xtrm-hndwr.6": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:51:57Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:51:57Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.6",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-20T05:51:57Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.2",
+            "issue_id": "xtrm-hndwr.6",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-20T05:51:57Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.3",
+            "issue_id": "xtrm-hndwr.6",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-20T05:51:57Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.4",
+            "issue_id": "xtrm-hndwr.6",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 3,
+        "dependent_count": 2,
+        "description": "## PROBLEM\n\nAdapters exist but there is no CLI entry point. Operators want one command that answers 'what happened around bead X' by merging events from all three sources with common filters, common output, follow mode.\n\n## SUCCESS\n\n- New command: cli/src/commands/log.ts registered as \\`xt log\\`\n- Flags: --bead, --session, --pane, --chain, --source (specialists|xtmux|xtrm|all; default all), --family, --severity, --since (5m|iso), --limit (default 200), --json, -f/--follow\n- Merges results from adapter-specialists + adapter-xtmux + adapter-xtrm-debug, sorted by t_unix_ms with (seq, source) tiebreaker\n- Follow mode polls at 750ms with cursor-based dedup (seq or event_json hash)\n- Default output: single-line compact row (ts family/name severity [source] correlation-summary body-preview). --json emits NDJSON of full ForensicEvent\n- --source filter short-circuits: --source specialists skips other adapters entirely\n- Help text names the trade-off vs sp log / xt debug / xtmux log (xt log = unified read; source-specific commands remain for tail/deep drill)\n\n## SCOPE\n\n- New: cli/src/commands/log.ts\n- New: cli/src/observability/merge.ts (sort+dedup helper)\n- Register command in cli/src/index.ts\n- No producer changes.\n\n## NON_GOALS\n\n- Do not build tree-view rendering (that's Phase C).\n- Do not add per-source pagination cursors this iteration; one over-fetch pass + tail slice is enough.\n- Do not deprecate sp log / xt debug / xtmux log.\n\n## CONSTRAINTS\n\n- Follow-mode must survive one source being unavailable (missing DB path). Log the source-absent event via xt debug and continue.\n- Do not raise process exit code when one source is empty — only when ALL sources fail.\n- --json output MUST be one valid NDJSON row per event, ForensicEvent shape, no wrapper.\n- SCRUTINY: medium.\n- Logging contract: xt debug 'kind=xtrm.log.query outcome=ok sources=[...] rows=<N> duration_ms=<...>' per invocation.\n\n## VALIDATION\n\n- [ ] Integration: seed fixture DBs from A2/A3/A4 fixtures; xt log --bead X returns merged rows in ts order\n- [ ] --source flag round-trips: xt log --source specialists matches adapter-specialists direct output\n- [ ] --follow: emit new event into a fixture DB during follow, verify it appears within 1s\n- [ ] --json: pipe to jq, validate all rows conform to forensic-schema\n- [ ] Missing DB: xt log --source xtmux with no xtmux DB → exits 0, logs source-absent\n- [ ] Smoke: xt log --bead <recent-bead> on live env, verify rows from at least 2 of the 3 sources appear\n\n## LIBRARIES\n\n- **Reuse in repo:** cli/src/commands/topology.ts (aggregation pattern), cli/src/commands/debug.ts (follow-mode + formatting)\n- **Installed deps:** commander (already in xt CLI)\n- **Stdlib:** node:setInterval for follow loop\n- **New dep candidate:** none\n- **Roll it:** yes\n\n## OUTPUT\n\nCommand file + merge helper + integration tests + before/after transcript comparing three-CLI juggling to one xt log --bead invocation.",
+        "id": "xtrm-hndwr.6",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "A5: xt log CLI — merge/sort/filter across 3 adapters",
+        "updated_at": "2026-08-20T05:51:57Z"
+      }
+    },
+    "xtrm-hndwr.7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:52:44Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:52:44Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.7",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-20T05:52:44Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr.6",
+            "issue_id": "xtrm-hndwr.7",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nxt log is only discoverable if it appears in xt help, CLAUDE.md, and the using-* skills. Otherwise operators will keep juggling three CLIs.\n\n## SUCCESS\n\n- xt help lists log with a one-line description\n- README.md gets a short section on unified observability\n- CLAUDE.md 'Essential command surface' adds \\`xt log\\` alongside xt debug + xt topology\n- ~/.xtrm/skills/default/using-specialists/references/monitoring.md and starting-and-resuming-work reference xt log where appropriate\n- 'Current gotchas' notes Phase B (native forensic in xtmux + xt debug) is in-flight\n\n## SCOPE\n\n- README.md\n- CLAUDE.md\n- cli/src/commands/help.ts (if scripted)\n- ~/.xtrm/skills/default/using-specialists/references/monitoring.md\n- ~/.xtrm/skills/default/starting-and-resuming-work/SKILL.md\n\n## NON_GOALS\n\n- Do not rewrite xtrm docs architecture.\n- Do not touch xtmux README (that's B3) or specialists README.\n\n## CONSTRAINTS\n\n- Keep additions terse; do not duplicate command help.\n- SCRUTINY: low.\n\n## VALIDATION\n\n- [ ] npm run check:payload-hygiene passes\n- [ ] xt help contains 'log' entry\n- [ ] Skills resolve\n\n## LIBRARIES\n\n- **Reuse in repo:** existing doc templates\n- **New dep candidate:** none\n- **Roll it:** yes\n\n## OUTPUT\n\nDiff of updated files + brief note on touched skills.",
+        "id": "xtrm-hndwr.7",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "A6: docs + skill routing for xt log (Phase A)",
+        "updated_at": "2026-08-20T05:52:44Z"
+      }
+    },
+    "xtrm-hndwr.8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:52:45Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:52:45Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.8",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nBefore touching the xtmux emitter (B3), enumerate every event kind xtmux emits and pick the xtrm.forensic.v1 family + event_name for each. Design first, code second — the taxonomy is the public contract.\n\n## SUCCESS\n\n- docs/design/xtmux-forensic-taxonomy.md in xtmux repo lists every current xtmux event type with proposed (event_family, event_name, severity_default, redaction_default, correlation-fields)\n- Covers: agents.state.* (needs-input/running/idle/done/failed), command.*, bridge.*, journal.*, session.*, pane.*, message.*, retention.*, monitor.*\n- Reserves a top-level event_family='xtmux' with sub-namespace by tmux concept: xtmux.pane.*, xtmux.session.*, xtmux.agent_state.*, xtmux.message.*, xtmux.bridge.*\n- Names the correlation-block fields xtmux populates: host_id (mandatory), session_id, pane_id, bead_id, message_key\n- Documents the migration strategy (dual-write window: emit both legacy type-row AND forensic-shape row, cutover after adapters verify)\n- Reviewer gate: seconder + specialists-creator review (they own the forensic-v1 schema in specialists repo)\n\n## SCOPE\n\n- New: docs/design/xtmux-forensic-taxonomy.md (xtmux repo)\n- No code changes.\n\n## NON_GOALS\n\n- Do not implement the emitter (B3).\n- Do not migrate historical events.\n- Do not decide retention policy (Phase C).\n\n## CONSTRAINTS\n\n- event_name MUST be dot-namespaced and stable — this is a contract with consumers.\n- host_id is REQUIRED for every xtmux event (it's the join key to specialists chain-view).\n- SCRUTINY: none (design doc, read-only).\n\n## VALIDATION\n\n- [ ] Doc reviewed by orchestrator + specialists-creator specialist\n- [ ] Every current xtmux event type has an entry\n- [ ] Correlation-block fields verified against ForensicEvent shape in specialists/src/specialist/forensic-events.ts\n\n## LIBRARIES\n\n- N/A — pure design doc\n\n## OUTPUT\n\nDesign doc committed to xtmux repo + link posted on the epic.",
+        "id": "xtrm-hndwr.8",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "B1: design — xtmux forensic families & names (event taxonomy)",
+        "updated_at": "2026-08-20T05:52:45Z"
+      }
+    },
+    "xtrm-hndwr.9": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-20T05:52:46Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-20T05:52:46Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-hndwr",
+            "issue_id": "xtrm-hndwr.9",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n\nSame as B1 but for xtrm-tools .xtrm/debug.db. Enumerate every kind the xtrm hooks emit (Claude Code + Pi runtime) and pick a canonical forensic family+name.\n\n## SUCCESS\n\n- docs/design/xtrm-debug-forensic-taxonomy.md in xtrm-tools/core repo\n- Covers: tool.call, gate.decision, bd.claimed/committed/closed, session.start/stop, hook events (PreToolUse, PostToolUse, UserPromptSubmit, Notification, Stop, etc.)\n- Proposes event_family='xtrm' with subnamespaces xtrm.tool.*, xtrm.gate.*, xtrm.bd.*, xtrm.session.*, xtrm.hook.*\n- Names correlation-block fields: session_id, bead_id, tool_name, runtime (claude-code|pi|codex), participant_kind\n- Documents dual-emit migration (write both to .xtrm/debug.db events table AND to a new forensic_events table; cutover after adapters verify)\n\n## SCOPE\n\n- New: docs/design/xtrm-debug-forensic-taxonomy.md\n- No code changes.\n\n## NON_GOALS\n\n- Do not implement (B4).\n- Do not touch the hook implementations.\n\n## CONSTRAINTS\n\n- Reuse specialists forensic naming conventions where they apply (e.g., tool.call.started/completed/failed already exists there — mirror it).\n- SCRUTINY: none.\n\n## VALIDATION\n\n- [ ] Reviewed by orchestrator + specialists-creator\n- [ ] Every current .xtrm/debug.db kind has an entry\n- [ ] Correlation-block validated against forensic-schema\n\n## LIBRARIES\n\n- N/A\n\n## OUTPUT\n\nDesign doc + link posted on the epic.",
+        "id": "xtrm-hndwr.9",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "B2: design — xt debug (Claude Code + Pi) forensic families & names",
+        "updated_at": "2026-08-20T05:52:46Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:23Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.1",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.1",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:53:39Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.8",
+        "issue_id": "xtrm-hndwr.10",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.10",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.8",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:53:39Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.10",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.10",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:53:39Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.9",
+        "issue_id": "xtrm-hndwr.11",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.11",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.9",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:53:39Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.11",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.11",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:54:10Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.10",
+        "issue_id": "xtrm-hndwr.12",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.12",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.10",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:54:10Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.11",
+        "issue_id": "xtrm-hndwr.12",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.12",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.11",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:53:40Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.6",
+        "issue_id": "xtrm-hndwr.12",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.12",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.6",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:53:40Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.12",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.12",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:24Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.1",
+        "issue_id": "xtrm-hndwr.2",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.2",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:24Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.2",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:24Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.1",
+        "issue_id": "xtrm-hndwr.3",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.3",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:24Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.3",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.3",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:25Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.1",
+        "issue_id": "xtrm-hndwr.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.4",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:25Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.4",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:57Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.2",
+        "issue_id": "xtrm-hndwr.6",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.6",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.2",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:57Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.3",
+        "issue_id": "xtrm-hndwr.6",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.6",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.3",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:57Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.4",
+        "issue_id": "xtrm-hndwr.6",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.6",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.4",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:51:57Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.6",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.6",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:52:44Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr.6",
+        "issue_id": "xtrm-hndwr.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-hndwr.7",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr.6",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:52:44Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.7",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.7",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:52:45Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.8",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.8",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-20T05:52:46Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-hndwr",
+        "issue_id": "xtrm-hndwr.9",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-hndwr.9",
+      "source_field": "dependencies",
+      "target": "xtrm-hndwr",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-hndwr",
+  "root_title": "xt log: unified runtime observability across sp forensic, xt debug, xtmux",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,44 @@
+{
+  "content_sha256": "c128eeb33196cdcbbc9512ec72c5787dc747139a763003350fb99f686b79e678",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-y0tdg"
+  },
+  "issues": {
+    "xtrm-y0tdg": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-10T12:07:15Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nThe xtrm-bq7yd epic shipped the data-plane half of the global-skills migration (shipped skills move to ~/.xtrm/skills/default; per-repo default/ + optional/ get removed on xt migrate). The wiring plane and the layout itself are still shaped for the pre-epic world. Session 2026-07-10 smoke pass across ~/dev/{console,vaultctl,specialists} + ~/projects/mercury/{treasury-cb,darth-feedor} surfaced four wiring bugs plus one design cliff. Three audit passes on this bead (xt-skills session 2026-07-11) confirmed the diagnosis and drove a substantially simpler design.\n\nLocked design: retire the materialized active/ view at BOTH scopes; xt skills enable/disable populates the runtimes' native skill directories directly (.claude/skills/ and .pi/skills/); global stays global, project stays project, no cross-view composition; global optional/ tier is retained (xtrm-vendored content); repo layout flattens to .xtrm/skills/<pack>/ with no PACK.json; runtime pointers at global become single-hop symlinks into default/.\n\n## SUCCESS\n\nGlobal layout:\n- ~/.xtrm/skills/default/ = shipped, always active. Invariant: dirname === frontmatter.name (release-gate enforced).\n- ~/.xtrm/skills/optional/ = shipped, opt-in per-repo via state.json.enabledPacks.\n- No ~/.xtrm/skills/active/; ~/.claude/skills and ~/.pi/agent/skills are dir symlinks direct to ~/.xtrm/skills/default/.\n\nProject layout:\n- <repo>/.xtrm/skills/state.json = { schemaVersion, enabledPacks: {claude, pi}, managedLinks: {claude, pi} }.\n- <repo>/.xtrm/skills/<pack>/ = flat top-level packs. Each pack has no PACK.json.\n- No .xtrm/skills/{default,optional,user,active}/ at project scope.\n- <repo>/.claude/skills/ = real dir of xt-managed symlinks populated on xt skills enable.\n- <repo>/.pi/skills/ = real dir of xt-managed symlinks (Pi natively discovers these; no .pi/settings.json.skills[] entry needed).\n\nDiscovery:\n- Non-reserved top-level dir under .xtrm/skills/ is a pack. pack.name = dirname.\n- Pack skills: (a) <pack>/SKILL.md if present, runtimeName = frontmatter.name ?? dirname; (b) each direct child dir with SKILL.md, same rule.\n- Legacy PACK.json warned once per session, never parsed.\n\nEnable/reconcile semantics:\n- xt skills enable <pack> resolves via priority: project pack > global optional > default (already active; refused) > not-found (error).\n- Collision check MANDATORY at enable time against global default (Pi and Claude both silently prefer user-global over project). Reject with clear error.\n- Reject same-name project pack + global optional collisions (enabledPacks stays string-keyed).\n- For each runtime enabled-for, write <repo>/<runtime-skills-dir>/<runtime-name> -> <absolute-path> via temp-symlink + rename. Update managedLinks in state.json LAST after all links are written.\n- xt init and xt update --apply reconcile the runtime dirs from either v1 or v2 discovery automatically (v1 runtime compatibility path).\n- Reap: only remove links tracked in state.json.managedLinks that are not in the newly-computed desired set. Non-managed links (user-owned) untouched.\n\nMigration:\n- xt migrate skills-layout --apply: user/packs/<pack>/ → <pack>/, drop PACK.json, delete active/ at project scope. Reconciles runtime dirs post-move.\n- Existing xt migrate skills (data-plane) unchanged; its restore sidecar is retired (no external pointer state to snapshot under direct-symlink model).\n\nDocs:\n- update-xt/SKILL.md sweep, service-skills library docs sweep, specialists-creator/creating-service-skills references to PACK.json / user/packs updated.\n\n## SCOPE\n\nTwo children:\n- .1 — Repo skills tree v2: layout flatten, drop PACK.json, retire project active/, docs sweep.\n- .2 — Direct-symlink runtime dirs + retire global active/ + collision/reconcile/managed-links machinery.\n\nOrdering: .2 first (owns the reconcile function that .1 will plug new discovery into), .1 second. Under this ordering the reconcile machinery is layout-agnostic; .1 swaps the discovery input without touching runtime materialization.\n\n## NON_GOALS\n\n- Flattening the global tree (~/.xtrm/skills/default and /optional keep their tier structure at global scope; those are xtrm-vendored payloads).\n- Changing enabledPacks: { claude, pi } schema shape (managedLinks is additive; string values).\n- Silent auto-migration of the layout on any command other than explicit xt update --apply or xt migrate skills-layout.\n- Removing the xtrm-hzkdk local-legacy pack repair; it stays as-is but becomes dead code under v2 (no PACK.json written for local-legacy either).\n- Adding project-shadows-global runtime-name precedence semantics.\n- Restoring backups made under active/ era across the v2 cutover — restore preflight will refuse if state has changed shape.\n\n## CONSTRAINTS\n\n- Deprecation window: 2 minor releases where v1 layout discovery still resolves for xt skills enable/reconcile purposes; native runtime discovery works throughout via auto-reconciled runtime dirs.\n- Restore semantics for xt migrate skills remain \"reverses migrate only\"; the ordering caveat stays documented.\n- Preserve docs/skills-ownership.json ownership.\n- No new dependencies. No new secrets.\n- Runtime-name collision detection is MANDATORY across scopes at enable time; must be identical logic for Claude and Pi.\n\n## VALIDATION\n\n- Full cli test suite pass.\n- New tests: v2 layout discovery, v1 discovery shim, runtime-link reconciliation (idempotent, retry-safe, ownership preserved), collision-against-global-default rejection, same-name-project-vs-global-optional rejection, managed-link manifest round-trip, xt migrate skills-layout on fixture with service-skills umbrella.\n- Manual smoke: repeat the 5-repo pass (console, vaultctl, specialists, treasury-cb, darth-feedor). Verify (a) 0 dangling symlinks anywhere post-migrate, (b) xt update --apply on migrated repos surfaces enabled packs correctly, (c) claude and pi see the expected skills.\n- Docs render check: xt docs show update-xt describes v2.\n\n## OUTPUT\n\nTwo child beads shipped in the ordering above. Consolidated smoke evidence. Docs sweep summary. Deprecation warning in the layout resolver. Shim window scheduled for release N+2.\n\n## AUDIT HISTORY\n\nThree audit passes on this bead by xt-skills session 2026-07-11 (openai-codex/gpt-5.6-terra/high). Full audit notes preserved in this bead's notes. Verdicts: pass 1 = needs-revision, pass 2 = needs-revision, pass 3 = needs-revision-with-locked-answers-in-three-blockers.\n\nLocked answers to pass 3 blockers:\n- Blocker 1 (v1 runtime compatibility): xt init and xt update --apply auto-reconcile runtime dirs from v1 sources during the shim window. Explicit xt migrate skills-layout handles the destructive data-plane move.\n- Blocker 2 (reap ownership): managed-link manifest in state.json.managedLinks tracks xt-owned links per runtime. Reap only removes tracked links not in the newly-computed desired set. Non-managed links are always safe.\n- Blocker 3 (same-name project vs global optional): reject with error. enabledPacks stays string-keyed. Scope-aware shadowing deferred to a future bead if a real product case arises.",
+        "id": "xtrm-y0tdg",
+        "issue_type": "epic",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "Hooks-migration parity triage: NOT fold into y0tdg. Hooks are project-owned policy runtime (settings use $CLAUDE_PROJECT_DIR/.xtrm/hooks); globalizing risks hook/config ownership drift. Correct target is role-worktree hook scaffold parity (option c), but needs dedicated migration/runtime epic due install/migrate/restore/template implications. Filed follow-up epic.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Repo skills layout v2 + migrate wiring completion",
+        "updated_at": "2026-07-11T14:22:27Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-y0tdg",
+  "root_title": "Repo skills layout v2 + migrate wiring completion",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

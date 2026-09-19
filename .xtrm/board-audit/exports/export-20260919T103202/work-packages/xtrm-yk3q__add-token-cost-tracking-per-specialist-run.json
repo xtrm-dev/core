@@ -1,0 +1,41 @@
+{
+  "content_sha256": "dd83384815a7c3db417a69f7fe3e483f6cf7dc604f5f814d429b6b24046d27e4",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-yk3q"
+  },
+  "issues": {
+    "xtrm-yk3q": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-04-02T22:28:19Z",
+        "created_by": "you@example.com",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Research finding: 'Ask HN: How are you keeping AI coding agents from burning money?' was a top discussion topic — cost control is a major concern for agent users.\n\n**Action items:**\n1. Add token counting to specialists CLI (--track-costs flag)\n2. Log cost per run to ~/.xtrm/costs.json with: specialist, bead, model, tokens_in, tokens_out, estimated_cost\n3. Show cost summary in specialists result output\n4. Add alert threshold (--alert-over=$5.00)\n5. Display cumulative costs in bd show <id> for claimed issues\n\n**Example output:**\n```\nspecialists run bug-hunt --bead bd-123 --track-costs\n# ... run completes ...\n# Cost: $0.42 (gemini-flash) — 847K tokens (412K in, 435K out)\n```\n\n**Why this matters:** Users need visibility into agent operating costs, especially for long-running specialist jobs.\n\n**Source:** last30days research on AI coding agents (HN discussion)",
+        "id": "xtrm-yk3q",
+        "issue_type": "feature",
+        "notes": "Release triage 2026-05-04: valuable roadmap work, but not required for the next patch release. Defer until after release-critical bugfix/docs/packaging items land.",
+        "owner": "you@example.com",
+        "priority": 3,
+        "status": "deferred",
+        "title": "Add token/cost tracking per specialist run",
+        "updated_at": "2026-05-08T15:37:05Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-yk3q",
+  "root_title": "Add token/cost tracking per specialist run",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

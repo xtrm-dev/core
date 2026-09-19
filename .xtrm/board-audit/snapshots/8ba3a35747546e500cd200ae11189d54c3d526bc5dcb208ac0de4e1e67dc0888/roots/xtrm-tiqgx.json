@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-tiqgx"],"open_issue_count":1,"root_id":"xtrm-tiqgx","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"565a57452c4380cf02949a5a3ed05ee6a225ce7c011b083939c3877c11c8f50b","title":"core: raw drift_detector hook in ~/.claude/settings.json lacks [-f] guard"}

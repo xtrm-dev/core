@@ -1,0 +1,39 @@
+{
+  "content_sha256": "28779dbfd12627519343f5f0e029d0b950e6f2fa55ba1a3eb8da5b2bd9f1e70f",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-mm19b"
+  },
+  "issues": {
+    "xtrm-mm19b": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-21T21:45:39Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "id": "xtrm-mm19b",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "READ-ONLY CONTRACT:",
+        "updated_at": "2026-07-21T21:45:39Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-mm19b",
+  "root_title": "READ-ONLY CONTRACT:",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

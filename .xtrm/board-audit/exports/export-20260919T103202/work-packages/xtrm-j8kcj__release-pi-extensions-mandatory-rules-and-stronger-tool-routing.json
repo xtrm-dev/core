@@ -1,0 +1,442 @@
+{
+  "content_sha256": "6a4be6e06fb735337d24e65afcca5d89aa2c2194f7e115fc86da91b5f8a9e34d",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:05Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj.3",
+        "issue_id": "xtrm-j8kcj.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-j8kcj.4",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj.3",
+      "target_present_in_snapshot": true,
+      "target_title": "explorer: design stronger Python and ast-grep enforcement",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-j8kcj.2"
+      },
+      {
+        "children": [],
+        "id": "xtrm-j8kcj.4"
+      },
+      {
+        "children": [],
+        "id": "xtrm-j8kcj.6"
+      },
+      {
+        "children": [],
+        "id": "xtrm-j8kcj.7"
+      },
+      {
+        "children": [],
+        "id": "xtrm-j8kcj.8"
+      },
+      {
+        "children": [],
+        "id": "xtrm-j8kcj.9"
+      }
+    ],
+    "id": "xtrm-j8kcj"
+  },
+  "issues": {
+    "xtrm-j8kcj": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-01T18:22:03Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nFinal extension and mandatory-rules work is reviewed but not integrated, documented, re-vendored, release-tested, or published. Interactive agents also underuse Python and ast-grep.\n## SUCCESS\nSpecialists and Core ship precise README-first docs, stronger bounded tool routing, fresh release evidence, and operator-gated publication.\n## SCOPE\nSpecialists final branch 66087bb3, Core candidate 4d61f233, README/CHANGELOG, prompt/advisory extensions, vendor and release gates.\n## NON_GOALS\nNo permission weakening. No publication without explicit final confirmation.\n## CONSTRAINTS\nSCRUTINY: critical. Preserve native Pi extension behavior and deterministic artifacts. Global prompt surface is HIGH risk: 11 upstream across four processes.\n## VALIDATION\n- [ ] Integration and deterministic builds pass.\n- [ ] README and release notes are precise.\n- [ ] Python/ast-grep routing is conditional and tested.\n- [ ] Core vendor and fresh Alpine/glibc gates pass.\n- [ ] Publication remains operator-gated.\n## LIBRARIES\nExisting repository and release tooling only.\n## OUTPUT\nFinal SHAs, hashes, release notes, evidence, blocker adjudication, and publication verification.",
+        "id": "xtrm-j8kcj",
+        "issue_type": "epic",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 0,
+        "status": "open",
+        "title": "Release Pi extensions, mandatory rules, and stronger tool routing",
+        "updated_at": "2026-09-01T18:22:03Z"
+      }
+    },
+    "xtrm-j8kcj.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-01T18:22:04Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-01T18:22:04Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj",
+            "issue_id": "xtrm-j8kcj.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nRelease behavior is fragmented and hard to discover.\n## SUCCESS\nREADME is the longer maintainable primary guide for extensions, mandatory rules, tool policy, Python, ast-grep, and troubleshooting.\n## SCOPE\nSpecialists README.md only; inspect docs and commits as evidence.\n## NON_GOALS\nDo not edit secondary docs or claim publication.\n## CONSTRAINTS\nSCRUTINY: high. Exact commands and null/[]/replace semantics. Include Alpine ast-grep limitation.\n## LIBRARIES\nN/A — documentation sync.\n## VALIDATION\n- [ ] Live CLI commands checked.\n- [ ] No runtime-policy contradiction.\n- [ ] README-first navigation is clear.\n## OUTPUT\nOne README commit plus citation/drift report.",
+        "id": "xtrm-j8kcj.2",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "sync-docs: make Specialists README the canonical release guide",
+        "updated_at": "2026-09-01T18:22:04Z"
+      }
+    },
+    "xtrm-j8kcj.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-01T18:22:05Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-01T18:22:05Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj",
+            "issue_id": "xtrm-j8kcj.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-01T18:22:05Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj.3",
+            "issue_id": "xtrm-j8kcj.4",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-09-01T19:02:45Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj.9",
+            "issue_id": "xtrm-j8kcj.4",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 2,
+        "dependent_count": 1,
+        "description": "## PROBLEM\nImplement the approved enforcement design.\n## SUCCESS\nSuitable structural searches prefer ast_grep and repeated parse/aggregate loops prefer persistent Python, conditionally when active, with fallbacks and evidence.\n## SCOPE\nFiles authorized by explorer design plus tests/generated assets.\n## NON_GOALS\nNo hard grep/bash ban or ceremonial tool calls.\n## CONSTRAINTS\nSCRUTINY: critical. Global prompt path HIGH risk; report before editing. Preserve activation and permissions.\n## LIBRARIES\nReuse installed extensions only.\n## VALIDATION\n- [ ] Conditional injection tests.\n- [ ] Model smoke calls both tools.\n- [ ] Simple config/prose grep remains valid.\n- [ ] Full QA/security pipeline passes.\n## OUTPUT\nCommits, behavior examples, evidence, limitations.",
+        "id": "xtrm-j8kcj.4",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "executor: implement bounded Python and ast-grep routing enforcement",
+        "updated_at": "2026-09-01T18:22:05Z"
+      }
+    },
+    "xtrm-j8kcj.6": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-01T18:22:07Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-01T18:22:07Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj",
+            "issue_id": "xtrm-j8kcj.6",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-01T18:22:07Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj.4",
+            "issue_id": "xtrm-j8kcj.6",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\nCore pins aa7975e4 and must consume the final Specialists SHA.\n## SUCCESS\nVendor record, skills/assets, registry and payload match exact final RC.\n## SCOPE\nCore vendor metadata, vendored files, registry, artifacts, README/CHANGELOG.\n## NON_GOALS\nNo unrelated refactors or publication.\n## CONSTRAINTS\nSCRUTINY: critical. Preserve trust, permission, and deterministic-build contracts.\n## LIBRARIES\nExisting repository tooling only.\n## VALIDATION\n- [ ] Vendor/source hashes match.\n- [ ] Registry/pack/ownership/security gates pass.\n- [ ] GitNexus change detection expected only.\n## OUTPUT\nCore RC SHA, tarball hash, parity evidence.",
+        "id": "xtrm-j8kcj.6",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 0,
+        "status": "open",
+        "title": "executor: re-vendor final Specialists into Core",
+        "updated_at": "2026-09-01T18:22:07Z"
+      }
+    },
+    "xtrm-j8kcj.7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-01T18:22:07Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-01T18:22:07Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj",
+            "issue_id": "xtrm-j8kcj.7",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-01T18:22:07Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj.6",
+            "issue_id": "xtrm-j8kcj.7",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\nFinal payload needs fresh package-aligned release proof and Alpine blocker adjudication.\n## SUCCESS\nFresh musl/glibc matrices prove installs, global surface, bounded tools, bead/prompt integrity, and model calls to Python/ast_grep.\n## SCOPE\nPacked Core/Specialists/xtmux artifacts and smoke scripts/evidence.\n## NON_GOALS\nNo publication or evidence deletion.\n## CONSTRAINTS\nSCRUTINY: critical. Disk-backed TMPDIR; hash evidence; baseline-compare Alpine failures.\n## LIBRARIES\nExisting smoke/container tooling.\n## VALIDATION\n- [ ] Alpine supported surface passes.\n- [ ] glibc full matrix passes.\n- [ ] Model calls Python and ast_grep.\n- [ ] Mutation tools absent.\n- [ ] xtrm-1fwl6 adjudicated.\n## OUTPUT\nEvidence bundle, hashes, matrix, recommendation.",
+        "id": "xtrm-j8kcj.7",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 0,
+        "status": "open",
+        "title": "test-runner: run Alpine and glibc final release gates",
+        "updated_at": "2026-09-01T18:22:07Z"
+      }
+    },
+    "xtrm-j8kcj.8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-01T18:22:08Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-01T18:22:08Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj",
+            "issue_id": "xtrm-j8kcj.8",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-01T18:22:08Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj.7",
+            "issue_id": "xtrm-j8kcj.8",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nPublication is irreversible and needs cumulative review and operator confirmation.\n## SUCCESS\nReviewer PASS and exact decision packet; publish only after explicit operator approval.\n## SCOPE\nCumulative diffs, tarballs, evidence, npm metadata, release notes.\n## NON_GOALS\nReviewer does not publish.\n## CONSTRAINTS\nSCRUTINY: critical. npm publish always escalates.\n## LIBRARIES\nExisting release tooling.\n## VALIDATION\n- [ ] QA/security/obligations/reviewer PASS.\n- [ ] Packs and registry checked.\n- [ ] Exact publish commands presented for approval.\n- [ ] If approved, publish and verify dist-tags/install smoke.\n## OUTPUT\nRelease decision packet and optional publication evidence.",
+        "id": "xtrm-j8kcj.8",
+        "issue_type": "task",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 0,
+        "status": "open",
+        "title": "reviewer: final release and publication gate",
+        "updated_at": "2026-09-01T18:22:08Z"
+      }
+    },
+    "xtrm-j8kcj.9": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-01T19:02:44Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-01T19:02:44Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-j8kcj",
+            "issue_id": "xtrm-j8kcj.9",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 1,
+        "description": "## PROBLEM\n~/.pi/agent/APPEND_SYSTEM.md contains four xtrm:global-prompt pairs, but Core global-prompt-sync supports exactly one unnamed pair and xt update --apply will throw. The command-chaining block is Core-owned; ast-grep, probe/kernel, and repo-knowledge blocks are operator-owned and must survive byte-identical.\n## SUCCESS\nPrompt sync identifies its owned command-chaining block, updates only that block, preserves unmatched blocks and all outside bytes, supports migration from the current four unnamed pairs, and remains idempotent.\n## SCOPE\ncli/src/core/global-prompt-sync.ts, cli/src/tests/global-prompt-sync.test.ts, packaged command-chaining asset, update/pi-install integration tests if required.\n## NON_GOALS\nDo not package or rewrite the three operator-owned blocks. Do not implement tool-routing enforcement here.\n## CONSTRAINTS\nSCRUTINY: critical. renderManagedGlobalPrompt impact LOW/5, two processes; readCanonicalGlobalPromptBody path HIGH/11 and must remain compatible. Follow claude-sync named/versioned unknown-fragment-preservation precedent. Fail closed only on malformed ownership of the Core-owned block, not on unknown blocks.\n## VALIDATION\n- [ ] Current four-block APPEND_SYSTEM.md dry-run/apply succeeds.\n- [ ] Core-owned body updates; other three blocks remain byte-identical.\n- [ ] Single legacy unnamed block migrates safely.\n- [ ] Duplicate owned names/nesting fail visibly.\n- [ ] Repeated sync is idempotent and CRLF/outside bytes preserved.\n- [ ] update and pi-install prompt tests pass.\n## LIBRARIES\nReuse claude-sync parser/sentinel patterns and Node stdlib; no dependency.\n## OUTPUT\nCommitted fix, migration examples, tests, impact/detect_changes, residual compatibility risks.",
+        "heartbeat_at": "2026-09-01T19:13:43Z",
+        "id": "xtrm-j8kcj.9",
+        "issue_type": "bug",
+        "lease_expires_at": "2026-09-01T19:18:43Z",
+        "notes": "Code complete. Rewrote renderManagedGlobalPrompt to a named marker owner model: Core-owned command-chaining block identified by <!-- xtrm:global-prompt:command-chaining:start|end -->; operator-owned blocks (unnamed/other-named) preserved byte-identical. Migration: unnamed block whose first line matches canonical command-chaining heading converts to named owned form (handles current four-uncnamed layout). Fail closed only on malformed owned markers (duplicate/orphan/out-of-order) or ambiguous candidates. Verified: tsc clean; global-prompt-sync.test.ts 30/30; update.test.ts + pi-install-global-prompt.test.ts 22/22; real ~/.pi/agent/APPEND_SYSTEM.md probe -> replace-block, 3 operator blocks byte-identical, idempotent on rerun.\nSECONDER FAIL: (1) shipped cli/dist/index.cjs remains stale old single-block implementation; package bin executes dist, so source-only fix does not ship. Rebuild and add package-bin smoke. (2) source normalizes mixed EOL across whole file, violating byte-identical outside owned span; replace by original string offsets. (3) unnamed marker pairing lacks structural validation for nested/overlap; refuse ambiguity before replacement. Add mixed-EOL byte assertions and malformed unnamed nesting/overlap regressions. Re-run source+dist/package-bin tests. Operator decision on monitor sentence remains pending; do not resolve it silently.\nSECURITY REQUEST CHANGES adds: migrate unnamed block only on complete normalized body equality against explicit canonical/legacy allowlist, never first-line heading alone; customized same-heading block must remain byte-identical and named Core block is prepended or actionable ambiguity returned. Also preflight/render BOTH Pi and Claude targets before writing either, so malformed second target leaves both unchanged. Where practical surface preflight before install/update side effects; at minimum make prompt sync atomic across targets with regression. Existing seconder findings cover stack/interval validation and mixed-EOL offsets.\nSeconder+security round applied: (1) render now splices by original string offsets (mixed-EOL outside bytes byte-identical, no whole-file re-EOL). (2) Migration claims an unnamed block ONLY on exact complete normalized-body equality to canonical/legacy allowlist (never first-line heading); customized same-heading block stays byte-identical and Core named block is prepended — the operator monitor line in the real block1 is neither dropped nor promoted (decision left pending). (3) Structural validation (pairBlocks) refuses nested/orphan/mismatched unnamed markers before any claim. (4) syncGlobalPrompts plans BOTH Pi+Claude targets before writing either; malformed second target leaves both unchanged. Rebuilt tracked cli/dist/index.cjs (+.map) so the shipped bin carries the fix; added hidden _global-prompt-sync diagnostic command + package-bin smoke against a four-block fixture (prepend + byte-identical operator preservation + idempotent rerun). Tests: global-prompt-sync 38/38, update+pi-install 56/..., auto_commit: checkpoint_on_waiting.\nROUND-2 SECONDER FAIL on 14331fb2: owned-block fast path replaces before global pairBlocks validation; nested/crossing operator marker inside/across owned span can be deleted/orphaned. Validate complete marker structure before every replacement. Concurrent creation race: planned original=null is not checked; a target created after plan can be overwritten. Before commit, assert still absent (exclusive create/appropriate fail) and abort preserving new file; add deterministic regression. Remove production _global-prompt-sync command and index wiring; it is visible and unjustified API surface. Exercise existing production update/pi-install route if feasible; otherwise retain source test plus deterministic dist rebuild/stale-dist assertion without adding runtime API. Rebuild dist and tests.\nSECURITY round-2 confirms SEC-01..04 closed but adds second-target commit failure atomicity: planning preflight alone is insufficient. Stage both writes, then if second replacement fails, roll back first target to exact original state (including restore absence for originally absent target). Add injected deterministic second-commit failure regression asserting both targets unchanged. Production diagnostic command removal already required, so SEC-05 resolves by deletion rather than hide/apply gate.\nROUND-2 fixes: (1) hoisted global structural validation (pairBlocks) BEFORE the owned fast path so a nested/crossing marker intersecting the owned span refuses (regression added); duplicate-owned still fails closed explicitly. (2) commit phase is now transactional: stage (guards+backup+temp) THEN rename both; if second rename fails, first is rolled back to exact original bytes (or absence). Exclusive-create guard: a target absent at plan must still be absent before create, else refuse and preserve the concurrent file (regression, deterministic via _beforeWrite). Added injected second-commit-failure regressions for both original-exists restore and absence restore. (3) DELETED _global-prompt-sync command + index wiring entirely (not hidden). Package-bin smoke now a deterministic rebuild + stale-dist guard (asserts new literals present, command absent; CI git-diff dist check enforces freshness). Rebuilt dist. auto_commit: checkpoint_on_waiting.\nFINAL SECONDER FAIL on 08dd2d5b: absent-target lstat guard catches every error as absence; catch ONLY ENOENT and propagate EACCES/EIO. Rollback currently suppresses unlink/write failures; collect rollback failures and throw GlobalPromptSyncError containing original commit error plus exact rollback failures/possibly inconsistent targets. Add deterministic EACCES lstat and rollback-failure regressions. Rebuild dist.\nFINAL gaps closed: (1) exclusive-create guard now treats ONLY ENOENT as absence; EACCES/EIO and other lstat errors propagate (regression injects EACCES at the guard lstat — target not created, sibling untouched). (2) rollback/temp-cleanup failures are no longer swallowed; the thrown GlobalPromptSyncError aggregates the original commit failure + each rollback failure (label+path) + affected target paths + cleanup count (regression injects commit-fail then rollback-fail and asserts all surfaced). Rebuilt dist. Testing: global-prompt-sync 43/43, integration 56/56; full suite running.\nFINAL DELTA RECHECK FAIL d74fe5de: rollbackTarget still swallows fs.remove failure for originally-absent target at source ~421. Remove catch; propagate so collector reports it. Cleanup failures are only a count; collect target label + temp path + message for each and include all in GlobalPromptSyncError. Add regressions for absent-target rollback removal failure and target-qualified cleanup failure reporting. Rebuild dist.\nDelta recheck: rollbackTarget no longer suppresses fs.remove for originally-absent targets (remove failure propagates to the collector and surfaces under rollback failure(s)); temp-cleanup failures are now collected individually with target label + temp path + error (temp cleanup failure(s)) instead of a bare count. Regressions: absent-target rollback-remove failure surfacing; target-qualified cleanup failure. Rebuilt dist. 45/45 sync, 56/56 integration; full suite running.",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 0,
+        "started_at": "2026-09-01T19:13:43Z",
+        "status": "in_progress",
+        "title": "executor: preserve operator blocks in Pi global-prompt sync",
+        "updated_at": "2026-09-01T20:44:07Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:04Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj",
+        "issue_id": "xtrm-j8kcj.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-j8kcj.2",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T19:02:45Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj.9",
+        "issue_id": "xtrm-j8kcj.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-j8kcj.4",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj.9",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:05Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj",
+        "issue_id": "xtrm-j8kcj.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-j8kcj.4",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:07Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj.4",
+        "issue_id": "xtrm-j8kcj.6",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-j8kcj.6",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj.4",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:07Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj",
+        "issue_id": "xtrm-j8kcj.6",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-j8kcj.6",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:07Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj.6",
+        "issue_id": "xtrm-j8kcj.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-j8kcj.7",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj.6",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:07Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj",
+        "issue_id": "xtrm-j8kcj.7",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-j8kcj.7",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:08Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj.7",
+        "issue_id": "xtrm-j8kcj.8",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "xtrm-j8kcj.8",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj.7",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T18:22:08Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj",
+        "issue_id": "xtrm-j8kcj.8",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-j8kcj.8",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-01T19:02:44Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-j8kcj",
+        "issue_id": "xtrm-j8kcj.9",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-j8kcj.9",
+      "source_field": "dependencies",
+      "target": "xtrm-j8kcj",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-j8kcj",
+  "root_title": "Release Pi extensions, mandatory rules, and stronger tool routing",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,710 @@
+{
+  "content_sha256": "2e3bce1b875ed3d915c03f1dacbae6084657a5b0dd8a6d90edd6945b762769ca",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "xtrm-23rcq"
+      },
+      {
+        "children": [],
+        "id": "xtrm-3n4ez"
+      },
+      {
+        "children": [],
+        "id": "xtrm-3o2ko"
+      },
+      {
+        "children": [],
+        "id": "xtrm-9rhsg"
+      },
+      {
+        "children": [],
+        "id": "xtrm-9w54r"
+      },
+      {
+        "children": [],
+        "id": "xtrm-bgizw"
+      },
+      {
+        "children": [],
+        "id": "xtrm-e31hz"
+      },
+      {
+        "children": [],
+        "id": "xtrm-foipw"
+      },
+      {
+        "children": [],
+        "id": "xtrm-nyv85"
+      },
+      {
+        "children": [],
+        "id": "xtrm-rquk2"
+      },
+      {
+        "children": [],
+        "id": "xtrm-v48hm"
+      },
+      {
+        "children": [],
+        "id": "xtrm-wrdo3"
+      }
+    ],
+    "id": "xtrm-mk488"
+  },
+  "issues": {
+    "xtrm-23rcq": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "Shims are removed or reduced; registry imports direct implementations; extension registration tests pass.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:15Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:12Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-23rcq",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: packages/pi-extensions/src/extensions/*.ts are mostly 3-line re-export shims that only import ../extensions/<name>/index.ts and re-export default. The registry can import extension indexes directly.\nSCOPE: Update packages/pi-extensions/src/registry.ts to import extension implementations directly, then delete redundant shim files where safe.\nGITNEXUS_EVIDENCE: registerManagedPiExtensions impact is LOW: one direct caller registerXtrmPiExtensions. The registry is the central seam to update.\nSUCCESS: Same managedPiExtensions list, fewer files, no runtime behavior change.\nNON_GOALS: Do not change extension IDs or registration order.\nVALIDATION: npm run verify:runtime --workspace @jaggerxtrm/pi-extensions if available; npm run build; extension parity tests.",
+        "id": "xtrm-23rcq",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "pi-extensions",
+          "ponytail-audit",
+          "refactor"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: collapse Pi extension shim files",
+        "updated_at": "2026-07-05T03:37:12Z"
+      }
+    },
+    "xtrm-3n4ez": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "cli/pnpm-lock.yaml is removed or documented as required; cli/package-lock.json remains unless CI is changed in the same PR.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:11Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:11Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-3n4ez",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: cli/pnpm-lock.yaml appears to be a side-effect artifact while the repository CI uses npm. Keeping multiple lock systems creates confusion and extra review churn.\nSCOPE: Remove cli/pnpm-lock.yaml if no maintained workflow needs pnpm; document npm as the lock authority for the CLI workspace.\nGITNEXUS_EVIDENCE: Repo search found CI using npm ci and no live workflow reference to pnpm-lock. Previous audit marked cli/package-lock.json unsafe to delete because CI runs cd cli && npm ci.\nSUCCESS: pnpm lockfile is gone or explicitly justified, and npm CI remains unchanged.\nNON_GOALS: Do not remove cli/package-lock.json unless CI is migrated away from cd cli && npm ci.\nVALIDATION: .github/workflows/ci.yml still works conceptually; npm ci && cd cli && npm ci; npm test --workspace cli.",
+        "id": "xtrm-3n4ez",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "ci",
+          "cleanup",
+          "lockfiles",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: remove unused pnpm lockfile without breaking npm CI",
+        "updated_at": "2026-07-05T03:37:11Z"
+      }
+    },
+    "xtrm-3o2ko": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": ".xtrm/ext-src no longer ships as source; remaining references are intentional docs/migration metadata; Pi runtime tests pass.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:08Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:10Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-3o2ko",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: .xtrm/ext-src is documented as deprecated legacy Pi extension source, but the files remain tracked alongside the current packages/pi-extensions source. Keeping both invites stale edits and noisy payloads.\nSCOPE: Remove tracked .xtrm/ext-src files, preserve/update migration documentation, and decide whether legacy-path-map should remain as documentation-only compatibility metadata.\nGITNEXUS_EVIDENCE: Live references were limited to docs/xtrm-directory.md and packages/pi-extensions/src/shared/legacy-path-map.ts; current runtime functions resolve packages/pi-extensions.\nSUCCESS: Deprecated source files are gone while legacy cleanup/docs still explain the migration path.\nNON_GOALS: Do not remove packages/pi-extensions or break existing installed user extensions.\nVALIDATION: npm run check:layout-guards; npm run check:payload-hygiene; Pi runtime/source-dir tests.",
+        "id": "xtrm-3o2ko",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "legacy",
+          "pi-extensions",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: retire deprecated .xtrm/ext-src extension tree",
+        "updated_at": "2026-07-05T03:37:10Z"
+      }
+    },
+    "xtrm-9rhsg": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": ".xtrm/skills/deferred is removed/migrated or officially supported with tests/docs.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:24Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:16Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-9rhsg",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: .xtrm/skills/deferred contains skills outside the documented default/optional/user/active tier model. There is little code support for a deferred tier, so it is either dead inventory or undocumented policy.\nSCOPE: Decide whether deferred skills should be deleted, moved into optional packs, or documented as a supported tier with tooling.\nGITNEXUS_EVIDENCE: Search found no active tier handling for .xtrm/skills/deferred in the skills layout; current tiers are default, optional, and user.\nSUCCESS: No unsupported tracked tier remains, or the tier is explicitly supported and tested.\nNON_GOALS: Do not silently drop useful skills; preserve by moving to optional if still valuable.\nVALIDATION: skill discovery/materializer tests; check-layout-guards; docs update if tier remains.",
+        "id": "xtrm-9rhsg",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "legacy",
+          "ponytail-audit",
+          "skills"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: remove or formalize deferred skill tier",
+        "updated_at": "2026-07-05T03:37:16Z"
+      }
+    },
+    "xtrm-9w54r": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "cli/lib and test-vault-dryrun.js are removed; no import references remain; CLI build/tests pass.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:13Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:11Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-9w54r",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: cli/lib contains an old JavaScript copy of CLI internals preserved after TypeScript migration, plus test-vault-dryrun.js imports that old tree. This duplicates logic that should live in cli/src and cli/dist only.\nSCOPE: Remove cli/lib and test-vault-dryrun.js after confirming no shipped command, test, or doc path depends on them.\nGITNEXUS_EVIDENCE: GitNexus shows cli/lib symbols have little/no upstream impact; CHANGELOG says old cli/lib/*.js was preserved but no longer referenced. Text refs are mostly docs and the stale dry-run script.\nSUCCESS: Old JS mirror is gone and TypeScript source/build remains the only implementation.\nNON_GOALS: Do not remove cli/dist, because package bin points to compiled output.\nVALIDATION: npm run typecheck --workspace cli; npm test --workspace cli; npm run build; git diff --exit-code cli/dist/ after build if required.",
+        "id": "xtrm-9w54r",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "cli",
+          "legacy",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: remove old JS CLI mirror and dry-run script",
+        "updated_at": "2026-07-05T03:37:11Z"
+      }
+    },
+    "xtrm-bgizw": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "Unused deps are absent from manifest/lockfiles and all CLI checks pass.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:09Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:10Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-bgizw",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: cli/package.json lists runtime dependencies listr2, minimist, and project, but exact import scans found no usage. Unused dependencies increase install size and audit noise.\nSCOPE: Remove unused dependency declarations and update lockfiles using the repository-supported package manager flow.\nGITNEXUS_EVIDENCE: Exact import search found no imports/requires for listr2, minimist, or project in cli/src, scripts, packages, or extension sources.\nSUCCESS: Dependencies are removed, lockfiles are consistent, and CLI build/tests pass.\nNON_GOALS: Do not replace dependencies that are actively imported.\nVALIDATION: npm install or npm ci-equivalent lock refresh; npm run typecheck --workspace cli; npm test --workspace cli; npm run build.",
+        "id": "xtrm-bgizw",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "dependencies",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: remove unused CLI dependencies",
+        "updated_at": "2026-07-05T03:37:10Z"
+      }
+    },
+    "xtrm-e31hz": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "A single canonical skill source is implemented or a documented decision keeps both; all skill runtime/release gates pass.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:20Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:14Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-e31hz",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The repo has both root skills/ and .xtrm/skills/default with overlapping content. This is the largest line-saving candidate but also touches source-root discovery and runtime skill materialization.\nSCOPE: Decide the canonical source for built-in skills, update findRepoRoot/source repo detection, registry generation, materialization, docs, and release gates accordingly.\nGITNEXUS_EVIDENCE: findRepoRoot impact CRITICAL: direct callers include claude, clean, init preflight, install-pi, pi, spec apply/doctor, and status. discoverDefaultSkills and rebuildAllRuntimeActiveViews are also CRITICAL.\nSUCCESS: One canonical skill source remains, active runtime views still build, package payload still includes required skills, and user fallback remains intact.\nNON_GOALS: Do not delete either tree before proving package/install/runtime behavior end-to-end.\nVALIDATION: npm run gen-registry; npm run check:registry-pack-parity; npm run check:skills-ownership; npm run check:layout-guards; skills materializer/discovery tests; xt init smoke.",
+        "id": "xtrm-e31hz",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "critical-risk",
+          "gitnexus-critical",
+          "ponytail-audit",
+          "skills"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: resolve root skills vs .xtrm/skills/default source split",
+        "updated_at": "2026-07-05T03:37:14Z"
+      }
+    },
+    "xtrm-foipw": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "Decision recorded; if replaced, fs-extra is gone from manifests and all CLI tests/build pass.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:21Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:15Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-foipw",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: fs-extra is heavily used for file operations that modern node:fs/promises can cover. Removing it could cut a dependency, but the churn is broad and easy to get subtly wrong.\nSCOPE: Inventory fs-extra usage and replace only low-risk calls where Node stdlib is equivalent, or document why keeping fs-extra is cheaper.\nGITNEXUS_EVIDENCE: Import scan found fs-extra used in roughly 98 files including tests and core CLI utilities. Previous audit verdict: not worth doing as casual cleanup.\nSUCCESS: Either dependency remains with justification, or a staged mechanical migration removes it with strong test coverage.\nNON_GOALS: Do not mix this with functional cleanup epics.\nVALIDATION: full CLI test suite; build; install/init smoke; Windows path semantics review for copy/remove/ensureDir equivalents.",
+        "id": "xtrm-foipw",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "dependencies",
+          "high-churn",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: reassess fs-extra dependency replacement",
+        "updated_at": "2026-07-05T03:37:15Z"
+      }
+    },
+    "xtrm-mk488": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "One parent epic owns all Ponytail cleanup child tasks; every child has risk-specific validation evidence before close.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:37:08Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Ponytail audit identified roughly 51k lines of possible cleanup, but GitNexus showed mixed risk: some candidates are safe deletions, while skills/runtime source cleanup is HIGH/CRITICAL risk. The work should be tracked as one cleanup epic with child tasks, not many independent epics.\nSCOPE: Coordinate the vetted cleanup candidates as child issues, preserving GitNexus risk evidence and requiring targeted validation per child.\nSUCCESS: Each cleanup candidate is implemented or explicitly rejected with evidence; no init/status/preflight/Pi-runtime/skills-runtime regression ships.\nNON_GOALS: Do not batch all deletions into one PR; high-risk children must be handled separately.\nVALIDATION: Child-specific validation plus final npm test --workspace cli, npm run build, and GitNexus detect-changes before merge.",
+        "id": "xtrm-mk488",
+        "issue_type": "epic",
+        "labels": [
+          "cleanup",
+          "gitnexus-vetted",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-06T23:07:08Z",
+        "status": "open",
+        "title": "Ponytail cleanup: repository line-count reduction",
+        "updated_at": "2026-07-06T23:07:33Z"
+      }
+    },
+    "xtrm-nyv85": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": ".xtrm/cache/docs-list.json is untracked/ignored and docs commands still work.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:23Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:15Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-nyv85",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: .xtrm/cache/docs-list.json is generated by docs-cache code and should not be source-controlled unless it is an intentional package artifact. Tracking cache creates noisy diffs.\nSCOPE: Remove the cache file from git, ensure .gitignore/package rules exclude generated cache, and keep docs list command regenerating it.\nGITNEXUS_EVIDENCE: docs-cache.ts writes .xtrm/cache/docs-list.json at runtime. References are confined to docs scanner/list tests and docs command behavior.\nSUCCESS: Cache regenerates locally but is not tracked.\nNON_GOALS: Do not remove docs scanning functionality.\nVALIDATION: docs-list tests; xtrm docs list smoke; git status stays clean after cache generation if ignored.",
+        "id": "xtrm-nyv85",
+        "issue_type": "task",
+        "labels": [
+          "cache",
+          "child",
+          "cleanup",
+          "docs",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: stop tracking generated docs cache",
+        "updated_at": "2026-07-05T03:37:16Z"
+      }
+    },
+    "xtrm-rquk2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": ".xtrm/packages/pi-extensions is untracked/removed; no runtime or packaging reference expects it; Pi extension package tests pass.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:06Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:09Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-rquk2",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The repository keeps a tracked duplicate of the Pi extension package under .xtrm/packages/pi-extensions even though packages/pi-extensions is the documented source of truth. This adds thousands of mirrored lines and increases drift risk without serving a runtime path.\nSCOPE: Remove .xtrm/packages/pi-extensions from tracked payload, update any stale registry/package references, and keep packages/pi-extensions as the only package source.\nGITNEXUS_EVIDENCE: Text search found no live references to .xtrm/packages. GitNexus Pi-extension flows point at packages/pi-extensions/package-mode runtime, not the .xtrm/packages mirror.\nSUCCESS: The mirror is gone from git, package/install flows still resolve npm:@jaggerxtrm/pi-extensions, and registry/package parity checks pass.\nNON_GOALS: Do not change extension behavior or package publishing semantics.\nVALIDATION: npm run check:registry-pack-parity; npm run check:payload-hygiene; npm run build; targeted Pi runtime tests.",
+        "id": "xtrm-rquk2",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "gitnexus-vetted",
+          "pi-extensions",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: remove duplicate Pi extension package mirror",
+        "updated_at": "2026-07-05T03:37:10Z"
+      }
+    },
+    "xtrm-v48hm": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "Either legacy branch is removed with tests, or issue documents why it must remain; no init/status/preflight regression.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:19Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:13Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-v48hm",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: calculateDiff/detectAdapter still carry legacy .agents/skills and single-Claude adapter plumbing. This looks like stale compatibility code, but it sits in init/status/preflight paths.\nSCOPE: Investigate and, if safe, remove the .agents/skills special-case and ToolAdapter/ClaudeAdapter abstraction in favor of direct current .xtrm/skills runtime logic.\nGITNEXUS_EVIDENCE: calculateDiff risk HIGH: direct callers runPreflight in init/core and createStatusCommand. detectAdapter risk HIGH via calculateDiff. Affected processes include runProjectInit, createStatusCommand, and runPreflight.\nSUCCESS: Legacy branch removed only after compatibility decision and tests prove init/status/preflight unchanged for supported installs.\nNON_GOALS: Do not remove deprecated user cleanup/migration reporting unless replacement exists.\nVALIDATION: npm test --workspace cli; init/status/preflight integration tests; run xt init/status smoke in temp project.",
+        "id": "xtrm-v48hm",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "cli",
+          "gitnexus-high",
+          "high-risk",
+          "ponytail-audit"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: retire legacy adapter/diff .agents skills branch safely",
+        "updated_at": "2026-07-05T03:37:13Z"
+      }
+    },
+    "xtrm-wrdo3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "acceptance_criteria": "ConfigAdapter indirection is reduced without changing hook script command output or sync behavior.",
+        "comment_count": 0,
+        "created_at": "2026-07-05T03:23:17Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-05T05:37:12Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-mk488",
+            "issue_id": "xtrm-wrdo3",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: ConfigAdapter remains as a Claude-only abstraction after multi-agent hook translation was removed. It may be needless indirection, but it still owns hook command path resolution in sync-executor.\nSCOPE: Either inline the small Claude-only hook adaptation into sync-executor or rename/simplify the class to reflect its actual purpose.\nGITNEXUS_EVIDENCE: ConfigAdapter impact is LOW: direct callers are executeSync and sync-executor import. Affected process is executeSync.\nSUCCESS: Same hooks.json adaptation behavior with less abstraction.\nNON_GOALS: Do not reintroduce Gemini/Qwen adapter translation.\nVALIDATION: hook/sync tests, install dry-run/status paths, npm test --workspace cli.",
+        "id": "xtrm-wrdo3",
+        "issue_type": "task",
+        "labels": [
+          "child",
+          "cleanup",
+          "cli",
+          "ponytail-audit",
+          "refactor"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Ponytail cleanup: simplify ConfigAdapter only within sync-executor seam",
+        "updated_at": "2026-07-05T03:37:12Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:12Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-23rcq",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-23rcq",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:11Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-3n4ez",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-3n4ez",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:10Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-3o2ko",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-3o2ko",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:16Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-9rhsg",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-9rhsg",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:11Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-9w54r",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-9w54r",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:10Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-bgizw",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-bgizw",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:14Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-e31hz",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-e31hz",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:15Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-foipw",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-foipw",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:15Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-nyv85",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-nyv85",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:09Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-rquk2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-rquk2",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:13Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-v48hm",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-v48hm",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-05T05:37:12Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-mk488",
+        "issue_id": "xtrm-wrdo3",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "xtrm-wrdo3",
+      "source_field": "dependencies",
+      "target": "xtrm-mk488",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-mk488",
+  "root_title": "Ponytail cleanup: repository line-count reduction",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

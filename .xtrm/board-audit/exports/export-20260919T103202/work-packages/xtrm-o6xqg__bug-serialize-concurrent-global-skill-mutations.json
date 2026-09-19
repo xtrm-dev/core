@@ -1,0 +1,67 @@
+{
+  "content_sha256": "82b02064e493102c4d90c59aee13b1a5fc9ad935f60c25037b3bf117ee312564",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-02T17:09:59Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-qs9in",
+        "issue_id": "xtrm-o6xqg",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-o6xqg",
+      "source_field": "dependencies",
+      "target": "xtrm-qs9in",
+      "target_present_in_snapshot": true,
+      "target_title": "bug: make global-skill validation cleanup transactional and non-destructive",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-o6xqg"
+  },
+  "issues": {
+    "xtrm-o6xqg": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-02T17:09:59Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-02T17:09:59Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-qs9in",
+            "issue_id": "xtrm-o6xqg",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nSecurity audit for xtrm-qs9in found that concurrent same-user `xt update --apply`, install, or bootstrap processes can race while reading stale manifests, creating independent backups, mutating ~/.xtrm/skills, and performing process-local rollback. Atomic directory placement does not serialize the wider transaction.\n\n## SUCCESS\nAll mutations of the shared global skill root are serialized across processes. Concurrent commands either wait safely or fail with a bounded actionable diagnostic. Final tree, manifest, state, and backup lineage are consistent.\n\n## SCOPE\nGlobal skill bootstrap/update/install mutation boundary, cross-process lock lifecycle, crash/stale-lock recovery, diagnostics, and isolated-HOME concurrency regressions.\n\n## NON_GOALS\nNo change to skill precedence or package contents. No real-HOME mutation in tests.\n\n## CONSTRAINTS\nReuse a proven repository lock primitive if one exists. Lock the complete read-backup-mutate-state-write/rollback transaction. Fail closed on unverifiable stale lock ownership. Preserve user/unmanaged state. No new dependency unless required.\n\n## VALIDATION\n- [ ] Two concurrent sandbox-HOME updates serialize.\n- [ ] Crash/stale lock recovery is deterministic.\n- [ ] Manifest/state/tree stay consistent.\n- [ ] Timeout/error diagnostics are bounded and path-safe.\n- [ ] Reviewer and security PASS.\n\n## OUTPUT\nImplementation, isolated concurrency proof, GitNexus impact/change report, and audit verdicts.",
+        "id": "xtrm-o6xqg",
+        "issue_type": "bug",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "bug: serialize concurrent global-skill mutations",
+        "updated_at": "2026-09-02T17:09:59Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-o6xqg",
+  "root_title": "bug: serialize concurrent global-skill mutations",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

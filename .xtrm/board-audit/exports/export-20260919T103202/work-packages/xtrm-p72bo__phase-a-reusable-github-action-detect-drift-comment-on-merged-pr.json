@@ -1,0 +1,66 @@
+{
+  "content_sha256": "642f80bfcea564b421786bde3b68afafa049816a77247e3e7a32b7615f22535f",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-23T04:30:27Z",
+        "created_by": "dawid",
+        "depends_on_id": "xtrm-c4fqp",
+        "issue_id": "xtrm-p72bo",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "xtrm-p72bo",
+      "source_field": "dependencies",
+      "target": "xtrm-c4fqp",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-23: pick up next priorities",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-p72bo"
+  },
+  "issues": {
+    "xtrm-p72bo": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-22T11:37:12Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-23T04:30:27Z",
+            "created_by": "dawid",
+            "depends_on_id": "xtrm-c4fqp",
+            "issue_id": "xtrm-p72bo",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## SCOPE\nPhase A of xtrm-lwpcn: ship the detect+report-only reusable workflow.\n\n### Deliverables\n1. .github/workflows/service-skills-drift-sweep.yml — reusable workflow (on: workflow_call), no model/API key needed.\n2. Inputs: scripts-path (default .xtrm/skills/default/service-skills/scripts), default-branch (default main).\n3. Logic: checkout, setup python, import scan_drift, dump JSON, on drift>0 post comment on merged PR.\n\n### Out of scope (deferred to Phase B)\n- sp script auto-reconcile on runner (needs bun + specialists install + API key).\n- Auto-PR for last_sync_ref bumps.\n\n### Validation\n- [ ] Workflow file ships in xtrm-tools main\n- [ ] Caller workflow in mercury-infra references it via uses: xtrm-dev/core/.github/workflows/service-skills-drift-sweep.yml@main\n- [ ] Forced-drift scenario on mercury-infra produces a PR comment with drift summary",
+        "id": "xtrm-p72bo",
+        "issue_type": "task",
+        "priority": 2,
+        "status": "open",
+        "title": "Phase A: reusable GitHub Action — detect drift, comment on merged PR",
+        "updated_at": "2026-06-22T11:37:12Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-p72bo",
+  "root_title": "Phase A: reusable GitHub Action — detect drift, comment on merged PR",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,40 @@
+{
+  "content_sha256": "65b898f4fc5fb661676266359cd4eb7068421c558796f07a9449e237c6593f42",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-dxq9v"
+  },
+  "issues": {
+    "xtrm-dxq9v": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-28T00:51:05Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: `bd dolt push` in core fails: \"Error: dangling chunk reference: aborting push to prevent propagating corrupt chunks\". The beads pre-push hook therefore aborts every git push (beads sync gate). Session context: long bd session with schema-skew warnings (binary v53 vs db v65) all day; corruption surfaced 2026-08-28 during first push attempt. Git pushes currently bypass via --no-verify (used for integration branch pushes; PR flow unaffected).\nEVIDENCE: bd dolt push output (dangling chunk reference); hook message \"beads-sync: ERROR: 'bd dolt push' failed — aborting Git push\".\nHYPOTHESIS: schema-skew (binary v53 vs database v65) or interrupted dolt op left dangling chunks.\nSTEPS: upgrade bd binary to v65-compatible; run bd dolt gc / dolt integrity checks on .beads/dolt; verify bd dolt push succeeds; then remove --no-verify bypasses.\nNON_GOALS: do NOT delete/rebuild the db without operator approval (history risk).\n",
+        "id": "xtrm-dxq9v",
+        "issue_type": "bug",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "beads dolt db: dangling chunk reference blocks bd dolt push (core)",
+        "updated_at": "2026-08-28T00:51:05Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-dxq9v",
+  "root_title": "beads dolt db: dangling chunk reference blocks bd dolt push (core)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

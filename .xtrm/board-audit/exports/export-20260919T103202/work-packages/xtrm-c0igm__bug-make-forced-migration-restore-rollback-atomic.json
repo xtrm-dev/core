@@ -1,0 +1,67 @@
+{
+  "content_sha256": "a5d23462e712a2d76a610f7f1ebefadcda16c41cb89c7164c5335f93a75dfbc7",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-02T17:32:59Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "xtrm-qs9in",
+        "issue_id": "xtrm-c0igm",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "xtrm-c0igm",
+      "source_field": "dependencies",
+      "target": "xtrm-qs9in",
+      "target_present_in_snapshot": true,
+      "target_title": "bug: make global-skill validation cleanup transactional and non-destructive",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "xtrm-c0igm"
+  },
+  "issues": {
+    "xtrm-c0igm": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-02T17:32:58Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-02T17:32:59Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "xtrm-qs9in",
+            "issue_id": "xtrm-c0igm",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nSecurity audit of xtrm-qs9in found `xt migrate --restore --force` removes the destination before moving the validated staged tree. A placement failure can leave the destination absent even though archive validation succeeded.\n\n## SUCCESS\nForced restore uses the existing atomic directory swap/rollback primitive. Placement failure preserves or restores the prior destination and remains operator-visible.\n\n## SCOPE\ncli/src/commands/migrate.ts forced restore placement and focused failure-injection tests.\n\n## NON_GOALS\nNo archive-format or skill-precedence changes.\n\n## CONSTRAINTS\nReuse atomicSwapDirectory. Validate/stage fully before target mutation. Tests use isolated roots only.\n\n## VALIDATION\n- [ ] Successful forced restore unchanged.\n- [ ] Placement failure preserves prior destination byte-for-byte.\n- [ ] Reviewer and security PASS.\n\n## OUTPUT\nMinimal implementation, focused tests, GitNexus evidence, and audit verdicts.",
+        "id": "xtrm-c0igm",
+        "issue_type": "bug",
+        "owner": "dawid.jgg@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "bug: make forced migration restore rollback-atomic",
+        "updated_at": "2026-09-02T17:32:58Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/core",
+  "root_id": "xtrm-c0igm",
+  "root_title": "bug: make forced migration restore rollback-atomic",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

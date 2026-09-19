@@ -1,0 +1,1 @@
+{"issue_ids":["xtrm-hf37h"],"open_issue_count":1,"root_id":"xtrm-hf37h","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"7b030667859cf166f7b3e7cfe9d54fff804f8d8ebac25cd015df7e930708e8d5","title":"chore(gitnexus): point GitNexus at a shared parent-repo index instead of one per worktree"}
