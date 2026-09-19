@@ -37,14 +37,11 @@
     "git:github.com/DietrichGebert/ponytail",
     "npm:@tintinweb/pi-tasks",
     "npm:pi-background-tasks@latest",
-    "npm:@gotgenes/pi-subagents",
     "npm:pi-mcp-adapter",
     "npm:pi-mermaid-viewer",
     "npm:@jaggerxtrm/pi-service-knowledge",
     "npm:pi-intercom",
     "git:github.com/alonw0/pi-claude-link",
-    "npm:pi-ast-grep",
-    "npm:@zenobius/pi-worktrees",
-    "npm:@aliou/pi-processes"
+    "npm:pi-ast-grep"
   ]
 }

@@ -51,11 +51,14 @@ describe('createInstallPiCommand', () => {
         expect(settings.packages).not.toContain('npm:pi-serena-tools');
     });
 
-    it('settings.json.template includes @zenobius/pi-worktrees package', () => {
+    it('settings.json.template pins the managed package inventory with background-tasks required', () => {
         const fs = require('node:fs');
         const p = require('node:path');
         const settings = JSON.parse(fs.readFileSync(p.resolve(__dirname, '..', '..', 'config', 'pi', 'settings.json.template'), 'utf8'));
-        expect(settings.packages).toContain('npm:@zenobius/pi-worktrees');
+        expect(settings.packages).toContain('npm:pi-background-tasks@latest');
+        expect(settings.packages).not.toContain('npm:@gotgenes/pi-subagents');
+        expect(settings.packages).not.toContain('npm:@zenobius/pi-worktrees');
+        expect(settings.packages).not.toContain('npm:@aliou/pi-processes');
     });
 
     it('copyExtraConfigs copies missing files and skips existing ones', async () => {
