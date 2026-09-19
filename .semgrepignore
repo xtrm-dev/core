@@ -37,6 +37,7 @@ cli/.pi/npm/
 # Test fixtures and snapshots — false-positive heavy.
 **/test_fixtures/
 **/snapshots/
+cli/test/fixtures/
 
 # Lock files are handled by OSV/Dependabot, not Semgrep SAST.
 package-lock.json

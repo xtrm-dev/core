@@ -7,7 +7,12 @@ import { ensureServiceSkills, hasServiceRegistry } from '../src/core/service-ski
 import { setRuntimeEnabledPacks } from '../src/core/skills-state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SCRIPTS_SRC = path.resolve(__dirname, '..', '..', 'skills', 'service-skills', 'scripts');
+// Machinery fixture, not a distribution source: the retired service-skills mirror
+// (skills/service-skills, removed with the hook-cleanup lane-2 skills wipe) held the last
+// in-tree copy of the legacy flat-to-umbrella migrator. ensureServiceSkills stays until
+// `service-knowledge migrate` covers the legacy flat path (CORE-2312), so its fixture lives
+// here instead of re-vendoring the retired mirror back into the shipped tree.
+const SCRIPTS_SRC = path.resolve(__dirname, 'fixtures', 'service-skills', 'scripts');
 
 const tempDirs: string[] = [];
 afterEach(async () => {
