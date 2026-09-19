@@ -27,7 +27,7 @@
           "version": "0.12.0"
         },
         "README.md": {
-          "hash": "594b8ae341a3beaf1fcbd125f409be03dadf48dc6a1c1513f37b420f8e9acaae",
+          "hash": "c9aa369a03e006d88b4ad56c2570c323112d4035a78de43d4ec731b64feb0643",
           "version": "0.12.0"
         },
         "specialists-agent-guard.mjs": {
@@ -35,11 +35,11 @@
           "version": "0.12.0"
         },
         "statusline.mjs": {
-          "hash": "d53454330328a3e8bd9dbee2aa1ff27607f45a8089f61198c000743d8878b32d",
+          "hash": "09647458d826dd5a98e260d0a6eab268197218e5a2c9785b035d91501172908e",
           "version": "0.12.0"
         },
         "statusline.test.mjs": {
-          "hash": "47a2cc09495ff6fee7c2d30a6f1efafdf2bfeb5f97b87ae867f345dae9020d31",
+          "hash": "d43042f73800d3762b53cb4c4636a2d822bce6e26f991a893cc21f3d85d15627",
           "version": "0.12.0"
         },
         "worktree-boundary.mjs": {
@@ -51,15 +51,15 @@
           "version": "0.12.0"
         },
         "xtrm-logger.mjs": {
-          "hash": "865592b9490f47da087f09b872284b7d281a9333a4e2a51f40e0535cf6334854",
+          "hash": "b9ca315b8d0b714abba0b8ede3435be9cda8822d28a02fa2d8327990e98c5314",
           "version": "0.12.0"
         },
         "xtrm-session-logger.mjs": {
-          "hash": "50bcd95a80b5e2174e9ecc498813917910d31a4cf19d46f44f9534e9004e3c15",
+          "hash": "702f4b7a9e3d8160900e2a8c034744b4814b15645b852ee353b37be1bb02746e",
           "version": "0.12.0"
         },
         "xtrm-tool-logger.mjs": {
-          "hash": "e562a304a12561e76131838c6b4a6b34c31b8e792f06bcaa5f9d37fe9a3ede21",
+          "hash": "1f526d320ae85b8b6d27d767e01adfe3f8fbbd9af3b5ec39bb0380d6215844e4",
           "version": "0.12.0"
         }
       }
@@ -78,7 +78,7 @@
           "version": "0.12.0"
         },
         "engineering-quality/references/review.md": {
-          "hash": "e7438b55de70ec07e1e025837242062cdc3a02e5ab4eb0b7549d087b892e5c1f",
+          "hash": "2d1ce01777895d7b7637445b9a5cc68a94e16e54b17607fc15ed28fb5a44a1fa",
           "version": "0.12.0"
         },
         "engineering-quality/references/testing.md": {
@@ -86,7 +86,7 @@
           "version": "0.12.0"
         },
         "engineering-quality/references/verification.md": {
-          "hash": "9b2e72f4f561ff70767efd242aec2a7a4ad01140a60cf898971ab7c2ac5004aa",
+          "hash": "9132097ffcbf51f398d9d7720d13be94f811531627baca830026a8ec8c92a967",
           "version": "0.12.0"
         },
         "engineering-quality/scripts/change-provenance.mjs": {
@@ -94,7 +94,7 @@
           "version": "0.12.0"
         },
         "engineering-quality/SKILL.md": {
-          "hash": "79e96acd480481b57c5e52d752a876bec198b99c9f92a86738b071b3e813751a",
+          "hash": "d72f27f8d375a42cedf9bd4be3d98266ee0da0db94e62a579361a1df77da6e9b",
           "version": "0.12.0"
         },
         "find-skills/SKILL.md": {
@@ -130,7 +130,7 @@
           "version": "0.12.0"
         },
         "goal-prompt/references/self-injection.md": {
-          "hash": "0dc762c3d0710d8c342307e35f6a492b3e3a4459306f3b8770ed020ff3f9b69d",
+          "hash": "0b5efa6316601a88e570e6ce52e5d4d5a9f9fdf9583ef10fea41a4e3987f52df",
           "version": "0.12.0"
         },
         "goal-prompt/references/stop-predicate.md": {
@@ -158,15 +158,15 @@
           "version": "0.12.0"
         },
         "multiplexing/references/fleet-window-dispatch.md": {
-          "hash": "7d1577bdffeecbfd08b42eb7c4e4e9ce764015cd79acbde8a861c7cc41544f94",
+          "hash": "bd180ef1661fab709fd5d4bb1c9d050bbee1b7bb58892596afacb7730f86d7e7",
           "version": "0.12.0"
         },
         "multiplexing/references/handoff.md": {
-          "hash": "9f7cc3b64bb588480642e5a5c7a4508696a29581ccf07306deca4d3fd0a71b8e",
+          "hash": "852b46f70452a803bc1e0fe6f86eaf92ab6d7fde1e2bf86be3e027ed9574aa31",
           "version": "0.12.0"
         },
         "multiplexing/references/harnesses.md": {
-          "hash": "e022550b58f8170d35cbd138e10bc09af8338f46975a50a26229a154922a8798",
+          "hash": "2bfc75f360f17f31fe8254e98174462e28e233d9c7274a0d08a253844c2d953a",
           "version": "0.12.0"
         },
         "multiplexing/references/messaging-and-continuation.md": {
@@ -194,7 +194,7 @@
           "version": "0.12.0"
         },
         "multiplexing/references/scope.md": {
-          "hash": "b0b6bf374f38edbe823caadc6ebffd9dccd42dd45602300d0900034de2176463",
+          "hash": "1eb477c4f552d4ba1a24bc2fe4dadcd34c814a17bc5077eb54cb9596493c09d6",
           "version": "0.12.0"
         },
         "multiplexing/references/terminal-fallback.md": {
@@ -206,7 +206,7 @@
           "version": "0.12.0"
         },
         "multiplexing/references/worker.md": {
-          "hash": "e85309ec7e96e13f351f8fe53880858e3da66b5bd21bad37be3190013459bacb",
+          "hash": "8321020aeba1cdac3dbd607b34b72a838450f0b773af90ed945adde5345182f3",
           "version": "0.12.0"
         },
         "multiplexing/scripts/verify-deploy-applied.sh": {
@@ -214,15 +214,15 @@
           "version": "0.12.0"
         },
         "multiplexing/SKILL.md": {
-          "hash": "46d1604c6c4b00c064c73d0bba6fb5f47277a7f428bd925ac1db6d0a09f68388",
+          "hash": "e2fda094b28672bfa31c480317cd2442c177999dbdef87b0dce92130ccc38b40",
           "version": "0.12.0"
         },
         "planning/references/board-triage.md": {
-          "hash": "e6316f196a87243f7d7aab33f51481d06fcfc7e056105846729dc8a5184f30e2",
+          "hash": "e75e868b86975ec6eecc299b47799807fe05cf6b711848c29911776517bdd514",
           "version": "0.12.0"
         },
         "planning/references/contracts.md": {
-          "hash": "0f532cc9c29a5f0f0d13854b0df82f09d019f1fb71f8df45f2b1af81a22f1f0a",
+          "hash": "e7f895a24786dc14b1853400533714264fd0e3118095a03e2da87742240cf4d2",
           "version": "0.12.0"
         },
         "planning/references/premortem.md": {
@@ -230,19 +230,19 @@
           "version": "0.12.0"
         },
         "planning/references/spec-to-board.md": {
-          "hash": "37ac9298e249a45c5f50b9e3abee227b5c9fa1f4a9c17bd9cad21062fc74bb83",
+          "hash": "aff74aafb86a7823b92d899b6f0adf0a0e333faf979d8b7621a0117ff028ab58",
           "version": "0.12.0"
         },
         "planning/references/test-strategy.md": {
-          "hash": "2e27bb2a4b6efd09bc588ec36117f3d44a1e181dfd90ecd0ff1c39d2b9dec1ae",
+          "hash": "a492e407a6629f67e9d3eb55a09d25f5f9a225bcd605cc6236d26ec72fec9c58",
           "version": "0.12.0"
         },
         "planning/SKILL.md": {
-          "hash": "b877b0e6d9cb7db1302e601cf36ea0e96b3ddc03cdb36019a7c74a4ab9d73255",
+          "hash": "81527befceb5a114b244eb65554ffb552cbaa6a8d8d151e2f00dc90432df7617",
           "version": "0.12.0"
         },
         "README.txt": {
-          "hash": "589836aa1223a3949491e504779852d6e3a84f5ec5df8f89456dfa160db0d8ea",
+          "hash": "8342d811627c6a2d70c0bad49dea6f30d072ce5047d9dc8bf80f7e94e34000dc",
           "version": "0.12.0"
         },
         "skill-creator/agents/analyzer.md": {
@@ -317,16 +317,8 @@
           "hash": "14ddfd5332e8e5f03565d0ec63c8764a201289c2c3424ad3a96a511f717c3606",
           "version": "0.12.0"
         },
-        "starting-and-resuming-work/references/surfaces.md": {
-          "hash": "cb15d7ad2130a775233334d6f1860a7fcfadaf6f5e0d4fbb745d0ddfd85f40b7",
-          "version": "0.12.0"
-        },
-        "starting-and-resuming-work/SKILL.md": {
-          "hash": "47f081e1d01ca899d14ed0d2e78d5a9890c211b46f1aa94a1f9952e0c0990b79",
-          "version": "0.12.0"
-        },
         "using-specialists/references/bead-contracts.md": {
-          "hash": "f41060f0819dcd7c22cdbbdfea7de11ca4dfb96fc2436287cdb8a8673238eba9",
+          "hash": "5d7dd4faf53be8f8867401c3de6881ede3cc9cb8a72fbc310c21ac77e8e695a9",
           "version": "0.12.0"
         },
         "using-specialists/references/chain-recipes.md": {
@@ -334,7 +326,7 @@
           "version": "0.12.0"
         },
         "using-specialists/references/dispatch-preconditions.md": {
-          "hash": "2cf11fb4752e87143150c4e072436b237ef0d60037ee2fe808f8ed0614c552e4",
+          "hash": "f45086d100d48d591cd0baf05c314ca9c8846a7255e3dcf98328dccbb425b267",
           "version": "0.12.0"
         },
         "using-specialists/references/kpi.md": {
@@ -354,11 +346,11 @@
           "version": "0.12.0"
         },
         "using-specialists/references/registry-and-locations.md": {
-          "hash": "d700474110f3607bfb7070ff5e5a4825324e8ca52782d602e62ffd345eec4072",
+          "hash": "fcb51618f219eacf8c266018b68bef502ce581e253a3dfb9d0654e7cbc0983ba",
           "version": "0.12.0"
         },
         "using-specialists/references/script-class.md": {
-          "hash": "626dc9fbe213e721131a8d57f31d51fec99f8d93ae709fafdf9e15ea61169f6c",
+          "hash": "041936477b066f06011985d33ea0d7f81f6d8201794ce8db19902bba18913eee",
           "version": "0.12.0"
         },
         "using-specialists/references/specialist-definitions.md": {
@@ -382,11 +374,19 @@
           "version": "0.12.0"
         },
         "using-specialists/SKILL.md": {
-          "hash": "96253400d17e42e23afca5ee69183ec06e571472562c99cd5beb8662a0f6dc45",
+          "hash": "bdcb884034b31bd3df6c470aee6acade6bcd2eef60acbd339340f28d758edf72",
+          "version": "0.12.0"
+        },
+        "using-xtrm/references/continuity.md": {
+          "hash": "5fd6c04f502e13590ff1d40106873da8ecd0ff9e48a0d6c7f52421a00dcce677",
+          "version": "0.12.0"
+        },
+        "using-xtrm/references/surfaces.md": {
+          "hash": "d3419b144e9ad254c1300a4cf328032c1ba20a20823fa84567628a3f5792316a",
           "version": "0.12.0"
         },
         "using-xtrm/SKILL.md": {
-          "hash": "3bf25fe8ca9f709f4bf29a5a7d16be494d7f17d3837d779b9b24f7af6d0d9a31",
+          "hash": "7a7e52f69fe7cb11235ece1d1b88a55eef5bba9693fe70490cf39f91eb9d02db",
           "version": "0.12.0"
         }
       }
@@ -936,19 +936,19 @@
           "version": "0.12.0"
         },
         "hooks.json": {
-          "hash": "39aa2530a70bba202792967ba98b5e5df1f3d0919579f3e15f1bf786e8cef646",
+          "hash": "7edb3987e57a2967f77fa15cc216ba1469628a8eb30d4ec19ec502a1323ca590",
           "version": "0.12.0"
         },
         "instructions/agent-contract.md": {
-          "hash": "45a601e7f013d419af109d481f22ef181ba12b992cca38f7b11485c5bb4f423c",
+          "hash": "f23c490c26304824ab271a0c7a9b922637b668f85a70c45e3bf4f7a59a4b4947",
           "version": "0.12.0"
         },
         "instructions/agents-top.md": {
-          "hash": "264bb2d393413deff6f5a3483d5d5c4a0db026eaa20b2fd3ed83e16ea1bf801c",
+          "hash": "120870fd5f4fef6f25b0f5ff7eeecd0ca09aec985d8cfe577394e21551f0eab5",
           "version": "0.12.0"
         },
         "instructions/claude-top.md": {
-          "hash": "42531bc63a7a96975b208f7b6090da3f8610b6b35096937a355b77b1eb67bc4f",
+          "hash": "99280d9e875bd254d840c3f844665c694d0a9c4cfccf56f3a495f7f93fabba66",
           "version": "0.12.0"
         },
         "instructions/global-system-prompt.md": {
@@ -996,7 +996,7 @@
     "source": {
       "kind": "ref",
       "ref": "master",
-      "resolved_sha": "5d2f2907f49877f6c4dcf32de95e8cb945c067c7",
+      "resolved_sha": "5a661d168c1188dc326e966463986fd0e52905d1",
       "repo_path": "../specialists",
       "source_path": "config/skills"
     },
@@ -1018,21 +1018,21 @@
         "SKILL.md": "109fcbf874fc58baa93f8a0ebc942a2a1f34cd58"
       },
       "using-specialists": {
-        "references/bead-contracts.md": "1a5698a5869f55bc5531514142e58946acbd6278",
+        "references/bead-contracts.md": "be4d11d8000f93efb3bd244349f19b0d7ed4f1d2",
         "references/chain-recipes.md": "42f02267eed5fa18dc33b814a7b1c7a054fddb8c",
-        "references/dispatch-preconditions.md": "ce5e270d76e173cab628b2c5a9edf8d5df0a86f8",
+        "references/dispatch-preconditions.md": "43eccee9ceb86e6111d820d17681fbf7f317d604",
         "references/kpi.md": "93caf443c4f3d19f824b4ebbec133a902addb520",
         "references/merge-and-integration.md": "22ea211e322d971242110dc1ebfa65d6f1e31f68",
         "references/monitoring.md": "089ddb679fd644e32fd608d657807e04fd9d9efe",
         "references/nodes.md": "8f1ada01a2940601fe758757d0ab1bfe0a7b6e60",
-        "references/registry-and-locations.md": "f31b077ebf3f7faaefd5002f66e0b751e4547ce3",
-        "references/script-class.md": "795a05041a1c5676a82bb3fda0051d0e6608d82a",
+        "references/registry-and-locations.md": "e1fa2d44f6f06e0aeff94d772c3c8ff05bbc1d67",
+        "references/script-class.md": "243b58d36f26d2f775a63905763fb10d06b3b99a",
         "references/specialist-definitions.md": "e74d7104167cc73dc665a970705054f753d7a1f1",
         "scripts/specialist-definitions/audit-spec-uniformity.mjs": "72bc5772d8fc4f8afdd323668bac6db5ed75582c",
         "scripts/specialist-definitions/resolve-specialists-root.mjs": "6bd6a3593e4ce89f39a3024d35f7033e78858397",
         "scripts/specialist-definitions/scaffold-specialist.ts": "e993d46432492429b72ccac5ac498813026013af",
         "scripts/specialist-definitions/validate-specialist.ts": "19f298eae0e0dbc809d0fa6ac282bf204cec1d4c",
-        "SKILL.md": "704c7fad7afb0dd0a0500d76323cc929f5db026c"
+        "SKILL.md": "48ea750bc550de07407727e1bd29cecb2283fe94"
       }
     }
   }

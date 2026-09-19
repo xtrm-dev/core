@@ -4,7 +4,7 @@ Review the work contract and actual diff/result, not the author's summary.
 
 ## Evidence order
 
-1. Read the durable XTRM contract when one exists.
+1. Read the durable Substrate Issue contract (pinned revision) when one exists.
 2. Read the actual diff and relevant current source.
 3. Inspect existing review threads/automated findings and verify them against this revision.
 4. Use GitNexus impact evidence for changed shared symbols/processes.

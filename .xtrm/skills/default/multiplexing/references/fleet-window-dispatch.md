@@ -1,6 +1,6 @@
 # Fleet window-dispatch (same-session variant)
 
-For coordinated bounded work — an epic, a wave of related beads, a batch of verification jobs — dispatch workers as **windows inside the current tmux session** instead of as fresh top-level tmux sessions. Native messaging is identical either way; the difference is inventory, cleanup, and cognitive load.
+For coordinated bounded work — an epic, a wave of related Issues, a batch of verification jobs — dispatch workers as **windows inside the current tmux session** instead of as fresh top-level tmux sessions. Native messaging is identical either way; the difference is inventory, cleanup, and cognitive load.
 
 **When it fits.** A parent coordinator drives 3–10 short-to-medium-lived workers whose lifetime is bounded by the current task. Not for long-lived independent peers that must outlive the coordinator, and not when workers must survive an accidental parent-session kill — those still want separate sessions.
 
@@ -28,7 +28,7 @@ For `xt pi`, replace `xt claude` with `xt pi --model <name>`; skill loading uses
 
 **Prompt shape.** Keep the initial prompt single-line; put the load-bearing instructions in a brief file and use a pointer prompt like `Read /tmp/.../brief.md and execute it exactly.` The tmux `send-keys` fallback rules still apply: never multiline-paste, never embed `$(...)` or backticks in a sent shell string.
 
-**Ping-back.** Every worker's brief MUST identify the parent coordinator by its stable native peer name (visible in `ListAgents`) and require SendMessage on: start, each meaningful state change (bead close, PR opened, block, escalation), and final completion. Silence is not a disposition.
+**Ping-back.** Every worker's brief MUST identify the parent coordinator by its stable native peer name (visible in `ListAgents`) and require SendMessage on: start, each meaningful state change (Issue close, PR opened, block, escalation), and final completion. Silence is not a disposition.
 
 **Kill / reuse.** Finished workers → `tmux kill-window -t "${SESSION}:${SLUG}"`. To reuse a window for the next task, send `/exit` (or Ctrl-D twice) to the running agent, `rename-window` to the new slug, then `send-keys` the next `xt` command. Killing and spawning fresh is safer; reuse is fine when the same pane's shell state is desirable.
 

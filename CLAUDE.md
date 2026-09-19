@@ -43,7 +43,7 @@
 | Need | Skill |
 |---|---|
 | XTRM doctrine, contracts, evidence, work shape | `/using-xtrm` |
-| Resume, takeover, context-pressure continuation | `/starting-and-resuming-work` |
+| Resume, takeover, context-pressure continuation | `/using-xtrm` (Continuity section + `references/continuity.md`) |
 | Peer and subagent coordination, replies, continuation | `/multiplexing` |
 | Contracts, decomposition, board triage, validation planning | `/planning` |
 | Debug, review, test, verify, reduce | `/engineering-quality` |
@@ -82,17 +82,16 @@ Clearly distinguish verified facts, observations, assumptions, inferences, recom
 
 Two task systems coexist in this repo. Use both; do not substitute one for the other.
 
-- **Beads (`bd`)** — top-level durable tracking. Authoritative for ownership, dependencies, and closure. Read the rest of this file and use targeted lookup (`bd ready`, `bd search "<terms>"`, `bd show <id>`) before starting work; `bd prime` is opt-in diagnostic only. File, claim, and close work here.
-- **Native integrated task system** (`TaskCreate` / `TaskList` / `TaskGet` / `TaskUpdate` / `TaskExecute`) — this-session execution tracking. Use it to mirror the active bead and break it into smaller intermediate steps. Ephemeral; does not replace beads.
+- **Substrate (`sb`)** — top-level durable tracking. Authoritative for ownership, dependencies, and closure. Discover the ready Issue revision, validate readiness, then claim it (`sb issue claim`) before edits; resume via `sb issue resume` (Resume Capsule). Journal owns continuity; explicit Closure owns completion. (`bd`/`bv` describe the retired Beads board — migration/history only.)
+- **Native integrated task system** (`TaskCreate` / `TaskList` / `TaskGet` / `TaskUpdate` / `TaskExecute`) — this-session execution tracking. Use it to mirror the active Issue claim and break it into smaller intermediate steps. Ephemeral; does not replace Substrate.
 
-Rule: when you pick up a bead, create native tasks that track it — reference the bead ID in each task title (e.g. `N.N summary — status (worker %NNNN)`) — and add any smaller intermediate steps as native sub-tasks. Beads own the durable record; native tasks own the in-flight breakdown.
+Rule: when you pick up an Issue, create native tasks that track it — reference the Issue ref in each task title (e.g. `CORE-2295 summary — status`) — and add any smaller intermediate steps as native sub-tasks. Substrate owns the durable record; native tasks own the in-flight breakdown.
 
-Example native task list mirroring beads:
-- ◼ N.N smoke container global surface — BLOCKS RELEASE (worker %NNNN)
-- ◼ N.N status test flake under load (worker %NNNN)
+Example native task list mirroring Substrate:
+- ◼ CORE-2295 cutover slice — BLOCKS RELEASE
+- ◼ CORE-140 migration evidence — in progress
 - ◻ Pre-release smoke run against current main branches
-- ◻ Dispatch N.N stale doc metrics + N.N Claude inbox surface
-- ◻ Dispatch N.N, N.N, N.N remaining small beads
+- ◻ Dispatch remaining small Issues
 <!-- END INJECTED BLOCK -->
 
 # xtrm-tools — Claude Code Guide
@@ -105,11 +104,11 @@ This file is a compact routing guide for Claude Code sessions in `xtrm-tools`. I
 
 ## Non-negotiable rules
 
-- Use beads as the authoritative issue tracker and normal work lifecycle. Inspect/claim/close with `bd` before and after edits.
-- To proceed on any non-trivial or multi-step Claude Code work, use Claude Code task planning features (TaskCreate/TodoWrite-style when available) alongside normal bead operations. The local plan must mirror the active bead scope and never replace beads for ownership, dependencies, or closure.
+- Use Substrate Issues as the authoritative work tracker and normal lifecycle. Attest/claim/close with `sb` before and after edits. (`bd` describes the retired Beads board — migration/history only.)
+- To proceed on any non-trivial or multi-step Claude Code work, use Claude Code task planning features (TaskCreate/TodoWrite-style when available) alongside normal Issue operations. The local plan must mirror the active Issue scope and never replace Substrate for ownership, dependencies, or closure.
 - Specialists are a normal operational surface here. Before specialist work, check `sp --help` and `sp list` / `specialists list` so you know the available roles and current CLI shape.
 - For documentation, service understanding, and project/service context, use the canonical service-skills skill set (`/scope`, `/using-service-skills`) as the primary knowledge substrate.
-- Never commit while a bead claim is open. Close the bead first.
+- Never commit while an Issue claim is open. Release or close the Issue first.
 - Before editing an existing function, class, or method, run GitNexus impact analysis.
 - Before committing, run `gitnexus_detect_changes()` for scope verification.
 - Do not edit generated files directly unless the task is explicitly to update generated artifacts.
@@ -120,19 +119,19 @@ This file is a compact routing guide for Claude Code sessions in `xtrm-tools`. I
 
 ## Session start: targeted, not reconstructive
 
-1. `bd list --status=in_progress`, `bd ready`, `bd search "<terms>"`, `bd show <id>` — locate the relevant current work.
-2. `bv --robot-triage` or `bv --robot-next` — choose work when needed. Never run bare `bv`.
-3. `bd update <id> --claim` — claim before edits.
+1. `sb issue ready`, `sb issue show <ref>` — locate the relevant current work.
+2. `sb issue resume <ref>` — Resume Capsule (revision + checkpoint + Journal delta).
+3. `sb issue claim <ref> --holder <who>` — claim before edits.
 
-`bd prime` is opt-in diagnostic only; invoke it explicitly when a full-context run helps.
+Resume from durable Substrate state, never from compacted chat memory.
 
-For full xtrm/beads workflow details, load `/using-xtrm` and use `bd --help`, `bd <cmd> --help`, `xt --help`.
+For full Substrate workflow details, load `/using-xtrm` and use `sb --help`, `sb help <group> <verb>`, `xt --help`.
 
 ## Skill routing
 
 | Need | Load/use |
 |---|---|
-| xtrm workflow, beads gates, session behavior | `/using-xtrm`; `bd --help`; `xt --help` |
+| xtrm workflow, claim/edit/commit gates, session behavior | `/using-xtrm`; `sb --help`; `xt --help` |
 | Specialist orchestration | latest `/using-specialists-*`, prefer `/using-specialists`; `sp --help` / `specialists --help` |
 | Planning feature/epic work | `/planning` plus `/test-planning` |
 | Tests and quality workflow | `/using-quality-gates`, `/using-tdd`, `/test-planning` |
@@ -166,15 +165,15 @@ For full xtrm/beads workflow details, load `/using-xtrm` and use `bd --help`, `b
 
 Keep only the commands an agent needs without another manual. Use `--help` for full syntax.
 
-### Beads / xtrm workflow
+### Substrate / xtrm workflow
 
-- `bd prime` — opt-in diagnostic full-context load. Not a session-start step.
-- `bd ready` — list unblocked open issues.
-- `bd list --status=in_progress` — see active claims.
-- `bd show <id>` — inspect detail, deps, blockers, notes.
-- `bd update <id> --claim` — claim before edits.
-- `bd close <id> --reason="..."` — close before commit.
-- `bv --robot-triage --format toon` / `bv --robot-next` — ranked work selection; never run bare `bv`.
+- `sb issue ready` — list claimable Issues.
+- `sb issue show <ref>` — inspect contract, readiness, claim, Journal.
+- `sb issue resume <ref>` — Resume Capsule for takeover.
+- `sb journal show|latest <ref>` — bounded continuity window.
+- `sb issue attest <ref> --outcome ready --policy <p> --attested-by <who>` — attest before claim.
+- `sb issue claim <ref> --holder <who>` — claim before edits.
+- `sb issue close <ref> --outcome <o> --reason="..."` — close after verification.
 - `xt update --apply` — refresh xtrm-managed assets in a repo.
 - `xt end` — close worktree session / PR flow when appropriate.
 - `xt worktree audit-prs --json`, `branch-gc --json`, `restart-audit --json` — PR drift, safe branch-GC dry run, and restart/handoff hygiene.
@@ -204,12 +203,12 @@ Keep only the commands an agent needs without another manual. Use `--help` for f
 
 ## Claude Code notes
 
-- For non-trivial or multi-step Claude Code work, create and maintain a small internal task plan before proceeding; keep it synchronized with the active bead and clear/complete it as work progresses.
+- For non-trivial or multi-step Claude Code work, create and maintain a small internal task plan before proceeding; keep it synchronized with the active Issue and clear/complete it as work progresses.
 - For service/documentation context, route through `/scope` and the canonical service-skills skill set first.
 - Use GitNexus for unfamiliar code execution flows before grepping large trees.
 - Use `structured_return` for tests, builds, lint, typecheck, and other quality commands.
 - Use `process` for long-running servers/watchers/log tails.
-- Do not create markdown TODO lists for work tracking; use `bd` issues.
+- Do not create markdown TODO lists for work tracking; use Substrate Issues.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
@@ -275,7 +274,7 @@ This project is indexed by GitNexus as **core** (15653 symbols, 31194 relationsh
 - Worktrees do not carry ignored dependencies (`node_modules`, `.venv`); run the repo bootstrap inside the worktree when needed.
 - `.xtrm/reports/` is gitignored; use `git add -f` only when a report should be committed.
 - Per-repo `default/` and `optional/` are deprecated; migrate with `xt migrate skills --apply`.
-- `pr-review-gate` GitHub Actions workflow is a required check on `main`/`master` across the 16 xtrm/mercuryintelligence/Jaggerxtrm-managed repos with real PR flow. Canonical template lives at `skills/security-pipeline/templates/.github/workflows/pr-review-gate.yml`; installed per-repo via `security-bootstrap.sh` and NOT auto-synced by `xt update --apply` — template changes require a manual fanout (see wave-1 `xtrm-7cjkv` + wave-2 `xtrm-54zwl.7` bead notes for the batch pattern).
+- `pr-review-gate` GitHub Actions workflow is a required check on `main`/`master` across the 16 xtrm/mercuryintelligence/Jaggerxtrm-managed repos with real PR flow. Canonical template lives at `skills/security-pipeline/templates/.github/workflows/pr-review-gate.yml`; installed per-repo via `security-bootstrap.sh` and NOT auto-synced by `xt update --apply` — template changes require a manual fanout (see wave-1/wave-2 run Journals for the batch pattern).
 
 ## Quality gates
 

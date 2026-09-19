@@ -260,16 +260,13 @@ const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:@narumitw/pi-goal', displayName: 'pi-goal', required: false },
     { id: 'git:github.com/DietrichGebert/ponytail', displayName: 'ponytail', required: false },
     { id: 'npm:@tintinweb/pi-tasks', displayName: 'pi-tasks', required: false },
-    { id: 'npm:pi-background-tasks@latest', displayName: 'pi-background-tasks', required: false },
-    { id: 'npm:@gotgenes/pi-subagents', displayName: 'pi-subagents', required: true },
+    { id: 'npm:pi-background-tasks@latest', displayName: 'pi-background-tasks', required: true },
     { id: 'npm:pi-mcp-adapter', displayName: 'pi-mcp-adapter', required: true },
     { id: 'npm:pi-mermaid-viewer', displayName: 'pi-mermaid-viewer', required: false },
     { id: 'npm:@jaggerxtrm/pi-service-knowledge', displayName: 'pi-service-knowledge', required: true },
     { id: 'npm:pi-intercom', displayName: 'pi-intercom', required: true },
     { id: 'git:github.com/alonw0/pi-claude-link', displayName: 'pi-claude-link', required: true },
     { id: 'npm:pi-ast-grep', displayName: 'pi-ast-grep', required: true },
-    { id: 'npm:@zenobius/pi-worktrees', displayName: 'pi-worktrees', required: true },
-    { id: 'npm:@aliou/pi-processes', displayName: 'pi-processes', required: true },
 ];
 
 const PROJECT_REQUIRED_PACKAGE_IDS = [

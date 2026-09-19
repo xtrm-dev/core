@@ -31,9 +31,8 @@ describe('config schema integrity', () => {
         it('contains all expected canonical packages and excludes retired Serena tooling', () => {
             const expected = [
                 'npm:pi-gitnexus',
-                'npm:@zenobius/pi-worktrees',
                 'npm:@robhowley/pi-structured-return',
-                'npm:@aliou/pi-processes',
+                'npm:pi-background-tasks@latest',
             ];
             for (const pkg of expected) {
                 expect(schema.packages).toContain(pkg);

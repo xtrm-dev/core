@@ -44,12 +44,11 @@ xt skills create-pack <name> --local    # .xtrm/skills/<name>/
 
 ## Universal defaults
 
-The v4 default set is intentionally ten skills:
+The v4 default set is intentionally nine skills (CORE-2304: continuity folded into using-xtrm):
 
 | Skill | Purpose |
 |---|---|
 | `using-xtrm` | system-level work, evidence and operating doctrine |
-| `starting-and-resuming-work` | cold start, continuation, handoff and context-pressure recovery |
 | `multiplexing` | peer/subagent messaging, coordination and reply/continuation obligations |
 | `planning` | durable work contracts, board decomposition, premortem and test strategy |
 | `engineering-quality` | causal debugging, review, testing, verification and reduction discipline |

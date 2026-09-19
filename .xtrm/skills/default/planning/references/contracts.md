@@ -24,7 +24,7 @@ VALIDATION
 Exact checks/evidence expected. Include integrated behavior where it matters.
 
 OUTPUT
-Durable result the worker must leave: code/commit, report, bead notes, artifact, etc.
+Durable result the worker must leave: code/commit, report, Journal result, artifact, etc.
 ```
 
 Optional sections: `LIBRARIES`, `REFERENCES`, `SCRUTINY`, `TELEMETRY`, `ROLLBACK`,
@@ -33,16 +33,25 @@ Optional sections: `LIBRARIES`, `REFERENCES`, `SCRUTINY`, `TELEMETRY`, `ROLLBACK
 ## Draft capture
 
 A draft is permitted for deferred ideas. It still requires a real `PROBLEM` and rough
-`SCOPE`; unknown sections explicitly say they need exploration. Mark it as draft using the
-current Beads state/label convention.
+`SCOPE`; unknown sections explicitly say they need exploration. Keep it as a draft Issue (no attestation, no claim).
 
 A draft may not be dispatched. Before dispatch:
 
 1. re-read current state;
 2. explore enough to replace unknowns;
 3. rewrite the contract in place;
-4. mark it ready using the current Beads state command;
+4. attest it ready (`sb issue attest <ref> --outcome ready --policy <p> --attested-by <who>`);
 5. re-read the final contract as the recipient would see it.
+
+## New work discovered mid-execution
+
+Apply the durability test before creating anything: independently assignable,
+blockable, resumable, reviewable, closable? YES -> child/follow-up Issue
+(`sb issue create --parent <ref> ...`). NO -> Journal entry on the owning Issue
+(`sb journal append <ref> --kind finding|decision|blocker`). Never mutate the Issue
+contract for routine progress; never file a child Issue for analysis, test runs, or a
+normal Specialist result. A Specialist result belongs to settlement/Journal/provenance,
+never to an appended contract note.
 
 ## Contract quality test
 

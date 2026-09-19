@@ -6,7 +6,6 @@ are enabled through `xt skills`.
 
 Current core routers:
 - using-xtrm — system doctrine, contract/evidence/minimal-engineering rules
-- starting-and-resuming-work — continuity, takeover, context-pressure handoff
 - multiplexing — native-first multi-agent coordination
 - planning — work contracts, decomposition, triage and validation planning
 - engineering-quality — causal debugging, provenance tracing, review, testing, verification, reduction

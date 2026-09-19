@@ -91,11 +91,10 @@ npm run gen-registry
 
 ## Skills v4
 
-The universal default surface is intentionally nine roots:
+The universal default surface is intentionally eight roots (CORE-2304: continuity folded into using-xtrm):
 
 ```text
 using-xtrm
-starting-and-resuming-work
 multiplexing
 planning
 engineering-quality

@@ -55981,16 +55981,13 @@ var MANAGED_PACKAGES = [
   { id: "npm:@narumitw/pi-goal", displayName: "pi-goal", required: false },
   { id: "git:github.com/DietrichGebert/ponytail", displayName: "ponytail", required: false },
   { id: "npm:@tintinweb/pi-tasks", displayName: "pi-tasks", required: false },
-  { id: "npm:pi-background-tasks@latest", displayName: "pi-background-tasks", required: false },
-  { id: "npm:@gotgenes/pi-subagents", displayName: "pi-subagents", required: true },
+  { id: "npm:pi-background-tasks@latest", displayName: "pi-background-tasks", required: true },
   { id: "npm:pi-mcp-adapter", displayName: "pi-mcp-adapter", required: true },
   { id: "npm:pi-mermaid-viewer", displayName: "pi-mermaid-viewer", required: false },
   { id: "npm:@jaggerxtrm/pi-service-knowledge", displayName: "pi-service-knowledge", required: true },
   { id: "npm:pi-intercom", displayName: "pi-intercom", required: true },
   { id: "git:github.com/alonw0/pi-claude-link", displayName: "pi-claude-link", required: true },
-  { id: "npm:pi-ast-grep", displayName: "pi-ast-grep", required: true },
-  { id: "npm:@zenobius/pi-worktrees", displayName: "pi-worktrees", required: true },
-  { id: "npm:@aliou/pi-processes", displayName: "pi-processes", required: true }
+  { id: "npm:pi-ast-grep", displayName: "pi-ast-grep", required: true }
 ];
 var PROJECT_REQUIRED_PACKAGE_IDS = [
   PROJECT_EXTENSION_PACKAGE_ID,
@@ -58966,24 +58963,24 @@ async function launchWorktreeSession(opts) {
     stdio: "pipe"
   }).status === 0;
   const branchCreatedByLauncher = !branchExistedBefore;
-  const bdResult = (0, import_node_child_process2.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
+  const branchExistsNow = (0, import_node_child_process2.spawnSync)("git", ["rev-parse", "--verify", branchName], {
+    cwd: mainRepoRoot,
+    stdio: "pipe"
+  }).status === 0;
+  const gitArgs = branchExistsNow ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath];
+  const gitResult = (0, import_node_child_process2.spawnSync)("git", gitArgs, {
     cwd: mainRepoRoot,
     stdio: structuredOutput ? "pipe" : "inherit"
   });
-  if (bdResult.error || bdResult.status !== 0) {
-    if (bdResult.status !== 0 && !bdResult.error) {
-      if (!structuredOutput) console.log(kleur_default.dim("  beads: no database found, creating worktree without redirect"));
+  if (gitResult.error || gitResult.status !== 0) {
+    if (gitResult.status !== 0 && !gitResult.error) {
+      if (!structuredOutput) console.log(kleur_default.dim("  git worktree add failed, trying bd worktree create"));
     }
-    const branchExists = (0, import_node_child_process2.spawnSync)("git", ["rev-parse", "--verify", branchName], {
-      cwd: mainRepoRoot,
-      stdio: "pipe"
-    }).status === 0;
-    const gitArgs = branchExists ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath];
-    const gitResult = (0, import_node_child_process2.spawnSync)("git", gitArgs, {
+    const bdResult = (0, import_node_child_process2.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
       cwd: mainRepoRoot,
       stdio: structuredOutput ? "pipe" : "inherit"
     });
-    if (gitResult.status !== 0) {
+    if (bdResult.error || bdResult.status !== 0) {
       console.error(kleur_default.red(`
   \u2717 Failed to create worktree at ${worktreePath}
 `));
@@ -61610,11 +61607,11 @@ async function launchCodexWorktreeSession(opts) {
   }
   const buffer = `xtrm-codex-${(0, import_node_crypto12.randomBytes)(16).toString("hex")}`;
   let created = false;
-  const bd2 = (0, import_node_child_process7.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
+  const codexGit = (0, import_node_child_process7.spawnSync)("git", ["worktree", "add", "-b", branchName, worktreePath], {
     cwd: mainRoot,
     stdio: structured ? "pipe" : "inherit"
   });
-  if (!bd2.error && bd2.status === 0) {
+  if (!codexGit.error && codexGit.status === 0) {
     created = true;
   } else {
     const partialBranch = (0, import_node_child_process7.spawnSync)(
@@ -61624,13 +61621,13 @@ async function launchCodexWorktreeSession(opts) {
     ).status === 0;
     if ((0, import_node_fs5.existsSync)(worktreePath) || partialBranch) {
       cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
-      fail(`bd worktree creation left partial state at ${worktreePath}`);
+      fail(`git worktree creation left partial state at ${worktreePath}`);
     }
-    const added = (0, import_node_child_process7.spawnSync)("git", ["worktree", "add", "-b", branchName, worktreePath], {
+    const bdFallback = (0, import_node_child_process7.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
       cwd: mainRoot,
       stdio: structured ? "pipe" : "inherit"
     });
-    created = added.status === 0;
+    created = !bdFallback.error && bdFallback.status === 0;
     if (!created) {
       cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
     }
@@ -67430,6 +67427,35 @@ function bd(args, cwd) {
   const r = (0, import_node_child_process14.spawnSync)("bd", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
+function sb(args, cwd) {
+  const r = (0, import_node_child_process14.spawnSync)("sb", args, { cwd, encoding: "utf8", stdio: "pipe" });
+  return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
+}
+function resolveIssueMeta(id, cwd) {
+  const show = sb(["issue", "show", id, "--json"], cwd);
+  if (show.ok) {
+    try {
+      const envelope = JSON.parse(show.out);
+      const data = envelope.data ?? {};
+      const contract = data.contract ?? {};
+      const closure = data.closure ?? {};
+      if (data.title !== void 0) {
+        return {
+          title: typeof data.title === "string" ? data.title : id,
+          description: typeof contract.problem === "string" ? contract.problem : "",
+          reason: typeof closure.reason === "string" ? closure.reason : ""
+        };
+      }
+    } catch {
+    }
+  }
+  return null;
+}
+function linkPrToIssue(id, prUrl, cwd) {
+  const noted = sb(["issue", "note", id, `PR: ${prUrl}`], cwd);
+  if (noted.ok) return;
+  bd(["update", id, "--notes", `PR: ${prUrl}`], cwd);
+}
 function npm(args, cwd) {
   const r = (0, import_node_child_process14.spawnSync)("npm", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
@@ -67697,6 +67723,11 @@ function createEndCommand() {
     const issueIds = extractIssueIds(logResult.out);
     const issues = [];
     for (const id of issueIds) {
+      const meta3 = resolveIssueMeta(id, cwd);
+      if (meta3) {
+        issues.push({ id, ...meta3 });
+        continue;
+      }
       const queryResult = bd(["query", `id=${id}`, "--all", "--json"], cwd);
       if (queryResult.ok) {
         try {
@@ -67802,7 +67833,7 @@ function createEndCommand() {
     const prUrl = prResult.stdout.trim();
     console.log(t.success(`  \u2713 PR created: ${prUrl}`));
     for (const issue2 of issues) {
-      bd(["update", issue2.id, "--notes", `PR: ${prUrl}`], cwd);
+      linkPrToIssue(issue2.id, prUrl, cwd);
     }
     if (issues.length > 0) {
       console.log(t.success(`  \u2713 Linked PR to ${issues.length} issue(s)`));
@@ -71360,6 +71391,13 @@ async function hasBeadsDir(repoRoot) {
 async function ensureBeadsSharedServerEnabled(repoRoot, apply) {
   const beadsDir = import_node_path41.default.join(repoRoot, ".beads");
   if (!await import_fs_extra46.default.pathExists(beadsDir)) return { changed: false, state: "not-applicable" };
+  if (apply) {
+    const plan = await planSubstrateMigration(repoRoot);
+    if (plan.needed) {
+      const blocked = migrationBlockedReason(plan);
+      throw new Error(blocked ?? plan.reason);
+    }
+  }
   const configPath = import_node_path41.default.join(beadsDir, "config.yaml");
   const raw = await import_fs_extra46.default.pathExists(configPath) ? await import_fs_extra46.default.readFile(configPath, "utf8") : "";
   const rawParsed = raw.trim() ? import_yaml.default.parse(raw) : {};

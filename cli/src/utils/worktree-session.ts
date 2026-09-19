@@ -2956,8 +2956,12 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         console.log(kleur.dim(`  branch:   ${branchName}\n`));
     }
 
-    // Use bd worktree create — sets up git worktree + canonical .beads/redirect in one step.
-    // Falls back to plain git worktree add if bd is unavailable or the project has no .beads/.
+    // Git-first worktree create (CORE-2307): `git worktree add` is the
+    // primary path — launchers must not require bd. When bd exists it is
+    // attempted as a FALLBACK for its canonical .beads/redirect setup
+    // only if git itself failed; observable behavior is identical and the
+    // post-create .beads removal below is shared by both paths.
+    // Flag surface untouched in this lane (XTRM-93 owns --bead).
     if (existsSync(worktreePath)) {
         console.error(kleur.red('\n  ✗ Worktree path already exists. Refusing to reuse stale directory.\n'));
         console.error(kleur.dim(`  path: ${worktreePath}`));
@@ -2975,28 +2979,29 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     }).status === 0;
     const branchCreatedByLauncher = !branchExistedBefore;
 
-    const bdResult = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
-        cwd: mainRepoRoot, stdio: structuredOutput ? 'pipe' : 'inherit',
+    const branchExistsNow = spawnSync('git', ['rev-parse', '--verify', branchName], {
+        cwd: mainRepoRoot, stdio: 'pipe',
+    }).status === 0;
+
+    const gitArgs = branchExistsNow
+        ? ['worktree', 'add', worktreePath, branchName]
+        : ['worktree', 'add', '-b', branchName, worktreePath];
+
+    const gitResult = spawnSync('git', gitArgs, {
+        cwd: mainRepoRoot,
+        stdio: structuredOutput ? 'pipe' : 'inherit',
     });
 
-    if (bdResult.error || bdResult.status !== 0) {
-        // Fall back to plain git worktree add (bd not found or no .beads/ in project)
-        if (bdResult.status !== 0 && !bdResult.error) {
-            if (!structuredOutput) console.log(kleur.dim('  beads: no database found, creating worktree without redirect'));
+    if (gitResult.error || gitResult.status !== 0) {
+        // Fallback: bd worktree create (canonical .beads/redirect setup)
+        // for projects where bd manages the worktree layout.
+        if (gitResult.status !== 0 && !gitResult.error) {
+            if (!structuredOutput) console.log(kleur.dim('  git worktree add failed, trying bd worktree create'));
         }
-        const branchExists = spawnSync('git', ['rev-parse', '--verify', branchName], {
-            cwd: mainRepoRoot, stdio: 'pipe',
-        }).status === 0;
-
-        const gitArgs = branchExists
-            ? ['worktree', 'add', worktreePath, branchName]
-            : ['worktree', 'add', '-b', branchName, worktreePath];
-
-        const gitResult = spawnSync('git', gitArgs, {
-            cwd: mainRepoRoot,
-            stdio: structuredOutput ? 'pipe' : 'inherit',
+        const bdResult = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
+            cwd: mainRepoRoot, stdio: structuredOutput ? 'pipe' : 'inherit',
         });
-        if (gitResult.status !== 0) {
+        if (bdResult.error || bdResult.status !== 0) {
             console.error(kleur.red(`\n  ✗ Failed to create worktree at ${worktreePath}\n`));
             process.exit(1);
         }

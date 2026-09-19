@@ -9,9 +9,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, '../..');
 const SCRIPT = path.join(REPO_ROOT, 'scripts/check-registry-pack-parity.mjs');
 
-// Retired Beads hooks (xtrm-6qu.8 allowlist): exact paths only — the count
-// and membership are pinned so a glob or broad exemption cannot sneak in.
-const RETIRED_BEADS_PATHS = [
+// Lane 2 (hook cleanup): the 11 retired beads-*.mjs payloads are deleted, so
+// the parity allowlist is empty (besides the two permanent packaging entries)
+// and the check must pass with zero allowlisted paths.
+const DELETED_BEADS_PATHS = [
   '.xtrm/hooks/beads-claim-sync.mjs',
   '.xtrm/hooks/beads-commit-gate.mjs',
   '.xtrm/hooks/beads-compact-restore.mjs',
@@ -31,22 +32,23 @@ function runParity(cwd: string, script: string = SCRIPT) {
   return spawnSync('node', [script], { encoding: 'utf8', cwd });
 }
 
-describe('registry-pack parity (retired Beads hooks)', () => {
-  it('passes on the real tree with exactly the retired set allowlisted', () => {
+describe('registry-pack parity (retired Beads hooks deleted)', () => {
+  it('passes on the real tree with no allowlisted paths', () => {
     const result = runParity(REPO_ROOT);
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Allowlisted pack-only managed paths: 11');
-    for (const retired of RETIRED_BEADS_PATHS) {
-      expect(fs.pathExistsSync(path.join(REPO_ROOT, retired))).toBe(true);
+    expect(result.stdout).not.toContain('Allowlisted');
+    for (const deleted of DELETED_BEADS_PATHS) {
+      expect(fs.pathExistsSync(path.join(REPO_ROOT, deleted))).toBe(false);
     }
   });
 
   it('allowlist keys are exact paths, never globs', async () => {
     const script = await fs.readFile(SCRIPT, 'utf8');
     const allowlistBlock = script.slice(script.indexOf('const allowlist = new Map('));
-    expect(allowlistBlock).not.toContain('*');
-    for (const retired of RETIRED_BEADS_PATHS) {
-      expect(allowlistBlock).toContain(`'${retired}'`);
+    const codeOnly = allowlistBlock.replace(/\/\/.*$/gm, '');
+    expect(codeOnly).not.toContain('*');
+    for (const deleted of DELETED_BEADS_PATHS) {
+      expect(allowlistBlock).not.toContain(`'${deleted}'`);
     }
   });
 

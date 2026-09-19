@@ -1,6 +1,6 @@
 # Concept: durable execution identity and `xt work`
 
-Status: parked / unvalidated concept
+Status: parked / unvalidated concept (note CORE-2304, 2026-09-18: `starting-and-resuming-work` folded into `using-xtrm`; body below is a historical record, not the current routing)
 
 This document captures a proposed XTRM work-lifecycle surface that is intentionally **not part of the current runtime contract yet**. The prototype implementation was explored on the skills-v4 branch and then removed from the active change set pending real local behavioral testing with Pi/Claude and an independent agent audit.
 
@@ -91,7 +91,7 @@ Execution / WorkRun
 
 ## Skill ownership if adopted
 
-The durable invariant belongs in `using-xtrm`, not primarily in `starting-and-resuming-work`.
+The durable invariant belongs in `using-xtrm`, not primarily in a separate continuity skill.
 
 Proposed responsibility split:
 
@@ -106,7 +106,7 @@ using-xtrm
 planning
   └── create/promote contract-quality work and dependencies
 
-starting-and-resuming-work
+continuity (folded into using-xtrm per CORE-2304)
   └── re-entry, takeover, context-pressure continuation, stalled-lane recovery
 
 multiplexing
@@ -116,7 +116,7 @@ engineering-quality
   └── prove the resulting work is correct
 ```
 
-`starting-and-resuming-work` would therefore become narrower rather than disappearing.
+The continuity half would therefore become narrower rather than disappearing — folded into `using-xtrm` per CORE-2304.
 
 ## Why a CLI may be preferable to more prompt text
 
@@ -217,7 +217,7 @@ After the real session test, use a fresh agent to review:
 - test transcript;
 - resulting Bead/work state;
 - repository diff and evidence;
-- interaction with `/planning` and `starting-and-resuming-work`.
+- interaction with `/planning` and `/using-xtrm` continuity.
 
 The auditor should explicitly look for confusing semantics, lifecycle bypasses, session-identity bugs, unnecessary ceremony, duplicate state, stale instructions, and migration risks.
 
@@ -232,7 +232,7 @@ agent-contract.md
   -> agents-top.md / claude-top.md
   -> generated AGENTS.md / CLAUDE.md
   -> using-xtrm
-  -> starting-and-resuming-work
+  -> using-xtrm continuity
   -> planning
   -> README
   -> hooks / Pi runtime docs

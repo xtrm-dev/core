@@ -12,9 +12,19 @@ vi.mock("@earendil-works/pi-tui", () => ({
 	visibleWidth: vi.fn((s: string) => s.replace(/\x1b\[[0-9;]*m/g, "").length),
 }));
 
+import { mkdirSync, writeFileSync } from "node:fs";
 import customFooterExtension from "../../../packages/pi-extensions/extensions/custom-footer/index";
 import { SubprocessRunner } from "../../../packages/pi-extensions/src/core";
-import * as beadsCache from "../../../.xtrm/hooks/beads-status-cache.mjs";
+
+// Lane 2: the retired beads-status-cache.mjs payload is deleted. Tests that
+// need an on-disk cache fixture write the JSON envelope directly.
+function writeCache(mainRoot: string, data: object) {
+	mkdirSync(`${mainRoot}/.xtrm/cache`, { recursive: true });
+	writeFileSync(
+		`${mainRoot}/.xtrm/cache/beads-status.json`,
+		JSON.stringify({ v: 1, ts: Date.now(), stale: false, ...data }),
+	);
+}
 
 vi.mock("../../../packages/pi-extensions/src/core", async () => {
 	const actual = await vi.importActual<any>("../../../packages/pi-extensions/src/core");
@@ -23,11 +33,11 @@ vi.mock("../../../packages/pi-extensions/src/core", async () => {
 
 const repoRoot = join(import.meta.dirname, "../../..");
 
-// xtrm-64pl0: the footer is a pure cache reader. The expandable epic/parent tree, the
-// /beads command + Alt+G toggle, and all descendant/parent bd subprocesses were removed.
-// These tests cover what remains: timer hygiene, compact-formatter parity, no subprocess
-// on render/startup, and absence of the removed toggle UI.
-describe("custom-footer shared beads cache", () => {
+// Lane 2 (hook cleanup): the retired beads payload is deleted — the footer
+// is git-only and never loads a cache module. These tests cover timer
+// hygiene, git-only render, no subprocess on render/startup, no-module path,
+// and absence of the removed toggle UI.
+describe("custom-footer git-only (beads retired)", () => {
 	let handlers: Record<string, Function[]>;
 	let footerRenderer: any;
 	let ctx: any;
@@ -96,18 +106,14 @@ describe("custom-footer shared beads cache", () => {
 		await vi.runOnlyPendingTimersAsync();
 	}
 
-	it("cleans cache synchronization and refresh timers on shutdown", async () => {
-		beadsCache.writeCache(cacheRoot, {
-			counts: { open: 1, in_progress: 0, blocked: 0 }, activeIssues: [], activeEpic: null,
-		});
+	it("cleans refresh timers on shutdown", async () => {
 		await start();
-		expect(vi.getTimerCount()).toBeGreaterThan(0);
 		await handlers.session_shutdown[0]();
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("renders the same compact formatter output as Claude from a fixture cache", async () => {
-		beadsCache.writeCache(cacheRoot, {
+	it("renders git-only with no beads segment even when a fixture cache exists", async () => {
+		writeCache(cacheRoot, {
 			counts: { open: 12, in_progress: 2, blocked: 0 },
 			activeIssues: [],
 			activeEpic: { id: "xtrm-k2ufi", title: "Role parity", closed: 1, total: 3 },
@@ -115,11 +121,23 @@ describe("custom-footer shared beads cache", () => {
 		await start();
 		const lines = footerRenderer.render(120);
 		expect(lines).toHaveLength(1);
-		expect(lines[0].replace(/\x1b\[[0-9;]*m/g, "")).toContain("o:12 p:2");
+		// Lane 2: the retired payload cache must not leak into the line.
+		expect(lines[0].replace(/\x1b\[[0-9;]*m/g, "")).not.toContain("o:12 p:2");
+	});
+
+	it("no-module path: footer renders git-only without ever loading the cache module", async () => {
+		// Lane 2 proof: no beads payload import is attempted at startup.
+		writeCache(cacheRoot, {
+			counts: { open: 5, in_progress: 0, blocked: 0 }, activeIssues: [], activeEpic: null,
+		});
+		await start();
+		const lines = footerRenderer.render(100);
+		expect(lines).toHaveLength(1);
+		expect(lines[0].replace(/\x1b\[[0-9;]*m/g, "")).not.toContain("o:");
 	});
 
 	it("render performs no subprocess work", async () => {
-		beadsCache.writeCache(cacheRoot, {
+		writeCache(cacheRoot, {
 			counts: { open: 5, in_progress: 0, blocked: 0 }, activeIssues: [], activeEpic: null,
 		});
 		await start();
@@ -130,7 +148,7 @@ describe("custom-footer shared beads cache", () => {
 	});
 
 	it("registers no beads toggle command/shortcut and spawns no bd or refresh subprocess on startup", async () => {
-		beadsCache.writeCache(cacheRoot, {
+		writeCache(cacheRoot, {
 			counts: { open: 2, in_progress: 1, blocked: 0 },
 			activeIssues: [{ id: "xtrm-one", title: "First claim", status: "in_progress" }],
 			activeEpic: { id: "xtrm-epic", title: "Some epic", closed: 1, total: 3 },
@@ -146,12 +164,12 @@ describe("custom-footer shared beads cache", () => {
 		expect(calls.filter(([cmd]) => cmd === "bd")).toHaveLength(0);
 		expect(calls.filter(([cmd]) => cmd !== "git" && cmd !== "bd")).toHaveLength(0);
 
-		// The footer renders exactly one line: path/branch, context/model, compact beads.
+		// The footer renders exactly one line: path/branch, context/model.
 		expect(footerRenderer.render(120)).toHaveLength(1);
 	});
 
 	it("re-reads the cache file (no subprocess) when a bd mutation tool_result arrives", async () => {
-		beadsCache.writeCache(cacheRoot, {
+		writeCache(cacheRoot, {
 			counts: { open: 1, in_progress: 0, blocked: 0 }, activeIssues: [], activeEpic: null,
 		});
 		await start();

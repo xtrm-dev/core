@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -7,30 +7,25 @@ import test from 'node:test';
 
 const hook = new URL('./statusline.mjs', import.meta.url).pathname;
 
+// Lane 1 (hook cleanup): statusline is git-only. The fixture uses a fake git
+// (fast, deterministic) and a fake bd that must NEVER be called — any bd
+// invocation is a lane-1 regression. No beads cache is ever written.
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'xtrm-statusline-'));
   const cwd = join(root, 'repo');
   const cache = join(root, 'cache');
-  const beadsRoot = join(root, 'beadsroot');
   const bin = join(root, 'bin');
   const log = join(root, 'calls.log');
-  mkdirSync(join(cwd, '.beads'), { recursive: true });
-  mkdirSync(cache); mkdirSync(bin); mkdirSync(beadsRoot);
-  writeFileSync(join(bin, 'git'), `#!/bin/sh\necho git >> '${log}'\nsleep 0.1\nprintf 'main\\n'\n`);
-  // bd returns JSON for --json commands, plain text otherwise. Slow (400ms) — beyond old 250ms timeout.
-  writeFileSync(join(bin, 'bd'), `#!/bin/sh
-echo bd >> '${log}'
-sleep 0.4
-case "$*" in
-  *"--json"*) printf '[]\\n' ;;
-  *) printf '0 open\\n' ;;
-esac
-`);
+  mkdirSync(join(cwd, '.xtrm'), { recursive: true });
+  mkdirSync(cache); mkdirSync(bin);
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\necho git >> '${log}'\ncase \"$*\" in\n  *\"rev-parse --show-toplevel\"*) printf '${cwd}\\n' ;;\n  *\"branch --show-current\"*) printf 'main\\n' ;;\n  *\"rev-parse --short HEAD\"*) printf 'abc1234\\n' ;;\n  *\"status --porcelain\"*) printf '' ;;\n  *\"rev-list\"*) printf '' ;;\n  *) printf '' ;;\nesac\n`);
+  // Regression tripwire: statusline must never spawn bd after lane 1.
+  writeFileSync(join(bin, 'bd'), `#!/bin/sh\necho bd >> '${log}'\nprintf '[]\\n'\n`);
   spawnSync('chmod', ['+x', join(bin, 'git'), join(bin, 'bd')]);
-  return { root, cwd, cache, beadsRoot, bin, log };
+  return { root, cwd, cache, bin, log };
 }
 
-function run({ cwd, cache, beadsRoot, bin }) {
+function run({ cwd, cache, bin }) {
   const started = performance.now();
   const result = spawnSync(process.execPath, [hook], {
     input: JSON.stringify({ workspace: { current_dir: cwd } }),
@@ -38,69 +33,72 @@ function run({ cwd, cache, beadsRoot, bin }) {
     env: {
       ...process.env,
       XTRM_STATUSLINE_CACHE_DIR: cache,
-      XTRM_BEADS_CACHE_ROOT: beadsRoot,
       PATH: `${bin}:${process.env.PATH}`,
     },
   });
   return { result, elapsed: performance.now() - started };
 }
 
-async function waitForBeadsCache(beadsRoot, timeout = 5_000) {
-  const target = join(beadsRoot, '.xtrm', 'cache', 'beads-status.json');
+function bdCalls(log) {
+  if (!existsSync(log)) return 0;
+  return readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).filter(c => c === 'bd').length;
+}
+
+async function waitForGitCache(cache, timeout = 5_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    if (existsSync(target)) return;
+    try {
+      if (readdirSync(cache).some(f => f.startsWith('xtrm-sl-git-'))) return;
+    } catch {}
     await new Promise(resolve => setTimeout(resolve, 25));
   }
-  throw new Error('background beads refresh did not finish');
+  throw new Error('background git refresh did not finish');
 }
 
 test('renderer never blocks; cold fallback + warm cached read both < 200ms', async (t) => {
   const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
   const cold = run(fx);
   assert.equal(cold.result.status, 0);
-  assert.match(cold.result.stdout, /no open issues|beads unavailable/);
+  // Git-only line: path + model, no beads segment.
+  assert.match(cold.result.stdout, /repo/);
+  assert.doesNotMatch(cold.result.stdout, /o:\d+ p:\d+|beads unavailable|no open issues/);
   assert.ok(cold.elapsed < 200, `renderer blocked for ${cold.elapsed}ms`);
-  await waitForBeadsCache(fx.beadsRoot);
+  await waitForGitCache(fx.cache);
   const warm = run(fx);
   assert.equal(warm.result.status, 0);
+  assert.match(warm.result.stdout, /main/);
   assert.ok(warm.elapsed < 200, `cached renderer blocked for ${warm.elapsed}ms`);
 });
 
-test('slow bd (400ms > old 250ms timeout) still populates cache instead of falling back to zero', async (t) => {
+test('never spawns bd (lane 1 regression tripwire)', async (t) => {
   const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
   run(fx);
-  await waitForBeadsCache(fx.beadsRoot);
-  const cache = JSON.parse(readFileSync(join(fx.beadsRoot, '.xtrm', 'cache', 'beads-status.json'), 'utf8'));
-  assert.equal(cache.v, 1);
-  assert.deepEqual(cache.counts, { open: 0, in_progress: 0, blocked: 0 });
+  await waitForGitCache(fx.cache);
+  // Warm render + refresh round-trip: still zero bd calls.
+  run(fx);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.equal(bdCalls(fx.log), 0, 'statusline spawned bd after lane-1 sever');
 });
 
-test('concurrent renders share one refresh lease (no bd stampede across N callers)', async (t) => {
+test('concurrent renders share one git refresh lease (no stampede)', async (t) => {
   const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
   const children = Array.from({ length: 5 }, () => spawn(process.execPath, [hook], {
     stdio: ['pipe', 'ignore', 'ignore'],
     env: {
       ...process.env,
       XTRM_STATUSLINE_CACHE_DIR: fx.cache,
-      XTRM_BEADS_CACHE_ROOT: fx.beadsRoot,
       PATH: `${fx.bin}:${process.env.PATH}`,
     },
   }));
   for (const child of children) child.stdin.end(JSON.stringify({ workspace: { current_dir: fx.cwd } }));
   await Promise.all(children.map(child => new Promise((resolve, reject) => child.on('exit', code => code === 0 ? resolve() : reject(new Error(`exit ${code}`))))));
-  await waitForBeadsCache(fx.beadsRoot);
-  const calls = readFileSync(fx.log, 'utf8').trim().split('\n').filter(Boolean);
-  const bdCalls = calls.filter(c => c === 'bd').length;
-  assert.ok(bdCalls <= 4, `bd stampede across concurrent renders: ${bdCalls} calls`);
+  await waitForGitCache(fx.cache);
+  assert.equal(bdCalls(fx.log), 0, 'concurrent renders spawned bd');
 });
 
-test('corrupt beads cache falls back safely without crashing', async (t) => {
+test('corrupt git cache falls back safely without crashing', async (t) => {
   const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
-  const cacheDir = join(fx.beadsRoot, '.xtrm', 'cache');
-  mkdirSync(cacheDir, { recursive: true });
-  writeFileSync(join(cacheDir, 'beads-status.json'), '{bad json');
-  const { result } = run(fx);
+  writeFileSync(join(fx.cache, 'xtrm-sl-git-deadbeef.json'), '{bad json');
+  const { result } = run({ ...fx, cache: fx.cache });
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /no open issues|beads unavailable/);
 });

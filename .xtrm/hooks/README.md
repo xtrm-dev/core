@@ -16,11 +16,21 @@ Hooks intercept specific events in the Claude Code lifecycle. Following architec
 
 **Trigger**: PostToolUse (Grep|Glob|Bash|Serena edit tools)
 
-## Beads Issue Tracking Gates
+## Issue Tracking Gates (retired — lane 2 deleted)
 
-The beads gate hooks integrate the `bd` (beads) issue tracker directly into Claude's workflow, ensuring no code changes happen without an active ticket.
+The `bd` (beads) issue-tracker gates are retired. The 11 `beads-*.mjs` payload
+files were deleted in lane 2; nothing live imports them:
 
-**Installation**: Installed with `xtrm install all` or included when `beads`+`dolt` is available.
+- `statusline.mjs` — git-only line; no `bd` subprocess.
+- `xtrm-tool-logger.mjs` / `xtrm-session-logger.mjs` — `resolveCwd`/`resolveSessionId`
+  inlined.
+- `xtrm-logger.mjs` — project anchor is `.xtrm/`, not `.beads/`; no `.beads` probe.
+- Pi `custom-footer` — git-only footer; no beads segment, no cache module load.
+- `claude-runtime-sync.ts` — SEAM comment updated; canonical template
+  (`.xtrm/config/hooks.json`) wires no `beads-*` hooks.
+
+**Installation**: `xtrm install all` wires only the gates listed below. Do not
+re-add `beads-*` registrations; the canonical template is the source of truth.
 
 ### Core Gates
 - **`beads-edit-gate.mjs`** (PreToolUse) — Blocks writes/edits without an active issue claim.

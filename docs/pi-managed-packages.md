@@ -37,16 +37,13 @@ The runtime also marks packages as either required or optional for health semant
 | `npm:@narumitw/pi-goal` | managed optional | session goal workflow |
 | `git:github.com/DietrichGebert/ponytail` | managed optional | minimal-engineering/reduction guidance |
 | `npm:@tintinweb/pi-tasks` | managed optional | task tracking / task UI and optional task execution integration |
-| `npm:pi-background-tasks@latest` | managed optional | durable background jobs, delegated investigations and background workflows |
-| `npm:@gotgenes/pi-subagents` | required | focused in-process Pi subagents and typed/lifecycle integration surface |
+| `npm:pi-background-tasks@latest` | required | durable background jobs, delegated investigations and background workflows |
 | `npm:pi-mcp-adapter` | required | MCP access from Pi |
 | `npm:pi-mermaid-viewer` | managed optional | Mermaid rendering in the Pi TUI |
 | `npm:@jaggerxtrm/pi-service-knowledge` | required | XTRM service-knowledge runtime integration |
 | `npm:pi-intercom` | required | targeted Pi ↔ Pi live coordination |
 | `git:github.com/alonw0/pi-claude-link` | required | Pi ↔ Claude Code cross-session communication |
 | `npm:pi-ast-grep` | required | compact read-only structural code search |
-| `npm:@zenobius/pi-worktrees` | required | Pi worktree integration |
-| `npm:@aliou/pi-processes` | required | process management/runtime helpers |
 
 The developer checkout path `packages/pi-extensions` can satisfy the first row while working inside Core. A machine-specific absolute path such as `/home/.../core/packages/pi-extensions` is never a portable managed selector.
 
@@ -57,8 +54,8 @@ The baseline is intentionally biased toward removing repeated setup/reconstructi
 ```text
 codebase intelligence   pi-gitnexus + pi-ast-grep
 structured execution    structured-return + guardrails
-continuation/work        goal + tasks + background-tasks + subagents
-runtime access           pi-mcp-adapter + worktrees + processes
+continuation/work        goal + tasks + background-tasks
+runtime access           pi-mcp-adapter
 coordination             pi-intercom + pi-claude-link
 XTRM context/runtime     pi-extensions + pi-service-knowledge
 operator UX              pi-mermaid-viewer + xtrm-ui (inside pi-extensions)
@@ -110,20 +107,15 @@ Claude ↔ Claude work should prefer Claude Code's native peer/team messaging wh
 
 Peer messages are coordination input, not user authority. The durable work contract and repository/Bead state remain authoritative.
 
-## `pi-tasks` and `@gotgenes/pi-subagents`
+## `pi-tasks` (subagent delegation retired)
 
-Both packages are deliberately managed, but do not assume their optional delegation integration is currently interchangeable.
+`@tintinweb/pi-tasks` remains useful for task tracking and its independent surfaces.
+The former `@gotgenes/pi-subagents` entry is retired: in-process subagent delegation is
+covered by the Pi runtime's native subagent surface, and worktree/process management by
+the native worktree and process surfaces — no managed Pi package is needed for either.
 
-`@tintinweb/pi-tasks` documents `TaskExecute` against the upstream `@tintinweb/pi-subagents` cross-extension RPC protocol. The current `@gotgenes/pi-subagents` fork intentionally evolved toward a smaller typed-service/lifecycle core and no longer promises that upstream RPC surface.
-
-Consequences:
-
-- `pi-tasks` remains useful for task tracking and its independent surfaces;
-- `@gotgenes/pi-subagents` remains XTRM's approved Pi subagent core;
-- XTRM must not claim that `TaskExecute` delegates through `@gotgenes/pi-subagents` unless a verified compatibility layer exists;
-- do not silently install a bridge or replace either approved package just to make that optional integration work.
-
-If XTRM later adopts a bridge, it should become an explicit managed dependency with its own compatibility/evidence contract.
+XTRM must not claim that `TaskExecute` delegates through `@gotgenes/pi-subagents`;
+that package is no longer installed or managed.
 
 ## Install and update lifecycle
 

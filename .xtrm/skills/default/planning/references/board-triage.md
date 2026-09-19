@@ -1,6 +1,6 @@
 # Board triage
 
-Use when the Beads board is large, duplicated, stale, or no longer reflects current work.
+Use when the Substrate board (Issues) is large, duplicated, stale, or no longer reflects current work.
 
 1. Snapshot open/in-progress/blocked work and existing dependencies.
 2. Find obvious duplicates mechanically, then verify semantic overlap against current
@@ -30,8 +30,10 @@ ancestry: orphan artifact branch; never a code-development base
 ```
 
 The worktree/branch is durable. Never cancel it, merge it into product code, or use it as
-a normal implementation branch. Beads DB access comes from Git common-directory
-discovery, so the orphan worktree does not need a product-code checkout.
+a normal implementation branch. Substrate state access comes from the state DB
+(`sb issue list`), so the orphan worktree does not need a product-code checkout. (Historical
+text below mentioning Beads/Dolt describes the retired board-audit transport, not current
+authority.)
 
 Use the package's current commands:
 
@@ -49,9 +51,9 @@ commits only `.xtrm/board-audit/**`, and fast-forwards the permanent artifact br
 The current fleet fanout timer can run this periodically without coupling publication to
 PR creation or an operator remembering to export.
 
-The branch is a durable evidence surface, not board authority. Beads/Dolt remains the
+The branch is a durable evidence surface, not board authority. Substrate Issues remain the
 source of truth. Consumers should use the latest export/manifest defined by the current
-`packages/board-audit` contract rather than copying data back into Beads by inference.
+`packages/board-audit` contract rather than copying data back into Issues by inference.
 
 ### Legacy handoff/reconcile is different
 

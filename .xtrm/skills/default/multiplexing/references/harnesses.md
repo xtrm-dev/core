@@ -20,7 +20,7 @@ and lifecycle surfaces.
 ## Codex
 
 Prefer the current Codex-native agent/session facilities exposed by the installed
-runtime. When Codex is launched as a durable XTRM peer, keep the same Beads contract and
+runtime. When Codex is launched as a durable XTRM peer, keep the same Substrate Issue contract and
 correlation/evidence rules even if its native transport differs from Pi or Claude.
 
 ## xt peers

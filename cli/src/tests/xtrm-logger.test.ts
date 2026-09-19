@@ -19,7 +19,8 @@ describe('xtrm hook logger', () => {
   it('persists events without an sqlite3 executable on PATH', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xtrm-logger-'));
     tempDirs.push(root);
-    await mkdir(join(root, '.beads'));
+    // Lane 1 (hook cleanup): logger anchors on .xtrm/, not retired .beads/.
+    await mkdir(join(root, '.xtrm'));
     const previousPath = process.env.PATH;
     process.env.PATH = join(root, 'empty-bin');
 

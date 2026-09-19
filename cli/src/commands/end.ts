@@ -56,6 +56,50 @@ function bd(args: string[], cwd: string): { ok: boolean; out: string } {
     return { ok: r.status === 0, out: (r.stdout ?? '').trim() };
 }
 
+function sb(args: string[], cwd: string): { ok: boolean; out: string } {
+    const r = spawnSync('sb', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+    return { ok: r.status === 0, out: (r.stdout ?? '').trim() };
+}
+
+/**
+ * Resolve issue metadata via sb first, with bd fallback for unmigrated
+ * boards (CORE-2307). sb `issue show <ref>` resolves both CORE-* and
+ * legacy xtrm-* humanRefs against the shared-server db; unknown refs
+ * return non-zero and fall through to bd.
+ */
+function resolveIssueMeta(id: string, cwd: string): { title: string; description: string; reason: string } | null {
+    const show = sb(['issue', 'show', id, '--json'], cwd);
+    if (show.ok) {
+        try {
+            const envelope = JSON.parse(show.out) as { ok?: unknown; data?: Record<string, unknown> };
+            const data = envelope.data ?? {};
+            const contract = (data.contract ?? {}) as Record<string, unknown>;
+            const closure = (data.closure ?? {}) as Record<string, unknown>;
+            if (data.title !== undefined) {
+                return {
+                    title: typeof data.title === 'string' ? data.title : id,
+                    description: typeof contract.problem === 'string' ? contract.problem : '',
+                    reason: typeof closure.reason === 'string' ? closure.reason : '',
+                };
+            }
+        } catch {
+            // fall through to bd fallback
+        }
+    }
+    return null;
+}
+
+/**
+ * Link the PR URL to an issue via sb journal, with bd fallback (CORE-2307).
+ * sb `issue note <ref> <text>` appends an append-only journal note without
+ * a revision bump; bd `--notes` is preserved for boards not yet in sb.
+ */
+function linkPrToIssue(id: string, prUrl: string, cwd: string): void {
+    const noted = sb(['issue', 'note', id, `PR: ${prUrl}`], cwd);
+    if (noted.ok) return;
+    bd(['update', id, '--notes', `PR: ${prUrl}`], cwd);
+}
+
 function npm(args: string[], cwd: string): { ok: boolean; out: string; err: string } {
     const r = spawnSync('npm', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
     return { ok: r.status === 0, out: (r.stdout ?? '').trim(), err: (r.stderr ?? '').trim() };
@@ -401,6 +445,12 @@ export function createEndCommand(): Command {
 
             const issues: EndIssue[] = [];
             for (const id of issueIds) {
+                // sb first (CORE-2307), bd fallback for unmigrated boards.
+                const meta = resolveIssueMeta(id, cwd);
+                if (meta) {
+                    issues.push({ id, ...meta });
+                    continue;
+                }
                 const queryResult = bd(['query', `id=${id}`, '--all', '--json'], cwd);
                 if (queryResult.ok) {
                     try {
@@ -522,9 +572,9 @@ export function createEndCommand(): Command {
             const prUrl = prResult.stdout.trim();
             console.log(t.success(`  ✓ PR created: ${prUrl}`));
 
-            // 11. Beads linkage: add PR URL to each closed issue's notes
+            // 11. Issue linkage: sb journal note first, bd --notes fallback (CORE-2307).
             for (const issue of issues) {
-                bd(['update', issue.id, '--notes', `PR: ${prUrl}`], cwd);
+                linkPrToIssue(issue.id, prUrl, cwd);
             }
             if (issues.length > 0) {
                 console.log(t.success(`  ✓ Linked PR to ${issues.length} issue(s)`));

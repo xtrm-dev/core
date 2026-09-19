@@ -2,7 +2,7 @@
 name: planning
 description: >
   Turn intent, a bug, feature, audit, PRD, or existing backlog into durable XTRM work
-  contracts. Use when work needs decomposition, a bead must be made dispatchable, an
+  contracts. Use when work needs decomposition, an Issue must be made dispatchable, an
   existing board is stale/duplicated, tests or operational evidence need planning, or a
   captured draft is about to be handed to another worker. This skill owns contract
   authoring and board structure for every XTRM worker, not only Specialists.
@@ -45,7 +45,7 @@ structure the work actually needs.
 For non-draft work, verify the current repository/runtime state before creating a board.
 Recent merged work may already satisfy or invalidate the request.
 
-Use GitNexus, targeted reads, recent commits/PRs, current Beads state, and current CLI
+Use GitNexus, targeted reads, recent commits/PRs, current Substrate Issue state, and current CLI
 help as appropriate. The goal is enough evidence to name real ownership and validation,
 not an archaeology ritual.
 
@@ -78,8 +78,9 @@ than saving time.
 ## Dependencies
 
 Use blocking dependencies only for real sequencing. Use non-blocking relationship types
-for context, validation, discovery, or related work when supported by the current Beads
-CLI. Check `bd ... --help` instead of preserving a frozen list of flags here.
+for context, validation, discovery, or related work when supported by the current Substrate
+CLI (`sb issue relate --kind blocks|relates_to|discovered_from|supersedes|duplicates`).
+Check live `sb ... --help` instead of preserving a frozen list of flags here.
 
 ## Test and operational evidence
 
@@ -108,7 +109,7 @@ sensitive, cross-repo, or based on uncertain assumptions.
 
 A completed planning pass leaves:
 
-- current durable work item(s);
+- current durable Issue(s);
 - clear ready vs draft state;
 - dependencies/ownership that match reality;
 - validation/evidence expectations;

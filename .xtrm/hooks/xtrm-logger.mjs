@@ -41,7 +41,9 @@ CREATE INDEX IF NOT EXISTS idx_kind    ON events(kind);
 function findDbPath(cwd) {
   let dir = cwd;
   for (let i = 0; i < 10; i++) {
-    if (existsSync(join(dir, '.beads'))) {
+    // Lane 1 (hook cleanup): project anchor is the .xtrm hooks dir, not the
+    // retired .beads payload tree. Audited: no .beads probe remains in live consumers.
+    if (existsSync(join(dir, '.xtrm'))) {
       return join(dir, '.xtrm', 'debug.db');
     }
     const parent = join(dir, '..');
@@ -70,7 +72,7 @@ function openDb(dbPath) {
  * @param {string}  [params.runtime]   'claude' | 'pi'  (default: 'claude')
  * @param {string}  [params.outcome]   'allow' | 'block' | 'ok' | 'error'
  * @param {string}  [params.toolName]  Tool name for gate / tool.call events
- * @param {string}  [params.issueId]   Linked beads issue ID
+ * @param {string}  [params.issueId]   Linked issue ID (legacy beads field, kept for schema compat)
  * @param {number}  [params.durationMs] Tool call duration
  * @param {object}  [params.data]      Structured context (file, cmd, reason, etc.)
  * @param {string}  [params.message]   Legacy: message string (merged into data.msg)

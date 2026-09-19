@@ -122,27 +122,27 @@ describe('xt doctor command', () => {
 
   it('reports a missing managed Pi package in text and json without installing anything', async () => {
     getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport({
-      issues: [{ pkg: { id: 'npm:@zenobius/pi-worktrees', displayName: 'pi-worktrees', required: true }, npmPackageName: '@zenobius/pi-worktrees', installedVersion: null, expectedVersion: '1.1.0', state: 'missing', remediation: 'pi install npm:@zenobius/pi-worktrees' }],
-      missing: [{ pkg: { id: 'npm:@zenobius/pi-worktrees', displayName: 'pi-worktrees', required: true }, npmPackageName: '@zenobius/pi-worktrees', installedVersion: null, expectedVersion: '1.1.0', state: 'missing', remediation: 'pi install npm:@zenobius/pi-worktrees' }],
+      issues: [{ pkg: { id: 'npm:pi-background-tasks@latest', displayName: 'pi-background-tasks', required: true }, npmPackageName: 'pi-background-tasks', installedVersion: null, expectedVersion: '1.1.0', state: 'missing', remediation: 'pi install npm:pi-background-tasks@latest' }],
+      missing: [{ pkg: { id: 'npm:pi-background-tasks@latest', displayName: 'pi-background-tasks', required: true }, npmPackageName: 'pi-background-tasks', installedVersion: null, expectedVersion: '1.1.0', state: 'missing', remediation: 'pi install npm:pi-background-tasks@latest' }],
       hasIssues: true,
     }));
 
     const textLogs = await runDoctorCli([]);
     expect(textLogs.join('\n')).toContain('missing');
-    expect(textLogs.join('\n')).toContain('pi install npm:@zenobius/pi-worktrees');
+    expect(textLogs.join('\n')).toContain('pi install npm:pi-background-tasks@latest');
     expect(getXtManagedPiPackageDoctorReportMock).toHaveBeenCalled();
 
     const jsonLogs = await runDoctorCli(['--json']);
     const parsed = JSON.parse(jsonLogs[0]);
     expect(parsed.piPackages.hasIssues).toBe(true);
-    expect(parsed.piPackages.missing[0].pkg.id).toBe('npm:@zenobius/pi-worktrees');
+    expect(parsed.piPackages.missing[0].pkg.id).toBe('npm:pi-background-tasks@latest');
   });
 
   it('reports outdated and version-unknown packages with visible warnings', async () => {
     getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport({
       issues: [
         { pkg: { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true }, npmPackageName: 'pi-gitnexus', installedVersion: '1.0.0', expectedVersion: '1.1.0', state: 'outdated', remediation: 'pi install npm:pi-gitnexus' },
-        { pkg: { id: 'npm:@aliou/pi-processes', displayName: 'pi-processes', required: true }, npmPackageName: 'pi-processes', installedVersion: '1.0.0', expectedVersion: null, state: 'version-unknown', remediation: 'check network/npm registry, then rerun xt doctor' },
+        { pkg: { id: 'npm:pi-background-tasks@latest', displayName: 'pi-background-tasks', required: true }, npmPackageName: 'pi-background-tasks', installedVersion: '1.0.0', expectedVersion: null, state: 'version-unknown', remediation: 'check network/npm registry, then rerun xt doctor' },
       ],
       outdated: [{ pkg: { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true }, npmPackageName: 'pi-gitnexus', installedVersion: '1.0.0', expectedVersion: '1.1.0', state: 'outdated', remediation: 'pi install npm:pi-gitnexus' }],
       hasIssues: true,

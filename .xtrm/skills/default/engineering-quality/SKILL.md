@@ -43,7 +43,7 @@ symptom / alert / failing test
   -> failing code/data/control path
   -> recent change(s) on that path
   -> commit body + diff
-  -> PR / bead / worker that produced the change
+  -> PR / Issue / worker that produced the change
   -> why the change was made and what contract it was satisfying
   -> deploy/runtime version that first contained it
   -> evidence that the change can cause the symptom
@@ -64,13 +64,14 @@ When relevant, correlate:
 - `git log --format=fuller` and complete commit bodies;
 - the actual commit diff and parent/base;
 - PR body, review discussion, and merge/deploy timestamps;
-- Bead contract, notes, dependencies, and close reason;
+- Issue contract (pinned revision), Journal entries, dependencies, and Closure reason;
 - Specialist/job result or XTRM peer/worktree that authored the change;
 - current worktree/session topology when the change is still in progress;
 - release/deployment identity and runtime observability.
 
-Commit messages and Beads are evidence of *why*. Source and runtime evidence determine
-whether that reasoning is still correct.
+Commit messages and Journal entries are evidence of *why*. Source and runtime evidence determine
+whether that reasoning is still correct. A Specialist result is evidence, not automatic truth;
+Closure is post-verification authority, never an executor success side-effect.
 
 ## Change discipline
 
@@ -90,7 +91,7 @@ Do not bundle unrelated cleanup into a bug fix merely because the area is alread
 - `/using-xtrm` owns system-wide work/contract/evidence rules.
 - `/gitnexus` provides code-graph evidence for call chains and blast radius.
 - `/planning` owns work contracts and test/evidence requirements before dispatch.
-- `/starting-and-resuming-work` owns continuity and handoff.
+- `/using-xtrm` (Continuity) owns continuity and handoff.
 - `/sre-ops` extends the same causal method into production observability and deployment
   reconstruction when that optional pack is enabled.
 

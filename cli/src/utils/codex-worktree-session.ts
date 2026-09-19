@@ -280,10 +280,14 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
 
     const buffer = `xtrm-codex-${randomBytes(16).toString('hex')}`;
     let created = false;
-    const bd = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
+    // Git-first worktree create (CORE-2307): `git worktree add` is the
+    // primary path — codex launches must not require bd. bd is attempted
+    // as a FALLBACK only if git itself failed; observable behavior is
+    // identical. Flag surface untouched in this lane (XTRM-93 owns --bead).
+    const codexGit = spawnSync('git', ['worktree', 'add', '-b', branchName, worktreePath], {
         cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
     });
-    if (!bd.error && bd.status === 0) {
+    if (!codexGit.error && codexGit.status === 0) {
         created = true;
     } else {
         const partialBranch = spawnSync(
@@ -292,12 +296,12 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         ).status === 0;
         if (existsSync(worktreePath) || partialBranch) {
             cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
-            fail(`bd worktree creation left partial state at ${worktreePath}`);
+            fail(`git worktree creation left partial state at ${worktreePath}`);
         }
-        const added = spawnSync('git', ['worktree', 'add', '-b', branchName, worktreePath], {
+        const bdFallback = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
             cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
         });
-        created = added.status === 0;
+        created = !bdFallback.error && bdFallback.status === 0;
         if (!created) {
             cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
         }

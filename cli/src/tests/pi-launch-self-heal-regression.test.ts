@@ -80,6 +80,16 @@ describe('pi launch self-heal regression', () => {
         return { status: 0, stdout: '.git\n', stderr: '' };
       }
 
+      if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') {
+        // Git-first path (CORE-2307): `git worktree add` is the primary
+        // creator. Mirror the bd fallback's side effects (worktree dir +
+        // broken core symlink) so the self-heal path is exercised.
+        const worktreePath = args.includes('-b') ? args[3] : args[2];
+        fs.ensureDirSync(path.join(worktreePath as string, '.xtrm', 'extensions', 'core'));
+        createBrokenCoreSymlink(worktreePath as string);
+        return { status: 0, stdout: '', stderr: '' };
+      }
+
       if (command === 'bd' && args[0] === 'worktree' && args[1] === 'create') {
         const worktreePath = args[2];
         fs.ensureDirSync(path.join(worktreePath, '.xtrm', 'extensions', 'core'));

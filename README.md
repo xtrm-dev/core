@@ -244,7 +244,6 @@ The always-active skill surface is intentionally small:
 | Skill | Purpose |
 |---|---|
 | `using-xtrm` | system doctrine, contracts, evidence, multi-agent behavior |
-| `starting-and-resuming-work` | cold start, continuation, handoff, context-pressure recovery |
 | `multiplexing` | native-first peer coordination and continuation |
 | `planning` | contracts, decomposition, board triage, tests, premortem |
 | `engineering-quality` | causal debugging, review, testing, verification, reduction |

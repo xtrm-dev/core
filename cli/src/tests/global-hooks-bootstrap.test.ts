@@ -16,7 +16,7 @@ afterEach(async () => {
 async function scaffoldPkg(pkgRoot: string, hooksJson: object): Promise<void> {
   await fs.ensureDir(pkgRoot);
   await fs.writeJson(path.join(pkgRoot, 'package.json'), { version: '1.2.3' });
-  await fs.outputFile(path.join(pkgRoot, '.xtrm', 'hooks', 'beads-claim-sync.mjs'), '#!/usr/bin/env node\n');
+  await fs.outputFile(path.join(pkgRoot, '.xtrm', 'hooks', 'statusline.mjs'), '#!/usr/bin/env node\n');
   await fs.outputFile(path.join(pkgRoot, '.xtrm', 'hooks', 'gitnexus', 'gitnexus-hook.cjs'), 'module.exports = {};\n');
   await fs.outputFile(path.join(pkgRoot, '.xtrm', 'config', 'hooks.json'), JSON.stringify(hooksJson, null, 2));
 }
@@ -40,7 +40,7 @@ describe('global-hooks-bootstrap', () => {
     expect(second.installedVersion).toBe('1.2.3');
     expect(second.changed).toBe(false);
     expect(second.sourceFingerprint).toBe(first.sourceFingerprint);
-    expect(await fs.pathExists(path.join(fakeHome, '.xtrm', 'hooks', 'beads-claim-sync.mjs'))).toBe(true);
+    expect(await fs.pathExists(path.join(fakeHome, '.xtrm', 'hooks', 'statusline.mjs'))).toBe(true);
     expect(await fs.pathExists(path.join(fakeHome, '.xtrm', 'hooks', 'gitnexus', 'gitnexus-hook.cjs'))).toBe(true);
     expect(await fs.pathExists(path.join(fakeHome, '.xtrm', 'config', 'hooks.json'))).toBe(true);
   });
@@ -84,13 +84,13 @@ describe('global-hooks-bootstrap', () => {
     const initial = await ensureGlobalHooksBootstrapped(pkgRoot);
 
     // Modify a hook file (not the config) — fingerprint must still detect it.
-    await fs.outputFile(path.join(pkgRoot, '.xtrm', 'hooks', 'beads-claim-sync.mjs'), '#!/usr/bin/env node\n// changed\n');
+    await fs.outputFile(path.join(pkgRoot, '.xtrm', 'hooks', 'statusline.mjs'), '#!/usr/bin/env node\n// changed\n');
 
     const second = await ensureGlobalHooksBootstrapped(pkgRoot);
     expect(second.changed).toBe(true);
     expect(second.sourceFingerprint).not.toBe(initial.sourceFingerprint);
 
-    const globalHook = await fs.readFile(path.join(fakeHome, '.xtrm', 'hooks', 'beads-claim-sync.mjs'), 'utf8');
+    const globalHook = await fs.readFile(path.join(fakeHome, '.xtrm', 'hooks', 'statusline.mjs'), 'utf8');
     expect(globalHook).toContain('// changed');
   });
 

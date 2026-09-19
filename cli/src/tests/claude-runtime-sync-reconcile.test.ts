@@ -245,7 +245,7 @@ describe('mergeProjectOwnedHooks', () => {
     PreToolUse: [
       {
         matcher: 'Bash',
-        hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/beads-commit-gate.mjs' }],
+        hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/worktree-boundary.mjs' }],
       },
     ],
     SessionStart: [
@@ -271,14 +271,14 @@ describe('mergeProjectOwnedHooks', () => {
     const merged = mergeProjectOwnedHooks(existing, canonical, '/repo/.xtrm/hooks');
     const commands = merged.PreToolUse.flatMap((w) => w.hooks.map((h) => h.command));
     expect(commands).toContain('node /home/dawid/dev/xtmux/bin/auto-monitor.mjs');
-    expect(commands).toContain('node /repo/.xtrm/hooks/beads-commit-gate.mjs');
+    expect(commands).toContain('node /repo/.xtrm/hooks/worktree-boundary.mjs');
   });
 
   it('drops an existing hook whose hash matches the canonical (dedupes)', () => {
     const existing = {
       PreToolUse: [{
         matcher: 'Bash',
-        hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/beads-commit-gate.mjs' }],
+        hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/worktree-boundary.mjs' }],
       }],
     };
     const merged = mergeProjectOwnedHooks(existing, canonical, '/repo/.xtrm/hooks');
@@ -296,7 +296,7 @@ describe('mergeProjectOwnedHooks', () => {
     const merged = mergeProjectOwnedHooks(existing, canonical, '/repo/.xtrm/hooks');
     const commands = merged.PreToolUse.flatMap((w) => w.hooks.map((h) => h.command));
     expect(commands).not.toContain('node "/repo/.xtrm/hooks/renamed-old-hook.mjs"');
-    expect(commands).toContain('node /repo/.xtrm/hooks/beads-commit-gate.mjs');
+    expect(commands).toContain('node /repo/.xtrm/hooks/worktree-boundary.mjs');
   });
 
   it('drops a stale service-skills wrapper reference (matches .xtrm/skills/default/service-skills/scripts/)', () => {

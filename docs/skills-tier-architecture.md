@@ -107,7 +107,7 @@ The global `default/` entry is **no longer a symlink** to the repo `skills/` dir
 - **Mutability**: Read-only — managed by xtrm updates
 - **Discovery**: Direct child directories with `SKILL.md`
 
-Contains the nine universal default skills: `using-xtrm`, `starting-and-resuming-work`, `multiplexing`, `planning`, `engineering-quality`, `using-specialists`, `gitnexus`, `skill-creator`, and `find-skills`.
+Contains the eight universal default skills: `using-xtrm` (incl. continuity), `multiplexing`, `planning`, `engineering-quality`, `using-specialists`, `gitnexus`, `skill-creator`, and `find-skills` (CORE-2304 retired `starting-and-resuming-work`).
 
 ### Global optional (Tier 2)
 

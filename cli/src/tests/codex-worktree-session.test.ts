@@ -285,7 +285,7 @@ describe('Codex worktree launcher', () => {
         );
     });
 
-    it('cleans partial state from a failed bd worktree creation before fallback', async () => {
+    it('cleans partial state from a failed git worktree creation before bd fallback', async () => {
         const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-partial-'));
         roots.push(repoRoot);
         const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', `${path.basename(repoRoot)}-xt-codex-partial`);
@@ -303,9 +303,12 @@ describe('Codex worktree launcher', () => {
                 return { status: branchChecks === 1 ? 1 : 0, stdout: '', stderr: '' };
             }
             if (command === 'tmux' && args[0] === 'has-session') return { status: 1, stdout: '', stderr: '' };
-            if (command === 'bd' && args[0] === 'worktree') {
+            if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') {
                 fs.ensureDirSync(worktreePath);
                 return { status: 1, stdout: '', stderr: 'partial failure' };
+            }
+            if (command === 'bd' && args[0] === 'worktree') {
+                return { status: 0, stdout: '', stderr: '' };
             }
             return { status: 0, stdout: '', stderr: '' };
         });
@@ -326,8 +329,61 @@ describe('Codex worktree launcher', () => {
         expect(mocked.spawnSync).toHaveBeenCalledWith(
             'git', ['branch', '-D', 'xt/partial'], expect.objectContaining({ cwd: repoRoot }),
         );
+        // Fail-closed: partial state never reaches the bd fallback.
         expect(mocked.spawnSync).not.toHaveBeenCalledWith(
+            'bd', expect.arrayContaining(['worktree', 'create']), expect.anything(),
+        );
+    });
+
+    it('falls back to bd worktree create when git worktree add fails cleanly', async () => {
+        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-gitfail-'));
+        roots.push(repoRoot);
+        const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', `${path.basename(repoRoot)}-xt-codex-gitfail`);
+        const codexHome = path.join(repoRoot, 'codex-home');
+        process.env.CODEX_HOME = codexHome;
+        process.chdir(repoRoot);
+
+        mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            const joined = args.join(' ');
+            if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
+            if (command === 'git' && joined === 'check-ref-format --branch xt/gitfail') return { status: 0, stdout: '', stderr: '' };
+            if (command === 'git' && joined.startsWith('show-ref --verify')) {
+                return { status: 1, stdout: '', stderr: '' };
+            }
+            if (command === 'tmux' && args[0] === 'has-session') return { status: 1, stdout: '', stderr: '' };
+            if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') {
+                return { status: 1, stdout: '', stderr: 'git add unavailable' };
+            }
+            if (command === 'bd' && args[0] === 'worktree') {
+                fs.ensureDirSync(worktreePath);
+                return { status: 0, stdout: '', stderr: '' };
+            }
+            if (command === 'tmux' && args[0] === 'new-session') return { status: 1, stdout: '', stderr: 'stop here' };
+            return { status: 0, stdout: '', stderr: '' };
+        });
+
+        exitByThrow();
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { launchCodexWorktreeSession } = await import('../utils/codex-worktree-session.js');
+        await expect(launchCodexWorktreeSession({
+            name: 'gitfail',
+            attach: false,
+            json: true,
+            yolo: true,
+        })).rejects.toThrow('exit:1');
+
+        // git-first attempted, then bd fallback created the worktree (later
+        // tmux failure proves creation succeeded and triggered cleanup).
+        expect(mocked.spawnSync).toHaveBeenCalledWith(
             'git', expect.arrayContaining(['worktree', 'add']), expect.anything(),
+        );
+        expect(mocked.spawnSync).toHaveBeenCalledWith(
+            'bd', expect.arrayContaining(['worktree', 'create']), expect.anything(),
+        );
+        expect(mocked.spawnSync).toHaveBeenCalledWith(
+            'git', ['worktree', 'remove', '--force', worktreePath], expect.objectContaining({ cwd: repoRoot }),
         );
     });
 });

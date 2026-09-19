@@ -4,7 +4,17 @@
 
 import { readFileSync } from 'node:fs';
 import { logEvent } from './xtrm-logger.mjs';
-import { resolveCwd, resolveSessionId } from './beads-gate-utils.mjs';
+
+// Lane 1 (hook cleanup): inlined from retired beads-gate-utils.mjs —
+// resolveCwd/resolveSessionId are trivial input fallbacks with no bd/bd-kv
+// dependency. The payload file stays until lane 2; live loggers no longer import it.
+function resolveCwd(input) {
+  return input?.cwd ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+}
+
+function resolveSessionId(input) {
+  return input?.session_id ?? input?.sessionId ?? resolveCwd(input);
+}
 
 function readInput() {
   try { return JSON.parse(readFileSync(0, 'utf-8')); } catch { return null; }
