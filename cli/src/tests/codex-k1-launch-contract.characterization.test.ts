@@ -634,11 +634,15 @@ describe('codex K1 launch contract (characterization)', () => {
       const worktreePath = worktreePathFor(repoRoot, runtime, slug);
 
       let bdArgs: string[] = [];
+      let gitArgs: string[] = [];
       installSpawnSync({
         repoRoot,
         worktreePath,
         paneId: '%5',
         handler: (command, args) => {
+          // Git-first (CORE-2307): launcher calls `git worktree add` primary;
+          // `bd worktree create` is fallback-only (never reached on success).
+          if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') gitArgs = [...args];
           if (command === 'bd' && args[0] === 'worktree' && args[1] === 'create') bdArgs = [...args];
           return undefined;
         },
@@ -660,7 +664,8 @@ describe('codex K1 launch contract (characterization)', () => {
       );
       const expectedBranch = `xt/${slug}`;
 
-      expect(bdArgs).toEqual(['worktree', 'create', expectedWorktree, '--branch', expectedBranch]);
+      expect(gitArgs.slice(0, 2)).toEqual(['worktree', 'add']);
+      expect(bdArgs).toEqual([]);
       expect(await fs.pathExists(expectedWorktree)).toBe(true);
 
       // CHARACTERIZATION: current behavior, see xtrm-ozknq.5 — the runtime is
@@ -668,15 +673,17 @@ describe('codex K1 launch contract (characterization)', () => {
       // the BRANCH name (worktree-session.ts:1717-1721). Two runtimes launched
       // with the same --name therefore get distinct worktrees but COLLIDE on
       // one branch `xt/<slug>`; the second launch reuses the existing branch
-      // via the `git worktree add <path> <branch>` fallback or fails. Adding a
+      // via `git worktree add <path> <branch>` or fails. Adding a
       // third runtime widens that collision surface. Asserted explicitly
       // because it is the asymmetry a shared-launcher refactor is most likely
       // to "tidy up" silently.
       // Asserted against the values the LAUNCHER actually passed to
-      // `bd worktree create`, never against the locally built expectations
+      // `git worktree add`, never against the locally built expectations
       // above — a self-comparison would pass for any implementation.
-      const observedWorktree = bdArgs[2];
-      const observedBranch = bdArgs[4];
+      // Git-first shape (CORE-2307): ['worktree','add','-b',<branch>,<path>]
+      // on new branch, ['worktree','add',<path>,<branch>] on reuse.
+      const observedWorktree = gitArgs.includes('-b') ? gitArgs[3] : gitArgs[2];
+      const observedBranch = gitArgs.includes('-b') ? gitArgs[2] : gitArgs[3];
       expect(observedBranch).toBe(`xt/${slug}`);
       expect(observedBranch).not.toContain(runtime);
       expect(observedBranch).not.toContain('pi');

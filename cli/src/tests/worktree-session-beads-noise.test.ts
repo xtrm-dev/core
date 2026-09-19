@@ -297,6 +297,14 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
       if (command === 'git' && joinedArgs === 'rev-parse --git-common-dir') {
         return { status: 0, stdout: '.git\n', stderr: '' };
       }
+      if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') {
+        // Git-first path (CORE-2307): `git worktree add` is the primary
+        // creator. Mirror the bd fallback's side effects, including the
+        // session-meta.json directory that forces writeSessionMeta to fail.
+        fs.ensureDirSync(worktreePath);
+        fs.ensureDirSync(path.join(worktreePath, '.xtrm', 'session-meta.json'));
+        return { status: 0, stdout: '', stderr: '' };
+      }
       if (command === 'bd' && args[0] === 'worktree' && args[1] === 'create') {
         fs.ensureDirSync(worktreePath);
         fs.ensureDirSync(path.join(worktreePath, '.xtrm', 'session-meta.json'));
@@ -353,6 +361,11 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
       && args.at(-1) === `'${path.join(repoRoot, 'bin', 'pi')}' '--name' 'repo-xt-pi-json' 'echo hi'`
     )).toBe(true);
     expect(mocked.spawnSync).toHaveBeenCalledWith(
+      'git',
+      expect.arrayContaining(['worktree', 'add']),
+      expect.objectContaining({ cwd: repoRoot }),
+    );
+    expect(mocked.spawnSync).not.toHaveBeenCalledWith(
       'bd',
       ['worktree', 'create', worktreePath, '--branch', 'xt/json'],
       expect.objectContaining({ stdio: 'pipe' }),
