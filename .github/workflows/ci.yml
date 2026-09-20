@@ -81,6 +81,7 @@ jobs:
         npm run check:skills-ownership
         npm run check:managed-skills
         npm run check:registry-pack-parity
+        npm run check:registry-freshness
         npm run check:specialists-vendor
         git diff --exit-code -- .xtrm/skills/default .xtrm/skills/optional .xtrm/specialists-source.json .xtrm/registry.json
 
