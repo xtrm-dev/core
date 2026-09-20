@@ -59,13 +59,14 @@ commit
   -> complete commit subject/body and actual diff
   -> authoring branch/worktree/peer when recoverable
   -> PR and review/discussion
-  -> Bead contract / dependencies / notes / close reason
+  -> Issue revision / dependencies / Journal / Closure reason (with provenance: claim, commits, PRs)
   -> Specialist or agent result when that work produced the change
   -> original problem, constraints and intended success condition
 ```
 
-Use `gh`, `bd`, XTRM worktree/topology state, and `sp result` or current equivalents when
-those surfaces exist. Exact commands are runtime-dependent; use live help.
+Use `gh`, `sb`, XTRM worktree/topology state, and `sp result` or current equivalents when
+those surfaces exist. (`bd`/`bv` describe the retired Beads board; use them only for
+migration/history work.) Exact commands are runtime-dependent; use live help.
 
 The commit body is valuable because XTRM agents normally record reasoning and scope. But
 it is not authority: compare stated intent with the actual diff and current contract.
@@ -144,7 +145,7 @@ A useful root-cause note:
 ```text
 Last good / first bad:
 Introduced / exposed / correlated by:
-Commit / PR / Bead / worker:
+Commit / PR / Issue revision / worker:
 Original intent:
 Mechanism:
 Evidence and counterevidence:

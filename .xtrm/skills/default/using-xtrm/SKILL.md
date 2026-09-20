@@ -63,6 +63,21 @@ when they matter.
 A draft Issue is not dispatchable but must still state a real problem and rough scope.
 Ground current state and promote it before another worker consumes it (`/planning` owns procedure).
 
+Contract-quality checklist (authoring procedure lives in `/planning`):
+
+```text
+1. PROBLEM states why the work exists, not just what to do.
+2. SUCCESS is observable — done is checkable, not felt.
+3. SCOPE names owned files/systems; NON_GOALS names the nearest excluded work.
+4. CONSTRAINTS capture invariants a fix must not break.
+5. VALIDATION names commands/checks whose output proves success.
+6. OUTPUT names the durable result (PR, Journal result, closed Issue).
+7. A fresh worker with repo access could execute it without this chat transcript.
+8. No second private prompt compensates for a weak contract — fix the contract.
+9. Mid-execution discovery: independently closable -> child/follow-up Issue, else Journal entry.
+10. Still draft? State real problem + rough scope, then promote via `/planning` (attest ready).
+```
+
 ## How to engineer: smallest correct system change
 
 Use a Ponytail-style reduction ladder, adapted for XTRM. The goal is not the fewest lines;

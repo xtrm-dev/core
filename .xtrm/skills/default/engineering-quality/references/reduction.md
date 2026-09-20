@@ -24,7 +24,7 @@ Prefer removal of duplicated authority and accidental complexity over clever com
 Do not reduce line count by removing validation, safety, accessibility, observability,
 rollback, tests, or failure handling.
 
-When the code exists for a reason that is not obvious, use commit/PR/Bead provenance
-before deleting it. Historical intent is not automatically still valid, but deleting
+When the code exists for a reason that is not obvious, use commit/PR/Issue provenance
+(Issue revision, Journal, Closure, Resume Capsule) before deleting it. Historical intent is not automatically still valid, but deleting
 without understanding the constraint that created the code is a common way to reintroduce
 old failures.
