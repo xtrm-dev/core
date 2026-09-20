@@ -4,11 +4,10 @@ version: 1.0.0
 description: GitNexus code-intelligence rules, tools, and pre-edit/pre-commit invariants
 template_vars:
   - repo_name
-  - repo_stats
 ---
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **{{repo_name}}** ({{repo_stats}}). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **{{repo_name}}**. Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
