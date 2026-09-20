@@ -1,6 +1,0 @@
-dolt.shared-server: true
-dolt:
-    shared-server: true
-export.git-add: false
-sync:
-    remote: "git+ssh://git@github.com/xtrm-dev/core.git"
