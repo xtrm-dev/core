@@ -30,7 +30,6 @@ export interface ManagedDependency {
     /**
      * When set, the dep is never auto-installed: executeBootstrap prints
      * this remediation and records failure instead of running install steps.
-     * Used while the package has no authorized distribution channel.
      */
     manualInstall?: string;
 }
@@ -57,9 +56,9 @@ const MANAGED_DEPS: ManagedDependency[] = [
         // Substrate-first (ADR section 40): `sb --version` is the
         // availability/version gate. The legacy Beads-stack CLIs are no
         // longer required deps and are never auto-installed or
-        // auto-uninstalled (ADR section 46). @xtrm/substrate is NOT published
-        // to npm and publication is unauthorized, so no install command can
-        // work — resolve from a local source instead (fail truthfully).
+        // auto-uninstalled (ADR section 46). Substrate ships on npm as
+        // @jaggerxtrm/substrate, so a missing `sb` provisions like any
+        // other managed dependency.
         id: 'sb',
         cli: 'sb',
         versionFlag: '--version',
@@ -67,9 +66,8 @@ const MANAGED_DEPS: ManagedDependency[] = [
         description: 'durable work authority — issue/claim/journal backend',
         required: true,
         install: {
-            default: [],
+            default: [{ cmd: 'npm', args: ['install', '-g', '@jaggerxtrm/substrate'] }],
         },
-        manualInstall: 'sb is not published to npm: set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH); automated provisioning ships with the installer pipeline',
     },
     {
         id: 'oh-pi',

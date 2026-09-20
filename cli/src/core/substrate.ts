@@ -6,7 +6,7 @@
  * `setup.ts` integration contract, or the one-way `bd export` intake —
  * nothing else.
  *
- * Verified against live `sb 0.1.0` (@xtrm/substrate, xtrm PR #163) plus the
+ * Verified against live `sb 0.1.0` (@jaggerxtrm/substrate, xtrm PR #163) plus the
  * A6 setup contract (xtrm PR #168):
  * - `sb --version [--json]` exits 0 with parseable `sb <semver>` output and
  *   no side effects.
@@ -30,7 +30,7 @@
  *   `--file` is a Beads JSONL export (`bd export -o`), edges are
  *   `{issue_id, depends_on_id, type}`. The `--json` envelope holds only
  *   with `--json`; without it sb prints bare human JSON by design.
- * - A6 `node <@xtrm/substrate>/integrations/setup.ts check --json` reports
+ * - A6 `node <@jaggerxtrm/substrate>/integrations/setup.ts check --json` reports
  *   `{ok, claude: Check[], pi: Check[], naming: {substratePlugins[],
  *   beadsRemnants[], duplicates}}`, exit 0/1; `plan --json` reports the
  *   declarative install plan for `xt init`.
@@ -392,7 +392,7 @@ export interface SetupCheckInfo {
 }
 
 /**
- * Resolve `integrations/setup.ts` inside an installed `@xtrm/substrate`.
+ * Resolve `setup.ts` inside an installed `@jaggerxtrm/substrate`.
  * `XTRM_SUBSTRATE_SETUP` overrides (tests point it at a fixture script).
  * Returns undefined when the package is not installed — callers report,
  * never guess.
@@ -440,18 +440,26 @@ export function resolveSetupTs(cwd?: string): string | undefined {
     const override = process.env.XTRM_SUBSTRATE_SETUP;
     if (override) return override;
     const roots: string[] = [];
-    if (cwd) roots.push(path.join(cwd, 'node_modules', '@xtrm', 'substrate'));
+    if (cwd) roots.push(path.join(cwd, 'node_modules', '@jaggerxtrm', 'substrate'));
     try {
         const npmRoot = spawnSync('npm', ['root', '-g'], { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
         if (npmRoot.status === 0 && String(npmRoot.stdout ?? '').trim()) {
-            roots.push(path.join(String(npmRoot.stdout).trim(), '@xtrm', 'substrate'));
+            roots.push(path.join(String(npmRoot.stdout).trim(), '@jaggerxtrm', 'substrate'));
         }
     } catch { /* best-effort */ }
+    // Two layouts are valid: a source checkout exposes integrations/setup.ts while
+    // the published package ships the compiled dist/integrations/setup.js. Checking
+    // both is what lets enrollment resolve from an installed package.
     for (const root of roots) {
-        const candidate = path.join(root, 'integrations', 'setup.ts');
-        try {
-            if (fs.pathExistsSync(candidate)) return candidate;
-        } catch { /* next */ }
+        const candidates = [
+            path.join(root, 'integrations', 'setup.ts'),
+            path.join(root, 'dist', 'integrations', 'setup.js'),
+        ];
+        for (const candidate of candidates) {
+            try {
+                if (fs.pathExistsSync(candidate)) return candidate;
+            } catch { /* next */ }
+        }
     }
     return undefined;
 }
@@ -486,7 +494,7 @@ function runSetupVerb(verb: 'check' | 'plan', opts: { setupTs?: string; cwd?: st
         }
     }
     setupTs ??= resolveSetupTs(opts.cwd);
-    if (!setupTs) return { status: null, stdout: '', stderr: '', error: '@xtrm/substrate integrations/setup.ts not installed' };
+    if (!setupTs) return { status: null, stdout: '', stderr: '', error: '@jaggerxtrm/substrate setup.ts not installed' };
     // --dir selects the validated checkout (contract #174); without it
     // setup.ts falls back to in-package defaults (the #168 behavior).
     const args = opts.dir ? [setupTs, verb, '--json', '--dir', opts.dir] : [setupTs, verb, '--json'];
