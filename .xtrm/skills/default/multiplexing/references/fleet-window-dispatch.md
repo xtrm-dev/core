@@ -17,6 +17,8 @@ tmux send-keys -t "$PANE" \
   "cd $MAIN && xt claude --bead $BEAD --prompt 'Read /tmp/.../brief.md and execute it exactly.'" Enter
 ```
 
+(`--bead` here is the legacy alias for the bound Issue; prefer `--issue`.)
+
 For `xt pi`, replace `xt claude` with `xt pi --model <name>`; skill loading uses `/skill:<name>` in the prompt.
 
 **Landmines actually hit and fixed.**
@@ -24,7 +26,7 @@ For `xt pi`, replace `xt claude` with `xt pi --model <name>`; skill loading uses
 - **Zsh `:l` parameter modifier eats the target.** `"$SESSION:$SLUG"` becomes lowercased garbage. Quote as `"${SESSION}:"` (with braces) and pass the slug separately, or use `"${SESSION}:${SLUG}"`.
 - **Nested-worktree refusal.** `xt claude` / `xt pi` explicitly refuse to create a worktree from inside an existing worktree. Always `cd` to the main repo root first, even when the current shell is already there — a stale `PWD` after a session pause can lie.
 - **Inline command in `new-window`.** `tmux new-window -d "cmd"` exits the pane when `cmd` returns; the agent never boots visibly. Create the window empty, then `send-keys` the command so the shell persists.
-- **Peer name collisions and roster drift.** `ListAgents` timestamps can be stale and peer entries can vanish while a process is still running. Trust the pane capture and the durable work state (Bead close, PR opened) over the roster when they disagree.
+- **Peer name collisions and roster drift.** `ListAgents` timestamps can be stale and peer entries can vanish while a process is still running. Trust the pane capture and the durable work state (Issue Closure, PR opened) over the roster when they disagree.
 
 **Prompt shape.** Keep the initial prompt single-line; put the load-bearing instructions in a brief file and use a pointer prompt like `Read /tmp/.../brief.md and execute it exactly.` The tmux `send-keys` fallback rules still apply: never multiline-paste, never embed `$(...)` or backticks in a sent shell string.
 
