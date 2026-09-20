@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bd-export preservation verifier + tests (xtrm-a2oup) ([124dd06](https://github.com/xtrm-dev/core/commit/124dd0684544614c22d28c566bcdc852d5afe790))
 - Xt init via sb init --json plus stable XTRM session identity ([56dc40f](https://github.com/xtrm-dev/core/commit/56dc40f202eebc747473222abe10f1b3be0a5b0d))
 - Surface Claude Code channel-wake state in xt doctor (advisory) (#655) ([dc60e66](https://github.com/xtrm-dev/core/commit/dc60e6662bfbc16dab129ddc331bfd1c671796cf))
+- Add CI gate for registry.json asset hash freshness (#667) ([4a418cc](https://github.com/xtrm-dev/core/commit/4a418cce56a5919ce708566403239f9e980ced08))
 
 ### Fixed
 - Vendor Specialists from pinned commit into declared placements ([8570bd3](https://github.com/xtrm-dev/core/commit/8570bd3f9f8508c197f714da23e969a24db4da8d))
@@ -90,11 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Export Substrate MCP env on xt claude launches (#656) ([e815743](https://github.com/xtrm-dev/core/commit/e81574332b9bcf51056f0e93508da8c589b7d227))
 - Gate install-path beads writer behind planSubstrateMigration (#660) ([6f70925](https://github.com/xtrm-dev/core/commit/6f709252771141065ab52f9e9d37a46c9b70be66))
 - Correct xt help init phases after the Substrate cutover (#663) ([7c05294](https://github.com/xtrm-dev/core/commit/7c052945c40e75a5e482401a1b53c24916454443))
+- Resolve substrate under its real npm scope and shipped layout (#669) ([8be4de3](https://github.com/xtrm-dev/core/commit/8be4de3f71eba6f83e60c5b3c7081d992a9bb09c))
+- Assert the shipped payload, not a project init a bare runner cannot complete (#670) ([b3e6a05](https://github.com/xtrm-dev/core/commit/b3e6a05f818a05a9845bb719cbc7503a654b584b))
 
 ### Other changes
 - Park execution-identity prototype pending local validation ([6c1397a](https://github.com/xtrm-dev/core/commit/6c1397a9733e4036abef1d2ec9127f7fb775bc35))
 - Reconcile ISSUE-136 into skills-v4 ([15ef0a4](https://github.com/xtrm-dev/core/commit/15ef0a4009d1cd97f1ef55bf3019e9881e028360))
 - Reconcile skills-v4 contract with ISSUE-136 compaction (#621) ([c49a53c](https://github.com/xtrm-dev/core/commit/c49a53c1697062f2a5cb5bce63c5b94d48350553))
+- V0.13.0 — Substrate runtime cutover, python-kernel skillbridge, Claude channel wake (#666) ([8810fee](https://github.com/xtrm-dev/core/commit/8810fee7e71c2a79054c6240eed37cbce441a426))
 
 ### Project maintenance
 - Establish XTRM system doctrine and core routers ([4c82c4b](https://github.com/xtrm-dev/core/commit/4c82c4be639a62cdcd1e7bcbc90ce01ae2680651))
@@ -259,6 +263,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cut over to Substrate, remove .beads/ state and bd hooks (#662) ([23d7c80](https://github.com/xtrm-dev/core/commit/23d7c80586a7aa55363be166d87186dfca9491b6))
 - Cut over residual Beads teachings to Substrate + contract checklist (#664) ([33d0366](https://github.com/xtrm-dev/core/commit/33d036602051730f6f83cb813ee638caf18f5317))
 - Refresh registry asset hashes after skill cutover (#665) ([b495210](https://github.com/xtrm-dev/core/commit/b49521083a7f7b62d5caa67e145224c7207dcc88))
+- Regenerate registry after the 0.13.0 version bump (#668) ([acdc7ca](https://github.com/xtrm-dev/core/commit/acdc7ca1c9a19c25529087fa4486e9e7e40bf4d4))
 
 ## [0.12.0] - 2026-09-04
 
