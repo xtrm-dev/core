@@ -70,11 +70,11 @@
       "install_scope": "global",
       "files": {
         "engineering-quality/references/causal-debugging.md": {
-          "hash": "f603f50878ef75dd818b5d0bed76801e821ff3b1525d745909552c0673e0889e",
+          "hash": "097477d5061af6baab68bfe63a8b47c513c70df2762b0d04a443d42045665530",
           "version": "0.12.0"
         },
         "engineering-quality/references/reduction.md": {
-          "hash": "7a626ff9dd40313ff06269b9e818b2a01d0cc05436a8008653924e7a58a28fe5",
+          "hash": "d182122c8d097bf276e8397758060f1cf368b11acbc9c5a36072830778011135",
           "version": "0.12.0"
         },
         "engineering-quality/references/review.md": {
@@ -158,7 +158,7 @@
           "version": "0.12.0"
         },
         "multiplexing/references/fleet-window-dispatch.md": {
-          "hash": "bd180ef1661fab709fd5d4bb1c9d050bbee1b7bb58892596afacb7730f86d7e7",
+          "hash": "37bfc6eae981f1f6402d7edb995cde3268281d9859ee863cf3c36dec53b7444f",
           "version": "0.12.0"
         },
         "multiplexing/references/handoff.md": {
@@ -174,7 +174,7 @@
           "version": "0.12.0"
         },
         "multiplexing/references/messy-run-recovery.md": {
-          "hash": "4d9f480345e4d453bdde2002a7440189b44d66a1cf92aa7b8c399272fe623889",
+          "hash": "b396b26e33ae7d6d36fc9af5b6e6120273aa181916d1a9c03c8e0f377bfa696d",
           "version": "0.12.0"
         },
         "multiplexing/references/native-transports.md": {
@@ -386,7 +386,7 @@
           "version": "0.12.0"
         },
         "using-xtrm/SKILL.md": {
-          "hash": "7a7e52f69fe7cb11235ece1d1b88a55eef5bba9693fe70490cf39f91eb9d02db",
+          "hash": "ff9b70ac178410be0cca3d5361ad9a0fb49dc64b384477bf655e62db2cef12b9",
           "version": "0.12.0"
         }
       }
@@ -964,7 +964,7 @@
           "version": "0.12.0"
         },
         "pi/install-schema.json": {
-          "hash": "bc4873f9bc401d598259cbbd2114b71aeafb6d7d98d7b1c10f71b793ce696029",
+          "hash": "52c41b77cf19397bc7028b236ffced2ab791d517b121a79ea2e3386b017bca52",
           "version": "0.12.0"
         },
         "pi/models.json.template": {
@@ -976,7 +976,7 @@
           "version": "0.12.0"
         },
         "pi/settings.json.template": {
-          "hash": "b3e8c178c288f5d15e3f53f33bf675d03ad22e1fefefa1a863900df2686426f6",
+          "hash": "eb50df73e0568784aef4c8e3b278d4f3287e3fc5eb84ee90329c4c25e16742ea",
           "version": "0.12.0"
         },
         "README.md": {
