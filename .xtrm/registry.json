@@ -816,10 +816,6 @@
           "hash": "14c67d32b92d4cbd74b8ef47141598408f427a3f56b031495a8270a492fb6fe6",
           "version": "0.13.0"
         },
-        "xtrm-maintenance/sync-docs/evals/evals.json": {
-          "hash": "51bc6d30e89e8c6a0af5356d8bbc2ab2c71d55822cfdee0bc94ab3402f57e117",
-          "version": "0.13.0"
-        },
         "xtrm-maintenance/sync-docs/references/doc-structure.md": {
           "hash": "bd30ca7777262b582c95d72a9507ad307aad21b806594ee98d855449763a6247",
           "version": "0.13.0"
