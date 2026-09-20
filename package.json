@@ -84,6 +84,7 @@
     "release:pi-extensions": "npm publish --workspace @jaggerxtrm/pi-extensions --tag latest --access public",
     "release:all": "npm run release && npm run release:pi-extensions",
     "gen-registry": "node scripts/gen-registry.mjs",
+    "check:registry-freshness": "node scripts/gen-registry.mjs --check",
     "check:registry-pack-parity": "node scripts/check-registry-pack-parity.mjs",
     "check:payload-hygiene": "node scripts/check-payload-hygiene.mjs",
     "check:deprecations": "node scripts/check-command-deprecations.mjs",

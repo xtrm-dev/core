@@ -167,5 +167,70 @@ for (const [assetName, asset] of Object.entries(assets)) {
 }
 
 const registryPath = path.join(repoRoot, '.xtrm', 'registry.json');
-await fs.writeFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
-console.log(`Wrote ${path.relative(repoRoot, registryPath)}`);
+const registryText = `${JSON.stringify(registry, null, 2)}\n`;
+
+function collectRegistryHashes(registryObject) {
+  const entries = new Map();
+  for (const asset of Object.values(registryObject?.assets ?? {})) {
+    const sourceDir = asset?.source_dir ?? '<unknown>';
+    for (const [relativePath, entry] of Object.entries(asset?.files ?? {})) {
+      entries.set(toPosixPath(`${sourceDir}/${relativePath}`), entry?.hash);
+    }
+  }
+  return entries;
+}
+
+function diffRegistryDrift(actual, expected) {
+  const drifted = [];
+  const actualHashes = collectRegistryHashes(actual);
+  const expectedHashes = collectRegistryHashes(expected);
+
+  for (const [filePath, expectedHash] of expectedHashes) {
+    if (!actualHashes.has(filePath)) {
+      drifted.push(`${filePath} (missing from registry)`);
+    } else if (actualHashes.get(filePath) !== expectedHash) {
+      drifted.push(`${filePath} (stale hash)`);
+    }
+  }
+  for (const filePath of actualHashes.keys()) {
+    if (!expectedHashes.has(filePath)) {
+      drifted.push(`${filePath} (removed from tree)`);
+    }
+  }
+  if (drifted.length === 0 && JSON.stringify(actual) !== JSON.stringify(expected)) {
+    drifted.push('registry metadata differs (version or specialists_source); regenerate');
+  }
+  return drifted.sort();
+}
+
+if (process.argv.slice(2).includes('--check')) {
+  let actualText;
+  try {
+    actualText = await fs.readFile(registryPath, 'utf8');
+  } catch (error) {
+    console.error(`Registry freshness check failed: ${path.relative(repoRoot, registryPath)} is missing.`);
+    console.error(`Fix: run 'npm run gen-registry' and commit the result.`);
+    process.exit(1);
+  }
+  if (actualText === registryText) {
+    console.log(`Registry freshness ok: ${path.relative(repoRoot, registryPath)} matches gen-registry output.`);
+  } else {
+    let actual;
+    try {
+      actual = JSON.parse(actualText);
+    } catch {
+      console.error(`Registry freshness check failed: ${path.relative(repoRoot, registryPath)} is not valid JSON.`);
+      console.error(`Fix: run 'npm run gen-registry' and commit the result.`);
+      process.exit(1);
+    }
+    console.error(`Registry freshness check failed: ${path.relative(repoRoot, registryPath)} is stale.`);
+    for (const line of diffRegistryDrift(actual, registry)) {
+      console.error(`- ${line}`);
+    }
+    console.error(`Fix: run 'npm run gen-registry' and commit the result.`);
+    process.exit(1);
+  }
+} else {
+  await fs.writeFile(registryPath, registryText, 'utf8');
+  console.log(`Wrote ${path.relative(repoRoot, registryPath)}`);
+}
