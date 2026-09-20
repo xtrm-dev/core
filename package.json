@@ -1,6 +1,6 @@
 {
   "name": "xtrm-tools",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Durable multi-agent coding runtime for Pi, Claude Code, Codex, and Specialists",
   "license": "MIT",
   "type": "module",
