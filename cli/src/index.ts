@@ -63,7 +63,7 @@ program
     .option('-y, --yes', 'Skip confirmation prompts', false)
     .option('--global', 'Install tooling to user-global scope instead of project-local', false)
     .option('--prune', 'Remove plugin-era artifacts (Claude plugin cache, stale settings keys)', false)
-    .option('--substrate-dir <path>', 'Authorized local @xtrm/substrate checkout for sb provision and integration enrollment')
+    .option('--substrate-dir <path>', 'Authorized local @jaggerxtrm/substrate checkout for sb provision and integration enrollment')
     .action(async (opts) => {
         await runProjectInit(opts);
     });

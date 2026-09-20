@@ -41,7 +41,7 @@ export function migrationBlockedReason(plan: MigrationPlan): string | null {
     if (!plan.needed) return null;
     const sbHint = plan.sbAvailable
         ? ''
-        : ' Install @xtrm/substrate via `xt init` first, then';
+        : ' Install @jaggerxtrm/substrate via `xt init` first, then';
     // No manual migration posture: the operator must not hand-migrate or
     // delete the board. Automated migration ships with the A9 pipeline;
     // the truthful action is upgrading xt and re-running.

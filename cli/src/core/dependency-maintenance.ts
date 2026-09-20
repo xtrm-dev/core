@@ -28,7 +28,7 @@ export interface DependencyMaintenanceSummary {
 }
 
 const TOOLS = [
-  { id: 'sb' as const, cli: 'sb', packageName: '@xtrm/substrate', versionArgs: ['--version'] },
+  { id: 'sb' as const, cli: 'sb', packageName: '@jaggerxtrm/substrate', versionArgs: ['--version'] },
   { id: 'gitnexus' as const, cli: 'gitnexus', packageName: 'gitnexus', versionArgs: ['--version'] },
 ];
 
@@ -80,9 +80,10 @@ function checkTool(tool: typeof TOOLS[number], cwd: string): ToolMaintenanceStat
     ? extractVersion(`${installed.stdout ?? ''}\n${installed.stderr ?? ''}`)
     : undefined;
 
-  // @xtrm/substrate is unpublished: never phone the npm registry for it
-  // (name leak + guaranteed lookup failure). Version truth comes from sb.
-  const latestVersion = tool.id === 'sb' ? undefined : latestPackageVersion(tool.packageName, cwd);
+  // sb ships on npm as @jaggerxtrm/substrate: the registry lookup applies
+  // like any other tool. Offline-safe: a failed lookup yields undefined
+  // and degrades to 'unknown' via compareVersions — never throws.
+  const latestVersion = latestPackageVersion(tool.packageName, cwd);
   const comparison = compareVersions(installedVersion, latestVersion);
 
   return {
@@ -102,10 +103,6 @@ function upgradeTool(tool: ToolMaintenanceStatus, cwd: string): ToolMaintenanceS
   if (tool.state !== 'missing' && tool.state !== 'outdated') return tool;
   if (tool.majorUpgrade) {
     return { ...tool, state: 'skipped', message: 'major upgrade requires operator confirmation' };
-  }
-  if (tool.id === 'sb') {
-    // @xtrm/substrate is unpublished: never attempt `npm install -g`.
-    return { ...tool, state: 'failed', message: 'sb is not published to npm: set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH)' };
   }
 
   const install = run('npm', ['install', '-g', tool.packageName], cwd, 120000);

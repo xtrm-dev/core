@@ -59493,9 +59493,9 @@ var MANAGED_DEPS = [
     // Substrate-first (ADR section 40): `sb --version` is the
     // availability/version gate. The legacy Beads-stack CLIs are no
     // longer required deps and are never auto-installed or
-    // auto-uninstalled (ADR section 46). @xtrm/substrate is NOT published
-    // to npm and publication is unauthorized, so no install command can
-    // work — resolve from a local source instead (fail truthfully).
+    // auto-uninstalled (ADR section 46). Substrate ships on npm as
+    // @jaggerxtrm/substrate, so a missing `sb` provisions like any
+    // other managed dependency.
     id: "sb",
     cli: "sb",
     versionFlag: "--version",
@@ -59503,9 +59503,8 @@ var MANAGED_DEPS = [
     description: "durable work authority \u2014 issue/claim/journal backend",
     required: true,
     install: {
-      default: []
-    },
-    manualInstall: "sb is not published to npm: set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH); automated provisioning ships with the installer pipeline"
+      default: [{ cmd: "npm", args: ["install", "-g", "@jaggerxtrm/substrate"] }]
+    }
   },
   {
     id: "oh-pi",
@@ -63086,19 +63085,24 @@ function resolveSetupTs(cwd) {
   const override = process.env.XTRM_SUBSTRATE_SETUP;
   if (override) return override;
   const roots = [];
-  if (cwd) roots.push(import_node_path25.default.join(cwd, "node_modules", "@xtrm", "substrate"));
+  if (cwd) roots.push(import_node_path25.default.join(cwd, "node_modules", "@jaggerxtrm", "substrate"));
   try {
     const npmRoot = (0, import_node_child_process10.spawnSync)("npm", ["root", "-g"], { encoding: "utf8", stdio: "pipe", timeout: 5e3 });
     if (npmRoot.status === 0 && String(npmRoot.stdout ?? "").trim()) {
-      roots.push(import_node_path25.default.join(String(npmRoot.stdout).trim(), "@xtrm", "substrate"));
+      roots.push(import_node_path25.default.join(String(npmRoot.stdout).trim(), "@jaggerxtrm", "substrate"));
     }
   } catch {
   }
   for (const root of roots) {
-    const candidate = import_node_path25.default.join(root, "integrations", "setup.ts");
-    try {
-      if (import_fs_extra25.default.pathExistsSync(candidate)) return candidate;
-    } catch {
+    const candidates = [
+      import_node_path25.default.join(root, "integrations", "setup.ts"),
+      import_node_path25.default.join(root, "dist", "integrations", "setup.js")
+    ];
+    for (const candidate of candidates) {
+      try {
+        if (import_fs_extra25.default.pathExistsSync(candidate)) return candidate;
+      } catch {
+      }
     }
   }
   return void 0;
@@ -63128,7 +63132,7 @@ function runSetupVerb(verb, opts = {}) {
     }
   }
   setupTs ??= resolveSetupTs(opts.cwd);
-  if (!setupTs) return { status: null, stdout: "", stderr: "", error: "@xtrm/substrate integrations/setup.ts not installed" };
+  if (!setupTs) return { status: null, stdout: "", stderr: "", error: "@jaggerxtrm/substrate setup.ts not installed" };
   const args = opts.dir ? [setupTs, verb, "--json", "--dir", opts.dir] : [setupTs, verb, "--json"];
   const result = (0, import_node_child_process10.spawnSync)("node", args, {
     cwd: opts.cwd,
@@ -65163,7 +65167,7 @@ async function compareItem(category, item, repoPath, systemPath, changeSet, prun
 var import_node_child_process11 = require("child_process");
 init_kleur();
 var TOOLS = [
-  { id: "sb", cli: "sb", packageName: "@xtrm/substrate", versionArgs: ["--version"] },
+  { id: "sb", cli: "sb", packageName: "@jaggerxtrm/substrate", versionArgs: ["--version"] },
   { id: "gitnexus", cli: "gitnexus", packageName: "gitnexus", versionArgs: ["--version"] }
 ];
 function run2(command, args, cwd, timeout = 1e4) {
@@ -65205,7 +65209,7 @@ function checkTool(tool, cwd) {
   const installed = run2(tool.cli, tool.versionArgs, cwd, 5e3);
   const installedVersion = installed.status === 0 ? extractVersion(`${installed.stdout ?? ""}
 ${installed.stderr ?? ""}`) : void 0;
-  const latestVersion = tool.id === "sb" ? void 0 : latestPackageVersion(tool.packageName, cwd);
+  const latestVersion = latestPackageVersion(tool.packageName, cwd);
   const comparison = compareVersions(installedVersion, latestVersion);
   return {
     id: tool.id,
@@ -65222,9 +65226,6 @@ function upgradeTool(tool, cwd) {
   if (tool.state !== "missing" && tool.state !== "outdated") return tool;
   if (tool.majorUpgrade) {
     return { ...tool, state: "skipped", message: "major upgrade requires operator confirmation" };
-  }
-  if (tool.id === "sb") {
-    return { ...tool, state: "failed", message: "sb is not published to npm: set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH)" };
   }
   const install = run2("npm", ["install", "-g", tool.packageName], cwd, 12e4);
   if (install.status !== 0) {
@@ -65285,7 +65286,7 @@ var import_node_path32 = __toESM(require("path"), 1);
 var MIGRATION_MARKER = ".substrate-migrated.json";
 function migrationBlockedReason(plan) {
   if (!plan.needed) return null;
-  const sbHint = plan.sbAvailable ? "" : " Install @xtrm/substrate via `xt init` first, then";
+  const sbHint = plan.sbAvailable ? "" : " Install @jaggerxtrm/substrate via `xt init` first, then";
   return `legacy .beads workspace blocks \`xt update --apply\`: automated Substrate migration ships with the A9 pipeline. Do NOT delete \`.beads\` (irreversible work loss).${sbHint} Upgrade xt, then re-run \`xt update --apply\`.`;
 }
 async function readMigrationMarker(repoRoot) {
@@ -65674,7 +65675,7 @@ async function runProjectInit(opts = {}) {
   }
   if (!getSbVersion().available) {
     console.log(kleur_default.red("  \u2717 sb CLI not found after enrollment; Substrate-first setup cannot proceed."));
-    console.log(kleur_default.dim("    Set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH), then re-run xtrm init."));
+    console.log(kleur_default.dim("    Install it with `npm install -g @jaggerxtrm/substrate`, or set XTRM_SB_BIN to a local `sb` entry (or put `sb` on PATH), then re-run xtrm init."));
     process.exitCode = 1;
     return;
   }
@@ -65820,7 +65821,7 @@ async function enrollSubstrateIntegrations(projectRoot, opts = {}) {
   }
   const plan = runSetupPlan({ setupTs: source.setupTs, cwd: projectRoot, dir: source.dir });
   if (!plan.ok) {
-    return fail2(`substrate source rejected (${plan.error ?? "plan failed"}); check XTRM_SUBSTRATE_DIR/--substrate-dir points at a reviewed @xtrm/substrate checkout`);
+    return fail2(`substrate source rejected (${plan.error ?? "plan failed"}); check XTRM_SUBSTRATE_DIR/--substrate-dir points at a reviewed @jaggerxtrm/substrate checkout`);
   }
   console.log(kleur_default.dim(`  \u2713 install plan validated (${plan.commands.length} native commands)`));
   try {
@@ -65869,7 +65870,7 @@ async function runSubstrateInitForProject(projectRoot) {
   };
   const version3 = getSbVersion();
   if (!version3.available) {
-    return fail2("sb CLI not found; cannot initialize the Substrate project. Set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH), then re-run xtrm init");
+    return fail2("sb CLI not found; cannot initialize the Substrate project. Install it with `npm install -g @jaggerxtrm/substrate`, or set XTRM_SB_BIN to a local `sb` entry (or put `sb` on PATH), then re-run xtrm init");
   }
   console.log(kleur_default.dim(`  \u2713 sb available${version3.version ? ` (${version3.version})` : ""}`));
   const stateDb = defaultStateDbPath();
@@ -72382,7 +72383,7 @@ function renderSubstrate(report) {
   section2("Substrate");
   if (!report.available) {
     warn(`sb CLI not found${report.error ? ` (${report.error})` : ""}`);
-    fix("xt init --substrate-dir <checkout>  (enrolls sb + integrations from a local @xtrm/substrate source)");
+    fix("xt init --substrate-dir <checkout>  (enrolls sb + integrations from a local @jaggerxtrm/substrate source)");
     return;
   }
   ok(`sb available${report.version ? ` (${report.version})` : ""}`);
@@ -72405,7 +72406,7 @@ function renderSubstrate(report) {
     if (report.integrations.enrollmentFailed.length > 0) warn(`enrollment failing: ${report.integrations.enrollmentFailed.join(", ")}`);
     if (report.integrations.duplicates) warn("duplicate substrate plugin registrations");
   } else {
-    warn("integration health unavailable (@xtrm/substrate setup.ts not installed)");
+    warn("integration health unavailable (@jaggerxtrm/substrate setup.ts not installed)");
   }
 }
 function buildClaudeChannelsSection() {
@@ -76426,7 +76427,7 @@ program2.exitOverride((err) => {
 program2.addCommand(createClaudeCommand());
 program2.addCommand(createPiCommand());
 program2.addCommand(createCodexCommand());
-program2.command("init").description("First-time xtrm bootstrap: machine \u2192 Claude \u2192 Pi \u2192 project").option("--dry-run", "Preview changes without making any modifications", false).option("-y, --yes", "Skip confirmation prompts", false).option("--global", "Install tooling to user-global scope instead of project-local", false).option("--prune", "Remove plugin-era artifacts (Claude plugin cache, stale settings keys)", false).option("--substrate-dir <path>", "Authorized local @xtrm/substrate checkout for sb provision and integration enrollment").action(async (opts) => {
+program2.command("init").description("First-time xtrm bootstrap: machine \u2192 Claude \u2192 Pi \u2192 project").option("--dry-run", "Preview changes without making any modifications", false).option("-y, --yes", "Skip confirmation prompts", false).option("--global", "Install tooling to user-global scope instead of project-local", false).option("--prune", "Remove plugin-era artifacts (Claude plugin cache, stale settings keys)", false).option("--substrate-dir <path>", "Authorized local @jaggerxtrm/substrate checkout for sb provision and integration enrollment").action(async (opts) => {
   await runProjectInit(opts);
 });
 program2.addCommand(createStatusCommand());
