@@ -32,7 +32,7 @@ const {
   planSubstrateMigrationMock: vi.fn(),
   migrationBlockedReasonMock: vi.fn((plan: { needed: boolean; sbAvailable: boolean; reason: string }) => {
     if (!plan.needed) return null;
-    const sbHint = plan.sbAvailable ? '' : ' Install @xtrm/substrate via `xt init` first, then';
+    const sbHint = plan.sbAvailable ? '' : ' Install @jaggerxtrm/substrate via `xt init` first, then';
     return `legacy .beads workspace blocks \`xt update --apply\`: automated Substrate migration ships with the A9 pipeline. Do NOT delete \`.beads\` (irreversible work loss).${sbHint} Upgrade xt, then re-run \`xt update --apply\`.`;
   }),
   runDependencyMaintenanceMock: vi.fn(),

@@ -596,7 +596,7 @@ function renderSubstrate(report: SubstrateDoctorSection): void {
   section('Substrate');
   if (!report.available) {
     warn(`sb CLI not found${report.error ? ` (${report.error})` : ''}`);
-    fix('xt init --substrate-dir <checkout>  (enrolls sb + integrations from a local @xtrm/substrate source)');
+    fix('xt init --substrate-dir <checkout>  (enrolls sb + integrations from a local @jaggerxtrm/substrate source)');
     return;
   }
   ok(`sb available${report.version ? ` (${report.version})` : ''}`);
@@ -619,7 +619,7 @@ function renderSubstrate(report: SubstrateDoctorSection): void {
     if (report.integrations.enrollmentFailed.length > 0) warn(`enrollment failing: ${report.integrations.enrollmentFailed.join(', ')}`);
     if (report.integrations.duplicates) warn('duplicate substrate plugin registrations');
   } else {
-    warn('integration health unavailable (@xtrm/substrate setup.ts not installed)');
+    warn('integration health unavailable (@jaggerxtrm/substrate setup.ts not installed)');
   }
 }
 

@@ -855,7 +855,7 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
     // Enrollment above provisions it; this gate is defense in depth.
     if (!getSbVersion().available) {
         console.log(kleur.red('  ✗ sb CLI not found after enrollment; Substrate-first setup cannot proceed.'));
-        console.log(kleur.dim('    Set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH), then re-run xtrm init.'));
+        console.log(kleur.dim('    Install it with `npm install -g @jaggerxtrm/substrate`, or set XTRM_SB_BIN to a local `sb` entry (or put `sb` on PATH), then re-run xtrm init.'));
         process.exitCode = 1;
         return;
     }
@@ -1071,7 +1071,7 @@ async function enrollSubstrateIntegrations(
 
     const plan = runSetupPlan({ setupTs: source.setupTs, cwd: projectRoot, dir: source.dir });
     if (!plan.ok) {
-        return fail(`substrate source rejected (${plan.error ?? 'plan failed'}); check XTRM_SUBSTRATE_DIR/--substrate-dir points at a reviewed @xtrm/substrate checkout`);
+        return fail(`substrate source rejected (${plan.error ?? 'plan failed'}); check XTRM_SUBSTRATE_DIR/--substrate-dir points at a reviewed @jaggerxtrm/substrate checkout`);
     }
     console.log(kleur.dim(`  ✓ install plan validated (${plan.commands.length} native commands)`));
     // Pin the plan to the validated source: canonical realpaths must match
@@ -1130,7 +1130,7 @@ async function runSubstrateInitForProject(projectRoot: string): Promise<{ linked
 
     const version = getSbVersion();
     if (!version.available) {
-        return fail('sb CLI not found; cannot initialize the Substrate project. Set XTRM_SB_BIN to a local @xtrm/substrate `sb` entry (or put `sb` on PATH), then re-run xtrm init');
+        return fail('sb CLI not found; cannot initialize the Substrate project. Install it with `npm install -g @jaggerxtrm/substrate`, or set XTRM_SB_BIN to a local `sb` entry (or put `sb` on PATH), then re-run xtrm init');
     }
     console.log(kleur.dim(`  ✓ sb available${version.version ? ` (${version.version})` : ''}`));
 
