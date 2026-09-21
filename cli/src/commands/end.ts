@@ -397,7 +397,7 @@ function buildPrBody(
 
 export function createEndCommand(): Command {
     return new Command('end')
-        .description('Close session: rebase, push, open PR, link beads issues, clean up worktree')
+        .description('Close session: rebase, push, open PR, link Substrate Issues, clean up worktree')
         .option('--draft', 'Open PR as draft', false)
         .option('--keep', 'Keep worktree after PR creation (default: prompt)', false)
         .option('-y, --yes', 'Skip confirmation prompts', false)
@@ -475,9 +475,9 @@ export function createEndCommand(): Command {
             if (issues.length > 0) {
                 console.log(t.success(`  ✓ Found ${issues.length} closed issue(s): ${issueIds.join(', ')}`));
             } else if (issueIds.length > 0) {
-                console.log(kleur.yellow(`  ⚠ Found issue references in commits but could not load bead details: ${issueIds.join(', ')}`));
+                console.log(kleur.yellow(`  ⚠ Found issue references in commits but could not load issue details: ${issueIds.join(', ')}`));
             } else {
-                console.log(kleur.dim('  ○ No beads issues found in commit log'));
+                console.log(kleur.dim('  ○ No linked issues found in commit log'));
             }
 
             // 5. Dry-run: build PR preview from local state and exit before any destructive steps
