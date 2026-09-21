@@ -829,7 +829,7 @@
           "version": "0.13.0"
         },
         "xtrm-maintenance/sync-docs/scripts/context_gatherer.py": {
-          "hash": "a18247b2f307c9df6268d6f4dda27d5a385e33dc745711912b483e6cf1c5e139",
+          "hash": "92bdfef38791a284a5a56c8ba2e4499e715191dbb28c25693cca89603179f756",
           "version": "0.13.0"
         },
         "xtrm-maintenance/sync-docs/scripts/doc_structure_analyzer.py": {
