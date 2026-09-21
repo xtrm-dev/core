@@ -5,11 +5,11 @@ Gather project context for documentation sync.
 Collects:
   - Recent commits in a time window (not merges)
   - Changed files per commit
-  - Recently closed bd issues
+  - Recently closed Substrate Issues (via the legacy bd CLI)
   - Docs drift report
 
 Outputs JSON to stdout. Safe to run in any project — degrades gracefully
-when bd or drift detection tools are unavailable.
+when the legacy bd CLI or drift detection tools are unavailable.
 
 Usage:
   context_gatherer.py [options]
@@ -220,7 +220,7 @@ def summarize_changed_dirs(commits: list[dict]) -> list[dict]:
 
 
 def gather_bd_closed(cwd: str, git_since: str | None) -> list[dict]:
-    """Get recently closed bd issues."""
+    """Get recently closed issues via the legacy bd CLI (behavior unchanged)."""
     out = run(["bd", "list", "--status=closed"], cwd=cwd)
     if not out:
         return []
@@ -328,7 +328,7 @@ def main() -> None:
         dolt_ready = ensure_dolt_server(bd_cwd)
         if not dolt_ready:
             warnings.append(
-                "Dolt server could not be started — bd data unavailable. "
+                "Dolt server could not be started — legacy bd data unavailable. "
                 "Run 'bd dolt start' manually and retry."
             )
 

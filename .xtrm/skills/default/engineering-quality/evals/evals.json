@@ -23,7 +23,7 @@
       "prompt": "A deployment immediately precedes a production error. The deployed commit correctly enables a previously-unused code path, but the null-handling bug inside that path predates the commit by months. Perform the RCA.",
       "must": [
         "distinguish introduced-by from exposed-by",
-        "reconstruct why the enabling change was made from commit/PR/Bead evidence when available",
+        "reconstruct why the enabling change was made from commit/PR/Issue evidence when available",
         "trace to the older defective assumption",
         "avoid reverting the valid enabling change unless evidence shows that is the correct containment action"
       ],
@@ -34,7 +34,7 @@
     },
     {
       "id": "revert-breaks-original-contract",
-      "prompt": "A recent refactor appears to correlate with a latency regression. Reverting it makes the benchmark fast again, but its commit body and Bead show it fixed a data-loss bug. Decide what to do.",
+      "prompt": "A recent refactor appears to correlate with a latency regression. Reverting it makes the benchmark fast again, but its commit body and linked Issue show it fixed a data-loss bug. Decide what to do.",
       "must": [
         "treat the revert as evidence/experiment rather than the final fix",
         "record the original data-loss contract as a constraint",

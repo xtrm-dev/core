@@ -11,7 +11,7 @@
     {
       "id": 2,
       "eval_name": "docs-crosscheck-command",
-      "prompt": "Plan the implementation of the `xtrm docs cross-check` command (xtrm-uc0e). This validates docs against PRs and bd issues — detects stale docs, coverage gaps, open issue references. Uses gh CLI for GitHub data. Needs to be a subcommand of `xtrm docs`. Break this into a well-structured bd issue board with proper phasing.",
+      "prompt": "Plan the implementation of the `xtrm docs cross-check` command (xtrm-uc0e). This validates docs against PRs and Substrate Issues — detects stale docs, coverage gaps, open issue references. Uses gh CLI for GitHub data. Needs to be a subcommand of `xtrm docs`. Break this into a well-structured Substrate Issue board with proper phasing.",
       "expected_output": "An epic with phased child tasks covering: GitHub data fetching (boundary layer), cross-check logic (core layer), CLI command wiring (shell layer). test-planning invoked. High-quality issue descriptions that another agent could work from independently.",
       "files": []
     }
