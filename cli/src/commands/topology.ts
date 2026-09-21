@@ -18,7 +18,7 @@ export function createTopologyCommand(): Command {
     const viewHelp = VIEW_NAMES.map((v) => `  ${v.padEnd(12)} ${VIEW_DESCRIPTIONS[v]}`).join('\n');
 
     cmd
-        .description('Read-only aggregated projection joining panes, roles, specialist jobs, beads, worktrees, branches and PRs')
+        .description('Read-only aggregated projection joining panes, roles, specialist jobs, issues, worktrees, branches and PRs')
         .option('--json', 'Print the machine-readable xtrm.topology.projection.v1 snapshot', false)
         .option('--view <name>', 'View to render (see Views below)', 'summary')
         .option('--no-github', 'Skip the GitHub query (slowest, rate-limited); PR evidence is omitted')

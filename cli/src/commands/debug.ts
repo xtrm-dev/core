@@ -236,11 +236,11 @@ function follow(dbPath: string, opts: DebugOptions): void {
 
 export function createDebugCommand(): Command {
   return new Command('debug')
-    .description('Watch xtrm events: tool calls, gate decisions, bd lifecycle')
+    .description('Watch xtrm events: tool calls, gate decisions, issue lifecycle')
     .option('-f, --follow',      'Follow new events (default)', false)
     .option('--all',             'Show full history and exit',  false)
     .option('--session <id>',    'Filter by session ID (prefix match)')
-    .option('--type <domain>',   'Filter by domain: tool | gate | bd | session')
+    .option('--type <domain>',   'Filter by domain: tool | gate | bd | session (bd reads legacy Beads event history)')
     .option('--json',            'Output raw JSON lines', false)
     .action((opts: DebugOptions) => {
       const cwd    = process.cwd();

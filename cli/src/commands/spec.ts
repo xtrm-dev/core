@@ -8,7 +8,7 @@ import { createSpecArchiveCommand } from './spec/archive.js';
 
 export function createSpecCommand(): Command {
     const cmd = new Command('spec')
-        .description('xtrm spec — PRD-level intent artifacts that compile to bd issues via the planner specialist');
+        .description('xtrm spec — PRD-level intent artifacts that compile to Substrate Issues via the planner specialist');
     cmd.addCommand(createSpecDraftCommand());
     cmd.addCommand(createSpecValidateCommand());
     cmd.addCommand(createSpecDoctorCommand());

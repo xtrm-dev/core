@@ -66848,7 +66848,7 @@ function createHelpCommand() {
       "     xt attach [slug]",
       "  4) Publish that worktree with:",
       "     xt end",
-      "  6) Manage old worktrees when needed:",
+      "  5) Manage old worktrees when needed:",
       "     xt worktree list | xt worktree doctor | xt worktree clean"
     ]));
     blocks.push(section("PRIMARY COMMANDS", [
@@ -66862,16 +66862,16 @@ function createHelpCommand() {
       "      6. Pi            \u2014 extensions + packages sync",
       "      7. Project       \u2014 sb init, GitNexus index, AGENTS.md/CLAUDE.md",
       "      8. Verify        \u2014 unified outcome summary",
-      "    Options: --dry-run, --yes/-y, --global",
+      "    Options: --dry-run, --yes/-y, --global, --prune, --substrate-dir <path>",
       "",
-      "  xtrm update [--apply] [--force] [--repo <path>] [--root <dir>] [--json]",
+      "  xtrm update [--apply] [--force] [--strict-registry] [--all-repos] [--repo <path>] [--root <dir>] [--json]",
       "    Routine refresh and repair for xtrm-managed files, runtimes, hooks, skills, and packages.",
       "    Default is dry-run for the current repo; --apply writes changes.",
       "    --force refreshes global payloads; retained for deprecated xt bootstrap.",
       "    --repo targets one repo; --root discovers repos with .xtrm/registry.json.",
       "",
-      "  xtrm status [--json]",
-      "    Show pending changes for detected environments.",
+      "  xtrm status [--json] [--check]",
+      "    Show status and optionally sync target environments.",
       "",
       "  xtrm clean [deprecated] [options]",
       "    Compatibility cleanup alias; use xt update [--apply].",
@@ -66879,17 +66879,17 @@ function createHelpCommand() {
       "",
       "  xtrm docs --help",
       "    Documentation inspection and drift-check submenu.",
-      "    Subcommands: show, list, cross-check",
+      "    Subcommands: show, list, cross-check, verify",
       "",
       "  xtrm docs cross-check [--days <n>] [--json]",
-      "    Validate docs against recent PR activity and closed bd issues.",
+      "    Validate docs against recent PR activity and closed Issue data.",
       "",
-      "  xtrm merge [--dry-run] [--yes/-y] [--no-beads]",
-      "    Drain the xt worktree PR merge queue via the xt-merge specialist (FIFO, --rebase).",
+      "  xtrm merge [--dry-run] [--yes/-y] [--no-beads] [--override-authority]",
+      "    Drain the xt worktree PR merge queue via the xt-merge specialist (FIFO).",
       "    --dry-run: list queue and CI status without merging.",
       "",
       "  xtrm debug [options]",
-      "    Stream xtrm event log (tool calls, gates, session/bd lifecycle).",
+      "    Stream xtrm event log (tool calls, gates, session/issue lifecycle).",
       "    Options: --follow, --all, --session <id>, --type <domain>, --json",
       "",
       "  xtrm reset [--yes/-y]",
@@ -66964,10 +66964,10 @@ function createHelpCommand() {
     ]));
     blocks.push(section("SESSION CLOSE", [
       "  xt end [options]",
-      "    Rebase to origin/main, push, open PR, link issues, and optionally clean worktree.",
-      "    Options: --draft, --keep, --yes/-y",
+      "    Rebase onto the default branch, push, open PR, link issues, and optionally clean worktree.",
+      "    Options: --draft, --keep, --yes/-y, --dry-run",
       "",
-      "  xt merge [--dry-run] [--yes/-y] [--no-beads]",
+      "  xt merge [--dry-run] [--yes/-y] [--no-beads] [--override-authority]",
       "    Run xt-merge to drain queued xt/* PRs FIFO: CI gate \u2192 rebase merge \u2192 rebase cascade."
     ]));
     blocks.push(section("NOTES", [
@@ -67688,7 +67688,7 @@ function buildPrBody(issues, commitLog, diffStat, branch) {
   return lines.join("\n");
 }
 function createEndCommand() {
-  return new Command("end").description("Close session: rebase, push, open PR, link beads issues, clean up worktree").option("--draft", "Open PR as draft", false).option("--keep", "Keep worktree after PR creation (default: prompt)", false).option("-y, --yes", "Skip confirmation prompts", false).option("--dry-run", "Preview PR title, body, and linked issues without pushing or creating PR", false).action(async (opts) => {
+  return new Command("end").description("Close session: rebase, push, open PR, link Substrate Issues, clean up worktree").option("--draft", "Open PR as draft", false).option("--keep", "Keep worktree after PR creation (default: prompt)", false).option("-y, --yes", "Skip confirmation prompts", false).option("--dry-run", "Preview PR title, body, and linked issues without pushing or creating PR", false).action(async (opts) => {
     const cwd = process.cwd();
     const codexSession = readCodexWorktreeSession(cwd);
     const branchResult = git2(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
@@ -67751,9 +67751,9 @@ function createEndCommand() {
     if (issues.length > 0) {
       console.log(t.success(`  \u2713 Found ${issues.length} closed issue(s): ${issueIds.join(", ")}`));
     } else if (issueIds.length > 0) {
-      console.log(kleur_default.yellow(`  \u26A0 Found issue references in commits but could not load bead details: ${issueIds.join(", ")}`));
+      console.log(kleur_default.yellow(`  \u26A0 Found issue references in commits but could not load issue details: ${issueIds.join(", ")}`));
     } else {
-      console.log(kleur_default.dim("  \u25CB No beads issues found in commit log"));
+      console.log(kleur_default.dim("  \u25CB No linked issues found in commit log"));
     }
     if (opts.dryRun) {
       const fullLog2 = git2(["log", `origin/${defaultBranch}..HEAD`, "--oneline"], cwd).out;
@@ -70185,7 +70185,7 @@ function follow(dbPath, opts) {
   });
 }
 function createDebugCommand() {
-  return new Command("debug").description("Watch xtrm events: tool calls, gate decisions, bd lifecycle").option("-f, --follow", "Follow new events (default)", false).option("--all", "Show full history and exit", false).option("--session <id>", "Filter by session ID (prefix match)").option("--type <domain>", "Filter by domain: tool | gate | bd | session").option("--json", "Output raw JSON lines", false).action((opts) => {
+  return new Command("debug").description("Watch xtrm events: tool calls, gate decisions, issue lifecycle").option("-f, --follow", "Follow new events (default)", false).option("--all", "Show full history and exit", false).option("--session <id>", "Filter by session ID (prefix match)").option("--type <domain>", "Filter by domain: tool | gate | bd | session (bd reads legacy Beads event history)").option("--json", "Output raw JSON lines", false).action((opts) => {
     const cwd = process.cwd();
     const dbPath = findDbPath(cwd);
     if (!dbPath || !(0, import_node_fs15.existsSync)(dbPath)) return;
@@ -74580,7 +74580,7 @@ function createSpecArchiveCommand() {
 
 // src/commands/spec.ts
 function createSpecCommand() {
-  const cmd = new Command("spec").description("xtrm spec \u2014 PRD-level intent artifacts that compile to bd issues via the planner specialist");
+  const cmd = new Command("spec").description("xtrm spec \u2014 PRD-level intent artifacts that compile to Substrate Issues via the planner specialist");
   cmd.addCommand(createSpecDraftCommand());
   cmd.addCommand(createSpecValidateCommand());
   cmd.addCommand(createSpecDoctorCommand());
@@ -76224,7 +76224,7 @@ function renderView(name, projection) {
 function createTopologyCommand() {
   const cmd = new Command("topology");
   const viewHelp = VIEW_NAMES.map((v) => `  ${v.padEnd(12)} ${VIEW_DESCRIPTIONS[v]}`).join("\n");
-  cmd.description("Read-only aggregated projection joining panes, roles, specialist jobs, beads, worktrees, branches and PRs").option("--json", "Print the machine-readable xtrm.topology.projection.v1 snapshot", false).option("--view <name>", "View to render (see Views below)", "summary").option("--no-github", "Skip the GitHub query (slowest, rate-limited); PR evidence is omitted").addHelpText("after", `
+  cmd.description("Read-only aggregated projection joining panes, roles, specialist jobs, issues, worktrees, branches and PRs").option("--json", "Print the machine-readable xtrm.topology.projection.v1 snapshot", false).option("--view <name>", "View to render (see Views below)", "summary").option("--no-github", "Skip the GitHub query (slowest, rate-limited); PR evidence is omitted").addHelpText("after", `
 Views:
 ${viewHelp}
 
