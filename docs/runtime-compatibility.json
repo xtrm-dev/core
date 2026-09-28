@@ -10,7 +10,7 @@
   "core": {
     "package": "xtrm-tools",
     "requires": {
-      "specialists": ">=3.21.0 <4",
+      "specialists": ">=3.21.0 <5",
       "xtmux": ">=0.1.0 <0.3",
       "node": ">=24.0.0"
     }

@@ -110,6 +110,15 @@ describe('runtimeCompatibilityError', () => {
         expect(requires?.specialists).toMatch(/\d+\.\d+\.\d+/);
     });
 
+    it('accepts the Specialists 3.21+ and 4.x lines and rejects 5.x', () => {
+        const range = loadRuntimeRequirements()?.specialists ?? '';
+        expect(satisfies('3.21.6', range)).toBe(true);
+        expect(satisfies('4.0.0', range)).toBe(true);
+        expect(satisfies('4.9.9', range)).toBe(true);
+        expect(satisfies('3.20.9', range)).toBe(false);
+        expect(satisfies('5.0.0', range)).toBe(false);
+    });
+
     it('honors the operator override', () => {
         // PATH is empty, so nothing resolves and the check is a no-op either
         // way; what is asserted is that the override short-circuits first.

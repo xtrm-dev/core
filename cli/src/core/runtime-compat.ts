@@ -47,7 +47,7 @@ const parse = (v: string): number[] => v.replace(/^[v^~]/, '').split('.').map((n
 const cmp = (a: number[], b: number[]): number => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
 // ponytail: understands the space-separated comparator form the contract
-// actually uses (">=3.21.0 <4", ">=24.0.0"). If it ever grows caret/OR ranges,
+// actually uses (">=3.21.0 <5", ">=24.0.0"). If it ever grows caret/OR ranges,
 // swap this for the `semver` package. Same comparator as Suite A's.
 export function satisfies(version: string, range: string): boolean {
     const v = parse(version);
