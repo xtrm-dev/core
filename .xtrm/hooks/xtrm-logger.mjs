@@ -9,15 +9,18 @@
 //   import { logEvent } from './xtrm-logger.mjs';
 //   logEvent({ cwd, sessionId, kind: 'gate.edit.allow', outcome: 'allow', toolName, issueId });
 
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
-const INIT_SQL = `
+const PRAGMA_SQL = `
 PRAGMA busy_timeout=5000;
 PRAGMA journal_mode=WAL;
+`;
+
+const INIT_SQL = PRAGMA_SQL + `
 CREATE TABLE IF NOT EXISTS events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   ts          INTEGER NOT NULL,
@@ -55,8 +58,17 @@ function findDbPath(cwd) {
 
 function openDb(dbPath) {
   mkdirSync(dirname(dbPath), { recursive: true });
+  // CORE-2339 cheap append-only path: the schema DDL is only needed on the
+  // first write. Every later event pays two pragmas and one INSERT. Hooks run
+  // on every tool call, so this statement set was per-call overhead for
+  // nothing; behavior is unchanged (CREATE ... IF NOT EXISTS was a no-op on an
+  // existing schema, and an old schema still fails the same way it did).
+  let isNew = true;
+  try {
+    isNew = statSync(dbPath).size === 0;
+  } catch { isNew = true; }
   const db = new DatabaseSync(dbPath);
-  db.exec(INIT_SQL);
+  db.exec(isNew ? INIT_SQL : PRAGMA_SQL);
   return db;
 }
 

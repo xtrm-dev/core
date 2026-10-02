@@ -3,7 +3,8 @@
 // Logs every tool call to .xtrm/debug.db with kind=tool.call.
 // Captures tool-specific context: cmd for Bash, file path for edits, etc.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { logEvent } from './xtrm-logger.mjs';
 
 // Lane 1 (hook cleanup): inlined from retired beads-gate-utils.mjs —
@@ -37,27 +38,51 @@ function buildData(toolName, toolInput) {
   return null;
 }
 
-const input = readInput();
-if (!input || input.hook_event_name !== 'PostToolUse') process.exit(0);
+// CORE-2339: logging logic exported for dispatch.mjs; CLI entry preserved.
+/**
+ * Log a PostToolUse tool.call event to .xtrm/debug.db.
+ * Never throws — logging must not affect hook behavior.
+ */
+export function logToolCall(input) {
+  if (!input || input.hook_event_name !== 'PostToolUse') return;
 
-const toolName = input.tool_name;
+  const toolName = input.tool_name;
 
-// Skip tools that would create noise or cause recursion
-const SKIP = new Set(['TodoRead', 'TodoWrite', 'Task', 'TaskCreate', 'TaskUpdate', 'TaskGet']);
-if (SKIP.has(toolName)) process.exit(0);
+  // Skip tools that would create noise or cause recursion
+  const SKIP = new Set(['TodoRead', 'TodoWrite', 'Task', 'TaskCreate', 'TaskUpdate', 'TaskGet']);
+  if (SKIP.has(toolName)) return;
 
-const cwd = resolveCwd(input) || process.cwd();
-const sessionId = resolveSessionId(input);
-const isError = input.tool_response?.is_error === true;
+  const cwd = resolveCwd(input) || process.cwd();
+  const sessionId = resolveSessionId(input);
+  const isError = input.tool_response?.is_error === true;
 
-logEvent({
-  cwd,
-  runtime: 'claude',
-  sessionId,
-  kind: 'tool.call',
-  outcome: isError ? 'error' : 'ok',
-  toolName,
-  data: buildData(toolName, input.tool_input),
-});
+  logEvent({
+    cwd,
+    runtime: 'claude',
+    sessionId,
+    kind: 'tool.call',
+    outcome: isError ? 'error' : 'ok',
+    toolName,
+    data: buildData(toolName, input.tool_input),
+  });
+}
 
-process.exit(0);
+function main() {
+  const input = readInput();
+  logToolCall(input);
+  process.exit(0);
+}
+
+// Symlink-safe CLI entry: repo-root `hooks/` is a symlink to .xtrm/hooks, and
+// node resolves module identity through the real path while argv[1] keeps the
+// symlink path — compare realpaths or the standalone entry never fires.
+function isCliMain() {
+  try {
+    return Boolean(process.argv[1])
+      && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isCliMain()) main();

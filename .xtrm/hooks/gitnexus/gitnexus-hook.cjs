@@ -188,17 +188,31 @@ function runAugment(pattern, cwd) {
 function main() {
   try {
     const input = readInput();
-    if (input.hook_event_name !== 'PostToolUse') return;
+    const out = enrich(input);
+    if (out) {
+      process.stdout.write(out);
+    }
+  } catch (err) {
+    process.stderr.write('GitNexus hook error: ' + err.message + '\n');
+  }
+}
+
+// CORE-2339: enrichment logic exported for dispatch.mjs; CLI entry preserved.
+// Returns the '[GitNexus]...' stdout block for Claude Code, or '' when
+// nothing was enriched. Graceful failure — never throws.
+function enrich(input) {
+  try {
+    if (!input || input.hook_event_name !== 'PostToolUse') return '';
 
     const cwd = input.cwd || process.cwd();
-    if (!findGitNexusIndex(cwd)) return;
+    if (!findGitNexusIndex(cwd)) return '';
 
     const toolName = input.tool_name || '';
     const toolInput = input.tool_input || {};
     const toolResponse = input.tool_response ?? input.tool_result ?? '';
 
     const patterns = extractPatterns(toolName, toolInput, toolResponse);
-    if (patterns.length === 0) return;
+    if (patterns.length === 0) return '';
 
     const cacheFile = getCacheFile(input.session_id);
     const cache = loadCache(cacheFile);
@@ -212,11 +226,15 @@ function main() {
     }
 
     if (results.length > 0) {
-      process.stdout.write('[GitNexus]\n' + results.join('\n\n') + '\n');
+      return '[GitNexus]\n' + results.join('\n\n') + '\n';
     }
+    return '';
   } catch (err) {
     process.stderr.write('GitNexus hook error: ' + err.message + '\n');
+    return '';
   }
 }
 
-main();
+module.exports = { enrich, extractPatterns };
+
+if (require.main === module) main();
