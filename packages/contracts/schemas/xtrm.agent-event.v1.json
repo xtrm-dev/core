@@ -1,0 +1,391 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xtrm.agent-event.v1",
+  "title": "XTRM agent event frame (extension -> agent host)",
+  "description": "One NDJSON frame pushed by an in-session agent integration (the XTRM Pi extension, or Claude hooks) to the XTRM agent host over the Unix socket $XDG_RUNTIME_DIR/xtrm/agent-host.sock (PRD xtrm-app §35.3, §35.8 item 1). The payload `type` values are the native Pi 1.0.0 extension lifecycle events (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts) plus `session_identity`, `extension_ui_request` and `command_result`, which the extension adds. Pi-native objects (message, args, result) pass through unchanged and stay opaque here: the §22 adapter owns their interpretation. Retry state (auto_retry_*) is not available to Pi extensions and is not carried; `agent_settled` is the authoritative Frame-close signal. A backward-incompatible change requires xtrm.agent-event.v2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "seq", "sessionId", "at", "payload"],
+  "properties": {
+    "schema": { "const": "xtrm.agent-event.v1" },
+    "seq": {
+      "description": "Per-connection monotonically increasing frame number, starting at 0.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "sessionId": { "$ref": "#/definitions/sessionId" },
+    "at": { "$ref": "#/definitions/epochMs" },
+    "payload": { "$ref": "#/definitions/event" }
+  },
+  "definitions": {
+    "sessionId": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "epochMs": { "description": "UTC epoch milliseconds.", "type": "integer", "minimum": 0 },
+    "boundedString": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "opaque": { "description": "Pi-native value passed through unchanged (any JSON)." },
+    "agentMessage": {
+      "description": "Pi AgentMessage (user | assistant | toolResult | custom roles). Passed through unchanged.",
+      "type": "object",
+      "required": ["role"],
+      "properties": { "role": { "type": "string", "minLength": 1 } }
+    },
+    "imageContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data", "mimeType"],
+      "properties": {
+        "type": { "const": "image" },
+        "data": { "type": "string", "description": "base64" },
+        "mimeType": { "type": "string", "pattern": "^image/[a-z0-9.+-]+$" }
+      }
+    },
+    "workItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref"],
+      "properties": {
+        "ref": { "$ref": "#/definitions/boundedString" },
+        "project": { "$ref": "#/definitions/boundedString" },
+        "system": { "enum": ["substrate", "beads"] }
+      }
+    },
+    "tmux": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session", "paneId"],
+      "properties": {
+        "session": { "$ref": "#/definitions/boundedString" },
+        "paneId": { "type": "string", "pattern": "^%[0-9]+$", "maxLength": 32 }
+      }
+    },
+    "capability": { "enum": ["presence", "stream", "prompt", "steer", "follow_up", "abort", "extension_ui"] },
+    "toolSource": {
+      "description": "Raw tool registration source, resolved by the producer from pi.getAllTools() by toolName (ToolInfo.sourceInfo / ToolInfo.namespace). Built-in tools have path \"builtin:<name>\" and source \"builtin\". Input for the §36.7 origin classifier; the class is never inferred from the tool name.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceInfo"],
+      "properties": {
+        "sourceInfo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "source", "scope", "origin"],
+          "properties": {
+            "path": { "$ref": "#/definitions/path" },
+            "source": { "$ref": "#/definitions/boundedString" },
+            "scope": { "enum": ["user", "project", "temporary"] },
+            "origin": { "enum": ["package", "top-level"] },
+            "baseDir": { "$ref": "#/definitions/path" }
+          }
+        },
+        "namespace": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "$ref": "#/definitions/boundedString" },
+            "description": { "type": "string", "maxLength": 4096 }
+          }
+        }
+      }
+    },
+    "toolOrigin": {
+      "description": "PRD §36.7 tool origin. Optional until the classification rule lands (XTRM-559 / XTRM-571).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class"],
+      "properties": {
+        "class": { "enum": ["native", "mcp", "extension", "coordination"] },
+        "server": { "$ref": "#/definitions/boundedString" },
+        "transport": { "$ref": "#/definitions/boundedString" },
+        "extension": { "$ref": "#/definitions/boundedString" },
+        "version": { "$ref": "#/definitions/boundedString" }
+      }
+    },
+    "toolCallId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "compactionReason": { "enum": ["manual", "threshold", "overflow"] },
+    "event": {
+      "oneOf": [
+        { "$ref": "#/definitions/session_identity" },
+        { "$ref": "#/definitions/session_start" },
+        { "$ref": "#/definitions/before_agent_start" },
+        { "$ref": "#/definitions/agent_start" },
+        { "$ref": "#/definitions/turn_start" },
+        { "$ref": "#/definitions/turn_end" },
+        { "$ref": "#/definitions/message_start" },
+        { "$ref": "#/definitions/message_update" },
+        { "$ref": "#/definitions/message_end" },
+        { "$ref": "#/definitions/tool_execution_start" },
+        { "$ref": "#/definitions/tool_execution_update" },
+        { "$ref": "#/definitions/tool_execution_end" },
+        { "$ref": "#/definitions/agent_end" },
+        { "$ref": "#/definitions/agent_settled" },
+        { "$ref": "#/definitions/session_compact" },
+        { "$ref": "#/definitions/session_compact_failed" },
+        { "$ref": "#/definitions/extension_ui_request" },
+        { "$ref": "#/definitions/command_result" },
+        { "$ref": "#/definitions/session_shutdown" }
+      ]
+    },
+    "session_identity": {
+      "description": "Sent first on every connection and again when identity changes (§11, §35.3). Not a Pi event.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "runtime", "cwd", "capabilities"],
+      "properties": {
+        "type": { "const": "session_identity" },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "enum": ["pi", "claude", "codex"] },
+            "version": { "type": ["string", "null"], "maxLength": 128 }
+          }
+        },
+        "producer": {
+          "description": "The integration that emits the frames (extension package or hook bundle).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "$ref": "#/definitions/boundedString" },
+            "version": { "$ref": "#/definitions/boundedString" }
+          }
+        },
+        "sessionFile": { "$ref": "#/definitions/path" },
+        "sessionName": { "$ref": "#/definitions/boundedString" },
+        "cwd": { "$ref": "#/definitions/path" },
+        "worktree": { "$ref": "#/definitions/path" },
+        "branch": { "$ref": "#/definitions/boundedString" },
+        "role": { "$ref": "#/definitions/boundedString" },
+        "workItem": { "$ref": "#/definitions/workItem" },
+        "parentSessionId": { "$ref": "#/definitions/sessionId" },
+        "tmux": { "$ref": "#/definitions/tmux" },
+        "launch": { "enum": ["gui", "terminal"] },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/capability" }
+        }
+      }
+    },
+    "session_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reason"],
+      "properties": {
+        "type": { "const": "session_start" },
+        "reason": { "enum": ["startup", "reload", "new", "resume", "fork"] },
+        "previousSessionFile": { "$ref": "#/definitions/path" }
+      }
+    },
+    "before_agent_start": {
+      "description": "A Frame request. Pi's systemPrompt/systemPromptOptions are deliberately not carried. `ingress.origin` is \"gui\" for host-routed submits and \"terminal\" otherwise (§35.8 item 5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "prompt", "ingress"],
+      "properties": {
+        "type": { "const": "before_agent_start" },
+        "prompt": { "type": "string" },
+        "images": { "type": "array", "items": { "$ref": "#/definitions/imageContent" } },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["origin"],
+          "properties": {
+            "origin": { "enum": ["gui", "terminal"] },
+            "commandId": { "$ref": "#/definitions/boundedString" }
+          }
+        }
+      }
+    },
+    "agent_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": { "type": { "const": "agent_start" } }
+    },
+    "turn_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "turnIndex", "timestamp"],
+      "properties": {
+        "type": { "const": "turn_start" },
+        "turnIndex": { "type": "integer", "minimum": 0 },
+        "timestamp": { "$ref": "#/definitions/epochMs" }
+      }
+    },
+    "turn_end": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "turnIndex", "message", "toolResults"],
+      "properties": {
+        "type": { "const": "turn_end" },
+        "turnIndex": { "type": "integer", "minimum": 0 },
+        "message": { "$ref": "#/definitions/agentMessage" },
+        "toolResults": { "type": "array", "items": { "$ref": "#/definitions/agentMessage" } },
+        "messageEntryId": { "type": "string", "maxLength": 256 },
+        "toolResultEntryIds": { "type": "array", "items": { "type": "string", "maxLength": 256 } }
+      }
+    },
+    "message_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "message_start" },
+        "message": { "$ref": "#/definitions/agentMessage" }
+      }
+    },
+    "message_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "message", "assistantMessageEvent"],
+      "properties": {
+        "type": { "const": "message_update" },
+        "message": { "$ref": "#/definitions/agentMessage" },
+        "assistantMessageEvent": { "type": "object", "required": ["type"] }
+      }
+    },
+    "message_end": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "message_end" },
+        "message": { "$ref": "#/definitions/agentMessage" }
+      }
+    },
+    "tool_execution_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "toolCallId", "toolName", "args"],
+      "properties": {
+        "type": { "const": "tool_execution_start" },
+        "toolCallId": { "$ref": "#/definitions/toolCallId" },
+        "toolName": { "$ref": "#/definitions/boundedString" },
+        "args": { "$ref": "#/definitions/opaque" },
+        "parentToolCallId": { "$ref": "#/definitions/toolCallId" },
+        "tool": { "$ref": "#/definitions/toolSource" },
+        "origin": { "$ref": "#/definitions/toolOrigin" }
+      }
+    },
+    "tool_execution_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "toolCallId", "toolName", "args", "partialResult"],
+      "properties": {
+        "type": { "const": "tool_execution_update" },
+        "toolCallId": { "$ref": "#/definitions/toolCallId" },
+        "toolName": { "$ref": "#/definitions/boundedString" },
+        "args": { "$ref": "#/definitions/opaque" },
+        "partialResult": { "$ref": "#/definitions/opaque" },
+        "parentToolCallId": { "$ref": "#/definitions/toolCallId" },
+        "tool": { "$ref": "#/definitions/toolSource" },
+        "origin": { "$ref": "#/definitions/toolOrigin" }
+      }
+    },
+    "tool_execution_end": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "toolCallId", "toolName", "result", "isError"],
+      "properties": {
+        "type": { "const": "tool_execution_end" },
+        "toolCallId": { "$ref": "#/definitions/toolCallId" },
+        "toolName": { "$ref": "#/definitions/boundedString" },
+        "result": { "$ref": "#/definitions/opaque" },
+        "isError": { "type": "boolean" },
+        "parentToolCallId": { "$ref": "#/definitions/toolCallId" },
+        "tool": { "$ref": "#/definitions/toolSource" },
+        "origin": { "$ref": "#/definitions/toolOrigin" }
+      }
+    },
+    "agent_end": {
+      "description": "`willRetry` is absent from the Pi extension API event; only RPC and in-process producers (AgentSessionEvent) can fill it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "messages"],
+      "properties": {
+        "type": { "const": "agent_end" },
+        "messages": { "type": "array", "items": { "$ref": "#/definitions/agentMessage" } },
+        "willRetry": { "type": "boolean" }
+      }
+    },
+    "agent_settled": {
+      "description": "The run has fully settled: no automatic retry, compaction, or queued continuation will run. Authoritative Frame-close signal.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": { "type": { "const": "agent_settled" } }
+    },
+    "session_compact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reason", "willRetry", "fromExtension"],
+      "properties": {
+        "type": { "const": "session_compact" },
+        "reason": { "$ref": "#/definitions/compactionReason" },
+        "willRetry": { "type": "boolean" },
+        "fromExtension": { "type": "boolean" },
+        "compactionEntryId": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "session_compact_failed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reason", "willRetry", "aborted", "fromExtension"],
+      "properties": {
+        "type": { "const": "session_compact_failed" },
+        "reason": { "$ref": "#/definitions/compactionReason" },
+        "willRetry": { "type": "boolean" },
+        "aborted": { "type": "boolean" },
+        "fromExtension": { "type": "boolean" },
+        "errorMessage": { "type": "string", "maxLength": 4096 }
+      }
+    },
+    "extension_ui_request": {
+      "description": "A blocking extension UI prompt proxied by the extension from ctx.ui (§20, §36.7). Shape follows Pi RpcExtensionUIRequest; answered by an xtrm.agent-command.v1 extension_ui_response with the same id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "method", "title"],
+      "properties": {
+        "type": { "const": "extension_ui_request" },
+        "id": { "$ref": "#/definitions/boundedString" },
+        "method": { "enum": ["select", "confirm", "input", "editor"] },
+        "title": { "type": "string", "maxLength": 1024 },
+        "message": { "type": "string", "maxLength": 16384 },
+        "options": { "type": "array", "items": { "type": "string", "maxLength": 1024 } },
+        "placeholder": { "type": "string", "maxLength": 1024 },
+        "prefill": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [
+        { "if": { "properties": { "method": { "const": "select" } } }, "then": { "required": ["options"] } },
+        { "if": { "properties": { "method": { "const": "confirm" } } }, "then": { "required": ["message"] } }
+      ]
+    },
+    "command_result": {
+      "description": "The extension's answer to one xtrm.agent-command.v1 frame, correlated by commandId.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "commandId", "status"],
+      "properties": {
+        "type": { "const": "command_result" },
+        "commandId": { "$ref": "#/definitions/boundedString" },
+        "status": { "enum": ["accepted", "rejected", "failed"] },
+        "reason": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9_]*$" },
+        "message": { "type": "string", "maxLength": 1024 }
+      }
+    },
+    "session_shutdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reason"],
+      "properties": {
+        "type": { "const": "session_shutdown" },
+        "reason": { "enum": ["quit", "reload", "new", "resume", "fork"] },
+        "targetSessionFile": { "$ref": "#/definitions/path" }
+      }
+    }
+  }
+}

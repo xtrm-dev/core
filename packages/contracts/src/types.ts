@@ -23,6 +23,9 @@ export const SCHEMA_ID = {
     agentRoleLaunched: 'xtrm.agent-role-launched.v1',
     specialistRoleEnvelope: 'xtrm.specialist-role-envelope.v1',
     topologyProjection: 'xtrm.topology.projection.v1',
+    agentEvent: 'xtrm.agent-event.v1',
+    agentCommand: 'xtrm.agent-command.v1',
+    agentHostApi: 'xtrm.agent-host-api.v1',
 } as const;
 
 export type SchemaId = (typeof SCHEMA_ID)[keyof typeof SCHEMA_ID];
@@ -471,6 +474,263 @@ export interface TopologyProjectionV1 {
     orphans: { jobs: TopologyJob[]; worktrees: TopologyWorktree[] };
 }
 
+// --- agent host protocol: xtrm.agent-event.v1 / xtrm.agent-command.v1 / xtrm.agent-host-api.v1 ---
+// PRD xtrm-app §35.3, §35.8 item 1, §36.7. Event payloads mirror the Pi 1.0.0 extension
+// lifecycle events; Pi-native objects (messages, tool args/results) stay opaque.
+
+/** Every NDJSON frame on the extension <-> agent host socket. */
+export interface AgentProtocolFrame<S extends string, P> {
+    schema: S;
+    /** Per-connection monotonically increasing frame number, starting at 0. */
+    seq: number;
+    sessionId: string;
+    /** UTC epoch milliseconds. */
+    at: number;
+    payload: P;
+}
+
+/** Pi AgentMessage, passed through unchanged. */
+export interface AgentMessagePassthrough {
+    role: string;
+    [key: string]: unknown;
+}
+export interface AgentImageContent {
+    type: 'image';
+    data: string;
+    mimeType: string;
+}
+export interface AgentWorkItem {
+    ref: string;
+    project?: string;
+    system?: 'substrate' | 'beads';
+}
+export interface AgentTmuxTarget {
+    session: string;
+    paneId: string;
+}
+export type AgentCapability = 'presence' | 'stream' | 'prompt' | 'steer' | 'follow_up' | 'abort' | 'extension_ui';
+
+/** Raw tool registration source from pi.getAllTools() (ToolInfo.sourceInfo / namespace). */
+export interface AgentToolSource {
+    sourceInfo: {
+        path: string;
+        source: string;
+        scope: 'user' | 'project' | 'temporary';
+        origin: 'package' | 'top-level';
+        baseDir?: string;
+    };
+    namespace?: { name: string; description?: string };
+}
+/** PRD §36.7 tool origin; filled once the classification rule lands (XTRM-559 / XTRM-571). */
+export interface AgentToolOrigin {
+    class: 'native' | 'mcp' | 'extension' | 'coordination';
+    server?: string;
+    transport?: string;
+    extension?: string;
+    version?: string;
+}
+interface AgentToolExecutionBase {
+    toolCallId: string;
+    toolName: string;
+    parentToolCallId?: string;
+    tool?: AgentToolSource;
+    origin?: AgentToolOrigin;
+}
+export type CompactionReason = 'manual' | 'threshold' | 'overflow';
+
+export interface AgentSessionIdentity {
+    type: 'session_identity';
+    runtime: { name: 'pi' | 'claude' | 'codex'; version: string | null };
+    producer?: { name: string; version: string };
+    sessionFile?: string;
+    sessionName?: string;
+    cwd: string;
+    worktree?: string;
+    branch?: string;
+    role?: string;
+    workItem?: AgentWorkItem;
+    parentSessionId?: string;
+    tmux?: AgentTmuxTarget;
+    launch?: 'gui' | 'terminal';
+    capabilities: AgentCapability[];
+}
+
+export type AgentEventPayload =
+    | AgentSessionIdentity
+    | { type: 'session_start'; reason: 'startup' | 'reload' | 'new' | 'resume' | 'fork'; previousSessionFile?: string }
+    | {
+          type: 'before_agent_start';
+          prompt: string;
+          images?: AgentImageContent[];
+          ingress: { origin: 'gui' | 'terminal'; commandId?: string };
+      }
+    | { type: 'agent_start' }
+    | { type: 'turn_start'; turnIndex: number; timestamp: number }
+    | {
+          type: 'turn_end';
+          turnIndex: number;
+          message: AgentMessagePassthrough;
+          toolResults: AgentMessagePassthrough[];
+          messageEntryId?: string;
+          toolResultEntryIds?: string[];
+      }
+    | { type: 'message_start'; message: AgentMessagePassthrough }
+    | {
+          type: 'message_update';
+          message: AgentMessagePassthrough;
+          assistantMessageEvent: { type: string; [key: string]: unknown };
+      }
+    | { type: 'message_end'; message: AgentMessagePassthrough }
+    | (AgentToolExecutionBase & { type: 'tool_execution_start'; args: unknown })
+    | (AgentToolExecutionBase & { type: 'tool_execution_update'; args: unknown; partialResult: unknown })
+    | (AgentToolExecutionBase & { type: 'tool_execution_end'; result: unknown; isError: boolean })
+    /** willRetry is filled only by RPC / in-process producers; Pi extensions cannot see it. */
+    | { type: 'agent_end'; messages: AgentMessagePassthrough[]; willRetry?: boolean }
+    /** Authoritative Frame-close signal. */
+    | { type: 'agent_settled' }
+    | {
+          type: 'session_compact';
+          reason: CompactionReason;
+          willRetry: boolean;
+          fromExtension: boolean;
+          compactionEntryId?: string;
+      }
+    | {
+          type: 'session_compact_failed';
+          reason: CompactionReason;
+          willRetry: boolean;
+          aborted: boolean;
+          fromExtension: boolean;
+          errorMessage?: string;
+      }
+    | {
+          type: 'extension_ui_request';
+          id: string;
+          method: 'select' | 'confirm' | 'input' | 'editor';
+          title: string;
+          message?: string;
+          options?: string[];
+          placeholder?: string;
+          prefill?: string;
+          timeout?: number;
+      }
+    | {
+          type: 'command_result';
+          commandId: string;
+          status: 'accepted' | 'rejected' | 'failed';
+          reason?: string;
+          message?: string;
+      }
+    | { type: 'session_shutdown'; reason: 'quit' | 'reload' | 'new' | 'resume' | 'fork'; targetSessionFile?: string };
+
+export type AgentEventType = AgentEventPayload['type'];
+export type AgentEventV1 = AgentProtocolFrame<'xtrm.agent-event.v1', AgentEventPayload>;
+
+export type AgentCommandPayload =
+    | { type: 'prompt'; commandId: string; message: string; images?: AgentImageContent[] }
+    | { type: 'steer'; commandId: string; message: string; images?: AgentImageContent[] }
+    | { type: 'follow_up'; commandId: string; message: string; images?: AgentImageContent[] }
+    | { type: 'abort'; commandId: string }
+    /** Exactly one of value / confirmed / cancelled (Pi RpcExtensionUIResponse); id = request id. */
+    | { type: 'extension_ui_response'; commandId: string; id: string; value: string }
+    | { type: 'extension_ui_response'; commandId: string; id: string; confirmed: boolean }
+    | { type: 'extension_ui_response'; commandId: string; id: string; cancelled: true };
+
+export type AgentCommandType = AgentCommandPayload['type'];
+export type AgentCommandV1 = AgentProtocolFrame<'xtrm.agent-command.v1', AgentCommandPayload>;
+
+export interface AgentSessionSummary {
+    sessionId: string;
+    provider: 'pi' | 'claude' | 'codex';
+    state: 'working' | 'waiting_for_input' | 'settled' | 'failed' | 'history_only';
+    name?: string;
+    cwd: string;
+    repository?: string;
+    worktree?: string;
+    branch?: string;
+    role?: string;
+    workItem?: AgentWorkItem;
+    parentSessionId?: string;
+    childCount?: number;
+    tmux?: AgentTmuxTarget;
+    launch?: 'gui' | 'terminal';
+    extensionConnected: boolean;
+    capabilities: AgentCapability[];
+    model?: string;
+    thinkingLevel?: string;
+    contextUsage?: { tokens: number; contextWindow: number };
+    frameCount?: number;
+    startedAt?: number;
+    lastActivityAt?: number;
+    sessionFile?: string;
+}
+export type ContextReferenceKind =
+    | 'issue'
+    | 'epic'
+    | 'gh-issue'
+    | 'pr'
+    | 'commit'
+    | 'file'
+    | 'session'
+    | 'agent'
+    | 'frame'
+    | 'artifact'
+    | 'program'
+    | 'chain';
+export interface ContextReference {
+    kind: ContextReferenceKind;
+    raw: string;
+    status: 'resolved' | 'unresolved';
+    title?: string;
+    revision?: string;
+    content?: string;
+    truncated?: boolean;
+    pointer?: string;
+    bytes?: number;
+    budgetBytes?: number;
+    error?: string;
+}
+
+type HostApi<K extends string, B> = { schema: 'xtrm.agent-host-api.v1'; kind: K } & B;
+export type AgentHostApiV1 =
+    | HostApi<'session_list', { sessions: AgentSessionSummary[]; nextCursor?: string }>
+    | HostApi<'session_detail', { session: AgentSessionSummary; identity?: AgentSessionIdentity; lastSeq?: number }>
+    | HostApi<'event', { cursor: string; frame: AgentEventV1 }>
+    | HostApi<'submit_request', { sessionId: string; command: AgentCommandPayload; references?: ContextReference[] }>
+    | HostApi<
+          'submit_result',
+          {
+              commandId: string;
+              status: 'accepted' | 'busy' | 'rejected' | 'not_found' | 'unsupported' | 'failed';
+              reason?: string;
+              message?: string;
+          }
+      >
+    | HostApi<
+          'launch_request',
+          {
+              cwd: string;
+              command: 'pi' | 'xt pi';
+              options?: {
+                  name?: string;
+                  role?: string;
+                  bead?: string;
+                  model?: string;
+                  thinking?: string;
+                  skills?: string[];
+                  prompt?: string;
+                  parent?: string;
+                  child?: boolean;
+              };
+          }
+      >
+    | HostApi<'launch_result', { outcome: CommandOutcomeV1; tmux?: AgentTmuxTarget }>
+    | HostApi<'reference_resolve_request', { sessionId?: string; references: string[] }>
+    | HostApi<'reference_resolve_result', { references: ContextReference[]; totalBytes: number; overBudget?: boolean }>
+    | HostApi<'error', { code: string; message: string }>;
+
+export type AgentHostApiKind = AgentHostApiV1['kind'];
+
 export interface ContractTypeMap {
     'xtrm.runtime-compatibility.v1': RuntimeCompatibilityV1;
     'xtrm.interactive-role-envelope.v1': InteractiveRoleEnvelopeV1;
@@ -490,4 +750,7 @@ export interface ContractTypeMap {
     'xtrm.agent-role-launched.v1': AgentRoleLaunchedV1;
     'xtrm.specialist-role-envelope.v1': SpecialistRoleEnvelopeV1;
     'xtrm.topology.projection.v1': TopologyProjectionV1;
+    'xtrm.agent-event.v1': AgentEventV1;
+    'xtrm.agent-command.v1': AgentCommandV1;
+    'xtrm.agent-host-api.v1': AgentHostApiV1;
 }

@@ -149,5 +149,25 @@
         "sources": [{ "name": "xtmux", "status": "degraded", "reason": null, "duration_ms": 41 }],
         "panes": [],
         "orphans": { "jobs": [], "worktrees": [] }
+    },
+    "xtrm.agent-event.v1": {
+        "schema": "xtrm.agent-event.v1",
+        "seq": 3,
+        "sessionId": "019f9a10-0000-7000-8000-000000000001",
+        "at": 1790000000106,
+        "payload": { "type": "agent_end", "messages": [], "systemPrompt": "must not be carried" }
+    },
+    "xtrm.agent-command.v1": {
+        "schema": "xtrm.agent-command.v1",
+        "seq": 0,
+        "sessionId": "019f9a10-0000-7000-8000-000000000001",
+        "at": 1790000000200,
+        "payload": { "type": "extension_ui_response", "commandId": "cmd-5", "id": "ui-1", "value": "main", "cancelled": true }
+    },
+    "xtrm.agent-host-api.v1": {
+        "schema": "xtrm.agent-host-api.v1",
+        "kind": "submit_result",
+        "commandId": "cmd-2",
+        "status": "queued"
     }
 }
