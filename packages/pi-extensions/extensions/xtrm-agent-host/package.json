@@ -1,0 +1,15 @@
+{
+  "name": "@xtrm/pi-xtrm-agent-host",
+  "version": "0.1.0",
+  "description": "XTRM Pi extension that streams session lifecycle events to the local XTRM agent host and executes host commands",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

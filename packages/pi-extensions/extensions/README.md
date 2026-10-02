@@ -4,6 +4,16 @@ This directory is the canonical source for managed Pi extension entrypoints.
 
 Runtime delivery is package-based via `npm:@jaggerxtrm/pi-extensions`.
 
+## xtrm-agent-host
+
+Connects every Pi session to the local XTRM agent host (`xt host start`, PRD xtrm-app §35.3, §35.8):
+
+- pushes `xtrm.agent-event.v1` frames over `$XDG_RUNTIME_DIR/xtrm/agent-host.sock` (fallback `~/.xtrm/run/agent-host.sock`; override `XTRM_AGENT_HOST_SOCKET`): `session_identity` first, then the Pi lifecycle, tool events with the raw `sourceInfo`, `extension_ui_request`, `command_result`, and `session_shutdown`;
+- executes `xtrm.agent-command.v1` commands: `prompt` (rejected `busy` while working), `steer`, `follow_up`, `abort`, and `extension_ui_response`;
+- proxies `ctx.ui.select` / `confirm` / `input`: the host and the terminal dialog race, and the first answer wins. `editor` stays terminal-only because Pi gives it no dismiss signal.
+
+`message_update` and `tool_execution_update` are coalesced (50 ms). The `message` field is authoritative, and `assistantMessageEvent.partial` is dropped. Identity reads the `xt pi` pane options (`@agent_role`, `@agent_bead`, `@agent_parent_session`, `@agent_worktree`, `@agent_branch`), with `XTMUX_AGENT_ROLE` / `XTMUX_AGENT_BEAD` as fallbacks. The extension publishes `@xtrm_agent_session_id` on its pane so that child sessions can resolve `parentSessionId`. `XTRM_AGENT_LAUNCH=gui` marks a GUI launch, and `XTRM_AGENT_HOST=off` disables the bridge. When no host runs, the extension spawns no subprocess and prints nothing. It retries the socket with backoff (1 s → 30 s).
+
 ## sp-terminal-overlay
 
 Streaming terminal-style overlay for specialist/process monitoring commands.
