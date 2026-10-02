@@ -73,22 +73,42 @@ describe('policy structure', () => {
 // ── Cross-runtime parity ──────────────────────────────────────────────────────
 
 const bothPolicies = policies.filter(({ policy }) => policy.runtime === 'both');
+const claudePolicies = policies.filter(({ policy }) => (policy.claude?.hooks?.length ?? 0) > 0);
+const piPolicies = policies.filter(({ policy }) => Boolean(policy.pi?.extension));
 
-describe('runtime:both parity', () => {
-  it('at least one policy targets both runtimes', () => {
-    expect(bothPolicies.length).toBeGreaterThan(0);
+void bothPolicies;
+
+describe('cross-runtime coverage', () => {
+  // CORE-2339: the Claude side now routes every hook through one dispatcher
+  // process per event, and the per-hook policies that used to declare
+  // `runtime: both` (worktree-boundary, specialists-agent-guard, gitnexus,
+  // quality-gates, xtrm-debug-logger, …) were superseded by `hook-dispatcher`.
+  // The invariant this file protects — enforcement is not Claude-only — is
+  // therefore restated as coverage on both runtimes rather than a literal
+  // `runtime: both` policy, which no longer describes how anything is wired.
+  it('at least one policy wires Claude hooks', () => {
+    expect(claudePolicies.length).toBeGreaterThan(0);
   });
 
-  it.each(bothPolicies.map(p => p.file))('%s has claude.hooks', (file) => {
-    const { policy } = policies.find(p => p.file === file)!;
-    expect(policy.claude?.hooks?.length ?? 0).toBeGreaterThan(0);
+  it('at least one policy wires a Pi extension', () => {
+    expect(piPolicies.length).toBeGreaterThan(0);
   });
 
-  it.each(bothPolicies.map(p => p.file))('%s has pi.extension', (file) => {
-    const { policy } = policies.find(p => p.file === file)!;
-    expect(policy.pi?.extension, 'runtime:both policy missing pi.extension').toBeTruthy();
+  it('every policy declares wiring only for the runtimes it targets', () => {
+    for (const { file, policy } of policies) {
+      const hasClaude = (policy.claude?.hooks?.length ?? 0) > 0;
+      const hasPi = Boolean(policy.pi?.extension);
+      if (policy.runtime === 'claude') expect(hasClaude || !hasPi, `${file} mis-declared`).toBe(true);
+      if (policy.runtime === 'pi') expect(!hasClaude, `${file} declares claude hooks but is pi-only`).toBe(true);
+    }
   });
 });
+
+// No policy declares `runtime: both` after CORE-2339 (see cross-runtime coverage
+// above): a `both` policy would need both a claude.hooks array and a pi
+// extension, and the Claude side is now a single dispatcher command rather than
+// per-check wires. If a future policy is genuinely cross-runtime, add it back
+// here with both assertions.
 
 // ── Matcher macro expansion parity ────────────────────────────────────────────
 

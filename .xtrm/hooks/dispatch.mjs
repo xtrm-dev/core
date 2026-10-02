@@ -16,25 +16,33 @@
 //   pre     Edit|Write|MultiEdit|NotebookEdit → worktree-boundary check
 //           Agent                              → specialists-agent-guard check
 //   post    (all)                              → xtrm-tool-logger (in-process)
-//           Bash|Grep|Read|Glob                → gitnexus enrichment (augment
+//           Bash|Grep|Read|Glob + Serena tools → gitnexus enrichment (augment
 //                                                child only when a pattern is
 //                                                extracted and not cached)
-//           Edit|Write|MultiEdit|NotebookEdit  → quality check: ONE child,
-//                                                quality-check.cjs for JS/TS
-//                                                files, quality-check.py for
-//                                                Python files, none otherwise
+//           Edit|Write|MultiEdit|NotebookEdit  → quality check: in-process
+//                                                quality-check.cjs for JS/TS,
+//                                                quality-check.py child for
+//                                                Python, nothing otherwise
 //   session (all)                              → quality-check-env probe,
 //                                                session logger, reap sweep
 //
+// Known output deviation (deliberate, asserted in cli/test/hooks/dispatch.test.ts):
+// an edit to a file that is neither JS/TS nor Python (e.g. .md, .json) used to
+// print "File skipped - not a source file." / "No checks needed for ..." from the
+// two gates and now prints nothing. The decision is unchanged — both paths exit
+// 0 — and the silence is the saving: two interpreter startups per such edit.
 // Guard parity (CONSTRAINT: fail-closed where the old hooks blocked):
 //   - boundary/guard checks keep their own fail-open semantics from the
 //     standalone hooks; the dispatcher adds no new failure modes (each check
 //     is wrapped exactly like the old process boundary was).
-//   - the quality child's exit code is forwarded verbatim, so an exit 2
-//     (blocking) still blocks.
+//   - the quality gate's exit code is forwarded verbatim, so an exit 2
+//     (blocking) still blocks — in-process for JS/TS, from the Python child
+//     otherwise.
 //   - an exception or timeout in the dispatcher exits 0 — identical to the
 //     old behaviour where Claude Code killed a hook at its timeout and the
-//     tool call proceeded (non-blocking).
+//     tool call proceeded (non-blocking). A watchdog fire during the quality
+//     gate additionally writes a stderr marker, so a dropped blocking decision
+//     is never silent.
 //
 // Anti-stick (RSS root cause, CORE-2339): the old xtrm-tool-logger processes
 // could block forever on readFileSync(0) when the parent died before closing
@@ -58,8 +66,15 @@ const require = createRequire(import.meta.url);
 const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
 
 const MODE = process.argv[2] ?? '';
-// Just under the timeout registered for this command in hooks.json, so the
-// process always exits before Claude Code would kill it (kill = non-blocking).
+// Fail-open watchdog. Claude Code kills a hook at its registered timeout and the
+// tool call proceeds, so exiting 0 here matches that outcome. Two deliberate
+// refinements (CORE-2339 review):
+//   1. It is armed AFTER stdin resolves, so it never races the stdin read or
+//      drops a `tool.call` row for a slow-drained payload.
+//   2. When it fires during the blocking quality gate it writes a stderr marker
+//      first. Claude Code surfaces a killed hook as a hook-timeout notice to the
+//      operator; a silent exit-0 would discard the exit-2 decision invisibly,
+//      which is a failure-mode inversion.
 const WATCHDOG_MS = { pre: 1500, post: 29500, session: 9500 }[MODE] ?? 1500;
 // Defensive cap on stdin: a PostToolUse payload carries tool_response content
 // and can be large; anything past this is pathological and would only feed a
@@ -67,13 +82,53 @@ const WATCHDOG_MS = { pre: 1500, post: 29500, session: 9500 }[MODE] ?? 1500;
 const MAX_STDIN_BYTES = 32 * 1024 * 1024;
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const GITNEXUS_TOOLS = new Set(['Bash', 'Grep', 'Read', 'Glob']);
+// The old registration matcher was Bash|Grep|Read|Glob, but the runtime sync
+// has historically widened the *installed* matcher to Serena symbol/file tools
+// (mergeMatcher in cli/src/utils/atomic-config.ts). Those machines were getting
+// enrichment; excluding them here would silently drop it, and
+// gitnexus-hook.cjs still carries the Serena branches.
+const GITNEXUS_TOOLS = new Set([
+  'Bash', 'Grep', 'Read', 'Glob',
+  'mcp__serena__find_symbol',
+  'mcp__serena__find_referencing_symbols',
+  'mcp__serena__replace_symbol_body',
+  'mcp__serena__insert_after_symbol',
+  'mcp__serena__insert_before_symbol',
+  'mcp__serena__get_symbols_overview',
+  'mcp__serena__search_for_pattern',
+  'mcp__serena__rename_symbol',
+]);
 const JS_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs']);
 
-// Armed before any I/O: a stalled dispatcher always exits before Claude
-// Code's kill window. Exits 0 — identical outcome to Claude killing the old
-// hook at its timeout (non-blocking).
-setTimeout(() => { process.exit(0); }, WATCHDOG_MS);
+// Set when the watchdog may fire, so its exit can be made diagnosable.
+let watchdogArmed = false;
+let inQualityGate = false;
+
+// Two deadlines (CORE-2339 review B3):
+//   - stall: armed immediately, covers the stdin read. A payload that never
+//     EOFs is exactly the mechanism that produced the stuck 47 MB loggers, and
+//     exiting here loses nothing: no payload was read, so there is no tool.call
+//     row and no guard decision to drop.
+//   - work: armed once stdin has resolved, covers the checks themselves. When
+//     it fires during the quality gate it says so on stderr first, because a
+//     silent exit-0 there would discard a blocking exit-2 decision invisibly.
+const stallTimer = setTimeout(() => { process.exit(0); }, WATCHDOG_MS);
+
+function armWatchdog() {
+  if (watchdogArmed) return;
+  watchdogArmed = true;
+  clearTimeout(stallTimer);
+  setTimeout(() => {
+    if (inQualityGate) {
+      // A blocking exit 2 is about to be discarded. Fail-open is still the
+      // contract (Claude Code would have killed the hook too), but make it
+      // visible instead of silently reporting a broken file as clean.
+      writeSync(2, 'xt hook dispatcher: quality-check exceeded its time budget; '
+        + 'blocking decision dropped (same outcome as a Claude hook timeout)\n');
+    }
+    process.exit(0);
+  }, WATCHDOG_MS);
+}
 
 // ── stdin ─────────────────────────────────────────────────────────────────────
 
@@ -192,6 +247,7 @@ async function runPost(input, rawPayload) {
       if (plan.kind === 'inproc') {
         try {
           const { main: qualityCheckMain } = require('./quality-check.cjs');
+          inQualityGate = true;
           return await qualityCheckMain(input);
         } catch (err) {
           // The standalone hook would have crashed on its own and exited 1
@@ -209,19 +265,23 @@ async function runPost(input, rawPayload) {
 
 async function runSession(input) {
   if (!input) return 0;
-  try {
-    const { logSessionStart } = await import('./xtrm-session-logger.mjs');
-    logSessionStart(input);
-  } catch { /* silent */ }
-  try {
-    const { reapSweep } = await import('./worktree-reap-sweep.mjs');
-    reapSweep(input);
-  } catch { /* never blocks session start */ }
-  try {
-    const { envCheck } = await import('./quality-check-env.mjs');
-    const out = envCheck(input);
-    if (out) writeSync(1, out + '\n');
-  } catch { /* informational only */ }
+    // Order mirrors the compiled policy order: quality-gates-env (10) ->
+    // xtrm-debug-logger (45) -> worktree-reap (90).
+    try {
+      const { envCheck } = await import('./quality-check-env.mjs');
+      const out = envCheck(input);
+      // No trailing newline: the standalone hook writes none, so Claude Code
+      // sees byte-identical output.
+      if (out) writeSync(1, out);
+    } catch { /* informational only */ }
+    try {
+      const { logSessionStart } = await import('./xtrm-session-logger.mjs');
+      logSessionStart(input);
+    } catch { /* silent */ }
+    try {
+      const { reapSweep } = await import('./worktree-reap-sweep.mjs');
+      reapSweep(input);
+    } catch { /* never blocks session start */ }
   return 0;
 }
 
@@ -229,6 +289,9 @@ async function runSession(input) {
 
 (async () => {
   const raw = await readStdin();
+  // stdin resolved: the stall deadline has done its job, hand over to the work
+  // deadline so a slow payload can neither hang nor be cut short mid-check.
+  armWatchdog();
   let input = null;
   if (raw) { try { input = JSON.parse(raw); } catch { input = null; } }
 

@@ -1063,8 +1063,10 @@ async function parseJsonInput(preParsed) {
   } catch (error) {
     log.error(`Failed to parse JSON input: ${error.message}`);
     log.debug(`Input was: ${inputData}`);
-    parseErrorExitCode = 1;
-    return null;
+    // CORE-2339: the old CLI called process.exit(1) here. In-process main()
+    // needs it as a value, so the failure is carried on the return value rather
+    // than in module state (which would leak across calls).
+    return { __parseError: true };
   }
 }
 
@@ -1157,10 +1159,6 @@ function printSummary(errors, autofixes) {
  * Main entry point
  * @returns {Promise<void>}
  */
-// Set by parseJsonInput when an unparseable payload was seen (CORE-2339):
-// the old CLI exited 1 there, the in-process path returns it as a value.
-let parseErrorExitCode = 0;
-
 async function main(preParsed) {
   // Show header with version
   const hookVersion = config._fileConfig.version || '1.0.0';
@@ -1173,7 +1171,8 @@ async function main(preParsed) {
 
   // Parse input (CORE-2339: the dispatcher passes the payload it already read)
   const input = await parseJsonInput(preParsed);
-  if (!input) return parseErrorExitCode;
+  if (!input) return 0;
+  if (input.__parseError) return 1;
   const filePath = extractFilePath(input);
 
   if (!filePath) {

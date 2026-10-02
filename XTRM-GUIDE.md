@@ -146,14 +146,18 @@ Policies are the **single source of truth** for all enforcement rules.
 
 | Policy | Runtime | Order | Purpose |
 |--------|---------|-------|---------|
+| `hook-dispatcher.json` | claude | 10 | One process per Claude Code event: boundary guard, agent guard, quality gates, GitNexus enrichment, debug loggers (CORE-2339) |
 | `session-flow.json` | both | 19 | Claim sync, stop gate (blocks with unclosed in_progress claim), `xt end` reminder in worktrees |
 | `beads.json` | both | 20 | Issue tracking gates (edit/commit/memory/compact) |
-| `quality-gates.json` | both | 30 | Linting/typechecking |
-| `quality-gates-env.json` | both | 31 | Warns if tsc/ruff/eslint missing at session start |
-| `using-xtrm.json` | both | 5 | Injects project memory without eagerly loading the using-xtrm skill |
-| `gitnexus.json` | claude | 40 | Knowledge graph enrichment |
-| `worktree-boundary.json` | claude | 15 | Blocks edits outside worktree when in `.xtrm/worktrees` |
+| `quality-gates.json` | pi | 30 | Linting/typechecking (Pi); the Claude side runs inside `hook-dispatcher` |
+| `inbox-reminder.json` | claude | 50 | Stop-event reminder for unread pane-scoped inbound messages |
 | `service-skills.json` | pi | 40 | Territory-based skill activation |
+
+The former `worktree-boundary`, `specialists-agent-guard`, `gitnexus`,
+`quality-gates-env`, `xtrm-debug-logger` and `worktree-reap` Claude policies were
+superseded by `hook-dispatcher` in CORE-2339: their checks still run, but inside
+the dispatcher process instead of one process each. Do not re-add per-hook
+Claude entries for them; add the check to `dispatch.mjs` instead.
 
 ### Compiler
 

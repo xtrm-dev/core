@@ -7,22 +7,39 @@ PATH-shim spawn counting, pacing, side-effect safety).
 
 ## Canonical runs
 
+Both runs MUST pass `--filter`, or the comparison is not apples-to-apples: the
+before config carries every third-party hook and the after config carries only
+xt, so an unfiltered delta mixes "xt fan-out removed" with "third-party hooks no
+longer measured". Use a distinct `--session-id` per run so neither side inherits
+the other's GitNexus dedup cache.
+
 ```bash
-# BEFORE — the live installed configuration (read-only; never edits it).
-# --copy-plugin-root is mandatory here: the installed quality-check.cjs writes
+# BEFORE — xt-managed commands from the live installed configuration.
+# --copy-plugin-root is mandatory: the installed quality-check.cjs writes
 # tsconfig-cache.json next to itself on every run, so replaying the live tree in
 # place would mutate ~/.xtrm/hooks (a contract violation).
 nice -n 19 python3 scripts/hook-bench/bench.py \
     --config ~/.claude/settings.json --label before \
     --plugin-root ~/.xtrm/hooks --copy-plugin-root \
+    --filter '\.xtrm/hooks/' --session-id bench-before \
     --cwd "$PWD" --n 50 --json /tmp/hook-bench/before.json
 
-# AFTER — this worktree's template + dispatcher
+# AFTER — this worktree's template + dispatcher (already xt-only)
 nice -n 19 python3 scripts/hook-bench/bench.py \
     --config .xtrm/config/hooks.json --plugin-root .xtrm/hooks \
-    --label after \
+    --label after --session-id bench-after \
     --cwd "$PWD" --n 50 --json /tmp/hook-bench/after.json
+
+# Whole-config baseline (xt + third-party), for attribution only — never as the
+# before/after delta.
+nice -n 19 python3 scripts/hook-bench/bench.py \
+    --config ~/.claude/settings.json --label baseline-all \
+    --plugin-root ~/.xtrm/hooks --copy-plugin-root --session-id bench-baseline \
+    --cwd "$PWD" --n 50 --json /tmp/hook-bench/baseline.json
 ```
+
+The reported numbers in `.xtrm/reports/core-2339/REPORT.md` come from exactly this
+recipe (filter on the before side, fresh session id per side, copies of both trees).
 
 Both runs must use the same `--cwd` and therefore the same payload set
 (`payloads.py` derives file paths from `--cwd`).

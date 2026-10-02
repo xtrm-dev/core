@@ -6,8 +6,12 @@
       "install_mode": "copy",
       "install_scope": "global",
       "files": {
+        "dispatch.mjs": {
+          "hash": "ed980fb46ce5ce73f9290b2843a664a32621a119a71f787ea276481fe1ed57c1",
+          "version": "0.13.0"
+        },
         "gitnexus/gitnexus-hook.cjs": {
-          "hash": "d0f88b78c6723d6b6a45dbbd85e37d935bea4461046fd286d658951b16f68680",
+          "hash": "8631c7ac403d8a4a224aea6b53db9a2b252af547b0e9722bf5834a9d52089af3",
           "version": "0.13.0"
         },
         "inbox-reminder-stop.mjs": {
@@ -15,11 +19,11 @@
           "version": "0.13.0"
         },
         "quality-check-env.mjs": {
-          "hash": "cb2c483ad0f23b48f5832c4abc62d3490d7e2d79a2ae0f880525952fbcbe3106",
+          "hash": "eb792fb46c0bc04109cc1a18434afacc996c20ec7e3cea023e858f345a93ae61",
           "version": "0.13.0"
         },
         "quality-check.cjs": {
-          "hash": "afab38dcba961b566d58ccc5578021827749b749225713e0bbc0bb4303cf09df",
+          "hash": "d2f714dab0e8032074f31eaec9b78d42713c039ab72d482022cc6df52bb53645",
           "version": "0.13.0"
         },
         "quality-check.py": {
@@ -27,11 +31,11 @@
           "version": "0.13.0"
         },
         "README.md": {
-          "hash": "c9aa369a03e006d88b4ad56c2570c323112d4035a78de43d4ec731b64feb0643",
+          "hash": "dce177f875c8ee0aaf5d73091ee84c902c2c9bcd697451c33d8ba1ad882ea5bc",
           "version": "0.13.0"
         },
         "specialists-agent-guard.mjs": {
-          "hash": "ef4755858eae64e8a0830d1dcbaa4e08962d9ae107729d4797154acad687621c",
+          "hash": "793365e0b85e528e3b9e1a51d5174b3ba9942afb0fecf38b3d0f5cfb85c65f9c",
           "version": "0.13.0"
         },
         "statusline.mjs": {
@@ -43,23 +47,23 @@
           "version": "0.13.0"
         },
         "worktree-boundary.mjs": {
-          "hash": "4a0daf11ca6733d620bcf60f0411ecffd81dfc086a22f84a6a9c5ff452567d37",
+          "hash": "dc9dec5cebc336bbf7da7c5642c2b8f29a55bdd93b35f08d87e1c2b87bae82ce",
           "version": "0.13.0"
         },
         "worktree-reap-sweep.mjs": {
-          "hash": "2cdaa6d86bd2f54cb8a3dffe9a58f94d24977720d65ee5567da7845943c2da08",
+          "hash": "53e232c731c2d906f31b321e87667c6df09766cedd7371c72b77fbc9e9bc32b9",
           "version": "0.13.0"
         },
         "xtrm-logger.mjs": {
-          "hash": "b9ca315b8d0b714abba0b8ede3435be9cda8822d28a02fa2d8327990e98c5314",
+          "hash": "6471ddfcde178a9691d899ab76b899d6e2252ca945bc0ebc5a0520ad3ee50394",
           "version": "0.13.0"
         },
         "xtrm-session-logger.mjs": {
-          "hash": "702f4b7a9e3d8160900e2a8c034744b4814b15645b852ee353b37be1bb02746e",
+          "hash": "23ce98e0b5f616c5b67e816b4707d5bb6a51b691a80391bbb2149d1128f228d8",
           "version": "0.13.0"
         },
         "xtrm-tool-logger.mjs": {
-          "hash": "1f526d320ae85b8b6d27d767e01adfe3f8fbbd9af3b5ec39bb0380d6215844e4",
+          "hash": "c08fd73dc923f1ac4b110cdb7507bc57d2523cfda17d010875673f37f3c2fd5c",
           "version": "0.13.0"
         }
       }
@@ -932,7 +936,7 @@
           "version": "0.13.0"
         },
         "hooks.json": {
-          "hash": "7edb3987e57a2967f77fa15cc216ba1469628a8eb30d4ec19ec502a1323ca590",
+          "hash": "f10978d703dc52cc6e7757794ed5ba9150edd3829ca33dc393d1e0fe0a1f5715",
           "version": "0.13.0"
         },
         "instructions/agent-contract.md": {

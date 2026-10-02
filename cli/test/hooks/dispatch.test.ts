@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -223,6 +224,56 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
             }, temp);
             expect(result.status).toBe(0);
             expect(result.stdout).toContain('Python Quality Check');
+        } finally {
+            await rm(temp, { recursive: true, force: true });
+        }
+    });
+
+    it('post: logs the tool.call to .xtrm/debug.db (CORE-2339 review S6)', async () => {
+        const temp = await mkdtemp(path.join(tmpdir(), 'xtrm-dispatch-log-'));
+        try {
+            // logEvent anchors on the nearest .xtrm/ directory above cwd.
+            await mkdir(path.join(temp, '.xtrm'), { recursive: true });
+            const result = runDispatcher('post', {
+                session_id: 'dispatch-log-test',
+                cwd: temp,
+                hook_event_name: 'PostToolUse',
+                tool_name: 'Bash',
+                tool_input: { command: 'echo hello' },
+                tool_response: { stdout: 'hello' },
+            }, temp);
+            expect(result.status).toBe(0);
+
+            const dbPath = path.join(temp, '.xtrm', 'debug.db');
+            expect(existsSync(dbPath)).toBe(true);
+            const { DatabaseSync } = await import('node:sqlite');
+            const db = new DatabaseSync(dbPath);
+            const row = db.prepare(
+                "SELECT kind, tool_name, data FROM events WHERE kind = 'tool.call' LIMIT 1",
+            ).get();
+            db.close();
+            expect(row).toBeTruthy();
+            expect((row as Record<string, unknown>).tool_name).toBe('Bash');
+            expect((row as Record<string, unknown>).data).toContain('echo hello');
+        } finally {
+            await rm(temp, { recursive: true, force: true });
+        }
+    });
+
+    it('post: routes GitNexus enrichment for Serena symbol tools (CORE-2339 review S1)', async () => {
+        const temp = await mkdtemp(path.join(tmpdir(), 'xtrm-dispatch-serena-'));
+        try {
+            const result = runDispatcher('post', {
+                session_id: 'dispatch-serena-test',
+                cwd: temp,
+                hook_event_name: 'PostToolUse',
+                tool_name: 'mcp__serena__find_symbol',
+                tool_input: { name_path_pattern: 'src/core/module.ts/MyClass' },
+                tool_response: {},
+            }, temp);
+            // A repo without a .gitnexus index returns early and stays silent;
+            // what matters is that the tool is routed (no crash, exit 0).
+            expect(result.status).toBe(0);
         } finally {
             await rm(temp, { recursive: true, force: true });
         }
