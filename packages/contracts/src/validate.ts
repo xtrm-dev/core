@@ -1,19 +1,7 @@
 import { Ajv, type ValidateFunction, type ErrorObject } from 'ajv';
-import { readdirSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-// Schemas ship as static JSON under ../schemas (sibling of both src/ and dist/,
-// so this resolves the same whether running from source or the packed build).
-const schemasDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'schemas');
+import { BUNDLED_SCHEMAS } from './schemas.js';
 
 export type JsonSchema = Record<string, unknown> & { $id: string };
-
-function loadSchemas(): JsonSchema[] {
-    return readdirSync(schemasDir)
-        .filter((f) => f.endsWith('.json'))
-        .map((f) => JSON.parse(readFileSync(path.join(schemasDir, f), 'utf8')) as JsonSchema);
-}
 
 // strict:false — contract ids (e.g. "xtrm.runtime-origin.v1") are intentionally
 // not URIs, and we lean on draft-07 `const`; neither should be a strict-mode error.
@@ -22,7 +10,8 @@ function loadSchemas(): JsonSchema[] {
 // allErrors defaults to false (fail-fast): a validator that may see cross-repo
 // payloads shouldn't let a crafted input balloon the error array (DoS).
 const ajv = new Ajv({ strict: false, validateFormats: false });
-const schemas = loadSchemas();
+// Schemas also ship as static JSON under schemas/ (the ./schemas/* export).
+const schemas = BUNDLED_SCHEMAS as JsonSchema[];
 for (const schema of schemas) ajv.addSchema(schema);
 
 /** All contract schema ids shipped by this package, sorted. */

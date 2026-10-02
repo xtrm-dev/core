@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { SCHEMA_IDS, SCHEMA_ID, validate, getSchema, isValid, uuidV7TimestampMs } from '../src/index.js';
@@ -14,6 +14,15 @@ describe('@xtrm/contracts registry', () => {
             expect(SCHEMA_IDS, `SCHEMA_ID.${id} missing from loaded schemas`).toContain(id);
             expect(getSchema(id), `schema ${id} not loadable`).toBeTruthy();
         }
+    });
+
+    it('bundled schema set exactly matches schemas/*.json (src/schemas.ts has no drift)', () => {
+        const schemasDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'schemas');
+        const onDisk = readdirSync(schemasDir)
+            .filter((f) => f.endsWith('.json'))
+            .map((f) => (JSON.parse(readFileSync(path.join(schemasDir, f), 'utf8')) as { $id: string }).$id)
+            .sort();
+        expect([...SCHEMA_IDS].sort()).toEqual(onDisk);
     });
 
     it('loaded schema set exactly matches the SCHEMA_ID constants (no orphans, no gaps)', () => {
