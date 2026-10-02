@@ -1,0 +1,247 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xtrm.agent-host-api.v1",
+  "title": "XTRM agent host client API message",
+  "description": "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app §35.5, §35.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
+  "type": "object",
+  "required": ["schema", "kind"],
+  "properties": {
+    "schema": { "const": "xtrm.agent-host-api.v1" },
+    "kind": {
+      "enum": [
+        "session_list",
+        "session_detail",
+        "event",
+        "submit_request",
+        "submit_result",
+        "launch_request",
+        "launch_result",
+        "reference_resolve_request",
+        "reference_resolve_result",
+        "error"
+      ]
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/session_list" },
+    { "$ref": "#/definitions/session_detail" },
+    { "$ref": "#/definitions/event" },
+    { "$ref": "#/definitions/submit_request" },
+    { "$ref": "#/definitions/submit_result" },
+    { "$ref": "#/definitions/launch_request" },
+    { "$ref": "#/definitions/launch_result" },
+    { "$ref": "#/definitions/reference_resolve_request" },
+    { "$ref": "#/definitions/reference_resolve_result" },
+    { "$ref": "#/definitions/error" }
+  ],
+  "definitions": {
+    "schema": { "const": "xtrm.agent-host-api.v1" },
+    "sessionId": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "boundedString": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "epochMs": { "type": "integer", "minimum": 0 },
+    "reasonCode": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9_]*$" },
+    "sessionSummary": {
+      "description": "One session row (§36.3). Identity fields mirror xtrm.agent-event.v1 session_identity.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "provider", "state", "cwd", "extensionConnected", "capabilities"],
+      "properties": {
+        "sessionId": { "$ref": "#/definitions/sessionId" },
+        "provider": { "enum": ["pi", "claude", "codex"] },
+        "state": { "enum": ["working", "waiting_for_input", "settled", "failed", "history_only"] },
+        "name": { "$ref": "#/definitions/boundedString" },
+        "cwd": { "$ref": "#/definitions/path" },
+        "repository": { "$ref": "#/definitions/path" },
+        "worktree": { "$ref": "#/definitions/path" },
+        "branch": { "$ref": "#/definitions/boundedString" },
+        "role": { "$ref": "#/definitions/boundedString" },
+        "workItem": { "$ref": "xtrm.agent-event.v1#/definitions/workItem" },
+        "parentSessionId": { "$ref": "#/definitions/sessionId" },
+        "childCount": { "type": "integer", "minimum": 0 },
+        "tmux": { "$ref": "xtrm.agent-event.v1#/definitions/tmux" },
+        "launch": { "enum": ["gui", "terminal"] },
+        "extensionConnected": { "type": "boolean" },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "xtrm.agent-event.v1#/definitions/capability" }
+        },
+        "model": { "$ref": "#/definitions/boundedString" },
+        "thinkingLevel": { "$ref": "#/definitions/boundedString" },
+        "contextUsage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokens", "contextWindow"],
+          "properties": {
+            "tokens": { "type": "integer", "minimum": 0 },
+            "contextWindow": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "frameCount": { "type": "integer", "minimum": 0 },
+        "startedAt": { "$ref": "#/definitions/epochMs" },
+        "lastActivityAt": { "$ref": "#/definitions/epochMs" },
+        "sessionFile": { "$ref": "#/definitions/path" }
+      }
+    },
+    "contextReference": {
+      "description": "A resolved typed reference (§36.6). Revision is recorded at resolve time; content above the per-kind budget (§36.12 item 2) is replaced by an excerpt plus pointer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "raw", "status"],
+      "properties": {
+        "kind": {
+          "enum": ["issue", "epic", "gh-issue", "pr", "commit", "file", "session", "agent", "frame", "artifact", "program", "chain"]
+        },
+        "raw": { "$ref": "#/definitions/boundedString" },
+        "status": { "enum": ["resolved", "unresolved"] },
+        "title": { "type": "string", "maxLength": 1024 },
+        "revision": { "$ref": "#/definitions/boundedString" },
+        "content": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "pointer": { "$ref": "#/definitions/boundedString" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "budgetBytes": { "type": "integer", "minimum": 0 },
+        "error": { "$ref": "#/definitions/reasonCode" }
+      }
+    },
+    "session_list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "sessions"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "session_list" },
+        "sessions": { "type": "array", "items": { "$ref": "#/definitions/sessionSummary" } },
+        "nextCursor": { "$ref": "#/definitions/boundedString" }
+      }
+    },
+    "session_detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "session"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "session_detail" },
+        "session": { "$ref": "#/definitions/sessionSummary" },
+        "identity": { "$ref": "xtrm.agent-event.v1#/definitions/session_identity" },
+        "lastSeq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "event": {
+      "description": "One SSE data line. `cursor` lets a reconnecting client resume with Last-Event-ID.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "cursor", "frame"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "event" },
+        "cursor": { "$ref": "#/definitions/boundedString" },
+        "frame": { "$ref": "xtrm.agent-event.v1" }
+      }
+    },
+    "submit_request": {
+      "description": "Route one command to a live session. `references` were resolved first; submit is refused while any is unresolved (§36.6 rule 5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "sessionId", "command"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "submit_request" },
+        "sessionId": { "$ref": "#/definitions/sessionId" },
+        "command": { "$ref": "xtrm.agent-command.v1#/definitions/command" },
+        "references": { "type": "array", "items": { "$ref": "#/definitions/contextReference" } }
+      }
+    },
+    "submit_result": {
+      "description": "`busy`: a normal prompt while the session is working, or another GUI client won the race (§35.8 item 5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "commandId", "status"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "submit_result" },
+        "commandId": { "$ref": "#/definitions/boundedString" },
+        "status": { "enum": ["accepted", "busy", "rejected", "not_found", "unsupported", "failed"] },
+        "reason": { "$ref": "#/definitions/reasonCode" },
+        "message": { "type": "string", "maxLength": 1024 }
+      }
+    },
+    "launch_request": {
+      "description": "Start an agent in tmux through the existing launcher (§35.4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "cwd", "command"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "launch_request" },
+        "cwd": { "$ref": "#/definitions/path" },
+        "command": { "enum": ["pi", "xt pi"] },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "$ref": "#/definitions/boundedString" },
+            "role": { "$ref": "#/definitions/boundedString" },
+            "bead": { "$ref": "#/definitions/boundedString" },
+            "model": { "$ref": "#/definitions/boundedString" },
+            "thinking": { "$ref": "#/definitions/boundedString" },
+            "skills": { "type": "array", "items": { "$ref": "#/definitions/boundedString" } },
+            "prompt": { "type": "string" },
+            "parent": { "$ref": "#/definitions/boundedString" },
+            "child": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "launch_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "outcome"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "launch_result" },
+        "outcome": { "$ref": "xtrm.command-outcome.v1" },
+        "tmux": { "$ref": "xtrm.agent-event.v1#/definitions/tmux" }
+      }
+    },
+    "reference_resolve_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "references"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "reference_resolve_request" },
+        "sessionId": { "$ref": "#/definitions/sessionId" },
+        "references": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/boundedString" }
+        }
+      }
+    },
+    "reference_resolve_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "references", "totalBytes"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "reference_resolve_result" },
+        "references": { "type": "array", "items": { "$ref": "#/definitions/contextReference" } },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "overBudget": { "type": "boolean" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "code", "message"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "error" },
+        "code": { "$ref": "#/definitions/reasonCode" },
+        "message": { "type": "string", "maxLength": 1024 }
+      }
+    }
+  }
+}

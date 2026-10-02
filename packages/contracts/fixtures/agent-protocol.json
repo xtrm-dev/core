@@ -1,0 +1,446 @@
+{
+    "$comment": "Round-trip fixtures for the agent host protocol: one valid message per event type, command type and host API kind. test/agent-protocol.test.ts asserts full coverage of each union.",
+    "events": [
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 0,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000000,
+            "payload": {
+                "type": "session_identity",
+                "runtime": { "name": "pi", "version": "1.0.0" },
+                "producer": { "name": "@jaggerxtrm/pi-extensions/xtrm-agent-host", "version": "0.14.0" },
+                "sessionFile": "/home/op/.pi/agent/sessions/core/2026-10-02T10-00-00.jsonl",
+                "sessionName": "pi-main",
+                "cwd": "/home/op/dev/core",
+                "worktree": "/home/op/dev/core/.xtrm/worktrees/core-xt-pi-main",
+                "branch": "xt/pi-main",
+                "role": "coordinator",
+                "workItem": { "ref": "XTRM-561", "project": "prj_xtrm", "system": "substrate" },
+                "parentSessionId": "019f9a10-0000-7000-8000-000000000000",
+                "tmux": { "session": "xtrm-pi-main", "paneId": "%12" },
+                "launch": "terminal",
+                "capabilities": ["presence", "stream", "prompt", "steer", "follow_up", "abort", "extension_ui"]
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 1,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000001,
+            "payload": { "type": "session_start", "reason": "resume", "previousSessionFile": "/home/op/.pi/agent/sessions/core/old.jsonl" }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 2,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000100,
+            "payload": {
+                "type": "before_agent_start",
+                "prompt": "Fix the failing contracts test",
+                "ingress": { "origin": "gui", "commandId": "cmd-1" }
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 3,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000101,
+            "payload": { "type": "agent_start" }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 4,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000102,
+            "payload": { "type": "turn_start", "turnIndex": 0, "timestamp": 1790000000102 }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 5,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000103,
+            "payload": {
+                "type": "message_start",
+                "message": { "role": "assistant", "content": [], "timestamp": 1790000000103 }
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 6,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000104,
+            "payload": {
+                "type": "message_update",
+                "message": { "role": "assistant", "content": [{ "type": "text", "text": "Run" }] },
+                "assistantMessageEvent": { "type": "text_delta", "contentIndex": 0, "delta": "Run" }
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 7,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000105,
+            "payload": {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{ "type": "toolCall", "id": "call_1", "name": "bash", "arguments": { "command": "npm test" } }]
+                }
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 8,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000106,
+            "payload": {
+                "type": "tool_execution_start",
+                "toolCallId": "call_1",
+                "toolName": "bash",
+                "args": { "command": "npm test" },
+                "tool": { "sourceInfo": { "path": "builtin:bash", "source": "builtin", "scope": "user", "origin": "top-level" } },
+                "origin": { "class": "native" }
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 9,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000107,
+            "payload": {
+                "type": "tool_execution_update",
+                "toolCallId": "call_2",
+                "toolName": "mcp__github__search_code",
+                "args": { "q": "agent_settled" },
+                "partialResult": { "content": [{ "type": "text", "text": "searching" }] },
+                "tool": {
+                    "sourceInfo": { "path": "builtin:mcp", "source": "builtin", "scope": "user", "origin": "top-level" },
+                    "namespace": { "name": "mcp__github", "description": "GitHub MCP server" }
+                }
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 10,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000108,
+            "payload": {
+                "type": "tool_execution_end",
+                "toolCallId": "call_1/1",
+                "toolName": "read",
+                "result": { "content": [{ "type": "text", "text": "{}" }] },
+                "isError": false,
+                "parentToolCallId": "call_1",
+                "tool": {
+                    "sourceInfo": {
+                        "path": "/home/op/.pi/agent/extensions/codemode/index.ts",
+                        "source": "local",
+                        "scope": "project",
+                        "origin": "package",
+                        "baseDir": "/home/op/.pi/agent/extensions/codemode"
+                    }
+                }
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 11,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000109,
+            "payload": {
+                "type": "turn_end",
+                "turnIndex": 0,
+                "message": { "role": "assistant", "content": [] },
+                "toolResults": [{ "role": "toolResult", "toolCallId": "call_1", "content": [], "isError": false }],
+                "messageEntryId": "e-10",
+                "toolResultEntryIds": ["e-11"]
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 12,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000110,
+            "payload": { "type": "agent_end", "messages": [{ "role": "assistant", "content": [] }] }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 13,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000111,
+            "payload": { "type": "session_compact", "reason": "overflow", "willRetry": true, "fromExtension": false, "compactionEntryId": "e-12" }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 14,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000112,
+            "payload": {
+                "type": "session_compact_failed",
+                "reason": "threshold",
+                "willRetry": false,
+                "aborted": false,
+                "fromExtension": false,
+                "errorMessage": "summary request failed"
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 15,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000113,
+            "payload": {
+                "type": "extension_ui_request",
+                "id": "ui-1",
+                "method": "select",
+                "title": "Pick a branch",
+                "options": ["main", "xt/pi-main"]
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 16,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000114,
+            "payload": { "type": "command_result", "commandId": "cmd-2", "status": "accepted" }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 17,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000115,
+            "payload": { "type": "agent_settled" }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 18,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000116,
+            "payload": { "type": "session_shutdown", "reason": "quit" }
+        }
+    ],
+    "commands": [
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 0,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000050,
+            "payload": { "type": "prompt", "commandId": "cmd-1", "message": "Fix the failing contracts test" }
+        },
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 1,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000200,
+            "payload": {
+                "type": "steer",
+                "commandId": "cmd-2",
+                "message": "Only touch packages/contracts",
+                "images": [{ "type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png" }]
+            }
+        },
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 2,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000201,
+            "payload": { "type": "follow_up", "commandId": "cmd-3", "message": "Then run the full suite" }
+        },
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 3,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000202,
+            "payload": { "type": "abort", "commandId": "cmd-4" }
+        },
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 4,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000203,
+            "payload": { "type": "extension_ui_response", "commandId": "cmd-5", "id": "ui-1", "value": "main" }
+        },
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 5,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000204,
+            "payload": { "type": "extension_ui_response", "commandId": "cmd-6", "id": "ui-2", "confirmed": false }
+        },
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 6,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000205,
+            "payload": { "type": "extension_ui_response", "commandId": "cmd-7", "id": "ui-3", "cancelled": true }
+        }
+    ],
+    "hostApi": [
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "session_list",
+            "sessions": [
+                {
+                    "sessionId": "019f9a10-0000-7000-8000-000000000001",
+                    "provider": "pi",
+                    "state": "working",
+                    "name": "pi-main",
+                    "cwd": "/home/op/dev/core",
+                    "repository": "/home/op/dev/core",
+                    "role": "coordinator",
+                    "workItem": { "ref": "XTRM-561", "project": "prj_xtrm", "system": "substrate" },
+                    "childCount": 2,
+                    "tmux": { "session": "xtrm-pi-main", "paneId": "%12" },
+                    "launch": "terminal",
+                    "extensionConnected": true,
+                    "capabilities": ["presence", "stream", "prompt", "steer", "follow_up", "abort", "extension_ui"],
+                    "model": "claude-opus-5-5",
+                    "thinkingLevel": "high",
+                    "contextUsage": { "tokens": 128000, "contextWindow": 200000 },
+                    "frameCount": 15,
+                    "startedAt": 1789990000000,
+                    "lastActivityAt": 1790000000110
+                },
+                {
+                    "sessionId": "claude-7f3e",
+                    "provider": "claude",
+                    "state": "history_only",
+                    "cwd": "/home/op/dev/xtrm",
+                    "extensionConnected": false,
+                    "capabilities": []
+                }
+            ],
+            "nextCursor": "c-2"
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "session_detail",
+            "session": {
+                "sessionId": "claude-7f3e",
+                "provider": "claude",
+                "state": "settled",
+                "cwd": "/home/op/dev/xtrm",
+                "extensionConnected": true,
+                "capabilities": ["presence"]
+            },
+            "identity": {
+                "type": "session_identity",
+                "runtime": { "name": "claude", "version": null },
+                "cwd": "/home/op/dev/xtrm",
+                "capabilities": ["presence"]
+            },
+            "lastSeq": 42
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "event",
+            "cursor": "019f9a10-0000-7000-8000-000000000001:17",
+            "frame": {
+                "schema": "xtrm.agent-event.v1",
+                "seq": 17,
+                "sessionId": "019f9a10-0000-7000-8000-000000000001",
+                "at": 1790000000115,
+                "payload": { "type": "agent_settled" }
+            }
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "submit_request",
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "command": { "type": "prompt", "commandId": "cmd-8", "message": "Review @issue:XTRM-562" },
+            "references": [
+                {
+                    "kind": "issue",
+                    "raw": "@issue:XTRM-562",
+                    "status": "resolved",
+                    "title": "Agent host protocol",
+                    "revision": "rev1",
+                    "content": "PROBLEM ...",
+                    "truncated": false,
+                    "bytes": 11,
+                    "budgetBytes": 16384
+                }
+            ]
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "submit_result",
+            "commandId": "cmd-8",
+            "status": "busy",
+            "reason": "session_working",
+            "message": "The session is working; use steer or follow-up."
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "launch_request",
+            "cwd": "/home/op/dev/core",
+            "command": "xt pi",
+            "options": {
+                "name": "pi-review",
+                "role": "pr-reviewer",
+                "bead": "XTRM-562",
+                "model": "claude-opus-5-5",
+                "thinking": "high",
+                "skills": ["engineering-quality"],
+                "prompt": "Review the open PR",
+                "parent": "pi-main",
+                "child": true
+            }
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "launch_result",
+            "outcome": {
+                "schema_version": "xtrm.command-outcome.v1",
+                "status": "ok",
+                "reason_code": "session_created_readiness_unverified",
+                "summary": "Started pi-review in tmux; runtime readiness is not asserted.",
+                "authoritative_mutation": { "completed": true, "kind": "interactive-session.created" },
+                "side_effects": [{ "kind": "tmux.session.created", "status": "ok", "id": "$43" }],
+                "next_actions": [
+                    {
+                        "kind": "attach",
+                        "required": false,
+                        "argv": ["tmux", "attach-session", "-t", "xtrm-pi-review"],
+                        "display": "tmux attach-session -t xtrm-pi-review",
+                        "cwd": "/home/op/dev/core",
+                        "why": "Attach to the live detached session."
+                    }
+                ]
+            },
+            "tmux": { "session": "xtrm-pi-review", "paneId": "%14" }
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "reference_resolve_request",
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "references": ["@file:packages/contracts/src/types.ts#L1-40", "@session:pi-missing"]
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "reference_resolve_result",
+            "references": [
+                {
+                    "kind": "file",
+                    "raw": "@file:packages/contracts/src/types.ts#L1-40",
+                    "status": "resolved",
+                    "revision": "sha256:4f2a",
+                    "content": "// Hand-authored TypeScript types",
+                    "truncated": false,
+                    "bytes": 33,
+                    "budgetBytes": 32768
+                },
+                { "kind": "session", "raw": "@session:pi-missing", "status": "unresolved", "error": "session_not_found" }
+            ],
+            "totalBytes": 33,
+            "overBudget": false
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
+            "kind": "error",
+            "code": "unauthorized",
+            "message": "Pairing token expired"
+        }
+    ]
+}

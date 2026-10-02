@@ -53,7 +53,7 @@
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.3.0",
     "@types/prompts": "^2.4.9",
-    "@xtrm/contracts": "^0.11.1",
+    "@xtrm/contracts": "^0.12.0",
     "ajv": "^8.20.0",
     "esbuild": "0.28.1",
     "fast-check": "^4.6.0",

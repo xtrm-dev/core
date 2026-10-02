@@ -404,5 +404,31 @@
                 }
             ]
         }
+    },
+    "xtrm.agent-event.v1": {
+        "schema": "xtrm.agent-event.v1",
+        "seq": 3,
+        "sessionId": "019f9a10-0000-7000-8000-000000000001",
+        "at": 1790000000106,
+        "payload": {
+            "type": "tool_execution_start",
+            "toolCallId": "call_1",
+            "toolName": "bash",
+            "args": { "command": "npm test" },
+            "tool": { "sourceInfo": { "path": "builtin:bash", "source": "builtin", "scope": "user", "origin": "top-level" } }
+        }
+    },
+    "xtrm.agent-command.v1": {
+        "schema": "xtrm.agent-command.v1",
+        "seq": 0,
+        "sessionId": "019f9a10-0000-7000-8000-000000000001",
+        "at": 1790000000200,
+        "payload": { "type": "steer", "commandId": "cmd-2", "message": "Only touch packages/contracts" }
+    },
+    "xtrm.agent-host-api.v1": {
+        "schema": "xtrm.agent-host-api.v1",
+        "kind": "submit_result",
+        "commandId": "cmd-2",
+        "status": "accepted"
     }
 }

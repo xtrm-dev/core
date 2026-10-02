@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xtrm.agent-command.v1",
+  "title": "XTRM agent command frame (agent host -> extension)",
+  "description": "One NDJSON frame sent by the XTRM agent host to a live in-session extension over the Unix socket (PRD xtrm-app §35.3, §35.8 item 1). Commands map onto the Pi 1.0.0 extension API: prompt -> pi.sendUserMessage(content), steer / follow_up -> pi.sendUserMessage(content, {deliverAs}), abort -> ctx.abort(), extension_ui_response -> the pending ctx.ui prompt the extension proxied as an xtrm.agent-event.v1 extension_ui_request. extension_ui_response follows Pi RpcExtensionUIResponse (id = request id). The extension answers each command with an xtrm.agent-event.v1 command_result carrying the same commandId. A backward-incompatible change requires xtrm.agent-command.v2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "seq", "sessionId", "at", "payload"],
+  "properties": {
+    "schema": { "const": "xtrm.agent-command.v1" },
+    "seq": { "type": "integer", "minimum": 0 },
+    "sessionId": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "at": { "type": "integer", "minimum": 0 },
+    "payload": { "$ref": "#/definitions/command" }
+  },
+  "definitions": {
+    "commandId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "imageContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data", "mimeType"],
+      "properties": {
+        "type": { "const": "image" },
+        "data": { "type": "string", "description": "base64" },
+        "mimeType": { "type": "string", "pattern": "^image/[a-z0-9.+-]+$" }
+      }
+    },
+    "command": {
+      "oneOf": [
+        { "$ref": "#/definitions/prompt" },
+        { "$ref": "#/definitions/steer" },
+        { "$ref": "#/definitions/follow_up" },
+        { "$ref": "#/definitions/abort" },
+        { "$ref": "#/definitions/extension_ui_response" }
+      ]
+    },
+    "prompt": {
+      "description": "Normal submit. The host rejects it with `busy` while the session is working (§35.8 item 5); it never queues implicitly.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "commandId", "message"],
+      "properties": {
+        "type": { "const": "prompt" },
+        "commandId": { "$ref": "#/definitions/commandId" },
+        "message": { "type": "string", "minLength": 1 },
+        "images": { "type": "array", "items": { "$ref": "#/definitions/imageContent" } }
+      }
+    },
+    "steer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "commandId", "message"],
+      "properties": {
+        "type": { "const": "steer" },
+        "commandId": { "$ref": "#/definitions/commandId" },
+        "message": { "type": "string", "minLength": 1 },
+        "images": { "type": "array", "items": { "$ref": "#/definitions/imageContent" } }
+      }
+    },
+    "follow_up": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "commandId", "message"],
+      "properties": {
+        "type": { "const": "follow_up" },
+        "commandId": { "$ref": "#/definitions/commandId" },
+        "message": { "type": "string", "minLength": 1 },
+        "images": { "type": "array", "items": { "$ref": "#/definitions/imageContent" } }
+      }
+    },
+    "abort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "commandId"],
+      "properties": {
+        "type": { "const": "abort" },
+        "commandId": { "$ref": "#/definitions/commandId" }
+      }
+    },
+    "extension_ui_response": {
+      "description": "Exactly one of value / confirmed / cancelled, as in Pi RpcExtensionUIResponse.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "commandId", "id"],
+      "properties": {
+        "type": { "const": "extension_ui_response" },
+        "commandId": { "$ref": "#/definitions/commandId" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "value": { "type": "string" },
+        "confirmed": { "type": "boolean" },
+        "cancelled": { "const": true }
+      },
+      "oneOf": [
+        { "required": ["value"], "not": { "anyOf": [{ "required": ["confirmed"] }, { "required": ["cancelled"] }] } },
+        { "required": ["confirmed"], "not": { "anyOf": [{ "required": ["value"] }, { "required": ["cancelled"] }] } },
+        { "required": ["cancelled"], "not": { "anyOf": [{ "required": ["value"] }, { "required": ["confirmed"] }] } }
+      ]
+    }
+  }
+}

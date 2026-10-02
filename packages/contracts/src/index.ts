@@ -13,6 +13,15 @@ export {
     type JsonSchema,
     type ValidationResult,
 } from './validate.js';
+export {
+    parseSchemaId,
+    checkSchemaVersion,
+    encodeFrame,
+    decodeFrame,
+    type AgentProtocolSchemaId,
+    type SchemaVersionCheck,
+    type DecodeResult,
+} from './agent-protocol.js';
 
 import { validate } from './validate.js';
 import type { ContractTypeMap } from './types.js';
