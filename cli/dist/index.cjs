@@ -1211,7 +1211,7 @@ var require_command = __commonJS({
     "use strict";
     var EventEmitter = require("events").EventEmitter;
     var childProcess = require("child_process");
-    var path79 = require("path");
+    var path80 = require("path");
     var fs65 = require("fs");
     var process11 = require("process");
     var { Argument: Argument2, humanReadableArgName } = require_argument();
@@ -2224,9 +2224,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
         let launchWithNode = false;
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
-          const localBin = path79.resolve(baseDir, baseName);
+          const localBin = path80.resolve(baseDir, baseName);
           if (fs65.existsSync(localBin)) return localBin;
-          if (sourceExt.includes(path79.extname(baseName))) return void 0;
+          if (sourceExt.includes(path80.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
             (ext) => fs65.existsSync(`${localBin}${ext}`)
           );
@@ -2244,17 +2244,17 @@ Expecting one of '${allowedValues.join("', '")}'`);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
-          executableDir = path79.resolve(
-            path79.dirname(resolvedScriptPath),
+          executableDir = path80.resolve(
+            path80.dirname(resolvedScriptPath),
             executableDir
           );
         }
         if (executableDir) {
           let localFile = findFile(executableDir, executableFile);
           if (!localFile && !subcommand._executableFile && this._scriptPath) {
-            const legacyName = path79.basename(
+            const legacyName = path80.basename(
               this._scriptPath,
-              path79.extname(this._scriptPath)
+              path80.extname(this._scriptPath)
             );
             if (legacyName !== this._name) {
               localFile = findFile(
@@ -2265,7 +2265,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
           }
           executableFile = localFile || executableFile;
         }
-        launchWithNode = sourceExt.includes(path79.extname(executableFile));
+        launchWithNode = sourceExt.includes(path80.extname(executableFile));
         let proc;
         if (process11.platform !== "win32") {
           if (launchWithNode) {
@@ -3180,7 +3180,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @return {Command}
        */
       nameFromFilename(filename) {
-        this._name = path79.basename(filename, path79.extname(filename));
+        this._name = path80.basename(filename, path80.extname(filename));
         return this;
       }
       /**
@@ -3194,9 +3194,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} [path]
        * @return {(string|null|Command)}
        */
-      executableDir(path80) {
-        if (path80 === void 0) return this._executableDir;
-        this._executableDir = path80;
+      executableDir(path81) {
+        if (path81 === void 0) return this._executableDir;
+        this._executableDir = path81;
         return this;
       }
       /**
@@ -3658,14 +3658,14 @@ var require_polyfills = __commonJS({
       fs65.fstatSync = statFixSync(fs65.fstatSync);
       fs65.lstatSync = statFixSync(fs65.lstatSync);
       if (fs65.chmod && !fs65.lchmod) {
-        fs65.lchmod = function(path79, mode, cb) {
+        fs65.lchmod = function(path80, mode, cb) {
           if (cb) process.nextTick(cb);
         };
         fs65.lchmodSync = function() {
         };
       }
       if (fs65.chown && !fs65.lchown) {
-        fs65.lchown = function(path79, uid, gid, cb) {
+        fs65.lchown = function(path80, uid, gid, cb) {
           if (cb) process.nextTick(cb);
         };
         fs65.lchownSync = function() {
@@ -3732,9 +3732,9 @@ var require_polyfills = __commonJS({
         };
       })(fs65.readSync);
       function patchLchmod(fs66) {
-        fs66.lchmod = function(path79, mode, callback) {
+        fs66.lchmod = function(path80, mode, callback) {
           fs66.open(
-            path79,
+            path80,
             constants.O_WRONLY | constants.O_SYMLINK,
             mode,
             function(err, fd) {
@@ -3750,8 +3750,8 @@ var require_polyfills = __commonJS({
             }
           );
         };
-        fs66.lchmodSync = function(path79, mode) {
-          var fd = fs66.openSync(path79, constants.O_WRONLY | constants.O_SYMLINK, mode);
+        fs66.lchmodSync = function(path80, mode) {
+          var fd = fs66.openSync(path80, constants.O_WRONLY | constants.O_SYMLINK, mode);
           var threw = true;
           var ret;
           try {
@@ -3772,8 +3772,8 @@ var require_polyfills = __commonJS({
       }
       function patchLutimes(fs66) {
         if (constants.hasOwnProperty("O_SYMLINK") && fs66.futimes) {
-          fs66.lutimes = function(path79, at, mt, cb) {
-            fs66.open(path79, constants.O_SYMLINK, function(er, fd) {
+          fs66.lutimes = function(path80, at, mt, cb) {
+            fs66.open(path80, constants.O_SYMLINK, function(er, fd) {
               if (er) {
                 if (cb) cb(er);
                 return;
@@ -3785,8 +3785,8 @@ var require_polyfills = __commonJS({
               });
             });
           };
-          fs66.lutimesSync = function(path79, at, mt) {
-            var fd = fs66.openSync(path79, constants.O_SYMLINK);
+          fs66.lutimesSync = function(path80, at, mt) {
+            var fd = fs66.openSync(path80, constants.O_SYMLINK);
             var ret;
             var threw = true;
             try {
@@ -3905,11 +3905,11 @@ var require_legacy_streams = __commonJS({
         ReadStream,
         WriteStream
       };
-      function ReadStream(path79, options) {
-        if (!(this instanceof ReadStream)) return new ReadStream(path79, options);
+      function ReadStream(path80, options) {
+        if (!(this instanceof ReadStream)) return new ReadStream(path80, options);
         Stream.call(this);
         var self = this;
-        this.path = path79;
+        this.path = path80;
         this.fd = null;
         this.readable = true;
         this.paused = false;
@@ -3954,10 +3954,10 @@ var require_legacy_streams = __commonJS({
           self._read();
         });
       }
-      function WriteStream(path79, options) {
-        if (!(this instanceof WriteStream)) return new WriteStream(path79, options);
+      function WriteStream(path80, options) {
+        if (!(this instanceof WriteStream)) return new WriteStream(path80, options);
         Stream.call(this);
-        this.path = path79;
+        this.path = path80;
         this.fd = null;
         this.writable = true;
         this.flags = "w";
@@ -4101,14 +4101,14 @@ var require_graceful_fs = __commonJS({
       fs66.createWriteStream = createWriteStream2;
       var fs$readFile = fs66.readFile;
       fs66.readFile = readFile;
-      function readFile(path79, options, cb) {
+      function readFile(path80, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$readFile(path79, options, cb);
-        function go$readFile(path80, options2, cb2, startTime) {
-          return fs$readFile(path80, options2, function(err) {
+        return go$readFile(path80, options, cb);
+        function go$readFile(path81, options2, cb2, startTime) {
+          return fs$readFile(path81, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$readFile, [path80, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$readFile, [path81, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -4118,14 +4118,14 @@ var require_graceful_fs = __commonJS({
       }
       var fs$writeFile = fs66.writeFile;
       fs66.writeFile = writeFile;
-      function writeFile(path79, data, options, cb) {
+      function writeFile(path80, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$writeFile(path79, data, options, cb);
-        function go$writeFile(path80, data2, options2, cb2, startTime) {
-          return fs$writeFile(path80, data2, options2, function(err) {
+        return go$writeFile(path80, data, options, cb);
+        function go$writeFile(path81, data2, options2, cb2, startTime) {
+          return fs$writeFile(path81, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$writeFile, [path80, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$writeFile, [path81, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -4136,14 +4136,14 @@ var require_graceful_fs = __commonJS({
       var fs$appendFile = fs66.appendFile;
       if (fs$appendFile)
         fs66.appendFile = appendFile;
-      function appendFile(path79, data, options, cb) {
+      function appendFile(path80, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$appendFile(path79, data, options, cb);
-        function go$appendFile(path80, data2, options2, cb2, startTime) {
-          return fs$appendFile(path80, data2, options2, function(err) {
+        return go$appendFile(path80, data, options, cb);
+        function go$appendFile(path81, data2, options2, cb2, startTime) {
+          return fs$appendFile(path81, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$appendFile, [path80, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$appendFile, [path81, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -4174,31 +4174,31 @@ var require_graceful_fs = __commonJS({
       var fs$readdir = fs66.readdir;
       fs66.readdir = readdir;
       var noReaddirOptionVersions = /^v[0-5]\./;
-      function readdir(path79, options, cb) {
+      function readdir(path80, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path80, options2, cb2, startTime) {
-          return fs$readdir(path80, fs$readdirCallback(
-            path80,
+        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path81, options2, cb2, startTime) {
+          return fs$readdir(path81, fs$readdirCallback(
+            path81,
             options2,
             cb2,
             startTime
           ));
-        } : function go$readdir2(path80, options2, cb2, startTime) {
-          return fs$readdir(path80, options2, fs$readdirCallback(
-            path80,
+        } : function go$readdir2(path81, options2, cb2, startTime) {
+          return fs$readdir(path81, options2, fs$readdirCallback(
+            path81,
             options2,
             cb2,
             startTime
           ));
         };
-        return go$readdir(path79, options, cb);
-        function fs$readdirCallback(path80, options2, cb2, startTime) {
+        return go$readdir(path80, options, cb);
+        function fs$readdirCallback(path81, options2, cb2, startTime) {
           return function(err, files) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
               enqueue([
                 go$readdir,
-                [path80, options2, cb2],
+                [path81, options2, cb2],
                 err,
                 startTime || Date.now(),
                 Date.now()
@@ -4269,7 +4269,7 @@ var require_graceful_fs = __commonJS({
         enumerable: true,
         configurable: true
       });
-      function ReadStream(path79, options) {
+      function ReadStream(path80, options) {
         if (this instanceof ReadStream)
           return fs$ReadStream.apply(this, arguments), this;
         else
@@ -4289,7 +4289,7 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function WriteStream(path79, options) {
+      function WriteStream(path80, options) {
         if (this instanceof WriteStream)
           return fs$WriteStream.apply(this, arguments), this;
         else
@@ -4307,22 +4307,22 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function createReadStream(path79, options) {
-        return new fs66.ReadStream(path79, options);
+      function createReadStream(path80, options) {
+        return new fs66.ReadStream(path80, options);
       }
-      function createWriteStream2(path79, options) {
-        return new fs66.WriteStream(path79, options);
+      function createWriteStream2(path80, options) {
+        return new fs66.WriteStream(path80, options);
       }
       var fs$open = fs66.open;
       fs66.open = open;
-      function open(path79, flags, mode, cb) {
+      function open(path80, flags, mode, cb) {
         if (typeof mode === "function")
           cb = mode, mode = null;
-        return go$open(path79, flags, mode, cb);
-        function go$open(path80, flags2, mode2, cb2, startTime) {
-          return fs$open(path80, flags2, mode2, function(err, fd) {
+        return go$open(path80, flags, mode, cb);
+        function go$open(path81, flags2, mode2, cb2, startTime) {
+          return fs$open(path81, flags2, mode2, function(err, fd) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$open, [path80, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$open, [path81, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -4505,10 +4505,10 @@ var require_fs = __commonJS({
 var require_utils = __commonJS({
   "../node_modules/fs-extra/lib/mkdirs/utils.js"(exports2, module2) {
     "use strict";
-    var path79 = require("path");
+    var path80 = require("path");
     module2.exports.checkPath = function checkPath(pth) {
       if (process.platform === "win32") {
-        const pathHasInvalidWinCharacters = /[<>:"|?*]/.test(pth.replace(path79.parse(pth).root, ""));
+        const pathHasInvalidWinCharacters = /[<>:"|?*]/.test(pth.replace(path80.parse(pth).root, ""));
         if (pathHasInvalidWinCharacters) {
           const error51 = new Error(`Path contains invalid characters: ${pth}`);
           error51.code = "EINVAL";
@@ -4572,8 +4572,8 @@ var require_path_exists = __commonJS({
     "use strict";
     var u = require_universalify().fromPromise;
     var fs65 = require_fs();
-    function pathExists(path79) {
-      return fs65.access(path79).then(() => true).catch(() => false);
+    function pathExists(path80) {
+      return fs65.access(path80).then(() => true).catch(() => false);
     }
     module2.exports = {
       pathExists: u(pathExists),
@@ -4588,8 +4588,8 @@ var require_utimes = __commonJS({
     "use strict";
     var fs65 = require_fs();
     var u = require_universalify().fromPromise;
-    async function utimesMillis(path79, atime, mtime) {
-      const fd = await fs65.open(path79, "r+");
+    async function utimesMillis(path80, atime, mtime) {
+      const fd = await fs65.open(path80, "r+");
       let error51 = null;
       try {
         await fs65.futimes(fd, atime, mtime);
@@ -4606,8 +4606,8 @@ var require_utimes = __commonJS({
         throw error51;
       }
     }
-    function utimesMillisSync(path79, atime, mtime) {
-      const fd = fs65.openSync(path79, "r+");
+    function utimesMillisSync(path80, atime, mtime) {
+      const fd = fs65.openSync(path80, "r+");
       let error51 = null;
       try {
         fs65.futimesSync(fd, atime, mtime);
@@ -4636,7 +4636,7 @@ var require_stat = __commonJS({
   "../node_modules/fs-extra/lib/util/stat.js"(exports2, module2) {
     "use strict";
     var fs65 = require_fs();
-    var path79 = require("path");
+    var path80 = require("path");
     var u = require_universalify().fromPromise;
     function getStats(src, dest, opts) {
       const statFunc = opts.dereference ? (file2) => fs65.stat(file2, { bigint: true }) : (file2) => fs65.lstat(file2, { bigint: true });
@@ -4664,8 +4664,8 @@ var require_stat = __commonJS({
       const { srcStat, destStat } = await getStats(src, dest, opts);
       if (destStat) {
         if (areIdentical(srcStat, destStat)) {
-          const srcBaseName = path79.basename(src);
-          const destBaseName = path79.basename(dest);
+          const srcBaseName = path80.basename(src);
+          const destBaseName = path80.basename(dest);
           if (funcName === "move" && srcBaseName !== destBaseName && srcBaseName.toLowerCase() === destBaseName.toLowerCase()) {
             return { srcStat, destStat, isChangingCase: true };
           }
@@ -4687,8 +4687,8 @@ var require_stat = __commonJS({
       const { srcStat, destStat } = getStatsSync(src, dest, opts);
       if (destStat) {
         if (areIdentical(srcStat, destStat)) {
-          const srcBaseName = path79.basename(src);
-          const destBaseName = path79.basename(dest);
+          const srcBaseName = path80.basename(src);
+          const destBaseName = path80.basename(dest);
           if (funcName === "move" && srcBaseName !== destBaseName && srcBaseName.toLowerCase() === destBaseName.toLowerCase()) {
             return { srcStat, destStat, isChangingCase: true };
           }
@@ -4707,9 +4707,9 @@ var require_stat = __commonJS({
       return { srcStat, destStat };
     }
     async function checkParentPaths(src, srcStat, dest, funcName) {
-      const srcParent = path79.resolve(path79.dirname(src));
-      const destParent = path79.resolve(path79.dirname(dest));
-      if (destParent === srcParent || destParent === path79.parse(destParent).root) return;
+      const srcParent = path80.resolve(path80.dirname(src));
+      const destParent = path80.resolve(path80.dirname(dest));
+      if (destParent === srcParent || destParent === path80.parse(destParent).root) return;
       let destStat;
       try {
         destStat = await fs65.stat(destParent, { bigint: true });
@@ -4723,9 +4723,9 @@ var require_stat = __commonJS({
       return checkParentPaths(src, srcStat, destParent, funcName);
     }
     function checkParentPathsSync(src, srcStat, dest, funcName) {
-      const srcParent = path79.resolve(path79.dirname(src));
-      const destParent = path79.resolve(path79.dirname(dest));
-      if (destParent === srcParent || destParent === path79.parse(destParent).root) return;
+      const srcParent = path80.resolve(path80.dirname(src));
+      const destParent = path80.resolve(path80.dirname(dest));
+      if (destParent === srcParent || destParent === path80.parse(destParent).root) return;
       let destStat;
       try {
         destStat = fs65.statSync(destParent, { bigint: true });
@@ -4742,8 +4742,8 @@ var require_stat = __commonJS({
       return destStat.ino !== void 0 && destStat.dev !== void 0 && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev;
     }
     function isSrcSubdir(src, dest) {
-      const srcArr = path79.resolve(src).split(path79.sep).filter((i) => i);
-      const destArr = path79.resolve(dest).split(path79.sep).filter((i) => i);
+      const srcArr = path80.resolve(src).split(path80.sep).filter((i) => i);
+      const destArr = path80.resolve(dest).split(path80.sep).filter((i) => i);
       return srcArr.every((cur, i) => destArr[i] === cur);
     }
     function errMsg(src, dest, funcName) {
@@ -4796,7 +4796,7 @@ var require_copy = __commonJS({
   "../node_modules/fs-extra/lib/copy/copy.js"(exports2, module2) {
     "use strict";
     var fs65 = require_fs();
-    var path79 = require("path");
+    var path80 = require("path");
     var { mkdirs } = require_mkdirs();
     var { pathExists } = require_path_exists();
     var { utimesMillis } = require_utimes();
@@ -4819,7 +4819,7 @@ var require_copy = __commonJS({
       await stat.checkParentPaths(src, srcStat, dest, "copy");
       const include = await runFilter(src, dest, opts);
       if (!include) return;
-      const destParent = path79.dirname(dest);
+      const destParent = path80.dirname(dest);
       const dirExists = await pathExists(destParent);
       if (!dirExists) {
         await mkdirs(destParent);
@@ -4872,8 +4872,8 @@ var require_copy = __commonJS({
         await fs65.mkdir(dest);
       }
       await asyncIteratorConcurrentProcess(await fs65.opendir(src), async (item) => {
-        const srcItem = path79.join(src, item.name);
-        const destItem = path79.join(dest, item.name);
+        const srcItem = path80.join(src, item.name);
+        const destItem = path80.join(dest, item.name);
         const include = await runFilter(srcItem, destItem, opts);
         if (include) {
           const { destStat: destStat2 } = await stat.checkPaths(srcItem, destItem, "copy", opts);
@@ -4887,7 +4887,7 @@ var require_copy = __commonJS({
     async function onLink(destStat, src, dest, opts) {
       let resolvedSrc = await fs65.readlink(src);
       if (opts.dereference) {
-        resolvedSrc = path79.resolve(process.cwd(), resolvedSrc);
+        resolvedSrc = path80.resolve(process.cwd(), resolvedSrc);
       }
       if (!destStat) {
         return fs65.symlink(resolvedSrc, dest);
@@ -4900,7 +4900,7 @@ var require_copy = __commonJS({
         throw e;
       }
       if (opts.dereference) {
-        resolvedDest = path79.resolve(process.cwd(), resolvedDest);
+        resolvedDest = path80.resolve(process.cwd(), resolvedDest);
       }
       if (resolvedSrc !== resolvedDest) {
         if (stat.isSrcSubdir(resolvedSrc, resolvedDest)) {
@@ -4922,7 +4922,7 @@ var require_copy_sync = __commonJS({
   "../node_modules/fs-extra/lib/copy/copy-sync.js"(exports2, module2) {
     "use strict";
     var fs65 = require_graceful_fs();
-    var path79 = require("path");
+    var path80 = require("path");
     var mkdirsSync = require_mkdirs().mkdirsSync;
     var utimesMillisSync = require_utimes().utimesMillisSync;
     var stat = require_stat();
@@ -4943,7 +4943,7 @@ var require_copy_sync = __commonJS({
       const { srcStat, destStat } = stat.checkPathsSync(src, dest, "copy", opts);
       stat.checkParentPathsSync(src, srcStat, dest, "copy");
       if (opts.filter && !opts.filter(src, dest)) return;
-      const destParent = path79.dirname(dest);
+      const destParent = path80.dirname(dest);
       if (!fs65.existsSync(destParent)) mkdirsSync(destParent);
       return getStats(destStat, src, dest, opts);
     }
@@ -5012,8 +5012,8 @@ var require_copy_sync = __commonJS({
       }
     }
     function copyDirItem(item, src, dest, opts) {
-      const srcItem = path79.join(src, item);
-      const destItem = path79.join(dest, item);
+      const srcItem = path80.join(src, item);
+      const destItem = path80.join(dest, item);
       if (opts.filter && !opts.filter(srcItem, destItem)) return;
       const { destStat } = stat.checkPathsSync(srcItem, destItem, "copy", opts);
       return getStats(destStat, srcItem, destItem, opts);
@@ -5021,7 +5021,7 @@ var require_copy_sync = __commonJS({
     function onLink(destStat, src, dest, opts) {
       let resolvedSrc = fs65.readlinkSync(src);
       if (opts.dereference) {
-        resolvedSrc = path79.resolve(process.cwd(), resolvedSrc);
+        resolvedSrc = path80.resolve(process.cwd(), resolvedSrc);
       }
       if (!destStat) {
         return fs65.symlinkSync(resolvedSrc, dest);
@@ -5034,7 +5034,7 @@ var require_copy_sync = __commonJS({
           throw err;
         }
         if (opts.dereference) {
-          resolvedDest = path79.resolve(process.cwd(), resolvedDest);
+          resolvedDest = path80.resolve(process.cwd(), resolvedDest);
         }
         if (resolvedSrc !== resolvedDest) {
           if (stat.isSrcSubdir(resolvedSrc, resolvedDest)) {
@@ -5073,11 +5073,11 @@ var require_remove = __commonJS({
     "use strict";
     var fs65 = require_graceful_fs();
     var u = require_universalify().fromCallback;
-    function remove(path79, callback) {
-      fs65.rm(path79, { recursive: true, force: true }, callback);
+    function remove(path80, callback) {
+      fs65.rm(path80, { recursive: true, force: true }, callback);
     }
-    function removeSync(path79) {
-      fs65.rmSync(path79, { recursive: true, force: true });
+    function removeSync(path80) {
+      fs65.rmSync(path80, { recursive: true, force: true });
     }
     module2.exports = {
       remove: u(remove),
@@ -5092,7 +5092,7 @@ var require_empty = __commonJS({
     "use strict";
     var u = require_universalify().fromPromise;
     var fs65 = require_fs();
-    var path79 = require("path");
+    var path80 = require("path");
     var mkdir = require_mkdirs();
     var remove = require_remove();
     var emptyDir = u(async function emptyDir2(dir) {
@@ -5102,7 +5102,7 @@ var require_empty = __commonJS({
       } catch {
         return mkdir.mkdirs(dir);
       }
-      return Promise.all(items.map((item) => remove.remove(path79.join(dir, item))));
+      return Promise.all(items.map((item) => remove.remove(path80.join(dir, item))));
     });
     function emptyDirSync(dir) {
       let items;
@@ -5112,7 +5112,7 @@ var require_empty = __commonJS({
         return mkdir.mkdirsSync(dir);
       }
       items.forEach((item) => {
-        item = path79.join(dir, item);
+        item = path80.join(dir, item);
         remove.removeSync(item);
       });
     }
@@ -5130,7 +5130,7 @@ var require_file = __commonJS({
   "../node_modules/fs-extra/lib/ensure/file.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var path79 = require("path");
+    var path80 = require("path");
     var fs65 = require_fs();
     var mkdir = require_mkdirs();
     async function createFile(file2) {
@@ -5140,7 +5140,7 @@ var require_file = __commonJS({
       } catch {
       }
       if (stats && stats.isFile()) return;
-      const dir = path79.dirname(file2);
+      const dir = path80.dirname(file2);
       let dirStats = null;
       try {
         dirStats = await fs65.stat(dir);
@@ -5166,7 +5166,7 @@ var require_file = __commonJS({
       } catch {
       }
       if (stats && stats.isFile()) return;
-      const dir = path79.dirname(file2);
+      const dir = path80.dirname(file2);
       try {
         if (!fs65.statSync(dir).isDirectory()) {
           fs65.readdirSync(dir);
@@ -5189,7 +5189,7 @@ var require_link = __commonJS({
   "../node_modules/fs-extra/lib/ensure/link.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var path79 = require("path");
+    var path80 = require("path");
     var fs65 = require_fs();
     var mkdir = require_mkdirs();
     var { pathExists } = require_path_exists();
@@ -5208,7 +5208,7 @@ var require_link = __commonJS({
         throw err;
       }
       if (dstStat && areIdentical(srcStat, dstStat)) return;
-      const dir = path79.dirname(dstpath);
+      const dir = path80.dirname(dstpath);
       const dirExists = await pathExists(dir);
       if (!dirExists) {
         await mkdir.mkdirs(dir);
@@ -5228,7 +5228,7 @@ var require_link = __commonJS({
         err.message = err.message.replace("lstat", "ensureLink");
         throw err;
       }
-      const dir = path79.dirname(dstpath);
+      const dir = path80.dirname(dstpath);
       const dirExists = fs65.existsSync(dir);
       if (dirExists) return fs65.linkSync(srcpath, dstpath);
       mkdir.mkdirsSync(dir);
@@ -5245,12 +5245,12 @@ var require_link = __commonJS({
 var require_symlink_paths = __commonJS({
   "../node_modules/fs-extra/lib/ensure/symlink-paths.js"(exports2, module2) {
     "use strict";
-    var path79 = require("path");
+    var path80 = require("path");
     var fs65 = require_fs();
     var { pathExists } = require_path_exists();
     var u = require_universalify().fromPromise;
     async function symlinkPaths(srcpath, dstpath) {
-      if (path79.isAbsolute(srcpath)) {
+      if (path80.isAbsolute(srcpath)) {
         try {
           await fs65.lstat(srcpath);
         } catch (err) {
@@ -5262,8 +5262,8 @@ var require_symlink_paths = __commonJS({
           toDst: srcpath
         };
       }
-      const dstdir = path79.dirname(dstpath);
-      const relativeToDst = path79.join(dstdir, srcpath);
+      const dstdir = path80.dirname(dstpath);
+      const relativeToDst = path80.join(dstdir, srcpath);
       const exists = await pathExists(relativeToDst);
       if (exists) {
         return {
@@ -5279,11 +5279,11 @@ var require_symlink_paths = __commonJS({
       }
       return {
         toCwd: srcpath,
-        toDst: path79.relative(dstdir, srcpath)
+        toDst: path80.relative(dstdir, srcpath)
       };
     }
     function symlinkPathsSync(srcpath, dstpath) {
-      if (path79.isAbsolute(srcpath)) {
+      if (path80.isAbsolute(srcpath)) {
         const exists2 = fs65.existsSync(srcpath);
         if (!exists2) throw new Error("absolute srcpath does not exist");
         return {
@@ -5291,8 +5291,8 @@ var require_symlink_paths = __commonJS({
           toDst: srcpath
         };
       }
-      const dstdir = path79.dirname(dstpath);
-      const relativeToDst = path79.join(dstdir, srcpath);
+      const dstdir = path80.dirname(dstpath);
+      const relativeToDst = path80.join(dstdir, srcpath);
       const exists = fs65.existsSync(relativeToDst);
       if (exists) {
         return {
@@ -5304,7 +5304,7 @@ var require_symlink_paths = __commonJS({
       if (!srcExists) throw new Error("relative srcpath does not exist");
       return {
         toCwd: srcpath,
-        toDst: path79.relative(dstdir, srcpath)
+        toDst: path80.relative(dstdir, srcpath)
       };
     }
     module2.exports = {
@@ -5352,7 +5352,7 @@ var require_symlink = __commonJS({
   "../node_modules/fs-extra/lib/ensure/symlink.js"(exports2, module2) {
     "use strict";
     var u = require_universalify().fromPromise;
-    var path79 = require("path");
+    var path80 = require("path");
     var fs65 = require_fs();
     var { mkdirs, mkdirsSync } = require_mkdirs();
     var { symlinkPaths, symlinkPathsSync } = require_symlink_paths();
@@ -5367,11 +5367,11 @@ var require_symlink = __commonJS({
       }
       if (stats && stats.isSymbolicLink()) {
         let srcStat;
-        if (path79.isAbsolute(srcpath)) {
+        if (path80.isAbsolute(srcpath)) {
           srcStat = await fs65.stat(srcpath, { bigint: true });
         } else {
-          const dstdir = path79.dirname(dstpath);
-          const relativeToDst = path79.join(dstdir, srcpath);
+          const dstdir = path80.dirname(dstpath);
+          const relativeToDst = path80.join(dstdir, srcpath);
           try {
             srcStat = await fs65.stat(relativeToDst, { bigint: true });
           } catch {
@@ -5389,7 +5389,7 @@ var require_symlink = __commonJS({
       const relative = await symlinkPaths(srcpath, dstpath);
       srcpath = relative.toDst;
       const toType = await symlinkType(relative.toCwd, type);
-      const dir = path79.dirname(dstpath);
+      const dir = path80.dirname(dstpath);
       if (!await pathExists(dir)) {
         await mkdirs(dir);
       }
@@ -5403,11 +5403,11 @@ var require_symlink = __commonJS({
       }
       if (stats && stats.isSymbolicLink()) {
         let srcStat;
-        if (path79.isAbsolute(srcpath)) {
+        if (path80.isAbsolute(srcpath)) {
           srcStat = fs65.statSync(srcpath, { bigint: true });
         } else {
-          const dstdir = path79.dirname(dstpath);
-          const relativeToDst = path79.join(dstdir, srcpath);
+          const dstdir = path80.dirname(dstpath);
+          const relativeToDst = path80.join(dstdir, srcpath);
           try {
             srcStat = fs65.statSync(relativeToDst, { bigint: true });
           } catch {
@@ -5425,7 +5425,7 @@ var require_symlink = __commonJS({
       const relative = symlinkPathsSync(srcpath, dstpath);
       srcpath = relative.toDst;
       type = symlinkTypeSync(relative.toCwd, type);
-      const dir = path79.dirname(dstpath);
+      const dir = path80.dirname(dstpath);
       const exists = fs65.existsSync(dir);
       if (exists) return fs65.symlinkSync(srcpath, dstpath, type);
       mkdirsSync(dir);
@@ -5519,7 +5519,7 @@ var require_jsonfile = __commonJS({
       return obj;
     }
     var readFile = universalify.fromPromise(_readFile);
-    function readFileSync11(file2, options = {}) {
+    function readFileSync12(file2, options = {}) {
       if (typeof options === "string") {
         options = { encoding: options };
       }
@@ -5544,16 +5544,16 @@ var require_jsonfile = __commonJS({
       await universalify.fromCallback(fs65.writeFile)(file2, str2, options);
     }
     var writeFile = universalify.fromPromise(_writeFile);
-    function writeFileSync7(file2, obj, options = {}) {
+    function writeFileSync8(file2, obj, options = {}) {
       const fs65 = options.fs || _fs;
       const str2 = stringify2(obj, options);
       return fs65.writeFileSync(file2, str2, options);
     }
     module2.exports = {
       readFile,
-      readFileSync: readFileSync11,
+      readFileSync: readFileSync12,
       writeFile,
-      writeFileSync: writeFileSync7
+      writeFileSync: writeFileSync8
     };
   }
 });
@@ -5579,18 +5579,18 @@ var require_output_file = __commonJS({
     "use strict";
     var u = require_universalify().fromPromise;
     var fs65 = require_fs();
-    var path79 = require("path");
+    var path80 = require("path");
     var mkdir = require_mkdirs();
     var pathExists = require_path_exists().pathExists;
     async function outputFile(file2, data, encoding = "utf-8") {
-      const dir = path79.dirname(file2);
+      const dir = path80.dirname(file2);
       if (!await pathExists(dir)) {
         await mkdir.mkdirs(dir);
       }
       return fs65.writeFile(file2, data, encoding);
     }
     function outputFileSync(file2, ...args) {
-      const dir = path79.dirname(file2);
+      const dir = path80.dirname(file2);
       if (!fs65.existsSync(dir)) {
         mkdir.mkdirsSync(dir);
       }
@@ -5654,7 +5654,7 @@ var require_move = __commonJS({
   "../node_modules/fs-extra/lib/move/move.js"(exports2, module2) {
     "use strict";
     var fs65 = require_fs();
-    var path79 = require("path");
+    var path80 = require("path");
     var { copy } = require_copy2();
     var { remove } = require_remove();
     var { mkdirp } = require_mkdirs();
@@ -5664,8 +5664,8 @@ var require_move = __commonJS({
       const overwrite = opts.overwrite || opts.clobber || false;
       const { srcStat, isChangingCase = false } = await stat.checkPaths(src, dest, "move", opts);
       await stat.checkParentPaths(src, srcStat, dest, "move");
-      const destParent = path79.dirname(dest);
-      const parsedParentPath = path79.parse(destParent);
+      const destParent = path80.dirname(dest);
+      const parsedParentPath = path80.parse(destParent);
       if (parsedParentPath.root !== destParent) {
         await mkdirp(destParent);
       }
@@ -5706,7 +5706,7 @@ var require_move_sync = __commonJS({
   "../node_modules/fs-extra/lib/move/move-sync.js"(exports2, module2) {
     "use strict";
     var fs65 = require_graceful_fs();
-    var path79 = require("path");
+    var path80 = require("path");
     var copySync = require_copy2().copySync;
     var removeSync = require_remove().removeSync;
     var mkdirpSync = require_mkdirs().mkdirpSync;
@@ -5716,12 +5716,12 @@ var require_move_sync = __commonJS({
       const overwrite = opts.overwrite || opts.clobber || false;
       const { srcStat, isChangingCase = false } = stat.checkPathsSync(src, dest, "move", opts);
       stat.checkParentPathsSync(src, srcStat, dest, "move");
-      if (!isParentRoot(dest)) mkdirpSync(path79.dirname(dest));
+      if (!isParentRoot(dest)) mkdirpSync(path80.dirname(dest));
       return doRename(src, dest, overwrite, isChangingCase);
     }
     function isParentRoot(dest) {
-      const parent = path79.dirname(dest);
-      const parsedPath = path79.parse(parent);
+      const parent = path80.dirname(dest);
+      const parsedPath = path80.parse(parent);
       return parsedPath.root === parent;
     }
     function doRename(src, dest, overwrite, isChangingCase) {
@@ -12479,8 +12479,8 @@ var require_keyword = __commonJS({
       var _a3;
       const { gen, keyword, schema, parentSchema, $data, it } = cxt;
       checkAsyncKeyword(it, def);
-      const validate3 = !$data && def.compile ? def.compile.call(it.self, schema, parentSchema, it) : def.validate;
-      const validateRef = useKeyword(gen, keyword, validate3);
+      const validate4 = !$data && def.compile ? def.compile.call(it.self, schema, parentSchema, it) : def.validate;
+      const validateRef = useKeyword(gen, keyword, validate4);
       const valid = gen.let("valid");
       cxt.block$data(valid, validateKeyword);
       cxt.ok((_a3 = def.valid) !== null && _a3 !== void 0 ? _a3 : valid);
@@ -13553,28 +13553,28 @@ var require_compile = __commonJS({
         if (this.opts.code.process)
           sourceCode = this.opts.code.process(sourceCode, sch);
         const makeValidate = new Function(`${names_1.default.self}`, `${names_1.default.scope}`, sourceCode);
-        const validate3 = makeValidate(this, this.scope.get());
-        this.scope.value(validateName, { ref: validate3 });
-        validate3.errors = null;
-        validate3.schema = sch.schema;
-        validate3.schemaEnv = sch;
+        const validate4 = makeValidate(this, this.scope.get());
+        this.scope.value(validateName, { ref: validate4 });
+        validate4.errors = null;
+        validate4.schema = sch.schema;
+        validate4.schemaEnv = sch;
         if (sch.$async)
-          validate3.$async = true;
+          validate4.$async = true;
         if (this.opts.code.source === true) {
-          validate3.source = { validateName, validateCode, scopeValues: gen._values };
+          validate4.source = { validateName, validateCode, scopeValues: gen._values };
         }
         if (this.opts.unevaluated) {
           const { props, items } = schemaCxt;
-          validate3.evaluated = {
+          validate4.evaluated = {
             props: props instanceof codegen_1.Name ? void 0 : props,
             items: items instanceof codegen_1.Name ? void 0 : items,
             dynamicProps: props instanceof codegen_1.Name,
             dynamicItems: items instanceof codegen_1.Name
           };
-          if (validate3.source)
-            validate3.source.evaluated = (0, codegen_1.stringify)(validate3.evaluated);
+          if (validate4.source)
+            validate4.source.evaluated = (0, codegen_1.stringify)(validate4.evaluated);
         }
-        sch.validate = validate3;
+        sch.validate = validate4;
         return sch;
       } catch (e) {
         delete sch.validate;
@@ -13871,8 +13871,8 @@ var require_utils3 = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path79) {
-      let input = path79;
+    function removeDotSegments(path80) {
+      let input = path80;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -14281,8 +14281,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path79 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path79 && path79 !== "/" ? path79 : void 0;
+        const path80 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path80 && path80 !== "/" ? path80 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -14341,7 +14341,7 @@ var require_schemes = __commonJS({
       urnComponent.nss = (uuidComponent.uuid || "").toLowerCase();
       return urnComponent;
     }
-    var http = (
+    var http2 = (
       /** @type {SchemeHandler} */
       {
         scheme: "http",
@@ -14354,7 +14354,7 @@ var require_schemes = __commonJS({
       /** @type {SchemeHandler} */
       {
         scheme: "https",
-        domainHost: http.domainHost,
+        domainHost: http2.domainHost,
         parse: httpParse,
         serialize: httpSerialize
       }
@@ -14398,7 +14398,7 @@ var require_schemes = __commonJS({
     var SCHEMES = (
       /** @type {Record<SchemeName, SchemeHandler>} */
       {
-        http,
+        http: http2,
         https,
         ws,
         wss,
@@ -14949,7 +14949,7 @@ var require_core = __commonJS({
         uriResolver
       };
     }
-    var Ajv2 = class {
+    var Ajv3 = class {
       constructor(opts = {}) {
         this.schemas = {};
         this.refs = {};
@@ -15255,15 +15255,15 @@ var require_core = __commonJS({
         }
         return metaSchema;
       }
-      _removeAllSchemas(schemas, regex2) {
-        for (const keyRef in schemas) {
-          const sch = schemas[keyRef];
+      _removeAllSchemas(schemas2, regex2) {
+        for (const keyRef in schemas2) {
+          const sch = schemas2[keyRef];
           if (!regex2 || regex2.test(keyRef)) {
             if (typeof sch == "string") {
-              delete schemas[keyRef];
+              delete schemas2[keyRef];
             } else if (sch && !sch.meta) {
               this._cache.delete(sch.schema);
-              delete schemas[keyRef];
+              delete schemas2[keyRef];
             }
           }
         }
@@ -15319,9 +15319,9 @@ var require_core = __commonJS({
         }
       }
     };
-    Ajv2.ValidationError = validation_error_1.default;
-    Ajv2.MissingRefError = ref_error_1.default;
-    exports2.default = Ajv2;
+    Ajv3.ValidationError = validation_error_1.default;
+    Ajv3.MissingRefError = ref_error_1.default;
+    exports2.default = Ajv3;
     function checkOptions(checkOpts, options, msg, log = "error") {
       for (const key in checkOpts) {
         const opt = key;
@@ -17432,7 +17432,7 @@ var require_ajv = __commonJS({
     var draft7MetaSchema = require_json_schema_draft_07();
     var META_SUPPORT_DATA = ["/properties"];
     var META_SCHEMA_ID = "http://json-schema.org/draft-07/schema";
-    var Ajv2 = class extends core_1.default {
+    var Ajv3 = class extends core_1.default {
       _addVocabularies() {
         super._addVocabularies();
         draft7_1.default.forEach((v) => this.addVocabulary(v));
@@ -17451,11 +17451,11 @@ var require_ajv = __commonJS({
         return this.opts.defaultMeta = super.defaultMeta() || (this.getSchema(META_SCHEMA_ID) ? META_SCHEMA_ID : void 0);
       }
     };
-    exports2.Ajv = Ajv2;
-    module2.exports = exports2 = Ajv2;
-    module2.exports.Ajv = Ajv2;
+    exports2.Ajv = Ajv3;
+    module2.exports = exports2 = Ajv3;
+    module2.exports.Ajv = Ajv3;
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.default = Ajv2;
+    exports2.default = Ajv3;
     var validate_1 = require_validate();
     Object.defineProperty(exports2, "KeywordCxt", { enumerable: true, get: function() {
       return validate_1.KeywordCxt;
@@ -17496,8 +17496,8 @@ var require_formats = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.formatNames = exports2.fastFormats = exports2.fullFormats = void 0;
-    function fmtDef(validate3, compare) {
-      return { validate: validate3, compare };
+    function fmtDef(validate4, compare) {
+      return { validate: validate4, compare };
     }
     exports2.fullFormats = {
       // date: http://tools.ietf.org/html/rfc3339#section-5.6
@@ -17721,9 +17721,9 @@ var require_limit = __commonJS({
       },
       dependencies: ["format"]
     };
-    var formatLimitPlugin = (ajv) => {
-      ajv.addKeyword(exports2.formatLimitDefinition);
-      return ajv;
+    var formatLimitPlugin = (ajv2) => {
+      ajv2.addKeyword(exports2.formatLimitDefinition);
+      return ajv2;
     };
     exports2.default = formatLimitPlugin;
   }
@@ -17739,17 +17739,17 @@ var require_dist2 = __commonJS({
     var codegen_1 = require_codegen();
     var fullName = new codegen_1.Name("fullFormats");
     var fastName = new codegen_1.Name("fastFormats");
-    var formatsPlugin = (ajv, opts = { keywords: true }) => {
+    var formatsPlugin = (ajv2, opts = { keywords: true }) => {
       if (Array.isArray(opts)) {
-        addFormats(ajv, opts, formats_1.fullFormats, fullName);
-        return ajv;
+        addFormats(ajv2, opts, formats_1.fullFormats, fullName);
+        return ajv2;
       }
       const [formats, exportName] = opts.mode === "fast" ? [formats_1.fastFormats, fastName] : [formats_1.fullFormats, fullName];
       const list = opts.formats || formats_1.formatNames;
-      addFormats(ajv, list, formats, exportName);
+      addFormats(ajv2, list, formats, exportName);
       if (opts.keywords)
-        limit_1.default(ajv);
-      return ajv;
+        limit_1.default(ajv2);
+      return ajv2;
     };
     formatsPlugin.get = (name, mode = "full") => {
       const formats = mode === "fast" ? formats_1.fastFormats : formats_1.fullFormats;
@@ -17758,12 +17758,12 @@ var require_dist2 = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs65, exportName) {
+    function addFormats(ajv2, list, fs65, exportName) {
       var _a3;
       var _b;
-      (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = codegen_1._`require("ajv-formats/dist/formats").${exportName}`;
+      (_a3 = (_b = ajv2.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = codegen_1._`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs65[f]);
+        ajv2.addFormat(f, fs65[f]);
     }
     module2.exports = exports2 = formatsPlugin;
     Object.defineProperty(exports2, "__esModule", { value: true });
@@ -28738,8 +28738,8 @@ var require_main = __commonJS({
   "node_modules/dotenv/lib/main.js"(exports2, module2) {
     "use strict";
     var fs65 = require("fs");
-    var path79 = require("path");
-    var os26 = require("os");
+    var path80 = require("path");
+    var os27 = require("os");
     var crypto10 = require("crypto");
     var packageJson = require_package();
     var version3 = packageJson.version;
@@ -28854,7 +28854,7 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path79.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path80.resolve(process.cwd(), ".env.vault");
       }
       if (fs65.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
@@ -28862,7 +28862,7 @@ var require_main = __commonJS({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path79.join(os26.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path80.join(os27.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -28879,7 +28879,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path79.resolve(process.cwd(), ".env");
+      const dotenvPath = path80.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -28903,13 +28903,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path80 of optionPaths) {
+      for (const path81 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs65.readFileSync(path80, { encoding }));
+          const parsed = DotenvModule.parse(fs65.readFileSync(path81, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path80} ${e.message}`);
+            _debug(`Failed to load ${path81} ${e.message}`);
           }
           lastError = e;
         }
@@ -28924,7 +28924,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative = path79.relative(process.cwd(), filePath);
+            const relative = path80.relative(process.cwd(), filePath);
             shortPaths.push(relative);
           } catch (e) {
             if (debug) {
@@ -29544,7 +29544,7 @@ var require_has_flag = __commonJS({
 var require_supports_colors = __commonJS({
   "../node_modules/@colors/colors/lib/system/supports-colors.js"(exports2, module2) {
     "use strict";
-    var os26 = require("os");
+    var os27 = require("os");
     var hasFlag2 = require_has_flag();
     var env3 = process.env;
     var forceColor = void 0;
@@ -29582,7 +29582,7 @@ var require_supports_colors = __commonJS({
       }
       var min = forceColor ? 1 : 0;
       if (process.platform === "win32") {
-        var osRelease = os26.release().split(".");
+        var osRelease = os27.release().split(".");
         if (Number(process.versions.node.split(".")[0]) >= 8 && Number(osRelease[0]) >= 10 && Number(osRelease[2]) >= 10586) {
           return Number(osRelease[2]) >= 14931 ? 3 : 2;
         }
@@ -30921,17 +30921,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path79) {
-      const ctrl = callVisitor(key, node, visitor, path79);
+    function visit_(key, node, visitor, path80) {
+      const ctrl = callVisitor(key, node, visitor, path80);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path79, ctrl);
-        return visit_(key, ctrl, visitor, path79);
+        replaceNode(key, path80, ctrl);
+        return visit_(key, ctrl, visitor, path80);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path79 = Object.freeze(path79.concat(node));
+          path80 = Object.freeze(path80.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path79);
+            const ci = visit_(i, node.items[i], visitor, path80);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -30942,13 +30942,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path79 = Object.freeze(path79.concat(node));
-          const ck = visit_("key", node.key, visitor, path79);
+          path80 = Object.freeze(path80.concat(node));
+          const ck = visit_("key", node.key, visitor, path80);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path79);
+          const cv = visit_("value", node.value, visitor, path80);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -30969,17 +30969,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path79) {
-      const ctrl = await callVisitor(key, node, visitor, path79);
+    async function visitAsync_(key, node, visitor, path80) {
+      const ctrl = await callVisitor(key, node, visitor, path80);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path79, ctrl);
-        return visitAsync_(key, ctrl, visitor, path79);
+        replaceNode(key, path80, ctrl);
+        return visitAsync_(key, ctrl, visitor, path80);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path79 = Object.freeze(path79.concat(node));
+          path80 = Object.freeze(path80.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path79);
+            const ci = await visitAsync_(i, node.items[i], visitor, path80);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -30990,13 +30990,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path79 = Object.freeze(path79.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path79);
+          path80 = Object.freeze(path80.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path80);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path79);
+          const cv = await visitAsync_("value", node.value, visitor, path80);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -31023,23 +31023,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path79) {
+    function callVisitor(key, node, visitor, path80) {
       if (typeof visitor === "function")
-        return visitor(key, node, path79);
+        return visitor(key, node, path80);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path79);
+        return visitor.Map?.(key, node, path80);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path79);
+        return visitor.Seq?.(key, node, path80);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path79);
+        return visitor.Pair?.(key, node, path80);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path79);
+        return visitor.Scalar?.(key, node, path80);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path79);
+        return visitor.Alias?.(key, node, path80);
       return void 0;
     }
-    function replaceNode(key, path79, node) {
-      const parent = path79[path79.length - 1];
+    function replaceNode(key, path80, node) {
+      const parent = path80[path80.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -31649,10 +31649,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path79, value) {
+    function collectionFromPath(schema, path80, value) {
       let v = value;
-      for (let i = path79.length - 1; i >= 0; --i) {
-        const k = path79[i];
+      for (let i = path80.length - 1; i >= 0; --i) {
+        const k = path80[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -31671,7 +31671,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path79) => path79 == null || typeof path79 === "object" && !!path79[Symbol.iterator]().next().done;
+    var isEmptyPath = (path80) => path80 == null || typeof path80 === "object" && !!path80[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -31701,11 +31701,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path79, value) {
-        if (isEmptyPath(path79))
+      addIn(path80, value) {
+        if (isEmptyPath(path80))
           this.add(value);
         else {
-          const [key, ...rest] = path79;
+          const [key, ...rest] = path80;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -31719,8 +31719,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path79) {
-        const [key, ...rest] = path79;
+      deleteIn(path80) {
+        const [key, ...rest] = path80;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -31734,8 +31734,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path79, keepScalar) {
-        const [key, ...rest] = path79;
+      getIn(path80, keepScalar) {
+        const [key, ...rest] = path80;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -31753,8 +31753,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path79) {
-        const [key, ...rest] = path79;
+      hasIn(path80) {
+        const [key, ...rest] = path80;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -31764,8 +31764,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path79, value) {
-        const [key, ...rest] = path79;
+      setIn(path80, value) {
+        const [key, ...rest] = path80;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -34016,7 +34016,7 @@ var require_tags = __commonJS({
     var schema$2 = require_schema3();
     var set2 = require_set();
     var timestamp = require_timestamp();
-    var schemas = /* @__PURE__ */ new Map([
+    var schemas2 = /* @__PURE__ */ new Map([
       ["core", schema.schema],
       ["failsafe", [map2.map, seq.seq, string4.string]],
       ["json", schema$1.schema],
@@ -34052,7 +34052,7 @@ var require_tags = __commonJS({
       "tag:yaml.org,2002:timestamp": timestamp.timestamp
     };
     function getTags(customTags, schemaName, addMergeTag) {
-      const schemaTags = schemas.get(schemaName);
+      const schemaTags = schemas2.get(schemaName);
       if (schemaTags && !customTags) {
         return addMergeTag && !schemaTags.includes(merge2.merge) ? schemaTags.concat(merge2.merge) : schemaTags.slice();
       }
@@ -34061,7 +34061,7 @@ var require_tags = __commonJS({
         if (Array.isArray(customTags))
           tags = [];
         else {
-          const keys = Array.from(schemas.keys()).filter((key) => key !== "yaml11").map((key) => JSON.stringify(key)).join(", ");
+          const keys = Array.from(schemas2.keys()).filter((key) => key !== "yaml11").map((key) => JSON.stringify(key)).join(", ");
           throw new Error(`Unknown schema "${schemaName}"; use one of ${keys} or define customTags array`);
         }
       }
@@ -34280,9 +34280,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path79, value) {
+      addIn(path80, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path79, value);
+          this.contents.addIn(path80, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -34357,14 +34357,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path79) {
-        if (Collection.isEmptyPath(path79)) {
+      deleteIn(path80) {
+        if (Collection.isEmptyPath(path80)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path79) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path80) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -34379,10 +34379,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path79, keepScalar) {
-        if (Collection.isEmptyPath(path79))
+      getIn(path80, keepScalar) {
+        if (Collection.isEmptyPath(path80))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path79, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path80, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -34393,10 +34393,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path79) {
-        if (Collection.isEmptyPath(path79))
+      hasIn(path80) {
+        if (Collection.isEmptyPath(path80))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path79) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path80) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -34413,13 +34413,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path79, value) {
-        if (Collection.isEmptyPath(path79)) {
+      setIn(path80, value) {
+        if (Collection.isEmptyPath(path80)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path79), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path80), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path79, value);
+          this.contents.setIn(path80, value);
         }
       }
       /**
@@ -36379,9 +36379,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path79) => {
+    visit.itemAtPath = (cst, path80) => {
       let item = cst;
-      for (const [field, index] of path79) {
+      for (const [field, index] of path80) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -36390,23 +36390,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path79) => {
-      const parent = visit.itemAtPath(cst, path79.slice(0, -1));
-      const field = path79[path79.length - 1][0];
+    visit.parentCollection = (cst, path80) => {
+      const parent = visit.itemAtPath(cst, path80.slice(0, -1));
+      const field = path80[path80.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path79, item, visitor) {
-      let ctrl = visitor(item, path79);
+    function _visit(path80, item, visitor) {
+      let ctrl = visitor(item, path80);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path79.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path80.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -36417,10 +36417,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path79);
+            ctrl = ctrl(item, path80);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path79) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path80) : ctrl;
     }
     exports2.visit = visit;
   }
@@ -39387,8 +39387,8 @@ var init_handoff = __esm({
 });
 
 // src/index.ts
-var import_node_fs21 = require("fs");
-var import_node_path63 = require("path");
+var import_node_fs22 = require("fs");
+var import_node_path64 = require("path");
 
 // ../node_modules/commander/esm.mjs
 var import_index = __toESM(require_commander(), 1);
@@ -41417,10 +41417,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path79) {
-  if (!path79)
+function getElementAtPath(obj, path80) {
+  if (!path80)
     return obj;
-  return path79.reduce((acc, key) => acc?.[key], obj);
+  return path80.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -41829,11 +41829,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path79, issues) {
+function prefixIssues(path80, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path79);
+    iss.path.unshift(path80);
     return iss;
   });
 }
@@ -41980,16 +41980,16 @@ function flattenError(error51, mapper = (issue2) => issue2.message) {
 }
 function formatError(error51, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error52, path79 = []) => {
+  const processError = (error52, path80 = []) => {
     for (const issue2 of error52.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path79, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path80, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path79, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path80, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path79, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path80, ...issue2.path]);
       } else {
-        const fullpath = [...path79, ...issue2.path];
+        const fullpath = [...path80, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -42016,17 +42016,17 @@ function formatError(error51, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error51, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error52, path79 = []) => {
+  const processError = (error52, path80 = []) => {
     var _a3, _b;
     for (const issue2 of error52.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path79, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path80, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path79, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path80, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path79, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path80, ...issue2.path]);
       } else {
-        const fullpath = [...path79, ...issue2.path];
+        const fullpath = [...path80, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -42058,8 +42058,8 @@ function treeifyError(error51, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path79 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path79) {
+  const path80 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path80) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -52937,7 +52937,7 @@ function toJSONSchema(input, params) {
       const [_, schema] = entry;
       process2(schema, ctx2);
     }
-    const schemas = {};
+    const schemas2 = {};
     const external = {
       registry: registry2,
       uri: params?.uri,
@@ -52947,15 +52947,15 @@ function toJSONSchema(input, params) {
     for (const entry of registry2._idmap.entries()) {
       const [key, schema] = entry;
       extractDefs(ctx2, schema);
-      schemas[key] = finalize(ctx2, schema);
+      schemas2[key] = finalize(ctx2, schema);
     }
     if (Object.keys(defs).length > 0) {
       const defsSegment = ctx2.target === "draft-2020-12" ? "$defs" : "definitions";
-      schemas.__shared = {
+      schemas2.__shared = {
         [defsSegment]: defs
       };
     }
-    return { schemas };
+    return { schemas: schemas2 };
   }
   const ctx = initializeContext({ ...params, processors: allProcessors });
   process2(input, ctx);
@@ -54751,13 +54751,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path79 = ref.slice(1).split("/").filter(Boolean);
-  if (path79.length === 0) {
+  const path80 = ref.slice(1).split("/").filter(Boolean);
+  if (path80.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path79[0] === defsKey) {
-    const key = path79[1];
+  if (path80[0] === defsKey) {
+    const key = path80[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -63713,12 +63713,12 @@ var disallowedKeys = /* @__PURE__ */ new Set([
   "constructor"
 ]);
 var digits = new Set("0123456789");
-function getPathSegments(path79) {
+function getPathSegments(path80) {
   const parts = [];
   let currentSegment = "";
   let currentPart = "start";
   let isIgnoring = false;
-  for (const character of path79) {
+  for (const character of path80) {
     switch (character) {
       case "\\": {
         if (currentPart === "index") {
@@ -63840,11 +63840,11 @@ function assertNotStringIndex(object2, key) {
     throw new Error("Cannot use string index");
   }
 }
-function getProperty(object2, path79, value) {
-  if (!isObject2(object2) || typeof path79 !== "string") {
+function getProperty(object2, path80, value) {
+  if (!isObject2(object2) || typeof path80 !== "string") {
     return value === void 0 ? object2 : value;
   }
-  const pathArray = getPathSegments(path79);
+  const pathArray = getPathSegments(path80);
   if (pathArray.length === 0) {
     return value;
   }
@@ -63864,12 +63864,12 @@ function getProperty(object2, path79, value) {
   }
   return object2 === void 0 ? value : object2;
 }
-function setProperty(object2, path79, value) {
-  if (!isObject2(object2) || typeof path79 !== "string") {
+function setProperty(object2, path80, value) {
+  if (!isObject2(object2) || typeof path80 !== "string") {
     return object2;
   }
   const root = object2;
-  const pathArray = getPathSegments(path79);
+  const pathArray = getPathSegments(path80);
   for (let index = 0; index < pathArray.length; index++) {
     const key = pathArray[index];
     assertNotStringIndex(object2, key);
@@ -63882,11 +63882,11 @@ function setProperty(object2, path79, value) {
   }
   return root;
 }
-function deleteProperty(object2, path79) {
-  if (!isObject2(object2) || typeof path79 !== "string") {
+function deleteProperty(object2, path80) {
+  if (!isObject2(object2) || typeof path80 !== "string") {
     return false;
   }
-  const pathArray = getPathSegments(path79);
+  const pathArray = getPathSegments(path80);
   for (let index = 0; index < pathArray.length; index++) {
     const key = pathArray[index];
     assertNotStringIndex(object2, key);
@@ -63900,11 +63900,11 @@ function deleteProperty(object2, path79) {
     }
   }
 }
-function hasProperty(object2, path79) {
-  if (!isObject2(object2) || typeof path79 !== "string") {
+function hasProperty(object2, path80) {
+  if (!isObject2(object2) || typeof path80 !== "string") {
     return false;
   }
-  const pathArray = getPathSegments(path79);
+  const pathArray = getPathSegments(path80);
   if (pathArray.length === 0) {
     return false;
   }
@@ -64576,16 +64576,16 @@ var Conf = class {
       if (typeof options.schema !== "object") {
         throw new TypeError("The `schema` option must be an object.");
       }
-      const ajv = new Ajv({
+      const ajv2 = new Ajv({
         allErrors: true,
         useDefaults: true
       });
-      ajvFormats(ajv);
+      ajvFormats(ajv2);
       const schema = {
         type: "object",
         properties: options.schema
       };
-      this.#validator = ajv.compile(schema);
+      this.#validator = ajv2.compile(schema);
       for (const [key, value] of Object.entries(options.schema)) {
         if (value?.default) {
           this.#defaultValues[key] = value.default;
@@ -65067,8 +65067,8 @@ function detectAdapter(systemRoot) {
 // src/core/diff.ts
 var IGNORED_ITEMS = /* @__PURE__ */ new Set(["__pycache__", ".DS_Store", "Thumbs.db", ".gitkeep", "node_modules"]);
 var PruneModeReadError = class extends Error {
-  constructor(path79) {
-    super(`Cannot read ${path79} in prune mode \u2014 aborting to prevent accidental deletion`);
+  constructor(path80) {
+    super(`Cannot read ${path80} in prune mode \u2014 aborting to prevent accidental deletion`);
     this.name = "PruneModeReadError";
   }
 };
@@ -67173,16 +67173,16 @@ function livePidsFor(worktreePath, cwds) {
   }
   return [...new Set(pids)].sort((a, b) => a - b);
 }
-function duBytes(path79) {
-  const r = (0, import_node_child_process13.spawnSync)("du", ["-sb", "--", path79], { encoding: "utf8", stdio: "pipe" });
+function duBytes(path80) {
+  const r = (0, import_node_child_process13.spawnSync)("du", ["-sb", "--", path80], { encoding: "utf8", stdio: "pipe" });
   if (r.status !== 0 && !r.stdout) return 0;
   const first = (r.stdout ?? "").split("\n")[0] ?? "";
   const bytes = Number(first.split("	")[0]);
   return Number.isFinite(bytes) ? bytes : 0;
 }
-function findRootOwned(path79, uid) {
+function findRootOwned(path80, uid) {
   const prune = ["-name", ".git", "-o", "-name", ".xtrm", "-o", "-name", ".worktrees"];
-  const scope = [path79, "(", ...prune, ")", "-prune", "-o", "!", "-user", String(uid)];
+  const scope = [path80, "(", ...prune, ")", "-prune", "-o", "!", "-user", String(uid)];
   const probe2 = (0, import_node_child_process13.spawnSync)("find", [...scope, "-print", "-quit"], {
     encoding: "utf8",
     stdio: "pipe"
@@ -67276,11 +67276,11 @@ function git(args, cwd) {
 function statusLinePath(line) {
   const body = line.slice(3).trim();
   const arrow = body.indexOf(" -> ");
-  const path79 = arrow === -1 ? body : body.slice(arrow + 4);
-  return path79.replace(/^"|"$/g, "");
+  const path80 = arrow === -1 ? body : body.slice(arrow + 4);
+  return path80.replace(/^"|"$/g, "");
 }
-function isExcludedPath(path79) {
-  return path79.split("/").some((segment) => EXCLUDED.has(segment));
+function isExcludedPath(path80) {
+  return path80.split("/").some((segment) => EXCLUDED.has(segment));
 }
 function dirtyPaths(worktreePath) {
   const status2 = (0, import_node_child_process13.spawnSync)("git", ["status", "--short"], {
@@ -67289,7 +67289,7 @@ function dirtyPaths(worktreePath) {
     stdio: "pipe"
   });
   if (status2.status !== 0) return [];
-  return (status2.stdout ?? "").split("\n").filter((line) => line.trim().length > 0).map(statusLinePath).filter(Boolean).filter((path79) => !isExcludedPath(path79));
+  return (status2.stdout ?? "").split("\n").filter((line) => line.trim().length > 0).map(statusLinePath).filter(Boolean).filter((path80) => !isExcludedPath(path80));
 }
 function unpushedCommits(worktreePath) {
   const upstream = git(["rev-list", "--count", "@{upstream}..HEAD"], worktreePath);
@@ -67311,14 +67311,14 @@ function unpushedCommits(worktreePath) {
 }
 function evaluateWorktree(opts) {
   const now = opts.now ?? Date.now();
-  const path79 = (0, import_node_path34.resolve)(opts.worktreePath);
-  const scan = scanWorktree(path79);
-  const livePids = livePidsFor(path79, opts.cwds);
-  const isCurrent = isInside4((0, import_node_path34.resolve)(opts.currentPath), path79) || opts.isMainWorktree;
+  const path80 = (0, import_node_path34.resolve)(opts.worktreePath);
+  const scan = scanWorktree(path80);
+  const livePids = livePidsFor(path80, opts.cwds);
+  const isCurrent = isInside4((0, import_node_path34.resolve)(opts.currentPath), path80) || opts.isMainWorktree;
   const idleMs = scan.newestWorkMtimeMs === null ? null : now - scan.newestWorkMtimeMs;
   const idleDays = idleMs === null ? null : idleMs / 864e5;
-  const dirty = dirtyPaths(path79);
-  const unpushed = unpushedCommits(path79);
+  const dirty = dirtyPaths(path80);
+  const unpushed = unpushedCommits(path80);
   const idlePastWorktreeThreshold = idleDays === null || idleDays >= opts.worktreeThresholdDays;
   const idlePastArtifactThreshold = idleDays === null || idleDays >= opts.artifactThresholdDays;
   const conditions = [
@@ -67358,7 +67358,7 @@ function evaluateWorktree(opts) {
   return {
     component: "xt.worktree_reap.candidate",
     repo: opts.repoRoot,
-    path: path79,
+    path: path80,
     branch: opts.branch,
     isMainWorktree: opts.isMainWorktree,
     conditions,
@@ -67634,16 +67634,16 @@ function findBeadsSymlinkIntroductions(cwd, upstream) {
       const match = line.match(/^:[0-9]{6} ([0-9]{6}) [0-9a-f]{7,40} [0-9a-f]{7,40} ([A-Z]+(?:[0-9]+)?)\t(.+)$/);
       if (!match) return [];
       const destinationMode = match[1];
-      const path79 = match[3];
+      const path80 = match[3];
       if (destinationMode !== "120000") return [];
-      return guardedPrefixes.some((p) => path79.startsWith(p)) ? [path79] : [];
+      return guardedPrefixes.some((p) => path80.startsWith(p)) ? [path80] : [];
     })
   )];
 }
 function printBeadsSymlinkGuardError(paths, upstream) {
   console.error(kleur_default.red("\n  \u2717 Refusing to push: guarded-path symlink mode change detected\n"));
-  for (const path79 of paths) {
-    console.error(kleur_default.red(`    ${path79}`));
+  for (const path80 of paths) {
+    console.error(kleur_default.red(`    ${path80}`));
   }
   const affectedPrefixes = [...new Set(paths.map((p) => p.split("/")[0] + "/"))];
   const restoreTargets = affectedPrefixes.join(" ");
@@ -68721,8 +68721,8 @@ function printReapHuman(plan, outcomes) {
     }
     if (candidate.rootOwnedPaths.length > 0) {
       console.log(kleur_default.red(`    \u26A0 root-owned: ${formatBytes(candidate.blockedBytes)} blocked \u2014 escalate`));
-      for (const path79 of candidate.rootOwnedPaths.slice(0, 3)) {
-        console.log(kleur_default.dim(`      ${path79}`));
+      for (const path80 of candidate.rootOwnedPaths.slice(0, 3)) {
+        console.log(kleur_default.dim(`      ${path80}`));
       }
     }
   }
@@ -76131,7 +76131,7 @@ function viewCollisions(p) {
   const rows = collidingWorktrees(p);
   if (rows.length === 0) return ["No worktree is shared by more than one live pane.", ...degradationNotice(p, ["git", "tmux"])];
   const out = [kleur_default.yellow(`${rows.length} shared worktree(s) \u2014 concurrent git state races are possible:`)];
-  for (const [path79, panes] of rows) out.push(`  ${path79}
+  for (const [path80, panes] of rows) out.push(`  ${path80}
     panes: ${panes.join(" ")}`);
   out.push("", dim("Mitigation: give each session its own worktree via `xt claude` / `xt pi`."));
   return [...out, ...degradationNotice(p, ["git", "tmux"])];
@@ -76249,6 +76249,2547 @@ terminal content, so it can never reach the durable event journal.`).action(asyn
       return;
     }
     console.log(renderView(view, projection));
+  });
+  return cmd;
+}
+
+// src/commands/host.ts
+init_kleur();
+
+// src/core/agent-host.ts
+var import_node_fs21 = require("fs");
+var import_node_http = __toESM(require("http"), 1);
+var import_node_net = __toESM(require("net"), 1);
+var import_node_os27 = __toESM(require("os"), 1);
+var import_node_path63 = __toESM(require("path"), 1);
+
+// ../packages/contracts/dist/index.js
+var import_ajv2 = __toESM(require_ajv(), 1);
+var xtrm_agent_command_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.agent-command.v1",
+  title: "XTRM agent command frame (agent host -> extension)",
+  description: "One NDJSON frame sent by the XTRM agent host to a live in-session extension over the Unix socket (PRD xtrm-app \xA735.3, \xA735.8 item 1). Commands map onto the Pi 1.0.0 extension API: prompt -> pi.sendUserMessage(content), steer / follow_up -> pi.sendUserMessage(content, {deliverAs}), abort -> ctx.abort(), extension_ui_response -> the pending ctx.ui prompt the extension proxied as an xtrm.agent-event.v1 extension_ui_request. extension_ui_response follows Pi RpcExtensionUIResponse (id = request id). The extension answers each command with an xtrm.agent-event.v1 command_result carrying the same commandId. A backward-incompatible change requires xtrm.agent-command.v2.",
+  type: "object",
+  additionalProperties: false,
+  required: ["schema", "seq", "sessionId", "at", "payload"],
+  properties: {
+    schema: { const: "xtrm.agent-command.v1" },
+    seq: { type: "integer", minimum: 0 },
+    sessionId: { type: "string", minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    at: { type: "integer", minimum: 0 },
+    payload: { $ref: "#/definitions/command" }
+  },
+  definitions: {
+    commandId: { type: "string", minLength: 1, maxLength: 128, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    imageContent: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "data", "mimeType"],
+      properties: {
+        type: { const: "image" },
+        data: { type: "string", description: "base64" },
+        mimeType: { type: "string", pattern: "^image/[a-z0-9.+-]+$" }
+      }
+    },
+    command: {
+      oneOf: [
+        { $ref: "#/definitions/prompt" },
+        { $ref: "#/definitions/steer" },
+        { $ref: "#/definitions/follow_up" },
+        { $ref: "#/definitions/abort" },
+        { $ref: "#/definitions/extension_ui_response" }
+      ]
+    },
+    prompt: {
+      description: "Normal submit. The host rejects it with `busy` while the session is working (\xA735.8 item 5); it never queues implicitly.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "commandId", "message"],
+      properties: {
+        type: { const: "prompt" },
+        commandId: { $ref: "#/definitions/commandId" },
+        message: { type: "string", minLength: 1 },
+        images: { type: "array", items: { $ref: "#/definitions/imageContent" } }
+      }
+    },
+    steer: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "commandId", "message"],
+      properties: {
+        type: { const: "steer" },
+        commandId: { $ref: "#/definitions/commandId" },
+        message: { type: "string", minLength: 1 },
+        images: { type: "array", items: { $ref: "#/definitions/imageContent" } }
+      }
+    },
+    follow_up: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "commandId", "message"],
+      properties: {
+        type: { const: "follow_up" },
+        commandId: { $ref: "#/definitions/commandId" },
+        message: { type: "string", minLength: 1 },
+        images: { type: "array", items: { $ref: "#/definitions/imageContent" } }
+      }
+    },
+    abort: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "commandId"],
+      properties: {
+        type: { const: "abort" },
+        commandId: { $ref: "#/definitions/commandId" }
+      }
+    },
+    extension_ui_response: {
+      description: "Exactly one of value / confirmed / cancelled, as in Pi RpcExtensionUIResponse.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "commandId", "id"],
+      properties: {
+        type: { const: "extension_ui_response" },
+        commandId: { $ref: "#/definitions/commandId" },
+        id: { type: "string", minLength: 1, maxLength: 1024 },
+        value: { type: "string" },
+        confirmed: { type: "boolean" },
+        cancelled: { const: true }
+      },
+      oneOf: [
+        { required: ["value"], not: { anyOf: [{ required: ["confirmed"] }, { required: ["cancelled"] }] } },
+        { required: ["confirmed"], not: { anyOf: [{ required: ["value"] }, { required: ["cancelled"] }] } },
+        { required: ["cancelled"], not: { anyOf: [{ required: ["value"] }, { required: ["confirmed"] }] } }
+      ]
+    }
+  }
+};
+var xtrm_agent_event_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.agent-event.v1",
+  title: "XTRM agent event frame (extension -> agent host)",
+  description: "One NDJSON frame pushed by an in-session agent integration (the XTRM Pi extension, or Claude hooks) to the XTRM agent host over the Unix socket $XDG_RUNTIME_DIR/xtrm/agent-host.sock (PRD xtrm-app \xA735.3, \xA735.8 item 1). The payload `type` values are the native Pi 1.0.0 extension lifecycle events (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts) plus `session_identity`, `extension_ui_request` and `command_result`, which the extension adds. Pi-native objects (message, args, result) pass through unchanged and stay opaque here: the \xA722 adapter owns their interpretation. Retry state (auto_retry_*) is not available to Pi extensions and is not carried; `agent_settled` is the authoritative Frame-close signal. A backward-incompatible change requires xtrm.agent-event.v2.",
+  type: "object",
+  additionalProperties: false,
+  required: ["schema", "seq", "sessionId", "at", "payload"],
+  properties: {
+    schema: { const: "xtrm.agent-event.v1" },
+    seq: {
+      description: "Per-connection monotonically increasing frame number, starting at 0.",
+      type: "integer",
+      minimum: 0
+    },
+    sessionId: { $ref: "#/definitions/sessionId" },
+    at: { $ref: "#/definitions/epochMs" },
+    payload: { $ref: "#/definitions/event" }
+  },
+  definitions: {
+    sessionId: { type: "string", minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    epochMs: { description: "UTC epoch milliseconds.", type: "integer", minimum: 0 },
+    boundedString: { type: "string", minLength: 1, maxLength: 1024, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    path: { type: "string", minLength: 1, maxLength: 4096, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    opaque: { description: "Pi-native value passed through unchanged (any JSON)." },
+    agentMessage: {
+      description: "Pi AgentMessage (user | assistant | toolResult | custom roles). Passed through unchanged.",
+      type: "object",
+      required: ["role"],
+      properties: { role: { type: "string", minLength: 1 } }
+    },
+    imageContent: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "data", "mimeType"],
+      properties: {
+        type: { const: "image" },
+        data: { type: "string", description: "base64" },
+        mimeType: { type: "string", pattern: "^image/[a-z0-9.+-]+$" }
+      }
+    },
+    workItem: {
+      type: "object",
+      additionalProperties: false,
+      required: ["ref"],
+      properties: {
+        ref: { $ref: "#/definitions/boundedString" },
+        project: { $ref: "#/definitions/boundedString" },
+        system: { enum: ["substrate", "beads"] }
+      }
+    },
+    tmux: {
+      type: "object",
+      additionalProperties: false,
+      required: ["session", "paneId"],
+      properties: {
+        session: { $ref: "#/definitions/boundedString" },
+        paneId: { type: "string", pattern: "^%[0-9]+$", maxLength: 32 }
+      }
+    },
+    capability: { enum: ["presence", "stream", "prompt", "steer", "follow_up", "abort", "extension_ui"] },
+    toolSource: {
+      description: 'Raw tool registration source, resolved by the producer from pi.getAllTools() by toolName (ToolInfo.sourceInfo / ToolInfo.namespace). Built-in tools have path "builtin:<name>" and source "builtin". Input for the \xA736.7 origin classifier; the class is never inferred from the tool name.',
+      type: "object",
+      additionalProperties: false,
+      required: ["sourceInfo"],
+      properties: {
+        sourceInfo: {
+          type: "object",
+          additionalProperties: false,
+          required: ["path", "source", "scope", "origin"],
+          properties: {
+            path: { $ref: "#/definitions/path" },
+            source: { $ref: "#/definitions/boundedString" },
+            scope: { enum: ["user", "project", "temporary"] },
+            origin: { enum: ["package", "top-level"] },
+            baseDir: { $ref: "#/definitions/path" }
+          }
+        },
+        namespace: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name"],
+          properties: {
+            name: { $ref: "#/definitions/boundedString" },
+            description: { type: "string", maxLength: 4096 }
+          }
+        }
+      }
+    },
+    toolOrigin: {
+      description: "PRD \xA736.7 tool origin. Optional until the classification rule lands (XTRM-559 / XTRM-571).",
+      type: "object",
+      additionalProperties: false,
+      required: ["class"],
+      properties: {
+        class: { enum: ["native", "mcp", "extension", "coordination"] },
+        server: { $ref: "#/definitions/boundedString" },
+        transport: { $ref: "#/definitions/boundedString" },
+        extension: { $ref: "#/definitions/boundedString" },
+        version: { $ref: "#/definitions/boundedString" }
+      }
+    },
+    toolCallId: { type: "string", minLength: 1, maxLength: 512 },
+    compactionReason: { enum: ["manual", "threshold", "overflow"] },
+    event: {
+      oneOf: [
+        { $ref: "#/definitions/session_identity" },
+        { $ref: "#/definitions/session_start" },
+        { $ref: "#/definitions/before_agent_start" },
+        { $ref: "#/definitions/agent_start" },
+        { $ref: "#/definitions/turn_start" },
+        { $ref: "#/definitions/turn_end" },
+        { $ref: "#/definitions/message_start" },
+        { $ref: "#/definitions/message_update" },
+        { $ref: "#/definitions/message_end" },
+        { $ref: "#/definitions/tool_execution_start" },
+        { $ref: "#/definitions/tool_execution_update" },
+        { $ref: "#/definitions/tool_execution_end" },
+        { $ref: "#/definitions/agent_end" },
+        { $ref: "#/definitions/agent_settled" },
+        { $ref: "#/definitions/session_compact" },
+        { $ref: "#/definitions/session_compact_failed" },
+        { $ref: "#/definitions/extension_ui_request" },
+        { $ref: "#/definitions/command_result" },
+        { $ref: "#/definitions/session_shutdown" }
+      ]
+    },
+    session_identity: {
+      description: "Sent first on every connection and again when identity changes (\xA711, \xA735.3). Not a Pi event.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "runtime", "cwd", "capabilities"],
+      properties: {
+        type: { const: "session_identity" },
+        runtime: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "version"],
+          properties: {
+            name: { enum: ["pi", "claude", "codex"] },
+            version: { type: ["string", "null"], maxLength: 128 }
+          }
+        },
+        producer: {
+          description: "The integration that emits the frames (extension package or hook bundle).",
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "version"],
+          properties: {
+            name: { $ref: "#/definitions/boundedString" },
+            version: { $ref: "#/definitions/boundedString" }
+          }
+        },
+        sessionFile: { $ref: "#/definitions/path" },
+        sessionName: { $ref: "#/definitions/boundedString" },
+        cwd: { $ref: "#/definitions/path" },
+        worktree: { $ref: "#/definitions/path" },
+        branch: { $ref: "#/definitions/boundedString" },
+        role: { $ref: "#/definitions/boundedString" },
+        workItem: { $ref: "#/definitions/workItem" },
+        parentSessionId: { $ref: "#/definitions/sessionId" },
+        tmux: { $ref: "#/definitions/tmux" },
+        launch: { enum: ["gui", "terminal"] },
+        capabilities: {
+          type: "array",
+          uniqueItems: true,
+          items: { $ref: "#/definitions/capability" }
+        }
+      }
+    },
+    session_start: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "reason"],
+      properties: {
+        type: { const: "session_start" },
+        reason: { enum: ["startup", "reload", "new", "resume", "fork"] },
+        previousSessionFile: { $ref: "#/definitions/path" }
+      }
+    },
+    before_agent_start: {
+      description: 'A Frame request. Pi\'s systemPrompt/systemPromptOptions are deliberately not carried. `ingress.origin` is "gui" for host-routed submits and "terminal" otherwise (\xA735.8 item 5).',
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "prompt", "ingress"],
+      properties: {
+        type: { const: "before_agent_start" },
+        prompt: { type: "string" },
+        images: { type: "array", items: { $ref: "#/definitions/imageContent" } },
+        ingress: {
+          type: "object",
+          additionalProperties: false,
+          required: ["origin"],
+          properties: {
+            origin: { enum: ["gui", "terminal"] },
+            commandId: { $ref: "#/definitions/boundedString" }
+          }
+        }
+      }
+    },
+    agent_start: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type"],
+      properties: { type: { const: "agent_start" } }
+    },
+    turn_start: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "turnIndex", "timestamp"],
+      properties: {
+        type: { const: "turn_start" },
+        turnIndex: { type: "integer", minimum: 0 },
+        timestamp: { $ref: "#/definitions/epochMs" }
+      }
+    },
+    turn_end: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "turnIndex", "message", "toolResults"],
+      properties: {
+        type: { const: "turn_end" },
+        turnIndex: { type: "integer", minimum: 0 },
+        message: { $ref: "#/definitions/agentMessage" },
+        toolResults: { type: "array", items: { $ref: "#/definitions/agentMessage" } },
+        messageEntryId: { type: "string", maxLength: 256 },
+        toolResultEntryIds: { type: "array", items: { type: "string", maxLength: 256 } }
+      }
+    },
+    message_start: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "message"],
+      properties: {
+        type: { const: "message_start" },
+        message: { $ref: "#/definitions/agentMessage" }
+      }
+    },
+    message_update: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "message", "assistantMessageEvent"],
+      properties: {
+        type: { const: "message_update" },
+        message: { $ref: "#/definitions/agentMessage" },
+        assistantMessageEvent: { type: "object", required: ["type"] }
+      }
+    },
+    message_end: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "message"],
+      properties: {
+        type: { const: "message_end" },
+        message: { $ref: "#/definitions/agentMessage" }
+      }
+    },
+    tool_execution_start: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "toolCallId", "toolName", "args"],
+      properties: {
+        type: { const: "tool_execution_start" },
+        toolCallId: { $ref: "#/definitions/toolCallId" },
+        toolName: { $ref: "#/definitions/boundedString" },
+        args: { $ref: "#/definitions/opaque" },
+        parentToolCallId: { $ref: "#/definitions/toolCallId" },
+        tool: { $ref: "#/definitions/toolSource" },
+        origin: { $ref: "#/definitions/toolOrigin" }
+      }
+    },
+    tool_execution_update: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "toolCallId", "toolName", "args", "partialResult"],
+      properties: {
+        type: { const: "tool_execution_update" },
+        toolCallId: { $ref: "#/definitions/toolCallId" },
+        toolName: { $ref: "#/definitions/boundedString" },
+        args: { $ref: "#/definitions/opaque" },
+        partialResult: { $ref: "#/definitions/opaque" },
+        parentToolCallId: { $ref: "#/definitions/toolCallId" },
+        tool: { $ref: "#/definitions/toolSource" },
+        origin: { $ref: "#/definitions/toolOrigin" }
+      }
+    },
+    tool_execution_end: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "toolCallId", "toolName", "result", "isError"],
+      properties: {
+        type: { const: "tool_execution_end" },
+        toolCallId: { $ref: "#/definitions/toolCallId" },
+        toolName: { $ref: "#/definitions/boundedString" },
+        result: { $ref: "#/definitions/opaque" },
+        isError: { type: "boolean" },
+        parentToolCallId: { $ref: "#/definitions/toolCallId" },
+        tool: { $ref: "#/definitions/toolSource" },
+        origin: { $ref: "#/definitions/toolOrigin" }
+      }
+    },
+    agent_end: {
+      description: "`willRetry` is absent from the Pi extension API event; only RPC and in-process producers (AgentSessionEvent) can fill it.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "messages"],
+      properties: {
+        type: { const: "agent_end" },
+        messages: { type: "array", items: { $ref: "#/definitions/agentMessage" } },
+        willRetry: { type: "boolean" }
+      }
+    },
+    agent_settled: {
+      description: "The run has fully settled: no automatic retry, compaction, or queued continuation will run. Authoritative Frame-close signal.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type"],
+      properties: { type: { const: "agent_settled" } }
+    },
+    session_compact: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "reason", "willRetry", "fromExtension"],
+      properties: {
+        type: { const: "session_compact" },
+        reason: { $ref: "#/definitions/compactionReason" },
+        willRetry: { type: "boolean" },
+        fromExtension: { type: "boolean" },
+        compactionEntryId: { type: "string", maxLength: 256 }
+      }
+    },
+    session_compact_failed: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "reason", "willRetry", "aborted", "fromExtension"],
+      properties: {
+        type: { const: "session_compact_failed" },
+        reason: { $ref: "#/definitions/compactionReason" },
+        willRetry: { type: "boolean" },
+        aborted: { type: "boolean" },
+        fromExtension: { type: "boolean" },
+        errorMessage: { type: "string", maxLength: 4096 }
+      }
+    },
+    extension_ui_request: {
+      description: "A blocking extension UI prompt proxied by the extension from ctx.ui (\xA720, \xA736.7). Shape follows Pi RpcExtensionUIRequest; answered by an xtrm.agent-command.v1 extension_ui_response with the same id.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "id", "method", "title"],
+      properties: {
+        type: { const: "extension_ui_request" },
+        id: { $ref: "#/definitions/boundedString" },
+        method: { enum: ["select", "confirm", "input", "editor"] },
+        title: { type: "string", maxLength: 1024 },
+        message: { type: "string", maxLength: 16384 },
+        options: { type: "array", items: { type: "string", maxLength: 1024 } },
+        placeholder: { type: "string", maxLength: 1024 },
+        prefill: { type: "string" },
+        timeout: { type: "integer", minimum: 0 }
+      },
+      allOf: [
+        { if: { properties: { method: { const: "select" } } }, then: { required: ["options"] } },
+        { if: { properties: { method: { const: "confirm" } } }, then: { required: ["message"] } }
+      ]
+    },
+    command_result: {
+      description: "The extension's answer to one xtrm.agent-command.v1 frame, correlated by commandId.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "commandId", "status"],
+      properties: {
+        type: { const: "command_result" },
+        commandId: { $ref: "#/definitions/boundedString" },
+        status: { enum: ["accepted", "rejected", "failed"] },
+        reason: { type: "string", maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" },
+        message: { type: "string", maxLength: 1024 }
+      }
+    },
+    session_shutdown: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "reason"],
+      properties: {
+        type: { const: "session_shutdown" },
+        reason: { enum: ["quit", "reload", "new", "resume", "fork"] },
+        targetSessionFile: { $ref: "#/definitions/path" }
+      }
+    }
+  }
+};
+var xtrm_agent_host_api_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.agent-host-api.v1",
+  title: "XTRM agent host client API message",
+  description: "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app \xA735.5, \xA735.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
+  type: "object",
+  required: ["schema", "kind"],
+  properties: {
+    schema: { const: "xtrm.agent-host-api.v1" },
+    kind: {
+      enum: [
+        "session_list",
+        "session_detail",
+        "event",
+        "submit_request",
+        "submit_result",
+        "launch_request",
+        "launch_result",
+        "reference_resolve_request",
+        "reference_resolve_result",
+        "error"
+      ]
+    }
+  },
+  oneOf: [
+    { $ref: "#/definitions/session_list" },
+    { $ref: "#/definitions/session_detail" },
+    { $ref: "#/definitions/event" },
+    { $ref: "#/definitions/submit_request" },
+    { $ref: "#/definitions/submit_result" },
+    { $ref: "#/definitions/launch_request" },
+    { $ref: "#/definitions/launch_result" },
+    { $ref: "#/definitions/reference_resolve_request" },
+    { $ref: "#/definitions/reference_resolve_result" },
+    { $ref: "#/definitions/error" }
+  ],
+  definitions: {
+    schema: { const: "xtrm.agent-host-api.v1" },
+    sessionId: { type: "string", minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    boundedString: { type: "string", minLength: 1, maxLength: 1024, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    path: { type: "string", minLength: 1, maxLength: 4096, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    epochMs: { type: "integer", minimum: 0 },
+    reasonCode: { type: "string", minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" },
+    sessionSummary: {
+      description: "One session row (\xA736.3). Identity fields mirror xtrm.agent-event.v1 session_identity.",
+      type: "object",
+      additionalProperties: false,
+      required: ["sessionId", "provider", "state", "cwd", "extensionConnected", "capabilities"],
+      properties: {
+        sessionId: { $ref: "#/definitions/sessionId" },
+        provider: { enum: ["pi", "claude", "codex"] },
+        state: { enum: ["working", "waiting_for_input", "settled", "failed", "history_only"] },
+        name: { $ref: "#/definitions/boundedString" },
+        cwd: { $ref: "#/definitions/path" },
+        repository: { $ref: "#/definitions/path" },
+        worktree: { $ref: "#/definitions/path" },
+        branch: { $ref: "#/definitions/boundedString" },
+        role: { $ref: "#/definitions/boundedString" },
+        workItem: { $ref: "xtrm.agent-event.v1#/definitions/workItem" },
+        parentSessionId: { $ref: "#/definitions/sessionId" },
+        childCount: { type: "integer", minimum: 0 },
+        tmux: { $ref: "xtrm.agent-event.v1#/definitions/tmux" },
+        launch: { enum: ["gui", "terminal"] },
+        extensionConnected: { type: "boolean" },
+        capabilities: {
+          type: "array",
+          uniqueItems: true,
+          items: { $ref: "xtrm.agent-event.v1#/definitions/capability" }
+        },
+        model: { $ref: "#/definitions/boundedString" },
+        thinkingLevel: { $ref: "#/definitions/boundedString" },
+        contextUsage: {
+          type: "object",
+          additionalProperties: false,
+          required: ["tokens", "contextWindow"],
+          properties: {
+            tokens: { type: "integer", minimum: 0 },
+            contextWindow: { type: "integer", minimum: 1 }
+          }
+        },
+        frameCount: { type: "integer", minimum: 0 },
+        startedAt: { $ref: "#/definitions/epochMs" },
+        lastActivityAt: { $ref: "#/definitions/epochMs" },
+        sessionFile: { $ref: "#/definitions/path" }
+      }
+    },
+    contextReference: {
+      description: "A resolved typed reference (\xA736.6). Revision is recorded at resolve time; content above the per-kind budget (\xA736.12 item 2) is replaced by an excerpt plus pointer.",
+      type: "object",
+      additionalProperties: false,
+      required: ["kind", "raw", "status"],
+      properties: {
+        kind: {
+          enum: ["issue", "epic", "gh-issue", "pr", "commit", "file", "session", "agent", "frame", "artifact", "program", "chain"]
+        },
+        raw: { $ref: "#/definitions/boundedString" },
+        status: { enum: ["resolved", "unresolved"] },
+        title: { type: "string", maxLength: 1024 },
+        revision: { $ref: "#/definitions/boundedString" },
+        content: { type: "string" },
+        truncated: { type: "boolean" },
+        pointer: { $ref: "#/definitions/boundedString" },
+        bytes: { type: "integer", minimum: 0 },
+        budgetBytes: { type: "integer", minimum: 0 },
+        error: { $ref: "#/definitions/reasonCode" }
+      }
+    },
+    session_list: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "sessions"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "session_list" },
+        sessions: { type: "array", items: { $ref: "#/definitions/sessionSummary" } },
+        nextCursor: { $ref: "#/definitions/boundedString" }
+      }
+    },
+    session_detail: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "session"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "session_detail" },
+        session: { $ref: "#/definitions/sessionSummary" },
+        identity: { $ref: "xtrm.agent-event.v1#/definitions/session_identity" },
+        lastSeq: { type: "integer", minimum: 0 }
+      }
+    },
+    event: {
+      description: "One SSE data line. `cursor` lets a reconnecting client resume with Last-Event-ID.",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "cursor", "frame"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "event" },
+        cursor: { $ref: "#/definitions/boundedString" },
+        frame: { $ref: "xtrm.agent-event.v1" }
+      }
+    },
+    submit_request: {
+      description: "Route one command to a live session. `references` were resolved first; submit is refused while any is unresolved (\xA736.6 rule 5).",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "sessionId", "command"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "submit_request" },
+        sessionId: { $ref: "#/definitions/sessionId" },
+        command: { $ref: "xtrm.agent-command.v1#/definitions/command" },
+        references: { type: "array", items: { $ref: "#/definitions/contextReference" } }
+      }
+    },
+    submit_result: {
+      description: "`busy`: a normal prompt while the session is working, or another GUI client won the race (\xA735.8 item 5).",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "commandId", "status"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "submit_result" },
+        commandId: { $ref: "#/definitions/boundedString" },
+        status: { enum: ["accepted", "busy", "rejected", "not_found", "unsupported", "failed"] },
+        reason: { $ref: "#/definitions/reasonCode" },
+        message: { type: "string", maxLength: 1024 }
+      }
+    },
+    launch_request: {
+      description: "Start an agent in tmux through the existing launcher (\xA735.4).",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "cwd", "command"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "launch_request" },
+        cwd: { $ref: "#/definitions/path" },
+        command: { enum: ["pi", "xt pi"] },
+        options: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            name: { $ref: "#/definitions/boundedString" },
+            role: { $ref: "#/definitions/boundedString" },
+            bead: { $ref: "#/definitions/boundedString" },
+            model: { $ref: "#/definitions/boundedString" },
+            thinking: { $ref: "#/definitions/boundedString" },
+            skills: { type: "array", items: { $ref: "#/definitions/boundedString" } },
+            prompt: { type: "string" },
+            parent: { $ref: "#/definitions/boundedString" },
+            child: { type: "boolean" }
+          }
+        }
+      }
+    },
+    launch_result: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "outcome"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "launch_result" },
+        outcome: { $ref: "xtrm.command-outcome.v1" },
+        tmux: { $ref: "xtrm.agent-event.v1#/definitions/tmux" }
+      }
+    },
+    reference_resolve_request: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "references"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "reference_resolve_request" },
+        sessionId: { $ref: "#/definitions/sessionId" },
+        references: {
+          type: "array",
+          minItems: 1,
+          items: { $ref: "#/definitions/boundedString" }
+        }
+      }
+    },
+    reference_resolve_result: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "references", "totalBytes"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "reference_resolve_result" },
+        references: { type: "array", items: { $ref: "#/definitions/contextReference" } },
+        totalBytes: { type: "integer", minimum: 0 },
+        overBudget: { type: "boolean" }
+      }
+    },
+    error: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "code", "message"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "error" },
+        code: { $ref: "#/definitions/reasonCode" },
+        message: { type: "string", maxLength: 1024 }
+      }
+    }
+  }
+};
+var xtrm_agent_role_launched_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.agent-role-launched.v1",
+  title: "xtmux agent.role.launched event fields",
+  description: "The key=value field bag carried by `xtmux log emit agent.role.launched ...`, parsed into agent-instance open input. Source: xtmux src/cli-log.ts (case 'agent.role.launched') -> openInstance (src/domains/agents/instance.ts); persisted envelope type becomes 'agents.instance.open', idempotent on instance_id. Loose event: emitters pass free k=v pairs, so extra keys are tolerated. Canonical + alias keys are typed below; missing session/pane default to ''.",
+  type: "object",
+  additionalProperties: true,
+  properties: {
+    instance_id: { type: "string" },
+    instance: { type: "string" },
+    session: { type: "string" },
+    session_id: { type: "string" },
+    session_name: { type: "string" },
+    pane: { type: "string" },
+    pane_id: { type: "string" },
+    runtime: { type: "string" },
+    role: { type: "string" },
+    bead: { type: "string" },
+    bead_id: { type: "string" },
+    task: { type: "string" },
+    prompt_file: { type: "string" },
+    parent: { type: "string" },
+    parent_session: { type: "string" }
+  }
+};
+var xtrm_beads_lifecycle_event_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.beads.lifecycle-event.v1",
+  title: "xtrm Beads lifecycle event",
+  description: "Canonical projection of one row from Beads' Dolt events table. Beads owns lifecycle facts for every runtime and raw shell. Core hooks and xtmux telemetry are not source events. The UUIDv7 id is the idempotency key and UTC timestamp source; Beads 1.1.0 created_at may contain local wall time mislabeled with Z.",
+  type: "object",
+  required: [
+    "schema_version",
+    "source",
+    "id",
+    "issue_id",
+    "event_type",
+    "actor",
+    "old_value",
+    "new_value",
+    "comment",
+    "created_at",
+    "occurred_at_ms",
+    "timestamp_source"
+  ],
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: "xtrm.beads.lifecycle-event.v1" },
+    source: { const: "beads.events" },
+    id: {
+      type: "string",
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    issue_id: { type: "string", minLength: 1 },
+    event_type: {
+      type: "string",
+      enum: ["created", "claimed", "updated", "closed", "reopened", "status_changed"]
+    },
+    actor: { type: "string", minLength: 1 },
+    old_value: {},
+    new_value: {},
+    comment: { type: ["string", "null"] },
+    created_at: { type: "string", minLength: 1 },
+    occurred_at_ms: { type: "number", minimum: 0 },
+    timestamp_source: { const: "uuidv7" }
+  }
+};
+var xtrm_branch_integration_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.branch.integration.v1",
+  title: "xtrm branch integration event",
+  description: "Append-only RESULT record emitted by Specialists after a chain/specialist branch merges into a target (coordinator or main) branch. Source: specialists src/specialist/branch-integration-events.ts (createBranchIntegrationEvent). Persisted to Specialists' observability.db (table branch_integration_events); git remains the authority, this only observes. target.role is omitted (not null) when unset.",
+  type: "object",
+  required: ["schema_version", "timestamp", "t_unix_ms", "source", "target", "status", "commit"],
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: "xtrm.branch.integration.v1" },
+    timestamp: { type: "string", format: "date-time" },
+    t_unix_ms: { type: "integer", minimum: 0 },
+    source: {
+      type: "object",
+      required: ["job_id", "branch", "worktree"],
+      additionalProperties: false,
+      properties: {
+        job_id: { type: "string", minLength: 1 },
+        branch: { type: "string", minLength: 1 },
+        worktree: { type: "string", minLength: 1 }
+      }
+    },
+    target: {
+      type: "object",
+      required: ["branch", "worktree"],
+      additionalProperties: false,
+      properties: {
+        branch: { type: "string", minLength: 1 },
+        worktree: { type: "string", minLength: 1 },
+        role: { type: "string", minLength: 1 }
+      }
+    },
+    status: { type: "string", enum: ["merged"] },
+    commit: { type: "string", minLength: 7 }
+  }
+};
+var xtrm_command_deprecations_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.command-deprecations.v1",
+  title: "xtrm command deprecations",
+  description: "Source of truth for xt/xtrm command tokens marked deprecated or retired. Instance: docs/command-deprecations.json. Build-time gate: scripts/check-command-deprecations.mjs.",
+  type: "object",
+  required: ["schema_version", "entries"],
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: "xtrm.command-deprecations.v1" },
+    notes: {
+      type: "array",
+      items: { type: "string" }
+    },
+    entries: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["command", "deprecated_since", "remove_in", "replacement", "behavior", "code_ref"],
+        additionalProperties: false,
+        properties: {
+          command: { type: "string", minLength: 1 },
+          deprecated_since: { type: "string", minLength: 1 },
+          remove_in: { type: "string", minLength: 1 },
+          replacement: { type: "string", minLength: 1 },
+          behavior: {
+            type: "string",
+            enum: ["execute-with-warning", "fail-with-redirect"]
+          },
+          code_ref: { type: "string", minLength: 1 },
+          notes: { type: "string" }
+        }
+      }
+    }
+  }
+};
+var xtrm_command_outcome_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.command-outcome.v1",
+  title: "XTRM deterministic command outcome",
+  description: "Additive machine outcome for XTRM mutations. Command owners remain authoritative; this contract reports completed state and exact next-action argv without carrying prompts, credentials, transcripts, or terminal capture.",
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "schema_version",
+    "status",
+    "reason_code",
+    "summary",
+    "authoritative_mutation",
+    "side_effects",
+    "next_actions"
+  ],
+  properties: {
+    schema_version: { const: "xtrm.command-outcome.v1" },
+    status: { enum: ["ok", "degraded", "noop", "rejected", "failed"] },
+    reason_code: {
+      type: "string",
+      minLength: 1,
+      maxLength: 64,
+      pattern: "^[a-z][a-z0-9_]*$"
+    },
+    summary: {
+      type: "string",
+      minLength: 1,
+      maxLength: 240,
+      pattern: "^[^\\u0000-\\u001F\\u007F]*$"
+    },
+    runtime: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "version"],
+      properties: {
+        name: { enum: ["pi", "claude", "codex"] },
+        version: {
+          type: ["string", "null"],
+          minLength: 1,
+          maxLength: 128,
+          pattern: "^[^\\u0000-\\u001F\\u007F]*$"
+        }
+      }
+    },
+    identity: {
+      type: "object",
+      additionalProperties: false,
+      required: ["thread_id", "session_name", "tmux_session_id", "pane_id"],
+      properties: {
+        thread_id: { $ref: "#/definitions/nullableBoundedString" },
+        session_name: { $ref: "#/definitions/nullableBoundedString" },
+        tmux_session_id: {
+          anyOf: [
+            { type: "null" },
+            { type: "string", pattern: "^\\$[0-9]+$", maxLength: 32 }
+          ]
+        },
+        pane_id: {
+          anyOf: [
+            { type: "null" },
+            { type: "string", pattern: "^%[0-9]+$", maxLength: 32 }
+          ]
+        }
+      }
+    },
+    worktree: {
+      type: "object",
+      additionalProperties: false,
+      required: ["path", "branch", "owner"],
+      properties: {
+        path: { $ref: "#/definitions/pathString" },
+        branch: { $ref: "#/definitions/pathString" },
+        owner: { const: "core" }
+      }
+    },
+    readiness: {
+      type: "object",
+      additionalProperties: false,
+      required: ["status", "source"],
+      properties: {
+        status: { enum: ["ready", "unverified", "not_ready"] },
+        source: { enum: ["agent.ready", "tmux-pane", "none"] }
+      }
+    },
+    safety_profile: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "sandbox", "approvals", "hook_trust"],
+      properties: {
+        name: { $ref: "#/definitions/token" },
+        sandbox: { $ref: "#/definitions/token" },
+        approvals: { $ref: "#/definitions/token" },
+        hook_trust: { const: "preserved" }
+      }
+    },
+    persistence: {
+      type: "object",
+      additionalProperties: false,
+      required: ["completed", "kind"],
+      properties: {
+        completed: { type: "boolean" },
+        kind: { $ref: "#/definitions/dottedToken" }
+      }
+    },
+    authoritative_mutation: {
+      type: "object",
+      additionalProperties: false,
+      required: ["completed", "kind"],
+      properties: {
+        completed: { type: "boolean" },
+        kind: { $ref: "#/definitions/dottedToken" }
+      }
+    },
+    side_effects: {
+      type: "array",
+      maxItems: 32,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "status"],
+        properties: {
+          kind: { $ref: "#/definitions/dottedToken" },
+          status: { enum: ["ok", "degraded", "failed", "skipped"] },
+          id: { $ref: "#/definitions/nullableBoundedString" }
+        }
+      }
+    },
+    next_actions: {
+      type: "array",
+      maxItems: 16,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "required", "argv", "display", "why"],
+        properties: {
+          kind: { enum: ["attach", "resume", "repair", "end", "wait", "inspect"] },
+          required: { type: "boolean" },
+          argv: {
+            type: "array",
+            minItems: 1,
+            maxItems: 32,
+            items: { $ref: "#/definitions/argvString" }
+          },
+          display: {
+            type: "string",
+            minLength: 1,
+            maxLength: 8192,
+            pattern: "^[^\\u0000-\\u001F\\u007F]*$"
+          },
+          cwd: { $ref: "#/definitions/pathString" },
+          why: {
+            type: "string",
+            minLength: 1,
+            maxLength: 240,
+            pattern: "^[^\\u0000-\\u001F\\u007F]*$"
+          }
+        }
+      }
+    }
+  },
+  definitions: {
+    token: {
+      type: "string",
+      minLength: 1,
+      maxLength: 64,
+      pattern: "^[a-z][a-z0-9-]*$"
+    },
+    dottedToken: {
+      type: "string",
+      minLength: 1,
+      maxLength: 96,
+      pattern: "^[a-z][a-z0-9.-]*$"
+    },
+    nullableBoundedString: {
+      type: ["string", "null"],
+      minLength: 1,
+      maxLength: 256,
+      pattern: "^[^\\u0000-\\u001F\\u007F]*$"
+    },
+    pathString: {
+      type: "string",
+      minLength: 1,
+      maxLength: 4096,
+      pattern: "^[^\\u0000-\\u001F\\u007F]*$"
+    },
+    argvString: {
+      type: "string",
+      maxLength: 4096,
+      pattern: "^[^\\u0000-\\u001F\\u007F]*$"
+    }
+  }
+};
+var xtrm_interactive_role_envelope_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.interactive-role-envelope.v1",
+  title: "xtrm interactive role envelope",
+  description: "The slim Core->runtime handoff for an interactive role launch. Authoritative shape: cli/src/types/interactive-role-envelope.ts. Deliberately minimal: Core must NOT carry Specialist job-supervision metadata (retries, stall_timeout, permission_tier, ...). additionalProperties:false enforces the slim envelope; additive optional fields bump the schema, removal/rename bumps the major version.",
+  type: "object",
+  required: ["role", "systemPrompt", "skillPaths"],
+  additionalProperties: false,
+  properties: {
+    role: { type: "string", minLength: 1 },
+    systemPrompt: { type: "string" },
+    skillPaths: {
+      type: "array",
+      items: { type: "string" }
+    },
+    model: { type: "string" },
+    thinkingLevel: { type: "string" }
+  }
+};
+var xtrm_pi_extension_manifest_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.pi-extension-manifest.v1",
+  title: "xtrm pi extension manifest",
+  description: "Declares which xtrm-managed Pi extensions are active and which are disabled (with a reason). Instance: packages/pi-extensions/src/manifest.json. Loader: cli/src/core/pi-runtime.ts (loadPiExtensionManifest). Note: the loader validates id/displayName/required and ignores ownership; ownership is kept here as an optional field.",
+  type: "object",
+  required: ["schema_version", "active", "disabled"],
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: "xtrm.pi-extension-manifest.v1" },
+    active: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "displayName", "required"],
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", minLength: 1 },
+          displayName: { type: "string", minLength: 1 },
+          required: { type: "boolean" },
+          ownership: { type: "string" }
+        }
+      }
+    },
+    disabled: {
+      type: "object",
+      description: "extension-id -> non-empty reason string.",
+      additionalProperties: { type: "string", minLength: 1 }
+    }
+  }
+};
+var xtrm_runtime_compatibility_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.runtime-compatibility.v1",
+  title: "xtrm runtime compatibility",
+  description: "Core's declared compatibility window against Specialists / xtmux / node, plus the registry of known contract ids. Instance: docs/runtime-compatibility.json. Build-time gate: scripts/check-runtime-compatibility.mjs.",
+  type: "object",
+  required: ["schema_version", "core", "contracts"],
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: "xtrm.runtime-compatibility.v1" },
+    notes: {
+      type: "array",
+      items: { type: "string" }
+    },
+    core: {
+      type: "object",
+      required: ["package", "requires"],
+      additionalProperties: false,
+      properties: {
+        package: { type: "string", minLength: 1 },
+        requires: {
+          type: "object",
+          required: ["specialists", "xtmux", "node"],
+          additionalProperties: { type: "string", minLength: 1 },
+          properties: {
+            specialists: { type: "string", minLength: 1 },
+            xtmux: { type: "string", minLength: 1 },
+            node: { type: "string", minLength: 1 }
+          }
+        }
+      }
+    },
+    contracts: {
+      type: "object",
+      description: 'contract-name -> schema id. Ids follow xtrm.<kebab>.v<int> or the legacy literal "1".',
+      minProperties: 1,
+      additionalProperties: {
+        type: "string",
+        pattern: "^(xtrm\\.[a-z][\\w.-]*\\.v\\d+|1)$"
+      }
+    }
+  }
+};
+var xtrm_runtime_matrix_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.runtime-matrix.v1",
+  title: "xtrm runtime matrix",
+  description: "Per-repo runtime profile (node/bun) and cross-repo consumer workflows. Instance: docs/runtime-matrix.yml. Repo blocks are intentionally non-uniform (core uses minimum/bun_usage; xtmux/specialists use bun_minimum/node_minimum), so a repo block requires primary_runtime and allows the observed union of keys.",
+  type: "object",
+  required: ["schema_version", "core", "xtmux", "specialists", "consumers"],
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: "xtrm.runtime-matrix.v1" },
+    core: { $ref: "#/definitions/repoBlock" },
+    xtmux: { $ref: "#/definitions/repoBlock" },
+    specialists: { $ref: "#/definitions/repoBlock" },
+    consumers: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["workflow", "repo", "runtime"],
+        additionalProperties: false,
+        properties: {
+          workflow: { type: "string", minLength: 1 },
+          repo: { type: "string", minLength: 1 },
+          runtime: { type: "string", minLength: 1 }
+        }
+      }
+    }
+  },
+  definitions: {
+    repoBlock: {
+      type: "object",
+      required: ["primary_runtime"],
+      additionalProperties: false,
+      properties: {
+        primary_runtime: { type: "string", enum: ["node", "bun"] },
+        minimum: { type: "string" },
+        bun_minimum: { type: "string" },
+        node_minimum: { type: ["string", "null"] },
+        node_usage: { type: "array", items: { type: "string" } },
+        bun_usage: { type: "array", items: { type: "string" } },
+        notes: { type: "string" }
+      }
+    }
+  }
+};
+var xtrm_runtime_origin_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.runtime-origin.v1",
+  title: "xtrm runtime origin",
+  description: "Where a runtime physically launched: host + tmux session/window/pane + agent instance. Captured by `xtmux context --current --json`, validated by RuntimeOriginV1 (xtmux src/domains/identity/runtime-context.ts; specialists src/specialist/runtime-origin.ts) and propagated to child jobs via SPECIALISTS_RUNTIME_ORIGIN_V1. Strict allowlist: unknown keys are rejected. NOTE: worktree/branch/role/parent-job lineage is NOT here \u2014 it lives on SupervisorStatus (spawn_origin / root_runtime_origin).",
+  type: "object",
+  required: [
+    "schema_version",
+    "kind",
+    "host_id",
+    "tmux_session_id",
+    "tmux_window_id",
+    "tmux_pane_id",
+    "captured_at_ms",
+    "capture_source",
+    "verified"
+  ],
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: "xtrm.runtime-origin.v1" },
+    kind: { const: "xtmux.agent_instance" },
+    host_id: { type: "string", minLength: 1 },
+    tmux_server_id: { type: "string", minLength: 1 },
+    tmux_session_id: { type: "string", minLength: 1 },
+    tmux_window_id: { type: "string", minLength: 1 },
+    tmux_pane_id: { type: "string", minLength: 1 },
+    agent_instance_id: { type: "string", minLength: 1 },
+    bead_id: { type: "string", minLength: 1 },
+    parent_session_id: { type: "string", minLength: 1 },
+    captured_at_ms: { type: "number", minimum: 0 },
+    capture_source: { type: "string", enum: ["xtmux-context", "propagated"] },
+    verified: { type: "boolean" }
+  }
+};
+var xtrm_specialist_role_envelope_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.specialist-role-envelope.v1",
+  title: "specialist role envelope (legacy)",
+  description: 'The legacy Specialists-owned role envelope: a .specialist.json document. Registered in docs/runtime-compatibility.json as specialist_role_envelope with the legacy version literal "1". Source of truth: specialists src/specialist/schema.ts (Zod SpecialistSchema). Every object is Zod .passthrough(), so this contract is intentionally OPEN (additionalProperties:true) \u2014 only the minimal required fields are enforced.',
+  type: "object",
+  required: ["specialist"],
+  additionalProperties: true,
+  properties: {
+    specialist: {
+      type: "object",
+      required: ["metadata", "execution", "prompt"],
+      additionalProperties: true,
+      properties: {
+        metadata: {
+          type: "object",
+          required: ["name", "version", "description", "category"],
+          additionalProperties: true,
+          properties: {
+            name: { type: "string", pattern: "^[a-z][a-z0-9-]*$" },
+            version: { type: "string", pattern: "^\\d+\\.\\d+\\.\\d+$" },
+            description: { type: "string" },
+            category: { type: "string" },
+            updated: { type: "string" },
+            tags: { type: "array", items: { type: "string" } }
+          }
+        },
+        execution: {
+          type: "object",
+          required: ["model"],
+          additionalProperties: true,
+          properties: {
+            mode: { type: "string", enum: ["tool", "skill", "auto"] },
+            model: { type: ["string", "null"] },
+            response_format: { type: "string", enum: ["text", "json", "markdown"] },
+            output_type: { type: "string", enum: ["codegen", "analysis", "review", "synthesis", "orchestration", "workflow", "research", "custom"] },
+            permission_required: { type: "string", enum: ["READ_ONLY", "LOW", "MEDIUM", "HIGH"] },
+            thinking_level: { type: "string", enum: ["off", "minimal", "low", "medium", "high", "xhigh"] },
+            auto_commit: { type: "string", enum: ["never", "checkpoint_on_waiting", "checkpoint_on_terminal"] },
+            interactive: { type: "boolean" },
+            requires_worktree: { type: "boolean" },
+            bare: { type: "boolean" },
+            max_retries: { type: "integer", minimum: 0 },
+            timeout_ms: { type: "number" }
+          }
+        },
+        prompt: {
+          type: "object",
+          required: ["task_template"],
+          additionalProperties: true,
+          properties: {
+            task_template: { type: "string" },
+            system: { type: "string" },
+            system_prompt_mode: { type: "string", enum: ["append", "replace"] }
+          }
+        }
+      }
+    }
+  }
+};
+var xtrm_topology_projection_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.topology.projection.v1",
+  title: "xtrm aggregated topology projection",
+  description: "Read-only aggregated projection produced by Core (`xt topology --json`, audit ~/dev/11.md P2-05). Joins tmux pane -> interactive runtime -> role -> coordinator -> specialist jobs -> bead -> worktree -> branch -> integration target -> pull request, reading each fact live from its owning system's published CLI surface at invocation time. NOT a persisted graph: nothing here is cached, materialized, or written back, and no field is authoritative over its source. snake_case, matching the xtrm.xtmux.topology.v1 cross-repo convention. Deliberately incapable of carrying terminal content: no pane-capture, preview, output or free-text-status field exists at any level, so the audit's 'pane capture is diagnostic and must never be journalled or persisted' rule is enforced by the type system rather than by discipline.",
+  type: "object",
+  required: ["schema_version", "generated_at_ms", "host", "sources", "panes", "orphans"],
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: "xtrm.topology.projection.v1" },
+    generated_at_ms: { type: "number", minimum: 0 },
+    host: {
+      type: "object",
+      required: ["host_id"],
+      additionalProperties: false,
+      properties: {
+        host_id: { type: "string", minLength: 1 },
+        tmux_server_id: { type: ["string", "null"] }
+      }
+    },
+    sources: {
+      description: "Per-source outcome ledger. The projection's own observability surface, and the ONLY way a consumer can distinguish a degraded projection from an empty world: an absent `sp` and zero running jobs both yield an empty jobs array, and only this ledger separates them.",
+      type: "array",
+      minItems: 6,
+      maxItems: 6,
+      uniqueItems: true,
+      allOf: [
+        { contains: { type: "object", properties: { name: { const: "xtmux" } }, required: ["name"] } },
+        { contains: { type: "object", properties: { name: { const: "tmux" } }, required: ["name"] } },
+        { contains: { type: "object", properties: { name: { const: "specialists" } }, required: ["name"] } },
+        { contains: { type: "object", properties: { name: { const: "beads" } }, required: ["name"] } },
+        { contains: { type: "object", properties: { name: { const: "git" } }, required: ["name"] } },
+        { contains: { type: "object", properties: { name: { const: "github" } }, required: ["name"] } }
+      ],
+      items: {
+        type: "object",
+        required: ["name", "status", "reason", "duration_ms"],
+        additionalProperties: false,
+        properties: {
+          name: {
+            description: "Owning system queried. Each maps to one published read-only CLI surface.",
+            enum: ["xtmux", "tmux", "specialists", "beads", "git", "github"]
+          },
+          status: {
+            description: "ok = queried and parsed. unavailable = the binary is not installed or not applicable on this host (not a bug). error = installed but the query failed, timed out, or returned unparseable output (a bug signal).",
+            enum: ["ok", "unavailable", "error"]
+          },
+          reason: {
+            description: "Human-readable cause for unavailable/error, null when ok. Never contains command output, secrets, or tokens.",
+            type: ["string", "null"]
+          },
+          duration_ms: { type: "number", minimum: 0 }
+        }
+      }
+    },
+    panes: {
+      description: "The join spine. One entry per live tmux pane, carrying everything the other five systems know about it.",
+      type: "array",
+      items: { $ref: "#/definitions/pane" }
+    },
+    orphans: {
+      description: "Facts that belong to no live pane. Without this a specialist job whose coordinator pane died, or a worktree whose session was killed, silently vanishes from the projection \u2014 which is exactly the leak an operator needs to see.",
+      type: "object",
+      required: ["jobs", "worktrees"],
+      additionalProperties: false,
+      properties: {
+        jobs: { type: "array", items: { $ref: "#/definitions/job" } },
+        worktrees: { type: "array", items: { $ref: "#/definitions/worktree" } }
+      }
+    }
+  },
+  definitions: {
+    pane: {
+      type: "object",
+      required: [
+        "pane_id",
+        "session_id",
+        "session_name",
+        "current_command",
+        "current_path",
+        "agent",
+        "jobs",
+        "bead",
+        "worktree",
+        "pull_request"
+      ],
+      additionalProperties: false,
+      properties: {
+        pane_id: { type: "string", minLength: 1 },
+        session_id: { type: "string", minLength: 1 },
+        session_name: { type: "string" },
+        window_id: { type: ["string", "null"] },
+        current_command: { type: "string" },
+        current_path: { type: "string" },
+        agent: {
+          description: "Lineage published by Core's launcher as @agent_* pane options (PR #465). Null for a pane that is not an xtrm-launched agent \u2014 a plain shell, an editor, the operator's own terminal.",
+          oneOf: [
+            { type: "null" },
+            {
+              type: "object",
+              required: ["state", "role", "task", "bead_id", "worktree", "branch", "parent_session_id"],
+              additionalProperties: false,
+              properties: {
+                state: {
+                  description: "@agent_state. A lifecycle signal owned by the runtime's own hook \u2014 NOT a completion signal. Completion is read from bead.status, pull_request.merged_at or job.status only.",
+                  type: ["string", "null"]
+                },
+                role: {
+                  description: "@agent_role (P2-03). Plain role identity; `task` still carries the legacy `role:<name>` encoding and is preserved, not replaced.",
+                  type: ["string", "null"]
+                },
+                task: { type: ["string", "null"] },
+                bead_id: { type: ["string", "null"] },
+                worktree: { type: ["string", "null"] },
+                branch: {
+                  description: "@agent_branch. For a coordinator pane this doubles as the integration target its specialist chains derive from (audit P1-03).",
+                  type: ["string", "null"]
+                },
+                parent_session_id: { type: ["string", "null"] },
+                parent_pane_id: { type: ["string", "null"] },
+                instance_id: { type: ["string", "null"] }
+              }
+            }
+          ]
+        },
+        jobs: {
+          description: "Specialist jobs attributed to this pane, by bead/epic/worktree match. Chain roots and descendants alike; use is_chain_root and chain_root_job_id to rebuild the lineage tree.",
+          type: "array",
+          items: { $ref: "#/definitions/job" }
+        },
+        bead: { oneOf: [{ type: "null" }, { $ref: "#/definitions/bead" }] },
+        worktree: { oneOf: [{ type: "null" }, { $ref: "#/definitions/worktree" }] },
+        pull_request: { oneOf: [{ type: "null" }, { $ref: "#/definitions/pull_request" }] }
+      }
+    },
+    job: {
+      description: "One specialist job as published by `sp ps --json`. Mirrors Specialists' field names; Core does not reinterpret them.",
+      type: "object",
+      required: ["job_id", "specialist", "status", "bead_id", "branch", "worktree_path", "is_chain_root"],
+      additionalProperties: false,
+      properties: {
+        job_id: { type: "string", minLength: 1 },
+        specialist: { type: "string" },
+        status: {
+          description: "Specialists-owned job status verbatim. Enumerating it here would fossilize another repo's vocabulary, so it stays an open string.",
+          type: "string"
+        },
+        bead_id: { type: ["string", "null"] },
+        epic_id: { type: ["string", "null"] },
+        chain_id: { type: ["string", "null"] },
+        chain_root_job_id: { type: ["string", "null"] },
+        is_chain_root: { type: "boolean" },
+        branch: { type: ["string", "null"] },
+        worktree_path: { type: ["string", "null"] },
+        pull_request: { oneOf: [{ type: "null" }, { $ref: "#/definitions/pull_request" }] },
+        integration_target_branch: {
+          description: "The @agent_branch of the coordinator pane this job is attributed to \u2014 the branch its work is destined to integrate into. Null when the job has no live owning pane.",
+          type: ["string", "null"]
+        },
+        started_at_ms: { type: ["number", "null"] },
+        owning_pane_id: { type: ["string", "null"] }
+      }
+    },
+    bead: {
+      description: "Beads state as published by `bd`. status is one of the two authoritative completion signals in this projection (the other is pull_request.merged_at).",
+      type: "object",
+      required: ["id", "status"],
+      additionalProperties: false,
+      properties: {
+        id: { type: "string", minLength: 1 },
+        status: { type: "string" },
+        title: { type: ["string", "null"] },
+        issue_type: { type: ["string", "null"] },
+        priority: { type: ["number", "null"] },
+        parent_id: { type: ["string", "null"] }
+      }
+    },
+    worktree: {
+      description: "git worktree metadata from `git worktree list --porcelain`.",
+      type: "object",
+      required: ["path", "branch", "head_sha", "detached"],
+      additionalProperties: false,
+      properties: {
+        path: { type: "string", minLength: 1 },
+        branch: { type: ["string", "null"] },
+        head_sha: { type: ["string", "null"] },
+        detached: { type: "boolean" },
+        shared_by_pane_ids: {
+          description: "Every live pane whose cwd resolves into this worktree. Length > 1 is the worktree-collision warning the multiplexing doctrine calls out.",
+          type: "array",
+          items: { type: "string" }
+        }
+      }
+    },
+    pull_request: {
+      description: "GitHub PR evidence for a branch, from `gh pr list --json`. merged_at is an authoritative completion signal; nothing else in this projection may be read as one.",
+      type: "object",
+      required: ["number", "state", "head_branch"],
+      additionalProperties: false,
+      properties: {
+        number: { type: "number" },
+        state: { type: "string" },
+        url: { type: ["string", "null"] },
+        title: { type: ["string", "null"] },
+        head_branch: { type: "string", minLength: 1 },
+        base_branch: { type: ["string", "null"] },
+        is_draft: { type: ["boolean", "null"] },
+        merged_at: { type: ["string", "null"] },
+        checks_state: { type: ["string", "null"] }
+      }
+    }
+  }
+};
+var xtrm_xtmux_bridge_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.xtmux.bridge.v1",
+  title: "xtmux read-only bridge frame",
+  description: "One NDJSON frame of the read-only xtmux bridge protocol (BRIDGE_SCHEMA='xtrm.xtmux.bridge.v1'). Source: xtmux src/bridge/stdio.ts. A frame is exactly one of: a request (id + method [+ params]), a success reply (id + result), or an error reply (id + error). Invariant: every reply echoes the request id \u2014 exactly one reply per request id. snake_case on params/result/detail. Only READ_ONLY_METHODS are accepted; mutation methods return XTMUX_BRIDGE_READ_ONLY.",
+  oneOf: [
+    {
+      type: "object",
+      required: ["id", "method"],
+      additionalProperties: false,
+      properties: {
+        id: { type: ["string", "number"] },
+        method: {
+          type: "string",
+          enum: ["bridge.hello", "bridge.cancel", "topology.snapshot", "journal.query", "journal.follow", "pane.capture", "health.get"]
+        },
+        params: { type: "object" }
+      }
+    },
+    {
+      type: "object",
+      required: ["id", "result"],
+      additionalProperties: false,
+      properties: {
+        id: { type: ["string", "number", "null"] },
+        result: { type: "object" }
+      }
+    },
+    {
+      type: "object",
+      required: ["id", "error"],
+      additionalProperties: false,
+      properties: {
+        id: { type: ["string", "number", "null"] },
+        error: {
+          type: "object",
+          required: ["code", "message"],
+          additionalProperties: false,
+          properties: {
+            code: { type: "string", minLength: 1 },
+            message: { type: "string" },
+            detail: { type: "object" }
+          }
+        }
+      }
+    }
+  ]
+};
+var xtrm_xtmux_message_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.xtmux.message.v1",
+  title: "xtmux message record",
+  description: "A message record as emitted by the xtmux message CLI (message-send / message-list / message-status / message-reply, all --json). Source: xtmux src/cli-messages.ts + src/domains/messages/*. camelCase, no schema_version on the wire. One permissive record covering all message responses: messageKey/senderId/recipientId are the stable core; send-, list-, status- and reply-specific fields are optional. replyStatus is only present for reply-required messages.",
+  type: "object",
+  required: ["messageKey", "senderId", "recipientId"],
+  additionalProperties: false,
+  properties: {
+    messageKey: { type: "string", minLength: 1 },
+    messageId: { type: "number" },
+    duplicate: { type: "boolean" },
+    senderId: { type: "string", minLength: 1 },
+    senderPaneId: { type: ["string", "null"] },
+    senderKind: { type: "string" },
+    recipientId: { type: "string", minLength: 1 },
+    targetPaneId: { type: ["string", "null"] },
+    recipientKind: { type: "string" },
+    beadId: { type: ["string", "null"] },
+    summary: { type: "string" },
+    createdAtMs: { type: ["number", "null"] },
+    expectsReply: { type: "boolean" },
+    acked: { type: "boolean" },
+    ackedAtMs: { type: ["number", "null"] },
+    ackedBy: { type: ["string", "null"] },
+    replyStatus: { type: ["string", "null"], enum: ["pending", "fulfilled", "cancelled", null] },
+    fulfilledAtMs: { type: ["number", "null"] },
+    fulfilledByMessageKey: { type: ["string", "null"] },
+    replyToMessageKey: { type: "string" },
+    fulfilledMessageKey: { type: "string" },
+    fulfilled: { type: "boolean" },
+    correlatedReply: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["messageKey", "senderId", "recipientId", "summary", "createdAtMs"],
+      properties: {
+        messageKey: { type: "string", minLength: 1 },
+        senderId: { type: "string" },
+        senderPaneId: { type: ["string", "null"] },
+        recipientId: { type: "string" },
+        targetPaneId: { type: ["string", "null"] },
+        summary: { type: "string" },
+        createdAtMs: { type: "number" }
+      }
+    }
+  }
+};
+var xtrm_xtmux_monitor_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.xtmux.monitor.v1",
+  title: "xtmux monitor projection",
+  description: "One monitor row as emitted by `xtmux monitor-list --json` (a bare array of these). Source: xtmux src/cli-monitors.ts (monitorProjection). camelCase. No schema_version on the wire. waitId is present only when a live wait is joined.",
+  type: "object",
+  required: ["monitorId", "target", "sessionId", "paneId", "state", "startedAtMs", "updatedAtMs", "timeoutMs", "intervalMs", "wakeDelivered", "wakeConsumed", "orphan"],
+  additionalProperties: false,
+  properties: {
+    monitorId: { type: "string", minLength: 1 },
+    waitId: { type: "string", minLength: 1 },
+    target: { type: "string" },
+    requesterSessionId: { type: ["string", "null"] },
+    requesterPaneId: { type: ["string", "null"] },
+    sessionId: { type: "string" },
+    paneId: { type: "string" },
+    state: { type: "string" },
+    startedAtMs: { type: "number" },
+    updatedAtMs: { type: "number" },
+    timeoutMs: { type: "number" },
+    intervalMs: { type: "number" },
+    terminalStatus: { type: ["string", "null"] },
+    terminalAtMs: { type: ["number", "null"] },
+    wakeDelivered: { type: "boolean" },
+    wakeConsumed: { type: "boolean" },
+    orphan: { type: "boolean" }
+  }
+};
+var xtrm_xtmux_obligation_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.xtmux.obligation.v1",
+  title: "xtmux pending obligation",
+  description: "One reply-obligation row as emitted by `xtmux obligations list --json` (a bare array of these). Source: xtmux src/domains/messages/obligations.ts (PendingObligation). camelCase. No schema_version on the wire; replyStatus is always the literal 'pending'.",
+  type: "object",
+  required: ["messageKey", "messageId", "senderId", "senderPaneId", "recipientId", "targetPaneId", "summary", "createdAtMs", "acked", "ackedAtMs", "replyStatus"],
+  additionalProperties: false,
+  properties: {
+    messageKey: { type: "string", minLength: 1 },
+    messageId: { type: "number" },
+    senderId: { type: "string", minLength: 1 },
+    senderPaneId: { type: ["string", "null"] },
+    recipientId: { type: "string", minLength: 1 },
+    targetPaneId: { type: ["string", "null"] },
+    summary: { type: "string" },
+    createdAtMs: { type: "number" },
+    acked: { type: "boolean" },
+    ackedAtMs: { type: ["number", "null"] },
+    replyStatus: { const: "pending" }
+  }
+};
+var xtrm_xtmux_topology_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.xtmux.topology.v1",
+  title: "xtmux topology projection",
+  description: "Aggregated tmux topology projection produced by the xtmux bash picker ($XTMUX_PICKER topology --json) and relayed verbatim by the read-only bridge (topology.snapshot). snake_case, deliberate cross-repo contract. Canonical shape: xtmux docs/xtmux-gaps.md \xA75.3.",
+  type: "object",
+  required: [
+    "schema_version",
+    "generated_at_ms",
+    "host",
+    "sessions"
+  ],
+  additionalProperties: false,
+  properties: {
+    schema_version: {
+      const: "xtrm.xtmux.topology.v1"
+    },
+    generated_at_ms: {
+      type: "number",
+      minimum: 0
+    },
+    host: {
+      type: "object",
+      required: [
+        "host_id",
+        "tmux_server_id"
+      ],
+      additionalProperties: false,
+      properties: {
+        host_id: {
+          type: "string",
+          minLength: 1
+        },
+        tmux_server_id: {
+          type: "string",
+          minLength: 1
+        }
+      }
+    },
+    sessions: {
+      type: "array",
+      items: {
+        type: "object",
+        required: [
+          "session_id",
+          "name",
+          "created_at_ms",
+          "activity_at_ms",
+          "attached",
+          "active",
+          "windows"
+        ],
+        additionalProperties: false,
+        properties: {
+          session_id: {
+            type: "string",
+            minLength: 1
+          },
+          name: {
+            type: "string"
+          },
+          created_at_ms: {
+            type: "number",
+            minimum: 0
+          },
+          activity_at_ms: {
+            type: "number",
+            minimum: 0
+          },
+          attached: {
+            type: "boolean"
+          },
+          active: {
+            type: "boolean"
+          },
+          windows: {
+            type: "array",
+            items: {
+              type: "object",
+              required: [
+                "window_id",
+                "window_index",
+                "name",
+                "active",
+                "panes"
+              ],
+              additionalProperties: false,
+              properties: {
+                window_id: {
+                  type: "string",
+                  minLength: 1
+                },
+                window_index: {
+                  type: "number"
+                },
+                name: {
+                  type: "string"
+                },
+                active: {
+                  type: "boolean"
+                },
+                panes: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: [
+                      "pane_id",
+                      "pane_index",
+                      "active",
+                      "width",
+                      "height",
+                      "left",
+                      "top",
+                      "pid",
+                      "current_command",
+                      "current_path"
+                    ],
+                    additionalProperties: false,
+                    properties: {
+                      pane_id: {
+                        type: "string",
+                        minLength: 1
+                      },
+                      pane_index: {
+                        type: "number"
+                      },
+                      active: {
+                        type: "boolean"
+                      },
+                      width: {
+                        type: "number"
+                      },
+                      height: {
+                        type: "number"
+                      },
+                      left: {
+                        type: "number"
+                      },
+                      top: {
+                        type: "number"
+                      },
+                      pid: {
+                        type: "number"
+                      },
+                      current_command: {
+                        type: "string"
+                      },
+                      current_path: {
+                        type: "string"
+                      },
+                      agent: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                          instance_id: {
+                            type: "string"
+                          },
+                          state: {
+                            type: "string"
+                          },
+                          bead_id: {
+                            type: "string"
+                          },
+                          task: {
+                            type: "string"
+                          },
+                          prompt_file: {
+                            type: "string"
+                          },
+                          parent_session_id: {
+                            type: "string"
+                          },
+                          last_transition: {
+                            type: "string"
+                          },
+                          role: {
+                            type: "string",
+                            description: "@agent_role (P2-03). Plain role identity; task still carries legacy role:<name> encoding."
+                          },
+                          worktree: {
+                            type: "string",
+                            description: "@agent_worktree \u2014 absolute path to the launched agent's worktree (Core PR #465)."
+                          },
+                          branch: {
+                            type: "string",
+                            description: "@agent_branch \u2014 the branch checked out in @agent_worktree (Core PR #465)."
+                          },
+                          parent_pane_id: {
+                            type: "string",
+                            description: "@agent_parent_pane \u2014 the tmux pane_id of the orchestrator that dispatched this agent (Core PR #465)."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+var xtrm_xtmux_wait_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.xtmux.wait.v1",
+  title: "xtmux wait projection",
+  description: "The single object emitted by `xtmux wait-agent --json`. Source: xtmux src/cli-monitors.ts (waitProjection). camelCase. No schema_version on the wire. intervalMs is always null in the wait projection.",
+  type: "object",
+  required: ["waitId", "target", "requesterSessionId", "requesterPaneId", "targetSessionId", "targetPaneId", "state", "wakeDelivered", "wakeConsumed", "replayed", "startedAtMs"],
+  additionalProperties: false,
+  properties: {
+    waitId: { type: "string", minLength: 1 },
+    target: { type: "string" },
+    requesterSessionId: { type: "string" },
+    requesterPaneId: { type: "string" },
+    targetSessionId: { type: "string" },
+    targetPaneId: { type: "string" },
+    state: { type: "string" },
+    monitorId: { type: ["string", "null"] },
+    terminalStatus: { type: ["string", "null"] },
+    wakeDelivered: { type: "boolean" },
+    wakeConsumed: { type: "boolean" },
+    replayed: { type: "boolean" },
+    startedAtMs: { type: "number" },
+    completedAtMs: { type: ["number", "null"] },
+    timeoutMs: { type: ["number", "null"] },
+    intervalMs: { type: "null" }
+  }
+};
+var BUNDLED_SCHEMAS = [xtrm_agent_command_v1_default, xtrm_agent_event_v1_default, xtrm_agent_host_api_v1_default, xtrm_agent_role_launched_v1_default, xtrm_beads_lifecycle_event_v1_default, xtrm_branch_integration_v1_default, xtrm_command_deprecations_v1_default, xtrm_command_outcome_v1_default, xtrm_interactive_role_envelope_v1_default, xtrm_pi_extension_manifest_v1_default, xtrm_runtime_compatibility_v1_default, xtrm_runtime_matrix_v1_default, xtrm_runtime_origin_v1_default, xtrm_specialist_role_envelope_v1_default, xtrm_topology_projection_v1_default, xtrm_xtmux_bridge_v1_default, xtrm_xtmux_message_v1_default, xtrm_xtmux_monitor_v1_default, xtrm_xtmux_obligation_v1_default, xtrm_xtmux_topology_v1_default, xtrm_xtmux_wait_v1_default];
+var ajv = new import_ajv2.Ajv({ strict: false, validateFormats: false });
+var schemas = BUNDLED_SCHEMAS;
+for (const schema of schemas) ajv.addSchema(schema);
+var SCHEMA_IDS = schemas.map((s) => s.$id).sort();
+function getValidator(id) {
+  const validator = ajv.getSchema(id);
+  if (!validator) {
+    throw new Error(`Unknown contract schema id: ${id}. Known ids: ${SCHEMA_IDS.join(", ")}`);
+  }
+  return validator;
+}
+function validate3(id, data) {
+  const validator = getValidator(id);
+  const valid = validator(data);
+  return { valid, errors: valid ? [] : validator.errors ?? [] };
+}
+var VERSIONED_ID = /^(xtrm\.[a-z0-9.-]+)\.v([1-9][0-9]*)$/;
+function parseSchemaId(id) {
+  const match = VERSIONED_ID.exec(id);
+  return match ? { family: match[1], major: Number(match[2]) } : null;
+}
+function checkSchemaVersion(expected, message) {
+  const want = parseSchemaId(expected);
+  const received = message?.schema;
+  if (typeof received !== "string") return { ok: false, reason: "missing_schema", received, expected };
+  const got = parseSchemaId(received);
+  if (!got || got.family !== want.family) return { ok: false, reason: "unknown_family", received, expected };
+  if (got.major !== want.major) return { ok: false, reason: "unsupported_major", received, expected };
+  return { ok: true, family: got.family, major: got.major };
+}
+function encodeFrame(frame) {
+  return `${JSON.stringify(frame)}
+`;
+}
+function decodeFrame(expected, line) {
+  let value;
+  try {
+    value = JSON.parse(line);
+  } catch (error51) {
+    return { ok: false, reason: "invalid_json", detail: error51.message };
+  }
+  const version3 = checkSchemaVersion(expected, value);
+  if (!version3.ok) {
+    return { ok: false, reason: version3.reason, detail: `expected ${expected}, received ${String(version3.received)}` };
+  }
+  const { valid, errors } = validate3(expected, value);
+  if (!valid) {
+    const detail = errors.map((e) => `${e.instancePath || "/"} ${e.message}`).join("; ");
+    return { ok: false, reason: "invalid_payload", detail };
+  }
+  return { ok: true, value };
+}
+
+// src/core/agent-host-registry.ts
+var CAPABILITY_FOR = {
+  prompt: "prompt",
+  steer: "steer",
+  follow_up: "follow_up",
+  abort: "abort",
+  extension_ui_response: "extension_ui"
+};
+var MAX_DISCONNECTED_SESSIONS = 256;
+var AgentHostRegistry = class {
+  sessions = /* @__PURE__ */ new Map();
+  pending = /* @__PURE__ */ new Map();
+  listeners = /* @__PURE__ */ new Set();
+  commandTimeoutMs;
+  log;
+  constructor(options = {}) {
+    this.commandTimeoutMs = options.commandTimeoutMs ?? 1e4;
+    this.log = options.log ?? (() => {
+    });
+  }
+  /** Subscribe to every accepted event frame, in arrival order. Returns an unsubscribe function. */
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  /**
+   * Apply one decoded event frame from `connection` and fan it out.
+   * Returns false when the frame is dropped (no session_identity seen for its session).
+   */
+  ingest(connection, frame) {
+    const { payload, sessionId } = frame;
+    let session = this.sessions.get(sessionId);
+    if (payload.type === "session_identity") {
+      if (session) {
+        session.identity = payload;
+        session.connection = connection;
+      } else {
+        session = {
+          identity: payload,
+          connection,
+          frameOpen: false,
+          promptPending: null,
+          pendingUi: /* @__PURE__ */ new Set(),
+          frameCount: 0,
+          startedAt: frame.at,
+          lastActivityAt: frame.at,
+          lastSeq: frame.seq
+        };
+        this.sessions.set(sessionId, session);
+      }
+    } else if (!session) {
+      this.log(`dropped ${payload.type} for session ${sessionId}: no session_identity received`);
+      return false;
+    } else {
+      session.connection = connection;
+    }
+    session.lastActivityAt = Math.max(session.lastActivityAt, frame.at);
+    session.lastSeq = frame.seq;
+    switch (payload.type) {
+      case "before_agent_start":
+      case "agent_start":
+        if (!session.frameOpen) {
+          session.frameOpen = true;
+          session.frameCount += 1;
+        }
+        break;
+      case "agent_settled":
+        session.frameOpen = false;
+        session.promptPending = null;
+        session.pendingUi.clear();
+        break;
+      case "extension_ui_request":
+        session.pendingUi.add(payload.id);
+        break;
+      case "command_result":
+        this.settleCommand(sessionId, payload.commandId, payload.status, payload.reason, payload.message);
+        break;
+      default:
+        break;
+    }
+    for (const listener of this.listeners) listener(frame);
+    if (payload.type === "session_shutdown") this.removeSession(sessionId);
+    return true;
+  }
+  /**
+   * The producer connection closed. Sessions with a persistent producer (any capability
+   * beyond presence) are gone from the live registry; presence-only sessions report through
+   * one connection per hook, so they stay until session_shutdown.
+   */
+  disconnect(connection) {
+    for (const [commandId, entry] of this.pending) {
+      if (entry.connection === connection) {
+        this.finishPending(commandId, "failed", "extension_disconnected", "the session producer disconnected");
+      }
+    }
+    for (const [sessionId, session] of this.sessions) {
+      if (session.connection !== connection) continue;
+      session.connection = null;
+      const persistent = session.identity.capabilities.some((c) => c !== "presence");
+      if (persistent) this.removeSession(sessionId);
+    }
+    this.pruneDisconnected();
+  }
+  list() {
+    return [...this.sessions.keys()].map((id) => this.summarize(id));
+  }
+  detail(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    return {
+      schema: "xtrm.agent-host-api.v1",
+      kind: "session_detail",
+      session: this.summarize(sessionId),
+      identity: session.identity,
+      lastSeq: session.lastSeq
+    };
+  }
+  /**
+   * Route one client command. Policy decisions run synchronously, so submits to one
+   * session are serialized by the event loop: the first accepted prompt marks the session
+   * busy before any other request is examined (§35.8 item 5). The result resolves when the
+   * producer answers with command_result, or fails after the command timeout.
+   */
+  submit(request) {
+    const { sessionId, command } = request;
+    const reject = (status2, reason, message) => Promise.resolve(this.result(command.commandId, status2, reason, message));
+    const session = this.sessions.get(sessionId);
+    if (!session) return reject("not_found", "session_not_found", `no live session ${sessionId}`);
+    if (!session.identity.capabilities.includes(CAPABILITY_FOR[command.type])) {
+      return reject("unsupported", "capability_not_advertised", `session does not advertise ${CAPABILITY_FOR[command.type]}`);
+    }
+    const unresolved = request.references?.find((ref) => ref.status !== "resolved");
+    if (unresolved) return reject("rejected", "unresolved_reference", `reference ${unresolved.raw} is unresolved`);
+    if (this.pending.has(command.commandId)) {
+      return reject("rejected", "duplicate_command_id", `command ${command.commandId} is already in flight`);
+    }
+    const connection = session.connection;
+    if (!connection) return reject("failed", "extension_disconnected", "the session producer is not connected");
+    switch (command.type) {
+      case "prompt":
+        if (session.frameOpen || session.promptPending) {
+          return reject("busy", "session_working", "the session is working; use steer or follow_up");
+        }
+        session.promptPending = command.commandId;
+        break;
+      case "steer":
+      case "follow_up":
+        if (!session.frameOpen && !session.promptPending) {
+          return reject("rejected", "session_idle", `${command.type} needs a running Frame; submit a prompt`);
+        }
+        break;
+      case "extension_ui_response":
+        if (!session.pendingUi.has(command.id)) {
+          return reject("rejected", "unknown_ui_request", `no pending extension UI request ${command.id}`);
+        }
+        break;
+      case "abort":
+        break;
+    }
+    return new Promise((resolve6) => {
+      const timer = setTimeout(
+        () => this.finishPending(command.commandId, "failed", "command_timeout", "the session producer did not answer"),
+        this.commandTimeoutMs
+      );
+      timer.unref?.();
+      this.pending.set(command.commandId, { sessionId, connection, payload: command, timer, resolve: resolve6 });
+      try {
+        connection.sendCommand(sessionId, command);
+      } catch (error51) {
+        this.finishPending(command.commandId, "failed", "send_failed", error51.message);
+      }
+    });
+  }
+  /** Fail every in-flight command; used on host shutdown. */
+  close() {
+    for (const commandId of [...this.pending.keys()]) {
+      this.finishPending(commandId, "failed", "host_shutdown", "the agent host is shutting down");
+    }
+  }
+  settleCommand(sessionId, commandId, status2, reason, message) {
+    const entry = this.pending.get(commandId);
+    if (!entry || entry.sessionId !== sessionId) return;
+    this.finishPending(commandId, status2, reason, message);
+  }
+  finishPending(commandId, status2, reason, message) {
+    const entry = this.pending.get(commandId);
+    if (!entry) return;
+    this.pending.delete(commandId);
+    clearTimeout(entry.timer);
+    const session = this.sessions.get(entry.sessionId);
+    if (session) {
+      const { payload } = entry;
+      if (payload.type === "prompt" && status2 !== "accepted" && session.promptPending === commandId) {
+        session.promptPending = null;
+      }
+      if (payload.type === "abort" && status2 === "accepted" && !session.frameOpen) {
+        session.promptPending = null;
+      }
+      if (payload.type === "extension_ui_response" && status2 === "accepted") {
+        session.pendingUi.delete(payload.id);
+      }
+    }
+    entry.resolve(this.result(commandId, status2, reason, message));
+  }
+  result(commandId, status2, reason, message) {
+    return {
+      schema: "xtrm.agent-host-api.v1",
+      kind: "submit_result",
+      commandId,
+      status: status2,
+      ...reason ? { reason } : {},
+      ...message ? { message: message.slice(0, 1024) } : {}
+    };
+  }
+  removeSession(sessionId) {
+    for (const [commandId, entry] of this.pending) {
+      if (entry.sessionId === sessionId) {
+        this.finishPending(commandId, "failed", "session_ended", "the session ended");
+      }
+    }
+    this.sessions.delete(sessionId);
+  }
+  pruneDisconnected() {
+    const disconnected = [...this.sessions.entries()].filter(([, s]) => !s.connection);
+    if (disconnected.length <= MAX_DISCONNECTED_SESSIONS) return;
+    disconnected.sort(([, a], [, b]) => a.lastActivityAt - b.lastActivityAt);
+    for (const [sessionId] of disconnected.slice(0, disconnected.length - MAX_DISCONNECTED_SESSIONS)) {
+      this.sessions.delete(sessionId);
+    }
+  }
+  summarize(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    const id = session.identity;
+    let childCount = 0;
+    for (const other of this.sessions.values()) if (other.identity.parentSessionId === sessionId) childCount += 1;
+    return {
+      sessionId,
+      provider: id.runtime.name,
+      state: session.pendingUi.size > 0 ? "waiting_for_input" : session.frameOpen ? "working" : "settled",
+      ...id.sessionName ? { name: id.sessionName } : {},
+      cwd: id.cwd,
+      ...id.worktree ? { worktree: id.worktree } : {},
+      ...id.branch ? { branch: id.branch } : {},
+      ...id.role ? { role: id.role } : {},
+      ...id.workItem ? { workItem: id.workItem } : {},
+      ...id.parentSessionId ? { parentSessionId: id.parentSessionId } : {},
+      childCount,
+      ...id.tmux ? { tmux: id.tmux } : {},
+      ...id.launch ? { launch: id.launch } : {},
+      extensionConnected: session.connection !== null,
+      capabilities: id.capabilities,
+      frameCount: session.frameCount,
+      startedAt: session.startedAt,
+      lastActivityAt: session.lastActivityAt,
+      ...id.sessionFile ? { sessionFile: id.sessionFile } : {}
+    };
+  }
+};
+
+// src/core/agent-host.ts
+var AGENT_HOST_BIND_ADDRESS = "127.0.0.1";
+var AGENT_HOST_PROTOCOL_MAJOR = 1;
+var MAX_SOCKET_LINE_BYTES = 32 * 1024 * 1024;
+var MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
+var MAX_SSE_BACKLOG_BYTES = 8 * 1024 * 1024;
+var SSE_HEARTBEAT_MS = 15e3;
+var DEFAULT_REPLAY_LIMIT = 1024;
+var LOOPBACK_HOSTNAMES = /* @__PURE__ */ new Set(["127.0.0.1", "localhost", "[::1]"]);
+function defaultSocketPath(env3 = process.env) {
+  const runtimeDir = env3.XDG_RUNTIME_DIR;
+  if (runtimeDir) return import_node_path63.default.join(runtimeDir, "xtrm", "agent-host.sock");
+  return import_node_path63.default.join(import_node_os27.default.homedir(), ".xtrm", "run", "agent-host.sock");
+}
+function defaultInfoPath() {
+  return import_node_path63.default.join(import_node_os27.default.homedir(), ".xtrm", "run", "agent-host.json");
+}
+function readAgentHostInfo(infoPath = defaultInfoPath()) {
+  try {
+    return JSON.parse((0, import_node_fs21.readFileSync)(infoPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+async function startAgentHost(options = {}) {
+  const socketPath = options.socketPath ?? defaultSocketPath();
+  const infoPath = options.infoPath ?? defaultInfoPath();
+  const log = options.log ?? ((message) => process.stderr.write(`[xt host] ${message}
+`));
+  const replayLimit = options.replayLimit ?? DEFAULT_REPLAY_LIMIT;
+  const registry2 = new AgentHostRegistry({ commandTimeoutMs: options.commandTimeoutMs, log });
+  await claimSocketPath(socketPath);
+  let cursor = 0;
+  const replay = [];
+  const streams = /* @__PURE__ */ new Set();
+  registry2.subscribe((frame) => {
+    cursor += 1;
+    const message = { schema: "xtrm.agent-host-api.v1", kind: "event", cursor: String(cursor), frame };
+    replay.push(message);
+    if (replay.length > replayLimit) replay.shift();
+    for (const stream of streams) writeEvent(stream, message);
+  });
+  const producers = /* @__PURE__ */ new Set();
+  const socketServer = import_node_net.default.createServer((socket) => {
+    producers.add(socket);
+    let commandSeq = 0;
+    const connection = {
+      sendCommand(sessionId, payload) {
+        socket.write(
+          encodeFrame({ schema: "xtrm.agent-command.v1", seq: commandSeq++, sessionId, at: Date.now(), payload })
+        );
+      }
+    };
+    let buffer = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (line.trim()) handleLine(line);
+        newline = buffer.indexOf("\n");
+      }
+      if (buffer.length > MAX_SOCKET_LINE_BYTES) {
+        log("producer frame exceeds the line limit; closing the connection");
+        socket.destroy();
+      }
+    });
+    socket.on("error", (error51) => log(`producer socket error: ${error51.message}`));
+    socket.on("close", () => {
+      producers.delete(socket);
+      registry2.disconnect(connection);
+    });
+    function handleLine(line) {
+      const decoded = decodeFrame("xtrm.agent-event.v1", line);
+      if (decoded.ok) {
+        registry2.ingest(connection, decoded.value);
+        return;
+      }
+      log(`rejected producer frame (${decoded.reason}): ${decoded.detail}`);
+      if (decoded.reason !== "invalid_json" && decoded.reason !== "invalid_payload") socket.destroy();
+    }
+  });
+  await listen(socketServer, socketPath);
+  (0, import_node_fs21.chmodSync)(socketPath, 384);
+  const httpServer = import_node_http.default.createServer((req, res) => {
+    handleRequest(req, res).catch((error51) => {
+      log(`request failed: ${error51.message}`);
+      if (!res.headersSent) sendJson(res, 500, apiError("internal_error", "the agent host failed to handle the request"));
+      else res.destroy();
+    });
+  });
+  async function handleRequest(req, res) {
+    const hostname4 = (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
+    if (!LOOPBACK_HOSTNAMES.has(hostname4)) {
+      sendJson(res, 403, apiError("forbidden_host", "the agent host only answers loopback host names"));
+      return;
+    }
+    const url2 = new URL(req.url ?? "/", "http://127.0.0.1");
+    const parts = url2.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    const route = `${req.method} /${parts.join("/")}`;
+    if (route === "GET /v1/sessions") {
+      sendJson(res, 200, { schema: "xtrm.agent-host-api.v1", kind: "session_list", sessions: registry2.list() });
+      return;
+    }
+    if (req.method === "GET" && parts.length === 3 && parts[0] === "v1" && parts[1] === "sessions") {
+      const detail = registry2.detail(parts[2]);
+      if (detail) sendJson(res, 200, detail);
+      else sendJson(res, 404, apiError("session_not_found", `no live session ${parts[2]}`));
+      return;
+    }
+    if (route === "GET /v1/events") {
+      openStream(req, res, url2.searchParams.get("sessionId"));
+      return;
+    }
+    if (route === "POST /v1/submit") {
+      const body = await readJsonBody(req, res);
+      if (body === null) return;
+      const decoded = decodeFrame("xtrm.agent-host-api.v1", body);
+      if (!decoded.ok || decoded.value.kind !== "submit_request") {
+        const detail = decoded.ok ? `expected submit_request, received ${decoded.value.kind}` : decoded.detail;
+        sendJson(res, 400, apiError("invalid_request", detail));
+        return;
+      }
+      sendJson(res, 200, await registry2.submit(decoded.value));
+      return;
+    }
+    if (route === "POST /v1/launch" || route === "POST /v1/references/resolve") {
+      sendJson(res, 501, apiError("not_implemented", `${url2.pathname} is not served by this agent host yet`));
+      return;
+    }
+    sendJson(res, 404, apiError("not_found", `no route ${route}`));
+  }
+  function openStream(req, res, sessionId) {
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache",
+      connection: "keep-alive"
+    });
+    res.write(": xtrm agent host\n\n");
+    const stream = { res, sessionId };
+    const lastEventId = Number(req.headers["last-event-id"]);
+    if (Number.isInteger(lastEventId) && lastEventId >= 0) {
+      for (const message of replay) if (Number(message.cursor) > lastEventId) writeEvent(stream, message);
+    }
+    streams.add(stream);
+    const heartbeat = setInterval(() => res.write(": keepalive\n\n"), SSE_HEARTBEAT_MS);
+    heartbeat.unref();
+    const drop = () => {
+      clearInterval(heartbeat);
+      streams.delete(stream);
+    };
+    req.on("close", drop);
+    res.on("close", drop);
+  }
+  function writeEvent(stream, message) {
+    if (stream.sessionId && message.frame.sessionId !== stream.sessionId) return;
+    if (stream.res.writableLength > MAX_SSE_BACKLOG_BYTES) {
+      log("event client is too far behind; closing its stream");
+      stream.res.destroy();
+      return;
+    }
+    stream.res.write(`id: ${message.cursor}
+data: ${JSON.stringify(message)}
+
+`);
+  }
+  async function readJsonBody(req, res) {
+    if (!/^application\/json\b/i.test(req.headers["content-type"] ?? "")) {
+      sendJson(res, 415, apiError("unsupported_media_type", "POST bodies must be application/json"));
+      return null;
+    }
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > MAX_REQUEST_BODY_BYTES) {
+        sendJson(res, 413, apiError("body_too_large", "request body exceeds the limit"));
+        return null;
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  }
+  try {
+    await listen(httpServer, options.port ?? 0, AGENT_HOST_BIND_ADDRESS);
+  } catch (error51) {
+    await closeServer(socketServer);
+    safeUnlink(socketPath);
+    throw error51;
+  }
+  const address = httpServer.address();
+  const info = {
+    pid: process.pid,
+    address: address.address,
+    port: address.port,
+    socket: socketPath,
+    version: options.version ?? "0.0.0",
+    protocol: { major: AGENT_HOST_PROTOCOL_MAJOR },
+    startedAt: Date.now()
+  };
+  writeInfoFile(infoPath, info);
+  let closing = null;
+  return {
+    info,
+    registry: registry2,
+    close() {
+      closing ??= (async () => {
+        registry2.close();
+        for (const stream of streams) stream.res.end();
+        streams.clear();
+        for (const socket of producers) socket.destroy();
+        httpServer.closeAllConnections();
+        await Promise.all([closeServer(httpServer), closeServer(socketServer)]);
+        safeUnlink(socketPath);
+        if (readAgentHostInfo(infoPath)?.pid === process.pid) safeUnlink(infoPath);
+      })();
+      return closing;
+    }
+  };
+}
+async function claimSocketPath(socketPath) {
+  const dir = import_node_path63.default.dirname(socketPath);
+  (0, import_node_fs21.mkdirSync)(dir, { recursive: true, mode: 448 });
+  if (!(0, import_node_fs21.existsSync)(socketPath)) return;
+  const alive = await new Promise((resolve6) => {
+    const probe2 = import_node_net.default.connect(socketPath);
+    probe2.once("connect", () => {
+      probe2.destroy();
+      resolve6(true);
+    });
+    probe2.once("error", () => resolve6(false));
+  });
+  if (alive) throw new Error(`an agent host is already listening on ${socketPath}`);
+  (0, import_node_fs21.unlinkSync)(socketPath);
+}
+function writeInfoFile(infoPath, info) {
+  (0, import_node_fs21.mkdirSync)(import_node_path63.default.dirname(infoPath), { recursive: true, mode: 448 });
+  const tmp = `${infoPath}.${process.pid}.tmp`;
+  (0, import_node_fs21.writeFileSync)(tmp, `${JSON.stringify(info, null, 2)}
+`, { mode: 384 });
+  (0, import_node_fs21.renameSync)(tmp, infoPath);
+}
+function apiError(code, message) {
+  return { schema: "xtrm.agent-host-api.v1", kind: "error", code, message: message.slice(0, 1024) };
+}
+function sendJson(res, status2, body) {
+  const text = JSON.stringify(body);
+  res.writeHead(status2, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(text) });
+  res.end(text);
+}
+function listen(server, target, host) {
+  return new Promise((resolve6, reject) => {
+    server.once("error", reject);
+    const done = () => {
+      server.off("error", reject);
+      resolve6();
+    };
+    if (typeof target === "string") server.listen(target, done);
+    else server.listen(target, host, done);
+  });
+}
+function closeServer(server) {
+  return new Promise((resolve6) => server.close(() => resolve6()));
+}
+function safeUnlink(file2) {
+  try {
+    (0, import_node_fs21.unlinkSync)(file2);
+  } catch {
+  }
+}
+
+// src/commands/host.ts
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error51) {
+    return error51.code === "EPERM";
+  }
+}
+function createHostCommand(version3 = "0.0.0") {
+  const cmd = new Command("host").description(
+    "XTRM agent host: live session registry, loopback client API, event fan-out and command routing"
+  );
+  cmd.command("start").description("Run the agent host in the foreground (binds 127.0.0.1 only)").option("--port <port>", "Client API port on 127.0.0.1 (0 picks a free port)", "0").option("--socket <path>", "Producer socket path (default $XDG_RUNTIME_DIR/xtrm/agent-host.sock)").option("--json", "Print the host info as JSON once listening", false).action(async (options) => {
+    const port = Number(options.port);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      console.error(kleur_default.red(`Invalid --port: ${options.port}`));
+      process.exitCode = 1;
+      return;
+    }
+    let host;
+    try {
+      host = await startAgentHost({ port, socketPath: options.socket, version: version3 });
+    } catch (error51) {
+      console.error(kleur_default.red(`\u2717 ${error51.message}`));
+      process.exitCode = 1;
+      return;
+    }
+    const { info } = host;
+    if (options.json) console.log(JSON.stringify(info));
+    else console.log(`xt host listening on http://${info.address}:${info.port} \xB7 socket ${info.socket} \xB7 pid ${info.pid}`);
+    const stop = () => {
+      void host.close().then(() => process.exit(0));
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  cmd.command("status").description("Report whether an agent host is running for this user").option("--json", "Print machine-readable status", false).action((options) => {
+    const info = readAgentHostInfo();
+    const running = info !== null && pidAlive(info.pid);
+    if (options.json) {
+      console.log(JSON.stringify({ running, ...running ? { info } : {}, infoPath: defaultInfoPath() }));
+    } else if (running) {
+      console.log(`running \xB7 http://${info.address}:${info.port} \xB7 socket ${info.socket} \xB7 pid ${info.pid}`);
+    } else {
+      console.log("not running");
+    }
+    if (!running) process.exitCode = 1;
   });
   return cmd;
 }
@@ -76410,7 +78951,7 @@ async function printBanner(version3) {
 // src/index.ts
 var version2 = "0.0.0";
 try {
-  version2 = JSON.parse((0, import_node_fs21.readFileSync)((0, import_node_path63.resolve)(__dirname, "../package.json"), "utf8")).version;
+  version2 = JSON.parse((0, import_node_fs22.readFileSync)((0, import_node_path64.resolve)(__dirname, "../package.json"), "utf8")).version;
 } catch {
 }
 var program2 = new Command();
@@ -76436,6 +78977,7 @@ program2.addCommand(createCleanCommand());
 program2.addCommand(createEndCommand());
 program2.addCommand(createWorktreeCommand());
 program2.addCommand(createTopologyCommand());
+program2.addCommand(createHostCommand(version2));
 program2.addCommand(createAttachCommand());
 program2.addCommand(createDocsCommand());
 program2.addCommand(createMergeCommand());

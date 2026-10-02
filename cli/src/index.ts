@@ -33,6 +33,7 @@ import { createSpecCommand } from './commands/spec.js';
 import { createMigrateCommand } from './commands/migrate.js';
 import { createVersionCommand } from './commands/version.js';
 import { createTopologyCommand } from './commands/topology.js';
+import { createHostCommand } from './commands/host.js';
 import { printBanner } from './utils/banner.js';
 
 const program = new Command();
@@ -73,6 +74,7 @@ program.addCommand(createCleanCommand());
 program.addCommand(createEndCommand());
 program.addCommand(createWorktreeCommand());
 program.addCommand(createTopologyCommand());
+program.addCommand(createHostCommand(version));
 program.addCommand(createAttachCommand());
 program.addCommand(createDocsCommand());
 program.addCommand(createMergeCommand());
