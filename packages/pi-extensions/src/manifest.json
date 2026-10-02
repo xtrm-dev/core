@@ -61,6 +61,13 @@
       "displayName": "read-line-numbers",
       "required": true,
       "ownership": "xtrm"
+    },
+    {
+      "id": "xtrm-agent-host",
+      "displayName": "xtrm-agent-host",
+      "required": false,
+      "ownership": "xtrm",
+      "description": "Streams session lifecycle events to the local XTRM agent host and executes host commands; silent when no host runs"
     }
   ],
   "disabled": {
