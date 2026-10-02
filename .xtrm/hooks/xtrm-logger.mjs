@@ -55,6 +55,12 @@ function findDbPath(cwd) {
 
 function openDb(dbPath) {
   mkdirSync(dirname(dbPath), { recursive: true });
+  // CORE-2339: the per-event cost is one open + one INSERT. The schema DDL
+  // stays unconditional on purpose: CREATE ... IF NOT EXISTS is a no-op on a
+  // healthy schema, and gating it on file size would leave a repo whose events
+  // table is missing (e.g. a write killed after `PRAGMA journal_mode=WAL`
+  // already sized the file) permanently unloggable, because the failing INSERT
+  // is swallowed below.
   const db = new DatabaseSync(dbPath);
   db.exec(INIT_SQL);
   return db;

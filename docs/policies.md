@@ -58,14 +58,11 @@ Other event groups retain the standard wrapper shape without the `script` field.
 
 | Policy | Runtime | Description |
 |---|---|---|
-| `worktree-boundary.json` | claude | Blocks write/edit tools outside active `.xtrm/worktrees/<name>` |
+| `hook-dispatcher.json` | claude | One `dispatch.mjs` process per Claude Code event. Runs the worktree-boundary guard, the specialists-agent-guard, the quality gates, GitNexus enrichment and the xt debug loggers in-process (CORE-2339). |
 | `session-flow.json` | both | Claim sync + stop gate + worktree session end workflow |
 | `beads.json` | both | Edit/commit/compact enforcement. Includes `PreCompact` (save) and `SessionStart` (restore) hooks for beads-compact state persistence. |
-| `quality-gates.json` | both | JS/TS + Python quality checks after mutating edits |
-| `quality-gates-env.json` | claude | Session-start check for required quality binaries |
-| `gitnexus.json` | claude | GitNexus augmentation for Bash/Grep/Read/Glob |
-| `xtrm-debug-logger.json` | claude | Session/tool lifecycle logging into `.xtrm/debug.db` |
-| `specialists-agent-guard.json` | claude | Blocks raw Agent tool calls when a using-specialists workflow is active — routes work through specialists CLI |
+| `quality-gates.json` | pi | JS/TS + Python quality checks after mutating edits (Pi). The Claude side runs inside `hook-dispatcher`. |
+| `inbox-reminder.json` | claude | Stop-event reminder for unread pane-scoped inbound messages |
 
 ## Add / Update Workflow
 

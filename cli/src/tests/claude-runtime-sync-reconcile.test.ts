@@ -274,6 +274,40 @@ describe('mergeProjectOwnedHooks', () => {
     expect(commands).toContain('node /repo/.xtrm/hooks/worktree-boundary.mjs');
   });
 
+  // CORE-2339: upgrading a project that already carries the superseded
+  // per-hook registrations must not leave them behind next to the dispatcher —
+  // that would silently restore the process fan-out this change removes.
+  it('drops superseded per-hook xt registrations when the dispatcher arrives', () => {
+    const existing = {
+      PreToolUse: [
+        { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/worktree-boundary.mjs' }] },
+        { matcher: 'Agent', hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/specialists-agent-guard.mjs' }] },
+      ],
+      PostToolUse: [
+        { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/quality-check.cjs' }] },
+        { hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/xtrm-tool-logger.mjs' }] },
+      ],
+      SessionStart: [
+        { hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/quality-check-env.mjs' }] },
+      ],
+    };
+    const dispatcher = {
+      PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit|Agent', hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/dispatch.mjs pre' }] }],
+      PostToolUse: [{ hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/dispatch.mjs post' }] }],
+      SessionStart: [{ hooks: [{ type: 'command' as const, command: 'node /repo/.xtrm/hooks/dispatch.mjs session' }] }],
+    };
+
+    const merged = mergeProjectOwnedHooks(existing, dispatcher, '/repo/.xtrm/hooks');
+    const commands = Object.values(merged).flat().flatMap((w) => w.hooks.map((h) => h.command));
+
+    expect(commands).toContain('node /repo/.xtrm/hooks/dispatch.mjs pre');
+    expect(commands).toContain('node /repo/.xtrm/hooks/dispatch.mjs post');
+    expect(commands).toContain('node /repo/.xtrm/hooks/dispatch.mjs session');
+    for (const superseded of ['worktree-boundary.mjs', 'specialists-agent-guard.mjs', 'quality-check.cjs', 'xtrm-tool-logger.mjs', 'quality-check-env.mjs']) {
+      expect(commands.filter(c => c.includes(superseded)), `${superseded} survived the upgrade`).toEqual([]);
+    }
+  });
+
   it('drops an existing hook whose hash matches the canonical (dedupes)', () => {
     const existing = {
       PreToolUse: [{

@@ -9,46 +9,72 @@
 // timeout, and session start must not block on disk work. Exit 0 in all paths.
 
 import { spawn } from 'node:child_process';
-import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, existsSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-let input;
-try {
-  input = JSON.parse(readFileSync(0, 'utf8'));
-} catch {
-  process.exit(0);
+// CORE-2339: sweep trigger exported for dispatch.mjs; CLI entry preserved.
+/**
+ * Kick an out-of-band worktree reap for the input's repo. Rate-limited,
+ * detached and never awaited. Never throws.
+ */
+export function reapSweep(input) {
+  if (!input) return;
+  const cwd = input.cwd ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+  const stampPath = path.join(cwd, '.xtrm', '.last-reap-sweep');
+
+  // Rate limit: a session restart loop must not turn into a scan loop.
+  try {
+    if (existsSync(stampPath) && Date.now() - statSync(stampPath).mtimeMs < MIN_INTERVAL_MS) {
+      return;
+    }
+  } catch {
+    // unreadable stamp — fall through and sweep
+  }
+
+  try {
+    mkdirSync(path.dirname(stampPath), { recursive: true });
+    writeFileSync(stampPath, new Date().toISOString(), 'utf8');
+  } catch {
+    return;
+  }
+
+  try {
+    const child = spawn(
+      'xt',
+      ['worktree', 'reap', '--artifacts-older-than', '7d', '--worktrees-older-than', '14d', '--apply', '--yes'],
+      { cwd, detached: true, stdio: 'ignore' },
+    );
+    child.unref();
+  } catch {
+    // xt not on PATH in this environment — the timer still covers the host
+  }
 }
 
-const cwd = input.cwd ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-const stampPath = path.join(cwd, '.xtrm', '.last-reap-sweep');
-
-// Rate limit: a session restart loop must not turn into a scan loop.
-try {
-  if (existsSync(stampPath) && Date.now() - statSync(stampPath).mtimeMs < MIN_INTERVAL_MS) {
+function main() {
+  let input;
+  try {
+    input = JSON.parse(readFileSync(0, 'utf8'));
+  } catch {
     process.exit(0);
   }
-} catch {
-  // unreadable stamp — fall through and sweep
-}
 
-try {
-  mkdirSync(path.dirname(stampPath), { recursive: true });
-  writeFileSync(stampPath, new Date().toISOString(), 'utf8');
-} catch {
+  reapSweep(input);
   process.exit(0);
 }
 
-try {
-  const child = spawn(
-    'xt',
-    ['worktree', 'reap', '--artifacts-older-than', '7d', '--worktrees-older-than', '14d', '--apply', '--yes'],
-    { cwd, detached: true, stdio: 'ignore' },
-  );
-  child.unref();
-} catch {
-  // xt not on PATH in this environment — the timer still covers the host
+// Symlink-safe CLI entry: repo-root `hooks/` is a symlink to .xtrm/hooks, and
+// node resolves module identity through the real path while argv[1] keeps the
+// symlink path — compare realpaths or the standalone entry never fires.
+function isCliMain() {
+  try {
+    return Boolean(process.argv[1])
+      && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
 }
 
-process.exit(0);
+if (isCliMain()) main();

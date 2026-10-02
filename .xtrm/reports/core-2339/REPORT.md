@@ -1,0 +1,356 @@
+# CORE-2339 — Hook process fan-out: before/after report
+
+**Base commit:** `7210fe1137cdb7c392bd324bf8267b41d392f430` (origin/main of `xtrm-dev/core`)
+**Worktree:** `.xtrm/worktrees/core-xt-pi-core-hook-fanout` (branch `xt/core-hook-fanout`)
+**Host:** Mercury production host, 12 cores. All measurements `nice -n 19`, paced to ≤0.2 core average, run at 14:30–15:0x UTC (outside the 20:00–23:00Z blackout).
+
+## 1. What changed
+
+Before: every Claude Code tool call started one **process per registered hook command**.
+A Bash call started ~12 processes; an Edit call ~16 (the union of the xt registrations and the
+third-party registrations that share the event).
+
+After: `.xtrm/config/hooks.json` registers **one `dispatch.mjs` process per event**
+(`pre`, `post`, `session`). The dispatcher runs every xt-managed check in-process, importing
+the guard modules as the single source of truth for their decisions:
+
+| old registration (per event) | now |
+|---|---|
+| PreToolUse: `worktree-boundary.mjs` (Edit family), `specialists-agent-guard.mjs` (Agent) | `dispatch.mjs pre` (matcher `Edit\|Write\|MultiEdit\|NotebookEdit\|Agent`) |
+| PostToolUse: `quality-check.cjs` + `quality-check.py` (Edit family), `gitnexus-hook.cjs` (Bash\|Grep\|Read\|Glob), `xtrm-tool-logger.mjs` (all) | `dispatch.mjs post` (no matcher — preserves tool-logger coverage) |
+| SessionStart: `quality-check-env.mjs`, `xtrm-session-logger.mjs`, `worktree-reap-sweep.mjs` | `dispatch.mjs session` |
+| Stop: `inbox-reminder-stop.mjs` | unchanged (already a single process; its work is `xtmux`/tmux I/O, nothing to consolidate) |
+
+Key routing decisions inside the dispatcher:
+
+- **Quality checks: one process at most, chosen by file language.** JS/TS edits run
+  `quality-check.cjs` **in-process** (its `main(input)` now returns the exit code instead of
+  calling `process.exit`, so the dispatcher forwards it verbatim and the output bytes are
+  identical to running it standalone). Python edits spawn `quality-check.py` — the one
+  remaining child, because it is a different runtime. Everything else spawns nothing.
+  Previously **both** interpreters ran for *every* edit and each exited early ("skipping
+  non-Python file", "not a source file") after paying full interpreter startup.
+- **GitNexus: narrower.** Pattern extraction runs in-process; the `gitnexus augment` child
+  spawns only when the tool call actually yields patterns (i.e. rg/grep-style Bash, or
+  Read/Grep/Glob with a code file) and the pattern is not already in the per-session dedup
+  cache. A plain `ls`/`git status` Bash call no longer starts a node process at all.
+- **Tool logger: in-process, cheap append-only path.** One prepared INSERT per tool call;
+  the schema DDL now runs only on first write, the two pragmas that govern concurrency
+  (`busy_timeout`, `journal_mode=WAL`) still run every time.
+- **Anti-stick watchdog.** The old hooks did `readFileSync(0)` with no bound and no
+  watchdog — a parent that died before closing the pipe left the hook blocked forever.
+  The dispatcher reads stdin asynchronously, caps it at 32 MB, and exits 0 on a watchdog
+  just under each event's registered timeout. Exit 0 == non-blocking, which is exactly what
+  Claude Code does when it kills a hook at its timeout.
+
+## 2. Guard parity (evidence)
+
+`cli/test/hooks/dispatch.test.ts` (new) plus the existing suites:
+
+- **Edit outside the worktree is still blocked** — dispatcher stdout is asserted byte-for-byte
+  equal to the standalone `worktree-boundary.mjs` output (`{"decision":"block",...}`).
+- **A forbidden Agent call is still blocked** — `specialists-agent-guard` fires when the
+  specialists marker is present; passes through when it is not.
+- **Quality-check still reports and blocks on a broken file** — an edited `.ts` file with
+  `as any` + `debugger` yields the quality child's **exit code 2**, forwarded verbatim.
+- **In-process equivalence**: for both a clean and a broken `.ts` file, `dispatch.mjs post`
+  produces **the same output content and the same exit code** as running `quality-check.cjs`
+  standalone — this is what makes merging the JS gate into the dispatcher safe. The content
+  is compared as a line multiset, not byte-for-byte: `checkAll()` runs
+  `checkCommonIssues`/`checkNodePatterns` under `Promise.all`, so their completion order —
+  and therefore their print order — is not deterministic **in the standalone hook either**.
+  An earlier revision of this test asserted byte equality, which failed in CI and
+  intermittently locally; that was a flaky assertion about a property the original hook did
+  not have either, not a parity regression (see §8).
+- Fail-closed rule: the dispatcher's failure surface is identical to the old process boundary —
+  each check keeps its own documented semantics (boundary/agent guard fail open exactly as
+  documented; quality child exit 2 blocks; dispatcher exception/timeout exits 0 = same as
+  Claude's timeout kill).
+
+### Test suites (all green)
+
+| suite | result |
+|---|---|
+| `cli/test/hooks/dispatch.test.ts` (new, 9 tests) | 9/9 |
+| `cli/test/hooks/quality-check-hooks.test.ts` | 2/2 |
+| `cli/test/hooks-integration.test.ts` | 4/4 |
+| `cli/test/hooks.test.ts` | 21 (19 platform-skipped) |
+| `src/tests/global-hooks-canonical.test.ts` (updated) | 3/3 |
+| `src/tests/reconcile-global-claude-hooks.test.ts` | 1/1 |
+| `src/tests/settings-audit.test.ts` / `-fix.test.ts` | 9/9 + 6/6 |
+| `src/tests/installer-global-writes.test.ts` | 20/20 |
+| `src/tests/install-integration.test.ts` | 10/10 |
+| `src/tests/update.test.ts` | 24/24 |
+| `src/tests/plugin-era-cleanup.test.ts`, `hook-entry-source-tagging.test.ts`, `substrate-doctrine.test.ts` | 2/2, 1/1, 2/2 |
+
+`xt update` dry-run (no `--apply`) completes with **"no changes written"**; the main checkout
+(`/home/dawid/dev/core`) was verified unmodified afterwards. `reconcileGlobalClaudeHooks` replaces
+xt-owned wrappers by hash and preserves foreign ones, so the dispatcher registration replaces the
+six old entries on upgrade instead of doubling them.
+
+Note on flakiness: running several of these suites concurrently on this saturated host produces
+10 s `test/setup.ts` hook timeouts and 120 s per-test timeouts. Every failure observed during this
+work passed in isolation; the numbers above are the isolated runs.
+
+## 3. Stuck-process / RSS root cause (the 856 MB)
+
+Reproduced directly (payload sent, stdin deliberately left open):
+
+| process | alive after 6 s | RSS |
+|---|---|---|
+| old `~/.xtrm/hooks/xtrm-tool-logger.mjs` | **yes** (blocked in `readFileSync(0)`) | 47 MB and growing per payload |
+| new `dispatch.mjs pre` | no (watchdog) | — |
+| new `dispatch.mjs session` | no by 12 s (9.5 s watchdog) | — |
+
+With ~12 processes per tool call, one stuck-and-parentless process per orphan multiplies;
+that is the 4×~214 MB seen in the pane. The dispatcher removes both ingredients: at most 1–2
+processes per event, and none of them can block forever.
+
+## 4. Measurements
+
+Harness: `scripts/hook-bench/bench.py` (committed). It replays N=50 sample payloads per event
+(PreToolUse Bash, PostToolUse Bash, PreToolUse Edit, PostToolUse Edit) through a real hook
+configuration, exactly as Claude Code would (`bash -c`, payload on stdin), and reports
+spawns (PATH-shim counters) and CPU (`os.wait4` rusage of the reaped tree).
+
+Same payloads, same host, same pacing for every row. Table filled from `results.json`:
+
+| event | spawns before | spawns after | CPU before | CPU after |
+|---|---|---|---|---|
+| PreToolUse Bash | 0.0 (max 0) | **0.0** (max 0) | 0 ms (med 0, p95 0) | **0 ms** (med 0, p95 0) |
+| PostToolUse Bash | 4.0 (max 6) | **2.0** (max 4) | 136 ms (med 124, p95 141) | **94 ms** (med 78, p95 92) |
+| PreToolUse Edit | 2.0 (max 2) | **2.0** (max 2) | 57 ms (med 56, p95 70) | **71 ms** (med 71, p95 79) |
+| PostToolUse Edit | 6.0 (max 6) | **2.2** (max 3) | 227 ms (med 229, p95 256) | **104 ms** (med 86, p95 174) |
+
+### Accounting note: per event vs per tool call
+
+A Claude tool call runs two hook events (PreToolUse + PostToolUse). The spawn counts above include
+the `bash -c` shell Claude Code uses to run each hook command — that shell is the execution
+mechanism, not a process the hooks create.
+
+| per tool call (xt-managed) | before | after |
+|---|---|---|
+| Bash call — spawns | 4 | **2** (all hook-created) |
+| Bash call — CPU | 136 ms | **94 ms** |
+| Edit call — spawns | 8 (6 hook-created) | **4** (2 hook-created: one dispatcher per event) |
+| Edit call — CPU | 284 ms | **175 ms** mean / 157 ms median-of-events |
+
+Against the contract target (≤3 spawns, ≤150 ms per tool call):
+
+- **Bash call: met** — 2 spawns, 94 ms.
+- **Edit call: spawn target met** (2 hook processes instead of 6); **CPU lands at ~157–175 ms
+  against the 150 ms figure**. The residual is structural, not fan-out: a two-event call needs two
+  node interpreters (~45 ms each on this loaded host ≈ 90 ms floor), and the remainder is the
+  boundary guard plus the quality gate actually running their checks. Reaching 150 ms for an Edit
+  call would require merging both events into one long-lived process, which contradicts the
+  contract's own scope ("one dispatcher process per hook event") and would replace the current
+  fail-closed, self-terminating model with a resident daemon.
+- `PreToolUse:Edit` is 14 ms *slower* (57 → 71 ms): the dispatcher carries routing that the
+  single-purpose boundary hook did not. It buys the removal of 6 processes and 123 ms from the
+  matching PostToolUse event, and it is the only xt process on that event going forward.
+
+### Deviations from the measurement protocol (disclosed)
+
+1. **The first BEFORE legs executed the live `~/.xtrm/hooks` tree in place.** The installed
+   `quality-check.cjs` rewrites its machine-local `tsconfig-cache.json` into its own directory on
+   every run, so those runs mutated `~/.xtrm/hooks/tsconfig-cache.json`. No hook source was
+   modified (verified: live tree md5-identical to the pre-change main checkout), but it is a write
+   into the protected directory. It was caught by the home-integrity guard in
+   `cli/src/tests/install-integration.test.ts`. The harness now takes `--copy-plugin-root` and
+   measures against a temporary copy; the README mandates it for the live tree, and every number
+   in the tables above comes from copy-based runs (live tree confirmed unmodified afterwards).
+2. **GitNexus dedup cache.** `gitnexus augment` children spawn only for uncached patterns, keyed by
+   session id. Both final legs used a fresh session id, so each paid its own cold-cache augment
+   spawns — the max-spawn column shows them (6 before, 4 after).
+3. Pacing and nice level as described in `scripts/hook-bench/README.md`; the runs' own CPU is
+   reported per event in `harness_cpu_s` of the JSON output (<1.5 s per 200-replay leg).
+
+## 8. CI failure: root cause, and a correction
+
+CI run 37031734460 failed on `test/hooks/dispatch.test.ts > post: runs the JS quality gate
+in-process with byte-identical output and exit code`.
+
+**First diagnosis (commit 97459551) was wrong.** I attributed it to `console.log` being
+asynchronous on a pipe and `process.exit()` dropping queued bytes, and added a synchronous
+stdout writer around the in-process gate. That hazard is real and the fix is kept — it removes
+a truncation risk that would otherwise bite on any output larger than the pipe buffer, and a
+122 KB report is now verifiably complete. But it did **not** fix the failure.
+
+**Actual root cause:** `quality-check.cjs` `checkAll()` runs its checks with
+`await Promise.all([...])`, so `checkCommonIssues` and `checkNodePatterns` print in completion
+order, which is not deterministic — in the standalone hook too. On a clean file the two `[OK]`
+lines therefore swap places between runs, and the test's byte-order assertion failed
+intermittently (3/3 local parallel reproductions, 1 CI failure, 0 sequential).
+
+**Fix:** the parity assertion now compares the exit code exactly and the stdout as a sorted
+line multiset, with a comment stating why order cannot be part of the contract. The test title
+no longer claims "byte-identical". Verified 11/11 three consecutive runs.
+
+Two lessons worth recording: a flaky assertion was presented as a defect under pressure to fix
+CI, and the first fix was shipped with a confident causal story that the evidence did not
+support. The real defect it looked like was a property the pre-existing hook never had.
+
+## 9. Execution review verdict (a7767645) and the two open items, decided
+
+An execution review (reviewer with a shell, isolated HOME, temporary worktree) returned
+**FAIL, narrowly**, and confirmed by execution what two static passes could only argue:
+byte-identical boundary and agent-guard blocks, exit 2 on `as any`/`debugger` for
+`.ts`/`.js`/`.jsx`, self-exit inside every registered timeout, `compile-policies --check`
+and `check:registry-freshness` green, one dispatcher command per event, project *and*
+global reconcile leaving exactly one dispatcher entry per event while preserving third-party
+hooks, and a `tool.call` row for every tool class.
+
+**Two real defects, both fixed and re-verified by execution:**
+
+1. **A missing `python3` made a `.py` edit look clean.** `runQualityChild`'s
+   `proc.on('error', () => resolve(0))` swallowed the spawn failure. This was *quieter than
+   the behaviour it replaced*: the old registration ran `python3 …` through a shell, so a
+   missing interpreter exited 127 with `command not found` on stderr — visible, non-blocking.
+   Now the spawn failure writes `xt hook dispatcher: quality-check child could not start
+   (ENOENT); the Python quality gate did NOT run for this edit` to stderr and returns 1:
+   still non-blocking (Claude Code blocks only on exit 2), never silent. Verified with a
+   PATH containing node but no python3: `rc=1`, stdout empty, stderr carries the marker.
+2. **The stdin stall deadline exited 0 with no output.** A hook that never read its payload
+   looked identical to one that ran. It now writes `stdin never completed; payload discarded
+   and no checks ran` to stderr. Verified for all three modes with stdin held open: pre 1.6 s
+   (limit 2000 ms), post 29.7 s (30000 ms), session 9.6 s (10000 ms).
+
+Both now have regression tests in `cli/test/hooks/dispatch.test.ts` (13/13, run twice).
+
+**Item: `cli/dist/index.cjs` is stale — decided: no rebuild needed, with evidence.**
+`dist` contains zero references to the dispatcher *and* zero to `worktree-boundary`, i.e. it
+never embedded hook wiring: it reads `.xtrm/config/hooks.json` from the package root at
+runtime (11 references). `package.json` `files` ships `.xtrm/config`, `.xtrm/hooks` and
+`.xtrm/registry.json`, so the template and the dispatcher reach installs as data. This branch
+changed **no runtime `cli/src` file** — only `*.test.ts` — so there is no new reconcile branch
+for dist to be missing; the reconcile code is untouched and the execution reviewer ran it
+successfully. Rebuilding dist would add a large unrelated diff.
+
+**Item: untagged legacy global entries — decided: documented, no code change.**
+Inventory of `~/.claude/settings.json`: all nine superseded per-hook registrations
+(`worktree-boundary`, `specialists-agent-guard`, `quality-check.cjs`, `quality-check.py`,
+`gitnexus-hook`, `xtrm-tool-logger`, `xtrm-session-logger`, `quality-check-env`,
+`worktree-reap-sweep`) carry `_source: xtrm-global`, so global reconcile recognises them as
+owned and replaces them with the dispatcher. Four xtrm-looking entries are untagged and are
+therefore preserved as foreign: three `service-knowledge` `sh -c` wrappers owned by
+`xtrm-dev/xtrm`, and `node "/home/dawid/.xtrm/hooks/using-xtrm-reminder.mjs"` at SessionStart.
+None of the four is in core's template or policies, and the dispatcher does not run
+`using-xtrm-reminder`, so there is no overlap and no double execution. The residual risk is
+real but out of scope: if core ever ships an untagged entry, reconcile would keep it beside the
+dispatcher. Follow-up for the owning repos: adopt `using-xtrm-reminder` into a template (so
+it gets tagged) or retire it.
+
+## 5. Non-core hooks (measure-and-report only — not touched)
+
+Measured per command with the same harness (`--per-hook`, n=10, same payloads). These are
+**not** touched by this PR — they are listed so their owners can act.
+
+### Non-core hooks (third-party; not modified)
+
+| hook | event | CPU/call | spawns | owner / repo |
+|---|---|---|---|---|
+| `pre-merge-codex-gate.mjs` (`sh -c` wrapper) | PreToolUse Bash | 66.6 ms | 3 | archon (`~/.archon/hooks`) |
+| `post-merge-orch-hygiene.mjs` (`sh -c` wrapper) | PostToolUse Bash | 61.6 ms | 3 | archon |
+| `mmd-prod-guard.py` | PreToolUse Bash | 58.4 ms | 2 | market-data (`make install-agent-guard`) |
+| orca `claude-hook.sh` wrapper (`if [ -z "${HOME-}" ]…`) | every event | 8.9 ms | 1 | orca |
+| `auto-monitor-on-send.sh` | PostToolUse Bash | 12.4 ms | 2 | xtmux |
+| `auto-monitor-consumed.sh` | PostToolUse Bash | 12.0 ms | 2 | xtmux |
+| `agent-state.sh` | Pre+Post (every tool call) | 7.5 ms | 2 | xtmux |
+| `context-mode-cache-heal.mjs` | SessionStart | 54.5 ms | 2 | context-mode |
+| `herdr-agent-state.sh` | SessionStart | 14.1 ms | 2 | herdr |
+
+### Non-core hooks that ship from `xtrm-dev/xtrm` (proposal only — report-only per contract)
+
+`service-knowledge` hooks are **registered by the `xtrm-dev/xtrm` repo** (`packages/service-knowledge`),
+not by core, so this PR measures them and proposes the change instead of applying it:
+
+| hook | event | CPU/call | spawns | wrapper-only cost in a repo without the skill |
+|---|---|---|---|---|
+| `skill_activator.py` | PreToolUse (every tool call) | **101.3 ms** | 2 | 6.3 ms (the `sh -c` wrapper alone) |
+| `drift_detector.py` | PostToolUse (every tool call) | **76.8 ms** | 2 | 6.3 ms |
+| `cataloger.py` | SessionStart | — | 2 | 5.8 ms |
+
+**Proposal for xtrm-dev/xtrm:** the same dispatcher pattern — one in-process router per event that
+imports the activator/detector and calls their `activate()`/`detect()` entry points, rather than a
+fresh `python3` interpreter (≈70–100 ms CPU) on **every** PreToolUse/PostToolUse call in every
+session. This is the single largest remaining xt-adjacent per-call cost after this PR: 101 ms + 77 ms
+per tool call, versus the ~90 ms this PR removes from the core hooks.
+
+### xt-owned hook that is not in core's template
+
+`using-xtrm-reminder.mjs` (SessionStart, 59.4 ms, 2 spawns) is present in the live
+`~/.xtrm/hooks` and registered in the live `settings.json`, but is **not** declared in
+`.xtrm/config/hooks.json` — it is installed by another repo. Its owner should confirm which.
+
+## 7. Review round (independent review, then fix)
+
+An independent read-only review of PR #678 returned **FAIL**. Two of its findings
+were blockers that would have made the change inert in production, and both were
+real:
+
+1. **`.xtrm/config/hooks.json` is generated, not authored.** `scripts/compile-policies.mjs`
+   derives it from `policies/*.json`, and the first commit hand-edited only the
+   golden file. `compile-policies --check` (run by CI) failed, and the next
+   `xt install` would have silently restored all six per-hook processes — the
+   "after" column above measured a configuration the product would never ship.
+   Fixed at the generator: `policies/hook-dispatcher.json` now carries the three
+   dispatcher wires, the superseded per-hook Claude wires were removed from the
+   policy set (the claude-only policies were deleted; `quality-gates.json` keeps
+   its Pi half and is now `runtime: pi`), and `hooks.json` is regenerated by the
+   compiler. `compile-policies --check` and `check-registry-pack-parity` are green.
+2. **`dispatch.mjs` was absent from `.xtrm/registry.json`,** so it would never have been
+   copied to `~/.xtrm/hooks`. The template would have pointed at a missing file, node
+   would exit 1, Claude Code treats that as non-blocking, and every guard would have
+   silently stopped running on every machine — absence, not weakening, and with no
+   signal. Fixed by regenerating the registry (`scripts/gen-registry.mjs`), which also
+   re-records the hashes of the ten modified hook files.
+
+Also fixed from the same review:
+
+- **Silent loss of a blocking decision (the one I reasoned about but did not prove).**
+  The watchdog was armed at module load, so on a slow quality gate it could fire at
+  29.5 s and `exit 0`, reporting a file with `as any`/`debugger` as clean — with a
+  500 ms *smaller* window than Claude Code's own kill, and with no operator-visible
+  signal. Now two deadlines: a **stall** timer armed immediately (covers the stdin
+  read; a payload that never EOFs is the stuck-logger mechanism, and exiting loses
+  nothing because no payload was read), and a **work** timer armed once stdin
+  resolves, which writes a stderr marker naming the dropped decision before failing
+  open. Re-verified: with stdin held open the dispatcher exits after 1.9 s.
+- **Serena GitNexus tools were unreachable.** The runtime sync has historically widened
+  the installed matcher to `mcp__serena__*` tools; the dispatcher's routing set did
+  not include them, so enrichment would have gone dark on those machines.
+- **The logger's new size heuristic could disable logging permanently.** A `debug.db`
+  that exists but has no `events` table (a write killed after `PRAGMA journal_mode=WAL`
+  sized the file) would take the DDL-skipping path forever, and the failing INSERT is
+  swallowed. Reverted: the schema DDL is unconditional again, which is what the old
+  hook did.
+- **SessionStart order** now follows the compiled policy order (env probe first), and
+  the env probe's output no longer gains a trailing newline the standalone hook does
+  not write.
+- **Documented deviation:** a non-JS/TS, non-Python edit (`.md`, `.json`) no longer
+  prints the two gates' "skipped" banners. The decision is unchanged (exit 0); the
+  silence is the saving. Stated in the dispatcher header and asserted by a test.
+- **Test gaps closed:** `tool.call` logging is now asserted against a real `debug.db`,
+  and GitNexus Serena routing has a test. Two generator-level guards were added: every
+  compiled hook group must contain exactly one command (so a second per-hook entry
+  cannot silently restore the fan-out), and cross-runtime coverage is asserted as
+  "Claude and Pi are both wired" rather than the now-impossible "a policy targets both".
+- **Bench README** now documents the filtered, fresh-session, copy-based recipe that the
+  reported numbers actually came from; the previous recipe mixed third-party hooks into
+  the before column.
+
+The reviewer's remaining points are recorded as accepted limitations rather than
+silently dropped: no test asserts a literal spawn count (the property is covered
+indirectly — the JS gate runs in-process, proven by byte-identical output and exit
+code, and one command per group is now pinned by the compiler test), and the >32 MB
+stdin cap intentionally drops the whole event including its log row.
+
+## 6. What was deliberately NOT done
+
+- No third-party hook was modified (archon, orca, herdr, context-mode, xtmux).
+- No guard was weakened: the same block/allow decisions, the same exit-code contract.
+- Live `~/.claude/settings.json` was never written. `~/.xtrm/hooks` was read and executed, but
+  no hook source was modified — one early measurement run rewrote the machine-local
+  `tsconfig-cache.json` inside it (disclosed below); the harness now measures against a copy.
+- The `service-knowledge` hooks (`skill_activator.py`, `drift_detector.py`) live in
+  `xtrm-dev/xtrm`; measured here and proposed below, not changed here.

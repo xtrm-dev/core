@@ -167,13 +167,32 @@ describe('compile-policies — output structure', () => {
     }
   });
 
-  it('SessionStart contains multiple hook entries from merged policies', () => {
+  // CORE-2339: the per-hook SessionStart entries (quality-check-env,
+  // xtrm-session-logger, worktree-reap-sweep) were merged into one
+  // `dispatch.mjs session` command, so "several policies contribute separate
+  // commands to one event" is no longer the shape this suite pins. The event is
+  // still single-source: exactly one entry, carrying every SessionStart check.
+  it('SessionStart is a single dispatcher entry carrying every SessionStart check', () => {
     const result = runCompiler(['--dry-run']);
     const parsed = JSON.parse(result.stdout);
     const sessionStart = parsed.hooks['SessionStart'];
     expect(Array.isArray(sessionStart)).toBe(true);
+    expect(sessionStart).toHaveLength(1);
     const allHooks = sessionStart.flatMap((g: { hooks: object[] }) => g.hooks ?? []);
-    expect(allHooks.length).toBeGreaterThan(1);
+    expect(allHooks).toHaveLength(1);
+    expect(allHooks[0].command).toContain('dispatch.mjs session');
+  });
+
+  it('every hook event is served by at most one command per group (CORE-2339)', () => {
+    const result = runCompiler(['--dry-run']);
+    const parsed = JSON.parse(result.stdout);
+    for (const [event, groups] of Object.entries<Record<string, { hooks: unknown[] }>>(parsed.hooks)) {
+      for (const group of groups) {
+        // One process per group is the whole point of the dispatcher; a second
+        // command in the same group would silently restore the fan-out.
+        expect(group.hooks.length, `${event} has ${group.hooks.length} commands`).toBe(1);
+      }
+    }
   });
 });
 

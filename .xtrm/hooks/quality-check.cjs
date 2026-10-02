@@ -1035,9 +1035,13 @@ class QualityChecker {
 
 /**
  * Parse JSON input from stdin
+ * @param {Object} [preParsed] Already-parsed payload (CORE-2339: the dispatcher
+ *   has consumed stdin, so it passes the object straight through).
  * @returns {Promise<Object>} Parsed JSON object
  */
-async function parseJsonInput() {
+async function parseJsonInput(preParsed) {
+  if (preParsed) return preParsed;
+
   let inputData = '';
 
   // Read from stdin
@@ -1051,7 +1055,7 @@ async function parseJsonInput() {
       'For testing, provide JSON like: echo \'{"tool_name":"Edit","tool_input":{"file_path":"/path/to/file.ts"}}\' | node hook.js',
     );
     console.log(`\n${colors.yellow}👉 Hook executed but no input to process.${colors.reset}`);
-    process.exit(0);
+    return null;
   }
 
   try {
@@ -1059,7 +1063,10 @@ async function parseJsonInput() {
   } catch (error) {
     log.error(`Failed to parse JSON input: ${error.message}`);
     log.debug(`Input was: ${inputData}`);
-    process.exit(1);
+    // CORE-2339: the old CLI called process.exit(1) here. In-process main()
+    // needs it as a value, so the failure is carried on the return value rather
+    // than in module state (which would leak across calls).
+    return { __parseError: true };
   }
 }
 
@@ -1152,7 +1159,7 @@ function printSummary(errors, autofixes) {
  * Main entry point
  * @returns {Promise<void>}
  */
-async function main() {
+async function main(preParsed) {
   // Show header with version
   const hookVersion = config._fileConfig.version || '1.0.0';
   console.log('');
@@ -1162,8 +1169,10 @@ async function main() {
   // Debug: show loaded configuration
   log.debug(`Loaded config: ${JSON.stringify(config, null, 2)}`);
 
-  // Parse input
-  const input = await parseJsonInput();
+  // Parse input (CORE-2339: the dispatcher passes the payload it already read)
+  const input = await parseJsonInput(preParsed);
+  if (!input) return 0;
+  if (input.__parseError) return 1;
   const filePath = extractFilePath(input);
 
   if (!filePath) {
@@ -1172,14 +1181,14 @@ async function main() {
     console.log(
       `\n${colors.yellow}👉 No file to check - tool may not be file-related.${colors.reset}`,
     );
-    process.exit(0);
+    return 0;
   }
 
   // Check if file exists
   if (!(await fileExists(filePath))) {
     log.info(`File does not exist: ${filePath} (may have been deleted)`);
     console.log(`\n${colors.yellow}👉 File skipped - doesn't exist.${colors.reset}`);
-    process.exit(0);
+    return 0;
   }
 
   // For non-source files, exit successfully without checks (matching shell behavior)
@@ -1189,7 +1198,7 @@ async function main() {
     console.log(
       `\n${colors.green}✅ No checks needed for ${path.basename(filePath)}${colors.reset}`,
     );
-    process.exit(0);
+    return 0;
   }
 
   // Update header with file name
@@ -1234,7 +1243,7 @@ async function main() {
     console.log(
       `${colors.yellow}  3. Continue with your original task once all checks pass${colors.reset}`,
     );
-    process.exit(2);
+    return 2;
   } else if (dependencyWarnings.length > 0) {
     // Warning - shows but doesn't block
     console.log(`\n${colors.yellow}⚠️ WARNING - Dependency issues found${colors.reset}`);
@@ -1254,7 +1263,7 @@ async function main() {
         `\n${colors.yellow}👉 File quality verified. Continue with your task.${colors.reset}`,
       );
     }
-    process.exit(0); // Don't block on dependency issues
+    return 0; // Don't block on dependency issues
   } else {
     console.log(
       `\n${colors.green}✅ Quality check passed for ${path.basename(filePath)}${colors.reset}`,
@@ -1269,18 +1278,27 @@ async function main() {
         `\n${colors.yellow}👉 File quality verified. Continue with your task.${colors.reset}`,
       );
     }
-    process.exit(0);
+    return 0;
   }
 }
 
-// Handle errors
-process.on('unhandledRejection', (error) => {
-  log.error(`Unhandled error: ${error.message}`);
-  process.exit(1);
-});
+// CORE-2339: the check is also callable in-process from dispatch.mjs, which
+// returns this exit code straight to Claude Code instead of paying a second
+// node startup per edited file. The CLI entry below is unchanged.
+module.exports = { main };
 
-// Run main
-main().catch((error) => {
-  log.error(`Fatal error: ${error.message}`);
-  process.exit(1);
-});
+// Handle errors
+if (require.main === module) {
+  process.on('unhandledRejection', (error) => {
+    log.error(`Unhandled error: ${error.message}`);
+    process.exit(1);
+  });
+
+  // Run main
+  main().then((code) => {
+    process.exit(code);
+  }).catch((error) => {
+    log.error(`Fatal error: ${error.message}`);
+    process.exit(1);
+  });
+}

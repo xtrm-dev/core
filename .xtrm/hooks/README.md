@@ -2,6 +2,42 @@
 
 Claude Code hooks that extend agent behavior with automated checks, workflow enhancements, and safety guardrails.
 
+## Dispatch model (CORE-2339)
+
+One process per event, not one process per hook. `.xtrm/config/hooks.json`
+registers a single `dispatch.mjs` command for PreToolUse, PostToolUse and
+SessionStart; the dispatcher runs every xt-managed check in-process and keeps
+the guard modules as the single source of truth for their decisions:
+
+- `worktree-boundary.mjs` → `boundaryDecision(input)`
+- `specialists-agent-guard.mjs` → `agentGuardDecision(input)`
+- `xtrm-tool-logger.mjs` → `logToolCall(input)`
+- `xtrm-session-logger.mjs` → `logSessionStart(input)`
+- `quality-check-env.mjs` → `envCheck(input)`
+- `worktree-reap-sweep.mjs` → `reapSweep(input)`
+- `gitnexus/gitnexus-hook.cjs` → `enrich(input)`
+- `quality-check.cjs` → `main(input)` (in-process, JS/TS only)
+
+Each of those files still works standalone (same stdin/exit contract), so
+direct invocation, tests and rollback keep working. The quality gates are routed
+by file language:
+
+- JS/TS edits run `quality-check.cjs` **in-process** (`main(input)` returns the
+  exit code instead of calling `process.exit`, so the dispatcher forwards it) —
+  byte-identical output, no second node startup per edited file.
+- Python edits spawn `quality-check.py` as the one remaining child (different
+  runtime).
+- Everything else spawns nothing. Previously **both** interpreters ran for
+  every edit and each exited early after full interpreter startup.
+
+Guard parity: the dispatcher forwards the quality child's exit code verbatim
+(exit 2 still blocks) and preserves each guard's own fail-open semantics. A
+watchdog just under each event's registered timeout guarantees a stalled
+dispatcher exits instead of accumulating as a stuck process (the RSS growth
+mechanism measured in MMD-2235).
+
+Measure before/after with `scripts/hook-bench/bench.py` (see its README).
+
 ## Overview
 
 Hooks intercept specific events in the Claude Code lifecycle. Following architecture decisions in v2.0.0+, the hook ecosystem is designed exclusively for Claude Code.
@@ -31,17 +67,6 @@ files were deleted in lane 2; nothing live imports them:
 
 **Installation**: `xtrm install all` wires only the gates listed below. Do not
 re-add `beads-*` registrations; the canonical template is the source of truth.
-
-### Core Gates
-- **`beads-edit-gate.mjs`** (PreToolUse) — Blocks writes/edits without an active issue claim.
-- **`beads-commit-gate.mjs`** (PreToolUse) — Blocks commits with an unresolved session claim.
-- **`beads-stop-gate.mjs`** (Stop) — Blocks session stop while a claim remains open.
-
-### Compaction & State Preservation (v2.1.18+)
-- **`beads-pre-compact.mjs`** (PreCompact) — Saves the currently `in_progress` beads state before Claude clears context.
-- **`beads-session-start.mjs`** (SessionStart) — Restores the `in_progress` state when the session restarts after compaction.
-
-*Note: As of v2.1.18+, hook blocking messages are quieted and compacted to save tokens.*
 
 ## Hook Timeouts
 

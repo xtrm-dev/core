@@ -2,22 +2,34 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Agent",
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/worktree-boundary.mjs",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs pre",
             "timeout": 2000
           }
         ]
-      },
+      }
+    ],
+    "PostToolUse": [
       {
-        "matcher": "Agent",
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/specialists-agent-guard.mjs",
-            "timeout": 2000
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs post",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs session",
+            "timeout": 10000
           }
         ]
       }
@@ -28,63 +40,6 @@
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/inbox-reminder-stop.mjs",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/quality-check.cjs",
-            "timeout": 30000
-          },
-          {
-            "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/quality-check.py",
-            "timeout": 30000
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Grep|Read|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/gitnexus/gitnexus-hook.cjs",
-            "timeout": 10000
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-tool-logger.mjs",
-            "timeout": 3000
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/quality-check-env.mjs",
-            "timeout": 5000
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-session-logger.mjs",
-            "timeout": 3000
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/worktree-reap-sweep.mjs",
             "timeout": 5000
           }
         ]

@@ -58,11 +58,23 @@ function createFakeWhich(scriptBody: string): string {
   chmodSync(whichPath, 0o755);
   return binDir;
 }
+
+// CORE-2339: quality-check-env probes PATH entries directly instead of
+// spawning `which`. Tests simulate environments with fake binaries on PATH.
+function createFakeBinDir(binaries: string[]): string {
+  const binDir = mkdtempSync(path.join(tmpdir(), 'xtrm-fake-bin-'));
+  for (const name of binaries) {
+    const binPath = path.join(binDir, name);
+    writeFileSync(binPath, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(binPath, 0o755);
+  }
+  return binDir;
+}
 describe('quality-check-env.mjs integration', () => {
   it('checks for tsc/eslint/ruff when quality-check hook is present', () => {
     const projectDir = createTempProject('xtrm-hook-qenv-present-');
     const hooksDir = path.join(projectDir, '.xtrm', 'hooks');
-    const fakeWhichDir = createFakeWhich('#!/bin/sh\nexit 1\n');
+    const fakeWhichDir = createFakeBinDir([]);
 
     mkdirSync(hooksDir, { recursive: true });
     writeFileSync(path.join(hooksDir, 'quality-check.cjs'), 'module.exports = {};', 'utf8');
@@ -104,15 +116,7 @@ describe('quality-check-env.mjs integration', () => {
   it('warns when tsc is missing', () => {
     const projectDir = createTempProject('xtrm-hook-qenv-tsc-');
     const hooksDir = path.join(projectDir, '.xtrm', 'hooks');
-    const fakeWhichDir = createFakeWhich([
-      '#!/bin/sh',
-      'case "$1" in',
-      '  tsc) exit 1 ;;',
-      '  eslint|ruff) exit 0 ;;',
-      '  *) exit 1 ;;',
-      'esac',
-      '',
-    ].join('\n'));
+    const fakeWhichDir = createFakeBinDir(['eslint', 'ruff']);
 
     mkdirSync(hooksDir, { recursive: true });
     writeFileSync(path.join(hooksDir, 'quality-check.cjs'), 'module.exports = {};', 'utf8');

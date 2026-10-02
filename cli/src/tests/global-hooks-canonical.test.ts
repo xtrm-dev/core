@@ -18,7 +18,7 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
   // .xtrm/registry.json, the template sits at .xtrm/config/hooks.json.
   const hooksPath = path.join(resolvePackageRoot(), '.xtrm', 'config', 'hooks.json');
 
-  it('contains every load-bearing canonical hook (10 entries across 4 events)', () => {
+  it('contains every load-bearing canonical hook (4 entries across 4 events, CORE-2339 dispatcher)', () => {
     const config = fs.readJsonSync(hooksPath) as {
       hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ type?: string; command: string }> }>>;
     };
@@ -33,19 +33,37 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
       }
     }
 
+    // CORE-2339: PreToolUse/PostToolUse/SessionStart consolidate into one
+    // dispatch.mjs process per event (guards still routed in-process);
+    // Stop keeps its single standalone hook. The standalone guard files must
+    // stay shippable — the dispatcher imports them for their decisions.
     const expected = [
-      'SessionStart:quality-check-env.mjs',
-      'SessionStart:xtrm-session-logger.mjs',
-      'SessionStart:worktree-reap-sweep.mjs',
-      'PreToolUse:worktree-boundary.mjs',
-      'PreToolUse:specialists-agent-guard.mjs',
-      'PostToolUse:quality-check.cjs',
-      'PostToolUse:quality-check.py',
-      'PostToolUse:gitnexus-hook.cjs',
-      'PostToolUse:xtrm-tool-logger.mjs',
+      'SessionStart:dispatch.mjs session',
+      'PreToolUse:dispatch.mjs pre',
+      'PostToolUse:dispatch.mjs post',
       'Stop:inbox-reminder-stop.mjs',
     ];
     expect([...entries].sort()).toEqual([...expected].sort());
+  });
+
+  it('keeps the dispatcher matchers covering every consolidated guard (CORE-2339)', () => {
+    const config = fs.readJsonSync(hooksPath) as {
+      hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>;
+    };
+
+    const byEvent: Record<string, string[]> = {};
+    for (const [event, wrappers] of Object.entries(config.hooks)) {
+      byEvent[event] = wrappers.map((w) => w.matcher ?? '');
+    }
+
+    // The old per-hook matchers, unioned per event — nothing may fall out of
+    // the dispatcher's routing table (see dispatch.mjs EDIT_TOOLS/GITNEXUS_TOOLS).
+    expect(byEvent.PreToolUse).toContain('Edit|Write|MultiEdit|NotebookEdit|Agent');
+    // PostToolUse has no matcher: the old xtrm-tool-logger was registered for
+    // every tool (and kept full tool.call logging coverage that way). The
+    // dispatcher's internal routing is the narrower part.
+    expect(byEvent.PostToolUse).toEqual(['']);
+    expect(byEvent.SessionStart).toEqual(['']);
   });
 
   it('wires no beads-* hooks (retired; successors owned by xtrm-6qu.6)', () => {
