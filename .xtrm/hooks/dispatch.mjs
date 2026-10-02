@@ -110,7 +110,14 @@ let workTimer = null;
 //   - work: armed once stdin has resolved, covers the checks themselves. When
 //     it fires during the quality gate it says so on stderr first, because a
 //     silent exit-0 there would discard a blocking exit-2 decision invisibly.
-const stallTimer = setTimeout(() => { process.exit(0); }, Math.max(0, DEADLINE_AT - Date.now()));
+const stallTimer = setTimeout(() => {
+  // Nothing was read, so no tool.call row and no guard decision is lost — but
+  // the event produced no checks at all, which must not be silent (the old
+  // readFileSync(0) hooks died with Claude's timeout notice; the quality child
+  // path at least writes a marker).
+  writeSync(2, 'xt hook dispatcher: stdin never completed; payload discarded and no checks ran\n');
+  process.exit(0);
+}, Math.max(0, DEADLINE_AT - Date.now()));
 
 function armWatchdog() {
   if (watchdogArmed) return;
@@ -179,12 +186,24 @@ function runQualityChild(child, payload) {
       stdio: ['pipe', 'inherit', 'inherit'],
       env: process.env,
     });
-    proc.on('error', () => resolve(0)); // spawn failure — old hook absent, allow
+    // Spawn failure must be VISIBLE. The old registration ran
+    // `python3 quality-check.py` through a shell, so a missing interpreter
+    // exited 127 with "command not found" on stderr. Silently resolving 0 here
+    // would report a .py edit as clean — the silent-guard-loss failure mode.
+    // Exit 1 keeps it non-blocking (Claude Code blocks only on exit 2), as the
+    // shell's 127 was.
+    proc.on('error', (err) => {
+      const code = err && typeof err === 'object' && 'code' in err ? err.code : 'unknown';
+      writeSync(2, `xt hook dispatcher: quality-check child could not start (${code}); `
+        + 'the Python quality gate did NOT run for this edit\n');
+      resolve(1);
+    });
     proc.on('close', (code) => resolve(code ?? 0));
     // proc.on('error') does NOT cover child.stdin stream errors: python3 missing
     // (ENOENT) or a child that exits before draining stdin (EPIPE) both raise on
     // the socket, and an unhandled 'error' there would crash the dispatcher with
-    // a stack trace instead of failing open the way the old standalone hook did.
+    // a stack trace. A write failure after a successful spawn is benign — the
+    // child already produced its result and exited — so it stays swallowed.
     proc.stdin.on('error', () => {});
     proc.stdin.write(payload);
     proc.stdin.end();

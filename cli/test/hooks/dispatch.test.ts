@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 // CORE-2339 guard regression tests: the single-process dispatcher must keep
 // every block/allow decision the standalone hooks made, and keep the
@@ -285,6 +285,57 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
             await rm(temp, { recursive: true, force: true });
         }
     });
+
+    // CORE-2339 execution review: both of these used to exit 0 with EMPTY
+    // stderr, so a Python edit could be reported clean with no interpreter, and
+    // a hook that never read its payload looked identical to a hook that ran.
+    it('post: a missing python3 is reported, not silently treated as clean', async () => {
+        const temp = await mkdtemp(path.join(tmpdir(), 'xtrm-dispatch-no-python-'));
+        try {
+            const file = path.join(temp, 'bad.py');
+            await writeFile(file, 'x: int = "bad"\n', 'utf8');
+            const nodeDir = path.dirname(process.execPath);
+            const result = spawnSync(process.execPath, [path.join(HOOKS, 'dispatch.mjs'), 'post'], {
+                cwd: temp,
+                encoding: 'utf8',
+                input: JSON.stringify({
+                    session_id: 'dispatch-test',
+                    cwd: temp,
+                    hook_event_name: 'PostToolUse',
+                    tool_name: 'Edit',
+                    tool_input: { file_path: file },
+                    tool_response: {},
+                }),
+                // A PATH with node but no python3 reproduces ENOENT on the child.
+                env: { ...process.env, PATH: nodeDir, CLAUDE_PROJECT_DIR: temp },
+            });
+            // Non-blocking (the old shell path exited 127), but visible.
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('could not start');
+            expect(result.stderr).toContain('did NOT run');
+        } finally {
+            await rm(temp, { recursive: true, force: true });
+        }
+    });
+
+    it('pre: a stdin that never completes exits within the timeout and says so', async () => {
+        const child = spawn(process.execPath, [path.join(HOOKS, 'dispatch.mjs'), 'pre'], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        child.stdin.on('error', () => { /* child exits first: EPIPE is expected */ });
+        child.stdin.write('{"session_id":"x"}');
+        // stdin deliberately left open: the stall deadline must fire.
+
+        const { code, stderr } = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
+            let buf = '';
+            const timer = setTimeout(() => { child.kill(); resolve({ code: -1, stderr: buf }); }, 10000);
+            child.stderr.on('data', (d) => { buf += String(d); });
+            child.on('close', (c) => { clearTimeout(timer); resolve({ code: c, stderr: buf }); });
+        });
+
+        expect(code).toBe(0);
+        expect(stderr).toContain('stdin never completed');
+    }, 20000);
 
     it('session: exits 0 on a plain project dir', async () => {
         const temp = await mkdtemp(path.join(tmpdir(), 'xtrm-dispatch-sess-'));

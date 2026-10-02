@@ -190,6 +190,56 @@ Two lessons worth recording: a flaky assertion was presented as a defect under p
 CI, and the first fix was shipped with a confident causal story that the evidence did not
 support. The real defect it looked like was a property the pre-existing hook never had.
 
+## 9. Execution review verdict (a7767645) and the two open items, decided
+
+An execution review (reviewer with a shell, isolated HOME, temporary worktree) returned
+**FAIL, narrowly**, and confirmed by execution what two static passes could only argue:
+byte-identical boundary and agent-guard blocks, exit 2 on `as any`/`debugger` for
+`.ts`/`.js`/`.jsx`, self-exit inside every registered timeout, `compile-policies --check`
+and `check:registry-freshness` green, one dispatcher command per event, project *and*
+global reconcile leaving exactly one dispatcher entry per event while preserving third-party
+hooks, and a `tool.call` row for every tool class.
+
+**Two real defects, both fixed and re-verified by execution:**
+
+1. **A missing `python3` made a `.py` edit look clean.** `runQualityChild`'s
+   `proc.on('error', () => resolve(0))` swallowed the spawn failure. This was *quieter than
+   the behaviour it replaced*: the old registration ran `python3 …` through a shell, so a
+   missing interpreter exited 127 with `command not found` on stderr — visible, non-blocking.
+   Now the spawn failure writes `xt hook dispatcher: quality-check child could not start
+   (ENOENT); the Python quality gate did NOT run for this edit` to stderr and returns 1:
+   still non-blocking (Claude Code blocks only on exit 2), never silent. Verified with a
+   PATH containing node but no python3: `rc=1`, stdout empty, stderr carries the marker.
+2. **The stdin stall deadline exited 0 with no output.** A hook that never read its payload
+   looked identical to one that ran. It now writes `stdin never completed; payload discarded
+   and no checks ran` to stderr. Verified for all three modes with stdin held open: pre 1.6 s
+   (limit 2000 ms), post 29.7 s (30000 ms), session 9.6 s (10000 ms).
+
+Both now have regression tests in `cli/test/hooks/dispatch.test.ts` (13/13, run twice).
+
+**Item: `cli/dist/index.cjs` is stale — decided: no rebuild needed, with evidence.**
+`dist` contains zero references to the dispatcher *and* zero to `worktree-boundary`, i.e. it
+never embedded hook wiring: it reads `.xtrm/config/hooks.json` from the package root at
+runtime (11 references). `package.json` `files` ships `.xtrm/config`, `.xtrm/hooks` and
+`.xtrm/registry.json`, so the template and the dispatcher reach installs as data. This branch
+changed **no runtime `cli/src` file** — only `*.test.ts` — so there is no new reconcile branch
+for dist to be missing; the reconcile code is untouched and the execution reviewer ran it
+successfully. Rebuilding dist would add a large unrelated diff.
+
+**Item: untagged legacy global entries — decided: documented, no code change.**
+Inventory of `~/.claude/settings.json`: all nine superseded per-hook registrations
+(`worktree-boundary`, `specialists-agent-guard`, `quality-check.cjs`, `quality-check.py`,
+`gitnexus-hook`, `xtrm-tool-logger`, `xtrm-session-logger`, `quality-check-env`,
+`worktree-reap-sweep`) carry `_source: xtrm-global`, so global reconcile recognises them as
+owned and replaces them with the dispatcher. Four xtrm-looking entries are untagged and are
+therefore preserved as foreign: three `service-knowledge` `sh -c` wrappers owned by
+`xtrm-dev/xtrm`, and `node "/home/dawid/.xtrm/hooks/using-xtrm-reminder.mjs"` at SessionStart.
+None of the four is in core's template or policies, and the dispatcher does not run
+`using-xtrm-reminder`, so there is no overlap and no double execution. The residual risk is
+real but out of scope: if core ever ships an untagged entry, reconcile would keep it beside the
+dispatcher. Follow-up for the owning repos: adopt `using-xtrm-reminder` into a template (so
+it gets tagged) or retire it.
+
 ## 5. Non-core hooks (measure-and-report only — not touched)
 
 Measured per command with the same harness (`--per-hook`, n=10, same payloads). These are

@@ -7,7 +7,7 @@
       "install_scope": "global",
       "files": {
         "dispatch.mjs": {
-          "hash": "3e727d9236be6e21f935a0561a2600690a48d70e6907fda920efdbb4395838f0",
+          "hash": "954d5f109ccde097363096817039e652ea84fab88f57c435ae29fc3e24503d38",
           "version": "0.13.0"
         },
         "gitnexus/gitnexus-hook.cjs": {
