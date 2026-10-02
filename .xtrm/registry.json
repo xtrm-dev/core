@@ -7,7 +7,7 @@
       "install_scope": "global",
       "files": {
         "dispatch.mjs": {
-          "hash": "ed980fb46ce5ce73f9290b2843a664a32621a119a71f787ea276481fe1ed57c1",
+          "hash": "d51bb2e3afc0df508e18eda00c42b0af2131e577774c8bcba69d70affa3e25d9",
           "version": "0.13.0"
         },
         "gitnexus/gitnexus-hook.cjs": {
@@ -23,7 +23,7 @@
           "version": "0.13.0"
         },
         "quality-check.cjs": {
-          "hash": "d2f714dab0e8032074f31eaec9b78d42713c039ab72d482022cc6df52bb53645",
+          "hash": "8fd74aef181ca542f8d3a8ae72eb91cb6614430d3558892cbcb3455ca7ec8721",
           "version": "0.13.0"
         },
         "quality-check.py": {
@@ -55,7 +55,7 @@
           "version": "0.13.0"
         },
         "xtrm-logger.mjs": {
-          "hash": "6471ddfcde178a9691d899ab76b899d6e2252ca945bc0ebc5a0520ad3ee50394",
+          "hash": "7af0f720b6cf33701a9b676e4fc3deaeaa9ecc898dbda789480e2c670ad0bd1c",
           "version": "0.13.0"
         },
         "xtrm-session-logger.mjs": {
