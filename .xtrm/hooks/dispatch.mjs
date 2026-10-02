@@ -57,6 +57,7 @@
 
 import { spawn } from 'node:child_process';
 import { writeSync } from 'node:fs';
+import { format } from 'node:util';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -245,6 +246,13 @@ async function runPost(input, rawPayload) {
     const plan = qualityPlan(input.tool_input);
     if (plan) {
       if (plan.kind === 'inproc') {
+        // The gate prints with console.log, which is ASYNC when stdout is a pipe.
+        // process.exit() below can then drop queued bytes and Claude Code would
+        // see a truncated report (caught in CI as a stdout mismatch). Route the
+        // gate's stdout through a synchronous writer for the duration of the
+        // call; util.format keeps console.log's exact formatting.
+        const originalLog = console.log;
+        console.log = (...args) => { writeSync(1, `${format(...args)}\n`); };
         try {
           const { main: qualityCheckMain } = require('./quality-check.cjs');
           inQualityGate = true;
@@ -254,6 +262,9 @@ async function runPost(input, rawPayload) {
           // (non-blocking for Claude Code). Same outcome, no block.
           writeSync(2, `quality-check.cjs failed: ${err?.message ?? err}\n`);
           return 1;
+        } finally {
+          console.log = originalLog;
+          inQualityGate = false;
         }
       }
       return await runQualityChild(plan, rawPayload);
