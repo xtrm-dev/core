@@ -58,6 +58,7 @@
 import { spawn } from 'node:child_process';
 import { writeSync } from 'node:fs';
 import { format } from 'node:util';
+import * as ROUTING from './hook-routing.mjs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -76,34 +77,30 @@ const MODE = process.argv[2] ?? '';
 //      first. Claude Code surfaces a killed hook as a hook-timeout notice to the
 //      operator; a silent exit-0 would discard the exit-2 decision invisibly,
 //      which is a failure-mode inversion.
-const WATCHDOG_MS = { pre: 1500, post: 29500, session: 9500 }[MODE] ?? 1500;
+// Absolute deadline from process start, deliberately under the timeout
+// registered in policies/hook-dispatcher.json (2000/30000/10000). ONE budget,
+// not two timers: a work timer that restarted the full budget would let the
+// dispatcher outlive Claude Code's own kill, which is the guarantee this file
+// documents.
+const TIMEOUT_MS = { pre: 2000, post: 30000, session: 10000 }[MODE] ?? 2000;
+const WATCHDOG_MS = TIMEOUT_MS - 500;
+const DEADLINE_AT = Date.now() + WATCHDOG_MS;
 // Defensive cap on stdin: a PostToolUse payload carries tool_response content
 // and can be large; anything past this is pathological and would only feed a
 // memory spike (old hooks parsed unbounded input and could balloon).
 const MAX_STDIN_BYTES = 32 * 1024 * 1024;
 
-const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-// The old registration matcher was Bash|Grep|Read|Glob, but the runtime sync
-// has historically widened the *installed* matcher to Serena symbol/file tools
-// (mergeMatcher in cli/src/utils/atomic-config.ts). Those machines were getting
-// enrichment; excluding them here would silently drop it, and
-// gitnexus-hook.cjs still carries the Serena branches.
-const GITNEXUS_TOOLS = new Set([
-  'Bash', 'Grep', 'Read', 'Glob',
-  'mcp__serena__find_symbol',
-  'mcp__serena__find_referencing_symbols',
-  'mcp__serena__replace_symbol_body',
-  'mcp__serena__insert_after_symbol',
-  'mcp__serena__insert_before_symbol',
-  'mcp__serena__get_symbols_overview',
-  'mcp__serena__search_for_pattern',
-  'mcp__serena__rename_symbol',
-]);
-const JS_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs']);
+// Tool routing lives in hook-routing.mjs so it can be pinned by tests against the
+// policy matchers and the gitnexus hook's own tool names.
+const EDIT_TOOLS = new Set(ROUTING.EDIT_TOOLS);
+const GITNEXUS_TOOLS = new Set(ROUTING.GITNEXUS_TOOLS);
+const JS_EXTS = new Set(ROUTING.JS_EXTS);
 
 // Set when the watchdog may fire, so its exit can be made diagnosable.
 let watchdogArmed = false;
 let inQualityGate = false;
+// Kept so a future early-return path can cancel the work timer.
+let workTimer = null;
 
 // Two deadlines (CORE-2339 review B3):
 //   - stall: armed immediately, covers the stdin read. A payload that never
@@ -113,13 +110,13 @@ let inQualityGate = false;
 //   - work: armed once stdin has resolved, covers the checks themselves. When
 //     it fires during the quality gate it says so on stderr first, because a
 //     silent exit-0 there would discard a blocking exit-2 decision invisibly.
-const stallTimer = setTimeout(() => { process.exit(0); }, WATCHDOG_MS);
+const stallTimer = setTimeout(() => { process.exit(0); }, Math.max(0, DEADLINE_AT - Date.now()));
 
 function armWatchdog() {
   if (watchdogArmed) return;
   watchdogArmed = true;
   clearTimeout(stallTimer);
-  setTimeout(() => {
+  workTimer = setTimeout(() => {
     if (inQualityGate) {
       // A blocking exit 2 is about to be discarded. Fail-open is still the
       // contract (Claude Code would have killed the hook too), but make it
@@ -128,7 +125,7 @@ function armWatchdog() {
         + 'blocking decision dropped (same outcome as a Claude hook timeout)\n');
     }
     process.exit(0);
-  }, WATCHDOG_MS);
+  }, Math.max(0, DEADLINE_AT - Date.now()));
 }
 
 // ── stdin ─────────────────────────────────────────────────────────────────────
@@ -184,6 +181,11 @@ function runQualityChild(child, payload) {
     });
     proc.on('error', () => resolve(0)); // spawn failure — old hook absent, allow
     proc.on('close', (code) => resolve(code ?? 0));
+    // proc.on('error') does NOT cover child.stdin stream errors: python3 missing
+    // (ENOENT) or a child that exits before draining stdin (EPIPE) both raise on
+    // the socket, and an unhandled 'error' there would crash the dispatcher with
+    // a stack trace instead of failing open the way the old standalone hook did.
+    proc.stdin.on('error', () => {});
     proc.stdin.write(payload);
     proc.stdin.end();
   });

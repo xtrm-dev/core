@@ -131,7 +131,7 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
         }
     });
 
-    it('post: forwards the quality child exit code 2 for a file with blocking issues', async () => {
+    it('post: forwards the in-process quality gate exit code 2 for a file with blocking issues', async () => {
         const temp = await mkdtemp(path.join(tmpdir(), 'xtrm-dispatch-post-'));
         try {
             const broken = path.join(temp, 'broken.ts');
@@ -176,7 +176,7 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
         }
     });
 
-    it('post: runs the JS quality gate in-process with byte-identical output and exit code', async () => {
+    it('post: runs the JS quality gate in-process with identical content and exit code', async () => {
         const temp = await mkdtemp(path.join(tmpdir(), 'xtrm-dispatch-parity-'));
         try {
             for (const [name, source, expected] of [
@@ -202,7 +202,14 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
 
                 expect(viaDispatcher.status).toBe(expected);
                 expect(viaDispatcher.status).toBe(viaStandalone.status);
-                expect(viaDispatcher.stdout).toBe(viaStandalone.stdout ?? '');
+                // Content must match exactly, but ORDER cannot: checkAll() runs
+                // checkCommonIssues/checkNodePatterns under Promise.all, so
+                // whichever finishes first prints first. That is true of the
+                // standalone hook too, so byte-order equality was a flaky
+                // assertion (it failed in CI and intermittently locally),
+                // not a parity signal. Compare the line multiset instead.
+                const lines = (text: string) => [...text.split('\n')].sort();
+                expect(lines(viaDispatcher.stdout ?? '')).toEqual(lines(viaStandalone.stdout ?? ''));
             }
         } finally {
             await rm(temp, { recursive: true, force: true });

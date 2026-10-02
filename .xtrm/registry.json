@@ -7,11 +7,15 @@
       "install_scope": "global",
       "files": {
         "dispatch.mjs": {
-          "hash": "c8f6161e326e445f3eb7f0343483632dbe81f788a05602365443abdd615dd66a",
+          "hash": "3e727d9236be6e21f935a0561a2600690a48d70e6907fda920efdbb4395838f0",
           "version": "0.13.0"
         },
         "gitnexus/gitnexus-hook.cjs": {
           "hash": "8631c7ac403d8a4a224aea6b53db9a2b252af547b0e9722bf5834a9d52089af3",
+          "version": "0.13.0"
+        },
+        "hook-routing.mjs": {
+          "hash": "2df8477c7c6ea13907f60109480f9f68f4c98f78f6f0338ba221d5b5022f068c",
           "version": "0.13.0"
         },
         "inbox-reminder-stop.mjs": {
@@ -31,7 +35,7 @@
           "version": "0.13.0"
         },
         "README.md": {
-          "hash": "dce177f875c8ee0aaf5d73091ee84c902c2c9bcd697451c33d8ba1ad882ea5bc",
+          "hash": "3b474739c655fa73dd9b7c9347fcd87051175671dd139f7bc041b75d73696e49",
           "version": "0.13.0"
         },
         "specialists-agent-guard.mjs": {

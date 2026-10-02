@@ -68,17 +68,6 @@ files were deleted in lane 2; nothing live imports them:
 **Installation**: `xtrm install all` wires only the gates listed below. Do not
 re-add `beads-*` registrations; the canonical template is the source of truth.
 
-### Core Gates
-- **`beads-edit-gate.mjs`** (PreToolUse) — Blocks writes/edits without an active issue claim.
-- **`beads-commit-gate.mjs`** (PreToolUse) — Blocks commits with an unresolved session claim.
-- **`beads-stop-gate.mjs`** (Stop) — Blocks session stop while a claim remains open.
-
-### Compaction & State Preservation (v2.1.18+)
-- **`beads-pre-compact.mjs`** (PreCompact) — Saves the currently `in_progress` beads state before Claude clears context.
-- **`beads-session-start.mjs`** (SessionStart) — Restores the `in_progress` state when the session restarts after compaction.
-
-*Note: As of v2.1.18+, hook blocking messages are quieted and compacted to save tokens.*
-
 ## Hook Timeouts
 
 Adjust hook execution timeouts in `settings.json` if commands take longer than expected:

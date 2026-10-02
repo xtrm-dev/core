@@ -54,8 +54,14 @@ Key routing decisions inside the dispatcher:
 - **Quality-check still reports and blocks on a broken file** — an edited `.ts` file with
   `as any` + `debugger` yields the quality child's **exit code 2**, forwarded verbatim.
 - **In-process equivalence**: for both a clean and a broken `.ts` file, `dispatch.mjs post`
-  produces **byte-identical stdout and the same exit code** as running `quality-check.cjs`
-  standalone — this is what makes merging the JS gate into the dispatcher safe.
+  produces **the same output content and the same exit code** as running `quality-check.cjs`
+  standalone — this is what makes merging the JS gate into the dispatcher safe. The content
+  is compared as a line multiset, not byte-for-byte: `checkAll()` runs
+  `checkCommonIssues`/`checkNodePatterns` under `Promise.all`, so their completion order —
+  and therefore their print order — is not deterministic **in the standalone hook either**.
+  An earlier revision of this test asserted byte equality, which failed in CI and
+  intermittently locally; that was a flaky assertion about a property the original hook did
+  not have either, not a parity regression (see §8).
 - Fail-closed rule: the dispatcher's failure surface is identical to the old process boundary —
   each check keeps its own documented semantics (boundary/agent guard fail open exactly as
   documented; quality child exit 2 blocks; dispatcher exception/timeout exits 0 = same as
@@ -158,6 +164,31 @@ Against the contract target (≤3 spawns, ≤150 ms per tool call):
    spawns — the max-spawn column shows them (6 before, 4 after).
 3. Pacing and nice level as described in `scripts/hook-bench/README.md`; the runs' own CPU is
    reported per event in `harness_cpu_s` of the JSON output (<1.5 s per 200-replay leg).
+
+## 8. CI failure: root cause, and a correction
+
+CI run 37031734460 failed on `test/hooks/dispatch.test.ts > post: runs the JS quality gate
+in-process with byte-identical output and exit code`.
+
+**First diagnosis (commit 97459551) was wrong.** I attributed it to `console.log` being
+asynchronous on a pipe and `process.exit()` dropping queued bytes, and added a synchronous
+stdout writer around the in-process gate. That hazard is real and the fix is kept — it removes
+a truncation risk that would otherwise bite on any output larger than the pipe buffer, and a
+122 KB report is now verifiably complete. But it did **not** fix the failure.
+
+**Actual root cause:** `quality-check.cjs` `checkAll()` runs its checks with
+`await Promise.all([...])`, so `checkCommonIssues` and `checkNodePatterns` print in completion
+order, which is not deterministic — in the standalone hook too. On a clean file the two `[OK]`
+lines therefore swap places between runs, and the test's byte-order assertion failed
+intermittently (3/3 local parallel reproductions, 1 CI failure, 0 sequential).
+
+**Fix:** the parity assertion now compares the exit code exactly and the stdout as a sorted
+line multiset, with a comment stating why order cannot be part of the contract. The test title
+no longer claims "byte-identical". Verified 11/11 three consecutive runs.
+
+Two lessons worth recording: a flaky assertion was presented as a defect under pressure to fix
+CI, and the first fix was shipped with a confident causal story that the evidence did not
+support. The real defect it looked like was a property the pre-existing hook never had.
 
 ## 5. Non-core hooks (measure-and-report only — not touched)
 
