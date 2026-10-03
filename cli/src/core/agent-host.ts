@@ -8,7 +8,10 @@
  *   only. Remote clients reach it through SSH port forwarding.
  * - Info file: ~/.xtrm/run/agent-host.json carries pid and port for clients and `xt host status`.
  *
- * Idle cost is the registry plus a bounded replay buffer; no provider adapter is resident.
+ * - Session index (XTRM-565): stopped sessions from provider journals, listed as `history_only`
+ *   after the live registry; a live session wins over its history entry.
+ *
+ * Idle cost is the registry, the index, and a bounded replay buffer; no provider adapter is resident.
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -19,6 +22,7 @@ import path from 'node:path';
 import { decodeFrame, encodeFrame } from '@xtrm/contracts';
 import type { AgentCommandPayload, AgentEventV1, AgentHostApiV1 } from '@xtrm/contracts';
 import { AgentHostRegistry, type ProducerConnection, type SubmitRequest } from './agent-host-registry.js';
+import { SessionIndex, type SessionIndexOptions } from './agent-host-session-index.js';
 
 /** The client API never binds anything else by default (§35.5). */
 export const AGENT_HOST_BIND_ADDRESS = '127.0.0.1';
@@ -60,12 +64,15 @@ export interface AgentHostOptions {
     version?: string;
     commandTimeoutMs?: number;
     replayLimit?: number;
+    /** Incremental index of stopped sessions; off unless given (`xt host start` passes the defaults). */
+    sessionIndex?: SessionIndexOptions;
     log?: (message: string) => void;
 }
 
 export interface AgentHost {
     readonly info: AgentHostInfo;
     readonly registry: AgentHostRegistry;
+    readonly sessionIndex: SessionIndex | null;
     close(): Promise<void>;
 }
 
@@ -85,6 +92,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
     const log = options.log ?? ((message: string) => process.stderr.write(`[xt host] ${message}\n`));
     const replayLimit = options.replayLimit ?? DEFAULT_REPLAY_LIMIT;
     const registry = new AgentHostRegistry({ commandTimeoutMs: options.commandTimeoutMs, log });
+    const sessionIndex = options.sessionIndex ? new SessionIndex({ log, ...options.sessionIndex }) : null;
 
     await claimSocketPath(socketPath);
 
@@ -169,13 +177,19 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
         const route = `${req.method} /${parts.join('/')}`;
 
         if (route === 'GET /v1/sessions') {
-            sendJson(res, 200, { schema: 'xtrm.agent-host-api.v1', kind: 'session_list', sessions: registry.list() });
+            const live = registry.list();
+            let sessions = live;
+            if (sessionIndex) {
+                const liveIds = new Set(live.map((s) => s.sessionId));
+                sessions = live.concat(sessionIndex.list().filter((s) => !liveIds.has(s.sessionId)));
+            }
+            sendJson(res, 200, { schema: 'xtrm.agent-host-api.v1', kind: 'session_list', sessions });
             return;
         }
         if (req.method === 'GET' && parts.length === 3 && parts[0] === 'v1' && parts[1] === 'sessions') {
-            const detail = registry.detail(parts[2]);
+            const detail = registry.detail(parts[2]) ?? sessionIndex?.detail(parts[2]) ?? null;
             if (detail) sendJson(res, 200, detail);
-            else sendJson(res, 404, apiError('session_not_found', `no live session ${parts[2]}`));
+            else sendJson(res, 404, apiError('session_not_found', `no session ${parts[2]}`));
             return;
         }
         if (route === 'GET /v1/events') {
@@ -258,6 +272,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
     } catch (error) {
         await closeServer(socketServer);
         safeUnlink(socketPath);
+        await sessionIndex?.close();
         throw error;
     }
     const address = httpServer.address() as net.AddressInfo;
@@ -277,6 +292,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
     return {
         info,
         registry,
+        sessionIndex,
         close() {
             closing ??= (async () => {
                 registry.close();
@@ -284,7 +300,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
                 streams.clear();
                 for (const socket of producers) socket.destroy();
                 httpServer.closeAllConnections();
-                await Promise.all([closeServer(httpServer), closeServer(socketServer)]);
+                await Promise.all([closeServer(httpServer), closeServer(socketServer), sessionIndex?.close()]);
                 safeUnlink(socketPath);
                 if (readAgentHostInfo(infoPath)?.pid === process.pid) safeUnlink(infoPath);
             })();
