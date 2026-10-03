@@ -166,7 +166,17 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const gateMean = gate.reduce((a, b) => a + b, 0) / gate.length;
       const pick = result.choice.choice;
       const entry = roster.find((r) => r.id === pick);
-      if (!result || gateMean < GATE_THRESHOLD || !entry) return { action: "continue" } as const;
+      // Log every evaluation — negatives are the tuning signal.
+      logDecision({
+        ts: new Date().toISOString(),
+        seam: "input",
+        pick: entry?.id ?? pick ?? "none",
+        gate: Number(gateMean.toFixed(3)),
+        confidence: result.choice.confidence,
+        injected: Boolean(entry) && gateMean >= GATE_THRESHOLD,
+        prompt_chars: prompt.length,
+      });
+      if (gateMean < GATE_THRESHOLD || !entry) return { action: "continue" } as const;
 
       // One card per prompt, per catalog id.
       if (!cooldownOk(entry.id, Date.now())) return { action: "continue" } as const;
@@ -181,15 +191,6 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         excerpt,
         `</skill_relevance>`,
       ].filter(Boolean).join("\n");
-
-      logDecision({
-        ts: new Date().toISOString(),
-        skill: entry.id,
-        level: entry.level,
-        confidence: result.choice.confidence,
-        gate: gateMean,
-        prompt_chars: prompt.length,
-      });
 
       pi.sendMessage(
         {
@@ -265,7 +266,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         excerpt,
         `</skill_relevance>`,
       ].filter(Boolean).join("\n");
-      logDecision({ ts: new Date().toISOString(), skill: entry.id, level: entry.level, seam: "agent_end", confidence: result.choice.confidence, gate: gateMean });
+      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
       // One message carries both audiences: the model reads the doctrine
       // block; the operator sees the house card around it.
       pi.sendMessage(
