@@ -36,7 +36,7 @@ export interface SessionIndexOptions {
 }
 
 /** Bump when the derived state changes shape or meaning; older caches are then ignored. */
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const READ_CHUNK_BYTES = 4 * 1024 * 1024;
 const CACHE_WRITE_DELAY_MS = 2_000;
 const TITLE_MAX_CHARS = 200;
@@ -64,6 +64,8 @@ interface JournalState {
     aiTitle?: string;
     firstPrompt?: string;
     model?: string;
+    /** Pi thinking_level_change. */
+    thinkingLevel?: string;
     startedAt?: number;
     lastActivityAt?: number;
     /** One human request and the activity it causes form one Frame (PRD Frame invariant). */
@@ -465,6 +467,9 @@ function applyPiLine(state: JournalState, line: string): void {
         if (typeof entry?.modelId === 'string') {
             state.model = typeof entry.provider === 'string' ? `${entry.provider}/${entry.modelId}` : entry.modelId;
         }
+    } else if (type === 'thinking_level_change') {
+        const entry = parse(line);
+        if (typeof entry?.thinkingLevel === 'string' && entry.thinkingLevel) state.thinkingLevel = entry.thinkingLevel;
     }
 }
 
@@ -517,6 +522,7 @@ function toSummary(file: string, record: JournalRecord): AgentSessionSummary | n
     if (!sessionId || !cwd) return null;
     const title = bounded(state.name ?? state.aiTitle ?? state.firstPrompt, TITLE_MAX_CHARS);
     const model = bounded(state.model, BOUNDED_MAX_CHARS);
+    const thinkingLevel = bounded(state.thinkingLevel, BOUNDED_MAX_CHARS);
     const startedAt = state.startedAt ?? Math.floor(record.mtimeMs);
     const lastActivityAt = Math.max(state.lastActivityAt ?? startedAt, startedAt);
     return {
@@ -528,6 +534,7 @@ function toSummary(file: string, record: JournalRecord): AgentSessionSummary | n
         extensionConnected: false,
         capabilities: [],
         ...(model ? { model } : {}),
+        ...(thinkingLevel ? { thinkingLevel } : {}),
         frameCount: state.frameCount,
         startedAt,
         lastActivityAt,

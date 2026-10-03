@@ -5,7 +5,7 @@ import path from "node:path";
 
 mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" }));
 
-const { createAgentHostBridge } = await import("./index.ts");
+const { createAgentHostBridge, repositoryFromRemote } = await import("./index.ts");
 const { startAgentHost } = await import("../../../../cli/src/core/agent-host.ts");
 
 type Handler = (event: any, ctx: any) => unknown;
@@ -22,6 +22,10 @@ function fakePi() {
       sent.push({ content, options });
     },
     getSessionName: () => "probe",
+    thinkingLevel: "medium",
+    getThinkingLevel(this: { thinkingLevel: string }) {
+      return this.thinkingLevel;
+    },
     getAllTools: () => [
       { name: "bash", sourceInfo: { path: "builtin:bash", source: "builtin", scope: "temporary", origin: "top-level" } },
       {
@@ -34,11 +38,12 @@ function fakePi() {
   const fire = (name: string, event: any, ctx: any) => {
     for (const handler of handlers.get(name) ?? []) handler({ type: name, ...event }, ctx);
   };
-  return { pi: pi as any, sent, fire, handlers };
+  return { pi: pi as any, sent, fire, handlers, setThinking: (level: string) => (pi.thinkingLevel = level) };
 }
 
 function fakeCtx(sessionId: string) {
   let idle = true;
+  let usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined = { tokens: 1000, contextWindow: 100000, percent: 1 };
   const aborts: number[] = [];
   const localDialogs: Array<{ method: string; signal?: AbortSignal; answer: (value: unknown) => void }> = [];
   const pendingLocal = (method: string, opts: any, value: unknown) =>
@@ -57,8 +62,10 @@ function fakeCtx(sessionId: string) {
     sessionManager: { getSessionId: () => sessionId, getSessionFile: () => `/tmp/${sessionId}.jsonl` },
     isIdle: () => idle,
     abort: () => aborts.push(Date.now()),
+    model: { provider: "opencode-go", id: "deepseek-v4.1-flash", contextWindow: 100000 } as any,
+    getContextUsage: () => usage,
   };
-  return { ctx: ctx as any, setIdle: (v: boolean) => (idle = v), aborts, localDialogs };
+  return { ctx: ctx as any, setIdle: (v: boolean) => (idle = v), setUsage: (u: typeof usage) => (usage = u), aborts, localDialogs };
 }
 
 const until = async (check: () => boolean, ms = 3000) => {
@@ -92,10 +99,10 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function start(sessionId = "s-1") {
+  function start(sessionId = "s-1", exec: (file: string, args: string[]) => Promise<string> = async () => "") {
     const pi = fakePi();
     const c = fakeCtx(sessionId);
-    const bridge = createAgentHostBridge(pi.pi, { socketPath: host.info.socket, exec: async () => "", env: {} });
+    const bridge = createAgentHostBridge(pi.pi, { socketPath: host.info.socket, exec, env: {} });
     bridge.register();
     pi.fire("session_start", { reason: "startup" }, c.ctx);
     return { ...pi, ...c, bridge };
@@ -123,11 +130,12 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
 
     const types = frames.map((f) => f.payload.type);
     expect(types[0]).toBe("session_identity");
-    expect(types[1]).toBe("session_start");
+    expect(types[1]).toBe("session_status");
+    expect(types[2]).toBe("session_start");
     expect(types.filter((t) => t === "message_update").length).toBeLessThan(50);
     const lifecycle = types.filter((t) => t !== "message_update");
     expect(lifecycle).toEqual([
-      "session_identity", "session_start", "before_agent_start", "agent_start", "turn_start", "message_start", "message_end",
+      "session_identity", "session_status", "session_start", "before_agent_start", "agent_start", "turn_start", "message_start", "message_end",
       "tool_execution_start", "tool_execution_end", "turn_end", "session_compact", "agent_end", "agent_settled",
     ]);
     expect(frames.map((f) => f.seq)).toEqual(frames.map((_, i) => i));
@@ -148,6 +156,70 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     expect(lastUpdate.assistantMessageEvent.partial).toBeUndefined();
     expect(frames.find((f) => f.payload.type === "agent_end").payload.willRetry).toBeUndefined();
     expect(host.registry.list()[0]).toMatchObject({ sessionId: "s-1", state: "settled", frameCount: 1, extensionConnected: true });
+  });
+
+  test("reports model, thinking level and context usage, and again only when they change (XTRM-603)", async () => {
+    const s = start();
+    const statuses = () => frames.filter((f) => f.payload.type === "session_status").map((f) => f.payload);
+    await until(() => statuses().length === 1);
+    expect(statuses()[0]).toEqual({
+      type: "session_status",
+      model: "opencode-go/deepseek-v4.1-flash",
+      thinkingLevel: "medium",
+      contextUsage: { tokens: 1000, contextWindow: 100000 },
+    });
+    expect(host.registry.list()[0]).toMatchObject({ model: "opencode-go/deepseek-v4.1-flash", thinkingLevel: "medium", contextUsage: { tokens: 1000, contextWindow: 100000 } });
+
+    // Unchanged state sends nothing; a turn that grew the context does.
+    s.fire("turn_end", { turnIndex: 0, message: { role: "assistant" }, toolResults: [] }, s.ctx);
+    s.setUsage({ tokens: 2500.4, contextWindow: 100000, percent: 2.5 });
+    s.fire("turn_end", { turnIndex: 1, message: { role: "assistant" }, toolResults: [] }, s.ctx);
+    await until(() => statuses().length === 2);
+    expect(statuses()[1].contextUsage).toEqual({ tokens: 2500, contextWindow: 100000 });
+
+    // *_select events report the selected value even before ctx reflects it.
+    s.fire("model_select", { model: { provider: "opencode-go", id: "glm-5.1" }, previousModel: s.ctx.model, source: "set" }, s.ctx);
+    s.fire("thinking_level_select", { level: "high", previousLevel: "medium" }, s.ctx);
+    await until(() => statuses().length === 4);
+    expect(statuses()[2].model).toBe("opencode-go/glm-5.1");
+    expect(statuses()[3]).toMatchObject({ model: "opencode-go/deepseek-v4.1-flash", thinkingLevel: "high" });
+
+    // After compaction Pi cannot estimate tokens: null travels, the summary drops the meter.
+    s.setThinking("high");
+    s.setUsage({ tokens: null, contextWindow: 100000, percent: null });
+    s.fire("session_compact", { reason: "manual", willRetry: false, fromExtension: false }, s.ctx);
+    await until(() => statuses().length === 5);
+    expect(statuses()[4].contextUsage).toEqual({ tokens: null, contextWindow: 100000 });
+    await until(() => host.registry.list()[0]?.contextUsage === undefined);
+    expect(hostLog.filter((l) => l.includes("rejected"))).toEqual([]);
+  });
+
+  test("resolves repository owner/name from the origin remote and keeps the main repository path (XTRM-603)", async () => {
+    const calls: string[][] = [];
+    const exec = async (file: string, args: string[]) => {
+      calls.push([file, ...args]);
+      if (args.includes("rev-parse")) return "/w/core/.xtrm/worktrees/core-x\n/w/core/.git\n";
+      if (args.includes("symbolic-ref")) return "xt/x\n";
+      if (args.includes("config")) return "remote.upstream.url https://github.com/up/core.git\nremote.origin.url git@github.com:xtrm-dev/core.git\n";
+      return "";
+    };
+    start("s-1", exec);
+    await until(() => frames.length >= 1);
+    expect(frames[0].payload).toMatchObject({
+      worktree: "/w/core/.xtrm/worktrees/core-x",
+      repository: "xtrm-dev/core",
+      repositoryPath: "/w/core",
+      branch: "xt/x",
+    });
+    expect(host.registry.list()[0]).toMatchObject({ repository: "xtrm-dev/core", repositoryPath: "/w/core" });
+  });
+
+  test("keeps the repository path without a remote", async () => {
+    start("s-1", async (_file, args) => (args.includes("rev-parse") ? "/w/solo\n/w/solo/.git\n" : args.includes("symbolic-ref") ? "main\n" : ""));
+    await until(() => frames.length >= 1);
+    expect(frames[0].payload.repositoryPath).toBe("/w/solo");
+    expect(frames[0].payload.repository).toBeUndefined();
+    expect(frames[0].payload.branch).toBe("main");
   });
 
   test("a host prompt creates a GUI Frame; busy while working; steer, follow_up and abort route", async () => {
@@ -339,4 +411,24 @@ describe("xtrm-agent-host bridge without a host", () => {
       (process.stderr as any).write = origWrite;
     }
   });
+});
+
+describe("repositoryFromRemote", () => {
+  test.each([
+    ["git@github.com:xtrm-dev/core.git", "xtrm-dev/core"],
+    ["github.com:xtrm-dev/core", "xtrm-dev/core"],
+    ["https://github.com/xtrm-dev/core.git", "xtrm-dev/core"],
+    ["https://user:token@github.com/xtrm-dev/core/", "xtrm-dev/core"],
+    ["ssh://git@gitlab.example:2222/group/sub/name.git", "group/sub/name"],
+    ["git://example.org/a.b/c_d-e.git", "a.b/c_d-e"],
+  ])("%s -> %s", (url, expected) => {
+    expect(repositoryFromRemote(url)).toBe(expected);
+  });
+
+  test.each(["/srv/git/core.git", "../core", "file:///srv/git/owner/core.git", "https://github.com/core", "ssh://host/~user/core.git", "", "not a url"])(
+    "%s has no owner/name",
+    (url) => {
+      expect(repositoryFromRemote(url)).toBeUndefined();
+    },
+  );
 });

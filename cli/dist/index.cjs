@@ -76486,7 +76486,7 @@ var xtrm_agent_event_v1_default = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "xtrm.agent-event.v1",
   title: "XTRM agent event frame (extension -> agent host)",
-  description: "One NDJSON frame pushed by an in-session agent integration (the XTRM Pi extension, or Claude hooks) to the XTRM agent host over the Unix socket $XDG_RUNTIME_DIR/xtrm/agent-host.sock (PRD xtrm-app \xA735.3, \xA735.8 item 1). The payload `type` values are the native Pi 1.0.0 extension lifecycle events (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts) plus `session_identity`, `extension_ui_request`, `extension_ui_resolved` and `command_result`, which the extension adds, and `notification` and `subagent_end`, which only Claude hooks report. Pi-native objects (message, args, result) pass through unchanged and stay opaque here: the \xA722 adapter owns their interpretation. Retry state (auto_retry_*) is not available to Pi extensions and is not carried; `agent_settled` is the authoritative Frame-close signal. A backward-incompatible change requires xtrm.agent-event.v2.",
+  description: "One NDJSON frame pushed by an in-session agent integration (the XTRM Pi extension, or Claude hooks) to the XTRM agent host over the Unix socket $XDG_RUNTIME_DIR/xtrm/agent-host.sock (PRD xtrm-app \xA735.3, \xA735.8 item 1). The payload `type` values are the native Pi 1.0.0 extension lifecycle events (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts) plus `session_identity`, `session_status`, `extension_ui_request`, `extension_ui_resolved` and `command_result`, which the extension adds, and `notification` and `subagent_end`, which only Claude hooks report. Pi-native objects (message, args, result) pass through unchanged and stay opaque here: the \xA722 adapter owns their interpretation. Retry state (auto_retry_*) is not available to Pi extensions and is not carried; `agent_settled` is the authoritative Frame-close signal. A backward-incompatible change requires xtrm.agent-event.v2.",
   type: "object",
   additionalProperties: false,
   required: ["schema", "seq", "sessionId", "at", "payload"],
@@ -76506,6 +76506,13 @@ var xtrm_agent_event_v1_default = {
     epochMs: { description: "UTC epoch milliseconds.", type: "integer", minimum: 0 },
     boundedString: { type: "string", minLength: 1, maxLength: 1024, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
     path: { type: "string", minLength: 1, maxLength: 4096, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    repositoryName: {
+      description: "Repository identity `owner/name` resolved from the git remote (origin, else the first remote) without host, scheme or credentials. Nested namespaces keep every owner segment (`group/sub/name`).",
+      type: "string",
+      minLength: 3,
+      maxLength: 512,
+      pattern: "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$"
+    },
     opaque: { description: "Pi-native value passed through unchanged (any JSON)." },
     agentMessage: {
       description: "Pi AgentMessage (user | assistant | toolResult | custom roles). Passed through unchanged.",
@@ -76590,6 +76597,7 @@ var xtrm_agent_event_v1_default = {
     event: {
       oneOf: [
         { $ref: "#/definitions/session_identity" },
+        { $ref: "#/definitions/session_status" },
         { $ref: "#/definitions/session_start" },
         { $ref: "#/definitions/before_agent_start" },
         { $ref: "#/definitions/agent_start" },
@@ -76643,6 +76651,11 @@ var xtrm_agent_event_v1_default = {
         sessionName: { $ref: "#/definitions/boundedString" },
         cwd: { $ref: "#/definitions/path" },
         worktree: { $ref: "#/definitions/path" },
+        repository: { $ref: "#/definitions/repositoryName" },
+        repositoryPath: {
+          description: "Root of the main repository: the parent of the git common directory, shared by all of its worktrees. Present without `repository` when the repository has no remote.",
+          $ref: "#/definitions/path"
+        },
         branch: { $ref: "#/definitions/boundedString" },
         role: { $ref: "#/definitions/boundedString" },
         workItem: { $ref: "#/definitions/workItem" },
@@ -76653,6 +76666,26 @@ var xtrm_agent_event_v1_default = {
           type: "array",
           uniqueItems: true,
           items: { $ref: "#/definitions/capability" }
+        }
+      }
+    },
+    session_status: {
+      description: "Model, thinking level and context usage of the session. Not a Pi event: the extension sends it after session_identity on every connection and again whenever a value changes (model_select, thinking_level_select, turn_end, agent_settled, session_compact). Each frame carries the complete current state and replaces the previous one; an absent field is unknown. `model` is `<provider>/<model id>`. contextUsage.tokens is null when Pi cannot estimate it (after compaction, before the next model response).",
+      type: "object",
+      additionalProperties: false,
+      required: ["type"],
+      properties: {
+        type: { const: "session_status" },
+        model: { $ref: "#/definitions/boundedString" },
+        thinkingLevel: { $ref: "#/definitions/boundedString" },
+        contextUsage: {
+          type: "object",
+          additionalProperties: false,
+          required: ["tokens", "contextWindow"],
+          properties: {
+            tokens: { type: ["integer", "null"], minimum: 0 },
+            contextWindow: { type: "integer", minimum: 1 }
+          }
         }
       }
     },
@@ -76965,7 +76998,14 @@ var xtrm_agent_host_api_v1_default = {
         state: { enum: ["working", "waiting_for_input", "settled", "failed", "history_only"] },
         name: { $ref: "#/definitions/boundedString" },
         cwd: { $ref: "#/definitions/path" },
-        repository: { $ref: "#/definitions/path" },
+        repository: {
+          description: "Repository identity `owner/name` from the git remote (xtrm.agent-event.v1 session_identity.repository); the grouping key (\xA736). Absent when the repository has no remote or the producer does not report one. The filesystem root is `repositoryPath`.",
+          $ref: "#/definitions/path"
+        },
+        repositoryPath: {
+          description: "Root of the main repository on the host (parent of the git common directory).",
+          $ref: "#/definitions/path"
+        },
         worktree: { $ref: "#/definitions/path" },
         branch: { $ref: "#/definitions/boundedString" },
         role: { $ref: "#/definitions/boundedString" },
@@ -76980,9 +77020,10 @@ var xtrm_agent_host_api_v1_default = {
           uniqueItems: true,
           items: { $ref: "xtrm.agent-event.v1#/definitions/capability" }
         },
-        model: { $ref: "#/definitions/boundedString" },
+        model: { description: "`<provider>/<model id>` from the latest session_status (live) or journal model change (history).", $ref: "#/definitions/boundedString" },
         thinkingLevel: { $ref: "#/definitions/boundedString" },
         contextUsage: {
+          description: "Estimated context tokens of the active model from the latest session_status. Absent while Pi cannot estimate the tokens (after compaction).",
           type: "object",
           additionalProperties: false,
           required: ["tokens", "contextWindow"],
@@ -79487,6 +79528,7 @@ var AgentHostRegistry = class {
       } else {
         session = {
           identity,
+          status: null,
           connection,
           frameOpen: false,
           promptPending: null,
@@ -79510,8 +79552,13 @@ var AgentHostRegistry = class {
     session.lastActivityAt = Math.max(session.lastActivityAt, frame.at);
     session.lastSeq = frame.seq;
     if (session.frameOpen) session.frames.at(-1).seq = frame.seq;
-    if (payload.type !== "session_identity" && payload.type !== "subagent_end") session.awaitingLocalInput = false;
+    if (payload.type !== "session_identity" && payload.type !== "session_status" && payload.type !== "subagent_end") {
+      session.awaitingLocalInput = false;
+    }
     switch (payload.type) {
+      case "session_status":
+        session.status = payload;
+        break;
       case "before_agent_start":
       case "agent_start":
         if (!session.frameOpen) this.openFrame(session, frame.seq);
@@ -79771,6 +79818,7 @@ var AgentHostRegistry = class {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
     const id = session.identity;
+    const status2 = session.status;
     let childCount = 0;
     for (const other of this.sessions.values()) if (other.identity.parentSessionId === sessionId) childCount += 1;
     return {
@@ -79779,6 +79827,8 @@ var AgentHostRegistry = class {
       state: session.pendingUi.size > 0 || session.awaitingLocalInput ? "waiting_for_input" : session.frameOpen ? "working" : "settled",
       ...id.sessionName ? { name: id.sessionName } : {},
       cwd: id.cwd,
+      ...id.repository ? { repository: id.repository } : {},
+      ...id.repositoryPath ? { repositoryPath: id.repositoryPath } : {},
       ...id.worktree ? { worktree: id.worktree } : {},
       ...id.branch ? { branch: id.branch } : {},
       ...id.role ? { role: id.role } : {},
@@ -79789,6 +79839,10 @@ var AgentHostRegistry = class {
       ...id.launch ? { launch: id.launch } : {},
       extensionConnected: session.connection !== null,
       capabilities: id.capabilities,
+      ...status2?.model ? { model: status2.model } : {},
+      ...status2?.thinkingLevel ? { thinkingLevel: status2.thinkingLevel } : {},
+      // Unknown tokens (after compaction) clear the meter instead of showing a stale value.
+      ...status2?.contextUsage && status2.contextUsage.tokens !== null ? { contextUsage: { tokens: status2.contextUsage.tokens, contextWindow: status2.contextUsage.contextWindow } } : {},
       frameCount: session.frameCount,
       startedAt: session.startedAt,
       lastActivityAt: session.lastActivityAt,
@@ -79823,7 +79877,7 @@ var import_node_fs25 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_node_os28 = __toESM(require("os"), 1);
 var import_node_path67 = __toESM(require("path"), 1);
-var CACHE_VERSION = 1;
+var CACHE_VERSION = 2;
 var READ_CHUNK_BYTES = 4 * 1024 * 1024;
 var CACHE_WRITE_DELAY_MS = 2e3;
 var TITLE_MAX_CHARS = 200;
@@ -80168,6 +80222,9 @@ function applyPiLine(state, line) {
     if (typeof entry?.modelId === "string") {
       state.model = typeof entry.provider === "string" ? `${entry.provider}/${entry.modelId}` : entry.modelId;
     }
+  } else if (type === "thinking_level_change") {
+    const entry = parse5(line);
+    if (typeof entry?.thinkingLevel === "string" && entry.thinkingLevel) state.thinkingLevel = entry.thinkingLevel;
   }
 }
 function applyClaudeLine(state, line) {
@@ -80213,6 +80270,7 @@ function toSummary(file2, record2) {
   if (!sessionId || !cwd) return null;
   const title = bounded2(state.name ?? state.aiTitle ?? state.firstPrompt, TITLE_MAX_CHARS);
   const model = bounded2(state.model, BOUNDED_MAX_CHARS2);
+  const thinkingLevel = bounded2(state.thinkingLevel, BOUNDED_MAX_CHARS2);
   const startedAt = state.startedAt ?? Math.floor(record2.mtimeMs);
   const lastActivityAt = Math.max(state.lastActivityAt ?? startedAt, startedAt);
   return {
@@ -80224,6 +80282,7 @@ function toSummary(file2, record2) {
     extensionConnected: false,
     capabilities: [],
     ...model ? { model } : {},
+    ...thinkingLevel ? { thinkingLevel } : {},
     frameCount: state.frameCount,
     startedAt,
     lastActivityAt,

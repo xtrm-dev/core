@@ -52,7 +52,14 @@
         "state": { "enum": ["working", "waiting_for_input", "settled", "failed", "history_only"] },
         "name": { "$ref": "#/definitions/boundedString" },
         "cwd": { "$ref": "#/definitions/path" },
-        "repository": { "$ref": "#/definitions/path" },
+        "repository": {
+          "description": "Repository identity `owner/name` from the git remote (xtrm.agent-event.v1 session_identity.repository); the grouping key (§36). Absent when the repository has no remote or the producer does not report one. The filesystem root is `repositoryPath`.",
+          "$ref": "#/definitions/path"
+        },
+        "repositoryPath": {
+          "description": "Root of the main repository on the host (parent of the git common directory).",
+          "$ref": "#/definitions/path"
+        },
         "worktree": { "$ref": "#/definitions/path" },
         "branch": { "$ref": "#/definitions/boundedString" },
         "role": { "$ref": "#/definitions/boundedString" },
@@ -67,9 +74,10 @@
           "uniqueItems": true,
           "items": { "$ref": "xtrm.agent-event.v1#/definitions/capability" }
         },
-        "model": { "$ref": "#/definitions/boundedString" },
+        "model": { "description": "`<provider>/<model id>` from the latest session_status (live) or journal model change (history).", "$ref": "#/definitions/boundedString" },
         "thinkingLevel": { "$ref": "#/definitions/boundedString" },
         "contextUsage": {
+          "description": "Estimated context tokens of the active model from the latest session_status. Absent while Pi cannot estimate the tokens (after compaction).",
           "type": "object",
           "additionalProperties": false,
           "required": ["tokens", "contextWindow"],

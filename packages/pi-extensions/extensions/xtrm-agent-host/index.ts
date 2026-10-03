@@ -4,7 +4,9 @@
  * Runs inside every Pi session, however it was started, and:
  * - pushes the Pi lifecycle events as xtrm.agent-event.v1 NDJSON frames to the local agent host
  *   socket ($XDG_RUNTIME_DIR/xtrm/agent-host.sock, else ~/.xtrm/run/agent-host.sock);
- * - sends session_identity first on every connection (§11 identity from the xt pi launch context);
+ * - sends session_identity first on every connection (§11 identity from the xt pi launch context, with the
+ *   repository owner/name from the git remote), then session_status (model, thinking level, context usage)
+ *   and again whenever one of those changes;
  * - executes xtrm.agent-command.v1 frames (prompt, steer, follow_up, abort, extension_ui_response)
  *   and answers each with a command_result;
  * - proxies ctx.ui select / confirm / input so the host can answer them while the terminal dialog
@@ -25,6 +27,7 @@ import type {
   AgentEventPayload,
   AgentImageContent,
   AgentSessionIdentity,
+  AgentSessionStatus,
   AgentToolSource,
 } from "@xtrm/contracts";
 import { execFile } from "node:child_process";
@@ -85,6 +88,44 @@ function bounded(value: unknown, max = 1024): string | undefined {
   if (typeof value !== "string") return undefined;
   const clean = value.replace(/[\u0000-\u001F\u007F]/g, "").slice(0, max);
   return clean.length > 0 ? clean : undefined;
+}
+
+const REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]+$/;
+
+/**
+ * `owner/name` of a git remote URL (scp-like `git@host:owner/name.git`, or ssh/https/git URLs), without host,
+ * scheme or credentials. Local paths and file:// remotes have no owner and return undefined.
+ */
+export function repositoryFromRemote(url: string): string | undefined {
+  const remote = url.trim();
+  let repoPath: string | undefined;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(remote)) {
+    try {
+      const parsed = new URL(remote);
+      if (parsed.protocol === "file:") return undefined;
+      repoPath = decodeURIComponent(parsed.pathname);
+    } catch {
+      return undefined;
+    }
+  } else {
+    // scp-like syntax: [user@]host:path. A colon after a slash means a local path.
+    const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(remote);
+    if (!scp) return undefined;
+    repoPath = scp[2];
+  }
+  const segments = repoPath.replace(/\/+$/, "").replace(/\.git$/, "").split("/").filter((part) => part.length > 0);
+  if (segments.length < 2 || !segments.every((part) => REPOSITORY_SEGMENT.test(part) && part !== "." && part !== "..")) return undefined;
+  const name = segments.join("/");
+  return name.length <= 512 ? name : undefined;
+}
+
+/** Remote URL of `origin`, else of the first remote, from `git config --get-regexp` output. */
+function remoteUrl(configOut: string): string | undefined {
+  const remotes = configOut
+    .split("\n")
+    .map((line) => /^remote\.(.+)\.url\s+(.+)$/.exec(line.trim()))
+    .filter((match): match is RegExpExecArray => match !== null);
+  return (remotes.find((match) => match[1] === "origin") ?? remotes[0])?.[2];
 }
 
 function compact<T extends Record<string, unknown>>(value: T): T {
@@ -162,6 +203,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   let ctx: ExtensionContext | null = null;
   let sessionId: string | null = null;
   let identity: AgentSessionIdentity | null = null;
+  /** JSON of the last session_status sent on the current connection; null forces the next one out. */
+  let lastStatus: string | null = null;
   let socket: net.Socket | null = null;
   let seq = 0;
   let reconnectDelay = RECONNECT_MIN_MS;
@@ -263,6 +306,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       seq = 0;
       reconnectDelay = RECONNECT_MIN_MS;
       write(frame(Date.now(), JSON.stringify(identity)));
+      lastStatus = JSON.stringify(buildStatus(ctx!));
+      write(frame(Date.now(), lastStatus));
       const queued = queue;
       queue = [];
       for (const entry of queued) {
@@ -278,6 +323,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       if (socket !== conn) return;
       socket = null;
       readBuffer = "";
+      lastStatus = null;
       queue = [];
       updates.clear();
       pendingUi.clear();
@@ -327,10 +373,13 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
           "#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}",
         ])
       : Promise.resolve("");
-    const gitInfo = exec("git", ["-C", cwd, "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]);
+    const gitInfo = exec("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"]);
+    // Separate from rev-parse: HEAD of a repository without commits fails rev-parse but still names a branch.
+    const branchInfo = exec("git", ["-C", cwd, "symbolic-ref", "--short", "-q", "HEAD"]);
+    const remoteInfo = exec("git", ["-C", cwd, "config", "--get-regexp", "^remote\\..*\\.url$"]);
     if (pane) void exec("tmux", ["set-option", "-p", "-t", pane, PANE_SESSION_OPTION, id]);
 
-    const [tmuxOut, gitOut] = await Promise.all([tmuxInfo, gitInfo]);
+    const [tmuxOut, gitOut, branchOut, remoteOut] = await Promise.all([tmuxInfo, gitInfo, branchInfo, remoteInfo]);
     if (tmuxOut) {
       const [name, paneRole, paneBead, parent, paneWorktree, paneBranch] = tmuxOut.replace(/\n$/, "").split("\t");
       tmuxSession = bounded(name);
@@ -340,9 +389,16 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       worktree = bounded(paneWorktree, 4096);
       branch = bounded(paneBranch);
     }
-    const [gitTop, gitBranch] = gitOut.split("\n");
+    const [gitTop, gitCommonDir] = gitOut.split("\n");
     worktree ??= bounded(gitTop, 4096);
-    if (gitBranch && gitBranch !== "HEAD") branch ??= bounded(gitBranch);
+    // The common directory is <repo>/.git for a checkout and all of its worktrees; a bare repository is its own root.
+    const repositoryPath = gitCommonDir
+      ? bounded(path.basename(gitCommonDir) === ".git" ? path.dirname(gitCommonDir) : gitCommonDir, 4096)
+      : undefined;
+    const remote = remoteUrl(remoteOut);
+    const repository = repositoryPath && remote ? repositoryFromRemote(remote) : undefined;
+    // A detached HEAD is not a symbolic ref: no branch.
+    branch ??= bounded(branchOut.trim());
 
     // @agent_parent_session holds the parent's tmux session id; the parent's bridge publishes
     // its Pi session id on its pane, which turns that into a session id the host can join on.
@@ -367,6 +423,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       sessionName: bounded(pi.getSessionName()) ?? bounded(env.XTRM_SESSION_NAME) ?? tmuxSession,
       cwd: bounded(cwd, 4096) ?? "/",
       worktree,
+      repository,
+      repositoryPath,
       branch,
       role,
       workItem: bead ? compact({ ref: bead, system: /^[A-Z][A-Z0-9]*-[0-9]+$/.test(bead) ? ("substrate" as const) : undefined }) : undefined,
@@ -375,6 +433,46 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       launch: env[LAUNCH_ENV] === "gui" ? ("gui" as const) : ("terminal" as const),
       capabilities: CAPABILITIES,
     });
+  }
+
+  // --- status ----------------------------------------------------------------------------
+
+  /**
+   * Model, thinking level and context usage from the Pi 1.0.0 extension API: ctx.model, pi.getThinkingLevel()
+   * (ctx.thinkingLevel as fallback) and ctx.getContextUsage(). `override` carries the value a *_select event
+   * reports, which ctx may not reflect yet while the event dispatches.
+   */
+  function buildStatus(current: ExtensionContext, override: { model?: any; thinkingLevel?: unknown } = {}): AgentSessionStatus {
+    const read = <T,>(get: () => T): T | undefined => {
+      try {
+        return get();
+      } catch {
+        return undefined;
+      }
+    };
+    const model = override.model ?? read(() => current.model);
+    const thinkingLevel = override.thinkingLevel ?? read(() => pi.getThinkingLevel()) ?? read(() => current.thinkingLevel);
+    const usage = read(() => current.getContextUsage());
+    const contextWindow = usage && Number.isFinite(usage.contextWindow) ? Math.floor(usage.contextWindow) : 0;
+    return compact({
+      type: "session_status" as const,
+      model: model && typeof model.id === "string" ? bounded(typeof model.provider === "string" ? `${model.provider}/${model.id}` : model.id) : undefined,
+      thinkingLevel: bounded(thinkingLevel),
+      contextUsage:
+        usage && contextWindow >= 1
+          ? { tokens: typeof usage.tokens === "number" && Number.isFinite(usage.tokens) && usage.tokens >= 0 ? Math.round(usage.tokens) : null, contextWindow }
+          : undefined,
+    });
+  }
+
+  /** Send session_status when it differs from the last one sent on this connection. */
+  function emitStatus(override?: { model?: any; thinkingLevel?: unknown }): void {
+    if (state !== "open" || !ctx) return;
+    const status = buildStatus(ctx, override);
+    const json = JSON.stringify(status);
+    if (json === lastStatus) return;
+    lastStatus = json;
+    emit(status);
   }
 
   // --- tools ------------------------------------------------------------------------------
@@ -644,6 +742,16 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       emit(toolPayload("tool_execution_end", event));
     });
 
+    pi.on("model_select", (event, current) => {
+      track(current);
+      emitStatus({ model: event.model });
+    });
+
+    pi.on("thinking_level_select", (event, current) => {
+      track(current);
+      emitStatus({ thinkingLevel: event.level });
+    });
+
     pi.on("turn_end", (event) => {
       if (!live()) return;
       emit(
@@ -656,6 +764,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
           toolResultEntryIds: Array.isArray((event as any).toolResultEntryIds) ? (event as any).toolResultEntryIds.map((e: unknown) => String(e).slice(0, 256)) : undefined,
         }),
       );
+      emitStatus();
     });
 
     // Pi extensions never see willRetry on agent_end; only agent_settled closes a Frame.
@@ -666,6 +775,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
     pi.on("agent_settled", (_event, current) => {
       track(current);
+      emitStatus();
       emit({ type: "agent_settled" });
     });
 
@@ -680,6 +790,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
           compactionEntryId: typeof event.compactionEntry?.id === "string" ? event.compactionEntry.id.slice(0, 256) : undefined,
         }),
       );
+      emitStatus();
     });
 
     pi.on("session_compact_failed", (event) => {
