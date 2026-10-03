@@ -22,14 +22,14 @@ interface HookRun {
 }
 
 /** Run the hook as Claude does: JSON on stdin, inherited env, no tmux pane (never touch the caller's). */
-function runHook(socketPath: string, input: Record<string, unknown>): Promise<HookRun> {
+function runHook(socketPath: string, input: Record<string, unknown>, nodeArgs: string[] = []): Promise<HookRun> {
     const env: NodeJS.ProcessEnv = { ...process.env, XTRM_AGENT_HOST_SOCKET: socketPath, XTRM_SESSION_NAME: 'claude-test' };
     for (const key of ['TMUX', 'TMUX_PANE', 'XTMUX_AGENT_ROLE', 'XTMUX_AGENT_BEAD', 'XTRM_AGENT_HOST', 'XTRM_AGENT_LAUNCH']) {
         delete env[key];
     }
     return new Promise((resolve, reject) => {
         const started = performance.now();
-        const child = spawn(process.execPath, [reporter], { env, stdio: ['pipe', 'pipe', 'ignore'] });
+        const child = spawn(process.execPath, [...nodeArgs, reporter], { env, stdio: ['pipe', 'pipe', 'ignore'] });
         let stdout = '';
         child.stdout.on('data', (chunk) => (stdout += chunk));
         child.on('error', reject);
@@ -71,14 +71,12 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
     });
 
     const summary = () => host.registry.list().find((s) => s.sessionId === sessionId);
-    // XTRM-579: the reporter hard-exits 0 at its 80 ms wall-clock budget measured from
-    // process start, so it includes node boot. Under parallel load an invocation can blow
-    // that budget before its socket connect completes (measured: a PreToolUse invocation
-    // returned after 94 ms with zero frames delivered, spinning until() for its full 5 s;
-    // at sustained load ≥ ~13 the exit timer wins deterministically and every invocation
-    // delivers nothing). A zero-frame invocation is therefore a benign miss of the hook's
-    // best-effort delivery, not a failure — re-invoke until a frame arrives. Retries only
-    // ever happen after a miss, so no duplicate frames can distort the assertions below.
+    // XTRM-579: delivery is best effort — the reporter hard-exits 0 when its budget runs
+    // out. Until XTRM-583 that budget counted node boot, so under parallel load every
+    // invocation could miss. The budget now starts with the hook's own work, so misses
+    // should be rare; a zero-frame invocation is still re-invoked (and logged) rather than
+    // failed. Retries only ever happen after a miss, so no duplicate frames can distort the
+    // assertions below, and the retry log keeps a regression visible.
     const hook = async (input: Record<string, unknown>) => {
         const before = frames.length;
         let run: HookRun | undefined;
@@ -98,9 +96,8 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
             }
             misses++;
             if (Date.now() > giveUpAt) throw new Error('hook never delivered a frame (reporter budget miss under sustained load)');
-            // When the invocation itself ran long, node boot ate the reporter's 80 ms
-            // from-process-start budget and the miss was load-caused; back off so the
-            // retry waits out the load spike instead of burning attempts into it.
+            // When the invocation itself ran long the miss was load-caused; back off so
+            // the retry waits out the load spike instead of burning attempts into it.
             if (run.ms >= 250) await new Promise((r) => setTimeout(r, 500));
         }
     };
@@ -173,6 +170,15 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
             (f) => f.payload.type === 'tool_execution_start' && (f.payload as { toolCallId?: string }).toolCallId === 'toolu_w',
         )!;
         expect((start.payload as { args: unknown }).args).toMatchObject({ truncated: true });
+    });
+
+    it('delivers when node boot is slow: the budget counts from hook work, not process start (XTRM-583)', async () => {
+        // A preload that busy-waits 200 ms stands in for node boot on a loaded machine. The
+        // old from-process-start 80 ms budget dropped this invocation every time. No retry.
+        const slowBoot = `data:text/javascript,${encodeURIComponent('const end = Date.now() + 200; while (Date.now() < end);')}`;
+        const run = await runHook(socketPath, { hook_event_name: 'UserPromptSubmit' }, ['--import', slowBoot]);
+        expect(run).toMatchObject({ code: 0, stdout: '' });
+        await until(() => summary()?.state === 'working');
     });
 
     it('exits 0 quickly with no output when no host is running', async () => {
