@@ -58,8 +58,11 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
         dir = mkdtempSync(path.join(os.tmpdir(), 'xt-host-claude-'));
         socketPath = path.join(dir, 'agent-host.sock');
         host = await startAgentHost({ socketPath, infoPath: path.join(dir, 'agent-host.json'), log: () => {} });
-        frames = [];
-        host.registry.subscribe((frame) => frames.push(frame));
+        // Bind the subscription to this test's own array: a frame delivered late by the
+        // previous test's host must not land in the next test's sink (XTRM-579).
+        const sink: AgentEventV1[] = [];
+        frames = sink;
+        host.registry.subscribe((frame) => sink.push(frame));
     });
 
     afterEach(async () => {
@@ -68,13 +71,38 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
     });
 
     const summary = () => host.registry.list().find((s) => s.sessionId === sessionId);
+    // XTRM-579: the reporter hard-exits 0 at its 80 ms wall-clock budget measured from
+    // process start, so it includes node boot. Under parallel load an invocation can blow
+    // that budget before its socket connect completes (measured: a PreToolUse invocation
+    // returned after 94 ms with zero frames delivered, spinning until() for its full 5 s;
+    // at sustained load ≥ ~13 the exit timer wins deterministically and every invocation
+    // delivers nothing). A zero-frame invocation is therefore a benign miss of the hook's
+    // best-effort delivery, not a failure — re-invoke until a frame arrives. Retries only
+    // ever happen after a miss, so no duplicate frames can distort the assertions below.
     const hook = async (input: Record<string, unknown>) => {
         const before = frames.length;
-        const run = await runHook(socketPath, input);
-        expect(run.code).toBe(0);
-        expect(run.stdout).toBe('');
-        await until(() => frames.length > before);
-        return run;
+        let run: HookRun | undefined;
+        let misses = 0;
+        // Fail with the measured cause before vitest's 30 s test timeout swallows it:
+        // under sustained load each spawn itself takes seconds, so a fixed attempt cap
+        // would time out inside vitest instead of reporting the budget miss.
+        const giveUpAt = Date.now() + 25000;
+        for (;;) {
+            run = await runHook(socketPath, input);
+            expect(run.code).toBe(0);
+            expect(run.stdout).toBe('');
+            if (await until(() => frames.length > before, 250).then(() => true, () => false)) {
+                if (misses > 0)
+                    console.error(`[xtrm-579] ${String(input.hook_event_name)} delivered after ${misses} retry(s), final invocation ms=${run!.ms.toFixed(0)}`);
+                return run;
+            }
+            misses++;
+            if (Date.now() > giveUpAt) throw new Error('hook never delivered a frame (reporter budget miss under sustained load)');
+            // When the invocation itself ran long, node boot ate the reporter's 80 ms
+            // from-process-start budget and the miss was load-caused; back off so the
+            // retry waits out the load spike instead of burning attempts into it.
+            if (run.ms >= 250) await new Promise((r) => setTimeout(r, 500));
+        }
     };
 
     it('reports presence, state transitions and classified tools until SessionEnd', async () => {
@@ -139,7 +167,11 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
 
     it('drops large tool input instead of forwarding file bodies', async () => {
         await hook({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_use_id: 'toolu_w', tool_input: { content: 'x'.repeat(10_000) } });
-        const start = frames.find((f) => f.payload.type === 'tool_execution_start')!;
+        // Select the Write event by its toolCallId so an out-of-order or stale frame
+        // cannot satisfy the lookup (XTRM-579).
+        const start = frames.find(
+            (f) => f.payload.type === 'tool_execution_start' && (f.payload as { toolCallId?: string }).toolCallId === 'toolu_w',
+        )!;
         expect((start.payload as { args: unknown }).args).toMatchObject({ truncated: true });
     });
 
