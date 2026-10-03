@@ -110,15 +110,38 @@ const XTRM_GLOBAL_SOURCE = 'xtrm-global';
 // untagged wrapper is dropped only when every command in it resolves under
 // ~/.xtrm/hooks to a file on this list. Never match by name alone, and never
 // add a file here without the commit that retired its registration.
+// XTRM-606: bare `bd` command hooks (for example the bulk `prime`
+// diagnostic) are NOT listed here. A repo-wide history search found no commit
+// whose code registers a bare bd command in settings.json — only docs prose,
+// the installer next-steps print and the Bash permission allowlist ever
+// referenced it — so bare bd entries are foreign residue and stay (the
+// runtime-sync global-guard test asserts exactly that).
 const RETIRED_HOOK_FILES: ReadonlySet<string> = new Set([
     // Registered by 617a74fe (#525); folded into dispatch.mjs event by 93c90513 (XTRM-592, #683).
     'inbox-reminder-stop.mjs',
     // Registered by 7196cdc7 (XTRM-569); folded into dispatch.mjs by 93c90513 (XTRM-592, #683).
     'agent-host-reporter.mjs',
-    // Registered since 020e1bec (#100); Stop registration removed by f949b33f (xtrm-6qu.8).
+    // Registered by 8ded3f2b (#17); every canonical registration removed by f949b33f (xtrm-6qu.8).
     'beads-stop-gate.mjs',
-    // Registered since 020e1bec (#100); retired with the bd-memory stack by 959c7718 (#639).
+    // Registered by d6eb19db (#41) on Stop; retired with the bd-memory stack by 959c7718 (#639).
     'beads-memory-gate.mjs',
+    // Registered by 8ded3f2b (#17); replaced by the beads-memory-gate Stop hook by d6eb19db (#41).
+    'beads-close-memory-prompt.mjs',
+    // Registered by 8ded3f2b (#17); every canonical registration removed by f949b33f (xtrm-6qu.8).
+    'beads-edit-gate.mjs',
+    // Registered by 8ded3f2b (#17); every canonical registration removed by f949b33f (xtrm-6qu.8).
+    'beads-commit-gate.mjs',
+    // Registered by 6d89ac99 (#76); every canonical registration removed by f949b33f (xtrm-6qu.8).
+    'beads-claim-sync.mjs',
+    // Registered by 9a3ccad5 (#61); every canonical registration removed by f949b33f (xtrm-6qu.8).
+    'beads-compact-save.mjs',
+    // Registered by 9a3ccad5 (#61); every canonical registration removed by f949b33f (xtrm-6qu.8).
+    'beads-compact-restore.mjs',
+    // beads-gate-utils.mjs / beads-gate-core.mjs / beads-gate-messages.mjs and
+    // beads-status-cache.mjs are intentionally absent: they shipped under
+    // ~/.xtrm/hooks as shared payload modules but were never registered as hook
+    // commands, so an untagged wrapper targeting one of them is not a known
+    // residue shape.
 ]);
 
 export function renderClaudeRuntimePlanSummary(): void {
