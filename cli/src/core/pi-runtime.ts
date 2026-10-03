@@ -134,6 +134,7 @@ export function resolvePiLaunchAgentDir(env: NodeJS.ProcessEnv = process.env): s
 
 /** True when the xt package runs from an npm install, not a source checkout/worktree build. */
 export function isInstalledPackageRoot(pkgRoot: string): boolean {
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `pkgRoot` is xt's own package root; the result is only inspected, never opened.
     return path.resolve(pkgRoot).split(path.sep).includes('node_modules');
 }
 
@@ -949,6 +950,7 @@ export async function remediateStalePiMcpAdapterOverride(
     log?: (message: string) => void,
     agentDir: string = PI_AGENT_DIR,
 ): Promise<PiMcpAdapterOverrideCheck> {
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir (PI_CODING_AGENT_DIR/PI_AGENT_DIR or ~/.pi/agent); the leaf is constant.
     const overrideDir = path.join(agentDir, 'extensions', 'pi-mcp-adapter');
     const stat = await fs.lstat(overrideDir).catch(() => null);
     if (!stat) {
@@ -959,6 +961,7 @@ export async function remediateStalePiMcpAdapterOverride(
         return { path: overrideDir, found: true, stale: false, remediated: false };
     }
 
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `overrideDir` is derived above; the entry name is a module constant.
     const hasRequiredEntry = await fs.pathExists(path.join(overrideDir, PI_MCP_ADAPTER_REQUIRED_ENTRY));
     if (stat.isDirectory() && hasRequiredEntry) {
         return { path: overrideDir, found: true, stale: false, remediated: false };
