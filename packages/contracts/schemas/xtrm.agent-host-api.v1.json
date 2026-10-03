@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "xtrm.agent-host-api.v1",
   "title": "XTRM agent host client API message",
-  "description": "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app §35.5, §35.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
+  "description": "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app §35.5, §35.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), session history (GET /v1/sessions/:id/history -> session_history: the provider journal entries a client projects Frames from, beyond the replay buffer), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
   "type": "object",
   "required": ["schema", "kind"],
   "properties": {
@@ -11,6 +11,7 @@
       "enum": [
         "session_list",
         "session_detail",
+        "session_history",
         "event",
         "submit_request",
         "submit_result",
@@ -25,6 +26,7 @@
   "oneOf": [
     { "$ref": "#/definitions/session_list" },
     { "$ref": "#/definitions/session_detail" },
+    { "$ref": "#/definitions/session_history" },
     { "$ref": "#/definitions/event" },
     { "$ref": "#/definitions/submit_request" },
     { "$ref": "#/definitions/submit_result" },
@@ -134,6 +136,20 @@
         "session": { "$ref": "#/definitions/sessionSummary" },
         "identity": { "$ref": "xtrm.agent-event.v1#/definitions/session_identity" },
         "lastSeq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "session_history": {
+      "description": "Frame-relevant entries of a provider session journal (XTRM-604, PRD xtrm-app §26): Pi `message` and `compaction` entries on the active branch, oldest first, as the journal holds them. Strings above 64 KiB are cut and image data is dropped; `truncated` is then true. The journal stays authoritative; the host keeps no copy.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "sessionId", "provider", "entries"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "session_history" },
+        "sessionId": { "$ref": "#/definitions/sessionId" },
+        "provider": { "const": "pi" },
+        "entries": { "type": "array", "items": { "type": "object", "required": ["type"], "properties": { "type": { "type": "string" } } } },
+        "truncated": { "type": "boolean" }
       }
     },
     "event": {

@@ -17,6 +17,9 @@
  * - References (XTRM-570): POST /v1/references/resolve resolves @file, @commit, @session, @agent
  *   and @frame against the session on this host, within the PRD §36.12 item 2 budgets.
  *
+ * - History (XTRM-604): GET /v1/sessions/:id/history returns the Pi journal entries of a live or
+ *   stopped session (agent-host-history.ts), read-only, so clients project Frames beyond the replay buffer.
+ *
  * - Direct mode (XTRM-568): off by default. With it, remote clients behind an HTTPS front such as
  *   `tailscale serve` reach the same loopback listener; every non-local request needs a device
  *   session from a one-time pairing token (agent-host-auth.ts). Without it, proxied requests are
@@ -44,6 +47,7 @@ import {
     type DeviceSummary,
     type DirectModeOptions,
 } from './agent-host-auth.js';
+import { HistoryRejection, readPiHistory } from './agent-host-history.js';
 import { AgentHostLauncher, LaunchRejection, type AgentHostLaunchOptions, type LaunchRequest } from './agent-host-launch.js';
 import { ReferenceRejection, resolveReferences, type ReferenceResolveRequest } from './agent-host-references.js';
 import { AgentHostRegistry, type ProducerConnection, type SubmitRequest } from './agent-host-registry.js';
@@ -253,6 +257,22 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
                 sessions = live.concat(sessionIndex.list().filter((s) => !liveIds.has(s.sessionId)));
             }
             sendJson(res, 200, { schema: 'xtrm.agent-host-api.v1', kind: 'session_list', sessions });
+            return;
+        }
+        if (req.method === 'GET' && parts.length === 4 && parts[0] === 'v1' && parts[1] === 'sessions' && parts[3] === 'history') {
+            const session = registry.detail(parts[2])?.session ?? sessionIndex?.get(parts[2]) ?? null;
+            if (!session) {
+                sendJson(res, 404, apiError('session_not_found', `no session ${parts[2]}`));
+                return;
+            }
+            try {
+                if (session.provider !== 'pi') throw new HistoryRejection('history_unsupported', `no history read for ${session.provider} sessions`);
+                if (!session.sessionFile) throw new HistoryRejection('history_not_found', `session ${parts[2]} reports no journal`);
+                sendJson(res, 200, await readPiHistory(session.sessionFile, session.sessionId));
+            } catch (error) {
+                if (!(error instanceof HistoryRejection)) throw error;
+                sendJson(res, error.code === 'history_unsupported' ? 400 : 404, apiError(error.code, error.message));
+            }
             return;
         }
         if (req.method === 'GET' && parts.length === 3 && parts[0] === 'v1' && parts[1] === 'sessions') {
