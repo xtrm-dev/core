@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-03
+
+### Added
+- Agent host protocol schemas in @xtrm/contracts 0.12.0 ([30ab889](https://github.com/xtrm-dev/core/commit/30ab8890c9bf7f706058588293a3540b101639c3))
+- Xt host agent host daemon ([73da09d](https://github.com/xtrm-dev/core/commit/73da09da29f7a6651bd6383fe105ab49fedfc1db))
+- Xtrm-agent-host Pi extension for the XTRM agent host ([1f24387](https://github.com/xtrm-dev/core/commit/1f243872daa1a15a6f8d2ee5564746b640733042))
+- Classify tool origin in the agent host (PRD §36.7) ([acffbed](https://github.com/xtrm-dev/core/commit/acffbedabc008575f179130218ed51dffc46ffd9))
+- Report extension UI requests resolved locally (extension_ui_resolved) ([ac1e7fb](https://github.com/xtrm-dev/core/commit/ac1e7fbd1c3b58e9f9f3a57c81cf23e16cb1ecb5))
+- Claude Code hook reporter for the agent host (presence-only) ([7196cdc](https://github.com/xtrm-dev/core/commit/7196cdc794b2f2c887ad54a7c6c031179693b647))
+- Incremental session index for history-only sessions in xt host ([1bcf7f3](https://github.com/xtrm-dev/core/commit/1bcf7f34cf989f7a8fe276efd732d4610dde25c3))
+- Host launch endpoint binds launched tmux panes to sessions ([7dbdc04](https://github.com/xtrm-dev/core/commit/7dbdc04b0a86bbc0ad24e8bca33d1c0d40153dcb))
+- Host resolves typed @ references with revisions and budgets ([8c0d991](https://github.com/xtrm-dev/core/commit/8c0d9915c778ddf2339bfd2bf6596e7d923cf904))
+- Xt host ensure starts or reuses the agent host for the SSH bootstrap ([f71052d](https://github.com/xtrm-dev/core/commit/f71052dcab62308f6c2144271da823fdd5ab5501))
+- Xt host direct mode with one-time pairing and revocable device sessions ([3e1e973](https://github.com/xtrm-dev/core/commit/3e1e973a96715b9d983199e89b4f64777b37038a))
+
+### Fixed
+- Eval phrasing, help-commander parity, receipts evidence (#674) ([2f5c399](https://github.com/xtrm-dev/core/commit/2f5c3991235d70d4b1c812585e651be5b08a2c90))
+- One dispatcher process per hook event (CORE-2339) (#678) ([e6043e4](https://github.com/xtrm-dev/core/commit/e6043e4ed4a8beee3af188e0fd43f254ea6d4792))
+- Inline schemas so bundled consumers load @xtrm/contracts ([1c11efb](https://github.com/xtrm-dev/core/commit/1c11efb470fc72c59a7a2ad06244239839fcb193))
+- Report the extension package name as origin.extension ([24ecda9](https://github.com/xtrm-dev/core/commit/24ecda9df95a69f4ea8ba8eb3ef7191bd0e66fdb))
+- Keep xt pi launch theme sync off the global ~/.pi/agent ([497303a](https://github.com/xtrm-dev/core/commit/497303ae6bdc2ccc37680d11654f9ccdd90cb098))
+- Session index picks up a provider root created after host start ([2b5a0ed](https://github.com/xtrm-dev/core/commit/2b5a0edda5472e5eac1568fe35048bfeebd6e921))
+- Stabilize agent-host Claude hooks test under parallel load ([68925ce](https://github.com/xtrm-dev/core/commit/68925ce2e92bfb52780bd813cf10dd38faca47b9))
+- Claude hook reporter budget counts from hook work, not Node boot ([7e4216e](https://github.com/xtrm-dev/core/commit/7e4216e19203cb784d643a49b189c416694adbf9))
+- Pi-extensions resolves Pi 1.0 SDK in-repo, not from a parent dir ([8f89de8](https://github.com/xtrm-dev/core/commit/8f89de81489fb7da39c7b06d4ed17711d164731d))
+- Pi-extensions typecheck clean against Pi 1.0; gate it in build ([8c8c190](https://github.com/xtrm-dev/core/commit/8c8c1900ccdc1aadfd5e91b8b2948439ead26d49))
+- Reconcile CORE-2339 dispatcher invariants with the XTRM-569 reporter ([2c77eb2](https://github.com/xtrm-dev/core/commit/2c77eb21dde28403d4aa233f7c1ba6e1f1e293da))
+- Justify three semgrep path-join false positives in pi-runtime ([1ff4645](https://github.com/xtrm-dev/core/commit/1ff4645d6ec1d2ce61264769e96317ac7b1e3105))
+- Gate the Pi SDK in prepublishOnly, not in build ([ce3356d](https://github.com/xtrm-dev/core/commit/ce3356d37297b9425305bbf01eb244154824f0dc))
+
+### Other changes
+- Widen specialists range to >=3.21.0 <5 (#677) ([7210fe1](https://github.com/xtrm-dev/core/commit/7210fe1137cdb7c392bd324bf8267b41d392f430))
+
 ## [0.13.0] - 2026-09-20
 
 ### Added
