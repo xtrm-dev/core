@@ -31,16 +31,16 @@ function classifier(reads: string[] = []) {
 }
 
 describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
-    it('rule 1: coordination tools keep their transport extension and version', () => {
+    it('rule 1: coordination tools keep their transport extension name and version', () => {
         const c = classifier();
         expect(c.classifyPi('intercom', pkg('npm:pi-intercom', `${NPM}/pi-intercom`))).toEqual({
             class: 'coordination',
-            extension: 'npm:pi-intercom',
+            extension: 'pi-intercom',
             version: '0.16.0',
         });
         expect(
             c.classifyPi('claude-link', pkg('git:github.com/alonw0/pi-claude-link', '/home/op/.pi/agent/git/github.com/alonw0/pi-claude-link')),
-        ).toMatchObject({ class: 'coordination', extension: 'git:github.com/alonw0/pi-claude-link' });
+        ).toMatchObject({ class: 'coordination', extension: 'pi-claude-link' });
     });
 
     it('rule 1: coordination is keyed by registering source plus name, not by name alone', () => {
@@ -48,7 +48,7 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
         // Same tool name registered by a different package is not coordination.
         expect(c.classifyPi('intercom', pkg('npm:pi-ast-grep', `${NPM}/pi-ast-grep`))).toEqual({
             class: 'extension',
-            extension: 'npm:pi-ast-grep',
+            extension: 'pi-ast-grep',
             version: '0.1.0',
         });
         // Specialists over MCP, both MCP paths.
@@ -61,7 +61,7 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
         expect(c.classifyPi('mcp__specialists__substrate_issue', builtinMcp)).toEqual({ class: 'mcp', server: 'specialists' });
         expect(
             c.classifyPi('mcp', pkg('npm:pi-mcp-adapter', `${NPM}/pi-mcp-adapter`), { server: 'specialists', tool: 'specialist_reply' }),
-        ).toEqual({ class: 'coordination', server: 'specialists', extension: 'npm:pi-mcp-adapter', version: '2.38.0' });
+        ).toEqual({ class: 'coordination', server: 'specialists', extension: 'pi-mcp-adapter', version: '2.38.0' });
         // A coordination tool name on another MCP server stays mcp.
         expect(
             c.classifyPi('mcp', pkg('npm:pi-mcp-adapter', `${NPM}/pi-mcp-adapter`), { server: 'other', tool: 'specialist_reply' }),
@@ -101,7 +101,7 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
         const c = classifier(reads);
         const ext = pkg('npm:@jaggerxtrm/pi-extensions', `${NPM}/@jaggerxtrm/pi-extensions`, 'src/index.ts');
         // An extension overriding a built-in name is still the extension.
-        expect(c.classifyPi('read', ext)).toEqual({ class: 'extension', extension: 'npm:@jaggerxtrm/pi-extensions', version: '1.4.0' });
+        expect(c.classifyPi('read', ext)).toEqual({ class: 'extension', extension: '@jaggerxtrm/pi-extensions', version: '1.4.0' });
         c.classifyPi('bash', ext);
         c.classifyPi('edit', ext);
         expect(reads).toEqual([`${NPM}/@jaggerxtrm/pi-extensions`]);
@@ -110,6 +110,37 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
             sourceInfo: { path: '/tmp/x/probe.ts', source: 'local', scope: 'temporary', origin: 'top-level', baseDir: '/tmp/x' },
         };
         expect(c.classifyPi('probe', local)).toEqual({ class: 'extension', extension: 'local' });
+    });
+
+    it('rule 5 (XTRM-575): extension is the package.json name, the raw spec only without one', () => {
+        // Path install, as recorded in the XTRM-571 E2E: source is an absolute install path.
+        const pathDir = '/home/op/.pi/agent/npm/node_modules/pi-intercom';
+        const c = new ToolOriginClassifier({
+            readManifest: (dir) => (dir === pathDir ? { name: 'pi-intercom', version: '0.16.0' } : manifests[dir] ?? null),
+        });
+        expect(c.classifyPi('intercom', pkg(pathDir, pathDir))).toEqual({
+            class: 'coordination',
+            extension: 'pi-intercom',
+            version: '0.16.0',
+        });
+        // npm install: source is an npm: spec.
+        expect(c.classifyPi('ast_grep', pkg('npm:pi-ast-grep@0.1.0', `${NPM}/pi-ast-grep`))).toEqual({
+            class: 'extension',
+            extension: 'pi-ast-grep',
+            version: '0.1.0',
+        });
+        // No package.json: fall back to sourceInfo.source unchanged.
+        expect(c.classifyPi('probe', pkg('/srv/ext/probe', '/srv/ext/probe'))).toEqual({
+            class: 'extension',
+            extension: '/srv/ext/probe',
+        });
+        // package.json without a name: the same fallback, with the version kept.
+        const nameless = new ToolOriginClassifier({ readManifest: () => ({ version: '1.0.0' }) });
+        expect(nameless.classifyPi('probe', pkg('npm:probe@1.0.0', '/x/probe'))).toEqual({
+            class: 'extension',
+            extension: 'npm:probe@1.0.0',
+            version: '1.0.0',
+        });
     });
 
     it('rule 6: sdk or no record is extension unknown', () => {
