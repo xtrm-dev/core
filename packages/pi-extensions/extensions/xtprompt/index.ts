@@ -512,8 +512,14 @@ function escapeXml(text: string): string {
   return escaped;
 }
 
-// Pi 1.0 exports no root `complete` from pi-ai; nested model calls go through
-// ctx.modelRegistry, which applies request-time auth (key, headers, env).
+// Pi 1.0: nested model calls go through ctx.modelRegistry.streamSimple, which
+// takes the provider-neutral SimpleStreamOptions shape (per-API `complete` has
+// no portable reasoning level) and resolves request-time auth (key, headers,
+// env). `reasoning: "low"` bounds thinking-by-default models, where reasoning
+// shares maxTokens with the answer: a XTRM-588 run with opencode-go/
+// deepseek-v4.1-flash truncated at 1600 output tokens on a thinking block
+// alone. Non-reasoning models clamp the level to "off" (no parameter sent),
+// so cost is unchanged for them.
 async function callModel(
   ctx: ExtensionContext,
   model: Model<Api>,
@@ -524,13 +530,15 @@ async function callModel(
   const timeout = setTimeout(() => timeoutController.abort(), DEFAULT_TIMEOUT_MS);
   const mergedSignal = AbortSignal.any([signal, timeoutController.signal]);
   try {
+    const stream = ctx.modelRegistry.streamSimple(model, request, {
+      signal: mergedSignal,
+      // Session-routed providers (e.g. opencode-go) reject calls without it.
+      sessionId: ctx.sessionManager.getSessionId(),
+      maxTokens: Math.min(model.maxTokens, ENHANCER_MAX_OUTPUT_TOKENS),
+      reasoning: "low",
+    });
     return await Promise.race<AssistantMessage | null>([
-      ctx.modelRegistry.complete(model, request, {
-        signal: mergedSignal,
-        // Session-routed providers (e.g. opencode-go) reject calls without it.
-        sessionId: ctx.sessionManager.getSessionId(),
-        maxTokens: Math.min(model.maxTokens, ENHANCER_MAX_OUTPUT_TOKENS),
-      }),
+      stream.result(),
       abortGuard(signal, null),
     ]);
   } finally {

@@ -2,13 +2,16 @@ import { describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const completeCalls: unknown[][] = [];
-let completeImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
+const streamCalls: unknown[][] = [];
+let streamImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 
-// Pi 1.0: xtprompt calls ctx.modelRegistry.complete (pi-ai has no root `complete`).
-const registryComplete = async (...args: unknown[]) => {
-  completeCalls.push(args);
-  return completeImpl(...args);
+// Pi 1.0: xtprompt calls ctx.modelRegistry.streamSimple (provider-neutral
+// reasoning level for nested calls); the result promise rides stream.result().
+const registryStreamSimple = (...args: unknown[]) => {
+  streamCalls.push(args);
+  return {
+    result: () => streamImpl(...args),
+  };
 };
 
 mock.module("@earendil-works/pi-coding-agent", () => ({
@@ -262,9 +265,9 @@ describe("xtprompt", () => {
   });
 
   test("cancelled clarification leaves editor unchanged and skips model call", async () => {
-    completeCalls.length = 0;
-    completeImpl = async () => {
-      throw new Error("complete should not run");
+    streamCalls.length = 0;
+    streamImpl = async () => {
+      throw new Error("streamSimple should not run");
     };
 
     let editorText = "help";
@@ -285,19 +288,19 @@ describe("xtprompt", () => {
         input: async () => null,
       },
       modelRegistry: {
-        complete: registryComplete,
+        streamSimple: registryStreamSimple,
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "k" }),
       },
       sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
     });
 
     expect(editorText).toBe("help");
-    expect(completeCalls).toHaveLength(0);
+    expect(streamCalls).toHaveLength(0);
   });
 
-  test("routes the model call through ctx.modelRegistry.complete with signal and token cap", async () => {
-    completeCalls.length = 0;
-    completeImpl = async () => ({
+  test("routes the model call through ctx.modelRegistry.streamSimple with signal, token cap, and low reasoning", async () => {
+    streamCalls.length = 0;
+    streamImpl = async () => ({
       content: [{ type: "text", text: "<xtprompt>done</xtprompt>" }],
     });
 
@@ -320,7 +323,7 @@ describe("xtprompt", () => {
           }),
       },
       modelRegistry: {
-        complete: registryComplete,
+        streamSimple: registryStreamSimple,
         getApiKeyAndHeaders: async () => ({
           ok: true,
           apiKey: "key-1",
@@ -332,18 +335,21 @@ describe("xtprompt", () => {
     });
 
     expect(editorText).toBe("done");
-    const [, , options] = completeCalls[0] as [unknown, unknown, Record<string, unknown>];
+    const [, , options] = streamCalls[0] as [unknown, unknown, Record<string, unknown>];
     expect(options.signal).toBeInstanceOf(AbortSignal);
     expect(options.maxTokens).toBe(1024);
     expect(options.sessionId).toBe("session-1");
+    // Provider-neutral reasoning level: bounds thinking-by-default models;
+    // the SDK clamps it to "off" (no parameter) for non-reasoning models.
+    expect(options.reasoning).toBe("low");
     // Auth is resolved by the registry at request time, not spread into options.
     expect(options.apiKey).toBeUndefined();
   });
 
   test("auth rejection leaves editor unchanged and skips model call", async () => {
-    completeCalls.length = 0;
-    completeImpl = async () => {
-      throw new Error("complete should not run");
+    streamCalls.length = 0;
+    streamImpl = async () => {
+      throw new Error("streamSimple should not run");
     };
 
     const notices: Array<{ message: string; level: string }> = [];
@@ -367,21 +373,21 @@ describe("xtprompt", () => {
         },
       },
       modelRegistry: {
-        complete: registryComplete,
+        streamSimple: registryStreamSimple,
         getApiKeyAndHeaders: async () => ({ ok: false, error: "RPC unavailable" }),
       },
       sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
     });
 
     expect(editorText).toBe("Rename command to /xtprompt in packages/pi-extensions/extensions/xtprompt/index.ts");
-    expect(completeCalls).toHaveLength(0);
+    expect(streamCalls).toHaveLength(0);
     expect(notices).toContainEqual({ message: "xtprompt: cannot resolve auth — RPC unavailable", level: "error" });
   });
 
-  test("rpc mode guard rejects before touching editor, loader, model registry, or complete", async () => {
-    completeCalls.length = 0;
-    completeImpl = async () => {
-      throw new Error("complete should not run");
+  test("rpc mode guard rejects before touching editor, loader, model registry, or streamSimple", async () => {
+    streamCalls.length = 0;
+    streamImpl = async () => {
+      throw new Error("streamSimple should not run");
     };
 
     const notices: Array<{ message: string; level: string }> = [];
@@ -406,7 +412,7 @@ describe("xtprompt", () => {
         custom,
       },
       modelRegistry: {
-        complete: registryComplete,
+        streamSimple: registryStreamSimple,
         getApiKeyAndHeaders,
       },
       sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
@@ -416,13 +422,13 @@ describe("xtprompt", () => {
     expect(setEditorText).toHaveBeenCalledTimes(0);
     expect(custom).toHaveBeenCalledTimes(0);
     expect(getApiKeyAndHeaders).toHaveBeenCalledTimes(0);
-    expect(completeCalls).toHaveLength(0);
+    expect(streamCalls).toHaveLength(0);
     expect(notices).toContainEqual({ message: "xtprompt needs TUI mode.", level: "error" });
   });
 
   test("clarification path forwards merged draft, session context, and avoids main-session send", async () => {
-    completeCalls.length = 0;
-    completeImpl = async () => ({
+    streamCalls.length = 0;
+    streamImpl = async () => ({
       content: [{ type: "text", text: "<xtprompt>done</xtprompt>" }],
     });
 
@@ -452,7 +458,7 @@ describe("xtprompt", () => {
           }),
       },
       modelRegistry: {
-        complete: registryComplete,
+        streamSimple: registryStreamSimple,
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "k" }),
       },
       sessionManager: {
@@ -467,7 +473,7 @@ describe("xtprompt", () => {
 
     expect(editorText).toBe("done");
     expect(send).toHaveBeenCalledTimes(0);
-    const [, request] = completeCalls[0] as [unknown, { messages: Array<{ content: string }>; systemPrompt: string }];
+    const [, request] = streamCalls[0] as [unknown, { messages: Array<{ content: string }>; systemPrompt: string }];
     expect(request.messages[0]?.content).toContain("Original draft: help me improve this prompt today");
     expect(request.messages[0]?.content).toContain("Clarification: Need rewrite for /xtprompt planning contract");
     expect(request.systemPrompt).toContain("Need post-diff xtprompt audit");
@@ -476,7 +482,7 @@ describe("xtprompt", () => {
   });
 
   test("managed registry smoke registers xtprompt command without agent send", async () => {
-    completeCalls.length = 0;
+    streamCalls.length = 0;
     const send = mock(() => {
       throw new Error("main agent send should stay unused");
     });
@@ -493,7 +499,7 @@ describe("xtprompt", () => {
 
     expect(commands.get("xtprompt")).toEqual({ description: "xtprompt: rewrite current editor prompt" });
     expect(send).toHaveBeenCalledTimes(0);
-    expect(completeCalls).toHaveLength(0);
+    expect(streamCalls).toHaveLength(0);
   });
 
   test("shipped xtprompt files contain no legacy project branding", () => {
