@@ -11,6 +11,9 @@
  * - Session index (XTRM-565): stopped sessions from provider journals, listed as `history_only`
  *   after the live registry; a live session wins over its history entry.
  *
+ * - Launch (XTRM-566): POST /v1/launch starts `xt pi` or bare `pi` in a detached tmux session and
+ *   binds the pane to the session whose extension reports it.
+ *
  * Idle cost is the registry, the index, and a bounded replay buffer; no provider adapter is resident.
  */
 
@@ -21,6 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { decodeFrame, encodeFrame } from '@xtrm/contracts';
 import type { AgentCommandPayload, AgentEventV1, AgentHostApiV1 } from '@xtrm/contracts';
+import { AgentHostLauncher, LaunchRejection, type AgentHostLaunchOptions, type LaunchRequest } from './agent-host-launch.js';
 import { AgentHostRegistry, type ProducerConnection, type SubmitRequest } from './agent-host-registry.js';
 import { SessionIndex, type SessionIndexOptions } from './agent-host-session-index.js';
 
@@ -66,6 +70,8 @@ export interface AgentHostOptions {
     replayLimit?: number;
     /** Incremental index of stopped sessions; off unless given (`xt host start` passes the defaults). */
     sessionIndex?: SessionIndexOptions;
+    /** POST /v1/launch: the xt build and environment launched agents start from. */
+    launch?: AgentHostLaunchOptions;
     log?: (message: string) => void;
 }
 
@@ -93,6 +99,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
     const replayLimit = options.replayLimit ?? DEFAULT_REPLAY_LIMIT;
     const registry = new AgentHostRegistry({ commandTimeoutMs: options.commandTimeoutMs, log });
     const sessionIndex = options.sessionIndex ? new SessionIndex({ log, ...options.sessionIndex }) : null;
+    const launcher = new AgentHostLauncher(options.launch);
 
     await claimSocketPath(socketPath);
 
@@ -208,7 +215,34 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
             sendJson(res, 200, await registry.submit(decoded.value as SubmitRequest));
             return;
         }
-        if (route === 'POST /v1/launch' || route === 'POST /v1/references/resolve') {
+        if (route === 'POST /v1/launch') {
+            const body = await readJsonBody(req, res);
+            if (body === null) return;
+            const decoded = decodeFrame('xtrm.agent-host-api.v1', body);
+            if (!decoded.ok || decoded.value.kind !== 'launch_request') {
+                const detail = decoded.ok ? `expected launch_request, received ${decoded.value.kind}` : decoded.detail;
+                sendJson(res, 400, apiError('invalid_request', detail));
+                return;
+            }
+            let result;
+            try {
+                result = await launcher.launch(decoded.value as LaunchRequest);
+            } catch (error) {
+                if (!(error instanceof LaunchRejection)) throw error;
+                sendJson(res, 400, apiError(error.code, error.message));
+                return;
+            }
+            const paneId = result.tmux?.paneId;
+            if (paneId) {
+                registry.expectLaunchedPane(paneId);
+                log(`launched ${decoded.value.command} in ${result.tmux!.session}:${paneId}`);
+            } else {
+                log(`launch failed (${result.outcome.reason_code}): ${result.outcome.summary}`);
+            }
+            sendJson(res, 200, result);
+            return;
+        }
+        if (route === 'POST /v1/references/resolve') {
             sendJson(res, 501, apiError('not_implemented', `${url.pathname} is not served by this agent host yet`));
             return;
         }

@@ -125,7 +125,7 @@ function assertDetachedLaunchInput(input: DetachedLaunchOutcomeInput): void {
     }
 }
 
-function action(
+export function action(
     kind: CommandOutcomeAction['kind'],
     argv: string[],
     cwd: string,
