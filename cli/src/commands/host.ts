@@ -9,6 +9,7 @@
 import { Command } from 'commander';
 import kleur from 'kleur';
 import { defaultInfoPath, readAgentHostInfo, startAgentHost } from '../core/agent-host.js';
+import { defaultSessionIndexOptions } from '../core/agent-host-session-index.js';
 
 function pidAlive(pid: number): boolean {
     try {
@@ -29,7 +30,8 @@ export function createHostCommand(version = '0.0.0'): Command {
         .option('--port <port>', 'Client API port on 127.0.0.1 (0 picks a free port)', '0')
         .option('--socket <path>', 'Producer socket path (default $XDG_RUNTIME_DIR/xtrm/agent-host.sock)')
         .option('--json', 'Print the host info as JSON once listening', false)
-        .action(async (options: { port: string; socket?: string; json?: boolean }) => {
+        .option('--no-history', 'Do not index stopped sessions from the Pi and Claude journals')
+        .action(async (options: { port: string; socket?: string; json?: boolean; history: boolean }) => {
             const port = Number(options.port);
             if (!Number.isInteger(port) || port < 0 || port > 65535) {
                 console.error(kleur.red(`Invalid --port: ${options.port}`));
@@ -38,7 +40,12 @@ export function createHostCommand(version = '0.0.0'): Command {
             }
             let host;
             try {
-                host = await startAgentHost({ port, socketPath: options.socket, version });
+                host = await startAgentHost({
+                    port,
+                    socketPath: options.socket,
+                    version,
+                    ...(options.history ? { sessionIndex: defaultSessionIndexOptions() } : {}),
+                });
             } catch (error) {
                 console.error(kleur.red(`✗ ${(error as Error).message}`));
                 process.exitCode = 1;
