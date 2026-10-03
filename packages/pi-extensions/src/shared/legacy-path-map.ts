@@ -2,6 +2,7 @@ export interface ExtensionPathMapping {
   readonly extensionId: string;
   readonly legacyPath: string;
   readonly newPath: string;
+  readonly note?: string;
 }
 
 export const LEGACY_PATH_MAPPINGS: readonly ExtensionPathMapping[] = [

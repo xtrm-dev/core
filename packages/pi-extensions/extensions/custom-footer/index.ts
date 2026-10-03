@@ -226,18 +226,10 @@ export default function registerCustomFooter(pi: ExtensionAPI): void {
 		reapplyFooter(ctx);
 		scheduleRuntimeRefresh();
 	});
-	pi.on("session_switch", async (_event, ctx) => {
-		capturedCtx = ctx;
-		reset();
-		reapplyFooter(ctx);
-		scheduleRuntimeRefresh();
-	});
-	pi.on("session_fork", async (_event, ctx) => {
-		capturedCtx = ctx;
-		reset();
-		reapplyFooter(ctx);
-		scheduleRuntimeRefresh();
-	});
+	// Pi 1.0 has no session_switch/session_fork events. /new, /resume and /fork
+	// replace the runtime and emit session_start (reason new|resume|fork) with a
+	// fresh ctx, so the handler above already covers them. session_before_* would
+	// run against the outgoing ctx, which the replacement invalidates.
 	pi.on("model_select", async (_event, ctx) => reapplyFooter(ctx));
 	pi.on("tool_result", async (event: any) => {
 		const command = event?.input?.command;

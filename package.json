@@ -59,7 +59,7 @@
     "check-policies": "node scripts/compile-policies.mjs --check",
     "check-pi": "node scripts/compile-policies.mjs --check-pi",
     "prebuild": "npm run sync:cli-version",
-    "build": "npm run check:pi-sdk && npm run build:contracts && npm run build --workspace cli",
+    "build": "npm run check:pi-sdk && npm run typecheck:pi-extensions && npm run build:contracts && npm run build --workspace cli",
     "typecheck": "npm run typecheck --workspace cli",
     "typecheck:pi-extensions": "npm run typecheck --workspace @jaggerxtrm/pi-extensions",
     "start": "node cli/dist/index.cjs",
