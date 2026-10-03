@@ -9,13 +9,20 @@
 //
 // Hard rules: exit 0 always, print nothing to stdout, never block a tool call, finish
 // within the time budget whether or not the host runs. No host socket → exit at once.
+//
+// Budget (XTRM-583): BUDGET_MS counts from when this module starts its work, not from
+// process start: Node boot (≈100 ms idle, 0.2–1.3 s under 2× core CPU load) is outside the
+// hook's control and must not eat the delivery window. The hook exits as soon as its
+// frames are flushed to the kernel socket buffer (the host reads them after we are gone),
+// so the budget only binds when delivery stalls. Worst-case hook time: Node boot +
+// BUDGET_MS. A detached sender was measured against this in-process send and rejected:
+// spawning it costs the hook as much under load (p95 117 ms) and adds a second Node boot.
 
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { performance } from 'node:perf_hooks';
 
 const PRODUCER = { name: 'xtrm-tools/agent-host-reporter', version: '1.0.0' };
 /** Same overrides as the Pi xtrm-agent-host extension. */
@@ -23,13 +30,13 @@ const SOCKET_ENV = 'XTRM_AGENT_HOST_SOCKET';
 const DISABLE_ENV = 'XTRM_AGENT_HOST';
 const LAUNCH_ENV = 'XTRM_AGENT_LAUNCH';
 const PANE_SESSION_OPTION = '@xtrm_agent_session_id';
-/** Wall-clock budget from process start; the process exits 0 when it runs out. */
-const BUDGET_MS = 80;
+/** Delivery budget from the start of hook work (not process start); exit 0 when it runs out. */
+const BUDGET_MS = 300;
 const EXEC_TIMEOUT_MS = 30;
 const MAX_ARGS_CHARS = 4096;
 
 const exit = () => process.exit(0);
-setTimeout(exit, Math.max(1, BUDGET_MS - performance.now())).unref();
+setTimeout(exit, BUDGET_MS).unref();
 process.on('uncaughtException', exit);
 process.stdout.write = () => true;
 
@@ -61,7 +68,9 @@ const frames = [identity(input), ...events].map(
 const socket = net.createConnection(socketPath);
 socket.on('error', exit);
 socket.on('close', exit);
-socket.on('connect', () => socket.end(frames.join('')));
+// Exit once the frames are flushed to the socket: waiting for 'close' would make the
+// hook wait on the host's scheduling, which is what a loaded machine delays.
+socket.on('connect', () => socket.end(frames.join(''), exit));
 
 // --- mapping -------------------------------------------------------------------------------
 
