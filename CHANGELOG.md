@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-03
+
+### Added
+- Move xtrm.agent-host-auth.v1 types into @xtrm/contracts ([82fd5c4](https://github.com/xtrm-dev/core/commit/82fd5c42633dfdf2c6de04f2e8da1ba2431867a0))
+- Host session summary reports model, thinking level, context usage and repository owner/name ([e9cb82e](https://github.com/xtrm-dev/core/commit/e9cb82e6bee830dd1be3a366e8c6067e2454f026))
+- Session history route for Frames beyond the replay buffer (XTRM-604) ([75fedcb](https://github.com/xtrm-dev/core/commit/75fedcb08f0d99747ac0bf2139652c109f6a4ce4))
+- Substrate-suggest Pi extension (#694) ([82df0b3](https://github.com/xtrm-dev/core/commit/82df0b3437d82f6a882e582974017d628153370e))
+
+### Fixed
+- Fold the agent-host Claude reporter into the CORE-2339 dispatcher (#683) ([93c9051](https://github.com/xtrm-dev/core/commit/93c9051306c92737abf483bee7047d5b28b349a2))
+- Drop untagged hook wrappers that target retired ~/.xtrm/hooks files ([372ebd5](https://github.com/xtrm-dev/core/commit/372ebd51ec24ac1e15c30882c3f142dd89080eca))
+- Bound thinking-by-default models with provider-neutral low reasoning ([f9d26e3](https://github.com/xtrm-dev/core/commit/f9d26e36c0532d43cc986f4ca8d41dff560679fc))
+- Agent host treats the Pi startup window as working ([2b2ed19](https://github.com/xtrm-dev/core/commit/2b2ed190820aaee6322eee246b21c8f6388a05d6))
+- Gate xt update by blast radius; transition pointer instead of dead end (#688) ([1bffe3d](https://github.com/xtrm-dev/core/commit/1bffe3d2f2ac064c092afe04907739374f889be6))
+- Host fills repository and repositoryPath for history-only sessions ([5f0734c](https://github.com/xtrm-dev/core/commit/5f0734c9c36a0ad9993db14426b35f39b52dfd94))
+- Agent host fails an accepted prompt that never starts a run ([0d82311](https://github.com/xtrm-dev/core/commit/0d82311bb6748dfbc3c59eeb6955a5b0b5b717da))
+- Retire every untagged beads hook registration in runtime sync ([bef29e9](https://github.com/xtrm-dev/core/commit/bef29e9c478e9ab07d4fc6504a5d7cb007b4de4e))
+
+### Project maintenance
+- Move to npm trusted publishing (OIDC) (#682) ([3ad1735](https://github.com/xtrm-dev/core/commit/3ad1735ab36ea76ac7bb6f7ca8d92fe1312a5399))
+
 ## [0.14.0] - 2026-10-03
 
 ### Added
