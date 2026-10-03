@@ -1,0 +1,51 @@
+{
+  "id": "agent-host-reporter",
+  "description": "XTRM-569 (PRD xtrm-app §35.6, §35.8 item 4): report Claude session presence, state transitions and tool events to the XTRM agent host (xt host) as a presence-only producer. Exits 0 within ~80 ms of process start and prints nothing; without a running host it exits at once. Timeout is Claude's seconds ceiling, never reached in practice.",
+  "version": "1",
+  "runtime": "claude",
+  "order": 90,
+  "claude": {
+    "hooks": [
+      {
+        "event": "SessionStart",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/agent-host-reporter.mjs",
+        "timeout": 2
+      },
+      {
+        "event": "UserPromptSubmit",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/agent-host-reporter.mjs",
+        "timeout": 2
+      },
+      {
+        "event": "PreToolUse",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/agent-host-reporter.mjs",
+        "timeout": 2
+      },
+      {
+        "event": "PostToolUse",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/agent-host-reporter.mjs",
+        "timeout": 2
+      },
+      {
+        "event": "Notification",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/agent-host-reporter.mjs",
+        "timeout": 2
+      },
+      {
+        "event": "Stop",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/agent-host-reporter.mjs",
+        "timeout": 2
+      },
+      {
+        "event": "SubagentStop",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/agent-host-reporter.mjs",
+        "timeout": 2
+      },
+      {
+        "event": "SessionEnd",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/agent-host-reporter.mjs",
+        "timeout": 2
+      }
+    ]
+  }
+}

@@ -39,6 +39,8 @@ interface LiveSession {
     promptPending: string | null;
     /** extension_ui_request ids awaiting an answer. */
     pendingUi: Set<string>;
+    /** A runtime notification (Claude permission or elicitation prompt) awaits local input. */
+    awaitingLocalInput: boolean;
     /** Origin per in-flight toolCallId, fixed at tool_execution_start (end carries no args). */
     toolOrigins: Map<string, AgentToolOrigin>;
     frameCount: number;
@@ -63,8 +65,16 @@ const CAPABILITY_FOR: Record<AgentCommandPayload['type'], AgentCapability> = {
     extension_ui_response: 'extension_ui',
 };
 
+/** Claude notification kinds that block the session on operator input in the terminal. */
+const INPUT_NOTIFICATIONS = new Set(['permission_prompt', 'elicitation_dialog']);
+
 /** Presence-only sessions (Claude hooks) outlive their short-lived connections; cap how many are kept. */
 const MAX_DISCONNECTED_SESSIONS = 256;
+
+/** Presence-only producers (Claude hooks) report through one short connection per hook. */
+function isPresenceOnly(session: LiveSession): boolean {
+    return session.identity.capabilities.every((c) => c === 'presence');
+}
 
 export interface AgentHostRegistryOptions {
     /** How long a routed command waits for the producer's command_result. */
@@ -110,6 +120,7 @@ export class AgentHostRegistry {
                     frameOpen: false,
                     promptPending: null,
                     pendingUi: new Set(),
+                    awaitingLocalInput: false,
                     toolOrigins: new Map(),
                     frameCount: 0,
                     startedAt: frame.at,
@@ -128,6 +139,8 @@ export class AgentHostRegistry {
 
         session.lastActivityAt = Math.max(session.lastActivityAt, frame.at);
         session.lastSeq = frame.seq;
+        // A notification-driven wait ends with the next lifecycle or tool event: the operator answered.
+        if (payload.type !== 'session_identity' && payload.type !== 'subagent_end') session.awaitingLocalInput = false;
 
         switch (payload.type) {
             case 'before_agent_start':
@@ -151,10 +164,21 @@ export class AgentHostRegistry {
                 // Answered in the terminal, cancelled, or answered by the host: the prompt is gone.
                 session.pendingUi.delete(payload.id);
                 break;
+            case 'notification':
+                session.awaitingLocalInput = INPUT_NOTIFICATIONS.has(payload.kind);
+                break;
             case 'command_result':
                 this.settleCommand(sessionId, payload.commandId, payload.status, payload.reason, payload.message);
                 break;
             case 'tool_execution_start':
+                // Hook producers have no persistent turn state: a tool call after Stop (a Stop hook
+                // that continued the turn) or after a host restart still means the session works.
+                if (!session.frameOpen && isPresenceOnly(session)) {
+                    session.frameOpen = true;
+                    session.frameCount += 1;
+                }
+                frame = { ...frame, payload: { ...payload, origin: this.toolOrigin(session, payload) } };
+                break;
             case 'tool_execution_update':
             case 'tool_execution_end':
                 frame = { ...frame, payload: { ...payload, origin: this.toolOrigin(session, payload) } };
@@ -183,8 +207,7 @@ export class AgentHostRegistry {
         for (const [sessionId, session] of this.sessions) {
             if (session.connection !== connection) continue;
             session.connection = null;
-            const persistent = session.identity.capabilities.some((c) => c !== 'presence');
-            if (persistent) this.removeSession(sessionId);
+            if (!isPresenceOnly(session)) this.removeSession(sessionId);
         }
         this.pruneDisconnected();
     }
@@ -367,7 +390,12 @@ export class AgentHostRegistry {
         return {
             sessionId,
             provider: id.runtime.name,
-            state: session.pendingUi.size > 0 ? 'waiting_for_input' : session.frameOpen ? 'working' : 'settled',
+            state:
+                session.pendingUi.size > 0 || session.awaitingLocalInput
+                    ? 'waiting_for_input'
+                    : session.frameOpen
+                      ? 'working'
+                      : 'settled',
             ...(id.sessionName ? { name: id.sessionName } : {}),
             cwd: id.cwd,
             ...(id.worktree ? { worktree: id.worktree } : {}),

@@ -52,6 +52,12 @@ Hooks intercept specific events in the Claude Code lifecycle. Following architec
 
 **Trigger**: PostToolUse (Grep|Glob|Bash|Serena edit tools)
 
+### agent-host-reporter.mjs
+
+**Purpose**: Reports Claude session presence to the XTRM agent host (`xt host`) as a presence-only producer (`capabilities: ["presence"]`, PRD xtrm-app §35.6, §35.8 item 4). Each invocation connects to the host socket, sends `session_identity` plus the mapped `xtrm.agent-event.v1` frames, and closes. It never prints to stdout, always exits 0, and exits within ~80 ms of process start; without a host socket it exits at once. `XTRM_AGENT_HOST=0` disables it; `XTRM_AGENT_HOST_SOCKET` overrides the socket path.
+
+**Trigger**: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Notification, Stop, SubagentStop, SessionEnd
+
 ## Issue Tracking Gates (retired — lane 2 deleted)
 
 The `bd` (beads) issue-tracker gates are retired. The 11 `beads-*.mjs` payload

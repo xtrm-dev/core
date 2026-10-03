@@ -216,12 +216,26 @@
             "schema": "xtrm.agent-event.v1",
             "seq": 18,
             "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000114,
+            "payload": { "type": "notification", "kind": "permission_prompt", "message": "Claude needs your permission to use Bash" }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 19,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000114,
+            "payload": { "type": "subagent_end", "agentId": "a1b2c3", "agentType": "Explore" }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 20,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
             "at": 1790000000115,
             "payload": { "type": "agent_settled" }
         },
         {
             "schema": "xtrm.agent-event.v1",
-            "seq": 19,
+            "seq": 21,
             "sessionId": "019f9a10-0000-7000-8000-000000000001",
             "at": 1790000000116,
             "payload": { "type": "session_shutdown", "reason": "quit" }

@@ -18,7 +18,7 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
   // .xtrm/registry.json, the template sits at .xtrm/config/hooks.json.
   const hooksPath = path.join(resolvePackageRoot(), '.xtrm', 'config', 'hooks.json');
 
-  it('contains every load-bearing canonical hook (4 entries across 4 events, CORE-2339 dispatcher)', () => {
+  it('contains every load-bearing canonical hook (12 entries across 8 events: CORE-2339 dispatcher + XTRM-569 reporter)', () => {
     const config = fs.readJsonSync(hooksPath) as {
       hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ type?: string; command: string }> }>>;
     };
@@ -42,6 +42,10 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
       'PreToolUse:dispatch.mjs pre',
       'PostToolUse:dispatch.mjs post',
       'Stop:inbox-reminder-stop.mjs',
+      // XTRM-569: the agent host presence reporter covers the PRD §35.8 item 4 v0 hook set.
+      ...['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SubagentStop', 'SessionEnd'].map(
+        (event) => `${event}:agent-host-reporter.mjs`,
+      ),
     ];
     expect([...entries].sort()).toEqual([...expected].sort());
   });

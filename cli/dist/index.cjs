@@ -76369,7 +76369,7 @@ var xtrm_agent_event_v1_default = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "xtrm.agent-event.v1",
   title: "XTRM agent event frame (extension -> agent host)",
-  description: "One NDJSON frame pushed by an in-session agent integration (the XTRM Pi extension, or Claude hooks) to the XTRM agent host over the Unix socket $XDG_RUNTIME_DIR/xtrm/agent-host.sock (PRD xtrm-app \xA735.3, \xA735.8 item 1). The payload `type` values are the native Pi 1.0.0 extension lifecycle events (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts) plus `session_identity`, `extension_ui_request`, `extension_ui_resolved` and `command_result`, which the extension adds. Pi-native objects (message, args, result) pass through unchanged and stay opaque here: the \xA722 adapter owns their interpretation. Retry state (auto_retry_*) is not available to Pi extensions and is not carried; `agent_settled` is the authoritative Frame-close signal. A backward-incompatible change requires xtrm.agent-event.v2.",
+  description: "One NDJSON frame pushed by an in-session agent integration (the XTRM Pi extension, or Claude hooks) to the XTRM agent host over the Unix socket $XDG_RUNTIME_DIR/xtrm/agent-host.sock (PRD xtrm-app \xA735.3, \xA735.8 item 1). The payload `type` values are the native Pi 1.0.0 extension lifecycle events (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts) plus `session_identity`, `extension_ui_request`, `extension_ui_resolved` and `command_result`, which the extension adds, and `notification` and `subagent_end`, which only Claude hooks report. Pi-native objects (message, args, result) pass through unchanged and stay opaque here: the \xA722 adapter owns their interpretation. Retry state (auto_retry_*) is not available to Pi extensions and is not carried; `agent_settled` is the authoritative Frame-close signal. A backward-incompatible change requires xtrm.agent-event.v2.",
   type: "object",
   additionalProperties: false,
   required: ["schema", "seq", "sessionId", "at", "payload"],
@@ -76491,6 +76491,8 @@ var xtrm_agent_event_v1_default = {
         { $ref: "#/definitions/extension_ui_request" },
         { $ref: "#/definitions/extension_ui_resolved" },
         { $ref: "#/definitions/command_result" },
+        { $ref: "#/definitions/notification" },
+        { $ref: "#/definitions/subagent_end" },
         { $ref: "#/definitions/session_shutdown" }
       ]
     },
@@ -76755,6 +76757,29 @@ var xtrm_agent_event_v1_default = {
         status: { enum: ["accepted", "rejected", "failed"] },
         reason: { type: "string", maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" },
         message: { type: "string", maxLength: 1024 }
+      }
+    },
+    notification: {
+      description: "A runtime notification that has no Pi event: Claude Code's Notification hook (PRD xtrm-app \xA735.8 item 4). `kind` is the runtime's notification type (Claude: permission_prompt, idle_prompt, auth_success, elicitation_dialog, or unknown when absent). permission_prompt and elicitation_dialog mean the session waits for local operator input: the host reports waiting_for_input until the session's next lifecycle or tool event. The host cannot answer it; answering stays in the terminal.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "kind"],
+      properties: {
+        type: { const: "notification" },
+        kind: { type: "string", minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" },
+        title: { $ref: "#/definitions/boundedString" },
+        message: { $ref: "#/definitions/boundedString" }
+      }
+    },
+    subagent_end: {
+      description: "A subagent of this session finished: Claude Code's SubagentStop hook. Not a Frame boundary of the reporting session. `agentId` and `agentType` are the runtime's subagent identifiers when it provides them.",
+      type: "object",
+      additionalProperties: false,
+      required: ["type"],
+      properties: {
+        type: { const: "subagent_end" },
+        agentId: { $ref: "#/definitions/boundedString" },
+        agentType: { $ref: "#/definitions/boundedString" }
       }
     },
     session_shutdown: {
@@ -78351,7 +78376,11 @@ var CAPABILITY_FOR = {
   abort: "abort",
   extension_ui_response: "extension_ui"
 };
+var INPUT_NOTIFICATIONS = /* @__PURE__ */ new Set(["permission_prompt", "elicitation_dialog"]);
 var MAX_DISCONNECTED_SESSIONS = 256;
+function isPresenceOnly(session) {
+  return session.identity.capabilities.every((c) => c === "presence");
+}
 var AgentHostRegistry = class {
   sessions = /* @__PURE__ */ new Map();
   pending = /* @__PURE__ */ new Map();
@@ -78387,6 +78416,7 @@ var AgentHostRegistry = class {
           frameOpen: false,
           promptPending: null,
           pendingUi: /* @__PURE__ */ new Set(),
+          awaitingLocalInput: false,
           toolOrigins: /* @__PURE__ */ new Map(),
           frameCount: 0,
           startedAt: frame.at,
@@ -78403,6 +78433,7 @@ var AgentHostRegistry = class {
     }
     session.lastActivityAt = Math.max(session.lastActivityAt, frame.at);
     session.lastSeq = frame.seq;
+    if (payload.type !== "session_identity" && payload.type !== "subagent_end") session.awaitingLocalInput = false;
     switch (payload.type) {
       case "before_agent_start":
       case "agent_start":
@@ -78423,10 +78454,19 @@ var AgentHostRegistry = class {
       case "extension_ui_resolved":
         session.pendingUi.delete(payload.id);
         break;
+      case "notification":
+        session.awaitingLocalInput = INPUT_NOTIFICATIONS.has(payload.kind);
+        break;
       case "command_result":
         this.settleCommand(sessionId, payload.commandId, payload.status, payload.reason, payload.message);
         break;
       case "tool_execution_start":
+        if (!session.frameOpen && isPresenceOnly(session)) {
+          session.frameOpen = true;
+          session.frameCount += 1;
+        }
+        frame = { ...frame, payload: { ...payload, origin: this.toolOrigin(session, payload) } };
+        break;
       case "tool_execution_update":
       case "tool_execution_end":
         frame = { ...frame, payload: { ...payload, origin: this.toolOrigin(session, payload) } };
@@ -78452,8 +78492,7 @@ var AgentHostRegistry = class {
     for (const [sessionId, session] of this.sessions) {
       if (session.connection !== connection) continue;
       session.connection = null;
-      const persistent = session.identity.capabilities.some((c) => c !== "presence");
-      if (persistent) this.removeSession(sessionId);
+      if (!isPresenceOnly(session)) this.removeSession(sessionId);
     }
     this.pruneDisconnected();
   }
@@ -78607,7 +78646,7 @@ var AgentHostRegistry = class {
     return {
       sessionId,
       provider: id.runtime.name,
-      state: session.pendingUi.size > 0 ? "waiting_for_input" : session.frameOpen ? "working" : "settled",
+      state: session.pendingUi.size > 0 || session.awaitingLocalInput ? "waiting_for_input" : session.frameOpen ? "working" : "settled",
       ...id.sessionName ? { name: id.sessionName } : {},
       cwd: id.cwd,
       ...id.worktree ? { worktree: id.worktree } : {},

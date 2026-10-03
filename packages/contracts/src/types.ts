@@ -622,6 +622,10 @@ export type AgentEventPayload =
           reason?: string;
           message?: string;
       }
+    /** Claude Notification hook: permission_prompt / elicitation_dialog mean waiting for local input. */
+    | { type: 'notification'; kind: string; title?: string; message?: string }
+    /** Claude SubagentStop hook: a subagent finished; not a Frame boundary of this session. */
+    | { type: 'subagent_end'; agentId?: string; agentType?: string }
     | { type: 'session_shutdown'; reason: 'quit' | 'reload' | 'new' | 'resume' | 'fork'; targetSessionFile?: string };
 
 export type AgentEventType = AgentEventPayload['type'];
