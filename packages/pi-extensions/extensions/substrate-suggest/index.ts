@@ -69,6 +69,7 @@ import {
   waitGuardVerb,
   type SkillEntry,
 } from "./duties.ts";
+import { evaluateToolNudge, newCounters, observeTool, type ToolCounters } from "./toolnudge.ts";
 
 const CUSTOM_TYPE = "substrate_suggestion";
 const LOG_DIR = join(homedir(), ".xtrm", "substrate-suggest");
@@ -278,6 +279,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   let lastTouchedRef: string | null = null;
   let lastClaimScan = { at: 0, ref: null as string | null };
   let turnMonitorSet = false;
+  const counters: ToolCounters = newCounters();
 
   // Card renderer: no [customType] label, no default card box — the two
   // plain lines ARE the card (dot glyph, no rail).
@@ -367,6 +369,11 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     try {
       const e = event as { toolName?: string; name?: string; args?: Record<string, unknown>; input?: Record<string, unknown> };
       const tool = String(e.toolName ?? e.name ?? "");
+      try {
+        observeTool(counters, tool, e.args, e.input);
+      } catch {
+        /* counters are best-effort */
+      }
       if (isMonitorSetter(tool, e.args, e.input)) turnMonitorSet = true;
       const { ref, isClaim } = observeToolCall(tool, e.args ?? e.input);
       if (ref) {
@@ -410,12 +417,17 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           sessionClaimRef = ref;
         }
       }
-      // Mid-turn intervention: a read/edit/bash touching a registered service's
-      // territory gets an advisory line appended to THIS tool result — the agent
-      // sees the expert-skill pointer exactly when it goes near that code. No
-      // model call (territory match is deterministic); structuredContent passes
-      // through untouched so schema-tools keep their machine payloads.
+      // Mid-turn intervention, two layers — tool-nudge first (an inefficient
+      // call is the strongest signal), then the service-territory pointer.
       if (!off()) {
+        const nudge = evaluateToolNudge(counters, "", e.input ? { command: e.input["command"] } : undefined, e.input);
+        if (nudge && cooldownAllows(cooldowns, "nudge", nudge.kind as unknown as VerbId, Date.now(), nudge.verb)) {
+          applyCooldown(cooldowns, "nudge", nudge.verb);
+          logDecision({ ts: new Date().toISOString(), issue: null, verb: `tool_nudge:${nudge.kind}`, source: "deterministic" });
+          const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
+          content.push({ type: "text", text: `\x1b[2m[substrate-suggest] ${nudge.verb.instruction("")}\x1b[22m` });
+          return { content, structuredContent: e.structuredContent } as never;
+        }
         const packs = discoverSkillPacks(process.cwd());
         const hit = packs.length > 0 ? territoryHit(packs, e.input, process.cwd()) : null;
         if (hit) {

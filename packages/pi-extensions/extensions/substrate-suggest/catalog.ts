@@ -21,9 +21,11 @@ export type VerbId =
   | "journal_milestone"
   | "journal_handoff"
   | "journal_result"
-  // Duty sources beyond the sb surface (duties.ts) share the cooldown machinery.
+  // Duty sources beyond the sb surface (duties.ts, toolnudge.ts) share the
+  // cooldown machinery.
   | "wait_guard"
-  | "skill_suggest";
+  | "skill_suggest"
+  | "tool_nudge";
 
 export interface VerbSpec {
   id: VerbId;
