@@ -353,6 +353,23 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           lastTouchedRef = ref;
           sessionClaimRef = ref; // the creator session works what it created
         }
+        return;
+      }
+      // specialist_dispatch creates + claims its own Issue: its result carries
+      // created_issue_ref. The dispatching session owns that work as surely as
+      // a bash claim would — observe it, or in-session binding misses every
+      // tool-dispatched activation.
+      const dispatch = typeof e.input?.["specialist"] === "string" && (e.input?.["contract"] !== undefined || e.input?.["issue_ref"] !== undefined);
+      if (dispatch) {
+        const text = (e.content ?? [])
+          .filter((p) => p?.["type"] === "text" && typeof p["text"] === "string")
+          .map((p) => p["text"] as string)
+          .join("\n");
+        const ref = /"created_issue_ref"\s*:\s*"([A-Z][A-Z0-9]{1,15}-\d+)"/.exec(text)?.[1] ?? REF_RE.exec(text)?.[1] ?? null;
+        if (ref) {
+          lastTouchedRef = ref;
+          sessionClaimRef = ref;
+        }
       }
     } catch {
       /* observation is best-effort */
