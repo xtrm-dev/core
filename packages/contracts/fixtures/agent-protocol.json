@@ -209,12 +209,19 @@
             "schema": "xtrm.agent-event.v1",
             "seq": 17,
             "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000114,
+            "payload": { "type": "extension_ui_resolved", "id": "ui-1", "resolvedBy": "local", "outcome": "answered" }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 18,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
             "at": 1790000000115,
             "payload": { "type": "agent_settled" }
         },
         {
             "schema": "xtrm.agent-event.v1",
-            "seq": 18,
+            "seq": 19,
             "sessionId": "019f9a10-0000-7000-8000-000000000001",
             "at": 1790000000116,
             "payload": { "type": "session_shutdown", "reason": "quit" }

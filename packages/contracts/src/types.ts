@@ -614,6 +614,7 @@ export type AgentEventPayload =
           prefill?: string;
           timeout?: number;
       }
+    | { type: 'extension_ui_resolved'; id: string; resolvedBy: 'local' | 'host'; outcome: 'answered' | 'cancelled' }
     | {
           type: 'command_result';
           commandId: string;

@@ -283,6 +283,29 @@ describe('xt host agent host (XTRM-563)', () => {
         ext.close();
     });
 
+    it('leaves waiting_for_input on extension_ui_resolved; a later host answer is rejected unknown_ui_request (XTRM-574)', async () => {
+        const ext = await FakeExtension.connect(socketPath);
+        ext.push(identity);
+        ext.payload('agent_start');
+        ext.payload('extension_ui_request', { id: 'ui-1', method: 'confirm', title: 'Delete?', message: 'really' });
+        await until(() => host.registry.list()[0]?.state === 'waiting_for_input');
+
+        // The terminal answered first: the Frame is still open, but the prompt is gone at once.
+        ext.payload('extension_ui_resolved', { id: 'ui-1', resolvedBy: 'local', outcome: 'answered' });
+        await until(() => host.registry.list()[0]?.state === 'working');
+
+        const late = await request(host, 'POST', '/v1/submit', {
+            schema: 'xtrm.agent-host-api.v1',
+            kind: 'submit_request',
+            sessionId,
+            command: { type: 'extension_ui_response', commandId: 'cmd-ui', id: 'ui-1', confirmed: true },
+        });
+        expect(validate('xtrm.agent-host-api.v1', late.body).errors).toEqual([]);
+        expect(late.body).toMatchObject({ kind: 'submit_result', commandId: 'cmd-ui', status: 'rejected', reason: 'unknown_ui_request' });
+        expect(ext.commands).toHaveLength(0);
+        ext.close();
+    });
+
     it('drops a persistent session from the live registry when its extension disconnects', async () => {
         const ext = await FakeExtension.connect(socketPath);
         ext.push(identity);
