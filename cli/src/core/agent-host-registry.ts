@@ -147,6 +147,10 @@ export class AgentHostRegistry {
             case 'extension_ui_request':
                 session.pendingUi.add(payload.id);
                 break;
+            case 'extension_ui_resolved':
+                // Answered in the terminal, cancelled, or answered by the host: the prompt is gone.
+                session.pendingUi.delete(payload.id);
+                break;
             case 'command_result':
                 this.settleCommand(sessionId, payload.commandId, payload.status, payload.reason, payload.message);
                 break;

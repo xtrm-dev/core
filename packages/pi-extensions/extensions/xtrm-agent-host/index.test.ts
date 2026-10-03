@@ -40,10 +40,10 @@ function fakePi() {
 function fakeCtx(sessionId: string) {
   let idle = true;
   const aborts: number[] = [];
-  const localDialogs: Array<{ method: string; signal?: AbortSignal }> = [];
+  const localDialogs: Array<{ method: string; signal?: AbortSignal; answer: (value: unknown) => void }> = [];
   const pendingLocal = (method: string, opts: any, value: unknown) =>
     new Promise((resolve) => {
-      localDialogs.push({ method, signal: opts?.signal });
+      localDialogs.push({ method, signal: opts?.signal, answer: resolve });
       opts?.signal?.addEventListener("abort", () => resolve(value));
     });
   const ctx = {
@@ -203,6 +203,64 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     const selectId = frames.filter((f) => f.payload.type === "extension_ui_request")[1].payload.id;
     await host.registry.submit({ schema: "xtrm.agent-host-api.v1", kind: "submit_request", sessionId: "s-1", command: { type: "extension_ui_response", commandId: "u2", id: selectId, value: "b" } } as any);
     expect(await select).toBe("b");
+  });
+
+  test("a confirm answered in the terminal first emits extension_ui_resolved and clears waiting_for_input (XTRM-574)", async () => {
+    const s = start();
+    await until(() => host.registry.list().length === 1);
+    s.fire("agent_start", {}, s.ctx);
+    const answer = s.ctx.ui.confirm("Delete?", "really delete");
+    await until(() => host.registry.list()[0].state === "waiting_for_input");
+    const request = frames.find((f) => f.payload.type === "extension_ui_request").payload;
+
+    s.localDialogs[0].answer(true);
+    expect(await answer).toBe(true);
+    await until(() => host.registry.list()[0].state === "working");
+    const resolved = frames.filter((f) => f.payload.type === "extension_ui_resolved");
+    expect(resolved.map((f) => f.payload)).toEqual([{ type: "extension_ui_resolved", id: request.id, resolvedBy: "local", outcome: "answered" }]);
+    expect(frames.at(-1).payload.type).toBe("extension_ui_resolved");
+
+    const late = await host.registry.submit({ schema: "xtrm.agent-host-api.v1", kind: "submit_request", sessionId: "s-1", command: { type: "extension_ui_response", commandId: "u9", id: request.id, confirmed: false } } as any);
+    expect(late).toMatchObject({ status: "rejected", reason: "unknown_ui_request" });
+  });
+
+  test("every request ends with exactly one extension_ui_resolved: host answer, host cancel, local dismiss, caller abort", async () => {
+    const s = start();
+    await until(() => host.registry.list().length === 1);
+    const requests = () => frames.filter((f) => f.payload.type === "extension_ui_request").map((f) => f.payload.id);
+    const respond = (commandId: string, id: string, answer: Record<string, unknown>) =>
+      host.registry.submit({ schema: "xtrm.agent-host-api.v1", kind: "submit_request", sessionId: "s-1", command: { type: "extension_ui_response", commandId, id, ...answer } } as any);
+
+    const hostAnswered = s.ctx.ui.select("Pick", ["a", "b"]);
+    await until(() => requests().length === 1);
+    await respond("r1", requests()[0], { value: "a" });
+    expect(await hostAnswered).toBe("a");
+
+    const hostCancelled = s.ctx.ui.input("Name");
+    await until(() => requests().length === 2);
+    await respond("r2", requests()[1], { cancelled: true });
+    expect(await hostCancelled).toBeUndefined();
+
+    const dismissed = s.ctx.ui.select("Pick", ["a", "b"]);
+    await until(() => requests().length === 3);
+    s.localDialogs[2].answer(undefined);
+    expect(await dismissed).toBeUndefined();
+
+    const caller = new AbortController();
+    const aborted = s.ctx.ui.confirm("Go?", "now", { signal: caller.signal });
+    await until(() => requests().length === 4);
+    caller.abort();
+    expect(await aborted).toBe(false);
+
+    await until(() => frames.filter((f) => f.payload.type === "extension_ui_resolved").length === 4);
+    const resolved = frames.filter((f) => f.payload.type === "extension_ui_resolved").map((f) => f.payload);
+    expect(resolved).toEqual([
+      { type: "extension_ui_resolved", id: requests()[0], resolvedBy: "host", outcome: "answered" },
+      { type: "extension_ui_resolved", id: requests()[1], resolvedBy: "host", outcome: "cancelled" },
+      { type: "extension_ui_resolved", id: requests()[2], resolvedBy: "local", outcome: "cancelled" },
+      { type: "extension_ui_resolved", id: requests()[3], resolvedBy: "local", outcome: "cancelled" },
+    ]);
+    expect(host.registry.list()[0].state).toBe("settled");
   });
 
   test("session_shutdown is sent and removes the session; the ui patch is restored", async () => {

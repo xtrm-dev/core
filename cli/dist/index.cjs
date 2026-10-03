@@ -76369,7 +76369,7 @@ var xtrm_agent_event_v1_default = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "xtrm.agent-event.v1",
   title: "XTRM agent event frame (extension -> agent host)",
-  description: "One NDJSON frame pushed by an in-session agent integration (the XTRM Pi extension, or Claude hooks) to the XTRM agent host over the Unix socket $XDG_RUNTIME_DIR/xtrm/agent-host.sock (PRD xtrm-app \xA735.3, \xA735.8 item 1). The payload `type` values are the native Pi 1.0.0 extension lifecycle events (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts) plus `session_identity`, `extension_ui_request` and `command_result`, which the extension adds. Pi-native objects (message, args, result) pass through unchanged and stay opaque here: the \xA722 adapter owns their interpretation. Retry state (auto_retry_*) is not available to Pi extensions and is not carried; `agent_settled` is the authoritative Frame-close signal. A backward-incompatible change requires xtrm.agent-event.v2.",
+  description: "One NDJSON frame pushed by an in-session agent integration (the XTRM Pi extension, or Claude hooks) to the XTRM agent host over the Unix socket $XDG_RUNTIME_DIR/xtrm/agent-host.sock (PRD xtrm-app \xA735.3, \xA735.8 item 1). The payload `type` values are the native Pi 1.0.0 extension lifecycle events (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts) plus `session_identity`, `extension_ui_request`, `extension_ui_resolved` and `command_result`, which the extension adds. Pi-native objects (message, args, result) pass through unchanged and stay opaque here: the \xA722 adapter owns their interpretation. Retry state (auto_retry_*) is not available to Pi extensions and is not carried; `agent_settled` is the authoritative Frame-close signal. A backward-incompatible change requires xtrm.agent-event.v2.",
   type: "object",
   additionalProperties: false,
   required: ["schema", "seq", "sessionId", "at", "payload"],
@@ -76489,6 +76489,7 @@ var xtrm_agent_event_v1_default = {
         { $ref: "#/definitions/session_compact" },
         { $ref: "#/definitions/session_compact_failed" },
         { $ref: "#/definitions/extension_ui_request" },
+        { $ref: "#/definitions/extension_ui_resolved" },
         { $ref: "#/definitions/command_result" },
         { $ref: "#/definitions/session_shutdown" }
       ]
@@ -76730,6 +76731,18 @@ var xtrm_agent_event_v1_default = {
         { if: { properties: { method: { const: "select" } } }, then: { required: ["options"] } },
         { if: { properties: { method: { const: "confirm" } } }, then: { required: ["message"] } }
       ]
+    },
+    extension_ui_resolved: {
+      description: 'Closes one extension_ui_request: sent exactly once per request id, however it ended. `resolvedBy` is "host" when an xtrm.agent-command.v1 extension_ui_response won, else "local" (the terminal dialog, the caller\'s AbortSignal, or the prompt timeout). `outcome` is "cancelled" when no answer was given (dismissed, aborted, timed out, or a host response with cancelled: true); a confirm answered false is "answered". Pi 1.0.0 confirm() returns false for a dismissed terminal dialog too, so a locally dismissed confirm reports "answered". The answer value is not carried. The host clears the request on this event; a later extension_ui_response for the id is rejected unknown_ui_request.',
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "id", "resolvedBy", "outcome"],
+      properties: {
+        type: { const: "extension_ui_resolved" },
+        id: { $ref: "#/definitions/boundedString" },
+        resolvedBy: { enum: ["local", "host"] },
+        outcome: { enum: ["answered", "cancelled"] }
+      }
     },
     command_result: {
       description: "The extension's answer to one xtrm.agent-command.v1 frame, correlated by commandId.",
@@ -78403,6 +78416,9 @@ var AgentHostRegistry = class {
         break;
       case "extension_ui_request":
         session.pendingUi.add(payload.id);
+        break;
+      case "extension_ui_resolved":
+        session.pendingUi.delete(payload.id);
         break;
       case "command_result":
         this.settleCommand(sessionId, payload.commandId, payload.status, payload.reason, payload.message);

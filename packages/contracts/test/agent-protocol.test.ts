@@ -120,6 +120,16 @@ describe('agent-event.v1 semantics', () => {
     it('requires options for a select UI request', () => {
         expect(validate(id, frame({ type: 'extension_ui_request', id: 'u', method: 'select', title: 't' })).valid).toBe(false);
     });
+
+    it('closes a UI request with extension_ui_resolved carrying who resolved it and how', () => {
+        const resolved = { type: 'extension_ui_resolved', id: 'u', resolvedBy: 'local', outcome: 'cancelled' };
+        expect(validate(id, frame(resolved)).valid).toBe(true);
+        expect(validate(id, frame({ ...resolved, resolvedBy: 'host', outcome: 'answered' })).valid).toBe(true);
+        expect(validate(id, frame({ ...resolved, resolvedBy: 'terminal' })).valid).toBe(false);
+        expect(validate(id, frame({ ...resolved, value: 'secret' })).valid).toBe(false);
+        const { outcome: _outcome, ...noOutcome } = resolved;
+        expect(validate(id, frame(noOutcome)).valid).toBe(false);
+    });
 });
 
 describe('agent-command.v1 semantics', () => {

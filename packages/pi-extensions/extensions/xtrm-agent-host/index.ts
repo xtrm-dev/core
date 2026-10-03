@@ -8,7 +8,9 @@
  * - executes xtrm.agent-command.v1 frames (prompt, steer, follow_up, abort, extension_ui_response)
  *   and answers each with a command_result;
  * - proxies ctx.ui select / confirm / input so the host can answer them while the terminal dialog
- *   stays open; whichever answer arrives first wins.
+ *   stays open; whichever answer arrives first wins, and extension_ui_resolved reports the end of
+ *   every request so the host leaves waiting_for_input. ctx.ui.editor is not proxied: Pi 1.0.0
+ *   gives editor() no AbortSignal, so a host answer could not dismiss the terminal editor.
  *
  * It never blocks or slows the turn loop: handlers are synchronous, socket writes are fire-and-forget,
  * streaming updates are coalesced, and a slow host loses update frames instead of stalling Pi. With no
@@ -138,10 +140,15 @@ function shrink(payload: any, bytes: number): any {
   return out;
 }
 
+interface UiAnswer {
+  value: unknown;
+  cancelled: boolean;
+}
+
 interface PendingUi {
   method: UiMethod;
   options?: string[];
-  resolve: (value: unknown) => void;
+  resolve: (answer: UiAnswer) => void;
 }
 
 export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridgeOptions = {}) {
@@ -410,7 +417,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const id = randomUUID();
     const controller = new AbortController();
     const signal = opts?.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
-    const hostAnswer = new Promise<unknown>((resolve) => pendingUi.set(id, { method, options: request.options, resolve }));
+    const hostAnswer = new Promise<UiAnswer>((resolve) => pendingUi.set(id, { method, options: request.options, resolve }));
     emit(
       compact({
         type: "extension_ui_request" as const,
@@ -423,20 +430,34 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         timeout: typeof request.timeout === "number" && request.timeout >= 0 ? Math.floor(request.timeout) : undefined,
       }),
     );
-    const localAnswer = local({ ...opts, signal });
+    // A throwing local dialog leaves these defaults: the request still ends, as cancelled.
+    let resolvedBy: "local" | "host" = "local";
+    let outcome: "answered" | "cancelled" = "cancelled";
     try {
+      const localAnswer = local({ ...opts, signal });
       const winner = await Promise.race([
-        localAnswer.then((value) => ({ from: "local" as const, value })),
-        hostAnswer.then((value) => ({ from: "host" as const, value: value as T })),
+        localAnswer.then((value) => ({ from: "local" as const, value, cancelled: localCancelled(value, opts?.signal) })),
+        hostAnswer.then((answer) => ({ from: "host" as const, value: answer.value as T, cancelled: answer.cancelled })),
       ]);
       if (winner.from === "host") {
         controller.abort();
         localAnswer.catch(() => {});
       }
+      resolvedBy = winner.from;
+      outcome = winner.cancelled ? "cancelled" : "answered";
       return winner.value;
     } finally {
       pendingUi.delete(id);
+      emit({ type: "extension_ui_resolved", id, resolvedBy, outcome });
     }
+  }
+
+  /**
+   * Pi's dialogs return undefined (select, input) when dismissed or timed out. confirm() returns false for both
+   * "No" and a dismissal, so only an aborted caller signal marks a local confirm cancelled.
+   */
+  function localCancelled(value: unknown, callerSignal: AbortSignal | undefined): boolean {
+    return value === undefined || callerSignal?.aborted === true;
   }
 
   function patchUi(current: ExtensionContext): void {
@@ -454,13 +475,13 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   }
 
   /** Map an RpcExtensionUIResponse onto the ctx.ui return value; null means the answer does not fit. */
-  function uiValue(entry: PendingUi, response: UiResponse): { value: unknown } | null {
+  function uiValue(entry: PendingUi, response: UiResponse): UiAnswer | null {
     const r = response as { value?: unknown; confirmed?: unknown; cancelled?: unknown };
-    if (r.cancelled === true) return { value: entry.method === "confirm" ? false : undefined };
-    if (entry.method === "confirm") return typeof r.confirmed === "boolean" ? { value: r.confirmed } : null;
+    if (r.cancelled === true) return { value: entry.method === "confirm" ? false : undefined, cancelled: true };
+    if (entry.method === "confirm") return typeof r.confirmed === "boolean" ? { value: r.confirmed, cancelled: false } : null;
     if (typeof r.value !== "string") return null;
     if (entry.method === "select" && !entry.options?.includes(r.value)) return null;
-    return { value: r.value };
+    return { value: r.value, cancelled: false };
   }
 
   // --- commands -----------------------------------------------------------------------------
@@ -506,7 +527,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       const mapped = uiValue(entry, command);
       if (!mapped) return result("rejected", "invalid_ui_response", `the answer does not fit a ${entry.method} prompt`);
       pendingUi.delete(command.id);
-      entry.resolve(mapped.value);
+      entry.resolve(mapped);
       return result("accepted");
     }
     if (!ctx) return result("failed", "no_session_context", "the session is not ready");
