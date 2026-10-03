@@ -135,7 +135,12 @@ export class ToolOriginClassifier {
 
         const manifest = info.baseDir ? this.manifest(info.baseDir) : null;
         const packageName = manifest?.name ?? packageNameFromSpec(info.source);
-        const transport = { extension: info.source, ...(manifest?.version ? { version: manifest.version } : {}) };
+        // Rule 5 identity: the package.json name, never the install path or spec; the raw
+        // spec stays in `tool.sourceInfo.source` and is the fallback only without a name.
+        const transport = {
+            extension: manifest?.name ?? info.source,
+            ...(manifest?.version ? { version: manifest.version } : {}),
+        };
 
         // Rule 4: the pi-mcp-adapter package.
         if (packageName === MCP_ADAPTER_PACKAGE) {

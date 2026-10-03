@@ -78314,7 +78314,10 @@ var ToolOriginClassifier = class {
     if (info.source === "builtin") return { class: "native" };
     const manifest = info.baseDir ? this.manifest(info.baseDir) : null;
     const packageName = manifest?.name ?? packageNameFromSpec(info.source);
-    const transport = { extension: info.source, ...manifest?.version ? { version: manifest.version } : {} };
+    const transport = {
+      extension: manifest?.name ?? info.source,
+      ...manifest?.version ? { version: manifest.version } : {}
+    };
     if (packageName === MCP_ADAPTER_PACKAGE) {
       const callArgs = args && typeof args === "object" ? args : {};
       const server = mcpServerFromNamespace(tool.namespace) ?? (toolName === MCP_ADAPTER_PROXY_TOOL ? nonEmptyString(callArgs.server) : void 0) ?? UNKNOWN;
