@@ -4,41 +4,40 @@
  *
  * Pattern credit: the Jev skill-suggestion mod (aitmpl productivity/
  * jev-skill-suggestion). Instead of ranking installed skills per prompt,
- * this extension ranks the sb verb surface (see catalog.ts) against what
- * just happened, and delivers at most ONE suggestion per agent turn as a
- * specialists-style railed wake card:
+ * this extension ranks duties — the sb verb surface (catalog.ts), wait
+ * commitments, service-knowledge skills (duties.ts), better-tool nudges
+ * (toolnudge.ts) — against what just happened, and delivers at most ONE
+ * wake card per turn in the house style:
  *
- *   │ ◆ sb journal append · CORE-2295 · kind=decision
- *   │ Record the course you just chose: … Ignore this if it does not fit. · jev 0.72
+ *   ● sb journal checkpoint · CORE-2295
+ *   Checkpoint now: … Ignore this if it does not fit. · jev 0.72
  *
  * Binding is fully in-session and automatic — the operator never exports
  * SUBSTRATE_ISSUE_REF. The bound issue resolves, in order:
  *   1. a claim this session observed (substrate_issue_claim tool call,
- *      `sb issue claim <ref>` bash, or specialist_dispatch issue_ref);
- *   2. the most recent issue ref the session touched through any
- *      substrate_* tool, specialist tool, or `sb … <REF>` command;
- *   3. the unique live claim in the checkout's bound Substrate project
- *      (discoverRepository → repository binding → claim scan, 60s cached;
- *      a live claim is current by TTL definition);
+ *      `sb issue claim <ref>` bash, specialist_dispatch issue_ref or
+ *      created_issue_ref, `sb issue create` results);
+ *   2. the most recent issue ref the session touched;
+ *   3. the unique live claim in the checkout's bound Substrate project;
  *   4. SUBSTRATE_ISSUE_REF / SUBSTRATE_ISSUE env (compat only).
  *
- * Lightness contract (the "absolute best way"):
- *   - Zero work on the keystroke/prompt path. One fire-and-forget async
- *     decision at agent_end, after the reply is already rendered.
- *   - Deterministic gate first: point reads over in-process Substrate
- *     services (SQLite WAL). Most turns cost zero model calls.
- *   - Jev runs ONLY for the semantic journal-kind pick, on the turn delta
- *     (bounded excerpt), Pi's native classifier API first (credentials are
- *     Pi's own — auth.json providers, e.g. opencode zen jev), direct REST
- *     second, 2.5s abort; any failure degrades to deterministic-only.
- *     Fail-open everywhere — a suggestion extension must never break a
- *     session.
- *   - Cooldowns per (issue, verb); reset on compaction or claim change.
+ * Duty chain, one card per turn, most duty first:
+ *   wait-guard (pre-binding) → service skill (pre-binding) → deterministic
+ *   sb verbs (binding-gated) → journal kind (Jev).
+ * Mid-turn, two result-level injections need no card budget: tool nudges
+ * (better-tool reminders) and service-territory skill pointers.
  *
- * Authority contract: suggestions are advisory text only. The claim gate
- * (owned by @jaggerxtrm/substrate) stays the only blocking authority.
- * Jev never authorizes CLAIM/CLOSE/DELETE — deterministic rules decide
- * those verbs, and even then the card only suggests the command.
+ * Lightness contract:
+ *   - Zero work on the keystroke/prompt path; one fire-and-forget async
+ *     decision at agent_end; result-level injections are deterministic.
+ *   - Jev (Pi classifier first, direct REST second) only where semantics
+ *     are needed; any failure degrades to deterministic-only. Fail-open.
+ *   - Cooldowns per (scope, verb); reset on compaction or claim change.
+ *
+ * Authority contract: suggestions are advisory. The claim gate (owned by
+ * @jaggerxtrm/substrate) stays the only blocking authority. Jev never
+ * authorizes CLAIM/CLOSE/DELETE — rules decide those verbs, and even then
+ * the card only suggests the command.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -245,7 +244,6 @@ async function jevPickKind(
     entries_since_checkpoint: snapshot.journalSeq - snapshot.lastCheckpointSeq,
     working_turn_excerpt: excerpt.slice(0, 8000),
   };
-  // Pi-native classifier first (credentials already configured), REST second.
   const result = await askJev(registry, state, questions);
   if (!result) return null;
 
@@ -265,8 +263,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     pi.getFlag("no-substrate-suggest") === true ||
     (process.env["SUBSTRATE_SUGGEST"] ?? "").toLowerCase() === "off";
 
-  // One services handle for the life of the pi process (VALIDATION: mirrors
-  // the specialists "one host" rule — never per-turn).
+  // One services handle for the life of the pi process (mirrors the
+  // specialists "one host" rule — never per-turn).
   let servicesPromise: Promise<SubstrateServices | null> | null = null;
   const getServices = () => (servicesPromise ??= openServices());
 
@@ -309,7 +307,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       { customType: CUSTOM_TYPE, content: card, display: true, details: { verb: verb.id, ref, severity: verb.severity } },
       // Wake the agent like specialists events do: every suggestion is
       // information for the model. Cooldowns plus self-extinguishing rules
-      // (acting on the verb removes its trigger) bound the turn cost.
+      // bound the turn cost.
       { deliverAs: "followUp", triggerTurn: true },
     );
   };
@@ -336,7 +334,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         const pool = byHolder.length > 0 ? byHolder : live;
         if (pool.length === 1) found = pool[0].ref;
         else if (pool.length > 1) {
-          // Ambiguy resolves to the most recently acquired claim: a live TTL
+          // Ambiguity resolves to the most recently acquired claim: a live TTL
           // means someone renewed it latest.
           found = pool.reduce((a, b) => (b.acquiredAt > a.acquiredAt ? b : a)).ref;
         }
@@ -363,8 +361,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     return null;
   };
 
-  // Observe claims and issue refs as the session works — this is what makes
-  // binding automatic: the agent claims/touches, the extension remembers.
+  // Observe claims, issue refs, monitors and tool counters as the session
+  // works — this is what makes binding and the duty gates automatic.
   pi.on("tool_call", (event) => {
     try {
       const e = event as { toolName?: string; name?: string; args?: Record<string, unknown>; input?: Record<string, unknown> };
@@ -417,40 +415,44 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           sessionClaimRef = ref;
         }
       }
+      if (off()) return;
       // Mid-turn intervention, two layers — tool-nudge first (an inefficient
       // call is the strongest signal), then the service-territory pointer.
-      if (!off()) {
-        const nudge = evaluateToolNudge(counters, "", e.input ? { command: e.input["command"] } : undefined, e.input);
-        if (nudge && cooldownAllows(cooldowns, "nudge", nudge.kind as unknown as VerbId, Date.now(), nudge.verb)) {
-          applyCooldown(cooldowns, "nudge", nudge.verb);
-          logDecision({ ts: new Date().toISOString(), issue: null, verb: `tool_nudge:${nudge.kind}`, source: "deterministic" });
-          const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
-          content.push({ type: "text", text: `\x1b[2m[substrate-suggest] ${nudge.verb.instruction("")}\x1b[22m` });
-          // The chat card keeps the operator in the loop in the house style;
-          // display-only — the inline advisory already informed the agent.
-          pi.sendMessage(
-            { customType: CUSTOM_TYPE, content: formatSuggestionCard({ verb: nudge.verb, ref: "—" }), display: true, details: { verb: nudge.verb.id, nudge: nudge.kind } },
-            { deliverAs: "followUp", triggerTurn: false },
-          );
-          return { content, structuredContent: e.structuredContent } as never;
-        }
-        const packs = discoverSkillPacks(process.cwd());
-        const hit = packs.length > 0 ? territoryHit(packs, e.input, process.cwd()) : null;
-        if (hit) {
-          const verb = skillVerb(hit);
-          // Per-service scoping: territory:${id} as the ref half of the cooldown key.
-          if (cooldownAllows(cooldowns, `territory:${hit.id}`, verb.id, Date.now(), verb)) {
-            applyCooldown(cooldowns, `territory:${hit.id}`, verb);
+      // Both append a dim advisory to THIS tool result (the agent reads it in
+      // the moment) and emit a display-only chat card (the operator stays in
+      // the loop, no turn burned). structuredContent passes through untouched.
+      const nudge = evaluateToolNudge(counters, "", e.input ? { command: e.input["command"] } : undefined, e.input);
+      if (nudge && cooldownAllows(cooldowns, "nudge", nudge.kind as unknown as VerbId, Date.now(), nudge.verb)) {
+        applyCooldown(cooldowns, "nudge", nudge.verb);
+        logDecision({ ts: new Date().toISOString(), issue: null, verb: `tool_nudge:${nudge.kind}`, source: "deterministic" });
+        const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
+        content.push({ type: "text", text: `\x1b[2m[substrate-suggest] ${nudge.verb.instruction("")}\x1b[22m` });
+        pi.sendMessage(
+          { customType: CUSTOM_TYPE, content: formatSuggestionCard({ verb: nudge.verb, ref: "—" }), display: true, details: { verb: nudge.verb.id, nudge: nudge.kind } },
+          { deliverAs: "followUp", triggerTurn: false },
+        );
+        return { content, structuredContent: e.structuredContent } as never;
+      }
+      const packs = discoverSkillPacks(process.cwd());
+      const hit = packs.length > 0 ? territoryHit(packs, e.input, process.cwd()) : null;
+      if (hit) {
+        const verb = skillVerb(hit);
+        // Per-service scoping: territory:<id> as the ref half of the cooldown key.
+        if (cooldownAllows(cooldowns, `territory:${hit.id}`, verb.id, Date.now(), verb)) {
+          applyCooldown(cooldowns, `territory:${hit.id}`, verb);
           logDecision({ ts: new Date().toISOString(), issue: null, verb: `skill_inline:${hit.id}`, source: "skill_inline" });
           const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
           content.push({
             type: "text",
             text: `\x1b[2m[substrate-suggest] expert skill: ${hit.skillPath} — ${hit.name}${hit.container ? ` (container ${hit.container})` : ""}. Consider it before going deeper.\x1b[22m`,
           });
+          pi.sendMessage(
+            { customType: CUSTOM_TYPE, content: formatSuggestionCard({ verb, ref: "—" }), display: true, details: { verb: "skill_suggest", skill: hit.id, midTurn: true } },
+            { deliverAs: "followUp", triggerTurn: false },
+          );
           return { content, structuredContent: e.structuredContent } as never;
         }
       }
-    }
     } catch {
       /* observation is best-effort */
     }
@@ -465,29 +467,63 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   pi.on("agent_end", async (event, ctx) => {
     if (off()) return;
     const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
-      const { excerpt, lastAssistant, wasActive, nextIdx } = turnEvidence(messages, messageCursor);
+    const { excerpt, lastAssistant, wasActive, nextIdx } = turnEvidence(messages, messageCursor);
     messageCursor = nextIdx;
     const monitorSet = turnMonitorSet;
     turnMonitorSet = false;
 
+    const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
+    const jevAvailable = registry !== null || readApiKey() !== null;
+
     // Duty 0 — wait-guard. Needs no bound issue and no substrate services:
     // a wait commitment without a monitor is a duty the moment it is spoken.
-    if (lastAssistant && waitCommitment(lastAssistant) && !monitorSet) {
-      const registry0 = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
-      if (registry0 || readApiKey()) {
-        const verb = waitGuardVerb();
-        if (cooldownAllows(cooldowns, "wait", verb.id, Date.now(), verb)) {
-          const result = await askJev(registry0, {
-            final_message: lastAssistant,
-            monitor_set_this_turn: monitorSet,
-          }, {
-            wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for an external event (CI, deploy, review, another agent's reply, a long job) rather than actively working or merely narrating?" },
-            monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here, instead of relying on the agent remembering?" },
-          } as Record<string, Question>);
-          const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
-          if (result && g >= GATE_THRESHOLD) {
-            emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
-            return;
+    if (jevAvailable && lastAssistant && waitCommitment(lastAssistant) && !monitorSet) {
+      const verb = waitGuardVerb();
+      if (cooldownAllows(cooldowns, "wait", verb.id, Date.now(), verb)) {
+        const result = await askJev(registry, {
+          final_message: lastAssistant,
+          monitor_set_this_turn: monitorSet,
+        }, {
+          wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for an external event (CI, deploy, review, another agent's reply, a long job) rather than actively working or merely narrating?" },
+          monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here, instead of relying on the agent remembering?" },
+        } as Record<string, Question>);
+        const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
+        if (result && g >= GATE_THRESHOLD) {
+          emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
+          return;
+        }
+      }
+    }
+
+    // Duty 1 — service skill (turn end). Also pre-binding: skills are repo
+    // knowledge, not issue knowledge.
+    if (jevAvailable && wasActive) {
+      const all = discoverSkillPacks(process.cwd()).flatMap((p) => p.entries);
+      if (all.length > 0 && cooldownAllows(cooldowns, "skills", SKILL_SOURCE_VERB.id, Date.now(), SKILL_SOURCE_VERB)) {
+        const result = await askJev(registry, {
+          working_turn_excerpt: excerpt.slice(0, 4000),
+        }, {
+          service: {
+            type: "choice",
+            instructions: "Pick the single service whose expert skill the working turn most clearly needs, or none. Base it only on the provided evidence.",
+            criteria: Object.fromEntries([
+              ...all.map((s) => [s.id, s.description]),
+              ["none", "No registered service matches this turn."],
+            ]),
+          },
+          service_specific: { type: "noul", instructions: "Would the picked service's expert skill materially change how the agent proceeds right now?" },
+        } as Record<string, Question>);
+        const fit = result?.nouls["service_specific"] ?? 0;
+        const pick = result?.choice.choice;
+        if (result && pick && pick !== "none" && fit >= FITS_THRESHOLD) {
+          const entry = all.find((s) => s.id === pick);
+          if (entry) {
+            const verb = skillVerb(entry);
+            if (cooldownAllows(cooldowns, "skills", verb.id, Date.now(), verb)) {
+              applyCooldown(cooldowns, "skills", SKILL_SOURCE_VERB);
+              emit(verb, "—", { confidence: result.choice.confidence ?? fit, source: "jev", model: result.model });
+              return;
+            }
           }
         }
       }
@@ -534,47 +570,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      // Semantic duty chain, one card per turn, most duty first:
-      // service skill → journal kind. Wait-guard already ran pre-binding.
-      const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
-      if (!registry && !readApiKey()) return;
-
-      const packs = discoverSkillPacks(process.cwd());
-      if (packs.length > 0) {
-        const all = packs.flatMap((p) => p.entries);
-        if (all.length > 0 && cooldownAllows(cooldowns, snapshot.ref, "skill_suggest", snapshot.now, SKILL_SOURCE_VERB)) {
-          const result = await askJev(registry, {
-            working_turn_excerpt: excerpt.slice(0, 4000),
-            issue_ref: snapshot.ref,
-            issue_purpose: meta.currentRevision ? undefined : undefined,
-          }, {
-            service: {
-              type: "choice",
-              instructions: "Pick the single service whose expert skill the working turn most clearly needs, or none. Base it only on the provided evidence.",
-              criteria: Object.fromEntries([
-                ...all.map((s) => [s.id, s.description]),
-                ["none", "No registered service matches this turn."],
-              ]),
-            },
-            service_specific: { type: "noul", instructions: "Would the picked service's expert skill materially change how the agent proceeds right now?" },
-          } as Record<string, Question>);
-          const fit = result?.nouls["service_specific"] ?? 0;
-          const pick = result?.choice.choice;
-          if (result && pick && pick !== "none" && fit >= FITS_THRESHOLD) {
-            const entry = all.find((s) => s.id === pick);
-            if (entry) {
-              const verb = skillVerb(entry);
-              if (cooldownAllows(cooldowns, snapshot.ref, verb.id, snapshot.now, verb)) {
-                applyCooldown(cooldowns, snapshot.ref, SKILL_SOURCE_VERB);
-                emit(verb, snapshot.ref, { confidence: result.choice.confidence ?? fit, revision: meta.currentRevision, source: "jev", model: result.model });
-                return;
-              }
-            }
-          }
-        }
-      }
-
       // Journal kind last: the ordinary case.
+      if (!jevAvailable) return;
       const pick = await jevPickKind(registry, snapshot, excerpt);
       if (!pick) {
         logDecision({ ts: new Date().toISOString(), issue: snapshot.ref, verb: null, source: "jev", outcome: "none" });
