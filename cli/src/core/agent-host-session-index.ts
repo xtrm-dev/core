@@ -13,7 +13,7 @@
  *   deeper files (Claude subagent transcripts) are not sessions of their own.
  */
 
-import { type FSWatcher, watch } from 'node:fs';
+import { existsSync, type FSWatcher, statSync, watch } from 'node:fs';
 import { mkdir, open, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -97,6 +97,8 @@ export class SessionIndex {
     private readonly log: (message: string) => void;
     private readonly journals = new Map<string, JournalRecord>();
     private readonly watchers = new Map<string, FSWatcher>();
+    /** Roots that do not exist yet, keyed by the nearest existing ancestor being watched. */
+    private readonly pendingRoots = new Map<string, Set<SessionIndexRoot>>();
     private readonly queue = new Set<string>();
     private readonly queued = new Map<string, HistoryProvider>();
     private draining: Promise<void> | null = null;
@@ -158,14 +160,7 @@ export class SessionIndex {
         for (const root of this.roots) {
             // Watch before listing so a change made during the scan is never missed.
             this.watchRoot(root);
-            let dirs: string[];
-            try {
-                dirs = await readdir(root.dir);
-            } catch (error) {
-                this.log(`session index: cannot read ${root.dir}: ${(error as Error).message}`);
-                continue;
-            }
-            for (const name of dirs) await this.addProjectDir(root, path.join(root.dir, name));
+            await this.scanRoot(root);
         }
         // Journals from the cache that no longer exist on disk.
         for (const file of this.journals.keys()) if (!this.queued.has(file)) this.enqueue(file, this.journals.get(file)!.provider);
@@ -174,9 +169,61 @@ export class SessionIndex {
     }
 
     private watchRoot(root: SessionIndexRoot): void {
-        this.watchDir(root.dir, (name) => {
-            if (name) void this.addProjectDir(root, path.join(root.dir, name));
-        });
+        if (existsSync(root.dir)) {
+            this.watchDir(root.dir, (name) => {
+                if (name) void this.addProjectDir(root, path.join(root.dir, name));
+            });
+            return;
+        }
+        // The root does not exist yet: watch the nearest existing ancestor and wait for it
+        // to appear. One stat per event on that ancestor, no periodic rescans.
+        const ancestor = this.nearestExistingDir(root.dir);
+        const pending = this.pendingRoots.get(ancestor) ?? new Set<SessionIndexRoot>();
+        pending.add(root);
+        this.pendingRoots.set(ancestor, pending);
+        this.watchDir(ancestor, () => void this.pollPendingRoots(ancestor));
+    }
+
+    private async pollPendingRoots(ancestor: string): Promise<void> {
+        const pending = this.pendingRoots.get(ancestor);
+        if (!pending) return;
+        for (const root of [...pending]) {
+            const info = await stat(root.dir).catch(() => null);
+            if (!info?.isDirectory()) continue;
+            pending.delete(root);
+            if (pending.size === 0) {
+                this.pendingRoots.delete(ancestor);
+                this.watchers.get(ancestor)?.close();
+                this.watchers.delete(ancestor);
+            }
+            this.watchRoot(root);
+            await this.scanRoot(root);
+        }
+    }
+
+    private async scanRoot(root: SessionIndexRoot): Promise<void> {
+        let dirs: string[];
+        try {
+            dirs = await readdir(root.dir);
+        } catch (error) {
+            this.log(`session index: cannot read ${root.dir}: ${(error as Error).message}`);
+            return;
+        }
+        for (const name of dirs) await this.addProjectDir(root, path.join(root.dir, name));
+    }
+
+    /** The closest ancestor of `dir` that exists as a directory (falls back to the filesystem root). */
+    private nearestExistingDir(dir: string): string {
+        let current = dir;
+        for (;;) {
+            current = path.dirname(current);
+            try {
+                if (statSync(current).isDirectory()) return current;
+            } catch {
+                // Not a directory or unreadable: keep climbing.
+            }
+            if (path.dirname(current) === current) return current;
+        }
     }
 
     private async addProjectDir(root: SessionIndexRoot, dir: string): Promise<void> {

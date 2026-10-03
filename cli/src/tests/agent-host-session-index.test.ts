@@ -183,6 +183,20 @@ describe('session index (XTRM-565)', () => {
         expect(index.list().map((s) => s.sessionId)).toEqual(['p2']);
     });
 
+    it('picks up a provider root that is created after start, without a restart (XTRM-580)', async () => {
+        const lateRoot = path.join(dir, 'late'); // never created before the index starts
+        options = { roots: [{ provider: 'pi', dir: lateRoot }], cachePath: path.join(dir, 'cache', 'session-index.json') };
+        const index = startIndex();
+        await index.ready;
+        expect(index.list()).toEqual([]);
+
+        // Install-time layout: mkdir -p creates the root, a project dir and one journal at once.
+        mkdirSync(path.join(lateRoot, '--work-late--'), { recursive: true });
+        writeFileSync(path.join(lateRoot, '--work-late--', 'l_l1.jsonl'), piJournal('l1', '/work/late'));
+        await until(() => index.get('l1')?.state === 'history_only');
+        expect(index.get('l1')).toMatchObject({ sessionId: 'l1', name: 'fix the flaky test', cwd: '/work/late', frameCount: 1 });
+    });
+
     it('rebuilds the same list from the journals after the cache is deleted, and reuses the cache otherwise', async () => {
         writeFileSync(path.join(piRoot, '--work-core--', 'a_p1.jsonl'), piJournal('p1', '/work/core'));
         writeFileSync(path.join(claudeRoot, '-work-app', 'c1.jsonl'), claudeJournal('/work/app'));
