@@ -418,8 +418,11 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       if (!off()) {
         const packs = discoverSkillPacks(process.cwd());
         const hit = packs.length > 0 ? territoryHit(packs, e.input, process.cwd()) : null;
-        if (hit && cooldownAllows(cooldowns, "territory", `skill:${hit.id}` as unknown as VerbId, Date.now(), SKILL_SOURCE_VERB)) {
-          applyCooldown(cooldowns, "territory", SKILL_SOURCE_VERB);
+        if (hit) {
+          const verb = skillVerb(hit);
+          // Per-service scoping: territory:${id} as the ref half of the cooldown key.
+          if (cooldownAllows(cooldowns, `territory:${hit.id}`, verb.id, Date.now(), verb)) {
+            applyCooldown(cooldowns, `territory:${hit.id}`, verb);
           logDecision({ ts: new Date().toISOString(), issue: null, verb: `skill_inline:${hit.id}`, source: "skill_inline" });
           const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
           content.push({
@@ -429,6 +432,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           return { content, structuredContent: e.structuredContent } as never;
         }
       }
+    }
     } catch {
       /* observation is best-effort */
     }
