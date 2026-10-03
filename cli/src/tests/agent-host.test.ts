@@ -334,6 +334,49 @@ describe('xt host agent host (XTRM-563)', () => {
         ext.close();
     });
 
+    it('fails an accepted prompt that never starts a run and clears the busy guard; a started run stays working (XTRM-605)', async () => {
+        // A Pi input handler can swallow the prompt, or Pi preflight can throw (no API key): the
+        // extension accepted it, but no before_agent_start, agent_start or agent_settled follows.
+        await host.close();
+        socketPath = path.join(dir, 'agent-host-605.sock');
+        host = await startAgentHost({ socketPath, infoPath: path.join(dir, 'agent-host-605.json'), promptStartTimeoutMs: 200, log: () => {} });
+        const events = await openEvents(host);
+        const ext = await FakeExtension.connect(socketPath);
+        ext.push(identity);
+        await until(() => host.registry.list().length === 1);
+
+        const swallowed = prompt(host, 'p-1');
+        ext.answer(await until(() => ext.commands[0]));
+        expect((await swallowed).body).toMatchObject({ commandId: 'p-1', status: 'accepted' });
+        expect((await prompt(host, 'p-2')).body).toMatchObject({ commandId: 'p-2', status: 'busy' });
+
+        // After the start bound the host reports the prompt as failed with a reason and is idle again.
+        const notice = await until(() =>
+            events.messages.find((m) => m.kind === 'event' && m.frame.payload.type === 'command_result' && m.frame.payload.status === 'failed'),
+        );
+        expect(validate('xtrm.agent-host-api.v1', notice).errors).toEqual([]);
+        expect(notice).toMatchObject({ frame: { sessionId, payload: { type: 'command_result', commandId: 'p-1', status: 'failed', reason: 'prompt_not_started' } } });
+        expect(host.registry.list()[0]).toMatchObject({ state: 'settled', frameCount: 0 });
+        const retry = prompt(host, 'p-3');
+        ext.answer(await until(() => ext.commands[1]));
+        expect((await retry).body).toMatchObject({ commandId: 'p-3', status: 'accepted' });
+
+        // A prompt whose run starts inside the bound is never failed, however long the run takes.
+        ext.payload('before_agent_start', { prompt: 'run the tests', ingress: { origin: 'gui', commandId: 'p-3' } });
+        ext.payload('agent_start');
+        await until(() => host.registry.list()[0]?.state === 'working');
+        await new Promise((r) => setTimeout(r, 400));
+        expect(host.registry.list()[0]).toMatchObject({ state: 'working', frameCount: 1 });
+        expect((await prompt(host, 'p-4')).body).toMatchObject({ status: 'busy' });
+        const failed = events.messages.filter((m) => m.kind === 'event' && m.frame.payload.type === 'command_result' && m.frame.payload.status === 'failed');
+        expect(failed).toHaveLength(1);
+        ext.payload('agent_settled');
+        await until(() => host.registry.list()[0]?.state === 'settled');
+
+        events.close();
+        ext.close();
+    });
+
     it('drops a persistent session from the live registry when its extension disconnects', async () => {
         const ext = await FakeExtension.connect(socketPath);
         ext.push(identity);
