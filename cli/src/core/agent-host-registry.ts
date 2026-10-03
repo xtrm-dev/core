@@ -17,7 +17,9 @@ import type {
     AgentHostApiV1,
     AgentSessionIdentity,
     AgentSessionSummary,
+    AgentToolOrigin,
 } from '@xtrm/contracts';
+import { classifyClaudeTool, ToolOriginClassifier } from './agent-host-origin.js';
 
 export type SubmitRequest = Extract<AgentHostApiV1, { kind: 'submit_request' }>;
 export type SubmitResult = Extract<AgentHostApiV1, { kind: 'submit_result' }>;
@@ -37,6 +39,8 @@ interface LiveSession {
     promptPending: string | null;
     /** extension_ui_request ids awaiting an answer. */
     pendingUi: Set<string>;
+    /** Origin per in-flight toolCallId, fixed at tool_execution_start (end carries no args). */
+    toolOrigins: Map<string, AgentToolOrigin>;
     frameCount: number;
     startedAt: number;
     lastActivityAt: number;
@@ -72,6 +76,7 @@ export class AgentHostRegistry {
     private readonly sessions = new Map<string, LiveSession>();
     private readonly pending = new Map<string, PendingCommand>();
     private readonly listeners = new Set<(frame: AgentEventV1) => void>();
+    private readonly classifier = new ToolOriginClassifier();
     private readonly commandTimeoutMs: number;
     private readonly log: (message: string) => void;
 
@@ -105,6 +110,7 @@ export class AgentHostRegistry {
                     frameOpen: false,
                     promptPending: null,
                     pendingUi: new Set(),
+                    toolOrigins: new Map(),
                     frameCount: 0,
                     startedAt: frame.at,
                     lastActivityAt: frame.at,
@@ -136,12 +142,18 @@ export class AgentHostRegistry {
                 session.frameOpen = false;
                 session.promptPending = null;
                 session.pendingUi.clear();
+                session.toolOrigins.clear();
                 break;
             case 'extension_ui_request':
                 session.pendingUi.add(payload.id);
                 break;
             case 'command_result':
                 this.settleCommand(sessionId, payload.commandId, payload.status, payload.reason, payload.message);
+                break;
+            case 'tool_execution_start':
+            case 'tool_execution_update':
+            case 'tool_execution_end':
+                frame = { ...frame, payload: { ...payload, origin: this.toolOrigin(session, payload) } };
                 break;
             default:
                 break;
@@ -249,6 +261,27 @@ export class AgentHostRegistry {
                 this.finishPending(command.commandId, 'failed', 'send_failed', (error as Error).message);
             }
         });
+    }
+
+    /**
+     * PRD §36.7: the host, not the producer, sets origin from the registration record.
+     * The class is fixed at tool_execution_start, whose args name the MCP proxy's server.
+     */
+    private toolOrigin(
+        session: LiveSession,
+        payload: Extract<AgentEventV1['payload'], { type: 'tool_execution_start' | 'tool_execution_update' | 'tool_execution_end' }>,
+    ): AgentToolOrigin {
+        let origin = session.toolOrigins.get(payload.toolCallId);
+        if (!origin) {
+            const args = 'args' in payload ? payload.args : undefined;
+            origin =
+                session.identity.runtime.name === 'claude'
+                    ? classifyClaudeTool(payload.toolName)
+                    : this.classifier.classifyPi(payload.toolName, payload.tool, args);
+            if (payload.type !== 'tool_execution_end') session.toolOrigins.set(payload.toolCallId, origin);
+        }
+        if (payload.type === 'tool_execution_end') session.toolOrigins.delete(payload.toolCallId);
+        return origin;
     }
 
     /** Fail every in-flight command; used on host shutdown. */

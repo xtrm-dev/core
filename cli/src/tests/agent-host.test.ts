@@ -1,7 +1,7 @@
 // XTRM-563: the agent host end to end — a fake Pi extension on the producer socket, clients
 // on the loopback HTTP + SSE API, and the §35.8 item 5 concurrent-submit policy.
 
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -173,7 +173,10 @@ describe('xt host agent host (XTRM-563)', () => {
         events.messages.forEach((message, i) => {
             expect(validate('xtrm.agent-host-api.v1', message).errors).toEqual([]);
             if (message.kind !== 'event') throw new Error(`unexpected ${message.kind}`);
-            expect(message.frame.payload).toEqual(frameEvents[i].payload);
+            // The host sets tool origin (XTRM-571); every other field passes through unchanged.
+            const { origin: _sent, ...sent } = frameEvents[i].payload as { origin?: unknown };
+            const { origin: _set, ...got } = message.frame.payload as { origin?: unknown };
+            expect(got).toEqual(sent);
             cursors.push(Number(message.cursor));
         });
         expect(cursors).toEqual([...cursors].sort((a, b) => a - b));
@@ -245,6 +248,39 @@ describe('xt host agent host (XTRM-563)', () => {
         const invalid = await request(host, 'POST', '/v1/submit', { schema: 'xtrm.agent-host-api.v1', kind: 'session_list' });
         expect(invalid.status).toBe(400);
         expect(validate('xtrm.agent-host-api.v1', invalid.body).errors).toEqual([]);
+    });
+
+    it('sets PRD §36.7 tool origin from the registration record, fixed at tool_execution_start (XTRM-571)', async () => {
+        const events = await openEvents(host);
+        const ext = await FakeExtension.connect(socketPath);
+        ext.push(identity);
+        const adapterDir = path.join(dir, 'pi-mcp-adapter');
+        mkdirSync(adapterDir);
+        writeFileSync(path.join(adapterDir, 'package.json'), JSON.stringify({ name: 'pi-mcp-adapter', version: '2.38.0' }));
+        const adapter = { sourceInfo: { path: `${adapterDir}/index.ts`, source: 'npm:pi-mcp-adapter', scope: 'user', origin: 'package', baseDir: adapterDir } };
+        // A producer-supplied origin is replaced: the host owns classification.
+        ext.payload('tool_execution_start', { toolCallId: 'p1', toolName: 'mcp', args: { server: 'everything', tool: 'echo' }, tool: adapter, origin: { class: 'native' } });
+        ext.payload('tool_execution_update', { toolCallId: 'p1', toolName: 'mcp', args: {}, partialResult: {}, tool: adapter });
+        ext.payload('tool_execution_end', { toolCallId: 'p1', toolName: 'mcp', result: {}, isError: false, tool: adapter });
+        ext.payload('tool_execution_start', { toolCallId: 'r1', toolName: 'read', args: { path: 'a' }, tool: { sourceInfo: { path: 'builtin:read', source: 'builtin', scope: 'temporary', origin: 'top-level' } } });
+        ext.payload('tool_execution_start', { toolCallId: 'x1', toolName: 'intercom', args: {}, tool: { sourceInfo: { path: '/p/pi-intercom/index.ts', source: 'npm:pi-intercom', scope: 'user', origin: 'package', baseDir: '/p/pi-intercom' } } });
+        ext.payload('tool_execution_start', { toolCallId: 's1', toolName: 'custom', args: {} });
+
+        const tools = await until(() => {
+            const frames = events.messages.flatMap((m) => (m.kind === 'event' && m.frame.payload.type.startsWith('tool_') ? [m] : []));
+            return frames.length === 6 && frames;
+        });
+        for (const message of tools) expect(validate('xtrm.agent-host-api.v1', message).errors).toEqual([]);
+        expect(tools.map((m) => (m.kind === 'event' ? (m.frame.payload as { origin?: unknown }).origin : null))).toEqual([
+            { class: 'mcp', server: 'everything' },
+            { class: 'mcp', server: 'everything' },
+            { class: 'mcp', server: 'everything' },
+            { class: 'native' },
+            { class: 'coordination', extension: 'npm:pi-intercom' },
+            { class: 'extension', extension: 'unknown' },
+        ]);
+        events.close();
+        ext.close();
     });
 
     it('drops a persistent session from the live registry when its extension disconnects', async () => {
