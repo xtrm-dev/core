@@ -34,7 +34,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { formatSuggestionCard, type VerbSpec } from "../substrate-suggest/catalog.ts";
+import { contextBlock, formatSuggestionCard, type VerbSpec } from "../substrate-suggest/catalog.ts";
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../substrate-suggest/jev.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
@@ -131,6 +131,10 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           type: "noul",
           instructions: "Could a knowledgeable generalist fully satisfy this request in prose, with no tools and no access to the user's files? (Counts against suggesting.)",
         },
+        asks_about_the_tooling: {
+          type: "noul",
+          instructions: "Is the request a question ABOUT this assistant, its extensions, its skills, prompts, cards or output — i.e. meta/tooling talk rather than a task that doctrine should govern? (Counts against suggesting.)",
+        },
       };
       const state = { request: prompt.slice(0, 2000), cwd: process.cwd() };
       const controller = new AbortController();
@@ -150,7 +154,11 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       }
       if (!result) return { action: "continue" } as const;
 
-      const gate = [(result.nouls["would_follow_documented_procedure"] ?? 0), 1 - (result.nouls["prose_suffices"] ?? 0)];
+      const gate = [
+        (result.nouls["would_follow_documented_procedure"] ?? 0),
+        1 - (result.nouls["prose_suffices"] ?? 0),
+        1 - (result.nouls["asks_about_the_tooling"] ?? 0),
+      ];
       const gateMean = gate.reduce((a, b) => a + b, 0) / gate.length;
       const pick = result.choice.choice;
       const entry = roster.find((r) => r.id === pick);
@@ -175,13 +183,17 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
       // Pointer, not content: the model has a read tool, so name the file and
       // let it load what fits. A bounded excerpt duplicated the doc badly.
-      const block = [
-        `<skill_relevance>`,
-        `Relevant to the current request: ${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what the user actually asked for.`,
-        `It's instructions: read ${entry.path} and apply what fits before proceeding.`,
-        entry.level === "reference" ? `This is a nested reference of the ${entry.skill} skill.` : "",
-        `</skill_relevance>`,
-      ].filter(Boolean).join("\n");
+      const block = contextBlock("skill-doctrine", {
+        about: `the current request`,
+        source: entry.id,
+        model: result.model ?? "jev",
+        confidence: result.choice.confidence,
+        body: [
+          `${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what the user actually asked for.`,
+          `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
+          entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
+        ].filter(Boolean).join("\n"),
+      });
 
       pi.sendMessage(
         {
@@ -240,7 +252,11 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
       } as Record<string, Question>);
       if (!result) return;
-      const gate = [(result.nouls["would_follow_documented_procedure"] ?? 0), 1 - (result.nouls["prose_suffices"] ?? 0)];
+      const gate = [
+        (result.nouls["would_follow_documented_procedure"] ?? 0),
+        1 - (result.nouls["prose_suffices"] ?? 0),
+        1 - (result.nouls["asks_about_the_tooling"] ?? 0),
+      ];
       const gateMean = gate.reduce((a, b) => a + b, 0) / gate.length;
       const pick = result.choice.choice;
       const entry = roster.find((r) => r.id === pick);
@@ -249,13 +265,17 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       cooldownSet(entry.id);
 
       // Pointer, not content (input seam parity).
-      const block = [
-        `<skill_relevance>`,
-        `Relevant to your stated next step: ${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what you actually plan to do.`,
-        `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
-        entry.level === "reference" ? `This is a nested reference of the ${entry.skill} skill.` : "",
-        `</skill_relevance>`,
-      ].filter(Boolean).join("\n");
+      const block = contextBlock("skill-doctrine", {
+        about: `your stated next step`,
+        source: entry.id,
+        model: result.model ?? "jev",
+        confidence: result.choice.confidence,
+        body: [
+          `${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what you actually plan to do.`,
+          `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
+          entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
+        ].filter(Boolean).join("\n"),
+      });
       logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
       // One message carries both audiences: the model reads the doctrine
       // block; the operator sees the house card around it.

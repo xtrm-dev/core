@@ -288,6 +288,32 @@ function box(title: string, rows: Row[]): string {
   return [top, ...body, bottom].join("\n");
 }
 
+/**
+ * Every block injected into an operator prompt carries its provenance, so
+ * injected doctrine, prior-agent output and the operator's own words never
+ * blur together. One convention for all injection sources.
+ */
+export function contextBlock(
+  kind: "skill-doctrine" | "agent-settlement" | string,
+  meta: { about?: string; source?: string; model?: string; confidence?: number | null; body: string },
+): string {
+  const attrs = [
+    `kind="${kind}"`,
+    meta.source ? `source="${meta.source}"` : null,
+    meta.about ? `about="${meta.about}"` : null,
+    meta.model ? `by="${meta.model}"` : null,
+    meta.confidence != null ? `confidence="${meta.confidence.toFixed(2)}"` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    `<xtrm_context ${attrs}>`,
+    `Injected context, not the operator's words:`,
+    meta.body,
+    `</xtrm_context>`,
+  ].join("\n");
+}
+
 export interface SuggestionCard {
   verb: VerbSpec;
   ref: string;
