@@ -34,8 +34,13 @@
 // Skipped entirely when there is no live tmux pane (TMUX_PANE unset): the
 // query surface itself has nothing to resolve to, and this hook exists to
 // serve tmux-panes, not headless invocations.
-import { readFileSync } from "node:fs";
+//
+// XTRM-592: Claude runs this inside `dispatch.mjs event` (one xt hook process
+// per event, CORE-2339); the dispatcher imports inboxReminder() and writes its
+// output. The CLI entry below keeps the standalone hook runnable.
+import { readFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const PICKER = process.env.XTMUX_PICKER || `${process.env.HOME}/.local/bin/xtmux`;
 const LIMIT = Math.max(1, Math.min(Number(process.env.XTMUX_INBOX_REMINDER_LIMIT ?? 5) || 5, 25));
@@ -85,33 +90,36 @@ function formatReminder(row) {
     : `Inbox FYI: ${sender}${bead} [${key}]: ${summary}`;
 }
 
-function emitSystemMessage(text) {
+function systemMessage(text) {
   // Claude hooks contract: on exit 0, stdout is surfaced to the operator.
   // Emit a single JSON envelope with `systemMessage` so the reminder is
   // routed through the supported channel (Hooks reference: systemMessage
   // is shown in the transcript). Not blocking; Stop still proceeds.
-  process.stdout.write(JSON.stringify({ systemMessage: text }) + "\n");
+  return JSON.stringify({ systemMessage: text }) + "\n";
 }
 
-function main() {
-  if (process.env.XTMUX_INBOX_REMINDER_DISABLE === "1") return;
+/**
+ * The reminder for one Stop payload: `{ stdout }` carries the systemMessage
+ * envelope, `{ stderr }` a diagnostic, `{}` means stay silent. Never throws.
+ */
+export function inboxReminder(input) {
+  if (process.env.XTMUX_INBOX_REMINDER_DISABLE === "1") return {};
   const pane = process.env.TMUX_PANE;
-  if (!pane) return;
-  const input = readInput();
-  if (input && input.stop_hook_active) return;
+  if (!pane) return {};
+  if (input && input.stop_hook_active) return {};
 
   try {
     const rows = pickerJson(
       ["message-list", "--pane", pane, "--unacked", "--expects-reply", "--json", "--limit", String(LIMIT)],
       "message-list",
     );
-    if (!Array.isArray(rows) || rows.length === 0) return;
+    if (!Array.isArray(rows) || rows.length === 0) return {};
     const invalid = rows.filter((row) => typeof row?.messageKey !== "string");
     if (invalid.length > 0) throw new Error("Incompatible message-list JSON result");
 
     const alreadyReminded = readRemindedKeys(pane);
     const fresh = rows.filter((row) => !alreadyReminded.has(String(row.messageKey)));
-    if (fresh.length === 0) return;
+    if (fresh.length === 0) return {};
 
     // Anti-spin ordering (Codex #525): persist the registry BEFORE emitting
     // the reminder. If the write fails, abort silently — a reminder we can
@@ -119,16 +127,32 @@ function main() {
     // bounded-work property. Silence here is safe: the row is still in the
     // pane's inbox and will surface on a later Stop once tmux is healthy.
     const updated = [...alreadyReminded, ...fresh.map((row) => String(row.messageKey))];
-    if (!persistRemindedKeys(pane, updated)) return;
+    if (!persistRemindedKeys(pane, updated)) return {};
 
     const lines = fresh.map((row) => `xtmux inbox: ${formatReminder(row)}`);
     lines.push(`xtmux inbox: reply with \`xtmux message-reply --in-reply-to <messageKey> --text ...\` (${fresh.length} new; ${rows.length - fresh.length} suppressed as already reminded).`);
-    emitSystemMessage(lines.join("\n"));
+    return { stdout: systemMessage(lines.join("\n")) };
   } catch (error) {
     // Best-effort: never block Stop. Emit the diagnostic on stderr so a
     // broken CLI surface stays visible without derailing the operator.
-    process.stderr.write(`xtmux inbox reminder unavailable: ${String(error instanceof Error ? error.message : error).slice(0, 300)}\n`);
+    return { stderr: `xtmux inbox reminder unavailable: ${String(error instanceof Error ? error.message : error).slice(0, 300)}\n` };
   }
 }
 
-main();
+function main() {
+  // Same order as before: no stdin read when disabled or headless.
+  if (process.env.XTMUX_INBOX_REMINDER_DISABLE === "1" || !process.env.TMUX_PANE) return;
+  const { stdout, stderr } = inboxReminder(readInput());
+  if (stdout) process.stdout.write(stdout);
+  if (stderr) process.stderr.write(stderr);
+}
+
+function isEntryPoint() {
+  try {
+    return realpathSync(process.argv[1] ?? "") === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) main();

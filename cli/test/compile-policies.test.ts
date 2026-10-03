@@ -18,9 +18,6 @@ function runCompiler(args: string[]) {
   });
 }
 
-// XTRM-569 presence reporter: the one hook allowed beside the CORE-2339 dispatcher.
-const AGENT_HOST_REPORTER = 'agent-host-reporter.mjs';
-
 // ── Golden file ───────────────────────────────────────────────────────────────
 
 describe('compile-policies — golden file', () => {
@@ -148,7 +145,28 @@ describe('compile-policies — output structure', () => {
     for (const matcher of allMatchers) {
       expect(matcher).not.toContain('$WRITE_TOOLS');
     }
-    expect(allMatchers.some(m => m?.includes('Edit'))).toBe(true);
+  });
+
+  // XTRM-592 removed the last real $WRITE_TOOLS matcher (PreToolUse now fires for
+  // every tool), so the expansion itself is pinned on a sandbox policy.
+  it('$WRITE_TOOLS macro expands to the edit tools', () => {
+    const sandbox = mkdtempSync(path.join(tmpdir(), 'xtrm-write-tools-'));
+    try {
+      writeFileSync(path.join(sandbox, 'macro.json'), JSON.stringify({
+        id: 'macro', description: 'fixture', version: '1', runtime: 'claude', order: 10,
+        claude: { hooks: [{ event: 'PreToolUse', matcher: '$WRITE_TOOLS|Agent', command: 'node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs pre' }] },
+      }));
+      const result = spawnSync('node', [SCRIPT, '--dry-run'], {
+        encoding: 'utf8',
+        cwd: REPO_ROOT,
+        env: { ...process.env, XTRM_POLICIES_DIR: sandbox },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.hooks.PreToolUse[0].matcher).toBe('Edit|Write|MultiEdit|NotebookEdit|Agent');
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
   });
 
   it('runtime:pi policies are excluded from hooks output', () => {
@@ -175,8 +193,7 @@ describe('compile-policies — output structure', () => {
   // `dispatch.mjs session` command, so "several policies contribute separate
   // commands to one event" is no longer the shape this suite pins. The event is
   // still single-source: exactly one entry, carrying every SessionStart check.
-  // XTRM-569's agent-host-reporter.mjs is the one standalone exception: it is a
-  // presence producer (no checks), registered on every v0 hook event.
+  // XTRM-592: the XTRM-569 agent host reporter runs inside that entry too.
   it('SessionStart is a single dispatcher entry carrying every SessionStart check', () => {
     const result = runCompiler(['--dry-run']);
     const parsed = JSON.parse(result.stdout);
@@ -184,8 +201,7 @@ describe('compile-policies — output structure', () => {
     expect(Array.isArray(sessionStart)).toBe(true);
     expect(sessionStart).toHaveLength(1);
     const allHooks = sessionStart
-      .flatMap((g: { hooks: Array<{ command: string }> }) => g.hooks ?? [])
-      .filter((h: { command: string }) => !h.command.includes(AGENT_HOST_REPORTER));
+      .flatMap((g: { hooks: Array<{ command: string }> }) => g.hooks ?? []);
     expect(allHooks).toHaveLength(1);
     expect(allHooks[0].command).toContain('dispatch.mjs session');
   });
@@ -196,14 +212,27 @@ describe('compile-policies — output structure', () => {
     for (const [event, groups] of Object.entries<Record<string, { hooks: unknown[] }>>(parsed.hooks)) {
       for (const group of groups) {
         // One process per group is the whole point of the dispatcher; a second
-        // command in the same group would silently restore the fan-out. The
-        // XTRM-569 agent-host reporter is the single named exception.
-        const checks = (group.hooks as Array<{ command: string }>).filter(
-          (h) => !h.command.includes(AGENT_HOST_REPORTER),
-        );
+        // command in the same group would silently restore the fan-out.
+        const checks = group.hooks as Array<{ command: string }>;
         expect(checks.length, `${event} has ${checks.length} commands`).toBeLessThanOrEqual(1);
       }
     }
+  });
+
+  // XTRM-592: Claude runs every matching group, so "one per group" alone would
+  // still allow a second process through a second group (the XTRM-569 reporter
+  // did exactly that on PreToolUse). Each event gets one dispatch.mjs process.
+  it('every hook event spawns exactly one dispatch.mjs process (XTRM-592)', () => {
+    const result = runCompiler(['--dry-run']);
+    const parsed = JSON.parse(result.stdout);
+    for (const [event, groups] of Object.entries<Array<{ hooks: Array<{ command: string }> }>>(parsed.hooks)) {
+      const commands = groups.flatMap((g) => g.hooks.map((h) => h.command));
+      expect(commands, `${event} commands`).toHaveLength(1);
+      expect(commands[0], `${event} command`).toMatch(/\/hooks\/dispatch\.mjs (pre|post|session|event)$/);
+    }
+    expect(Object.keys(parsed.hooks).sort()).toEqual(
+      ['Notification', 'PostToolUse', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'SubagentStop', 'UserPromptSubmit'],
+    );
   });
 });
 

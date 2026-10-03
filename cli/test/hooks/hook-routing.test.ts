@@ -20,16 +20,18 @@ describe('hook routing tables (.xtrm/hooks/hook-routing.mjs)', () => {
         expect(EDIT_TOOLS).toEqual(parsed);
     });
 
-    it('PRE_TOOLS matches the compiled PreToolUse matcher', () => {
+    it('PRE_TOOLS keeps the guard tools of the former PreToolUse matcher', () => {
+        // Until XTRM-592 the compiled matcher was $WRITE_TOOLS|Agent. The agent host
+        // reporter needs every tool, so the matcher is now empty and PRE_TOOLS alone
+        // decides which tools pay for guard work inside `dispatch.mjs pre`.
+        expect([...PRE_TOOLS].sort()).toEqual([...EDIT_TOOLS, 'Agent'].sort());
         const hooks = fs.readJsonSync(path.join(resolvePackageRoot(), '.xtrm', 'config', 'hooks.json')) as {
             hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>;
         };
-        // The XTRM-569 agent-host reporter registers its own matcher-less group.
-        const pre = (hooks.hooks.PreToolUse ?? []).filter(
-            (g) => !g.hooks.every((h) => h.command.includes('agent-host-reporter.mjs')));
+        const pre = hooks.hooks.PreToolUse ?? [];
         expect(pre).toHaveLength(1);
-        const matcher = pre[0].matcher ?? '';
-        expect(matcher.split('|').sort()).toEqual([...PRE_TOOLS].sort());
+        expect(pre[0].matcher ?? '').toBe('');
+        expect(pre[0].hooks).toHaveLength(1);
         expect(pre[0].hooks[0].command).toContain('dispatch.mjs pre');
     });
 

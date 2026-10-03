@@ -12,8 +12,19 @@
 // xt-managed checks in-process. The guard modules stay the single source of
 // truth for their decisions — dispatch.mjs only routes.
 //
+// Agent host presence (XTRM-592): every mode also reports the event to the
+// XTRM agent host in-process (agent-host-reporter.mjs, XTRM-569), and the
+// `event` mode serves the remaining reported events (UserPromptSubmit,
+// Notification, Stop, SubagentStop, SessionEnd). The report runs concurrently
+// with the checks and never changes their exit code; see settleReport().
+//
 // Routing (mirrors the old per-hook matchers exactly):
-//   pre     Edit|Write|MultiEdit|NotebookEdit → worktree-boundary check
+//   pre     (all)                              → agent host report only; the
+//                                                PreToolUse matcher is empty
+//                                                because presence needs every
+//                                                tool, and PRE_TOOLS gates
+//                                                the guards below
+//           Edit|Write|MultiEdit|NotebookEdit → worktree-boundary check
 //           Agent                              → specialists-agent-guard check
 //   post    (all)                              → xtrm-tool-logger (in-process)
 //           Bash|Grep|Read|Glob + Serena tools → gitnexus enrichment (augment
@@ -25,6 +36,8 @@
 //                                                Python, nothing otherwise
 //   session (all)                              → quality-check-env probe,
 //                                                session logger, reap sweep
+//   event   Stop                               → inbox reminder (in-process)
+//           other events                       → agent host report only
 //
 // Known output deviation (deliberate, asserted in cli/test/hooks/dispatch.test.ts):
 // an edit to a file that is neither JS/TS nor Python (e.g. .md, .json) used to
@@ -59,6 +72,7 @@ import { spawn } from 'node:child_process';
 import { writeSync } from 'node:fs';
 import { format } from 'node:util';
 import * as ROUTING from './hook-routing.mjs';
+import { BUDGET_MS as REPORT_BUDGET_MS, reportToAgentHost } from './agent-host-reporter.mjs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -78,11 +92,12 @@ const MODE = process.argv[2] ?? '';
 //      operator; a silent exit-0 would discard the exit-2 decision invisibly,
 //      which is a failure-mode inversion.
 // Absolute deadline from process start, deliberately under the timeout
-// registered in policies/hook-dispatcher.json (2000/30000/10000). ONE budget,
+// registered in policies/hook-dispatcher.json (2000/30000/10000/20000). ONE budget,
 // not two timers: a work timer that restarted the full budget would let the
 // dispatcher outlive Claude Code's own kill, which is the guarantee this file
 // documents.
-const TIMEOUT_MS = { pre: 2000, post: 30000, session: 10000 }[MODE] ?? 2000;
+// event: the Stop inbox reminder makes up to three 5 s-bounded tmux/xtmux calls.
+const TIMEOUT_MS = { pre: 2000, post: 30000, session: 10000, event: 20000 }[MODE] ?? 2000;
 const WATCHDOG_MS = TIMEOUT_MS - 500;
 const DEADLINE_AT = Date.now() + WATCHDOG_MS;
 // Defensive cap on stdin: a PostToolUse payload carries tool_response content
@@ -93,6 +108,7 @@ const MAX_STDIN_BYTES = 32 * 1024 * 1024;
 // Tool routing lives in hook-routing.mjs so it can be pinned by tests against the
 // policy matchers and the gitnexus hook's own tool names.
 const EDIT_TOOLS = new Set(ROUTING.EDIT_TOOLS);
+const PRE_TOOLS = new Set(ROUTING.PRE_TOOLS);
 const GITNEXUS_TOOLS = new Set(ROUTING.GITNEXUS_TOOLS);
 const JS_EXTS = new Set(ROUTING.JS_EXTS);
 
@@ -215,6 +231,8 @@ function runQualityChild(child, payload) {
 async function runPre(input) {
   if (!input) return 0;
   const toolName = input.tool_name ?? input.toolName ?? '';
+  // PreToolUse fires for every tool (presence); the guards only for theirs.
+  if (!PRE_TOOLS.has(toolName)) return 0;
 
   if (EDIT_TOOLS.has(toolName)) {
     try {
@@ -317,6 +335,45 @@ async function runSession(input) {
   return 0;
 }
 
+async function runEvent(input) {
+  if (!input) return 0;
+  if (input.hook_event_name === 'Stop') {
+    try {
+      const { inboxReminder } = await import('./inbox-reminder-stop.mjs');
+      const { stdout, stderr } = inboxReminder(input);
+      if (stdout) writeSync(1, stdout);
+      if (stderr) writeSync(2, stderr);
+    } catch { /* best effort, never blocks Stop — as the standalone hook */ }
+  }
+  return 0;
+}
+
+// ── agent host report (XTRM-592) ──────────────────────────────────────────────
+// The report starts as soon as the payload is parsed and runs alongside the
+// checks; its tmux lookups and socket write are async. Before exit the
+// dispatcher waits for it, bounded: the XTRM-583 window of REPORT_BUDGET_MS
+// from the report's start, or REPORT_GRACE_MS after the checks when they took
+// longer (synchronous check work can hold the event loop past the window while
+// the frames are still queued). With no host socket the report has already
+// resolved. The checks' exit code is computed before the wait and forwarded
+// unchanged; the report cannot raise, print to stdout or change it.
+const REPORT_GRACE_MS = 50;
+
+function startReport(input) {
+  return { startedAt: Date.now(), done: reportToAgentHost(input).catch(() => {}) };
+}
+
+async function settleReport(report) {
+  if (!report) return;
+  const deadline = Math.max(report.startedAt + REPORT_BUDGET_MS, Date.now() + REPORT_GRACE_MS);
+  let timer;
+  await Promise.race([
+    report.done,
+    new Promise((resolve) => { timer = setTimeout(resolve, Math.max(0, deadline - Date.now())); }),
+  ]);
+  clearTimeout(timer);
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 (async () => {
@@ -327,11 +384,15 @@ async function runSession(input) {
   let input = null;
   if (raw) { try { input = JSON.parse(raw); } catch { input = null; } }
 
+  const report = input ? startReport(input) : null;
+
   let code = 0;
   if (MODE === 'pre') code = await runPre(input);
   else if (MODE === 'post') code = await runPost(input, raw ?? '');
   else if (MODE === 'session') code = await runSession(input);
+  else if (MODE === 'event') code = await runEvent(input);
   else code = 0; // unknown mode — fail-open
 
+  await settleReport(report);
   process.exit(code);
 })().catch(() => process.exit(0));

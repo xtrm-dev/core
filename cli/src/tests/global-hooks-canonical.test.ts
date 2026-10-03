@@ -33,18 +33,17 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
       }
     }
 
-    // CORE-2339: PreToolUse/PostToolUse/SessionStart consolidate into one
-    // dispatch.mjs process per event (guards still routed in-process);
-    // Stop keeps its single standalone hook. The standalone guard files must
-    // stay shippable — the dispatcher imports them for their decisions.
+    // CORE-2339: one dispatch.mjs process per event (guards still routed
+    // in-process). The standalone guard files must stay shippable — the
+    // dispatcher imports them for their decisions. XTRM-592: the XTRM-569
+    // agent host reporter (PRD §35.8 item 4 v0 hook set) and the Stop inbox
+    // reminder run inside the dispatcher; `event` serves the non-tool events.
     const expected = [
       'SessionStart:dispatch.mjs session',
       'PreToolUse:dispatch.mjs pre',
       'PostToolUse:dispatch.mjs post',
-      'Stop:inbox-reminder-stop.mjs',
-      // XTRM-569: the agent host presence reporter covers the PRD §35.8 item 4 v0 hook set.
-      ...['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SubagentStop', 'SessionEnd'].map(
-        (event) => `${event}:agent-host-reporter.mjs`,
+      ...['UserPromptSubmit', 'Notification', 'Stop', 'SubagentStop', 'SessionEnd'].map(
+        (event) => `${event}:dispatch.mjs event`,
       ),
     ];
     expect([...entries].sort()).toEqual([...expected].sort());
@@ -62,7 +61,9 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
 
     // The old per-hook matchers, unioned per event — nothing may fall out of
     // the dispatcher's routing table (see dispatch.mjs EDIT_TOOLS/GITNEXUS_TOOLS).
-    expect(byEvent.PreToolUse).toContain('Edit|Write|MultiEdit|NotebookEdit|Agent');
+    // XTRM-592: PreToolUse has no matcher either — the agent host reporter needs
+    // every tool; the guards keep their tools via PRE_TOOLS in hook-routing.mjs.
+    expect(byEvent.PreToolUse).toEqual(['']);
     // PostToolUse has no matcher: the old xtrm-tool-logger was registered for
     // every tool (and kept full tool.call logging coverage that way). The
     // dispatcher's internal routing is the narrower part.

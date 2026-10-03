@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { mergeProjectOwnedHooks, reconcileProjectClaudeHooks, resolveHooksForGlobalRuntime, runClaudeRuntimeSyncPhase } from '../core/claude-runtime-sync.js';
+import { mergeProjectOwnedHooks, reconcileGlobalClaudeHooks, reconcileProjectClaudeHooks, resolveHooksForGlobalRuntime, runClaudeRuntimeSyncPhase } from '../core/claude-runtime-sync.js';
 
 // reconcileProjectClaudeHooks resolves the canonical hooks.json from the package root
 // (the xtrm-tools repo root in tests, via __dirname walk), then rewrites the project's
@@ -381,5 +381,71 @@ describe('mergeProjectOwnedHooks', () => {
     };
     const merged = mergeProjectOwnedHooks(existing, canonical, '/repo/.xtrm/hooks');
     expect(merged.PreToolUse).toHaveLength(1);
+  });
+});
+
+// XTRM-592 upgrade path: 0.14.0 registered agent-host-reporter.mjs as its own
+// process on 8 events and inbox-reminder-stop.mjs on Stop. Both now run inside
+// dispatch.mjs, so after the runtime sync reconciles an installed 0.14.0 neither
+// may survive, or the event would run twice. The 0.14.0 side is the released
+// hooks.json verbatim (fixtures/hooks-0.14.0.json, from 53e9a8c6), installed by
+// the same reconcile code into a temp HOME.
+describe('upgrade from 0.14.0 hooks (XTRM-592)', () => {
+  const OLD_CONFIG = path.join(__dirname, 'fixtures', 'hooks-0.14.0.json');
+  const NEW_CONFIG = path.resolve(__dirname, '../../../.xtrm/config/hooks.json');
+  const RETIRED = ['agent-host-reporter.mjs', 'inbox-reminder-stop.mjs'];
+  const EVENTS = ['Notification', 'PostToolUse', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'SubagentStop', 'UserPromptSubmit'];
+
+  const commandsByEvent = (hooks: Record<string, Wrapper[]>) =>
+    Object.fromEntries(Object.entries(hooks).map(([event, ws]) => [event, ws.flatMap((w) => w.hooks.map((h) => h.command))]));
+
+  it('global: reconcile replaces the installed 0.14.0 reporter and inbox entries with one dispatch.mjs per event', async () => {
+    const configPath = path.join(fakeHome, '.xtrm', 'config', 'hooks.json');
+    const settingsPath = path.join(fakeHome, '.claude', 'settings.json');
+    fs.ensureDirSync(path.dirname(configPath));
+    fs.ensureDirSync(path.dirname(settingsPath));
+    // A user hook on Stop must survive the upgrade untouched.
+    const foreign = { hooks: [{ type: 'command', command: 'bash /home/user/.claude/hooks/xtmux/agent-state.sh done' }] };
+    fs.writeJsonSync(settingsPath, { hooks: { Stop: [foreign] } });
+
+    fs.copySync(OLD_CONFIG, configPath);
+    await reconcileGlobalClaudeHooks({ dryRun: false });
+    const installed = commandsByEvent(fs.readJsonSync(settingsPath).hooks);
+    // The fixture really is the 0.14.0 shape: both retired hooks are wired.
+    expect(installed.SessionEnd.join('\n')).toContain('agent-host-reporter.mjs');
+    expect(installed.Stop.join('\n')).toContain('inbox-reminder-stop.mjs');
+
+    fs.copySync(NEW_CONFIG, configPath);
+    const upgrade = await reconcileGlobalClaudeHooks({ dryRun: false });
+    expect(upgrade.changed).toBe(true);
+    const after = commandsByEvent(fs.readJsonSync(settingsPath).hooks);
+    const xtCommands = Object.fromEntries(
+      Object.entries(after).map(([event, cs]) => [event, cs.filter((c) => c.includes(path.join(fakeHome, '.xtrm', 'hooks')))]),
+    );
+    for (const retired of RETIRED) expect(JSON.stringify(after)).not.toContain(retired);
+    expect(Object.keys(xtCommands).sort()).toEqual(EVENTS);
+    for (const event of EVENTS) {
+      expect(xtCommands[event], event).toHaveLength(1);
+      expect(xtCommands[event][0], event).toMatch(/dispatch\.mjs"? (pre|post|session|event)$/);
+    }
+    expect(after.Stop).toContain(foreign.hooks[0].command);
+
+    // A second sync is a no-op: the upgrade converges.
+    expect((await reconcileGlobalClaudeHooks({ dryRun: false })).changed).toBe(false);
+  });
+
+  it('project: reconcile drops the 0.14.0 reporter and inbox entries from .claude/settings.json', async () => {
+    const settingsPath = path.join(repoRoot, '.claude', 'settings.json');
+    const projectHooksDir = path.join(repoRoot, '.xtrm', 'hooks');
+    const old = fs.readJsonSync(OLD_CONFIG).hooks as Record<string, Wrapper[]>;
+    fs.ensureDirSync(path.dirname(settingsPath));
+    fs.writeJsonSync(settingsPath, { hooks: resolveHooksForGlobalRuntime(old, projectHooksDir) });
+
+    await reconcileProjectClaudeHooks(repoRoot, { dryRun: false });
+
+    const after = commandsByEvent(fs.readJsonSync(settingsPath).hooks);
+    for (const retired of RETIRED) expect(JSON.stringify(after)).not.toContain(retired);
+    expect(Object.keys(after).sort()).toEqual(EVENTS);
+    for (const event of EVENTS) expect(after[event], event).toHaveLength(1);
   });
 });

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // agent-host-reporter.mjs — Claude Code hook → XTRM agent host
 // (PRD xtrm-app §35.6, §35.8 item 4, §36.12 item 4; XTRM-569).
 //
@@ -7,18 +6,21 @@
 // Claude sessions are presence-only producers (capabilities ["presence"]): no assistant
 // text, no command channel. The host sets tool origin itself (classifyClaudeTool).
 //
-// Hard rules: exit 0 always, print nothing to stdout, never block a tool call, finish
-// within the time budget whether or not the host runs. No host socket → exit at once.
+// XTRM-592: this is a module, not a hook process. dispatch.mjs imports it and calls
+// reportToAgentHost() in the same Node process that runs the xt checks for the event
+// (CORE-2339: one xt hook process per Claude event). The module therefore never calls
+// process.exit, never touches stdout and never throws; the dispatcher owns the exit code.
 //
-// Budget (XTRM-583): BUDGET_MS counts from when this module starts its work, not from
-// process start: Node boot (≈100 ms idle, 0.2–1.3 s under 2× core CPU load) is outside the
-// hook's control and must not eat the delivery window. The hook exits as soon as its
-// frames are flushed to the kernel socket buffer (the host reads them after we are gone),
-// so the budget only binds when delivery stalls. Worst-case hook time: Node boot +
-// BUDGET_MS. A detached sender was measured against this in-process send and rejected:
-// spawning it costs the hook as much under load (p95 117 ms) and adds a second Node boot.
+// Hard rules (unchanged from XTRM-569/583): never print to stdout, never block a tool call,
+// never change a check's exit code. No host socket → resolve at once.
+//
+// Budget (XTRM-583): BUDGET_MS counts from when the hook's own work starts, not from
+// process start: Node boot is outside the hook's control and must not eat the delivery
+// window. The promise resolves as soon as the frames are flushed to the kernel socket
+// buffer (the host reads them after the process is gone); dispatch.mjs bounds the wait
+// with BUDGET_MS, so the budget only binds when delivery stalls.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -30,47 +32,45 @@ const SOCKET_ENV = 'XTRM_AGENT_HOST_SOCKET';
 const DISABLE_ENV = 'XTRM_AGENT_HOST';
 const LAUNCH_ENV = 'XTRM_AGENT_LAUNCH';
 const PANE_SESSION_OPTION = '@xtrm_agent_session_id';
-/** Delivery budget from the start of hook work (not process start); exit 0 when it runs out. */
-const BUDGET_MS = 300;
+/** Delivery budget from the start of hook work (not process start). */
+export const BUDGET_MS = 300;
 const EXEC_TIMEOUT_MS = 30;
 const MAX_ARGS_CHARS = 4096;
 
-const exit = () => process.exit(0);
-setTimeout(exit, BUDGET_MS).unref();
-process.on('uncaughtException', exit);
-process.stdout.write = () => true;
+/**
+ * Send this hook event's frames to the agent host. Resolves (never rejects) once the frames
+ * are flushed, the connection fails, or there is nothing to send. Callers bound the wait.
+ */
+export async function reportToAgentHost(input, env = process.env) {
+  try {
+    if (/^(0|off|false)$/i.test(env[DISABLE_ENV] ?? '')) return;
+    const socketPath =
+      env[SOCKET_ENV] ||
+      (env.XDG_RUNTIME_DIR
+        ? path.join(env.XDG_RUNTIME_DIR, 'xtrm', 'agent-host.sock')
+        : path.join(os.homedir(), '.xtrm', 'run', 'agent-host.sock'));
+    if (!existsSync(socketPath)) return;
+    const sessionId = bounded(input?.session_id, 256);
+    if (!sessionId) return;
+    const events = eventsFor(input);
+    if (events.length === 0) return;
 
-const env = process.env;
-if (/^(0|off|false)$/i.test(env[DISABLE_ENV] ?? '')) exit();
-const socketPath =
-  env[SOCKET_ENV] ||
-  (env.XDG_RUNTIME_DIR
-    ? path.join(env.XDG_RUNTIME_DIR, 'xtrm', 'agent-host.sock')
-    : path.join(os.homedir(), '.xtrm', 'run', 'agent-host.sock'));
-if (!existsSync(socketPath)) exit();
-
-let input;
-try {
-  input = JSON.parse(readFileSync(0, 'utf8'));
-} catch {
-  exit();
+    const now = Date.now();
+    const frames = [await identity(input, sessionId, env), ...events].map(
+      (payload, seq) => `${JSON.stringify({ schema: 'xtrm.agent-event.v1', seq, sessionId, at: now, payload })}\n`,
+    );
+    await new Promise((resolve) => {
+      const socket = net.createConnection(socketPath);
+      socket.on('error', resolve);
+      socket.on('close', resolve);
+      // Resolve once the frames are flushed to the socket: waiting for 'close' would make
+      // the hook wait on the host's scheduling, which is what a loaded machine delays.
+      socket.on('connect', () => socket.end(frames.join(''), resolve));
+    });
+  } catch {
+    /* presence is best effort: never affects the hook's outcome */
+  }
 }
-const sessionId = bounded(input?.session_id, 256);
-if (!sessionId) exit();
-
-const events = eventsFor(input);
-if (events.length === 0) exit();
-const now = Date.now();
-const frames = [identity(input), ...events].map(
-  (payload, seq) => `${JSON.stringify({ schema: 'xtrm.agent-event.v1', seq, sessionId, at: now, payload })}\n`,
-);
-
-const socket = net.createConnection(socketPath);
-socket.on('error', exit);
-socket.on('close', exit);
-// Exit once the frames are flushed to the socket: waiting for 'close' would make the
-// hook wait on the host's scheduling, which is what a loaded machine delays.
-socket.on('connect', () => socket.end(frames.join(''), exit));
 
 // --- mapping -------------------------------------------------------------------------------
 
@@ -117,7 +117,7 @@ function eventsFor(hook) {
 }
 
 /** The §11 identity, with the same fields the Pi extension reports. */
-function identity(hook) {
+async function identity(hook, sessionId, env) {
   const cwd = bounded(hook.cwd, 4096) ?? bounded(env.CLAUDE_PROJECT_DIR, 4096) ?? '/';
   const pane = env.TMUX && /^%[0-9]+$/.test(env.TMUX_PANE ?? '') ? env.TMUX_PANE : null;
   let tmuxSession;
@@ -127,7 +127,7 @@ function identity(hook) {
   let worktree;
   let branch;
   if (pane) {
-    const out = run('tmux', [
+    const out = await run('tmux', [
       'display-message', '-p', '-t', pane,
       '#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}',
     ]);
@@ -149,7 +149,7 @@ function identity(hook) {
   branch ??= bounded(git.branch);
   let parentSessionId;
   if (parentTmux) {
-    const panes = run('tmux', ['list-panes', '-s', '-t', parentTmux, '-F', `#{${PANE_SESSION_OPTION}}`]);
+    const panes = await run('tmux', ['list-panes', '-s', '-t', parentTmux, '-F', `#{${PANE_SESSION_OPTION}}`]);
     parentSessionId = bounded(panes?.split('\n').find((line) => line.trim().length > 0), 256);
   }
   return compact({
@@ -193,12 +193,17 @@ function gitInfo(cwd) {
 
 // --- helpers -------------------------------------------------------------------------------
 
+/** Async so the tmux lookups overlap the dispatcher's checks instead of blocking them. */
 function run(file, args) {
-  try {
-    return execFileSync(file, args, { timeout: EXEC_TIMEOUT_MS, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch {
-    return undefined;
-  }
+  return new Promise((resolve) => {
+    try {
+      execFile(file, args, { timeout: EXEC_TIMEOUT_MS, encoding: 'utf8' }, (error, stdout) =>
+        resolve(error ? undefined : stdout),
+      );
+    } catch {
+      resolve(undefined);
+    }
+  });
 }
 
 function detached(file, args) {
