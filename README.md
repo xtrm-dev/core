@@ -181,8 +181,8 @@ Suggestions appear as house cards (purple `●` dot, dim metadata, and ignore-if
 `skill-suggest` brings Jev skill suggestions natively into Pi over curated XTRM skill packs.
 
 It maintains a two-tier roster covering both top-level skills (`SKILL.md`) and their nested reference doctrine (`references/*.md`):
-- **Input seam:** transforms user prompts before a turn by injecting a bounded `<skill_relevance>` excerpt when relevant documented procedures exist.
-- **Intention seam (`agent_end`):** inspects the agent's own final message to determine if its stated next step requires specific doctrine, injecting the excerpt as a `followUp` for the next turn.
+- **Input seam:** transforms user prompts before a turn by naming the relevant skill or reference in a `<skill_relevance>` pointer block (id, one-line description, file path) — the model reads the file itself.
+- **Intention seam (`agent_end`):** inspects the agent's own final message to determine if its stated next step requires specific doctrine, injecting the same pointer block as a `followUp` for the next turn.
 
 Decisions are gated by a two-stage Jev classification (evaluating whether documented procedure is needed and whether prose alone suffices, followed by Choice selection). Typed `/skill:<name>` commands continue to work directly. Evaluations log to `~/.xtrm/skill-suggest/log.jsonl`, and the extension can be disabled with `--no-skill-suggest` or `SKILL_SUGGEST=off`.
 
