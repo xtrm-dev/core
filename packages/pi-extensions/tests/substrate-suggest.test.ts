@@ -13,6 +13,7 @@ import {
   type Cooldowns,
 } from "../extensions/substrate-suggest/catalog.ts";
 import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
+import { waitCommitment, isMonitorSetter } from "../extensions/substrate-suggest/duties.ts";
 
 function snap(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
   return {
@@ -237,5 +238,42 @@ describe("registry classifier path", () => {
       classify: async () => ({ answers: {}, stopReason: "error" }),
     };
     expect(await classifyViaRegistry(registry, {}, {})).toBeNull();
+  });
+});
+
+describe("wait-guard", () => {
+  // Live-fire miss on 2026-10-03: the agent sleep-polled CI checks for four
+  // turns and the guard never fired. These are that session's real final
+  // messages — positives must all trigger, negatives must stay silent.
+  const positives = [
+    "All 6 pass; only Gitleaks is pending — the saturated queue the peer warned about. Waiting for it:",
+    "Waiting on the #698 (docs) watcher — it'll wake me, and then I ping the peer.",
+    "when both land",
+    "once it merges, I cut the release",
+    "I'll wait for CI",
+    "let's wait for the deploy",
+  ];
+  const negatives = [
+    "Status: both merges now run as background watchers that wake me on completion.",
+    "Merging origin/main --no-edit now:",
+    "The merge completed; notification woke me.",
+  ];
+  it("triggers on real wait-commitment phrasings (incl. pronoun targets)", () => {
+    for (const t of positives) expect(waitCommitment(t)).toBe(true);
+  });
+  it("stays silent on active work and monitored narration", () => {
+    for (const t of negatives) expect(waitCommitment(t)).toBe(false);
+  });
+  it("backgrounded wake seams set the monitor, foreground sleeps do not", () => {
+    const t = (c: unknown) => ({ command: c });
+    expect(isMonitorSetter("bash", t("bg_run 'watcher' /tmp/loop"), {})).toBe(true);
+    expect(isMonitorSetter("bash", t("gh run watch 123 &"), {})).toBe(true);
+    expect(isMonitorSetter("bash", t("nohup ./poll.sh &"), {})).toBe(true);
+    expect(isMonitorSetter("bash", t("sleep infinity"), {})).toBe(true);
+    expect(isMonitorSetter("intercom", { action: "ask" }, {})).toBe(true);
+    // The 2026-10-03 misclassification: a timed foreground flex-sleep poll
+    // masqueraded as a monitor and suppressed the guard.
+    expect(isMonitorSetter("bash", t("sleep 45; gh pr view 697 …"), {})).toBe(false);
+    expect(isMonitorSetter("bash", t("while true; do check; sleep 60; done"), {})).toBe(false);
   });
 });

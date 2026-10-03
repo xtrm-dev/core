@@ -12,7 +12,7 @@
  *      follow a documented procedure? could prose alone suffice?) then one
  *      Choice over the roster. Best fit under threshold -> nothing.
  *   3. On a hit: the prompt is transformed with a bounded `<skill_relevance>`
- *      block carrying the doc excerpt and its path, phrased ignore-if-not-fits
+ *      block pointing at the doc path (the model reads it), ignore-if-not-fits
  *      (the mod's cookbook wording). A display-only house card shows the
  *      operator what was injected.
  *
@@ -44,7 +44,6 @@ const LOG_FILE = join(LOG_DIR, "log.jsonl");
 
 const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
 const FITS_THRESHOLD = 0.3; // winner's verify noul under this -> nothing
-const EXCERPT_CHARS = 700;
 const INJECT_TIMEOUT_MS = 2500;
 
 const COOLDOWN_MIN = 30;
@@ -55,17 +54,6 @@ function logDecision(row: Record<string, unknown>): void {
     appendFileSync(LOG_FILE, `${JSON.stringify(row)}\n`);
   } catch {
     /* logging is best-effort */
-  }
-}
-
-/** Bounded doc excerpt for the injection block. */
-function docExcerpt(path: string): string {
-  try {
-    const md = readFileSync(path, "utf8");
-    const body = md.replace(/^---\r?\n[\s\S]*?\r?\n---/, "");
-    return body.slice(0, EXCERPT_CHARS);
-  } catch {
-    return "";
   }
 }
 
@@ -177,18 +165,21 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         prompt_chars: prompt.length,
       });
       if (gateMean < GATE_THRESHOLD || !entry) return { action: "continue" } as const;
+      // Sub-gate choice confidence stays silent: a high procedural gate with a
+      // barely-confident pick injected wrong doctrine in live use (0.19/0.20 hits).
+      if (result.choice.confidence !== null && result.choice.confidence < FITS_THRESHOLD) return { action: "continue" } as const;
 
       // One card per prompt, per catalog id.
       if (!cooldownOk(entry.id, Date.now())) return { action: "continue" } as const;
       cooldownSet(entry.id);
 
-      const excerpt = docExcerpt(entry.path);
+      // Pointer, not content: the model has a read tool, so name the file and
+      // let it load what fits. A bounded excerpt duplicated the doc badly.
       const block = [
         `<skill_relevance>`,
-        `Relevant to the current request: ${entry.id}. Ignore this if it does not fit what the user actually asked for.`,
-        `Its instructions follow (bounded excerpt of ${entry.path}); read the file for the rest.`,
+        `Relevant to the current request: ${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what the user actually asked for.`,
+        `It's instructions: read ${entry.path} and apply what fits before proceeding.`,
         entry.level === "reference" ? `This is a nested reference of the ${entry.skill} skill.` : "",
-        excerpt,
         `</skill_relevance>`,
       ].filter(Boolean).join("\n");
 
@@ -257,13 +248,12 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!cooldownOk(entry.id, Date.now())) return;
       cooldownSet(entry.id);
 
-      const excerpt = docExcerpt(entry.path);
+      // Pointer, not content (input seam parity).
       const block = [
         `<skill_relevance>`,
-        `Relevant to your stated next step: ${entry.id}. Ignore this if it does not fit what you actually plan to do.`,
-        `Its instructions follow (bounded excerpt of ${entry.path}); read the file for the rest.`,
+        `Relevant to your stated next step: ${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what you actually plan to do.`,
+        `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
         entry.level === "reference" ? `This is a nested reference of the ${entry.skill} skill.` : "",
-        excerpt,
         `</skill_relevance>`,
       ].filter(Boolean).join("\n");
       logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
@@ -272,7 +262,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       pi.sendMessage(
         {
           customType: CUSTOM_TYPE,
-          content: `${formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence })}\n\x1b[2m${excerpt.slice(0, 600)}\x1b[22m`,
+          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence }),
           display: true,
           details: { skill: entry.id, level: entry.level, seam: "agent_end" },
         },

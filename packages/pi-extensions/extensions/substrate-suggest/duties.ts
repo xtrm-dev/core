@@ -20,12 +20,12 @@ import type { VerbSpec } from "./catalog.ts";
 
 // ── wait-guard ───────────────────────────────────────────────────────────────
 
-/** Commitment shapes worth a second opinion. Deliberately small — Jev verifies. */
+/** Commitment shapes worth a second opinion. Deliberately broad — Jev filters the noise. */
 const WAIT_COMMIT_RE =
-  /\b(i'?ll\s+(?:wait|check|monitor|watch|poll)|i will\s+(?:wait|check|monitor|watch|poll)|let'?s wait|going to wait|wait(?:ing)? for (?:the )?(?:ci|build|pipeline|tests?|deploy|review|results?))\b/i;
+  /\b(i'?ll\s+(?:wait|check|monitor|watch|poll)|i will\s+(?:wait|check|monitor|watch|poll)|let'?s wait|going to wait|wait(?:ing)?\s+(?:for\s+(?:it|them|this|that|both|the)\b|on\b)|wait(?:ing)? for (?:the )?(?:ci|build|pipeline|tests?|deploy|review|results?))\b/i;
 /** …and this is what "waiting for X" looks like when X is named. */
 const WAIT_TARGET_RE =
-  /\b(?:once|when|after|until)\s+(?:the\s+)?(?:ci|cd|build|pipeline|tests?|deploy\w*|review|job|run|workflow|results?|reply|response|summary|output)\s+(?:arrives?|lands?|comes? back|finishes|completes|passes|fails|is done|ends)\b/i;
+  /\b(?:once|when|after|until)\s+(?:(?:both|they|it|that|this)\s+(?:merge[sd]?|lands?|finish(?:es)?|complet(?:e|es|ed)|pass(?:es)?|is done)\b|(?:the\s+)?(?:ci|cd|build|pipeline|tests?|checks?|deploy\w*|review|job|run|workflow|results?|reply|response|summary|output|queue|release|cut|merge|publish)\b)/i;
 
 /** Tool evidence that a monitor or wake seam actually exists for the thing being awaited. */
 export function isMonitorSetter(toolName: string, args: Record<string, unknown> | undefined, input: Record<string, unknown> | undefined): boolean {
@@ -39,7 +39,13 @@ export function isMonitorSetter(toolName: string, args: Record<string, unknown> 
   }
   const cmd = String(args?.["command"] ?? input?.["command"] ?? "");
   if (!cmd) return false;
-  return /\b(bg_run|bg_delegate|process start|nohup|watch\s+-?\d|sleep\s+\d{2,}|while\s+.*sleep|systemd-run|at now|sleep infinity)\b/.test(cmd) || /&\s*$/.test(cmd);
+  // Foreground `sleep N; check` poll loops are NOT monitors: they block the
+  // turn and force a fresh decision every cycle. Real wake seams are
+  // backgrounded or parked: bg_run/process/nohup, `&\s*$`, watch -n (runs
+  // behind), sleep infinity, `at now`. A plain foreground while-sleep or
+  // timed sleep still lets the wait-guard fire; Jev then decides whether a
+  // proper background monitor would materially help.
+  return /\b(bg_run|bg_delegate|process start|nohup|watch\s+-?\d|systemd-run|at now|sleep infinity)\b/.test(cmd) || /&\s*$/.test(cmd);
 }
 
 export function waitCommitment(text: string): boolean {
