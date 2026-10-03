@@ -70,6 +70,17 @@ jobs:
           node-version: '24.x'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Ensure npm >= 11.5.1 (trusted publishing requires it)
+        shell: bash
+        run: |
+          npm_version="$(npm --version)"
+          echo "npm version: $npm_version"
+          if [ "$(printf '%s\n' 11.5.1 "$npm_version" | sort -V | head -1)" != "11.5.1" ]; then
+            echo "npm $npm_version is older than 11.5.1; upgrading"
+            npm install -g npm@latest
+            echo "npm after upgrade: $(npm --version)"
+          fi
+
       - name: Install dependencies
         run: npm ci
 
@@ -115,10 +126,7 @@ jobs:
       - name: Publish xtrm-tools to npm
         run: npm publish --provenance
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           SPECIALISTS_REPO_PATH: ${{ github.workspace }}/specialists-src
 
       - name: Publish @jaggerxtrm/pi-extensions to npm
         run: npm publish -w @jaggerxtrm/pi-extensions --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
