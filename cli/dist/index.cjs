@@ -76295,210 +76295,34 @@ var import_node_fs21 = require("fs");
 var import_node_net = __toESM(require("net"), 1);
 var import_node_os27 = __toESM(require("os"), 1);
 var import_node_path63 = __toESM(require("path"), 1);
-var PAIRING_TOKEN_PREFIX = "xtp_";
-var DEVICE_TOKEN_PREFIX = "xtd_";
-var PAIRING_TOKEN_BYTES = 16;
-var DEVICE_TOKEN_BYTES = 32;
-var MAX_PAIRING_TTL_MS = 10 * 60 * 1e3;
-var MAX_PENDING_PAIRINGS = 16;
-var MAX_DEVICE_NAME_LENGTH = 64;
-var STORE_SCHEMA = "xtrm.agent-host-devices.v1";
-var PROXY_HEADERS = [
-  "forwarded",
-  "x-forwarded-for",
-  "x-forwarded-host",
-  "x-forwarded-proto",
-  "x-real-ip",
-  "tailscale-user-login",
-  "tailscale-user-name",
-  "tailscale-user-profile-pic",
-  "tailscale-app-capabilities"
-];
-var LOOPBACK_HOSTNAMES = /* @__PURE__ */ new Set(["127.0.0.1", "localhost", "[::1]"]);
-function defaultDeviceStorePath() {
-  return import_node_path63.default.join(import_node_os27.default.homedir(), ".xtrm", "agent-host", "devices.json");
-}
-function normalizeDirectHostname(value) {
-  const name = value.trim().toLowerCase();
-  if (!name || name.includes("*") || name.includes("/") || /\s/.test(name)) {
-    throw new Error(`invalid direct host name: ${JSON.stringify(value)}`);
-  }
-  const bare = name.startsWith("[") && name.endsWith("]") ? name.slice(1, -1) : name;
-  if (import_node_net.default.isIP(bare)) {
-    const unspecified = import_node_net.default.isIPv4(bare) ? bare === "0.0.0.0" : bare.split(":").every((group) => /^0*$/.test(group));
-    if (unspecified) {
-      throw new Error(`direct host name must not be an unspecified address: ${value}`);
-    }
-    return import_node_net.default.isIPv6(bare) ? `[${bare}]` : bare;
-  }
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,62})(?:\.[a-z0-9](?:[a-z0-9-]{0,62}))*\.?$/.test(name)) {
-    throw new Error(`invalid direct host name: ${JSON.stringify(value)}`);
-  }
-  return name.replace(/\.$/, "");
-}
-function isLoopbackAddress(address) {
-  if (!address) return false;
-  const v4 = address.startsWith("::ffff:") ? address.slice(7) : address;
-  if (import_node_net.default.isIPv4(v4)) return v4.startsWith("127.");
-  return address === "::1";
-}
-function hasProxyHeaders(headers) {
-  return PROXY_HEADERS.some((name) => headers[name] !== void 0);
-}
-function requestHostname(headers) {
-  return (headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
-}
-function isLocalRequest(req) {
-  return isLoopbackAddress(req.socket.remoteAddress) && LOOPBACK_HOSTNAMES.has(requestHostname(req.headers)) && !hasProxyHeaders(req.headers);
-}
-function bearerToken(headers) {
-  const match = /^Bearer ([A-Za-z0-9_-]{1,256})$/.exec(headers.authorization ?? "");
-  return match ? match[1] : null;
-}
-function hashToken(token) {
-  return (0, import_node_crypto17.createHash)("sha256").update(token, "utf8").digest();
-}
-function newToken(prefix, bytes) {
-  return `${prefix}${(0, import_node_crypto17.randomBytes)(bytes).toString("base64url")}`;
-}
-function sanitizeDeviceName(value) {
-  const name = typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim() : "";
-  return name.slice(0, MAX_DEVICE_NAME_LENGTH) || "device";
-}
-var DeviceAuthority = class {
-  storePath;
-  pairingTtlMs;
-  now;
-  pending = [];
-  devices;
-  constructor(options = {}) {
-    this.storePath = options.storePath ?? defaultDeviceStorePath();
-    const ttl = options.pairingTtlMs ?? MAX_PAIRING_TTL_MS;
-    if (!Number.isFinite(ttl) || ttl <= 0 || ttl > MAX_PAIRING_TTL_MS) {
-      throw new Error(`pairing token lifetime must be within (0, ${MAX_PAIRING_TTL_MS}] ms`);
-    }
-    this.pairingTtlMs = ttl;
-    this.now = options.now ?? Date.now;
-    this.devices = this.load();
-  }
-  /** A new single-use pairing token. Only its hash is kept. */
-  issuePairingToken() {
-    this.prunePending();
-    const token = newToken(PAIRING_TOKEN_PREFIX, PAIRING_TOKEN_BYTES);
-    const expiresAt = this.now() + this.pairingTtlMs;
-    this.pending.push({ hash: hashToken(token), expiresAt });
-    if (this.pending.length > MAX_PENDING_PAIRINGS) this.pending.shift();
-    return { token, expiresAt };
-  }
-  /**
-   * Exchange a pairing token for a device session. The token is consumed on its first
-   * match, even when it has expired, so it never works twice. Returns null on any failure.
-   */
-  exchange(pairingToken, deviceName) {
-    if (!pairingToken.startsWith(PAIRING_TOKEN_PREFIX)) return null;
-    const hash2 = hashToken(pairingToken);
-    let match = -1;
-    this.pending.forEach((entry2, i) => {
-      if ((0, import_node_crypto17.timingSafeEqual)(entry2.hash, hash2)) match = i;
-    });
-    if (match === -1) return null;
-    const [entry] = this.pending.splice(match, 1);
-    if (entry.expiresAt <= this.now()) return null;
-    const token = newToken(DEVICE_TOKEN_PREFIX, DEVICE_TOKEN_BYTES);
-    const device = {
-      deviceId: (0, import_node_crypto17.randomUUID)(),
-      name: sanitizeDeviceName(deviceName),
-      createdAt: this.now(),
-      tokenHash: hashToken(token).toString("hex")
-    };
-    this.devices.push(device);
-    this.save();
-    return { device: summary(device), token };
-  }
-  /** The device a bearer token belongs to, else null. Constant time over the stored set. */
-  authenticate(token) {
-    if (!token || !token.startsWith(DEVICE_TOKEN_PREFIX)) return null;
-    const hash2 = hashToken(token);
-    let found = null;
-    for (const device of this.devices) {
-      const stored = Buffer.from(device.tokenHash, "hex");
-      if (stored.length === hash2.length && (0, import_node_crypto17.timingSafeEqual)(stored, hash2)) found = device;
-    }
-    return found ? summary(found) : null;
-  }
-  list() {
-    return this.devices.map(summary);
-  }
-  /** Revoke one device session; false when the id is unknown. */
-  revoke(deviceId) {
-    const before = this.devices.length;
-    this.devices = this.devices.filter((d) => d.deviceId !== deviceId);
-    if (this.devices.length === before) return false;
-    this.save();
-    return true;
-  }
-  prunePending() {
-    const now = this.now();
-    for (let i = this.pending.length - 1; i >= 0; i -= 1) {
-      if (this.pending[i].expiresAt <= now) this.pending.splice(i, 1);
-    }
-  }
-  load() {
-    let text;
-    try {
-      text = (0, import_node_fs21.readFileSync)(this.storePath, "utf8");
-    } catch (error51) {
-      if (error51.code === "ENOENT") return [];
-      throw error51;
-    }
-    if (((0, import_node_fs21.statSync)(this.storePath).mode & 63) !== 0) (0, import_node_fs21.chmodSync)(this.storePath, 384);
-    const parsed = JSON.parse(text);
-    if (parsed.schema !== STORE_SCHEMA || !Array.isArray(parsed.devices)) {
-      throw new Error(`unrecognized device store ${this.storePath}`);
-    }
-    return parsed.devices.filter(
-      (d) => !!d && typeof d.deviceId === "string" && typeof d.name === "string" && typeof d.createdAt === "number" && typeof d.tokenHash === "string" && /^[0-9a-f]{64}$/.test(d.tokenHash)
-    );
-  }
-  save() {
-    (0, import_node_fs21.mkdirSync)(import_node_path63.default.dirname(this.storePath), { recursive: true, mode: 448 });
-    const tmp = `${this.storePath}.${process.pid}.tmp`;
-    (0, import_node_fs21.writeFileSync)(tmp, `${JSON.stringify({ schema: STORE_SCHEMA, devices: this.devices }, null, 2)}
-`, { mode: 384 });
-    (0, import_node_fs21.chmodSync)(tmp, 384);
-    (0, import_node_fs21.renameSync)(tmp, this.storePath);
-  }
-};
-function summary(device) {
-  return { deviceId: device.deviceId, name: device.name, createdAt: device.createdAt };
-}
-function tailscaleServeCommand(port, httpsPort = 8447) {
-  return `tailscale serve --bg --https=${httpsPort} http://127.0.0.1:${port}`;
-}
-var AGENT_HOST_AUTH_SCHEMA = "xtrm.agent-host-auth.v1";
-function parsePairRequest(text) {
-  let body;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (!body || typeof body !== "object") return null;
-  const value = body;
-  if (value.schema !== AGENT_HOST_AUTH_SCHEMA || value.kind !== "pair_request") return null;
-  if (typeof value.pairingToken !== "string" || value.pairingToken.length > 256) return null;
-  return { pairingToken: value.pairingToken, deviceName: value.deviceName };
-}
-
-// src/core/agent-host.ts
-var import_node_fs26 = require("fs");
-var import_node_http = __toESM(require("http"), 1);
-var import_node_net2 = __toESM(require("net"), 1);
-var import_node_os29 = __toESM(require("os"), 1);
-var import_node_path68 = __toESM(require("path"), 1);
 
 // ../packages/contracts/dist/index.js
 var import_ajv2 = __toESM(require_ajv(), 1);
+var SCHEMA_ID = {
+  runtimeCompatibility: "xtrm.runtime-compatibility.v1",
+  interactiveRoleEnvelope: "xtrm.interactive-role-envelope.v1",
+  piExtensionManifest: "xtrm.pi-extension-manifest.v1",
+  commandDeprecations: "xtrm.command-deprecations.v1",
+  commandOutcome: "xtrm.command-outcome.v1",
+  runtimeMatrix: "xtrm.runtime-matrix.v1",
+  runtimeOrigin: "xtrm.runtime-origin.v1",
+  branchIntegration: "xtrm.branch.integration.v1",
+  beadsLifecycleEvent: "xtrm.beads.lifecycle-event.v1",
+  xtmuxTopology: "xtrm.xtmux.topology.v1",
+  xtmuxMessage: "xtrm.xtmux.message.v1",
+  xtmuxObligation: "xtrm.xtmux.obligation.v1",
+  xtmuxMonitor: "xtrm.xtmux.monitor.v1",
+  xtmuxWait: "xtrm.xtmux.wait.v1",
+  xtmuxBridge: "xtrm.xtmux.bridge.v1",
+  agentRoleLaunched: "xtrm.agent-role-launched.v1",
+  specialistRoleEnvelope: "xtrm.specialist-role-envelope.v1",
+  topologyProjection: "xtrm.topology.projection.v1",
+  agentEvent: "xtrm.agent-event.v1",
+  agentCommand: "xtrm.agent-command.v1",
+  agentHostApi: "xtrm.agent-host-api.v1",
+  agentHostEnsure: "xtrm.agent-host-ensure.v1",
+  agentHostAuth: "xtrm.agent-host-auth.v1"
+};
 var xtrm_agent_command_v1_default = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "xtrm.agent-command.v1",
@@ -78475,7 +78299,106 @@ var xtrm_agent_host_ensure_v1_default = {
     }
   }
 };
-var BUNDLED_SCHEMAS = [xtrm_agent_command_v1_default, xtrm_agent_event_v1_default, xtrm_agent_host_api_v1_default, xtrm_agent_role_launched_v1_default, xtrm_beads_lifecycle_event_v1_default, xtrm_branch_integration_v1_default, xtrm_command_deprecations_v1_default, xtrm_command_outcome_v1_default, xtrm_interactive_role_envelope_v1_default, xtrm_pi_extension_manifest_v1_default, xtrm_runtime_compatibility_v1_default, xtrm_runtime_matrix_v1_default, xtrm_runtime_origin_v1_default, xtrm_specialist_role_envelope_v1_default, xtrm_topology_projection_v1_default, xtrm_xtmux_bridge_v1_default, xtrm_xtmux_message_v1_default, xtrm_xtmux_monitor_v1_default, xtrm_xtmux_obligation_v1_default, xtrm_xtmux_topology_v1_default, xtrm_xtmux_wait_v1_default, xtrm_agent_host_ensure_v1_default];
+var xtrm_agent_host_auth_v1_default = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "xtrm.agent-host-auth.v1",
+  title: "XTRM agent host direct-mode auth message",
+  description: "Pairing and device-session bodies of the XTRM agent host direct connection mode (PRD xtrm-app \xA735.5; XTRM-568). The host binds 127.0.0.1; remote clients reach it through an HTTPS front such as `tailscale serve` and must present a device-session bearer token. Every body carries `schema` and a `kind` discriminator. Endpoints: pair (POST pair_request -> device_session; the only route open to a remote client without a token), pairing token (POST, local only -> pairing_token), device list (GET, local only -> device_list), revoke (DELETE, local only -> device_revoked). Pairing tokens (`xtp_`) are single use and live at most 10 minutes; device tokens (`xtd_`) are 256-bit bearer tokens the host stores only as SHA-256 hashes. Error replies keep the xtrm.agent-host-api.v1 `error` kind. A backward-incompatible change requires xtrm.agent-host-auth.v2.",
+  type: "object",
+  required: ["schema", "kind"],
+  properties: {
+    schema: { const: "xtrm.agent-host-auth.v1" },
+    kind: {
+      enum: ["pair_request", "pairing_token", "device_session", "device_list", "device_revoked"]
+    }
+  },
+  oneOf: [
+    { $ref: "#/definitions/pair_request" },
+    { $ref: "#/definitions/pairing_token" },
+    { $ref: "#/definitions/device_session" },
+    { $ref: "#/definitions/device_list" },
+    { $ref: "#/definitions/device_revoked" }
+  ],
+  definitions: {
+    schema: { const: "xtrm.agent-host-auth.v1" },
+    epochMs: { type: "integer", minimum: 0 },
+    deviceId: { type: "string", minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001F\\u007F]*$" },
+    deviceSummary: {
+      type: "object",
+      additionalProperties: false,
+      required: ["deviceId", "name", "createdAt"],
+      properties: {
+        deviceId: { $ref: "#/definitions/deviceId" },
+        name: {
+          description: "Operator-facing device name; the host strips control characters, trims and caps it at 64 characters, and falls back to `device`.",
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          pattern: "^[^\\u0000-\\u001F\\u007F]*$"
+        },
+        createdAt: { $ref: "#/definitions/epochMs" }
+      }
+    },
+    pair_request: {
+      description: "Client -> host: exchange a one-time pairing token for a device session. The host sanitizes `deviceName` and treats a missing or non-string name as `device`.",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "pairingToken"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "pair_request" },
+        pairingToken: { type: "string", minLength: 1, maxLength: 256 },
+        deviceName: { type: "string", maxLength: 1024 }
+      }
+    },
+    pairing_token: {
+      description: "Host -> local operator: a new single-use pairing token and its expiry. Never logged.",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "token", "expiresAt"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "pairing_token" },
+        token: { type: "string", maxLength: 256, pattern: "^xtp_[A-Za-z0-9_-]+$" },
+        expiresAt: { $ref: "#/definitions/epochMs" }
+      }
+    },
+    device_session: {
+      description: "Host -> paired client: the new device and its bearer token, returned once.",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "device", "token"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "device_session" },
+        device: { $ref: "#/definitions/deviceSummary" },
+        token: { type: "string", maxLength: 256, pattern: "^xtd_[A-Za-z0-9_-]+$" }
+      }
+    },
+    device_list: {
+      description: "Host -> local operator: the paired devices, without tokens or token hashes.",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "devices"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "device_list" },
+        devices: { type: "array", items: { $ref: "#/definitions/deviceSummary" } }
+      }
+    },
+    device_revoked: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "deviceId"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "device_revoked" },
+        deviceId: { $ref: "#/definitions/deviceId" }
+      }
+    }
+  }
+};
+var BUNDLED_SCHEMAS = [xtrm_agent_command_v1_default, xtrm_agent_event_v1_default, xtrm_agent_host_api_v1_default, xtrm_agent_role_launched_v1_default, xtrm_beads_lifecycle_event_v1_default, xtrm_branch_integration_v1_default, xtrm_command_deprecations_v1_default, xtrm_command_outcome_v1_default, xtrm_interactive_role_envelope_v1_default, xtrm_pi_extension_manifest_v1_default, xtrm_runtime_compatibility_v1_default, xtrm_runtime_matrix_v1_default, xtrm_runtime_origin_v1_default, xtrm_specialist_role_envelope_v1_default, xtrm_topology_projection_v1_default, xtrm_xtmux_bridge_v1_default, xtrm_xtmux_message_v1_default, xtrm_xtmux_monitor_v1_default, xtrm_xtmux_obligation_v1_default, xtrm_xtmux_topology_v1_default, xtrm_xtmux_wait_v1_default, xtrm_agent_host_ensure_v1_default, xtrm_agent_host_auth_v1_default];
 var ajv = new import_ajv2.Ajv({ strict: false, validateFormats: false });
 var schemas = BUNDLED_SCHEMAS;
 for (const schema of schemas) ajv.addSchema(schema);
@@ -78528,6 +78451,209 @@ function decodeFrame(expected, line) {
   }
   return { ok: true, value };
 }
+
+// src/core/agent-host-auth.ts
+var PAIRING_TOKEN_PREFIX = "xtp_";
+var DEVICE_TOKEN_PREFIX = "xtd_";
+var PAIRING_TOKEN_BYTES = 16;
+var DEVICE_TOKEN_BYTES = 32;
+var MAX_PAIRING_TTL_MS = 10 * 60 * 1e3;
+var MAX_PENDING_PAIRINGS = 16;
+var MAX_DEVICE_NAME_LENGTH = 64;
+var STORE_SCHEMA = "xtrm.agent-host-devices.v1";
+var PROXY_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "tailscale-user-login",
+  "tailscale-user-name",
+  "tailscale-user-profile-pic",
+  "tailscale-app-capabilities"
+];
+var LOOPBACK_HOSTNAMES = /* @__PURE__ */ new Set(["127.0.0.1", "localhost", "[::1]"]);
+function defaultDeviceStorePath() {
+  return import_node_path63.default.join(import_node_os27.default.homedir(), ".xtrm", "agent-host", "devices.json");
+}
+function normalizeDirectHostname(value) {
+  const name = value.trim().toLowerCase();
+  if (!name || name.includes("*") || name.includes("/") || /\s/.test(name)) {
+    throw new Error(`invalid direct host name: ${JSON.stringify(value)}`);
+  }
+  const bare = name.startsWith("[") && name.endsWith("]") ? name.slice(1, -1) : name;
+  if (import_node_net.default.isIP(bare)) {
+    const unspecified = import_node_net.default.isIPv4(bare) ? bare === "0.0.0.0" : bare.split(":").every((group) => /^0*$/.test(group));
+    if (unspecified) {
+      throw new Error(`direct host name must not be an unspecified address: ${value}`);
+    }
+    return import_node_net.default.isIPv6(bare) ? `[${bare}]` : bare;
+  }
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,62})(?:\.[a-z0-9](?:[a-z0-9-]{0,62}))*\.?$/.test(name)) {
+    throw new Error(`invalid direct host name: ${JSON.stringify(value)}`);
+  }
+  return name.replace(/\.$/, "");
+}
+function isLoopbackAddress(address) {
+  if (!address) return false;
+  const v4 = address.startsWith("::ffff:") ? address.slice(7) : address;
+  if (import_node_net.default.isIPv4(v4)) return v4.startsWith("127.");
+  return address === "::1";
+}
+function hasProxyHeaders(headers) {
+  return PROXY_HEADERS.some((name) => headers[name] !== void 0);
+}
+function requestHostname(headers) {
+  return (headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
+}
+function isLocalRequest(req) {
+  return isLoopbackAddress(req.socket.remoteAddress) && LOOPBACK_HOSTNAMES.has(requestHostname(req.headers)) && !hasProxyHeaders(req.headers);
+}
+function bearerToken(headers) {
+  const match = /^Bearer ([A-Za-z0-9_-]{1,256})$/.exec(headers.authorization ?? "");
+  return match ? match[1] : null;
+}
+function hashToken(token) {
+  return (0, import_node_crypto17.createHash)("sha256").update(token, "utf8").digest();
+}
+function newToken(prefix, bytes) {
+  return `${prefix}${(0, import_node_crypto17.randomBytes)(bytes).toString("base64url")}`;
+}
+function sanitizeDeviceName(value) {
+  const name = typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim() : "";
+  return name.slice(0, MAX_DEVICE_NAME_LENGTH) || "device";
+}
+var DeviceAuthority = class {
+  storePath;
+  pairingTtlMs;
+  now;
+  pending = [];
+  devices;
+  constructor(options = {}) {
+    this.storePath = options.storePath ?? defaultDeviceStorePath();
+    const ttl = options.pairingTtlMs ?? MAX_PAIRING_TTL_MS;
+    if (!Number.isFinite(ttl) || ttl <= 0 || ttl > MAX_PAIRING_TTL_MS) {
+      throw new Error(`pairing token lifetime must be within (0, ${MAX_PAIRING_TTL_MS}] ms`);
+    }
+    this.pairingTtlMs = ttl;
+    this.now = options.now ?? Date.now;
+    this.devices = this.load();
+  }
+  /** A new single-use pairing token. Only its hash is kept. */
+  issuePairingToken() {
+    this.prunePending();
+    const token = newToken(PAIRING_TOKEN_PREFIX, PAIRING_TOKEN_BYTES);
+    const expiresAt = this.now() + this.pairingTtlMs;
+    this.pending.push({ hash: hashToken(token), expiresAt });
+    if (this.pending.length > MAX_PENDING_PAIRINGS) this.pending.shift();
+    return { token, expiresAt };
+  }
+  /**
+   * Exchange a pairing token for a device session. The token is consumed on its first
+   * match, even when it has expired, so it never works twice. Returns null on any failure.
+   */
+  exchange(pairingToken, deviceName) {
+    if (!pairingToken.startsWith(PAIRING_TOKEN_PREFIX)) return null;
+    const hash2 = hashToken(pairingToken);
+    let match = -1;
+    this.pending.forEach((entry2, i) => {
+      if ((0, import_node_crypto17.timingSafeEqual)(entry2.hash, hash2)) match = i;
+    });
+    if (match === -1) return null;
+    const [entry] = this.pending.splice(match, 1);
+    if (entry.expiresAt <= this.now()) return null;
+    const token = newToken(DEVICE_TOKEN_PREFIX, DEVICE_TOKEN_BYTES);
+    const device = {
+      deviceId: (0, import_node_crypto17.randomUUID)(),
+      name: sanitizeDeviceName(deviceName),
+      createdAt: this.now(),
+      tokenHash: hashToken(token).toString("hex")
+    };
+    this.devices.push(device);
+    this.save();
+    return { device: summary(device), token };
+  }
+  /** The device a bearer token belongs to, else null. Constant time over the stored set. */
+  authenticate(token) {
+    if (!token || !token.startsWith(DEVICE_TOKEN_PREFIX)) return null;
+    const hash2 = hashToken(token);
+    let found = null;
+    for (const device of this.devices) {
+      const stored = Buffer.from(device.tokenHash, "hex");
+      if (stored.length === hash2.length && (0, import_node_crypto17.timingSafeEqual)(stored, hash2)) found = device;
+    }
+    return found ? summary(found) : null;
+  }
+  list() {
+    return this.devices.map(summary);
+  }
+  /** Revoke one device session; false when the id is unknown. */
+  revoke(deviceId) {
+    const before = this.devices.length;
+    this.devices = this.devices.filter((d) => d.deviceId !== deviceId);
+    if (this.devices.length === before) return false;
+    this.save();
+    return true;
+  }
+  prunePending() {
+    const now = this.now();
+    for (let i = this.pending.length - 1; i >= 0; i -= 1) {
+      if (this.pending[i].expiresAt <= now) this.pending.splice(i, 1);
+    }
+  }
+  load() {
+    let text;
+    try {
+      text = (0, import_node_fs21.readFileSync)(this.storePath, "utf8");
+    } catch (error51) {
+      if (error51.code === "ENOENT") return [];
+      throw error51;
+    }
+    if (((0, import_node_fs21.statSync)(this.storePath).mode & 63) !== 0) (0, import_node_fs21.chmodSync)(this.storePath, 384);
+    const parsed = JSON.parse(text);
+    if (parsed.schema !== STORE_SCHEMA || !Array.isArray(parsed.devices)) {
+      throw new Error(`unrecognized device store ${this.storePath}`);
+    }
+    return parsed.devices.filter(
+      (d) => !!d && typeof d.deviceId === "string" && typeof d.name === "string" && typeof d.createdAt === "number" && typeof d.tokenHash === "string" && /^[0-9a-f]{64}$/.test(d.tokenHash)
+    );
+  }
+  save() {
+    (0, import_node_fs21.mkdirSync)(import_node_path63.default.dirname(this.storePath), { recursive: true, mode: 448 });
+    const tmp = `${this.storePath}.${process.pid}.tmp`;
+    (0, import_node_fs21.writeFileSync)(tmp, `${JSON.stringify({ schema: STORE_SCHEMA, devices: this.devices }, null, 2)}
+`, { mode: 384 });
+    (0, import_node_fs21.chmodSync)(tmp, 384);
+    (0, import_node_fs21.renameSync)(tmp, this.storePath);
+  }
+};
+function summary(device) {
+  return { deviceId: device.deviceId, name: device.name, createdAt: device.createdAt };
+}
+function tailscaleServeCommand(port, httpsPort = 8447) {
+  return `tailscale serve --bg --https=${httpsPort} http://127.0.0.1:${port}`;
+}
+var AGENT_HOST_AUTH_SCHEMA = SCHEMA_ID.agentHostAuth;
+function parsePairRequest(text) {
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!body || typeof body !== "object") return null;
+  const value = body;
+  if (value.schema !== AGENT_HOST_AUTH_SCHEMA || value.kind !== "pair_request") return null;
+  if (typeof value.pairingToken !== "string" || value.pairingToken.length > 256) return null;
+  return { pairingToken: value.pairingToken, deviceName: value.deviceName };
+}
+
+// src/core/agent-host.ts
+var import_node_fs26 = require("fs");
+var import_node_http = __toESM(require("http"), 1);
+var import_node_net2 = __toESM(require("net"), 1);
+var import_node_os29 = __toESM(require("os"), 1);
+var import_node_path68 = __toESM(require("path"), 1);
 
 // src/core/agent-host-launch.ts
 var import_node_crypto18 = require("crypto");

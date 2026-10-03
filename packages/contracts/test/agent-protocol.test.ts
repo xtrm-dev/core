@@ -14,6 +14,7 @@ import {
     type AgentEventV1,
     type AgentCommandV1,
     type AgentHostApiV1,
+    type AgentHostAuthV1,
 } from '../src/index.js';
 
 const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
@@ -21,6 +22,7 @@ const fixtures = JSON.parse(readFileSync(path.join(fixturesDir, 'agent-protocol.
     events: AgentEventV1[];
     commands: AgentCommandV1[];
     hostApi: AgentHostApiV1[];
+    hostAuth: AgentHostAuthV1[];
 };
 
 /** Discriminator values a schema's union accepts, read from the schema itself. */
@@ -50,6 +52,12 @@ const sets: Array<{ id: AgentProtocolSchemaId; items: unknown[]; tags: string[];
         id: SCHEMA_ID.agentHostApi,
         items: fixtures.hostApi,
         tags: unionTags(SCHEMA_ID.agentHostApi, '', 'kind'),
+        tagOf: (m) => m.kind,
+    },
+    {
+        id: SCHEMA_ID.agentHostAuth,
+        items: fixtures.hostAuth,
+        tags: unionTags(SCHEMA_ID.agentHostAuth, '', 'kind'),
         tagOf: (m) => m.kind,
     },
 ];
@@ -203,6 +211,30 @@ describe('agent-host-ensure.v1 semantics', () => {
         expect(validate(id, { ...ok, port: 0 }).valid).toBe(false);
         expect(validate(id, { ...ok, address: '0.0.0.0' }).valid).toBe(false);
         expect(validate(id, { ...ok, error: { code: 'x', message: 'y' } }).valid).toBe(false);
+    });
+});
+
+describe('agent-host-auth.v1 semantics', () => {
+    const id = SCHEMA_ID.agentHostAuth;
+    const session = () => structuredClone(fixtures.hostAuth.find((m) => m.kind === 'device_session')!) as any;
+
+    it('accepts a pair_request without a device name', () => {
+        expect(validate(id, { schema: id, kind: 'pair_request', pairingToken: 'xtp_x' }).valid).toBe(true);
+    });
+
+    it('never carries a token hash and keeps token prefixes per kind', () => {
+        expect(validate(id, { ...session(), tokenHash: 'a'.repeat(64) }).valid).toBe(false);
+        expect(validate(id, { ...session(), token: 'xtp_wrongKind' }).valid).toBe(false);
+        expect(validate(id, { schema: id, kind: 'pairing_token', token: 'xtd_wrongKind', expiresAt: 1 }).valid).toBe(false);
+        const list = { schema: id, kind: 'device_list', devices: [{ ...session().device, tokenHash: 'a'.repeat(64) }] };
+        expect(validate(id, list).valid).toBe(false);
+    });
+
+    it('rejects a control character in a device name and a host API error kind', () => {
+        const bad = session();
+        bad.device.name = 'pho\u0007ne';
+        expect(validate(id, bad).valid).toBe(false);
+        expect(validate(id, { schema: id, kind: 'error', code: 'unauthorized', message: 'x' }).valid).toBe(false);
     });
 });
 
