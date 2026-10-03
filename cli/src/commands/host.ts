@@ -4,21 +4,15 @@
  * `xt host start` runs the host in the foreground: one process per user, the producer
  * socket for in-session extensions, and the xtrm.agent-host-api.v1 client API on
  * 127.0.0.1. `xt host status` reads the info file and checks that the recorded pid lives.
+ * `xt host ensure` starts the host detached or reuses the running one and prints
+ * xtrm.agent-host-ensure.v1 (§35.8 item 2, the SSH bootstrap; XTRM-567).
  */
 
 import { Command } from 'commander';
 import kleur from 'kleur';
 import { defaultInfoPath, readAgentHostInfo, startAgentHost } from '../core/agent-host.js';
+import { ensureAgentHost, pidAlive, toEnsureError, toEnsureResult } from '../core/agent-host-ensure.js';
 import { defaultSessionIndexOptions } from '../core/agent-host-session-index.js';
-
-function pidAlive(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-        return true;
-    } catch (error) {
-        return (error as NodeJS.ErrnoException).code === 'EPERM';
-    }
-}
 
 export function createHostCommand(version = '0.0.0'): Command {
     const cmd = new Command('host').description(
@@ -60,6 +54,25 @@ export function createHostCommand(version = '0.0.0'): Command {
             };
             process.once('SIGINT', stop);
             process.once('SIGTERM', stop);
+        });
+
+    cmd.command('ensure')
+        .description('Start the agent host detached if none is running, or reuse it; print its port and pid')
+        .option('--json', 'Print exactly one xtrm.agent-host-ensure.v1 object on stdout', false)
+        .option('--timeout <ms>', 'How long to wait for the lock and for a started host', '30000')
+        .action(async (options: { json?: boolean; timeout: string }) => {
+            const timeoutMs = Number(options.timeout);
+            try {
+                if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error(`Invalid --timeout: ${options.timeout}`);
+                const { info, started } = await ensureAgentHost({ timeoutMs });
+                if (options.json) console.log(JSON.stringify(toEnsureResult(info)));
+                else console.log(`${started ? 'started' : 'running'} · http://${info.address}:${info.port} · pid ${info.pid} · v${info.version}`);
+            } catch (error) {
+                const failure = toEnsureError(error);
+                if (options.json) console.log(JSON.stringify(failure));
+                else if ('error' in failure) console.error(kleur.red(`✗ ${failure.error.code}: ${failure.error.message}`));
+                process.exitCode = 1;
+            }
         });
 
     cmd.command('status')

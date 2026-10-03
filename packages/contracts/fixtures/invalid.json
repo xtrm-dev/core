@@ -169,5 +169,12 @@
         "kind": "submit_result",
         "commandId": "cmd-2",
         "status": "queued"
+    },
+    "xtrm.agent-host-ensure.v1": {
+        "schema": "xtrm.agent-host-ensure.v1",
+        "version": "0.13.0",
+        "protocol": { "major": 1 },
+        "port": "43817",
+        "pid": 48211
     }
 }

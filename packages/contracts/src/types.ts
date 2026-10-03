@@ -26,6 +26,7 @@ export const SCHEMA_ID = {
     agentEvent: 'xtrm.agent-event.v1',
     agentCommand: 'xtrm.agent-command.v1',
     agentHostApi: 'xtrm.agent-host-api.v1',
+    agentHostEnsure: 'xtrm.agent-host-ensure.v1',
 } as const;
 
 export type SchemaId = (typeof SCHEMA_ID)[keyof typeof SCHEMA_ID];
@@ -736,6 +737,17 @@ export type AgentHostApiV1 =
 
 export type AgentHostApiKind = AgentHostApiV1['kind'];
 
+// --- xtrm.agent-host-ensure.v1 (PRD xtrm-app §35.8 item 2: `xt host ensure --json`) ---
+export type AgentHostEnsureV1 =
+    | {
+          schema: 'xtrm.agent-host-ensure.v1';
+          version: string;
+          protocol: { major: number };
+          port: number;
+          pid: number;
+      }
+    | { schema: 'xtrm.agent-host-ensure.v1'; error: { code: string; message: string } };
+
 export interface ContractTypeMap {
     'xtrm.runtime-compatibility.v1': RuntimeCompatibilityV1;
     'xtrm.interactive-role-envelope.v1': InteractiveRoleEnvelopeV1;
@@ -758,4 +770,5 @@ export interface ContractTypeMap {
     'xtrm.agent-event.v1': AgentEventV1;
     'xtrm.agent-command.v1': AgentCommandV1;
     'xtrm.agent-host-api.v1': AgentHostApiV1;
+    'xtrm.agent-host-ensure.v1': AgentHostEnsureV1;
 }
