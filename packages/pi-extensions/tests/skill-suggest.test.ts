@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { formatSuggestionPlain } from "../extensions/substrate-suggest/catalog.ts";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
 import { contextBlock, formatSuggestionPlain } from "../extensions/substrate-suggest/catalog.ts";
 
