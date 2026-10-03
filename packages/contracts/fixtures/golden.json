@@ -437,5 +437,11 @@
         "protocol": { "major": 1 },
         "port": 43817,
         "pid": 48211
+    },
+    "xtrm.agent-host-auth.v1": {
+        "schema": "xtrm.agent-host-auth.v1",
+        "kind": "device_session",
+        "device": { "deviceId": "6f1c2b9e-3d4a-4e5f-8a7b-9c0d1e2f3a4b", "name": "phone", "createdAt": 1790000000000 },
+        "token": "xtd_fixtureDeviceTokenNotARealSecret0000000"
     }
 }

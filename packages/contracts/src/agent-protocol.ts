@@ -1,12 +1,17 @@
 // Agent host protocol helpers (PRD xtrm-app §35.8 item 1): schema-version check and
-// NDJSON framing for xtrm.agent-event.v1 / xtrm.agent-command.v1 / xtrm.agent-host-api.v1.
+// NDJSON framing for xtrm.agent-event.v1 / xtrm.agent-command.v1 / xtrm.agent-host-api.v1 /
+// xtrm.agent-host-auth.v1.
 // The JSON Schemas stay the source of truth; these helpers only add the version
 // negotiation a peer needs before it validates a frame.
 
 import { validate } from './validate.js';
 import type { ContractTypeMap } from './types.js';
 
-export type AgentProtocolSchemaId = 'xtrm.agent-event.v1' | 'xtrm.agent-command.v1' | 'xtrm.agent-host-api.v1';
+export type AgentProtocolSchemaId =
+    | 'xtrm.agent-event.v1'
+    | 'xtrm.agent-command.v1'
+    | 'xtrm.agent-host-api.v1'
+    | 'xtrm.agent-host-auth.v1';
 
 const VERSIONED_ID = /^(xtrm\.[a-z0-9.-]+)\.v([1-9][0-9]*)$/;
 

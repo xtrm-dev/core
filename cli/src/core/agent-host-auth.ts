@@ -20,6 +20,7 @@ import type http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { SCHEMA_ID, type AgentHostAuthV1, type AgentHostDeviceSummary } from '@xtrm/contracts';
 
 export const PAIRING_TOKEN_PREFIX = 'xtp_';
 export const DEVICE_TOKEN_PREFIX = 'xtd_';
@@ -59,11 +60,7 @@ export interface DirectModeOptions {
     now?: () => number;
 }
 
-export interface DeviceSummary {
-    deviceId: string;
-    name: string;
-    createdAt: number;
-}
+export type DeviceSummary = AgentHostDeviceSummary;
 
 interface StoredDevice extends DeviceSummary {
     tokenHash: string;
@@ -281,14 +278,10 @@ export function tailscaleServeCommand(port: number, httpsPort = 8447): string {
     return `tailscale serve --bg --https=${httpsPort} http://127.0.0.1:${port}`;
 }
 
-export const AGENT_HOST_AUTH_SCHEMA = 'xtrm.agent-host-auth.v1';
+export const AGENT_HOST_AUTH_SCHEMA = SCHEMA_ID.agentHostAuth;
 
-/** Pairing and device messages of the host API; error replies keep xtrm.agent-host-api.v1. */
-export type AgentHostAuthMessage =
-    | { schema: typeof AGENT_HOST_AUTH_SCHEMA; kind: 'pairing_token'; token: string; expiresAt: number }
-    | { schema: typeof AGENT_HOST_AUTH_SCHEMA; kind: 'device_session'; device: DeviceSummary; token: string }
-    | { schema: typeof AGENT_HOST_AUTH_SCHEMA; kind: 'device_list'; devices: DeviceSummary[] }
-    | { schema: typeof AGENT_HOST_AUTH_SCHEMA; kind: 'device_revoked'; deviceId: string };
+/** Host replies of xtrm.agent-host-auth.v1 (@xtrm/contracts); error replies keep xtrm.agent-host-api.v1. */
+export type AgentHostAuthMessage = Exclude<AgentHostAuthV1, { kind: 'pair_request' }>;
 
 /** Body of POST /v1/pair: `{schema, kind: 'pair_request', pairingToken, deviceName?}`. */
 export function parsePairRequest(text: string): { pairingToken: string; deviceName: unknown } | null {
