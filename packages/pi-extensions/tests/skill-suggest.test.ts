@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
-import { contextBlock } from "../extensions/substrate-suggest/catalog.ts";
+import { contextBlock, formatSuggestionPlain } from "../extensions/substrate-suggest/catalog.ts";
 
 describe("roster parsing", () => {
   it("parses folded and inline frontmatter descriptions", () => {
@@ -54,5 +54,22 @@ describe("labelled injected context", () => {
     const block = contextBlock("agent-settlement", { source: "sync-docs@CORE-2350", body: "docs merged" });
     expect(block).toContain('kind="agent-settlement"');
     expect(block).toContain('source="sync-docs@CORE-2350"');
+  });
+});
+
+describe("compact skill card", () => {
+  it("is one boxed row: id, ref and confidence, no instruction body", () => {
+    const card = formatSuggestionPlain({
+      verb: { id: "skill_suggest", action: "skill loaded · engineering-quality/causal-debugging", oneLine: "x", instruction: () => "SHOULD NOT APPEAR", severity: "normal", cooldownMin: 30, source: "jev" },
+      ref: "—",
+      confidence: 0.58,
+      compact: true,
+    });
+    const lines = card.split("\n");
+    expect(lines).toHaveLength(3);
+    expect(card).toContain("skill loaded · engineering-quality/causal-debugging");
+    expect(card).toContain("jev 0.58");
+    expect(card).not.toContain("SHOULD NOT APPEAR");
+    expect(new Set(lines.map((l) => [...l].length)).size).toBe(1);
   });
 });
