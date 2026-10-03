@@ -4948,8 +4948,8 @@ var require_copy_sync = __commonJS({
       return getStats(destStat, src, dest, opts);
     }
     function getStats(destStat, src, dest, opts) {
-      const statSync4 = opts.dereference ? fs65.statSync : fs65.lstatSync;
-      const srcStat = statSync4(src);
+      const statSync5 = opts.dereference ? fs65.statSync : fs65.lstatSync;
+      const srcStat = statSync5(src);
       if (srcStat.isDirectory()) return onDir(srcStat, destStat, src, dest, opts);
       else if (srcStat.isFile() || srcStat.isCharacterDevice() || srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts);
       else if (srcStat.isSymbolicLink()) return onLink(destStat, src, dest, opts);
@@ -78982,6 +78982,8 @@ var SessionIndex = class {
   log;
   journals = /* @__PURE__ */ new Map();
   watchers = /* @__PURE__ */ new Map();
+  /** Roots that do not exist yet, keyed by the nearest existing ancestor being watched. */
+  pendingRoots = /* @__PURE__ */ new Map();
   queue = /* @__PURE__ */ new Set();
   queued = /* @__PURE__ */ new Map();
   draining = null;
@@ -79035,23 +79037,62 @@ var SessionIndex = class {
     await this.loadCache();
     for (const root of this.roots) {
       this.watchRoot(root);
-      let dirs;
-      try {
-        dirs = await (0, import_promises.readdir)(root.dir);
-      } catch (error51) {
-        this.log(`session index: cannot read ${root.dir}: ${error51.message}`);
-        continue;
-      }
-      for (const name of dirs) await this.addProjectDir(root, import_node_path65.default.join(root.dir, name));
+      await this.scanRoot(root);
     }
     for (const file2 of this.journals.keys()) if (!this.queued.has(file2)) this.enqueue(file2, this.journals.get(file2).provider);
     await this.settled();
     this.scheduleCacheWrite();
   }
   watchRoot(root) {
-    this.watchDir(root.dir, (name) => {
-      if (name) void this.addProjectDir(root, import_node_path65.default.join(root.dir, name));
-    });
+    if ((0, import_node_fs23.existsSync)(root.dir)) {
+      this.watchDir(root.dir, (name) => {
+        if (name) void this.addProjectDir(root, import_node_path65.default.join(root.dir, name));
+      });
+      return;
+    }
+    const ancestor = this.nearestExistingDir(root.dir);
+    const pending = this.pendingRoots.get(ancestor) ?? /* @__PURE__ */ new Set();
+    pending.add(root);
+    this.pendingRoots.set(ancestor, pending);
+    this.watchDir(ancestor, () => void this.pollPendingRoots(ancestor));
+  }
+  async pollPendingRoots(ancestor) {
+    const pending = this.pendingRoots.get(ancestor);
+    if (!pending) return;
+    for (const root of [...pending]) {
+      const info = await (0, import_promises.stat)(root.dir).catch(() => null);
+      if (!info?.isDirectory()) continue;
+      pending.delete(root);
+      if (pending.size === 0) {
+        this.pendingRoots.delete(ancestor);
+        this.watchers.get(ancestor)?.close();
+        this.watchers.delete(ancestor);
+      }
+      this.watchRoot(root);
+      await this.scanRoot(root);
+    }
+  }
+  async scanRoot(root) {
+    let dirs;
+    try {
+      dirs = await (0, import_promises.readdir)(root.dir);
+    } catch (error51) {
+      this.log(`session index: cannot read ${root.dir}: ${error51.message}`);
+      return;
+    }
+    for (const name of dirs) await this.addProjectDir(root, import_node_path65.default.join(root.dir, name));
+  }
+  /** The closest ancestor of `dir` that exists as a directory (falls back to the filesystem root). */
+  nearestExistingDir(dir) {
+    let current = dir;
+    for (; ; ) {
+      current = import_node_path65.default.dirname(current);
+      try {
+        if ((0, import_node_fs23.statSync)(current).isDirectory()) return current;
+      } catch {
+      }
+      if (import_node_path65.default.dirname(current) === current) return current;
+    }
   }
   async addProjectDir(root, dir) {
     if (this.closed) return;
