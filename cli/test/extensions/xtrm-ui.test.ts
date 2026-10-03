@@ -354,7 +354,7 @@ describe("xtrm-ui built-in tool rendering", () => {
       context(args, { executionStarted: true, isPartial: true }),
     );
 
-    expect(pending.render(200).join("\n")).toBe("• Ran \x1b[1mecho context-label\x1b[22m");
+    expect(pending.render(200).join("\n")).toBe("● Ran \x1b[1mecho context-label\x1b[22m");
     expect(running.render(200).join("\n")).toBe("");
   });
 
@@ -370,7 +370,7 @@ describe("xtrm-ui built-in tool rendering", () => {
 
     const lines = component.render(200);
     expect(lines.slice(0, 3)).toEqual([
-      "• Ran \x1b[1mecho one\x1b[22m",
+      "● Ran \x1b[1mecho one\x1b[22m",
       "\x1b[1mecho two\x1b[22m",
       "└ line 3",
     ]);
@@ -392,7 +392,7 @@ describe("xtrm-ui built-in tool rendering", () => {
 
     colors.length = 0;
     tools.bash.renderResult(result, renderOptions, spyTheme, context({ command: "echo ok" }));
-    expect(colors.slice(0, 3)).toEqual(["success", "success", "text"]); // • , Ran, command
+    expect(colors.slice(0, 3)).toEqual(["success", "success", "text"]); // ● , Ran, command
 
     colors.length = 0;
     tools.bash.renderResult(
@@ -401,7 +401,7 @@ describe("xtrm-ui built-in tool rendering", () => {
       spyTheme,
       context({ command: "echo fail" }, { isError: true }),
     );
-    expect(colors.slice(0, 3)).toEqual(["error", "error", "dim"]); // • , Ran, command
+    expect(colors.slice(0, 3)).toEqual(["error", "error", "dim"]); // ● , Ran, command
 
     colors.length = 0;
     tools.bash.renderCall(
@@ -428,7 +428,7 @@ describe("xtrm-ui built-in tool rendering", () => {
     );
 
     const lines = component.render(200);
-    expect(lines[0]).toBe(`• ${name} ${subject}`);
+    expect(lines[0]).toBe(`● ${name} ${subject}`);
     expect(lines[1]).toBe("└ line 1");
     expect(lines[6]).toBe("  line 6");
     expect(lines.at(-1)).toContain(`showing 6/8 ${noun}s (ctrl+o expand)`);
@@ -444,7 +444,7 @@ describe("xtrm-ui built-in tool rendering", () => {
     ).render(200);
 
     expect(lines).toEqual([
-      "• find *.ts",
+      "● find *.ts",
       "└ only.ts",
       "1 match · 7B",
     ]);
@@ -471,10 +471,10 @@ describe("xtrm-ui built-in tool rendering", () => {
       context({ path }),
     ).render(200);
 
-    expect(write[0]).toBe(`• write ${path}`);
+    expect(write[0]).toBe(`● write ${path}`);
     expect(write[1]).toBe("└ line 1");
     expect(write.at(-1)).toContain("showing 6/8 lines (ctrl+o expand)");
-    expect(edit[0]).toBe(`• edit ${path}`);
+    expect(edit[0]).toBe(`● edit ${path}`);
     expect(edit[1]).toMatch(/│ /); // diff line-number gutter, not the tool tree
   });
 
@@ -566,8 +566,8 @@ describe("xtrm-ui external tool rendering", () => {
       "find_symbol",
     );
 
-    // • used <Serena #9a8bff bold> <find_symbol bold dim>
-    expect(rendered[0]).toBe("• \x1b[1mused\x1b[22m \x1b[38;2;154;139;255m\x1b[1mSerena\x1b[22m\x1b[39m \x1b[2m\x1b[1mfind_symbol\x1b[22m\x1b[22m");
+    // ● used <Serena #9a8bff bold> <find_symbol bold dim>
+    expect(rendered[0]).toBe("● \x1b[1mused\x1b[22m \x1b[38;2;154;139;255m\x1b[1mSerena\x1b[22m\x1b[39m \x1b[2m\x1b[1mfind_symbol\x1b[22m\x1b[22m");
     expect(rendered.length).toBeGreaterThan(2);
     expect(rendered.join("\n")).toContain('"name_path": "highlightExternalToolBadge"');
   });
@@ -581,7 +581,7 @@ describe("xtrm-ui external tool rendering", () => {
       "mcp_custom_tool",
     );
 
-    expect(rendered[0]).toBe("• \x1b[1mused\x1b[22m \x1b[38;2;154;139;255m\x1b[1mmcp\x1b[22m\x1b[39m \x1b[2m\x1b[1mcustom_tool\x1b[22m\x1b[22m");
+    expect(rendered[0]).toBe("● \x1b[1mused\x1b[22m \x1b[38;2;154;139;255m\x1b[1mmcp\x1b[22m\x1b[39m \x1b[2m\x1b[1mcustom_tool\x1b[22m\x1b[22m");
   });
 
   it("keeps a colored provider label and tool for raw GitNexus output", () => {
@@ -593,16 +593,16 @@ describe("xtrm-ui external tool rendering", () => {
       "gitnexus_query",
     );
 
-    expect(rendered[0]).toBe("• \x1b[1mused\x1b[22m \x1b[38;2;154;139;255m\x1b[1mGitNexus\x1b[22m\x1b[39m \x1b[2m\x1b[1mquery\x1b[22m\x1b[22m");
+    expect(rendered[0]).toBe("● \x1b[1mused\x1b[22m \x1b[38;2;154;139;255m\x1b[1mGitNexus\x1b[22m\x1b[39m \x1b[2m\x1b[1mquery\x1b[22m\x1b[22m");
   });
 
   it("dims the dot and brightens the tool on success, keeps them muted while pending", () => {
     const stripAnsi = (value: string) => value.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
     const statuses = ["pending", "success", "error"] as const;
     const expected = [
-      "• used Serena execute_shell_command",
-      "• used Serena execute_shell_command",
-      "• used Serena execute_shell_command",
+      "● used Serena execute_shell_command",
+      "● used Serena execute_shell_command",
+      "● used Serena execute_shell_command",
     ];
 
     for (let index = 0; index < statuses.length; index++) {
@@ -620,7 +620,7 @@ describe("xtrm-ui external tool rendering", () => {
       expect(stripAnsi(rendered[0] ?? "")).toBe(expected[index]);
       const line = rendered[0] ?? "";
       if (status === "success") {
-        expect(line).toContain("\x1b[2m•\x1b[22m"); // dot dimmed on success
+        expect(line).toContain("\x1b[2m●\x1b[22m"); // dot dimmed on success
         expect(line).toContain("\x1b[1mexecute_shell_command\x1b[22m"); // tool bright (no dim)
       } else {
         expect(line).toContain("\x1b[2m\x1b[1mexecute_shell_command\x1b[22m\x1b[22m"); // tool dim while pending/error

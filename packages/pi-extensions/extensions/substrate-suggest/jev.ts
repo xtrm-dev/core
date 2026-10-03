@@ -79,14 +79,21 @@ export interface RegistryLike {
   }>;
 }
 
-/** Pick the best classifier: jev on the typesafe provider first, any jev id next. */
-export function pickClassifier(models: readonly unknown[]): ClassifierModelLike | null {
+/** Jev candidates in preference order: paid jev first (better calibration), free fallback. */
+export function pickClassifiers(models: readonly unknown[]): ClassifierModelLike[] {
   const jev = models.filter((m) => /jev/i.test(String((m as { id?: unknown })?.id ?? "")));
-  const preferred =
-    jev.find((m) => String((m as { provider?: unknown })?.provider ?? "") === "typesafe") ??
-    jev[0] ??
-    null;
-  return (preferred as ClassifierModelLike) ?? null;
+  jev.sort((a, b) => {
+    const pa = String((a as { provider?: unknown })?.provider ?? "") === "typesafe" ? 0 : 1;
+    const pb = String((b as { provider?: unknown })?.provider ?? "") === "typesafe" ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    // Paid before free within the same provider: a 402 on the paid id
+    // falls through to the free id; the reverse would silently cost nothing
+    // but also calibrate worse.
+    const fa = /free/i.test(String((a as { id?: unknown })?.id ?? "")) ? 1 : 0;
+    const fb = /free/i.test(String((b as { id?: unknown })?.id ?? "")) ? 1 : 0;
+    return fa - fb;
+  });
+  return jev as ClassifierModelLike[];
 }
 
 /** Pi-native path: the same credentials and gateways codemode uses. Never rejects. */
@@ -97,8 +104,8 @@ export async function classifyViaRegistry(
 ): Promise<JevResult | null> {
   try {
     const models = await registry.getAvailableOfType("classifier");
-    const model = pickClassifier(models);
-    if (!model) return null;
+    const candidates = pickClassifiers(models);
+    if (candidates.length === 0) return null;
     const mapped: Record<string, unknown> = {};
     for (const [id, q] of Object.entries(questions)) {
       if (q.type === "choice") mapped[id] = { type: "choice", instructions: q.instructions, criteria: q.criteria };
@@ -109,9 +116,22 @@ export async function classifyViaRegistry(
           criteria: { true: "The answer is yes.", false: "The answer is no." },
         };
     }
-    const res = await registry.classify(model, { state, questions: mapped });
-    if (!res || res.stopReason === "error" || res.stopReason === "aborted" || !res.answers) return null;
-    const choiceRaw = Object.values(res.answers).find((a) => a?.["type"] === "choice");
+    let res: Awaited<ReturnType<RegistryLike["classify"]>> | null = null;
+    let used: ClassifierModelLike | null = null;
+    // First success wins; an errored candidate (e.g. 402 funds) falls
+    // through to the next — the answer is never taken from a failed call.
+    for (const candidate of candidates) {
+      const attempt = await registry.classify(candidate, { state, questions: mapped });
+      if (attempt && attempt.stopReason !== "error" && attempt.stopReason !== "aborted" && attempt.answers) {
+        res = attempt;
+        used = candidate;
+        break;
+      }
+    }
+    if (!res || !used) return null;
+    const answers = res.answers;
+    if (!answers) return null;
+    const choiceRaw = Object.values(answers).find((a) => a?.["type"] === "choice");
     if (!choiceRaw) return null;
     const choice: JevChoiceAnswer = {
       choice: String(choiceRaw["choice"] ?? ""),
@@ -122,13 +142,13 @@ export async function classifyViaRegistry(
     };
     if (!choice.choice) return null;
     const nouls: Record<string, number> = {};
-    for (const [id, a] of Object.entries(res.answers)) {
+    for (const [id, a] of Object.entries(answers)) {
       if (a?.["type"] === "bool") nouls[id] = toNumber(a["probability"]);
     }
     return {
       choice,
       nouls,
-      model: res.model ?? `${model.provider}/${model.id}`,
+      model: res.model ?? `${used.provider}/${used.id}`,
       usage: res.usage ? { input_tokens: res.usage.input, output_tokens: res.usage.output } : null,
       latencyMs: 0,
     };

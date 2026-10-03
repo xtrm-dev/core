@@ -11,6 +11,7 @@ import readLineNumbersExtension from "./extensions/read-line-numbers.ts";
 import sessionFlowExtension from "./extensions/session-flow.ts";
 import spTerminalOverlayExtension from "./extensions/sp-terminal-overlay.ts";
 import substrateSuggestExtension from "./extensions/substrate-suggest.ts";
+import skillSuggestExtension from "./extensions/skill-suggest.ts";
 import xtrmUiExtension from "./extensions/xtrm-ui.ts";
 import xtpromptExtension from "./extensions/xtprompt.ts";
 import xtrmAgentHostExtension from "./extensions/xtrm-agent-host.ts";
@@ -31,6 +32,7 @@ const availableManagedPiExtensions: readonly ManagedPiExtension[] = [
   { id: "session-flow", register: sessionFlowExtension },
   { id: "sp-terminal-overlay", register: spTerminalOverlayExtension },
   { id: "substrate-suggest", register: substrateSuggestExtension },
+  { id: "skill-suggest", register: skillSuggestExtension },
   { id: "xtrm-ui", register: xtrmUiExtension },
   { id: "xtprompt", register: xtpromptExtension },
   { id: "xtrm-agent-host", register: xtrmAgentHostExtension },
