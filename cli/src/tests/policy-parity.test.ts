@@ -101,7 +101,11 @@ describe('cross-runtime coverage', () => {
   });
 
   it('the Claude hook wiring is single-sourced through the dispatcher', () => {
-    expect(claudePolicies.map(p => p.file)).toEqual(['hook-dispatcher.json', 'inbox-reminder.json']);
+    // agent-host-reporter.json (XTRM-569) is a presence producer, not a check;
+    // its Pi side is the xtrm-agent-host extension.
+    expect(claudePolicies.map(p => p.file).sort()).toEqual(
+      ['agent-host-reporter.json', 'hook-dispatcher.json', 'inbox-reminder.json'],
+    );
   });
 
   it('every policy declares wiring only for the runtimes it targets', () => {
@@ -120,7 +124,7 @@ describe('cross-runtime coverage', () => {
     // regression this file exists to catch.
     const claudeOnly = claudePolicies
       .map(p => p.file)
-      .filter(file => file !== 'hook-dispatcher.json' && file !== 'inbox-reminder.json');
+      .filter(file => !['hook-dispatcher.json', 'inbox-reminder.json', 'agent-host-reporter.json'].includes(file));
     expect(claudeOnly).toEqual([]);
   });
 
