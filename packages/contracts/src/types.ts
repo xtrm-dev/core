@@ -720,6 +720,7 @@ type HostApi<K extends string, B> = { schema: 'xtrm.agent-host-api.v1'; kind: K 
 export type AgentHostApiV1 =
     | HostApi<'session_list', { sessions: AgentSessionSummary[]; nextCursor?: string }>
     | HostApi<'session_detail', { session: AgentSessionSummary; identity?: AgentSessionIdentity; lastSeq?: number }>
+    | HostApi<'session_history', { sessionId: string; provider: 'pi'; entries: Record<string, unknown>[]; truncated?: boolean }>
     | HostApi<'event', { cursor: string; frame: AgentEventV1 }>
     | HostApi<'submit_request', { sessionId: string; command: AgentCommandPayload; references?: ContextReference[] }>
     | HostApi<

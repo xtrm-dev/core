@@ -4097,7 +4097,7 @@ var require_graceful_fs = __commonJS({
     function patch(fs66) {
       polyfills(fs66);
       fs66.gracefulify = patch;
-      fs66.createReadStream = createReadStream;
+      fs66.createReadStream = createReadStream2;
       fs66.createWriteStream = createWriteStream2;
       var fs$readFile = fs66.readFile;
       fs66.readFile = readFile2;
@@ -4307,7 +4307,7 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function createReadStream(path86, options) {
+      function createReadStream2(path86, options) {
         return new fs66.ReadStream(path86, options);
       }
       function createWriteStream2(path86, options) {
@@ -6215,7 +6215,7 @@ var require_util = __commonJS({
 var require_prompt = __commonJS({
   "../node_modules/prompts/dist/elements/prompt.js"(exports2, module2) {
     "use strict";
-    var readline = require("readline");
+    var readline2 = require("readline");
     var _require = require_util();
     var action2 = _require.action;
     var EventEmitter = require("events");
@@ -6230,11 +6230,11 @@ var require_prompt = __commonJS({
         this.in = opts.stdin || process.stdin;
         this.out = opts.stdout || process.stdout;
         this.onRender = (opts.onRender || (() => void 0)).bind(this);
-        const rl = readline.createInterface({
+        const rl = readline2.createInterface({
           input: this.in,
           escapeCodeTimeout: 50
         });
-        readline.emitKeypressEvents(this.in, rl);
+        readline2.emitKeypressEvents(this.in, rl);
         if (this.in.isTTY) this.in.setRawMode(true);
         const isSelect = ["SelectPrompt", "MultiselectPrompt"].indexOf(this.constructor.name) > -1;
         const keypress = (str2, key) => {
@@ -8681,7 +8681,7 @@ var require_util2 = __commonJS({
 var require_prompt2 = __commonJS({
   "../node_modules/prompts/lib/elements/prompt.js"(exports2, module2) {
     "use strict";
-    var readline = require("readline");
+    var readline2 = require("readline");
     var { action: action2 } = require_util2();
     var EventEmitter = require("events");
     var { beep, cursor } = require_src();
@@ -8693,8 +8693,8 @@ var require_prompt2 = __commonJS({
         this.in = opts.stdin || process.stdin;
         this.out = opts.stdout || process.stdout;
         this.onRender = (opts.onRender || (() => void 0)).bind(this);
-        const rl = readline.createInterface({ input: this.in, escapeCodeTimeout: 50 });
-        readline.emitKeypressEvents(this.in, rl);
+        const rl = readline2.createInterface({ input: this.in, escapeCodeTimeout: 50 });
+        readline2.emitKeypressEvents(this.in, rl);
         if (this.in.isTTY) this.in.setRawMode(true);
         const isSelect = ["SelectPrompt", "MultiselectPrompt"].indexOf(this.constructor.name) > -1;
         const keypress = (str2, key) => {
@@ -39387,7 +39387,7 @@ var init_handoff = __esm({
 });
 
 // src/index.ts
-var import_node_fs28 = require("fs");
+var import_node_fs29 = require("fs");
 var import_node_path70 = require("path");
 
 // ../node_modules/commander/esm.mjs
@@ -53435,14 +53435,14 @@ function _installLazyMethods(inst, group, methods) {
       configurable: true,
       enumerable: false,
       get() {
-        const bound = fn.bind(this);
+        const bound2 = fn.bind(this);
         Object.defineProperty(this, key, {
           configurable: true,
           writable: true,
           enumerable: true,
-          value: bound
+          value: bound2
         });
-        return bound;
+        return bound2;
       },
       set(v) {
         Object.defineProperty(this, key, {
@@ -57861,20 +57861,20 @@ function bindClaudePackNames(mainRepoRoot, roleDecls, rolePrefixNames, explicitR
         );
       }
     }
-    let bound;
+    let bound2;
     if (names.has(slotAlias)) {
-      bound = slotAlias;
+      bound2 = slotAlias;
     } else if (names.has(entry.runtimeName)) {
-      bound = entry.runtimeName;
+      bound2 = entry.runtimeName;
     } else {
-      bound = entry.runtimeName;
+      bound2 = entry.runtimeName;
     }
-    if (!isSafeRuntimeName(bound)) {
+    if (!isSafeRuntimeName(bound2)) {
       throw new Error(
-        `project-pack skill '${sanitizeDiagnosticName(entry.repoRelativeDir)}' has unsafe bound name '${sanitizeDiagnosticName(bound)}'.`
+        `project-pack skill '${sanitizeDiagnosticName(entry.repoRelativeDir)}' has unsafe bound name '${sanitizeDiagnosticName(bound2)}'.`
       );
     }
-    const named = { ...entry, name: bound };
+    const named = { ...entry, name: bound2 };
     if (bucket.roleOwned || !bucket.explicitOwned) roleEntries.push(named);
     else explicitEntries.push(named);
   }
@@ -58346,8 +58346,8 @@ function claudeExplicitLinesFor(mainRepoRoot, paths, entries) {
 function renderDeclaredSkillPrefix(paths, runtime, mainRepoRoot = process.cwd(), entries) {
   const byPath = new Map((entries ?? []).map((entry) => [entry.canonicalPath, entry.name]));
   const names = [...new Set(paths.map((p) => {
-    const bound = byPath.get(realpathSyncSafe(p));
-    if (bound) return bound;
+    const bound2 = byPath.get(realpathSyncSafe(p));
+    if (bound2) return bound2;
     const packName = resolveProjectPackEntry(mainRepoRoot, p)?.runtimeName;
     if (packName) return packName;
     return import_node_path14.default.basename(p) === "SKILL.md" ? import_node_path14.default.basename(import_node_path14.default.dirname(p)) : import_node_path14.default.basename(p);
@@ -75569,8 +75569,8 @@ function createMigrateCommand() {
       console.log(kleur_default.dim(`  Repo: ${repoPath}
 `));
       if (!opts.dryRun && opts.apply && !opts.yes) {
-        const readline = await import("readline");
-        const rl = readline.createInterface({
+        const readline2 = await import("readline");
+        const rl = readline2.createInterface({
           input: process.stdin,
           output: process.stdout
         });
@@ -76991,7 +76991,7 @@ var xtrm_agent_host_api_v1_default = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "xtrm.agent-host-api.v1",
   title: "XTRM agent host client API message",
-  description: "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app \xA735.5, \xA735.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
+  description: "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app \xA735.5, \xA735.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), session history (GET /v1/sessions/:id/history -> session_history: the provider journal entries a client projects Frames from, beyond the replay buffer), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
   type: "object",
   required: ["schema", "kind"],
   properties: {
@@ -77000,6 +77000,7 @@ var xtrm_agent_host_api_v1_default = {
       enum: [
         "session_list",
         "session_detail",
+        "session_history",
         "event",
         "submit_request",
         "submit_result",
@@ -77014,6 +77015,7 @@ var xtrm_agent_host_api_v1_default = {
   oneOf: [
     { $ref: "#/definitions/session_list" },
     { $ref: "#/definitions/session_detail" },
+    { $ref: "#/definitions/session_history" },
     { $ref: "#/definitions/event" },
     { $ref: "#/definitions/submit_request" },
     { $ref: "#/definitions/submit_result" },
@@ -77123,6 +77125,20 @@ var xtrm_agent_host_api_v1_default = {
         session: { $ref: "#/definitions/sessionSummary" },
         identity: { $ref: "xtrm.agent-event.v1#/definitions/session_identity" },
         lastSeq: { type: "integer", minimum: 0 }
+      }
+    },
+    session_history: {
+      description: "Frame-relevant entries of a provider session journal (XTRM-604, PRD xtrm-app \xA726): Pi `message` and `compaction` entries on the active branch, oldest first, as the journal holds them. Strings above 64 KiB are cut and image data is dropped; `truncated` is then true. The journal stays authoritative; the host keeps no copy.",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "sessionId", "provider", "entries"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "session_history" },
+        sessionId: { $ref: "#/definitions/sessionId" },
+        provider: { const: "pi" },
+        entries: { type: "array", items: { type: "object", required: ["type"], properties: { type: { type: "string" } } } },
+        truncated: { type: "boolean" }
       }
     },
     event: {
@@ -78792,16 +78808,107 @@ function parsePairRequest(text) {
 }
 
 // src/core/agent-host.ts
-var import_node_fs26 = require("fs");
+var import_node_fs27 = require("fs");
 var import_node_http = __toESM(require("http"), 1);
 var import_node_net2 = __toESM(require("net"), 1);
 var import_node_os29 = __toESM(require("os"), 1);
 var import_node_path68 = __toESM(require("path"), 1);
 
+// src/core/agent-host-history.ts
+var import_node_fs22 = require("fs");
+var import_node_readline = __toESM(require("readline"), 1);
+var HISTORY_STRING_MAX = 64 * 1024;
+var HISTORY_TYPES = /* @__PURE__ */ new Set(["message", "compaction"]);
+var HistoryRejection = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+  code;
+};
+function bound(value, cut) {
+  if (typeof value === "string") {
+    if (value.length <= HISTORY_STRING_MAX) return value;
+    cut.done = true;
+    return `${value.slice(0, HISTORY_STRING_MAX)}
+\u2026 truncated`;
+  }
+  if (Array.isArray(value)) return value.map((v) => bound(v, cut));
+  if (value && typeof value === "object") {
+    const o = value;
+    const out = {};
+    for (const [k, v] of Object.entries(o)) {
+      if (k === "data" && o.type === "image") {
+        cut.done = true;
+        continue;
+      }
+      out[k] = bound(v, cut);
+    }
+    return out;
+  }
+  return value;
+}
+async function readPiHistory(file2, sessionId) {
+  const entries = [];
+  let header = false;
+  const stream = (0, import_node_fs22.createReadStream)(file2, { encoding: "utf8", flags: "r" });
+  const lines = import_node_readline.default.createInterface({ input: stream, crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!header) {
+        if (entry.type !== "session" || entry.id !== sessionId) {
+          throw new HistoryRejection("history_not_found", `${file2} is not the journal of session ${sessionId}`);
+        }
+        header = true;
+        continue;
+      }
+      entries.push(entry);
+    }
+  } catch (error51) {
+    if (error51 instanceof HistoryRejection) throw error51;
+    throw new HistoryRejection("history_not_found", `cannot read the journal of session ${sessionId}`);
+  } finally {
+    lines.close();
+    stream.destroy();
+  }
+  if (!header) throw new HistoryRejection("history_not_found", `the journal of session ${sessionId} is empty`);
+  const cut = { done: false };
+  const kept = activeBranch(entries).filter((e) => HISTORY_TYPES.has(e.type)).map((e) => bound(e, cut));
+  return {
+    schema: "xtrm.agent-host-api.v1",
+    kind: "session_history",
+    sessionId,
+    provider: "pi",
+    entries: kept,
+    ...cut.done ? { truncated: true } : {}
+  };
+}
+function activeBranch(entries) {
+  const byId = /* @__PURE__ */ new Map();
+  for (const e of entries) if (typeof e.id === "string") byId.set(e.id, e);
+  if (byId.size === 0) return entries;
+  let leaf;
+  for (let i = entries.length - 1; i >= 0 && !leaf; i -= 1) if (typeof entries[i].id === "string") leaf = entries[i];
+  const path86 = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (let e = leaf; e && typeof e.id === "string" && !seen.has(e.id); e = typeof e.parentId === "string" ? byId.get(e.parentId) : void 0) {
+    seen.add(e.id);
+    path86.push(e);
+  }
+  return path86.reverse();
+}
+
 // src/core/agent-host-launch.ts
 var import_node_crypto18 = require("crypto");
 var import_node_child_process35 = require("child_process");
-var import_node_fs22 = require("fs");
+var import_node_fs23 = require("fs");
 var import_node_path64 = __toESM(require("path"), 1);
 var LAUNCH_ENV = "XTRM_AGENT_LAUNCH";
 var PANE_SESSION_OPTION = "@xtrm_agent_session_id";
@@ -78865,8 +78972,8 @@ function validateLaunchRequest(request) {
   if (!import_node_path64.default.isAbsolute(request.cwd)) throw new LaunchRejection("invalid_cwd", "cwd must be an absolute path");
   let cwd;
   try {
-    cwd = (0, import_node_fs22.realpathSync)(request.cwd);
-    if (!(0, import_node_fs22.statSync)(cwd).isDirectory()) throw new Error("not a directory");
+    cwd = (0, import_node_fs23.realpathSync)(request.cwd);
+    if (!(0, import_node_fs23.statSync)(cwd).isDirectory()) throw new Error("not a directory");
   } catch {
     throw new LaunchRejection("invalid_cwd", `cwd ${request.cwd} is not an existing directory`);
   }
@@ -79029,7 +79136,7 @@ function firstLine2(text) {
 // src/core/agent-host-references.ts
 var import_node_child_process36 = require("child_process");
 var import_node_crypto19 = require("crypto");
-var import_node_fs23 = require("fs");
+var import_node_fs24 = require("fs");
 var import_promises = require("fs/promises");
 var import_node_path65 = __toESM(require("path"), 1);
 var KB = 1024;
@@ -79141,7 +79248,7 @@ async function resolveFile(ref, cwd) {
   if (!isInside5(root, real)) throw new Unresolved("path_outside_cwd");
   let handle;
   try {
-    handle = await (0, import_promises.open)(real, import_node_fs23.constants.O_RDONLY | import_node_fs23.constants.O_NOFOLLOW | import_node_fs23.constants.O_NONBLOCK);
+    handle = await (0, import_promises.open)(real, import_node_fs24.constants.O_RDONLY | import_node_fs24.constants.O_NOFOLLOW | import_node_fs24.constants.O_NONBLOCK);
   } catch {
     throw new Unresolved("file_unreadable");
   }
@@ -79401,7 +79508,7 @@ function bounded(value) {
 }
 
 // src/core/agent-host-origin.ts
-var import_node_fs24 = require("fs");
+var import_node_fs25 = require("fs");
 var import_node_path66 = __toESM(require("path"), 1);
 var COORDINATION_TOOLS = [
   { extension: "pi-intercom", tools: ["intercom", "contact_supervisor"] },
@@ -79425,7 +79532,7 @@ var UNKNOWN = "unknown";
 var CLAUDE_SUBAGENT_TOOLS = /* @__PURE__ */ new Set(["Agent", "Task"]);
 function readManifest(baseDir) {
   try {
-    const parsed = JSON.parse((0, import_node_fs24.readFileSync)(import_node_path66.default.join(baseDir, "package.json"), "utf8"));
+    const parsed = JSON.parse((0, import_node_fs25.readFileSync)(import_node_path66.default.join(baseDir, "package.json"), "utf8"));
     return {
       ...typeof parsed.name === "string" && parsed.name ? { name: parsed.name } : {},
       ...typeof parsed.version === "string" && parsed.version ? { version: parsed.version } : {}
@@ -79964,7 +80071,7 @@ function boundText(text) {
 
 // src/core/agent-host-session-index.ts
 var import_node_child_process37 = require("child_process");
-var import_node_fs25 = require("fs");
+var import_node_fs26 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_node_os28 = __toESM(require("os"), 1);
 var import_node_path67 = __toESM(require("path"), 1);
@@ -80066,7 +80173,7 @@ var SessionIndex = class {
     this.scheduleCacheWrite();
   }
   watchRoot(root) {
-    if ((0, import_node_fs25.existsSync)(root.dir)) {
+    if ((0, import_node_fs26.existsSync)(root.dir)) {
       this.watchDir(root.dir, (name) => {
         if (name) void this.addProjectDir(root, import_node_path67.default.join(root.dir, name));
       });
@@ -80110,7 +80217,7 @@ var SessionIndex = class {
     for (; ; ) {
       current = import_node_path67.default.dirname(current);
       try {
-        if ((0, import_node_fs25.statSync)(current).isDirectory()) return current;
+        if ((0, import_node_fs26.statSync)(current).isDirectory()) return current;
       } catch {
       }
       if (import_node_path67.default.dirname(current) === current) return current;
@@ -80142,7 +80249,7 @@ var SessionIndex = class {
   watchDir(dir, onEvent) {
     if (this.closed || this.watchers.has(dir)) return;
     try {
-      const watcher = (0, import_node_fs25.watch)(dir, { persistent: false }, (_event, name) => onEvent(name ? String(name) : null));
+      const watcher = (0, import_node_fs26.watch)(dir, { persistent: false }, (_event, name) => onEvent(name ? String(name) : null));
       watcher.on("error", (error51) => {
         this.log(`session index: watcher for ${dir} failed: ${error51.message}`);
         watcher.close();
@@ -80533,7 +80640,7 @@ function defaultInfoPath() {
 }
 function readAgentHostInfo(infoPath = defaultInfoPath()) {
   try {
-    return JSON.parse((0, import_node_fs26.readFileSync)(infoPath, "utf8"));
+    return JSON.parse((0, import_node_fs27.readFileSync)(infoPath, "utf8"));
   } catch {
     return null;
   }
@@ -80613,7 +80720,7 @@ async function startAgentHost(options = {}) {
     }
   });
   await listen(socketServer, socketPath);
-  (0, import_node_fs26.chmodSync)(socketPath, 384);
+  (0, import_node_fs27.chmodSync)(socketPath, 384);
   const httpServer = import_node_http.default.createServer((req, res) => {
     handleRequest(req, res).catch((error51) => {
       log(`request failed: ${error51.message}`);
@@ -80656,6 +80763,22 @@ async function startAgentHost(options = {}) {
         sessions = live.concat(sessionIndex.list().filter((s) => !liveIds.has(s.sessionId)));
       }
       sendJson(res, 200, { schema: "xtrm.agent-host-api.v1", kind: "session_list", sessions });
+      return;
+    }
+    if (req.method === "GET" && parts.length === 4 && parts[0] === "v1" && parts[1] === "sessions" && parts[3] === "history") {
+      const session = registry2.detail(parts[2])?.session ?? sessionIndex?.get(parts[2]) ?? null;
+      if (!session) {
+        sendJson(res, 404, apiError("session_not_found", `no session ${parts[2]}`));
+        return;
+      }
+      try {
+        if (session.provider !== "pi") throw new HistoryRejection("history_unsupported", `no history read for ${session.provider} sessions`);
+        if (!session.sessionFile) throw new HistoryRejection("history_not_found", `session ${parts[2]} reports no journal`);
+        sendJson(res, 200, await readPiHistory(session.sessionFile, session.sessionId));
+      } catch (error51) {
+        if (!(error51 instanceof HistoryRejection)) throw error51;
+        sendJson(res, error51.code === "history_unsupported" ? 400 : 404, apiError(error51.code, error51.message));
+      }
       return;
     }
     if (req.method === "GET" && parts.length === 3 && parts[0] === "v1" && parts[1] === "sessions") {
@@ -80869,8 +80992,8 @@ data: ${JSON.stringify(message)}
 }
 async function claimSocketPath(socketPath) {
   const dir = import_node_path68.default.dirname(socketPath);
-  (0, import_node_fs26.mkdirSync)(dir, { recursive: true, mode: 448 });
-  if (!(0, import_node_fs26.existsSync)(socketPath)) return;
+  (0, import_node_fs27.mkdirSync)(dir, { recursive: true, mode: 448 });
+  if (!(0, import_node_fs27.existsSync)(socketPath)) return;
   const alive = await new Promise((resolve6) => {
     const probe2 = import_node_net2.default.connect(socketPath);
     probe2.once("connect", () => {
@@ -80880,14 +81003,14 @@ async function claimSocketPath(socketPath) {
     probe2.once("error", () => resolve6(false));
   });
   if (alive) throw new Error(`an agent host is already listening on ${socketPath}`);
-  (0, import_node_fs26.unlinkSync)(socketPath);
+  (0, import_node_fs27.unlinkSync)(socketPath);
 }
 function writeInfoFile(infoPath, info) {
-  (0, import_node_fs26.mkdirSync)(import_node_path68.default.dirname(infoPath), { recursive: true, mode: 448 });
+  (0, import_node_fs27.mkdirSync)(import_node_path68.default.dirname(infoPath), { recursive: true, mode: 448 });
   const tmp = `${infoPath}.${process.pid}.tmp`;
-  (0, import_node_fs26.writeFileSync)(tmp, `${JSON.stringify(info, null, 2)}
+  (0, import_node_fs27.writeFileSync)(tmp, `${JSON.stringify(info, null, 2)}
 `, { mode: 384 });
-  (0, import_node_fs26.renameSync)(tmp, infoPath);
+  (0, import_node_fs27.renameSync)(tmp, infoPath);
 }
 function apiError(code, message) {
   return { schema: "xtrm.agent-host-api.v1", kind: "error", code, message: message.slice(0, 1024) };
@@ -80919,7 +81042,7 @@ function closeServer(server) {
 }
 function safeUnlink(file2) {
   try {
-    (0, import_node_fs26.unlinkSync)(file2);
+    (0, import_node_fs27.unlinkSync)(file2);
   } catch {
   }
 }
@@ -80927,7 +81050,7 @@ function safeUnlink(file2) {
 // src/core/agent-host-ensure.ts
 var import_node_child_process38 = require("child_process");
 var import_node_crypto20 = require("crypto");
-var import_node_fs27 = require("fs");
+var import_node_fs28 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
 var import_node_path69 = __toESM(require("path"), 1);
 var AGENT_HOST_ENSURE_SCHEMA = "xtrm.agent-host-ensure.v1";
@@ -80999,7 +81122,7 @@ async function ensureAgentHost(options = {}) {
   const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const running = await liveHost(infoPath);
   if (running) return { info: running, started: false };
-  (0, import_node_fs27.mkdirSync)(import_node_path69.default.dirname(infoPath), { recursive: true, mode: 448 });
+  (0, import_node_fs28.mkdirSync)(import_node_path69.default.dirname(infoPath), { recursive: true, mode: 448 });
   const release = await acquireLock(`${infoPath}.lock`, deadline);
   try {
     const started = await liveHost(infoPath);
@@ -81016,11 +81139,11 @@ async function startDetachedHost(infoPath, options, deadline, log) {
   const logPath = options.logPath ?? import_node_path69.default.join(import_node_path69.default.dirname(infoPath), "agent-host.log");
   let logSize = 0;
   try {
-    logSize = (0, import_node_fs27.statSync)(logPath).size;
+    logSize = (0, import_node_fs28.statSync)(logPath).size;
   } catch {
   }
   const logStart = logSize > MAX_LOG_BYTES ? 0 : logSize;
-  const logFd = (0, import_node_fs27.openSync)(logPath, logSize > MAX_LOG_BYTES ? "w" : "a", 384);
+  const logFd = (0, import_node_fs28.openSync)(logPath, logSize > MAX_LOG_BYTES ? "w" : "a", 384);
   let child;
   try {
     child = (0, import_node_child_process38.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
@@ -81029,7 +81152,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
       env: options.env ?? process.env
     });
   } finally {
-    (0, import_node_fs27.closeSync)(logFd);
+    (0, import_node_fs28.closeSync)(logFd);
   }
   let exit = null;
   let spawnError = null;
@@ -81059,7 +81182,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
 }
 function logTail(logPath, from) {
   try {
-    const text = (0, import_node_fs27.readFileSync)(logPath).subarray(from).toString("utf8").trim();
+    const text = (0, import_node_fs28.readFileSync)(logPath).subarray(from).toString("utf8").trim();
     return text ? `: ${text.slice(-LOG_TAIL_BYTES)}` : "";
   } catch {
     return "";
@@ -81069,7 +81192,7 @@ async function acquireLock(lockPath, deadline) {
   const token = `${process.pid} ${(0, import_node_crypto20.randomUUID)()}`;
   for (; ; ) {
     try {
-      (0, import_node_fs27.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
+      (0, import_node_fs28.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
       return () => {
         if (readText(lockPath) === token) safeUnlink2(lockPath);
       };
@@ -81091,20 +81214,20 @@ function breakStaleLock(lockPath) {
     if (pidAlive(holder)) return;
   } else {
     try {
-      if (Date.now() - (0, import_node_fs27.statSync)(lockPath).mtimeMs < UNOWNED_LOCK_STALE_MS) return;
+      if (Date.now() - (0, import_node_fs28.statSync)(lockPath).mtimeMs < UNOWNED_LOCK_STALE_MS) return;
     } catch {
       return;
     }
   }
   const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto20.randomUUID)()}.stale`;
   try {
-    (0, import_node_fs27.renameSync)(lockPath, aside);
+    (0, import_node_fs28.renameSync)(lockPath, aside);
   } catch {
     return;
   }
   if (readText(aside) !== content) {
     try {
-      (0, import_node_fs27.linkSync)(aside, lockPath);
+      (0, import_node_fs28.linkSync)(aside, lockPath);
     } catch {
     }
   }
@@ -81112,14 +81235,14 @@ function breakStaleLock(lockPath) {
 }
 function readText(file2) {
   try {
-    return (0, import_node_fs27.readFileSync)(file2, "utf8");
+    return (0, import_node_fs28.readFileSync)(file2, "utf8");
   } catch {
     return null;
   }
 }
 function safeUnlink2(file2) {
   try {
-    (0, import_node_fs27.unlinkSync)(file2);
+    (0, import_node_fs28.unlinkSync)(file2);
   } catch {
   }
 }
@@ -81431,7 +81554,7 @@ async function printBanner(version3) {
 // src/index.ts
 var version2 = "0.0.0";
 try {
-  version2 = JSON.parse((0, import_node_fs28.readFileSync)((0, import_node_path70.resolve)(__dirname, "../package.json"), "utf8")).version;
+  version2 = JSON.parse((0, import_node_fs29.readFileSync)((0, import_node_path70.resolve)(__dirname, "../package.json"), "utf8")).version;
 } catch {
 }
 var program2 = new Command();

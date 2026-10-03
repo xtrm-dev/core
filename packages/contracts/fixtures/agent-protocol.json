@@ -370,6 +370,16 @@
         },
         {
             "schema": "xtrm.agent-host-api.v1",
+            "kind": "session_history",
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "provider": "pi",
+            "entries": [
+                { "type": "message", "id": "e1", "parentId": null, "timestamp": "2026-10-02T10:00:01.000Z", "message": { "role": "user", "content": "Summarize XTRM-561", "timestamp": 1790000001000 } },
+                { "type": "message", "id": "e2", "parentId": "e1", "timestamp": "2026-10-02T10:00:03.000Z", "message": { "role": "assistant", "content": [{ "type": "text", "text": "Done." }], "stopReason": "stop", "timestamp": 1790000003000 } }
+            ]
+        },
+        {
+            "schema": "xtrm.agent-host-api.v1",
             "kind": "event",
             "cursor": "019f9a10-0000-7000-8000-000000000001:17",
             "frame": {

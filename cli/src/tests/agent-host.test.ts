@@ -377,6 +377,35 @@ describe('xt host agent host (XTRM-563)', () => {
         ext.close();
     });
 
+    it('returns the Pi journal entries of a live session on its history route, read-only (XTRM-604)', async () => {
+        const journal = path.join(dir, 'session.jsonl');
+        const lines = [
+            { type: 'session', version: 3, id: sessionId, timestamp: '2026-10-02T10:00:00.000Z', cwd: '/home/op/dev/core' },
+            { type: 'message', id: 'a1', parentId: null, timestamp: '2026-10-02T10:00:01.000Z', message: { role: 'user', content: 'hi', timestamp: 1 } },
+            { type: 'model_change', id: 'a2', parentId: 'a1', timestamp: '2026-10-02T10:00:01.500Z', provider: 'p', modelId: 'm' },
+            { type: 'message', id: 'a3', parentId: 'a2', timestamp: '2026-10-02T10:00:02.000Z', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }], timestamp: 2 } },
+        ];
+        writeFileSync(journal, `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`);
+        const before = readFileSync(journal, 'utf8');
+        const ext = await FakeExtension.connect(socketPath);
+        ext.push({ ...identity, payload: { ...identity.payload, sessionFile: journal } as never });
+        await until(() => host.registry.list().length === 1);
+
+        const reply = await request(host, 'GET', `/v1/sessions/${sessionId}/history`);
+        expect(reply.status).toBe(200);
+        expect(validate('xtrm.agent-host-api.v1', reply.body).errors).toEqual([]);
+        const body = reply.body as Extract<AgentHostApiV1, { kind: 'session_history' }>;
+        expect(body).toMatchObject({ kind: 'session_history', sessionId, provider: 'pi' });
+        expect(body.entries.map((e) => e.id)).toEqual(['a1', 'a3']);
+        expect(readFileSync(journal, 'utf8')).toBe(before);
+
+        // A journal of another session is refused; an unknown session is not found.
+        writeFileSync(journal, `${JSON.stringify({ ...lines[0], id: 'other' })}\n`);
+        expect(await request(host, 'GET', `/v1/sessions/${sessionId}/history`)).toMatchObject({ status: 404, body: { code: 'history_not_found' } });
+        expect(await request(host, 'GET', '/v1/sessions/nope/history')).toMatchObject({ status: 404, body: { code: 'session_not_found' } });
+        ext.close();
+    });
+
     it('drops a persistent session from the live registry when its extension disconnects', async () => {
         const ext = await FakeExtension.connect(socketPath);
         ext.push(identity);
