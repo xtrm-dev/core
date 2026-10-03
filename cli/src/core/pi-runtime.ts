@@ -122,6 +122,21 @@ export function resolveManagedPiCoreSourceDir(pkgRoot: string = resolvePkgRoot()
 }
 
 const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+
+/**
+ * Agent dir the launched Pi will actually read: Pi's own PI_CODING_AGENT_DIR
+ * override wins, then PI_AGENT_DIR, then ~/.pi/agent. Resolved per call (not
+ * at module load) so an isolated launch or test env is honored (XTRM-581).
+ */
+export function resolvePiLaunchAgentDir(env: NodeJS.ProcessEnv = process.env): string {
+    return env.PI_CODING_AGENT_DIR || env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+}
+
+/** True when the xt package runs from an npm install, not a source checkout/worktree build. */
+export function isInstalledPackageRoot(pkgRoot: string): boolean {
+    return path.resolve(pkgRoot).split(path.sep).includes('node_modules');
+}
+
 const MANAGED_XTRM_THEME_FILES = [
     'xtrm-dark.json',
     'xtrm-dark-flattools.json',
@@ -170,7 +185,6 @@ export async function syncManagedPiThemes(
     return true;
 }
 
-const PI_MCP_ADAPTER_OVERRIDE_DIR = path.join(PI_AGENT_DIR, 'extensions', 'pi-mcp-adapter');
 const PI_MCP_ADAPTER_REQUIRED_ENTRY = 'commands.js';
 
 async function resolveGlobalNpmRootDir(): Promise<string | null> {
@@ -933,30 +947,32 @@ export interface PiLaunchPreflightResult {
 export async function remediateStalePiMcpAdapterOverride(
     dryRun: boolean,
     log?: (message: string) => void,
+    agentDir: string = PI_AGENT_DIR,
 ): Promise<PiMcpAdapterOverrideCheck> {
-    const stat = await fs.lstat(PI_MCP_ADAPTER_OVERRIDE_DIR).catch(() => null);
+    const overrideDir = path.join(agentDir, 'extensions', 'pi-mcp-adapter');
+    const stat = await fs.lstat(overrideDir).catch(() => null);
     if (!stat) {
-        return { path: PI_MCP_ADAPTER_OVERRIDE_DIR, found: false, stale: false, remediated: false };
+        return { path: overrideDir, found: false, stale: false, remediated: false };
     }
 
     if (stat.isSymbolicLink()) {
-        return { path: PI_MCP_ADAPTER_OVERRIDE_DIR, found: true, stale: false, remediated: false };
+        return { path: overrideDir, found: true, stale: false, remediated: false };
     }
 
-    const hasRequiredEntry = await fs.pathExists(path.join(PI_MCP_ADAPTER_OVERRIDE_DIR, PI_MCP_ADAPTER_REQUIRED_ENTRY));
+    const hasRequiredEntry = await fs.pathExists(path.join(overrideDir, PI_MCP_ADAPTER_REQUIRED_ENTRY));
     if (stat.isDirectory() && hasRequiredEntry) {
-        return { path: PI_MCP_ADAPTER_OVERRIDE_DIR, found: true, stale: false, remediated: false };
+        return { path: overrideDir, found: true, stale: false, remediated: false };
     }
 
     const reason = stat.isDirectory() ? `missing ${PI_MCP_ADAPTER_REQUIRED_ENTRY}` : 'not a directory/symlink';
     if (dryRun) {
         log?.(kleur.dim(`[DRY RUN] would remove stale pi-mcp-adapter override (${reason})`));
-        return { path: PI_MCP_ADAPTER_OVERRIDE_DIR, found: true, stale: true, remediated: false, reason };
+        return { path: overrideDir, found: true, stale: true, remediated: false, reason };
     }
 
-    await fs.remove(PI_MCP_ADAPTER_OVERRIDE_DIR);
+    await fs.remove(overrideDir);
     log?.(kleur.dim(`Removed stale pi-mcp-adapter override (${reason})`));
-    return { path: PI_MCP_ADAPTER_OVERRIDE_DIR, found: true, stale: true, remediated: true, reason };
+    return { path: overrideDir, found: true, stale: true, remediated: true, reason };
 }
 
 export async function runPiLaunchPreflight(
@@ -964,8 +980,20 @@ export async function runPiLaunchPreflight(
     dryRun: boolean,
     log?: (message: string) => void,
 ): Promise<PiLaunchPreflightResult> {
-    const themesChanged = await syncManagedPiThemes(resolveManagedPiThemesSourceDir(), dryRun, log);
-    const staleOverride = await remediateStalePiMcpAdapterOverride(dryRun, log);
+    const agentDir = resolvePiLaunchAgentDir();
+    const pkgRoot = resolvePkgRoot();
+    // A worktree/source build must never re-point the operator's global theme
+    // links at itself; only an installed xt owns ~/.pi/agent/themes (XTRM-581).
+    const isGlobalAgentDir = path.resolve(agentDir) === path.resolve(homedir(), '.pi', 'agent');
+    let themesChanged = false;
+    if (isGlobalAgentDir && !isInstalledPackageRoot(pkgRoot)) {
+        log?.(kleur.dim(`Skipped XTRM Pi theme sync: ${pkgRoot} is not an installed build (global agent dir untouched)`));
+    } else {
+        themesChanged = await syncManagedPiThemes(
+            resolveManagedPiThemesSourceDir(pkgRoot), dryRun, log, path.join(agentDir, 'themes'),
+        );
+    }
+    const staleOverride = await remediateStalePiMcpAdapterOverride(dryRun, log, agentDir);
     const coreSymlinkStatus = await ensureCorePackageSymlink(
         path.join(projectRoot, '.xtrm', 'extensions', 'core'),
         projectRoot,

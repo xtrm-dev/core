@@ -19,10 +19,15 @@ vi.mock('../core/skills-scaffold.js', () => ({
 describe('worktree session .beads handling (no symlink; skip-worktree only)', () => {
   let tempRoot = '';
   let previousCwd = '';
+  let previousPiAgentDirs: Record<'PI_AGENT_DIR' | 'PI_CODING_AGENT_DIR', string | undefined>;
 
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-worktree-beads-'));
     previousCwd = process.cwd();
+    // Pi launches run the theme-sync preflight; keep it off the real ~/.pi/agent (XTRM-581).
+    previousPiAgentDirs = { PI_AGENT_DIR: process.env.PI_AGENT_DIR, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR };
+    process.env.PI_AGENT_DIR = path.join(tempRoot, 'pi-agent');
+    process.env.PI_CODING_AGENT_DIR = path.join(tempRoot, 'pi-agent');
     mocked.spawnSync.mockReset();
     mocked.ensureAgentsSkillsSymlink.mockReset();
     mocked.ensureAgentsSkillsSymlink.mockResolvedValue(undefined);
@@ -31,6 +36,10 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
 
   afterEach(async () => {
     process.chdir(previousCwd);
+    for (const [key, value] of Object.entries(previousPiAgentDirs)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     await fs.remove(tempRoot);
     vi.restoreAllMocks();
   });
