@@ -24,7 +24,9 @@ describe('hook routing tables (.xtrm/hooks/hook-routing.mjs)', () => {
         const hooks = fs.readJsonSync(path.join(resolvePackageRoot(), '.xtrm', 'config', 'hooks.json')) as {
             hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>;
         };
-        const pre = hooks.hooks.PreToolUse ?? [];
+        // The XTRM-569 agent-host reporter registers its own matcher-less group.
+        const pre = (hooks.hooks.PreToolUse ?? []).filter(
+            (g) => !g.hooks.every((h) => h.command.includes('agent-host-reporter.mjs')));
         expect(pre).toHaveLength(1);
         const matcher = pre[0].matcher ?? '';
         expect(matcher.split('|').sort()).toEqual([...PRE_TOOLS].sort());

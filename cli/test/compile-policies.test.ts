@@ -18,6 +18,9 @@ function runCompiler(args: string[]) {
   });
 }
 
+// XTRM-569 presence reporter: the one hook allowed beside the CORE-2339 dispatcher.
+const AGENT_HOST_REPORTER = 'agent-host-reporter.mjs';
+
 // ── Golden file ───────────────────────────────────────────────────────────────
 
 describe('compile-policies — golden file', () => {
@@ -172,13 +175,17 @@ describe('compile-policies — output structure', () => {
   // `dispatch.mjs session` command, so "several policies contribute separate
   // commands to one event" is no longer the shape this suite pins. The event is
   // still single-source: exactly one entry, carrying every SessionStart check.
+  // XTRM-569's agent-host-reporter.mjs is the one standalone exception: it is a
+  // presence producer (no checks), registered on every v0 hook event.
   it('SessionStart is a single dispatcher entry carrying every SessionStart check', () => {
     const result = runCompiler(['--dry-run']);
     const parsed = JSON.parse(result.stdout);
     const sessionStart = parsed.hooks['SessionStart'];
     expect(Array.isArray(sessionStart)).toBe(true);
     expect(sessionStart).toHaveLength(1);
-    const allHooks = sessionStart.flatMap((g: { hooks: object[] }) => g.hooks ?? []);
+    const allHooks = sessionStart
+      .flatMap((g: { hooks: Array<{ command: string }> }) => g.hooks ?? [])
+      .filter((h: { command: string }) => !h.command.includes(AGENT_HOST_REPORTER));
     expect(allHooks).toHaveLength(1);
     expect(allHooks[0].command).toContain('dispatch.mjs session');
   });
@@ -189,8 +196,12 @@ describe('compile-policies — output structure', () => {
     for (const [event, groups] of Object.entries<Record<string, { hooks: unknown[] }>>(parsed.hooks)) {
       for (const group of groups) {
         // One process per group is the whole point of the dispatcher; a second
-        // command in the same group would silently restore the fan-out.
-        expect(group.hooks.length, `${event} has ${group.hooks.length} commands`).toBe(1);
+        // command in the same group would silently restore the fan-out. The
+        // XTRM-569 agent-host reporter is the single named exception.
+        const checks = (group.hooks as Array<{ command: string }>).filter(
+          (h) => !h.command.includes(AGENT_HOST_REPORTER),
+        );
+        expect(checks.length, `${event} has ${checks.length} commands`).toBeLessThanOrEqual(1);
       }
     }
   });

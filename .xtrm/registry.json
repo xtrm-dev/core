@@ -7,7 +7,7 @@
       "install_scope": "global",
       "files": {
         "agent-host-reporter.mjs": {
-          "hash": "fb950614a95a6893fcbd5a118107d01307bdfa07caf4ae8de981a44eae881838",
+          "hash": "45cfc095f482c34afa60bdcb774eff1ba5f825474eec0943ea121de83068e495",
           "version": "0.13.0"
         },
         "dispatch.mjs": {
