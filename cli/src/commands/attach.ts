@@ -2,17 +2,41 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import prompts from 'prompts';
 import { spawnSync } from 'node:child_process';
+import { basename } from 'node:path';
 import { t } from '../utils/theme.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
 import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled } from '../utils/worktree-session.js';
+import type { WorktreeInfo } from './worktree.js';
+
+/** Last-activity timestamp, for recency ordering. */
+export function recency(wt: WorktreeInfo): number {
+    return wt.lastLogTime?.getTime() ?? (wt.launchedAt ? new Date(wt.launchedAt).getTime() : 0);
+}
+
+export function mostRecent(worktrees: WorktreeInfo[]): WorktreeInfo {
+    return [...worktrees].sort((a, b) => recency(b) - recency(a))[0];
+}
+
+/**
+ * Match an attach target by, in order: full or short branch name, worktree
+ * directory name, directory-name suffix with a `-` boundary (so "7trm" hits
+ * "core-xt-pi-7trm" but "trm" does not). First match wins.
+ */
+export function matchWorktree(worktrees: WorktreeInfo[], name: string): WorktreeInfo | undefined {
+    const shortBranch = name.replace(/^refs\/heads\//, '');
+    const norm = shortBranch.startsWith('xt/') ? `refs/heads/${shortBranch}` : `refs/heads/xt/${shortBranch}`;
+    return worktrees.find(wt => wt.branch === norm || wt.branch === `refs/heads/${shortBranch}` || wt.branch === shortBranch)
+        ?? worktrees.find(wt => basename(wt.path) === name)
+        ?? worktrees.find(wt => basename(wt.path).endsWith(`-${name}`));
+}
 
 export function createAttachCommand(): Command {
     return new Command('attach')
         .description('Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session')
-        .argument('[name]', 'Worktree slug or branch name to attach to (e.g. "abc1" or "xt/abc1")')
+        .argument('[name]', 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")')
         .action(async (name: string | undefined) => {
             const repoRoot = getRepoRoot(process.cwd());
             const worktrees = listXtWorktrees(repoRoot);
@@ -22,13 +46,10 @@ export function createAttachCommand(): Command {
                 return;
             }
 
-            let target = worktrees[0]; // default: most recent (last in list)
+            let target = mostRecent(worktrees);
 
             if (name) {
-                const norm = name.startsWith('xt/') ? `refs/heads/${name}` : `refs/heads/xt/${name}`;
-                const found = worktrees.find(wt =>
-                    wt.branch === norm || wt.branch === `refs/heads/${name}`
-                ) ?? worktrees.find(wt => wt.path.endsWith(name));
+                const found = matchWorktree(worktrees, name);
                 if (!found) {
                     console.error(kleur.red(`\n  ✗ No xt worktree found matching "${name}"\n`));
                     console.log(kleur.dim('  Run: xt worktree list\n'));
@@ -36,10 +57,12 @@ export function createAttachCommand(): Command {
                 }
                 target = found;
             } else if (worktrees.length > 1) {
-                // Prompt user to pick
-                const choices = worktrees.map(wt => {
+                // Most recent first; slug is the worktree directory name, which
+                // is the stable identity across branch conventions.
+                const sorted = [...worktrees].sort((a, b) => recency(b) - recency(a));
+                const choices = sorted.map(wt => {
                     const branch = wt.branch.replace('refs/heads/', '');
-                    const slug = branch.replace('xt/', '');
+                    const slug = basename(wt.path);
                     const runtime = wt.runtime ? ` [${wt.runtime}]` : '';
                     const time = wt.lastLogTime
                         ? wt.lastLogTime.toLocaleString()
@@ -48,7 +71,7 @@ export function createAttachCommand(): Command {
                             : 'unknown';
                     const msg = wt.lastLogMsg ? `  "${wt.lastLogMsg.slice(0, 50)}"` : '';
                     return {
-                        title: `${branch}${runtime}  —  ${time}${msg}`,
+                        title: `${slug}  (${branch})${runtime}  —  ${time}${msg}`,
                         value: slug,
                     };
                 });
@@ -65,7 +88,7 @@ export function createAttachCommand(): Command {
                     return;
                 }
 
-                target = worktrees.find(wt => wt.branch.endsWith(`/${picked}`)) ?? target;
+                target = sorted.find(wt => basename(wt.path) === picked) ?? target;
             }
 
             const branch = target.branch.replace('refs/heads/', '');
