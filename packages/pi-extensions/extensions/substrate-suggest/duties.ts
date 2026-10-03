@@ -18,6 +18,41 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { VerbSpec } from "./catalog.ts";
 
+// ── provenance duty ──────────────────────────────────────────────────────────
+
+// XTRM provenance is engineering evidence (engineering-quality): commits and
+// PRs are memory of *why* code is the way it is. A behavior-affecting change
+// made without consulting that memory is exactly what the doctrine forbids.
+// Deterministic trigger: the turn edited files AND consulted no history.
+// Jev only verifies whether the history could plausibly matter.
+
+/** Tools that change code or tracked content. The python tool is excluded:
+ * it is invoked far too often for compute to gate cheaply — its file writes
+ * are rarer and covered by the kernel's own audit policy. */
+export function isEditor(toolName: string): boolean {
+  return /^(edit|write|apply_patch|multi_edit)$/.test(toolName);
+}
+
+/** Tool evidence that commit/PR history was consulted this turn. */
+export function isProvenanceReader(toolName: string, args: Record<string, unknown> | undefined, input: Record<string, unknown> | undefined): boolean {
+  const raw = `${toolName} ${JSON.stringify(args ?? {})} ${JSON.stringify(input ?? {})}`;
+  return /\b(git (log|show|blame|bisect)|change-provenance|preflight\s*\(|gitnexus_(context|impact))\b/.test(raw);
+}
+
+export function provenanceDutyVerb(editedFiles: string[]): VerbSpec {
+  const first = editedFiles[0]?.split("/").pop() ?? "the changed file";
+  return {
+    id: "provenance_unread",
+    action: "provenance unread",
+    oneLine: "Behavior changed without consulting why the code was the way it was.",
+    instruction: () =>
+      `You changed ${first} behavior without reading its history: run preflight(repo, '${editedFiles[0] ?? "file"}') or change-provenance.mjs — commits and PRs record why the code is as it is. Ignore this if you already consulted provenance this session.`,
+    severity: "normal",
+    cooldownMin: 45,
+    source: "jev",
+  };
+}
+
 // ── wait-guard ───────────────────────────────────────────────────────────────
 
 /** Commitment shapes worth a second opinion. Deliberately broad — Jev filters the noise. */
