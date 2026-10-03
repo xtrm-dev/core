@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
@@ -255,6 +256,41 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     expect(host.registry.list()[0].frameCount).toBe(1);
   });
 
+  test("the Pi startup window counts as working: prompt busy, steer/follow_up/abort wait for agent_start, one Frame (XTRM-607)", async () => {
+    const s = start();
+    await until(() => host.registry.list().length === 1);
+    const submit = (command: Record<string, unknown>) =>
+      host.registry.submit({ schema: "xtrm.agent-host-api.v1", kind: "submit_request", sessionId: "s-1", command } as any);
+
+    expect((await submit({ type: "prompt", commandId: "c1", message: "do it" })).status).toBe("accepted");
+    // Pi 1.0.0 reports isIdle() true from the prompt until agent_start; ctx stays idle here.
+    expect((await submit({ type: "steer", commandId: "c2", message: "early" })).status).toBe("accepted");
+    s.fire("before_agent_start", { prompt: "do it" }, s.ctx);
+    await until(() => frames.some((f) => f.payload.type === "before_agent_start"));
+    expect((await submit({ type: "prompt", commandId: "c3", message: "again" })).status).toBe("busy");
+    expect((await submit({ type: "follow_up", commandId: "c4", message: "then" })).status).toBe("accepted");
+    expect((await submit({ type: "abort", commandId: "c5" })).status).toBe("accepted");
+    // Delivered now, Pi would start a second run (second before_agent_start, early agent_settled).
+    expect(s.sent).toEqual([{ content: "do it", options: undefined }]);
+    expect(s.aborts.length).toBe(0);
+
+    s.setIdle(false);
+    s.fire("agent_start", {}, s.ctx);
+    expect(s.sent.slice(1)).toEqual([
+      { content: "early", options: { deliverAs: "steer" } },
+      { content: "then", options: { deliverAs: "followUp" } },
+    ]);
+    expect(s.aborts.length).toBe(1);
+
+    s.setIdle(true);
+    s.fire("agent_end", { messages: [] }, s.ctx);
+    s.fire("agent_settled", {}, s.ctx);
+    await until(() => host.registry.list()[0].state === "settled");
+    expect(frames.filter((f) => f.payload.type === "before_agent_start").length).toBe(1);
+    expect(frames.filter((f) => f.payload.type === "agent_settled").length).toBe(1);
+    expect(host.registry.list()[0].frameCount).toBe(1);
+  });
+
   test("an extension confirm prompt is answered from the host and the local dialog is dismissed", async () => {
     const s = start();
     await until(() => host.registry.list().length === 1);
@@ -368,6 +404,77 @@ describe("xtrm-agent-host bridge with a late host", () => {
       pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
       await host.close();
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("xtrm-agent-host bridge busy rule without host-side guards", () => {
+  /** A raw socket peer: commands reach the extension even when the registry would reject them. */
+  async function rawHost() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-agent-host-raw-"));
+    const socketPath = path.join(dir, "host.sock");
+    const frames: any[] = [];
+    let peer: net.Socket | null = null;
+    let buffer = "";
+    const server = net.createServer((conn) => {
+      peer = conn;
+      conn.setEncoding("utf8");
+      conn.on("data", (chunk: string) => {
+        buffer += chunk;
+        let nl;
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          frames.push(JSON.parse(buffer.slice(0, nl)));
+          buffer = buffer.slice(nl + 1);
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    const send = (sessionId: string, payload: Record<string, unknown>) =>
+      peer!.write(`${JSON.stringify({ schema: "xtrm.agent-command.v1", sessionId, payload })}\n`);
+    const resultFor = async (commandId: string) => {
+      await until(() => frames.some((f) => f.payload.type === "command_result" && f.payload.commandId === commandId));
+      return frames.find((f) => f.payload.type === "command_result" && f.payload.commandId === commandId).payload;
+    };
+    const close = async () => {
+      peer?.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    };
+    return { socketPath, frames, send, resultFor, close };
+  }
+
+  test("a prompt between before_agent_start and agent_start is rejected busy while ctx.isIdle() is true", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-raw");
+    const bridge = createAgentHostBridge(pi.pi, { socketPath: raw.socketPath, exec: async () => "", env: {} });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 2);
+
+      // A terminal prompt: Pi emits before_agent_start and keeps reporting idle until agent_start.
+      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      raw.send("s-raw", { type: "prompt", commandId: "p1", message: "gui" });
+      expect(await raw.resultFor("p1")).toMatchObject({ status: "rejected", reason: "busy" });
+      expect(pi.sent).toEqual([]);
+
+      pi.fire("agent_start", {}, c.ctx);
+      pi.fire("agent_settled", {}, c.ctx);
+      raw.send("s-raw", { type: "prompt", commandId: "p2", message: "next" });
+      expect(await raw.resultFor("p2")).toMatchObject({ status: "accepted" });
+      expect(pi.sent).toEqual([{ content: "next", options: undefined }]);
+
+      // A run that never reaches agent_start (Pi preflight failed) stops counting as working after the stale bound.
+      raw.send("s-raw", { type: "prompt", commandId: "p3", message: "again" });
+      expect(await raw.resultFor("p3")).toMatchObject({ status: "rejected", reason: "busy" });
+      setSystemTime(new Date(Date.now() + 61_000));
+      raw.send("s-raw", { type: "prompt", commandId: "p4", message: "after failure" });
+      expect(await raw.resultFor("p4")).toMatchObject({ status: "accepted" });
+    } finally {
+      setSystemTime();
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
     }
   });
 });
