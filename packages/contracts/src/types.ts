@@ -27,6 +27,7 @@ export const SCHEMA_ID = {
     agentCommand: 'xtrm.agent-command.v1',
     agentHostApi: 'xtrm.agent-host-api.v1',
     agentHostEnsure: 'xtrm.agent-host-ensure.v1',
+    agentHostAuth: 'xtrm.agent-host-auth.v1',
 } as const;
 
 export type SchemaId = (typeof SCHEMA_ID)[keyof typeof SCHEMA_ID];
@@ -748,6 +749,25 @@ export type AgentHostEnsureV1 =
       }
     | { schema: 'xtrm.agent-host-ensure.v1'; error: { code: string; message: string } };
 
+// --- xtrm.agent-host-auth.v1 (PRD xtrm-app §35.5 direct mode; XTRM-568) ---
+// Error replies on these routes keep the xtrm.agent-host-api.v1 `error` kind.
+export interface AgentHostDeviceSummary {
+    deviceId: string;
+    name: string;
+    /** Epoch milliseconds. */
+    createdAt: number;
+}
+
+type HostAuth<K extends string, B> = { schema: 'xtrm.agent-host-auth.v1'; kind: K } & B;
+export type AgentHostAuthV1 =
+    | HostAuth<'pair_request', { pairingToken: string; deviceName?: string }>
+    | HostAuth<'pairing_token', { token: string; expiresAt: number }>
+    | HostAuth<'device_session', { device: AgentHostDeviceSummary; token: string }>
+    | HostAuth<'device_list', { devices: AgentHostDeviceSummary[] }>
+    | HostAuth<'device_revoked', { deviceId: string }>;
+
+export type AgentHostAuthKind = AgentHostAuthV1['kind'];
+
 export interface ContractTypeMap {
     'xtrm.runtime-compatibility.v1': RuntimeCompatibilityV1;
     'xtrm.interactive-role-envelope.v1': InteractiveRoleEnvelopeV1;
@@ -771,4 +791,5 @@ export interface ContractTypeMap {
     'xtrm.agent-command.v1': AgentCommandV1;
     'xtrm.agent-host-api.v1': AgentHostApiV1;
     'xtrm.agent-host-ensure.v1': AgentHostEnsureV1;
+    'xtrm.agent-host-auth.v1': AgentHostAuthV1;
 }

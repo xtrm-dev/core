@@ -1,5 +1,5 @@
 {
-    "$comment": "Round-trip fixtures for the agent host protocol: one valid message per event type, command type and host API kind. test/agent-protocol.test.ts asserts full coverage of each union.",
+    "$comment": "Round-trip fixtures for the agent host protocol: one valid message per event type, command type, host API kind and host auth kind. test/agent-protocol.test.ts asserts full coverage of each union.",
     "events": [
         {
             "schema": "xtrm.agent-event.v1",
@@ -462,6 +462,36 @@
             "kind": "error",
             "code": "unauthorized",
             "message": "Pairing token expired"
+        }
+    ],
+    "hostAuth": [
+        {
+            "schema": "xtrm.agent-host-auth.v1",
+            "kind": "pair_request",
+            "pairingToken": "xtp_fixturePairingTok00",
+            "deviceName": "phone"
+        },
+        {
+            "schema": "xtrm.agent-host-auth.v1",
+            "kind": "pairing_token",
+            "token": "xtp_fixturePairingTok00",
+            "expiresAt": 1790000600000
+        },
+        {
+            "schema": "xtrm.agent-host-auth.v1",
+            "kind": "device_session",
+            "device": { "deviceId": "6f1c2b9e-3d4a-4e5f-8a7b-9c0d1e2f3a4b", "name": "phone", "createdAt": 1790000000000 },
+            "token": "xtd_fixtureDeviceTokenNotARealSecret0000000"
+        },
+        {
+            "schema": "xtrm.agent-host-auth.v1",
+            "kind": "device_list",
+            "devices": [{ "deviceId": "6f1c2b9e-3d4a-4e5f-8a7b-9c0d1e2f3a4b", "name": "phone", "createdAt": 1790000000000 }]
+        },
+        {
+            "schema": "xtrm.agent-host-auth.v1",
+            "kind": "device_revoked",
+            "deviceId": "6f1c2b9e-3d4a-4e5f-8a7b-9c0d1e2f3a4b"
         }
     ]
 }

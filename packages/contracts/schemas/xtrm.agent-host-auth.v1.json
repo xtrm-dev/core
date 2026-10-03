@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xtrm.agent-host-auth.v1",
+  "title": "XTRM agent host direct-mode auth message",
+  "description": "Pairing and device-session bodies of the XTRM agent host direct connection mode (PRD xtrm-app §35.5; XTRM-568). The host binds 127.0.0.1; remote clients reach it through an HTTPS front such as `tailscale serve` and must present a device-session bearer token. Every body carries `schema` and a `kind` discriminator. Endpoints: pair (POST pair_request -> device_session; the only route open to a remote client without a token), pairing token (POST, local only -> pairing_token), device list (GET, local only -> device_list), revoke (DELETE, local only -> device_revoked). Pairing tokens (`xtp_`) are single use and live at most 10 minutes; device tokens (`xtd_`) are 256-bit bearer tokens the host stores only as SHA-256 hashes. Error replies keep the xtrm.agent-host-api.v1 `error` kind. A backward-incompatible change requires xtrm.agent-host-auth.v2.",
+  "type": "object",
+  "required": ["schema", "kind"],
+  "properties": {
+    "schema": { "const": "xtrm.agent-host-auth.v1" },
+    "kind": {
+      "enum": ["pair_request", "pairing_token", "device_session", "device_list", "device_revoked"]
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/pair_request" },
+    { "$ref": "#/definitions/pairing_token" },
+    { "$ref": "#/definitions/device_session" },
+    { "$ref": "#/definitions/device_list" },
+    { "$ref": "#/definitions/device_revoked" }
+  ],
+  "definitions": {
+    "schema": { "const": "xtrm.agent-host-auth.v1" },
+    "epochMs": { "type": "integer", "minimum": 0 },
+    "deviceId": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+    "deviceSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId", "name", "createdAt"],
+      "properties": {
+        "deviceId": { "$ref": "#/definitions/deviceId" },
+        "name": {
+          "description": "Operator-facing device name; the host strips control characters, trims and caps it at 64 characters, and falls back to `device`.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+        },
+        "createdAt": { "$ref": "#/definitions/epochMs" }
+      }
+    },
+    "pair_request": {
+      "description": "Client -> host: exchange a one-time pairing token for a device session. The host sanitizes `deviceName` and treats a missing or non-string name as `device`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "pairingToken"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "pair_request" },
+        "pairingToken": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "deviceName": { "type": "string", "maxLength": 1024 }
+      }
+    },
+    "pairing_token": {
+      "description": "Host -> local operator: a new single-use pairing token and its expiry. Never logged.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "token", "expiresAt"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "pairing_token" },
+        "token": { "type": "string", "maxLength": 256, "pattern": "^xtp_[A-Za-z0-9_-]+$" },
+        "expiresAt": { "$ref": "#/definitions/epochMs" }
+      }
+    },
+    "device_session": {
+      "description": "Host -> paired client: the new device and its bearer token, returned once.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "device", "token"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "device_session" },
+        "device": { "$ref": "#/definitions/deviceSummary" },
+        "token": { "type": "string", "maxLength": 256, "pattern": "^xtd_[A-Za-z0-9_-]+$" }
+      }
+    },
+    "device_list": {
+      "description": "Host -> local operator: the paired devices, without tokens or token hashes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "devices"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "device_list" },
+        "devices": { "type": "array", "items": { "$ref": "#/definitions/deviceSummary" } }
+      }
+    },
+    "device_revoked": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "deviceId"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "device_revoked" },
+        "deviceId": { "$ref": "#/definitions/deviceId" }
+      }
+    }
+  }
+}

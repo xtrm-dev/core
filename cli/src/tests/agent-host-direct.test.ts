@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SCHEMA_ID, validate } from '@xtrm/contracts';
 import {
     DEVICE_TOKEN_PREFIX,
     MAX_PAIRING_TTL_MS,
@@ -63,6 +64,7 @@ async function issuePairingToken(host: AgentHost): Promise<string> {
     const reply = await request(host, 'POST', '/v1/pairing', {}, {});
     expect(reply.status).toBe(200);
     expect(reply.body).toMatchObject({ schema: 'xtrm.agent-host-auth.v1', kind: 'pairing_token' });
+    expect(validate(SCHEMA_ID.agentHostAuth, reply.body).errors).toEqual([]);
     return reply.body.token as string;
 }
 
@@ -202,6 +204,7 @@ describe('xt host direct mode (XTRM-568)', () => {
         const paired = await pair(host, pairingToken, 'phone\u0007');
         expect(paired.status).toBe(200);
         expect(paired.body).toMatchObject({ schema: 'xtrm.agent-host-auth.v1', kind: 'device_session', device: { name: 'phone' } });
+        expect(validate(SCHEMA_ID.agentHostAuth, paired.body).errors).toEqual([]);
         const token = paired.body.token as string;
         expect(Buffer.from(token.slice(DEVICE_TOKEN_PREFIX.length), 'base64url')).toHaveLength(32);
 
@@ -253,6 +256,7 @@ describe('xt host direct mode (XTRM-568)', () => {
 
         const listed = await request(host, 'GET', '/v1/devices');
         expect(listed.body).toMatchObject({ kind: 'device_list' });
+        expect(validate(SCHEMA_ID.agentHostAuth, listed.body).errors).toEqual([]);
         expect((listed.body.devices as { name: string }[]).map((d) => d.name).sort()).toEqual(['phone', 'tablet']);
         expect(JSON.stringify(listed.body)).not.toMatch(/tokenHash|xtd_/);
 
