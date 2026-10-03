@@ -45,6 +45,13 @@
       "ownership": "xtrm"
     },
     {
+      "id": "substrate-suggest",
+      "displayName": "substrate-suggest",
+      "required": false,
+      "ownership": "xtrm",
+      "description": "Jev-gated at-most-one-per-turn sb update suggestions (journal kind, checkpoint, claim renew, close) as railed wake cards; deterministic gate first, advisory only"
+    },
+    {
       "id": "xtrm-ui",
       "displayName": "xtrm-ui",
       "required": true,

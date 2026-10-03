@@ -41,7 +41,8 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
-    "typebox": "*"
+    "typebox": "*",
+    "@jaggerxtrm/substrate": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^1.0.0",
@@ -57,5 +58,10 @@
     "themes",
     "MIGRATION_NOTES.md",
     "README.md"
-  ]
+  ],
+  "peerDependenciesMeta": {
+    "@jaggerxtrm/substrate": {
+      "optional": true
+    }
+  }
 }
