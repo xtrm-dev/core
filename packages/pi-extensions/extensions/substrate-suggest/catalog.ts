@@ -25,7 +25,8 @@ export type VerbId =
   // cooldown machinery.
   | "wait_guard"
   | "skill_suggest"
-  | "tool_nudge";
+  | "tool_nudge"
+  | "provenance_unread";
 
 export interface VerbSpec {
   id: VerbId;

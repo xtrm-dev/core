@@ -66,6 +66,9 @@ import {
   territoryHit,
   waitCommitment,
   waitGuardVerb,
+  isEditor,
+  isProvenanceReader,
+  provenanceDutyVerb,
   type SkillEntry,
 } from "./duties.ts";
 import { evaluateToolNudge, newCounters, observeTool, type ToolCounters } from "./toolnudge.ts";
@@ -119,6 +122,23 @@ function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fro
 }
 
 /** Observe one tool call for issue references the session works on. */
+/** Extract the file path an editing tool touched, if any. */
+function editTarget(tool: string, e: { args?: Record<string, unknown>; input?: Record<string, unknown> }): string | null {
+  const a = (e.args ?? e.input ?? {}) as Record<string, unknown>;
+  for (const k of ["file_path", "filePath", "path", "file"]) {
+    const v = a[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+function turnEditedFileInto(list: string[], e: { args?: Record<string, unknown>; input?: Record<string, unknown> }, tool: string): string[] {
+  const t = editTarget(tool, e);
+  if (!t) return list;
+  const next = list.includes(t) ? list : [...list, t];
+  return next.slice(0, 8);
+}
+
 function observeToolCall(
   name: string,
   args: Record<string, unknown> | undefined,
@@ -277,6 +297,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   let lastTouchedRef: string | null = null;
   let lastClaimScan = { at: 0, ref: null as string | null };
   let turnMonitorSet = false;
+  let turnEditedFiles: string[] = [];
+  let turnProvenanceSeen = false;
   const counters: ToolCounters = newCounters();
 
   // Card renderer: no [customType] label, no default card box — the two
@@ -373,6 +395,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         /* counters are best-effort */
       }
       if (isMonitorSetter(tool, e.args, e.input)) turnMonitorSet = true;
+      if (isEditor(tool)) turnEditedFiles = turnEditedFileInto(turnEditedFiles, e, tool); else if (isProvenanceReader(tool, e.args, e.input)) turnProvenanceSeen = true;
       const { ref, isClaim } = observeToolCall(tool, e.args ?? e.input);
       if (ref) {
         lastTouchedRef = ref;
@@ -471,6 +494,10 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     messageCursor = nextIdx;
     const monitorSet = turnMonitorSet;
     turnMonitorSet = false;
+    const edited = turnEditedFiles;
+    turnEditedFiles = [];
+    const provenanceSeen = turnProvenanceSeen;
+    turnProvenanceSeen = false;
 
     const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
     const jevAvailable = registry !== null || readApiKey() !== null;
@@ -488,6 +515,27 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here, instead of relying on the agent remembering?" },
         } as Record<string, Question>);
         const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
+        if (result && g >= GATE_THRESHOLD) {
+          emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
+          return;
+        }
+      }
+    }
+
+    // Duty 0.5 — provenance unread. XTRM doctrine (engineering-quality):
+    // commits and PRs are memory of why. Editing behavior without consulting
+    // that history is a duty the moment the turn shows it happened.
+    if (jevAvailable && edited.length > 0 && !provenanceSeen) {
+      const verb = provenanceDutyVerb(edited);
+      if (cooldownAllows(cooldowns, "prov", verb.id, Date.now(), verb)) {
+        const result = await askJev(registry, {
+          edited_files: edited.slice(0, 5),
+          final_message: lastAssistant.slice(0, 1200),
+        }, {
+          provenance_materially_helpful: { type: "noul", instructions: "Given these files were changed this turn without consulting commit or PR history, would the history plausibly change what the change should be or reveal it repeats a past mistake?" },
+          sonata_harm: { type: "noul", instructions: "Is the change clearly the provenance-free kind (new file, mechanical refactor, asked-for rename) where history consultation would be noise?" },
+        } as Record<string, Question>);
+        const g = result ? ((result.nouls["provenance_materially_helpful"] ?? 0) + (1 - (result.nouls["sonata_harm"] ?? 0))) / 2 : 0;
         if (result && g >= GATE_THRESHOLD) {
           emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
           return;

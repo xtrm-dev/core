@@ -69,6 +69,13 @@ When relevant, correlate:
 - current worktree/session topology when the change is still in progress;
 - release/deployment identity and runtime observability.
 
+Commits and PRs are memory. Before changing behavior in code you did not recently write,
+consult what that code already remembers: the python-kernel's `preflight(repo, path)` returns
+one file's full `git log --follow` bodies, pending diff and memory keys as a bounded digest;
+`<engineering-quality-skill-dir>/scripts/change-provenance.mjs` bounds the candidate set for
+regressions (Phase 2 — reconstruct change provenance); gitnexus context/impact names the
+reachable callers before an edit. Progressive retrieval, never bulk.
+
 Commit messages and Journal entries are evidence of *why*. Source and runtime evidence determine
 whether that reasoning is still correct. A Specialist result is evidence, not automatic truth;
 Closure is post-verification authority, never an executor success side-effect.

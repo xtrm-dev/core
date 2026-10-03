@@ -13,7 +13,7 @@ import {
   type Cooldowns,
 } from "../extensions/substrate-suggest/catalog.ts";
 import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
-import { waitCommitment, isMonitorSetter } from "../extensions/substrate-suggest/duties.ts";
+import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb } from "../extensions/substrate-suggest/duties.ts";
 
 function snap(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
   return {
@@ -275,5 +275,28 @@ describe("wait-guard", () => {
     // masqueraded as a monitor and suppressed the guard.
     expect(isMonitorSetter("bash", t("sleep 45; gh pr view 697 …"), {})).toBe(false);
     expect(isMonitorSetter("bash", t("while true; do check; sleep 60; done"), {})).toBe(false);
+  });
+});
+
+describe("provenance duty", () => {
+  it("counts file-editing tools, not compute invocations", () => {
+    expect(isEditor("edit")).toBe(true);
+    expect(isEditor("write")).toBe(true);
+    expect(isEditor("python")).toBe(false); // compute is too frequent to gate
+    expect(isEditor("read")).toBe(false);
+  });
+  it("recognizes provenance consultation in tools and commands", () => {
+    expect(isProvenanceReader("bash", { command: "git log --oneline -- src/x.ts" }, {})).toBe(true);
+    expect(isProvenanceReader("bash", { command: "node change-provenance.mjs --repo . --path x" }, {})).toBe(true);
+    expect(isProvenanceReader("gitnexus_context", { name: "f" }, {})).toBe(true);
+    const e = { code: "preflight(repo, 'src/x.ts')" };
+    expect(isProvenanceReader("python", {}, e as any)).toBe(true);
+    expect(isProvenanceReader("python", {}, { code: "print(1+1)" })).toBe(false);
+  });
+  it("names the first edited file in the instruction", () => {
+    const v = provenanceDutyVerb(["src/a/long.ts", "src/b.ts"]);
+    expect(v.id).toBe("provenance_unread");
+    expect(v.instruction()).toContain("long.ts");
+    expect(v.instruction()).toContain("preflight");
   });
 });
