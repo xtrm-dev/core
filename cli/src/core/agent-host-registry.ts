@@ -15,6 +15,7 @@ import type {
     AgentCommandPayload,
     AgentEventV1,
     AgentHostApiV1,
+    AgentMessagePassthrough,
     AgentSessionIdentity,
     AgentSessionSummary,
     AgentToolOrigin,
@@ -24,6 +25,22 @@ import { classifyClaudeTool, ToolOriginClassifier } from './agent-host-origin.js
 export type SubmitRequest = Extract<AgentHostApiV1, { kind: 'submit_request' }>;
 export type SubmitResult = Extract<AgentHostApiV1, { kind: 'submit_result' }>;
 export type SessionDetail = Extract<AgentHostApiV1, { kind: 'session_detail' }>;
+
+/**
+ * The request and settled response of one Frame, kept for @frame and @session references
+ * (PRD §36.6). Text is stored up to FRAME_TEXT_MAX_BYTES; the *Bytes fields hold the full size.
+ */
+export interface FrameRecord {
+    /** 1-based, matching the session summary's frameCount. */
+    n: number;
+    request?: string;
+    requestBytes: number;
+    response?: string;
+    responseBytes: number;
+    settled: boolean;
+    /** seq of the last frame applied to this Frame (agent_settled once settled). */
+    seq: number;
+}
 
 /** One producer connection (a Pi extension socket, or one Claude hook invocation). */
 export interface ProducerConnection {
@@ -44,6 +61,8 @@ interface LiveSession {
     /** Origin per in-flight toolCallId, fixed at tool_execution_start (end carries no args). */
     toolOrigins: Map<string, AgentToolOrigin>;
     frameCount: number;
+    /** The most recent Frames, oldest first (bounded by MAX_FRAME_RECORDS). */
+    frames: FrameRecord[];
     startedAt: number;
     lastActivityAt: number;
     lastSeq: number;
@@ -73,6 +92,11 @@ const MAX_DISCONNECTED_SESSIONS = 256;
 
 /** Launched panes remembered for binding; pane ids are unique for a tmux server's lifetime. */
 const MAX_LAUNCHED_PANES = 256;
+
+/** Frames retained per session for references; older Frames resolve as not retained. */
+const MAX_FRAME_RECORDS = 16;
+/** Stored request/response text per Frame; above the largest reference budget (8 KB) with margin. */
+const FRAME_TEXT_MAX_BYTES = 16 * 1024;
 
 /** Presence-only producers (Claude hooks) report through one short connection per hook. */
 function isPresenceOnly(session: LiveSession): boolean {
@@ -129,6 +153,7 @@ export class AgentHostRegistry {
                     awaitingLocalInput: false,
                     toolOrigins: new Map(),
                     frameCount: 0,
+                    frames: [],
                     startedAt: frame.at,
                     lastActivityAt: frame.at,
                     lastSeq: frame.seq,
@@ -145,24 +170,37 @@ export class AgentHostRegistry {
 
         session.lastActivityAt = Math.max(session.lastActivityAt, frame.at);
         session.lastSeq = frame.seq;
+        if (session.frameOpen) session.frames.at(-1)!.seq = frame.seq;
         // A notification-driven wait ends with the next lifecycle or tool event: the operator answered.
         if (payload.type !== 'session_identity' && payload.type !== 'subagent_end') session.awaitingLocalInput = false;
 
         switch (payload.type) {
             case 'before_agent_start':
             case 'agent_start':
-                if (!session.frameOpen) {
-                    session.frameOpen = true;
-                    session.frameCount += 1;
+                if (!session.frameOpen) this.openFrame(session, frame.seq);
+                if (payload.type === 'before_agent_start') {
+                    const record = session.frames.at(-1);
+                    if (record && record.request === undefined) {
+                        [record.request, record.requestBytes] = boundText(payload.prompt);
+                    }
                 }
                 break;
-            case 'agent_settled':
+            case 'message_end':
+                this.recordResponse(session, [payload.message]);
+                break;
+            case 'agent_end':
+                this.recordResponse(session, payload.messages);
+                break;
+            case 'agent_settled': {
                 // The only Frame close; agent_end (with or without willRetry) never settles.
+                const record = session.frameOpen ? session.frames.at(-1) : undefined;
+                if (record) record.settled = true;
                 session.frameOpen = false;
                 session.promptPending = null;
                 session.pendingUi.clear();
                 session.toolOrigins.clear();
                 break;
+            }
             case 'extension_ui_request':
                 session.pendingUi.add(payload.id);
                 break;
@@ -179,10 +217,7 @@ export class AgentHostRegistry {
             case 'tool_execution_start':
                 // Hook producers have no persistent turn state: a tool call after Stop (a Stop hook
                 // that continued the turn) or after a host restart still means the session works.
-                if (!session.frameOpen && isPresenceOnly(session)) {
-                    session.frameOpen = true;
-                    session.frameCount += 1;
-                }
+                if (!session.frameOpen && isPresenceOnly(session)) this.openFrame(session, frame.seq);
                 frame = { ...frame, payload: { ...payload, origin: this.toolOrigin(session, payload) } };
                 break;
             case 'tool_execution_update':
@@ -240,6 +275,31 @@ export class AgentHostRegistry {
         if (!paneId || !this.launchedPanes.has(paneId) || identity.launch === 'gui') return identity;
         this.log(`bound launched pane ${paneId} to session ${sessionId}`);
         return { ...identity, launch: 'gui' };
+    }
+
+    /** Retained Frames of a live session, oldest first; null when the session is not live. */
+    frames(sessionId: string): readonly FrameRecord[] | null {
+        return this.sessions.get(sessionId)?.frames ?? null;
+    }
+
+    private openFrame(session: LiveSession, seq: number): void {
+        session.frameOpen = true;
+        session.frameCount += 1;
+        session.frames.push({ n: session.frameCount, requestBytes: 0, responseBytes: 0, settled: false, seq });
+        if (session.frames.length > MAX_FRAME_RECORDS) session.frames.shift();
+    }
+
+    /** The last assistant text of an open Frame is its response so far; it is final once settled. */
+    private recordResponse(session: LiveSession, messages: readonly AgentMessagePassthrough[]): void {
+        const record = session.frameOpen ? session.frames.at(-1) : undefined;
+        if (!record) return;
+        for (let i = messages.length - 1; i >= 0; i -= 1) {
+            if (messages[i]?.role !== 'assistant') continue;
+            const text = messageText(messages[i]);
+            if (!text) continue;
+            [record.response, record.responseBytes] = boundText(text);
+            return;
+        }
     }
 
     list(): AgentSessionSummary[] {
@@ -444,4 +504,29 @@ export class AgentHostRegistry {
             ...(id.sessionFile ? { sessionFile: id.sessionFile } : {}),
         };
     }
+}
+
+/** Text parts of a provider message: a string content, or the `text` parts of a content array. */
+function messageText(message: AgentMessagePassthrough): string {
+    const { content } = message;
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    let text = '';
+    for (const part of content) {
+        if (part && typeof part === 'object' && (part as { type?: unknown }).type === 'text') {
+            const value = (part as { text?: unknown }).text;
+            if (typeof value === 'string') text += value;
+        }
+    }
+    return text;
+}
+
+/** Store at most FRAME_TEXT_MAX_BYTES of UTF-8 text; returns the stored text and the full byte size. */
+function boundText(text: string): [string, number] {
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes <= FRAME_TEXT_MAX_BYTES) return [text, bytes];
+    const buffer = Buffer.from(text, 'utf8');
+    let end = FRAME_TEXT_MAX_BYTES;
+    while (end > 0 && (buffer[end] & 0xc0) === 0x80) end -= 1;
+    return [buffer.subarray(0, end).toString('utf8'), bytes];
 }

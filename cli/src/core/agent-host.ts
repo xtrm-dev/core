@@ -14,6 +14,9 @@
  * - Launch (XTRM-566): POST /v1/launch starts `xt pi` or bare `pi` in a detached tmux session and
  *   binds the pane to the session whose extension reports it.
  *
+ * - References (XTRM-570): POST /v1/references/resolve resolves @file, @commit, @session, @agent
+ *   and @frame against the session on this host, within the PRD §36.12 item 2 budgets.
+ *
  * Idle cost is the registry, the index, and a bounded replay buffer; no provider adapter is resident.
  */
 
@@ -25,6 +28,7 @@ import path from 'node:path';
 import { decodeFrame, encodeFrame } from '@xtrm/contracts';
 import type { AgentCommandPayload, AgentEventV1, AgentHostApiV1 } from '@xtrm/contracts';
 import { AgentHostLauncher, LaunchRejection, type AgentHostLaunchOptions, type LaunchRequest } from './agent-host-launch.js';
+import { ReferenceRejection, resolveReferences, type ReferenceResolveRequest } from './agent-host-references.js';
 import { AgentHostRegistry, type ProducerConnection, type SubmitRequest } from './agent-host-registry.js';
 import { SessionIndex, type SessionIndexOptions } from './agent-host-session-index.js';
 
@@ -243,7 +247,20 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
             return;
         }
         if (route === 'POST /v1/references/resolve') {
-            sendJson(res, 501, apiError('not_implemented', `${url.pathname} is not served by this agent host yet`));
+            const body = await readJsonBody(req, res);
+            if (body === null) return;
+            const decoded = decodeFrame('xtrm.agent-host-api.v1', body);
+            if (!decoded.ok || decoded.value.kind !== 'reference_resolve_request') {
+                const detail = decoded.ok ? `expected reference_resolve_request, received ${decoded.value.kind}` : decoded.detail;
+                sendJson(res, 400, apiError('invalid_request', detail));
+                return;
+            }
+            try {
+                sendJson(res, 200, await resolveReferences(decoded.value as ReferenceResolveRequest, { registry, sessionIndex }));
+            } catch (error) {
+                if (!(error instanceof ReferenceRejection)) throw error;
+                sendJson(res, 400, apiError(error.code, error.message));
+            }
             return;
         }
         sendJson(res, 404, apiError('not_found', `no route ${route}`));
