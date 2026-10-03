@@ -165,6 +165,27 @@ The Pi extension package also ships `python-kernel`, a persistent sequential `py
 
 The goal is the same as elsewhere in XTRM: do not make the worker reconstruct useful machinery repeatedly when a stable runtime primitive can provide it.
 
+### `substrate-suggest`
+
+`@jaggerxtrm/pi-extensions` includes `substrate-suggest`, an advisory extension that suggests Substrate work duties (journal kinds, checkpoints, claim renewals, closures, contract revisions) at `agent_end`.
+
+It uses deterministic rules first and queries Jev (Typesafe System One Choice and Noul classifiers) when semantic judgment is required. It automatically binds to the current Substrate issue from in-session tool calls and recent activity without requiring environment variables. Beyond issue duties, `substrate-suggest` includes:
+- **Wait-guard:** detects when an agent declares it will wait for an external event (like CI or builds) without setting a monitor, treating the wait as a potential blocker.
+- **Service knowledge:** points agents toward relevant service skills defined in `.xtrm/skills/<pack>/service-knowledge/service-registry.json`.
+- **Tool nudges:** gently steers recursive `grep` and ad-hoc `python3` invocations toward faster, indexed alternatives (`ast-grep`, `GitNexus`, and `python-kernel`).
+
+Suggestions appear as house cards (purple `●` dot, dim metadata, and ignore-if-not-fits wording). Suggestions are purely advisory, fail open, enforce per-scope cooldowns, log decisions to `~/.xtrm/substrate-suggest/log.jsonl`, and can be disabled with `--no-substrate-suggest` or `SUBSTRATE_SUGGEST=off`.
+
+### `skill-suggest`
+
+`skill-suggest` brings Jev skill suggestions natively into Pi over curated XTRM skill packs.
+
+It maintains a two-tier roster covering both top-level skills (`SKILL.md`) and their nested reference doctrine (`references/*.md`):
+- **Input seam:** transforms user prompts before a turn by injecting a bounded `<skill_relevance>` excerpt when relevant documented procedures exist.
+- **Intention seam (`agent_end`):** inspects the agent's own final message to determine if its stated next step requires specific doctrine, injecting the excerpt as a `followUp` for the next turn.
+
+Decisions are gated by a two-stage Jev classification (evaluating whether documented procedure is needed and whether prose alone suffices, followed by Choice selection). Typed `/skill:<name>` commands continue to work directly. Evaluations log to `~/.xtrm/skill-suggest/log.jsonl`, and the extension can be disabled with `--no-skill-suggest` or `SKILL_SUGGEST=off`.
+
 ### Managed Pi environment
 
 `xt init` / `xt update` manage the Pi environment XTRM expects rather than leaving every machine to accumulate a different ad-hoc package set.
