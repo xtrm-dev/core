@@ -67,6 +67,7 @@ export interface SkillEntry {
   description: string;
   skillPath: string;
   container: string | null;
+  territory?: string[];
 }
 
 export interface SkillPack {
@@ -81,7 +82,7 @@ let rosterCache: { at: number; packs: SkillPack[] } = { at: 0, packs: [] };
 /** Parse one service-registry.json into bounded roster entries. */
 export function parseRegistry(registryJson: string, packDir: string, repoRoot: string): SkillEntry[] {
   try {
-    const parsed = JSON.parse(registryJson) as { services?: Record<string, { name?: string; description?: string; container?: string; skill_path?: string }> };
+    const parsed = JSON.parse(registryJson) as { services?: Record<string, { name?: string; description?: string; container?: string; skill_path?: string; territory?: unknown }> };
     const services = parsed.services ?? {};
     const entries: SkillEntry[] = [];
     for (const [id, svc] of Object.entries(services)) {
@@ -93,6 +94,7 @@ export function parseRegistry(registryJson: string, packDir: string, repoRoot: s
         description,
         skillPath: svc.skill_path ? join(repoRoot, svc.skill_path) : join(packDir, "services", id, "SKILL.md"),
         container: svc.container ?? null,
+        territory: Array.isArray(svc.territory) ? (svc.territory as string[]).slice(0, 40) : [],
       });
     }
     return entries.slice(0, ROSTER_MAX);
@@ -147,4 +149,49 @@ export function skillVerb(entry: SkillEntry): VerbSpec {
     cooldownMin: 30,
     source: "jev",
   };
+}
+
+// ── mid-turn territory hit (tool_result injection) ──────────────────────────
+
+/** Extract plausible file paths from a tool call's input. */
+export function inputPaths(input: Record<string, unknown> | undefined): string[] {
+  if (!input) return [];
+  const out: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === "string" && v.length > 0 && v.length < 500 && /[A-Za-z0-9_./-]/.test(v) && !v.includes("\n")) out.push(v);
+  };
+  for (const key of ["path", "file_path", "file", "filePath"]) push(input[key]);
+  const cmd = input["command"];
+  if (typeof cmd === "string") {
+    // bash: bare path-ish tokens only — bounded scan, no regex over the whole command.
+    for (const tok of cmd.split(/\s+/).slice(0, 40)) {
+      if (/\.(py|ts|js|mjs|json|md|toml|ya?ml|go|rs|sh)$/.test(tok)) out.push(tok);
+    }
+  }
+  return out.slice(0, 10);
+}
+
+/** Glob-lite: `dir/**␣/` is a prefix, a trailing `*` is a segment wildcard, else exact. */
+function territoryMatches(pattern: string, path: string): boolean {
+  const p = pattern.replace(/^\.\//, "");
+  if (p.includes("**")) return path.startsWith(p.split("**")[0]);
+  if (p.endsWith("*")) return path.startsWith(p.slice(0, -1));
+  return path === p || path.endsWith(`/${p}`) || path.startsWith(`${p}/`);
+}
+
+/** The service whose territory this tool call touches, or null. First hit wins. */
+export function territoryHit(packs: SkillPack[], input: Record<string, unknown> | undefined, cwd: string): SkillEntry | null {
+  const paths = inputPaths(input);
+  if (paths.length === 0) return null;
+  for (const pack of packs) {
+    for (const entry of pack.entries) {
+      for (const pattern of entry.territory ?? []) {
+        for (const path of paths) {
+          const rel = path.startsWith("/") ? (relative(cwd, path) || path) : path;
+          if (!rel.startsWith("..") && territoryMatches(pattern, rel)) return entry;
+        }
+      }
+    }
+  }
+  return null;
 }

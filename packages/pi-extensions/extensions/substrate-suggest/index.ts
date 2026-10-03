@@ -64,6 +64,7 @@ import {
   discoverSkillPacks,
   isMonitorSetter,
   skillVerb,
+  territoryHit,
   waitCommitment,
   waitGuardVerb,
   type SkillEntry,
@@ -379,7 +380,11 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
 
   pi.on("tool_result", (event) => {
     try {
-      const e = event as unknown as { input?: Record<string, unknown>; content?: Array<Record<string, unknown>> };
+      const e = event as unknown as {
+        input?: Record<string, unknown>;
+        content?: Array<Record<string, unknown>>;
+        structuredContent?: unknown;
+      };
       const cmd = String(e.input?.["command"] ?? "");
       if (/\bsb\s+issue\s+create\b/.test(cmd)) {
         const ref = observeCreateResult(e.content);
@@ -403,6 +408,25 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         if (ref) {
           lastTouchedRef = ref;
           sessionClaimRef = ref;
+        }
+      }
+      // Mid-turn intervention: a read/edit/bash touching a registered service's
+      // territory gets an advisory line appended to THIS tool result — the agent
+      // sees the expert-skill pointer exactly when it goes near that code. No
+      // model call (territory match is deterministic); structuredContent passes
+      // through untouched so schema-tools keep their machine payloads.
+      if (!off()) {
+        const packs = discoverSkillPacks(process.cwd());
+        const hit = packs.length > 0 ? territoryHit(packs, e.input, process.cwd()) : null;
+        if (hit && cooldownAllows(cooldowns, "territory", `skill:${hit.id}` as unknown as VerbId, Date.now(), SKILL_SOURCE_VERB)) {
+          applyCooldown(cooldowns, "territory", SKILL_SOURCE_VERB);
+          logDecision({ ts: new Date().toISOString(), issue: null, verb: `skill_inline:${hit.id}`, source: "skill_inline" });
+          const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
+          content.push({
+            type: "text",
+            text: `\x1b[2m[substrate-suggest] expert skill: ${hit.skillPath} — ${hit.name}${hit.container ? ` (container ${hit.container})` : ""}. Consider it before going deeper.\x1b[22m`,
+          });
+          return { content, structuredContent: e.structuredContent } as never;
         }
       }
     } catch {
