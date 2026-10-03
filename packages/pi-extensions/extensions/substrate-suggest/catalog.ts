@@ -220,19 +220,15 @@ export function resetCooldowns(cd: Cooldowns): void {
   for (const k of Object.keys(cd)) delete cd[k];
 }
 
-// ── Wake-card chrome (lighter than the specialists card: rail + 2 lines) ────
+// ── Wake-card chrome (no rail; a colored dot glyph + two plain lines) ───────
 
-const RAIL = "\x1b[38;2;141;127;232m│\x1b[0m";
+const DOT = "\x1b[38;2;141;127;232m●\x1b[0m"; // the rail's purple, as a glyph
 const DIM = (t: string) => `\x1b[2m${t}\x1b[22m`;
 const BOLD = (t: string) => `\x1b[1m${t}\x1b[22m`;
 const ITALIC_DIM = (t: string) => `\x1b[2m\x1b[3m${t}\x1b[23m\x1b[22m`;
 const WARN = (t: string) => `\x1b[33m${t}\x1b[0m`;
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
-
-export function withRail(line: string): string {
-  return line ? `${RAIL} ${line}` : RAIL;
-}
 
 export interface SuggestionCard {
   verb: VerbSpec;
@@ -243,7 +239,7 @@ export interface SuggestionCard {
 }
 
 export function formatSuggestionCard(c: SuggestionCard): string {
-  const glyph = c.verb.severity === "high" ? WARN("!") : "◆";
+  const glyph = c.verb.severity === "high" ? WARN("!") : DOT;
   const header = [`${glyph} ${BOLD(c.verb.action)}`, DIM(c.ref)].join(` ${DIM("·")} `);
   const facts = [
     c.confidence != null ? DIM(`jev ${c.confidence.toFixed(2)}`) : null,
@@ -253,20 +249,10 @@ export function formatSuggestionCard(c: SuggestionCard): string {
     .join(` ${DIM("·")} `);
   const instr = `${ITALIC_DIM(c.verb.instruction(c.ref))} Ignore this if it does not fit what actually happened.`;
   const tail = facts ? ` ${DIM("·")} ${facts}` : "";
-  return [withRail(header), withRail(`${instr}${tail}`)].join("\n");
+  return [header, `${instr}${tail}`].join("\n");
 }
 
 /** Model-visible plain text (what lands in the transcript strip/exports). */
 export function formatSuggestionPlain(c: SuggestionCard): string {
   return stripAnsi(formatSuggestionCard(c));
-}
-
-/** Wrap an already-railed line so terminal wrap keeps the rail (specialists pattern). */
-export function wrapRailedLine(line: string, width: number, wrap: ((t: string, w: number) => string[]) | null): string[] {
-  if (!line.startsWith(RAIL)) return [line];
-  const body = line.slice(RAIL.length + 1);
-  const budget = Math.floor(width) - 2;
-  if (!wrap || !Number.isFinite(budget) || budget < 8) return [line];
-  const pieces = wrap(body, budget);
-  return (Array.isArray(pieces) ? pieces : [body]).map((p) => (p === "" ? RAIL : `${RAIL} ${p}`));
 }

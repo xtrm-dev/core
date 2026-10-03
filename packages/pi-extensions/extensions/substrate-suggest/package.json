@@ -12,5 +12,10 @@
     "xtrm"
   ],
   "author": "xtrm",
-  "license": "MIT"
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

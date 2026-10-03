@@ -485,7 +485,7 @@ function boldSgr(text: string): string {
 
 /**
  * External tool row header in native tool style:
- *   • used <Extension> <tool>
+ *   ● used <Extension> <tool>
  *   - dot: plain prompt color; dim once the command succeeds (like native rows)
  *   - "used": bold action word
  *   - extension: #9a8bff, bold
@@ -496,7 +496,7 @@ function externalToolHeaderLine(
   provider: string,
   tool?: string,
 ): string {
-  const dot = status === "success" ? "\x1b[2m•\x1b[22m" : "•";
+  const dot = status === "success" ? "\x1b[2m●\x1b[22m" : "●";
   const ext = `${XTRM_EXT_ACCENT}${boldSgr(provider)}\x1b[39m`;
   const toolColor = status === "success" ? "" : "\x1b[2m";
   const toolReset = status === "success" ? "" : "\x1b[22m";
@@ -594,8 +594,8 @@ function externalToolHeader(
   toolName: string | undefined,
   firstLine: string,
 ): { provider: string; action?: string } {
-  const bracketHeader = firstLine.match(/^(?:[•›]\s+)?\[([A-Za-z][A-Za-z0-9 _-]{0,31})\](?:\s+(\S+))?/u);
-  const markerHeader = firstLine.match(/^[•›]\s+(\S+)(?:\s+(\S+))?/u);
+  const bracketHeader = firstLine.match(/^(?:[•›●]\s+)?\[([A-Za-z][A-Za-z0-9 _-]{0,31})\](?:\s+(\S+))?/u);
+  const markerHeader = firstLine.match(/^[•›●]\s+(\S+)(?:\s+(\S+))?/u);
   return {
     provider: bracketHeader?.[1] ?? externalToolProvider(kind, toolName),
     action: externalToolAction(kind, toolName) ?? bracketHeader?.[2] ?? markerHeader?.[2],
@@ -622,8 +622,8 @@ export function renderExternalToolBackgroundLines(
   }
 
   const firstLine = displayLines[0] ?? "";
-  const hasHeader = /^(?:[•›]\s+)?\[[A-Za-z][A-Za-z0-9 _-]{0,31}\]/u.test(firstLine)
-    || /^[•›]\s+\S+/u.test(firstLine);
+  const hasHeader = /^(?:[•›●]\s+)?\[[A-Za-z][A-Za-z0-9 _-]{0,31}\]/u.test(firstLine)
+    || /^[•›●]\s+\S+/u.test(firstLine);
   const header = externalToolHeader(kind, toolName, firstLine);
   const payloadLines = hasHeader ? displayLines.slice(1) : displayLines;
   const headerLine = externalToolHeaderLine(status, header.provider, header.action);
@@ -1145,7 +1145,7 @@ function renderBashTree(
   // theme.bold is a chalk no-op in pi's runtime; emit the SGR escape directly.
   const boldCommand = (text: string) => `\x1b[1m${text}\x1b[22m`;
   return appendToolTree(theme, [
-    `${theme.fg(statusColor, "•")} ${theme.fg(statusColor, theme.bold("Ran"))} ${boldCommand(theme.fg(commandColor, firstCommand))}`,
+    `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, theme.bold("Ran"))} ${boldCommand(theme.fg(commandColor, firstCommand))}`,
     ...continuedCommands.map((line) => boldCommand(theme.fg(commandColor, line))),
   ], outputLines, meta);
 }
@@ -1160,7 +1160,7 @@ function renderNamedToolTree(
 ): string {
   const subjectColor = statusColor === "success" ? "text" : "dim";
   return appendToolTree(theme, [
-    `${theme.fg(statusColor, "•")} ${theme.fg(statusColor, theme.bold(label))}${subject ? ` ${theme.fg(subjectColor, subject)}` : ""}`,
+    `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, theme.bold(label))}${subject ? ` ${theme.fg(subjectColor, subject)}` : ""}`,
   ], outputLines, meta);
 }
 

@@ -53,7 +53,6 @@ import {
   resetCooldowns,
   jevRoster,
   formatSuggestionCard,
-  wrapRailedLine,
   TERMINAL_LIFECYCLE,
   type Cooldowns,
   type StateSnapshot,
@@ -247,25 +246,15 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   let lastTouchedRef: string | null = null;
   let lastClaimScan = { at: 0, ref: null as string | null };
 
-  // Rail renderer: no [customType] label, no default card box.
-  let wrapTextWithAnsi: ((t: string, w: number) => string[]) | null = null;
+  // Card renderer: no [customType] label, no default card box — the two
+  // plain lines ARE the card (dot glyph, no rail).
   if (typeof pi.registerMessageRenderer === "function") {
-    import("@earendil-works/pi-tui")
-      .then((mod) => {
-        if (typeof mod.wrapTextWithAnsi === "function") wrapTextWithAnsi = mod.wrapTextWithAnsi;
-      })
-      .catch(() => {
-        /* unwrapped fallback is still a correct card */
-      });
     pi.registerMessageRenderer(CUSTOM_TYPE, (message: { content?: unknown }) => {
       const content = typeof message?.content === "string" ? message.content : "";
       return {
         dispose: () => {},
         invalidate: () => {},
-        render: (width: number) =>
-          String(content)
-            .split("\n")
-            .flatMap((line) => wrapRailedLine(line, Number(width) || 80, wrapTextWithAnsi)),
+        render: () => String(content).split("\n"),
       };
     });
   }
@@ -283,8 +272,10 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     });
     pi.sendMessage(
       { customType: CUSTOM_TYPE, content: card, display: true, details: { verb: verb.id, ref, severity: verb.severity } },
-      // Loud for high severity only: a triggered turn is a model turn.
-      { deliverAs: "followUp", triggerTurn: verb.severity === "high" },
+      // Wake the agent like specialists events do: every suggestion is
+      // information for the model. Cooldowns plus self-extinguishing rules
+      // (acting on the verb removes its trigger) bound the turn cost.
+      { deliverAs: "followUp", triggerTurn: true },
     );
   };
 
