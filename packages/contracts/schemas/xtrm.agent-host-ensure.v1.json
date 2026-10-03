@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xtrm.agent-host-ensure.v1",
+  "title": "xt host ensure result",
+  "description": "The single JSON object `xt host ensure --json` prints on stdout (PRD xtrm-app §35.5, §35.8 item 2). The desktop app runs `ssh -o BatchMode=yes <target> -- \"${SHELL:-/bin/sh}\" -lc 'xt host ensure --json'`; ensure starts the per-user agent host (detached, bound to 127.0.0.1) or reuses the running one, then prints its version, protocol major, loopback port and pid. The app rejects a different protocol major and forwards 127.0.0.1:<port>. On failure ensure exits non-zero and prints the `error` form instead. A backward-incompatible change requires xtrm.agent-host-ensure.v2.",
+  "type": "object",
+  "required": ["schema"],
+  "properties": {
+    "schema": { "const": "xtrm.agent-host-ensure.v1" }
+  },
+  "oneOf": [{ "$ref": "#/definitions/result" }, { "$ref": "#/definitions/error" }],
+  "definitions": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "version", "protocol", "port", "pid"],
+      "properties": {
+        "schema": { "const": "xtrm.agent-host-ensure.v1" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
+        "protocol": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["major"],
+          "properties": { "major": { "type": "integer", "minimum": 1 } }
+        },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "pid": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "error"],
+      "properties": {
+        "schema": { "const": "xtrm.agent-host-ensure.v1" },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9_]*$" },
+            "message": { "type": "string", "maxLength": 4096 }
+          }
+        }
+      }
+    }
+  }
+}

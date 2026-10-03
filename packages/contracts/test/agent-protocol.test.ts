@@ -188,6 +188,24 @@ describe('agent-host-api.v1 semantics', () => {
     });
 });
 
+describe('agent-host-ensure.v1 semantics', () => {
+    const id = SCHEMA_ID.agentHostEnsure;
+    const ok = { schema: id, version: '0.13.0', protocol: { major: 1 }, port: 43817, pid: 48211 };
+
+    it('accepts the result and the error form', () => {
+        expect(validate(id, ok).valid).toBe(true);
+        expect(validate(id, { schema: id, error: { code: 'host_start_failed', message: 'exited with code 1' } }).valid).toBe(true);
+    });
+
+    it('rejects a missing protocol major, port 0, extra fields and a mixed result/error object', () => {
+        const { protocol: _protocol, ...noProtocol } = ok;
+        expect(validate(id, noProtocol).valid).toBe(false);
+        expect(validate(id, { ...ok, port: 0 }).valid).toBe(false);
+        expect(validate(id, { ...ok, address: '0.0.0.0' }).valid).toBe(false);
+        expect(validate(id, { ...ok, error: { code: 'x', message: 'y' } }).valid).toBe(false);
+    });
+});
+
 describe('parseSchemaId', () => {
     it('splits family and major', () => {
         expect(parseSchemaId('xtrm.agent-event.v12')).toEqual({ family: 'xtrm.agent-event', major: 12 });
