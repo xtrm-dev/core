@@ -8,7 +8,8 @@
  *   repository owner/name from the git remote), then session_status (model, thinking level, context usage)
  *   and again whenever one of those changes;
  * - executes xtrm.agent-command.v1 frames (prompt, steer, follow_up, abort, extension_ui_response)
- *   and answers each with a command_result;
+ *   and answers each with a command_result; the session counts as working from the moment a run is
+ *   requested until agent_settled, including the Pi startup window before agent_start (see `startingAt`);
  * - proxies ctx.ui select / confirm / input so the host can answer them while the terminal dialog
  *   stays open; whichever answer arrives first wins, and extension_ui_resolved reports the end of
  *   every request so the host leaves waiting_for_input. ctx.ui.editor is not proxied: Pi 1.0.0
@@ -60,6 +61,8 @@ const MAX_FRAME_CHARS = 16 * 1024 * 1024;
 const MAX_CONNECT_QUEUE = 512;
 const EXEC_TIMEOUT_MS = 1_500;
 const GUI_INGRESS_WINDOW_MS = 10_000;
+/** A requested run that has not reached agent_start this long after the request, while Pi is idle, never started. */
+const STARTUP_STALE_MS = 60_000;
 
 type Payload = AgentEventPayload;
 type UiMethod = "select" | "confirm" | "input";
@@ -217,6 +220,14 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   const patchedUis = new Map<object, Record<string, unknown>>();
   let toolCache: Map<string, AgentToolSource | undefined> | null = null;
   let guiIngress: { commandId: string; message: string; at: number } | null = null;
+  /**
+   * Set when a run is requested (an idle submit or before_agent_start) and cleared on agent_start. Pi 1.0.0 marks
+   * the run active only after the before_agent_start handlers, image normalization and the tool loadout (6-8 s
+   * observed), so ctx.isIdle() is true in that window; a message sent then starts a second run (XTRM-607).
+   */
+  let startingAt: number | null = null;
+  /** Steer, follow_up and abort received in the startup window; run on agent_start, when Pi can queue them. */
+  let deferred: Array<() => void> = [];
   let readBuffer = "";
 
   const live = () => state === "connecting" || state === "open";
@@ -351,6 +362,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     socket?.end();
     socket = null;
     pendingUi.clear();
+    deferred = [];
     for (const [ui, originals] of patchedUis) Object.assign(ui, originals);
     patchedUis.clear();
   }
@@ -629,24 +641,45 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       return result("accepted");
     }
     if (!ctx) return result("failed", "no_session_context", "the session is not ready");
+    const current = ctx;
+    const starting = isStarting();
     if (command.type === "abort") {
-      ctx.abort();
+      // Pi ignores abort() before agent_start: the run it would stop is not active yet.
+      if (starting) deferred.push(() => current.abort());
+      else current.abort();
       return result("accepted");
     }
     if (command.type !== "prompt" && command.type !== "steer" && command.type !== "follow_up") {
       return result("rejected", "unsupported_command", `unsupported command ${(command as { type?: unknown }).type}`);
     }
     if (typeof command.message !== "string" || command.message.length === 0) return result("rejected", "invalid_command", "message is empty");
-    const idle = ctx.isIdle();
+    const idle = !starting && current.isIdle();
     // §35.8 item 5: a normal submit never queues behind running work.
     if (command.type === "prompt" && !idle) return result("rejected", "busy", "the session is working; use steer or follow_up");
     const attached = images(command.images);
     const content = attached ? [{ type: "text" as const, text: command.message }, ...attached] : command.message;
+    const deliverAs = command.type === "steer" ? "steer" : "followUp";
+    if (starting) {
+      deferred.push(() => pi.sendUserMessage(content, { deliverAs }));
+      return result("accepted");
+    }
     // An idle session starts a new Frame from this message; mark it as GUI ingress.
-    if (idle) guiIngress = { commandId: command.commandId, message: command.message, at: Date.now() };
+    if (idle) {
+      guiIngress = { commandId: command.commandId, message: command.message, at: Date.now() };
+      startingAt = Date.now();
+    }
     if (command.type === "prompt") pi.sendUserMessage(content);
-    else pi.sendUserMessage(content, { deliverAs: command.type === "steer" ? "steer" : "followUp" });
+    else pi.sendUserMessage(content, { deliverAs });
     result("accepted");
+  }
+
+  /** Whether a requested run has not reached agent_start yet; a run Pi never started stops counting after STARTUP_STALE_MS. */
+  function isStarting(): boolean {
+    if (startingAt !== null && Date.now() - startingAt > STARTUP_STALE_MS && ctx?.isIdle() !== false) {
+      startingAt = null;
+      deferred = [];
+    }
+    return startingAt !== null;
   }
 
   function ingressFor(prompt: string): { origin: "gui" | "terminal"; commandId?: string } {
@@ -695,6 +728,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
     pi.on("before_agent_start", (event, current) => {
       track(current);
+      startingAt = Date.now();
       if (!live()) {
         guiIngress = null;
         return;
@@ -706,6 +740,10 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       track(current);
       toolCache = null;
       emit({ type: "agent_start" });
+      startingAt = null;
+      const run = deferred;
+      deferred = [];
+      for (const action of run) action();
     });
 
     pi.on("turn_start", (event, current) => {
@@ -775,6 +813,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
     pi.on("agent_settled", (_event, current) => {
       track(current);
+      startingAt = null;
+      deferred = [];
       emitStatus();
       emit({ type: "agent_settled" });
     });
