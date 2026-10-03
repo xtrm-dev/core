@@ -72545,7 +72545,13 @@ function renderLegacyMigration(report) {
   if (report.beadsDirPresent) warn("legacy .beads workspace present \u2014 legacy migration required");
   if (report.beadsHookRegistrations > 0) warn(`${report.beadsHookRegistrations} legacy Beads hook registration(s) \u2014 legacy migration required`);
   if (report.substrateRemnants.length > 0) warn(`stale Beads plugin/marketplace remnant(s): ${report.substrateRemnants.join(", ")} \u2014 legacy migration required`);
-  fix("legacy .beads workspace blocks migration: automated Substrate migration ships with the A9 pipeline. Do NOT delete `.beads`. Upgrade xt, then re-run `xt update --apply`");
+  fix(migrationBlockedReason({
+    needed: report.beadsDirPresent,
+    hasBeads: report.beadsDirPresent,
+    alreadyMigrated: false,
+    sbAvailable: getSbVersion().available,
+    reason: "legacy .beads workspace present"
+  }) ?? "legacy .beads workspace blocks migration \u2014 see docs/migration/beads-to-substrate.md");
 }
 function createDoctorCommand() {
   const doctor = new Command("doctor").description("Canonical diagnosis for xtrm-managed project and runtime surfaces").option("--cwd <path>", "Operate on this directory (default: process.cwd())").option("--json", "Output machine-readable JSON", false).option("--check-drift", "Exit non-zero on any drift, missing, extra, or duplicate").action(async (opts) => {
