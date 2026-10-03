@@ -424,6 +424,29 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     const monitorSet = turnMonitorSet;
     turnMonitorSet = false;
 
+    // Duty 0 — wait-guard. Needs no bound issue and no substrate services:
+    // a wait commitment without a monitor is a duty the moment it is spoken.
+    if (lastAssistant && waitCommitment(lastAssistant) && !monitorSet) {
+      const registry0 = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
+      if (registry0 || readApiKey()) {
+        const verb = waitGuardVerb();
+        if (cooldownAllows(cooldowns, "wait", verb.id, Date.now(), verb)) {
+          const result = await askJev(registry0, {
+            final_message: lastAssistant,
+            monitor_set_this_turn: monitorSet,
+          }, {
+            wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for an external event (CI, deploy, review, another agent's reply, a long job) rather than actively working or merely narrating?" },
+            monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here, instead of relying on the agent remembering?" },
+          } as Record<string, Question>);
+          const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
+          if (result && g >= GATE_THRESHOLD) {
+            emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
+            return;
+          }
+        }
+      }
+    }
+
     const svc = await getServices();
     if (!svc) return;
     try {
@@ -466,28 +489,9 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       }
 
       // Semantic duty chain, one card per turn, most duty first:
-      // wait-guard → service skill → journal kind. Each is Jev-verified.
+      // service skill → journal kind. Wait-guard already ran pre-binding.
       const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
       if (!registry && !readApiKey()) return;
-
-      if (waitCommitment(lastAssistant) && !monitorSet) {
-        const verb = waitGuardVerb();
-        if (cooldownAllows(cooldowns, snapshot.ref, verb.id, snapshot.now, verb)) {
-          const result = await askJev(registry, {
-            final_message: lastAssistant,
-            monitor_set_this_turn: monitorSet,
-            issue_ref: snapshot.ref,
-          }, {
-            wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for an external event (CI, deploy, review, a long job) rather than actively working or merely narrating?" },
-            monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here, instead of relying on the agent remembering?" },
-          } as Record<string, Question>);
-          const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
-          if (result && g >= GATE_THRESHOLD) {
-            emit(verb, snapshot.ref, { confidence: result.choice.confidence ?? g, revision: meta.currentRevision, source: "jev", model: result.model });
-            return;
-          }
-        }
-      }
 
       const packs = discoverSkillPacks(process.cwd());
       if (packs.length > 0) {

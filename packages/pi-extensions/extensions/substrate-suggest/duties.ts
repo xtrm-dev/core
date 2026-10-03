@@ -25,11 +25,18 @@ const WAIT_COMMIT_RE =
   /\b(i'?ll\s+(?:wait|check|monitor|watch|poll)|i will\s+(?:wait|check|monitor|watch|poll)|let'?s wait|going to wait|wait(?:ing)? for (?:the )?(?:ci|build|pipeline|tests?|deploy|review|results?))\b/i;
 /** …and this is what "waiting for X" looks like when X is named. */
 const WAIT_TARGET_RE =
-  /\b(?:once|when|after|until)\s+(?:the\s+)?(?:ci|cd|build|pipeline|tests?|deploy\w*|review|job|run|workflow)\s+(?:finishes|completes|passes|fails|is done|lands|ends)\b/i;
+  /\b(?:once|when|after|until)\s+(?:the\s+)?(?:ci|cd|build|pipeline|tests?|deploy\w*|review|job|run|workflow|results?|reply|response|summary|output)\s+(?:arrives?|lands?|comes? back|finishes|completes|passes|fails|is done|ends)\b/i;
 
-/** Tool evidence that a monitor actually exists for the thing being awaited. */
+/** Tool evidence that a monitor or wake seam actually exists for the thing being awaited. */
 export function isMonitorSetter(toolName: string, args: Record<string, unknown> | undefined, input: Record<string, unknown> | undefined): boolean {
   if (/^(bg_run|bg_delegate|process)$/.test(toolName)) return true;
+  // An intercom ask/send IS a wake seam: the peer's reply re-enters this
+  // session as a follow-up turn. Awaiting "the reply arrives" behind an
+  // intercom send is monitored by construction.
+  if (toolName === "intercom") {
+    const action = String(args?.["action"] ?? input?.["action"] ?? "");
+    if (action === "ask" || action === "send") return true;
+  }
   const cmd = String(args?.["command"] ?? input?.["command"] ?? "");
   if (!cmd) return false;
   return /\b(bg_run|bg_delegate|process start|nohup|watch\s+-?\d|sleep\s+\d{2,}|while\s+.*sleep|systemd-run|at now|sleep infinity)\b/.test(cmd) || /&\s*$/.test(cmd);
