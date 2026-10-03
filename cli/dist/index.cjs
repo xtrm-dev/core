@@ -79515,6 +79515,7 @@ var CAPABILITY_FOR = {
 var INPUT_NOTIFICATIONS = /* @__PURE__ */ new Set(["permission_prompt", "elicitation_dialog"]);
 var MAX_DISCONNECTED_SESSIONS = 256;
 var MAX_LAUNCHED_PANES = 256;
+var PROMPT_START_TIMEOUT_MS = 6e4;
 var MAX_FRAME_RECORDS = 16;
 var FRAME_TEXT_MAX_BYTES = 16 * 1024;
 function isPresenceOnly(session) {
@@ -79528,9 +79529,11 @@ var AgentHostRegistry = class {
   listeners = /* @__PURE__ */ new Set();
   classifier = new ToolOriginClassifier();
   commandTimeoutMs;
+  promptStartTimeoutMs;
   log;
   constructor(options = {}) {
     this.commandTimeoutMs = options.commandTimeoutMs ?? 1e4;
+    this.promptStartTimeoutMs = options.promptStartTimeoutMs ?? PROMPT_START_TIMEOUT_MS;
     this.log = options.log ?? (() => {
     });
   }
@@ -79558,6 +79561,7 @@ var AgentHostRegistry = class {
           connection,
           frameOpen: false,
           promptPending: null,
+          promptStartTimer: null,
           pendingUi: /* @__PURE__ */ new Set(),
           awaitingLocalInput: false,
           toolOrigins: /* @__PURE__ */ new Map(),
@@ -79605,7 +79609,7 @@ var AgentHostRegistry = class {
         const record2 = session.frameOpen ? session.frames.at(-1) : void 0;
         if (record2) record2.settled = true;
         session.frameOpen = false;
-        session.promptPending = null;
+        this.clearPromptPending(session);
         session.pendingUi.clear();
         session.toolOrigins.clear();
         break;
@@ -79682,6 +79686,7 @@ var AgentHostRegistry = class {
     return this.sessions.get(sessionId)?.frames ?? null;
   }
   openFrame(session, seq) {
+    this.stopPromptStartTimer(session);
     session.frameOpen = true;
     session.frameCount += 1;
     session.frames.push({ n: session.frameCount, requestBytes: 0, responseBytes: 0, settled: false, seq });
@@ -79788,6 +79793,45 @@ var AgentHostRegistry = class {
     for (const commandId of [...this.pending.keys()]) {
       this.finishPending(commandId, "failed", "host_shutdown", "the agent host is shutting down");
     }
+    for (const session of this.sessions.values()) this.stopPromptStartTimer(session);
+  }
+  clearPromptPending(session) {
+    session.promptPending = null;
+    this.stopPromptStartTimer(session);
+  }
+  stopPromptStartTimer(session) {
+    if (session.promptStartTimer) clearTimeout(session.promptStartTimer);
+    session.promptStartTimer = null;
+  }
+  /**
+   * An accepted prompt that opens no Frame within the bound never started a run. The host frees
+   * the session for the next prompt and reports the prompt as failed with a reason through a
+   * host-originated command_result (the submit itself was already answered accepted).
+   */
+  armPromptStart(sessionId, session, commandId) {
+    this.stopPromptStartTimer(session);
+    const timer = setTimeout(() => {
+      if (this.sessions.get(sessionId) !== session || session.promptPending !== commandId || session.frameOpen) return;
+      this.clearPromptPending(session);
+      const seconds = Math.round(this.promptStartTimeoutMs / 1e3);
+      this.log(`prompt ${commandId} for session ${sessionId} opened no Frame within ${seconds} s; failed as prompt_not_started`);
+      const frame = {
+        schema: "xtrm.agent-event.v1",
+        seq: session.lastSeq,
+        sessionId,
+        at: Date.now(),
+        payload: {
+          type: "command_result",
+          commandId,
+          status: "failed",
+          reason: "prompt_not_started",
+          message: `the agent started no run for this prompt within ${seconds} s: an input handler handled it, or the agent refused it before the run (for example no model or no API key)`
+        }
+      };
+      for (const listener of this.listeners) listener(frame);
+    }, this.promptStartTimeoutMs);
+    timer.unref?.();
+    session.promptStartTimer = timer;
   }
   settleCommand(sessionId, commandId, status2, reason, message) {
     const entry = this.pending.get(commandId);
@@ -79802,11 +79846,12 @@ var AgentHostRegistry = class {
     const session = this.sessions.get(entry.sessionId);
     if (session) {
       const { payload } = entry;
-      if (payload.type === "prompt" && status2 !== "accepted" && session.promptPending === commandId) {
-        session.promptPending = null;
+      if (payload.type === "prompt" && session.promptPending === commandId) {
+        if (status2 !== "accepted") this.clearPromptPending(session);
+        else if (!session.frameOpen) this.armPromptStart(entry.sessionId, session, commandId);
       }
       if (payload.type === "abort" && status2 === "accepted" && !session.frameOpen) {
-        session.promptPending = null;
+        this.clearPromptPending(session);
       }
       if (payload.type === "extension_ui_response" && status2 === "accepted") {
         session.pendingUi.delete(payload.id);
@@ -79830,6 +79875,8 @@ var AgentHostRegistry = class {
         this.finishPending(commandId, "failed", "session_ended", "the session ended");
       }
     }
+    const session = this.sessions.get(sessionId);
+    if (session) this.stopPromptStartTimer(session);
     this.sessions.delete(sessionId);
   }
   pruneDisconnected() {
@@ -80480,7 +80527,11 @@ async function startAgentHost(options = {}) {
   const log = options.log ?? ((message) => process.stderr.write(`[xt host] ${message}
 `));
   const replayLimit = options.replayLimit ?? DEFAULT_REPLAY_LIMIT;
-  const registry2 = new AgentHostRegistry({ commandTimeoutMs: options.commandTimeoutMs, log });
+  const registry2 = new AgentHostRegistry({
+    commandTimeoutMs: options.commandTimeoutMs,
+    promptStartTimeoutMs: options.promptStartTimeoutMs,
+    log
+  });
   const sessionIndex = options.sessionIndex ? new SessionIndex({ log, ...options.sessionIndex }) : null;
   const launcher = new AgentHostLauncher(options.launch);
   const directHostnames = (options.direct?.hostnames ?? []).map(normalizeDirectHostname);

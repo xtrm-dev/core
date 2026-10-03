@@ -57,6 +57,8 @@ interface LiveSession {
     frameOpen: boolean;
     /** commandId of a routed prompt whose Frame has not settled yet (§35.8 item 5). */
     promptPending: string | null;
+    /** Runs while an accepted prompt has not opened its Frame; see PROMPT_START_TIMEOUT_MS. */
+    promptStartTimer: NodeJS.Timeout | null;
     /** extension_ui_request ids awaiting an answer. */
     pendingUi: Set<string>;
     /** A runtime notification (Claude permission or elicitation prompt) awaits local input. */
@@ -96,6 +98,15 @@ const MAX_DISCONNECTED_SESSIONS = 256;
 /** Launched panes remembered for binding; pane ids are unique for a tmux server's lifetime. */
 const MAX_LAUNCHED_PANES = 256;
 
+/**
+ * How long an accepted prompt may take to open its Frame (XTRM-605). A Pi input handler can
+ * handle the prompt itself, or Pi preflight can throw (no model, no API key): Pi then emits no
+ * before_agent_start, agent_start or agent_settled, and promptPending would refuse every later
+ * prompt as busy. Matches the xtrm-agent-host extension's STARTUP_STALE_MS, after which the
+ * extension stops counting the run as starting.
+ */
+const PROMPT_START_TIMEOUT_MS = 60_000;
+
 /** Frames retained per session for references; older Frames resolve as not retained. */
 const MAX_FRAME_RECORDS = 16;
 /** Stored request/response text per Frame; above the largest reference budget (8 KB) with margin. */
@@ -109,6 +120,8 @@ function isPresenceOnly(session: LiveSession): boolean {
 export interface AgentHostRegistryOptions {
     /** How long a routed command waits for the producer's command_result. */
     commandTimeoutMs?: number;
+    /** How long an accepted prompt may take to open its Frame before the host fails it. */
+    promptStartTimeoutMs?: number;
     log?: (message: string) => void;
 }
 
@@ -120,10 +133,12 @@ export class AgentHostRegistry {
     private readonly listeners = new Set<(frame: AgentEventV1) => void>();
     private readonly classifier = new ToolOriginClassifier();
     private readonly commandTimeoutMs: number;
+    private readonly promptStartTimeoutMs: number;
     private readonly log: (message: string) => void;
 
     constructor(options: AgentHostRegistryOptions = {}) {
         this.commandTimeoutMs = options.commandTimeoutMs ?? 10_000;
+        this.promptStartTimeoutMs = options.promptStartTimeoutMs ?? PROMPT_START_TIMEOUT_MS;
         this.log = options.log ?? (() => {});
     }
 
@@ -153,6 +168,7 @@ export class AgentHostRegistry {
                     connection,
                     frameOpen: false,
                     promptPending: null,
+                    promptStartTimer: null,
                     pendingUi: new Set(),
                     awaitingLocalInput: false,
                     toolOrigins: new Map(),
@@ -205,7 +221,7 @@ export class AgentHostRegistry {
                 const record = session.frameOpen ? session.frames.at(-1) : undefined;
                 if (record) record.settled = true;
                 session.frameOpen = false;
-                session.promptPending = null;
+                this.clearPromptPending(session);
                 session.pendingUi.clear();
                 session.toolOrigins.clear();
                 break;
@@ -292,6 +308,7 @@ export class AgentHostRegistry {
     }
 
     private openFrame(session: LiveSession, seq: number): void {
+        this.stopPromptStartTimer(session);
         session.frameOpen = true;
         session.frameCount += 1;
         session.frames.push({ n: session.frameCount, requestBytes: 0, responseBytes: 0, settled: false, seq });
@@ -415,6 +432,48 @@ export class AgentHostRegistry {
         for (const commandId of [...this.pending.keys()]) {
             this.finishPending(commandId, 'failed', 'host_shutdown', 'the agent host is shutting down');
         }
+        for (const session of this.sessions.values()) this.stopPromptStartTimer(session);
+    }
+
+    private clearPromptPending(session: LiveSession): void {
+        session.promptPending = null;
+        this.stopPromptStartTimer(session);
+    }
+
+    private stopPromptStartTimer(session: LiveSession): void {
+        if (session.promptStartTimer) clearTimeout(session.promptStartTimer);
+        session.promptStartTimer = null;
+    }
+
+    /**
+     * An accepted prompt that opens no Frame within the bound never started a run. The host frees
+     * the session for the next prompt and reports the prompt as failed with a reason through a
+     * host-originated command_result (the submit itself was already answered accepted).
+     */
+    private armPromptStart(sessionId: string, session: LiveSession, commandId: string): void {
+        this.stopPromptStartTimer(session);
+        const timer = setTimeout(() => {
+            if (this.sessions.get(sessionId) !== session || session.promptPending !== commandId || session.frameOpen) return;
+            this.clearPromptPending(session);
+            const seconds = Math.round(this.promptStartTimeoutMs / 1000);
+            this.log(`prompt ${commandId} for session ${sessionId} opened no Frame within ${seconds} s; failed as prompt_not_started`);
+            const frame: AgentEventV1 = {
+                schema: 'xtrm.agent-event.v1',
+                seq: session.lastSeq,
+                sessionId,
+                at: Date.now(),
+                payload: {
+                    type: 'command_result',
+                    commandId,
+                    status: 'failed',
+                    reason: 'prompt_not_started',
+                    message: `the agent started no run for this prompt within ${seconds} s: an input handler handled it, or the agent refused it before the run (for example no model or no API key)`,
+                },
+            };
+            for (const listener of this.listeners) listener(frame);
+        }, this.promptStartTimeoutMs);
+        timer.unref?.();
+        session.promptStartTimer = timer;
     }
 
     private settleCommand(
@@ -438,11 +497,12 @@ export class AgentHostRegistry {
         const session = this.sessions.get(entry.sessionId);
         if (session) {
             const { payload } = entry;
-            if (payload.type === 'prompt' && status !== 'accepted' && session.promptPending === commandId) {
-                session.promptPending = null;
+            if (payload.type === 'prompt' && session.promptPending === commandId) {
+                if (status !== 'accepted') this.clearPromptPending(session);
+                else if (!session.frameOpen) this.armPromptStart(entry.sessionId, session, commandId);
             }
             if (payload.type === 'abort' && status === 'accepted' && !session.frameOpen) {
-                session.promptPending = null;
+                this.clearPromptPending(session);
             }
             if (payload.type === 'extension_ui_response' && status === 'accepted') {
                 session.pendingUi.delete(payload.id);
@@ -468,6 +528,8 @@ export class AgentHostRegistry {
                 this.finishPending(commandId, 'failed', 'session_ended', 'the session ended');
             }
         }
+        const session = this.sessions.get(sessionId);
+        if (session) this.stopPromptStartTimer(session);
         this.sessions.delete(sessionId);
     }
 

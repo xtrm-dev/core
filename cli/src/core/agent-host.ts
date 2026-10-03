@@ -89,6 +89,8 @@ export interface AgentHostOptions {
     port?: number;
     version?: string;
     commandTimeoutMs?: number;
+    /** How long an accepted prompt may take to open its Frame before the host fails it (XTRM-605). */
+    promptStartTimeoutMs?: number;
     replayLimit?: number;
     /** Incremental index of stopped sessions; off unless given (`xt host start` passes the defaults). */
     sessionIndex?: SessionIndexOptions;
@@ -123,7 +125,11 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
     const infoPath = options.infoPath ?? defaultInfoPath();
     const log = options.log ?? ((message: string) => process.stderr.write(`[xt host] ${message}\n`));
     const replayLimit = options.replayLimit ?? DEFAULT_REPLAY_LIMIT;
-    const registry = new AgentHostRegistry({ commandTimeoutMs: options.commandTimeoutMs, log });
+    const registry = new AgentHostRegistry({
+        commandTimeoutMs: options.commandTimeoutMs,
+        promptStartTimeoutMs: options.promptStartTimeoutMs,
+        log,
+    });
     const sessionIndex = options.sessionIndex ? new SessionIndex({ log, ...options.sessionIndex }) : null;
     const launcher = new AgentHostLauncher(options.launch);
     const directHostnames = (options.direct?.hostnames ?? []).map(normalizeDirectHostname);
