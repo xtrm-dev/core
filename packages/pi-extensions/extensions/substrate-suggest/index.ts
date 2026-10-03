@@ -426,6 +426,12 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           logDecision({ ts: new Date().toISOString(), issue: null, verb: `tool_nudge:${nudge.kind}`, source: "deterministic" });
           const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
           content.push({ type: "text", text: `\x1b[2m[substrate-suggest] ${nudge.verb.instruction("")}\x1b[22m` });
+          // The chat card keeps the operator in the loop in the house style;
+          // display-only — the inline advisory already informed the agent.
+          pi.sendMessage(
+            { customType: CUSTOM_TYPE, content: formatSuggestionCard({ verb: nudge.verb, ref: "—" }), display: true, details: { verb: nudge.verb.id, nudge: nudge.kind } },
+            { deliverAs: "followUp", triggerTurn: false },
+          );
           return { content, structuredContent: e.structuredContent } as never;
         }
         const packs = discoverSkillPacks(process.cwd());
