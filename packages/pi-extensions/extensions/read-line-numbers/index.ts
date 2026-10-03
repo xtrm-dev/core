@@ -105,7 +105,7 @@ export default function readLineNumbersExtension(pi: ExtensionAPI): void {
       if (item.type !== "text") return item;
       const text = (item as { text?: unknown }).text;
       if (typeof text !== "string") return item;
-      return { type: "text", text: numberReadText(text, startLine, truncation?.truncated === true) };
+      return { type: "text" as const, text: numberReadText(text, startLine, truncation?.truncated === true) };
     });
     return { content: transformed };
   });

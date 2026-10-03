@@ -34,7 +34,22 @@
   },
   "scripts": {
     "prepublishOnly": "npm run verify:runtime",
-    "verify:runtime": "node -e \"const fs=require('fs');const required=['src/index.ts','src/registry.ts','extensions','themes'];const missing=required.filter((entry)=>!fs.existsSync(entry));if(missing.length){console.error('Missing publish runtime assets: '+missing.join(', '));process.exit(1);}console.log('Runtime assets present for npm publish.');\""
+    "verify:runtime": "node -e \"const fs=require('fs');const required=['src/index.ts','src/registry.ts','extensions','themes'];const missing=required.filter((entry)=>!fs.existsSync(entry));if(missing.length){console.error('Missing publish runtime assets: '+missing.join(', '));process.exit(1);}console.log('Runtime assets present for npm publish.');\"",
+    "typecheck": "npm run build --workspace @xtrm/contracts && tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-tui": "^1.0.0",
+    "@types/node": "^25.3.0",
+    "typebox": "^1.3.27",
+    "typescript": "^5.9.3"
   },
   "files": [
     "src",
