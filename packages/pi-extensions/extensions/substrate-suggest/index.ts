@@ -60,6 +60,14 @@ import {
   type VerbSpec,
 } from "./catalog.ts";
 import { systemOne, classifyViaRegistry, readApiKey, type Question, type RegistryLike } from "./jev.ts";
+import {
+  discoverSkillPacks,
+  isMonitorSetter,
+  skillVerb,
+  waitCommitment,
+  waitGuardVerb,
+  type SkillEntry,
+} from "./duties.ts";
 
 const CUSTOM_TYPE = "substrate_suggestion";
 const LOG_DIR = join(homedir(), ".xtrm", "substrate-suggest");
@@ -69,11 +77,23 @@ const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
 const FITS_THRESHOLD = 0.3; // best verify noul under this -> drop the pick
 const CLAIM_SCAN_TTL_MS = 60_000;
 
+/** Source-level dedupe for skill suggestions: any card silences the source for a while. */
+const SKILL_SOURCE_VERB: VerbSpec = {
+  id: "skill_suggest",
+  action: "consider skill",
+  oneLine: "A service-knowledge expert skill fits the working turn.",
+  instruction: () => "",
+  severity: "normal",
+  cooldownMin: 15,
+  source: "jev",
+};
+
 const REF_RE = /\b([A-Z][A-Z0-9]{1,15}-\d+)\b/;
 
 /** Extract bounded turn evidence from finished agent messages. */
-function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fromIdx: number): { excerpt: string; wasActive: boolean; nextIdx: number } {
+function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fromIdx: number): { excerpt: string; lastAssistant: string; wasActive: boolean; nextIdx: number } {
   const parts: string[] = [];
+  let lastAssistant = "";
   let wasActive = false;
   let userText = 0;
   for (let i = fromIdx; i < messages.length; i++) {
@@ -83,6 +103,7 @@ function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fro
       if (p?.["type"] === "text" && typeof p["text"] === "string") {
         const role = m?.role ?? "unknown";
         parts.push(`${role}: ${p["text"].slice(0, 2000)}`);
+        if (role === "assistant") lastAssistant = p["text"];
         if (role === "user") userText++;
       }
       if (p?.["type"] === "tool_call") {
@@ -93,7 +114,7 @@ function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fro
     }
   }
   const excerpt = parts.join("\n").slice(0, 8000);
-  return { excerpt, wasActive: wasActive || userText > 0, nextIdx: messages.length };
+  return { excerpt, lastAssistant: lastAssistant.slice(0, 1500), wasActive: wasActive || userText > 0, nextIdx: messages.length };
 }
 
 /** Observe one tool call for issue references the session works on. */
@@ -181,6 +202,17 @@ function logDecision(row: Record<string, unknown>): void {
   }
 }
 
+/** Shared Jev runner: Pi-native classifier first, direct REST second. */
+async function askJev(
+  registry: RegistryLike | null,
+  state: Record<string, unknown>,
+  questions: Record<string, Question>,
+) {
+  let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
+  if (!result) result = await systemOne(state, questions);
+  return result;
+}
+
 /** The Jev semantic stage: pick one journal kind for the turn, or none. */
 async function jevPickKind(
   registry: RegistryLike | null,
@@ -212,8 +244,7 @@ async function jevPickKind(
     working_turn_excerpt: excerpt.slice(0, 8000),
   };
   // Pi-native classifier first (credentials already configured), REST second.
-  let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
-  if (!result) result = await systemOne(state, questions);
+  const result = await askJev(registry, state, questions);
   if (!result) return null;
 
   const gate = [result.nouls["material_event"] ?? 0, 1 - (result.nouls["prose_would_suffice"] ?? 0)];
@@ -245,6 +276,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   let sessionClaimRef: string | null = null;
   let lastTouchedRef: string | null = null;
   let lastClaimScan = { at: 0, ref: null as string | null };
+  let turnMonitorSet = false;
 
   // Card renderer: no [customType] label, no default card box — the two
   // plain lines ARE the card (dot glyph, no rail).
@@ -333,7 +365,9 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   pi.on("tool_call", (event) => {
     try {
       const e = event as { toolName?: string; name?: string; args?: Record<string, unknown>; input?: Record<string, unknown> };
-      const { ref, isClaim } = observeToolCall(String(e.toolName ?? e.name ?? ""), e.args ?? e.input);
+      const tool = String(e.toolName ?? e.name ?? "");
+      if (isMonitorSetter(tool, e.args, e.input)) turnMonitorSet = true;
+      const { ref, isClaim } = observeToolCall(tool, e.args ?? e.input);
       if (ref) {
         lastTouchedRef = ref;
         if (isClaim) sessionClaimRef = ref;
@@ -385,8 +419,10 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   pi.on("agent_end", async (event, ctx) => {
     if (off()) return;
     const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
-    const { excerpt, wasActive, nextIdx } = turnEvidence(messages, messageCursor);
+      const { excerpt, lastAssistant, wasActive, nextIdx } = turnEvidence(messages, messageCursor);
     messageCursor = nextIdx;
+    const monitorSet = turnMonitorSet;
+    turnMonitorSet = false;
 
     const svc = await getServices();
     if (!svc) return;
@@ -429,11 +465,66 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      // Semantic stage: Jev picks the journal kind, or nothing. Pi's own
-      // classifier credentials first, direct REST with a key second, else
-      // deterministic-only.
+      // Semantic duty chain, one card per turn, most duty first:
+      // wait-guard → service skill → journal kind. Each is Jev-verified.
       const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
       if (!registry && !readApiKey()) return;
+
+      if (waitCommitment(lastAssistant) && !monitorSet) {
+        const verb = waitGuardVerb();
+        if (cooldownAllows(cooldowns, snapshot.ref, verb.id, snapshot.now, verb)) {
+          const result = await askJev(registry, {
+            final_message: lastAssistant,
+            monitor_set_this_turn: monitorSet,
+            issue_ref: snapshot.ref,
+          }, {
+            wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for an external event (CI, deploy, review, a long job) rather than actively working or merely narrating?" },
+            monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here, instead of relying on the agent remembering?" },
+          } as Record<string, Question>);
+          const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
+          if (result && g >= GATE_THRESHOLD) {
+            emit(verb, snapshot.ref, { confidence: result.choice.confidence ?? g, revision: meta.currentRevision, source: "jev", model: result.model });
+            return;
+          }
+        }
+      }
+
+      const packs = discoverSkillPacks(process.cwd());
+      if (packs.length > 0) {
+        const all = packs.flatMap((p) => p.entries);
+        if (all.length > 0 && cooldownAllows(cooldowns, snapshot.ref, "skill_suggest", snapshot.now, SKILL_SOURCE_VERB)) {
+          const result = await askJev(registry, {
+            working_turn_excerpt: excerpt.slice(0, 4000),
+            issue_ref: snapshot.ref,
+            issue_purpose: meta.currentRevision ? undefined : undefined,
+          }, {
+            service: {
+              type: "choice",
+              instructions: "Pick the single service whose expert skill the working turn most clearly needs, or none. Base it only on the provided evidence.",
+              criteria: Object.fromEntries([
+                ...all.map((s) => [s.id, s.description]),
+                ["none", "No registered service matches this turn."],
+              ]),
+            },
+            service_specific: { type: "noul", instructions: "Would the picked service's expert skill materially change how the agent proceeds right now?" },
+          } as Record<string, Question>);
+          const fit = result?.nouls["service_specific"] ?? 0;
+          const pick = result?.choice.choice;
+          if (result && pick && pick !== "none" && fit >= FITS_THRESHOLD) {
+            const entry = all.find((s) => s.id === pick);
+            if (entry) {
+              const verb = skillVerb(entry);
+              if (cooldownAllows(cooldowns, snapshot.ref, verb.id, snapshot.now, verb)) {
+                applyCooldown(cooldowns, snapshot.ref, SKILL_SOURCE_VERB);
+                emit(verb, snapshot.ref, { confidence: result.choice.confidence ?? fit, revision: meta.currentRevision, source: "jev", model: result.model });
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      // Journal kind last: the ordinary case.
       const pick = await jevPickKind(registry, snapshot, excerpt);
       if (!pick) {
         logDecision({ ts: new Date().toISOString(), issue: snapshot.ref, verb: null, source: "jev", outcome: "none" });
