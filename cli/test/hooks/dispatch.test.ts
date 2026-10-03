@@ -17,12 +17,17 @@ interface RunResult {
     stderr: string;
 }
 
+// XTRM-592: every dispatcher mode also reports to the XTRM agent host. These
+// tests pin the checks, so presence is off: a host running on the test machine
+// must never receive test frames (agent-host-claude-hooks.test.ts covers it).
+const NO_AGENT_HOST = { XTRM_AGENT_HOST: '0' };
+
 function runDispatcher(mode: string, payload: unknown, cwd: string, env: NodeJS.ProcessEnv = {}): RunResult {
     const result = spawnSync(process.execPath, [path.join(HOOKS, 'dispatch.mjs'), mode], {
         cwd,
         encoding: 'utf8',
         input: typeof payload === 'string' ? payload : JSON.stringify(payload),
-        env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...env },
+        env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...NO_AGENT_HOST, ...env },
         timeout: 30000,
     });
     return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
@@ -82,6 +87,26 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
                 hook_event_name: 'PreToolUse',
                 tool_name: 'Edit',
                 tool_input: { file_path: insideFile },
+            }, worktreeRoot);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toBe('');
+        } finally {
+            await rm(worktreeRoot.split('/.xtrm')[0], { recursive: true, force: true });
+        }
+    });
+
+    // XTRM-592: the PreToolUse matcher is empty (presence needs every tool), so the
+    // guards must route by PRE_TOOLS themselves: a Read outside the worktree is not
+    // an edit and gets no decision.
+    it('pre: a non-guard tool gets no guard decision', async () => {
+        const { worktreeRoot, outsideFile } = await makeWorktree();
+        try {
+            const result = runDispatcher('pre', {
+                session_id: 'dispatch-test',
+                cwd: worktreeRoot,
+                hook_event_name: 'PreToolUse',
+                tool_name: 'Read',
+                tool_input: { file_path: outsideFile },
             }, worktreeRoot);
             expect(result.status).toBe(0);
             expect(result.stdout).toBe('');
@@ -307,7 +332,7 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
                     tool_response: {},
                 }),
                 // A PATH with node but no python3 reproduces ENOENT on the child.
-                env: { ...process.env, PATH: nodeDir, CLAUDE_PROJECT_DIR: temp },
+                env: { ...process.env, PATH: nodeDir, CLAUDE_PROJECT_DIR: temp, ...NO_AGENT_HOST },
             });
             // Non-blocking (the old shell path exited 127), but visible.
             expect(result.status).toBe(1);
@@ -321,6 +346,7 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
     it('pre: a stdin that never completes exits within the timeout and says so', async () => {
         const child = spawn(process.execPath, [path.join(HOOKS, 'dispatch.mjs'), 'pre'], {
             stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, ...NO_AGENT_HOST },
         });
         child.stdin.on('error', () => { /* child exits first: EPIPE is expected */ });
         child.stdin.write('{"session_id":"x"}');
@@ -336,6 +362,29 @@ describe('dispatch.mjs guard parity (CORE-2339)', () => {
         expect(code).toBe(0);
         expect(stderr).toContain('stdin never completed');
     }, 20000);
+
+    // XTRM-592: the Stop inbox reminder runs inside `dispatch.mjs event`. A failing
+    // picker yields the reminder's own stderr diagnostic, which proves it ran in-process
+    // without touching tmux (the picker fails before any pane option is read).
+    it('event: Stop runs the inbox reminder in-process; other events stay silent', async () => {
+        const temp = await mkdtemp(path.join(tmpdir(), 'xtrm-dispatch-event-'));
+        try {
+            const env = { TMUX: '', TMUX_PANE: '%999999', XTMUX_PICKER: '/bin/false' };
+            const stop = runDispatcher('event', {
+                session_id: 'dispatch-test', cwd: temp, hook_event_name: 'Stop', stop_hook_active: false,
+            }, temp, env);
+            expect(stop.status).toBe(0);
+            expect(stop.stdout).toBe('');
+            expect(stop.stderr).toContain('xtmux inbox reminder unavailable: message-list failed');
+
+            for (const hook_event_name of ['UserPromptSubmit', 'Notification', 'SubagentStop', 'SessionEnd']) {
+                const other = runDispatcher('event', { session_id: 'dispatch-test', cwd: temp, hook_event_name }, temp, env);
+                expect(other, hook_event_name).toMatchObject({ status: 0, stdout: '', stderr: '' });
+            }
+        } finally {
+            await rm(temp, { recursive: true, force: true });
+        }
+    });
 
     it('session: exits 0 on a plain project dir', async () => {
         const temp = await mkdtemp(path.join(tmpdir(), 'xtrm-dispatch-sess-'));

@@ -50,15 +50,18 @@ The compiled `.xtrm/config/hooks.json` is the definitive current event/matcher l
 ## Current wired hooks
 
 Since CORE-2339 the Claude hook surface is **one process per event**: a single
-`dispatch.mjs` registered for PreToolUse, PostToolUse and SessionStart, which
-runs the xt checks in-process. `Stop` keeps its own single hook.
+`dispatch.mjs` registered for every event xt serves, which runs the xt checks
+in-process. Since XTRM-592 each mode also reports the event to the XTRM agent
+host (`agent-host-reporter.mjs`, imported, never a process of its own); the
+report runs alongside the checks and never changes their exit code.
 
 | Event | Command | Checks that run inside it |
 |---|---|---|
-| `PreToolUse` (`Edit\|Write\|MultiEdit\|NotebookEdit\|Agent`) | `node .xtrm/hooks/dispatch.mjs pre` | worktree boundary guard; specialists agent guard |
+| `PreToolUse` (all tools) | `node .xtrm/hooks/dispatch.mjs pre` | worktree boundary guard (Edit/Write/MultiEdit/NotebookEdit); specialists agent guard (Agent); presence report |
 | `PostToolUse` (all tools) | `node .xtrm/hooks/dispatch.mjs post` | tool.call logging; GitNexus enrichment (Bash/Grep/Read/Glob + Serena); quality gate — in-process for JS/TS, `quality-check.py` child for Python |
 | `SessionStart` (all) | `node .xtrm/hooks/dispatch.mjs session` | quality-gate environment probe; session-start logging; worktree reap sweep |
-| `Stop` (all) | `node .xtrm/hooks/inbox-reminder-stop.mjs` | unread pane-scoped inbound message reminder |
+| `Stop` (all) | `node .xtrm/hooks/dispatch.mjs event` | unread pane-scoped inbound message reminder; presence report |
+| `UserPromptSubmit`, `Notification`, `SubagentStop`, `SessionEnd` | `node .xtrm/hooks/dispatch.mjs event` | presence report |
 
 The wiring is generated: edit `policies/hook-dispatcher.json` and run
 `node scripts/compile-policies.mjs`. Never hand-edit `.xtrm/config/hooks.json`.

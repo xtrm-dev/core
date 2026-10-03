@@ -7,11 +7,11 @@
       "install_scope": "global",
       "files": {
         "agent-host-reporter.mjs": {
-          "hash": "45cfc095f482c34afa60bdcb774eff1ba5f825474eec0943ea121de83068e495",
+          "hash": "f491a52d210df5c07ecf6aace45ebcb43fb014f68a5c9c2c3af4bfe5531b5aec",
           "version": "0.14.0"
         },
         "dispatch.mjs": {
-          "hash": "954d5f109ccde097363096817039e652ea84fab88f57c435ae29fc3e24503d38",
+          "hash": "94a79fd304419271bf1aff76902a13ba839d3b74ad208fb295ad64ce804fdc2d",
           "version": "0.14.0"
         },
         "gitnexus/gitnexus-hook.cjs": {
@@ -19,11 +19,11 @@
           "version": "0.14.0"
         },
         "hook-routing.mjs": {
-          "hash": "2df8477c7c6ea13907f60109480f9f68f4c98f78f6f0338ba221d5b5022f068c",
+          "hash": "acc0edb6381fb001b8c05fdbac4814c96a10db2d7a7d8c5f8e89e5e7014d8b7f",
           "version": "0.14.0"
         },
         "inbox-reminder-stop.mjs": {
-          "hash": "c0060b8661872bfcebc71283d8ebd3985ac0396e158c3c88f02b8c0ad7e2ea55",
+          "hash": "6fadad32b2f88c1e7a09391daa81c607f4f510f90149c34e05a5562b59e5d17e",
           "version": "0.14.0"
         },
         "quality-check-env.mjs": {
@@ -944,7 +944,7 @@
           "version": "0.14.0"
         },
         "hooks.json": {
-          "hash": "8134b0a79a8677cae650e1791495927f3a3449ba7602ad44251c264dd158d3e7",
+          "hash": "99b17e2d576f600d9964f099b346bcf1cca37414478a9defba73c800f8f9b3af",
           "version": "0.14.0"
         },
         "instructions/agent-contract.md": {

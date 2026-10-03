@@ -1,6 +1,6 @@
 {
   "id": "hook-dispatcher",
-  "description": "Single xt-managed hook process per Claude Code event (CORE-2339). worktree-boundary, specialists-agent-guard, the quality gates, the gitnexus enrichment and the xt debug loggers all run in-process inside dispatch.mjs; their policies no longer register a command of their own.",
+  "description": "Single xt-managed hook process per Claude Code event (CORE-2339). worktree-boundary, specialists-agent-guard, the quality gates, the gitnexus enrichment and the xt debug loggers all run in-process inside dispatch.mjs; their policies no longer register a command of their own. XTRM-592: the XTRM-569 agent host presence reporter and the Stop inbox reminder also run in-process (formerly agent-host-reporter.json and inbox-reminder.json); PreToolUse has no matcher because presence covers every tool, and the guards keep their own tool routing inside dispatch.mjs.",
   "version": "1",
   "runtime": "claude",
   "order": 10,
@@ -8,7 +8,7 @@
     "hooks": [
       {
         "event": "PreToolUse",
-        "matcher": "$WRITE_TOOLS|Agent",
+        "matcher": "",
         "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs pre",
         "timeout": 2000
       },
@@ -23,6 +23,31 @@
         "matcher": "",
         "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs session",
         "timeout": 10000
+      },
+      {
+        "event": "UserPromptSubmit",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs event",
+        "timeout": 20000
+      },
+      {
+        "event": "Notification",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs event",
+        "timeout": 20000
+      },
+      {
+        "event": "Stop",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs event",
+        "timeout": 20000
+      },
+      {
+        "event": "SubagentStop",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs event",
+        "timeout": 20000
+      },
+      {
+        "event": "SessionEnd",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs event",
+        "timeout": 20000
       }
     ]
   }

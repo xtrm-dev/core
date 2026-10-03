@@ -1,9 +1,12 @@
 // XTRM-569: Claude Code hooks as a presence-only agent host producer (PRD xtrm-app §35.6,
-// §35.8 item 4, §36.12 item 4). Runs the real hook script against a real host socket, one
+// §35.8 item 4, §36.12 item 4). Runs the real hook command against a real host socket, one
 // short-lived process and connection per hook, as Claude Code invokes it.
+//
+// XTRM-592: the reporter runs inside the CORE-2339 dispatcher, so each hook below runs the
+// one command the compiled .xtrm/config/hooks.json registers for its event.
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +15,7 @@ import type { AgentEventV1 } from '@xtrm/contracts';
 import { startAgentHost, type AgentHost } from '../core/agent-host.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const reporter = path.resolve(here, '../../../.xtrm/hooks/agent-host-reporter.mjs');
+const xtrmDir = path.resolve(here, '../../../.xtrm');
 const sessionId = '5d1c9a52-0000-4000-8000-00000000c1a0';
 
 interface HookRun {
@@ -21,20 +24,53 @@ interface HookRun {
     ms: number;
 }
 
+const compiled = JSON.parse(readFileSync(path.join(xtrmDir, 'config', 'hooks.json'), 'utf8')) as {
+    hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+};
+
+/** The script argv Claude runs for an event: the event's single registered xt command. */
+function commandFor(event: unknown): string[] {
+    const commands = (compiled.hooks[String(event)] ?? []).flatMap((group) => group.hooks.map((h) => h.command));
+    expect(commands, `${String(event)} must register exactly one xt hook process`).toHaveLength(1);
+    const [node, script, ...args] = commands[0].split(' ');
+    expect(node).toBe('node');
+    return [script.replace('${CLAUDE_PLUGIN_ROOT}', xtrmDir), ...args];
+}
+
+/**
+ * A throwaway project for the hook payload cwd: the dispatcher also runs the xt loggers
+ * and the SessionStart reap sweep against it, so it must never be this repository. A fresh
+ * reap stamp rate-limits the sweep, so no `xt worktree reap` is spawned.
+ */
+function makeProject(root: string): string {
+    const project = path.join(root, 'project');
+    mkdirSync(path.join(project, '.git'), { recursive: true });
+    writeFileSync(path.join(project, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    mkdirSync(path.join(project, '.xtrm'), { recursive: true });
+    writeFileSync(path.join(project, '.xtrm', '.last-reap-sweep'), new Date().toISOString());
+    return project;
+}
+
 /** Run the hook as Claude does: JSON on stdin, inherited env, no tmux pane (never touch the caller's). */
 function runHook(socketPath: string, input: Record<string, unknown>, nodeArgs: string[] = []): Promise<HookRun> {
-    const env: NodeJS.ProcessEnv = { ...process.env, XTRM_AGENT_HOST_SOCKET: socketPath, XTRM_SESSION_NAME: 'claude-test' };
+    const cwd = path.join(path.dirname(socketPath), 'project');
+    const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        XTRM_AGENT_HOST_SOCKET: socketPath,
+        XTRM_SESSION_NAME: 'claude-test',
+        CLAUDE_PROJECT_DIR: cwd,
+    };
     for (const key of ['TMUX', 'TMUX_PANE', 'XTMUX_AGENT_ROLE', 'XTMUX_AGENT_BEAD', 'XTRM_AGENT_HOST', 'XTRM_AGENT_LAUNCH']) {
         delete env[key];
     }
     return new Promise((resolve, reject) => {
         const started = performance.now();
-        const child = spawn(process.execPath, [...nodeArgs, reporter], { env, stdio: ['pipe', 'pipe', 'ignore'] });
+        const child = spawn(process.execPath, [...nodeArgs, ...commandFor(input.hook_event_name)], { cwd, env, stdio: ['pipe', 'pipe', 'ignore'] });
         let stdout = '';
         child.stdout.on('data', (chunk) => (stdout += chunk));
         child.on('error', reject);
         child.on('close', (code) => resolve({ code, stdout, ms: performance.now() - started }));
-        child.stdin.end(JSON.stringify({ session_id: sessionId, transcript_path: '/tmp/t.jsonl', cwd: here, ...input }));
+        child.stdin.end(JSON.stringify({ session_id: sessionId, transcript_path: '/tmp/t.jsonl', cwd, ...input }));
     });
 }
 
@@ -53,9 +89,11 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
     let socketPath: string;
     let host: AgentHost;
     let frames: AgentEventV1[];
+    let project: string;
 
     beforeEach(async () => {
         dir = mkdtempSync(path.join(os.tmpdir(), 'xt-host-claude-'));
+        project = makeProject(dir);
         socketPath = path.join(dir, 'agent-host.sock');
         host = await startAgentHost({ socketPath, infoPath: path.join(dir, 'agent-host.json'), log: () => {} });
         // Bind the subscription to this test's own array: a frame delivered late by the
@@ -110,11 +148,12 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
             producer: { name: 'xtrm-tools/agent-host-reporter' },
             sessionName: 'claude-test',
             sessionFile: '/tmp/t.jsonl',
-            cwd: here,
+            cwd: project,
+            worktree: project,
+            branch: 'main',
             launch: 'terminal',
             capabilities: ['presence'],
         });
-        expect(identity.worktree).toBeTruthy();
         expect(summary()).toMatchObject({ provider: 'claude', state: 'settled', capabilities: ['presence'] });
         // The hook connection is gone, but a presence-only session stays.
         await until(() => summary()?.extensionConnected === false);
@@ -187,9 +226,26 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
         expect(run.ms).toBeLessThan(1000);
     });
 
+    it('keeps a guard decision on stdout while reporting the same PreToolUse (XTRM-592)', async () => {
+        // The dispatcher's boundary guard blocks an edit outside the worktree; the presence
+        // report runs in the same process and must neither swallow nor delay that decision.
+        const worktree = path.join(dir, 'repo', '.xtrm', 'worktrees', 'wt');
+        const run = await runHook(socketPath, {
+            hook_event_name: 'PreToolUse',
+            cwd: worktree,
+            tool_name: 'Edit',
+            tool_use_id: 'toolu_guard',
+            tool_input: { file_path: path.join(dir, 'repo', 'outside.ts') },
+        });
+        expect(run.code).toBe(0);
+        expect(JSON.parse(run.stdout)).toMatchObject({ decision: 'block' });
+        await until(() => frames.find((f) => (f.payload as { toolCallId?: string }).toolCallId === 'toolu_guard'));
+    });
+
     it('exits 0 with no output on malformed stdin', async () => {
-        const child = spawn(process.execPath, [reporter], {
-            env: { ...process.env, XTRM_AGENT_HOST_SOCKET: socketPath, TMUX: '' },
+        const child = spawn(process.execPath, commandFor('PreToolUse'), {
+            cwd: project,
+            env: { ...process.env, XTRM_AGENT_HOST_SOCKET: socketPath, CLAUDE_PROJECT_DIR: project, TMUX: '' },
             stdio: ['pipe', 'pipe', 'ignore'],
         });
         let stdout = '';
