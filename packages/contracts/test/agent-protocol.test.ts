@@ -138,6 +138,28 @@ describe('agent-event.v1 semantics', () => {
         const { outcome: _outcome, ...noOutcome } = resolved;
         expect(validate(id, frame(noOutcome)).valid).toBe(false);
     });
+
+    it('reports session_status with every field optional and unknown context tokens as null', () => {
+        expect(validate(id, frame({ type: 'session_status' })).valid).toBe(true);
+        const status = { type: 'session_status', model: 'opencode-go/deepseek-v4.1-flash', thinkingLevel: 'off' };
+        expect(validate(id, frame({ ...status, contextUsage: { tokens: null, contextWindow: 128000 } })).valid).toBe(true);
+        expect(validate(id, frame({ ...status, contextUsage: { tokens: -1, contextWindow: 128000 } })).valid).toBe(false);
+        expect(validate(id, frame({ ...status, contextUsage: { tokens: 10, contextWindow: 0 } })).valid).toBe(false);
+        expect(validate(id, frame({ ...status, contextUsage: { tokens: 10, contextWindow: 10, percent: 100 } })).valid).toBe(false);
+        expect(validate(id, frame({ ...status, model: '' })).valid).toBe(false);
+    });
+
+    it('carries the repository as owner/name and its path separately on session_identity', () => {
+        const identity = fixtures.events[0].payload as Record<string, unknown>;
+        for (const repository of ['xtrm-dev/core', 'group/sub/name', 'a.b/c_d-e']) {
+            expect(validate(id, frame({ ...identity, repository })).valid, repository).toBe(true);
+        }
+        for (const repository of ['core', '/home/op/dev/core', 'git@github.com:xtrm-dev/core.git', 'https://github.com/xtrm-dev/core']) {
+            expect(validate(id, frame({ ...identity, repository })).valid, repository).toBe(false);
+        }
+        const { repository: _repository, ...noRemote } = identity;
+        expect(validate(id, frame(noRemote)).valid).toBe(true);
+    });
 });
 
 describe('agent-event.v1 Claude hook events', () => {

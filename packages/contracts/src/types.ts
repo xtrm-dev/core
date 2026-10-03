@@ -548,6 +548,10 @@ export interface AgentSessionIdentity {
     sessionName?: string;
     cwd: string;
     worktree?: string;
+    /** `owner/name` from the git remote; absent without a remote. */
+    repository?: string;
+    /** Root of the main repository (parent of the git common directory). */
+    repositoryPath?: string;
     branch?: string;
     role?: string;
     workItem?: AgentWorkItem;
@@ -557,8 +561,19 @@ export interface AgentSessionIdentity {
     capabilities: AgentCapability[];
 }
 
+/** Model, thinking level and context usage; each session_status frame replaces the previous one. */
+export interface AgentSessionStatus {
+    type: 'session_status';
+    /** `<provider>/<model id>`. */
+    model?: string;
+    thinkingLevel?: string;
+    /** tokens is null when Pi cannot estimate it (after compaction, before the next response). */
+    contextUsage?: { tokens: number | null; contextWindow: number };
+}
+
 export type AgentEventPayload =
     | AgentSessionIdentity
+    | AgentSessionStatus
     | { type: 'session_start'; reason: 'startup' | 'reload' | 'new' | 'resume' | 'fork'; previousSessionFile?: string }
     | {
           type: 'before_agent_start';
@@ -652,7 +667,10 @@ export interface AgentSessionSummary {
     state: 'working' | 'waiting_for_input' | 'settled' | 'failed' | 'history_only';
     name?: string;
     cwd: string;
+    /** `owner/name` from the git remote: the grouping key (§36). */
     repository?: string;
+    /** Root of the main repository on the host. */
+    repositoryPath?: string;
     worktree?: string;
     branch?: string;
     role?: string;

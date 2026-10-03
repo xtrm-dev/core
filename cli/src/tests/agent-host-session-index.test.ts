@@ -46,7 +46,8 @@ function piJournal(id: string, cwd: string, extra: unknown[] = []): string {
     return [
         { type: 'session', version: 3, id, timestamp: '2026-10-01T10:00:00.000Z', cwd },
         { type: 'model_change', id: 'm1', parentId: null, timestamp: '2026-10-01T10:00:00.001Z', provider: 'opencode-go', modelId: 'deepseek-v4.1-flash' },
-        { type: 'message', id: 'u1', parentId: 'm1', timestamp: '2026-10-01T10:00:05.000Z', message: { role: 'user', content: [{ type: 'text', text: 'fix the\nflaky test' }], timestamp: 1 } },
+        { type: 'thinking_level_change', id: 'k1', parentId: 'm1', timestamp: '2026-10-01T10:00:00.002Z', thinkingLevel: 'high' },
+        { type: 'message', id: 'u1', parentId: 'k1', timestamp: '2026-10-01T10:00:05.000Z', message: { role: 'user', content: [{ type: 'text', text: 'fix the\nflaky test' }], timestamp: 1 } },
         { type: 'message', id: 'a1', parentId: 'u1', timestamp: '2026-10-01T10:00:09.000Z', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } },
         { type: 'message', id: 't1', parentId: 'a1', timestamp: '2026-10-01T10:00:10.000Z', message: { role: 'toolResult', content: [] } },
         ...extra,
@@ -106,7 +107,7 @@ describe('session index (XTRM-565)', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 
-    it('derives title, cwd, model, started, last activity and Frame count from Pi and Claude journals', async () => {
+    it('derives title, cwd, model, thinking level, started, last activity and Frame count from Pi and Claude journals', async () => {
         const piFile = path.join(piRoot, '--work-core--', '2026-10-01T10-00-00-000Z_p1.jsonl');
         writeFileSync(piFile, piJournal('p1', '/work/core'));
         writeFileSync(path.join(piRoot, '--work-core--', 'not-a-session.jsonl'), line({ type: 'message', id: 'x' }));
@@ -126,6 +127,7 @@ describe('session index (XTRM-565)', () => {
             extensionConnected: false,
             capabilities: [],
             model: 'opencode-go/deepseek-v4.1-flash',
+            thinkingLevel: 'high',
             frameCount: 1,
             startedAt: Date.parse('2026-10-01T10:00:00.000Z'),
             lastActivityAt: Date.parse('2026-10-01T10:00:09.000Z'),

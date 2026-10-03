@@ -14,6 +14,8 @@
                 "sessionName": "pi-main",
                 "cwd": "/home/op/dev/core",
                 "worktree": "/home/op/dev/core/.xtrm/worktrees/core-xt-pi-main",
+                "repository": "xtrm-dev/core",
+                "repositoryPath": "/home/op/dev/core",
                 "branch": "xt/pi-main",
                 "role": "coordinator",
                 "workItem": { "ref": "XTRM-561", "project": "prj_xtrm", "system": "substrate" },
@@ -21,6 +23,18 @@
                 "tmux": { "session": "xtrm-pi-main", "paneId": "%12" },
                 "launch": "terminal",
                 "capabilities": ["presence", "stream", "prompt", "steer", "follow_up", "abort", "extension_ui"]
+            }
+        },
+        {
+            "schema": "xtrm.agent-event.v1",
+            "seq": 1,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000001,
+            "payload": {
+                "type": "session_status",
+                "model": "opencode-go/deepseek-v4.1-flash",
+                "thinkingLevel": "medium",
+                "contextUsage": { "tokens": 18432, "contextWindow": 1000000 }
             }
         },
         {
@@ -308,7 +322,8 @@
                     "state": "working",
                     "name": "pi-main",
                     "cwd": "/home/op/dev/core",
-                    "repository": "/home/op/dev/core",
+                    "repository": "xtrm-dev/core",
+                    "repositoryPath": "/home/op/dev/core",
                     "role": "coordinator",
                     "workItem": { "ref": "XTRM-561", "project": "prj_xtrm", "system": "substrate" },
                     "childCount": 2,

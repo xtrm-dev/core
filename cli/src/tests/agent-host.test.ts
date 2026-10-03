@@ -306,6 +306,34 @@ describe('xt host agent host (XTRM-563)', () => {
         ext.close();
     });
 
+    it('reports repository owner/name, its path, model, thinking level and context usage in the session summary (XTRM-603)', async () => {
+        const ext = await FakeExtension.connect(socketPath);
+        ext.push(identity);
+        await until(() => host.registry.list().length === 1);
+        const summaryOf = async () => {
+            const reply = await request(host, 'GET', `/v1/sessions/${sessionId}`);
+            expect(validate('xtrm.agent-host-api.v1', reply.body).errors).toEqual([]);
+            return (reply.body as Extract<AgentHostApiV1, { kind: 'session_detail' }>).session;
+        };
+        const before = await summaryOf();
+        expect(before).toMatchObject({ repository: 'xtrm-dev/core', repositoryPath: '/home/op/dev/core' });
+        expect(before).not.toHaveProperty('model');
+        expect(before).not.toHaveProperty('contextUsage');
+
+        const status = { model: 'opencode-go/deepseek-v4.1-flash', thinkingLevel: 'medium' };
+        ext.payload('session_status', { ...status, contextUsage: { tokens: 1200, contextWindow: 1000000 } });
+        await until(() => host.registry.list()[0]?.contextUsage?.tokens === 1200);
+        expect(await summaryOf()).toMatchObject({ ...status, contextUsage: { tokens: 1200, contextWindow: 1000000 } });
+
+        // Each status replaces the last; unknown tokens (after compaction) clear the meter.
+        ext.payload('session_status', { ...status, thinkingLevel: 'high', contextUsage: { tokens: null, contextWindow: 1000000 } });
+        await until(() => host.registry.list()[0]?.thinkingLevel === 'high');
+        const compacted = await summaryOf();
+        expect(compacted).toMatchObject({ model: status.model, thinkingLevel: 'high' });
+        expect(compacted).not.toHaveProperty('contextUsage');
+        ext.close();
+    });
+
     it('drops a persistent session from the live registry when its extension disconnects', async () => {
         const ext = await FakeExtension.connect(socketPath);
         ext.push(identity);

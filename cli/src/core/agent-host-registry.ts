@@ -17,6 +17,7 @@ import type {
     AgentHostApiV1,
     AgentMessagePassthrough,
     AgentSessionIdentity,
+    AgentSessionStatus,
     AgentSessionSummary,
     AgentToolOrigin,
 } from '@xtrm/contracts';
@@ -49,6 +50,8 @@ export interface ProducerConnection {
 
 interface LiveSession {
     identity: AgentSessionIdentity;
+    /** The latest session_status (model, thinking level, context usage); each one replaces the last. */
+    status: AgentSessionStatus | null;
     connection: ProducerConnection | null;
     /** A Frame is open between before_agent_start/agent_start and agent_settled. */
     frameOpen: boolean;
@@ -146,6 +149,7 @@ export class AgentHostRegistry {
             } else {
                 session = {
                     identity,
+                    status: null,
                     connection,
                     frameOpen: false,
                     promptPending: null,
@@ -172,9 +176,14 @@ export class AgentHostRegistry {
         session.lastSeq = frame.seq;
         if (session.frameOpen) session.frames.at(-1)!.seq = frame.seq;
         // A notification-driven wait ends with the next lifecycle or tool event: the operator answered.
-        if (payload.type !== 'session_identity' && payload.type !== 'subagent_end') session.awaitingLocalInput = false;
+        if (payload.type !== 'session_identity' && payload.type !== 'session_status' && payload.type !== 'subagent_end') {
+            session.awaitingLocalInput = false;
+        }
 
         switch (payload.type) {
+            case 'session_status':
+                session.status = payload;
+                break;
             case 'before_agent_start':
             case 'agent_start':
                 if (!session.frameOpen) this.openFrame(session, frame.seq);
@@ -475,6 +484,7 @@ export class AgentHostRegistry {
         const session = this.sessions.get(sessionId);
         if (!session) return null;
         const id = session.identity;
+        const status = session.status;
         let childCount = 0;
         for (const other of this.sessions.values()) if (other.identity.parentSessionId === sessionId) childCount += 1;
         return {
@@ -488,6 +498,8 @@ export class AgentHostRegistry {
                       : 'settled',
             ...(id.sessionName ? { name: id.sessionName } : {}),
             cwd: id.cwd,
+            ...(id.repository ? { repository: id.repository } : {}),
+            ...(id.repositoryPath ? { repositoryPath: id.repositoryPath } : {}),
             ...(id.worktree ? { worktree: id.worktree } : {}),
             ...(id.branch ? { branch: id.branch } : {}),
             ...(id.role ? { role: id.role } : {}),
@@ -498,6 +510,12 @@ export class AgentHostRegistry {
             ...(id.launch ? { launch: id.launch } : {}),
             extensionConnected: session.connection !== null,
             capabilities: id.capabilities,
+            ...(status?.model ? { model: status.model } : {}),
+            ...(status?.thinkingLevel ? { thinkingLevel: status.thinkingLevel } : {}),
+            // Unknown tokens (after compaction) clear the meter instead of showing a stale value.
+            ...(status?.contextUsage && status.contextUsage.tokens !== null
+                ? { contextUsage: { tokens: status.contextUsage.tokens, contextWindow: status.contextUsage.contextWindow } }
+                : {}),
             frameCount: session.frameCount,
             startedAt: session.startedAt,
             lastActivityAt: session.lastActivityAt,
