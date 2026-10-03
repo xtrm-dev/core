@@ -450,7 +450,7 @@ describe('upgrade from 0.14.0 hooks (XTRM-592)', () => {
   });
 });
 
-describe('retired hook residue (XTRM-602)', () => {
+describe('retired hook residue (XTRM-602, XTRM-606 beads sweep)', () => {
   const NEW_CONFIG = path.resolve(__dirname, '../../../.xtrm/config/hooks.json');
   const EVENTS = ['Notification', 'PostToolUse', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'SubagentStop', 'UserPromptSubmit'];
   const cmd = (command: string): Wrapper => ({ hooks: [{ type: 'command', command }] });
@@ -470,19 +470,37 @@ describe('retired hook residue (XTRM-602)', () => {
     fs.ensureDirSync(path.dirname(settingsPath));
     fs.copySync(NEW_CONFIG, configPath);
 
-    const retired = [
-      cmd(`node "${hooksDir}/inbox-reminder-stop.mjs"`),
-      cmd('node "$HOME/.xtrm/hooks/beads-stop-gate.mjs"'),
-      cmd('node ~/.xtrm/hooks/beads-memory-gate.mjs'),
+    // XTRM-606: one wrapper per beads hook file xt once registered. Each
+    // lives on the event the canonical hooks.json used to wire it to.
+    const retired: Array<[string, Wrapper]> = [
+      ['Stop', cmd('node "$HOME/.xtrm/hooks/beads-stop-gate.mjs"')],
+      ['Stop', cmd('node ~/.xtrm/hooks/beads-memory-gate.mjs')],
+      ['Stop', cmd(`node "${hooksDir}/inbox-reminder-stop.mjs"`)],
+      ['PreToolUse', cmd('node ~/.xtrm/hooks/beads-edit-gate.mjs')],
+      ['PreToolUse', cmd(`node "${hooksDir}/beads-commit-gate.mjs"`)],
+      ['PostToolUse', cmd('node ~/.xtrm/hooks/beads-claim-sync.mjs')],
+      ['PostToolUse', cmd(`node "${hooksDir}/beads-close-memory-prompt.mjs"`)],
+      ['SessionStart', cmd('node ~/.xtrm/hooks/beads-compact-restore.mjs')],
+      ['PreCompact', cmd(`node "${hooksDir}/beads-compact-save.mjs"`)],
     ];
+    const retiredWrappers = retired.map(([, wrapper]) => wrapper);
     const foreign = cmd('bash /home/user/.claude/hooks/xtmux/agent-state.sh done');
     // Same file name outside ~/.xtrm/hooks: never matched by name alone.
     const elsewhere = cmd('node "/opt/tools/inbox-reminder-stop.mjs"');
     // A retired file next to a foreign command: the wrapper is kept whole.
-    const mixed: Wrapper = { hooks: [{ type: 'command', command: `node "${hooksDir}/inbox-reminder-stop.mjs"` }, { type: 'command', command: 'bash /opt/tools/notify.sh' }] };
-    // An xt file that is not on the retired list survives.
-    const unlisted = cmd('node ~/.xtrm/hooks/beads-compact-save.mjs');
-    fs.writeJsonSync(settingsPath, { hooks: { Stop: [...retired, foreign, elsewhere, mixed], PreCompact: [unlisted] } });
+    const mixed: Wrapper = { hooks: [{ type: 'command', command: `node "${hooksDir}/beads-edit-gate.mjs"` }, { type: 'command', command: 'bash /opt/tools/notify.sh' }] };
+    // An xt payload module that was never registered as a hook survives
+    // (XTRM-606 narrowed the preserve case to these files).
+    const unlisted = cmd('node ~/.xtrm/hooks/beads-gate-utils.mjs');
+    // XTRM-606: git history shows xt never registered a bare bd command hook
+    // (for example `bd prime`), so a bare command is foreign and stays.
+    const bareBd = cmd('bd prime');
+    const staged = retired.reduce<Record<string, Wrapper[]>>((acc, [event, wrapper]) => {
+      (acc[event] ??= []).push(wrapper);
+      return acc;
+    }, {});
+    staged.SessionStart.push(bareBd);
+    fs.writeJsonSync(settingsPath, { hooks: { ...staged, Stop: [...staged.Stop, foreign, elsewhere, mixed], PreCompact: [...staged.PreCompact, unlisted] } });
 
     const log = captureLog();
     let first;
@@ -494,19 +512,23 @@ describe('retired hook residue (XTRM-602)', () => {
     expect(first.changed).toBe(true);
 
     const after = fs.readJsonSync(settingsPath).hooks as Record<string, Wrapper[]>;
-    for (const wrapper of retired) expect(after.Stop).not.toContainEqual(wrapper);
+    for (const [event, wrapper] of retired) expect(after[event]).not.toContainEqual(wrapper);
+    // Wrapper-level containment is the guarantee; a crude name-string check
+    // would false-positive on the intentional elsewhere/mixed survivors.
     expect(after.Stop).toContainEqual(foreign);
     expect(after.Stop).toContainEqual(elsewhere);
     expect(after.Stop).toContainEqual(mixed);
+    expect(after.SessionStart).toContainEqual(bareBd);
     expect(after.PreCompact).toEqual([unlisted]);
     for (const event of EVENTS) {
       expect(commandsOf(after[event]).filter((c) => c.includes('dispatch.mjs')), event).toHaveLength(1);
     }
 
     const removals = log.lines.filter((line) => line.includes('removed retired hook'));
-    expect(removals).toHaveLength(3);
-    for (const name of ['inbox-reminder-stop.mjs', 'beads-stop-gate.mjs', 'beads-memory-gate.mjs']) {
-      expect(removals.some((line) => line.includes('Stop') && line.includes(name)), name).toBe(true);
+    expect(removals).toHaveLength(retiredWrappers.length);
+    for (const [event, wrapper] of retired) {
+      const name = /([\w-]+\.mjs)"?$/.exec(wrapper.hooks[0].command)?.[1] ?? '';
+      expect(removals.some((line) => line.includes(event) && line.includes(name)), `${event} ${name}`).toBe(true);
     }
 
     // A second sync is a no-op and reports nothing.
