@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mergeProjectOwnedHooks, reconcileGlobalClaudeHooks, reconcileProjectClaudeHooks, resolveHooksForGlobalRuntime, runClaudeRuntimeSyncPhase } from '../core/claude-runtime-sync.js';
 
@@ -439,7 +439,7 @@ describe('upgrade from 0.14.0 hooks (XTRM-592)', () => {
     const projectHooksDir = path.join(repoRoot, '.xtrm', 'hooks');
     const old = fs.readJsonSync(OLD_CONFIG).hooks as Record<string, Wrapper[]>;
     fs.ensureDirSync(path.dirname(settingsPath));
-    fs.writeJsonSync(settingsPath, { hooks: resolveHooksForGlobalRuntime(old, projectHooksDir) });
+    fs.writeJsonSync(settingsPath, { hooks: resolveHooksForGlobalRuntime(old as Parameters<typeof resolveHooksForGlobalRuntime>[0], projectHooksDir) });
 
     await reconcileProjectClaudeHooks(repoRoot, { dryRun: false });
 
@@ -447,5 +447,94 @@ describe('upgrade from 0.14.0 hooks (XTRM-592)', () => {
     for (const retired of RETIRED) expect(JSON.stringify(after)).not.toContain(retired);
     expect(Object.keys(after).sort()).toEqual(EVENTS);
     for (const event of EVENTS) expect(after[event], event).toHaveLength(1);
+  });
+});
+
+describe('retired hook residue (XTRM-602)', () => {
+  const NEW_CONFIG = path.resolve(__dirname, '../../../.xtrm/config/hooks.json');
+  const EVENTS = ['Notification', 'PostToolUse', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'SubagentStop', 'UserPromptSubmit'];
+  const cmd = (command: string): Wrapper => ({ hooks: [{ type: 'command', command }] });
+  const commandsOf = (wrappers: Wrapper[] = []) => wrappers.flatMap((w) => w.hooks.map((h) => h.command));
+
+  function captureLog(): { lines: string[]; restore: () => void } {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { lines.push(args.map(String).join(' ')); });
+    return { lines, restore: () => spy.mockRestore() };
+  }
+
+  it('global: drops untagged wrappers that target retired ~/.xtrm/hooks files and keeps every other entry', async () => {
+    const hooksDir = path.join(fakeHome, '.xtrm', 'hooks');
+    const configPath = path.join(fakeHome, '.xtrm', 'config', 'hooks.json');
+    const settingsPath = path.join(fakeHome, '.claude', 'settings.json');
+    fs.ensureDirSync(path.dirname(configPath));
+    fs.ensureDirSync(path.dirname(settingsPath));
+    fs.copySync(NEW_CONFIG, configPath);
+
+    const retired = [
+      cmd(`node "${hooksDir}/inbox-reminder-stop.mjs"`),
+      cmd('node "$HOME/.xtrm/hooks/beads-stop-gate.mjs"'),
+      cmd('node ~/.xtrm/hooks/beads-memory-gate.mjs'),
+    ];
+    const foreign = cmd('bash /home/user/.claude/hooks/xtmux/agent-state.sh done');
+    // Same file name outside ~/.xtrm/hooks: never matched by name alone.
+    const elsewhere = cmd('node "/opt/tools/inbox-reminder-stop.mjs"');
+    // A retired file next to a foreign command: the wrapper is kept whole.
+    const mixed: Wrapper = { hooks: [{ type: 'command', command: `node "${hooksDir}/inbox-reminder-stop.mjs"` }, { type: 'command', command: 'bash /opt/tools/notify.sh' }] };
+    // An xt file that is not on the retired list survives.
+    const unlisted = cmd('node ~/.xtrm/hooks/beads-compact-save.mjs');
+    fs.writeJsonSync(settingsPath, { hooks: { Stop: [...retired, foreign, elsewhere, mixed], PreCompact: [unlisted] } });
+
+    const log = captureLog();
+    let first;
+    try {
+      first = await reconcileGlobalClaudeHooks({ dryRun: false });
+    } finally {
+      log.restore();
+    }
+    expect(first.changed).toBe(true);
+
+    const after = fs.readJsonSync(settingsPath).hooks as Record<string, Wrapper[]>;
+    for (const wrapper of retired) expect(after.Stop).not.toContainEqual(wrapper);
+    expect(after.Stop).toContainEqual(foreign);
+    expect(after.Stop).toContainEqual(elsewhere);
+    expect(after.Stop).toContainEqual(mixed);
+    expect(after.PreCompact).toEqual([unlisted]);
+    for (const event of EVENTS) {
+      expect(commandsOf(after[event]).filter((c) => c.includes('dispatch.mjs')), event).toHaveLength(1);
+    }
+
+    const removals = log.lines.filter((line) => line.includes('removed retired hook'));
+    expect(removals).toHaveLength(3);
+    for (const name of ['inbox-reminder-stop.mjs', 'beads-stop-gate.mjs', 'beads-memory-gate.mjs']) {
+      expect(removals.some((line) => line.includes('Stop') && line.includes(name)), name).toBe(true);
+    }
+
+    // A second sync is a no-op and reports nothing.
+    const log2 = captureLog();
+    try {
+      expect((await reconcileGlobalClaudeHooks({ dryRun: false })).changed).toBe(false);
+    } finally {
+      log2.restore();
+    }
+    expect(log2.lines.filter((line) => line.includes('retired hook'))).toEqual([]);
+  });
+
+  it('project: reports the retired ~/.xtrm/hooks wrappers that reconcile drops', async () => {
+    const settingsPath = path.join(repoRoot, '.claude', 'settings.json');
+    const foreign = cmd('bash /home/user/.claude/hooks/xtmux/agent-state.sh done');
+    fs.ensureDirSync(path.dirname(settingsPath));
+    fs.writeJsonSync(settingsPath, { hooks: { Stop: [cmd('node ~/.xtrm/hooks/inbox-reminder-stop.mjs'), foreign] } });
+
+    const log = captureLog();
+    try {
+      await reconcileProjectClaudeHooks(repoRoot, { dryRun: false });
+    } finally {
+      log.restore();
+    }
+
+    const after = fs.readJsonSync(settingsPath).hooks as Record<string, Wrapper[]>;
+    expect(JSON.stringify(after)).not.toContain('inbox-reminder-stop.mjs');
+    expect(after.Stop).toContainEqual(foreign);
+    expect(log.lines.filter((line) => line.includes('removed retired hook') && line.includes('inbox-reminder-stop.mjs'))).toHaveLength(1);
   });
 });

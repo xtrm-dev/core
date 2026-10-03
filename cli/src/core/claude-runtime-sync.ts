@@ -92,9 +92,34 @@ interface SafeMergeResult {
     readonly settings: HookRuntimeSettingsShape;
     readonly changed: boolean;
     readonly hooksEntries: number;
+    /** Untagged wrappers dropped because every command targets a retired ~/.xtrm/hooks file. */
+    readonly retiredRemoved: readonly RetiredHookRemoval[];
+}
+
+export interface RetiredHookRemoval {
+    readonly event: string;
+    readonly command: string;
 }
 
 const XTRM_GLOBAL_SOURCE = 'xtrm-global';
+
+// XTRM-602: hook files that xt once registered as standalone hooks and has
+// since folded into dispatch.mjs or removed. Older installs left untagged
+// (no _source) wrappers for these in settings.json; they survive the owned-hook
+// merge as foreign entries and make the event spawn a second process. An
+// untagged wrapper is dropped only when every command in it resolves under
+// ~/.xtrm/hooks to a file on this list. Never match by name alone, and never
+// add a file here without the commit that retired its registration.
+const RETIRED_HOOK_FILES: ReadonlySet<string> = new Set([
+    // Registered by 617a74fe (#525); folded into dispatch.mjs event by 93c90513 (XTRM-592, #683).
+    'inbox-reminder-stop.mjs',
+    // Registered by 7196cdc7 (XTRM-569); folded into dispatch.mjs by 93c90513 (XTRM-592, #683).
+    'agent-host-reporter.mjs',
+    // Registered since 020e1bec (#100); Stop registration removed by f949b33f (xtrm-6qu.8).
+    'beads-stop-gate.mjs',
+    // Registered since 020e1bec (#100); retired with the bd-memory stack by 959c7718 (#639).
+    'beads-memory-gate.mjs',
+]);
 
 export function renderClaudeRuntimePlanSummary(): void {
     console.log(kleur.bold('\n  Claude Runtime Sync'));
@@ -223,8 +248,12 @@ export async function reconcileProjectClaudeHooks(
         if (skip.drift) console.log(t.muted(`    ↳ ${skip.drift}`));
     }
     const generatedHooksToWrite = coverage.hooks;
+    const existingHooks = await readExistingHooks(settingsPath);
+    // XTRM-602: mergeProjectOwnedHooks already drops every untagged .xtrm/hooks
+    // wrapper at project scope; report the retired ones so the removal is visible.
+    reportRetiredHookRemovals(findRetiredHookWrappers(existingHooks, path.resolve(os.homedir(), '.xtrm', 'hooks')), dryRun);
     // xtrm-61cdl: preserve third-party (unmanaged) wrappers on reconcile.
-    const mergedHooks = mergeProjectOwnedHooks(await readExistingHooks(settingsPath), generatedHooksToWrite, projectHooksDir);
+    const mergedHooks = mergeProjectOwnedHooks(existingHooks, generatedHooksToWrite, projectHooksDir);
     // xtrm-v1yck: drop registrations the global install already covers byte-for-byte.
     // Fail-open — without a readable global baseline nothing is provably redundant.
     const dedupe = await planLegacyHookDedupe(repoRoot, mergedHooks);
@@ -276,6 +305,7 @@ export async function reconcileGlobalClaudeHooks(opts: { dryRun?: boolean } = {}
 
     const currentSettings = await readSettings(settingsPath);
     const mergeResult = await safeMergeOwnedHookSettings(currentSettings, generatedHooks, { dryRun });
+    reportRetiredHookRemovals(mergeResult.retiredRemoved, dryRun);
     if (!mergeResult.changed) {
         await ensureGlobalStatusLine();
         await appendHookLog({
@@ -575,6 +605,7 @@ export async function safeMergeOwnedHookSettings(
     const canonicalHashes = new Set(Object.values(taggedHooks).flat().map((wrapper) => wrapper._xtrm?.hash ?? stableHookHash(wrapper)));
     const mergedHooks: Record<string, HookWrapper[]> = {};
     const globalHooksRoot = path.resolve(os.homedir(), '.xtrm', 'hooks');
+    const retiredRemoved: RetiredHookRemoval[] = [];
 
     for (const [eventName, wrappers] of Object.entries(taggedHooks)) {
         mergedHooks[eventName] = [...wrappers];
@@ -586,6 +617,12 @@ export async function safeMergeOwnedHookSettings(
             const entryHash = stableHookHash(wrapper);
             if (wrapper._source === XTRM_GLOBAL_SOURCE || canonicalHashes.has(entryHash) || canonicalHashes.has(wrapper._xtrm?.hash ?? '')) {
                 await appendHookLog({ timestamp: new Date().toISOString(), component: 'hooks-migration', event: 'hook.entry.owned-replaced', entryKey: eventName, source: hashValue(entryHash), action: 'replace', outcome: 'ok', durationMs: 0 });
+                continue;
+            }
+
+            if (isRetiredHookWrapper(wrapper, globalHooksRoot)) {
+                for (const hook of wrapper.hooks) retiredRemoved.push({ event: eventName, command: hook.command });
+                await appendHookLog({ timestamp: new Date().toISOString(), component: 'hooks-migration', event: 'hook.entry.retired-removed', entryKey: eventName, source: hashValue(entryHash), action: 'remove', outcome: 'ok', durationMs: 0 });
                 continue;
             }
 
@@ -610,7 +647,50 @@ export async function safeMergeOwnedHookSettings(
 
     const nextSettings: HookRuntimeSettingsShape = { ...currentSettings, hooks: mergedHooks };
     const changed = JSON.stringify(currentSettings) !== JSON.stringify(nextSettings);
-    return { settings: nextSettings, changed: changed && !opts.dryRun, hooksEntries: countHookEntries(taggedHooks) };
+    return { settings: nextSettings, changed: changed && !opts.dryRun, hooksEntries: countHookEntries(taggedHooks), retiredRemoved };
+}
+
+function reportRetiredHookRemovals(removals: readonly RetiredHookRemoval[], dryRun: boolean): void {
+    const verb = dryRun ? 'would remove' : 'removed';
+    for (const removal of removals) {
+        console.log(t.label(`  • ${verb} retired hook: ${removal.event} ${removal.command.slice(0, 120)}`));
+    }
+}
+
+// XTRM-602: list the untagged wrappers in a hooks map that isRetiredHookWrapper
+// would drop, one entry per command.
+export function findRetiredHookWrappers(hooks: Record<string, HookWrapper[]>, globalHooksRoot: string): RetiredHookRemoval[] {
+    const removals: RetiredHookRemoval[] = [];
+    for (const [eventName, wrappers] of Object.entries(hooks)) {
+        if (!Array.isArray(wrappers)) continue;
+        for (const wrapper of wrappers) {
+            if (!isRetiredHookWrapper(wrapper, globalHooksRoot)) continue;
+            for (const hook of wrapper.hooks) removals.push({ event: eventName, command: hook.command });
+        }
+    }
+    return removals;
+}
+
+// True only for an untagged wrapper whose every hook is a command, and whose
+// every path token in every command resolves under globalHooksRoot to a file on
+// RETIRED_HOOK_FILES. Mixed wrappers, unlisted files and paths elsewhere are kept.
+function isRetiredHookWrapper(wrapper: HookWrapper, globalHooksRoot: string): boolean {
+    if (wrapper._source !== undefined || wrapper._xtrm !== undefined) {
+        return false;
+    }
+    if (!Array.isArray(wrapper.hooks) || wrapper.hooks.length === 0) {
+        return false;
+    }
+    return wrapper.hooks.every((hook) => {
+        if (hook.type !== 'command' || typeof hook.command !== 'string') {
+            return false;
+        }
+        const pathTokens = tokenizeCommand(hook.command).filter((token) => token.includes('/'));
+        return pathTokens.length > 0 && pathTokens.every((token) => {
+            const relativePath = relativeToGlobalHooksRoot(token, globalHooksRoot);
+            return relativePath !== null && RETIRED_HOOK_FILES.has(relativePath.split(path.sep).join('/'));
+        });
+    });
 }
 
 function conflictsWithCanonical(wrapper: HookWrapper, globalHooksRoot: string): boolean {
@@ -626,6 +706,12 @@ function conflictsWithCanonical(wrapper: HookWrapper, globalHooksRoot: string): 
 }
 
 function commandTargetsGlobalHook(command: string, globalHooksRoot: string): boolean {
+    return extractCommandPathTokens(command).some((token) => relativeToGlobalHooksRoot(token, globalHooksRoot) !== null);
+}
+
+// Path of a command token relative to globalHooksRoot, or null when the token
+// does not resolve inside it. Both sides are realpath-resolved when they exist.
+function relativeToGlobalHooksRoot(token: string, globalHooksRoot: string): string | null {
     let realRoot: string;
     try {
         realRoot = fsSync.realpathSync(globalHooksRoot);
@@ -634,42 +720,44 @@ function commandTargetsGlobalHook(command: string, globalHooksRoot: string): boo
         realRoot = path.resolve(globalHooksRoot);
     }
 
-    for (const token of extractCommandPathTokens(command)) {
-        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-        const resolvedTokenPath = path.resolve(expandTilde(token));
-        let realTokenPath: string;
-        try {
-            realTokenPath = fsSync.realpathSync(resolvedTokenPath);
-        } catch {
-            // Missing file — treat lexical path as authoritative for containment;
-            // a canonical hook path that resolves cleanly is trustworthy even if
-            // the file has not been materialised yet.
-            realTokenPath = resolvedTokenPath;
-        }
-
-        const relativePath = path.relative(realRoot, realTokenPath);
-        if (relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
-            return true;
-        }
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const resolvedTokenPath = path.resolve(expandTilde(token));
+    let realTokenPath: string;
+    try {
+        realTokenPath = fsSync.realpathSync(resolvedTokenPath);
+    } catch {
+        // Missing file — treat lexical path as authoritative for containment;
+        // a canonical hook path that resolves cleanly is trustworthy even if
+        // the file has not been materialised yet.
+        realTokenPath = resolvedTokenPath;
     }
 
-    return false;
+    const relativePath = path.relative(realRoot, realTokenPath);
+    if (relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+        return relativePath;
+    }
+    return null;
+}
+
+function tokenizeCommand(command: string): string[] {
+    const matches = command.match(/"([^"]+)"|'([^']+)'|([^\s]+)/g) ?? [];
+    return matches.map((match) => match.replace(/^['"]|['"]$/g, ''));
 }
 
 function extractCommandPathTokens(command: string): string[] {
-    const matches = command.match(/"([^"]+)"|'([^']+)'|([^\s]+)/g) ?? [];
-    return matches
-        .map((match) => match.replace(/^['"]|['"]$/g, ''))
-        .filter((token) => token.includes('.xtrm/hooks/'));
+    return tokenizeCommand(command).filter((token) => token.includes('.xtrm/hooks/'));
 }
 
 function expandTilde(targetPath: string): string {
-    if (!targetPath.startsWith('~/')) {
+    // Claude Code runs hook commands through a shell, so ~/, $HOME/ and ${HOME}/
+    // all name the same home directory.
+    const homePrefix = ['~/', '$HOME/', '${HOME}/'].find((prefix) => targetPath.startsWith(prefix));
+    if (!homePrefix) {
         return targetPath;
     }
 
     // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-    return path.join(os.homedir(), targetPath.slice(2));
+    return path.join(os.homedir(), targetPath.slice(homePrefix.length));
 }
 
 async function readExistingHooks(settingsPath: string): Promise<Record<string, HookWrapper[]>> {
