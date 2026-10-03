@@ -16,6 +16,12 @@
  *      (the mod's cookbook wording). A display-only house card shows the
  *      operator what was injected.
  *
+ * And at each agent_end (the intention seam): the AGENT decides things no
+ * user prompt ever names — "let me debug this", "I'll review the diff".
+ * The same two-stage Jev runs over the agent's final message and turn
+ * evidence; a hit injects the doctrine as a followUp message the model
+ * reads at its next turn, with the same house card for the operator.
+ *
  * Phase 1 (this build) keeps the skill listing visible — conservative mode.
  * Withholding the listing via disable-model-invocation frontmatter waits for
  * eval evidence from the decision log.
@@ -61,6 +67,17 @@ function docExcerpt(path: string): string {
   } catch {
     return "";
   }
+}
+
+/** Shared Jev runner for both seams: Pi-native classifier first, REST second. */
+async function askJev(
+  registry: RegistryLike | null,
+  state: Record<string, unknown>,
+  questions: Record<string, Question>,
+) {
+  let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
+  if (!result) result = await systemOne(state, questions);
+  return result;
 }
 
 function skillVerb(entry: RosterEntry, confidence: number | null): VerbSpec {
@@ -192,6 +209,78 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
   // The input seam: transform the prompt before the turn starts.
   pi.on("input", handler as never);
+
+  // The intention seam: the agent declares what it is doing in its own final
+  // message. Same two-stage Jev over the turn evidence; the doctrine rides
+  // into the next turn as a followUp the model reads.
+  pi.on("agent_end", async (event, ctx) => {
+    try {
+      if (off()) return;
+      const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
+      let lastAssistant = "";
+      let wasActive = false;
+      for (let i = Math.max(0, messages.length - 6); i < messages.length; i++) {
+        const m = messages[i];
+        const content = Array.isArray(m?.content) ? (m!.content as Array<Record<string, unknown>>) : [];
+        for (const p of content) {
+          if (p?.["type"] === "text" && typeof p["text"] === "string" && m?.role === "assistant") lastAssistant = p["text"];
+          if (p?.["type"] === "tool_call") wasActive = true;
+        }
+      }
+      if (!lastAssistant || !wasActive) return;
+      const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
+      if (!registry && !readApiKey()) return;
+      const roster = discoverRoster(process.cwd());
+      if (roster.length === 0) return;
+
+      const result = await askJev(registry, {
+        agent_final_message: lastAssistant.slice(0, 1500),
+      }, {
+        skill: {
+          type: "choice",
+          instructions: "The agent just ended a working turn stating its intention. Pick the single skill or reference document its stated next step most needs, or none.",
+          criteria: Object.fromEntries([
+            ...roster.map((r) => [r.id, r.description]),
+            ["none", "No documented procedure adds value to the stated next step."],
+          ]),
+        },
+        would_follow_documented_procedure: { type: "noul", instructions: "For the stated next step, would a careful expert follow a specific documented procedure rather than improvise?" },
+        prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
+      } as Record<string, Question>);
+      if (!result) return;
+      const gate = [(result.nouls["would_follow_documented_procedure"] ?? 0), 1 - (result.nouls["prose_suffices"] ?? 0)];
+      const gateMean = gate.reduce((a, b) => a + b, 0) / gate.length;
+      const pick = result.choice.choice;
+      const entry = roster.find((r) => r.id === pick);
+      if (gateMean < GATE_THRESHOLD || !entry) return;
+      if (!cooldownOk(entry.id, Date.now())) return;
+      cooldownSet(entry.id);
+
+      const excerpt = docExcerpt(entry.path);
+      const block = [
+        `<skill_relevance>`,
+        `Relevant to your stated next step: ${entry.id}. Ignore this if it does not fit what you actually plan to do.`,
+        `Its instructions follow (bounded excerpt of ${entry.path}); read the file for the rest.`,
+        entry.level === "reference" ? `This is a nested reference of the ${entry.skill} skill.` : "",
+        excerpt,
+        `</skill_relevance>`,
+      ].filter(Boolean).join("\n");
+      logDecision({ ts: new Date().toISOString(), skill: entry.id, level: entry.level, seam: "agent_end", confidence: result.choice.confidence, gate: gateMean });
+      // One message carries both audiences: the model reads the doctrine
+      // block; the operator sees the house card around it.
+      pi.sendMessage(
+        {
+          customType: CUSTOM_TYPE,
+          content: `${formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence })}\n\x1b[2m${excerpt.slice(0, 600)}\x1b[22m`,
+          display: true,
+          details: { skill: entry.id, level: entry.level, seam: "agent_end" },
+        },
+        { deliverAs: "followUp", triggerTurn: false },
+      );
+    } catch {
+      /* fail-open: a suggestion extension must never break a session */
+    }
+  });
 
   // Reload the roster when packs change on disk (cheap: cache TTL governs).
   if (typeof pi.on === "function") {
