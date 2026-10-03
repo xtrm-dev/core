@@ -1,0 +1,16 @@
+{
+  "name": "@xtrm/pi-skill-suggest",
+  "version": "1.0.0",
+  "description": "xtrm Pi extension: skill-suggest",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "xtrm"
+  ],
+  "author": "xtrm",
+  "license": "MIT"
+}
