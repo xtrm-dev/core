@@ -40012,6 +40012,16 @@ async function planLegacyHookDedupe(projectRoot, hooks, opts = {}) {
 
 // src/core/claude-runtime-sync.ts
 var XTRM_GLOBAL_SOURCE = "xtrm-global";
+var RETIRED_HOOK_FILES = /* @__PURE__ */ new Set([
+  // Registered by 617a74fe (#525); folded into dispatch.mjs event by 93c90513 (XTRM-592, #683).
+  "inbox-reminder-stop.mjs",
+  // Registered by 7196cdc7 (XTRM-569); folded into dispatch.mjs by 93c90513 (XTRM-592, #683).
+  "agent-host-reporter.mjs",
+  // Registered since 020e1bec (#100); Stop registration removed by f949b33f (xtrm-6qu.8).
+  "beads-stop-gate.mjs",
+  // Registered since 020e1bec (#100); retired with the bd-memory stack by 959c7718 (#639).
+  "beads-memory-gate.mjs"
+]);
 function renderClaudeRuntimePlanSummary() {
   console.log(kleur_default.bold("\n  Claude Runtime Sync"));
   console.log(`${kleur_default.cyan("  \u2022")}  read canonical hooks: .xtrm/config/hooks.json`);
@@ -40098,7 +40108,9 @@ async function reconcileProjectClaudeHooks(repoRoot, opts = {}) {
     if (skip.drift) console.log(t.muted(`    \u21B3 ${skip.drift}`));
   }
   const generatedHooksToWrite = coverage.hooks;
-  const mergedHooks = mergeProjectOwnedHooks(await readExistingHooks(settingsPath), generatedHooksToWrite, projectHooksDir);
+  const existingHooks = await readExistingHooks(settingsPath);
+  reportRetiredHookRemovals(findRetiredHookWrappers(existingHooks, import_path2.default.resolve(import_os.default.homedir(), ".xtrm", "hooks")), dryRun);
+  const mergedHooks = mergeProjectOwnedHooks(existingHooks, generatedHooksToWrite, projectHooksDir);
   const dedupe = await planLegacyHookDedupe(repoRoot, mergedHooks);
   if (dedupe.skipped) {
     console.log(t.muted(`  \u21BB hook dedupe skipped: ${dedupe.skipped}`));
@@ -40141,6 +40153,7 @@ async function reconcileGlobalClaudeHooks(opts = {}) {
   });
   const currentSettings = await readSettings(settingsPath);
   const mergeResult = await safeMergeOwnedHookSettings(currentSettings, generatedHooks, { dryRun });
+  reportRetiredHookRemovals(mergeResult.retiredRemoved, dryRun);
   if (!mergeResult.changed) {
     await ensureGlobalStatusLine();
     await appendHookLog({
@@ -40358,6 +40371,7 @@ async function safeMergeOwnedHookSettings(currentSettings, generatedHooks, opts 
   const canonicalHashes = new Set(Object.values(taggedHooks).flat().map((wrapper) => wrapper._xtrm?.hash ?? stableHookHash(wrapper)));
   const mergedHooks = {};
   const globalHooksRoot = import_path2.default.resolve(import_os.default.homedir(), ".xtrm", "hooks");
+  const retiredRemoved = [];
   for (const [eventName, wrappers] of Object.entries(taggedHooks)) {
     mergedHooks[eventName] = [...wrappers];
   }
@@ -40367,6 +40381,11 @@ async function safeMergeOwnedHookSettings(currentSettings, generatedHooks, opts 
       const entryHash = stableHookHash(wrapper);
       if (wrapper._source === XTRM_GLOBAL_SOURCE || canonicalHashes.has(entryHash) || canonicalHashes.has(wrapper._xtrm?.hash ?? "")) {
         await appendHookLog({ timestamp: (/* @__PURE__ */ new Date()).toISOString(), component: "hooks-migration", event: "hook.entry.owned-replaced", entryKey: eventName, source: hashValue(entryHash), action: "replace", outcome: "ok", durationMs: 0 });
+        continue;
+      }
+      if (isRetiredHookWrapper(wrapper, globalHooksRoot)) {
+        for (const hook of wrapper.hooks) retiredRemoved.push({ event: eventName, command: hook.command });
+        await appendHookLog({ timestamp: (/* @__PURE__ */ new Date()).toISOString(), component: "hooks-migration", event: "hook.entry.retired-removed", entryKey: eventName, source: hashValue(entryHash), action: "remove", outcome: "ok", durationMs: 0 });
         continue;
       }
       if (conflictsWithCanonical(wrapper, globalHooksRoot)) {
@@ -40386,7 +40405,42 @@ async function safeMergeOwnedHookSettings(currentSettings, generatedHooks, opts 
   }
   const nextSettings = { ...currentSettings, hooks: mergedHooks };
   const changed = JSON.stringify(currentSettings) !== JSON.stringify(nextSettings);
-  return { settings: nextSettings, changed: changed && !opts.dryRun, hooksEntries: countHookEntries(taggedHooks) };
+  return { settings: nextSettings, changed: changed && !opts.dryRun, hooksEntries: countHookEntries(taggedHooks), retiredRemoved };
+}
+function reportRetiredHookRemovals(removals, dryRun) {
+  const verb = dryRun ? "would remove" : "removed";
+  for (const removal of removals) {
+    console.log(t.label(`  \u2022 ${verb} retired hook: ${removal.event} ${removal.command.slice(0, 120)}`));
+  }
+}
+function findRetiredHookWrappers(hooks, globalHooksRoot) {
+  const removals = [];
+  for (const [eventName, wrappers] of Object.entries(hooks)) {
+    if (!Array.isArray(wrappers)) continue;
+    for (const wrapper of wrappers) {
+      if (!isRetiredHookWrapper(wrapper, globalHooksRoot)) continue;
+      for (const hook of wrapper.hooks) removals.push({ event: eventName, command: hook.command });
+    }
+  }
+  return removals;
+}
+function isRetiredHookWrapper(wrapper, globalHooksRoot) {
+  if (wrapper._source !== void 0 || wrapper._xtrm !== void 0) {
+    return false;
+  }
+  if (!Array.isArray(wrapper.hooks) || wrapper.hooks.length === 0) {
+    return false;
+  }
+  return wrapper.hooks.every((hook) => {
+    if (hook.type !== "command" || typeof hook.command !== "string") {
+      return false;
+    }
+    const pathTokens = tokenizeCommand(hook.command).filter((token) => token.includes("/"));
+    return pathTokens.length > 0 && pathTokens.every((token) => {
+      const relativePath = relativeToGlobalHooksRoot(token, globalHooksRoot);
+      return relativePath !== null && RETIRED_HOOK_FILES.has(relativePath.split(import_path2.default.sep).join("/"));
+    });
+  });
 }
 function conflictsWithCanonical(wrapper, globalHooksRoot) {
   if (wrapper._source === XTRM_GLOBAL_SOURCE) {
@@ -40398,36 +40452,41 @@ function conflictsWithCanonical(wrapper, globalHooksRoot) {
   return wrapper.hooks.some((hook) => typeof hook.command === "string" && commandTargetsGlobalHook(hook.command, globalHooksRoot));
 }
 function commandTargetsGlobalHook(command, globalHooksRoot) {
+  return extractCommandPathTokens(command).some((token) => relativeToGlobalHooksRoot(token, globalHooksRoot) !== null);
+}
+function relativeToGlobalHooksRoot(token, globalHooksRoot) {
   let realRoot;
   try {
     realRoot = import_node_fs.default.realpathSync(globalHooksRoot);
   } catch {
     realRoot = import_path2.default.resolve(globalHooksRoot);
   }
-  for (const token of extractCommandPathTokens(command)) {
-    const resolvedTokenPath = import_path2.default.resolve(expandTilde(token));
-    let realTokenPath;
-    try {
-      realTokenPath = import_node_fs.default.realpathSync(resolvedTokenPath);
-    } catch {
-      realTokenPath = resolvedTokenPath;
-    }
-    const relativePath = import_path2.default.relative(realRoot, realTokenPath);
-    if (relativePath !== "" && !relativePath.startsWith("..") && !import_path2.default.isAbsolute(relativePath)) {
-      return true;
-    }
+  const resolvedTokenPath = import_path2.default.resolve(expandTilde(token));
+  let realTokenPath;
+  try {
+    realTokenPath = import_node_fs.default.realpathSync(resolvedTokenPath);
+  } catch {
+    realTokenPath = resolvedTokenPath;
   }
-  return false;
+  const relativePath = import_path2.default.relative(realRoot, realTokenPath);
+  if (relativePath !== "" && !relativePath.startsWith("..") && !import_path2.default.isAbsolute(relativePath)) {
+    return relativePath;
+  }
+  return null;
+}
+function tokenizeCommand(command) {
+  const matches = command.match(/"([^"]+)"|'([^']+)'|([^\s]+)/g) ?? [];
+  return matches.map((match) => match.replace(/^['"]|['"]$/g, ""));
 }
 function extractCommandPathTokens(command) {
-  const matches = command.match(/"([^"]+)"|'([^']+)'|([^\s]+)/g) ?? [];
-  return matches.map((match) => match.replace(/^['"]|['"]$/g, "")).filter((token) => token.includes(".xtrm/hooks/"));
+  return tokenizeCommand(command).filter((token) => token.includes(".xtrm/hooks/"));
 }
 function expandTilde(targetPath) {
-  if (!targetPath.startsWith("~/")) {
+  const homePrefix = ["~/", "$HOME/", "${HOME}/"].find((prefix) => targetPath.startsWith(prefix));
+  if (!homePrefix) {
     return targetPath;
   }
-  return import_path2.default.join(import_os.default.homedir(), targetPath.slice(2));
+  return import_path2.default.join(import_os.default.homedir(), targetPath.slice(homePrefix.length));
 }
 async function readExistingHooks(settingsPath) {
   const settings = await readSettings(settingsPath);
