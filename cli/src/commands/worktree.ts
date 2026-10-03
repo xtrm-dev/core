@@ -231,7 +231,14 @@ function detectNestedParents(paths: string[]): Map<string, string> {
 /** Parse `git worktree list --porcelain` output into WorktreeInfo array */
 export function listXtWorktrees(repoRoot: string): WorktreeInfo[] {
     const allWorktrees = parseGitWorktreeList(repoRoot);
-    const xtWorktrees = allWorktrees.filter(wt => wt.branch?.startsWith('refs/heads/xt/'));
+    // xt-managed worktrees are identified by location (the managed root), not
+    // by branch prefix: session branches follow the per-issue convention
+    // (feature/<id>-slug, fix/…), and only older sessions used xt/ branches.
+    const managedRoot = resolve(join(repoRoot, '.xtrm', 'worktrees'));
+    const xtWorktrees = allWorktrees.filter(wt =>
+        wt.branch?.startsWith('refs/heads/xt/')
+        || (wt.path.startsWith(`${managedRoot}${sep}`) && resolve(wt.path) !== managedRoot)
+    );
     const nestedParents = detectNestedParents(xtWorktrees.map(wt => wt.path));
 
     const worktrees: WorktreeInfo[] = xtWorktrees.map(wt => ({
