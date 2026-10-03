@@ -35,17 +35,33 @@ export function resetRosterCache(): void {
   cache = { at: 0, entries: [] };
 }
 
-/** Parse minimal frontmatter (--- fenced) for name/description. */
+/** Parse minimal frontmatter (--- fenced) for name/description, folded or inline. */
 export function parseFrontmatter(md: string): { name?: string; description?: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md);
   if (!m) return {};
-  const block = m[1];
-  const name = /^name:\s*(.+)$/m.exec(block)?.[1]?.trim();
-  const descMatch = /^description:\s*>-?\s*\n([\s\S]*?)(?=^\w+:|\Z)/m.exec(block)
-    ?? /^description:\s*(.+)$/m.exec(block);
-  const description = descMatch
-    ? descMatch[1].replace(/\n\s*/g, " ").trim()
-    : undefined;
+  const lines = m[1].split(/\r?\n/);
+  let name: string | undefined;
+  let description: string | undefined;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const nm = /^name:\s*(.+)$/.exec(line);
+    if (nm) name = nm[1].trim();
+    const dm = /^description:\s*(>-?)?\s*(.*)$/.exec(line);
+    if (dm) {
+      const inline = dm[2].trim();
+      if (inline) {
+        description = inline;
+      } else {
+        const folded: string[] = [];
+        for (let j = i + 1; j < lines.length; j++) {
+          const l = lines[j];
+          if (!/^\s/.test(l) || l.trim() === "") break;
+          folded.push(l.trim());
+        }
+        description = folded.join(" ").trim() || undefined;
+      }
+    }
+  }
   return { name, description };
 }
 
