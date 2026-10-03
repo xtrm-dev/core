@@ -132,6 +132,22 @@ describe('agent-event.v1 semantics', () => {
     });
 });
 
+describe('agent-event.v1 Claude hook events', () => {
+    const id = SCHEMA_ID.agentEvent;
+    const frame = (payload: Record<string, unknown>) => ({ ...fixtures.events[0], payload });
+
+    it('accepts a notification with a snake_case kind and rejects free text kinds', () => {
+        expect(validate(id, frame({ type: 'notification', kind: 'idle_prompt' })).valid).toBe(true);
+        expect(validate(id, frame({ type: 'notification', kind: 'Permission prompt' })).valid).toBe(false);
+        expect(validate(id, frame({ type: 'notification' })).valid).toBe(false);
+    });
+
+    it('accepts subagent_end with optional identifiers only', () => {
+        expect(validate(id, frame({ type: 'subagent_end' })).valid).toBe(true);
+        expect(validate(id, frame({ type: 'subagent_end', agentId: 'a', transcript: 'x' })).valid).toBe(false);
+    });
+});
+
 describe('agent-command.v1 semantics', () => {
     const id = SCHEMA_ID.agentCommand;
     const frame = (payload: Record<string, unknown>) => ({ ...fixtures.commands[0], payload });

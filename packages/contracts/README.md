@@ -55,7 +55,8 @@ Agent host protocol (PRD xtrm-app §35.3, §35.8 item 1, §36.7; XTRM-562):
 
 Socket frames carry `schema`, `seq`, `sessionId`, `at`, and `payload`. Event payloads
 are the Pi 1.0.0 extension lifecycle events plus `session_identity`,
-`extension_ui_request`, `extension_ui_resolved`, and `command_result`. Every
+`extension_ui_request`, `extension_ui_resolved`, and `command_result`; Claude hooks
+also report `notification` and `subagent_end`, which have no Pi event. Every
 `extension_ui_request` is closed by one `extension_ui_resolved` with the same `id`
 (`resolvedBy`: `local` | `host`, `outcome`: `answered` | `cancelled`). Pi-native messages and tool args/results
 pass through opaque. `agent_settled` closes a Frame. `agent_end.willRetry` is optional,
