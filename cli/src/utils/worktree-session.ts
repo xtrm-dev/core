@@ -2200,6 +2200,35 @@ export function buildAgentEnv(
     return env;
 }
 
+/**
+ * Caller environment a detached launch forwards into the new tmux session, which
+ * otherwise inherits only the tmux server's environment.
+ *
+ * - XTRM_SUBSTRATE_DIR: without it specialist_dispatch inside the session is
+ *   refused with work_item_store_unavailable (XTRM-249).
+ * - XTRM_AGENT_LAUNCH: `gui` when the agent host launched the session; the
+ *   xtrm-agent-host extension reports it as the session's launch (XTRM-566).
+ * - XTRM_AGENT_HOST_SOCKET: the agent host socket the extension reports to.
+ * - PI_CODING_AGENT_DIR: the Pi agent directory (settings, auth, extensions).
+ *
+ * Absent or empty stays absent — each reader has its own fallback.
+ */
+export const LAUNCH_FORWARDED_ENV = [
+    'XTRM_SUBSTRATE_DIR',
+    'XTRM_AGENT_LAUNCH',
+    'XTRM_AGENT_HOST_SOCKET',
+    'PI_CODING_AGENT_DIR',
+] as const;
+
+export function forwardedLaunchEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const key of LAUNCH_FORWARDED_ENV) {
+        const value = env[key];
+        if (value) out[key] = value;
+    }
+    return out;
+}
+
 function currentTmuxSessionId(): string {
     if (!process.env.TMUX) return '';
     const r = spawnSync('tmux', ['display-message', '-p', '-F', '#{session_id}'], {
@@ -3435,13 +3464,9 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     }
 
     // A tmux session started by `new-session` inherits the tmux SERVER's
-    // environment, not this process's, so an operator's exported
-    // XTRM_SUBSTRATE_DIR never reached the launched runtime. Without it
-    // specialist_dispatch inside the session is refused outright with
-    // work_item_store_unavailable, so forward it explicitly. Absent or empty
-    // stays absent — substrate resolution has its own fallbacks. XTRM-249.
-    const substrateDir = process.env.XTRM_SUBSTRATE_DIR;
-    if (substrateDir) envArgs.push('-e', `XTRM_SUBSTRATE_DIR=${substrateDir}`);
+    // environment, not this process's, so exported launch context never
+    // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
+    for (const [k, v] of Object.entries(forwardedLaunchEnv())) envArgs.push('-e', `${k}=${v}`);
 
     // Transport. The buffered handshake exists so a 50-1000KB role system
     // prompt never has to fit on a command line: tmux starts a consumer

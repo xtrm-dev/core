@@ -71,6 +71,9 @@ const INPUT_NOTIFICATIONS = new Set(['permission_prompt', 'elicitation_dialog'])
 /** Presence-only sessions (Claude hooks) outlive their short-lived connections; cap how many are kept. */
 const MAX_DISCONNECTED_SESSIONS = 256;
 
+/** Launched panes remembered for binding; pane ids are unique for a tmux server's lifetime. */
+const MAX_LAUNCHED_PANES = 256;
+
 /** Presence-only producers (Claude hooks) report through one short connection per hook. */
 function isPresenceOnly(session: LiveSession): boolean {
     return session.identity.capabilities.every((c) => c === 'presence');
@@ -85,6 +88,8 @@ export interface AgentHostRegistryOptions {
 export class AgentHostRegistry {
     private readonly sessions = new Map<string, LiveSession>();
     private readonly pending = new Map<string, PendingCommand>();
+    /** tmux panes the host launched agents into, oldest first (bounded). */
+    private readonly launchedPanes = new Set<string>();
     private readonly listeners = new Set<(frame: AgentEventV1) => void>();
     private readonly classifier = new ToolOriginClassifier();
     private readonly commandTimeoutMs: number;
@@ -110,12 +115,13 @@ export class AgentHostRegistry {
         let session = this.sessions.get(sessionId);
 
         if (payload.type === 'session_identity') {
+            const identity = this.bindLaunchedPane(sessionId, payload);
             if (session) {
-                session.identity = payload;
+                session.identity = identity;
                 session.connection = connection;
             } else {
                 session = {
-                    identity: payload,
+                    identity,
                     connection,
                     frameOpen: false,
                     promptPending: null,
@@ -210,6 +216,30 @@ export class AgentHostRegistry {
             if (!isPresenceOnly(session)) this.removeSession(sessionId);
         }
         this.pruneDisconnected();
+    }
+
+    /**
+     * Record a tmux pane the host just launched an agent into (§35.4). The session whose
+     * session_identity names this pane is bound to the launch and reports `launch: gui`,
+     * whether its extension connected before or after this call.
+     */
+    expectLaunchedPane(paneId: string): void {
+        this.launchedPanes.delete(paneId);
+        this.launchedPanes.add(paneId);
+        if (this.launchedPanes.size > MAX_LAUNCHED_PANES) {
+            this.launchedPanes.delete(this.launchedPanes.values().next().value as string);
+        }
+        for (const [sessionId, session] of this.sessions) {
+            if (session.identity.tmux?.paneId !== paneId) continue;
+            session.identity = this.bindLaunchedPane(sessionId, session.identity);
+        }
+    }
+
+    private bindLaunchedPane(sessionId: string, identity: AgentSessionIdentity): AgentSessionIdentity {
+        const paneId = identity.tmux?.paneId;
+        if (!paneId || !this.launchedPanes.has(paneId) || identity.launch === 'gui') return identity;
+        this.log(`bound launched pane ${paneId} to session ${sessionId}`);
+        return { ...identity, launch: 'gui' };
     }
 
     list(): AgentSessionSummary[] {
