@@ -1,7 +1,6 @@
 /**
  * xtprompt - generic context-aware prompt improver.
  */
-import { complete } from "@earendil-works/pi-ai";
 import type {
   Api,
   AssistantMessage,
@@ -44,12 +43,6 @@ type PromptRequestOptions = {
   draft: string;
   intent: Intent;
   conversationContext: string;
-};
-
-type AuthResolved = {
-  apiKey?: string;
-  headers?: Record<string, string>;
-  env?: Record<string, string>;
 };
 
 type PromptState = {
@@ -183,6 +176,8 @@ export default function registerXtprompt(pi: ExtensionAPI): void {
       conversationContext,
     });
 
+    // Pre-flight auth so a missing credential is reported before the loader
+    // opens; the call itself resolves auth again through ctx.modelRegistry.
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) {
       ctx.ui.notify(`${EXTENSION}: cannot resolve auth — ${auth.error}`, "error");
@@ -193,11 +188,11 @@ export default function registerXtprompt(pi: ExtensionAPI): void {
       ctx,
       `${EXTENSION} rewriting (${intent})…`,
       async (signal) => {
-        const primary = await callModel(model, request, auth, signal);
+        const primary = await callModel(ctx, model, request, signal);
         if (primary === null) return null;
         const parsed = parseSentinel(extractText(primary));
         if (parsed !== undefined) return parsed;
-        const retried = await callModel(model, retryRequest(request), auth, signal);
+        const retried = await callModel(ctx, model, retryRequest(request), signal);
         if (retried === null) return null;
         const retriedParsed = parseSentinel(extractText(retried));
         if (retriedParsed !== undefined) return retriedParsed;
@@ -517,10 +512,12 @@ function escapeXml(text: string): string {
   return escaped;
 }
 
+// Pi 1.0 exports no root `complete` from pi-ai; nested model calls go through
+// ctx.modelRegistry, which applies request-time auth (key, headers, env).
 async function callModel(
+  ctx: ExtensionContext,
   model: Model<Api>,
   request: Context,
-  auth: AuthResolved,
   signal: AbortSignal,
 ): Promise<AssistantMessage | null> {
   const timeoutController = new AbortController();
@@ -528,9 +525,10 @@ async function callModel(
   const mergedSignal = AbortSignal.any([signal, timeoutController.signal]);
   try {
     return await Promise.race<AssistantMessage | null>([
-      complete(model, request, {
-        ...auth,
+      ctx.modelRegistry.complete(model, request, {
         signal: mergedSignal,
+        // Session-routed providers (e.g. opencode-go) reject calls without it.
+        sessionId: ctx.sessionManager.getSessionId(),
         maxTokens: Math.min(model.maxTokens, ENHANCER_MAX_OUTPUT_TOKENS),
       }),
       abortGuard(signal, null),

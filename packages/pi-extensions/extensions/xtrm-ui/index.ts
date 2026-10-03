@@ -88,8 +88,9 @@ type MaybeCustomEntry = {
 
 function normalizePrefs(input: unknown): XtrmUiPrefs {
   if (!input || typeof input !== "object") return { ...DEFAULT_PREFS };
-  const source = input as Partial<XtrmUiPrefs> & { themeName?: unknown };
-  const themeName = source.themeName;
+  const source = input as Partial<XtrmUiPrefs>;
+  // Persisted prefs may still hold retired theme names; compare the raw value.
+  const themeName: unknown = (input as { themeName?: unknown }).themeName;
   const lightTheme = themeName === "xtrm-light"
     || themeName === "xtrm-light-flattools"
     || themeName === "pidex-light"
@@ -128,7 +129,7 @@ type AssistantMessageComponentCtor = {
 	};
 };
 
-type AssistantContentBlock = { type?: string; thinking?: string };
+type AssistantContentBlock = { type?: string; thinking?: string; text?: string };
 type AssistantMessageLike = { content?: AssistantContentBlock[] };
 type PatchableAssistantMessage = {
 	hideThinkingBlock?: boolean;
@@ -303,12 +304,13 @@ export function createPatchedUpdateContent(
 	latch: ThinkingToggleLatch = thinkingToggleLatch,
 ): (this: PatchableAssistantMessage, message: AssistantMessageLike) => void {
 	return function patchedUpdateContent(this: PatchableAssistantMessage, message: AssistantMessageLike) {
-		if (Array.isArray(message.content)) {
-			const hasThinking = message.content.some((block) => block.type === "thinking" && block.thinking?.trim());
+		const blocks = message.content;
+		if (Array.isArray(blocks)) {
+			const hasThinking = blocks.some((block) => block.type === "thinking" && block.thinking?.trim());
 			if (hasThinking) {
 				if (this.hideThinkingBlock) latch.followsToggle = true;
 				const compact = this.hideThinkingBlock === true || !latch.followsToggle;
-				const content = message.content.flatMap((block, index) => {
+				const content = blocks.flatMap((block, index) => {
 					if (block.type !== "thinking" || !block.thinking?.trim()) return [block];
 					const row = compact
 						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), block.thinking.length, style)
@@ -319,9 +321,9 @@ export function createPatchedUpdateContent(
 					// zero-width space survives pi's text trim and renders as a blank
 					// line) when a visible text/thinking block follows — mirroring pi's
 					// Spacer(1) after thinking runs; none before tool-call blocks.
-					const hasVisibleAfter = message.content
+					const hasVisibleAfter = blocks
 						.slice(index + 1)
-						.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
+						.some((c) => (c.type === "text" && c.text?.trim()) || (c.type === "thinking" && c.thinking?.trim()));
 					return hasVisibleAfter
 						? [{ type: "text", text: row }, { type: "text", text: "\u200b" }]
 						: [{ type: "text", text: row }];
@@ -1703,13 +1705,10 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
     });
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
-    refresh(ctx);
-  });
-
-  pi.on("session_fork", async (_event, ctx) => {
-    refresh(ctx);
-  });
+  // Pi 1.0 has no session_switch/session_fork events. /new, /resume and /fork
+  // replace the runtime and emit session_start (reason new|resume|fork) with a
+  // fresh ctx, so the session_start handler above already refreshes the chrome.
+  // session_before_* would run against the outgoing ctx, which is invalidated.
 
   pi.on("model_select", async (_event, ctx) => {
     refresh(ctx);

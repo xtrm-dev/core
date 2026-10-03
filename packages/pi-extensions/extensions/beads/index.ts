@@ -81,7 +81,7 @@ export default function (pi: ExtensionAPI) {
 		/\bspecialists\s+(run|resume|result|feed|stop|status)\b/.test(commandUnquoted);
 
 	pi.on("session_start", async (_event, ctx) => {
-		cachedSessionId = ctx?.sessionManager?.getSessionId?.() ?? ctx?.sessionId ?? ctx?.session_id ?? cachedSessionId;
+		cachedSessionId = ctx?.sessionManager?.getSessionId?.() ?? cachedSessionId;
 		return undefined;
 	});
 
@@ -131,7 +131,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_result", async (event, ctx) => {
 		if (!isBashToolResult(event)) return undefined;
 
-		const command = event.input.command || "";
+		const command = typeof event.input.command === "string" ? event.input.command : "";
 		const sessionId = getSessionId(ctx);
 		const cwd = getCwd(ctx);
 

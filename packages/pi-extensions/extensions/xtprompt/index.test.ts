@@ -5,12 +5,11 @@ import { join } from "node:path";
 const completeCalls: unknown[][] = [];
 let completeImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 
-mock.module("@earendil-works/pi-ai", () => ({
-  complete: async (...args: unknown[]) => {
-    completeCalls.push(args);
-    return completeImpl(...args);
-  },
-}));
+// Pi 1.0: xtprompt calls ctx.modelRegistry.complete (pi-ai has no root `complete`).
+const registryComplete = async (...args: unknown[]) => {
+  completeCalls.push(args);
+  return completeImpl(...args);
+};
 
 mock.module("@earendil-works/pi-coding-agent", () => ({
   BorderedLoader: class {
@@ -286,16 +285,17 @@ describe("xtprompt", () => {
         input: async () => null,
       },
       modelRegistry: {
+        complete: registryComplete,
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "k" }),
       },
-      sessionManager: { buildContextEntries: () => [] },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
     });
 
     expect(editorText).toBe("help");
     expect(completeCalls).toHaveLength(0);
   });
 
-  test("forwards resolved auth env to complete", async () => {
+  test("routes the model call through ctx.modelRegistry.complete with signal and token cap", async () => {
     completeCalls.length = 0;
     completeImpl = async () => ({
       content: [{ type: "text", text: "<xtprompt>done</xtprompt>" }],
@@ -320,6 +320,7 @@ describe("xtprompt", () => {
           }),
       },
       modelRegistry: {
+        complete: registryComplete,
         getApiKeyAndHeaders: async () => ({
           ok: true,
           apiKey: "key-1",
@@ -327,14 +328,16 @@ describe("xtprompt", () => {
           env: { RESOLVED_AUTH: "yes" },
         }),
       },
-      sessionManager: { buildContextEntries: () => [] },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
     });
 
     expect(editorText).toBe("done");
     const [, , options] = completeCalls[0] as [unknown, unknown, Record<string, unknown>];
-    expect(options.apiKey).toBe("key-1");
-    expect(options.headers).toEqual({ authorization: "Bearer x" });
-    expect(options.env).toEqual({ RESOLVED_AUTH: "yes" });
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(options.maxTokens).toBe(1024);
+    expect(options.sessionId).toBe("session-1");
+    // Auth is resolved by the registry at request time, not spread into options.
+    expect(options.apiKey).toBeUndefined();
   });
 
   test("auth rejection leaves editor unchanged and skips model call", async () => {
@@ -364,9 +367,10 @@ describe("xtprompt", () => {
         },
       },
       modelRegistry: {
+        complete: registryComplete,
         getApiKeyAndHeaders: async () => ({ ok: false, error: "RPC unavailable" }),
       },
-      sessionManager: { buildContextEntries: () => [] },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
     });
 
     expect(editorText).toBe("Rename command to /xtprompt in packages/pi-extensions/extensions/xtprompt/index.ts");
@@ -402,9 +406,10 @@ describe("xtprompt", () => {
         custom,
       },
       modelRegistry: {
+        complete: registryComplete,
         getApiKeyAndHeaders,
       },
-      sessionManager: { buildContextEntries: () => [] },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
     });
 
     expect(getEditorText).toHaveBeenCalledTimes(0);
@@ -447,6 +452,7 @@ describe("xtprompt", () => {
           }),
       },
       modelRegistry: {
+        complete: registryComplete,
         getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "k" }),
       },
       sessionManager: {
@@ -455,6 +461,7 @@ describe("xtprompt", () => {
           { message: { role: "assistant", content: [{ type: "text", text: "Protect critical paths only" }] } },
           { summary: "older compacted summary" },
         ],
+        getSessionId: () => "session-1",
       },
     });
 

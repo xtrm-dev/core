@@ -111,12 +111,12 @@ class StreamingTerminalOverlay {
       this.options.requestRender();
       return;
     }
-    if (matchesKey(data, "pageup")) {
+    if (matchesKey(data, "pageUp")) {
       this.scrollOffset = Math.min(this.scrollOffset + DEFAULT_VISIBLE_LINES, Math.max(0, this.renderSourceLines().length - 1));
       this.options.requestRender();
       return;
     }
-    if (matchesKey(data, "pagedown")) {
+    if (matchesKey(data, "pageDown")) {
       this.scrollOffset = Math.max(0, this.scrollOffset - DEFAULT_VISIBLE_LINES);
       this.options.requestRender();
       return;

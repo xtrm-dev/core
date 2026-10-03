@@ -100,7 +100,8 @@ export default function readLineNumbersExtension(pi: ExtensionAPI): void {
     }
 
     // Pi's `offset` is 1-based; the first displayed line keeps that number.
-    const startLine = event.input.offset != null && event.input.offset > 0 ? event.input.offset : 1;
+    const offset = event.input.offset;
+    const startLine = typeof offset === "number" && offset > 0 ? offset : 1;
     const transformed = event.content.map((item) => {
       if (item.type !== "text") return item;
       const text = (item as { text?: unknown }).text;

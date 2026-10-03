@@ -54,7 +54,7 @@ export default function (pi: ExtensionAPI) {
 		const cwd = getCwd(ctx);
 		if (!EventAdapter.isBeadsProject(cwd)) return undefined;
 
-		const command = event.input.command || "";
+		const command = typeof event.input.command === "string" ? event.input.command : "";
 		const { isClaim, issueId } = isClaimCommand(command);
 		if (!isClaim || !issueId) return undefined;
 
