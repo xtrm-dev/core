@@ -14,12 +14,16 @@ vi.mock('node:child_process', () => ({
 let tempRoot = '';
 let previousCwd = '';
 let previousPiAgentDir: string | undefined;
+let previousPiCodingAgentDir: string | undefined;
 
 beforeEach(async () => {
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-pi-launch-'));
   previousCwd = process.cwd();
   previousPiAgentDir = process.env.PI_AGENT_DIR;
   process.env.PI_AGENT_DIR = path.join(tempRoot, 'pi-agent');
+  // PI_CODING_AGENT_DIR outranks PI_AGENT_DIR in the launch preflight (XTRM-581).
+  previousPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
+  delete process.env.PI_CODING_AGENT_DIR;
   mocked.spawnSync.mockReset();
   vi.resetModules();
 });
@@ -31,6 +35,7 @@ afterEach(async () => {
   } else {
     process.env.PI_AGENT_DIR = previousPiAgentDir;
   }
+  if (previousPiCodingAgentDir !== undefined) process.env.PI_CODING_AGENT_DIR = previousPiCodingAgentDir;
   await fs.remove(tempRoot);
   vi.restoreAllMocks();
 });
