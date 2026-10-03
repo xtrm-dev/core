@@ -45,6 +45,13 @@
       "ownership": "xtrm"
     },
     {
+      "id": "skill-suggest",
+      "displayName": "skill-suggest",
+      "required": false,
+      "ownership": "xtrm",
+      "description": "Jev skill-suggestion over the curated XTRM skill packs, including nested reference doctrine; two-stage gate, prompt transform injection, display-only cards"
+    },
+    {
       "id": "substrate-suggest",
       "displayName": "substrate-suggest",
       "required": false,

@@ -8,12 +8,11 @@ import {
   formatSuggestionCard,
   formatSuggestionPlain,
   jevRoster,
-  wrapRailedLine,
   cooldownKey,
   type StateSnapshot,
   type Cooldowns,
 } from "../extensions/substrate-suggest/catalog.ts";
-import { parseAnswerPayload, questionShape, pickClassifier, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
+import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
 
 function snap(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
   return {
@@ -116,15 +115,24 @@ describe("cooldowns", () => {
 describe("wake card", () => {
   const verb = CATALOG.find((v) => v.id === "journal_decision")!;
 
-  it("renders exactly two railed lines with the ignore clause", () => {
+  it("renders two plain lines: dot glyph, no rail, ignore clause", () => {
     const card = formatSuggestionCard({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
     const lines = card.split("\n");
     expect(lines).toHaveLength(2);
+    expect(lines[0]).not.toContain("│");
+    expect(lines[0]).toContain("●");
     expect(lines[0]).toContain("sb journal append");
     expect(lines[0]).toContain("CORE-9");
     expect(lines[1]).toContain("Ignore this if it does not fit");
     expect(lines[1]).toContain("jev 0.72");
     expect(lines[1]).toContain("rev 3");
+  });
+
+  it("high severity keeps the ! glyph", () => {
+    const high = CATALOG.find((v) => v.id === "claim_renew")!;
+    const card = formatSuggestionPlain({ verb: high, ref: "CORE-9" });
+    expect(card).toContain("!");
+    expect(card).not.toContain("●");
   });
 
   it("plain form carries no ANSI escapes", () => {
@@ -133,16 +141,6 @@ describe("wake card", () => {
     expect(plain).toContain("CORE-9");
   });
 
-  it("wraps railed lines with the rail on continuations", () => {
-    const railed = formatSuggestionCard({ verb, ref: "CORE-9" }).split("\n")[1];
-    const wrapped = wrapRailedLine(railed, 40, (t, w) => {
-      const out: string[] = [];
-      for (let i = 0; i < t.length; i += w) out.push(t.slice(i, i + w));
-      return out;
-    });
-    expect(wrapped.length).toBeGreaterThan(1);
-    for (const line of wrapped) expect(line.startsWith("│") || line.includes("│")).toBe(true);
-  });
 });
 
 describe("jev payload tolerance", () => {
@@ -164,14 +162,44 @@ describe("jev payload tolerance", () => {
 });
 
 describe("registry classifier path", () => {
-  it("prefers jev on the typesafe provider, then any jev id", () => {
+  it("orders jev candidates: typesafe first, paid before free, non-jev dropped", () => {
     const models = [
       { provider: "opencode", id: "jev-1.13-free" },
       { provider: "some-other", id: "sentiment-x" },
+      { provider: "opencode", id: "jev-1.13" },
       { provider: "typesafe", id: "jev-latest" },
     ];
-    expect(pickClassifier(models)).toEqual({ provider: "typesafe", id: "jev-latest" });
-    expect(pickClassifier([{ provider: "a", id: "b" }])).toBeNull();
+    expect(pickClassifiers(models)).toEqual([
+      { provider: "typesafe", id: "jev-latest" },
+      { provider: "opencode", id: "jev-1.13" },
+      { provider: "opencode", id: "jev-1.13-free" },
+    ]);
+    expect(pickClassifiers([{ provider: "a", id: "b" }])).toEqual([]);
+  });
+
+  it("falls through an errored candidate to the next", async () => {
+    const tried: string[] = [];
+    const registry = {
+      getAvailableOfType: async () => [{ provider: "opencode", id: "jev-1.13" }, { provider: "opencode", id: "jev-1.13-free" }],
+      classify: async (m: { id: string }) => {
+        tried.push(m.id);
+        if (m.id === "jev-1.13") return { answers: {}, stopReason: "error", errorMessage: "402 funds" };
+        return {
+          answers: {
+            journal_kind: { type: "choice", choice: "journal_finding", probabilities: { journal_finding: 0.75 }, confidence: 0.5 },
+            material_event: { type: "bool", probability: 0.71 },
+          },
+          stopReason: "stop",
+        };
+      },
+    };
+    const result = await classifyViaRegistry(registry, {}, {
+      journal_kind: { type: "choice", instructions: "pick", criteria: { journal_finding: "fact" } },
+      material_event: { type: "noul", instructions: "material?" },
+    });
+    expect(tried).toEqual(["jev-1.13", "jev-1.13-free"]);
+    expect(result?.choice.choice).toBe("journal_finding");
+    expect(result?.model).toBe("opencode/jev-1.13-free");
   });
 
   it("maps registry bool answers onto nouls and never rejects", async () => {
