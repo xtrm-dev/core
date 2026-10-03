@@ -16,7 +16,7 @@ import { printGlobalPromptSyncSummary, syncGlobalPrompts } from '../core/global-
 import { scanXtrmRepos } from '../core/repo-discovery.js';
 import { isStrictRegistryMode, runInstall } from './install.js';
 import { printDependencyMaintenanceSummary, runDependencyMaintenance, type DependencyMaintenanceSummary } from '../core/dependency-maintenance.js';
-import { migrationBlockedReason, planSubstrateMigration, type MigrationPlan } from '../core/substrate-migration.js';
+import { migrationBlockedReason, planSubstrateMigration, substrateMigrationTransition, type MigrationPlan, type SubstrateTransition } from '../core/substrate-migration.js';
 import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { ensureAgentsSkillsSymlink, ensureUserAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { reconcileProjectClaudeHooks } from '../core/claude-runtime-sync.js';
@@ -35,6 +35,8 @@ interface RepoUpdateResult {
         needed: boolean;
         status: string;
         reason: string;
+        /** Present when the repo is in the beads→Substrate transition (CORE-2343). */
+        transition?: SubstrateTransition;
     };
     piRuntime?: {
         changed: boolean;
@@ -96,6 +98,31 @@ async function printSkillsMigrationNudge(repoRoot: string): Promise<void> {
     ]);
 }
 
+/**
+ * User-scope maintenance (CORE-2343): global skills payload, hook rewiring,
+ * prompt nudge, bootstrap log. Every path here resolves under $HOME, never
+ * under a repo, so none of it can reach a `.beads` board. Extracted so the
+ * blocked-repo path can run it without touching repo-scoped state.
+ */
+async function runUserScopeMaintenance(packageRoot: string, repoRoot: string, opts: UpdateOpts): Promise<void> {
+    const pkgJson = await fs.readJson(path.join(packageRoot, 'package.json')) as { version?: string };
+    await logBootstrapTrigger({
+        command: 'update',
+        cwd: process.cwd(),
+        pkgVersion: pkgJson.version ?? '0.0.0',
+    });
+    await ensureGlobalSkillsBootstrapped(packageRoot, opts.force ? { force: true } : {});
+    await ensureUserAgentsSkillsSymlink({ force: true });
+    if (shouldUseGlobalHooks()) {
+        await ensureGlobalHooksBootstrapped(packageRoot, opts.force ? { force: true } : {});
+        await reconcileGlobalClaudeHooks();
+        await reconcileGlobalPiHooks();
+    }
+    if (shouldUseGlobalSkills(repoRoot)) {
+        await printSkillsMigrationNudge(repoRoot);
+    }
+}
+
 async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdateResult> {
     const packageRoot = resolvePackageRoot();
     const registryPath = path.join(packageRoot, '.xtrm', 'registry.json');
@@ -107,44 +134,45 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
         }
 
         // ADR 43 gate FIRST (read-only): the migration decision precedes
-        // every mutation below — log trigger, global bootstrap, registry
-        // install, skills, hooks, maintenance, and staging. The gate sits
-        // here (not after the bootstrap block) so the per-repo blocked path
-        // is itself zero-mutation even if fleet preflight is ever bypassed.
+        // every REPO-scoped mutation below — drift install, skills install,
+        // project hooks, service skills, staging. The gate sits here (not
+        // after those steps) so the per-repo blocked path is itself
+        // zero-mutation even if fleet preflight is ever bypassed.
         const earlyMigrationPlan: MigrationPlan = await planSubstrateMigration(repoRoot);
         // Amended A8/A9 contract: A8 never activates the legacy import.
         // Any needed migration fails closed here with exact remediation.
         // Import activation + verifier + cleanup are owned by xtrm-6qu.9.
         if (opts.apply && earlyMigrationPlan.needed) {
             const blocked = migrationBlockedReason(earlyMigrationPlan);
+            const transition = substrateMigrationTransition(earlyMigrationPlan);
             const gateMaintenance = await runDependencyMaintenance(repoRoot, false);
+            // User scope cannot reach the board (CORE-2343): refresh it so a
+            // blocked repo is not a dead end for global payload freshness. A
+            // failure here is reported, never silently swallowed.
+            let userScope = 'user-scope maintenance failed';
+            try {
+                await runUserScopeMaintenance(packageRoot, repoRoot, opts);
+                userScope = 'user-scope refreshed';
+            } catch (error) {
+                userScope = `user-scope maintenance failed: ${error instanceof Error ? error.message : String(error)}`;
+            }
             return {
                 repo: repoRoot,
                 status: 'failed',
-                reason: `substrate migration required: ${blocked ?? earlyMigrationPlan.reason}`,
+                reason: `substrate migration required: ${blocked ?? earlyMigrationPlan.reason} (${userScope})`,
                 maintenance: gateMaintenance,
-                migration: { needed: true, status: 'blocked', reason: blocked ?? earlyMigrationPlan.reason },
+                migration: {
+                    needed: true,
+                    status: transition?.status ?? 'transition-pending',
+                    reason: blocked ?? earlyMigrationPlan.reason,
+                    ...(transition ? { transition } : {}),
+                },
                 piRuntime: undefined,
             };
         }
 
-        const pkgJson = await fs.readJson(path.join(packageRoot, 'package.json')) as { version?: string };
         if (opts.apply) {
-            await logBootstrapTrigger({
-                command: 'update',
-                cwd: process.cwd(),
-                pkgVersion: pkgJson.version ?? '0.0.0',
-            });
-            await ensureGlobalSkillsBootstrapped(packageRoot, opts.force ? { force: true } : {});
-            await ensureUserAgentsSkillsSymlink({ force: true });
-            if (shouldUseGlobalHooks()) {
-                await ensureGlobalHooksBootstrapped(packageRoot, opts.force ? { force: true } : {});
-                await reconcileGlobalClaudeHooks();
-                await reconcileGlobalPiHooks();
-            }
-            if (shouldUseGlobalSkills(repoRoot)) {
-                await printSkillsMigrationNudge(repoRoot);
-            }
+            await runUserScopeMaintenance(packageRoot, repoRoot, opts);
         }
 
         const drift = await checkDrift(registryPath, userXtrmDir, opts.apply ? getGlobalSkillsOverrideRoots(repoRoot) : undefined);
@@ -348,9 +376,11 @@ function printTable(rows: RepoUpdateResult[]): void {
  * Fleet preflight (apply mode only, read-only): plan every target's AND
  * every incomplete repo's migration BEFORE any global/repo mutation.
  * Incomplete repos (`.xtrm/` without `registry.json`) are included because
- * an incomplete repo can still carry a legacy `.beads` board. A single
- * blocked repo aborts the whole run — global skills/hooks/package cutover
- * must never strand a legacy board that cannot migrate (ADR 43).
+ * an incomplete repo can still carry a legacy `.beads` board.
+ *
+ * CORE-2343: this is read-only bookkeeping now. It records which repos are
+ * blocked; the per-repo gate in updateRepo decides what may be written. A
+ * single blocked repo no longer aborts user-scoped maintenance.
  */
 async function preflightFleetMigration(repos: string[]): Promise<Array<{ repo: string; blocked: string | null }>> {
     const results: Array<{ repo: string; blocked: string | null }> = [];
@@ -380,43 +410,28 @@ export function createUpdateCommand(): Command {
             const typedOpts = opts as UpdateOpts;
             const { targets, incomplete } = await resolveTargetRepos(typedOpts);
             const rows: RepoUpdateResult[] = [];
-            // Fleet gate BEFORE apply-mode globals (prompts, packages, hooks):
-            // zero global/repo/runtime mutation while any target is blocked.
-            // Incomplete repos are preflighted too: an incomplete `.xtrm/`
-            // repo can still carry a legacy `.beads` board.
+            // Fleet preflight is READ-ONLY bookkeeping (CORE-2343). It used to
+            // abort the whole run before any mutation; that coupled repo-scoped
+            // board safety to user-scoped payload freshness and made
+            // `xt update --apply` a dead end on any machine with a legacy
+            // board. Each repo is now gated on its own plan inside updateRepo;
+            // this pass only records WHICH repos are blocked so the summary and
+            // the JSON envelope can name them. Incomplete repos are preflighted
+            // too: an incomplete `.xtrm/` repo can still carry a legacy board.
+            let fleetBlocked = new Map<string, string>();
             if (typedOpts.apply) {
                 const preflightTargets = await preflightFleetMigration(targets);
                 const preflightIncomplete = await preflightFleetMigration(incomplete);
-                const blocked = [...preflightTargets, ...preflightIncomplete].filter(entry => entry.blocked);
-                if (blocked.length > 0) {
-                    const blockers = blocked.map(entry => entry.repo).join(', ');
-                    for (const repo of targets) {
-                        const hit = blocked.find(entry => entry.repo === repo);
-                        rows.push(hit
-                            ? { repo, status: 'failed', reason: `substrate migration required: ${hit.blocked}` }
-                            : { repo, status: 'skipped', reason: `not attempted: fleet preflight blocked by ${blockers}` });
-                    }
-                    for (const repo of incomplete) {
-                        const hit = blocked.find(entry => entry.repo === repo);
-                        rows.push(hit
-                            ? { repo, status: 'failed', reason: `substrate migration required: ${hit.blocked}` }
-                            : {
-                                repo,
-                                status: 'incomplete',
-                                reason: 'missing .xtrm/registry.json — run `xt init` to bootstrap or `xt update --apply --repo <path>` to repair',
-                            });
-                    }
-                    if (typedOpts.json) {
-                        // Same keys as the normal path (packages/promptSync null:
-                        // skipped stages), plus the abort cause.
-                        console.log(JSON.stringify({ repos: rows, packages: null, promptSync: null, fleetPreflightBlocked: blockers }, null, 2));
-                    } else {
-                        printTable(rows);
-                    }
-                    process.exitCode = 1;
-                    return;
-                }
+                fleetBlocked = new Map(
+                    [...preflightTargets, ...preflightIncomplete]
+                        .filter(entry => entry.blocked)
+                        .map(entry => [entry.repo, entry.blocked as string]),
+                );
             }
+            const blockedReasonFor = (repo: string): string | undefined => {
+                const blocked = fleetBlocked.get(repo);
+                return blocked ? `substrate migration required: ${blocked}` : undefined;
+            };
             const promptSync = await syncGlobalPrompts({ dryRun: !typedOpts.apply });
             for (const repo of targets) {
                 const row = await updateRepo(repo, typedOpts);
@@ -433,22 +448,29 @@ export function createUpdateCommand(): Command {
             // Surface incomplete repos (have .xtrm/ but no registry.json).
             // Never auto-fix — would be destructive without explicit opt-in.
             for (const repo of incomplete) {
-                rows.push({
-                    repo,
-                    status: 'incomplete',
-                    reason: 'missing .xtrm/registry.json — run `xt init` to bootstrap or `xt update --apply --repo <path>` to repair',
-                });
+                const blocked = blockedReasonFor(repo);
+                rows.push(blocked
+                    ? { repo, status: 'failed', reason: blocked }
+                    : {
+                        repo,
+                        status: 'incomplete',
+                        reason: 'missing .xtrm/registry.json — run `xt init` to bootstrap or `xt update --apply --repo <path>` to repair',
+                    });
             }
 
-            // Post-loop globals stay behind the same gate: a migration-blocked
-            // row means a legacy board is stranded, so global package/tool
-            // cutover is skipped (report-only assurance instead of mutation).
-            const migrationStranded = rows.some(row => row.migration?.status === 'blocked');
-            const packageAssurance = await assureXtManagedPiPackages(!Boolean(typedOpts.apply) || migrationStranded);
-            if (typedOpts.apply && !migrationStranded) runExternalPiToolPatch(resolvePackageRoot(), false);
+            // Post-loop globals are NOT gated on migration state (CORE-2343):
+            // Pi package assurance and the external tool patch write under $HOME
+            // and the package root, so neither can strand or reach a board.
+            const packageAssurance = await assureXtManagedPiPackages(!typedOpts.apply);
+            if (typedOpts.apply) runExternalPiToolPatch(resolvePackageRoot(), false);
 
             if (opts.json) {
-                console.log(JSON.stringify({ repos: rows, packages: packageAssurance, promptSync }, null, 2));
+                console.log(JSON.stringify({
+                    repos: rows,
+                    packages: packageAssurance,
+                    promptSync,
+                    ...([...fleetBlocked.keys()].length > 0 ? { fleetPreflightBlocked: [...fleetBlocked.keys()] } : {}),
+                }, null, 2));
             } else {
                 printTable(rows);
                 for (const row of rows) {
@@ -458,8 +480,9 @@ export function createUpdateCommand(): Command {
                 printGlobalPromptSyncSummary(promptSync);
             }
 
-            // Blocked migrations map to 'failed' rows; 'incomplete' rows are
-            // also nonzero (a repo that cannot even be read is not success).
+            // A repo in the beads→Substrate transition maps to a 'failed' row
+            // (repo-scoped writes were gated); 'incomplete' rows are also
+            // nonzero (a repo that cannot even be read is not success).
             if (rows.some(row => row.status === 'failed' || row.status === 'incomplete') || packageAssurance.failed.length > 0) {
                 process.exitCode = 1;
             }

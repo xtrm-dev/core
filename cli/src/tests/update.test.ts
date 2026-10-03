@@ -10,7 +10,6 @@ const {
   runExternalPiToolPatchMock,
   resolvePackageRootMock,
   planSubstrateMigrationMock,
-  migrationBlockedReasonMock,
   runDependencyMaintenanceMock,
   ensureServiceSkillsMock,
   reconcileProjectClaudeHooksMock,
@@ -30,11 +29,7 @@ const {
   runExternalPiToolPatchMock: vi.fn(),
   resolvePackageRootMock: vi.fn(),
   planSubstrateMigrationMock: vi.fn(),
-  migrationBlockedReasonMock: vi.fn((plan: { needed: boolean; sbAvailable: boolean; reason: string }) => {
-    if (!plan.needed) return null;
-    const sbHint = plan.sbAvailable ? '' : ' Install @jaggerxtrm/substrate via `xt init` first, then';
-    return `legacy .beads workspace blocks \`xt update --apply\`: automated Substrate migration ships with the A9 pipeline. Do NOT delete \`.beads\` (irreversible work loss).${sbHint} Upgrade xt, then re-run \`xt update --apply\`.`;
-  }),
+  migrationBlockedReasonMock: vi.fn(),
   runDependencyMaintenanceMock: vi.fn(),
   ensureServiceSkillsMock: vi.fn(),
   reconcileProjectClaudeHooksMock: vi.fn(),
@@ -67,10 +62,15 @@ vi.mock('../commands/install.js', () => ({
   isStrictRegistryMode: (opts: { strictRegistry?: boolean }) => opts.strictRegistry ?? process.env.XTRM_STRICT_REGISTRY === '1',
 }));
 
-vi.mock('../core/substrate-migration.js', () => ({
-  planSubstrateMigration: planSubstrateMigrationMock,
-  migrationBlockedReason: migrationBlockedReasonMock,
-}));
+// Only detection is faked. The gate message and the transition shape come
+// from the real module, so tests assert the shipped pointer text.
+vi.mock('../core/substrate-migration.js', async () => {
+  const actual = await vi.importActual<typeof import('../core/substrate-migration.js')>('../core/substrate-migration.js');
+  return {
+    ...actual,
+    planSubstrateMigration: planSubstrateMigrationMock,
+  };
+});
 
 vi.mock('../core/dependency-maintenance.js', () => ({
   runDependencyMaintenance: runDependencyMaintenanceMock,
@@ -133,7 +133,6 @@ beforeEach(() => {
   runExternalPiToolPatchMock.mockReset();
   resolvePackageRootMock.mockReset();
   planSubstrateMigrationMock.mockReset();
-  migrationBlockedReasonMock.mockClear();
   runDependencyMaintenanceMock.mockReset();
   checkDriftMock.mockResolvedValue({ missing: ['asset.txt'], upToDate: [], drifted: [] });
   assureXtManagedPiPackagesMock.mockResolvedValue({
@@ -287,7 +286,7 @@ describe('xtrm update', () => {
     expect(result.logs.join('\n')).toContain('substrate migration pending');
   });
 
-  it('apply fails closed with zero mutation when migration is needed', async () => {
+  it('apply fails closed for repo scope with zero mutation when migration is needed', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
     const repo = writeRepo(tmpDir, 'repo-a');
@@ -299,17 +298,19 @@ describe('xtrm update', () => {
     const result = await runUpdateCli(['--apply', '--repo', repo]);
 
     // Amended A8/A9 contract: A8 never activates the import. Needed means
-    // fail-closed with remediation and zero mutation — A9 owns activation.
+    // fail-closed with remediation and zero REPO mutation — A9 owns activation.
     expect(result.exitCode).toBe(1);
     expect(result.logs.join('\n')).toContain('failed');
     expect(result.logs.join('\n')).toContain('substrate migration required');
-    expect(result.logs.join('\n')).toContain('A9 pipeline');
+    expect(result.logs.join('\n')).toContain('transition pending');
     expect(runInstallMock).not.toHaveBeenCalled();
-    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
+    // CORE-2343: user scope cannot reach the board, so it still refreshes.
+    expect(syncGlobalPromptsMock).toHaveBeenCalled();
+    expect(ensureGlobalSkillsBootstrappedMock).toHaveBeenCalled();
     expect(await snapshotTree(repo)).toEqual(before);
   });
 
-  it('apply aborts with zero mutation when migration is blocked (sb absent)', async () => {
+  it('apply blocks repo scope but not user scope when sb is absent (CORE-2343)', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
     const repo = writeRepo(tmpDir, 'repo-a');
@@ -321,24 +322,56 @@ describe('xtrm update', () => {
     const before = await snapshotTree(repo);
     const result = await runUpdateCli(['--apply', '--repo', repo]);
 
-    // ADR 43: blocked migration is a zero-mutation abort with remediation.
     expect(result.exitCode).toBe(1);
     expect(result.logs.join('\n')).toContain('failed');
     expect(result.logs.join('\n')).toContain('substrate migration required');
     expect(result.logs.join('\n')).toContain('xt init');
+    // repo scope stays frozen...
     expect(runInstallMock).not.toHaveBeenCalled();
-    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
-    expect(logBootstrapTriggerMock).not.toHaveBeenCalled();
-    expect(ensureGlobalSkillsBootstrappedMock).not.toHaveBeenCalled();
-    expect(reconcileGlobalClaudeHooksMock).not.toHaveBeenCalled();
-    expect(reconcileGlobalPiHooksMock).not.toHaveBeenCalled();
-    expect(assureXtManagedPiPackagesMock).not.toHaveBeenCalled();
-    expect(runExternalPiToolPatchMock).not.toHaveBeenCalled();
+    expect(ensureServiceSkillsMock).not.toHaveBeenCalled();
+    expect(reconcileProjectClaudeHooksMock).not.toHaveBeenCalled();
+    // ...user scope runs: it resolves under $HOME and cannot reach the board.
+    expect(syncGlobalPromptsMock).toHaveBeenCalled();
+    expect(logBootstrapTriggerMock).toHaveBeenCalled();
+    expect(ensureGlobalSkillsBootstrappedMock).toHaveBeenCalled();
+    expect(ensureUserAgentsSkillsSymlinkMock).toHaveBeenCalled();
+    expect(assureXtManagedPiPackagesMock).toHaveBeenCalled();
+    expect(runExternalPiToolPatchMock).toHaveBeenCalled();
     expect(await snapshotTree(repo)).toEqual(before);
     expect(await fs.readFile(path.join(repo, '.xtrm', 'sentinel.txt'), 'utf8')).toBe('untouched');
   });
 
-  it('fail-closed remediation forbids deletion and points at A9 automation', async () => {
+  it('a blocked repo reports transition-pending with a resolvable pointer (CORE-2343)', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const repo = writeRepo(tmpDir, 'repo-a');
+    await fs.ensureDir(path.join(repo, '.beads'));
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    planSubstrateMigrationMock.mockResolvedValue({ needed: true, hasBeads: true, alreadyMigrated: false, sbAvailable: true, reason: 'legacy .beads workspace pending Substrate import' });
+
+    const result = await runUpdateCli(['--apply', '--repo', repo, '--json']);
+    const row = (result.json as { repos: Array<Record<string, unknown>> }).repos[0];
+    const migration = row.migration as { status: string; transition?: Record<string, unknown> };
+
+    // Machine-readable transition, so stranded repos are enumerable.
+    expect(migration.status).toBe('transition-pending');
+    expect(migration.transition).toMatchObject({
+      needed: true,
+      status: 'transition-pending',
+      inspectCommand: 'xt doctor',
+      clearsWithUpgrade: false,
+    });
+    expect(String(migration.transition?.docPath)).toContain('docs/migration/beads-to-substrate.md');
+
+    // The human reason names the same pointer and never sends the operator
+    // down the "upgrade xt" dead end.
+    const logs = result.logs.join('\n');
+    expect(logs).toContain('docs/migration/beads-to-substrate.md');
+    expect(logs).toContain('xt doctor');
+    expect(logs).not.toContain('Upgrade xt, then re-run');
+  });
+
+  it('fail-closed remediation forbids deletion and refuses the upgrade dead end', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
     const repo = writeRepo(tmpDir, 'repo-a');
@@ -352,16 +385,14 @@ describe('xtrm update', () => {
     expect(result.exitCode).toBe(1);
     const logs = result.logs.join('\n');
     expect(logs).toContain('substrate migration required');
-    expect(logs).toContain('A9 pipeline');
     expect(logs).toContain('Do NOT delete');
-    expect(logs).toContain('Upgrade xt');
+    expect(logs).toContain('No released xt version clears this gate');
     expect(logs).not.toContain('bd export');
     expect(runInstallMock).not.toHaveBeenCalled();
-    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
     expect(await snapshotTree(repo)).toEqual(before);
   });
 
-  it('fleet preflight aborts before globals when any repo is blocked', async () => {
+  it('a blocked repo does not abort the fleet or freeze user scope (CORE-2343)', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
     const root = path.join(tmpDir, 'root');
@@ -379,23 +410,24 @@ describe('xtrm update', () => {
 
     const beforeA = await snapshotTree(repoA);
     const beforeB = await snapshotTree(repoB);
-    const result = await runUpdateCli(['--apply', '--root', root]);
+    const result = await runUpdateCli(['--apply', '--root', root, '--json']);
 
+    // repoA stays frozen, repoB proceeds: gating is per repo, not per fleet.
     expect(result.exitCode).toBe(1);
+    const rows = (result.json as { repos: Array<Record<string, unknown>> }).repos;
+    expect(rows.find(row => row.repo === repoA)?.status).toBe('failed');
+    expect(rows.find(row => row.repo === repoB)?.status).not.toBe('failed');
     expect(result.logs.join('\n')).toContain(repoA);
     expect(result.logs.join('\n')).toContain('substrate migration required');
-    expect(result.logs.join('\n')).toContain('not attempted');
-    // zero mutation fleet-wide: no per-repo work, no globals.
-    expect(runInstallMock).not.toHaveBeenCalled();
-    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
-    expect(ensureGlobalSkillsBootstrappedMock).not.toHaveBeenCalled();
-    expect(assureXtManagedPiPackagesMock).not.toHaveBeenCalled();
-    expect(runExternalPiToolPatchMock).not.toHaveBeenCalled();
     expect(await snapshotTree(repoA)).toEqual(beforeA);
-    expect(await snapshotTree(repoB)).toEqual(beforeB);
+    expect(runInstallMock).toHaveBeenCalledWith(expect.objectContaining({ projectRoot: repoB }));
+    // user scope ran once for the whole fleet.
+    expect(ensureGlobalSkillsBootstrappedMock).toHaveBeenCalled();
+    expect(syncGlobalPromptsMock).toHaveBeenCalledTimes(1);
+    expect(await snapshotTree(repoB)).not.toEqual(beforeB);
   });
 
-  it('fleet preflight covers incomplete repos carrying a board', async () => {
+  it('fleet preflight reports an incomplete repo carrying a board without aborting', async () => {
     const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
     fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
     const root = path.join(tmpDir, 'root');
@@ -417,20 +449,17 @@ describe('xtrm update', () => {
     const beforeB = await snapshotTree(repoB);
     const result = await runUpdateCli(['--apply', '--root', root]);
 
-    // the incomplete board blocks the fleet; the managed repo is skipped.
+    // the incomplete board is reported as blocked; the managed repo is updated.
     expect(result.exitCode).toBe(1);
     const logs = result.logs.join('\n');
     expect(logs).toContain(repoB);
     expect(logs).toContain('substrate migration required');
     expect(logs).toContain('failed');
-    expect(logs).toContain('A9 pipeline');
+    expect(logs).toContain('transition pending');
     expect(logs).toContain('Do NOT delete');
-    expect(runInstallMock).not.toHaveBeenCalled();
-    expect(syncGlobalPromptsMock).not.toHaveBeenCalled();
-    expect(assureXtManagedPiPackagesMock).not.toHaveBeenCalled();
-    expect(runExternalPiToolPatchMock).not.toHaveBeenCalled();
-    expect(await snapshotTree(repoA)).toEqual(beforeA);
+    expect(runInstallMock).toHaveBeenCalledWith(expect.objectContaining({ projectRoot: repoA }));
     expect(await snapshotTree(repoB)).toEqual(beforeB);
+    expect(await snapshotTree(repoA)).not.toEqual(beforeA);
   });
 
   it('apply refreshes repo once when current package registry differs from old installed registry', async () => {

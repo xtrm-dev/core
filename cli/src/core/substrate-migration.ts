@@ -6,9 +6,15 @@
  * `.beads` workspace, plans the migration, and reports the exact remediation.
  * It never backs up, exports, imports, verifies, receipts, cleans up, or
  * writes markers. Import activation, preservation verification, receipt
- * interpretation, cleanup, and cutover are owned by xtrm-6qu.9 (A9):
- * `xt update --apply` fails closed on any legacy `.beads` repo BEFORE all
- * apply-mode global/repo/runtime mutation, with zero-mutation proof.
+ * interpretation, cleanup, and cutover are owned by xtrm-6qu.9 (A9).
+ *
+ * Blast radius (CORE-2343): `needed` gates REPO-scoped writes only, with a
+ * zero-mutation proof for that repo. User-scoped writes (~/.xtrm skills
+ * payload, hook rewiring, prompt sync, Pi package assurance) cannot reach a
+ * `.beads` board, so they proceed; gating them made `xt update --apply` a
+ * dead end and let the global payload drift behind the installed package.
+ * The gate message is a transition pointer, not a dead end — see
+ * `substrateMigrationTransition`.
  *
  * Forward compatibility: `readMigrationMarker` honors a marker file the A9
  * pipeline will write; nothing in A8 creates one.
@@ -30,22 +36,59 @@ export interface MigrationPlan {
 }
 
 /**
- * Single source of truth for the ADR 43 fail-closed gate.
- * Returns the exact remediation whenever migration is needed, null when the
- * repo needs nothing. A8 never activates the import, so "needed" is always
- * blocking: callers must treat a non-null result as a zero-mutation abort —
- * no global, repo, or runtime writes before or after this decision in the
- * same run.
+ * In-repo remediation pointer. Deliberately NOT a GitHub URL: the substrate
+ * package ships no repository field, so any hardcoded link would rot into a
+ * 404. `scripts/` gates assert this path exists.
+ */
+export const SUBSTRATE_TRANSITION_DOC = 'docs/migration/beads-to-substrate.md';
+
+/** Machine-readable state for a repo whose board has not been migrated yet. */
+export const SUBSTRATE_TRANSITION_STATUS = 'transition-pending';
+
+export interface SubstrateTransition {
+    needed: boolean;
+    status: typeof SUBSTRATE_TRANSITION_STATUS;
+    reason: string;
+    /** Read-only inspection of the current Substrate/board state. */
+    inspectCommand: string;
+    /** Full remediation write-up, relative to the repo root. */
+    docPath: string;
+    /** False until the A9 import pipeline ships; no xt release clears this yet. */
+    clearsWithUpgrade: false;
+}
+
+/**
+ * The transition a blocked repo is in: repo-scope writes are gated, the board
+ * is untouched, and the operator has a resolvable next step. This is DATA, not
+ * prose, so callers can surface it as-is and machines can enumerate it.
+ */
+export function substrateMigrationTransition(plan: MigrationPlan): SubstrateTransition | null {
+    if (!plan.needed) return null;
+    return {
+        needed: true,
+        status: SUBSTRATE_TRANSITION_STATUS,
+        reason: plan.reason,
+        inspectCommand: 'xt doctor',
+        docPath: SUBSTRATE_TRANSITION_DOC,
+        clearsWithUpgrade: false,
+    };
+}
+
+/**
+ * Single source of truth for the ADR 43 gate message.
+ * Returns the remediation whenever migration is needed, null when the repo
+ * needs nothing. "Needed" gates REPO-scope writes only — user-scope writes
+ * (~/.xtrm payload, hook rewiring, prompt sync) cannot reach `.beads` and are
+ * not gated. Never instructs deletion or hand-migration: the operator must not
+ * destroy the board, and no released xt version clears this gate (CORE-2343).
  */
 export function migrationBlockedReason(plan: MigrationPlan): string | null {
-    if (!plan.needed) return null;
+    const transition = substrateMigrationTransition(plan);
+    if (!transition) return null;
     const sbHint = plan.sbAvailable
         ? ''
-        : ' Install @jaggerxtrm/substrate via `xt init` first, then';
-    // No manual migration posture: the operator must not hand-migrate or
-    // delete the board. Automated migration ships with the A9 pipeline;
-    // the truthful action is upgrading xt and re-running.
-    return `legacy .beads workspace blocks \`xt update --apply\`: automated Substrate migration ships with the A9 pipeline. Do NOT delete \`.beads\` (irreversible work loss).${sbHint} Upgrade xt, then re-run \`xt update --apply\`.`;
+        : ' Install @jaggerxtrm/substrate via `xt init` first.';
+    return `legacy .beads workspace gates repo-scoped \`xt update --apply\` (transition pending): ${transition.reason}. Do NOT delete or hand-migrate \`.beads\` (irreversible work loss).${sbHint} Inspect with \`${transition.inspectCommand}\`; remediation: ${transition.docPath}. No released xt version clears this gate — the A9 import pipeline has not shipped.`;
 }
 
 export async function readMigrationMarker(repoRoot: string): Promise<Record<string, unknown> | null> {
