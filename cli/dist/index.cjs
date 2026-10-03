@@ -65375,10 +65375,24 @@ function printDependencyMaintenanceSummary(summary2) {
 var import_fs_extra32 = __toESM(require_lib(), 1);
 var import_node_path32 = __toESM(require("path"), 1);
 var MIGRATION_MARKER = ".substrate-migrated.json";
-function migrationBlockedReason(plan) {
+var SUBSTRATE_TRANSITION_DOC = "docs/migration/beads-to-substrate.md";
+var SUBSTRATE_TRANSITION_STATUS = "transition-pending";
+function substrateMigrationTransition(plan) {
   if (!plan.needed) return null;
-  const sbHint = plan.sbAvailable ? "" : " Install @jaggerxtrm/substrate via `xt init` first, then";
-  return `legacy .beads workspace blocks \`xt update --apply\`: automated Substrate migration ships with the A9 pipeline. Do NOT delete \`.beads\` (irreversible work loss).${sbHint} Upgrade xt, then re-run \`xt update --apply\`.`;
+  return {
+    needed: true,
+    status: SUBSTRATE_TRANSITION_STATUS,
+    reason: plan.reason,
+    inspectCommand: "xt doctor",
+    docPath: SUBSTRATE_TRANSITION_DOC,
+    clearsWithUpgrade: false
+  };
+}
+function migrationBlockedReason(plan) {
+  const transition = substrateMigrationTransition(plan);
+  if (!transition) return null;
+  const sbHint = plan.sbAvailable ? "" : " Install @jaggerxtrm/substrate via `xt init` first.";
+  return `legacy .beads workspace gates repo-scoped \`xt update --apply\` (transition pending): ${transition.reason}. Do NOT delete or hand-migrate \`.beads\` (irreversible work loss).${sbHint} Inspect with \`${transition.inspectCommand}\`; remediation: ${transition.docPath}. No released xt version clears this gate \u2014 the A9 import pipeline has not shipped.`;
 }
 async function readMigrationMarker(repoRoot) {
   const markerPath = import_node_path32.default.join(repoRoot, ".xtrm", MIGRATION_MARKER);
@@ -72531,7 +72545,13 @@ function renderLegacyMigration(report) {
   if (report.beadsDirPresent) warn("legacy .beads workspace present \u2014 legacy migration required");
   if (report.beadsHookRegistrations > 0) warn(`${report.beadsHookRegistrations} legacy Beads hook registration(s) \u2014 legacy migration required`);
   if (report.substrateRemnants.length > 0) warn(`stale Beads plugin/marketplace remnant(s): ${report.substrateRemnants.join(", ")} \u2014 legacy migration required`);
-  fix("legacy .beads workspace blocks migration: automated Substrate migration ships with the A9 pipeline. Do NOT delete `.beads`. Upgrade xt, then re-run `xt update --apply`");
+  fix(migrationBlockedReason({
+    needed: report.beadsDirPresent,
+    hasBeads: report.beadsDirPresent,
+    alreadyMigrated: false,
+    sbAvailable: getSbVersion().available,
+    reason: "legacy .beads workspace present"
+  }) ?? "legacy .beads workspace blocks migration \u2014 see docs/migration/beads-to-substrate.md");
 }
 function createDoctorCommand() {
   const doctor = new Command("doctor").description("Canonical diagnosis for xtrm-managed project and runtime surfaces").option("--cwd <path>", "Operate on this directory (default: process.cwd())").option("--json", "Output machine-readable JSON", false).option("--check-drift", "Exit non-zero on any drift, missing, extra, or duplicate").action(async (opts) => {
@@ -72942,6 +72962,24 @@ async function printSkillsMigrationNudge(repoRoot) {
     kleur_default.yellow("    Docs: https://github.com/Jaggerxtrm/xtrm-tools/blob/main/docs/skills-registry-exploration.md")
   ]);
 }
+async function runUserScopeMaintenance(packageRoot, repoRoot, opts) {
+  const pkgJson = await import_fs_extra53.default.readJson(import_node_path49.default.join(packageRoot, "package.json"));
+  await logBootstrapTrigger({
+    command: "update",
+    cwd: process.cwd(),
+    pkgVersion: pkgJson.version ?? "0.0.0"
+  });
+  await ensureGlobalSkillsBootstrapped(packageRoot, opts.force ? { force: true } : {});
+  await ensureUserAgentsSkillsSymlink({ force: true });
+  if (shouldUseGlobalHooks()) {
+    await ensureGlobalHooksBootstrapped(packageRoot, opts.force ? { force: true } : {});
+    await reconcileGlobalClaudeHooks();
+    await reconcileGlobalPiHooks();
+  }
+  if (shouldUseGlobalSkills(repoRoot)) {
+    await printSkillsMigrationNudge(repoRoot);
+  }
+}
 async function updateRepo(repoRoot, opts) {
   const packageRoot = resolvePackageRoot2();
   const registryPath = import_node_path49.default.join(packageRoot, ".xtrm", "registry.json");
@@ -72953,33 +72991,31 @@ async function updateRepo(repoRoot, opts) {
     const earlyMigrationPlan = await planSubstrateMigration(repoRoot);
     if (opts.apply && earlyMigrationPlan.needed) {
       const blocked = migrationBlockedReason(earlyMigrationPlan);
+      const transition = substrateMigrationTransition(earlyMigrationPlan);
       const gateMaintenance = await runDependencyMaintenance(repoRoot, false);
+      let userScope = "user-scope maintenance failed";
+      try {
+        await runUserScopeMaintenance(packageRoot, repoRoot, opts);
+        userScope = "user-scope refreshed";
+      } catch (error51) {
+        userScope = `user-scope maintenance failed: ${error51 instanceof Error ? error51.message : String(error51)}`;
+      }
       return {
         repo: repoRoot,
         status: "failed",
-        reason: `substrate migration required: ${blocked ?? earlyMigrationPlan.reason}`,
+        reason: `substrate migration required: ${blocked ?? earlyMigrationPlan.reason} (${userScope})`,
         maintenance: gateMaintenance,
-        migration: { needed: true, status: "blocked", reason: blocked ?? earlyMigrationPlan.reason },
+        migration: {
+          needed: true,
+          status: transition?.status ?? "transition-pending",
+          reason: blocked ?? earlyMigrationPlan.reason,
+          ...transition ? { transition } : {}
+        },
         piRuntime: void 0
       };
     }
-    const pkgJson = await import_fs_extra53.default.readJson(import_node_path49.default.join(packageRoot, "package.json"));
     if (opts.apply) {
-      await logBootstrapTrigger({
-        command: "update",
-        cwd: process.cwd(),
-        pkgVersion: pkgJson.version ?? "0.0.0"
-      });
-      await ensureGlobalSkillsBootstrapped(packageRoot, opts.force ? { force: true } : {});
-      await ensureUserAgentsSkillsSymlink({ force: true });
-      if (shouldUseGlobalHooks()) {
-        await ensureGlobalHooksBootstrapped(packageRoot, opts.force ? { force: true } : {});
-        await reconcileGlobalClaudeHooks();
-        await reconcileGlobalPiHooks();
-      }
-      if (shouldUseGlobalSkills(repoRoot)) {
-        await printSkillsMigrationNudge(repoRoot);
-      }
+      await runUserScopeMaintenance(packageRoot, repoRoot, opts);
     }
     const drift = await checkDrift(registryPath, userXtrmDir, opts.apply ? getGlobalSkillsOverrideRoots(repoRoot) : void 0);
     const migrationPlan = earlyMigrationPlan;
@@ -73145,33 +73181,18 @@ function createUpdateCommand() {
     const typedOpts = opts;
     const { targets, incomplete } = await resolveTargetRepos(typedOpts);
     const rows = [];
+    let fleetBlocked = /* @__PURE__ */ new Map();
     if (typedOpts.apply) {
       const preflightTargets = await preflightFleetMigration(targets);
       const preflightIncomplete = await preflightFleetMigration(incomplete);
-      const blocked = [...preflightTargets, ...preflightIncomplete].filter((entry) => entry.blocked);
-      if (blocked.length > 0) {
-        const blockers = blocked.map((entry) => entry.repo).join(", ");
-        for (const repo of targets) {
-          const hit = blocked.find((entry) => entry.repo === repo);
-          rows.push(hit ? { repo, status: "failed", reason: `substrate migration required: ${hit.blocked}` } : { repo, status: "skipped", reason: `not attempted: fleet preflight blocked by ${blockers}` });
-        }
-        for (const repo of incomplete) {
-          const hit = blocked.find((entry) => entry.repo === repo);
-          rows.push(hit ? { repo, status: "failed", reason: `substrate migration required: ${hit.blocked}` } : {
-            repo,
-            status: "incomplete",
-            reason: "missing .xtrm/registry.json \u2014 run `xt init` to bootstrap or `xt update --apply --repo <path>` to repair"
-          });
-        }
-        if (typedOpts.json) {
-          console.log(JSON.stringify({ repos: rows, packages: null, promptSync: null, fleetPreflightBlocked: blockers }, null, 2));
-        } else {
-          printTable(rows);
-        }
-        process.exitCode = 1;
-        return;
-      }
+      fleetBlocked = new Map(
+        [...preflightTargets, ...preflightIncomplete].filter((entry) => entry.blocked).map((entry) => [entry.repo, entry.blocked])
+      );
     }
+    const blockedReasonFor = (repo) => {
+      const blocked = fleetBlocked.get(repo);
+      return blocked ? `substrate migration required: ${blocked}` : void 0;
+    };
     const promptSync = await syncGlobalPrompts({ dryRun: !typedOpts.apply });
     for (const repo of targets) {
       const row = await updateRepo(repo, typedOpts);
@@ -73185,17 +73206,22 @@ function createUpdateCommand() {
       rows.push(row);
     }
     for (const repo of incomplete) {
-      rows.push({
+      const blocked = blockedReasonFor(repo);
+      rows.push(blocked ? { repo, status: "failed", reason: blocked } : {
         repo,
         status: "incomplete",
         reason: "missing .xtrm/registry.json \u2014 run `xt init` to bootstrap or `xt update --apply --repo <path>` to repair"
       });
     }
-    const migrationStranded = rows.some((row) => row.migration?.status === "blocked");
-    const packageAssurance = await assureXtManagedPiPackages(!Boolean(typedOpts.apply) || migrationStranded);
-    if (typedOpts.apply && !migrationStranded) runExternalPiToolPatch(resolvePackageRoot2(), false);
+    const packageAssurance = await assureXtManagedPiPackages(!typedOpts.apply);
+    if (typedOpts.apply) runExternalPiToolPatch(resolvePackageRoot2(), false);
     if (opts.json) {
-      console.log(JSON.stringify({ repos: rows, packages: packageAssurance, promptSync }, null, 2));
+      console.log(JSON.stringify({
+        repos: rows,
+        packages: packageAssurance,
+        promptSync,
+        ...[...fleetBlocked.keys()].length > 0 ? { fleetPreflightBlocked: [...fleetBlocked.keys()] } : {}
+      }, null, 2));
     } else {
       printTable(rows);
       for (const row of rows) {

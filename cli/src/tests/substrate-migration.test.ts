@@ -8,6 +8,9 @@ import {
   MIGRATION_MARKER,
   planSubstrateMigration,
   readMigrationMarker,
+  substrateMigrationTransition,
+  SUBSTRATE_TRANSITION_DOC,
+  SUBSTRATE_TRANSITION_STATUS,
 } from '../core/substrate-migration.js';
 import type { SbRunner } from '../core/substrate.js';
 
@@ -101,14 +104,48 @@ describe('migrationBlockedReason (fail-closed gate)', () => {
       const plan = await planSubstrateMigration(repo, stubSb(available));
       const reason = migrationBlockedReason(plan);
       expect(reason).not.toBeNull();
-      expect(reason as string).toContain('A9 pipeline');
+      expect(reason as string).toContain('transition pending');
       expect(reason as string).toContain('Do NOT delete');
-      expect(reason as string).toContain('Upgrade xt');
+      expect(reason as string).toContain('No released xt version clears this gate');
       expect(reason as string).not.toContain('bd export');
     }
     const withSb = await planSubstrateMigration(repo, stubSb(true));
     expect(migrationBlockedReason(withSb)).not.toContain('xt init');
     const withoutSb = await planSubstrateMigration(repo, stubSb(false));
     expect(migrationBlockedReason(withoutSb)).toContain('xt init');
+  });
+
+  it('never sends the operator down the upgrade dead end (CORE-2343)', async () => {
+    const repo = await writeBeadsRepo(tmpDir);
+    const reason = migrationBlockedReason(await planSubstrateMigration(repo, stubSb(true))) as string;
+    expect(reason).not.toContain('Upgrade xt, then re-run');
+  });
+
+  it('points at a remediation doc that exists in the repo', async () => {
+    // A pointer that 404s is worse than no pointer: the substrate package
+    // ships no repository URL, so the doc must live in-repo.
+    const docPath = path.resolve(__dirname, '..', '..', '..', SUBSTRATE_TRANSITION_DOC);
+    expect(await fs.pathExists(docPath)).toBe(true);
+  });
+});
+
+describe('substrateMigrationTransition (machine-readable transition)', () => {
+  it('is null when nothing is needed', async () => {
+    const repo = await writeBeadsRepo(tmpDir);
+    await fs.remove(path.join(repo, '.beads'));
+    expect(substrateMigrationTransition(await planSubstrateMigration(repo, stubSb(true)))).toBeNull();
+  });
+
+  it('describes the pending state without claiming an upgrade clears it', async () => {
+    const repo = await writeBeadsRepo(tmpDir);
+    const transition = substrateMigrationTransition(await planSubstrateMigration(repo, stubSb(true)));
+    expect(transition).toEqual({
+      needed: true,
+      status: SUBSTRATE_TRANSITION_STATUS,
+      reason: expect.stringContaining('.beads'),
+      inspectCommand: 'xt doctor',
+      docPath: SUBSTRATE_TRANSITION_DOC,
+      clearsWithUpgrade: false,
+    });
   });
 });

@@ -12,6 +12,7 @@ import { ensureBeadsSharedServerEnabled, hasBeadsDir, type SharedBeadsServerStat
 import { findProjectRoot } from '../utils/repo-root.js';
 import { applySettingsFixes, auditSettings, type SettingsAuditOutcome, type SettingsFinding } from '../core/settings-audit.js';
 import { defaultStateDbPath, getSbDoctorJson, getSbVersion, runSetupCheck, stateDbPresent, type SetupCheckReport } from '../core/substrate.js';
+import { migrationBlockedReason } from '../core/substrate-migration.js';
 import { CLAUDE_CHANNEL_POLICY_JSON, defaultInstalledPluginsPath, defaultManagedSettingsPath, getClaudeChannelStatus, type ClaudeChannelStatus } from '../core/claude-channel-status.js';
 import { checkXtrmUpdates, defaultCacheFile, formatUpdateRows, updatesSummary, type PackageStatus } from '../utils/npm-latest.js';
 
@@ -658,7 +659,16 @@ function renderLegacyMigration(report: LegacyMigrationSection): void {
   if (report.beadsDirPresent) warn('legacy .beads workspace present — legacy migration required');
   if (report.beadsHookRegistrations > 0) warn(`${report.beadsHookRegistrations} legacy Beads hook registration(s) — legacy migration required`);
   if (report.substrateRemnants.length > 0) warn(`stale Beads plugin/marketplace remnant(s): ${report.substrateRemnants.join(', ')} — legacy migration required`);
-  fix('legacy .beads workspace blocks migration: automated Substrate migration ships with the A9 pipeline. Do NOT delete `.beads`. Upgrade xt, then re-run `xt update --apply`');
+  // CORE-2343: single source of truth for the gate message. The previous
+  // hardcoded copy here told operators to "Upgrade xt, then re-run", which is a
+  // dead end — no released xt clears this gate before the A9 pipeline ships.
+  fix(migrationBlockedReason({
+    needed: report.beadsDirPresent,
+    hasBeads: report.beadsDirPresent,
+    alreadyMigrated: false,
+    sbAvailable: getSbVersion().available,
+    reason: 'legacy .beads workspace present',
+  }) ?? 'legacy .beads workspace blocks migration — see docs/migration/beads-to-substrate.md');
 }
 
 export function createDoctorCommand(): Command {
