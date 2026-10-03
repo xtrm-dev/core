@@ -13,6 +13,7 @@
  *   deeper files (Claude subagent transcripts) are not sessions of their own.
  */
 
+import { execFile, type ExecFileException } from 'node:child_process';
 import { existsSync, type FSWatcher, statSync, watch } from 'node:fs';
 import { mkdir, open, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -32,6 +33,8 @@ export interface SessionIndexOptions {
     roots: SessionIndexRoot[];
     /** Rebuildable cache file; omit to keep the index in memory only. */
     cachePath?: string;
+    /** How long a resolved git identity for one cwd stays valid before an async refresh (default 60s). */
+    repoTtlMs?: number;
     log?: (message: string) => void;
 }
 
@@ -41,8 +44,18 @@ const READ_CHUNK_BYTES = 4 * 1024 * 1024;
 const CACHE_WRITE_DELAY_MS = 2_000;
 const TITLE_MAX_CHARS = 200;
 const BOUNDED_MAX_CHARS = 1024;
+const PATH_MAX_CHARS = 4096;
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]+/g;
 const HAS_CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
+/** Hard bound on one git identity lookup; the request path is never blocked by it. */
+const REPO_LOOKUP_TIMEOUT_MS = 2_000;
+const REPO_TTL_MS = 60_000;
+
+/** Repository identity a host fills for the session cwd (matching what a live session reports). */
+interface RepoIdentity {
+    repository?: string;
+    repositoryPath?: string;
+}
 
 export function defaultSessionIndexOptions(home = os.homedir()): SessionIndexOptions {
     return {
@@ -96,6 +109,12 @@ export class SessionIndex {
 
     private readonly roots: SessionIndexRoot[];
     private readonly cachePath: string | undefined;
+    private readonly repoTtlMs: number;
+    /** Resolved git identity per cwd; undefined entries are simply absent until a lookup lands. */
+    private readonly repoIdentity = new Map<string, RepoIdentity>();
+    /** When each cwd was last resolved (fresh or expired), gating the per-cwd re-lookup. */
+    private readonly repoLookedUpAt = new Map<string, number>();
+    private readonly repoPending = new Set<string>();
     private readonly log: (message: string) => void;
     private readonly journals = new Map<string, JournalRecord>();
     private readonly watchers = new Map<string, FSWatcher>();
@@ -113,17 +132,20 @@ export class SessionIndex {
     constructor(options: SessionIndexOptions) {
         this.roots = options.roots.map((r) => ({ provider: r.provider, dir: path.resolve(r.dir) }));
         this.cachePath = options.cachePath;
+        this.repoTtlMs = options.repoTtlMs ?? REPO_TTL_MS;
         this.log = options.log ?? (() => {});
         this.ready = this.build();
     }
 
     /** History-only summaries, most recent activity first. Served from memory. */
     list(): AgentSessionSummary[] {
+        this.refreshRepositories();
         this.project();
         return this.summaries!;
     }
 
     get(sessionId: string): AgentSessionSummary | null {
+        this.refreshRepositories();
         this.project();
         return this.byId!.get(sessionId) ?? null;
     }
@@ -332,11 +354,57 @@ export class SessionIndex {
         for (const [file, record] of this.journals) {
             const summary = toSummary(file, record);
             if (!summary) continue;
+            const identity = this.repoIdentity.get(summary.cwd);
+            if (identity?.repository) summary.repository = identity.repository;
+            if (identity?.repositoryPath) summary.repositoryPath = identity.repositoryPath;
             const other = byId.get(summary.sessionId);
             if (!other || (summary.lastActivityAt ?? 0) > (other.lastActivityAt ?? 0)) byId.set(summary.sessionId, summary);
         }
         this.byId = byId;
         this.summaries = [...byId.values()].sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
+    }
+
+    // --- repository identity (XTRM-608) ---
+
+    /** Kick the per-cwd git lookups for every tracked cwd; the TTL map coalesces repeats. */
+    private refreshRepositories(): void {
+        if (this.closed) return;
+        for (const record of this.journals.values()) {
+            if (record.state.cwd) this.refreshRepository(record.state.cwd);
+        }
+    }
+
+    /**
+     * Serve the cached git identity for `cwd` and, when it is missing or stale, start an async
+     * refresh (all lookups for one cwd coalesce). The request path stays synchronous: an identity
+     * resolving later only causes a re-projection, and a lookup failure leaves the fields absent.
+     */
+    private refreshRepository(cwd: string): void {
+        if (this.closed || this.repoPending.has(cwd)) return;
+        const at = this.repoLookedUpAt.get(cwd);
+        if (at !== undefined && Date.now() - at < this.repoTtlMs) return;
+        this.repoLookedUpAt.set(cwd, Date.now());
+        this.repoPending.add(cwd);
+        void lookupRepository(cwd).then(
+            (identity) => {
+                this.repoPending.delete(cwd);
+                if (this.closed) return;
+                const previous = this.repoIdentity.get(cwd);
+                this.repoIdentity.set(cwd, identity);
+                if (previous?.repository !== identity.repository || previous?.repositoryPath !== identity.repositoryPath) {
+                    this.changed();
+                }
+            },
+            (error) => {
+                this.repoPending.delete(cwd);
+                if (this.closed) return;
+                // A missing or deleted cwd, or git failing for it, leaves the fields absent.
+                const previous = this.repoIdentity.get(cwd);
+                this.repoIdentity.delete(cwd);
+                if (previous?.repository !== undefined || previous?.repositoryPath !== undefined) this.changed();
+                this.log(`session index: repository identity for ${cwd}: ${(error as Error).message}`);
+            },
+        );
     }
 
     // --- cache ---
@@ -410,6 +478,80 @@ async function readLines(file: string, offset: number, onLine: (line: string) =>
     } finally {
         await handle.close();
     }
+}
+
+// --- repository identity (XTRM-608; rules shared with the xtrm-agent-host extension, XTRM-603) ---
+
+const REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]+$/;
+
+/**
+ * `owner/name` of a git remote URL (scp-like `git@host:owner/name.git`, or ssh/https/git URLs), without host,
+ * scheme or credentials. Local paths and file:// remotes have no owner and return undefined.
+ */
+export function repositoryFromRemote(url: string): string | undefined {
+    const remote = url.trim();
+    let repoPath: string | undefined;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(remote)) {
+        try {
+            const parsed = new URL(remote);
+            if (parsed.protocol === 'file:') return undefined;
+            repoPath = decodeURIComponent(parsed.pathname);
+        } catch {
+            return undefined;
+        }
+    } else {
+        // scp-like syntax: [user@]host:path. A colon after a slash means a local path.
+        const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(remote);
+        if (!scp) return undefined;
+        repoPath = scp[2];
+    }
+    const segments = repoPath.replace(/\/+$/, '').replace(/\.git$/, '').split('/').filter((part) => part.length > 0);
+    if (segments.length < 2 || !segments.every((part) => REPOSITORY_SEGMENT.test(part) && part !== '.' && part !== '..')) return undefined;
+    const name = segments.join('/');
+    return name.length <= 512 ? name : undefined;
+}
+
+/** Remote URL of `origin`, else of the first remote, from `git config --get-regexp` output. */
+function remoteUrl(configOut: string): string | undefined {
+    const remotes = configOut
+        .split('\n')
+        .map((line) => /^remote\.(.+)\.url\s+(.+)$/.exec(line.trim()))
+        .filter((match): match is RegExpExecArray => match !== null);
+    return (remotes.find((match) => match[1] === 'origin') ?? remotes[0])?.[2];
+}
+
+/** One bounded git command; a missing cwd or non-repository rejects, no-match (exit 1) resolves empty. */
+function git(cwd: string, args: string[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+        execFile(
+            'git',
+            ['-C', cwd, ...args],
+            { timeout: REPO_LOOKUP_TIMEOUT_MS, maxBuffer: 1 << 20, encoding: 'utf8' },
+            (error: ExecFileException | null, stdout: string) => {
+                const code = error && typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : null;
+                if (error && code !== 1) reject(error);
+                else resolve(stdout);
+            },
+        );
+    });
+}
+
+/**
+ * Repository identity of `cwd`: the remote owner/name and the root of the main repository
+ * (parent of the git common directory, so worktrees of one checkout share it).
+ */
+async function lookupRepository(cwd: string): Promise<RepoIdentity> {
+    const [commonDirOut, remotesOut] = await Promise.all([git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']), git(cwd, ['config', '--get-regexp', '^remote\\..*\\.url$'])]);
+    const commonDir = commonDirOut.split('\n')[0]?.trim();
+    // The common directory is <repo>/.git for a checkout and all of its worktrees; a bare repository is its own root.
+    const repositoryPath = commonDir && !HAS_CONTROL_CHAR.test(commonDir) && commonDir.length <= PATH_MAX_CHARS
+        ? path.basename(commonDir) === '.git'
+          ? path.dirname(commonDir)
+          : commonDir
+        : undefined;
+    const remote = remoteUrl(remotesOut);
+    const repository = repositoryPath && remote ? repositoryFromRemote(remote) : undefined;
+    return { ...(repository ? { repository } : {}), ...(repositoryPath ? { repositoryPath } : {}) };
 }
 
 // --- provider parsers ---

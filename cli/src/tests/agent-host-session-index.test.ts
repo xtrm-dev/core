@@ -1,6 +1,7 @@
 // XTRM-565: the incremental session index — stopped sessions from Pi and Claude journals,
 // served history-only through the agent host API, merged with live sessions without duplicates.
 
+import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -316,5 +317,85 @@ describe('xt host serves history-only sessions (XTRM-565)', () => {
         host = await startAgentHost(hostOptions);
         await host.sessionIndex!.ready;
         expect(await sessions()).toEqual(original);
+    });
+});
+
+describe('session index repository identity (XTRM-608)', () => {
+    let dir: string;
+    let index: SessionIndex;
+
+    /** A temp git repository, optionally with an `origin` remote; `commit` adds an empty commit. */
+    function tempRepo(name: string, remote?: string, commit = false): string {
+        const repo = path.join(dir, name);
+        execFileSync('git', ['init', repo]);
+        if (remote) execFileSync('git', ['-C', repo, 'remote', 'add', 'origin', remote]);
+        if (commit) execFileSync('git', ['-C', repo, '-c', 'user.name=a', '-c', 'user.email=a@b', 'commit', '--allow-empty', '-m', 'c']);
+        return repo;
+    }
+
+    function writePiJournal(id: string, cwd: string): void {
+        const project = path.join(dir, 'pi', cwd.replace(/[/\\]/g, '-'));
+        mkdirSync(project, { recursive: true });
+        writeFileSync(path.join(project, `${id}.jsonl`), piJournal(id, cwd));
+    }
+
+    beforeEach(() => {
+        dir = mkdtempSync(path.join(os.tmpdir(), 'xt-session-index-repo-'));
+    });
+
+    afterEach(async () => {
+        if (index) await index.close();
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('fills repository owner/name and repositoryPath for a cwd with a remote, path-only without a remote, nothing for a non-repository', async () => {
+        const remote = tempRepo('with-remote', 'git@github.com:xtrm-dev/core.git');
+        const bare = tempRepo('no-remote');
+        writePiJournal('r1', remote);
+        writePiJournal('r2', bare);
+        writePiJournal('r3', '/definitely/not/here');
+        // A worktree of the same checkout shares its identity through the common directory.
+        const wt = path.join(dir, 'wt');
+        execFileSync('git', ['-C', remote, 'worktree', 'add', wt]);
+        writePiJournal('r4', wt);
+
+        index = new SessionIndex({ roots: [{ provider: 'pi', dir: path.join(dir, 'pi') }], cachePath: path.join(dir, 'cache', 'i.json') });
+        await index.ready;
+        await until(() => {
+            const list = index.list();
+            return list.every((s) => s.sessionId === 'r3' || s.repositoryPath !== undefined) ? list : undefined;
+        });
+        const sessions = index.list();
+        expect(sessions.find((s) => s.sessionId === 'r1')).toMatchObject({ repository: 'xtrm-dev/core', repositoryPath: remote });
+        expect(sessions.find((s) => s.sessionId === 'r2')).toEqual(expect.not.objectContaining({ repository: expect.anything() }));
+        expect(sessions.find((s) => s.sessionId === 'r2')).toMatchObject({ repositoryPath: bare });
+        expect(sessions.find((s) => s.sessionId === 'r4')).toMatchObject({ repository: 'xtrm-dev/core', repositoryPath: remote });
+        expect(sessions.find((s) => s.sessionId === 'r3')).toEqual(expect.not.objectContaining({ repository: expect.anything(), repositoryPath: expect.anything() }));
+    });
+
+    it('serves repeated lookups from the per-cwd cache and drops the fields once the cwd is deleted (after the TTL)', async () => {
+        const repo = tempRepo('cached', 'git@github.com:xtrm-dev/core.git');
+        writePiJournal('c1', repo);
+        index = new SessionIndex({
+            roots: [{ provider: 'pi', dir: path.join(dir, 'pi') }],
+            cachePath: path.join(dir, 'cache', 'i.json'),
+            repoTtlMs: 50,
+        });
+        await index.ready;
+        await until(() => (index.get('c1')?.repository !== undefined ? index.get('c1') : undefined));
+        const summary = index.get('c1');
+        expect(summary).toMatchObject({ repository: 'xtrm-dev/core', repositoryPath: repo });
+
+        // Within the TTL the cached values are served without touching git again.
+        rmSync(repo, { recursive: true, force: true });
+        expect(index.get('c1')).toMatchObject({ repository: 'xtrm-dev/core', repositoryPath: repo });
+
+        // After the TTL the async refresh runs and a deleted cwd leaves both fields absent.
+        await new Promise((r) => setTimeout(r, 80));
+        const gone = await until(() => {
+            const s = index.get('c1');
+            return s?.repository === undefined && s?.repositoryPath === undefined ? s : undefined;
+        });
+        expect(gone).toEqual(expect.not.objectContaining({ repository: expect.anything(), repositoryPath: expect.anything() }));
     });
 });

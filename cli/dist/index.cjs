@@ -79899,6 +79899,7 @@ function boundText(text) {
 }
 
 // src/core/agent-host-session-index.ts
+var import_node_child_process37 = require("child_process");
 var import_node_fs25 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_node_os28 = __toESM(require("os"), 1);
@@ -79908,8 +79909,11 @@ var READ_CHUNK_BYTES = 4 * 1024 * 1024;
 var CACHE_WRITE_DELAY_MS = 2e3;
 var TITLE_MAX_CHARS = 200;
 var BOUNDED_MAX_CHARS2 = 1024;
+var PATH_MAX_CHARS = 4096;
 var CONTROL_CHARS2 = /[\u0000-\u001F\u007F]+/g;
 var HAS_CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
+var REPO_LOOKUP_TIMEOUT_MS = 2e3;
+var REPO_TTL_MS = 6e4;
 function defaultSessionIndexOptions(home = import_node_os28.default.homedir()) {
   return {
     roots: [
@@ -79924,6 +79928,12 @@ var SessionIndex = class {
   ready;
   roots;
   cachePath;
+  repoTtlMs;
+  /** Resolved git identity per cwd; undefined entries are simply absent until a lookup lands. */
+  repoIdentity = /* @__PURE__ */ new Map();
+  /** When each cwd was last resolved (fresh or expired), gating the per-cwd re-lookup. */
+  repoLookedUpAt = /* @__PURE__ */ new Map();
+  repoPending = /* @__PURE__ */ new Set();
   log;
   journals = /* @__PURE__ */ new Map();
   watchers = /* @__PURE__ */ new Map();
@@ -79940,16 +79950,19 @@ var SessionIndex = class {
   constructor(options) {
     this.roots = options.roots.map((r) => ({ provider: r.provider, dir: import_node_path67.default.resolve(r.dir) }));
     this.cachePath = options.cachePath;
+    this.repoTtlMs = options.repoTtlMs ?? REPO_TTL_MS;
     this.log = options.log ?? (() => {
     });
     this.ready = this.build();
   }
   /** History-only summaries, most recent activity first. Served from memory. */
   list() {
+    this.refreshRepositories();
     this.project();
     return this.summaries;
   }
   get(sessionId) {
+    this.refreshRepositories();
     this.project();
     return this.byId.get(sessionId) ?? null;
   }
@@ -80132,11 +80145,53 @@ var SessionIndex = class {
     for (const [file2, record2] of this.journals) {
       const summary2 = toSummary(file2, record2);
       if (!summary2) continue;
+      const identity = this.repoIdentity.get(summary2.cwd);
+      if (identity?.repository) summary2.repository = identity.repository;
+      if (identity?.repositoryPath) summary2.repositoryPath = identity.repositoryPath;
       const other = byId.get(summary2.sessionId);
       if (!other || (summary2.lastActivityAt ?? 0) > (other.lastActivityAt ?? 0)) byId.set(summary2.sessionId, summary2);
     }
     this.byId = byId;
     this.summaries = [...byId.values()].sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
+  }
+  // --- repository identity (XTRM-608) ---
+  /** Kick the per-cwd git lookups for every tracked cwd; the TTL map coalesces repeats. */
+  refreshRepositories() {
+    if (this.closed) return;
+    for (const record2 of this.journals.values()) {
+      if (record2.state.cwd) this.refreshRepository(record2.state.cwd);
+    }
+  }
+  /**
+   * Serve the cached git identity for `cwd` and, when it is missing or stale, start an async
+   * refresh (all lookups for one cwd coalesce). The request path stays synchronous: an identity
+   * resolving later only causes a re-projection, and a lookup failure leaves the fields absent.
+   */
+  refreshRepository(cwd) {
+    if (this.closed || this.repoPending.has(cwd)) return;
+    const at = this.repoLookedUpAt.get(cwd);
+    if (at !== void 0 && Date.now() - at < this.repoTtlMs) return;
+    this.repoLookedUpAt.set(cwd, Date.now());
+    this.repoPending.add(cwd);
+    void lookupRepository(cwd).then(
+      (identity) => {
+        this.repoPending.delete(cwd);
+        if (this.closed) return;
+        const previous = this.repoIdentity.get(cwd);
+        this.repoIdentity.set(cwd, identity);
+        if (previous?.repository !== identity.repository || previous?.repositoryPath !== identity.repositoryPath) {
+          this.changed();
+        }
+      },
+      (error51) => {
+        this.repoPending.delete(cwd);
+        if (this.closed) return;
+        const previous = this.repoIdentity.get(cwd);
+        this.repoIdentity.delete(cwd);
+        if (previous?.repository !== void 0 || previous?.repositoryPath !== void 0) this.changed();
+        this.log(`session index: repository identity for ${cwd}: ${error51.message}`);
+      }
+    );
   }
   // --- cache ---
   async loadCache() {
@@ -80200,6 +80255,54 @@ async function readLines(file2, offset, onLine) {
   } finally {
     await handle.close();
   }
+}
+var REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]+$/;
+function repositoryFromRemote(url2) {
+  const remote = url2.trim();
+  let repoPath;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(remote)) {
+    try {
+      const parsed = new URL(remote);
+      if (parsed.protocol === "file:") return void 0;
+      repoPath = decodeURIComponent(parsed.pathname);
+    } catch {
+      return void 0;
+    }
+  } else {
+    const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(remote);
+    if (!scp) return void 0;
+    repoPath = scp[2];
+  }
+  const segments = repoPath.replace(/\/+$/, "").replace(/\.git$/, "").split("/").filter((part) => part.length > 0);
+  if (segments.length < 2 || !segments.every((part) => REPOSITORY_SEGMENT.test(part) && part !== "." && part !== "..")) return void 0;
+  const name = segments.join("/");
+  return name.length <= 512 ? name : void 0;
+}
+function remoteUrl(configOut) {
+  const remotes = configOut.split("\n").map((line) => /^remote\.(.+)\.url\s+(.+)$/.exec(line.trim())).filter((match) => match !== null);
+  return (remotes.find((match) => match[1] === "origin") ?? remotes[0])?.[2];
+}
+function git5(cwd, args) {
+  return new Promise((resolve6, reject) => {
+    (0, import_node_child_process37.execFile)(
+      "git",
+      ["-C", cwd, ...args],
+      { timeout: REPO_LOOKUP_TIMEOUT_MS, maxBuffer: 1 << 20, encoding: "utf8" },
+      (error51, stdout) => {
+        const code = error51 && typeof error51.code === "number" ? error51.code : null;
+        if (error51 && code !== 1) reject(error51);
+        else resolve6(stdout);
+      }
+    );
+  });
+}
+async function lookupRepository(cwd) {
+  const [commonDirOut, remotesOut] = await Promise.all([git5(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]), git5(cwd, ["config", "--get-regexp", "^remote\\..*\\.url$"])]);
+  const commonDir = commonDirOut.split("\n")[0]?.trim();
+  const repositoryPath = commonDir && !HAS_CONTROL_CHAR.test(commonDir) && commonDir.length <= PATH_MAX_CHARS ? import_node_path67.default.basename(commonDir) === ".git" ? import_node_path67.default.dirname(commonDir) : commonDir : void 0;
+  const remote = remoteUrl(remotesOut);
+  const repository = repositoryPath && remote ? repositoryFromRemote(remote) : void 0;
+  return { ...repository ? { repository } : {}, ...repositoryPath ? { repositoryPath } : {} };
 }
 var PI_TYPE = /^\{"type":"([^"]+)"/;
 var PI_TIMESTAMP = /"timestamp":"([^"]+)"/;
@@ -80754,7 +80857,7 @@ function safeUnlink(file2) {
 }
 
 // src/core/agent-host-ensure.ts
-var import_node_child_process37 = require("child_process");
+var import_node_child_process38 = require("child_process");
 var import_node_crypto20 = require("crypto");
 var import_node_fs27 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
@@ -80852,7 +80955,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
   const logFd = (0, import_node_fs27.openSync)(logPath, logSize > MAX_LOG_BYTES ? "w" : "a", 384);
   let child;
   try {
-    child = (0, import_node_child_process37.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
+    child = (0, import_node_child_process38.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
       detached: true,
       stdio: ["ignore", logFd, logFd],
       env: options.env ?? process.env
