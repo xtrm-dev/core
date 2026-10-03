@@ -226,15 +226,67 @@ export function resetCooldowns(cd: Cooldowns): void {
   for (const k of Object.keys(cd)) delete cd[k];
 }
 
-// ── Wake-card chrome (no rail; a colored dot glyph + two plain lines) ───────
+// ── Wake-card chrome (dim purple box, italic interior, highlighted tokens) ──
 
-const DOT = "\x1b[38;2;141;127;232m●\x1b[0m"; // the rail's purple, as a glyph
+const PURPLE = "\x1b[38;2;141;127;232m";
+const MAGENTA = "\x1b[38;2;213;120;255m";
+/** Border and edges: dim purple strokes. */
+const STROKE = (t: string) => `\x1b[2m${PURPLE}${t}\x1b[39m\x1b[22m`;
 const DIM = (t: string) => `\x1b[2m${t}\x1b[22m`;
 const BOLD = (t: string) => `\x1b[1m${t}\x1b[22m`;
-const ITALIC_DIM = (t: string) => `\x1b[2m\x1b[3m${t}\x1b[23m\x1b[22m`;
+/** Everything inside the box is italic; highlighted tokens break the italic in magenta bold. */
+const ITALIC = (t: string) => `\x1b[3m${t}\x1b[23m`;
+const HL = (t: string) => `\x1b[23m${MAGENTA}\x1b[1m${t}\x1b[22m\x1b[39m\x1b[3m`;
 const WARN = (t: string) => `\x1b[33m${t}\x1b[0m`;
+const CARD_TITLE = "suggestion";
+const CARD_MIN = 44;
+const CARD_MAX = 96;
+
+/** Highlight the tokens a reader acts on: refs, commands, paths, tools. */
+function emphasize(plain: string): string {
+  return ITALIC(
+    plain.replace(
+      /(`[^`]+`|\b(?:CORE|XTRM|SPECIALISTS)-[A-Z0-9]+|\b(?:sb|bg_run|bg_delegate|intercom|claude-link)\b|\bsubstrate_[a-z_]+\b|[\w./-]+\.(?:ts|mjs|py|md|json))\b/g,
+      (m) => HL(m),
+    ),
+  );
+}
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+interface Row {
+  /** Visible text — sizing, wrapping and padding all measure this. */
+  plain: string;
+  /** Rendered text with escapes. */
+  ansi: string;
+}
+
+/** Wrap plain text to the interior width, then render each chunk. */
+function wrapRow(plain: string, ansi: (chunk: string) => string, inner: number): Row[] {
+  const width = inner - 1;
+  const out: Row[] = [];
+  let rest = plain;
+  while (rest.length > width) {
+    const cut = rest.lastIndexOf(" ", width);
+    const head = cut > 20 ? rest.slice(0, cut) : rest.slice(0, width);
+    out.push({ plain: head, ansi: ansi(head) });
+    rest = rest.slice(head.length).replace(/^\s+/, "");
+  }
+  out.push({ plain: rest, ansi: ansi(rest) });
+  return out;
+}
+
+function box(title: string, rows: Row[]): string {
+  const inner = Math.min(CARD_MAX, Math.max(CARD_MIN, ...rows.map((r) => r.plain.length + 1)));
+  // The title carries ANSI; measure its visible width, not its byte length.
+  const titleLen = [...stripAnsi(title)].length;
+  const top = `╭─ ${title} ${"─".repeat(Math.max(0, inner - titleLen - 3))}╮`;
+  const bottom = STROKE(`╰${"─".repeat(inner)}╯`);
+  const body = rows.map(
+    (r) => `${STROKE("│")} ${r.ansi}${" ".repeat(Math.max(0, inner - 1 - r.plain.length))}${STROKE("│")}`,
+  );
+  return [top, ...body, bottom].join("\n");
+}
 
 export interface SuggestionCard {
   verb: VerbSpec;
@@ -245,17 +297,26 @@ export interface SuggestionCard {
 }
 
 export function formatSuggestionCard(c: SuggestionCard): string {
-  const glyph = c.verb.severity === "high" ? WARN("!") : DOT;
-  const header = [`${glyph} ${BOLD(c.verb.action)}`, DIM(c.ref)].join(` ${DIM("·")} `);
+  const glyph = c.verb.severity === "high" ? WARN("!") : `${PURPLE}\x1b[1m●\x1b[22m`;
+  const title = `${glyph} ${CARD_TITLE}`;
   const facts = [
-    c.confidence != null ? DIM(`jev ${c.confidence.toFixed(2)}`) : null,
-    c.revision != null ? DIM(`rev ${c.revision}`) : null,
+    c.confidence != null ? `jev ${c.confidence.toFixed(2)}` : null,
+    c.revision != null ? `rev ${c.revision}` : null,
   ]
     .filter(Boolean)
-    .join(` ${DIM("·")} `);
-  const instr = `${ITALIC_DIM(c.verb.instruction(c.ref))} Ignore this if it does not fit what actually happened.`;
-  const tail = facts ? ` ${DIM("·")} ${facts}` : "";
-  return [header, `${instr}${tail}`].join("\n");
+    .join(" · ");
+  const headerPlain = `${c.verb.action} · ${c.ref}`;
+  const instrPlain = `${c.verb.instruction(c.ref)} Ignore this if it does not fit what actually happened.${facts ? ` · ${facts}` : ""}`;
+  // Size the box from the widest visible row before wrapping.
+  const inner = Math.min(
+    CARD_MAX,
+    Math.max(CARD_MIN, headerPlain.length + 1, instrPlain.length + 1),
+  );
+  const rows: Row[] = [
+    ...wrapRow(headerPlain, (chunk) => `${HL(chunk)}`, inner),
+    ...wrapRow(instrPlain, (chunk) => emphasize(chunk), inner),
+  ];
+  return box(title, rows);
 }
 
 /** Model-visible plain text (what lands in the transcript strip/exports). */
