@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "xtrm.agent-host-api.v1",
   "title": "XTRM agent host client API message",
-  "description": "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app §35.5, §35.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), session history (GET /v1/sessions/:id/history -> session_history: the provider journal entries a client projects Frames from, beyond the replay buffer), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
+  "description": "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app §35.5, §35.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), session history (GET /v1/sessions/:id/history -> session_history: the provider journal entries a client projects Frames from, beyond the replay buffer), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), topology (GET /v1/topology -> topology_snapshot; SSE GET /v1/topology/events: a topology_snapshot first, then topology_update diffs or topology_snapshot replacements, event id = seq), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
   "type": "object",
   "required": ["schema", "kind"],
   "properties": {
@@ -19,6 +19,8 @@
         "launch_result",
         "reference_resolve_request",
         "reference_resolve_result",
+        "topology_snapshot",
+        "topology_update",
         "error"
       ]
     }
@@ -34,6 +36,8 @@
     { "$ref": "#/definitions/launch_result" },
     { "$ref": "#/definitions/reference_resolve_request" },
     { "$ref": "#/definitions/reference_resolve_result" },
+    { "$ref": "#/definitions/topology_snapshot" },
+    { "$ref": "#/definitions/topology_update" },
     { "$ref": "#/definitions/error" }
   ],
   "definitions": {
@@ -254,6 +258,58 @@
         "references": { "type": "array", "items": { "$ref": "#/definitions/contextReference" } },
         "totalBytes": { "type": "integer", "minimum": 0 },
         "overBudget": { "type": "boolean" }
+      }
+    },
+    "topologyRevision": {
+      "description": "Content hash of the projection without volatile fields (generated_at_ms, sources[].duration_ms). Equal revisions are never resent.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "topologyFeedVersion": {
+      "description": "Topology feed protocol version, independent of the projection schema. A client that does not know this value falls back to GET /v1/topology.",
+      "const": 1
+    },
+    "topology_snapshot": {
+      "description": "The full xtrm.topology.projection.v1 at one revision. Sent first on every topology subscription, whenever a diff would exceed the size cap (64 KiB or half the snapshot), and as the GET /v1/topology body. A snapshot over 4 MiB is sent with empty orphans and truncated: true; panes are never dropped.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "topology", "seq", "revision", "projection"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "topology_snapshot" },
+        "topology": { "$ref": "#/definitions/topologyFeedVersion" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "revision": { "$ref": "#/definitions/topologyRevision" },
+        "truncated": { "type": "boolean" },
+        "projection": { "$ref": "xtrm.topology.projection.v1" }
+      }
+    },
+    "topology_update": {
+      "description": "A diff from base_revision to revision. Apply it only when base_revision equals the client's current revision; otherwise resubscribe. Panes are keyed by pane_id: upsert replaces or adds whole panes, remove deletes them. order (the full pane_id order) is present only when the order changed. host, sources and orphans are present only when they changed and replace the previous value.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "topology", "seq", "base_revision", "revision", "generated_at_ms", "panes"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "kind": { "const": "topology_update" },
+        "topology": { "$ref": "#/definitions/topologyFeedVersion" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "base_revision": { "$ref": "#/definitions/topologyRevision" },
+        "revision": { "$ref": "#/definitions/topologyRevision" },
+        "generated_at_ms": { "type": "number", "minimum": 0 },
+        "panes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["upsert", "remove"],
+          "properties": {
+            "upsert": { "type": "array", "items": { "$ref": "xtrm.topology.projection.v1#/definitions/pane" } },
+            "remove": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "order": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "host": { "$ref": "xtrm.topology.projection.v1#/properties/host" },
+        "sources": { "$ref": "xtrm.topology.projection.v1#/properties/sources" },
+        "orphans": { "$ref": "xtrm.topology.projection.v1#/properties/orphans" }
       }
     },
     "error": {

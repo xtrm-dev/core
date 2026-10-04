@@ -22,6 +22,7 @@ export {
     type SchemaVersionCheck,
     type DecodeResult,
 } from './agent-protocol.js';
+export { diffTopology, applyTopologyUpdate, type TopologyDiff } from './topology-feed.js';
 
 import { validate } from './validate.js';
 import type { ContractTypeMap } from './types.js';

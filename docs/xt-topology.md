@@ -27,9 +27,9 @@ tmux pane → interactive runtime → role → coordinator → specialist jobs
 | Source | Read via | Contributes |
 |---|---|---|
 | xtmux | `xtmux topology --json` | host identity |
-| tmux | `tmux list-panes -a -F …` | panes + `@agent_*` lineage |
+| tmux | `tmux list-panes -a -F …` | panes, window/pane index, window name, active flags + `@agent_*` lineage |
 | Specialists | `sp ps --json` | jobs, chains, epics, branches |
-| Beads | `bd list --all --json` | bead status |
+| Substrate | `sb --json issue show <ref>` per issue ref a pane names (max 64) | issue status (`bead` field, v1 name) |
 | git | `git worktree list --porcelain` | worktrees, branches, HEADs |
 | GitHub | `gh pr list --json …` | PR evidence |
 
@@ -111,10 +111,11 @@ command's.
 
 ## Known limitations
 
-- **Beads resolve from the invoking repo's database only.** A pane sitting in a
-  different project reports its bead id with status `unknown` rather than a wrong
-  status — the projection will not guess across repo boundaries. The `beads` view
-  annotates these as `(other repo)`.
+- **Issues resolve through Substrate (XTRM-629).** Substrate resolves refs across
+  projects, so a pane in another repository gets its real issue state. A ref
+  Substrate does not know (a legacy Beads id) reports status `unknown`; that is
+  not a source failure. Before XTRM-629 the source was Beads (`bd list`), and the
+  schema still accepts a `beads` ledger entry from older producers.
 - **Job attribution is by bead identity.** A job is attributed to a pane when
   they share a bead (directly, or via the pane's bead being the job's epic), or
   when the pane is parked inside the job's own worktree. Jobs whose coordinator
@@ -123,6 +124,47 @@ command's.
   because `xtmux topology --json` does not yet publish them (tracked as
   `xtmux-71y`). When it does, the enrichment call can be dropped and the
   projection gains remote-host support for free via the xtmux bridge.
+
+## Live feed in the agent host (XTRM-629)
+
+`xt host start` serves the same projection to app clients over every host
+transport (loopback, SSH port forward, direct mode with a device token):
+
+- `GET /v1/topology` returns one `topology_snapshot`.
+- `GET /v1/topology/events` (SSE) sends a `topology_snapshot` first, then
+  `topology_update` diffs (event `id` = `seq`). A reconnect always starts with a
+  fresh snapshot.
+- Every pane that hosts a live agent host session carries `agent_session`
+  (`session_id`, `provider`, `state`), joined on `session_identity.tmux.paneId`.
+  Shells and editors are included with `agent_session: null`.
+
+Messages carry `topology: 1` (feed protocol version) and a `revision` (16 hex of
+sha256 over the projection without `generated_at_ms` and `sources[].duration_ms`).
+An identical revision is never resent. A client applies an update only when its
+`base_revision` matches, with `applyTopologyUpdate()` from `@xtrm/contracts`.
+
+**Size cap.** An update over 64 KiB, or over half of the snapshot, is sent as a
+snapshot. A snapshot over 4 MiB drops `orphans` and sets `truncated: true`; panes
+are never dropped. A client more than 8 MiB behind is disconnected and
+resubscribes.
+
+**Events and cost.** One feed serves all clients: each refresh is one
+`tmux list-panes -a` pass, joined with enrichment (xtmux, `sp`, `sb`, git, and
+`gh` only with `--topology-github`) cached for 10 s and refreshed in the
+background. Refreshes are coalesced (leading edge, one trailing pass, 100 ms
+minimum gap) and serialized once for every subscriber. Changes are pushed by one
+tmux control-mode observer client (`-C attach-session -r -f
+ignore-size,no-output,no-detach-on-destroy` plus one `refresh-client -B`
+subscription to `@agent_state`, the pane command and the pane path). The observer
+cannot send input, never resizes a window and receives no pane output; tmux does
+list it as an attached client. Without it the feed polls every 2 s; with it,
+every 10 s as a safety net. Registry frames that change a pane's session or state
+also trigger a refresh. With no subscriber the feed runs no client and no timer.
+
+Measured on a private tmux server (`agent-host-topology.test.ts`): session,
+window and pane create/close/rename arrive in about 100 ms; an `@agent_state`
+flip in 250–400 ms, bounded by tmux's 1 Hz subscription timer (worst case just
+over 1 s); a registered session's pane join in under 100 ms.
 
 ## Contract
 
