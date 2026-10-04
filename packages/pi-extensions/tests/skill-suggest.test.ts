@@ -167,3 +167,22 @@ describe("turn evidence beats final-message-only", () => {
     expect(turnEvidence(huge, 0).excerpt.length).toBeLessThanOrEqual(8000);
   });
 });
+
+describe("list-shaped reference docs", () => {
+  it("describes a numbered-step doc by its first step, not by markers", () => {
+    const md = ["# Messy run recovery", "", "1. Freeze new work assignment to it. 2. Send one concise native correction stating the violated constraint. 3. If there is a stale Pi inte…"].join("\n");
+    const { name, description } = extractReferenceSummary(md);
+    expect(name).toBe("Messy run recovery");
+    expect(description).toBe("Freeze new work assignment to it.");
+  });
+
+  it("describes a bullet doc by its first bullet", () => {
+    const md = ["# Native waiting", "", "- Pi short decision uses an intercom ask. - Pi long task uses intercom send. - tmux is the fallback"].join("\n");
+    expect(extractReferenceSummary(md).description).toBe("Pi short decision uses an intercom ask.");
+  });
+
+  it("leaves prose docs alone", () => {
+    const md = ["# Causal debugging", "", "Use for bugs, regressions, crashes, unexpected output, failing tests."].join("\n");
+    expect(extractReferenceSummary(md).description).toContain("bugs, regressions");
+  });
+});

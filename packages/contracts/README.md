@@ -30,6 +30,22 @@ const occurredAtMs = uuidV7TimestampMs(beadsEvent.id);
 
 Consumers who only want the raw schemas can read `@xtrm/contracts/schemas/<id>.json`.
 
+Topology feed clients (XTRM-629) keep one projection and apply each update to it:
+
+```ts
+import { applyTopologyUpdate, type AgentHostApiV1, type TopologyProjectionV1 } from '@xtrm/contracts';
+
+let projection: TopologyProjectionV1 | null = null;
+let revision = '';
+function onTopology(message: AgentHostApiV1) {
+    if (message.kind === 'topology_snapshot') ({ projection, revision } = message);
+    else if (message.kind === 'topology_update' && projection && message.base_revision === revision) {
+        projection = applyTopologyUpdate(projection, message);
+        revision = message.revision;
+    } // else: resubscribe to GET /v1/topology/events for a fresh snapshot
+}
+```
+
 ## Contracts
 
 Core: `xtrm.runtime-compatibility.v1`, `xtrm.interactive-role-envelope.v1`,
@@ -41,7 +57,8 @@ xtmux runtime: `xtrm.xtmux.topology.v1`, `xtrm.xtmux.message.v1`, `xtrm.xtmux.ob
 `xtrm.xtmux.monitor.v1`, `xtrm.xtmux.wait.v1`, `xtrm.xtmux.bridge.v1`, `xtrm.agent-role-launched.v1`.
 Legacy specialists: `xtrm.specialist-role-envelope.v1` (registry version `"1"`).
 Aggregation: `xtrm.topology.projection.v1` — the read-only join across xtmux, tmux,
-Specialists, Beads, git and GitHub emitted by `xt topology --json` (audit P2-05). It is a
+Specialists, Substrate (Beads before XTRM-629), git and GitHub emitted by `xt topology --json`
+(audit P2-05) and served live by the agent host (XTRM-629). It is a
 per-invocation snapshot, never a persisted graph, and it deliberately cannot carry pane
 capture: no content/preview/output field exists at any level.
 
@@ -51,7 +68,7 @@ Agent host protocol (PRD xtrm-app §35.3, §35.8 item 1, §36.7; XTRM-562):
 |---|---|
 | `xtrm.agent-event.v1` | in-session extension or Claude hooks → agent host, NDJSON on `$XDG_RUNTIME_DIR/xtrm/agent-host.sock` |
 | `xtrm.agent-command.v1` | agent host → extension, same socket |
-| `xtrm.agent-host-api.v1` | client ⇄ agent host, HTTP + SSE on `127.0.0.1` |
+| `xtrm.agent-host-api.v1` | client ⇄ agent host, HTTP + SSE on `127.0.0.1`; includes the topology feed (`topology_snapshot`, `topology_update`; XTRM-629) |
 | `xtrm.agent-host-auth.v1` | client ⇄ agent host direct mode: pairing, device session, device list, revoke (XTRM-568); errors keep `xtrm.agent-host-api.v1` |
 
 Socket frames carry `schema`, `seq`, `sessionId`, `at`, and `payload`. Event payloads

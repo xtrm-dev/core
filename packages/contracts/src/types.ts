@@ -374,14 +374,16 @@ export interface SpecialistRoleEnvelopeV1 {
  * Owning system behind one projection source. Each maps to one published
  * read-only CLI surface; Core never reads another repo's database directly.
  */
-export type TopologySourceName = 'xtmux' | 'tmux' | 'specialists' | 'beads' | 'git' | 'github';
+export type TopologySourceName = 'xtmux' | 'tmux' | 'specialists' | 'substrate' | 'git' | 'github';
+/** Source name in documents from producers before XTRM-629, which read Beads instead of Substrate. */
+export type LegacyTopologySourceName = 'beads';
 /**
  * `unavailable` (binary absent) vs `error` (present but failed) is a load-bearing
  * distinction: only the latter is a bug signal.
  */
 export type TopologySourceStatus = 'ok' | 'unavailable' | 'error';
 export interface TopologySource {
-    name: TopologySourceName;
+    name: TopologySourceName | LegacyTopologySourceName;
     status: TopologySourceStatus;
     reason: string | null;
     duration_ms: number;
@@ -447,11 +449,25 @@ export interface TopologyPullRequest {
     merged_at?: string | null;
     checks_state?: string | null;
 }
+/** Join of a pane to the agent host registry (session_identity.tmux.paneId). */
+export interface TopologyAgentSession {
+    session_id: string;
+    provider: string;
+    /** Agent host session state (AgentSessionSummary.state). */
+    state: string;
+}
 export interface TopologyPane {
     pane_id: string;
     session_id: string;
     session_name: string;
     window_id?: string | null;
+    window_index?: number | null;
+    window_name?: string | null;
+    window_active?: boolean | null;
+    pane_index?: number | null;
+    pane_active?: boolean | null;
+    /** The agent host session registered for this pane; null for shells, editors and outside the host. */
+    agent_session?: TopologyAgentSession | null;
     current_command: string;
     current_path: string;
     /** Null for a pane that is not an xtrm-launched agent. */
@@ -716,6 +732,32 @@ export interface ContextReference {
     error?: string;
 }
 
+/** Topology feed protocol version (GET /v1/topology, GET /v1/topology/events; XTRM-629). */
+export const TOPOLOGY_FEED_VERSION = 1;
+export interface TopologySnapshotBody {
+    topology: typeof TOPOLOGY_FEED_VERSION;
+    seq: number;
+    /** 16 hex chars over the projection without generated_at_ms and sources[].duration_ms. */
+    revision: string;
+    /** Set when the snapshot exceeded the size cap and its orphans were dropped. */
+    truncated?: boolean;
+    projection: TopologyProjectionV1;
+}
+/** Apply only when base_revision equals the current revision; otherwise resubscribe. */
+export interface TopologyUpdateBody {
+    topology: typeof TOPOLOGY_FEED_VERSION;
+    seq: number;
+    base_revision: string;
+    revision: string;
+    generated_at_ms: number;
+    panes: { upsert: TopologyPane[]; remove: string[] };
+    /** Full pane_id order, present only when it changed. */
+    order?: string[];
+    host?: TopologyProjectionV1['host'];
+    sources?: TopologySource[];
+    orphans?: TopologyProjectionV1['orphans'];
+}
+
 type HostApi<K extends string, B> = { schema: 'xtrm.agent-host-api.v1'; kind: K } & B;
 export type AgentHostApiV1 =
     | HostApi<'session_list', { sessions: AgentSessionSummary[]; nextCursor?: string }>
@@ -753,6 +795,8 @@ export type AgentHostApiV1 =
     | HostApi<'launch_result', { outcome: CommandOutcomeV1; tmux?: AgentTmuxTarget }>
     | HostApi<'reference_resolve_request', { sessionId?: string; references: string[] }>
     | HostApi<'reference_resolve_result', { references: ContextReference[]; totalBytes: number; overBudget?: boolean }>
+    | HostApi<'topology_snapshot', TopologySnapshotBody>
+    | HostApi<'topology_update', TopologyUpdateBody>
     | HostApi<'error', { code: string; message: string }>;
 
 export type AgentHostApiKind = AgentHostApiV1['kind'];

@@ -54,7 +54,7 @@ export const VIEW_DESCRIPTIONS: Record<ViewName, string> = {
     worktrees: 'worktree and branch graph, including unattached worktrees',
     collisions: 'worktrees shared by more than one live pane',
     integration: 'integration status — job branch, target branch and PR state',
-    beads: 'bead state per pane',
+    beads: 'issue state per pane (Substrate)',
     prs: 'pull-request evidence per branch',
     routes: 'exact commands for the live/diagnostic surfaces xtmux and git own',
 };
@@ -82,7 +82,8 @@ const pad = (s: string | null | undefined, n: number) => (s ?? '-').slice(0, n).
 /** Completion is read from bead/PR/job state only — never from agent.state. */
 function completionOf(pane: TopologyPane): string {
     if (pane.pull_request?.merged_at) return kleur.green('merged');
-    if (pane.bead?.status === 'closed') return kleur.green('bead closed');
+    // Substrate closes an issue as `done`; `closed` is the Beads-era status.
+    if (pane.bead?.status === 'done' || pane.bead?.status === 'closed') return kleur.green('bead closed');
     if (pane.pull_request) return `pr ${pane.pull_request.state.toLowerCase()}`;
     if (pane.bead) return `bead ${pane.bead.status}`;
     return dim('-');
@@ -106,7 +107,7 @@ function viewSummary(p: TopologyProjectionV1): string[] {
     out.push(`  specialist jobs  ${jobs} attached, ${p.orphans.jobs.length} orphaned`);
     out.push(`  worktrees        ${p.orphans.worktrees.length} unattached`);
     if (collisions > 0) out.push(kleur.yellow(`  collisions       ${collisions} worktree(s) shared by >1 pane`));
-    out.push(...degradationNotice(p, ['xtmux', 'tmux', 'specialists', 'beads', 'git', 'github']));
+    out.push(...degradationNotice(p, ['xtmux', 'tmux', 'specialists', 'substrate', 'beads', 'git', 'github']));
     out.push('', dim('Views: xt topology --view <name>   (xt topology --help lists them)'));
     return out;
 }
@@ -229,7 +230,7 @@ function viewBeads(p: TopologyProjectionV1): string[] {
         const status = b.status === 'unknown' ? kleur.yellow(pad(b.status, 14)) : pad(b.status, 14);
         out.push(`${pad(x.pane_id, 8)} ${pad(b.id, 18)} ${status}${note} ${dim(b.title ?? '')}`);
     }
-    return [...out, ...degradationNotice(p, ['beads', 'tmux'])];
+    return [...out, ...degradationNotice(p, ['substrate', 'beads', 'tmux'])];
 }
 
 function viewPrs(p: TopologyProjectionV1): string[] {

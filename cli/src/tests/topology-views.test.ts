@@ -138,6 +138,12 @@ describe('completion is never inferred from terminal output', () => {
         expect(renderView('chains', p)).toContain('bead closed');
     });
 
+    it('reports a Substrate issue in state done as closed', () => {
+        const p = fixture();
+        p.panes[0].bead!.status = 'done';
+        expect(renderView('chains', p)).toContain('bead closed');
+    });
+
     it('agent.state alone never produces a completion claim', () => {
         const p = fixture();
         p.panes[0].bead = null;

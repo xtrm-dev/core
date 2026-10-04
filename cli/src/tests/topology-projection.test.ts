@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { validate } from '@xtrm/contracts';
 import {
+    ISSUE_REF_PATTERN,
     READ_ONLY_COMMANDS,
+    collectEnrichment,
     collectProjection,
-    parseBeads,
+    joinProjection,
     parsePanes,
+    parseSubstrateIssue,
+    readPanes,
+    readSubstrateIssues,
     parsePullRequests,
     parseWorktrees,
     type CommandRunner,
@@ -31,6 +36,11 @@ const paneLine = (fields: Partial<Record<string, string>>) =>
         fields.parent_session ?? '',
         fields.parent_pane ?? '',
         fields.instance ?? '',
+        fields.window_index ?? '0',
+        fields.pane_index ?? '0',
+        fields.window_active ?? '1',
+        fields.pane_active ?? '1',
+        fields.window_name ?? 'zsh',
     ].join(SEP);
 
 const COORD_PANE = paneLine({
@@ -58,9 +68,14 @@ const SP_JSON = JSON.stringify({
         },
     ],
 });
-const BD_JSON = JSON.stringify([
-    { id: 'xtrm-abc', status: 'in_progress', title: 'epic', issue_type: 'epic', priority: 1 },
-]);
+const SB_JSON = JSON.stringify({
+    schema: 'substrate-cli/v1', command: 'issue.show', ok: true,
+    data: { humanRef: 'xtrm-abc', locator: 'XTRM-621.8', title: 'epic', kind: 'epic', lifecycleState: 'open', revision: 1 },
+});
+const SB_UNRESOLVED: RunOutcome = {
+    kind: 'failed', reason: 'exit 1',
+    stdout: JSON.stringify({ schema: 'substrate-cli/v1', command: 'issue.show', ok: false, error: 'unresolvable ref: xtrm-abc' }),
+};
 const GIT_PORCELAIN = [
     'worktree /repo', 'HEAD abc123', 'branch refs/heads/main', '',
     'worktree /repo/.xtrm/worktrees/coord', 'HEAD def456', 'branch refs/heads/xt/coord', '',
@@ -88,7 +103,7 @@ const healthyResponses = {
     xtmux: OK(JSON.stringify({ host: { host_id: 'workstation', tmux_server_id: 'default' } })),
     tmux: OK(`${COORD_PANE}\n${SHELL_PANE}\n`),
     sp: OK(SP_JSON),
-    bd: OK(BD_JSON),
+    sb: OK(SB_JSON),
     git: OK(GIT_PORCELAIN),
     gh: OK(GH_JSON),
 };
@@ -131,8 +146,25 @@ describe('parsers', () => {
         expect(prs.get('b')?.number).toBe(42);
     });
 
-    it('ignores bead rows without an id', () => {
-        expect(parseBeads(JSON.stringify([{ status: 'open' }, { id: 'a', status: 'open' }])).size).toBe(1);
+    it('reads window and pane layout fields, and keeps a tab inside a window name', () => {
+        const [pane] = parsePanes(paneLine({ window_index: '3', pane_index: '1', window_active: '0', pane_active: '1', window_name: `a${SEP}b` }));
+        expect(pane).toMatchObject({ window_index: 3, pane_index: 1, window_active: false, pane_active: true, window_name: `a${SEP}b` });
+    });
+
+    it('maps a Substrate issue envelope onto the bead fields', () => {
+        expect(parseSubstrateIssue('XTRM-629', SB_JSON)).toEqual({
+            id: 'XTRM-629', status: 'open', title: 'epic', issue_type: 'epic', priority: null, parent_id: 'XTRM-621',
+        });
+    });
+
+    it('treats an unresolvable ref as no issue, and any other envelope failure as an error', () => {
+        expect(parseSubstrateIssue('xtrm-abc', SB_UNRESOLVED.kind === 'failed' ? SB_UNRESOLVED.stdout! : '')).toBeNull();
+        expect(() => parseSubstrateIssue('X-1', JSON.stringify({ ok: false, error: 'database is locked' }))).toThrow(/locked/);
+    });
+
+    it('accepts issue refs and rejects anything that could reach sb as a flag', () => {
+        for (const ref of ['XTRM-629', 'CORE-10.2', 'xtrm-d1fod.3']) expect(ISSUE_REF_PATTERN.test(ref)).toBe(true);
+        for (const ref of ['--db', '-x', 'XTRM 1', 'a;b', '', 'XTRM-']) expect(ISSUE_REF_PATTERN.test(ref)).toBe(false);
     });
 });
 
@@ -142,7 +174,7 @@ describe('the join', () => {
         const coord = p.panes.find((x) => x.pane_id === '%10')!;
 
         expect(coord.agent?.role).toBe('chain-coordinator');
-        expect(coord.bead).toMatchObject({ id: 'xtrm-abc', status: 'in_progress', issue_type: 'epic' });
+        expect(coord.bead).toMatchObject({ id: 'xtrm-abc', status: 'open', issue_type: 'epic' });
         expect(coord.worktree?.branch).toBe('xt/coord');
         expect(coord.pull_request?.number).toBe(467);
         expect(coord.jobs.map((j) => j.job_id)).toEqual(['900']);
@@ -244,9 +276,34 @@ describe('the join', () => {
         expect(p.panes[0].worktree?.shared_by_pane_ids).toEqual(['%2', '%3']);
     });
 
-    it('falls back to a placeholder bead when the pane names one beads never returned', async () => {
-        const { p } = await collect({ ...healthyResponses, bd: OK('[]') });
+    it('falls back to a placeholder issue when Substrate cannot resolve the ref, without failing the source', async () => {
+        const { p } = await collect({ ...healthyResponses, sb: SB_UNRESOLVED });
         expect(p.panes.find((x) => x.pane_id === '%10')!.bead).toEqual({ id: 'xtrm-abc', status: 'unknown' });
+        expect(p.sources.find((s) => s.name === 'substrate')!.status).toBe('ok');
+    });
+
+    it('carries the pane layout and the joined agent session, and null outside the host', async () => {
+        const { p } = await collect(healthyResponses);
+        expect(p.panes[0]).toMatchObject({ window_index: 0, pane_index: 0, window_name: 'zsh', agent_session: null });
+
+        const { runner } = recordingRunner(healthyResponses);
+        const panes = await readPanes({ runner });
+        const enrichment = await collectEnrichment(panes.data ?? [], { runner, cwd: '/repo' });
+        const sessions = new Map([['%10', { session_id: 'sess-1', provider: 'pi', state: 'working' }]]);
+        const joined = joinProjection(panes, enrichment, { agentSessions: sessions });
+        expect(joined.panes.find((x) => x.pane_id === '%10')!.agent_session).toEqual({ session_id: 'sess-1', provider: 'pi', state: 'working' });
+        expect(joined.panes.find((x) => x.pane_id === '%2')!.agent_session).toBeNull();
+        expect(validate(SCHEMA, joined).valid).toBe(true);
+    });
+
+    it('joining one enrichment twice gives the same result (the join does not mutate it)', async () => {
+        const { runner } = recordingRunner(healthyResponses);
+        const panes = await readPanes({ runner });
+        const enrichment = await collectEnrichment(panes.data ?? [], { runner, cwd: '/repo' });
+        const a = joinProjection(panes, enrichment, { now: () => 1 });
+        const b = joinProjection(panes, enrichment, { now: () => 1 });
+        expect(b).toEqual(a);
+        expect(a.panes.find((x) => x.pane_id === '%2')!.worktree?.shared_by_pane_ids).toEqual(['%2']);
     });
 });
 
@@ -270,13 +327,30 @@ describe('per-source degradation', () => {
     });
 
     it('treats malformed JSON as error, since the binary answered', async () => {
-        const { p } = await collect({ ...healthyResponses, bd: OK('not json at all') });
-        expect(p.sources.find((s) => s.name === 'beads')!.status).toBe('error');
+        const { p } = await collect({ ...healthyResponses, sb: OK('not json at all') });
+        expect(p.sources.find((s) => s.name === 'substrate')!.status).toBe('error');
+        expect(p.panes.find((x) => x.pane_id === '%10')!.bead).toEqual({ id: 'xtrm-abc', status: 'unknown' });
+    });
+
+    it('records an absent sb as unavailable', async () => {
+        const { p } = await collect({ ...healthyResponses, sb: { kind: 'missing' } });
+        expect(p.sources.find((s) => s.name === 'substrate')).toMatchObject({ status: 'unavailable' });
+    });
+
+    it('bounds Substrate lookups to MAX_ISSUE_REFS distinct, valid refs', async () => {
+        const calls: string[][] = [];
+        const runner: CommandRunner = async (_bin, args) => { calls.push([...args]); return OK(SB_JSON); };
+        const refs = [...Array.from({ length: 100 }, (_, i) => `XTRM-${i}`), 'XTRM-1', '--db'];
+        const read = await readSubstrateIssues(refs, { runner, now: () => 0 });
+        expect(calls.length).toBe(64);
+        expect(calls.every((argv) => argv.slice(0, 3).join(' ') === '--json issue show')).toBe(true);
+        expect(read.entry.status).toBe('ok');
     });
 
     it('survives every single source failing at once', async () => {
         const { p } = await collect({});
-        expect(p.sources.every((s) => s.status === 'unavailable')).toBe(true);
+        // No pane names an issue, so Substrate has nothing to look up.
+        expect(p.sources.filter((s) => s.name !== 'substrate').every((s) => s.status === 'unavailable')).toBe(true);
         expect(p.panes).toEqual([]);
         expect(validate(SCHEMA, p).valid).toBe(true);
     });
@@ -292,7 +366,7 @@ describe('per-source degradation', () => {
     it('always emits one ledger entry per source, so degraded never looks empty', async () => {
         const { p } = await collect({ ...healthyResponses, sp: { kind: 'missing' } });
         expect(p.sources.map((s) => s.name).sort()).toEqual(
-            ['beads', 'git', 'github', 'specialists', 'tmux', 'xtmux'],
+            ['git', 'github', 'specialists', 'substrate', 'tmux', 'xtmux'],
         );
     });
 });
@@ -304,6 +378,12 @@ describe('read-only guarantee', () => {
         const { calls } = await collect(healthyResponses);
         const allowed = Object.values(READ_ONLY_COMMANDS).map((c) => `${c.bin} ${c.args.join(' ')}`);
         for (const call of calls) {
+            if (call.bin === READ_ONLY_COMMANDS.substrate.bin) {
+                // The one parameterised read: the declared argv plus one validated ref.
+                expect(call.args.slice(0, -1)).toEqual([...READ_ONLY_COMMANDS.substrate.args]);
+                expect(call.args.at(-1)).toMatch(ISSUE_REF_PATTERN);
+                continue;
+            }
             expect(allowed).toContain(`${call.bin} ${call.args.join(' ')}`);
         }
         expect(calls.length).toBe(6);
@@ -311,11 +391,14 @@ describe('read-only guarantee', () => {
 
     it('every declared command is a known read-only verb', () => {
         const readOnlyVerbs: Record<string, string> = {
-            xtmux: 'topology', tmux: 'list-panes', sp: 'ps', bd: 'list', git: 'worktree', gh: 'pr',
+            xtmux: 'topology', tmux: 'list-panes', sp: 'ps', git: 'worktree', gh: 'pr',
         };
         for (const cmd of Object.values(READ_ONLY_COMMANDS)) {
+            if (cmd.bin === 'sb') continue;
             expect(cmd.args[0]).toBe(readOnlyVerbs[cmd.bin]);
         }
+        // sb issue has mutating verbs (claim/close/edit); pin the read.
+        expect(READ_ONLY_COMMANDS.substrate.args).toEqual(['--json', 'issue', 'show']);
         // git worktree has mutating subcommands (add/remove/prune); pin the read.
         expect(READ_ONLY_COMMANDS.git.args).toEqual(['worktree', 'list', '--porcelain']);
         // gh pr likewise (create/merge/close); pin the read.

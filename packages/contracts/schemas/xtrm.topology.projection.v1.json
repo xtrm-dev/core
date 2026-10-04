@@ -28,7 +28,10 @@
                 { "contains": { "type": "object", "properties": { "name": { "const": "xtmux" } }, "required": ["name"] } },
                 { "contains": { "type": "object", "properties": { "name": { "const": "tmux" } }, "required": ["name"] } },
                 { "contains": { "type": "object", "properties": { "name": { "const": "specialists" } }, "required": ["name"] } },
-                { "contains": { "type": "object", "properties": { "name": { "const": "beads" } }, "required": ["name"] } },
+                {
+                    "description": "The issue source: `substrate` (Substrate, the issue authority) since XTRM-629; `beads` in documents from older producers.",
+                    "contains": { "type": "object", "properties": { "name": { "enum": ["substrate", "beads"] } }, "required": ["name"] }
+                },
                 { "contains": { "type": "object", "properties": { "name": { "const": "git" } }, "required": ["name"] } },
                 { "contains": { "type": "object", "properties": { "name": { "const": "github" } }, "required": ["name"] } }
             ],
@@ -39,7 +42,7 @@
                 "properties": {
                     "name": {
                         "description": "Owning system queried. Each maps to one published read-only CLI surface.",
-                        "enum": ["xtmux", "tmux", "specialists", "beads", "git", "github"]
+                        "enum": ["xtmux", "tmux", "specialists", "substrate", "beads", "git", "github"]
                     },
                     "status": {
                         "description": "ok = queried and parsed. unavailable = the binary is not installed or not applicable on this host (not a bug). error = installed but the query failed, timed out, or returned unparseable output (a bug signal).",
@@ -82,6 +85,27 @@
                 "session_id": { "type": "string", "minLength": 1 },
                 "session_name": { "type": "string" },
                 "window_id": { "type": ["string", "null"] },
+                "window_index": { "description": "tmux window_index; with window_name and pane_index it builds the session -> window -> pane tree.", "type": ["integer", "null"] },
+                "window_name": { "type": ["string", "null"] },
+                "window_active": { "type": ["boolean", "null"] },
+                "pane_index": { "type": ["integer", "null"] },
+                "pane_active": { "type": ["boolean", "null"] },
+                "agent_session": {
+                    "description": "The agent host session registered for this pane (session_identity.tmux.paneId), so a client can open its Frame. Null for a pane without a registered session (shells, editors) and outside the agent host (`xt topology`).",
+                    "oneOf": [
+                        { "type": "null" },
+                        {
+                            "type": "object",
+                            "required": ["session_id", "provider", "state"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "session_id": { "type": "string", "minLength": 1 },
+                                "provider": { "type": "string" },
+                                "state": { "description": "Agent host session state (xtrm.agent-host-api.v1 sessionSummary.state).", "type": "string" }
+                            }
+                        }
+                    ]
+                },
                 "current_command": { "type": "string" },
                 "current_path": { "type": "string" },
                 "agent": {
@@ -154,7 +178,7 @@
             }
         },
         "bead": {
-            "description": "Beads state as published by `bd`. status is one of the two authoritative completion signals in this projection (the other is pull_request.merged_at).",
+            "description": "Issue state. Since XTRM-629 read from Substrate (`sb --json issue show`): id = the pane's issue ref, status = lifecycleState (or `unknown` when the ref does not resolve), issue_type = kind, parent_id = parent locator. The field keeps the v1 name `bead`. status is one of the two authoritative completion signals in this projection (the other is pull_request.merged_at).",
             "type": "object",
             "required": ["id", "status"],
             "additionalProperties": false,
