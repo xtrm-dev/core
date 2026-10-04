@@ -38,6 +38,39 @@ import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, t
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../substrate-suggest/jev.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
+/**
+ * Which seam delivers a decision, for every situation a session can be in.
+ *
+ * The bug this encodes: submitting decided a doctrine, then the turn made no
+ * tool call, and the block was dropped. Keep this table honest — a new
+ * situation needs a row, not a hope.
+ */
+export type DeliverySeam = "tool_result" | "agent_end_flush" | "agent_end_decision" | "none";
+export interface Situation {
+  /** The operator submitted a prompt this turn. */
+  prompted: boolean;
+  /** Submit produced a decision that is still pending. */
+  pending: boolean;
+  /** The turn has at least one tool call. */
+  usedTool: boolean;
+  /** The turn ended with agent activity worth judging. */
+  activeTurn: boolean;
+}
+
+export function deliverySeam(s: Situation): DeliverySeam {
+  if (s.pending) return s.usedTool ? "tool_result" : "agent_end_flush";
+  if (!s.prompted && s.activeTurn) return "agent_end_decision"; // unprompted: judge the turn itself
+  if (s.prompted && s.activeTurn) return "agent_end_decision";
+  return "none";
+}
+
+/** Decided at submit, delivered at the first ordered boundary in the turn. */
+interface PendingDoctrine {
+  entry: RosterEntry;
+  block: string;
+  confidence: number | null;
+}
+
 /** The last extension context seen, so the input handler can reach the session. */
 let latestCtx: unknown = null;
 
@@ -194,6 +227,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   const cooldowns: Record<string, number> = {};
   /** Advances per turn so consecutive turns do not double-count evidence. */
   let messageCursor = 0;
+  /** Set by the input seam, consumed by the first tool_result of the turn. */
+  let pending: PendingDoctrine | null = null;
   const cooldownOk = (id: string, now: number) => (cooldowns[id] === undefined || now >= cooldowns[id]);
   const cooldownSet = (id: string) => { cooldowns[id] = Date.now() + COOLDOWN_MIN * 60_000; };
 
@@ -325,24 +360,59 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           `${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what the user actually asked for.`,
           `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
           entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
+          // What this skill is, in its own words — the description the roster
+          // ranked on, restored for the reader.
+          `\x1b[3m${entry.description}\x1b[23m`,
         ].filter(Boolean).join("\n"),
       });
 
-      // The prompt transform is the only ordered delivery at this seam: a
-      // sendMessage here races the in-flight turn ("Agent is already
-      // processing") and displaced the operator's own prompt in the TUI.
-      // No card is emitted for this seam — the labelled block appended to the
-      // prompt is the whole delivery, so nothing is shown twice.
-      logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "prompt-transform" });
+      // Decide here (the prompt is the signal), deliver at the first ordered
+      // boundary inside the turn. The prompt is never mutated: a transform
+      // echoes into the operator's input line, and sendMessage here races the
+      // in-flight turn ("Agent is already processing") and displaced the
+      // operator's prompt outright.
+      pending = { entry, block, confidence: result.choice.confidence };
+      logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "deferred-to-tool-result" });
 
-      return { action: "transform", text: `${prompt}\n\n${block}` } as const;
+      return { action: "continue" } as const;
     } catch {
       return { action: "continue" } as const; // fail-open: prompt untouched
     }
   };
 
-  // The input seam: transform the prompt before the turn starts.
+  // The input seam decides; it never mutates the prompt.
   pi.on("input", handler as never);
+
+  // Delivery: the first tool_result of the turn is the first ordered place
+  // where extra context is guaranteed to reach the model (substrate-suggest's
+  // inline pattern). The operator gets the loud gold card at the same moment.
+  pi.on("tool_result", (event) => {
+    if (!pending || off()) return undefined;
+    const item = pending;
+    pending = null;
+    const content = (event as { content?: unknown }).content;
+    const advisory = [
+      `\n\n${item.block}`,
+      "",
+    ].join("");
+    const nextContent =
+      Array.isArray(content)
+        ? [...content, { type: "text", text: advisory } as never]
+        : [{ type: "text", text: advisory } as never];
+    logDecision({ ts: new Date().toISOString(), seam: "tool_result", pick: item.entry.id, injected: true, confidence: item.confidence });
+    pi.sendMessage(
+      {
+        customType: CUSTOM_TYPE,
+        content: item.block,
+        display: true,
+        details: { skill: item.entry.id, level: item.entry.level, seam: "tool_result" },
+      },
+      { deliverAs: "followUp", triggerTurn: false },
+    );
+    return { content: nextContent } as never;
+  });
+
+
 
   // Conversation context for the classifier, read from the session projection
   // (compaction-aware). InputEvent itself carries only the new text, so this
@@ -366,9 +436,10 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // The intention seam: the agent declares what it is doing in its own final
   // message. Same two-stage Jev over the turn evidence; the doctrine rides
   // into the next turn as a followUp the model reads.
-  pi.on("agent_end", async (event, ctx) => {
+  const runAgentEnd = async (event: unknown, ctx: unknown): Promise<void> => {
     try {
       if (off()) return;
+      pending = null; // already flushed, or superseded by a fresh decision
       const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
       const turn = turnEvidence(messages, messageCursor);
       messageCursor = turn.nextIdx;
@@ -419,6 +490,9 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           `${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what you actually plan to do.`,
           `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
           entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
+          // What this skill is, in its own words — the description the roster
+          // ranked on, restored for the reader.
+          `\x1b[3m${entry.description}\x1b[23m`,
         ].filter(Boolean).join("\n"),
       });
       logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
@@ -436,6 +510,26 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     } catch {
       /* fail-open: a suggestion extension must never break a session */
     }
+  };
+
+  // Coverage: a turn with no tool call would otherwise drop what submit
+  // decided, so agent_end flushes it before its own decision runs.
+  pi.on("agent_end", async (event: unknown, ctx: unknown) => {
+    if (pending) {
+      const item = pending;
+      pending = null;
+      logDecision({ ts: new Date().toISOString(), seam: "agent_end_flush", pick: item.entry.id, injected: true, confidence: item.confidence });
+      pi.sendMessage(
+        {
+          customType: CUSTOM_TYPE,
+          content: item.block,
+          display: true,
+          details: { skill: item.entry.id, level: item.entry.level, seam: "agent_end_flush" },
+        },
+        { deliverAs: "followUp", triggerTurn: false },
+      );
+    }
+    return runAgentEnd(event, ctx);
   });
 
   // Reload the roster when packs change on disk (cheap: cache TTL governs).
