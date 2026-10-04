@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
-import { conversationContext, turnEvidence } from "../extensions/skill-suggest/index.ts";
+import { conversationContext, isControlNudge, turnEvidence } from "../extensions/skill-suggest/index.ts";
 import { contextBlock, formatSuggestionPlain, parseContextBlock } from "../extensions/substrate-suggest/catalog.ts";
 
 describe("roster parsing", () => {
