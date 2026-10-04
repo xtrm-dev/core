@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
+import { contextBlock } from "../extensions/substrate-suggest/catalog.ts";
 
 describe("roster parsing", () => {
   it("parses folded and inline frontmatter descriptions", () => {
@@ -29,5 +30,29 @@ describe("roster parsing", () => {
     expect(causal!.description.toLowerCase()).toContain("bug");
     // every reference carries its parent skill
     for (const r of refs) expect(r.skill.length).toBeGreaterThan(0);
+  });
+});
+
+describe("labelled injected context", () => {
+  it("labels doctrine blocks with kind, source, author and confidence", () => {
+    const block = contextBlock("skill-doctrine", {
+      about: "the current request",
+      source: "engineering-quality/causal-debugging",
+      model: "jev-1.13-free",
+      confidence: 0.38,
+      body: "pointer",
+    });
+    expect(block).toContain('<xtrm_context kind="skill-doctrine"');
+    expect(block).toContain('source="engineering-quality/causal-debugging"');
+    expect(block).toContain('by="jev-1.13-free"');
+    expect(block).toContain('confidence="0.38"');
+    expect(block).toContain("Injected context, not the operator's words:");
+    expect(block).toContain("</xtrm_context>");
+  });
+
+  it("settlements use the same convention", () => {
+    const block = contextBlock("agent-settlement", { source: "sync-docs@CORE-2350", body: "docs merged" });
+    expect(block).toContain('kind="agent-settlement"');
+    expect(block).toContain('source="sync-docs@CORE-2350"');
   });
 });

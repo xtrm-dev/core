@@ -116,17 +116,37 @@ describe("cooldowns", () => {
 describe("wake card", () => {
   const verb = CATALOG.find((v) => v.id === "journal_decision")!;
 
-  it("renders two plain lines: dot glyph, no rail, ignore clause", () => {
+  it("renders a dim-purple box with an italic, highlighted interior", () => {
     const card = formatSuggestionCard({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
-    const lines = card.split("\n");
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).not.toContain("│");
-    expect(lines[0]).toContain("●");
-    expect(lines[0]).toContain("sb journal append");
-    expect(lines[0]).toContain("CORE-9");
-    expect(lines[1]).toContain("Ignore this if it does not fit");
-    expect(lines[1]).toContain("jev 0.72");
-    expect(lines[1]).toContain("rev 3");
+    const plain = formatSuggestionPlain({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
+    const lines = plain.split("\n");
+    // top border (with the ● title) … bottom border, at least one content row
+    expect(lines[0]).toMatch(/^╭─ ● suggestion ─+╮$/);
+    expect(lines[lines.length - 1]).toMatch(/^╰─+╯$/);
+    // every interior row is boxed and the content is present
+    const interior = lines.slice(1, -1);
+    for (const row of interior) expect(row.startsWith("│")).toBe(true);
+    const body = interior.join("\n");
+    expect(body).toContain("sb journal append");
+    expect(body).toContain("CORE-9");
+    expect(body).toContain("Ignore this if it does not fit");
+    expect(body).toContain("jev 0.72");
+    expect(body).toContain("rev 3");
+    // interior rows share one width, so the right edge aligns
+    const widths = new Set(lines.map((l) => [...l].length));
+    expect(widths.size).toBe(1);
+    // dim purple strokes and italic interior, highlighted tokens in the render
+    expect(card).toContain("\x1b[2m\x1b[38;2;141;127;232m│");
+    expect(card).toContain("\x1b[3m");
+    expect(card).toContain("\x1b[38;2;213;120;255m\x1b[1m");
+  });
+
+  it("wraps long instructions instead of overflowing the box", () => {
+    const long = { ...verb, instruction: () => "x ".repeat(120) };
+    const plain = formatSuggestionPlain({ verb: long, ref: "CORE-9" });
+    const widths = new Set(plain.split("\n").map((l) => [...l].length));
+    expect(widths.size).toBe(1);
+    expect(Math.max(...[...widths])).toBeLessThanOrEqual(98);
   });
 
   it("high severity keeps the ! glyph", () => {
