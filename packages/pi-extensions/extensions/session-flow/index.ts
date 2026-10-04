@@ -2,12 +2,22 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isBashToolResult } from "@earendil-works/pi-coding-agent";
 import { SubprocessRunner, EventAdapter } from "../../src/core";
 
+export function isIssueRefToken(token: string | null | undefined): token is string {
+	return typeof token === "string" && /^(?!-)[A-Za-z0-9][\w:.-]*$/.test(token);
+}
+
 function isClaimCommand(command: string): { isClaim: boolean; issueId: string | null } {
 	if (!/\bbd\s+update\b/.test(command) || !/--claim\b/.test(command)) {
 		return { isClaim: false, issueId: null };
 	}
 	const match = command.match(/\bbd\s+update\s+(\S+)/);
-	return { isClaim: true, issueId: match?.[1] ?? null };
+	const issueId = match?.[1] ?? null;
+	// CORE-2357: the notice must never fire for garbage ids (`--claim` or
+	// `<id>` captured from scripts/heredocs); the caller additionally gates on
+	// success. Both notices below stay silent unless the id is id-shaped.
+	return isIssueRefToken(issueId)
+		? { isClaim: true, issueId }
+		: { isClaim: false, issueId: null };
 }
 
 function isWorktree(cwd: string): boolean {
@@ -55,6 +65,9 @@ export default function (pi: ExtensionAPI) {
 		if (!EventAdapter.isBeadsProject(cwd)) return undefined;
 
 		const command = typeof event.input.command === "string" ? event.input.command : "";
+		// CORE-2357: a FAILED bd update --claim must never print the success
+		// notice (mirror of the beads auto-claim gate).
+		if (event.isError) return undefined;
 		const { isClaim, issueId } = isClaimCommand(command);
 		if (!isClaim || !issueId) return undefined;
 

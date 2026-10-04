@@ -1,6 +1,104 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, isBashToolResult } from "@earendil-works/pi-coding-agent";
 import { SubprocessRunner, EventAdapter } from "../../src/core";
+import { createHash } from "node:crypto";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+// --- Substrate fallback (CORE-2357) -------------------------------------------
+// `bd` is a retired board. Where `bd` has no database (migrated repos), no
+// bd claim can ever exist, so the gate would block every edit forever even
+// with a live Substrate claim. The fallback below engages ONLY when `bd`
+// itself errors in that cwd; bd-backed repos behave exactly as before.
+//
+// Per-session markers live under user scope (~/.xtrm/claims/), written only
+// on observed SUCCESSFUL `sb issue claim <ref>` commands and cleared on
+// observed successful close/release/cancel/reopen of the same ref — the
+// same shape as bd's own claimed:<session> KV. XTRM_TEST_HOME overrides
+// $HOME so tests never touch the operator's state.
+export function claimsRoot(): string {
+const home = process.env.XTRM_TEST_HOME || os.homedir();
+return path.join(home, ".xtrm", "claims");
+}
+
+export function claimMarkerPath(sessionId: string, cwd: string): string {
+const safe = String(sessionId).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 128) || "unknown";
+const repo = createHash("sha1").update(path.resolve(cwd)).digest("hex").slice(0, 12);
+return path.join(claimsRoot(), `${safe}.${repo}`);
+}
+
+/** An id token, never a flag: rejects `--claim`-as-id garbage (CORE-2357). */
+export function isIssueRefToken(token: string | null | undefined): token is string {
+return typeof token === "string" && /^(?!-)[A-Za-z0-9][\w:.-]*$/.test(token);
+}
+
+export function parseSbClaimRef(command: string): string | null {
+const match = command.match(/\bsb\s+issue\s+claim\s+(\S+)/);
+return match && isIssueRefToken(match[1]) ? match[1]! : null;
+}
+
+export function parseSbUnclaimRef(command: string): string | null {
+const match = command.match(/\bsb\s+issue\s+(?:close|release|cancel|reopen)\s+(\S+)/);
+return match && isIssueRefToken(match[1]) ? match[1]! : null;
+}
+
+export function readSbMarker(sessionId: string, cwd: string): string | null {
+try {
+const ref = fs.readFileSync(claimMarkerPath(sessionId, cwd), "utf8").trim();
+return isIssueRefToken(ref) ? ref : null;
+} catch {
+return null;
+}
+}
+
+export function writeSbMarker(sessionId: string, cwd: string, ref: string): void {
+fs.mkdirSync(claimsRoot(), { mode: 0o700, recursive: true });
+fs.writeFileSync(claimMarkerPath(sessionId, cwd), `${ref}\n`, { mode: 0o600 });
+}
+
+export function clearSbMarker(sessionId: string, cwd: string, ref?: string): void {
+try {
+const marker = claimMarkerPath(sessionId, cwd);
+if (ref !== undefined) {
+	const current = readSbMarker(sessionId, cwd);
+	if (current !== ref) return;
+}
+fs.unlinkSync(marker);
+} catch {
+// already absent — nothing to clear
+}
+}
+
+/**
+ * Rechecks a marker against the Substrate board.
+ * - "claimed": live claim, edits allowed.
+ * - "released": no live claim (released/closed/cancelled/unknown ref) — caller clears and blocks.
+ * - "unknown": `sb` itself flaked (non-zero/empty/unparsable). The marker
+ *   stands: it is positive evidence of an observed successful claim, and
+ *   there is no bd to fall back to. Documented, deliberate.
+ */
+export async function validateSbClaim(ref: string, cwd: string): Promise<"claimed" | "released" | "unknown"> {
+const result = await SubprocessRunner.run("sb", ["issue", "show", ref, "--json"], { cwd });
+if (result.code !== 0 || !result.stdout.trim()) return "unknown";
+try {
+const parsed = JSON.parse(result.stdout);
+const data = parsed?.data ?? parsed;
+const claimState = data?.claimState;
+const claim = data?.claim;
+if (claimState === "claimed") return "claimed";
+if (claim && !claim.releasedAt) return "claimed";
+return "released";
+} catch {
+return "unknown";
+}
+}
+
+/** True when `bd` itself is dead in cwd (missing binary or no database). */
+export async function isBdDead(cwd: string): Promise<boolean> {
+const result = await SubprocessRunner.run("bd", ["kv", "get", "claimed:__xtrm_probe__"], { cwd });
+return result.code !== 0;
+}
 
 export default function (pi: ExtensionAPI) {
 	const getCwd = (ctx: any) => ctx.cwd || process.cwd();
@@ -97,15 +195,26 @@ export default function (pi: ExtensionAPI) {
 		// CHANGELOG.md and docs/pi-extensions.md).
 		if (EventAdapter.isMutatingFileTool(event)) {
 			const claim = await getActiveClaimCached(sessionId, cwd);
-			if (!claim) {
-				if (ctx.hasUI) {
-					ctx.ui.notify("Beads: Edit blocked. Claim an issue first.", "warning");
+			if (claim) return undefined;
+			// bd gave nothing. If bd itself is dead here (retired board), the
+			// session-scoped Substrate marker applies (CORE-2357).
+			let sbHint = "";
+			if (await isBdDead(cwd)) {
+				const marker = readSbMarker(sessionId, cwd);
+				if (marker) {
+					const decision = await validateSbClaim(marker, cwd);
+					if (decision === "claimed") return undefined;
+					if (decision === "released") clearSbMarker(sessionId, cwd);
 				}
-				return {
-					block: true,
-					reason: `No active claim for session ${sessionId}.\n  bd update <id> --claim\n`,
-				};
+				sbHint = "\n  sb issue claim <ref> --holder <you>  (bd has no database here; Substrate claims apply)";
 			}
+			if (ctx.hasUI) {
+				ctx.ui.notify("Beads: Edit blocked. Claim an issue first.", "warning");
+			}
+			return {
+				block: true,
+				reason: `No active claim for session ${sessionId}.\n  bd update <id> --claim${sbHint}\n`,
+			};
 		}
 
 		if (isToolCallEventType("bash", event)) {
@@ -141,15 +250,32 @@ export default function (pi: ExtensionAPI) {
 			invalidateClaimCache();
 		}
 
-		// Auto-claim on bd update --claim regardless of exit code.
-		if (/\bbd\s+update\b/.test(command) && /--claim\b/.test(command)) {
+		// Auto-claim on a SUCCESSFUL bd update --claim only (CORE-2357): a
+		// failed claim must never print the success notice.
+		if (/\bbd\s+update\b/.test(command) && /--claim\b/.test(command) && !event.isError) {
 			const issueMatch = command.match(/\bbd\s+update\s+(\S+)/);
-			if (issueMatch) {
-				const issueId = issueMatch[1];
+			const issueId = issueMatch?.[1] ?? null;
+			if (isIssueRefToken(issueId)) {
 				await SubprocessRunner.run("bd", ["kv", "set", `claimed:${sessionId}`, issueId], { cwd });
 				invalidateClaimCache();
 				const claimNotice = `\n\n✅ **Beads**: Session \`${sessionId}\` claimed issue \`${issueId}\`. File edits are now unblocked.`;
 				return { content: [...event.content, { type: "text", text: claimNotice }] };
+			}
+		}
+
+		// Substrate auto-claim/clear (CORE-2357): same shape, user-scope marker.
+		if (!event.isError) {
+			const sbClaim = parseSbClaimRef(command);
+			if (sbClaim) {
+				writeSbMarker(sessionId, cwd, sbClaim);
+				invalidateClaimCache();
+				const claimNotice = `\n\n✅ **Substrate**: Session \`${sessionId}\` claimed issue \`${sbClaim}\`. File edits are now unblocked.`;
+				return { content: [...event.content, { type: "text", text: claimNotice }] };
+			}
+			const sbUnclaim = parseSbUnclaimRef(command);
+			if (sbUnclaim) {
+				clearSbMarker(sessionId, cwd, sbUnclaim);
+				invalidateClaimCache();
 			}
 		}
 
