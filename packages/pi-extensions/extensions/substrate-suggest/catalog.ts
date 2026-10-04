@@ -234,8 +234,10 @@ const BG = [201, 162, 39] as const;
 const FG = [24, 20, 16] as const;
 const YELLOW_ON = `\x1b[48;2;${BG[0]};${BG[1]};${BG[2]}m\x1b[38;2;${FG[0]};${FG[1]};${FG[2]}m`;
 const YELLOW_OFF = "\x1b[49m\x1b[39m";
-const DOT = `${PURPLE}\x1b[1m●\x1b[22m`;
+const DOT = "\x1b[1m●\x1b[22m"; // white, out of the gold block
 const WARN = "\x1b[33m!\x1b[0m";
+const WHITE = (t: string) => `\x1b[37m${t}\x1b[39m`;
+const DIM = (t: string) => `\x1b[2m${t}\x1b[22m`;
 const INDENT = "  ";
 const CARD_MIN = 44;
 const CARD_MAX = 88;
@@ -360,7 +362,7 @@ export interface SuggestionCard {
 
 export function formatSuggestionCard(c: SuggestionCard): string {
   const glyph = c.verb.severity === "high" ? WARN : DOT;
-  const header = `${glyph} ${c.verb.action} · ${c.ref}`;
+  const header = `${glyph} ${WHITE(c.verb.action)} ${DIM("·")} ${WHITE(c.ref)}`;
   const parts = [
     c.confidence != null ? `${CONF_LABEL}: ${c.confidence.toFixed(2)}` : null,
     c.revision != null ? `rev ${c.revision}` : null,
