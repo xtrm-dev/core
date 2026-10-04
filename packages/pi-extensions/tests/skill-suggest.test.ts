@@ -59,7 +59,9 @@ describe("labelled injected context", () => {
 
 describe("one channel: no prompt rewrite", () => {
   it("the input seam sends the doctrine as a message instead of transforming the prompt", async () => {
-    const src = await Bun.file("packages/pi-extensions/extensions/skill-suggest/index.ts").text();
+    // Anchor the probe to this file, not the cwd: the suite runs both from
+    // the repo root and from packages/pi-extensions.
+    const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
     // The input seam must not return a transform: that is what made the
     // operator see the doctrine twice and blurred their own words.
     expect(src).not.toContain('action: "transform"');
