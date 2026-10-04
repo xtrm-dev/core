@@ -32,7 +32,8 @@ export function createHostCommand(version = '0.0.0'): Command {
         .option('--no-history', 'Do not index stopped sessions from the Pi and Claude journals')
         .option('--direct', 'Direct mode: accept proxied tailnet requests that carry a paired device session', false)
         .option('--direct-host <names>', 'Comma-separated host names the HTTPS front forwards (e.g. machine.tailnet.ts.net)')
-        .action(async (options: { port: string; socket?: string; json?: boolean; history: boolean; direct?: boolean; directHost?: string }) => {
+        .option('--topology-github', 'Enrich the topology feed with GitHub pull requests (gh pr list; off by default)', false)
+        .action(async (options: { port: string; socket?: string; json?: boolean; history: boolean; direct?: boolean; directHost?: string; topologyGithub?: boolean }) => {
             const port = Number(options.port);
             if (!Number.isInteger(port) || port < 0 || port > 65535) {
                 console.error(kleur.red(`Invalid --port: ${options.port}`));
@@ -53,6 +54,7 @@ export function createHostCommand(version = '0.0.0'): Command {
                     version,
                     ...(options.history ? { sessionIndex: defaultSessionIndexOptions() } : {}),
                     ...(options.direct ? { direct: { hostnames: directHostnames } } : {}),
+                    topology: { includeGithub: options.topologyGithub === true },
                 });
             } catch (error) {
                 console.error(kleur.red(`✗ ${(error as Error).message}`));

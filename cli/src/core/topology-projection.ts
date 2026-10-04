@@ -2,8 +2,15 @@
  * Aggregated topology projection — audit ~/dev/11.md P2-05.
  *
  * Joins tmux pane -> interactive runtime -> role -> coordinator -> specialist
- * jobs -> bead -> worktree -> branch -> integration target -> pull request, and
- * emits one `xtrm.topology.projection.v1` snapshot.
+ * jobs -> issue -> worktree -> branch -> integration target -> pull request, and
+ * emits one `xtrm.topology.projection.v1` snapshot. Issues come from Substrate
+ * (`sb`), the issue authority, since XTRM-629; the pane field keeps the v1 name
+ * `bead`.
+ *
+ * Collection is three steps so the agent host's live feed (topology-feed.ts) can
+ * rerun only the cheap one: `readPanes()` is the single `tmux list-panes -a`
+ * pass, `collectEnrichment()` reads the slower sources, and `joinProjection()`
+ * is a pure join of the two. `collectProjection()` runs all three once.
  *
  * READ-ONLY, BY CONSTRUCTION. Every fact is read live at invocation from the
  * owning system's published CLI surface; nothing is cached, materialized, or
@@ -17,8 +24,8 @@
  * that can issue a mutating command — the guarantee is structural, and the test
  * suite asserts the recorded argv against the same table.
  *
- * Why the source CLIs and not the databases: `sp ps --json` and `xtmux
- * topology --json` are published contracts; .specialists/db/observability.db and
+ * Why the source CLIs and not the databases: `sp ps --json`, `sb --json issue
+ * show` and `xtmux topology --json` are published contracts; .specialists/db/observability.db and
  * the xtmux state DB are private schemas owned by other repos. Reading them
  * directly would couple Core to another project's internals and would add a
  * native sqlite dependency to a CLI that has none.
@@ -29,6 +36,7 @@ import { hostname } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type {
+    TopologyAgentSession,
     TopologyBead,
     TopologyJob,
     TopologyPane,
@@ -75,6 +83,13 @@ const PANE_FIELDS = [
     '@agent_parent_session',
     '@agent_parent_pane',
     '@agent_instance_id',
+    'window_index',
+    'pane_index',
+    'window_active',
+    'pane_active',
+    // Free text, so last: a tab inside a window name rejoins instead of
+    // shifting every later column.
+    'window_name',
 ] as const;
 
 const PANE_FORMAT = PANE_FIELDS.map((f) => `#{${f}}`).join(SEP);
@@ -88,7 +103,12 @@ export const READ_ONLY_COMMANDS = {
     xtmux: { bin: 'xtmux', args: ['topology', '--json'], timeoutMs: 5_000 },
     tmux: { bin: 'tmux', args: ['list-panes', '-a', '-F', PANE_FORMAT], timeoutMs: 5_000 },
     specialists: { bin: 'sp', args: ['ps', '--json'], timeoutMs: 10_000 },
-    beads: { bin: 'bd', args: ['list', '--all', '--json'], timeoutMs: 10_000 },
+    /**
+     * One `show` per distinct issue ref a pane names, ref appended as the last
+     * argv element after ISSUE_REF_PATTERN accepted it. `issue list --json` is
+     * per project and ~0.5 MB for one board, so a ref lookup is the bounded read.
+     */
+    substrate: { bin: 'sb', args: ['--json', 'issue', 'show'], timeoutMs: 5_000 },
     git: { bin: 'git', args: ['worktree', 'list', '--porcelain'], timeoutMs: 5_000 },
     github: {
         bin: 'gh',
@@ -105,7 +125,8 @@ export type RunOutcome =
     /** Binary is not on PATH. Not a bug — the host simply does not have it. */
     | { kind: 'missing' }
     | { kind: 'timeout' }
-    | { kind: 'failed'; reason: string };
+    /** stdout is kept when the binary printed a machine envelope before failing (`sb --json`). */
+    | { kind: 'failed'; reason: string; stdout?: string };
 
 export type CommandRunner = (
     bin: string,
@@ -131,17 +152,20 @@ export const defaultRunner: CommandRunner = async (bin, args, { timeoutMs, cwd }
         } as Parameters<typeof execFileAsync>[2]);
         return { kind: 'ok', stdout: String(stdout) };
     } catch (error) {
-        const err = error as NodeJS.ErrnoException & { killed?: boolean; stderr?: string };
+        const err = error as NodeJS.ErrnoException & { killed?: boolean; stderr?: string; stdout?: string };
         if (err.code === 'ENOENT') return { kind: 'missing' };
         if (err.killed) return { kind: 'timeout' };
-        return { kind: 'failed', reason: firstLine(err.stderr) || err.message || 'unknown failure' };
+        const reason = firstLine(err.stderr) || err.message || 'unknown failure';
+        return err.stdout ? { kind: 'failed', reason, stdout: String(err.stdout) } : { kind: 'failed', reason };
     }
 };
 
 /** Keep `sources[].reason` to one line and free of command output / secrets. */
 function firstLine(text: string | undefined): string {
     if (!text) return '';
-    const line = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+    // Node runtime warnings (`sb` prints an ExperimentalWarning) are not the cause.
+    const line = text.split('\n').map((l) => l.trim())
+        .find((l) => l && !/ExperimentalWarning|--trace-warnings/.test(l)) ?? '';
     return line.length > 200 ? `${line.slice(0, 197)}...` : line;
 }
 
@@ -150,12 +174,14 @@ export interface CollectOptions {
     cwd?: string;
     /** Skip GitHub — the slowest, rate-limited source. Recorded as unavailable. */
     includeGithub?: boolean;
+    /** `sources[].reason` when GitHub is skipped. */
+    githubSkipReason?: string;
     runner?: CommandRunner;
     now?: () => number;
 }
 
 /** One source's raw result plus the ledger entry describing how it went. */
-interface SourceRead<T> {
+export interface SourceRead<T> {
     entry: TopologySource;
     data: T | null;
 }
@@ -191,11 +217,16 @@ async function readSource<T>(
 
 // ── source parsers ──────────────────────────────────────────────────────────
 
-interface RawPane {
+export interface RawPane {
     pane_id: string;
     session_id: string;
     session_name: string;
     window_id: string | null;
+    window_index: number | null;
+    window_name: string | null;
+    window_active: boolean | null;
+    pane_index: number | null;
+    pane_active: boolean | null;
     current_command: string;
     current_path: string;
     agent: TopologyPaneAgent | null;
@@ -210,7 +241,9 @@ export function parsePanes(stdout: string): RawPane[] {
         const [
             pane_id, session_id, session_name, window_id, current_command, current_path,
             state, role, task, bead_id, worktree, branch, parent_session_id, parent_pane_id, instance_id,
+            window_index, pane_index, window_active, pane_active,
         ] = cols;
+        const window_name = cols.slice(PANE_FIELDS.length - 1).join(SEP);
         // A pane is an xtrm-launched agent only if it carries lineage. A plain
         // shell gets `agent: null` rather than an object of empty strings —
         // "not an agent" and "an agent with no role" are different facts.
@@ -233,6 +266,11 @@ export function parsePanes(stdout: string): RawPane[] {
             session_id,
             session_name,
             window_id: blankToNull(window_id),
+            window_index: intOrNull(window_index),
+            window_name,
+            window_active: flagOrNull(window_active),
+            pane_index: intOrNull(pane_index),
+            pane_active: flagOrNull(pane_active),
             current_command,
             current_path,
             agent,
@@ -242,6 +280,8 @@ export function parsePanes(stdout: string): RawPane[] {
 }
 
 const blankToNull = (v: string | undefined): string | null => (v && v.length > 0 ? v : null);
+const intOrNull = (v: string | undefined): number | null => (v && /^\d+$/.test(v) ? Number(v) : null);
+const flagOrNull = (v: string | undefined): boolean | null => (v === '1' ? true : v === '0' ? false : null);
 
 /** Host identity from the xtmux topology snapshot; panes come from tmux. */
 export function parseXtmuxHost(stdout: string): { host_id: string; tmux_server_id: string | null } {
@@ -279,28 +319,83 @@ export function parseJobs(stdout: string): TopologyJob[] {
 }
 
 /**
- * Beads resolve from the INVOKING repo's database only. A pane sitting in a
- * different project reports its bead id with status `unknown` rather than a
- * wrong status — the projection will not guess across repo boundaries.
+ * An issue ref as panes publish it (`@agent_bead`): `XTRM-629`, `CORE-10.2`,
+ * or a legacy Beads id such as `xtrm-d1fod.3`. Anything else is never passed to
+ * `sb`, so a pane option cannot smuggle a flag into the argv.
  */
-export function parseBeads(stdout: string): Map<string, TopologyBead> {
-    const rows = JSON.parse(stdout) as unknown;
-    const map = new Map<string, TopologyBead>();
-    if (!Array.isArray(rows)) return map;
-    for (const row of rows) {
-        const r = row as Record<string, unknown>;
-        const id = str(r.id);
-        if (!id) continue;
-        map.set(id, {
-            id,
-            status: str(r.status) ?? 'unknown',
-            title: str(r.title),
-            issue_type: str(r.issue_type) ?? str(r.type),
-            priority: typeof r.priority === 'number' ? r.priority : null,
-            parent_id: str(r.parent_id) ?? str(r.parent),
-        });
+export const ISSUE_REF_PATTERN = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/;
+/** Upper bound on `sb` lookups per enrichment; refs past it keep status `unknown`. */
+export const MAX_ISSUE_REFS = 64;
+const ISSUE_LOOKUP_CONCURRENCY = 8;
+
+/**
+ * One `sb --json issue show` envelope. Substrate resolves refs across projects,
+ * so a pane in another repository still gets its real issue state. A ref
+ * Substrate does not know (a legacy Beads id) resolves to null, which the join
+ * reports as status `unknown` — a missing issue is not a source failure.
+ */
+export function parseSubstrateIssue(ref: string, stdout: string): TopologyBead | null {
+    const envelope = JSON.parse(stdout) as { ok?: unknown; data?: Record<string, unknown>; error?: unknown };
+    if (envelope.ok !== true) {
+        const message = typeof envelope.error === 'string' ? envelope.error : 'issue lookup failed';
+        if (/unresolvable|not found|unknown (?:ref|issue)/i.test(message)) return null;
+        throw new Error(message);
     }
-    return map;
+    const data = envelope.data ?? {};
+    const locator = str(data.locator);
+    const dot = locator ? locator.lastIndexOf('.') : -1;
+    return {
+        id: ref,
+        status: str(data.lifecycleState) ?? 'unknown',
+        title: str(data.title),
+        issue_type: str(data.kind),
+        priority: typeof data.priority === 'number' ? data.priority : null,
+        parent_id: locator && dot > 0 ? locator.slice(0, dot) : null,
+    };
+}
+
+/**
+ * Resolve the given refs through Substrate, bounded in count and concurrency.
+ * Ledger: `unavailable` when `sb` is absent, `error` when any lookup failed (the
+ * resolved issues are still returned), `ok` otherwise — including no refs.
+ */
+export async function readSubstrateIssues(
+    refs: readonly string[],
+    opts: { runner: CommandRunner; now: () => number },
+): Promise<SourceRead<Map<string, TopologyBead>>> {
+    const { bin, args, timeoutMs } = READ_ONLY_COMMANDS.substrate;
+    const started = opts.now();
+    const wanted = [...new Set(refs)].filter((ref) => ISSUE_REF_PATTERN.test(ref)).slice(0, MAX_ISSUE_REFS);
+    const issues = new Map<string, TopologyBead>();
+    const failures: string[] = [];
+    let missing = false;
+    let next = 0;
+    const worker = async () => {
+        while (next < wanted.length && !missing) {
+            const ref = wanted[next++];
+            const outcome = await opts.runner(bin, [...args, ref], { timeoutMs });
+            if (outcome.kind === 'missing') { missing = true; return; }
+            if (outcome.kind === 'timeout') { failures.push(`${ref}: ${bin} timed out after ${timeoutMs}ms`); continue; }
+            const stdout = outcome.stdout;
+            if (!stdout) { failures.push(`${ref}: ${outcome.kind === 'failed' ? outcome.reason : 'no output'}`); continue; }
+            try {
+                const issue = parseSubstrateIssue(ref, stdout);
+                if (issue) issues.set(ref, issue);
+            } catch (error) {
+                failures.push(`${ref}: ${firstLine(error instanceof Error ? error.message : 'unparseable output')}`);
+            }
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(ISSUE_LOOKUP_CONCURRENCY, wanted.length) }, worker));
+    const duration_ms = Math.max(0, opts.now() - started);
+    if (missing) {
+        return { entry: { name: 'substrate', status: 'unavailable', reason: `${bin} not found on PATH`, duration_ms }, data: null };
+    }
+    if (failures.length > 0) {
+        const reason = firstLine(`${failures.length} of ${wanted.length} issue lookups failed: ${failures[0]}`);
+        return { entry: { name: 'substrate', status: 'error', reason, duration_ms }, data: issues };
+    }
+    return { entry: { name: 'substrate', status: 'ok', reason: null, duration_ms }, data: issues };
 }
 
 export function parseWorktrees(stdout: string): TopologyWorktree[] {
@@ -396,47 +491,87 @@ function worktreeForPath(trees: TopologyWorktree[], target: string | null): Topo
     return best;
 }
 
-export async function collectProjection(options: CollectOptions = {}): Promise<TopologyProjectionV1> {
+/** The single `tmux list-panes -a` pass: the only read the live feed repeats per tmux event. */
+export function readPanes(options: Pick<CollectOptions, 'runner' | 'now'> = {}): Promise<SourceRead<RawPane[]>> {
+    return readSource('tmux', parsePanes, { runner: options.runner ?? defaultRunner, now: options.now ?? (() => Date.now()) });
+}
+
+/** Everything the join needs besides the pane list. Never mutated by the join. */
+export interface TopologyEnrichment {
+    xtmux: SourceRead<{ host_id: string; tmux_server_id: string | null }>;
+    jobs: SourceRead<TopologyJob[]>;
+    issues: SourceRead<Map<string, TopologyBead>>;
+    worktrees: SourceRead<TopologyWorktree[]>;
+    pullRequests: SourceRead<Map<string, TopologyPullRequest>>;
+}
+
+/** Issue refs and filesystem paths a pane list asks the enrichment to cover. */
+export function enrichmentKeys(rawPanes: readonly RawPane[]): { refs: string[]; paths: string[] } {
+    const refs = new Set<string>();
+    const paths = new Set<string>();
+    for (const pane of rawPanes) {
+        if (pane.agent?.bead_id) refs.add(pane.agent.bead_id);
+        if (pane.current_path) paths.add(pane.current_path);
+        if (pane.agent?.worktree) paths.add(pane.agent.worktree);
+    }
+    return { refs: [...refs].sort(), paths: [...paths].sort() };
+}
+
+/**
+ * Read the slower sources for a pane list. Git worktrees are queried from the
+ * invocation repository and from any pane path outside that initial inventory;
+ * this keeps the common case to one git call while making cross-repo panes
+ * visible instead of silently treating their worktrees as missing.
+ */
+export async function collectEnrichment(rawPanes: readonly RawPane[], options: CollectOptions = {}): Promise<TopologyEnrichment> {
     const runner = options.runner ?? defaultRunner;
     const now = options.now ?? (() => Date.now());
     const cwd = options.cwd ?? process.cwd();
     const includeGithub = options.includeGithub ?? true;
     const ctx = { runner, cwd, now };
+    const keys = enrichmentKeys(rawPanes);
 
-    // The pane list is server-wide, so first read it alongside the other
-    // independent sources. Git worktrees are then queried from the invocation
-    // repository and from any pane path outside that initial inventory; this
-    // keeps the common case to one git call while making cross-repo panes
-    // visible instead of silently treating their worktrees as missing.
-    const [xtmuxRead, paneRead, jobRead, beadRead, initialTreeRead, prRead] = await Promise.all([
+    const [xtmux, jobs, issues, initialTreeRead, pullRequests] = await Promise.all([
         readSource('xtmux', parseXtmuxHost, ctx),
-        readSource('tmux', parsePanes, ctx),
         readSource('specialists', parseJobs, ctx),
-        readSource('beads', parseBeads, ctx),
+        readSubstrateIssues(keys.refs, ctx),
         readSource('git', parseWorktrees, ctx),
         includeGithub
             ? readSource('github', parsePullRequests, ctx)
             : Promise.resolve<SourceRead<Map<string, TopologyPullRequest>>>({
-                entry: { name: 'github', status: 'unavailable', reason: 'skipped by --no-github', duration_ms: 0 },
+                entry: { name: 'github', status: 'unavailable', reason: options.githubSkipReason ?? 'skipped by --no-github', duration_ms: 0 },
                 data: null,
             }),
     ]);
 
-    const rawPanes = paneRead.data ?? [];
     const knownTrees = initialTreeRead.data ?? [];
-    const extraRepoPaths = [...new Set(rawPanes.flatMap((pane) => [
-        pane.current_path,
-        pane.agent?.worktree,
-    ].filter((candidate): candidate is string => Boolean(candidate))))]
-        .filter((candidate) => !worktreeForPath(knownTrees, candidate));
+    const extraRepoPaths = keys.paths.filter((candidate) => !worktreeForPath(knownTrees, candidate));
     const extraTreeReads = await Promise.all(extraRepoPaths.map((repoPath) =>
         readSource('git', parseWorktrees, { ...ctx, cwd: repoPath })));
-    const treeRead = mergeWorktreeReads([initialTreeRead, ...extraTreeReads]);
+    const worktrees = mergeWorktreeReads([initialTreeRead, ...extraTreeReads]);
+    return { xtmux, jobs, issues, worktrees, pullRequests };
+}
 
-    const rawJobs = jobRead.data ?? [];
-    const beads = beadRead.data ?? new Map<string, TopologyBead>();
-    const worktrees = treeRead.data ?? [];
-    const prs = prRead.data ?? new Map<string, TopologyPullRequest>();
+export interface JoinOptions {
+    now?: () => number;
+    /** Agent host sessions by tmux pane id (the host's registry); absent outside the host. */
+    agentSessions?: ReadonlyMap<string, TopologyAgentSession>;
+}
+
+/** Pure join of one pane read with an enrichment. Neither input is mutated. */
+export function joinProjection(
+    paneRead: SourceRead<RawPane[]>,
+    enrichment: TopologyEnrichment,
+    options: JoinOptions = {},
+): TopologyProjectionV1 {
+    const now = options.now ?? (() => Date.now());
+    const rawPanes = paneRead.data ?? [];
+    const rawJobs = enrichment.jobs.data ?? [];
+    const issues = enrichment.issues.data ?? new Map<string, TopologyBead>();
+    // Fresh copies: the feed joins one enrichment many times, and
+    // shared_by_pane_ids is per join.
+    const worktrees = (enrichment.worktrees.data ?? []).map((tree) => ({ ...tree, shared_by_pane_ids: [] as string[] }));
+    const prs = enrichment.pullRequests.data ?? new Map<string, TopologyPullRequest>();
     const jobs = rawJobs.map((job) => {
         const pull_request = job.branch ? prs.get(job.branch) : undefined;
         return pull_request ? { ...job, pull_request } : job;
@@ -446,7 +581,7 @@ export async function collectProjection(options: CollectOptions = {}): Promise<T
     // > 1 is the shared-checkout hazard the multiplexing doctrine warns about.
     for (const pane of rawPanes) {
         const tree = worktreeForPath(worktrees, pane.current_path);
-        if (tree) tree.shared_by_pane_ids = [...(tree.shared_by_pane_ids ?? []), pane.pane_id];
+        if (tree) (tree.shared_by_pane_ids ??= []).push(pane.pane_id);
     }
 
     const claimedJobs = new Set<string>();
@@ -495,11 +630,17 @@ export async function collectProjection(options: CollectOptions = {}): Promise<T
             session_id: raw.session_id,
             session_name: raw.session_name,
             window_id: raw.window_id,
+            window_index: raw.window_index,
+            window_name: raw.window_name,
+            window_active: raw.window_active,
+            pane_index: raw.pane_index,
+            pane_active: raw.pane_active,
+            agent_session: options.agentSessions?.get(raw.pane_id) ?? null,
             current_command: raw.current_command,
             current_path: raw.current_path,
             agent,
             jobs: paneJobs,
-            bead: paneBeadId ? beads.get(paneBeadId) ?? { id: paneBeadId, status: 'unknown' } : null,
+            bead: paneBeadId ? issues.get(paneBeadId) ?? { id: paneBeadId, status: 'unknown' } : null,
             worktree,
             pull_request: branch ? prs.get(branch) ?? null : null,
         } satisfies TopologyPane;
@@ -509,10 +650,17 @@ export async function collectProjection(options: CollectOptions = {}): Promise<T
         schema_version: 'xtrm.topology.projection.v1',
         generated_at_ms: now(),
         host: {
-            host_id: xtmuxRead.data?.host_id ?? hostname(),
-            tmux_server_id: xtmuxRead.data?.tmux_server_id ?? null,
+            host_id: enrichment.xtmux.data?.host_id ?? hostname(),
+            tmux_server_id: enrichment.xtmux.data?.tmux_server_id ?? null,
         },
-        sources: [xtmuxRead.entry, paneRead.entry, jobRead.entry, beadRead.entry, treeRead.entry, prRead.entry],
+        sources: [
+            enrichment.xtmux.entry,
+            paneRead.entry,
+            enrichment.jobs.entry,
+            enrichment.issues.entry,
+            enrichment.worktrees.entry,
+            enrichment.pullRequests.entry,
+        ],
         panes,
         // Anything no live pane claimed. Without this a job whose coordinator
         // pane died, or a worktree whose session was killed, silently vanishes.
@@ -521,4 +669,12 @@ export async function collectProjection(options: CollectOptions = {}): Promise<T
             worktrees: worktrees.filter((tree) => !usedWorktrees.has(tree.path)),
         },
     };
+}
+
+export async function collectProjection(options: CollectOptions = {}): Promise<TopologyProjectionV1> {
+    // Issue refs and extra worktree paths come from the panes, so the pane
+    // list is read first; the rest of the sources then run in parallel.
+    const paneRead = await readPanes(options);
+    const enrichment = await collectEnrichment(paneRead.data ?? [], options);
+    return joinProjection(paneRead, enrichment, { now: options.now });
 }
