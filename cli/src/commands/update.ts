@@ -467,15 +467,27 @@ export function createUpdateCommand(): Command {
             // Post-loop globals are NOT gated on migration state (CORE-2343):
             // Pi package assurance and the external tool patch write under $HOME
             // and the package root, so neither can strand or reach a board.
-            const packageAssurance = await assureXtManagedPiPackages(!typedOpts.apply);
+            const packageAssurance = await assureXtManagedPiPackages(
+                !typedOpts.apply,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                targets,
+            );
             if (typedOpts.apply) runExternalPiToolPatch(resolvePackageRoot(), false);
             // CORE-2342: an apply that leaves pi unable to start is a failed
-            // apply. Probe once, after every write, and fail loudly.
-            const piStartupSmoke = typedOpts.apply ? await runPiStartupSmokeCheck() : null;
-            if (piStartupSmoke && !piStartupSmoke.ok) {
-                console.error(kleur.red(`\n  ✗ pi startup smoke check failed: ${piStartupSmoke.detail}`));
-                console.error(kleur.red('    A package is registered more than once (npm:, git:, or a local path).\n'
-                    + '    Fix the duplicate entry in ~/.pi/agent/settings.json, then rerun xt update --apply.'));
+            // apply. Probe once, after every write, and report the real cause.
+            const piStartupSmoke = typedOpts.apply
+                ? await runPiStartupSmokeCheck()
+                : null;
+            if (piStartupSmoke && piStartupSmoke.status !== 'ok') {
+                const label = piStartupSmoke.status === 'skipped' ? 'skipped' : 'FAILED';
+                const paint = piStartupSmoke.status === 'skipped' ? kleur.yellow : kleur.red;
+                console.error(paint(`\n  ${piStartupSmoke.status === 'skipped' ? '⚠' : '✗'} pi startup smoke check ${label}: ${piStartupSmoke.detail}`));
+                if (piStartupSmoke.status !== 'skipped') {
+                    console.error(kleur.red('    pi startability is unproven after this apply — see the cause above, fix it, then rerun xt update --apply.'));
+                }
             }
 
             if (opts.json) {
@@ -500,7 +512,8 @@ export function createUpdateCommand(): Command {
             // nonzero (a repo that cannot even be read is not success).
             if (rows.some(row => row.status === 'failed' || row.status === 'incomplete')
                 || packageAssurance.failed.length > 0
-                || piStartupSmoke?.ok === false) {
+                || piStartupSmoke?.status === 'failed'
+                || piStartupSmoke?.status === 'inconclusive') {
                 process.exitCode = 1;
             }
         });

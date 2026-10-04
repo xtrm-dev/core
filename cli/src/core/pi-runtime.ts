@@ -432,21 +432,31 @@ function readLocalPackageName(entry: string): string | null {
     }
 }
 
+/**
+ * Identity of a `git:` source: `<owner>/<name>` from the repository path, with
+ * any `@ref` or `#ref` suffix and a trailing `.git` removed. The owner is part
+ * of the identity on purpose — `git:github.com/other/ponytail` is a different
+ * package from `npm:ponytail`, while `git:github.com/jaggerxtrm/pi-extensions`
+ * is the same package as `npm:@jaggerxtrm/pi-extensions`.
+ */
+export function resolveGitSourceIdentity(piPackageId: string): string | null {
+    const repo = piPackageId.slice('git:'.length).split('#', 1)[0].replace(/\.git$/, '').replace(/\/+$/, '');
+    const lastSlash = repo.lastIndexOf('/');
+    const name = repo.slice(lastSlash + 1).replace(/[@#].*$/, '');
+    if (!name) return null;
+    const owner = lastSlash > 0 ? repo.slice(0, lastSlash).split('/').pop() ?? '' : '';
+    return owner ? `npm:@${owner}/${name}` : `npm:${name}`;
+}
+
 export function resolvePiPackageEntryIdentity(entry: string): string | null {
     const npmPackageName = parseNpmPackageName(entry);
-    if (npmPackageName) return npmPackageName;
-    // A git source is identified by its repository name, so `npm:ponytail` and
-    // `git:github.com/DietrichGebert/ponytail` are the same package.
-    if (entry.startsWith('git:')) {
-        const repo = entry.split('#', 1)[0].replace(/:\/$/, '').replace(/\.git$/, '');
-        const repoName = repo.split('/').filter(Boolean).pop();
-        return repoName ?? null;
-    }
+    if (npmPackageName) return `npm:${npmPackageName}`;
+    if (entry.startsWith('git:')) return resolveGitSourceIdentity(entry);
     const localName = readLocalPackageName(entry);
-    if (localName) return localName;
+    if (localName) return `npm:${localName}`;
     // An unreadable checkout still counts when its path shape proves it is a
     // pi-extensions source (same rule the global-registration reconciler uses).
-    return isManagedPiExtensionsPackageEntry(entry) ? parseNpmPackageName(PROJECT_EXTENSION_PACKAGE_ID) : null;
+    return isManagedPiExtensionsPackageEntry(entry) ? `npm:${parseNpmPackageName(PROJECT_EXTENSION_PACKAGE_ID)}` : null;
 }
 
 /** The first settings entry that provides the same package as `pkgId` by another source. */
@@ -466,16 +476,17 @@ export interface DuplicatePiPackageProvider {
 export async function findDeclaredDuplicatePiPackageProvider(
     pkgId: string,
     agentDir: string = PI_AGENT_DIR,
-    projectRoot?: string,
+    projectRoots?: string | readonly string[],
 ): Promise<DuplicatePiPackageProvider | null> {
     // Both roots are chosen by xt (the agent dir, the repo being updated) and
     // both files are only read.
     // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     const agentSettings = path.join(agentDir, 'settings.json');
+    const projectSettings = typeof projectRoots === 'string' ? [projectRoots] : [...(projectRoots ?? [])];
     const files = [
         agentSettings,
         // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-        ...(projectRoot ? [path.join(projectRoot, '.pi', 'settings.json')] : []),
+        ...projectSettings.map((root) => path.join(root, '.pi', 'settings.json')),
     ];
     for (const file of files) {
         let settings: PiSettingsShape;
@@ -901,7 +912,7 @@ export async function assureXtManagedPiPackages(
     agentDir: string = PI_AGENT_DIR,
     installRunner: PiPackageInstallRunner = runPiPackageInstall,
     versionProvider?: PiPackageVersionProvider,
-    projectRoot?: string,
+    projectRoots?: string | readonly string[],
 ): Promise<PiPackageAssuranceResult> {
     const npmRootDir = await resolveGlobalNpmRootDir();
     const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
@@ -919,7 +930,7 @@ export async function assureXtManagedPiPackages(
     for (const status of statuses) {
         const needsInstall = status.state === 'missing' || status.state === 'outdated';
         const duplicate = needsInstall
-            ? await findDeclaredDuplicatePiPackageProvider(status.pkg.id, agentDir, projectRoot)
+            ? await findDeclaredDuplicatePiPackageProvider(status.pkg.id, agentDir, projectRoots)
             : null;
         if (duplicate) {
             provided.push(status.pkg.id);
@@ -1679,53 +1690,115 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
 }
 
 // ── Post-apply pi startup smoke check (CORE-2342) ──────────────────────────
+//
+// The probe runs `pi` with no prompt, no TTY and no session: pi loads every
+// configured extension during startup and then exits. Nothing is sent to a
+// model — there is no prompt to answer — and `--offline` keeps startup network
+// operations out of the picture. A duplicated package fails here with the very
+// error a real session shows:
+//
+//   Error: Failed to load extension ".../@jaggerxtrm/pi-extensions/src/index.ts":
+//     Tool "find" conflicts with /home/dawid/dev/core/packages/pi-extensions/src/index.ts
+//
+// Measured on the Mercury host at `nice -n 19` under a 30-agent load: 9 s floor
+// (identical with `--no-extensions`, so the cost is pi's own boot, not the
+// extension load), 25-40 s observed worst case, one run over 60 s. The timeout
+// covers that distribution; a probe that cannot finish is inconclusive, never
+// ok. The previous 120 s budget was only ever hit by a probe that answered a
+// prompt — this one cannot make a model call at all.
 
-/** Provider name that cannot resolve, so the probe aborts before any model call. */
-const PI_STARTUP_SMOKE_PROVIDER = 'xt-startup-smoke-probe';
-const PI_STARTUP_SMOKE_TIMEOUT_MS = 120_000;
-const PI_EXTENSION_LOAD_FAILURE = /Failed to load extension/;
+const PI_STARTUP_SMOKE_TIMEOUT_MS = 60_000;
+const PI_EXTENSION_LOAD_FAILURE = 'Failed to load extension';
+
+export type PiStartupSmokeStatus = 'ok' | 'failed' | 'inconclusive' | 'skipped';
 
 export interface PiStartupSmokeResult {
+    status: PiStartupSmokeStatus;
+    /** True only for `ok`. */
     ok: boolean;
-    /** First extension-load failure, or a positive confirmation when `ok`. */
+    /** The actual cause, quoted from the probe. No boilerplate. */
     detail: string;
 }
 
-export type PiStartupSmokeRunner = () => { status: number | null; stdout: string; stderr: string };
+export interface PiStartupSmokeProbe {
+    status: number | null;
+    stdout: string;
+    stderr: string;
+    /** The probe was killed before it finished. */
+    timedOut?: boolean;
+    /** Set when pi could not be executed at all (e.g. not on PATH). */
+    spawnError?: string;
+}
 
-function runPiStartupSmokeProbe(): { status: number | null; stdout: string; stderr: string } {
-    const result = spawnSync('pi', [
-        '-p',
-        '--offline',
-        '--no-session',
-        '--provider',
-        PI_STARTUP_SMOKE_PROVIDER,
-        'xt pi startup smoke check',
-    ], { encoding: 'utf8', stdio: 'pipe', timeout: PI_STARTUP_SMOKE_TIMEOUT_MS });
+export type PiStartupSmokeRunner = () => PiStartupSmokeProbe;
+
+function runPiStartupSmokeProbe(): PiStartupSmokeProbe {
+    const result = spawnSync('pi', ['--offline'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: PI_STARTUP_SMOKE_TIMEOUT_MS,
+    });
+
+    if (result.error) {
+        const code = (result.error as NodeJS.ErrnoException).code;
+        if (code === 'ETIMEDOUT' || result.signal) {
+            return { status: null, stdout: '', stderr: '', timedOut: true };
+        }
+        return {
+            status: null,
+            stdout: '',
+            stderr: '',
+            spawnError: code === 'ENOENT' ? 'pi executable not found on PATH' : result.error.message,
+        };
+    }
 
     return {
         status: result.status,
         stdout: result.stdout ?? '',
         stderr: result.stderr ?? '',
+        timedOut: result.signal === 'SIGTERM' || result.signal === 'SIGKILL',
     };
 }
 
+function firstMeaningfulLine(output: string): string {
+    const line = output.split('\n').map((entry) => entry.trim()).find((entry) => entry.length > 0);
+    return line ?? '(no output)';
+}
+
 /**
- * Start pi far enough to load every configured extension, then abort before any
- * model call. A duplicate package fails here exactly as it fails a real
- * session: `Failed to load extension ... Tool "find" conflicts with ...`.
- * The exit code is not a usable signal (the probe always aborts on its bogus
- * provider), so the verdict comes from the extension-load output.
+ * Turn the probe result into a verdict. Only a clean exit with no
+ * extension-load failure counts as `ok`; anything else is reported with the
+ * cause that was actually observed.
  */
-export function checkPiStartupFromOutput(output: string): PiStartupSmokeResult {
-    const failure = output.split('\n').find((line) => PI_EXTENSION_LOAD_FAILURE.test(line));
-    if (failure) return { ok: false, detail: failure.trim() };
-    return { ok: true, detail: 'pi loaded every configured extension' };
+export function checkPiStartup(probe: PiStartupSmokeProbe): PiStartupSmokeResult {
+    if (probe.spawnError) {
+        return { status: 'skipped', ok: false, detail: `pi startup smoke check skipped: ${probe.spawnError}` };
+    }
+
+    const output = `${probe.stdout}\n${probe.stderr}`;
+    const loadFailure = output.split('\n').find((line) => line.includes(PI_EXTENSION_LOAD_FAILURE));
+    if (loadFailure) {
+        return { status: 'failed', ok: false, detail: loadFailure.trim() };
+    }
+    if (probe.timedOut) {
+        return {
+            status: 'inconclusive',
+            ok: false,
+            detail: `pi startup probe timed out after ${PI_STARTUP_SMOKE_TIMEOUT_MS / 1000}s before extension load finished`,
+        };
+    }
+    if (probe.status !== 0) {
+        return {
+            status: 'inconclusive',
+            ok: false,
+            detail: `pi startup probe exited ${probe.status} without an extension-load failure: ${firstMeaningfulLine(probe.stderr || probe.stdout)}`,
+        };
+    }
+    return { status: 'ok', ok: true, detail: 'pi loaded every configured extension (startup probe exit 0)' };
 }
 
 export async function runPiStartupSmokeCheck(
     run: PiStartupSmokeRunner = runPiStartupSmokeProbe,
 ): Promise<PiStartupSmokeResult> {
-    const result = run();
-    return checkPiStartupFromOutput(`${result.stdout}\n${result.stderr}`);
+    return checkPiStartup(run());
 }

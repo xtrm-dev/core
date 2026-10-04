@@ -22,6 +22,7 @@ const {
   ensureAgentsSkillsSymlinkMock,
   syncGlobalPromptsMock,
   printGlobalPromptSyncSummaryMock,
+  runPiStartupSmokeCheckMock,
 } = vi.hoisted(() => ({
   checkDriftMock: vi.fn(),
   runInstallMock: vi.fn(),
@@ -42,6 +43,7 @@ const {
   ensureAgentsSkillsSymlinkMock: vi.fn(),
   syncGlobalPromptsMock: vi.fn(),
   printGlobalPromptSyncSummaryMock: vi.fn(),
+  runPiStartupSmokeCheckMock: vi.fn(),
 }));
 
 vi.mock('../core/drift.js', () => ({
@@ -56,7 +58,7 @@ vi.mock('../core/pi-runtime.js', () => ({
   assureXtManagedPiPackages: assureXtManagedPiPackagesMock,
   runExternalPiToolPatch: runExternalPiToolPatchMock,
   // CORE-2342: post-apply startup probe. Mocked so tests never boot a real pi.
-  runPiStartupSmokeCheck: vi.fn(async () => ({ ok: true, detail: 'pi loaded every configured extension' })),
+  runPiStartupSmokeCheck: runPiStartupSmokeCheckMock,
 }));
 
 vi.mock('../commands/install.js', () => ({
@@ -132,6 +134,8 @@ beforeEach(() => {
   checkDriftMock.mockReset();
   runInstallMock.mockReset();
   assureXtManagedPiPackagesMock.mockReset();
+  runPiStartupSmokeCheckMock.mockReset();
+  runPiStartupSmokeCheckMock.mockResolvedValue({ status: 'ok', ok: true, detail: 'pi loaded every configured extension (startup probe exit 0)' });
   runExternalPiToolPatchMock.mockReset();
   resolvePackageRootMock.mockReset();
   planSubstrateMigrationMock.mockReset();
@@ -186,10 +190,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function runUpdateCli(args: string[]): Promise<{ logs: string[]; json?: unknown; exitCode: number | undefined }> {
+async function runUpdateCli(args: string[]): Promise<{ logs: string[]; errors: string[]; json?: unknown; exitCode: number | undefined }> {
   const logs: string[] = [];
+  const errors: string[] = [];
   const logSpy = vi.spyOn(console, 'log').mockImplementation((...values: unknown[]) => {
     logs.push(values.map(String).join(' '));
+  });
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...values: unknown[]) => {
+    errors.push(values.map(String).join(' '));
   });
   const previousExitCode = process.exitCode;
   process.exitCode = undefined;
@@ -198,10 +206,16 @@ async function runUpdateCli(args: string[]): Promise<{ logs: string[]; json?: un
     const command = createUpdateCommand();
     await command.parseAsync(['node', 'xtrm-update-test', ...args]);
     const jsonText = logs.join('\n');
-    return { logs, json: jsonText.includes('{') ? JSON.parse(jsonText) : undefined, exitCode: process.exitCode };
+    return {
+      logs,
+      errors,
+      json: jsonText.includes('{') ? JSON.parse(jsonText) : undefined,
+      exitCode: process.exitCode,
+    };
   } finally {
     process.exitCode = previousExitCode;
     logSpy.mockRestore();
+    errorSpy.mockRestore();
   }
 }
 
@@ -261,7 +275,7 @@ describe('xtrm update', () => {
       skipExternalPiToolPatch: true,
     }));
     // plain update is a dry run: package assurance must not install/mutate
-    expect(assureXtManagedPiPackagesMock).toHaveBeenCalledWith(true);
+    expect(assureXtManagedPiPackagesMock).toHaveBeenCalledWith(true, undefined, undefined, undefined, undefined, expect.any(Array));
     expect(result.logs.join('\n')).toContain('refreshed');
     expect(result.logs.join('\n')).not.toContain('already-current');
   });
@@ -480,7 +494,7 @@ describe('xtrm update', () => {
       undefined, // ponytail: globalRoots is undefined when HOME has no .xtrm/skills (CI temp HOME)
     );
     expect(runInstallMock).toHaveBeenCalledTimes(1);
-    expect(assureXtManagedPiPackagesMock).toHaveBeenCalledWith(false);
+    expect(assureXtManagedPiPackagesMock).toHaveBeenCalledWith(false, undefined, undefined, undefined, undefined, expect.any(Array));
     expect(runExternalPiToolPatchMock).toHaveBeenCalledWith(packageRoot, false);
     expect(assureXtManagedPiPackagesMock.mock.invocationCallOrder[0]).toBeLessThan(runExternalPiToolPatchMock.mock.invocationCallOrder[0]);
     expect(result.logs.join('\n')).toContain('refreshed');
@@ -582,6 +596,68 @@ describe('xtrm update', () => {
     const out = result.logs.join('\n');
     expect(out).toContain('refreshed');
     expect(out).toContain('claude hooks rewired');
+  });
+
+  // CORE-2342 review: the probe verdict must reach the operator and the exit code.
+  it('a failed smoke check fails the update with the real cause in the JSON envelope', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const repo = writeRepo(tmpDir, 'repo-a');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
+    const cause = 'Error: Failed to load extension "/home/.pi/agent/npm/node_modules/@jaggerxtrm/pi-extensions/src/index.ts": Tool "find" conflicts with /home/dawid/dev/core/packages/pi-extensions/src/index.ts';
+    runPiStartupSmokeCheckMock.mockResolvedValue({ status: 'failed', ok: false, detail: cause });
+
+    const result = await runUpdateCli(['--apply', '--json', '--repo', repo]);
+
+    expect(result.exitCode).toBe(1);
+    expect((result.json as { piStartupSmoke: { status: string; detail: string } }).piStartupSmoke)
+      .toEqual({ status: 'failed', ok: false, detail: cause });
+    expect(result.errors.join('\n')).toContain('Tool "find" conflicts with');
+    // The boilerplate claim about duplicate entries is gone; the cause speaks for itself.
+    expect(result.errors.join('\n')).not.toContain('registered more than once');
+  });
+
+  it('an inconclusive smoke check also fails the update', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const repo = writeRepo(tmpDir, 'repo-a');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
+    runPiStartupSmokeCheckMock.mockResolvedValue({ status: 'inconclusive', ok: false, detail: 'pi startup probe timed out after 60s' });
+
+    const result = await runUpdateCli(['--apply', '--json', '--repo', repo]);
+
+    expect(result.exitCode).toBe(1);
+    expect((result.json as { piStartupSmoke: { status: string } }).piStartupSmoke.status).toBe('inconclusive');
+    expect(result.errors.join('\n')).toContain('timed out');
+  });
+
+  it('a skipped smoke check (pi not installed) does not fail the update', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const repo = writeRepo(tmpDir, 'repo-a');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
+    runPiStartupSmokeCheckMock.mockResolvedValue({ status: 'skipped', ok: false, detail: 'pi startup smoke check skipped: pi executable not found on PATH' });
+
+    const result = await runUpdateCli(['--apply', '--json', '--repo', repo]);
+
+    expect(result.exitCode).toBeUndefined();
+    expect((result.json as { piStartupSmoke: { status: string } }).piStartupSmoke.status).toBe('skipped');
+    expect(result.errors.join('\n')).toContain('not found on PATH');
+  });
+
+  it('checks project-scoped duplicates: the targets reach the package assurance', async () => {
+    const packageRoot = writePackageRoot(path.join(tmpDir, 'package-root'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.2.3' });
+    const repo = writeRepo(tmpDir, 'repo-a');
+    resolvePackageRootMock.mockReturnValue(packageRoot);
+    checkDriftMock.mockResolvedValue({ missing: [], upToDate: ['asset.txt'], drifted: [] });
+
+    await runUpdateCli(['--apply', '--repo', repo]);
+
+    expect(assureXtManagedPiPackagesMock).toHaveBeenCalledWith(false, undefined, undefined, undefined, undefined, [repo]);
   });
 
   it('json output is valid JSON', async () => {

@@ -73,9 +73,23 @@ describe.skipIf(!sandboxE2eEnabled || !devCheckoutExists)('pi package duplicate 
     expect(extensionEntries).toEqual([DEV_PATH]);
 
     const smoke = await runPiStartupSmokeCheck();
-    expect(smoke.detail).toBeTruthy();
+    expect(smoke.status).toBe('ok');
     expect(smoke.ok).toBe(true);
+    expect(smoke.detail).toContain('startup probe exit 0');
   }, 300_000);
+
+  it('skips the check when pi is not on PATH, without failing the host', async () => {
+    const { runPiStartupSmokeCheck } = await import('../core/pi-runtime.js');
+    const previousPath = process.env.PATH;
+    process.env.PATH = '/usr/bin:/bin';
+    try {
+      const smoke = await runPiStartupSmokeCheck();
+      expect(smoke.status).toBe('skipped');
+      expect(smoke.detail).toContain('not found on PATH');
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  }, 120_000);
 
   it('still reports a pre-existing duplicate loudly (the failure it would have hidden)', async () => {
     const agentDir = process.env.PI_CODING_AGENT_DIR as string;
@@ -86,7 +100,10 @@ describe.skipIf(!sandboxE2eEnabled || !devCheckoutExists)('pi package duplicate 
     const { runPiStartupSmokeCheck } = await import('../core/pi-runtime.js');
     const smoke = await runPiStartupSmokeCheck();
 
+    expect(smoke.status).toBe('failed');
     expect(smoke.ok).toBe(false);
+    expect(smoke.detail).toContain('Failed to load extension');
     expect(smoke.detail).toContain('conflicts with');
+    expect(smoke.detail).not.toContain('registered more than once');
   }, 300_000);
 });

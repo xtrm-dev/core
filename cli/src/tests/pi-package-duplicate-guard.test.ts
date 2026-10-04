@@ -41,8 +41,8 @@ describe('pi package duplicate detection by package name (CORE-2342)', () => {
   it('treats a local dev checkout and the npm package as the same package', async () => {
     const { findDuplicatePiPackageProvider, resolvePiPackageEntryIdentity } = await import('../core/pi-runtime.js');
 
-    expect(resolvePiPackageEntryIdentity(NPM_EXTENSION_PKG)).toBe('@jaggerxtrm/pi-extensions');
-    expect(resolvePiPackageEntryIdentity(DEV_PATH)).toBe('@jaggerxtrm/pi-extensions');
+    expect(resolvePiPackageEntryIdentity(NPM_EXTENSION_PKG)).toBe('npm:@jaggerxtrm/pi-extensions');
+    expect(resolvePiPackageEntryIdentity(DEV_PATH)).toBe('npm:@jaggerxtrm/pi-extensions');
     expect(findDuplicatePiPackageProvider(NPM_EXTENSION_PKG, ['npm:pi-gitnexus', DEV_PATH])).toBe(DEV_PATH);
   });
 
@@ -55,11 +55,38 @@ describe('pi package duplicate detection by package name (CORE-2342)', () => {
     expect(findDuplicatePiPackageProvider('npm:other-extensions', [checkout])).toBeNull();
   });
 
-  it('matches across npm: and git: sources of the same package', async () => {
+  it('matches the same npm package under a different npm version selector', async () => {
     const { findDuplicatePiPackageProvider } = await import('../core/pi-runtime.js');
+    expect(findDuplicatePiPackageProvider(NPM_EXTENSION_PKG, ['npm:@jaggerxtrm/pi-extensions@0.15.1'])).toBe('npm:@jaggerxtrm/pi-extensions@0.15.1');
+  });
 
-    expect(findDuplicatePiPackageProvider('npm:@jaggerxtrm/pi-extensions', ['npm:@jaggerxtrm/pi-extensions@0.15.1'])).toBeTruthy();
-    expect(findDuplicatePiPackageProvider('npm:ponytail', ['git:github.com/DietrichGebert/ponytail'])).toBe('git:github.com/DietrichGebert/ponytail');
+  it('matches a scoped npm package against its own git repository', async () => {
+    const { findDuplicatePiPackageProvider } = await import('../core/pi-runtime.js');
+    expect(findDuplicatePiPackageProvider(NPM_EXTENSION_PKG, ['git:github.com/jaggerxtrm/pi-extensions']))
+      .toBe('git:github.com/jaggerxtrm/pi-extensions');
+  });
+
+  it('strips an @ref as well as a #ref from a git source', async () => {
+    const { findDuplicatePiPackageProvider, resolveGitSourceIdentity } = await import('../core/pi-runtime.js');
+    expect(resolveGitSourceIdentity('git:github.com/jaggerxtrm/pi-extensions@v1.2.3')).toBe('npm:@jaggerxtrm/pi-extensions');
+    expect(resolveGitSourceIdentity('git:github.com/jaggerxtrm/pi-extensions#main')).toBe('npm:@jaggerxtrm/pi-extensions');
+    expect(resolveGitSourceIdentity('git:https://github.com/jaggerxtrm/pi-extensions.git')).toBe('npm:@jaggerxtrm/pi-extensions');
+    expect(findDuplicatePiPackageProvider(NPM_EXTENSION_PKG, ['git:github.com/jaggerxtrm/pi-extensions@v1.2.3']))
+      .toBe('git:github.com/jaggerxtrm/pi-extensions@v1.2.3');
+  });
+
+  it('matches a git source against a local checkout of the same package', async () => {
+    const { findDuplicatePiPackageProvider } = await import('../core/pi-runtime.js');
+    const checkout = path.join(tempRoot, 'jaggerxtrm-pi-extensions');
+    await fs.outputJson(path.join(checkout, 'package.json'), { name: '@jaggerxtrm/pi-extensions' });
+    expect(findDuplicatePiPackageProvider('git:github.com/jaggerxtrm/pi-extensions', [checkout])).toBe(checkout);
+  });
+
+  it('does not match a same-named repo owned by somebody else', async () => {
+    const { findDuplicatePiPackageProvider } = await import('../core/pi-runtime.js');
+    // The owner is part of the identity: `other/ponytail` is not `ponytail`.
+    expect(findDuplicatePiPackageProvider('npm:ponytail', ['git:github.com/other/ponytail'])).toBeNull();
+    expect(findDuplicatePiPackageProvider('npm:@jaggerxtrm/pi-extensions', ['git:github.com/impostor/pi-extensions'])).toBeNull();
     expect(findDuplicatePiPackageProvider('npm:pi-gitnexus', ['npm:pi-gitnexus', DEV_PATH])).toBeNull();
   });
 
@@ -134,24 +161,60 @@ describe('the installer skips packages a configured source already provides (COR
   });
 });
 
-describe('pi startup smoke check (CORE-2342)', () => {
-  it('fails loudly on an extension-load conflict', async () => {
+describe('pi startup smoke check verdict (CORE-2342)', () => {
+  const conflictLine = 'Error: Failed to load extension "/home/.pi/agent/npm/node_modules/@jaggerxtrm/pi-extensions/src/index.ts": Tool "find" conflicts with /home/dawid/dev/core/packages/pi-extensions/src/index.ts';
+
+  it('fails with the exact extension-load cause', async () => {
     const { runPiStartupSmokeCheck } = await import('../core/pi-runtime.js');
 
-    const result = await runPiStartupSmokeCheck(() => ({
-      status: 1,
-      stdout: '',
-      stderr: `Error: Failed to load extension "/home/.pi/agent/npm/node_modules/@jaggerxtrm/pi-extensions/src/index.ts": Tool "find" conflicts with ${DEV_PATH}/src/index.ts`,
-    }));
+    const result = await runPiStartupSmokeCheck(() => ({ status: 1, stdout: '', stderr: conflictLine }));
 
-    expect(result.ok).toBe(false);
-    expect(result.detail).toContain('conflicts with');
+    expect(result).toEqual({ status: 'failed', ok: false, detail: conflictLine });
   });
 
-  it('passes when every configured extension loads', async () => {
+  it('passes only on a clean exit with no load failure', async () => {
     const { runPiStartupSmokeCheck } = await import('../core/pi-runtime.js');
 
-    expect(await runPiStartupSmokeCheck(() => ({ status: 1, stdout: '', stderr: 'Error: Unknown provider' })))
-      .toEqual({ ok: true, detail: 'pi loaded every configured extension' });
+    expect(await runPiStartupSmokeCheck(() => ({ status: 0, stdout: '', stderr: 'Warning: Extension package "x": heads up' })))
+      .toEqual({ status: 'ok', ok: true, detail: 'pi loaded every configured extension (startup probe exit 0)' });
+  });
+
+  it('never reports ok when the probe times out', async () => {
+    const { runPiStartupSmokeCheck } = await import('../core/pi-runtime.js');
+
+    const result = await runPiStartupSmokeCheck(() => ({ status: null, stdout: '', stderr: '', timedOut: true }));
+
+    expect(result.status).toBe('inconclusive');
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('timed out');
+  });
+
+  it('never reports ok on a non-zero exit without a load failure', async () => {
+    const { runPiStartupSmokeCheck } = await import('../core/pi-runtime.js');
+
+    const result = await runPiStartupSmokeCheck(() => ({ status: 3, stdout: '', stderr: 'Error: terminal is unavailable' }));
+
+    expect(result.status).toBe('inconclusive');
+    expect(result.detail).toContain('exited 3');
+    expect(result.detail).toContain('terminal is unavailable');
+  });
+
+  it('skips when pi cannot be executed at all', async () => {
+    const { runPiStartupSmokeCheck } = await import('../core/pi-runtime.js');
+
+    expect(await runPiStartupSmokeCheck(() => ({ status: null, stdout: '', stderr: '', spawnError: 'pi executable not found on PATH' })))
+      .toEqual({ status: 'skipped', ok: false, detail: 'pi startup smoke check skipped: pi executable not found on PATH' });
+  });
+
+  it('runs pi with no prompt and no session, so no model call can happen', async () => {
+    // The probe contract itself: `pi --offline`, stdin ignored. A probe that
+    // can answer a prompt is a bug (review 719 finding 1).
+    const { spawnSync } = await import('node:child_process');
+    const source = await fs.readFile(new URL('../core/pi-runtime.ts', import.meta.url), 'utf8');
+    const probeBlock = source.slice(source.indexOf('function runPiStartupSmokeProbe'));
+    expect(probeBlock).toContain("spawnSync('pi', ['--offline']");
+    expect(probeBlock).not.toContain("'-p'");
+    expect(probeBlock).not.toContain('xt-startup-smoke-probe');
+    expect(spawnSync).toBeTypeOf('function');
   });
 });
