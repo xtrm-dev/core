@@ -120,8 +120,10 @@ describe("wake card", () => {
     const card = formatSuggestionCard({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
     const plain = formatSuggestionPlain({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
     const lines = plain.split("\n");
-    // dot on its own header row, like a tool row
+    // dot on its own header row, like a tool row — white, out of the block
     expect(lines[0].startsWith("●")).toBe(true);
+    expect(card).toContain("\x1b[1m●\x1b[22m");
+    expect(card).not.toContain("\x1b[38;2;141;127;232m\x1b[1m●");
     expect(lines[0]).toContain("sb journal append");
     expect(lines[0]).toContain("CORE-9");
     // gold background + contrasting foreground + bold evidence
