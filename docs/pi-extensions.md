@@ -128,6 +128,8 @@ See `packages/pi-extensions/extensions/python-kernel/README.md`.
 
 Pi-side durable-work lifecycle enforcement and session continuity. These are runtime mechanics around claim/edit/commit/stop/continuation behavior; the higher-level work doctrine lives in XTRM skills and contracts.
 
+The `beads` edit gate consults `bd` first. Where `bd` itself is dead in the cwd (retired board, no database — e.g. Substrate-migrated repos), the gate falls back to a session-scoped Substrate marker under `~/.xtrm/claims/`, written on observed successful `sb issue claim <ref>` commands and rechecked with `sb issue show` (CORE-2357). Claim success notices fire only for successful commands with id-shaped refs; a failed claim stays silent.
+
 #### `sp-terminal-overlay`
 
 Operator-visible Specialist execution/feed overlays inside Pi.
