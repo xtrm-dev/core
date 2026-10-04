@@ -74,6 +74,60 @@ function logDecision(row: Record<string, unknown>): void {
  * projection gives the turns around the prompt — compaction-aware, so no
  * reading of this file can drift from what the model actually sees.
  */
+export interface TurnEvidence {
+  excerpt: string;
+  lastAssistant: string;
+  wasActive: boolean;
+  errored: boolean;
+  editedFiles: string[];
+  nextIdx: number;
+}
+
+/**
+ * The whole working turn, not just its last message.
+ *
+ * Final-message-only under-recalls: the intention often lives in an earlier
+ * assistant message, a tool error, or an edited file, and the finale is "done,
+ * let me verify". Cursor-based so consecutive turns do not double-count.
+ * Mirrors substrate-suggest's turnEvidence.
+ */
+export function turnEvidence(
+  messages: ReadonlyArray<{ role?: string; content?: unknown }>,
+  fromIdx: number,
+): TurnEvidence {
+  const parts: string[] = [];
+  const editedFiles: string[] = [];
+  let lastAssistant = "";
+  let wasActive = false;
+  let errored = false;
+  for (let i = Math.max(0, fromIdx); i < messages.length; i++) {
+    const m = messages[i];
+    const content = Array.isArray(m?.content) ? (m!.content as Array<Record<string, unknown>>) : [];
+    for (const p of content) {
+      const type = p?.["type"];
+      if (type === "text" && typeof p["text"] === "string") {
+        const text = p["text"];
+        if (m?.role === "assistant") lastAssistant = text;
+        if (text.trim()) parts.push(`${m?.role ?? "?"}: ${text.slice(0, 1200)}`);
+      } else if (type === "tool_call") {
+        const name = String(p["toolName"] ?? p["name"] ?? "");
+        wasActive = true;
+        if (/^(edit|write|apply_patch|multi_edit)$/.test(name)) {
+          const path = (p["input"] ?? p["args"] ?? {}) as Record<string, unknown>;
+          const file = ["file_path", "filePath", "path", "file"].map((k) => path[k]).find((v) => typeof v === "string");
+          if (typeof file === "string" && !editedFiles.includes(file)) editedFiles.push(file);
+        }
+        parts.push(`tool: ${name}`);
+      } else if (type === "tool_result" || type === "tool_error") {
+        wasActive = true;
+        errored = true;
+        parts.push(`tool_error: ${String(p["toolName"] ?? "").slice(0, 40)}`);
+      }
+    }
+  }
+  return { excerpt: parts.join("\n").slice(-8000), lastAssistant, wasActive, errored, editedFiles, nextIdx: messages.length };
+}
+
 export function conversationContext(
   messages: ReadonlyArray<{ role?: string; content?: unknown }> | undefined,
   maxChars = 1500,
@@ -125,6 +179,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     (process.env["SKILL_SUGGEST"] ?? "").toLowerCase() === "off";
 
   const cooldowns: Record<string, number> = {};
+  /** Advances per turn so consecutive turns do not double-count evidence. */
+  let messageCursor = 0;
   const cooldownOk = (id: string, now: number) => (cooldowns[id] === undefined || now >= cooldowns[id]);
   const cooldownSet = (id: string) => { cooldowns[id] = Date.now() + COOLDOWN_MIN * 60_000; };
 
@@ -299,16 +355,9 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     try {
       if (off()) return;
       const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
-      let lastAssistant = "";
-      let wasActive = false;
-      for (let i = Math.max(0, messages.length - 6); i < messages.length; i++) {
-        const m = messages[i];
-        const content = Array.isArray(m?.content) ? (m!.content as Array<Record<string, unknown>>) : [];
-        for (const p of content) {
-          if (p?.["type"] === "text" && typeof p["text"] === "string" && m?.role === "assistant") lastAssistant = p["text"];
-          if (p?.["type"] === "tool_call") wasActive = true;
-        }
-      }
+      const turn = turnEvidence(messages, messageCursor);
+      messageCursor = turn.nextIdx;
+      const { lastAssistant, wasActive } = turn;
       if (!lastAssistant || !wasActive) return;
       const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
       if (!registry && !readApiKey()) return;
@@ -317,6 +366,9 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
       const result = await askJev(registry, {
         agent_final_message: lastAssistant.slice(0, 1500),
+        working_turn_excerpt: turn.excerpt.slice(0, 6000),
+        edited_files: turn.editedFiles.slice(0, 8),
+        turn_had_error: turn.errored,
       }, {
         skill: {
           type: "choice",
