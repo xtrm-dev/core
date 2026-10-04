@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Edit gate honors Substrate claims where `bd` is dead: session-scoped markers under `~/.xtrm/claims/` unblock edits when `bd` has no database, rechecked with `sb issue show`; claim success notices now fire only for successful commands with id-shaped refs (CORE-2357)
-
 ## [0.15.2] - 2026-10-04
 
 ### Fixed
