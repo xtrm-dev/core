@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-10-04
+
+### Fixed
+- Start xt worktree branches at fresh origin/<default> (CORE-2340) (#704) ([61c66c2](https://github.com/xtrm-dev/core/commit/61c66c250c536dc40a940eb6fc35db22c86dc25f))
+- One channel — doctrine fires as its own message; docs synced ([bebcbc7](https://github.com/xtrm-dev/core/commit/bebcbc7902c9d1e0964abc6e5e80b950fc1343b7))
+
+### Other changes
+- Merge main into fix/registry-refresh-0.15.0 ([f0f9fc9](https://github.com/xtrm-dev/core/commit/f0f9fc9eb77f1de9c5456d7fe351a07816eee266))
+- Merge remote branch state ([b04de2b](https://github.com/xtrm-dev/core/commit/b04de2bc828a99f6b0633b10c7f4b2a9e5fbe46f))
+
+### Project maintenance
+- Regenerate registry.json for the 0.15.0 version bump ([1389df4](https://github.com/xtrm-dev/core/commit/1389df4942f8eb18eaa98f589a4dc34e9c6a8e49))
+- Compact skill card — one boxed row on the agent_end seam ([811f651](https://github.com/xtrm-dev/core/commit/811f6516750f4e767782288c97507fde74489910))
+
 ## [0.15.0] - 2026-10-03
 
 ### Added
