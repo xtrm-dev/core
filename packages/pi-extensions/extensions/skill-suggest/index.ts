@@ -38,6 +38,15 @@ import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, t
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../substrate-suggest/jev.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
+/** The last extension context seen, so the input handler can reach the session. */
+let latestCtx: unknown = null;
+
+/** Minimal read-only slice of ReadonlySessionManager that we depend on. */
+interface ReadonlySessionManagerLike {
+  getEntries?: () => unknown[];
+  buildSessionProjection?: (entries: unknown[], leafId?: string | null) => { messages?: unknown[] };
+}
+
 const CUSTOM_TYPE = "skill_suggestion";
 const LOG_DIR = join(homedir(), ".xtrm", "skill-suggest");
 const LOG_FILE = join(LOG_DIR, "log.jsonl");
@@ -55,6 +64,35 @@ function logDecision(row: Record<string, unknown>): void {
   } catch {
     /* logging is best-effort */
   }
+}
+
+/**
+ * Recent conversation, compressed for the classifier.
+ *
+ * The input seam sees only the operator's prompt, which is why Jev kept
+ * matching doctrine by surface words ("skill", "wait"). The session
+ * projection gives the turns around the prompt — compaction-aware, so no
+ * reading of this file can drift from what the model actually sees.
+ */
+export function conversationContext(
+  messages: ReadonlyArray<{ role?: string; content?: unknown }> | undefined,
+  maxChars = 1500,
+): string {
+  if (!messages?.length) return "";
+  const turns: string[] = [];
+  for (const m of messages) {
+    const role = m?.role === "user" ? "operator" : m?.role === "assistant" ? "agent" : null;
+    if (!role) continue;
+    const parts = Array.isArray(m?.content) ? (m.content as Array<Record<string, unknown>>) : [];
+    const text = parts
+      .filter((p) => p?.["type"] === "text" && typeof p["text"] === "string")
+      .map((p) => String(p["text"]).replace(/\s+/g, " ").trim())
+      .join(" ")
+      .slice(0, 400);
+    if (text) turns.push(`${role}: ${text}`);
+  }
+  const recent = turns.slice(-6);
+  return recent.join("\n").slice(-maxChars);
 }
 
 /** Shared Jev runner for both seams: Pi-native classifier first, REST second. */
@@ -122,7 +160,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     });
   }
 
-  const handler = async (event: { text?: string }, ctx?: { modelRegistry?: unknown }) => {
+  const handler = async (event: { text?: string }, ctx?: { modelRegistry?: unknown; sessionManager?: unknown }) => {
+    latestCtx = ctx;
     if (off()) return { action: "continue" } as const;
     const prompt = typeof event?.text === "string" ? event.text : "";
     if (prompt.trim().length < 8 || prompt.startsWith("/")) return { action: "continue" } as const; // commands decide for themselves
@@ -157,7 +196,11 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           instructions: "Is the request a question ABOUT this assistant, its extensions, its skills, prompts, cards or output — i.e. meta/tooling talk rather than a task that doctrine should govern? (Counts against suggesting.)",
         },
       };
-      const state = { request: prompt.slice(0, 2000), cwd: process.cwd() };
+      const state = {
+        request: prompt.slice(0, 2000),
+        recent_conversation: recentContext(prompt),
+        cwd: process.cwd(),
+      };
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), INJECT_TIMEOUT_MS);
       let result: Awaited<ReturnType<typeof classifyViaRegistry>> = null;
@@ -229,6 +272,25 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
   // The input seam: transform the prompt before the turn starts.
   pi.on("input", handler as never);
+
+  // Conversation context for the classifier, read from the session projection
+  // (compaction-aware). InputEvent itself carries only the new text, so this
+  // is the only way the seam sees what the conversation is actually about.
+  function recentContext(prompt: string): string {
+    const manager = (latestCtx as { sessionManager?: ReadonlySessionManagerLike } | undefined)?.sessionManager;
+    if (!manager) return "";
+    try {
+      const entries = manager.getEntries?.();
+      const projection = manager.buildSessionProjection?.(entries ?? []);
+      const messages = projection?.messages as ReadonlyArray<{ role?: string; content?: unknown }> | undefined;
+      // The prompt about to be evaluated is already in the projection; drop
+      // the duplicate tail so Jev does not read it twice.
+      const trimmed = messages?.filter((m) => !(m?.role === "user" && String(Array.isArray(m.content) ? JSON.stringify(m.content) : "").includes(prompt.trim().slice(0, 60))));
+      return conversationContext(trimmed ?? messages);
+    } catch {
+      return "";
+    }
+  }
 
   // The intention seam: the agent declares what it is doing in its own final
   // message. Same two-stage Jev over the turn evidence; the doctrine rides
