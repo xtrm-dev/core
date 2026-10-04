@@ -57,35 +57,17 @@ describe("labelled injected context", () => {
   });
 });
 
-describe("one channel: no prompt rewrite", () => {
-  it("the input seam sends the doctrine as a message instead of transforming the prompt", async () => {
-    // Anchor the probe to this file, not the cwd: the suite runs both from
-    // the repo root and from packages/pi-extensions.
+describe("input seam delivery", () => {
+  it("uses the ordered prompt transform and emits no card", async () => {
+    // Anchor the probe to this file, not the cwd: the suite runs from both.
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
-    // The input seam must not return a transform: that is what made the
-    // operator see the doctrine twice and blurred their own words.
-    expect(src).not.toContain('action: "transform"');
-    expect(src).toContain('content: block');
-    expect(src).toContain('seam: "input"');
-    // the renderer, not the message, carries the house chrome
-    expect(src).toContain("renderCardBox");
-  });
-});
-
-describe("compact skill card", () => {
-  it("is one boxed row with no instruction body", () => {
-    const card = formatSuggestionPlain({
-      verb: { id: "skill_suggest", action: "skill loaded · engineering-quality/verification", oneLine: "x", instruction: () => "SHOULD NOT APPEAR", severity: "normal", cooldownMin: 30, source: "jev" },
-      ref: "—",
-      confidence: 0.36,
-      compact: true,
-    });
-    const lines = card.split("\n");
-    expect(lines).toHaveLength(3);
-    expect(card).toContain("skill loaded · engineering-quality/verification");
-    expect(card).toContain("jev 0.36");
-    expect(card).not.toContain("SHOULD NOT APPEAR");
-    expect(new Set(lines.map((l) => [...l].length)).size).toBe(1);
+    const at = src.indexOf('delivery: "prompt-transform"');
+    const seam = src.slice(at - 2000, at + 200);
+    // Ordered delivery: the transform is the only race-free path at input.
+    expect(seam).toContain('action: "transform"');
+    // No second channel at this seam — the block in the prompt is the delivery,
+    // so the operator never sees the doctrine twice.
+    expect(seam).not.toContain("pi.sendMessage(");
   });
 });
 

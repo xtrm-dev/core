@@ -214,21 +214,14 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         ].filter(Boolean).join("\n"),
       });
 
-      // One channel, not two. Rewriting the operator's prompt showed them the
-      // doctrine twice (card + mutated message) and made their own words look
-      // like injected text. The doctrine is now its own labelled message and
-      // the renderer draws the house box around it for the operator.
-      pi.sendMessage(
-        {
-          customType: CUSTOM_TYPE,
-          content: block,
-          display: true,
-          details: { skill: entry.id, level: entry.level, seam: "input" },
-        },
-        { deliverAs: "followUp", triggerTurn: true },
-      );
+      // The prompt transform is the only ordered delivery at this seam: a
+      // sendMessage here races the in-flight turn ("Agent is already
+      // processing") and displaced the operator's own prompt in the TUI.
+      // No card is emitted for this seam — the labelled block appended to the
+      // prompt is the whole delivery, so nothing is shown twice.
+      logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "prompt-transform" });
 
-      return { action: "continue" } as const;
+      return { action: "transform", text: `${prompt}\n\n${block}` } as const;
     } catch {
       return { action: "continue" } as const; // fail-open: prompt untouched
     }
