@@ -57,6 +57,19 @@ const INJECT_TIMEOUT_MS = 2500;
 
 const COOLDOWN_MIN = 30;
 
+/**
+ * Bare control nudges ("continue", "go on", "yes") mean resume, not new work:
+ * they carry no task context for a doctrine to attach to. Deterministic, so
+ * no classifier call is spent on them. Anything with extra words falls
+ * through — a real request that happens to start with "continue, check the
+ * PR checks" still gets evaluated.
+ */
+export function isControlNudge(prompt: string): boolean {
+  const t = prompt.trim().toLowerCase().replace(/[.!\u2026]+$/, "").replace(/\s+/g, " ");
+  if (t.split(" ").length > 3) return false;
+  return /^(continue|cont|go on|go ahead|proceed|carry on|keep going|next|yes|yep|yeah|ok|okay|k|do it|go|thanks|thank you|ty|nice|cool|perfect|great)( please| pls| now| then| on)?$/.test(t);
+}
+
 function logDecision(row: Record<string, unknown>): void {
   try {
     mkdirSync(LOG_DIR, { recursive: true });
@@ -220,7 +233,9 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     latestCtx = ctx;
     if (off()) return { action: "continue" } as const;
     const prompt = typeof event?.text === "string" ? event.text : "";
-    if (prompt.trim().length < 8 || prompt.startsWith("/")) return { action: "continue" } as const; // commands decide for themselves
+    if (prompt.startsWith("/")) return { action: "continue" } as const; // commands decide for themselves
+    if (isControlNudge(prompt)) return { action: "continue" } as const; // "continue" carries no task signal
+    if (prompt.trim().length < 12) return { action: "continue" } as const;
 
     const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
     if (!registry && !readApiKey()) return { action: "continue" } as const;
