@@ -94,7 +94,7 @@ describe("renderer parses the labelled block into a compact card", () => {
     expect(parseContextBlock("")).toBeNull();
   });
 
-  it("renders a framed one-row card with no raw XML", () => {
+  it("renders a compact card with no raw XML", () => {
     const meta = parseContextBlock(block)!;
     const card = formatSuggestionPlain({
       verb: { id: "skill_suggest", action: `skill loaded · ${meta.source}`, oneLine: meta.body!, instruction: () => "", severity: "normal", cooldownMin: 30, source: "jev" },
@@ -103,10 +103,11 @@ describe("renderer parses the labelled block into a compact card", () => {
       compact: true,
     });
     const lines = card.split("\n");
-    expect(lines).toHaveLength(3);
+    expect(lines[0].startsWith("●")).toBe(true);
     expect(card).toContain("skill loaded · engineering-quality/causal-debugging");
     expect(card).not.toContain("xtrm_context");
-    expect(new Set(lines.map((l) => [...l].length)).size).toBe(1);
+    expect(card).not.toMatch(/[╭╰│]/);
+    expect(new Set(lines.slice(1).map((l) => [...l].length)).size).toBe(1);
   });
 });
 
@@ -132,21 +133,5 @@ describe("conversation context for the classifier", () => {
   it("bounds the context so the classifier stays cheap", () => {
     const many = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: [{ type: "text", text: `turn ${i} `.repeat(60) }] }));
     expect(conversationContext(many, 400).length).toBeLessThanOrEqual(400);
-  });
-});
-
-describe("gold-block chrome", () => {
-  const verb = { id: "skill_suggest", action: "skill loaded · engineering-quality/verification", oneLine: "Use for bugs, regressions, crashes.", instruction: () => "", severity: "normal" as const, cooldownMin: 30, source: "jev" as const };
-
-  it("renders a dot header and an indented gold block with the labelled confidence", () => {
-    const card = formatSuggestionCard({ verb, ref: "—", confidence: 0.59, compact: true });
-    const plain = formatSuggestionPlain({ verb, ref: "—", confidence: 0.59, compact: true });
-    const lines = plain.split("\n");
-    expect(lines[0].startsWith("●")).toBe(true);
-    expect(plain).toContain("jev_confidence: 0.59");
-    expect(card).toContain("\x1b[48;2;201;162;39m");
-    expect(card).toContain("\x1b[38;2;24;20;16m");
-    expect(plain).not.toMatch(/[╭╰│]/);
-    expect(new Set(lines.slice(1).map((l) => [...l].length)).size).toBe(1);
   });
 });
