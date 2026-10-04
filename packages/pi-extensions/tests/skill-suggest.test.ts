@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
-import { conversationContext } from "../extensions/skill-suggest/index.ts";
+import { conversationContext, turnEvidence } from "../extensions/skill-suggest/index.ts";
 import { contextBlock, formatSuggestionPlain, parseContextBlock } from "../extensions/substrate-suggest/catalog.ts";
 
 describe("roster parsing", () => {
@@ -132,5 +132,37 @@ describe("conversation context for the classifier", () => {
   it("bounds the context so the classifier stays cheap", () => {
     const many = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: [{ type: "text", text: `turn ${i} `.repeat(60) }] }));
     expect(conversationContext(many, 400).length).toBeLessThanOrEqual(400);
+  });
+});
+
+describe("turn evidence beats final-message-only", () => {
+  const turn = [
+    { role: "user", content: [{ type: "text", text: "the auth test fails intermittently" }] },
+    { role: "assistant", content: [{ type: "text", text: "I suspect the fixture races." }, { type: "tool_call", toolName: "bash", input: { command: "npm test" } }] },
+    { role: "assistant", content: [{ type: "tool_result", toolName: "bash" }] },
+    { role: "assistant", content: [{ type: "tool_call", toolName: "edit", input: { file_path: "src/auth.ts" } }] },
+    { role: "assistant", content: [{ type: "text", text: "Done — verifying now." }] },
+  ];
+
+  it("captures activity, errors and edited files the final message hides", () => {
+    const ev = turnEvidence(turn, 0);
+    expect(ev.lastAssistant).toBe("Done — verifying now.");
+    expect(ev.wasActive).toBe(true);
+    expect(ev.errored).toBe(true);
+    expect(ev.editedFiles).toEqual(["src/auth.ts"]);
+    expect(ev.excerpt).toContain("user: the auth test fails intermittently");
+    expect(ev.excerpt).toContain("tool: bash");
+  });
+
+  it("advances its cursor so consecutive turns do not double-count", () => {
+    const first = turnEvidence(turn, 0);
+    expect(first.nextIdx).toBe(turn.length);
+    const next = turnEvidence([...turn, { role: "assistant", content: [{ type: "text", text: "new turn" }] }], first.nextIdx);
+    expect(next.excerpt).toBe("assistant: new turn");
+  });
+
+  it("bounds the excerpt", () => {
+    const huge = [{ role: "assistant", content: [{ type: "text", text: "x".repeat(5000) }] }];
+    expect(turnEvidence(huge, 0).excerpt.length).toBeLessThanOrEqual(8000);
   });
 });
