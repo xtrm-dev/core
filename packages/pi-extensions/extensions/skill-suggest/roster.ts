@@ -70,7 +70,21 @@ export function extractReferenceSummary(md: string): { name: string; description
   const withoutFront = md.replace(/^---\r?\n[\s\S]*?\r?\n---/, "");
   const heading = /^#\s+(.+)$/m.exec(withoutFront)?.[1]?.trim() ?? "";
   const body = withoutFront.slice(withoutFront.indexOf(heading) + heading.length);
-  const para = body.split(/\n\s*\n/).map((s) => s.replace(/[#*`>\[\]]/g, "").replace(/\s+/g, " ").trim()).find((s) => s.length > 30) ?? "";
+  // Reference docs are often list-shaped. A numbered step ("1. Freeze new
+  // work assignment to it.") is a procedure fragment, not a summary — feeding
+  // it to Jev as criteria produced weak matches (messy-run-recovery at 0.31).
+  // Prefer the first prose block; fall back to the first sentence of a list.
+  const blocks = body
+    .split(/\n\s*\n/)
+    .map((s) => s.replace(/[#*`>\[\]]/g, "").replace(/\s+/g, " ").trim())
+    .filter((s) => s.length > 30);
+  const isList = (s: string) => /^(?:[-*\u2022]|\d+[.)])\s/.test(s);
+  const prose = blocks.find((s) => !isList(s));
+  const listy = blocks.find((s) => isList(s));
+  // Strip list markers (leading and inline "2." "3.") before taking a sentence,
+  // otherwise the first "1." wins and the description is one character.
+  const unlisted = listy ? listy.replace(/^(?:[-*\u2022]|\d+[.)])\s+/, "").replace(/\s+\d+[.)]\s+/g, " ") : "";
+  const para = prose ?? (unlisted ? (unlisted.match(/^(.*?[.:;])(\s|$)/)?.[1] ?? unlisted) : "");
   const name = heading || para.split(/[.:—]/)[0].slice(0, 60) || "reference";
   const description = (para || heading).slice(0, DESC_MAX);
   return { name, description: description.length > 0 ? description : heading };
