@@ -174,15 +174,15 @@ It uses deterministic rules first and queries Jev (Typesafe System One Choice an
 - **Service knowledge:** points agents toward relevant service skills defined in `.xtrm/skills/<pack>/service-knowledge/service-registry.json`.
 - **Tool nudges:** gently steers recursive `grep` and ad-hoc `python3` invocations toward faster, indexed alternatives (`ast-grep`, `GitNexus`, and `python-kernel`).
 
-Suggestions appear as house cards (purple `●` dot, dim metadata, and ignore-if-not-fits wording). Suggestions are purely advisory, fail open, enforce per-scope cooldowns, log decisions to `~/.xtrm/substrate-suggest/log.jsonl`, and can be disabled with `--no-substrate-suggest` or `SUBSTRATE_SUGGEST=off`.
+Suggestions appear as house cards: a dim purple box (`#8d7fe8`) with a `(● suggestion)` title, italic interior, and magenta-bold highlights on the tokens you act on (issue refs, `sb`/`bg_run`/`intercom` calls, file paths). Every injected block carries `<xtrm_context>` provenance so injected doctrine never blurs with the operator's own words. Suggestions are purely advisory, fail open, enforce per-scope cooldowns, log decisions to `~/.xtrm/substrate-suggest/log.jsonl`, and can be disabled with `--no-substrate-suggest` or `SUBSTRATE_SUGGEST=off`.
 
 ### `skill-suggest`
 
 `skill-suggest` brings Jev skill suggestions natively into Pi over curated XTRM skill packs.
 
 It maintains a two-tier roster covering both top-level skills (`SKILL.md`) and their nested reference doctrine (`references/*.md`):
-- **Input seam:** transforms user prompts before a turn by naming the relevant skill or reference in a `<skill_relevance>` pointer block (id, one-line description, file path) — the model reads the file itself.
-- **Intention seam (`agent_end`):** inspects the agent's own final message to determine if its stated next step requires specific doctrine, injecting the same pointer block as a `followUp` for the next turn.
+- **Input seam:** names the relevant skill or reference in a labelled `<xtrm_context kind="skill-doctrine">` block (id, one-line description, file path) and posts it as its own message — the operator's prompt is never rewritten, so their words stay their words. The model reads the file itself.
+- **Intention seam (`agent_end`):** inspects the agent's own final message to determine if its stated next step requires specific doctrine, delivering the same labelled block as a `followUp` for the next turn.
 
 Decisions are gated by a two-stage Jev classification (evaluating whether documented procedure is needed and whether prose alone suffices, followed by Choice selection). Typed `/skill:<name>` commands continue to work directly. Evaluations log to `~/.xtrm/skill-suggest/log.jsonl`, and the extension can be disabled with `--no-skill-suggest` or `SKILL_SUGGEST=off`.
 
