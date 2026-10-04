@@ -15,6 +15,7 @@ export function createCodexCommand(): Command {
         .option('--json', 'With --no-attach: emit one xtrm.command-outcome.v1 JSON object')
         .option('--yolo', 'Disable sandboxing and approval prompts (default)', true)
         .option('--no-yolo', 'Use workspace-write sandboxing with on-request approval')
+        .option('--base <ref>', 'Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)')
         .allowExcessArguments(true)
         .allowUnknownOption(true)
         .addHelpText('after', `
@@ -35,6 +36,7 @@ Status:
             attach?: boolean;
             json?: boolean;
             yolo?: boolean;
+            base?: string;
         }, command: Command) => {
             const passthrough = command.args.slice(name === undefined ? 0 : 1);
             await launchCodexWorktreeSession({
@@ -47,6 +49,7 @@ Status:
                 attach: opts.attach,
                 json: Boolean(opts.json),
                 yolo: opts.yolo !== false,
+                base: opts.base,
                 passthrough,
             });
         });
