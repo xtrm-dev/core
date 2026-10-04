@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
+import { conversationContext } from "../extensions/skill-suggest/index.ts";
 import { contextBlock, formatSuggestionPlain, parseContextBlock } from "../extensions/substrate-suggest/catalog.ts";
 
 describe("roster parsing", () => {
@@ -106,5 +107,30 @@ describe("renderer parses the labelled block into a compact card", () => {
     expect(card).toContain("skill loaded · engineering-quality/causal-debugging");
     expect(card).not.toContain("xtrm_context");
     expect(new Set(lines.map((l) => [...l].length)).size).toBe(1);
+  });
+});
+
+describe("conversation context for the classifier", () => {
+  const msgs = [
+    { role: "user", content: [{ type: "text", text: "why is the auth test flaky" }] },
+    { role: "assistant", content: [{ type: "text", text: "Looking at the trace: the fixture writes then reads." }, { type: "tool_call" }] },
+    { role: "user", content: [{ type: "text", text: "continue" }] },
+  ];
+
+  it("renders recent turns as operator/agent lines, ignoring tool calls", () => {
+    const ctx = conversationContext(msgs);
+    expect(ctx).toContain("operator: why is the auth test flaky");
+    expect(ctx).toContain("agent: Looking at the trace");
+    expect(ctx).not.toContain("tool_call");
+  });
+
+  it("returns empty when there is no projection (fail-open)", () => {
+    expect(conversationContext(undefined)).toBe("");
+    expect(conversationContext([])).toBe("");
+  });
+
+  it("bounds the context so the classifier stays cheap", () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: [{ type: "text", text: `turn ${i} `.repeat(60) }] }));
+    expect(conversationContext(many, 400).length).toBeLessThanOrEqual(400);
   });
 });
