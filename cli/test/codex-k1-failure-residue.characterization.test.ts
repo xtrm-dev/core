@@ -134,6 +134,17 @@ beforeAll(() => {
     fs.writeFileSync(path.join(repoDir, 'README.md'), '# test');
     git(['add', '.'], repoDir);
     git(['commit', '-m', 'init'], repoDir);
+
+    // CORE-2340: xt resolves the worktree base from a fetched
+    // origin/<default> and fails loudly when the fetch fails, so the sandbox
+    // repo needs an origin. A local bare remote keeps this offline; the push
+    // names the branch `main` explicitly so the fallback resolves regardless
+    // of the runner's init.defaultBranch.
+    const originDir = path.join(sandbox, 'origin.git');
+    fs.mkdirSync(originDir);
+    git(['init', '--bare'], originDir);
+    git(['remote', 'add', 'origin', originDir], repoDir);
+    git(['push', 'origin', 'HEAD:refs/heads/main'], repoDir);
 });
 
 afterAll(() => {
