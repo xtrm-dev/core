@@ -41,6 +41,9 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null } = {})
     const joined = args.join(' ');
     if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
     if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
+    if (command === 'git' && args[0] === 'fetch') return { status: 0, stdout: '', stderr: '' };
+    if (command === 'git' && args[0] === 'symbolic-ref') return { status: 0, stdout: 'origin/main\n', stderr: '' };
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === '--quiet' && (args[3] ?? '').startsWith('origin/')) return { status: 0, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'rev-parse') return { status: 1, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'config') return { status: 1, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'ls-files') return { status: 0, stdout: '', stderr: '' };
