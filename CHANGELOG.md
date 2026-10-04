@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-03
+
+### Added
+- Substrate-suggest always-wake, dot chrome, classifier fallback; xtrm-ui tool dot swap ([37216f2](https://github.com/xtrm-dev/core/commit/37216f2ef524ff35c99f5411fff407354e7997b3))
+- Duty sources — wait-guard and service-knowledge skill suggestions ([6962f87](https://github.com/xtrm-dev/core/commit/6962f875a5fec37dd70dc1b66095600c68671261))
+- Mid-turn territory-hit injection — jev-style intervention while working ([ad399b0](https://github.com/xtrm-dev/core/commit/ad399b0f0e307d083feac789b27b06469aacdc63))
+- Tool-nudge source — remind agents the better tool exists ([a5ccec8](https://github.com/xtrm-dev/core/commit/a5ccec8e2ca2b894568647c10080c2bb0a98c148))
+- Tool nudges render a chat card in the house style ([48a861a](https://github.com/xtrm-dev/core/commit/48a861a837557d791fbec60db2b2b2918270dbc7))
+- Every suggestion is visible — skill cards un-bound and territory hits get chat cards ([31b4cc9](https://github.com/xtrm-dev/core/commit/31b4cc96f11237ae07cc2a7f477071ee3de2dd1b))
+- Skill-suggest — Jev skill suggestion over the curated packs, two-tier ([3b007b4](https://github.com/xtrm-dev/core/commit/3b007b45766b6e9f76b75ba5ae702eebcac103d8))
+- Agent_end intention seam — doctrine follows the agent's stated next step ([b4945dd](https://github.com/xtrm-dev/core/commit/b4945dd4d1de4106f0a37ea729ad59f63bd4db99))
+- Log every evaluation — negatives are the tuning signal ([ec2a67f](https://github.com/xtrm-dev/core/commit/ec2a67f84a6dcf169b1e082f13c34193c08adb52))
+- Provenance-unread duty + engineering-quality memory pointer ([33786f2](https://github.com/xtrm-dev/core/commit/33786f20e15a5c3f2945546658f42726d55d8122))
+- Labelled <xtrm_context> injection + anti-tooling gate noul ([0088d4a](https://github.com/xtrm-dev/core/commit/0088d4acaab05d7d148e28a3a1fd12eb908ebd8e))
+
+### Fixed
+- Xt attach — managed-root worktrees, bounded slug matching, recency-ordered picker ([d1b86f7](https://github.com/xtrm-dev/core/commit/d1b86f708d54719e29a71c3a9bc27c5b2488b65b))
+- Observe specialist_dispatch results for in-session binding ([d5af06e](https://github.com/xtrm-dev/core/commit/d5af06ed27dad47672691a6df103f7d5608c11f7))
+- Wait-guard runs pre-binding, learns wake seams and arrival phrasing ([abf6c14](https://github.com/xtrm-dev/core/commit/abf6c14420f0421f51c9764da28a14aabcf8c413))
+- Per-service cooldown for territory-hit advisories ([cebbe5c](https://github.com/xtrm-dev/core/commit/cebbe5c33c309308a9c43b3091f579e407620f3e))
+- Line-wise frontmatter parser (folded scalars; JS regex has no \Z) ([78155fe](https://github.com/xtrm-dev/core/commit/78155fe850648ba65497b79a000e09f68849ef3f))
+- Wait-guard coverage from a live miss + pointer-only skill injection + sub-threshold confidence floor ([af55a0d](https://github.com/xtrm-dev/core/commit/af55a0d076798cd57a63e1e4a5c0184749f8f7d0))
+
+### Other changes
+- Merge origin/main (v0.14.1) into fix/substrate-suggest-wake-chrome ([4b0fb85](https://github.com/xtrm-dev/core/commit/4b0fb859802f32b25cdae262cc98d65cb4848fd5))
+- Merge origin/main (#697) into docs/jev-suggesters ([b72ef4f](https://github.com/xtrm-dev/core/commit/b72ef4f515115783a1d59edbfb5e812535588279))
+- Merge main (#699) into docs/jev-suggesters ([d96b023](https://github.com/xtrm-dev/core/commit/d96b02321bbd73d647e2bdfc61155943bc9f8381))
+- Merge main (#698) into fix/provenance-duty ([14de407](https://github.com/xtrm-dev/core/commit/14de4070cd3d745379c994f181f08eaac17d1d60))
+
+### Project maintenance
+- Rebuild dist for the attach fixes ([c8d124c](https://github.com/xtrm-dev/core/commit/c8d124cd83f038e8ccbd3242548c1caae1d1cde9))
+- Update glyph assertions to the house ● dot ([1316786](https://github.com/xtrm-dev/core/commit/13167868f8e28a3962f2c5f6a7c429739964028a))
+- Release notes v0.15.0 and README documentation for Jev suggesters ([b36ba4b](https://github.com/xtrm-dev/core/commit/b36ba4b34c2a3d0e6cbd779110f9ff20c26cbd44))
+- Match skill-suggest to the merged pointer-only injection (#699) ([88a65d6](https://github.com/xtrm-dev/core/commit/88a65d6cf21684571650f97eb365a70cb24e088b))
+- Regenerate registry.json after SKILL.md provenance pointer ([e9603cb](https://github.com/xtrm-dev/core/commit/e9603cb6dbc1975819ff9bba704137a771c45cef))
+- Box chrome — dim purple border, italic interior, highlighted tokens ([2f51bcd](https://github.com/xtrm-dev/core/commit/2f51bcd826aa5b831c512096cfd19690f2da62a6))
+
 ## [0.14.1] - 2026-10-03
 
 ### Added
