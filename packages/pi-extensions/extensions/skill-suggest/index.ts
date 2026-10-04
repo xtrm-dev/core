@@ -34,7 +34,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { contextBlock, formatSuggestionCard, renderCardBox, type VerbSpec } from "../substrate-suggest/catalog.ts";
+import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, type VerbSpec } from "../substrate-suggest/catalog.ts";
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../substrate-suggest/jev.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
@@ -96,7 +96,28 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       return {
         dispose: () => {},
         invalidate: () => {},
-        render: () => renderCardBox(String(content)).split("\n"),
+        render: () => {
+          // The message body is the model-visible labelled block; the operator
+          // gets a compact card parsed from it. Drawing the raw XML in a box
+          // clipped the frame and buried the operator's prompt.
+          const meta = parseContextBlock(String(content));
+          if (!meta) return renderCardBox(String(content)).split("\n");
+          return formatSuggestionCard({
+            verb: {
+              id: "skill_suggest",
+              action: `${meta.kind === "agent-settlement" ? "result settled" : "skill loaded"} · ${meta.source ?? "—"}`,
+              oneLine: meta.body ?? "",
+              instruction: () => "",
+              severity: "normal",
+              cooldownMin: COOLDOWN_MIN,
+              source: "jev",
+            },
+            ref: "—",
+            confidence: meta.confidence,
+            compact: true,
+          })
+            .split("\n");
+        },
       };
     });
   }

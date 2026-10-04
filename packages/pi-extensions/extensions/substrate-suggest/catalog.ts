@@ -333,6 +333,39 @@ export function contextBlock(
   ].join("\n");
 }
 
+/** Fields an operator card needs from a labelled <xtrm_context> block. */
+export interface ContextBlockMeta {
+  kind: string | null;
+  source: string | null;
+  about: string | null;
+  model: string | null;
+  confidence: number | null;
+  body: string | null;
+}
+
+const ATTR_RE = /(\w+)="([^"]*)"/g;
+
+/** Parse a labelled context block; null when the content is not one. */
+export function parseContextBlock(content: string): ContextBlockMeta | null {
+  const open = /^<xtrm_context\b([^>]*)>/.exec(content.trim());
+  if (!open) return null;
+  const meta: ContextBlockMeta = { kind: null, source: null, about: null, model: null, confidence: null, body: null };
+  for (const m of open[1].matchAll(ATTR_RE)) {
+    if (m[1] === "kind") meta.kind = m[2];
+    else if (m[1] === "source") meta.source = m[2];
+    else if (m[1] === "about") meta.about = m[2];
+    else if (m[1] === "by") meta.model = m[2];
+    else if (m[1] === "confidence") meta.confidence = Number.isFinite(Number(m[2])) ? Number(m[2]) : null;
+  }
+  const body = content.replace(/^<xtrm_context[^>]*>\n?/, "").replace(/<\/xtrm_context>\s*$/, "");
+  const first = body
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0 && l !== "Injected context, not the operator's words:");
+  meta.body = first ?? null;
+  return meta;
+}
+
 export interface SuggestionCard {
   verb: VerbSpec;
   ref: string;

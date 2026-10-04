@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
-import { contextBlock, formatSuggestionPlain } from "../extensions/substrate-suggest/catalog.ts";
+import { contextBlock, formatSuggestionPlain, parseContextBlock } from "../extensions/substrate-suggest/catalog.ts";
 
 describe("roster parsing", () => {
   it("parses folded and inline frontmatter descriptions", () => {
@@ -85,6 +85,44 @@ describe("compact skill card", () => {
     expect(card).toContain("skill loaded · engineering-quality/verification");
     expect(card).toContain("jev 0.36");
     expect(card).not.toContain("SHOULD NOT APPEAR");
+    expect(new Set(lines.map((l) => [...l].length)).size).toBe(1);
+  });
+});
+
+describe("renderer parses the labelled block into a compact card", () => {
+  const block = [
+    '<xtrm_context kind="skill-doctrine" source="engineering-quality/causal-debugging" about="the current request" by="jev-1.13-free" confidence="0.59">',
+    "Injected context, not the operator's words:",
+    "engineering-quality/causal-debugging — Use for bugs, regressions, crashes…",
+    "</xtrm_context>",
+  ].join("\n");
+
+  it("extracts kind, source and confidence", () => {
+    const meta = parseContextBlock(block)!;
+    expect(meta.kind).toBe("skill-doctrine");
+    expect(meta.source).toBe("engineering-quality/causal-debugging");
+    expect(meta.model).toBe("jev-1.13-free");
+    expect(meta.confidence).toBeCloseTo(0.59);
+    expect(meta.body).toContain("causal-debugging — Use for bugs");
+  });
+
+  it("returns null for content that is not a labelled block", () => {
+    expect(parseContextBlock("just text")).toBeNull();
+    expect(parseContextBlock("")).toBeNull();
+  });
+
+  it("renders a framed one-row card with no raw XML", () => {
+    const meta = parseContextBlock(block)!;
+    const card = formatSuggestionPlain({
+      verb: { id: "skill_suggest", action: `skill loaded · ${meta.source}`, oneLine: meta.body!, instruction: () => "", severity: "normal", cooldownMin: 30, source: "jev" },
+      ref: "—",
+      confidence: meta.confidence,
+      compact: true,
+    });
+    const lines = card.split("\n");
+    expect(lines).toHaveLength(3);
+    expect(card).toContain("skill loaded · engineering-quality/causal-debugging");
+    expect(card).not.toContain("xtrm_context");
     expect(new Set(lines.map((l) => [...l].length)).size).toBe(1);
   });
 });
