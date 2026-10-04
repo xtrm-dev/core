@@ -34,7 +34,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { contextBlock, formatSuggestionCard, type VerbSpec } from "../substrate-suggest/catalog.ts";
+import { contextBlock, formatSuggestionCard, renderCardBox, type VerbSpec } from "../substrate-suggest/catalog.ts";
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../substrate-suggest/jev.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
@@ -96,7 +96,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       return {
         dispose: () => {},
         invalidate: () => {},
-        render: () => String(content).split("\n"),
+        render: () => renderCardBox(String(content)).split("\n"),
       };
     });
   }
@@ -181,8 +181,6 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!cooldownOk(entry.id, Date.now())) return { action: "continue" } as const;
       cooldownSet(entry.id);
 
-      // Pointer, not content: the model has a read tool, so name the file and
-      // let it load what fits. A bounded excerpt duplicated the doc badly.
       const block = contextBlock("skill-doctrine", {
         about: `the current request`,
         source: entry.id,
@@ -195,17 +193,21 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         ].filter(Boolean).join("\n"),
       });
 
+      // One channel, not two. Rewriting the operator's prompt showed them the
+      // doctrine twice (card + mutated message) and made their own words look
+      // like injected text. The doctrine is now its own labelled message and
+      // the renderer draws the house box around it for the operator.
       pi.sendMessage(
         {
           customType: CUSTOM_TYPE,
-          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence }),
+          content: block,
           display: true,
-          details: { skill: entry.id, level: entry.level },
+          details: { skill: entry.id, level: entry.level, seam: "input" },
         },
-        { deliverAs: "followUp", triggerTurn: false },
+        { deliverAs: "followUp", triggerTurn: true },
       );
 
-      return { action: "transform", text: `${prompt}\n\n${block}` } as const;
+      return { action: "continue" } as const;
     } catch {
       return { action: "continue" } as const; // fail-open: prompt untouched
     }

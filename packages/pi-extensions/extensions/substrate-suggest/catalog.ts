@@ -278,7 +278,6 @@ function wrapRow(plain: string, ansi: (chunk: string) => string, inner: number):
 
 function box(title: string, rows: Row[]): string {
   const inner = Math.min(CARD_MAX, Math.max(CARD_MIN, ...rows.map((r) => r.plain.length + 1)));
-  // The title carries ANSI; measure its visible width, not its byte length.
   const titleLen = [...stripAnsi(title)].length;
   const top = `╭─ ${title} ${"─".repeat(Math.max(0, inner - titleLen - 3))}╮`;
   const bottom = STROKE(`╰${"─".repeat(inner)}╯`);
@@ -286,6 +285,26 @@ function box(title: string, rows: Row[]): string {
     (r) => `${STROKE("│")} ${r.ansi}${" ".repeat(Math.max(0, inner - 1 - r.plain.length))}${STROKE("│")}`,
   );
   return [top, ...body, bottom].join("\n");
+}
+
+/** Wrap already-built message content in the house box for the operator. */
+export function renderCardBox(content: string): string {
+  const lines = content.split("\n");
+  const inner = Math.min(CARD_MAX, Math.max(CARD_MIN, ...lines.map((l) => l.length + 1)));
+  const title = `${PURPLE}\x1b[1m●\x1b[22m ${CARD_TITLE}`;
+  const titleLen = [...stripAnsi(title)].length;
+  const top = `╭─ ${title} ${"─".repeat(Math.max(0, inner - titleLen - 3))}╮`;
+  const bottom = STROKE(`╰${"─".repeat(inner)}╯`);
+  const body = lines.map((l) => `${STROKE("│")} ${ITALIC(emphasizePlain(l))}${" ".repeat(Math.max(0, inner - 1 - l.length))}${STROKE("│")}`);
+  return [top, ...body, bottom].join("\n");
+}
+
+/** Plain-text emphasis used by the box renderer (no surrounding italic). */
+function emphasizePlain(plain: string): string {
+  return plain.replace(
+    /(`[^`]+`|\b(?:CORE|XTRM|SPECIALISTS)-[A-Z0-9]+|\b(?:sb|bg_run|bg_delegate|intercom|claude-link)\b|\bsubstrate_[a-z_]+\b|[\w./-]+\.(?:ts|mjs|py|md|json))\b/g,
+    (m) => HL(m),
+  );
 }
 
 /**
