@@ -320,6 +320,8 @@ export interface SuggestionCard {
   /** Deterministic rules carry no confidence; Jev picks do. */
   confidence?: number | null;
   revision?: number | null;
+  /** FYI card: one row, no instruction body. Duties stay two rows. */
+  compact?: boolean;
 }
 
 export function formatSuggestionCard(c: SuggestionCard): string {
@@ -332,15 +334,20 @@ export function formatSuggestionCard(c: SuggestionCard): string {
     .filter(Boolean)
     .join(" · ");
   const headerPlain = `${c.verb.action} · ${c.ref}`;
+  const headerRow = (plain: string) => `${HL(plain)}`;
+
+  if (c.compact) {
+    // FYI card: one row, facts folded in. A skill load is a pointer the
+    // model already received in the prompt; the card only says it happened.
+    const plain = facts ? `${headerPlain} · ${facts}` : headerPlain;
+    return box(title, [{ plain, ansi: `${headerRow(headerPlain)}${facts ? ` ${DIM("·")} ${DIM(facts)}` : ""}` }]);
+  }
+
   const instrPlain = `${c.verb.instruction(c.ref)} Ignore this if it does not fit what actually happened.${facts ? ` · ${facts}` : ""}`;
-  // Size the box from the widest visible row before wrapping.
-  const inner = Math.min(
-    CARD_MAX,
-    Math.max(CARD_MIN, headerPlain.length + 1, instrPlain.length + 1),
-  );
+  const inner = Math.min(CARD_MAX, Math.max(CARD_MIN, headerPlain.length + 1, instrPlain.length + 1));
   const rows: Row[] = [
-    ...wrapRow(headerPlain, (chunk) => `${HL(chunk)}`, inner),
-    ...wrapRow(instrPlain, (chunk) => emphasize(chunk), inner),
+    ...wrapRow(headerPlain, headerRow, inner),
+    ...wrapRow(instrPlain, emphasize, inner),
   ];
   return box(title, rows);
 }
