@@ -638,7 +638,11 @@ describe("python-kernel managed extension", () => {
         const kernel = new PythonKernel(fx.dir, () => {}, {}, [], null);
         const call = await kernel.runCell("sk_rebuild()", false);
         expect(call.error).toBeNull();
-        expect(call.stdout.trim()).toBe("None");
+        // The kernel execs cells with redirected stdout and does not echo
+        // expression values (it is not a REPL), so a None return produces
+        // no output. The contract is 'safe no-op': no error and no output.
+        expect(call.stderr.trim()).toBe("");
+        expect(call.stdout.trim()).toBe("");
         kernel.kill();
         return;
       }

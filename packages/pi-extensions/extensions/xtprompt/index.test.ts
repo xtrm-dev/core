@@ -510,7 +510,9 @@ describe("xtprompt", () => {
     ];
 
     for (const file of ["index.ts", "package.json"]) {
-      const content = readFileSync(join("packages/pi-extensions/extensions/xtprompt", file), "utf8").toLowerCase();
+      // Anchor to this file, not the cwd: the suite must behave identically
+      // when bun runs it from the repo root or from packages/pi-extensions.
+      const content = readFileSync(join(import.meta.dir, "..", "xtprompt", file), "utf8").toLowerCase();
       for (const forbiddenToken of forbiddenTokens) {
         expect(content.includes(forbiddenToken)).toBe(false);
       }
