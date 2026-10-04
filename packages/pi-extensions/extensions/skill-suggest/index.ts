@@ -284,7 +284,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       pi.sendMessage(
         {
           customType: CUSTOM_TYPE,
-          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence }),
+          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence, compact: true }),
           display: true,
           details: { skill: entry.id, level: entry.level, seam: "agent_end" },
         },
