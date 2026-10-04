@@ -187,6 +187,9 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
             const cwd = (mo.cwd as string | undefined) ?? process.cwd();
             return { status: 0, stdout: cwd.includes('subdir') ? '../.git\n' : '.git\n', stderr: '' };
         }
+        if (command === 'git' && args[0] === 'fetch') return { status: 0, stdout: '', stderr: '' };
+        if (command === 'git' && args[0] === 'symbolic-ref') return { status: 0, stdout: 'origin/main\n', stderr: '' };
+        if (command === 'git' && joined.startsWith('rev-parse --verify --quiet origin/')) return { status: 0, stdout: '', stderr: '' };
         if (command === 'git' && joined.startsWith('rev-parse --verify')) {
             return h.branchPreExists ? { status: 0, stdout: '', stderr: '' } : { status: 1, stdout: '', stderr: '' };
         }

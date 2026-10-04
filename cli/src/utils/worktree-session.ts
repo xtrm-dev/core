@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, unlink
 
 import { shouldUseGlobalSkills } from '../core/global-skills-flag.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
+import { fetchWorktreeBase } from './worktree-base.js';
 import { isSafeRuntimeLinkName } from '../core/skills-state.js';
 import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core/skills-layout.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
@@ -218,6 +219,8 @@ export interface WorktreeSessionOptions {
     skills?: string[];
     /** Raw argv after `--` on the xt pi command; forwarded verbatim to pi. */
     passthrough?: string[];
+    /** Explicit branch start point (e.g. origin/stable). Default: fresh origin/<default>, fetched first (CORE-2340). */
+    base?: string;
 }
 
 function worktreeHasProjectUserPacks(worktreePath: string): boolean {
@@ -3008,13 +3011,23 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     }).status === 0;
     const branchCreatedByLauncher = !branchExistedBefore;
 
+    // CORE-2340: the new branch must start at a fresh origin/<default>, never
+    // at the main checkout's local HEAD (on this multi-session host that is
+    // often another session's branch or a stale master). Offline is a hard
+    // error — a wrong base produces wrong PR diffs.
+    const base = fetchWorktreeBase(mainRepoRoot, opts.base);
+    if (!base.ok) {
+        console.error(kleur.red(`\n  ✗ Could not resolve worktree base: ${base.error}\n`));
+        process.exit(1);
+    }
+
     const branchExistsNow = spawnSync('git', ['rev-parse', '--verify', branchName], {
         cwd: mainRepoRoot, stdio: 'pipe',
     }).status === 0;
 
     const gitArgs = branchExistsNow
         ? ['worktree', 'add', worktreePath, branchName]
-        : ['worktree', 'add', '-b', branchName, worktreePath];
+        : ['worktree', 'add', '-b', branchName, worktreePath, base.ref];
 
     const gitResult = spawnSync('git', gitArgs, {
         cwd: mainRepoRoot,
@@ -3026,6 +3039,18 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         // for projects where bd manages the worktree layout.
         if (gitResult.status !== 0 && !gitResult.error) {
             if (!structuredOutput) console.log(kleur.dim('  git worktree add failed, trying bd worktree create'));
+        }
+        // bd's --branch takes no start point; pre-create the branch at the
+        // resolved base so the fallback reuses it (or fails loudly) instead of
+        // silently branching off the local HEAD (CORE-2340).
+        if (!branchExistsNow) {
+            const branchAtBase = spawnSync('git', ['branch', branchName, base.ref], {
+                cwd: mainRepoRoot, stdio: 'pipe',
+            });
+            if (branchAtBase.error || branchAtBase.status !== 0) {
+                console.error(kleur.red(`\n  ✗ Could not start branch ${branchName} at ${base.ref}\n`));
+                process.exit(1);
+            }
         }
         const bdResult = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
             cwd: mainRepoRoot, stdio: structuredOutput ? 'pipe' : 'inherit',

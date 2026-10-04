@@ -33,6 +33,7 @@ import {
     resolveRequestedSkills,
 } from './worktree-session.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
+import { fetchWorktreeBase } from './worktree-base.js';
 
 export interface CodexWorktreeSessionOptions {
     name?: string;
@@ -45,6 +46,8 @@ export interface CodexWorktreeSessionOptions {
     json?: boolean;
     yolo: boolean;
     passthrough?: string[];
+    /** Explicit branch start point (e.g. origin/stable). Default: fresh origin/<default>, fetched first (CORE-2340). */
+    base?: string;
 }
 
 const SESSION_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -280,11 +283,18 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
 
     const buffer = `xtrm-codex-${randomBytes(16).toString('hex')}`;
     let created = false;
+    // CORE-2340: the branch must start at a fresh origin/<default>, never at
+    // the main checkout's local HEAD (on this multi-session host that is
+    // often another session's branch or a stale master). Offline is a hard
+    // error — a wrong base produces wrong PR diffs. Resolved here, after all
+    // prelaunch validation, so rejection paths never touch the network.
+    const base = fetchWorktreeBase(mainRoot, opts.base);
+    if (!base.ok) fail(`Could not resolve worktree base: ${base.error}`);
     // Git-first worktree create (CORE-2307): `git worktree add` is the
     // primary path — codex launches must not require bd. bd is attempted
     // as a FALLBACK only if git itself failed; observable behavior is
     // identical. Flag surface untouched in this lane (XTRM-93 owns --bead).
-    const codexGit = spawnSync('git', ['worktree', 'add', '-b', branchName, worktreePath], {
+    const codexGit = spawnSync('git', ['worktree', 'add', '-b', branchName, worktreePath, base.ref], {
         cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
     });
     if (!codexGit.error && codexGit.status === 0) {
@@ -297,6 +307,17 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         if (existsSync(worktreePath) || partialBranch) {
             cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
             fail(`git worktree creation left partial state at ${worktreePath}`);
+        }
+        // bd's --branch takes no start point; pre-create the branch at the
+        // resolved base so the fallback reuses it (or fails loudly) instead of
+        // silently branching off the local HEAD (CORE-2340). The branch cannot
+        // pre-exist here (enforced above), so pre-creation is unconditional.
+        const branchAtBase = spawnSync('git', ['branch', branchName, base.ref], {
+            cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
+        });
+        if (branchAtBase.error || branchAtBase.status !== 0) {
+            cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+            fail(`Could not start branch ${branchName} at ${base.ref}`);
         }
         const bdFallback = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
             cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
