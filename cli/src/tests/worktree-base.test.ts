@@ -47,6 +47,10 @@ function cloneOnUnrelatedBranch(origin: string): string {
     const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'xt-base-clone-'));
     created.push(clone);
     spawnSync('git', ['clone', '--quiet', origin, clone], { encoding: 'utf8', stdio: 'pipe' });
+    // Repo-local identity: the clone does not inherit the origin's config, and
+    // CI runners have no global git identity (fae: author identity unknown).
+    git(clone, ['config', 'user.email', 'test@example.invalid']);
+    git(clone, ['config', 'user.name', 'test']);
     git(clone, ['checkout', '--quiet', 'develop']);
     fs.writeFileSync(path.join(clone, 'f.txt'), 'local\n');
     git(clone, ['add', '-A']);
