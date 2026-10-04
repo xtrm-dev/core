@@ -25,6 +25,10 @@
  *   session from a one-time pairing token (agent-host-auth.ts). Without it, proxied requests are
  *   refused. The listener stays on 127.0.0.1 in every mode.
  *
+ * - Topology (XTRM-629): GET /v1/topology returns one topology_snapshot; GET /v1/topology/events streams
+ *   a snapshot, then topology_update diffs, from one shared feed (topology-feed.ts) driven by a read-only
+ *   tmux control-mode observer. Panes hosting a live session carry its id. Idle without subscribers.
+ *
  * Idle cost is the registry, the index, and a bounded replay buffer; no provider adapter is resident.
  */
 
@@ -34,7 +38,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { decodeFrame, encodeFrame } from '@xtrm/contracts';
-import type { AgentCommandPayload, AgentEventV1, AgentHostApiV1 } from '@xtrm/contracts';
+import type { AgentCommandPayload, AgentEventV1, AgentHostApiV1, AgentSessionSummary, TopologyAgentSession } from '@xtrm/contracts';
 import {
     AGENT_HOST_AUTH_SCHEMA,
     bearerToken,
@@ -52,6 +56,7 @@ import { AgentHostLauncher, LaunchRejection, type AgentHostLaunchOptions, type L
 import { ReferenceRejection, resolveReferences, type ReferenceResolveRequest } from './agent-host-references.js';
 import { AgentHostRegistry, type ProducerConnection, type SubmitRequest } from './agent-host-registry.js';
 import { SessionIndex, type SessionIndexOptions } from './agent-host-session-index.js';
+import { TopologyFeed, type TopologyFeedOptions } from './topology-feed.js';
 
 /** The client API never binds anything else by default (§35.5). */
 export const AGENT_HOST_BIND_ADDRESS = '127.0.0.1';
@@ -102,6 +107,8 @@ export interface AgentHostOptions {
     launch?: AgentHostLaunchOptions;
     /** Direct connection mode (XTRM-568); off unless given. Never changes the bind address. */
     direct?: DirectModeOptions;
+    /** Topology feed (XTRM-629); `agentSessions` comes from the registry. GitHub stays off unless set. */
+    topology?: Omit<TopologyFeedOptions, 'agentSessions' | 'log'>;
     log?: (message: string) => void;
 }
 
@@ -109,12 +116,32 @@ export interface AgentHost {
     readonly info: AgentHostInfo;
     readonly registry: AgentHostRegistry;
     readonly sessionIndex: SessionIndex | null;
+    readonly topology: TopologyFeed;
     close(): Promise<void>;
 }
 
 type HostEventMessage = Extract<AgentHostApiV1, { kind: 'event' }>;
 /** `deviceId` is set for a stream a remote device opened, so revoking the device can end it. */
 type EventStream = { res: http.ServerResponse; sessionId: string | null; deviceId: string | null };
+type TopologyStream = { res: http.ServerResponse; deviceId: string | null };
+
+/**
+ * Pane id -> live session for the topology join. A pane id can only be reused after a tmux
+ * server restart; a connected session, then the latest activity, wins.
+ */
+export function agentSessionsByPane(sessions: AgentSessionSummary[]): Map<string, TopologyAgentSession> {
+    const best = new Map<string, AgentSessionSummary>();
+    const rank = (s: AgentSessionSummary) => [s.extensionConnected ? 1 : 0, s.lastActivityAt ?? s.startedAt ?? 0];
+    for (const session of sessions) {
+        const paneId = session.tmux?.paneId;
+        if (!paneId || session.state === 'history_only') continue;
+        const current = best.get(paneId);
+        const [c1, c2] = current ? rank(current) : [-1, -1];
+        const [n1, n2] = rank(session);
+        if (!current || n1 > c1 || (n1 === c1 && n2 > c2)) best.set(paneId, session);
+    }
+    return new Map([...best].map(([paneId, s]) => [paneId, { session_id: s.sessionId, provider: s.provider, state: s.state }]));
+}
 
 export function readAgentHostInfo(infoPath = defaultInfoPath()): AgentHostInfo | null {
     try {
@@ -153,7 +180,14 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
     let cursor = 0;
     const replay: HostEventMessage[] = [];
     const streams = new Set<EventStream>();
+    const topology = new TopologyFeed({
+        ...options.topology,
+        agentSessions: () => agentSessionsByPane(registry.list()),
+        log,
+    });
+    const topologyStreams = new Set<TopologyStream>();
     registry.subscribe((frame) => {
+        topology.noteAgentActivity();
         cursor += 1;
         const message: HostEventMessage = { schema: 'xtrm.agent-host-api.v1', kind: 'event', cursor: String(cursor), frame };
         replay.push(message);
@@ -281,6 +315,14 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
             else sendJson(res, 404, apiError('session_not_found', `no session ${parts[2]}`));
             return;
         }
+        if (route === 'GET /v1/topology') {
+            sendJson(res, 200, await topology.snapshot());
+            return;
+        }
+        if (route === 'GET /v1/topology/events') {
+            openTopologyStream(req, res, device?.deviceId ?? null);
+            return;
+        }
         if (route === 'GET /v1/events') {
             openStream(req, res, url.searchParams.get('sessionId'), device?.deviceId ?? null);
             return;
@@ -399,6 +441,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
         }
         // A revoked device loses its open event streams at once.
         for (const stream of streams) if (stream.deviceId === deviceId) stream.res.destroy();
+        for (const stream of topologyStreams) if (stream.deviceId === deviceId) stream.res.destroy();
         log(`revoked device ${deviceId}`);
         sendJson(res, 200, { schema: AGENT_HOST_AUTH_SCHEMA, kind: 'device_revoked', deviceId });
         return true;
@@ -422,6 +465,41 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
         const drop = () => {
             clearInterval(heartbeat);
             streams.delete(stream);
+        };
+        req.on('close', drop);
+        res.on('close', drop);
+    }
+
+    /**
+     * Topology SSE: the feed hands every subscriber the same serialized message, a snapshot first.
+     * A reconnect always starts from a fresh snapshot, so Last-Event-ID is not replayed.
+     */
+    function openTopologyStream(req: http.IncomingMessage, res: http.ServerResponse, deviceId: string | null): void {
+        res.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache',
+            connection: 'keep-alive',
+        });
+        res.write(': xtrm agent host topology\n\n');
+        const stream: TopologyStream = { res, deviceId };
+        topologyStreams.add(stream);
+        const unsubscribe = topology.subscribe((message, text) => {
+            if (res.writableLength > MAX_SSE_BACKLOG_BYTES) {
+                log('topology client is too far behind; closing its stream');
+                res.destroy();
+                return;
+            }
+            res.write(`id: ${message.seq}\ndata: ${text}\n\n`);
+        });
+        const heartbeat = setInterval(() => res.write(': keepalive\n\n'), SSE_HEARTBEAT_MS);
+        heartbeat.unref();
+        let dropped = false;
+        const drop = () => {
+            if (dropped) return;
+            dropped = true;
+            clearInterval(heartbeat);
+            topologyStreams.delete(stream);
+            unsubscribe();
         };
         req.on('close', drop);
         res.on('close', drop);
@@ -462,6 +540,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
         await closeServer(socketServer);
         safeUnlink(socketPath);
         await sessionIndex?.close();
+        topology.close();
         throw error;
     }
     const address = httpServer.address() as net.AddressInfo;
@@ -483,11 +562,15 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
         info,
         registry,
         sessionIndex,
+        topology,
         close() {
             closing ??= (async () => {
                 registry.close();
+                topology.close();
                 for (const stream of streams) stream.res.end();
                 streams.clear();
+                for (const stream of topologyStreams) stream.res.end();
+                topologyStreams.clear();
                 for (const socket of producers) socket.destroy();
                 httpServer.closeAllConnections();
                 await Promise.all([closeServer(httpServer), closeServer(socketServer), sessionIndex?.close()]);

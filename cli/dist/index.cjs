@@ -58001,13 +58001,13 @@ function assertClaudePackSkillsLoadable(mainRepoRoot, resolvedPaths) {
     if (name !== entry.runtimeName) {
       const canonicalSlotFile = import_node_path14.default.join(mainRepoRoot, ".claude", "skills", entry.runtimeName, SKILL_FILE_NAME);
       if ((0, import_node_fs2.existsSync)(canonicalSlotFile)) {
-        let same = false;
+        let same2 = false;
         try {
-          same = (0, import_node_fs2.realpathSync)(canonicalSlotFile) === entry.canonicalPath;
+          same2 = (0, import_node_fs2.realpathSync)(canonicalSlotFile) === entry.canonicalPath;
         } catch {
-          same = false;
+          same2 = false;
         }
-        if (!same) {
+        if (!same2) {
           throw new Error(
             `skill '/${sanitizeDiagnosticName(name)}' resolves to a project pack whose canonical runtime name '${sanitizeDiagnosticName(entry.runtimeName)}' is occupied by a different skill at ${import_node_path14.default.join(mainRepoRoot, ".claude", "skills", entry.runtimeName)}. Remove or rename that slot, then retry.`
           );
@@ -58048,13 +58048,13 @@ function ensureClaudePackSkillLinks(worktreePath, mainRepoRoot, resolvedPaths) {
       if (name !== entry.runtimeName) {
         const wtCanonicalSlot = import_node_path14.default.join(worktreePath, ".claude", "skills", entry.runtimeName, SKILL_FILE_NAME);
         if ((0, import_node_fs2.existsSync)(wtCanonicalSlot)) {
-          let same = false;
+          let same2 = false;
           try {
-            same = (0, import_node_fs2.realpathSync)(wtCanonicalSlot) === (0, import_node_fs2.realpathSync)(wtSkillFile);
+            same2 = (0, import_node_fs2.realpathSync)(wtCanonicalSlot) === (0, import_node_fs2.realpathSync)(wtSkillFile);
           } catch {
-            same = false;
+            same2 = false;
           }
-          if (!same) {
+          if (!same2) {
             throw new Error(
               `cannot link pack skill '${sanitizeDiagnosticName(name)}': the worktree canonical runtime name '${sanitizeDiagnosticName(entry.runtimeName)}' slot holds different content. Remove or rename that slot, then retry.`
             );
@@ -75863,14 +75863,26 @@ var PANE_FIELDS = [
   "@agent_branch",
   "@agent_parent_session",
   "@agent_parent_pane",
-  "@agent_instance_id"
+  "@agent_instance_id",
+  "window_index",
+  "pane_index",
+  "window_active",
+  "pane_active",
+  // Free text, so last: a tab inside a window name rejoins instead of
+  // shifting every later column.
+  "window_name"
 ];
 var PANE_FORMAT = PANE_FIELDS.map((f) => `#{${f}}`).join(SEP2);
 var READ_ONLY_COMMANDS = {
   xtmux: { bin: "xtmux", args: ["topology", "--json"], timeoutMs: 5e3 },
   tmux: { bin: "tmux", args: ["list-panes", "-a", "-F", PANE_FORMAT], timeoutMs: 5e3 },
   specialists: { bin: "sp", args: ["ps", "--json"], timeoutMs: 1e4 },
-  beads: { bin: "bd", args: ["list", "--all", "--json"], timeoutMs: 1e4 },
+  /**
+   * One `show` per distinct issue ref a pane names, ref appended as the last
+   * argv element after ISSUE_REF_PATTERN accepted it. `issue list --json` is
+   * per project and ~0.5 MB for one board, so a ref lookup is the bounded read.
+   */
+  substrate: { bin: "sb", args: ["--json", "issue", "show"], timeoutMs: 5e3 },
   git: { bin: "git", args: ["worktree", "list", "--porcelain"], timeoutMs: 5e3 },
   github: {
     bin: "gh",
@@ -75903,12 +75915,13 @@ var defaultRunner = async (bin, args, { timeoutMs, cwd }) => {
     const err = error51;
     if (err.code === "ENOENT") return { kind: "missing" };
     if (err.killed) return { kind: "timeout" };
-    return { kind: "failed", reason: firstLine(err.stderr) || err.message || "unknown failure" };
+    const reason = firstLine(err.stderr) || err.message || "unknown failure";
+    return err.stdout ? { kind: "failed", reason, stdout: String(err.stdout) } : { kind: "failed", reason };
   }
 };
 function firstLine(text) {
   if (!text) return "";
-  const line = text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  const line = text.split("\n").map((l) => l.trim()).find((l) => l && !/ExperimentalWarning|--trace-warnings/.test(l)) ?? "";
   return line.length > 200 ? `${line.slice(0, 197)}...` : line;
 }
 async function readSource(name, parse6, opts) {
@@ -75953,8 +75966,13 @@ function parsePanes(stdout) {
       branch,
       parent_session_id,
       parent_pane_id,
-      instance_id
+      instance_id,
+      window_index,
+      pane_index,
+      window_active,
+      pane_active
     ] = cols;
+    const window_name = cols.slice(PANE_FIELDS.length - 1).join(SEP2);
     const lineage = [state, role, task, bead_id, worktree, branch, parent_session_id];
     const agent = lineage.some(Boolean) ? {
       state: blankToNull(state),
@@ -75972,6 +75990,11 @@ function parsePanes(stdout) {
       session_id,
       session_name,
       window_id: blankToNull(window_id),
+      window_index: intOrNull(window_index),
+      window_name,
+      window_active: flagOrNull(window_active),
+      pane_index: intOrNull(pane_index),
+      pane_active: flagOrNull(pane_active),
       current_command,
       current_path,
       agent
@@ -75980,6 +76003,8 @@ function parsePanes(stdout) {
   return panes;
 }
 var blankToNull = (v) => v && v.length > 0 ? v : null;
+var intOrNull = (v) => v && /^\d+$/.test(v) ? Number(v) : null;
+var flagOrNull = (v) => v === "1" ? true : v === "0" ? false : null;
 function parseXtmuxHost(stdout) {
   const parsed = JSON.parse(stdout);
   return {
@@ -76012,24 +76037,71 @@ function parseJobs(stdout) {
     };
   }).filter((j) => j.job_id.length > 0);
 }
-function parseBeads(stdout) {
-  const rows = JSON.parse(stdout);
-  const map2 = /* @__PURE__ */ new Map();
-  if (!Array.isArray(rows)) return map2;
-  for (const row of rows) {
-    const r = row;
-    const id = str(r.id);
-    if (!id) continue;
-    map2.set(id, {
-      id,
-      status: str(r.status) ?? "unknown",
-      title: str(r.title),
-      issue_type: str(r.issue_type) ?? str(r.type),
-      priority: typeof r.priority === "number" ? r.priority : null,
-      parent_id: str(r.parent_id) ?? str(r.parent)
-    });
+var ISSUE_REF_PATTERN = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/;
+var MAX_ISSUE_REFS = 64;
+var ISSUE_LOOKUP_CONCURRENCY = 8;
+function parseSubstrateIssue(ref, stdout) {
+  const envelope = JSON.parse(stdout);
+  if (envelope.ok !== true) {
+    const message = typeof envelope.error === "string" ? envelope.error : "issue lookup failed";
+    if (/unresolvable|not found|unknown (?:ref|issue)/i.test(message)) return null;
+    throw new Error(message);
   }
-  return map2;
+  const data = envelope.data ?? {};
+  const locator = str(data.locator);
+  const dot = locator ? locator.lastIndexOf(".") : -1;
+  return {
+    id: ref,
+    status: str(data.lifecycleState) ?? "unknown",
+    title: str(data.title),
+    issue_type: str(data.kind),
+    priority: typeof data.priority === "number" ? data.priority : null,
+    parent_id: locator && dot > 0 ? locator.slice(0, dot) : null
+  };
+}
+async function readSubstrateIssues(refs, opts) {
+  const { bin, args, timeoutMs } = READ_ONLY_COMMANDS.substrate;
+  const started = opts.now();
+  const wanted = [...new Set(refs)].filter((ref) => ISSUE_REF_PATTERN.test(ref)).slice(0, MAX_ISSUE_REFS);
+  const issues = /* @__PURE__ */ new Map();
+  const failures = [];
+  let missing = false;
+  let next = 0;
+  const worker = async () => {
+    while (next < wanted.length && !missing) {
+      const ref = wanted[next++];
+      const outcome = await opts.runner(bin, [...args, ref], { timeoutMs });
+      if (outcome.kind === "missing") {
+        missing = true;
+        return;
+      }
+      if (outcome.kind === "timeout") {
+        failures.push(`${ref}: ${bin} timed out after ${timeoutMs}ms`);
+        continue;
+      }
+      const stdout = outcome.stdout;
+      if (!stdout) {
+        failures.push(`${ref}: ${outcome.kind === "failed" ? outcome.reason : "no output"}`);
+        continue;
+      }
+      try {
+        const issue2 = parseSubstrateIssue(ref, stdout);
+        if (issue2) issues.set(ref, issue2);
+      } catch (error51) {
+        failures.push(`${ref}: ${firstLine(error51 instanceof Error ? error51.message : "unparseable output")}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(ISSUE_LOOKUP_CONCURRENCY, wanted.length) }, worker));
+  const duration_ms = Math.max(0, opts.now() - started);
+  if (missing) {
+    return { entry: { name: "substrate", status: "unavailable", reason: `${bin} not found on PATH`, duration_ms }, data: null };
+  }
+  if (failures.length > 0) {
+    const reason = firstLine(`${failures.length} of ${wanted.length} issue lookups failed: ${failures[0]}`);
+    return { entry: { name: "substrate", status: "error", reason, duration_ms }, data: issues };
+  }
+  return { entry: { name: "substrate", status: "ok", reason: null, duration_ms }, data: issues };
 }
 function parseWorktrees(stdout) {
   const trees = [];
@@ -76116,42 +76188,56 @@ function worktreeForPath(trees, target) {
   }
   return best;
 }
-async function collectProjection(options = {}) {
+function readPanes(options = {}) {
+  return readSource("tmux", parsePanes, { runner: options.runner ?? defaultRunner, now: options.now ?? (() => Date.now()) });
+}
+function enrichmentKeys(rawPanes) {
+  const refs = /* @__PURE__ */ new Set();
+  const paths = /* @__PURE__ */ new Set();
+  for (const pane of rawPanes) {
+    if (pane.agent?.bead_id) refs.add(pane.agent.bead_id);
+    if (pane.current_path) paths.add(pane.current_path);
+    if (pane.agent?.worktree) paths.add(pane.agent.worktree);
+  }
+  return { refs: [...refs].sort(), paths: [...paths].sort() };
+}
+async function collectEnrichment(rawPanes, options = {}) {
   const runner = options.runner ?? defaultRunner;
   const now = options.now ?? (() => Date.now());
   const cwd = options.cwd ?? process.cwd();
   const includeGithub = options.includeGithub ?? true;
   const ctx = { runner, cwd, now };
-  const [xtmuxRead, paneRead, jobRead, beadRead, initialTreeRead, prRead] = await Promise.all([
+  const keys = enrichmentKeys(rawPanes);
+  const [xtmux, jobs, issues, initialTreeRead, pullRequests] = await Promise.all([
     readSource("xtmux", parseXtmuxHost, ctx),
-    readSource("tmux", parsePanes, ctx),
     readSource("specialists", parseJobs, ctx),
-    readSource("beads", parseBeads, ctx),
+    readSubstrateIssues(keys.refs, ctx),
     readSource("git", parseWorktrees, ctx),
     includeGithub ? readSource("github", parsePullRequests, ctx) : Promise.resolve({
-      entry: { name: "github", status: "unavailable", reason: "skipped by --no-github", duration_ms: 0 },
+      entry: { name: "github", status: "unavailable", reason: options.githubSkipReason ?? "skipped by --no-github", duration_ms: 0 },
       data: null
     })
   ]);
-  const rawPanes = paneRead.data ?? [];
   const knownTrees = initialTreeRead.data ?? [];
-  const extraRepoPaths = [...new Set(rawPanes.flatMap((pane) => [
-    pane.current_path,
-    pane.agent?.worktree
-  ].filter((candidate) => Boolean(candidate))))].filter((candidate) => !worktreeForPath(knownTrees, candidate));
+  const extraRepoPaths = keys.paths.filter((candidate) => !worktreeForPath(knownTrees, candidate));
   const extraTreeReads = await Promise.all(extraRepoPaths.map((repoPath) => readSource("git", parseWorktrees, { ...ctx, cwd: repoPath })));
-  const treeRead = mergeWorktreeReads([initialTreeRead, ...extraTreeReads]);
-  const rawJobs = jobRead.data ?? [];
-  const beads = beadRead.data ?? /* @__PURE__ */ new Map();
-  const worktrees = treeRead.data ?? [];
-  const prs = prRead.data ?? /* @__PURE__ */ new Map();
+  const worktrees = mergeWorktreeReads([initialTreeRead, ...extraTreeReads]);
+  return { xtmux, jobs, issues, worktrees, pullRequests };
+}
+function joinProjection(paneRead, enrichment, options = {}) {
+  const now = options.now ?? (() => Date.now());
+  const rawPanes = paneRead.data ?? [];
+  const rawJobs = enrichment.jobs.data ?? [];
+  const issues = enrichment.issues.data ?? /* @__PURE__ */ new Map();
+  const worktrees = (enrichment.worktrees.data ?? []).map((tree) => ({ ...tree, shared_by_pane_ids: [] }));
+  const prs = enrichment.pullRequests.data ?? /* @__PURE__ */ new Map();
   const jobs = rawJobs.map((job) => {
     const pull_request = job.branch ? prs.get(job.branch) : void 0;
     return pull_request ? { ...job, pull_request } : job;
   });
   for (const pane of rawPanes) {
     const tree = worktreeForPath(worktrees, pane.current_path);
-    if (tree) tree.shared_by_pane_ids = [...tree.shared_by_pane_ids ?? [], pane.pane_id];
+    if (tree) (tree.shared_by_pane_ids ??= []).push(pane.pane_id);
   }
   const claimedJobs = /* @__PURE__ */ new Set();
   const usedWorktrees = /* @__PURE__ */ new Set();
@@ -76182,11 +76268,17 @@ async function collectProjection(options = {}) {
       session_id: raw.session_id,
       session_name: raw.session_name,
       window_id: raw.window_id,
+      window_index: raw.window_index,
+      window_name: raw.window_name,
+      window_active: raw.window_active,
+      pane_index: raw.pane_index,
+      pane_active: raw.pane_active,
+      agent_session: options.agentSessions?.get(raw.pane_id) ?? null,
       current_command: raw.current_command,
       current_path: raw.current_path,
       agent,
       jobs: paneJobs,
-      bead: paneBeadId ? beads.get(paneBeadId) ?? { id: paneBeadId, status: "unknown" } : null,
+      bead: paneBeadId ? issues.get(paneBeadId) ?? { id: paneBeadId, status: "unknown" } : null,
       worktree,
       pull_request: branch ? prs.get(branch) ?? null : null
     };
@@ -76195,10 +76287,17 @@ async function collectProjection(options = {}) {
     schema_version: "xtrm.topology.projection.v1",
     generated_at_ms: now(),
     host: {
-      host_id: xtmuxRead.data?.host_id ?? (0, import_node_os26.hostname)(),
-      tmux_server_id: xtmuxRead.data?.tmux_server_id ?? null
+      host_id: enrichment.xtmux.data?.host_id ?? (0, import_node_os26.hostname)(),
+      tmux_server_id: enrichment.xtmux.data?.tmux_server_id ?? null
     },
-    sources: [xtmuxRead.entry, paneRead.entry, jobRead.entry, beadRead.entry, treeRead.entry, prRead.entry],
+    sources: [
+      enrichment.xtmux.entry,
+      paneRead.entry,
+      enrichment.jobs.entry,
+      enrichment.issues.entry,
+      enrichment.worktrees.entry,
+      enrichment.pullRequests.entry
+    ],
     panes,
     // Anything no live pane claimed. Without this a job whose coordinator
     // pane died, or a worktree whose session was killed, silently vanishes.
@@ -76207,6 +76306,11 @@ async function collectProjection(options = {}) {
       worktrees: worktrees.filter((tree) => !usedWorktrees.has(tree.path))
     }
   };
+}
+async function collectProjection(options = {}) {
+  const paneRead = await readPanes(options);
+  const enrichment = await collectEnrichment(paneRead.data ?? [], options);
+  return joinProjection(paneRead, enrichment, { now: options.now });
 }
 
 // src/core/topology-views.ts
@@ -76231,7 +76335,7 @@ var VIEW_DESCRIPTIONS = {
   worktrees: "worktree and branch graph, including unattached worktrees",
   collisions: "worktrees shared by more than one live pane",
   integration: "integration status \u2014 job branch, target branch and PR state",
-  beads: "bead state per pane",
+  beads: "issue state per pane (Substrate)",
   prs: "pull-request evidence per branch",
   routes: "exact commands for the live/diagnostic surfaces xtmux and git own"
 };
@@ -76249,7 +76353,7 @@ function degradationNotice(p, sources) {
 var pad = (s, n) => (s ?? "-").slice(0, n).padEnd(n);
 function completionOf(pane) {
   if (pane.pull_request?.merged_at) return kleur_default.green("merged");
-  if (pane.bead?.status === "closed") return kleur_default.green("bead closed");
+  if (pane.bead?.status === "done" || pane.bead?.status === "closed") return kleur_default.green("bead closed");
   if (pane.pull_request) return `pr ${pane.pull_request.state.toLowerCase()}`;
   if (pane.bead) return `bead ${pane.bead.status}`;
   return dim("-");
@@ -76268,7 +76372,7 @@ function viewSummary(p) {
   out.push(`  specialist jobs  ${jobs} attached, ${p.orphans.jobs.length} orphaned`);
   out.push(`  worktrees        ${p.orphans.worktrees.length} unattached`);
   if (collisions > 0) out.push(kleur_default.yellow(`  collisions       ${collisions} worktree(s) shared by >1 pane`));
-  out.push(...degradationNotice(p, ["xtmux", "tmux", "specialists", "beads", "git", "github"]));
+  out.push(...degradationNotice(p, ["xtmux", "tmux", "specialists", "substrate", "beads", "git", "github"]));
   out.push("", dim("Views: xt topology --view <name>   (xt topology --help lists them)"));
   return out;
 }
@@ -76379,7 +76483,7 @@ function viewBeads(p) {
     const status2 = b.status === "unknown" ? kleur_default.yellow(pad(b.status, 14)) : pad(b.status, 14);
     out.push(`${pad(x.pane_id, 8)} ${pad(b.id, 18)} ${status2}${note} ${dim(b.title ?? "")}`);
   }
-  return [...out, ...degradationNotice(p, ["beads", "tmux"])];
+  return [...out, ...degradationNotice(p, ["substrate", "beads", "tmux"])];
 }
 function viewPrs(p) {
   const out = [kleur_default.bold(`${pad("PR", 7)} ${pad("STATE", 10)} ${pad("HEAD", 34)} ${pad("BASE", 12)} MERGED`)];
@@ -76505,6 +76609,7 @@ var SCHEMA_ID = {
   agentHostEnsure: "xtrm.agent-host-ensure.v1",
   agentHostAuth: "xtrm.agent-host-auth.v1"
 };
+var TOPOLOGY_FEED_VERSION = 1;
 var xtrm_agent_command_v1_default = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "xtrm.agent-command.v1",
@@ -77071,7 +77176,7 @@ var xtrm_agent_host_api_v1_default = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "xtrm.agent-host-api.v1",
   title: "XTRM agent host client API message",
-  description: "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app \xA735.5, \xA735.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), session history (GET /v1/sessions/:id/history -> session_history: the provider journal entries a client projects Frames from, beyond the replay buffer), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
+  description: "Request and response bodies of the XTRM agent host client API: HTTP plus Server-Sent Events on 127.0.0.1, reached locally or through SSH port forwarding (PRD xtrm-app \xA735.5, \xA735.8 item 1). Every body carries `schema` and a `kind` discriminator. Endpoints: session list (GET -> session_list), session detail (GET -> session_detail), session history (GET /v1/sessions/:id/history -> session_history: the provider journal entries a client projects Frames from, beyond the replay buffer), event stream (SSE; each `data:` line is one `event` message wrapping an xtrm.agent-event.v1 frame), submit (POST submit_request -> submit_result), launch (POST launch_request -> launch_result), reference resolve (POST reference_resolve_request -> reference_resolve_result), topology (GET /v1/topology -> topology_snapshot; SSE GET /v1/topology/events: a topology_snapshot first, then topology_update diffs or topology_snapshot replacements, event id = seq), and `error` for any failure. Live state comes from the pushed registry; stopped sessions come from the incremental index (`state: history_only`). A backward-incompatible change requires xtrm.agent-host-api.v2.",
   type: "object",
   required: ["schema", "kind"],
   properties: {
@@ -77088,6 +77193,8 @@ var xtrm_agent_host_api_v1_default = {
         "launch_result",
         "reference_resolve_request",
         "reference_resolve_result",
+        "topology_snapshot",
+        "topology_update",
         "error"
       ]
     }
@@ -77103,6 +77210,8 @@ var xtrm_agent_host_api_v1_default = {
     { $ref: "#/definitions/launch_result" },
     { $ref: "#/definitions/reference_resolve_request" },
     { $ref: "#/definitions/reference_resolve_result" },
+    { $ref: "#/definitions/topology_snapshot" },
+    { $ref: "#/definitions/topology_update" },
     { $ref: "#/definitions/error" }
   ],
   definitions: {
@@ -77323,6 +77432,58 @@ var xtrm_agent_host_api_v1_default = {
         references: { type: "array", items: { $ref: "#/definitions/contextReference" } },
         totalBytes: { type: "integer", minimum: 0 },
         overBudget: { type: "boolean" }
+      }
+    },
+    topologyRevision: {
+      description: "Content hash of the projection without volatile fields (generated_at_ms, sources[].duration_ms). Equal revisions are never resent.",
+      type: "string",
+      pattern: "^[0-9a-f]{16}$"
+    },
+    topologyFeedVersion: {
+      description: "Topology feed protocol version, independent of the projection schema. A client that does not know this value falls back to GET /v1/topology.",
+      const: 1
+    },
+    topology_snapshot: {
+      description: "The full xtrm.topology.projection.v1 at one revision. Sent first on every topology subscription, whenever a diff would exceed the size cap (64 KiB or half the snapshot), and as the GET /v1/topology body. A snapshot over 4 MiB is sent with empty orphans and truncated: true; panes are never dropped.",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "topology", "seq", "revision", "projection"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "topology_snapshot" },
+        topology: { $ref: "#/definitions/topologyFeedVersion" },
+        seq: { type: "integer", minimum: 0 },
+        revision: { $ref: "#/definitions/topologyRevision" },
+        truncated: { type: "boolean" },
+        projection: { $ref: "xtrm.topology.projection.v1" }
+      }
+    },
+    topology_update: {
+      description: "A diff from base_revision to revision. Apply it only when base_revision equals the client's current revision; otherwise resubscribe. Panes are keyed by pane_id: upsert replaces or adds whole panes, remove deletes them. order (the full pane_id order) is present only when the order changed. host, sources and orphans are present only when they changed and replace the previous value.",
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "kind", "topology", "seq", "base_revision", "revision", "generated_at_ms", "panes"],
+      properties: {
+        schema: { $ref: "#/definitions/schema" },
+        kind: { const: "topology_update" },
+        topology: { $ref: "#/definitions/topologyFeedVersion" },
+        seq: { type: "integer", minimum: 0 },
+        base_revision: { $ref: "#/definitions/topologyRevision" },
+        revision: { $ref: "#/definitions/topologyRevision" },
+        generated_at_ms: { type: "number", minimum: 0 },
+        panes: {
+          type: "object",
+          additionalProperties: false,
+          required: ["upsert", "remove"],
+          properties: {
+            upsert: { type: "array", items: { $ref: "xtrm.topology.projection.v1#/definitions/pane" } },
+            remove: { type: "array", items: { type: "string", minLength: 1 } }
+          }
+        },
+        order: { type: "array", items: { type: "string", minLength: 1 } },
+        host: { $ref: "xtrm.topology.projection.v1#/properties/host" },
+        sources: { $ref: "xtrm.topology.projection.v1#/properties/sources" },
+        orphans: { $ref: "xtrm.topology.projection.v1#/properties/orphans" }
       }
     },
     error: {
@@ -77931,7 +78092,10 @@ var xtrm_topology_projection_v1_default = {
         { contains: { type: "object", properties: { name: { const: "xtmux" } }, required: ["name"] } },
         { contains: { type: "object", properties: { name: { const: "tmux" } }, required: ["name"] } },
         { contains: { type: "object", properties: { name: { const: "specialists" } }, required: ["name"] } },
-        { contains: { type: "object", properties: { name: { const: "beads" } }, required: ["name"] } },
+        {
+          description: "The issue source: `substrate` (Substrate, the issue authority) since XTRM-629; `beads` in documents from older producers.",
+          contains: { type: "object", properties: { name: { enum: ["substrate", "beads"] } }, required: ["name"] }
+        },
         { contains: { type: "object", properties: { name: { const: "git" } }, required: ["name"] } },
         { contains: { type: "object", properties: { name: { const: "github" } }, required: ["name"] } }
       ],
@@ -77942,7 +78106,7 @@ var xtrm_topology_projection_v1_default = {
         properties: {
           name: {
             description: "Owning system queried. Each maps to one published read-only CLI surface.",
-            enum: ["xtmux", "tmux", "specialists", "beads", "git", "github"]
+            enum: ["xtmux", "tmux", "specialists", "substrate", "beads", "git", "github"]
           },
           status: {
             description: "ok = queried and parsed. unavailable = the binary is not installed or not applicable on this host (not a bug). error = installed but the query failed, timed out, or returned unparseable output (a bug signal).",
@@ -77993,6 +78157,27 @@ var xtrm_topology_projection_v1_default = {
         session_id: { type: "string", minLength: 1 },
         session_name: { type: "string" },
         window_id: { type: ["string", "null"] },
+        window_index: { description: "tmux window_index; with window_name and pane_index it builds the session -> window -> pane tree.", type: ["integer", "null"] },
+        window_name: { type: ["string", "null"] },
+        window_active: { type: ["boolean", "null"] },
+        pane_index: { type: ["integer", "null"] },
+        pane_active: { type: ["boolean", "null"] },
+        agent_session: {
+          description: "The agent host session registered for this pane (session_identity.tmux.paneId), so a client can open its Frame. Null for a pane without a registered session (shells, editors) and outside the agent host (`xt topology`).",
+          oneOf: [
+            { type: "null" },
+            {
+              type: "object",
+              required: ["session_id", "provider", "state"],
+              additionalProperties: false,
+              properties: {
+                session_id: { type: "string", minLength: 1 },
+                provider: { type: "string" },
+                state: { description: "Agent host session state (xtrm.agent-host-api.v1 sessionSummary.state).", type: "string" }
+              }
+            }
+          ]
+        },
         current_command: { type: "string" },
         current_path: { type: "string" },
         agent: {
@@ -78065,7 +78250,7 @@ var xtrm_topology_projection_v1_default = {
       }
     },
     bead: {
-      description: "Beads state as published by `bd`. status is one of the two authoritative completion signals in this projection (the other is pull_request.merged_at).",
+      description: "Issue state. Since XTRM-629 read from Substrate (`sb --json issue show`): id = the pane's issue ref, status = lifecycleState (or `unknown` when the ref does not resolve), issue_type = kind, parent_id = parent locator. The field keeps the v1 name `bead`. status is one of the two authoritative completion signals in this projection (the other is pull_request.merged_at).",
       type: "object",
       required: ["id", "status"],
       additionalProperties: false,
@@ -78689,6 +78874,26 @@ function decodeFrame(expected, line) {
     return { ok: false, reason: "invalid_payload", detail };
   }
   return { ok: true, value };
+}
+var same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function appliedOrder(prev, remove, upsert) {
+  const order = prev.map((pane) => pane.pane_id).filter((id) => !remove.has(id));
+  const known = new Set(order);
+  for (const pane of upsert) if (!known.has(pane.pane_id)) order.push(pane.pane_id);
+  return order;
+}
+function diffTopology(prev, next) {
+  const before = new Map(prev.panes.map((pane) => [pane.pane_id, JSON.stringify(pane)]));
+  const nextIds = new Set(next.panes.map((pane) => pane.pane_id));
+  const upsert = next.panes.filter((pane) => before.get(pane.pane_id) !== JSON.stringify(pane));
+  const remove = prev.panes.map((pane) => pane.pane_id).filter((id) => !nextIds.has(id));
+  const diff = { generated_at_ms: next.generated_at_ms, panes: { upsert, remove } };
+  const order = next.panes.map((pane) => pane.pane_id);
+  if (!same(appliedOrder(prev.panes, new Set(remove), upsert), order)) diff.order = order;
+  if (!same(prev.host, next.host)) diff.host = next.host;
+  if (!same(prev.sources, next.sources)) diff.sources = next.sources;
+  if (!same(prev.orphans, next.orphans)) diff.orphans = next.orphans;
+  return diff;
 }
 
 // src/core/agent-host-auth.ts
@@ -80702,6 +80907,312 @@ function bounded2(value, max) {
   return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
 }
 
+// src/core/topology-feed.ts
+var import_node_child_process39 = require("child_process");
+var import_node_crypto20 = require("crypto");
+var import_node_readline2 = require("readline");
+var TOPOLOGY_UPDATE_MAX_BYTES = 64 * 1024;
+var TOPOLOGY_SNAPSHOT_MAX_BYTES = 4 * 1024 * 1024;
+var SUBSCRIPTION = "xtrm-topology";
+var TMUX_CONTROL = {
+  attach: ["-C", "attach-session", "-r", "-f", "ignore-size,no-output,no-detach-on-destroy", "-t"],
+  subscribe: `refresh-client -B '${SUBSCRIPTION}:%*:#{@agent_state}|#{pane_current_command}|#{pane_current_path}'`
+};
+var TRIGGERS = /^%(?:window-|session|sessions-changed|layout-change|unlinked-window-|subscription-changed|pane-mode-changed)/;
+function topologyRevision(projection) {
+  const stable = {
+    ...projection,
+    generated_at_ms: 0,
+    sources: projection.sources.map((source) => ({ ...source, duration_ms: 0 }))
+  };
+  return (0, import_node_crypto20.createHash)("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 16);
+}
+function buildSnapshot(projection, seq, revision) {
+  let message = {
+    schema: "xtrm.agent-host-api.v1",
+    kind: "topology_snapshot",
+    topology: TOPOLOGY_FEED_VERSION,
+    seq,
+    revision,
+    projection
+  };
+  let text = JSON.stringify(message);
+  if (Buffer.byteLength(text) > TOPOLOGY_SNAPSHOT_MAX_BYTES) {
+    message = { ...message, truncated: true, projection: { ...projection, orphans: { jobs: [], worktrees: [] } } };
+    text = JSON.stringify(message);
+  }
+  return { message, text };
+}
+function inheritedTmuxArgs(env3 = process.env) {
+  const socket = env3.TMUX?.split(",")[0];
+  return socket ? ["-S", socket] : [];
+}
+var TopologyFeed = class {
+  constructor(options = {}) {
+    this.options = options;
+    this.tmuxArgs = options.tmuxArgs ?? inheritedTmuxArgs();
+    const base = options.runner ?? defaultRunner;
+    this.runner = this.tmuxArgs.length === 0 ? base : (bin, args, opts) => base(bin, bin === "tmux" ? [...this.tmuxArgs, ...args] : args, opts);
+    this.now = options.now ?? (() => Date.now());
+    this.log = options.log ?? (() => {
+    });
+    this.enrichmentTtlMs = options.enrichmentTtlMs ?? 1e4;
+    this.fallbackPollMs = Math.max(2e3, options.fallbackPollMs ?? 2e3);
+    this.safetyPollMs = Math.max(this.fallbackPollMs, options.safetyPollMs ?? 1e4);
+    this.minRefreshIntervalMs = options.minRefreshIntervalMs ?? 100;
+  }
+  options;
+  runner;
+  tmuxArgs;
+  now;
+  log;
+  enrichmentTtlMs;
+  fallbackPollMs;
+  safetyPollMs;
+  minRefreshIntervalMs;
+  listeners = /* @__PURE__ */ new Set();
+  latest = null;
+  seq = -1;
+  enrichment = null;
+  enrichmentKey = "";
+  enrichedAt = 0;
+  enriching = null;
+  refreshing = null;
+  dirty = false;
+  lastRefreshAt = 0;
+  lastPanes = [];
+  agentSignature = "";
+  agentCheck = null;
+  pollTimer = null;
+  control = null;
+  controlUp = false;
+  restartTimer = null;
+  restartDelayMs = 2e3;
+  closed = false;
+  get subscriberCount() {
+    return this.listeners.size;
+  }
+  get controlClientUp() {
+    return this.controlUp;
+  }
+  /**
+   * Add a subscriber. It receives the current snapshot synchronously when one
+   * exists, otherwise the first snapshot as soon as it is computed, and every
+   * later message in order. Returns the unsubscribe function.
+   */
+  subscribe(listener) {
+    if (this.closed) return () => {
+    };
+    this.listeners.add(listener);
+    if (this.latest) {
+      const { message, text } = this.snapshotOf(this.latest);
+      listener(message, text);
+    }
+    if (this.listeners.size === 1) this.activate();
+    return () => {
+      this.listeners.delete(listener);
+      if (this.listeners.size === 0) this.deactivate();
+    };
+  }
+  /** The current snapshot for a pull client; reuses a result younger than 1 s. */
+  async snapshot() {
+    if (!this.latest || this.now() - this.latest.at > 1e3) await this.refresh();
+    return this.snapshotOf(this.latest).message;
+  }
+  /**
+   * Ask for a refresh. Leading edge: an idle feed refreshes at once (or after
+   * the minimum gap); triggers during a refresh collapse into one trailing pass.
+   */
+  refresh() {
+    if (this.closed) return Promise.resolve();
+    if (this.refreshing) {
+      this.dirty = true;
+      return this.refreshing;
+    }
+    this.refreshing = (async () => {
+      const wait = this.lastRefreshAt + this.minRefreshIntervalMs - this.now();
+      if (wait > 0) await sleep(wait);
+      do {
+        this.dirty = false;
+        this.lastRefreshAt = this.now();
+        await this.runOnce();
+      } while (this.dirty && !this.closed);
+    })().catch((error51) => this.log(`topology refresh failed: ${error51.message}`)).finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+  /**
+   * The registry saw a frame. Refresh only when a pane's session id or state
+   * changed, checked at most every 100 ms, so streaming deltas cost nothing.
+   */
+  noteAgentActivity() {
+    if (this.closed || this.listeners.size === 0 || this.agentCheck) return;
+    this.agentCheck = setTimeout(() => {
+      this.agentCheck = null;
+      const signature = this.currentAgentSignature();
+      if (signature !== this.agentSignature) void this.refresh();
+    }, 100);
+    this.agentCheck.unref();
+  }
+  close() {
+    this.closed = true;
+    this.listeners.clear();
+    this.deactivate();
+  }
+  // ── internals ────────────────────────────────────────────────────────────
+  snapshotOf(state) {
+    return { message: JSON.parse(state.snapshotText), text: state.snapshotText };
+  }
+  currentAgentSignature() {
+    const sessions = this.options.agentSessions?.();
+    if (!sessions) return "";
+    return JSON.stringify([...sessions.entries()].sort(([a], [b]) => a.localeCompare(b)));
+  }
+  async runOnce() {
+    const paneRead = await readPanes({ runner: this.runner, now: this.now });
+    const panes = paneRead.data ?? [];
+    this.lastPanes = panes;
+    const key = JSON.stringify(enrichmentKeys(panes));
+    if (!this.enrichment) {
+      await this.enrich(panes, key);
+    } else if (key !== this.enrichmentKey || this.now() - this.enrichedAt > this.enrichmentTtlMs) {
+      if (!this.enriching) {
+        this.enriching = this.enrich(panes, key).finally(() => {
+          this.enriching = null;
+          void this.refresh();
+        });
+      }
+    }
+    this.agentSignature = this.currentAgentSignature();
+    const projection = joinProjection(paneRead, this.enrichment, {
+      now: this.now,
+      agentSessions: this.options.agentSessions?.()
+    });
+    this.publish(projection);
+    if (this.listeners.size > 0 && !this.control && !this.restartTimer) this.startControl();
+  }
+  async enrich(panes, key) {
+    this.enrichment = await collectEnrichment(panes, {
+      runner: this.runner,
+      now: this.now,
+      cwd: this.options.cwd,
+      includeGithub: this.options.includeGithub ?? false,
+      githubSkipReason: "github enrichment is off (xt host start --topology-github)"
+    });
+    this.enrichmentKey = key;
+    this.enrichedAt = this.now();
+  }
+  publish(projection) {
+    const revision = topologyRevision(projection);
+    const previous = this.latest;
+    if (previous && previous.revision === revision) {
+      this.latest = { ...previous, projection, snapshotText: buildSnapshot(projection, previous.seq, revision).text, at: this.now() };
+      return;
+    }
+    this.seq += 1;
+    const snapshot = buildSnapshot(projection, this.seq, revision);
+    let message = snapshot.message;
+    let text = snapshot.text;
+    if (previous) {
+      const update = {
+        schema: "xtrm.agent-host-api.v1",
+        kind: "topology_update",
+        topology: TOPOLOGY_FEED_VERSION,
+        seq: this.seq,
+        base_revision: previous.revision,
+        revision,
+        ...diffTopology(previous.projection, projection)
+      };
+      const updateText = JSON.stringify(update);
+      const bytes = Buffer.byteLength(updateText);
+      if (bytes <= TOPOLOGY_UPDATE_MAX_BYTES && bytes <= Buffer.byteLength(snapshot.text) / 2) {
+        message = update;
+        text = updateText;
+      }
+    }
+    this.latest = { projection, revision, seq: this.seq, snapshotText: snapshot.text, at: this.now() };
+    for (const listener of this.listeners) listener(message, text);
+  }
+  activate() {
+    this.schedulePoll();
+    void this.refresh();
+  }
+  deactivate() {
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    if (this.restartTimer) clearTimeout(this.restartTimer);
+    if (this.agentCheck) clearTimeout(this.agentCheck);
+    this.pollTimer = this.restartTimer = this.agentCheck = null;
+    this.stopControl();
+  }
+  schedulePoll() {
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    if (this.closed || this.listeners.size === 0) return;
+    const delay2 = this.controlUp ? this.safetyPollMs : this.fallbackPollMs;
+    this.pollTimer = setTimeout(() => {
+      void this.refresh();
+      this.schedulePoll();
+    }, delay2);
+    this.pollTimer.unref();
+  }
+  startControl() {
+    if (this.options.controlClient === false || this.closed) return;
+    const target = this.lastPanes[0]?.session_id;
+    if (!target) return;
+    const env3 = { ...process.env };
+    delete env3.TMUX;
+    const child = (0, import_node_child_process39.spawn)("tmux", [...this.tmuxArgs, ...TMUX_CONTROL.attach, target], {
+      stdio: ["pipe", "pipe", "ignore"],
+      env: env3
+    });
+    this.control = child;
+    child.on("error", (error51) => this.log(`tmux control client failed: ${error51.message}`));
+    child.stdin?.on("error", () => {
+    });
+    child.stdin?.write(`${TMUX_CONTROL.subscribe}
+`);
+    const lines = (0, import_node_readline2.createInterface)({ input: child.stdout });
+    lines.on("line", (line) => {
+      if (!this.controlUp && line.startsWith("%")) {
+        this.controlUp = true;
+        this.restartDelayMs = 2e3;
+        this.schedulePoll();
+        this.log("tmux control client attached");
+      }
+      if (line.startsWith("%exit")) return;
+      if (TRIGGERS.test(line)) void this.refresh();
+    });
+    child.on("close", () => {
+      if (this.control !== child) return;
+      this.control = null;
+      this.controlUp = false;
+      if (this.closed || this.listeners.size === 0) return;
+      this.log(`tmux control client exited; polling every ${this.fallbackPollMs} ms, retry in ${this.restartDelayMs} ms`);
+      this.schedulePoll();
+      this.restartTimer = setTimeout(() => {
+        this.restartTimer = null;
+        void this.refresh();
+      }, this.restartDelayMs);
+      this.restartTimer.unref();
+      this.restartDelayMs = Math.min(this.restartDelayMs * 2, 3e4);
+      void this.refresh();
+    });
+  }
+  stopControl() {
+    const child = this.control;
+    this.control = null;
+    this.controlUp = false;
+    if (!child) return;
+    child.stdin?.end();
+    const kill = setTimeout(() => child.kill("SIGTERM"), 500);
+    kill.unref();
+    child.once("close", () => clearTimeout(kill));
+  }
+};
+function sleep(ms) {
+  return new Promise((resolve6) => setTimeout(resolve6, ms));
+}
+
 // src/core/agent-host.ts
 var AGENT_HOST_BIND_ADDRESS = "127.0.0.1";
 var AGENT_HOST_PROTOCOL_MAJOR = 1;
@@ -80717,6 +81228,19 @@ function defaultSocketPath(env3 = process.env) {
 }
 function defaultInfoPath() {
   return import_node_path69.default.join(import_node_os29.default.homedir(), ".xtrm", "run", "agent-host.json");
+}
+function agentSessionsByPane(sessions) {
+  const best = /* @__PURE__ */ new Map();
+  const rank2 = (s) => [s.extensionConnected ? 1 : 0, s.lastActivityAt ?? s.startedAt ?? 0];
+  for (const session of sessions) {
+    const paneId = session.tmux?.paneId;
+    if (!paneId || session.state === "history_only") continue;
+    const current = best.get(paneId);
+    const [c1, c2] = current ? rank2(current) : [-1, -1];
+    const [n1, n2] = rank2(session);
+    if (!current || n1 > c1 || n1 === c1 && n2 > c2) best.set(paneId, session);
+  }
+  return new Map([...best].map(([paneId, s]) => [paneId, { session_id: s.sessionId, provider: s.provider, state: s.state }]));
 }
 function readAgentHostInfo(infoPath = defaultInfoPath()) {
   try {
@@ -80750,7 +81274,14 @@ async function startAgentHost(options = {}) {
   let cursor = 0;
   const replay = [];
   const streams = /* @__PURE__ */ new Set();
+  const topology = new TopologyFeed({
+    ...options.topology,
+    agentSessions: () => agentSessionsByPane(registry2.list()),
+    log
+  });
+  const topologyStreams = /* @__PURE__ */ new Set();
   registry2.subscribe((frame) => {
+    topology.noteAgentActivity();
     cursor += 1;
     const message = { schema: "xtrm.agent-host-api.v1", kind: "event", cursor: String(cursor), frame };
     replay.push(message);
@@ -80867,6 +81398,14 @@ async function startAgentHost(options = {}) {
       else sendJson(res, 404, apiError("session_not_found", `no session ${parts[2]}`));
       return;
     }
+    if (route === "GET /v1/topology") {
+      sendJson(res, 200, await topology.snapshot());
+      return;
+    }
+    if (route === "GET /v1/topology/events") {
+      openTopologyStream(req, res, device?.deviceId ?? null);
+      return;
+    }
     if (route === "GET /v1/events") {
       openStream(req, res, url2.searchParams.get("sessionId"), device?.deviceId ?? null);
       return;
@@ -80975,6 +81514,7 @@ async function startAgentHost(options = {}) {
       return true;
     }
     for (const stream of streams) if (stream.deviceId === deviceId) stream.res.destroy();
+    for (const stream of topologyStreams) if (stream.deviceId === deviceId) stream.res.destroy();
     log(`revoked device ${deviceId}`);
     sendJson(res, 200, { schema: AGENT_HOST_AUTH_SCHEMA, kind: "device_revoked", deviceId });
     return true;
@@ -80997,6 +81537,39 @@ async function startAgentHost(options = {}) {
     const drop = () => {
       clearInterval(heartbeat);
       streams.delete(stream);
+    };
+    req.on("close", drop);
+    res.on("close", drop);
+  }
+  function openTopologyStream(req, res, deviceId) {
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache",
+      connection: "keep-alive"
+    });
+    res.write(": xtrm agent host topology\n\n");
+    const stream = { res, deviceId };
+    topologyStreams.add(stream);
+    const unsubscribe = topology.subscribe((message, text) => {
+      if (res.writableLength > MAX_SSE_BACKLOG_BYTES) {
+        log("topology client is too far behind; closing its stream");
+        res.destroy();
+        return;
+      }
+      res.write(`id: ${message.seq}
+data: ${text}
+
+`);
+    });
+    const heartbeat = setInterval(() => res.write(": keepalive\n\n"), SSE_HEARTBEAT_MS);
+    heartbeat.unref();
+    let dropped = false;
+    const drop = () => {
+      if (dropped) return;
+      dropped = true;
+      clearInterval(heartbeat);
+      topologyStreams.delete(stream);
+      unsubscribe();
     };
     req.on("close", drop);
     res.on("close", drop);
@@ -81036,6 +81609,7 @@ data: ${JSON.stringify(message)}
     await closeServer(socketServer);
     safeUnlink(socketPath);
     await sessionIndex?.close();
+    topology.close();
     throw error51;
   }
   const address = httpServer.address();
@@ -81055,11 +81629,15 @@ data: ${JSON.stringify(message)}
     info,
     registry: registry2,
     sessionIndex,
+    topology,
     close() {
       closing ??= (async () => {
         registry2.close();
+        topology.close();
         for (const stream of streams) stream.res.end();
         streams.clear();
+        for (const stream of topologyStreams) stream.res.end();
+        topologyStreams.clear();
         for (const socket of producers) socket.destroy();
         httpServer.closeAllConnections();
         await Promise.all([closeServer(httpServer), closeServer(socketServer), sessionIndex?.close()]);
@@ -81128,8 +81706,8 @@ function safeUnlink(file2) {
 }
 
 // src/core/agent-host-ensure.ts
-var import_node_child_process39 = require("child_process");
-var import_node_crypto20 = require("crypto");
+var import_node_child_process40 = require("child_process");
+var import_node_crypto21 = require("crypto");
 var import_node_fs28 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
 var import_node_path70 = __toESM(require("path"), 1);
@@ -81226,7 +81804,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
   const logFd = (0, import_node_fs28.openSync)(logPath, logSize > MAX_LOG_BYTES ? "w" : "a", 384);
   let child;
   try {
-    child = (0, import_node_child_process39.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
+    child = (0, import_node_child_process40.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
       detached: true,
       stdio: ["ignore", logFd, logFd],
       env: options.env ?? process.env
@@ -81257,7 +81835,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
       }
       throw new AgentHostEnsureError("host_start_timeout", `xt host did not become ready in time${logTail(logPath, logStart)}`);
     }
-    await sleep(POLL_MS);
+    await sleep2(POLL_MS);
   }
 }
 function logTail(logPath, from) {
@@ -81269,7 +81847,7 @@ function logTail(logPath, from) {
   }
 }
 async function acquireLock(lockPath, deadline) {
-  const token = `${process.pid} ${(0, import_node_crypto20.randomUUID)()}`;
+  const token = `${process.pid} ${(0, import_node_crypto21.randomUUID)()}`;
   for (; ; ) {
     try {
       (0, import_node_fs28.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
@@ -81283,7 +81861,7 @@ async function acquireLock(lockPath, deadline) {
     if (Date.now() > deadline) {
       throw new AgentHostEnsureError("lock_timeout", `another xt host ensure holds ${lockPath}`);
     }
-    await sleep(POLL_MS);
+    await sleep2(POLL_MS);
   }
 }
 function breakStaleLock(lockPath) {
@@ -81299,7 +81877,7 @@ function breakStaleLock(lockPath) {
       return;
     }
   }
-  const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto20.randomUUID)()}.stale`;
+  const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto21.randomUUID)()}.stale`;
   try {
     (0, import_node_fs28.renameSync)(lockPath, aside);
   } catch {
@@ -81326,7 +81904,7 @@ function safeUnlink2(file2) {
   } catch {
   }
 }
-function sleep(ms) {
+function sleep2(ms) {
   return new Promise((resolve6) => setTimeout(resolve6, ms));
 }
 
@@ -81335,7 +81913,7 @@ function createHostCommand(version3 = "0.0.0") {
   const cmd = new Command("host").description(
     "XTRM agent host: live session registry, loopback client API, event fan-out and command routing"
   );
-  cmd.command("start").description("Run the agent host in the foreground (binds 127.0.0.1 only)").option("--port <port>", "Client API port on 127.0.0.1 (0 picks a free port)", "0").option("--socket <path>", "Producer socket path (default $XDG_RUNTIME_DIR/xtrm/agent-host.sock)").option("--json", "Print the host info as JSON once listening", false).option("--no-history", "Do not index stopped sessions from the Pi and Claude journals").option("--direct", "Direct mode: accept proxied tailnet requests that carry a paired device session", false).option("--direct-host <names>", "Comma-separated host names the HTTPS front forwards (e.g. machine.tailnet.ts.net)").action(async (options) => {
+  cmd.command("start").description("Run the agent host in the foreground (binds 127.0.0.1 only)").option("--port <port>", "Client API port on 127.0.0.1 (0 picks a free port)", "0").option("--socket <path>", "Producer socket path (default $XDG_RUNTIME_DIR/xtrm/agent-host.sock)").option("--json", "Print the host info as JSON once listening", false).option("--no-history", "Do not index stopped sessions from the Pi and Claude journals").option("--direct", "Direct mode: accept proxied tailnet requests that carry a paired device session", false).option("--direct-host <names>", "Comma-separated host names the HTTPS front forwards (e.g. machine.tailnet.ts.net)").option("--topology-github", "Enrich the topology feed with GitHub pull requests (gh pr list; off by default)", false).action(async (options) => {
     const port = Number(options.port);
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       console.error(kleur_default.red(`Invalid --port: ${options.port}`));
@@ -81355,7 +81933,8 @@ function createHostCommand(version3 = "0.0.0") {
         socketPath: options.socket,
         version: version3,
         ...options.history ? { sessionIndex: defaultSessionIndexOptions() } : {},
-        ...options.direct ? { direct: { hostnames: directHostnames } } : {}
+        ...options.direct ? { direct: { hostnames: directHostnames } } : {},
+        topology: { includeGithub: options.topologyGithub === true }
       });
     } catch (error51) {
       console.error(kleur_default.red(`\u2717 ${error51.message}`));
