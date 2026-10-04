@@ -34,6 +34,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@v2
+
     - name: Install Node dependencies
       run: npm ci && cd cli && npm ci
 
@@ -110,3 +113,9 @@ jobs:
       run: |
         npm test --prefix cli
         npm run test:scripts
+        # packages/pi-extensions ships bun:test suites (colocated and under
+        # tests/); they were previously unrun by CI, which is how two real
+        # failures survived on main — see CORE-2352. npm ci above provides the
+        # node_modules and SDK resolution those suites need; suite runs from
+        # the repo root and is cwd-independent by assertion.
+        bun test packages/pi-extensions

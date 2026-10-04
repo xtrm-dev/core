@@ -50,7 +50,6 @@ describe("retired Pi extensions", () => {
 
     for (const relativePath of [
       "packages/pi-extensions/src/shared/legacy-path-map.ts",
-      "packages/pi-extensions/src/manifest.json",
       "packages/pi-extensions/extensions/xtprompt/index.test.ts",
       "cli/src/core/plugin-era-cleanup.ts",
       "cli/src/core/pi-runtime.ts",
@@ -59,6 +58,15 @@ describe("retired Pi extensions", () => {
       for (const id of retiredExtensionIds) {
         expect(content, `${relativePath} should not contain ${id}`).not.toContain(id);
       }
+    }
+
+    // The manifest names retired ids in its `disabled` block WITH the
+    // retirement reason — that is documentation, not enrollment. The scan
+    // checks the structured contract: no retired id may sit in `active`.
+    const manifest = JSON.parse(readFileSync(join(repoRoot, "packages/pi-extensions/src/manifest.json"), "utf8"));
+    const activeIds = (manifest.active ?? []).map((entry: { id: string }) => entry.id);
+    for (const id of retiredExtensionIds) {
+      expect(activeIds, `retired id ${id} must not be enrolled in active`).not.toContain(id);
     }
   });
 });
