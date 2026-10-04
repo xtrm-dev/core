@@ -372,7 +372,7 @@ export function formatSuggestionCard(c: SuggestionCard): string {
     // FYI: one gold row carrying the summary, nothing more.
     return goldCard(glyph, header, wrapPlain(c.verb.oneLine || c.verb.action, CARD_MAX), facts);
   }
-  const instr = `${c.verb.instruction(c.ref)} Ignore this if it does not fit what actually happened.`;
+  const instr = `${c.verb.instruction(c.ref).replace(/[.]?$/, "")}. Ignore this if it does not fit what actually happened.`;
   // Reserve the facts room before wrapping so the last row never overruns.
   const factsLen = facts ? [...facts].length + 2 : 0;
   return goldCard(glyph, header, wrapPlain(instr, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts);
