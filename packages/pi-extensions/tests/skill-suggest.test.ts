@@ -58,17 +58,22 @@ describe("labelled injected context", () => {
   });
 });
 
-describe("input seam delivery", () => {
-  it("uses the ordered prompt transform and emits no card", async () => {
-    // Anchor the probe to this file, not the cwd: the suite runs from both.
+describe("input seam decides, never mutates", () => {
+  it("returns continue and defers delivery to the first tool_result", async () => {
+    // Anchor the probe to this file: the suite runs from two directories.
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
-    const at = src.indexOf('delivery: "prompt-transform"');
-    const seam = src.slice(at - 2000, at + 200);
-    // Ordered delivery: the transform is the only race-free path at input.
-    expect(seam).toContain('action: "transform"');
-    // No second channel at this seam — the block in the prompt is the delivery,
-    // so the operator never sees the doctrine twice.
-    expect(seam).not.toContain("pi.sendMessage(");
+    expect(src).toContain("deferred-to-tool-result");
+    expect(src).toContain("pending = { entry, block, confidence: result.choice.confidence }");
+    // No prompt mutation anywhere in the file, and no wake at submit.
+    expect(src).not.toContain('action: "transform"');
+    const deliver = src.slice(src.indexOf('pi.on("tool_result"'), src.indexOf('pi.on("tool_result"') + 1200);
+    expect(deliver).toContain("triggerTurn: false");
+    expect(deliver).not.toContain("triggerTurn: true");
+  });
+
+  it("restores the skill description, italic, at the end of the block", async () => {
+    const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
+    expect(src).toContain("\\x1b[3m${entry.description}\\x1b[23m");
   });
 });
 
