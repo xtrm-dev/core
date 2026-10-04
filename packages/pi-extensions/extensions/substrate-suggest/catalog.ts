@@ -226,111 +226,69 @@ export function resetCooldowns(cd: Cooldowns): void {
   for (const k of Object.keys(cd)) delete cd[k];
 }
 
-// ── Wake-card chrome (dim purple box, italic interior, highlighted tokens) ──
+// ── Wake-card chrome: purple dot on a tool row, indented gold block ─────────
 
 const PURPLE = "\x1b[38;2;141;127;232m";
-const MAGENTA = "\x1b[38;2;213;120;255m";
-/** Border and edges: dim purple strokes. */
-const STROKE = (t: string) => `\x1b[2m${PURPLE}${t}\x1b[39m\x1b[22m`;
+/** Full yellow, deliberately not brilliant: reads as a signal, not a highlighter. */
+const BG = [201, 162, 39] as const;
+const FG = [24, 20, 16] as const;
+const YELLOW_ON = `\x1b[48;2;${BG[0]};${BG[1]};${BG[2]}m\x1b[38;2;${FG[0]};${FG[1]};${FG[2]}m`;
+const YELLOW_OFF = "\x1b[49m\x1b[39m";
+const DOT = "\x1b[1m●\x1b[22m"; // white, out of the gold block
+const WARN = "\x1b[33m!\x1b[0m";
+const WHITE = (t: string) => `\x1b[37m${t}\x1b[39m`;
 const DIM = (t: string) => `\x1b[2m${t}\x1b[22m`;
-const BOLD = (t: string) => `\x1b[1m${t}\x1b[22m`;
-/** Everything inside the box is italic; highlighted tokens break the italic in magenta bold. */
-const ITALIC = (t: string) => `\x1b[3m${t}\x1b[23m`;
-const HL = (t: string) => `\x1b[23m${MAGENTA}\x1b[1m${t}\x1b[22m\x1b[39m\x1b[3m`;
-const WARN = (t: string) => `\x1b[33m${t}\x1b[0m`;
-const CARD_TITLE = "suggestion";
+const INDENT = "  ";
 const CARD_MIN = 44;
-const CARD_MAX = 96;
+const CARD_MAX = 88;
+const CONF_LABEL = "jev_confidence";
 
-/** Highlight the tokens a reader acts on: refs, commands, paths, tools. */
-function emphasize(plain: string): string {
-  return ITALIC(
-    plain.replace(
-      /(`[^`]+`|\b(?:CORE|XTRM|SPECIALISTS)-[A-Z0-9]+|\b(?:sb|bg_run|bg_delegate|intercom|claude-link)\b|\bsubstrate_[a-z_]+\b|[\w./-]+\.(?:ts|mjs|py|md|json))\b/g,
-      (m) => HL(m),
-    ),
-  );
+const stripAnsi = (v: string) => v.replace(/\x1b\[[0-9;]*m/g, "");
+
+/** Gold background, dark foreground; bold marks what the reader would copy. */
+function paint(text: string, bold = false): string {
+  return `${YELLOW_ON}${bold ? "\x1b[1m" : ""}${text}${bold ? "\x1b[22m" : ""}${YELLOW_OFF}`;
 }
 
-const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
-
 interface Row {
-  /** Visible text — sizing, wrapping and padding all measure this. */
   plain: string;
-  /** Rendered text with escapes. */
   ansi: string;
 }
 
-/** Wrap plain text to the interior width, then render each chunk. */
-function wrapRow(plain: string, ansi: (chunk: string) => string, inner: number): Row[] {
-  const width = inner - 1;
-  const out: Row[] = [];
-  let rest = plain;
-  while (rest.length > width) {
-    const cut = rest.lastIndexOf(" ", width);
-    const head = cut > 20 ? rest.slice(0, cut) : rest.slice(0, width);
-    out.push({ plain: head, ansi: ansi(head) });
-    rest = rest.slice(head.length).replace(/^\s+/, "");
+/** Wrap plain text to the interior width. */
+function wrapPlain(plain: string, max: number): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (const w of plain.split(" ")) {
+    if ((cur + " " + w).trim().length > max) {
+      out.push(cur.trim());
+      cur = w;
+    } else cur += " " + w;
   }
-  out.push({ plain: rest, ansi: ansi(rest) });
-  return out;
+  if (cur.trim()) out.push(cur.trim());
+  return out.length ? out : [""];
 }
 
-function box(title: string, rows: Row[]): string {
-  const inner = Math.min(CARD_MAX, Math.max(CARD_MIN, ...rows.map((r) => r.plain.length + 1)));
-  const titleLen = [...stripAnsi(title)].length;
-  const top = `╭─ ${title} ${"─".repeat(Math.max(0, inner - titleLen - 3))}╮`;
-  const bottom = STROKE(`╰${"─".repeat(inner)}╯`);
-  const body = rows.map(
-    (r) => `${STROKE("│")} ${r.ansi}${" ".repeat(Math.max(0, inner - 1 - r.plain.length))}${STROKE("│")}`,
-  );
-  return [top, ...body, bottom].join("\n");
+/** Paint a chunk, bolding the tokens a reader acts on. */
+function emphasize(chunk: string): string {
+  return chunk
+    .split(/(`[^`]+`|\b(?:CORE|XTRM|SPECIALISTS)-[A-Z0-9]+|\b(?:sb|bg_run|bg_delegate|intercom|claude-link)\b|\bsubstrate_[a-z_]+\b|[\w./-]+\.(?:ts|mjs|py|md|json))\b/g)
+    .map((seg, i) => (i % 2 ? paint(seg, true) : paint(seg)))
+    .join("");
 }
 
-/** Wrap already-built message content in the house box for the operator. */
-export function renderCardBox(content: string): string {
-  const lines = content.split("\n");
-  const inner = Math.min(CARD_MAX, Math.max(CARD_MIN, ...lines.map((l) => l.length + 1)));
-  const title = `${PURPLE}\x1b[1m●\x1b[22m ${CARD_TITLE}`;
-  const titleLen = [...stripAnsi(title)].length;
-  const top = `╭─ ${title} ${"─".repeat(Math.max(0, inner - titleLen - 3))}╮`;
-  const bottom = STROKE(`╰${"─".repeat(inner)}╯`);
-  const body = lines.map((l) => `${STROKE("│")} ${ITALIC(emphasizePlain(l))}${" ".repeat(Math.max(0, inner - 1 - l.length))}${STROKE("│")}`);
-  return [top, ...body, bottom].join("\n");
-}
-
-/** Plain-text emphasis used by the box renderer (no surrounding italic). */
-function emphasizePlain(plain: string): string {
-  return plain.replace(
-    /(`[^`]+`|\b(?:CORE|XTRM|SPECIALISTS)-[A-Z0-9]+|\b(?:sb|bg_run|bg_delegate|intercom|claude-link)\b|\bsubstrate_[a-z_]+\b|[\w./-]+\.(?:ts|mjs|py|md|json))\b/g,
-    (m) => HL(m),
-  );
-}
-
-/**
- * Every block injected into an operator prompt carries its provenance, so
- * injected doctrine, prior-agent output and the operator's own words never
- * blur together. One convention for all injection sources.
- */
-export function contextBlock(
-  kind: "skill-doctrine" | "agent-settlement" | string,
-  meta: { about?: string; source?: string; model?: string; confidence?: number | null; body: string },
-): string {
-  const attrs = [
-    `kind="${kind}"`,
-    meta.source ? `source="${meta.source}"` : null,
-    meta.about ? `about="${meta.about}"` : null,
-    meta.model ? `by="${meta.model}"` : null,
-    meta.confidence != null ? `confidence="${meta.confidence.toFixed(2)}"` : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return [
-    `<xtrm_context ${attrs}>`,
-    `Injected context, not the operator's words:`,
-    meta.body,
-    `</xtrm_context>`,
-  ].join("\n");
+/** Dot row, then the gold block indented under it with uniform width. */
+function goldCard(header: string, rows: string[], facts: string | null): string {
+  // Reserve the facts room inside the block width, then size to the widest row.
+  const factsLen = facts ? [...facts].length + 2 : 0;
+  const width = Math.min(CARD_MAX, Math.max(CARD_MIN, ...rows.map((r) => [...r].length)) + factsLen);
+  const lines = rows.map((r, i) => {
+    const last = i === rows.length - 1;
+    const tail = last && facts ? `  ${paint(`\x1b[2m${facts}\x1b[22m`)}` : "";
+    const used = [...r].length + (last && facts ? factsLen : 0);
+    return `${INDENT}${emphasize(r)}${tail}${" ".repeat(Math.max(0, width - used))}`;
+  });
+  return [header, ...lines].join("\n");
 }
 
 /** Fields an operator card needs from a labelled <xtrm_context> block. */
@@ -366,6 +324,32 @@ export function parseContextBlock(content: string): ContextBlockMeta | null {
   return meta;
 }
 
+/**
+ * Every block injected into an operator prompt carries its provenance, so
+ * injected doctrine, prior-agent output and the operator's own words never
+ * blur together. One convention for all injection sources.
+ */
+export function contextBlock(
+  kind: "skill-doctrine" | "agent-settlement" | string,
+  meta: { about?: string; source?: string; model?: string; confidence?: number | null; body: string },
+): string {
+  const attrs = [
+    `kind="${kind}"`,
+    meta.source ? `source="${meta.source}"` : null,
+    meta.about ? `about="${meta.about}"` : null,
+    meta.model ? `by="${meta.model}"` : null,
+    meta.confidence != null ? `confidence="${meta.confidence.toFixed(2)}"` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    `<xtrm_context ${attrs}>`,
+    `Injected context, not the operator's words:`,
+    meta.body,
+    `</xtrm_context>`,
+  ].join("\n");
+}
+
 export interface SuggestionCard {
   verb: VerbSpec;
   ref: string;
@@ -377,34 +361,30 @@ export interface SuggestionCard {
 }
 
 export function formatSuggestionCard(c: SuggestionCard): string {
-  const glyph = c.verb.severity === "high" ? WARN("!") : `${PURPLE}\x1b[1m●\x1b[22m`;
-  const title = `${glyph} ${CARD_TITLE}`;
-  const facts = [
-    c.confidence != null ? `jev ${c.confidence.toFixed(2)}` : null,
+  const glyph = c.verb.severity === "high" ? WARN : DOT;
+  const header = `${glyph} ${WHITE(c.verb.action)} ${DIM("·")} ${WHITE(c.ref)}`;
+  const parts = [
+    c.confidence != null ? `${CONF_LABEL}: ${c.confidence.toFixed(2)}` : null,
     c.revision != null ? `rev ${c.revision}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const headerPlain = `${c.verb.action} · ${c.ref}`;
-  const instrPlain = `${c.verb.instruction(c.ref)} Ignore this if it does not fit what actually happened.${facts ? ` · ${facts}` : ""}`;
-  // Size the box from the widest visible row before wrapping.
-  const inner = Math.min(
-    CARD_MAX,
-    Math.max(CARD_MIN, headerPlain.length + 1, instrPlain.length + 1),
-  );
+  ].filter(Boolean);
+  const facts = parts.length ? parts.join(" · ") : null;
+
   if (c.compact) {
-    // FYI: one row, facts folded in. The instruction body is what the model
-    // already received as a labelled message; repeating it is duplication.
-    const plain = facts ? `${headerPlain} · ${facts}` : headerPlain;
-    return box(title, [
-      { plain, ansi: `${HL(headerPlain)}${facts ? ` ${DIM("·")} ${DIM(facts)}` : ""}` },
-    ]);
+    // FYI: one gold row carrying the summary, nothing more.
+    return goldCard(header, wrapPlain(c.verb.oneLine || c.verb.action, CARD_MAX), facts);
   }
-  const rows: Row[] = [
-    ...wrapRow(headerPlain, (chunk) => `${HL(chunk)}`, inner),
-    ...wrapRow(instrPlain, (chunk) => emphasize(chunk), inner),
-  ];
-  return box(title, rows);
+  const instr = `${c.verb.instruction(c.ref)} Ignore this if it does not fit what actually happened.`;
+  // Reserve the facts room before wrapping so the last row never overruns.
+  const factsLen = facts ? [...facts].length + 2 : 0;
+  return goldCard(header, wrapPlain(instr, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts);
+}
+
+/** Render arbitrary message content in the house style (renderer fallback). */
+export function renderCardBox(content: string): string {
+  const [first, ...rest] = content.split("\n");
+  const header = first.startsWith("<") ? "context" : first;
+  const body = rest.length ? rest.join(" ") : content;
+  return goldCard(header, wrapPlain(body, CARD_MAX), null);
 }
 
 /** Model-visible plain text (what lands in the transcript strip/exports). */
