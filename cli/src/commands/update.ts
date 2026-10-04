@@ -11,7 +11,7 @@ import { getGlobalSkillsOverrideRoots, shouldUseGlobalSkills } from '../core/glo
 import { shouldUseGlobalHooks } from '../core/global-hooks-flag.js';
 import { reconcileGlobalClaudeHooks } from '../core/claude-runtime-sync.js';
 import { reconcileGlobalPiHooks } from '../core/pi-runtime-hooks.js';
-import { assureXtManagedPiPackages, runExternalPiToolPatch } from '../core/pi-runtime.js';
+import { assureXtManagedPiPackages, runExternalPiToolPatch, runPiStartupSmokeCheck } from '../core/pi-runtime.js';
 import { printGlobalPromptSyncSummary, syncGlobalPrompts } from '../core/global-prompt-sync.js';
 import { scanXtrmRepos } from '../core/repo-discovery.js';
 import { isStrictRegistryMode, runInstall } from './install.js';
@@ -325,7 +325,9 @@ function formatRegistrySourceMismatchReason(error: unknown, strictRegistry: bool
 }
 
 function printPiPackages(packageAssurance: Awaited<ReturnType<typeof assureXtManagedPiPackages>>): void {
-    if (packageAssurance.missing.length === 0 && packageAssurance.outdated.length === 0) {
+    if (packageAssurance.missing.length === 0
+        && packageAssurance.outdated.length === 0
+        && packageAssurance.provided.length === 0) {
         return;
     }
 
@@ -333,6 +335,10 @@ function printPiPackages(packageAssurance: Awaited<ReturnType<typeof assureXtMan
     console.log(kleur.dim('  ' + '-'.repeat(50)));
     for (const status of packageAssurance.statuses) {
         if (status.state === 'current') continue;
+        if (packageAssurance.provided.includes(status.pkg.id)) {
+            console.log(`${'provided'.padEnd(10)} ${status.pkg.displayName} (already provided by a configured source)`);
+            continue;
+        }
         console.log(`${status.state.padEnd(10)} ${status.pkg.displayName}`);
     }
 }
@@ -461,13 +467,34 @@ export function createUpdateCommand(): Command {
             // Post-loop globals are NOT gated on migration state (CORE-2343):
             // Pi package assurance and the external tool patch write under $HOME
             // and the package root, so neither can strand or reach a board.
-            const packageAssurance = await assureXtManagedPiPackages(!typedOpts.apply);
+            const packageAssurance = await assureXtManagedPiPackages(
+                !typedOpts.apply,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                targets,
+            );
             if (typedOpts.apply) runExternalPiToolPatch(resolvePackageRoot(), false);
+            // CORE-2342: an apply that leaves pi unable to start is a failed
+            // apply. Probe once, after every write, and report the real cause.
+            const piStartupSmoke = typedOpts.apply
+                ? await runPiStartupSmokeCheck()
+                : null;
+            if (piStartupSmoke && piStartupSmoke.status !== 'ok') {
+                const label = piStartupSmoke.status === 'skipped' ? 'skipped' : 'FAILED';
+                const paint = piStartupSmoke.status === 'skipped' ? kleur.yellow : kleur.red;
+                console.error(paint(`\n  ${piStartupSmoke.status === 'skipped' ? '⚠' : '✗'} pi startup smoke check ${label}: ${piStartupSmoke.detail}`));
+                if (piStartupSmoke.status !== 'skipped') {
+                    console.error(kleur.red('    pi startability is unproven after this apply — see the cause above, fix it, then rerun xt update --apply.'));
+                }
+            }
 
             if (opts.json) {
                 console.log(JSON.stringify({
                     repos: rows,
                     packages: packageAssurance,
+                    piStartupSmoke,
                     promptSync,
                     ...([...fleetBlocked.keys()].length > 0 ? { fleetPreflightBlocked: [...fleetBlocked.keys()] } : {}),
                 }, null, 2));
@@ -483,7 +510,10 @@ export function createUpdateCommand(): Command {
             // A repo in the beads→Substrate transition maps to a 'failed' row
             // (repo-scoped writes were gated); 'incomplete' rows are also
             // nonzero (a repo that cannot even be read is not success).
-            if (rows.some(row => row.status === 'failed' || row.status === 'incomplete') || packageAssurance.failed.length > 0) {
+            if (rows.some(row => row.status === 'failed' || row.status === 'incomplete')
+                || packageAssurance.failed.length > 0
+                || piStartupSmoke?.status === 'failed'
+                || piStartupSmoke?.status === 'inconclusive') {
                 process.exitCode = 1;
             }
         });
