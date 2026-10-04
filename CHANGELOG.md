@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-10-04
+
+### Fixed
+- Render a compact card parsed from the labelled block ([767164d](https://github.com/xtrm-dev/core/commit/767164d4478f7d14fb671561d09dbd726ee4c111))
+
+### Project maintenance
+- Anchor the source probe to the test file, not the cwd ([0601b1d](https://github.com/xtrm-dev/core/commit/0601b1d72de0d1311366e07c73a615d1abfd72c9))
+
 ## [0.15.1] - 2026-10-04
 
 ### Fixed
