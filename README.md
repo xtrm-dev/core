@@ -167,6 +167,8 @@ The goal is the same as elsewhere in XTRM: do not make the worker reconstruct us
 
 ### `substrate-suggest`
 
+See [docs/pi-extensions.md](docs/pi-extensions.md) for the extension model and [docs/xtrm-ui.md](docs/xtrm-ui.md) for card rendering.
+
 `@jaggerxtrm/pi-extensions` includes `substrate-suggest`, an advisory extension that suggests Substrate work duties (journal kinds, checkpoints, claim renewals, closures, contract revisions) at `agent_end`.
 
 It uses deterministic rules first and queries Jev (Typesafe System One Choice and Noul classifiers) when semantic judgment is required. It automatically binds to the current Substrate issue from in-session tool calls and recent activity without requiring environment variables. Beyond issue duties, `substrate-suggest` includes:
@@ -177,6 +179,8 @@ It uses deterministic rules first and queries Jev (Typesafe System One Choice an
 Suggestions appear as house cards: a dim purple box (`#8d7fe8`) with a `(● suggestion)` title, italic interior, and magenta-bold highlights on the tokens you act on (issue refs, `sb`/`bg_run`/`intercom` calls, file paths). Every injected block carries `<xtrm_context>` provenance so injected doctrine never blurs with the operator's own words. Suggestions are purely advisory, fail open, enforce per-scope cooldowns, log decisions to `~/.xtrm/substrate-suggest/log.jsonl`, and can be disabled with `--no-substrate-suggest` or `SUBSTRATE_SUGGEST=off`.
 
 ### `skill-suggest`
+
+See [docs/pi-extensions.md](docs/pi-extensions.md) for the extension model.
 
 `skill-suggest` brings Jev skill suggestions natively into Pi over curated XTRM skill packs.
 
@@ -375,7 +379,7 @@ Use live `xt <command> --help`, `sp help`, and `specialists list --full` for exa
 | [docs/xt-pi-role.md](docs/xt-pi-role.md) | role launcher and Specialist behavior |
 | [docs/xt-claude-channels.md](docs/xt-claude-channels.md) | `xt claude` channel wake and the managed settings it needs |
 | [docs/xtrm-ui.md](docs/xtrm-ui.md) | XTRM Pi UI/themes/tool rendering |
-| [docs/pi-extensions.md](docs/pi-extensions.md) | Pi extension/runtime integration |
+| [docs/pi-extensions.md](docs/pi-extensions.md) | Pi extension/runtime integration (incl. `substrate-suggest` and `skill-suggest` Jev suggestion extensions) |
 | [docs/skills.md](docs/skills.md) | current skills-v4 catalog and tier model |
 | [docs/skills-v4-preservation-matrix.md](docs/skills-v4-preservation-matrix.md) | v3 → v4 capability disposition |
 | [docs/skills-ownership.md](docs/skills-ownership.md) | Core/Specialists skill ownership and vendoring |
