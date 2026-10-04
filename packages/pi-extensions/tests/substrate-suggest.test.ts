@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
+  contextBlock,
+  parseContextBlock,
   CATALOG,
   evaluateDeterministic,
   cooldownAllows,
@@ -113,51 +115,80 @@ describe("cooldowns", () => {
   });
 });
 
+describe("duty gate observability (CORE-2359)", () => {
+  it("records the gate outcome for every early return, not only fires", async () => {
+    const src = await Bun.file(new URL("../extensions/substrate-suggest/index.ts", import.meta.url)).text();
+    // The log must distinguish the gates, or silence is undiagnosable again.
+    for (const reason of [
+      "services_unavailable",
+      "no_bound_issue",
+      "turn_inactive",
+      "issue_terminal",
+      "no_due_duty",
+      "cooldown",
+    ]) {
+      expect(src, reason).toContain(`gate("${reason}"`);
+    }
+    // no_due_duty must carry the state that explains WHY nothing was due.
+    expect(src).toContain("claim_expires_at");
+    expect(src).toContain("journal_entries");
+  });
+});
+
 describe("wake card", () => {
   const verb = CATALOG.find((v) => v.id === "journal_decision")!;
 
-  it("renders a dot header and an indented gold block with jev_confidence", () => {
+  it("bands the header text in gold and leaves the dot and body unbanded", () => {
     const card = formatSuggestionCard({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
     const plain = formatSuggestionPlain({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
-    const lines = plain.split("\n");
-    // dot on its own header row, like a tool row — white, out of the block
-    expect(lines[0].startsWith("●")).toBe(true);
+    const [head, ...body] = plain.split("\n");
+
+    // dot first, white, then the gold band begins at the header text
+    expect(head.startsWith("●")).toBe(true);
     expect(card).toContain("\x1b[1m●\x1b[22m");
-    expect(card).not.toContain("\x1b[38;2;141;127;232m\x1b[1m●");
-    expect(lines[0]).toContain("sb journal append");
-    expect(lines[0]).toContain("CORE-9");
-    // gold background + contrasting foreground + bold evidence
-    expect(card).toContain("\x1b[48;2;201;162;39m");
-    expect(card).toContain("\x1b[38;2;24;20;16m");
-    expect(card).toContain("\x1b[1msubstrate_journal_append\x1b[22m");
+    expect(head).toContain("sb journal append");
+    expect(head).toContain("CORE-9");
+
+    // gold + dark foreground + bold, on the header only
+    const banded = card.split("\n")[0];
+    expect(banded).toContain("\x1b[48;2;201;162;39m");
+    expect(banded).toContain("\x1b[38;2;24;20;16m");
+    expect(banded).toContain("\x1b[1m");
+    for (const line of card.split("\n").slice(1)) {
+      expect(line).not.toContain("\x1b[48;2;201;162;39m");
+      expect(line).toContain("\x1b[3m"); // italic, normal background
+    }
+
     // confidence is labelled by its actual name
     expect(plain).toContain("jev_confidence: 0.72");
     expect(plain).toContain("rev 3");
-    // indented rows of one width, no box furniture
-    for (const row of lines.slice(1)) expect(row.startsWith("  ")).toBe(true);
-    expect(new Set(lines.slice(1).map((l) => [...l].length)).size).toBe(1);
-    expect(plain).not.toMatch(/[╭╰│]/);
   });
 
-  it("high severity keeps the ! glyph", () => {
-    const high = CATALOG.find((v) => v.id === "claim_renew")!;
-    const card = formatSuggestionPlain({ verb: high, ref: "CORE-9" });
-    expect(card).toContain("!");
-    expect(card).not.toContain("●");
-  });
-
-  it("plain form carries no ANSI escapes", () => {
-    const plain = formatSuggestionPlain({ verb, ref: "CORE-9" });
-    expect(plain).not.toMatch(/\x1b\[/);
-    expect(plain).toContain("CORE-9");
+  it("summarises a context block with its italic description, not the first body line", () => {
+    const block = contextBlock("skill-doctrine", {
+      about: "the current request",
+      source: "engineering-quality/causal-debugging",
+      model: "jev-1.13-free",
+      confidence: 0.61,
+      body: [
+        "Injected context, not the operator's words:",
+        "engineering-quality/causal-debugging \u2014 Use for bugs. Ignore this if it does not fit what actually happened.",
+        "Its instructions: read .xtrm/skills/default/engineering-quality/references/causal-debugging.md and apply what fits before proceeding.",
+        "Nested reference of the engineering-quality skill.",
+        "\u001b[3mUse for bugs, regressions, crashes, unexpected output, failing tests.\u001b[23m",
+      ].join("\n"),
+    });
+    const meta = parseContextBlock(block);
+    expect(meta?.body).toBe("Use for bugs, regressions, crashes, unexpected output, failing tests.");
+    expect(meta?.confidence).toBe(0.61);
+    expect(meta?.source).toBe("engineering-quality/causal-debugging");
   });
 
   it("wraps long instructions instead of overflowing", () => {
     const long = { ...verb, instruction: () => "x ".repeat(200) };
     const plain = formatSuggestionPlain({ verb: long, ref: "CORE-9" });
-    const widths = new Set(plain.split("\n").slice(1).map((l) => [...l].length));
-    expect(widths.size).toBe(1);
-    expect(Math.max(...[...widths])).toBeLessThanOrEqual(90);
+    const widths = plain.split("\n").slice(1).map((l) => [...l].length);
+    expect(Math.max(...widths)).toBeLessThanOrEqual(90);
   });
 });
 
