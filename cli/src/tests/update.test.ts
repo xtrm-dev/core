@@ -55,6 +55,8 @@ vi.mock('../core/registry-scaffold.js', () => ({
 vi.mock('../core/pi-runtime.js', () => ({
   assureXtManagedPiPackages: assureXtManagedPiPackagesMock,
   runExternalPiToolPatch: runExternalPiToolPatchMock,
+  // CORE-2342: post-apply startup probe. Mocked so tests never boot a real pi.
+  runPiStartupSmokeCheck: vi.fn(async () => ({ ok: true, detail: 'pi loaded every configured extension' })),
 }));
 
 vi.mock('../commands/install.js', () => ({
@@ -142,6 +144,7 @@ beforeEach(() => {
     installed: [],
     refreshed: [],
     failed: [],
+    provided: [],
   });
   planSubstrateMigrationMock.mockResolvedValue({ needed: false, hasBeads: false, alreadyMigrated: false, sbAvailable: false, reason: 'no .beads directory' });
   runDependencyMaintenanceMock.mockResolvedValue({
@@ -597,7 +600,8 @@ describe('xtrm update', () => {
         maintenance: { tools: [], substrateDoctor: { state: 'checked' }, gitnexusIndex: { state: 'current' } },
         migration: { needed: false, status: 'planned', reason: 'no .beads directory' },
       }],
-      packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [] },
+      packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [], provided: [] },
+      piStartupSmoke: null,
       promptSync: { targets: [] },
     });
   });
@@ -613,7 +617,7 @@ describe('xtrm update', () => {
       throw new Error('Registry/source mismatch: missing package source files.\n    • .xtrm/skills/default/missing/file.md');
     });
     assureXtManagedPiPackagesMock.mockResolvedValue({
-      statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [],
+      statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [], provided: [],
     });
     const previousStrict = process.env.XTRM_STRICT_REGISTRY;
     process.env.XTRM_STRICT_REGISTRY = '1';
