@@ -383,22 +383,15 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // The input seam decides; it never mutates the prompt.
   pi.on("input", handler as never);
 
-  // Delivery: the first tool_result of the turn is the first ordered place
-  // where extra context is guaranteed to reach the model (substrate-suggest's
-  // inline pattern). The operator gets the loud gold card at the same moment.
-  pi.on("tool_result", (event) => {
+  // Delivery: the first tool_result of the turn is the first ordered point
+  // inside the turn, and the card is a context-bearing custom message, so the
+  // agent reads it. No inline copy: a block appended to tool output renders as
+  // raw XML in the transcript — exactly what the operator should not wade
+  // through.
+  pi.on("tool_result", () => {
     if (!pending || off()) return undefined;
     const item = pending;
     pending = null;
-    const content = (event as { content?: unknown }).content;
-    const advisory = [
-      `\n\n${item.block}`,
-      "",
-    ].join("");
-    const nextContent =
-      Array.isArray(content)
-        ? [...content, { type: "text", text: advisory } as never]
-        : [{ type: "text", text: advisory } as never];
     logDecision({ ts: new Date().toISOString(), seam: "tool_result", pick: item.entry.id, injected: true, confidence: item.confidence });
     pi.sendMessage(
       {
@@ -409,7 +402,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       },
       { deliverAs: "followUp", triggerTurn: false },
     );
-    return { content: nextContent } as never;
+    return undefined;
   });
 
 

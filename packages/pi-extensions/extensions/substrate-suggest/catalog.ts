@@ -245,9 +245,14 @@ const CONF_LABEL = "jev_confidence";
 
 const stripAnsi = (v: string) => v.replace(/\x1b\[[0-9;]*m/g, "");
 
-/** Gold background, dark foreground; bold marks what the reader would copy. */
+/** Gold background, dark foreground. Used for the header band only. */
 function paint(text: string, bold = false): string {
   return `${YELLOW_ON}${bold ? "\x1b[1m" : ""}${text}${bold ? "\x1b[22m" : ""}${YELLOW_OFF}`;
+}
+
+/** Body text: italic on the normal background — no gold, no box. */
+function italic(text: string): string {
+  return `\x1b[3m${text}\x1b[23m`;
 }
 
 interface Row {
@@ -269,26 +274,19 @@ function wrapPlain(plain: string, max: number): string[] {
   return out.length ? out : [""];
 }
 
-/** Paint a chunk, bolding the tokens a reader acts on. */
-function emphasize(chunk: string): string {
-  return chunk
-    .split(/(`[^`]+`|\b(?:CORE|XTRM|SPECIALISTS)-[A-Z0-9]+|\b(?:sb|bg_run|bg_delegate|intercom|claude-link)\b|\bsubstrate_[a-z_]+\b|[\w./-]+\.(?:ts|mjs|py|md|json))\b/g)
-    .map((seg, i) => (i % 2 ? paint(seg, true) : paint(seg)))
-    .join("");
-}
-
-/** Dot row, then the gold block indented under it with uniform width. */
-function goldCard(header: string, rows: string[], facts: string | null): string {
-  // Reserve the facts room inside the block width, then size to the widest row.
-  const factsLen = facts ? [...facts].length + 2 : 0;
-  const width = Math.min(CARD_MAX, Math.max(CARD_MIN, ...rows.map((r) => [...r].length)) + factsLen);
+/**
+ * A dot, then the header on a gold band with a dark bold foreground, then the
+ * body italic on the normal background. Only the header text carries the gold —
+ * the dot and everything below it stay unbanded.
+ */
+function goldCard(glyph: string, header: string, rows: string[], facts: string | null): string {
+  const head = paint(header, true);
   const lines = rows.map((r, i) => {
     const last = i === rows.length - 1;
-    const tail = last && facts ? `  ${paint(`\x1b[2m${facts}\x1b[22m`)}` : "";
-    const used = [...r].length + (last && facts ? factsLen : 0);
-    return `${INDENT}${emphasize(r)}${tail}${" ".repeat(Math.max(0, width - used))}`;
+    const tail = last && facts ? `  ${DIM(facts)}` : "";
+    return `${INDENT}${italic(r)}${tail}`;
   });
-  return [header, ...lines].join("\n");
+  return [`${glyph} ${head}`, ...lines].join("\n");
 }
 
 /** Fields an operator card needs from a labelled <xtrm_context> block. */
@@ -316,11 +314,12 @@ export function parseContextBlock(content: string): ContextBlockMeta | null {
     else if (m[1] === "confidence") meta.confidence = Number.isFinite(Number(m[2])) ? Number(m[2]) : null;
   }
   const body = content.replace(/^<xtrm_context[^>]*>\n?/, "").replace(/<\/xtrm_context>\s*$/, "");
-  const first = body
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.length > 0 && l !== "Injected context, not the operator's words:");
-  meta.body = first ?? null;
+  const lines = body.split("\n").map((l) => l.trim());
+  // The description rides last, in italics. That is the reader-facing summary;
+  // the lines above it are model-facing instructions.
+  const described = lines.map((l) => /^\x1b\[3m(.+)\x1b\[23m$/.exec(l)?.[1]).find(Boolean);
+  const first = lines.find((l) => l.length > 0 && l !== "Injected context, not the operator's words:" && !/^\x1b\[3m/.test(l));
+  meta.body = described ?? first ?? null;
   return meta;
 }
 
@@ -362,7 +361,7 @@ export interface SuggestionCard {
 
 export function formatSuggestionCard(c: SuggestionCard): string {
   const glyph = c.verb.severity === "high" ? WARN : DOT;
-  const header = `${glyph} ${WHITE(c.verb.action)} ${DIM("·")} ${WHITE(c.ref)}`;
+  const header = `${c.verb.action} · ${c.ref}`;
   const parts = [
     c.confidence != null ? `${CONF_LABEL}: ${c.confidence.toFixed(2)}` : null,
     c.revision != null ? `rev ${c.revision}` : null,
@@ -371,12 +370,12 @@ export function formatSuggestionCard(c: SuggestionCard): string {
 
   if (c.compact) {
     // FYI: one gold row carrying the summary, nothing more.
-    return goldCard(header, wrapPlain(c.verb.oneLine || c.verb.action, CARD_MAX), facts);
+    return goldCard(glyph, header, wrapPlain(c.verb.oneLine || c.verb.action, CARD_MAX), facts);
   }
   const instr = `${c.verb.instruction(c.ref)} Ignore this if it does not fit what actually happened.`;
   // Reserve the facts room before wrapping so the last row never overruns.
   const factsLen = facts ? [...facts].length + 2 : 0;
-  return goldCard(header, wrapPlain(instr, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts);
+  return goldCard(glyph, header, wrapPlain(instr, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts);
 }
 
 /** Render arbitrary message content in the house style (renderer fallback). */
@@ -384,7 +383,7 @@ export function renderCardBox(content: string): string {
   const [first, ...rest] = content.split("\n");
   const header = first.startsWith("<") ? "context" : first;
   const body = rest.length ? rest.join(" ") : content;
-  return goldCard(header, wrapPlain(body, CARD_MAX), null);
+  return goldCard(DOT, header, wrapPlain(body, CARD_MAX), null);
 }
 
 /** Model-visible plain text (what lands in the transcript strip/exports). */
