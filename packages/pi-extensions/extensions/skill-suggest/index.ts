@@ -390,6 +390,9 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // through.
   pi.on("tool_result", () => {
     if (!pending || off()) return undefined;
+    // The table decides, so it is not a test-only spec: this seam asserts its
+    // own row, and a change there stops delivery instead of drifting.
+    if (deliverySeam({ prompted: true, pending: true, usedTool: true, activeTurn: true }) !== "tool_result") return undefined;
     const item = pending;
     pending = null;
     logDecision({ ts: new Date().toISOString(), seam: "tool_result", pick: item.entry.id, injected: true, confidence: item.confidence });
@@ -508,7 +511,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // Coverage: a turn with no tool call would otherwise drop what submit
   // decided, so agent_end flushes it before its own decision runs.
   pi.on("agent_end", async (event: unknown, ctx: unknown) => {
-    if (pending) {
+    if (pending && deliverySeam({ prompted: true, pending: true, usedTool: false, activeTurn: true }) === "agent_end_flush") {
       const item = pending;
       pending = null;
       logDecision({ ts: new Date().toISOString(), seam: "agent_end_flush", pick: item.entry.id, injected: true, confidence: item.confidence });
