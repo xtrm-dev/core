@@ -115,6 +115,26 @@ describe("cooldowns", () => {
   });
 });
 
+describe("duty gate observability (CORE-2359)", () => {
+  it("records the gate outcome for every early return, not only fires", async () => {
+    const src = await Bun.file(new URL("../extensions/substrate-suggest/index.ts", import.meta.url)).text();
+    // The log must distinguish the gates, or silence is undiagnosable again.
+    for (const reason of [
+      "services_unavailable",
+      "no_bound_issue",
+      "turn_inactive",
+      "issue_terminal",
+      "no_due_duty",
+      "cooldown",
+    ]) {
+      expect(src, reason).toContain(`gate("${reason}"`);
+    }
+    // no_due_duty must carry the state that explains WHY nothing was due.
+    expect(src).toContain("claim_expires_at");
+    expect(src).toContain("journal_entries");
+  });
+});
+
 describe("wake card", () => {
   const verb = CATALOG.find((v) => v.id === "journal_decision")!;
 
