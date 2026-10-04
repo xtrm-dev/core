@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
-import { contextBlock } from "../extensions/substrate-suggest/catalog.ts";
+import { contextBlock, formatSuggestionPlain } from "../extensions/substrate-suggest/catalog.ts";
 
 describe("roster parsing", () => {
   it("parses folded and inline frontmatter descriptions", () => {
@@ -67,5 +67,22 @@ describe("one channel: no prompt rewrite", () => {
     expect(src).toContain('seam: "input"');
     // the renderer, not the message, carries the house chrome
     expect(src).toContain("renderCardBox");
+  });
+});
+
+describe("compact skill card", () => {
+  it("is one boxed row with no instruction body", () => {
+    const card = formatSuggestionPlain({
+      verb: { id: "skill_suggest", action: "skill loaded · engineering-quality/verification", oneLine: "x", instruction: () => "SHOULD NOT APPEAR", severity: "normal", cooldownMin: 30, source: "jev" },
+      ref: "—",
+      confidence: 0.36,
+      compact: true,
+    });
+    const lines = card.split("\n");
+    expect(lines).toHaveLength(3);
+    expect(card).toContain("skill loaded · engineering-quality/verification");
+    expect(card).toContain("jev 0.36");
+    expect(card).not.toContain("SHOULD NOT APPEAR");
+    expect(new Set(lines.map((l) => [...l].length)).size).toBe(1);
   });
 });
