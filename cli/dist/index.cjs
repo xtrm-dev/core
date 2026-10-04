@@ -56136,6 +56136,56 @@ function isPiPackageInstalled(piPackageId, installedPackageIds) {
   const expected = normalizePiPackageIdentity(piPackageId);
   return installedPackageIds.some((installed) => normalizePiPackageIdentity(installed) === expected);
 }
+function readLocalPackageName(entry) {
+  const localPath = entry.startsWith("file:") ? entry.slice("file:".length) : entry;
+  try {
+    const manifest = import_fs_extra13.default.readJsonSync(import_path3.default.resolve(localPath, "package.json"));
+    return typeof manifest.name === "string" && manifest.name.length > 0 ? manifest.name : null;
+  } catch {
+    return null;
+  }
+}
+function resolveGitSourceIdentity(piPackageId) {
+  const repo = piPackageId.slice("git:".length).split("#", 1)[0].replace(/\.git$/, "").replace(/\/+$/, "");
+  const lastSlash = repo.lastIndexOf("/");
+  const name = repo.slice(lastSlash + 1).replace(/[@#].*$/, "");
+  if (!name) return null;
+  const owner = lastSlash > 0 ? repo.slice(0, lastSlash).split("/").pop() ?? "" : "";
+  return owner ? `npm:@${owner}/${name}` : `npm:${name}`;
+}
+function resolvePiPackageEntryIdentity(entry) {
+  const npmPackageName = parseNpmPackageName(entry);
+  if (npmPackageName) return `npm:${npmPackageName}`;
+  if (entry.startsWith("git:")) return resolveGitSourceIdentity(entry);
+  const localName = readLocalPackageName(entry);
+  if (localName) return `npm:${localName}`;
+  return isManagedPiExtensionsPackageEntry(entry) ? `npm:${parseNpmPackageName(PROJECT_EXTENSION_PACKAGE_ID)}` : null;
+}
+function findDuplicatePiPackageProvider(pkgId, entries) {
+  const identity = resolvePiPackageEntryIdentity(pkgId);
+  if (!identity) return null;
+  return entries.find((entry) => entry !== pkgId && resolvePiPackageEntryIdentity(entry) === identity) ?? null;
+}
+async function findDeclaredDuplicatePiPackageProvider(pkgId, agentDir = PI_AGENT_DIR, projectRoots) {
+  const agentSettings = import_path3.default.join(agentDir, "settings.json");
+  const projectSettings = typeof projectRoots === "string" ? [projectRoots] : [...projectRoots ?? []];
+  const files = [
+    agentSettings,
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    ...projectSettings.map((root) => import_path3.default.join(root, ".pi", "settings.json"))
+  ];
+  for (const file2 of files) {
+    let settings;
+    try {
+      settings = await import_fs_extra13.default.readJson(file2);
+    } catch {
+      continue;
+    }
+    const entry = findDuplicatePiPackageProvider(pkgId, normalizeStringArray(settings.packages));
+    if (entry) return { entry, file: file2 };
+  }
+  return null;
+}
 function getInstalledPiPackages() {
   const result = (0, import_child_process3.spawnSync)("pi", ["list"], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) return [];
@@ -56397,6 +56447,11 @@ async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR
   const resolvedNpmRootDir = npmRootDir === void 0 ? await resolveGlobalNpmRootDir() : npmRootDir;
   const resolvedInstalledPackageIds = installedPackageIds ?? getInstalledPiPackages();
   for (const pkg of getXtManagedPiPackages()) {
+    const duplicate = await findDeclaredDuplicatePiPackageProvider(pkg.id, agentDir);
+    if (duplicate) {
+      log?.(kleur_default.dim(`${pkg.displayName}: provided by '${duplicate.entry}' in ${duplicate.file}; skipping pi install`));
+      continue;
+    }
     if (await isPackagePresentInPiAgent(agentDir, pkg.id, resolvedNpmRootDir ?? void 0, resolvedInstalledPackageIds)) continue;
     if (dryRun) {
       log?.(`[DRY RUN] pi install ${pkg.id}`);
@@ -56416,15 +56471,27 @@ async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR
   }
   return { installed, failed: failed2 };
 }
-async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, versionProvider) {
+async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, versionProvider, projectRoots) {
   const npmRootDir = await resolveGlobalNpmRootDir();
   const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
     installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? void 0),
     expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
   }));
   const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider);
-  const missing = statuses.filter((status2) => status2.state === "missing");
-  const outdated = statuses.filter((status2) => status2.state === "outdated");
+  const provided = [];
+  const actionable = [];
+  for (const status2 of statuses) {
+    const needsInstall = status2.state === "missing" || status2.state === "outdated";
+    const duplicate = needsInstall ? await findDeclaredDuplicatePiPackageProvider(status2.pkg.id, agentDir, projectRoots) : null;
+    if (duplicate) {
+      provided.push(status2.pkg.id);
+      log?.(kleur_default.dim(`${status2.pkg.displayName}: provided by '${duplicate.entry}' in ${duplicate.file}; skipping pi install`));
+      continue;
+    }
+    actionable.push(status2);
+  }
+  const missing = actionable.filter((status2) => status2.state === "missing");
+  const outdated = actionable.filter((status2) => status2.state === "outdated");
   const installed = [];
   const refreshed = [];
   const failed2 = [];
@@ -56450,7 +56517,7 @@ async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, i
       log?.(kleur_default.yellow("  \u2192 " + hint));
     }
   }
-  return { statuses, missing, outdated, installed, refreshed, failed: failed2 };
+  return { statuses, missing, outdated, installed, refreshed, failed: failed2, provided };
 }
 async function getXtManagedPiPackageDoctorReport(versionProvider) {
   const npmRootDir = await resolveGlobalNpmRootDir();
@@ -56932,6 +56999,11 @@ async function runPiRuntimeSync(opts = {}) {
   if (!skipGlobalPackageAssurance) {
     for (const status2 of missingPackages) {
       const { pkg } = status2;
+      const duplicate = await findDeclaredDuplicatePiPackageProvider(pkg.id, PI_AGENT_DIR, resolvedProjectRoot);
+      if (duplicate) {
+        log(kleur_default.dim(`${pkg.displayName}: provided by '${duplicate.entry}' in ${duplicate.file}; skipping pi install`));
+        continue;
+      }
       if (dryRun) {
         log(`[DRY RUN] pi install ${pkg.id}`);
         continue;
@@ -56977,6 +57049,66 @@ async function runPiRuntimeSync(opts = {}) {
   if (requiredFailed.length === 0) console.log(t.success("  \u2713 All required items present.\n"));
   else console.log(kleur_default.yellow("  \u26A0 Missing required items.\n"));
   return result;
+}
+var PI_STARTUP_SMOKE_TIMEOUT_MS = 6e4;
+var PI_EXTENSION_LOAD_FAILURE = "Failed to load extension";
+function runPiStartupSmokeProbe() {
+  const result = (0, import_child_process3.spawnSync)("pi", ["--offline"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: PI_STARTUP_SMOKE_TIMEOUT_MS
+  });
+  if (result.error) {
+    const code = result.error.code;
+    if (code === "ETIMEDOUT" || result.signal) {
+      return { status: null, stdout: "", stderr: "", timedOut: true };
+    }
+    return {
+      status: null,
+      stdout: "",
+      stderr: "",
+      spawnError: code === "ENOENT" ? "pi executable not found on PATH" : result.error.message
+    };
+  }
+  return {
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    timedOut: result.signal === "SIGTERM" || result.signal === "SIGKILL"
+  };
+}
+function firstMeaningfulLine(output) {
+  const line = output.split("\n").map((entry) => entry.trim()).find((entry) => entry.length > 0);
+  return line ?? "(no output)";
+}
+function checkPiStartup(probe2) {
+  if (probe2.spawnError) {
+    return { status: "skipped", ok: false, detail: `pi startup smoke check skipped: ${probe2.spawnError}` };
+  }
+  const output = `${probe2.stdout}
+${probe2.stderr}`;
+  const loadFailure = output.split("\n").find((line) => line.includes(PI_EXTENSION_LOAD_FAILURE));
+  if (loadFailure) {
+    return { status: "failed", ok: false, detail: loadFailure.trim() };
+  }
+  if (probe2.timedOut) {
+    return {
+      status: "inconclusive",
+      ok: false,
+      detail: `pi startup probe timed out after ${PI_STARTUP_SMOKE_TIMEOUT_MS / 1e3}s before extension load finished`
+    };
+  }
+  if (probe2.status !== 0) {
+    return {
+      status: "inconclusive",
+      ok: false,
+      detail: `pi startup probe exited ${probe2.status} without an extension-load failure: ${firstMeaningfulLine(probe2.stderr || probe2.stdout)}`
+    };
+  }
+  return { status: "ok", ok: true, detail: "pi loaded every configured extension (startup probe exit 0)" };
+}
+async function runPiStartupSmokeCheck(run5 = runPiStartupSmokeProbe) {
+  return checkPiStartup(run5());
 }
 
 // src/core/runtime-compat.ts
@@ -73222,13 +73354,17 @@ function formatRegistrySourceMismatchReason(error51, strictRegistry) {
   return `${prefix} ${visiblePaths.join(", ")}${remaining > 0 ? ` (+${remaining} more)` : ""}`;
 }
 function printPiPackages(packageAssurance) {
-  if (packageAssurance.missing.length === 0 && packageAssurance.outdated.length === 0) {
+  if (packageAssurance.missing.length === 0 && packageAssurance.outdated.length === 0 && packageAssurance.provided.length === 0) {
     return;
   }
   console.log(kleur_default.bold("\n  Pi Packages"));
   console.log(kleur_default.dim("  " + "-".repeat(50)));
   for (const status2 of packageAssurance.statuses) {
     if (status2.state === "current") continue;
+    if (packageAssurance.provided.includes(status2.pkg.id)) {
+      console.log(`${"provided".padEnd(10)} ${status2.pkg.displayName} (already provided by a configured source)`);
+      continue;
+    }
     console.log(`${status2.state.padEnd(10)} ${status2.pkg.displayName}`);
   }
 }
@@ -73310,12 +73446,30 @@ function createUpdateCommand() {
         reason: "missing .xtrm/registry.json \u2014 run `xt init` to bootstrap or `xt update --apply --repo <path>` to repair"
       });
     }
-    const packageAssurance = await assureXtManagedPiPackages(!typedOpts.apply);
+    const packageAssurance = await assureXtManagedPiPackages(
+      !typedOpts.apply,
+      void 0,
+      void 0,
+      void 0,
+      void 0,
+      targets
+    );
     if (typedOpts.apply) runExternalPiToolPatch(resolvePackageRoot2(), false);
+    const piStartupSmoke = typedOpts.apply ? await runPiStartupSmokeCheck() : null;
+    if (piStartupSmoke && piStartupSmoke.status !== "ok") {
+      const label = piStartupSmoke.status === "skipped" ? "skipped" : "FAILED";
+      const paint = piStartupSmoke.status === "skipped" ? kleur_default.yellow : kleur_default.red;
+      console.error(paint(`
+  ${piStartupSmoke.status === "skipped" ? "\u26A0" : "\u2717"} pi startup smoke check ${label}: ${piStartupSmoke.detail}`));
+      if (piStartupSmoke.status !== "skipped") {
+        console.error(kleur_default.red("    pi startability is unproven after this apply \u2014 see the cause above, fix it, then rerun xt update --apply."));
+      }
+    }
     if (opts.json) {
       console.log(JSON.stringify({
         repos: rows,
         packages: packageAssurance,
+        piStartupSmoke,
         promptSync,
         ...[...fleetBlocked.keys()].length > 0 ? { fleetPreflightBlocked: [...fleetBlocked.keys()] } : {}
       }, null, 2));
@@ -73327,7 +73481,7 @@ function createUpdateCommand() {
       printPiPackages(packageAssurance);
       printGlobalPromptSyncSummary(promptSync);
     }
-    if (rows.some((row) => row.status === "failed" || row.status === "incomplete") || packageAssurance.failed.length > 0) {
+    if (rows.some((row) => row.status === "failed" || row.status === "incomplete") || packageAssurance.failed.length > 0 || piStartupSmoke?.status === "failed" || piStartupSmoke?.status === "inconclusive") {
       process.exitCode = 1;
     }
   });
