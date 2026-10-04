@@ -94,7 +94,7 @@ describe("renderer parses the labelled block into a compact card", () => {
     expect(parseContextBlock("")).toBeNull();
   });
 
-  it("renders a framed one-row card with no raw XML", () => {
+  it("renders a compact card with no raw XML", () => {
     const meta = parseContextBlock(block)!;
     const card = formatSuggestionPlain({
       verb: { id: "skill_suggest", action: `skill loaded · ${meta.source}`, oneLine: meta.body!, instruction: () => "", severity: "normal", cooldownMin: 30, source: "jev" },
@@ -103,10 +103,11 @@ describe("renderer parses the labelled block into a compact card", () => {
       compact: true,
     });
     const lines = card.split("\n");
-    expect(lines).toHaveLength(3);
+    expect(lines[0].startsWith("●")).toBe(true);
     expect(card).toContain("skill loaded · engineering-quality/causal-debugging");
     expect(card).not.toContain("xtrm_context");
-    expect(new Set(lines.map((l) => [...l].length)).size).toBe(1);
+    expect(card).not.toMatch(/[╭╰│]/);
+    expect(new Set(lines.slice(1).map((l) => [...l].length)).size).toBe(1);
   });
 });
 
