@@ -339,6 +339,8 @@ export interface SuggestionCard {
   /** Deterministic rules carry no confidence; Jev picks do. */
   confidence?: number | null;
   revision?: number | null;
+  /** FYI card: one row, no instruction body. Duties stay two rows. */
+  compact?: boolean;
 }
 
 export function formatSuggestionCard(c: SuggestionCard): string {
@@ -357,6 +359,14 @@ export function formatSuggestionCard(c: SuggestionCard): string {
     CARD_MAX,
     Math.max(CARD_MIN, headerPlain.length + 1, instrPlain.length + 1),
   );
+  if (c.compact) {
+    // FYI: one row, facts folded in. The instruction body is what the model
+    // already received as a labelled message; repeating it is duplication.
+    const plain = facts ? `${headerPlain} · ${facts}` : headerPlain;
+    return box(title, [
+      { plain, ansi: `${HL(headerPlain)}${facts ? ` ${DIM("·")} ${DIM(facts)}` : ""}` },
+    ]);
+  }
   const rows: Row[] = [
     ...wrapRow(headerPlain, (chunk) => `${HL(chunk)}`, inner),
     ...wrapRow(instrPlain, (chunk) => emphasize(chunk), inner),
