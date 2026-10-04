@@ -56,3 +56,16 @@ describe("labelled injected context", () => {
     expect(block).toContain('source="sync-docs@CORE-2350"');
   });
 });
+
+describe("one channel: no prompt rewrite", () => {
+  it("the input seam sends the doctrine as a message instead of transforming the prompt", async () => {
+    const src = await Bun.file("packages/pi-extensions/extensions/skill-suggest/index.ts").text();
+    // The input seam must not return a transform: that is what made the
+    // operator see the doctrine twice and blurred their own words.
+    expect(src).not.toContain('action: "transform"');
+    expect(src).toContain('content: block');
+    expect(src).toContain('seam: "input"');
+    // the renderer, not the message, carries the house chrome
+    expect(src).toContain("renderCardBox");
+  });
+});

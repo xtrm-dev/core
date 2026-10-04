@@ -7,6 +7,7 @@ import { join, dirname, isAbsolute, resolve, sep } from 'node:path';
 import type { SessionMeta } from '../utils/worktree-session.js';
 import { unregisterPluginsForWorktree } from '../utils/worktree-session.js';
 import { t } from '../utils/theme.js';
+import { resolveDefaultBranchRef } from '../utils/worktree-base.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
 import type { ReapCandidate, ReapPlan } from '../core/worktree-reap.js';
 import {
@@ -318,10 +319,13 @@ function runGitWorktreePrune(repoRoot: string): { ok: boolean; message: string }
     };
 }
 
-/** Check if a branch has been merged into main */
+/** Check if a branch has been merged into the default branch */
 function isMergedIntoMain(branch: string, repoRoot: string): boolean {
     const branchShort = branch.replace('refs/heads/', '');
-    const r = spawnSync('git', ['branch', '--merged', 'origin/main', '--list', branchShort], {
+    // CORE-2340: resolve the default branch dynamically instead of assuming
+    // origin/main (same resolution order as worktree branch creation).
+    const baseRef = resolveDefaultBranchRef(repoRoot) ?? 'origin/main';
+    const r = spawnSync('git', ['branch', '--merged', baseRef, '--list', branchShort], {
         cwd: repoRoot, encoding: 'utf8', stdio: 'pipe',
     });
     return (r.stdout ?? '').includes(branchShort);

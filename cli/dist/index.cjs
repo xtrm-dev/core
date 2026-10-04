@@ -19776,14 +19776,14 @@ __export(git_staging_exports, {
   untrackRuntimePaths: () => untrackRuntimePaths
 });
 function isGitRepo(repoPath) {
-  const result = (0, import_node_child_process12.spawnSync)("git", ["-C", repoPath, "rev-parse", "--is-inside-work-tree"], {
+  const result = (0, import_node_child_process13.spawnSync)("git", ["-C", repoPath, "rev-parse", "--is-inside-work-tree"], {
     encoding: "utf8",
     stdio: "pipe"
   });
   return result.status === 0 && result.stdout.trim() === "true";
 }
 function runGit(repoPath, args) {
-  const result = (0, import_node_child_process12.spawnSync)("git", ["-C", repoPath, ...args], { encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_node_child_process13.spawnSync)("git", ["-C", repoPath, ...args], { encoding: "utf8", stdio: "pipe" });
   return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 function stageTrackedChanges(repoPath, opts = {}) {
@@ -19873,11 +19873,11 @@ async function stageMigrationChanges(repoPath, opts = {}) {
     skipped: stage.skipped
   };
 }
-var import_node_child_process12, import_fs_extra33, import_node_fs10, import_node_path33, RUNTIME_GITIGNORE_BLOCK, RUNTIME_GITIGNORE_MARKER, XTRM_MANAGED_PATHSPECS;
+var import_node_child_process13, import_fs_extra33, import_node_fs10, import_node_path33, RUNTIME_GITIGNORE_BLOCK, RUNTIME_GITIGNORE_MARKER, XTRM_MANAGED_PATHSPECS;
 var init_git_staging = __esm({
   "src/utils/git-staging.ts"() {
     "use strict";
-    import_node_child_process12 = require("child_process");
+    import_node_child_process13 = require("child_process");
     import_fs_extra33 = __toESM(require_lib(), 1);
     import_node_fs10 = __toESM(require("fs"), 1);
     import_node_path33 = __toESM(require("path"), 1);
@@ -39288,7 +39288,7 @@ __export(reconcile_exports, {
 async function reconcile(specPath, state, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process29.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process30.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) {
     return { ok: false, error: `sp result failed: ${r.stderr || r.stdout}` };
   }
@@ -39328,7 +39328,7 @@ function extractPlannerResult(parsed) {
 async function validateIdsExist(ids, bdBin) {
   const orphans = [];
   for (const id of ids) {
-    const r = (0, import_node_child_process29.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
+    const r = (0, import_node_child_process30.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
     if (r.status !== 0) orphans.push(id);
   }
   return orphans;
@@ -39353,11 +39353,11 @@ async function writeLinksInPlace(specPath, links) {
 function sidecarPathFromSpec(specPath) {
   return import_node_path57.default.join(import_node_path57.default.dirname(specPath), ".apply-state.json");
 }
-var import_node_child_process29, import_fs_extra58, import_node_path57, import_yaml4;
+var import_node_child_process30, import_fs_extra58, import_node_path57, import_yaml4;
 var init_reconcile = __esm({
   "src/spec/reconcile.ts"() {
     "use strict";
-    import_node_child_process29 = require("child_process");
+    import_node_child_process30 = require("child_process");
     import_fs_extra58 = __toESM(require_lib(), 1);
     import_node_path57 = __toESM(require("path"), 1);
     import_yaml4 = __toESM(require_dist3(), 1);
@@ -39412,7 +39412,7 @@ init_kleur();
 
 // src/commands/claude.ts
 init_kleur();
-var import_node_child_process3 = require("child_process");
+var import_node_child_process4 = require("child_process");
 var import_fs_extra14 = __toESM(require_lib(), 1);
 var import_node_path16 = __toESM(require("path"), 1);
 
@@ -40560,7 +40560,7 @@ function warnIfOutdated() {
 init_kleur();
 var import_node_os7 = __toESM(require("os"), 1);
 var import_node_path14 = __toESM(require("path"), 1);
-var import_node_child_process2 = require("child_process");
+var import_node_child_process3 = require("child_process");
 var import_node_crypto7 = require("crypto");
 var import_node_fs2 = require("fs");
 
@@ -55888,6 +55888,40 @@ async function ensureAgentsSkillsSymlink(projectRoot, options = {}) {
   };
 }
 
+// src/utils/worktree-base.ts
+var import_node_child_process = require("child_process");
+var FALLBACK_REFS = ["origin/main", "origin/master"];
+function git(repoRoot, args) {
+  const r = (0, import_node_child_process.spawnSync)("git", args, { cwd: repoRoot, encoding: "utf8", stdio: "pipe" });
+  return {
+    status: r.status ?? -1,
+    stdout: (r.stdout ?? "").trim(),
+    stderr: (r.stderr ?? "").trim()
+  };
+}
+function resolveDefaultBranchRef(repoRoot) {
+  const sym2 = git(repoRoot, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  if (sym2.status === 0 && sym2.stdout) return sym2.stdout;
+  for (const ref of FALLBACK_REFS) {
+    if (git(repoRoot, ["rev-parse", "--verify", "--quiet", ref]).status === 0) return ref;
+  }
+  return null;
+}
+function fetchWorktreeBase(repoRoot, baseOverride) {
+  const fetch = git(repoRoot, ["fetch", "origin", "--quiet"]);
+  if (fetch.status !== 0) {
+    return { ok: false, error: `git fetch origin failed (offline?): ${fetch.stderr || "no stderr"}` };
+  }
+  const ref = baseOverride ?? resolveDefaultBranchRef(repoRoot);
+  if (!ref) {
+    return { ok: false, error: "could not resolve the default branch (origin/HEAD, origin/main, origin/master); pass --base <ref>" };
+  }
+  if (git(repoRoot, ["rev-parse", "--verify", "--quiet", ref]).status !== 0) {
+    return { ok: false, error: `base ref '${ref}' not found after fetch` };
+  }
+  return { ok: true, ref };
+}
+
 // src/core/pi-runtime.ts
 var import_child_process3 = require("child_process");
 var import_fs_extra13 = __toESM(require_lib(), 1);
@@ -57212,11 +57246,11 @@ function buildDetachedLaunchOutcome(input) {
 }
 
 // src/core/session-identity.ts
-var import_node_child_process = require("child_process");
+var import_node_child_process2 = require("child_process");
 var XTRM_SESSION_ID_VAR = "XTRM_SESSION_ID";
 var XTRM_SESSION_NAME_VAR = "XTRM_SESSION_NAME";
 function defaultProbe(args) {
-  const result = (0, import_node_child_process.spawnSync)("tmux", args, { encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_node_child_process2.spawnSync)("tmux", args, { encoding: "utf8", stdio: "pipe" });
   return { status: result.status, stdout: String(result.stdout ?? "") };
 }
 function clean(value) {
@@ -57277,7 +57311,7 @@ function shouldAutoAssignBead(assignee) {
   return !assignee || AUTO_ASSIGNEE_RE.test(assignee);
 }
 function readyInstanceId(paneId, sinceMs, previousInstanceId) {
-  const query = (0, import_node_child_process2.spawnSync)("xtmux", [
+  const query = (0, import_node_child_process3.spawnSync)("xtmux", [
     "log",
     "query",
     "--type",
@@ -57315,7 +57349,7 @@ async function assignBeadToRuntime(bead, runtime, paneId, cwd, options = {}) {
     readyTimeoutMs = RUNTIME_READY_TIMEOUT_MS
   } = options;
   const warn2 = (message) => console.error(kleur_default.yellow(`  \u26A0 bead assignee: ${message}`));
-  const show = (0, import_node_child_process2.spawnSync)("bd", ["show", bead, "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
+  const show = (0, import_node_child_process3.spawnSync)("bd", ["show", bead, "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
   if (show.status !== 0) {
     warn2(`could not read ${bead}; session launch continues`);
     return;
@@ -57344,7 +57378,7 @@ async function assignBeadToRuntime(bead, runtime, paneId, cwd, options = {}) {
     warn2(instanceId ? `unusable runtime-origin '${instanceId}' for ${bead}; session launch continues` : `${runtime} did not signal readiness for ${bead} within ${Math.round(readyTimeoutMs / 1e3)}s; session launch continues`);
     return;
   }
-  const update = (0, import_node_child_process2.spawnSync)("bd", ["update", bead, `--assignee=${assignee}`, "--json"], {
+  const update = (0, import_node_child_process3.spawnSync)("bd", ["update", bead, `--assignee=${assignee}`, "--json"], {
     cwd,
     encoding: "utf8",
     stdio: "pipe"
@@ -58162,14 +58196,14 @@ function isUnsupportedSurfaceOption(stderr) {
   return /unknown (?:option|flag)|unrecognized option|unexpected argument|invalid option/i.test(stderr);
 }
 function resolveRole(name, mainRepoRoot = process.cwd(), runtime = "pi", allowLegacyFallback = false) {
-  let result = (0, import_node_child_process2.spawnSync)("sp", ["view", name, "--raw", "--surface", runtime], {
+  let result = (0, import_node_child_process3.spawnSync)("sp", ["view", name, "--raw", "--surface", runtime], {
     cwd: mainRepoRoot,
     encoding: "utf8",
     stdio: "pipe"
   });
   const stderr = (result.stderr ?? "").trim();
   if (result.status !== 0 && (runtime === "pi" || allowLegacyFallback) && isUnsupportedSurfaceOption(stderr)) {
-    result = (0, import_node_child_process2.spawnSync)("sp", ["view", name, "--raw"], {
+    result = (0, import_node_child_process3.spawnSync)("sp", ["view", name, "--raw"], {
       cwd: mainRepoRoot,
       encoding: "utf8",
       stdio: "pipe"
@@ -58187,7 +58221,7 @@ function resolveRole(name, mainRepoRoot = process.cwd(), runtime = "pi", allowLe
   return parseSpecialistJson(name, result.stdout ?? "", mainRepoRoot);
 }
 function renderRoleTask(args) {
-  const result = (0, import_node_child_process2.spawnSync)("sp", [
+  const result = (0, import_node_child_process3.spawnSync)("sp", [
     "render-task",
     args.role,
     "--bead",
@@ -58234,7 +58268,7 @@ function shellQuote(s) {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 function resolveRuntimeExecutable(runtime) {
-  const result = (0, import_node_child_process2.spawnSync)("sh", ["-c", 'command -v "$1"', "xtrm", runtime], {
+  const result = (0, import_node_child_process3.spawnSync)("sh", ["-c", 'command -v "$1"', "xtrm", runtime], {
     encoding: "utf8",
     stdio: "pipe"
   });
@@ -58245,7 +58279,7 @@ function createRuntimeBufferName() {
   return `xtrm-role-${(0, import_node_crypto7.randomBytes)(16).toString("hex")}`;
 }
 function deleteRuntimeBuffer(bufferName) {
-  (0, import_node_child_process2.spawnSync)("tmux", ["delete-buffer", "-b", bufferName], { stdio: "ignore" });
+  (0, import_node_child_process3.spawnSync)("tmux", ["delete-buffer", "-b", bufferName], { stdio: "ignore" });
 }
 function buildBufferedRuntimeCommand(bufferName, payloadWaitTimeoutMs = TMUX_PAYLOAD_READY_TIMEOUT_MS) {
   const script = [
@@ -58273,7 +58307,7 @@ function buildBufferedRuntimeCommand(bufferName, payloadWaitTimeoutMs = TMUX_PAY
   return [process.execPath, "-e", script, bufferName].map(shellQuote).join(" ");
 }
 function probeSkillPrefixAvailable() {
-  const r = (0, import_node_child_process2.spawnSync)("sp", ["render-skill-prefix", "--help"], {
+  const r = (0, import_node_child_process3.spawnSync)("sp", ["render-skill-prefix", "--help"], {
     stdio: "pipe",
     encoding: "utf8"
   });
@@ -58287,7 +58321,7 @@ Original error: ${stderr.trim() || "unknown"}`
   };
 }
 function renderSkillPrefix(args) {
-  const r = (0, import_node_child_process2.spawnSync)(
+  const r = (0, import_node_child_process3.spawnSync)(
     "sp",
     ["render-skill-prefix", args.role, "--surface", args.runtime],
     {
@@ -58587,7 +58621,7 @@ function forwardedLaunchEnv(env3 = process.env) {
 }
 function currentTmuxSessionId() {
   if (!process.env.TMUX) return "";
-  const r = (0, import_node_child_process2.spawnSync)("tmux", ["display-message", "-p", "-F", "#{session_id}"], {
+  const r = (0, import_node_child_process3.spawnSync)("tmux", ["display-message", "-p", "-F", "#{session_id}"], {
     encoding: "utf8",
     stdio: "pipe"
   });
@@ -58597,7 +58631,7 @@ function randomSlug(len = 4) {
   return Math.random().toString(36).slice(2, 2 + len);
 }
 function gitRepoRoot(cwd) {
-  const r = (0, import_node_child_process2.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
+  const r = (0, import_node_child_process3.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
     cwd,
     stdio: "pipe",
     encoding: "utf8"
@@ -58605,7 +58639,7 @@ function gitRepoRoot(cwd) {
   return r.status === 0 ? (r.stdout ?? "").trim() : null;
 }
 function gitMainRepoRoot(cwd) {
-  const common = (0, import_node_child_process2.spawnSync)("git", ["rev-parse", "--git-common-dir"], {
+  const common = (0, import_node_child_process3.spawnSync)("git", ["rev-parse", "--git-common-dir"], {
     cwd,
     stdio: "pipe",
     encoding: "utf8"
@@ -58617,7 +58651,7 @@ function gitMainRepoRoot(cwd) {
   return commonDir.endsWith("/.git") || commonDir.endsWith("\\.git") ? import_node_path14.default.dirname(commonDir) : commonDir;
 }
 function rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, deleteBranch) {
-  const removal = (0, import_node_child_process2.spawnSync)("git", ["worktree", "remove", "--force", worktreePath], {
+  const removal = (0, import_node_child_process3.spawnSync)("git", ["worktree", "remove", "--force", worktreePath], {
     cwd: mainRepoRoot,
     stdio: "pipe"
   });
@@ -58629,7 +58663,7 @@ function rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, delete
     return;
   }
   if (!deleteBranch) return;
-  const branchRemoval = (0, import_node_child_process2.spawnSync)("git", ["branch", "-D", branchName], {
+  const branchRemoval = (0, import_node_child_process3.spawnSync)("git", ["branch", "-D", branchName], {
     cwd: mainRepoRoot,
     stdio: "pipe"
   });
@@ -58664,7 +58698,7 @@ function ensureWorktreeSpecialists(worktreePath, mainRepoPath) {
 }
 function normalizeParentHooksPath(mainRepoRoot) {
   try {
-    const result = (0, import_node_child_process2.spawnSync)("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
+    const result = (0, import_node_child_process3.spawnSync)("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
       stdio: "pipe",
       encoding: "utf8"
     });
@@ -58674,13 +58708,13 @@ function normalizeParentHooksPath(mainRepoRoot) {
     if (import_node_path14.default.isAbsolute(current)) return;
     if (current !== ".beads/hooks" && current !== "./.beads/hooks") return;
     const absolute = import_node_path14.default.join(mainRepoRoot, ".beads", "hooks");
-    (0, import_node_child_process2.spawnSync)("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
+    (0, import_node_child_process3.spawnSync)("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
   } catch {
   }
 }
 function markPathSkipWorktree(worktreePath, pathspec) {
   try {
-    const trackedResult = (0, import_node_child_process2.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", pathspec], {
+    const trackedResult = (0, import_node_child_process3.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", pathspec], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -58688,7 +58722,7 @@ function markPathSkipWorktree(worktreePath, pathspec) {
     if (trackedResult.status !== 0) return;
     const trackedPaths = (trackedResult.stdout ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (trackedPaths.length === 0) return;
-    (0, import_node_child_process2.spawnSync)("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
+    (0, import_node_child_process3.spawnSync)("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -58775,13 +58809,13 @@ function checkSubordinateRole(args) {
 }
 function currentPaneRole() {
   if (!process.env.TMUX) return "";
-  const r = (0, import_node_child_process2.spawnSync)("tmux", ["display-message", "-p", "#{pane_id}"], {
+  const r = (0, import_node_child_process3.spawnSync)("tmux", ["display-message", "-p", "#{pane_id}"], {
     stdio: "pipe",
     encoding: "utf8"
   });
   const paneId = (r.stdout ?? "").trim();
   if (!paneId) return "";
-  const option = (0, import_node_child_process2.spawnSync)("tmux", ["show-options", "-p", "-t", paneId, "-qv", "@agent_role"], {
+  const option = (0, import_node_child_process3.spawnSync)("tmux", ["show-options", "-p", "-t", paneId, "-qv", "@agent_role"], {
     stdio: "pipe",
     encoding: "utf8"
   });
@@ -59013,9 +59047,9 @@ async function launchWorktreeSession(opts) {
   if (reuseRequested) {
     const roleSlug = resolvedRole ? slugifyForSession(resolvedRole.name) : null;
     const sessionName = roleSlug ? `role-${runtime}-${roleSlug}${bead ? `-${slugifyForSession(bead)}` : ""}` : `${runtime}-${slugifyForSession(slug)}`;
-    const sessionExists = (0, import_node_child_process2.spawnSync)("tmux", ["has-session", "-t", `=${sessionName}`], { stdio: "pipe" }).status === 0;
+    const sessionExists = (0, import_node_child_process3.spawnSync)("tmux", ["has-session", "-t", `=${sessionName}`], { stdio: "pipe" }).status === 0;
     if (sessionExists) {
-      const paneQuery = (0, import_node_child_process2.spawnSync)("tmux", ["list-panes", "-t", sessionName, "-F", "#{pane_id}"], {
+      const paneQuery = (0, import_node_child_process3.spawnSync)("tmux", ["list-panes", "-t", sessionName, "-F", "#{pane_id}"], {
         stdio: "pipe",
         encoding: "utf8"
       });
@@ -59025,7 +59059,7 @@ async function launchWorktreeSession(opts) {
 `);
         process.exit(0);
       }
-      const attachResult = (0, import_node_child_process2.spawnSync)("tmux", chooseAttachCommand(sessionName, Boolean(process.env.TMUX)), {
+      const attachResult = (0, import_node_child_process3.spawnSync)("tmux", chooseAttachCommand(sessionName, Boolean(process.env.TMUX)), {
         stdio: "inherit"
       });
       process.exit(attachResult.status ?? 0);
@@ -59067,17 +59101,24 @@ async function launchWorktreeSession(opts) {
     console.error(kleur_default.dim("    xt worktree clean --orphans --yes\n"));
     process.exit(1);
   }
-  const branchExistedBefore = (0, import_node_child_process2.spawnSync)("git", ["rev-parse", "--verify", branchName], {
+  const branchExistedBefore = (0, import_node_child_process3.spawnSync)("git", ["rev-parse", "--verify", branchName], {
     cwd: mainRepoRoot,
     stdio: "pipe"
   }).status === 0;
   const branchCreatedByLauncher = !branchExistedBefore;
-  const branchExistsNow = (0, import_node_child_process2.spawnSync)("git", ["rev-parse", "--verify", branchName], {
+  const base = fetchWorktreeBase(mainRepoRoot, opts.base);
+  if (!base.ok) {
+    console.error(kleur_default.red(`
+  \u2717 Could not resolve worktree base: ${base.error}
+`));
+    process.exit(1);
+  }
+  const branchExistsNow = (0, import_node_child_process3.spawnSync)("git", ["rev-parse", "--verify", branchName], {
     cwd: mainRepoRoot,
     stdio: "pipe"
   }).status === 0;
-  const gitArgs = branchExistsNow ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath];
-  const gitResult = (0, import_node_child_process2.spawnSync)("git", gitArgs, {
+  const gitArgs = branchExistsNow ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath, base.ref];
+  const gitResult = (0, import_node_child_process3.spawnSync)("git", gitArgs, {
     cwd: mainRepoRoot,
     stdio: structuredOutput ? "pipe" : "inherit"
   });
@@ -59085,7 +59126,19 @@ async function launchWorktreeSession(opts) {
     if (gitResult.status !== 0 && !gitResult.error) {
       if (!structuredOutput) console.log(kleur_default.dim("  git worktree add failed, trying bd worktree create"));
     }
-    const bdResult = (0, import_node_child_process2.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
+    if (!branchExistsNow) {
+      const branchAtBase = (0, import_node_child_process3.spawnSync)("git", ["branch", branchName, base.ref], {
+        cwd: mainRepoRoot,
+        stdio: "pipe"
+      });
+      if (branchAtBase.error || branchAtBase.status !== 0) {
+        console.error(kleur_default.red(`
+  \u2717 Could not start branch ${branchName} at ${base.ref}
+`));
+        process.exit(1);
+      }
+    }
+    const bdResult = (0, import_node_child_process3.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
       cwd: mainRepoRoot,
       stdio: structuredOutput ? "pipe" : "inherit"
     });
@@ -59180,7 +59233,7 @@ async function launchWorktreeSession(opts) {
     }
   }
   const directSessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
-  const launchResult2 = (0, import_node_child_process2.spawnSync)(runtimeCmd, runtimeArgs, {
+  const launchResult2 = (0, import_node_child_process3.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
     env: { ...process.env, ...claudeMcpEnv(runtime), ...directSessionEnv }
@@ -59189,7 +59242,7 @@ async function launchWorktreeSession(opts) {
 }
 function resolveParentSession(target) {
   if (/^\$\d+$/.test(target)) return target;
-  const r = (0, import_node_child_process2.spawnSync)("tmux", ["display-message", "-p", "-t", target, "#{session_id}"], {
+  const r = (0, import_node_child_process3.spawnSync)("tmux", ["display-message", "-p", "-t", target, "#{session_id}"], {
     stdio: "pipe",
     encoding: "utf8"
   });
@@ -59201,7 +59254,7 @@ function emitAgentRoleLaunched(fields) {
   const picker = process.env.XTMUX_PICKER || import_node_path14.default.join(import_node_os7.default.homedir(), ".local", "bin", "tmux-session-picker");
   if (!(0, import_node_fs2.existsSync)(picker)) return;
   const kvArgs = Object.entries(fields).filter(([, v]) => v !== "" && v != null).map(([k, v]) => `${k}=${v}`);
-  (0, import_node_child_process2.spawnSync)(picker, ["log", "emit", "agent.role.launched", ...kvArgs], {
+  (0, import_node_child_process3.spawnSync)(picker, ["log", "emit", "agent.role.launched", ...kvArgs], {
     stdio: "ignore"
   });
   if (fields.task_prompt_renderer) {
@@ -59214,7 +59267,7 @@ function emitAgentRoleLaunched(fields) {
       "task_prompt_hash",
       "task_prompt_components"
     ].flatMap((key) => fields[key] ? [`${key}=${fields[key]}`] : []);
-    (0, import_node_child_process2.spawnSync)(picker, ["log", "emit", "agent.role.task-rendered", ...taskFields], {
+    (0, import_node_child_process3.spawnSync)(picker, ["log", "emit", "agent.role.task-rendered", ...taskFields], {
       stdio: "ignore"
     });
   }
@@ -59289,7 +59342,7 @@ async function launchTmuxSession(args) {
   const agentEnv = buildAgentEnv(plan.paneOptions);
   if (currentPaneMode) {
     const sessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
-    const paneQuery2 = (0, import_node_child_process2.spawnSync)("tmux", ["display-message", "-p", "#{pane_id}"], {
+    const paneQuery2 = (0, import_node_child_process3.spawnSync)("tmux", ["display-message", "-p", "#{pane_id}"], {
       stdio: "pipe",
       encoding: "utf8"
     });
@@ -59298,12 +59351,12 @@ async function launchTmuxSession(args) {
       process.stderr.write(kleur_default.red("\n  \u2717 Could not resolve current pane id\n"));
       process.exit(1);
     }
-    const previousInstanceId = bead ? ((0, import_node_child_process2.spawnSync)("tmux", ["show-options", "-p", "-t", paneId2, "-qv", "@agent_instance_id"], {
+    const previousInstanceId = bead ? ((0, import_node_child_process3.spawnSync)("tmux", ["show-options", "-p", "-t", paneId2, "-qv", "@agent_instance_id"], {
       encoding: "utf8",
       stdio: "pipe"
     }).stdout ?? "").trim() : "";
     for (const { key, value } of plan.paneOptions) {
-      (0, import_node_child_process2.spawnSync)("tmux", ["set-option", "-p", "-t", paneId2, key, value], { stdio: "pipe" });
+      (0, import_node_child_process3.spawnSync)("tmux", ["set-option", "-p", "-t", paneId2, key, value], { stdio: "pipe" });
     }
     if (args.mode === "role") {
       emitAgentRoleLaunched({
@@ -59320,7 +59373,7 @@ async function launchTmuxSession(args) {
       });
     }
     if (!bead) {
-      const runtimeResult = (0, import_node_child_process2.spawnSync)(runtimeExecutable, plan.runtimeArgs, {
+      const runtimeResult = (0, import_node_child_process3.spawnSync)(runtimeExecutable, plan.runtimeArgs, {
         cwd: worktreePath,
         stdio: "inherit",
         env: { ...process.env, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv }
@@ -59328,7 +59381,7 @@ async function launchTmuxSession(args) {
       process.exit(runtimeResult.status ?? 0);
     }
     const readyAfterMs2 = Date.now();
-    const runtimeProcess = (0, import_node_child_process2.spawn)(runtimeExecutable, plan.runtimeArgs, {
+    const runtimeProcess = (0, import_node_child_process3.spawn)(runtimeExecutable, plan.runtimeArgs, {
       cwd: worktreePath,
       stdio: "inherit",
       env: { ...process.env, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv }
@@ -59341,12 +59394,12 @@ async function launchTmuxSession(args) {
     process.exit(await runtimeExit);
   }
   const sessionExists = (name) => {
-    const r = (0, import_node_child_process2.spawnSync)("tmux", ["has-session", "-t", `=${name}`], { stdio: "pipe" });
+    const r = (0, import_node_child_process3.spawnSync)("tmux", ["has-session", "-t", `=${name}`], { stdio: "pipe" });
     return r.status === 0;
   };
   if (sessionExists(plan.sessionName)) {
     if (reuse) {
-      const paneQuery2 = (0, import_node_child_process2.spawnSync)("tmux", [
+      const paneQuery2 = (0, import_node_child_process3.spawnSync)("tmux", [
         "list-panes",
         "-t",
         plan.sessionName,
@@ -59360,7 +59413,7 @@ async function launchTmuxSession(args) {
         process.exit(0);
       }
       const attachCmd2 = chooseAttachCommand(plan.sessionName, insideTmux);
-      const attachResult2 = (0, import_node_child_process2.spawnSync)("tmux", attachCmd2, { stdio: "inherit" });
+      const attachResult2 = (0, import_node_child_process3.spawnSync)("tmux", attachCmd2, { stdio: "inherit" });
       process.exit(attachResult2.status ?? 0);
     }
     let suffixed = plan.sessionName;
@@ -59392,7 +59445,7 @@ async function launchTmuxSession(args) {
   let runtimeBuffer = null;
   const cleanupOnSignal = () => {
     if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer);
-    (0, import_node_child_process2.spawnSync)("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
+    (0, import_node_child_process3.spawnSync)("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
     process.exit(1);
   };
   process.once("SIGINT", cleanupOnSignal);
@@ -59407,7 +59460,7 @@ async function launchTmuxSession(args) {
   };
   const readyAfterMs = Date.now();
   if (args.mode === "bare") {
-    const newSess = (0, import_node_child_process2.spawnSync)("tmux", [
+    const newSess = (0, import_node_child_process3.spawnSync)("tmux", [
       "new-session",
       "-d",
       "-s",
@@ -59420,11 +59473,11 @@ async function launchTmuxSession(args) {
     if (newSess.status !== 0) failNewSession((newSess.stderr ?? "").trim());
     const bareSessionId = resolveTmuxSessionId(plan.sessionName);
     if (bareSessionId) {
-      (0, import_node_child_process2.spawnSync)("tmux", ["set-environment", "-t", plan.sessionName, XTRM_SESSION_ID_VAR, bareSessionId], { stdio: "pipe" });
+      (0, import_node_child_process3.spawnSync)("tmux", ["set-environment", "-t", plan.sessionName, XTRM_SESSION_ID_VAR, bareSessionId], { stdio: "pipe" });
     }
   } else {
     runtimeBuffer = createRuntimeBufferName();
-    const newSess = (0, import_node_child_process2.spawnSync)("tmux", [
+    const newSess = (0, import_node_child_process3.spawnSync)("tmux", [
       "new-session",
       "-d",
       "-s",
@@ -59435,7 +59488,7 @@ async function launchTmuxSession(args) {
       buildBufferedRuntimeCommand(runtimeBuffer)
     ], { stdio: "pipe", encoding: "utf8" });
     if (newSess.status !== 0) failNewSession((newSess.stderr ?? "").trim());
-    const consumerReady = (0, import_node_child_process2.spawnSync)("tmux", ["wait-for", `${runtimeBuffer}-consumer-ready`], {
+    const consumerReady = (0, import_node_child_process3.spawnSync)("tmux", ["wait-for", `${runtimeBuffer}-consumer-ready`], {
       stdio: "pipe",
       encoding: "utf8",
       timeout: TMUX_CONSUMER_READY_TIMEOUT_MS,
@@ -59443,7 +59496,7 @@ async function launchTmuxSession(args) {
     });
     if (consumerReady.status !== 0) {
       deleteRuntimeBuffer(runtimeBuffer);
-      (0, import_node_child_process2.spawnSync)("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
+      (0, import_node_child_process3.spawnSync)("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
       const stderr = (consumerReady.stderr ?? consumerReady.error?.message ?? "").trim() || "consumer readiness timed out";
       process.stderr.write(kleur_default.red(`
   \u2717 tmux prompt consumer failed to become ready: ${stderr}
@@ -59452,22 +59505,22 @@ async function launchTmuxSession(args) {
     }
     const roleSessionId = resolveTmuxSessionId(plan.sessionName);
     if (roleSessionId) {
-      (0, import_node_child_process2.spawnSync)("tmux", ["set-environment", "-t", plan.sessionName, XTRM_SESSION_ID_VAR, roleSessionId], { stdio: "pipe" });
+      (0, import_node_child_process3.spawnSync)("tmux", ["set-environment", "-t", plan.sessionName, XTRM_SESSION_ID_VAR, roleSessionId], { stdio: "pipe" });
     }
     const bufferedPayload = JSON.stringify({
       runtimeCmd: runtimeExecutable,
       runtimeArgs: plan.runtimeArgs,
       sessionEnv: buildSessionIdentityEnv({ sessionId: roleSessionId, sessionName: plan.sessionName })
     });
-    const loaded = (0, import_node_child_process2.spawnSync)("tmux", ["load-buffer", "-b", runtimeBuffer, "-"], {
+    const loaded = (0, import_node_child_process3.spawnSync)("tmux", ["load-buffer", "-b", runtimeBuffer, "-"], {
       input: bufferedPayload,
       stdio: ["pipe", "pipe", "pipe"],
       encoding: "utf8"
     });
-    const signaled = loaded.status === 0 ? (0, import_node_child_process2.spawnSync)("tmux", ["wait-for", "-S", `${runtimeBuffer}-ready`], { stdio: "pipe", encoding: "utf8" }) : null;
+    const signaled = loaded.status === 0 ? (0, import_node_child_process3.spawnSync)("tmux", ["wait-for", "-S", `${runtimeBuffer}-ready`], { stdio: "pipe", encoding: "utf8" }) : null;
     if (loaded.status !== 0 || signaled?.status !== 0) {
       deleteRuntimeBuffer(runtimeBuffer);
-      (0, import_node_child_process2.spawnSync)("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
+      (0, import_node_child_process3.spawnSync)("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
       const stderr = (loaded.stderr ?? signaled?.stderr)?.trim() || "unknown error";
       process.stderr.write(kleur_default.red(`
   \u2717 tmux prompt transport failed: ${stderr}
@@ -59475,7 +59528,7 @@ async function launchTmuxSession(args) {
       process.exit(1);
     }
   }
-  const paneQuery = (0, import_node_child_process2.spawnSync)("tmux", [
+  const paneQuery = (0, import_node_child_process3.spawnSync)("tmux", [
     "list-panes",
     "-t",
     plan.sessionName,
@@ -59485,7 +59538,7 @@ async function launchTmuxSession(args) {
   const paneId = (paneQuery.stdout ?? "").trim().split("\n")[0] ?? "";
   if (!paneId) {
     if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer);
-    (0, import_node_child_process2.spawnSync)("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
+    (0, import_node_child_process3.spawnSync)("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
     process.stderr.write(kleur_default.red("\n  \u2717 Could not resolve pane id for new session\n"));
     process.exit(1);
   }
@@ -59493,7 +59546,7 @@ async function launchTmuxSession(args) {
   process.off("SIGTERM", cleanupOnSignal);
   process.off("SIGHUP", cleanupOnSignal);
   for (const { key, value } of plan.paneOptions) {
-    (0, import_node_child_process2.spawnSync)("tmux", ["set-option", "-p", "-t", paneId, key, value], { stdio: "pipe" });
+    (0, import_node_child_process3.spawnSync)("tmux", ["set-option", "-p", "-t", paneId, key, value], { stdio: "pipe" });
   }
   if (bead) await assignBeadToRuntime(bead, runtime, paneId, worktreePath, { readyAfterMs });
   if (args.mode === "role") {
@@ -59512,7 +59565,7 @@ async function launchTmuxSession(args) {
   }
   if (!attach) {
     if (structuredOutput) {
-      const sessionIdResult = (0, import_node_child_process2.spawnSync)("tmux", [
+      const sessionIdResult = (0, import_node_child_process3.spawnSync)("tmux", [
         "list-sessions",
         "-F",
         "#{session_name}	#{session_id}"
@@ -59529,7 +59582,7 @@ async function launchTmuxSession(args) {
         process.exit(1);
       }
       const tmuxSessionId = sessionIdentity.sessionId;
-      const versionResult = (0, import_node_child_process2.spawnSync)(runtimeExecutable, ["--version"], {
+      const versionResult = (0, import_node_child_process3.spawnSync)(runtimeExecutable, ["--version"], {
         cwd: worktreePath,
         stdio: "pipe",
         encoding: "utf8",
@@ -59558,7 +59611,7 @@ async function launchTmuxSession(args) {
     process.exit(0);
   }
   const attachCmd = chooseAttachCommand(plan.sessionName, insideTmux);
-  const attachResult = (0, import_node_child_process2.spawnSync)("tmux", attachCmd, {
+  const attachResult = (0, import_node_child_process3.spawnSync)("tmux", attachCmd, {
     stdio: "inherit"
   });
   process.exit(attachResult.status ?? 0);
@@ -59966,7 +60019,7 @@ function hasXtrmHookWiring(settingsPath) {
   }
 }
 function createClaudeCommand() {
-  const cmd = new Command("claude").description("Launch a Claude session in a sandboxed worktree, or manage Claude hook wiring").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch claude as a specialist role (resolved via `sp view <name>`); mirrors xt pi --role \u2014 creates a tmux session (or runs in current pane inside $TMUX) with @agent_task metadata").option("--bead <id>", "Bind a bead to the session and auto-populate its assignee as claude/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_bead pane option + XTMUX_AGENT_BEAD \u2014 and combines freely with --prompt").option("--prompt <text>", "Use <text> as the initial user prompt. A leading /<skill-name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to claude; with --role, overrides specialist.execution.model").option("--thinking <level>", "Warn-and-drop \u2014 claude has no --thinking flag; set thinking on the underlying model config instead").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  const cmd = new Command("claude").description("Launch a Claude session in a sandboxed worktree, or manage Claude hook wiring").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch claude as a specialist role (resolved via `sp view <name>`); mirrors xt pi --role \u2014 creates a tmux session (or runs in current pane inside $TMUX) with @agent_task metadata").option("--bead <id>", "Bind a bead to the session and auto-populate its assignee as claude/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_bead pane option + XTMUX_AGENT_BEAD \u2014 and combines freely with --prompt").option("--prompt <text>", "Use <text> as the initial user prompt. A leading /<skill-name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to claude; with --role, overrides specialist.execution.model").option("--thinking <level>", "Warn-and-drop \u2014 claude has no --thinking flag; set thinking on the underlying model config instead").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Passthrough:
   Everything after \`--\` is forwarded verbatim to the claude runtime, with or
   without --role. xt-owned flags (--session-dir, --name, --system-prompt,
@@ -60007,6 +60060,7 @@ Examples:
       child: Boolean(opts.child),
       reuse: Boolean(opts.reuse),
       subordinate: Boolean(opts.subordinate),
+      base: opts.base,
       passthrough
     });
   });
@@ -60042,7 +60096,7 @@ Examples:
   cmd.command("status").description("Show Claude CLI version and .xtrm hook wiring status").action(async () => {
     console.log(t.bold("\n  Claude Code Status\n"));
     try {
-      const version3 = (0, import_node_child_process3.execSync)("claude --version", { encoding: "utf8", stdio: "pipe" }).trim();
+      const version3 = (0, import_node_child_process4.execSync)("claude --version", { encoding: "utf8", stdio: "pipe" }).trim();
       console.log(t.success(`  \u2713 claude CLI: ${version3}`));
     } catch {
       console.log(kleur_default.red("  \u2717 claude CLI not found"));
@@ -60057,7 +60111,7 @@ Examples:
       console.log(kleur_default.yellow("  \u26A0 .xtrm hook wiring missing \u2014 run: xt claude install"));
     }
     try {
-      (0, import_node_child_process3.execSync)("bd --version", { stdio: "ignore" });
+      (0, import_node_child_process4.execSync)("bd --version", { stdio: "ignore" });
       console.log(t.success("  \u2713 beads (bd) available"));
     } catch {
       console.log(kleur_default.dim("  \u25CB beads (bd) not installed"));
@@ -60069,7 +60123,7 @@ Examples:
     console.log(t.bold("\n  Claude Code Doctor\n"));
     let allOk = true;
     try {
-      (0, import_node_child_process3.execSync)("claude --version", { stdio: "ignore" });
+      (0, import_node_child_process4.execSync)("claude --version", { stdio: "ignore" });
       console.log(t.success("  \u2713 claude CLI available"));
     } catch {
       console.log(kleur_default.red("  \u2717 claude CLI not found \u2014 install Claude Code"));
@@ -60099,14 +60153,14 @@ Examples:
 // src/commands/pi.ts
 init_kleur();
 var import_path8 = __toESM(require("path"), 1);
-var import_node_child_process6 = require("child_process");
+var import_node_child_process7 = require("child_process");
 var import_node_os11 = require("os");
 var import_fs_extra19 = __toESM(require_lib(), 1);
 
 // src/commands/pi-install.ts
 init_kleur();
 var import_path6 = __toESM(require("path"), 1);
-var import_node_child_process4 = require("child_process");
+var import_node_child_process5 = require("child_process");
 var import_node_fs3 = require("fs");
 var import_node_os9 = require("os");
 
@@ -60682,7 +60736,7 @@ function printGlobalPromptSyncSummary(result) {
 var PI_AGENT_DIR2 = process.env.PI_AGENT_DIR || import_path6.default.join((0, import_node_os9.homedir)(), ".pi", "agent");
 function ensurePnpm(dryRun) {
   if (isPnpmInstalled()) {
-    const v = (0, import_node_child_process4.spawnSync)("pnpm", ["--version"], { encoding: "utf8", stdio: "pipe" });
+    const v = (0, import_node_child_process5.spawnSync)("pnpm", ["--version"], { encoding: "utf8", stdio: "pipe" });
     console.log(t.success(`  \u2713 pnpm ${v.stdout.trim()} already installed`));
     return;
   }
@@ -60691,7 +60745,7 @@ function ensurePnpm(dryRun) {
     console.log(kleur_default.dim("  [DRY RUN] npm install -g pnpm"));
     return;
   }
-  const r = (0, import_node_child_process4.spawnSync)("npm", ["install", "-g", "pnpm"], { stdio: "inherit" });
+  const r = (0, import_node_child_process5.spawnSync)("npm", ["install", "-g", "pnpm"], { stdio: "inherit" });
   if (r.status !== 0) {
     console.log(kleur_default.yellow("  \u26A0 Failed to install pnpm. Run: npm install -g pnpm"));
   } else {
@@ -60700,7 +60754,7 @@ function ensurePnpm(dryRun) {
 }
 async function runPiInstall(dryRun = false, isGlobal = false, projectRoot, options = {}) {
   if (!projectRoot) {
-    const r = (0, import_node_child_process4.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
+    const r = (0, import_node_child_process5.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
       cwd: process.cwd(),
       encoding: "utf8",
       stdio: "pipe"
@@ -60711,7 +60765,7 @@ async function runPiInstall(dryRun = false, isGlobal = false, projectRoot, optio
   if (!isPiInstalled()) {
     console.log(kleur_default.yellow("  pi not found \u2014 installing oh-pi globally..."));
     if (!dryRun) {
-      const r = (0, import_node_child_process4.spawnSync)("npm", ["install", "-g", "oh-pi"], { stdio: "inherit" });
+      const r = (0, import_node_child_process5.spawnSync)("npm", ["install", "-g", "oh-pi"], { stdio: "inherit" });
       if (r.status !== 0) {
         console.error(kleur_default.red("  \u2717 Failed to install oh-pi. Run: npm install -g oh-pi\n"));
         return {
@@ -60728,7 +60782,7 @@ async function runPiInstall(dryRun = false, isGlobal = false, projectRoot, optio
     }
     console.log(t.success("  \u2713 pi installed"));
   } else {
-    const v = (0, import_node_child_process4.spawnSync)("pi", ["--version"], { encoding: "utf8" });
+    const v = (0, import_node_child_process5.spawnSync)("pi", ["--version"], { encoding: "utf8" });
     console.log(t.success(`  \u2713 pi ${v.stdout.trim()} already installed`));
   }
   ensurePnpm(dryRun);
@@ -60776,7 +60830,7 @@ init_kleur();
 var import_prompts2 = __toESM(require_prompts3(), 1);
 var import_fs_extra18 = __toESM(require_lib(), 1);
 var import_path7 = __toESM(require("path"), 1);
-var import_node_child_process5 = require("child_process");
+var import_node_child_process6 = require("child_process");
 var import_node_os10 = require("os");
 var PI_AGENT_DIR3 = process.env.PI_AGENT_DIR || import_path7.default.join((0, import_node_os10.homedir)(), ".pi", "agent");
 function fillTemplate(template, values) {
@@ -60804,12 +60858,12 @@ function readExistingPiValues(piAgentDir) {
 }
 function ensurePnpm2() {
   if (isPnpmInstalled()) {
-    const v = (0, import_node_child_process5.spawnSync)("pnpm", ["--version"], { encoding: "utf8", stdio: "pipe" });
+    const v = (0, import_node_child_process6.spawnSync)("pnpm", ["--version"], { encoding: "utf8", stdio: "pipe" });
     console.log(t.success(`  \u2713 pnpm ${v.stdout.trim()} already installed`));
     return;
   }
   console.log(kleur_default.yellow("\n  pnpm not found \u2014 installing via npm..."));
-  const r = (0, import_node_child_process5.spawnSync)("npm", ["install", "-g", "pnpm"], { stdio: "inherit" });
+  const r = (0, import_node_child_process6.spawnSync)("npm", ["install", "-g", "pnpm"], { stdio: "inherit" });
   if (r.status !== 0) {
     console.log(kleur_default.yellow("  \u26A0 Failed to install pnpm. Run: npm install -g pnpm"));
   } else {
@@ -60845,14 +60899,14 @@ function createInstallPiCommand() {
       console.log(t.bold("\n  Pi Coding Agent Setup\n"));
       if (!isPiInstalled()) {
         console.log(kleur_default.yellow("  pi not found \u2014 installing oh-pi globally...\n"));
-        const r = (0, import_node_child_process5.spawnSync)("npm", ["install", "-g", "oh-pi"], { stdio: "inherit" });
+        const r = (0, import_node_child_process6.spawnSync)("npm", ["install", "-g", "oh-pi"], { stdio: "inherit" });
         if (r.status !== 0) {
           console.error(kleur_default.red("\n  Failed to install oh-pi. Run: npm install -g oh-pi\n"));
           process.exit(1);
         }
         console.log(t.success("  \u2713 pi installed\n"));
       } else {
-        const v = (0, import_node_child_process5.spawnSync)("pi", ["--version"], { encoding: "utf8" });
+        const v = (0, import_node_child_process6.spawnSync)("pi", ["--version"], { encoding: "utf8" });
         console.log(t.success(`  \u2713 pi ${v.stdout.trim()} already installed
 `));
       }
@@ -60944,7 +60998,7 @@ var RETIRED_PI_COMMANDS = /* @__PURE__ */ new Set(["install"]);
 var RETIRED_PI_INSTALL_REDIRECT = "xt pi install is retired \u2014 run: xt update --apply --repo <path> (planned removal: v0.13.0)";
 var EXTENSION_PACKAGE_ID = "npm:@jaggerxtrm/pi-extensions";
 function resolveProjectRoot() {
-  const gitResult = (0, import_node_child_process6.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
+  const gitResult = (0, import_node_child_process7.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
     cwd: process.cwd(),
     encoding: "utf8",
     stdio: "pipe"
@@ -60998,7 +61052,7 @@ async function getPiProjectPointer(projectRoot) {
   }
 }
 function createPiCommand() {
-  const cmd = new Command("pi").description("Launch a Pi session in a sandboxed worktree, or manage the Pi runtime").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch pi as a specialist role (resolved via `sp view <name>`); creates a named tmux session with @agent_task metadata").option("--bead <id>", "Bind a bead to the session and auto-populate its assignee as pi/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_bead pane option + XTMUX_AGENT_BEAD \u2014 and combines freely with --prompt").option("--prompt <text>", "Use <text> as the initial user prompt. A leading /skill:<name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to pi; with --role, overrides specialist.execution.model").option("--thinking <level>", "Forward `--thinking <level>` to pi; with --role, overrides specialist.execution.thinking_level").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  const cmd = new Command("pi").description("Launch a Pi session in a sandboxed worktree, or manage the Pi runtime").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch pi as a specialist role (resolved via `sp view <name>`); creates a named tmux session with @agent_task metadata").option("--bead <id>", "Bind a bead to the session and auto-populate its assignee as pi/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_bead pane option + XTMUX_AGENT_BEAD \u2014 and combines freely with --prompt").option("--prompt <text>", "Use <text> as the initial user prompt. A leading /skill:<name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to pi; with --role, overrides specialist.execution.model").option("--thinking <level>", "Forward `--thinking <level>` to pi; with --role, overrides specialist.execution.thinking_level").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Passthrough:
   Everything after \`--\` is forwarded verbatim to the pi runtime, with or
   without --role. xt-owned flags (--session-dir, --name, --system-prompt,
@@ -61033,6 +61087,7 @@ Examples:
       child: Boolean(opts.child),
       reuse: Boolean(opts.reuse),
       subordinate: Boolean(opts.subordinate),
+      base: opts.base,
       passthrough
     });
   });
@@ -61049,7 +61104,7 @@ Examples:
   cmd.addCommand(piSetup);
   cmd.command("status").description("Check Pi version and extension deployment drift").action(async () => {
     console.log(t.bold("\n  Pi Runtime Status\n"));
-    const piResult = (0, import_node_child_process6.spawnSync)("pi", ["--version"], { encoding: "utf8", stdio: "pipe" });
+    const piResult = (0, import_node_child_process7.spawnSync)("pi", ["--version"], { encoding: "utf8", stdio: "pipe" });
     if (piResult.status === 0) {
       console.log(t.success(`  \u2713 pi ${piResult.stdout.trim()} installed`));
     } else {
@@ -61120,14 +61175,14 @@ Examples:
     console.error("xt pi doctor is deprecated \u2014 use: xt doctor (planned removal: v0.13.0)");
     console.log(t.bold("\n  Pi Doctor\n"));
     let allOk = true;
-    const piResult = (0, import_node_child_process6.spawnSync)("pi", ["--version"], { encoding: "utf8", stdio: "pipe" });
+    const piResult = (0, import_node_child_process7.spawnSync)("pi", ["--version"], { encoding: "utf8", stdio: "pipe" });
     if (piResult.status === 0) {
       console.log(t.success(`  \u2713 pi ${piResult.stdout.trim()} installed`));
     } else {
       console.log(kleur_default.red("  \u2717 pi not found \u2014 run: xt pi setup"));
       allOk = false;
     }
-    const pnpmResult = (0, import_node_child_process6.spawnSync)("pnpm", ["--version"], { encoding: "utf8", stdio: "pipe" });
+    const pnpmResult = (0, import_node_child_process7.spawnSync)("pnpm", ["--version"], { encoding: "utf8", stdio: "pipe" });
     if (pnpmResult.status === 0) {
       console.log(t.success(`  \u2713 pnpm ${pnpmResult.stdout.trim()} installed`));
     } else {
@@ -61251,7 +61306,7 @@ var import_node_os12 = __toESM(require("os"), 1);
 var import_node_path20 = __toESM(require("path"), 1);
 var import_node_crypto12 = require("crypto");
 var import_node_fs5 = require("fs");
-var import_node_child_process7 = require("child_process");
+var import_node_child_process8 = require("child_process");
 
 // src/core/codex-runtime.ts
 var OWNED_OR_FORBIDDEN_FLAGS = /* @__PURE__ */ new Set([
@@ -61522,11 +61577,11 @@ function slugify2(value) {
   return slug.slice(0, 64) || "codex";
 }
 function gitRoot(cwd) {
-  const result = (0, import_node_child_process7.spawnSync)("git", ["rev-parse", "--show-toplevel"], { cwd, stdio: "pipe", encoding: "utf8" });
+  const result = (0, import_node_child_process8.spawnSync)("git", ["rev-parse", "--show-toplevel"], { cwd, stdio: "pipe", encoding: "utf8" });
   return result.status === 0 ? (result.stdout ?? "").trim() || null : null;
 }
 function mainGitRoot(cwd) {
-  const result = (0, import_node_child_process7.spawnSync)("git", ["rev-parse", "--git-common-dir"], { cwd, stdio: "pipe", encoding: "utf8" });
+  const result = (0, import_node_child_process8.spawnSync)("git", ["rev-parse", "--git-common-dir"], { cwd, stdio: "pipe", encoding: "utf8" });
   if (result.status !== 0) return null;
   const raw = (result.stdout ?? "").trim();
   if (!raw) return null;
@@ -61534,7 +61589,7 @@ function mainGitRoot(cwd) {
   return common.endsWith(`${import_node_path20.default.sep}.git`) ? import_node_path20.default.dirname(common) : common;
 }
 function resolveCodexExecutable() {
-  const result = (0, import_node_child_process7.spawnSync)("sh", ["-c", 'command -v "$1"', "xtrm", "codex"], {
+  const result = (0, import_node_child_process8.spawnSync)("sh", ["-c", 'command -v "$1"', "xtrm", "codex"], {
     stdio: "pipe",
     encoding: "utf8"
   });
@@ -61571,7 +61626,7 @@ function skillNames(paths) {
   });
 }
 function renderCodexTask(role, bead, cwd) {
-  const result = (0, import_node_child_process7.spawnSync)("sp", [
+  const result = (0, import_node_child_process8.spawnSync)("sp", [
     "render-task",
     role,
     "--bead",
@@ -61597,10 +61652,10 @@ function renderCodexTask(role, bead, cwd) {
   return output.initial_prompt;
 }
 function cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, profile) {
-  if (buffer) (0, import_node_child_process7.spawnSync)("tmux", ["delete-buffer", "-b", buffer], { stdio: "ignore" });
-  (0, import_node_child_process7.spawnSync)("tmux", ["kill-session", "-t", `=${sessionName}`], { stdio: "ignore" });
-  (0, import_node_child_process7.spawnSync)("git", ["worktree", "remove", "--force", worktreePath], { cwd: mainRoot, stdio: "pipe" });
-  (0, import_node_child_process7.spawnSync)("git", ["branch", "-D", branchName], { cwd: mainRoot, stdio: "pipe" });
+  if (buffer) (0, import_node_child_process8.spawnSync)("tmux", ["delete-buffer", "-b", buffer], { stdio: "ignore" });
+  (0, import_node_child_process8.spawnSync)("tmux", ["kill-session", "-t", `=${sessionName}`], { stdio: "ignore" });
+  (0, import_node_child_process8.spawnSync)("git", ["worktree", "remove", "--force", worktreePath], { cwd: mainRoot, stdio: "pipe" });
+  (0, import_node_child_process8.spawnSync)("git", ["branch", "-D", branchName], { cwd: mainRoot, stdio: "pipe" });
   if (profile) removeCodexTrustProfile(profile, worktreePath);
 }
 function fail(message) {
@@ -61645,9 +61700,9 @@ async function launchCodexWorktreeSession(opts) {
   const trustProfile = codexTrustProfile(codexHome, worktreePath);
   const pathCheck = checkStructuredLaunchPaths({ json: structured, worktreePath, branchName });
   if (!pathCheck.ok) fail(pathCheck.error);
-  const refCheck = (0, import_node_child_process7.spawnSync)("git", ["check-ref-format", "--branch", branchName], { cwd: mainRoot, stdio: "pipe" });
+  const refCheck = (0, import_node_child_process8.spawnSync)("git", ["check-ref-format", "--branch", branchName], { cwd: mainRoot, stdio: "pipe" });
   if (refCheck.status !== 0) fail(`invalid worktree branch '${branchName}'`);
-  const existingBranch = (0, import_node_child_process7.spawnSync)("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], {
+  const existingBranch = (0, import_node_child_process8.spawnSync)("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], {
     cwd: mainRoot,
     stdio: "pipe"
   });
@@ -61664,7 +61719,7 @@ async function launchCodexWorktreeSession(opts) {
     requestedSkills = resolveRequestedSkills(mainRoot, opts.skills ?? [], "codex");
     if (opts.role) {
       roleName = opts.role;
-      const view = (0, import_node_child_process7.spawnSync)("sp", ["view", opts.role, "--raw", "--surface", "codex"], {
+      const view = (0, import_node_child_process8.spawnSync)("sp", ["view", opts.role, "--raw", "--surface", "codex"], {
         cwd: mainRoot,
         stdio: "pipe",
         encoding: "utf8",
@@ -61703,7 +61758,7 @@ async function launchCodexWorktreeSession(opts) {
     passthrough: passthrough.argv
   });
   const sessionName = roleName ? `role-codex-${slugify2(roleName)}${opts.bead ? `-${slugify2(opts.bead)}` : ""}` : `codex-${slugify2(slug)}`;
-  if ((0, import_node_child_process7.spawnSync)("tmux", ["has-session", "-t", `=${sessionName}`], { stdio: "pipe" }).status === 0) {
+  if ((0, import_node_child_process8.spawnSync)("tmux", ["has-session", "-t", `=${sessionName}`], { stdio: "pipe" }).status === 0) {
     fail(`tmux session already exists: ${sessionName}`);
   }
   if (!structured) {
@@ -61714,14 +61769,16 @@ async function launchCodexWorktreeSession(opts) {
   }
   const buffer = `xtrm-codex-${(0, import_node_crypto12.randomBytes)(16).toString("hex")}`;
   let created = false;
-  const codexGit = (0, import_node_child_process7.spawnSync)("git", ["worktree", "add", "-b", branchName, worktreePath], {
+  const base = fetchWorktreeBase(mainRoot, opts.base);
+  if (!base.ok) fail(`Could not resolve worktree base: ${base.error}`);
+  const codexGit = (0, import_node_child_process8.spawnSync)("git", ["worktree", "add", "-b", branchName, worktreePath, base.ref], {
     cwd: mainRoot,
     stdio: structured ? "pipe" : "inherit"
   });
   if (!codexGit.error && codexGit.status === 0) {
     created = true;
   } else {
-    const partialBranch = (0, import_node_child_process7.spawnSync)(
+    const partialBranch = (0, import_node_child_process8.spawnSync)(
       "git",
       ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`],
       { cwd: mainRoot, stdio: "pipe" }
@@ -61730,7 +61787,15 @@ async function launchCodexWorktreeSession(opts) {
       cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
       fail(`git worktree creation left partial state at ${worktreePath}`);
     }
-    const bdFallback = (0, import_node_child_process7.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
+    const branchAtBase = (0, import_node_child_process8.spawnSync)("git", ["branch", branchName, base.ref], {
+      cwd: mainRoot,
+      stdio: structured ? "pipe" : "inherit"
+    });
+    if (branchAtBase.error || branchAtBase.status !== 0) {
+      cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+      fail(`Could not start branch ${branchName} at ${base.ref}`);
+    }
+    const bdFallback = (0, import_node_child_process8.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
       cwd: mainRoot,
       stdio: structured ? "pipe" : "inherit"
     });
@@ -61748,14 +61813,14 @@ async function launchCodexWorktreeSession(opts) {
   }
   try {
     (0, import_node_fs5.rmSync)(import_node_path20.default.join(worktreePath, ".beads"), { recursive: true, force: true });
-    const tracked = (0, import_node_child_process7.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
+    const tracked = (0, import_node_child_process8.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
     });
     const paths = (tracked.stdout ?? "").split(/\r?\n/).filter(Boolean);
     if (paths.length > 0) {
-      (0, import_node_child_process7.spawnSync)("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...paths], {
+      (0, import_node_child_process8.spawnSync)("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...paths], {
         cwd: worktreePath,
         stdio: "pipe",
         encoding: "utf8"
@@ -61764,7 +61829,7 @@ async function launchCodexWorktreeSession(opts) {
   } catch {
   }
   const launchedAfterMs = Date.now() - 1e3;
-  const parentSession = process.env.TMUX ? ((0, import_node_child_process7.spawnSync)("tmux", ["display-message", "-p", "-F", "#{session_id}"], {
+  const parentSession = process.env.TMUX ? ((0, import_node_child_process8.spawnSync)("tmux", ["display-message", "-p", "-F", "#{session_id}"], {
     stdio: "pipe",
     encoding: "utf8"
   }).stdout ?? "").trim() : "";
@@ -61801,7 +61866,7 @@ async function launchCodexWorktreeSession(opts) {
   } catch (error51) {
     cleanupAndFail(error51 instanceof Error ? error51.message : String(error51));
   }
-  const launched = (0, import_node_child_process7.spawnSync)("tmux", [
+  const launched = (0, import_node_child_process8.spawnSync)("tmux", [
     "new-session",
     "-d",
     "-s",
@@ -61812,28 +61877,28 @@ async function launchCodexWorktreeSession(opts) {
     codexBufferCommand(buffer)
   ], { stdio: "pipe", encoding: "utf8" });
   if (launched.status !== 0) cleanupAndFail((launched.stderr ?? "").trim() || "tmux new-session failed");
-  const consumer = (0, import_node_child_process7.spawnSync)("tmux", ["wait-for", `${buffer}-consumer-ready`], {
+  const consumer = (0, import_node_child_process8.spawnSync)("tmux", ["wait-for", `${buffer}-consumer-ready`], {
     stdio: "pipe",
     encoding: "utf8",
     timeout: 5e3,
     killSignal: "SIGTERM"
   });
   if (consumer.status !== 0) cleanupAndFail("Codex prompt consumer did not become ready");
-  const loaded = (0, import_node_child_process7.spawnSync)("tmux", ["load-buffer", "-b", buffer, "-"], {
+  const loaded = (0, import_node_child_process8.spawnSync)("tmux", ["load-buffer", "-b", buffer, "-"], {
     input: JSON.stringify({ runtimeCmd: executable, runtimeArgs: runtimePlan.argv }),
     stdio: ["pipe", "pipe", "pipe"],
     encoding: "utf8"
   });
-  const signaled = loaded.status === 0 ? (0, import_node_child_process7.spawnSync)("tmux", ["wait-for", "-S", `${buffer}-ready`], { stdio: "pipe", encoding: "utf8" }) : null;
+  const signaled = loaded.status === 0 ? (0, import_node_child_process8.spawnSync)("tmux", ["wait-for", "-S", `${buffer}-ready`], { stdio: "pipe", encoding: "utf8" }) : null;
   if (loaded.status !== 0 || signaled?.status !== 0) cleanupAndFail("Codex prompt transport failed");
-  const pane = (0, import_node_child_process7.spawnSync)("tmux", ["list-panes", "-t", sessionName, "-F", "#{pane_id}"], {
+  const pane = (0, import_node_child_process8.spawnSync)("tmux", ["list-panes", "-t", sessionName, "-F", "#{pane_id}"], {
     stdio: "pipe",
     encoding: "utf8"
   });
   const paneId = (pane.stdout ?? "").trim().split(/\r?\n/, 1)[0] ?? "";
   if (!/^%[0-9]+$/.test(paneId)) cleanupAndFail("Could not resolve Codex pane id");
   for (const { key, value } of paneOptions) {
-    (0, import_node_child_process7.spawnSync)("tmux", ["set-option", "-p", "-t", paneId, key, value], { stdio: "pipe" });
+    (0, import_node_child_process8.spawnSync)("tmux", ["set-option", "-p", "-t", paneId, key, value], { stdio: "pipe" });
   }
   const session = await waitForCodexSession(import_node_path20.default.join(codexHome, "sessions"), worktreePath, launchedAfterMs);
   const launchedAt = new Date(launchedAfterMs).toISOString();
@@ -61845,7 +61910,7 @@ async function launchCodexWorktreeSession(opts) {
     profileName: trustProfile.name,
     profilePath: trustProfile.path
   })) cleanupAndFail("Could not persist Codex worktree session metadata");
-  const sessionQuery = (0, import_node_child_process7.spawnSync)("tmux", ["list-sessions", "-F", "#{session_name}	#{session_id}"], {
+  const sessionQuery = (0, import_node_child_process8.spawnSync)("tmux", ["list-sessions", "-F", "#{session_name}	#{session_id}"], {
     stdio: "pipe",
     encoding: "utf8"
   });
@@ -61854,7 +61919,7 @@ async function launchCodexWorktreeSession(opts) {
   removeSignalCleanup();
   if (!attach) {
     if (structured) {
-      const version3 = (0, import_node_child_process7.spawnSync)(executable, ["--version"], {
+      const version3 = (0, import_node_child_process8.spawnSync)(executable, ["--version"], {
         cwd: worktreePath,
         stdio: "pipe",
         encoding: "utf8",
@@ -61881,13 +61946,13 @@ async function launchCodexWorktreeSession(opts) {
     }
     process.exit(0);
   }
-  const attached = (0, import_node_child_process7.spawnSync)("tmux", chooseAttachCommand(sessionName, Boolean(process.env.TMUX)), { stdio: "inherit" });
+  const attached = (0, import_node_child_process8.spawnSync)("tmux", chooseAttachCommand(sessionName, Boolean(process.env.TMUX)), { stdio: "inherit" });
   process.exit(attached.status ?? 0);
 }
 
 // src/commands/codex.ts
 function createCodexCommand() {
-  return new Command("codex").description("EXPERIMENTAL: launch Codex in an xt-owned worktree with persisted hook trust").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch Codex with a Specialists role").option("--bead <id>", "Bind a bead to the session; with --role, render it as the initial task").option("--prompt <text>", "Use text as the initial user prompt").option("--model <name>", "Forward --model to Codex").option("--skill <name-or-path>", "Invoke an additional $skill-name at startup (repeatable)", (value, previous) => [...previous, value], []).option("--no-attach", "Create the tmux session detached").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object").option("--yolo", "Disable sandboxing and approval prompts (default)", true).option("--no-yolo", "Use workspace-write sandboxing with on-request approval").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  return new Command("codex").description("EXPERIMENTAL: launch Codex in an xt-owned worktree with persisted hook trust").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch Codex with a Specialists role").option("--bead <id>", "Bind a bead to the session; with --role, render it as the initial task").option("--prompt <text>", "Use text as the initial user prompt").option("--model <name>", "Forward --model to Codex").option("--skill <name-or-path>", "Invoke an additional $skill-name at startup (repeatable)", (value, previous) => [...previous, value], []).option("--no-attach", "Create the tmux session detached").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object").option("--yolo", "Disable sandboxing and approval prompts (default)", true).option("--no-yolo", "Use workspace-write sandboxing with on-request approval").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Safety:
   The default --yolo profile emits --dangerously-bypass-approvals-and-sandbox.
   --no-yolo emits --sandbox workspace-write --ask-for-approval on-request.
@@ -61907,6 +61972,7 @@ Status:
       attach: opts.attach,
       json: Boolean(opts.json),
       yolo: opts.yolo !== false,
+      base: opts.base,
       passthrough
     });
   });
@@ -62343,7 +62409,7 @@ async function getManagedAgentSkillNames(repoRoot) {
 
 // src/core/global-skills-bootstrap.ts
 var import_node_crypto13 = __toESM(require("crypto"), 1);
-var import_node_child_process8 = require("child_process");
+var import_node_child_process9 = require("child_process");
 var import_node_os13 = __toESM(require("os"), 1);
 var import_fs_extra22 = __toESM(require_lib(), 1);
 var import_node_path22 = __toESM(require("path"), 1);
@@ -62672,7 +62738,7 @@ async function createVerifiedSkillsBackup(globalSkillsRoot) {
   const sidecarPath2 = `${archivePath}.sha256.json`;
   const parentDir = import_node_path22.default.dirname(globalSkillsRoot);
   const sourceBasename = import_node_path22.default.basename(globalSkillsRoot);
-  const result = (0, import_node_child_process8.spawnSync)("tar", ["-czf", archivePath, "-C", parentDir, sourceBasename], { stdio: "pipe" });
+  const result = (0, import_node_child_process9.spawnSync)("tar", ["-czf", archivePath, "-C", parentDir, sourceBasename], { stdio: "pipe" });
   if (result.status !== 0) {
     throw new Error(`Failed to create skills backup archive: ${result.stderr.toString() || "unknown error"}`);
   }
@@ -62926,7 +62992,7 @@ async function readPiHookSettings(settingsPath) {
 }
 
 // src/core/service-skills-ensure.ts
-var import_node_child_process9 = require("child_process");
+var import_node_child_process10 = require("child_process");
 var import_node_path24 = __toESM(require("path"), 1);
 var import_fs_extra24 = __toESM(require_lib(), 1);
 var PACKS_REL = import_node_path24.default.join(".xtrm", "skills", "user", "packs");
@@ -62988,7 +63054,7 @@ async function ensureServiceSkills(projectRoot, opts) {
     const packPath = pack ? import_node_path24.default.join(projectRoot, PACKS_REL, pack) : "";
     const packJsonPath = packPath ? import_node_path24.default.join(packPath, "PACK.json") : "";
     const originalPackMetadata = packJsonPath && await import_fs_extra24.default.pathExists(packJsonPath) ? await import_fs_extra24.default.readJson(packJsonPath).catch(() => null) : null;
-    const run5 = (0, import_node_child_process9.spawnSync)("python3", [migrator, repoName], {
+    const run5 = (0, import_node_child_process10.spawnSync)("python3", [migrator, repoName], {
       cwd: projectRoot,
       encoding: "utf8",
       // Pass the project root explicitly (the CLI knows it) so the migrator never
@@ -63027,7 +63093,7 @@ async function ensurePostMergeDriftHook(projectRoot, notes) {
   if (!await import_fs_extra24.default.pathExists(installer)) {
     return;
   }
-  const run5 = (0, import_node_child_process9.spawnSync)("python3", [installer, "--hooks-only"], {
+  const run5 = (0, import_node_child_process10.spawnSync)("python3", [installer, "--hooks-only"], {
     cwd: projectRoot,
     encoding: "utf8",
     env: { ...process.env, CLAUDE_PROJECT_DIR: projectRoot }
@@ -63045,7 +63111,7 @@ var import_os3 = __toESM(require("os"), 1);
 var import_path10 = __toESM(require("path"), 1);
 
 // src/core/substrate.ts
-var import_node_child_process10 = require("child_process");
+var import_node_child_process11 = require("child_process");
 var import_fs_extra25 = __toESM(require_lib(), 1);
 var import_node_os15 = __toESM(require("os"), 1);
 var import_node_path25 = __toESM(require("path"), 1);
@@ -63053,7 +63119,7 @@ function resolveSbBin() {
   return process.env.XTRM_SB_BIN ?? "sb";
 }
 function defaultSbRunner(args, opts = {}) {
-  const result = (0, import_node_child_process10.spawnSync)(opts.bin ?? resolveSbBin(), args, {
+  const result = (0, import_node_child_process11.spawnSync)(opts.bin ?? resolveSbBin(), args, {
     cwd: opts.cwd,
     encoding: "utf8",
     stdio: "pipe",
@@ -63195,7 +63261,7 @@ function resolveSetupTs(cwd) {
   const roots = [];
   if (cwd) roots.push(import_node_path25.default.join(cwd, "node_modules", "@jaggerxtrm", "substrate"));
   try {
-    const npmRoot = (0, import_node_child_process10.spawnSync)("npm", ["root", "-g"], { encoding: "utf8", stdio: "pipe", timeout: 5e3 });
+    const npmRoot = (0, import_node_child_process11.spawnSync)("npm", ["root", "-g"], { encoding: "utf8", stdio: "pipe", timeout: 5e3 });
     if (npmRoot.status === 0 && String(npmRoot.stdout ?? "").trim()) {
       roots.push(import_node_path25.default.join(String(npmRoot.stdout).trim(), "@jaggerxtrm", "substrate"));
     }
@@ -63242,7 +63308,7 @@ function runSetupVerb(verb, opts = {}) {
   setupTs ??= resolveSetupTs(opts.cwd);
   if (!setupTs) return { status: null, stdout: "", stderr: "", error: "@jaggerxtrm/substrate setup.ts not installed" };
   const args = opts.dir ? [setupTs, verb, "--json", "--dir", opts.dir] : [setupTs, verb, "--json"];
-  const result = (0, import_node_child_process10.spawnSync)("node", args, {
+  const result = (0, import_node_child_process11.spawnSync)("node", args, {
     cwd: opts.cwd,
     encoding: "utf8",
     stdio: "pipe",
@@ -63327,7 +63393,7 @@ function truncateLines(text, maxLines) {
 function executePlanCommands(commands, opts = {}) {
   const results = [];
   const run5 = opts.run ?? ((cmd, args, timeout) => {
-    const result = (0, import_node_child_process10.spawnSync)(cmd, args, { cwd: opts.cwd, encoding: "utf8", stdio: "pipe", timeout });
+    const result = (0, import_node_child_process11.spawnSync)(cmd, args, { cwd: opts.cwd, encoding: "utf8", stdio: "pipe", timeout });
     if (result.error) {
       return { status: result.status, stdout: "", stderr: "", error: result.error.message };
     }
@@ -65272,14 +65338,14 @@ async function compareItem(category, item, repoPath, systemPath, changeSet, prun
 }
 
 // src/core/dependency-maintenance.ts
-var import_node_child_process11 = require("child_process");
+var import_node_child_process12 = require("child_process");
 init_kleur();
 var TOOLS = [
   { id: "sb", cli: "sb", packageName: "@jaggerxtrm/substrate", versionArgs: ["--version"] },
   { id: "gitnexus", cli: "gitnexus", packageName: "gitnexus", versionArgs: ["--version"] }
 ];
 function run2(command, args, cwd, timeout = 1e4) {
-  return (0, import_node_child_process11.spawnSync)(command, args, {
+  return (0, import_node_child_process12.spawnSync)(command, args, {
     cwd,
     encoding: "utf8",
     stdio: "pipe",
@@ -67220,12 +67286,12 @@ function createCleanCommand() {
 
 // src/commands/end.ts
 init_kleur();
-var import_node_child_process14 = require("child_process");
+var import_node_child_process15 = require("child_process");
 var import_node_fs12 = require("fs");
 var import_node_path35 = require("path");
 
 // src/core/worktree-reap.ts
-var import_node_child_process13 = require("child_process");
+var import_node_child_process14 = require("child_process");
 var import_node_fs11 = require("fs");
 var import_node_path34 = require("path");
 var WORK_EXCLUDED_NAMES = [
@@ -67296,7 +67362,7 @@ function livePidsFor(worktreePath, cwds) {
   return [...new Set(pids)].sort((a, b) => a - b);
 }
 function duBytes(path86) {
-  const r = (0, import_node_child_process13.spawnSync)("du", ["-sb", "--", path86], { encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process14.spawnSync)("du", ["-sb", "--", path86], { encoding: "utf8", stdio: "pipe" });
   if (r.status !== 0 && !r.stdout) return 0;
   const first = (r.stdout ?? "").split("\n")[0] ?? "";
   const bytes = Number(first.split("	")[0]);
@@ -67305,13 +67371,13 @@ function duBytes(path86) {
 function findRootOwned(path86, uid) {
   const prune = ["-name", ".git", "-o", "-name", ".xtrm", "-o", "-name", ".worktrees"];
   const scope = [path86, "(", ...prune, ")", "-prune", "-o", "!", "-user", String(uid)];
-  const probe2 = (0, import_node_child_process13.spawnSync)("find", [...scope, "-print", "-quit"], {
+  const probe2 = (0, import_node_child_process14.spawnSync)("find", [...scope, "-print", "-quit"], {
     encoding: "utf8",
     stdio: "pipe"
   });
   const hit = (probe2.stdout ?? "").trim();
   if (!hit) return { paths: [], bytes: 0 };
-  const full = (0, import_node_child_process13.spawnSync)("find", [...scope, "-printf", "%s\\t%p\\n"], {
+  const full = (0, import_node_child_process14.spawnSync)("find", [...scope, "-printf", "%s\\t%p\\n"], {
     encoding: "utf8",
     stdio: "pipe",
     maxBuffer: 64 * 1024 * 1024
@@ -67391,8 +67457,8 @@ function scanWorktree(worktreePath, uid = process.getuid?.() ?? -1) {
   }
   return scan;
 }
-function git(args, cwd) {
-  const r = (0, import_node_child_process13.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
+function git2(args, cwd) {
+  const r = (0, import_node_child_process14.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 function statusLinePath(line) {
@@ -67405,7 +67471,7 @@ function isExcludedPath(path86) {
   return path86.split("/").some((segment) => EXCLUDED.has(segment));
 }
 function dirtyPaths(worktreePath) {
-  const status2 = (0, import_node_child_process13.spawnSync)("git", ["status", "--short"], {
+  const status2 = (0, import_node_child_process14.spawnSync)("git", ["status", "--short"], {
     cwd: worktreePath,
     encoding: "utf8",
     stdio: "pipe"
@@ -67414,15 +67480,15 @@ function dirtyPaths(worktreePath) {
   return (status2.stdout ?? "").split("\n").filter((line) => line.trim().length > 0).map(statusLinePath).filter(Boolean).filter((path86) => !isExcludedPath(path86));
 }
 function unpushedCommits(worktreePath) {
-  const upstream = git(["rev-list", "--count", "@{upstream}..HEAD"], worktreePath);
+  const upstream = git2(["rev-list", "--count", "@{upstream}..HEAD"], worktreePath);
   if (upstream.ok) {
     const count = Number(upstream.out);
     return Number.isFinite(count) ? { count, detail: count === 0 ? "upstream up to date" : `${count} commit(s) ahead of upstream` } : { count: null, detail: "could not parse rev-list output" };
   }
   for (const ref of ["origin/HEAD", "origin/main", "origin/master"]) {
-    const exists = git(["rev-parse", "--verify", "--quiet", ref], worktreePath);
+    const exists = git2(["rev-parse", "--verify", "--quiet", ref], worktreePath);
     if (!exists.ok || !exists.out) continue;
-    const ancestor = (0, import_node_child_process13.spawnSync)("git", ["merge-base", "--is-ancestor", "HEAD", ref], {
+    const ancestor = (0, import_node_child_process14.spawnSync)("git", ["merge-base", "--is-ancestor", "HEAD", ref], {
       cwd: worktreePath,
       encoding: "utf8",
       stdio: "pipe"
@@ -67542,16 +67608,16 @@ function worktreeHoldsWork(cwd) {
   }
   return { holds: false, reason: "clean after scaffolding exclusions; nothing unpushed" };
 }
-function git2(args, cwd) {
-  const r = (0, import_node_child_process14.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
+function git3(args, cwd) {
+  const r = (0, import_node_child_process15.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 function bd(args, cwd) {
-  const r = (0, import_node_child_process14.spawnSync)("bd", args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process15.spawnSync)("bd", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
 function sb(args, cwd) {
-  const r = (0, import_node_child_process14.spawnSync)("sb", args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process15.spawnSync)("sb", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
 function resolveIssueMeta(id, cwd) {
@@ -67580,16 +67646,16 @@ function linkPrToIssue(id, prUrl, cwd) {
   bd(["update", id, "--notes", `PR: ${prUrl}`], cwd);
 }
 function npm(args, cwd) {
-  const r = (0, import_node_child_process14.spawnSync)("npm", args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process15.spawnSync)("npm", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 function resolveMainRepoRoot(cwd) {
-  const commonDirResult = git2(["rev-parse", "--git-common-dir"], cwd);
+  const commonDirResult = git3(["rev-parse", "--git-common-dir"], cwd);
   if (commonDirResult.ok && commonDirResult.out) {
     const commonDir = (0, import_node_path35.isAbsolute)(commonDirResult.out) ? commonDirResult.out : (0, import_node_path35.resolve)(cwd, commonDirResult.out);
     return commonDir.endsWith("/.git") || commonDir.endsWith("\\.git") ? (0, import_node_path35.dirname)(commonDir) : commonDir;
   }
-  const fallback = git2(["rev-parse", "--show-toplevel"], cwd);
+  const fallback = git3(["rev-parse", "--show-toplevel"], cwd);
   return fallback.ok && fallback.out ? fallback.out : cwd;
 }
 function clearStatuslineClaim(repoRoot) {
@@ -67601,7 +67667,7 @@ function clearStatuslineClaim(repoRoot) {
 }
 function cleanupWorktreePath(worktreePath, repoRoot) {
   const warnings = [];
-  const removeResult = (0, import_node_child_process14.spawnSync)(
+  const removeResult = (0, import_node_child_process15.spawnSync)(
     "git",
     ["worktree", "remove", worktreePath, "--force"],
     { cwd: repoRoot, encoding: "utf8", stdio: "pipe" }
@@ -67610,7 +67676,7 @@ function cleanupWorktreePath(worktreePath, repoRoot) {
     const errorText = (removeResult.stderr ?? "").trim();
     if (errorText) warnings.push(errorText);
   }
-  const pruneResult = (0, import_node_child_process14.spawnSync)("git", ["worktree", "prune", "--expire", "now"], {
+  const pruneResult = (0, import_node_child_process15.spawnSync)("git", ["worktree", "prune", "--expire", "now"], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe"
@@ -67711,7 +67777,7 @@ function buildPrTitle(issues, changedFiles, commitLog) {
 function getChangedFilesSinceBase(cwd, defaultBranch, pathspec) {
   const args = ["diff", "--name-only", `origin/${defaultBranch}..HEAD`];
   if (pathspec) args.push("--", pathspec);
-  const result = git2(args, cwd);
+  const result = git3(args, cwd);
   return result.out.split("\n").map((line) => line.trim()).filter(Boolean);
 }
 function maybeRebuildCliDist(cwd, defaultBranch) {
@@ -67728,13 +67794,13 @@ ${details}
 ` : ""}`));
     process.exit(1);
   }
-  git2(["add", "cli/dist"], cwd);
-  const stagedDist = git2(["diff", "--cached", "--name-only", "--", "cli/dist/"], cwd).out.split("\n").map((line) => line.trim()).filter(Boolean);
+  git3(["add", "cli/dist"], cwd);
+  const stagedDist = git3(["diff", "--cached", "--name-only", "--", "cli/dist/"], cwd).out.split("\n").map((line) => line.trim()).filter(Boolean);
   if (stagedDist.length === 0) {
     console.log(t.success("  \u2713 cli/dist already up to date"));
     return;
   }
-  const commitResult = git2(["commit", "-m", "chore: rebuild dist after source changes"], cwd);
+  const commitResult = git3(["commit", "-m", "chore: rebuild dist after source changes"], cwd);
   if (!commitResult.ok) {
     console.error(kleur_default.red(`
   \u2717 Could not commit rebuilt cli/dist:
@@ -67746,7 +67812,7 @@ ${details}
 }
 function findBeadsSymlinkIntroductions(cwd, upstream) {
   const guardedPrefixes = [".beads/", ".specialists/"];
-  const diffResult = git2(["diff", "--raw", `${upstream}..HEAD`, "--", ...guardedPrefixes], cwd);
+  const diffResult = git3(["diff", "--raw", `${upstream}..HEAD`, "--", ...guardedPrefixes], cwd);
   if (!diffResult.ok) {
     console.warn(kleur_default.yellow("  \u26A0 Could not inspect guarded-path diff for symlink mode changes; continuing safely."));
     return [];
@@ -67813,7 +67879,7 @@ function createEndCommand() {
   return new Command("end").description("Close session: rebase, push, open PR, link Substrate Issues, clean up worktree").option("--draft", "Open PR as draft", false).option("--keep", "Keep worktree after PR creation (default: prompt)", false).option("-y, --yes", "Skip confirmation prompts", false).option("--dry-run", "Preview PR title, body, and linked issues without pushing or creating PR", false).action(async (opts) => {
     const cwd = process.cwd();
     const codexSession = readCodexWorktreeSession(cwd);
-    const branchResult = git2(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+    const branchResult = git3(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
     const branch = branchResult.out;
     if (!branch.startsWith("xt/")) {
       console.error(kleur_default.red(
@@ -67824,7 +67890,7 @@ function createEndCommand() {
       ));
       process.exit(1);
     }
-    const statusResult = git2(["status", "--porcelain"], cwd);
+    const statusResult = git3(["status", "--porcelain"], cwd);
     if (statusResult.out.length > 0) {
       console.error(kleur_default.red(
         "\n  \u2717 Uncommitted changes detected. Commit or stash before running xt end.\n"
@@ -67836,13 +67902,13 @@ function createEndCommand() {
   xt end \u2014 closing session on ${branch}
 `));
     let defaultBranch = "main";
-    const symRef = git2(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], cwd);
+    const symRef = git3(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], cwd);
     if (symRef.ok && symRef.out) {
       defaultBranch = symRef.out.replace("origin/", "");
-    } else if (git2(["rev-parse", "--verify", "origin/master"], cwd).ok) {
+    } else if (git3(["rev-parse", "--verify", "origin/master"], cwd).ok) {
       defaultBranch = "master";
     }
-    const logResult = git2(["log", `origin/${defaultBranch}..HEAD`, "--oneline"], cwd);
+    const logResult = git3(["log", `origin/${defaultBranch}..HEAD`, "--oneline"], cwd);
     const issueIds = extractIssueIds(logResult.out);
     const issues = [];
     for (const id of issueIds) {
@@ -67878,9 +67944,9 @@ function createEndCommand() {
       console.log(kleur_default.dim("  \u25CB No linked issues found in commit log"));
     }
     if (opts.dryRun) {
-      const fullLog2 = git2(["log", `origin/${defaultBranch}..HEAD`, "--oneline"], cwd).out;
-      const diffStat2 = git2(["diff", `origin/${defaultBranch}`, "--stat"], cwd).out;
-      const changedFiles2 = git2(["diff", `origin/${defaultBranch}`, "--name-only"], cwd).out.split("\n").filter(Boolean);
+      const fullLog2 = git3(["log", `origin/${defaultBranch}..HEAD`, "--oneline"], cwd).out;
+      const diffStat2 = git3(["diff", `origin/${defaultBranch}`, "--stat"], cwd).out;
+      const changedFiles2 = git3(["diff", `origin/${defaultBranch}`, "--name-only"], cwd).out.split("\n").filter(Boolean);
       const prTitle2 = buildPrTitle(issues, changedFiles2, fullLog2);
       const prBody2 = buildPrBody(issues, fullLog2, diffStat2, branch);
       console.log(t.bold("\n  [DRY RUN] PR preview\n"));
@@ -67897,11 +67963,11 @@ function createEndCommand() {
       return;
     }
     console.log(kleur_default.dim(`  Fetching origin/${defaultBranch}...`));
-    git2(["fetch", "origin", defaultBranch], cwd);
+    git3(["fetch", "origin", defaultBranch], cwd);
     console.log(kleur_default.dim(`  Rebasing onto origin/${defaultBranch}...`));
-    const rebaseResult = git2(["rebase", `origin/${defaultBranch}`], cwd);
+    const rebaseResult = git3(["rebase", `origin/${defaultBranch}`], cwd);
     if (!rebaseResult.ok) {
-      const conflicts = git2(["diff", "--name-only", "--diff-filter=U"], cwd).out;
+      const conflicts = git3(["diff", "--name-only", "--diff-filter=U"], cwd).out;
       console.error(kleur_default.red("\n  \u2717 Rebase conflicts detected:\n"));
       if (conflicts) {
         for (const f of conflicts.split("\n")) console.error(kleur_default.yellow(`    ${f}`));
@@ -67928,7 +67994,7 @@ function createEndCommand() {
       return;
     }
     console.log(kleur_default.dim("  Pushing branch..."));
-    const pushResult = git2(["push", "origin", branch, "--force-with-lease"], cwd);
+    const pushResult = git3(["push", "origin", branch, "--force-with-lease"], cwd);
     if (!pushResult.ok) {
       console.error(kleur_default.red(`
   \u2717 Push failed:
@@ -67937,15 +68003,15 @@ function createEndCommand() {
       process.exit(1);
     }
     console.log(t.success(`  \u2713 Pushed ${branch}`));
-    const fullLog = git2(["log", `origin/${defaultBranch}..HEAD`, "--oneline"], cwd).out;
-    const diffStat = git2(["diff", `origin/${defaultBranch}`, "--stat"], cwd).out;
-    const changedFiles = git2(["diff", `origin/${defaultBranch}`, "--name-only"], cwd).out.split("\n").filter(Boolean);
+    const fullLog = git3(["log", `origin/${defaultBranch}..HEAD`, "--oneline"], cwd).out;
+    const diffStat = git3(["diff", `origin/${defaultBranch}`, "--stat"], cwd).out;
+    const changedFiles = git3(["diff", `origin/${defaultBranch}`, "--name-only"], cwd).out.split("\n").filter(Boolean);
     const prTitle = buildPrTitle(issues, changedFiles, fullLog);
     const prBody = buildPrBody(issues, fullLog, diffStat, branch);
     console.log(kleur_default.dim("  Creating PR..."));
     const prArgs = ["pr", "create", "--title", prTitle, "--body", prBody];
     if (opts.draft) prArgs.push("--draft");
-    const prResult = (0, import_node_child_process14.spawnSync)("gh", prArgs, { cwd, encoding: "utf8", stdio: "pipe" });
+    const prResult = (0, import_node_child_process15.spawnSync)("gh", prArgs, { cwd, encoding: "utf8", stdio: "pipe" });
     if (prResult.status !== 0) {
       console.error(kleur_default.red(`
   \u2717 PR creation failed:
@@ -68006,12 +68072,12 @@ function createEndCommand() {
 
 // src/commands/worktree.ts
 init_kleur();
-var import_node_child_process15 = require("child_process");
+var import_node_child_process16 = require("child_process");
 var import_node_fs13 = require("fs");
 var import_node_os19 = require("os");
 var import_node_path36 = require("path");
-function git3(args, cwd) {
-  const r = (0, import_node_child_process15.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
+function git4(args, cwd) {
+  const r = (0, import_node_child_process16.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
   return {
     ok: r.status === 0,
     out: (r.stdout ?? "").trim(),
@@ -68019,7 +68085,7 @@ function git3(args, cwd) {
   };
 }
 function parseGitWorktreeList(repoRoot) {
-  const r = git3(["worktree", "list", "--porcelain"], repoRoot);
+  const r = git4(["worktree", "list", "--porcelain"], repoRoot);
   if (!r.ok) return [];
   const worktrees = [];
   let current = {};
@@ -68095,7 +68161,7 @@ function listXtWorktrees(repoRoot) {
       wt.launchedAt = meta3.launchedAt;
     } catch {
     }
-    const logR = (0, import_node_child_process15.spawnSync)("git", ["log", "-1", "--format=%ci%s", "HEAD"], {
+    const logR = (0, import_node_child_process16.spawnSync)("git", ["log", "-1", "--format=%ci%s", "HEAD"], {
       cwd: wt.path,
       encoding: "utf8",
       stdio: "pipe"
@@ -68134,7 +68200,7 @@ function listOrphanManagedDirs(repoRoot) {
   return orphans.sort();
 }
 function runGitWorktreePrune(repoRoot) {
-  const prune = git3(["worktree", "prune", "--expire", "now"], repoRoot);
+  const prune = git4(["worktree", "prune", "--expire", "now"], repoRoot);
   return {
     ok: prune.ok,
     message: prune.ok ? "pruned stale git worktree metadata" : prune.err || "git worktree prune failed"
@@ -68142,7 +68208,8 @@ function runGitWorktreePrune(repoRoot) {
 }
 function isMergedIntoMain(branch, repoRoot) {
   const branchShort = branch.replace("refs/heads/", "");
-  const r = (0, import_node_child_process15.spawnSync)("git", ["branch", "--merged", "origin/main", "--list", branchShort], {
+  const baseRef = resolveDefaultBranchRef(repoRoot) ?? "origin/main";
+  const r = (0, import_node_child_process16.spawnSync)("git", ["branch", "--merged", baseRef, "--list", branchShort], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe"
@@ -68199,7 +68266,7 @@ function classifyPrStatus(state, mergeStateStatus, mergeable) {
 }
 function resolveBaseSha(repoRoot, baseRefName) {
   if (!baseRefName) return null;
-  const refResult = git3(["rev-parse", `origin/${baseRefName}`], repoRoot);
+  const refResult = git4(["rev-parse", `origin/${baseRefName}`], repoRoot);
   return refResult.ok && refResult.out ? refResult.out : null;
 }
 function buildPrStatus(branch, pr, repoRoot, error51) {
@@ -68248,7 +68315,7 @@ function buildPrStatus(branch, pr, repoRoot, error51) {
 }
 function getPrStatus(branch, repoRoot) {
   const branchShort = normalizeBranchName(branch);
-  const r = (0, import_node_child_process15.spawnSync)("gh", [
+  const r = (0, import_node_child_process16.spawnSync)("gh", [
     "pr",
     "list",
     "--head",
@@ -68388,7 +68455,7 @@ function normalizeBranchGcPrefixes(input) {
   return prefixes.length > 0 ? [...new Set(prefixes)] : ["xt/"];
 }
 function listManagedBranches(repoRoot, prefixes) {
-  const branches = git3(["for-each-ref", "--format=%(refname:short)", "refs/heads"], repoRoot);
+  const branches = git4(["for-each-ref", "--format=%(refname:short)", "refs/heads"], repoRoot);
   if (!branches.ok) return [];
   return branches.out.split("\n").map((line) => line.trim()).filter(Boolean).filter((branch) => prefixes.some((prefix) => branch.startsWith(prefix))).sort();
 }
@@ -68458,7 +68525,7 @@ function planBranchGc(repoRoot, prefixes, checkedAtMs = Date.now()) {
 function applyBranchGc(report) {
   const findings = report.findings.map((finding) => {
     if (finding.action !== "delete") return finding;
-    const result = git3(["branch", "-D", finding.branch], report.repo);
+    const result = git4(["branch", "-D", finding.branch], report.repo);
     if (result.ok) {
       return { ...finding, outcome: "deleted" };
     }
@@ -68777,7 +68844,7 @@ function applyReap(plan) {
   return { plan: { ...plan, mode: "apply" }, outcomes };
 }
 function resolveXtBinary() {
-  const which = (0, import_node_child_process15.spawnSync)("which", ["xt"], { encoding: "utf8", stdio: "pipe" });
+  const which = (0, import_node_child_process16.spawnSync)("which", ["xt"], { encoding: "utf8", stdio: "pipe" });
   if (which.status === 0 && which.stdout.trim()) return which.stdout.trim();
   return `${process.execPath} ${process.argv[1] ?? "xt"}`;
 }
@@ -68822,7 +68889,7 @@ WantedBy=timers.target
   }
   const messages = [];
   for (const args of [["--user", "daemon-reload"], ["--user", "enable", "--now", "xt-worktree-reap.timer"]]) {
-    const r = (0, import_node_child_process15.spawnSync)("systemctl", args, { encoding: "utf8", stdio: "pipe" });
+    const r = (0, import_node_child_process16.spawnSync)("systemctl", args, { encoding: "utf8", stdio: "pipe" });
     messages.push(r.status === 0 ? `systemctl ${args.join(" ")} ok` : `systemctl ${args.join(" ")} failed: ${(r.stderr ?? "").trim() || "unknown error"}`);
   }
   return { units, messages };
@@ -68876,7 +68943,7 @@ function printReapHuman(plan, outcomes) {
   console.log(kleur_default.yellow("\n  Dry run \u2014 nothing removed. Re-run with --apply --yes to reclaim.\n"));
 }
 function removeWorktreeEntry(repoRoot, worktreePath) {
-  const remove = git3(["worktree", "remove", worktreePath, "--force"], repoRoot);
+  const remove = git4(["worktree", "remove", worktreePath, "--force"], repoRoot);
   if (!remove.ok) {
     return { ok: false, message: remove.err || `could not remove ${worktreePath}` };
   }
@@ -68885,12 +68952,12 @@ function removeWorktreeEntry(repoRoot, worktreePath) {
   return { ok: true, message: `Removed ${worktreePath}` };
 }
 function getRepoRoot(cwd) {
-  const commonDirResult = git3(["rev-parse", "--git-common-dir"], cwd);
+  const commonDirResult = git4(["rev-parse", "--git-common-dir"], cwd);
   if (commonDirResult.ok && commonDirResult.out) {
     const commonDir = (0, import_node_path36.isAbsolute)(commonDirResult.out) ? commonDirResult.out : (0, import_node_path36.resolve)(cwd, commonDirResult.out);
     return commonDir.endsWith("/.git") || commonDir.endsWith("\\.git") ? (0, import_node_path36.dirname)(commonDir) : commonDir;
   }
-  const fallback = git3(["rev-parse", "--show-toplevel"], cwd);
+  const fallback = git4(["rev-parse", "--show-toplevel"], cwd);
   return fallback.ok && fallback.out ? fallback.out : cwd;
 }
 function createWorktreeCommand() {
@@ -69176,7 +69243,7 @@ function clearStatuslineClaim2(repoRoot) {
 // src/commands/attach.ts
 init_kleur();
 var import_prompts5 = __toESM(require_prompts3(), 1);
-var import_node_child_process16 = require("child_process");
+var import_node_child_process17 = require("child_process");
 var import_node_path37 = require("path");
 function recency(wt) {
   return wt.lastLogTime?.getTime() ?? (wt.launchedAt ? new Date(wt.launchedAt).getTime() : 0);
@@ -69264,7 +69331,7 @@ function createAttachCommand() {
         console.log(kleur_default.dim(`  warning: pi launch preflight failed (${message})`));
       }
     }
-    const result = (0, import_node_child_process16.spawnSync)(runtime, resumeArgs, runtime === "claude" ? { cwd: target.path, stdio: "inherit", env: { ...process.env, ...claudeMcpEnv(runtime) } } : { cwd: target.path, stdio: "inherit" });
+    const result = (0, import_node_child_process17.spawnSync)(runtime, resumeArgs, runtime === "claude" ? { cwd: target.path, stdio: "inherit", env: { ...process.env, ...claudeMcpEnv(runtime) } } : { cwd: target.path, stdio: "inherit" });
     process.exit(result.status ?? 0);
   });
 }
@@ -69426,16 +69493,16 @@ function isCacheValid(cache, entries, ttlMs = DEFAULT_TTL_MS) {
 
 // src/commands/docs-cross-check-gh.ts
 init_kleur();
-var import_node_child_process17 = require("child_process");
+var import_node_child_process18 = require("child_process");
 function isGhAvailable() {
-  return (0, import_node_child_process17.spawnSync)("gh", ["--version"], { stdio: "pipe", encoding: "utf8" }).status === 0;
+  return (0, import_node_child_process18.spawnSync)("gh", ["--version"], { stdio: "pipe", encoding: "utf8" }).status === 0;
 }
 function fetchRecentPrs(repoRoot, days) {
   if (!isGhAvailable()) {
     console.log(kleur_default.yellow("  \u26A0 gh CLI not found \u2014 skipping PR data (install gh to enable cross-check)"));
     return [];
   }
-  const r = (0, import_node_child_process17.spawnSync)("gh", [
+  const r = (0, import_node_child_process18.spawnSync)("gh", [
     "pr",
     "list",
     "--state",
@@ -69465,12 +69532,12 @@ function fetchRecentPrs(repoRoot, days) {
 }
 
 // src/commands/docs-cross-check-bd.ts
-var import_node_child_process18 = require("child_process");
+var import_node_child_process19 = require("child_process");
 init_kleur();
 var _bdAvailable = null;
 function isBdAvailable() {
   if (_bdAvailable !== null) return _bdAvailable;
-  const r = (0, import_node_child_process18.spawnSync)("bd", ["--version"], { stdio: "pipe", encoding: "utf8" });
+  const r = (0, import_node_child_process19.spawnSync)("bd", ["--version"], { stdio: "pipe", encoding: "utf8" });
   _bdAvailable = r.status === 0;
   return _bdAvailable;
 }
@@ -69482,7 +69549,7 @@ function fetchClosedBdIssues(days) {
     logBdWarning("fetchClosedBdIssues: bd CLI not available, skipping issue fetch");
     return [];
   }
-  const r = (0, import_node_child_process18.spawnSync)("bd", [
+  const r = (0, import_node_child_process19.spawnSync)("bd", [
     "query",
     `status=closed AND updated>${days}d`,
     "--json"
@@ -70010,10 +70077,10 @@ ${content}`;
 
 // src/commands/merge.ts
 init_kleur();
-var import_node_child_process19 = require("child_process");
+var import_node_child_process20 = require("child_process");
 var import_node_fs14 = require("fs");
 var import_node_path38 = require("path");
-function readSubordinateIdentity(query = (args) => ((0, import_node_child_process19.spawnSync)("tmux", args, { encoding: "utf8", stdio: "pipe" }).stdout ?? "").trim(), insideTmux = Boolean(process.env.TMUX)) {
+function readSubordinateIdentity(query = (args) => ((0, import_node_child_process20.spawnSync)("tmux", args, { encoding: "utf8", stdio: "pipe" }).stdout ?? "").trim(), insideTmux = Boolean(process.env.TMUX)) {
   if (!insideTmux) return { subordinate: false };
   const paneId = query(["display-message", "-p", "#{pane_id}"]);
   if (!paneId) return { subordinate: false };
@@ -70045,33 +70112,33 @@ function createMergeCommand() {
       ));
       process.exit(1);
     }
-    const gitCheck = (0, import_node_child_process19.spawnSync)("git", ["rev-parse", "--git-dir"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const gitCheck = (0, import_node_child_process20.spawnSync)("git", ["rev-parse", "--git-dir"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (gitCheck.status !== 0) {
       console.error(kleur_default.red("\n  \u2717 Not inside a git repository.\n"));
       process.exit(1);
     }
-    const ghAuth = (0, import_node_child_process19.spawnSync)("gh", ["auth", "status"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const ghAuth = (0, import_node_child_process20.spawnSync)("gh", ["auth", "status"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (ghAuth.status !== 0) {
       console.error(kleur_default.red(
         "\n  \u2717 gh is not authenticated.\n  Run: gh auth login\n"
       ));
       process.exit(1);
     }
-    const dirty = (0, import_node_child_process19.spawnSync)("git", ["status", "--porcelain", "--", ":!.beads/", ":!.specialists/"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const dirty = (0, import_node_child_process20.spawnSync)("git", ["status", "--porcelain", "--", ":!.beads/", ":!.specialists/"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (dirty.stdout.trim().length > 0) {
       console.error(kleur_default.yellow(
         '\n  \u26A0 Uncommitted changes detected.\n  The rebase cascade will check out other branches \u2014 a dirty tree\n  will either fail or carry changes onto the wrong branch.\n\n  Stash first:  git stash push -m "xt-merge cascade stash"\n  Then re-run:  xt merge\n'
       ));
       process.exit(1);
     }
-    const check2 = (0, import_node_child_process19.spawnSync)("specialists", ["--version"], { encoding: "utf8", stdio: "pipe" });
+    const check2 = (0, import_node_child_process20.spawnSync)("specialists", ["--version"], { encoding: "utf8", stdio: "pipe" });
     if (check2.status !== 0) {
       console.error(kleur_default.red(
         "\n  \u2717 specialists CLI not found.\n  Install with: npm install -g @jaggerxtrm/specialists\n"
       ));
       process.exit(1);
     }
-    const list = (0, import_node_child_process19.spawnSync)("specialists", ["list", "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
+    const list = (0, import_node_child_process20.spawnSync)("specialists", ["list", "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
     if (list.status === 0) {
       try {
         const specialists = JSON.parse(list.stdout);
@@ -70110,7 +70177,7 @@ function createMergeCommand() {
     } catch {
       jobsBefore = /* @__PURE__ */ new Set();
     }
-    const runProc = (0, import_node_child_process19.spawn)("specialists", args, { cwd, detached: true, stdio: "ignore" });
+    const runProc = (0, import_node_child_process20.spawn)("specialists", args, { cwd, detached: true, stdio: "ignore" });
     runProc.unref();
     const jobId = await (async () => {
       const deadline = Date.now() + 15e3;
@@ -70129,18 +70196,18 @@ function createMergeCommand() {
       console.error(kleur_default.red("\n  \u2717 Timed out waiting for xt-merge job to start.\n"));
       process.exit(1);
     }
-    const feed = (0, import_node_child_process19.spawnSync)("specialists", ["feed", "--job", jobId, "--follow"], { cwd, stdio: "inherit" });
+    const feed = (0, import_node_child_process20.spawnSync)("specialists", ["feed", "--job", jobId, "--follow"], { cwd, stdio: "inherit" });
     if (feed.status !== 0) {
       process.exit(feed.status ?? 1);
     }
-    const result = (0, import_node_child_process19.spawnSync)("specialists", ["result", jobId, "--wait"], { cwd, stdio: "inherit" });
+    const result = (0, import_node_child_process20.spawnSync)("specialists", ["result", jobId, "--wait"], { cwd, stdio: "inherit" });
     process.exit(result.status ?? 0);
   });
 }
 
 // src/commands/debug.ts
 init_kleur();
-var import_node_child_process20 = require("child_process");
+var import_node_child_process21 = require("child_process");
 var import_node_fs15 = require("fs");
 var import_node_path39 = require("path");
 var committedLabel = (outcome) => outcome === "error" ? "ACMT-" : "ACMT+";
@@ -70283,7 +70350,7 @@ function buildWhere(opts, base) {
 }
 function queryEvents(dbPath, where, limit) {
   const sql = `SELECT id,ts,session_id,runtime,worktree,kind,tool_name,outcome,issue_id,duration_ms,data FROM events${where ? ` WHERE ${where}` : ""} ORDER BY id ASC LIMIT ${limit}`;
-  const result = (0, import_node_child_process20.spawnSync)("sqlite3", [dbPath, "-json", sql], {
+  const result = (0, import_node_child_process21.spawnSync)("sqlite3", [dbPath, "-json", sql], {
     stdio: ["pipe", "pipe", "pipe"],
     encoding: "utf8",
     timeout: 5e3
@@ -70340,9 +70407,9 @@ function createDebugCommand() {
 init_kleur();
 var import_fs_extra43 = __toESM(require_lib(), 1);
 var import_path25 = __toESM(require("path"), 1);
-var import_node_child_process21 = require("child_process");
+var import_node_child_process22 = require("child_process");
 function run3(cmd, args, cwd) {
-  const r = (0, import_node_child_process21.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process22.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
 function detectDefaultBranch(cwd) {
@@ -71220,7 +71287,7 @@ function createSkillsCommand() {
 // src/commands/claude-sync.ts
 var import_fs_extra45 = __toESM(require_lib(), 1);
 var import_node_path41 = __toESM(require("path"), 1);
-var import_node_child_process22 = require("child_process");
+var import_node_child_process23 = require("child_process");
 init_kleur();
 var SENTINEL_RE = /<!-- XTRM-MANAGED:(\S+) start v=(\S+) -->\n([\s\S]*?)\n<!-- XTRM-MANAGED:\1 end -->/g;
 function parseFrontmatter2(text) {
@@ -71311,7 +71378,7 @@ function renderFragmentBody(frag, ctx) {
 function detectRepoContext(cwd) {
   let repoName = import_node_path41.default.basename(cwd);
   try {
-    const top = (0, import_node_child_process22.execSync)("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const top = (0, import_node_child_process23.execSync)("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     if (top) repoName = import_node_path41.default.basename(top);
   } catch {
   }
@@ -71513,7 +71580,7 @@ Run: xt claude-sync --apply --accept-overwrite`));
 // src/commands/doctor.ts
 var import_fs_extra48 = __toESM(require_lib(), 1);
 var import_node_path46 = __toESM(require("path"), 1);
-var import_node_child_process24 = require("child_process");
+var import_node_child_process25 = require("child_process");
 init_kleur();
 var import_cli_table3 = __toESM(require_cli_table3(), 1);
 
@@ -71975,7 +72042,7 @@ function getClaudeChannelStatus(paths) {
 
 // src/utils/npm-latest.ts
 var import_node_fs17 = require("fs");
-var import_node_child_process23 = require("child_process");
+var import_node_child_process24 = require("child_process");
 var import_node_path45 = __toESM(require("path"), 1);
 var import_node_os23 = __toESM(require("os"), 1);
 var XTRM_PACKAGES = [
@@ -72007,7 +72074,7 @@ function writeCache2(file2, data) {
   }
 }
 function defaultNpmView(pkg) {
-  const result = (0, import_node_child_process23.spawnSync)("npm", ["view", pkg, "version", "--registry", NPMJS_REGISTRY], {
+  const result = (0, import_node_child_process24.spawnSync)("npm", ["view", pkg, "version", "--registry", NPMJS_REGISTRY], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NPM_VIEW_TIMEOUT_MS
@@ -72017,7 +72084,7 @@ function defaultNpmView(pkg) {
   return v.length > 0 ? v : null;
 }
 function defaultInstalledResolver(pkg) {
-  const rootResult = (0, import_node_child_process23.spawnSync)("npm", ["root", "-g"], {
+  const rootResult = (0, import_node_child_process24.spawnSync)("npm", ["root", "-g"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NPM_VIEW_TIMEOUT_MS
@@ -72122,7 +72189,7 @@ ${kleur_default.bold(`\u2500\u2500 ${label} ${line}`)}`);
 function runSelfCheck(cwd) {
   const cliEntry = process.argv[1];
   if (!cliEntry) return null;
-  const result = (0, import_node_child_process24.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
+  const result = (0, import_node_child_process25.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -72625,9 +72692,9 @@ function createDoctorCommand() {
 ${kleur_default.bold("xt doctor")}
 `);
     section2("Runtime availability");
-    const claudeAvailable = (0, import_node_child_process24.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
-    const piAvailable = (0, import_node_child_process24.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
-    const pnpmAvailable = (0, import_node_child_process24.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
+    const claudeAvailable = (0, import_node_child_process25.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
+    const piAvailable = (0, import_node_child_process25.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
+    const pnpmAvailable = (0, import_node_child_process25.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
     claudeAvailable ? ok("claude CLI available") : warn("claude CLI not found");
     piAvailable ? ok("pi CLI available") : warn("pi CLI not found");
     pnpmAvailable ? ok("pnpm available") : warn("pnpm not found");
@@ -72707,7 +72774,7 @@ function createBootstrapCommand() {
 
 // src/commands/update.ts
 init_kleur();
-var import_node_child_process25 = require("child_process");
+var import_node_child_process26 = require("child_process");
 var import_node_path50 = __toESM(require("path"), 1);
 var import_fs_extra53 = __toESM(require_lib(), 1);
 
@@ -73177,7 +73244,7 @@ function commitAllReposPatch(repoRoot) {
   return { ok: true, message: `committed ${hash2.stdout.trim()}` };
 }
 function spawnGit(repoRoot, args) {
-  return (0, import_node_child_process25.spawnSync)("git", args, {
+  return (0, import_node_child_process26.spawnSync)("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe",
@@ -73269,17 +73336,17 @@ function createUpdateCommand() {
 // src/commands/release.ts
 init_kleur();
 var import_node_fs19 = require("fs");
-var import_node_child_process27 = require("child_process");
+var import_node_child_process28 = require("child_process");
 var import_node_path52 = __toESM(require("path"), 1);
 
 // src/core/xt-reports.ts
 var import_node_fs18 = require("fs");
-var import_node_child_process26 = require("child_process");
+var import_node_child_process27 = require("child_process");
 var import_node_path51 = __toESM(require("path"), 1);
 var DEFAULT_CAP_BYTES = 5e4;
 var REPORT_DIR = ".xtrm/reports";
 function getCommitDate(ref, cwd) {
-  return (0, import_node_child_process26.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
+  return (0, import_node_child_process27.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
     cwd,
     encoding: "utf8"
   }).trim();
@@ -73348,7 +73415,7 @@ var RELEASE_SCOPE_PATTERNS = [
   /^dist(?:\/|$)/
 ];
 function run4(cmd, args, cwd) {
-  const result = (0, import_node_child_process27.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_node_child_process28.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? "",
@@ -74201,7 +74268,7 @@ function renderHuman2(report) {
 init_kleur();
 var import_fs_extra59 = __toESM(require_lib(), 1);
 var import_node_path58 = __toESM(require("path"), 1);
-var import_node_child_process30 = require("child_process");
+var import_node_child_process31 = require("child_process");
 var import_yaml5 = __toESM(require_dist3(), 1);
 
 // src/spec/xml.ts
@@ -74272,10 +74339,10 @@ function toChangeContractNode({ spec, effectiveScrutiny }) {
 }
 
 // src/spec/dispatch.ts
-var import_node_child_process28 = require("child_process");
+var import_node_child_process29 = require("child_process");
 function dispatchPlanner(plannerBeadId, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
-  const r = (0, import_node_child_process28.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
+  const r = (0, import_node_child_process29.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
     encoding: "utf8"
   });
   if (r.status !== 0) {
@@ -74456,7 +74523,7 @@ function createSpecApplyCommand() {
 }
 function bdCreatePlannerBead(args) {
   const bd2 = process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process30.spawnSync)(
+  const r = (0, import_node_child_process31.spawnSync)(
     bd2,
     ["create", "--type", "task", "--priority", "1", "--title", args.title, "--description", args.description, "--json"],
     { encoding: "utf8" }
@@ -74479,7 +74546,7 @@ var import_node_path59 = __toESM(require("path"), 1);
 var import_yaml6 = __toESM(require_dist3(), 1);
 
 // src/spec/drift.ts
-var import_node_child_process31 = require("child_process");
+var import_node_child_process32 = require("child_process");
 async function computeStatus(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const epic = spec.links.epic ?? null;
@@ -74529,7 +74596,7 @@ async function computeStatus(spec, opts = {}) {
   };
 }
 function bdShow(bd2, id) {
-  const r = (0, import_node_child_process31.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process32.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout);
@@ -74538,7 +74605,7 @@ function bdShow(bd2, id) {
   }
 }
 function bdChildrenDiff(bd2, epic, knownChildren) {
-  const r = (0, import_node_child_process31.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process32.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -74549,7 +74616,7 @@ function bdChildrenDiff(bd2, epic, knownChildren) {
   }
 }
 function bdCycles(bd2, epic) {
-  const r = (0, import_node_child_process31.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process32.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -74616,7 +74683,7 @@ var import_node_path60 = __toESM(require("path"), 1);
 var import_yaml7 = __toESM(require_dist3(), 1);
 
 // src/spec/archive-gate.ts
-var import_node_child_process32 = require("child_process");
+var import_node_child_process33 = require("child_process");
 async function checkArchiveGate(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const failures = [];
@@ -74661,7 +74728,7 @@ async function checkArchiveGate(spec, opts = {}) {
   return { ok: failures.length === 0, failures };
 }
 function bdStatus(bd2, id) {
-  const r = (0, import_node_child_process32.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process33.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout).status ?? null;
@@ -74670,7 +74737,7 @@ function bdStatus(bd2, id) {
   }
 }
 function bdKv(bd2, key) {
-  const r = (0, import_node_child_process32.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
+  const r = (0, import_node_child_process33.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
   if (r.status !== 0) return null;
   const value = r.stdout.trim();
   return value.length > 0 ? value : null;
@@ -75664,7 +75731,7 @@ function createMigrateCommand() {
 // src/commands/version.ts
 var import_node_fs20 = require("fs");
 var import_node_path62 = require("path");
-var import_node_child_process33 = require("child_process");
+var import_node_child_process34 = require("child_process");
 init_kleur();
 function readInstallPackageJson() {
   const candidates = [
@@ -75687,7 +75754,7 @@ function detectSource(installRoot) {
 }
 function readGitCommit(installRoot) {
   if (!(0, import_node_fs20.existsSync)((0, import_node_path62.resolve)(installRoot, ".git"))) return null;
-  const result = (0, import_node_child_process33.spawnSync)("git", ["rev-parse", "HEAD"], {
+  const result = (0, import_node_child_process34.spawnSync)("git", ["rev-parse", "HEAD"], {
     cwd: installRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -75697,7 +75764,7 @@ function readGitCommit(installRoot) {
 }
 function readGitDirty(installRoot) {
   if (!(0, import_node_fs20.existsSync)((0, import_node_path62.resolve)(installRoot, ".git"))) return null;
-  const result = (0, import_node_child_process33.spawnSync)("git", ["status", "--porcelain"], {
+  const result = (0, import_node_child_process34.spawnSync)("git", ["status", "--porcelain"], {
     cwd: installRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -75775,11 +75842,11 @@ function createVersionCommand() {
 init_kleur();
 
 // src/core/topology-projection.ts
-var import_node_child_process34 = require("child_process");
+var import_node_child_process35 = require("child_process");
 var import_node_os26 = require("os");
 var import_node_path63 = __toESM(require("path"), 1);
 var import_node_util3 = require("util");
-var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process34.execFile);
+var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process35.execFile);
 var SEP2 = "	";
 var PANE_FIELDS = [
   "pane_id",
@@ -78920,7 +78987,7 @@ function activeBranch(entries) {
 
 // src/core/agent-host-launch.ts
 var import_node_crypto18 = require("crypto");
-var import_node_child_process35 = require("child_process");
+var import_node_child_process36 = require("child_process");
 var import_node_fs23 = require("fs");
 var import_node_path65 = __toESM(require("path"), 1);
 var LAUNCH_ENV = "XTRM_AGENT_LAUNCH";
@@ -78949,7 +79016,7 @@ var LaunchRejection = class extends Error {
   code;
 };
 var runProcess = (file2, args, options) => new Promise((resolve6) => {
-  (0, import_node_child_process35.execFile)(
+  (0, import_node_child_process36.execFile)(
     file2,
     [...args],
     { cwd: options.cwd, env: options.env, timeout: options.timeoutMs, maxBuffer: MAX_OUTPUT_BYTES, encoding: "utf8" },
@@ -79147,7 +79214,7 @@ function firstLine2(text) {
 }
 
 // src/core/agent-host-references.ts
-var import_node_child_process36 = require("child_process");
+var import_node_child_process37 = require("child_process");
 var import_node_crypto19 = require("crypto");
 var import_node_fs24 = require("fs");
 var import_promises = require("fs/promises");
@@ -79346,12 +79413,12 @@ function isInside5(root, target) {
 }
 async function resolveCommit(ref, cwd) {
   if (!/^[0-9a-f]{4,64}$/i.test(ref.body)) throw new Unresolved("invalid_reference");
-  const full = (await git4(cwd, ["rev-parse", "--verify", "--quiet", `${ref.body}^{commit}`])).trim();
+  const full = (await git5(cwd, ["rev-parse", "--verify", "--quiet", `${ref.body}^{commit}`])).trim();
   if (!/^[0-9a-f]{40,64}$/.test(full)) throw new Unresolved("commit_not_found");
-  const header = await git4(cwd, ["show", "-s", "--no-color", "--format=%an <%ae>%n%aI%n%B", full]);
+  const header = await git5(cwd, ["show", "-s", "--no-color", "--format=%an <%ae>%n%aI%n%B", full]);
   const [author = "", date5 = "", ...messageLines] = header.split("\n");
   const message = messageLines.join("\n").trimEnd();
-  const statText = (await git4(cwd, ["show", "--no-color", "--no-ext-diff", "--no-textconv", "--stat", "--format=", full])).trim();
+  const statText = (await git5(cwd, ["show", "--no-color", "--no-ext-diff", "--no-textconv", "--stat", "--format=", full])).trim();
   const rendered = `commit ${full}
 Author: ${author}
 Date:   ${date5}
@@ -79376,9 +79443,9 @@ ${statText}
     pointer: `git show ${full}`
   };
 }
-function git4(cwd, args) {
+function git5(cwd, args) {
   return new Promise((resolve6, reject) => {
-    (0, import_node_child_process36.execFile)(
+    (0, import_node_child_process37.execFile)(
       "git",
       ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args],
       {
@@ -80083,7 +80150,7 @@ function boundText(text) {
 }
 
 // src/core/agent-host-session-index.ts
-var import_node_child_process37 = require("child_process");
+var import_node_child_process38 = require("child_process");
 var import_node_fs26 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_node_os28 = __toESM(require("os"), 1);
@@ -80466,9 +80533,9 @@ function remoteUrl(configOut) {
   const remotes = configOut.split("\n").map((line) => /^remote\.(.+)\.url\s+(.+)$/.exec(line.trim())).filter((match) => match !== null);
   return (remotes.find((match) => match[1] === "origin") ?? remotes[0])?.[2];
 }
-function git5(cwd, args) {
+function git6(cwd, args) {
   return new Promise((resolve6, reject) => {
-    (0, import_node_child_process37.execFile)(
+    (0, import_node_child_process38.execFile)(
       "git",
       ["-C", cwd, ...args],
       { timeout: REPO_LOOKUP_TIMEOUT_MS, maxBuffer: 1 << 20, encoding: "utf8" },
@@ -80481,7 +80548,7 @@ function git5(cwd, args) {
   });
 }
 async function lookupRepository(cwd) {
-  const [commonDirOut, remotesOut] = await Promise.all([git5(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]), git5(cwd, ["config", "--get-regexp", "^remote\\..*\\.url$"])]);
+  const [commonDirOut, remotesOut] = await Promise.all([git6(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]), git6(cwd, ["config", "--get-regexp", "^remote\\..*\\.url$"])]);
   const commonDir = commonDirOut.split("\n")[0]?.trim();
   const repositoryPath = commonDir && !HAS_CONTROL_CHAR.test(commonDir) && commonDir.length <= PATH_MAX_CHARS ? import_node_path68.default.basename(commonDir) === ".git" ? import_node_path68.default.dirname(commonDir) : commonDir : void 0;
   const remote = remoteUrl(remotesOut);
@@ -81061,7 +81128,7 @@ function safeUnlink(file2) {
 }
 
 // src/core/agent-host-ensure.ts
-var import_node_child_process38 = require("child_process");
+var import_node_child_process39 = require("child_process");
 var import_node_crypto20 = require("crypto");
 var import_node_fs28 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
@@ -81159,7 +81226,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
   const logFd = (0, import_node_fs28.openSync)(logPath, logSize > MAX_LOG_BYTES ? "w" : "a", 384);
   let child;
   try {
-    child = (0, import_node_child_process38.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
+    child = (0, import_node_child_process39.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
       detached: true,
       stdio: ["ignore", logFd, logFd],
       env: options.env ?? process.env

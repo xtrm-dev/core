@@ -114,6 +114,7 @@ export function createPiCommand(): Command {
         .option('--child', 'With --role: explicit form of the auto-behavior — @agent_parent_session = current pane\'s session_id')
         .option('--reuse', 'With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one')
         .option('--subordinate', 'Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch')
+        .option('--base <ref>', 'Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)')
         .allowExcessArguments(true)
         .allowUnknownOption(true)
         .addHelpText('after', `
@@ -148,6 +149,7 @@ Examples:
             child?: boolean;
             reuse?: boolean;
             subordinate?: boolean;
+            base?: string;
         }) => {
             // Everything after `--` is forwarded verbatim to pi (with guards
             // enforced in the launcher). This is the primary escape hatch for
@@ -170,6 +172,7 @@ Examples:
                 child: Boolean(opts.child),
                 reuse: Boolean(opts.reuse),
                 subordinate: Boolean(opts.subordinate),
+                base: opts.base,
                 passthrough,
             });
         });
