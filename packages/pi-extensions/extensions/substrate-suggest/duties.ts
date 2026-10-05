@@ -118,7 +118,12 @@ export interface SkillPack {
 
 const ROSTER_CACHE_TTL_MS = 5 * 60_000;
 const ROSTER_MAX = 24;
-let rosterCache: { at: number; packs: SkillPack[] } = { at: 0, packs: [] };
+/**
+ * Cached pack scan. Keyed by repoRoot, NOT a single slot: an unkeyed cache makes the FIRST
+ * repo's packs answer for every later repo in the same process, so a session that evaluates
+ * duties in a second repo silently suggests another repository's services.
+ */
+let rosterCache: { at: number; key: string; packs: SkillPack[] } = { at: 0, key: "", packs: [] };
 
 /** Parse one service-registry.json into bounded roster entries. */
 export function parseRegistry(registryJson: string, packDir: string, repoRoot: string): SkillEntry[] {
@@ -146,17 +151,10 @@ export function parseRegistry(registryJson: string, packDir: string, repoRoot: s
 
 /** Discover service-knowledge packs between cwd and the git root. Bounded walk, 5-min cache. */
 export function discoverSkillPacks(cwd: string, now = Date.now()): SkillPack[] {
-  if (now - rosterCache.at < ROSTER_CACHE_TTL_MS) return rosterCache.packs;
+  const repoRoot = repoRootOf(cwd);
+  if (repoRoot === rosterCache.key && now - rosterCache.at < ROSTER_CACHE_TTL_MS) return rosterCache.packs;
   const packs: SkillPack[] = [];
   try {
-    let dir = cwd;
-    let repoRoot = cwd;
-    for (let guard = 0; guard < 8; guard++) {
-      if (existsSync(join(dir, ".git"))) { repoRoot = dir; break; }
-      const parent = join(dir, "..");
-      if (parent === dir) break;
-      dir = parent;
-    }
     const skillsRoot = join(repoRoot, ".xtrm", "skills");
     if (existsSync(skillsRoot)) {
       for (const pack of readdirSync(skillsRoot)) {
@@ -170,13 +168,25 @@ export function discoverSkillPacks(cwd: string, now = Date.now()): SkillPack[] {
   } catch {
     return [];
   }
-  rosterCache = { at: now, packs };
+  rosterCache = { at: now, key: repoRoot, packs };
   return packs;
 }
 
 /** Reset for tests. */
 export function resetRosterCache(): void {
-  rosterCache = { at: 0, packs: [] };
+  rosterCache = { at: 0, key: "", packs: [] };
+}
+
+/** Nearest ancestor holding `.git`, else the cwd itself. Bounded to 8 levels. */
+function repoRootOf(cwd: string): string {
+  let dir = cwd;
+  for (let guard = 0; guard < 8; guard++) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    const parent = join(dir, "..");
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return cwd;
 }
 
 export function skillVerb(entry: SkillEntry): VerbSpec {
