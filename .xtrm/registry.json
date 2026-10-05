@@ -329,16 +329,16 @@
           "hash": "14ddfd5332e8e5f03565d0ec63c8764a201289c2c3424ad3a96a511f717c3606",
           "version": "0.15.2"
         },
-        "using-specialists/references/bead-contracts.md": {
-          "hash": "5d7dd4faf53be8f8867401c3de6881ede3cc9cb8a72fbc310c21ac77e8e695a9",
-          "version": "0.15.2"
-        },
         "using-specialists/references/chain-recipes.md": {
-          "hash": "dc7c41da09dce6138e068ad3863fb9cace3a1052f18d0cb0c0994c3d1239bbcd",
+          "hash": "ea4b8672c4334f9c1b0da5f1053728c865597a31025e2637b0eb5cd5498b7d57",
           "version": "0.15.2"
         },
         "using-specialists/references/dispatch-preconditions.md": {
-          "hash": "f45086d100d48d591cd0baf05c314ca9c8846a7255e3dcf98328dccbb425b267",
+          "hash": "97b135ec31c2b0e6e3500d642002886b1729330655a118edd00b87a126b3c28e",
+          "version": "0.15.2"
+        },
+        "using-specialists/references/issue-contracts.md": {
+          "hash": "9cb53c8436c63b6959ad12c9d115b6de9d1f47e18d0003f965c03303148b6f79",
           "version": "0.15.2"
         },
         "using-specialists/references/kpi.md": {
@@ -346,11 +346,11 @@
           "version": "0.15.2"
         },
         "using-specialists/references/merge-and-integration.md": {
-          "hash": "391cee796f139a4084d7bbf36aacf68cb1b6f2dfb9d2bc32eb2daba67995dc90",
+          "hash": "857c9e31fb678fe66606caff4018399f41ff77ca90007b8e19e117de5c6cd698",
           "version": "0.15.2"
         },
         "using-specialists/references/monitoring.md": {
-          "hash": "7f3386e644e2253cd651425ed82c2bd906bb36ddcb7cd0114ee9494654c84992",
+          "hash": "47ead8b37be8dc75fe8334f44249c1de1bd0dc135df173b83467c556a8cd6043",
           "version": "0.15.2"
         },
         "using-specialists/references/nodes.md": {
@@ -358,7 +358,7 @@
           "version": "0.15.2"
         },
         "using-specialists/references/registry-and-locations.md": {
-          "hash": "fcb51618f219eacf8c266018b68bef502ce581e253a3dfb9d0654e7cbc0983ba",
+          "hash": "37ff4d9e3181b32611686a1fed680b8984153948f46715958f06882015bd77aa",
           "version": "0.15.2"
         },
         "using-specialists/references/script-class.md": {
@@ -386,7 +386,7 @@
           "version": "0.15.2"
         },
         "using-specialists/SKILL.md": {
-          "hash": "bdcb884034b31bd3df6c470aee6acade6bcd2eef60acbd339340f28d758edf72",
+          "hash": "0e85ff72144ef3d528950c6263b46d23c23d3f300f87ab6255fadc1a14b861d2",
           "version": "0.15.2"
         },
         "using-xtrm/references/continuity.md": {
@@ -817,7 +817,7 @@
           "version": "0.15.2"
         },
         "xtrm-maintenance/PACK.json": {
-          "hash": "94d83570000cd607973d6c2d917fae4e90e33c1d815e9166c0f9793b3e91cc92",
+          "hash": "be330a48210f74f33ba3f60cfa0c1938fe73e6ec11bae97a3416824ff30d22c6",
           "version": "0.15.2"
         },
         "xtrm-maintenance/releasing/scripts/xt-reports.ts": {
@@ -866,10 +866,6 @@
         },
         "xtrm-maintenance/sync-docs/SKILL.md": {
           "hash": "d11306a7f13afd0a47a26c3a9585bdab313e97a091f4b36379b0264f7a1ca09e",
-          "version": "0.15.2"
-        },
-        "xtrm-maintenance/update-specialists/SKILL.md": {
-          "hash": "f403cee492f7f076bfaaa262917879923663e374a1f410581d147281f6267989",
           "version": "0.15.2"
         },
         "xtrm-maintenance/updating-dependencies/schemas/dependency_update_case.schema.json": {
@@ -1002,45 +998,37 @@
     "version": 2,
     "digest": "git-blob-sha1",
     "source": {
-      "kind": "ref",
-      "ref": "master",
-      "resolved_sha": "5a661d168c1188dc326e966463986fd0e52905d1",
+      "kind": "repo",
+      "ref": "remove-redundant-specialist-skills",
+      "resolved_sha": "74c81fe04f0439183ed0bc9e34cde8693891969c",
       "repo_path": "../specialists",
       "source_path": "config/skills"
     },
     "skills": [
-      "update-specialists",
       "using-specialists"
     ],
     "placements": {
-      "update-specialists": {
-        "tier": "optional",
-        "pack": "xtrm-maintenance"
-      },
       "using-specialists": {
         "tier": "default"
       }
     },
     "files": {
-      "update-specialists": {
-        "SKILL.md": "109fcbf874fc58baa93f8a0ebc942a2a1f34cd58"
-      },
       "using-specialists": {
-        "references/bead-contracts.md": "be4d11d8000f93efb3bd244349f19b0d7ed4f1d2",
-        "references/chain-recipes.md": "42f02267eed5fa18dc33b814a7b1c7a054fddb8c",
-        "references/dispatch-preconditions.md": "43eccee9ceb86e6111d820d17681fbf7f317d604",
+        "references/chain-recipes.md": "650b939df6b925b9a02f9c8dbad3b4429d59959a",
+        "references/dispatch-preconditions.md": "b96d4bf8f2ad7b0efa6c2fe8be82fb3c807c9dd1",
+        "references/issue-contracts.md": "d5fc0c8aa7bdeee09d1e3e1f7f59e6e334d7bccd",
         "references/kpi.md": "93caf443c4f3d19f824b4ebbec133a902addb520",
-        "references/merge-and-integration.md": "22ea211e322d971242110dc1ebfa65d6f1e31f68",
-        "references/monitoring.md": "089ddb679fd644e32fd608d657807e04fd9d9efe",
+        "references/merge-and-integration.md": "7a512b2151777a62af265c54bf02d4b66ea3e7a4",
+        "references/monitoring.md": "d89916dcc6c4c796b571a8913e8f1e43bc173969",
         "references/nodes.md": "8f1ada01a2940601fe758757d0ab1bfe0a7b6e60",
-        "references/registry-and-locations.md": "e1fa2d44f6f06e0aeff94d772c3c8ff05bbc1d67",
+        "references/registry-and-locations.md": "08f664eafbd391c72bebf24b47d89748d3ada806",
         "references/script-class.md": "243b58d36f26d2f775a63905763fb10d06b3b99a",
         "references/specialist-definitions.md": "e74d7104167cc73dc665a970705054f753d7a1f1",
         "scripts/specialist-definitions/audit-spec-uniformity.mjs": "72bc5772d8fc4f8afdd323668bac6db5ed75582c",
         "scripts/specialist-definitions/resolve-specialists-root.mjs": "6bd6a3593e4ce89f39a3024d35f7033e78858397",
         "scripts/specialist-definitions/scaffold-specialist.ts": "e993d46432492429b72ccac5ac498813026013af",
         "scripts/specialist-definitions/validate-specialist.ts": "19f298eae0e0dbc809d0fa6ac282bf204cec1d4c",
-        "SKILL.md": "48ea750bc550de07407727e1bd29cecb2283fe94"
+        "SKILL.md": "412c8392e983b2a968545d572b520ab19b0fa678"
       }
     }
   }
