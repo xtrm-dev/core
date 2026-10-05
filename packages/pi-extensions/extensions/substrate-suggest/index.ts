@@ -577,14 +577,23 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       }
     }
 
+    // CORE-2359: every early return below used to be silent, so "the gate said no" and
+    // "the extension never ran" were indistinguishable in the log — the log only ever
+    // recorded FIRES. Seven entries in the whole history, none since 2026-10-03, with no
+    // way to tell which gate closed. Log the gate outcome, once per turn, and the next
+    // occurrence answers itself.
+    const gate = (reason: string, extra: Record<string, unknown> = {}) =>
+      logDecision({ ts: new Date().toISOString(), issue: null, verb: null, source: "deterministic", gate: reason, ...extra });
+
     const svc = await getServices();
-    if (!svc) return;
+    if (!svc) return gate("services_unavailable");
     try {
       const ref = resolveBoundRef(svc);
-      if (!ref || !wasActive) return;
+      if (!ref) return gate("no_bound_issue");
+      if (!wasActive) return gate("turn_inactive", { issue: ref });
       const issue = svc.issues.resolveRef(ref);
       const meta = svc.issues.getIssue(issue.id);
-      if (TERMINAL_LIFECYCLE.has(meta.lifecycleState)) return;
+      if (TERMINAL_LIFECYCLE.has(meta.lifecycleState)) return gate("issue_terminal", { issue: ref, lifecycle: meta.lifecycleState });
 
       const claim = svc.issues.getActiveClaim(issue.id);
       if (lastClaimHolder !== undefined && (claim?.holder ?? null) !== lastClaimHolder) resetCooldowns(cooldowns);
@@ -609,11 +618,20 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       };
 
       const decision = evaluateDeterministic(snapshot, cooldowns);
-      if (decision === null || !snapshot.ref) return;
+      if (decision === null || !snapshot.ref) {
+        return gate("no_due_duty", {
+          issue: snapshot.ref,
+          claimed: snapshot.claim ? true : false,
+          claim_expires_at: snapshot.claim?.expiresAt ?? null,
+          journal_entries: snapshot.journalSeq - snapshot.lastCheckpointSeq,
+        });
+      }
 
       if (typeof decision === "string") {
         const verb = VERB_BY_ID.get(decision)!;
-        if (!cooldownAllows(cooldowns, snapshot.ref, verb.id, snapshot.now, verb)) return;
+        if (!cooldownAllows(cooldowns, snapshot.ref, verb.id, snapshot.now, verb)) {
+          return gate("cooldown", { issue: snapshot.ref, verb: verb.id });
+        }
         emit(verb, snapshot.ref, { source: "deterministic", revision: meta.currentRevision });
         return;
       }
