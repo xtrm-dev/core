@@ -4,10 +4,9 @@
   "version": "2.0.0",
   "description": "XTRM release, dependency update, documentation synchronization, Specialists refresh, and maintenance workflows",
   "skills": [
-    "xtrm-maintenance",
     "releasing",
     "sync-docs",
-    "update-specialists",
-    "updating-dependencies"
+    "updating-dependencies",
+    "xtrm-maintenance"
   ]
 }
