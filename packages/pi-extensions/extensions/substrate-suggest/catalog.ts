@@ -418,7 +418,17 @@ export function parseContextBlock(content: string): ContextBlockMeta | null {
  */
 export function contextBlock(
   kind: "skill-doctrine" | "agent-settlement" | string,
-  meta: { about?: string; source?: string; model?: string; confidence?: number | null; skill?: string; level?: string; body: string },
+  meta: {
+    about?: string;
+    source?: string;
+    model?: string;
+    confidence?: number | null;
+    skill?: string;
+    level?: string;
+    body: string;
+    /** Optional bounded router: where to look, never what it says. */
+    router?: string | null;
+  },
 ): string {
   const attrs = [
     `kind="${kind}"`,
@@ -435,8 +445,11 @@ export function contextBlock(
     `<xtrm_context ${attrs}>`,
     `Injected context, not the operator's words:`,
     meta.body,
+    meta.router ?? null,
     `</xtrm_context>`,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export interface SuggestionCard {

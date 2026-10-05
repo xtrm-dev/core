@@ -33,7 +33,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, type VerbSpec } from "../substrate-suggest/catalog.ts";
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../substrate-suggest/jev.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
@@ -206,6 +206,62 @@ async function askJev(
   return result;
 }
 
+/**
+ * Read-after-suggest accounting (CORE-2367).
+ *
+ * A suggestion that is never read is a working card that changed nothing, and
+ * until this existed nothing in the system could tell the two apart. The rule
+ * is deliberately narrow: a PATH-IDENTICAL read of the suggested file within
+ * N turns. Counting card renders would make the metric agree with itself.
+ */
+export interface ReadWatch {
+  id: string;
+  path: string;
+  turnsLeft: number;
+}
+
+export function watchRead(
+  watch: ReadWatch | null,
+  readPath: string | null,
+  turnBoundary: boolean,
+): { watch: ReadWatch | null; read: boolean; expired: boolean } {
+  if (!watch) return { watch: null, read: false, expired: false };
+  if (readPath && samePath(readPath, watch.path)) {
+    return { watch: null, read: true, expired: false };
+  }
+  if (turnBoundary) {
+    const left = watch.turnsLeft - 1;
+    if (left <= 0) return { watch: null, read: false, expired: true };
+    return { watch: { ...watch, turnsLeft: left }, read: false, expired: false };
+  }
+  return { watch, read: false, expired: false };
+}
+
+/** Path comparison tolerant of relative-vs-absolute and `.` segments. */
+export function samePath(a: string, b: string): boolean {
+  const norm = (v: string) => {
+    try {
+      return resolve(v);
+    } catch {
+      return v;
+    }
+  };
+  return norm(a) === norm(b);
+}
+
+/** The path a `read`-shaped tool call targeted, or null. */
+export function readPathOf(tool: string, args: unknown): string | null {
+  if (tool !== "read" && tool !== "read_file" && tool !== "view") return null;
+  const a = (args ?? {}) as { path?: unknown; file_path?: unknown };
+  const p = typeof a.path === "string" ? a.path : typeof a.file_path === "string" ? a.file_path : null;
+  return p;
+}
+
+/** A registry-backed entry: the service-knowledge CLI is a valid route to its evidence. */
+export function isServiceEntry(entry: { id: string; skill: string }): boolean {
+  return entry.id.includes("service-knowledge/") || entry.skill.includes("service-knowledge");
+}
+
 /** The last segment of a path-shaped id: the document a human would name. */
 function leafName(id: string): string {
   const parts = id.split("/").filter(Boolean);
@@ -236,6 +292,34 @@ function skillVerb(entry: RosterEntry, confidence: number | null): VerbSpec {
 }
 
 /** The labelled doctrine block for a roster hit — one shape for both seams. */
+/**
+ * The section headings of a skill file, bounded (CORE-2367).
+ *
+ * A ROUTER, not an excerpt: the source records that "a bounded excerpt
+ * duplicated the doc badly", so this deliberately carries structure and no
+ * prose. It answers "where do I look" for the price of a readdir-sized scan,
+ * and it cannot go stale in the way quoted paragraphs do.
+ */
+export function routerSections(md: string, max = 12): string[] {
+  const out: string[] = [];
+  for (const line of md.split("\n")) {
+    // H2/H3 only: the H1 is the document title, not a place to look.
+    const m = /^#{2,3}\s+(.{1,80}?)\s*$/.exec(line);
+    if (m && !out.includes(m[1])) out.push(m[1]);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Sections for the entry's own file, or [] when it cannot be read. */
+function sectionsFor(entry: RosterEntry): string[] {
+  try {
+    return routerSections(readFileSync(entry.path, "utf-8"));
+  } catch {
+    return [];
+  }
+}
+
 export function doctrineBlock(
   entry: RosterEntry,
   about: string,
@@ -246,6 +330,16 @@ export function doctrineBlock(
     entry.level === "skill"
       ? `Load this skill: /skill:${entry.skill}. Ignore this if it does not fit what you were asked to do.`
       : `Read: ${entry.path} — nested under /skill:${entry.skill}. Ignore this if it does not fit.`;
+  // The router: where to look, not what it says. A service-backed entry also
+  // names the CLI, because the registry is queryable and a file read is only
+  // one of the two routes to the evidence.
+  const sections = sectionsFor(entry);
+  const router = [
+    sections.length ? `Sections: ${sections.join(" \u00b7 ")}` : null,
+    isServiceEntry(entry)
+      ? `Service CLI: service-knowledge index query "<3-5 terms>" --bundle (see service-knowledge --help).`
+      : null,
+  ].filter(Boolean).join("\n");
   return contextBlock("skill-doctrine", {
     about,
     source: entry.id,
@@ -253,6 +347,7 @@ export function doctrineBlock(
     level: entry.level,
     model: model ?? "jev",
     confidence,
+    router: router || null,
     body: [
       lead,
       `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
@@ -274,6 +369,10 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   let messageCursor = 0;
   /** Set by the input seam, consumed by the first tool_result of the turn. */
   let pending: PendingDoctrine | null = null;
+  /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
+  let readWatch: ReadWatch | null = null;
+  let lastSuggestedId: string | null = null;
+  const READ_WINDOW_TURNS = 2;
   const cooldownOk = (id: string, now: number) => (cooldowns[id] === undefined || now >= cooldowns[id]);
   const cooldownSet = (id: string) => { cooldowns[id] = Date.now() + COOLDOWN_MIN * 60_000; };
 
@@ -411,6 +510,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       // in-flight turn ("Agent is already processing") and displaced the
       // operator's prompt outright.
       pending = { entry, block, confidence: result.choice.confidence };
+      readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
+      lastSuggestedId = entry.id;
       logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "deferred-to-tool-result" });
 
       return { action: "continue" } as const;
@@ -421,6 +522,25 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
   // The input seam decides; it never mutates the prompt.
   pi.on("input", handler as never);
+
+  // CORE-2367: did the suggestion actually get read? A path-identical read inside
+  // the window counts; nothing else does.
+  pi.on("tool_call", (event) => {
+    const e = event as { toolName?: string; args?: unknown };
+    const path = readPathOf(String(e.toolName ?? ""), e.args);
+    if (!path || !readWatch) return;
+    const next = watchRead(readWatch, path, false);
+    readWatch = next.watch;
+    if (next.read) {
+      logDecision({
+        ts: new Date().toISOString(),
+        seam: "read_after_suggest",
+        pick: readWatch?.id ?? lastSuggestedId,
+        outcome: "read",
+        path,
+      });
+    }
+  });
 
   // Delivery: the first tool_result of the turn is the first ordered point
   // inside the turn, and the card is a context-bearing custom message, so the
@@ -512,6 +632,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const pick = result.choice.choice;
       const entry = roster.find((r) => r.id === pick);
       if (gateMean < GATE_THRESHOLD || !entry) return;
+      readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
+      lastSuggestedId = entry.id;
       if (!cooldownOk(entry.id, Date.now())) return;
       cooldownSet(entry.id);
 
