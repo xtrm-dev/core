@@ -134,11 +134,16 @@ export function parseRegistry(registryJson: string, packDir: string, repoRoot: s
     for (const [id, svc] of Object.entries(services)) {
       const description = typeof svc?.description === "string" ? svc.description.trim() : "";
       if (!description) continue;
+      const skillPath = svc.skill_path ? join(repoRoot, svc.skill_path) : join(packDir, "services", id, "SKILL.md");
+      // The card tells the agent to OPEN this path. A service whose skill file is missing
+      // would otherwise produce a confident instruction that cannot be followed: the agent
+      // reads the path, takes ENOENT, and burns a turn. Quiet beats wrong.
+      if (!existsSync(skillPath)) continue;
       entries.push({
         id,
         name: svc.name ?? id,
         description,
-        skillPath: svc.skill_path ? join(repoRoot, svc.skill_path) : join(packDir, "services", id, "SKILL.md"),
+        skillPath,
         container: svc.container ?? null,
         territory: Array.isArray(svc.territory) ? (svc.territory as string[]).slice(0, 40) : [],
       });
