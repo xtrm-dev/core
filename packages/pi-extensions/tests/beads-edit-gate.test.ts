@@ -11,9 +11,16 @@ import { join } from "node:path";
 // (XTRM_TEST_HOME), then drive the extensions through a fake `pi` object the
 // same way `xtrm-agent-host/index.test.ts` does.
 
+// NOTE: this factory must stay a structural superset of the sibling factories
+// for the same module (registry-parity, xtprompt, xtrm-agent-host): bun shares
+// mock.module registrations process-wide, so a factory missing an export that
+// another file's import graph needs (e.g. VERSION) breaks that file when
+// scheduling interleaves. See CORE-2360.
 mock.module("@earendil-works/pi-coding-agent", () => ({
+	VERSION: "test",
 	isToolCallEventType: (toolName: string, event: any) => event?.toolName === toolName,
 	isBashToolResult: (event: any) => event?.toolName === "bash",
+	isReadToolResult: (event: any) => event?.toolName === "read",
 }));
 
 const beads = await import("../extensions/beads/index.ts");
