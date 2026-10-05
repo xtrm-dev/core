@@ -95,8 +95,27 @@ describe("deterministic triggers", () => {
     expect(evaluateDeterministic(snap(), {})).toEqual({ kind: "semantic" });
   });
 
-  it("no claim means no suggestions", () => {
-    expect(evaluateDeterministic(snap({ claim: null }), {})).toBeNull();
+  it("no claim on a claimable issue draws a claim suggestion (CORE-2361)", () => {
+    expect(evaluateDeterministic(snap({ claim: null }), {})).toBe("claim_start");
+  });
+
+  it("no claim on a draft revision draws an attest suggestion", () => {
+    expect(evaluateDeterministic(snap({ claim: null, readinessState: "draft" }), {})).toBe("attest_ready");
+  });
+
+  it("no claim on a blocked issue stays silent — the claim cannot be taken", () => {
+    expect(evaluateDeterministic(snap({ claim: null, readinessState: "blocked" }), {})).toBeNull();
+  });
+
+  it("unclaimed but inactive stays silent", () => {
+    expect(evaluateDeterministic(snap({ claim: null, turnWasActive: false }), {})).toBeNull();
+  });
+
+  it("the wider sb surface is on the Jev roster (CORE-2361)", () => {
+    const ids = jevRoster().map((r) => r.id);
+    for (const id of ["issue_note", "defer_work", "dep_relate", "provenance_receipt", "resume_capsule"]) {
+      expect(ids).toContain(id);
+    }
   });
 });
 

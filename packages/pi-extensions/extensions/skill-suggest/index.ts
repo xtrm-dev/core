@@ -209,14 +209,47 @@ async function askJev(
 function skillVerb(entry: RosterEntry, confidence: number | null): VerbSpec {
   return {
     id: "skill_suggest",
-    action: `skill loaded · ${entry.id}`,
+    // CORE-2361: the header states what to load or read, up front.
+    action:
+      entry.level === "skill"
+        ? `skill loaded /skill:${entry.skill}`
+        : `reference to read · ${entry.id}`,
     oneLine: entry.description,
     instruction: () =>
-      `Injected from ${entry.path} — follow it for this task if it fits; /skill:${entry.skill} reloads the umbrella.`,
+      `Load /skill:${entry.skill} or read ${entry.path}; apply what fits. Ignore this if it does not fit.`,
     severity: "normal",
     cooldownMin: COOLDOWN_MIN,
     source: "jev",
   };
+}
+
+/** The labelled doctrine block for a roster hit — one shape for both seams. */
+export function doctrineBlock(
+  entry: RosterEntry,
+  about: string,
+  confidence: number | null,
+  model: string | null,
+): string {
+  const lead =
+    entry.level === "skill"
+      ? `Load this skill: /skill:${entry.skill}. Ignore this if it does not fit what you were asked to do.`
+      : `Read: ${entry.path} — nested under /skill:${entry.skill}. Ignore this if it does not fit.`;
+  return contextBlock("skill-doctrine", {
+    about,
+    source: entry.id,
+    skill: entry.skill,
+    level: entry.level,
+    model: model ?? "jev",
+    confidence,
+    body: [
+      lead,
+      `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
+      entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
+      // What this skill is, in its own words — the description the roster
+      // ranked on, restored for the reader.
+      `\x1b[3m${entry.description}\x1b[23m`,
+    ].filter(Boolean).join("\n"),
+  });
 }
 
 export default function skillSuggestExtension(pi: ExtensionAPI): void {
@@ -247,7 +280,14 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           return formatSuggestionCard({
             verb: {
               id: "skill_suggest",
-              action: `${meta.kind === "agent-settlement" ? "result settled" : "skill loaded"} · ${meta.source ?? "—"}`,
+              // CORE-2361: header states the target — /skill:<name> for a
+              // skill, the doc id for a nested reference.
+              action:
+                meta.kind === "agent-settlement"
+                  ? "result settled"
+                  : meta.level === "reference"
+                    ? `reference to read · ${meta.source ?? "—"}`
+                    : `skill loaded /skill:${meta.skill ?? meta.source ?? "—"}`,
               oneLine: meta.body ?? "",
               instruction: () => "",
               severity: "normal",
@@ -351,20 +391,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!cooldownOk(entry.id, Date.now())) return { action: "continue" } as const;
       cooldownSet(entry.id);
 
-      const block = contextBlock("skill-doctrine", {
-        about: `the current request`,
-        source: entry.id,
-        model: result.model ?? "jev",
-        confidence: result.choice.confidence,
-        body: [
-          `${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what the user actually asked for.`,
-          `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
-          entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
-          // What this skill is, in its own words — the description the roster
-          // ranked on, restored for the reader.
-          `\x1b[3m${entry.description}\x1b[23m`,
-        ].filter(Boolean).join("\n"),
-      });
+      const block = doctrineBlock(entry, `the current request`, result.choice.confidence, result.model);
 
       // Decide here (the prompt is the signal), deliver at the first ordered
       // boundary inside the turn. The prompt is never mutated: a transform
@@ -477,20 +504,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       cooldownSet(entry.id);
 
       // Pointer, not content (input seam parity).
-      const block = contextBlock("skill-doctrine", {
-        about: `your stated next step`,
-        source: entry.id,
-        model: result.model ?? "jev",
-        confidence: result.choice.confidence,
-        body: [
-          `${entry.id} — ${entry.description.slice(0, 160)}. Ignore this if it does not fit what you actually plan to do.`,
-          `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
-          entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
-          // What this skill is, in its own words — the description the roster
-          // ranked on, restored for the reader.
-          `\x1b[3m${entry.description}\x1b[23m`,
-        ].filter(Boolean).join("\n"),
-      });
+      const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
       logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
       // One message carries both audiences: the model reads the doctrine
       // block; the operator sees the house card around it.

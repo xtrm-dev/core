@@ -10,7 +10,7 @@
  * Agent Skills locations pi discovers (~/.agents/skills, .agents/skills).
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -27,7 +27,11 @@ export interface RosterEntry {
 }
 
 const CACHE_TTL_MS = 5 * 60_000;
-const ROSTER_MAX = 60;
+// CORE-2361: the real union (repo packs 131 + top-level home skills) is ~163
+// today; the old bound of 60 silently hid more than half the catalog from
+// ranking. 200 covers the union with headroom; one-line criteria keep the
+// classifier call bounded (~30 tokens per entry).
+const ROSTER_MAX = 200;
 const DESC_MAX = 240;
 let cache: { at: number; entries: RosterEntry[] } = { at: 0, entries: [] };
 
@@ -99,6 +103,70 @@ function skillDirs(repoRoot: string): string[] {
   ].filter((d) => existsSync(d));
 }
 
+/** Scan one skill dir: the SKILL.md itself plus every other doc under it. */
+function scanSkillDir(entries: RosterEntry[], cwd: string, skillDir: string, skill: string): void {
+  try {
+    const md = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+    const fm = parseFrontmatter(md);
+    const rel = relative(cwd, join(skillDir, "SKILL.md")) || join(skillDir, "SKILL.md");
+    entries.push({
+      id: skill,
+      skill,
+      level: "skill",
+      name: fm.name ?? skill,
+      description: (fm.description ?? "").slice(0, DESC_MAX),
+      path: rel.startsWith("..") ? join(skillDir, "SKILL.md") : rel,
+    });
+  } catch {
+    return; // unreadable skill: skip entirely
+  }
+  // Tier 2 (CORE-2361): every *.md under the skill dir, not just references/ —
+  // agents/, assets/, README/REFERENCE are doctrine depth too. Ids keep the
+  // legacy `<skill>/<file>` shape for direct references/*.md; other locations
+  // carry their relative path (`<skill>/agents/analyzer`).
+  const walk = (dir: string) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const full = join(dir, name);
+      let isDir = false;
+      try {
+        isDir = statSync(full).isDirectory();
+      } catch {
+        continue;
+      }
+      if (isDir) {
+        walk(full);
+        continue;
+      }
+      if (!name.endsWith(".md") || name === "SKILL.md") continue;
+      try {
+        const refMd = readFileSync(full, "utf8");
+        const { name: rName, description } = extractReferenceSummary(refMd);
+        if (!description) continue;
+        const relInside = relative(skillDir, full).replace(/\.md$/, "").split(/[\\/]/).join("/");
+        const idPart = relInside.startsWith("references/") ? relInside.slice("references/".length) : relInside;
+        const refRel = relative(cwd, full) || full;
+        entries.push({
+          id: `${skill}/${idPart}`,
+          skill,
+          level: "reference",
+          name: rName,
+          description,
+          path: refRel.startsWith("..") ? full : refRel,
+        });
+      } catch {
+        /* unreadable reference: skip */
+      }
+    }
+  };
+  walk(skillDir);
+}
+
 /** Discover the two-tier roster. 5-min cached; bounded. */
 export function discoverRoster(cwd: string, now = Date.now()): RosterEntry[] {
   if (now - cache.at < CACHE_TTL_MS) return cache.entries;
@@ -113,56 +181,45 @@ export function discoverRoster(cwd: string, now = Date.now()): RosterEntry[] {
   const entries: RosterEntry[] = [];
   try {
     for (const root of skillDirs(repoRoot)) {
-      for (const pack of readdirSync(root)) {
-        const packDir = join(root, pack);
-        let skillDirsList: string[] = [];
+      let rootChildren: string[];
+      try {
+        rootChildren = readdirSync(root);
+      } catch {
+        continue;
+      }
+      for (const childName of rootChildren) {
+        const childDir = join(root, childName);
+        // CORE-2361: pack-less root — ~/.agents/skills/<skill>/SKILL.md sits at
+        // the top level; the old pack-only scan found zero entries there.
+        if (existsSync(join(childDir, "SKILL.md"))) {
+          scanSkillDir(entries, cwd, childDir, childName);
+          continue;
+        }
+        // Pack layout: .xtrm/skills/<pack>/<skill>/SKILL.md.
+        let skillNames: string[];
         try {
-          skillDirsList = readdirSync(packDir).filter((d) => existsSync(join(packDir, d, "SKILL.md")));
-        } catch { continue; }
-        for (const skill of skillDirsList) {
-          const skillDir = join(packDir, skill);
-          try {
-            const md = readFileSync(join(skillDir, "SKILL.md"), "utf8");
-            const fm = parseFrontmatter(md);
-            const rel = relative(cwd, join(skillDir, "SKILL.md")) || join(skillDir, "SKILL.md");
-            entries.push({
-              id: skill,
-              skill,
-              level: "skill",
-              name: fm.name ?? skill,
-              description: (fm.description ?? "").slice(0, DESC_MAX),
-              path: rel.startsWith("..") ? join(skillDir, "SKILL.md") : rel,
-            });
-            // Tier 2: nested references — the doctrine depth.
-            const refsDir = join(skillDir, "references");
-            if (existsSync(refsDir)) {
-              for (const ref of readdirSync(refsDir)) {
-                if (!ref.endsWith(".md")) continue;
-                const refPath = join(refsDir, ref);
-                try {
-                  const refMd = readFileSync(refPath, "utf8");
-                  const { name, description } = extractReferenceSummary(refMd);
-                  if (!description) continue;
-                  const refRel = relative(cwd, refPath) || refPath;
-                  entries.push({
-                    id: `${skill}/${ref.replace(/\.md$/, "")}`,
-                    skill,
-                    level: "reference",
-                    name,
-                    description,
-                    path: refRel.startsWith("..") ? refPath : refRel,
-                  });
-                } catch { /* unreadable reference: skip */ }
-              }
-            }
-          } catch { /* unreadable skill: skip */ }
+          skillNames = readdirSync(childDir);
+        } catch {
+          continue;
+        }
+        for (const s of skillNames) {
+          if (existsSync(join(childDir, s, "SKILL.md"))) scanSkillDir(entries, cwd, join(childDir, s), s);
         }
       }
     }
   } catch {
     return [];
   }
-  const bounded = entries.slice(0, ROSTER_MAX);
+  // The same skill can be reachable through two roots (repo .agents/skills
+  // and ~/.agents/skills both carry multiplexing, gitnexus, ...). First wins —
+  // roots are ordered repo-first, so repo state beats home state (CORE-2361).
+  const seen = new Set<string>();
+  const deduped = entries.filter((e) => {
+    if (seen.has(e.id)) return false;
+    seen.add(e.id);
+    return true;
+  });
+  const bounded = deduped.slice(0, ROSTER_MAX);
   cache = { at: now, entries: bounded };
   return bounded;
 }
