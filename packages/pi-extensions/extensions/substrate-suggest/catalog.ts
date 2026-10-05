@@ -12,6 +12,8 @@ export type Severity = "high" | "normal";
 
 export type VerbId =
   | "claim_renew"
+  | "claim_start"
+  | "attest_ready"
   | "close_due"
   | "revise_contract"
   | "checkpoint"
@@ -26,7 +28,14 @@ export type VerbId =
   | "wait_guard"
   | "skill_suggest"
   | "tool_nudge"
-  | "provenance_unread";
+  | "provenance_unread"
+  // CORE-2361: the wider sb surface — sb help offers far more than the
+  // journal kinds; surface the parts a working turn plausibly warrants.
+  | "issue_note"
+  | "defer_work"
+  | "dep_relate"
+  | "provenance_receipt"
+  | "resume_capsule";
 
 export interface VerbSpec {
   id: VerbId;
@@ -44,6 +53,24 @@ export interface VerbSpec {
 }
 
 export const CATALOG: readonly VerbSpec[] = [
+  {
+    id: "claim_start",
+    action: "sb issue claim",
+    oneLine: "Active work on an unclaimed issue; claim it before continuing.",
+    instruction: (ref) => `Claim before continuing: sb issue claim ${ref} --holder <holder>.`,
+    severity: "high",
+    cooldownMin: 15,
+    source: "deterministic",
+  },
+  {
+    id: "attest_ready",
+    action: "sb issue attest",
+    oneLine: "The draft contract must be attested ready before it can be claimed.",
+    instruction: (ref) => `Attest readiness first: sb issue attest ${ref} --outcome ready --policy <policy> --attested-by <you>, then claim.`,
+    severity: "normal",
+    cooldownMin: 20,
+    source: "deterministic",
+  },
   {
     id: "claim_renew",
     action: "sb issue claim · renew",
@@ -134,6 +161,51 @@ export const CATALOG: readonly VerbSpec[] = [
     cooldownMin: 15,
     source: "jev",
   },
+  {
+    id: "issue_note",
+    action: "sb issue note",
+    oneLine: "A bounded clarification about the contract surfaced; record it as a note.",
+    instruction: (ref) => `Record the note: sb issue note ${ref} "<clarification>" — notes are continuity, never contract changes.`,
+    severity: "normal",
+    cooldownMin: 20,
+    source: "jev",
+  },
+  {
+    id: "defer_work",
+    action: "sb issue defer",
+    oneLine: "Work should pause past this cycle; defer the issue with a reason.",
+    instruction: (ref) => `Defer deliberately: sb issue defer ${ref} --reason "<why>" — a deferred issue leaves the ready pool cleanly.`,
+    severity: "normal",
+    cooldownMin: 30,
+    source: "jev",
+  },
+  {
+    id: "dep_relate",
+    action: "sb issue relate",
+    oneLine: "A dependency or relation between issues surfaced; link them so the board knows.",
+    instruction: (ref) => `Relate the issues: sb issue relate ${ref} <other> — dependency-aware scheduling needs the edge.`,
+    severity: "normal",
+    cooldownMin: 30,
+    source: "jev",
+  },
+  {
+    id: "provenance_receipt",
+    action: "sb provenance receipt",
+    oneLine: "External evidence arrived (CI run, published artifact, review); bind a receipt.",
+    instruction: (ref) => `Bind the evidence: sb provenance receipt ${ref} --kind <kind> --ref <external ref> — closure cites receipts.`,
+    severity: "normal",
+    cooldownMin: 30,
+    source: "jev",
+  },
+  {
+    id: "resume_capsule",
+    action: "sb issue resume",
+    oneLine: "Continuing earlier work; read the Resume Capsule, not the compacted transcript.",
+    instruction: (ref) => `Resume properly: sb issue resume ${ref} — revision + checkpoint + Journal delta + claim state, the durable state.`,
+    severity: "normal",
+    cooldownMin: 20,
+    source: "jev",
+  },
 ];
 
 export const VERB_BY_ID: ReadonlyMap<VerbId, VerbSpec> = new Map(CATALOG.map((v) => [v.id, v]));
@@ -191,7 +263,18 @@ export function evaluateDeterministic(s: StateSnapshot, cooldowns: Cooldowns): V
   // Idle turns never nudge: suggestions ride real work.
   if (!s.turnWasActive) return null;
 
-  if (s.claim && s.claim.expiresAt - s.now < TUNING.claimExpiryWindowMs) return "claim_renew";
+  // CORE-2361: unclaimed work. Active work on a bound, non-terminal issue
+  // with no live claim draws a claim suggestion (or an attest suggestion
+  // when the contract revision is still draft — claiming a draft is not
+  // possible). Other non-dispatchable readiness (blocked etc.) stays silent:
+  // the claim cannot be taken and the contract is fine.
+  if (!s.claim) {
+    if (s.readinessState === "draft") return "attest_ready";
+    if (s.readinessState == null) return "claim_start";
+    return null;
+  }
+
+  if (s.claim.expiresAt - s.now < TUNING.claimExpiryWindowMs) return "claim_renew";
 
   if (s.claim && s.latestKind === "result") return "close_due";
 
@@ -208,7 +291,6 @@ export function evaluateDeterministic(s: StateSnapshot, cooldowns: Cooldowns): V
   // Uncheckpointed-but-under-threshold activity with edits and no journal
   // movement this session: a semantic journal-kind pick is warranted.
   if (s.claim && s.turnWasActive) return { kind: "semantic" };
-
   return null;
 }
 
@@ -293,6 +375,10 @@ function goldCard(glyph: string, header: string, rows: string[], facts: string |
 export interface ContextBlockMeta {
   kind: string | null;
   source: string | null;
+  /** The loadable skill command target (CORE-2361): /skill:<name>. */
+  skill: string | null;
+  /** "skill" | "reference" — what the reader should do with the block. */
+  level: string | null;
   about: string | null;
   model: string | null;
   confidence: number | null;
@@ -305,10 +391,12 @@ const ATTR_RE = /(\w+)="([^"]*)"/g;
 export function parseContextBlock(content: string): ContextBlockMeta | null {
   const open = /^<xtrm_context\b([^>]*)>/.exec(content.trim());
   if (!open) return null;
-  const meta: ContextBlockMeta = { kind: null, source: null, about: null, model: null, confidence: null, body: null };
+  const meta: ContextBlockMeta = { kind: null, source: null, skill: null, level: null, about: null, model: null, confidence: null, body: null };
   for (const m of open[1].matchAll(ATTR_RE)) {
     if (m[1] === "kind") meta.kind = m[2];
     else if (m[1] === "source") meta.source = m[2];
+    else if (m[1] === "skill") meta.skill = m[2];
+    else if (m[1] === "level") meta.level = m[2];
     else if (m[1] === "about") meta.about = m[2];
     else if (m[1] === "by") meta.model = m[2];
     else if (m[1] === "confidence") meta.confidence = Number.isFinite(Number(m[2])) ? Number(m[2]) : null;
@@ -330,11 +418,13 @@ export function parseContextBlock(content: string): ContextBlockMeta | null {
  */
 export function contextBlock(
   kind: "skill-doctrine" | "agent-settlement" | string,
-  meta: { about?: string; source?: string; model?: string; confidence?: number | null; body: string },
+  meta: { about?: string; source?: string; model?: string; confidence?: number | null; skill?: string; level?: string; body: string },
 ): string {
   const attrs = [
     `kind="${kind}"`,
     meta.source ? `source="${meta.source}"` : null,
+    meta.skill ? `skill="${meta.skill}"` : null,
+    meta.level ? `level="${meta.level}"` : null,
     meta.about ? `about="${meta.about}"` : null,
     meta.model ? `by="${meta.model}"` : null,
     meta.confidence != null ? `confidence="${meta.confidence.toFixed(2)}"` : null,

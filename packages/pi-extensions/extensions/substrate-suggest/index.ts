@@ -64,7 +64,6 @@ import {
   isMonitorSetter,
   skillVerb,
   territoryHit,
-  waitCommitment,
   waitGuardVerb,
   isEditor,
   isProvenanceReader,
@@ -504,13 +503,29 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
 
     // Duty 0 — wait-guard. Needs no bound issue and no substrate services:
     // a wait commitment without a monitor is a duty the moment it is spoken.
-    if (jevAvailable && lastAssistant && waitCommitment(lastAssistant) && !monitorSet) {
+    // CORE-2361: no regex pre-gate — the old waitCommitment() match essentially
+    // never fired, so this advisor was silent. Jev reads the full final
+    // message and the gate nouls decide; wasActive bounds the call cost.
+    if (jevAvailable && wasActive && lastAssistant && !monitorSet) {
       const verb = waitGuardVerb();
       if (cooldownAllows(cooldowns, "wait", verb.id, Date.now(), verb)) {
         const result = await askJev(registry, {
           final_message: lastAssistant,
           monitor_set_this_turn: monitorSet,
         }, {
+          // CORE-2361: a choice question is mandatory — both Jev client paths
+          // null out a result with no choice answer, which is why this duty
+          // never fired even when the regex matched.
+          monitor_kind: {
+            type: "choice",
+            instructions: "If the agent should set up a monitor before waiting, pick the kind that fits; none otherwise.",
+            criteria: {
+              timer: "A bounded wake-up (sleep/timeout) suffices.",
+              background_monitor: "A long job or server to watch via a background task.",
+              durable_reminder: "A cross-session reminder (journal/calendar).",
+              none: "No monitor is warranted.",
+            },
+          },
           wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for an external event (CI, deploy, review, another agent's reply, a long job) rather than actively working or merely narrating?" },
           monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here, instead of relying on the agent remembering?" },
         } as Record<string, Question>);
@@ -532,6 +547,18 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           edited_files: edited.slice(0, 5),
           final_message: lastAssistant.slice(0, 1200),
         }, {
+          // CORE-2361: same mandatory-choice rule as wait-guard — a noul-only
+          // question set can never produce a non-null result.
+          provenance_source: {
+            type: "choice",
+            instructions: "Which history source should be consulted for these files, if any?",
+            criteria: {
+              git_log: "Commit messages on the touched paths.",
+              pr_history: "Reviews and discussions on past PRs touching these files.",
+              both: "Both git log and PR history.",
+              none: "History would not change this change.",
+            },
+          },
           provenance_materially_helpful: { type: "noul", instructions: "Given these files were changed this turn without consulting commit or PR history, would the history plausibly change what the change should be or reveal it repeats a past mistake?" },
           sonata_harm: { type: "noul", instructions: "Is the change clearly the provenance-free kind (new file, mechanical refactor, asked-for rename) where history consultation would be noise?" },
         } as Record<string, Question>);
