@@ -209,25 +209,6 @@ async function askJev(
   return { result, jevMs: Date.now() - start, jevPath: path };
 }
 
-/** Full load subpath for the card header (operator directive, CORE-2348). */
-function skillLoadPath(entry: RosterEntry): string {
-  return entry.level === "skill" ? `${entry.skill}/SKILL.md` : entry.id;
-}
-
-function skillVerb(entry: RosterEntry, confidence: number | null): VerbSpec {
-  return {
-    id: "skill_suggest",
-    // CORE-2348: the header states the full load subpath, up front.
-    action: `load /skill:${skillLoadPath(entry)}`,
-    oneLine: entry.description,
-    instruction: () =>
-      `Load /skill:${entry.skill} or read ${entry.path}; apply what fits. Ignore this if it does not fit.`,
-    severity: "normal",
-    cooldownMin: COOLDOWN_MIN,
-    source: "jev",
-  };
-}
-
 /** The labelled doctrine block for a roster hit — one shape for both seams. */
 export function doctrineBlock(
   entry: RosterEntry,
@@ -516,15 +497,18 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!cooldownOk(entry.id, Date.now())) return;
       cooldownSet(entry.id);
 
-      // Pointer, not content (input seam parity).
+      // CORE-2367: this block used to be built and DISCARDED, so the intention
+      // seam showed the operator a card while sending the model nothing at all -
+      // which is why "the agent never reads it" looked like disobedience rather
+      // than the delivery that actually happened. Both audiences get it now.
       const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
       logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)), jev_ms: jevMs, jev_path: jevPath });
-      // One message carries both audiences: the model reads the doctrine
-      // block; the operator sees the house card around it.
+      // The renderer draws the card from the labelled block's fields, so the model
+      // receives the doctrine and the operator still sees the house card.
       pi.sendMessage(
         {
           customType: CUSTOM_TYPE,
-          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence, compact: true }, SKILL_ACCENT),
+          content: block,
           display: true,
           details: { skill: entry.id, level: entry.level, seam: "agent_end" },
         },
