@@ -84,8 +84,92 @@ const CUSTOM_TYPE = "skill_suggestion";
 const LOG_DIR = join(homedir(), ".xtrm", "skill-suggest");
 const LOG_FILE = join(LOG_DIR, "log.jsonl");
 
+/**
+ * The gate, as one pure function (CORE-2366).
+ *
+ * The defect: every noul defaulted to 0, so a NEGATING noul contributed
+ * 1.0 - the strongest possible vote to fire. A classifier that answered
+ * nothing scored 0.5 and cleared a 0.3 bar. Missing evidence was the
+ * strongest evidence there was.
+ *
+ * The fix is asymmetric, and deliberately NOT blanket fail-closed: Jev
+ * degrades partially under timeout and fallback, so abstaining on every
+ * partial answer would starve legitimate weak signal and trade a visible
+ * error for an invisible one.
+ *   - a missing POSITIVE noul has no evidence, so the gate fails;
+ *   - a missing NEGATING noul is imputed NEUTRAL (0.5), never maximal.
+ */
+export function gateTerms(nouls: Record<string, number | null | undefined>): {
+  terms: number[];
+  abstain: string | null;
+} {
+  const terms: number[] = [];
+  let abstain: string | null = null;
+
+  // Positive noul: absent evidence cannot support firing.
+  const positive = nouls["would_follow_documented_procedure"];
+  if (typeof positive !== "number") {
+    abstain = "missing-positive-noul";
+    terms.push(0);
+  } else {
+    terms.push(positive);
+  }
+
+  // Negating nouls: absent evidence is neutral, not maximal.
+  for (const key of ["prose_suffices", "asks_about_the_tooling"] as const) {
+    const raw = nouls[key];
+    terms.push(typeof raw === "number" ? 1 - raw : 0.5);
+  }
+
+  return { terms, abstain };
+}
+
+/** Would this entry be suggested? The reason is returned so it can be logged. */
+export function evaluateGate(input: {
+  nouls: Record<string, number | null | undefined>;
+  confidence: number | null;
+  noneConfidence?: number | null;
+  hasEntry: boolean;
+}): { fire: boolean; gateMean: number; reason: string } {
+  const { terms, abstain } = gateTerms(input.nouls);
+  const gateMean = terms.reduce((a, b) => a + b, 0) / terms.length;
+
+  if (abstain) return { fire: false, gateMean, reason: abstain };
+
+  // A mean hides a unanimous veto. With a strong positive (1.0) and BOTH negators
+  // maxed (0.0 each) the mean lands exactly on GATE_THRESHOLD, so a strict `<`
+  // comparison let "prose fully suffices AND this is pure tooling chatter" fire.
+  // Two independent negators at their extreme outrank one positive; a mean cannot
+  // express that, so it is stated explicitly.
+  const proseMax = input.nouls["prose_suffices"] ?? 0;
+  const toolingMax = input.nouls["asks_about_the_tooling"] ?? 0;
+  if (proseMax >= 0.9 && toolingMax >= 0.9) {
+    return { fire: false, gateMean, reason: "vetoed-by-negators" };
+  }
+
+  if (gateMean < GATE_THRESHOLD) return { fire: false, gateMean, reason: "below-gate" };
+  if (!input.hasEntry) return { fire: false, gateMean, reason: "unknown-entry" };
+
+  // The agent_end seam had NO confidence sub-gate at all, so a near-zero pick with
+  // a healthy gate injected there by design. Both seams require it now.
+  const confidence = input.confidence;
+  if (typeof confidence !== "number") return { fire: false, gateMean, reason: "missing-confidence" };
+  if (confidence < FITS_THRESHOLD) return { fire: false, gateMean, reason: "below-fits" };
+
+  // Confidence alone is insufficient: the winner must BEAT the explicit `none`
+  // option, not merely clear an absolute bar. `none` is otherwise just another
+  // entry in the choice, so a weak winner fires against nothing.
+  const none = input.noneConfidence;
+  if (typeof none === "number" && confidence - none < NONE_MARGIN) {
+    return { fire: false, gateMean, reason: "below-none-margin" };
+  }
+
+  return { fire: true, gateMean, reason: "fire" };
+}
+
 const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
-const FITS_THRESHOLD = 0.3; // winner's verify noul under this -> nothing
+const FITS_THRESHOLD = 0.3; // winner's own confidence under this -> nothing (both seams, CORE-2366)
+const NONE_MARGIN = 0.05; // the winner must BEAT `none`, not merely clear a bar
 const INJECT_TIMEOUT_MS = 2500;
 
 const COOLDOWN_MIN = 30;
@@ -475,28 +559,33 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       }
       if (!result) return { action: "continue" } as const;
 
-      const gate = [
-        (result.nouls["would_follow_documented_procedure"] ?? 0),
-        1 - (result.nouls["prose_suffices"] ?? 0),
-        1 - (result.nouls["asks_about_the_tooling"] ?? 0),
-      ];
-      const gateMean = gate.reduce((a, b) => a + b, 0) / gate.length;
       const pick = result.choice.choice;
       const entry = roster.find((r) => r.id === pick);
-      // Log every evaluation — negatives are the tuning signal.
+      const verdict = evaluateGate({
+        nouls: result.nouls,
+        confidence: result.choice.confidence,
+        noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        hasEntry: Boolean(entry),
+      });
+      const gateMean = verdict.gateMean;
+      // Log every evaluation — negatives are the tuning signal. An ABSTAIN is
+      // recorded distinctly from a genuine `none` answer: collapsing the two
+      // reintroduces this defect in a new shape, because both would otherwise
+      // read as "the classifier considered and declined".
+      const noneConfidence = result.choice.probabilities?.["none"] ?? null;
       logDecision({
         ts: new Date().toISOString(),
         seam: "input",
-        pick: entry?.id ?? pick ?? "none",
+        pick: pick ?? "none",
+        outcome: verdict.fire ? "fire" : "abstain",
+        reason: verdict.reason,
         gate: Number(gateMean.toFixed(3)),
         confidence: result.choice.confidence,
-        injected: Boolean(entry) && gateMean >= GATE_THRESHOLD,
+        noneConfidence,
+        injected: verdict.fire,
         prompt_chars: prompt.length,
       });
-      if (gateMean < GATE_THRESHOLD || !entry) return { action: "continue" } as const;
-      // Sub-gate choice confidence stays silent: a high procedural gate with a
-      // barely-confident pick injected wrong doctrine in live use (0.19/0.20 hits).
-      if (result.choice.confidence !== null && result.choice.confidence < FITS_THRESHOLD) return { action: "continue" } as const;
+      if (!verdict.fire || !entry) return { action: "continue" } as const;
 
       // One card per prompt, per catalog id.
       if (!cooldownOk(entry.id, Date.now())) return { action: "continue" } as const;
@@ -623,15 +712,27 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
       } as Record<string, Question>);
       if (!result) return;
-      const gate = [
-        (result.nouls["would_follow_documented_procedure"] ?? 0),
-        1 - (result.nouls["prose_suffices"] ?? 0),
-        1 - (result.nouls["asks_about_the_tooling"] ?? 0),
-      ];
-      const gateMean = gate.reduce((a, b) => a + b, 0) / gate.length;
       const pick = result.choice.choice;
       const entry = roster.find((r) => r.id === pick);
-      if (gateMean < GATE_THRESHOLD || !entry) return;
+      const verdict = evaluateGate({
+        nouls: result.nouls,
+        confidence: result.choice.confidence,
+        noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        hasEntry: Boolean(entry),
+      });
+      if (!verdict.fire || !entry) {
+        logDecision({
+          ts: new Date().toISOString(),
+          seam: "agent_end",
+          pick: pick ?? "none",
+          outcome: "abstain",
+          reason: verdict.reason,
+          gate: Number(verdict.gateMean.toFixed(3)),
+          confidence: result.choice.confidence,
+          noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        });
+        return;
+      }
       readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
       lastSuggestedId = entry.id;
       if (!cooldownOk(entry.id, Date.now())) return;
@@ -642,7 +743,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       // which is why "the agent never reads it" looked like disobedience rather
       // than the delivery that actually happened. Both audiences get it now.
       const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
+      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(verdict.gateMean.toFixed(3)) });
       // The renderer draws the card from the labelled block's fields, so the model
       // receives the doctrine and the operator still sees the house card.
       pi.sendMessage(
