@@ -206,14 +206,26 @@ async function askJev(
   return result;
 }
 
+/** The last segment of a path-shaped id: the document a human would name. */
+function leafName(id: string): string {
+  const parts = id.split("/").filter(Boolean);
+  return parts[parts.length - 1] || id;
+}
+
+/**
+ * CORE-2367: signal a suggestion to LOAD, never assert a load that did not happen.
+ * The header names the artefact in human terms - pack/skill plus the leaf name - and the
+ * path goes in the body, where a reader can act on it. A live render showed a header
+ * carrying `service-knowledge/services/infrastructure-platform/references/production-deploy-runbook`,
+ * which is a filesystem location doing a header's job.
+ */
 function skillVerb(entry: RosterEntry, confidence: number | null): VerbSpec {
   return {
     id: "skill_suggest",
-    // CORE-2361: the header states what to load or read, up front.
     action:
       entry.level === "skill"
-        ? `skill loaded /skill:${entry.skill}`
-        : `reference to read · ${entry.id}`,
+        ? `consider loading /skill:${entry.skill}`
+        : `reference to read · ${entry.skill}/${leafName(entry.id)}`,
     oneLine: entry.description,
     instruction: () =>
       `Load /skill:${entry.skill} or read ${entry.path}; apply what fits. Ignore this if it does not fit.`,
@@ -287,7 +299,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
                   ? "result settled"
                   : meta.level === "reference"
                     ? `reference to read · ${meta.source ?? "—"}`
-                    : `skill loaded /skill:${meta.skill ?? meta.source ?? "—"}`,
+                    : `consider loading /skill:${meta.skill ?? meta.source ?? "—"}`,
               oneLine: meta.body ?? "",
               instruction: () => "",
               severity: "normal",
@@ -503,15 +515,18 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!cooldownOk(entry.id, Date.now())) return;
       cooldownSet(entry.id);
 
-      // Pointer, not content (input seam parity).
+      // CORE-2367: this block used to be built and DISCARDED, so the intention
+      // seam showed the operator a card while sending the model nothing at all -
+      // which is why "the agent never reads it" looked like disobedience rather
+      // than the delivery that actually happened. Both audiences get it now.
       const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
       logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
-      // One message carries both audiences: the model reads the doctrine
-      // block; the operator sees the house card around it.
+      // The renderer draws the card from the labelled block's fields, so the model
+      // receives the doctrine and the operator still sees the house card.
       pi.sendMessage(
         {
           customType: CUSTOM_TYPE,
-          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence, compact: true }),
+          content: block,
           display: true,
           details: { skill: entry.id, level: entry.level, seam: "agent_end" },
         },
