@@ -195,15 +195,33 @@ export function discoverRoster(cwd: string, now = Date.now()): RosterEntry[] {
           scanSkillDir(entries, cwd, childDir, childName);
           continue;
         }
-        // Pack layout: .xtrm/skills/<pack>/<skill>/SKILL.md.
-        let skillNames: string[];
-        try {
-          skillNames = readdirSync(childDir);
-        } catch {
-          continue;
-        }
-        for (const s of skillNames) {
-          if (existsSync(join(childDir, s, "SKILL.md"))) scanSkillDir(entries, cwd, join(childDir, s), s);
+        if (childName === "active") continue; // runtime view shadows default skills
+        // Pack layout: .xtrm/skills/<pack>/<skill>/SKILL.md. Pack containers
+        // hold skills one level deeper (optional/<pack>/<skill>.descend only
+        // when no skill sits directly under the pack.
+        const packSkills = (dir: string, depth: number): string[] => {
+          let names: string[];
+          try {
+            names = readdirSync(dir);
+          } catch {
+            return [];
+          }
+          const direct: string[] = [];
+          for (const s of names) {
+            if (existsSync(join(dir, s, "SKILL.md"))) direct.push(s);
+          }
+          if (direct.length === 0 && depth > 0) {
+            for (const s of names) {
+              for (const nested of packSkills(join(dir, s), depth - 1)) {
+                direct.push(`${s}/${nested}`);
+              }
+            }
+          }
+          return direct;
+        };
+        for (const rel of packSkills(childDir, 1)) {
+          const bare = rel.split(/[\\/]/).pop() ?? rel;
+          scanSkillDir(entries, cwd, join(childDir, ...rel.split("/")), bare);
         }
       }
     }
