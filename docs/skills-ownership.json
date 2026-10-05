@@ -7,15 +7,6 @@
       "source": "xtrm-tools",
       "kind": "skill"
     },
-    "update-specialists": {
-      "owner": "specialists",
-      "source": "specialists",
-      "kind": "skill",
-      "placement": {
-        "tier": "optional",
-        "pack": "xtrm-maintenance"
-      }
-    },
     "using-specialists": {
       "owner": "specialists",
       "source": "specialists",
