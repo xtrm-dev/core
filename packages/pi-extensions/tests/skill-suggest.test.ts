@@ -71,6 +71,14 @@ describe("input seam decides, never mutates", () => {
     expect(deliver).not.toContain("triggerTurn: true");
   });
 
+  it("logs Jev spend next to confidence on both deciding seams", async () => {
+    const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
+    // Both confidence-bearing rows carry elapsed ms + registry/fallback split.
+    expect(src).toContain("jev_ms: jevMs");
+    expect(src).toContain("jev_path: jevPath");
+    expect(src).toContain('jevPath = "registry"');
+    expect(src).toContain('jevPath = "fallback"');
+  });
   it("restores the skill description, italic and period-stripped, at the end of the block", async () => {
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
     expect(src).toContain("\\x1b[3m${stripEndPeriod(entry.description)}\\x1b[23m");

@@ -195,15 +195,18 @@ export function conversationContext(
   return recent.join("\n").slice(-maxChars);
 }
 
-/** Shared Jev runner for both seams: Pi-native classifier first, REST second. */
+/** Shared Jev runner for both seams: Pi-native classifier first, REST second.
+ *  Returns spend telemetry with the answer: elapsed ms and which path served. */
 async function askJev(
   registry: RegistryLike | null,
   state: Record<string, unknown>,
   questions: Record<string, Question>,
 ) {
+  const start = Date.now();
   let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
+  const path = result ? "registry" : "fallback";
   if (!result) result = await systemOne(state, questions);
-  return result;
+  return { result, jevMs: Date.now() - start, jevPath: path };
 }
 
 /** Full load subpath for the card header (operator directive, CORE-2348). */
@@ -351,11 +354,17 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), INJECT_TIMEOUT_MS);
       let result: Awaited<ReturnType<typeof classifyViaRegistry>> = null;
+      let jevPath: string | null = null;
+      const jevStart = Date.now();
       try {
         result = (await Promise.race([
           (async () => {
             let r = registry ? await classifyViaRegistry(registry, state, questions) : null;
-            if (!r) r = await systemOne(state, questions);
+            if (r) jevPath = "registry";
+            if (!r) {
+              r = await systemOne(state, questions);
+              if (r) jevPath = "fallback";
+            }
             return r;
           })(),
           new Promise<null>((resolve) => { controller.signal.addEventListener("abort", () => resolve(null)); }),
@@ -363,6 +372,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       } finally {
         clearTimeout(timer);
       }
+      const jevMs = Date.now() - jevStart;
       if (!result) return { action: "continue" } as const;
 
       const gate = [
@@ -382,6 +392,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         confidence: result.choice.confidence,
         injected: Boolean(entry) && gateMean >= GATE_THRESHOLD,
         prompt_chars: prompt.length,
+        jev_ms: jevMs,
+        jev_path: jevPath,
       });
       if (gateMean < GATE_THRESHOLD || !entry) return { action: "continue" } as const;
       // Sub-gate choice confidence stays silent: a high procedural gate with a
@@ -474,7 +486,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const roster = discoverRoster(process.cwd());
       if (roster.length === 0) return;
 
-      const result = await askJev(registry, {
+      const { result, jevMs, jevPath } = await askJev(registry, {
         agent_final_message: lastAssistant.slice(0, 1500),
         working_turn_excerpt: turn.excerpt.slice(0, 6000),
         edited_files: turn.editedFiles.slice(0, 8),
@@ -506,7 +518,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
       // Pointer, not content (input seam parity).
       const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
+      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)), jev_ms: jevMs, jev_path: jevPath });
       // One message carries both audiences: the model reads the doctrine
       // block; the operator sees the house card around it.
       pi.sendMessage(
