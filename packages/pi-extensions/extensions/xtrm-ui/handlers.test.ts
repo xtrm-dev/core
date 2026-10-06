@@ -343,7 +343,7 @@ describe("CORE-2358 external frame shows executed code", async () => {
       args: { code: "print(1)" },
       result: { content: [{ type: "text", text: "1" }] },
     };
-    expect(externalToolContentLines(component as never, [])).toEqual(["print(1)", "1"]);
+    expect(externalToolContentLines(component as never, [])).toEqual(["print(1)", "\x1b[2m└\x1b[22m 1"]);
   });
   test("pending content is the program alone", () => {
     const component = { toolName: "python", args: { code: "print(1)" }, result: null };

@@ -472,7 +472,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 24;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 25;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -574,8 +574,11 @@ export function externalToolContentLines(
 ): string[] {
   const preview = externalToolCodePreview(component.toolName, getToolArgs(component));
   if (!preview) return extractResultTextLines(component) ?? rendered;
-  // Pending: the program is the content. Resolved: program above output.
+  // Pending: the program is the content. Resolved: program above output,
+  // with the native `└` branch marking where output starts.
   const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
+  const firstOutput = tail.findIndex((l) => l.trim().length > 0);
+  if (firstOutput >= 0) tail[firstOutput] = `\x1b[2m└\x1b[22m ${tail[firstOutput]}`;
   return [...preview, ...tail];
 }
 
