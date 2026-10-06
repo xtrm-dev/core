@@ -124,12 +124,6 @@ It runs with the user's permissions and is not a sandbox. `python3` must be avai
 
 See `packages/pi-extensions/extensions/python-kernel/README.md`.
 
-#### `beads` and `session-flow`
-
-Pi-side durable-work lifecycle enforcement and session continuity. These are runtime mechanics around claim/edit/commit/stop/continuation behavior; the higher-level work doctrine lives in XTRM skills and contracts.
-
-The `beads` edit gate consults `bd` first. Where `bd` itself is dead in the cwd (retired board, no database — e.g. Substrate-migrated repos), the gate falls back to a session-scoped Substrate marker under `~/.xtrm/claims/`, written on observed successful `sb issue claim <ref>` commands and rechecked with `sb issue show` (CORE-2357). Claim success notices fire only for successful commands with id-shaped refs; a failed claim stays silent.
-
 #### `sp-terminal-overlay`
 
 Operator-visible Specialist execution/feed overlays inside Pi.
@@ -139,6 +133,16 @@ Operator-visible Specialist execution/feed overlays inside Pi.
 The current manifest also controls helpers such as `custom-footer`, `compact-header`, `git-checkpoint`, `xtprompt`, and `read-line-numbers`. Read `packages/pi-extensions/src/manifest.json` for the current authoritative enrollment state (`xtrm-loader` retired with the bd-memory retirement).
 
 ## Retired / relocated surfaces
+
+### Beads gates: `beads` and `session-flow`
+
+Retired in CORE-2372. `beads` blocked every mutating file tool while `cwd/.beads`
+existed and no claim was active, and blocked `git commit` while a claim was open;
+`session-flow` carried the Beads claim-sync notice and the Beads stop gate. Beads is a
+retired board and Substrate owns work authorization, so the gates were removed rather
+than ported — nothing replaces them. Both ids sit in `src/manifest.json.disabled` with a
+retirement reason, and their sources, shims, policy files and legacy-path-map entries are
+deleted. The former `xt end` worktree reminder is gone with `session-flow`.
 
 ### Service knowledge
 

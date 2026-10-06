@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 
 // NOTE: keep this factory a structural superset of the sibling factories for
-// the same module (see tests/beads-edit-gate.test.ts, CORE-2360): bun shares
+// the same module (see extensions/xtprompt/index.test.ts, CORE-2360): bun shares
 // mock.module registrations process-wide across test files.
 mock.module("@earendil-works/pi-coding-agent", () => ({
   VERSION: "test",
