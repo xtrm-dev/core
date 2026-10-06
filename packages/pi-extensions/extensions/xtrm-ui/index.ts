@@ -472,7 +472,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 25;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 26;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -571,15 +571,26 @@ export function externalToolCodePreview(toolName: string | undefined, args: Reco
 export function externalToolContentLines(
   component: PatchableToolExecutionComponent,
   rendered: string[],
+  expanded = false,
 ): string[] {
   const preview = externalToolCodePreview(component.toolName, getToolArgs(component));
   if (!preview) return extractResultTextLines(component) ?? rendered;
   // Pending: the program is the content. Resolved: program above output,
   // with the native `└` branch marking where output starts.
+  // Collapsed: first 3 code lines only, so output stays visible.
+  const shown = expanded ? preview : preview.slice(0, 3);
   const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
   const firstOutput = tail.findIndex((l) => l.trim().length > 0);
   if (firstOutput >= 0) tail[firstOutput] = `\x1b[2m└\x1b[22m ${tail[firstOutput]}`;
-  return [...preview, ...tail];
+  return [...shown, ...tail];
+}
+
+/** First code line as the header subject (read-row precedent: path in header, content below). */
+export function externalToolCodeSubject(toolName: string | undefined, args: Record<string, unknown>): string | undefined {
+  const preview = externalToolCodePreview(toolName, args);
+  if (!preview) return undefined;
+  const first = preview[0]?.trim() ?? "";
+  return first.length > 60 ? `${first.slice(0, 57)}...` : first || undefined;
 }
 
 function trimRenderedToolLines(lines: string[]): string[] {
@@ -638,6 +649,7 @@ export function renderExternalToolBackgroundLines(
   toolName?: string,
   durationMs?: number,
   status: ToolRowStatus = "pending",
+  subject?: string,
 ): string[] {
   let displayLines = contentLines;
   const raw = contentLines.length === 1 ? contentLines[0]?.trim() : undefined;
@@ -653,6 +665,7 @@ export function renderExternalToolBackgroundLines(
   const hasHeader = /^(?:[•›●]\s+)?\[[A-Za-z][A-Za-z0-9 _-]{0,31}\]/u.test(firstLine)
     || /^[•›●]\s+\S+/u.test(firstLine);
   const header = externalToolHeader(kind, toolName, firstLine);
+  if (subject) header.action = subject;
   const payloadLines = hasHeader ? displayLines.slice(1) : displayLines;
   const headerLine = externalToolHeaderLine(status, header.provider, header.action);
   displayLines = [headerLine, ...payloadLines];
@@ -687,10 +700,11 @@ function renderExternalToolLines(
   toolName?: string,
   durationMs?: number,
   status: ToolRowStatus = "pending",
+  subject?: string,
 ): string[] {
   const contentLines = trimRenderedToolLines(lines).filter((line) => !isBlankRenderedLine(line));
   return contentLines.length > 0
-    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status)
+    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, subject)
     : [];
 }
 
@@ -737,7 +751,9 @@ async function installExternalToolFramePatch(): Promise<void> {
     }
     const firstContentIndex = rendered.findIndex((line) => !isBlankRenderedLine(line));
     const leading = firstContentIndex > 0 ? rendered.slice(0, firstContentIndex) : [];
-    const content = externalToolContentLines(this, rendered);
+    const isExpanded = Boolean(this.expanded);
+    const content = externalToolContentLines(this, rendered, isExpanded);
+    const subject = externalToolCodeSubject(this.toolName, getToolArgs(this));
     const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
     let styled: string[];
     try {
@@ -745,10 +761,11 @@ async function installExternalToolFramePatch(): Promise<void> {
         content,
         width,
         kind,
-        Boolean(this.expanded),
+        isExpanded,
         this.toolName,
         this.__xtrmExternalDurationMs,
         status,
+        subject,
       );
     } catch {
       // A patched renderer must never take the interactive mode down.

@@ -350,3 +350,21 @@ describe("CORE-2358 external frame shows executed code", async () => {
     expect(externalToolContentLines(component as never, ["fallback"])).toEqual(["print(1)"]);
   });
 });
+
+describe("CORE-2358 collapsed code cap and header subject", async () => {
+  const { externalToolContentLines, externalToolCodeSubject } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("collapsed shows first 3 code lines, expanded shows all", () => {
+    const code = "l1\nl2\nl3\nl4\nl5";
+    const component = { toolName: "python", args: { code }, result: { content: [{ type: "text", text: "out" }] } };
+    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "[2m└[22m out"]);
+    expect(externalToolContentLines(component as never, [], true)).toEqual(["l1", "l2", "l3", "l4", "l5", "[2m└[22m out"]);
+  });
+  test("subject is the first code line, truncated", () => {
+    expect(externalToolCodeSubject("python", { code: "print(1)\nprint(2)" })).toBe("print(1)");
+    expect(externalToolCodeSubject("bash", { command: "ls" })).toBeUndefined();
+    expect(externalToolCodeSubject("python", {})).toBeUndefined();
+  });
+});
