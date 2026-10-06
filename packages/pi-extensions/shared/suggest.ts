@@ -701,7 +701,8 @@ export function stripEndPeriod(s: string): string {
 
 export function formatSuggestionCard(c: SuggestionCard, accent: CardAccent = SUBSTRATE_ACCENT): string {
   const glyph = c.verb.severity === "high" ? WARN : DOT;
-  const header = `${c.verb.action} · ${c.ref}`;
+  // No dangling separator: without a real ref the header is the action alone.
+  const header = c.ref && c.ref !== "—" ? `${c.verb.action} · ${c.ref}` : c.verb.action;
   const parts = [
     c.confidence != null ? `${CONF_LABEL}: ${c.confidence.toFixed(2)}` : null,
     c.revision != null ? `rev ${c.revision}` : null,

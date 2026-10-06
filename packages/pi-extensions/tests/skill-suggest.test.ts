@@ -118,6 +118,7 @@ describe("renderer parses the labelled block into a compact card", () => {
     const lines = card.split("\n");
     expect(lines[0].startsWith("●")).toBe(true);
     expect(card).toContain("skill loaded · engineering-quality/causal-debugging");
+    expect(lines[0]).not.toContain("· —");
     expect(card).not.toContain("xtrm_context");
     expect(card).not.toMatch(/[╭╰│]/);
     expect(new Set(lines.slice(1).map((l) => [...l].length)).size).toBe(1);

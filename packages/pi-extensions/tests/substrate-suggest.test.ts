@@ -224,6 +224,7 @@ describe("CORE-2348 card polish", () => {
     const plain = formatSuggestionPlain({ verb: dotted, ref: "CORE-1", confidence: 0.66, compact: true });
     expect(plain).not.toContain("contracts.  jev_confidence");
     expect(plain).toContain("contracts  jev_confidence: 0.66");
+    expect(plain.split("\n")[0]).not.toContain("· —");
   });
   it("bands substrate orange by default and skill blue on request", () => {
     const sub = formatSuggestionCard({ verb: base, ref: "CORE-9", confidence: 0.72 });
