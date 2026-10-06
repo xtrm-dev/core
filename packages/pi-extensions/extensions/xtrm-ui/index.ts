@@ -1231,7 +1231,7 @@ function appendToolTree(
       ? `  ${theme.fg("muted", "└")} ${theme.fg("toolOutput", line)}`
       : `    ${theme.fg("toolOutput", line)}`);
   });
-  if (meta) indented.push(theme.fg("dim", meta));
+  if (meta) indented.push(`  ${theme.fg("dim", meta)}`);
   return indented.join("\n");
 }
 
