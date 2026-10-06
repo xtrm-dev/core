@@ -407,3 +407,29 @@ describe("CORE-2358 bash command cap and pref", async () => {
     expect(normalizePrefs({ commandPreviewLines: 0 }).commandPreviewLines).toBe(1);
   });
 });
+
+describe("CORE-2358 result-lines pref and payload indent", async () => {
+  const { renderExternalToolBackgroundLines, renderBashTree, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+  const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
+
+  test("frame payload indents two spaces under a flush header", () => {
+    const rows = renderExternalToolBackgroundLines(["out1", "out2"], 80, "external", false, "some_tool", 5, "success", true, 6);
+    expect(strip(rows[0]).startsWith("●")).toBe(true);
+    expect(strip(rows[1]).startsWith("  out1")).toBe(true);
+  });
+  test("bash continued lines indent, header stays flush", () => {
+    const out = renderBashTree(theme, "success", "c1\nc2", ["o1"], undefined, 4);
+    const lines = out.split("\n").map(strip);
+    expect(lines[0].startsWith("●")).toBe(true);
+    expect(lines[1]).toBe("  c2");
+    expect(lines[2]).toBe("  └ o1");
+  });
+  test("result pref defaults 6, clamps 1-50", () => {
+    expect(DEFAULT_PREFS.resultPreviewLines).toBe(6);
+    expect(normalizePrefs({}).resultPreviewLines).toBe(6);
+    expect(normalizePrefs({ resultPreviewLines: 99 }).resultPreviewLines).toBe(50);
+  });
+});

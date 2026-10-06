@@ -60,6 +60,7 @@ export interface XtrmUiPrefs {
   forceTheme: boolean;
   toolRowBg: boolean;
   commandPreviewLines: number;
+  resultPreviewLines: number;
 }
 
 // ============================================================================
@@ -75,6 +76,7 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   forceTheme: true,
   toolRowBg: false,
   commandPreviewLines: 4,
+  resultPreviewLines: 6,
 };
 
 /** Collapsed command/code lines before the hidden-count line. Agent context is
@@ -108,7 +110,13 @@ export function normalizePrefs(input: unknown): XtrmUiPrefs {
     forceTheme: source.forceTheme ?? DEFAULT_PREFS.forceTheme,
     toolRowBg: source.toolRowBg ?? DEFAULT_PREFS.toolRowBg,
     commandPreviewLines: normalizeCommandPreviewLines(source.commandPreviewLines),
+    resultPreviewLines: normalizeResultPreviewLines((source as { resultPreviewLines?: unknown }).resultPreviewLines),
   };
+}
+
+function normalizeResultPreviewLines(value: unknown): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : DEFAULT_PREFS.resultPreviewLines;
+  return Math.min(50, Math.max(1, n));
 }
 
 function normalizeCommandPreviewLines(value: unknown): number {
@@ -484,7 +492,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 32;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 33;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -597,11 +605,11 @@ function trimRenderedToolLines(lines: string[]): string[] {
   return lines.slice(start, end).map((line) => line.replace(/\s+$/u, ""));
 }
 
-export function collapsedExternalToolLines(contentLines: string[], expanded: boolean): string[] {
-  if (expanded || contentLines.length <= 6) return contentLines;
+export function collapsedExternalToolLines(contentLines: string[], expanded: boolean, resultCap: number = DEFAULT_PREFS.resultPreviewLines): string[] {
+  if (expanded || contentLines.length <= resultCap) return contentLines;
   return [
-    ...contentLines.slice(0, 6),
-    `... (${contentLines.length - 6} more lines, ctrl+o to expand)`,
+    ...contentLines.slice(0, resultCap),
+    `... (${contentLines.length - resultCap} more lines, ctrl+o to expand)`,
   ];
 }
 
@@ -646,6 +654,7 @@ export function renderExternalToolBackgroundLines(
   durationMs?: number,
   status: ToolRowStatus = "pending",
   bareHeader = false,
+  resultCap: number = DEFAULT_PREFS.resultPreviewLines,
 ): string[] {
   let displayLines = contentLines;
   const raw = contentLines.length === 1 ? contentLines[0]?.trim() : undefined;
@@ -670,7 +679,7 @@ export function renderExternalToolBackgroundLines(
   displayLines = [headerLine, ...payloadLines];
 
   const renderedHeader = displayLines[0] ?? "";
-  const visiblePayload = expanded ? payloadLines : payloadLines.slice(0, 6);
+  const visiblePayload = expanded ? payloadLines : payloadLines.slice(0, resultCap);
   const shown = visiblePayload.length;
   const total = payloadLines.length;
   const lineSummary = !expanded && shown < total
@@ -684,7 +693,7 @@ export function renderExternalToolBackgroundLines(
   const renderWidth = Math.max(8, width);
   const body = [
     truncateToWidth(renderedHeader, renderWidth),
-    ...visiblePayload.map((rawLine) => truncateToWidth(rawLine, renderWidth)),
+    ...visiblePayload.map((rawLine) => truncateToWidth(rawLine.length > 0 ? `  ${rawLine}` : rawLine, renderWidth)),
   ];
   return footerMeta
     ? [...body, `\x1b[2m${truncateToWidth(`└─ ${footerMeta}`, renderWidth)}\x1b[22m`]
@@ -713,10 +722,11 @@ function renderExternalToolLines(
   durationMs?: number,
   status: ToolRowStatus = "pending",
   bareHeader = false,
+  resultCap: number = DEFAULT_PREFS.resultPreviewLines,
 ): string[] {
   const contentLines = trimRenderedToolLines(lines).filter((line) => !isBlankRenderedLine(line));
   return contentLines.length > 0
-    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, bareHeader)
+    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, bareHeader, resultCap)
     : [];
 }
 
@@ -778,6 +788,7 @@ async function installExternalToolFramePatch(): Promise<void> {
         this.__xtrmExternalDurationMs,
         status,
         bareHeader,
+        activeResultPreviewLines(),
       );
     } catch {
       // A patched renderer must never take the interactive mode down.
@@ -889,7 +900,6 @@ function lineRange(offset?: number, limit?: number): string | undefined {
   return `${start}-${start + limit - 1}`;
 }
 
-const DEFAULT_TOOL_PREVIEW_LINES = 6;
 
 function summarizeCount(text: string): number {
   return text.split("\n").filter((line) => line.trim().length > 0).length;
@@ -984,6 +994,7 @@ function registerCommands(
         `Force theme: ${prefs.forceTheme ? "on" : "off"}`,
         `Tool row background: ${prefs.toolRowBg ? "on" : "off"}`,
       `Command lines: ${prefs.commandPreviewLines}`,
+      `Result lines: ${prefs.resultPreviewLines}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ].join("\n"));
@@ -1106,6 +1117,22 @@ function registerCommands(
     },
   });
 
+  pi.registerCommand("xtrm-ui-result-lines", {
+    description: "Collapsed result lines before the hidden-count: 1-50",
+    handler: async (args, ctx) => {
+      const n = Math.floor(Number(args.trim()));
+      if (!Number.isFinite(n) || n < 1 || n > 50) {
+        ctx.ui.notify("Usage: /xtrm-ui-result-lines <1-50>", "warning");
+        return;
+      }
+      const prefs = { ...getPrefs(), resultPreviewLines: n };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      applyXtrmChrome(ctx, prefs, getThinkingLevel);
+      ctx.ui.notify(`Collapsed result lines set to ${n}.`, "info");
+    },
+  });
+
   pi.registerCommand("xtrm-ui-reset", {
     description: "Restore XTRM UI defaults",
     handler: async (_args, ctx) => {
@@ -1198,13 +1225,21 @@ function appendToolTree(
   outputLines: string[],
   meta?: string,
 ): string {
+  const indented = lines.map((line, index) => (index === 0 || line.length === 0 ? line : `  ${line}`));
   outputLines.forEach((line, index) => {
-    lines.push(index === 0
-      ? `${theme.fg("muted", "└")} ${theme.fg("toolOutput", line)}`
-      : `  ${theme.fg("toolOutput", line)}`);
+    indented.push(index === 0
+      ? `  ${theme.fg("muted", "└")} ${theme.fg("toolOutput", line)}`
+      : `    ${theme.fg("toolOutput", line)}`);
   });
-  if (meta) lines.push(theme.fg("dim", meta));
-  return lines.join("\n");
+  if (meta) indented.push(theme.fg("dim", meta));
+  return indented.join("\n");
+}
+
+/** Live prefs snapshot for module-level render paths (the prototype patch has
+ * no factory closure). Display only — the model always sees full args. */
+let activePrefsSnapshot: XtrmUiPrefs | null = null;
+export function activeResultPreviewLines(): number {
+  return activePrefsSnapshot?.resultPreviewLines ?? DEFAULT_PREFS.resultPreviewLines;
 }
 
 export function renderBashTree(
@@ -1439,7 +1474,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const output = getTextContent(result as any);
       const outputLines = cleanOutputLines(output);
       const statusColor = context.isError ? "error" : "success";
-      const visibleLines = expanded ? outputLines : outputLines.slice(-DEFAULT_TOOL_PREVIEW_LINES);
+      const visibleLines = expanded ? outputLines : outputLines.slice(-getPrefs().resultPreviewLines);
       const lineSummary = previewSummary(visibleLines.length, outputLines.length, "line", expanded);
       const text = renderBashTree(theme, statusColor, command, visibleLines, joinMeta([
         lineSummary,
@@ -1481,7 +1516,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const textContent = getTextContent(result as any);
       const lines = textContent.split("\n");
       const totalLines = lines.length;
-      const visibleLines = expanded ? lines : lines.slice(0, DEFAULT_TOOL_PREVIEW_LINES);
+      const visibleLines = expanded ? lines : lines.slice(0, getPrefs().resultPreviewLines);
       const lineSummary = previewSummary(visibleLines.length, totalLines, "line", expanded);
       const text = renderNamedToolTree(
         theme,
@@ -1594,7 +1629,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
 
       const lines = preview?.kind === "created" ? preview.lineCount : lineCount(content);
       const contentLines = content.split("\n");
-      const visibleLines = !content ? [] : expanded ? contentLines : contentLines.slice(0, DEFAULT_TOOL_PREVIEW_LINES);
+      const visibleLines = !content ? [] : expanded ? contentLines : contentLines.slice(0, getPrefs().resultPreviewLines);
       const text = renderNamedToolTree(
         theme,
         "success",
@@ -1626,7 +1661,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const textContent = getTextContent(result as any);
       const count = summarizeCount(textContent);
-      const outputLines = count > 0 ? previewLines(textContent, expanded ? 10 : DEFAULT_TOOL_PREVIEW_LINES) : [];
+      const outputLines = count > 0 ? previewLines(textContent, expanded ? 10 : getPrefs().resultPreviewLines) : [];
       const text = renderNamedToolTree(
         theme,
         context.isError ? "error" : "success",
@@ -1659,7 +1694,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const textContent = getTextContent(result as any);
       const count = countPrefixedItems(textContent, ["-- "]) || summarizeCount(textContent);
-      const outputLines = textContent.length > 0 ? previewLines(textContent, expanded ? 12 : DEFAULT_TOOL_PREVIEW_LINES) : [];
+      const outputLines = textContent.length > 0 ? previewLines(textContent, expanded ? 12 : getPrefs().resultPreviewLines) : [];
       const text = renderNamedToolTree(
         theme,
         context.isError ? "error" : "success",
@@ -1692,7 +1727,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const textContent = getTextContent(result as any);
       const count = summarizeCount(textContent);
-      const outputLines = count > 0 ? previewLines(textContent, expanded ? 12 : DEFAULT_TOOL_PREVIEW_LINES) : [];
+      const outputLines = count > 0 ? previewLines(textContent, expanded ? 12 : getPrefs().resultPreviewLines) : [];
       const text = renderNamedToolTree(
         theme,
         context.isError ? "error" : "success",
@@ -1740,6 +1775,7 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   const getPrefs = () => prefs;
   const setPrefs = (nextPrefs: XtrmUiPrefs) => {
     prefs = nextPrefs;
+    activePrefsSnapshot = nextPrefs;
   };
   const getThinkingLevel = () => formatThinking(pi.getThinkingLevel());
 
