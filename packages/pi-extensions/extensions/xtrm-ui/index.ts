@@ -554,6 +554,28 @@ function extractResultTextLines(component: PatchableToolExecutionComponent): str
     : [summarizeExternalToolPending(component.toolName, getToolArgs(component))];
 }
 
+// CORE-2358: code-carrying external tools pass the program in `code`.
+// The framed row must show it above the output — otherwise the operator
+// never sees what ran. Scoped to python: codemode is Pi core's renderer
+// and already shows its script.
+export function externalToolCodePreview(toolName: string | undefined, args: Record<string, unknown>): string[] | undefined {
+  if (toolName !== "python") return undefined;
+  const code = args.code;
+  if (typeof code !== "string" || code.trim().length === 0) return undefined;
+  return code.split("\n");
+}
+
+export function externalToolContentLines(
+  component: PatchableToolExecutionComponent,
+  rendered: string[],
+): string[] {
+  const preview = externalToolCodePreview(component.toolName, getToolArgs(component));
+  if (!preview) return extractResultTextLines(component) ?? rendered;
+  // Pending: the program is the content. Resolved: program above output.
+  const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
+  return [...preview, ...tail];
+}
+
 function trimRenderedToolLines(lines: string[]): string[] {
   let start = 0;
   let end = lines.length;
@@ -709,7 +731,7 @@ async function installExternalToolFramePatch(): Promise<void> {
     }
     const firstContentIndex = rendered.findIndex((line) => !isBlankRenderedLine(line));
     const leading = firstContentIndex > 0 ? rendered.slice(0, firstContentIndex) : [];
-    const content = extractResultTextLines(this) ?? rendered;
+    const content = externalToolContentLines(this, rendered);
     const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
     let styled: string[];
     try {

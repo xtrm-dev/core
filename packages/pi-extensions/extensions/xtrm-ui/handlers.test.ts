@@ -323,3 +323,30 @@ describe("xtrm-ui presentation-only boundary", () => {
     });
   });
 });
+
+describe("CORE-2358 external frame shows executed code", async () => {
+  const { externalToolCodePreview, externalToolContentLines } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("python code is previewed line by line", () => {
+    expect(externalToolCodePreview("python", { code: "a = 1\nprint(a)" })).toEqual(["a = 1", "print(a)"]);
+  });
+  test("other tools and empty code get no preview", () => {
+    expect(externalToolCodePreview("bash", { command: "ls" })).toBeUndefined();
+    expect(externalToolCodePreview("python", { code: "  " })).toBeUndefined();
+    expect(externalToolCodePreview("python", {})).toBeUndefined();
+  });
+  test("content is program above output once resolved", () => {
+    const component = {
+      toolName: "python",
+      args: { code: "print(1)" },
+      result: { content: [{ type: "text", text: "1" }] },
+    };
+    expect(externalToolContentLines(component as never, [])).toEqual(["print(1)", "1"]);
+  });
+  test("pending content is the program alone", () => {
+    const component = { toolName: "python", args: { code: "print(1)" }, result: null };
+    expect(externalToolContentLines(component as never, ["fallback"])).toEqual(["print(1)"]);
+  });
+});
