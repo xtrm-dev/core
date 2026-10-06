@@ -472,7 +472,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 27;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 28;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -575,15 +575,17 @@ export function externalToolContentLines(
 ): string[] {
   const preview = externalToolCodePreview(component.toolName, getToolArgs(component));
   if (!preview) return extractResultTextLines(component) ?? rendered;
-  // Pending: the program is the content. Resolved: program above output,
-  // with the native `└` branch marking where output starts.
-  // Collapsed: first 3 code lines only, so output stays visible.
-  const shown = expanded ? preview : preview.slice(0, 3);
+  // Pending: the program is the content. Resolved: program above output.
+  // The output block renders dimmed: the call above is the eye anchor.
+  // Collapsed: 4 code lines + a `showing X/N lines` count (N = code lines),
+  // no expand hint — the footer already carries it.
+  const shown = expanded ? preview : preview.slice(0, 4);
   const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
-  // The output block renders dimmed, with no branch marker: the call above
-  // is already the header the eye anchors to.
   const dimmed = tail.map((l) => (l.trim().length > 0 ? `\x1b[2m${l}\x1b[22m` : l));
-  return [...shown, ...dimmed];
+  const count = !expanded && preview.length > shown.length
+    ? [`\x1b[2mshowing ${shown.length}/${preview.length} lines\x1b[22m`]
+    : [];
+  return [...shown, ...count, ...dimmed];
 }
 
 function trimRenderedToolLines(lines: string[]): string[] {

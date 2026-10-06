@@ -356,10 +356,10 @@ describe("CORE-2358 collapsed code cap and dimmed output", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("collapsed shows first 3 code lines, expanded shows all", () => {
+  test("collapsed shows 4 code lines plus a showing X/N count, expanded shows all", () => {
     const code = "l1\nl2\nl3\nl4\nl5";
     const component = { toolName: "python", args: { code }, result: { content: [{ type: "text", text: "out" }] } };
-    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "\x1b[2mout\x1b[22m"]);
+    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "l4", "\x1b[2mshowing 4/5 lines\x1b[22m", "\x1b[2mout\x1b[22m"]);
     expect(externalToolContentLines(component as never, [], true)).toEqual(["l1", "l2", "l3", "l4", "l5", "\x1b[2mout\x1b[22m"]);
   });
 
