@@ -343,7 +343,7 @@ describe("CORE-2358 external frame shows executed code", async () => {
       args: { code: "print(1)" },
       result: { content: [{ type: "text", text: "1" }] },
     };
-    expect(externalToolContentLines(component as never, [])).toEqual(["print(1)", "\x1b[2m└\x1b[22m 1"]);
+    expect(externalToolContentLines(component as never, [])).toEqual(["print(1)", "\x1b[2m1\x1b[22m"]);
   });
   test("pending content is the program alone", () => {
     const component = { toolName: "python", args: { code: "print(1)" }, result: null };
@@ -351,20 +351,16 @@ describe("CORE-2358 external frame shows executed code", async () => {
   });
 });
 
-describe("CORE-2358 collapsed code cap and header subject", async () => {
-  const { externalToolContentLines, externalToolCodeSubject } = await import("./index.ts");
+describe("CORE-2358 collapsed code cap and dimmed output", async () => {
+  const { externalToolContentLines } = await import("./index.ts");
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
   test("collapsed shows first 3 code lines, expanded shows all", () => {
     const code = "l1\nl2\nl3\nl4\nl5";
     const component = { toolName: "python", args: { code }, result: { content: [{ type: "text", text: "out" }] } };
-    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "[2m└[22m out"]);
-    expect(externalToolContentLines(component as never, [], true)).toEqual(["l1", "l2", "l3", "l4", "l5", "[2m└[22m out"]);
+    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "\x1b[2mout\x1b[22m"]);
+    expect(externalToolContentLines(component as never, [], true)).toEqual(["l1", "l2", "l3", "l4", "l5", "\x1b[2mout\x1b[22m"]);
   });
-  test("subject is the first code line, truncated", () => {
-    expect(externalToolCodeSubject("python", { code: "print(1)\nprint(2)" })).toBe("print(1)");
-    expect(externalToolCodeSubject("bash", { command: "ls" })).toBeUndefined();
-    expect(externalToolCodeSubject("python", {})).toBeUndefined();
-  });
+
 });
