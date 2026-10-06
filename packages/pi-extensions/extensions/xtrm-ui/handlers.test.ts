@@ -360,8 +360,25 @@ describe("CORE-2358 collapsed code cap and dimmed output", async () => {
   test("collapsed shows 4 code lines plus a showing X/N count, expanded shows all", () => {
     const code = "l1\nl2\nl3\nl4\nl5";
     const component = { toolName: "python", args: { code }, result: { content: [{ type: "text", text: "out" }] } };
-    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "l4", "\x1b[2m\x1b[3mshowing 4/5 lines\x1b[23m\x1b[22m", "\x1b[2mout\x1b[22m"]);
+    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "l4", " \x1b[2m\x1b[3m< … +1 lines>\x1b[23m\x1b[22m", "\x1b[2mout\x1b[22m"]);
     expect(externalToolContentLines(component as never, [], true)).toEqual(["l1", "l2", "l3", "l4", "l5", "\x1b[2mout\x1b[22m"]);
   });
 
+});
+
+describe("CORE-2358 bare headers for non-code tools", async () => {
+  const { bareExternalToolHeader, renderExternalToolBackgroundLines } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("gitnexus header is provider plus tool, nothing sniffed", () => {
+    expect(bareExternalToolHeader("gitnexus", "gitnexus_query")).toEqual({ provider: "GitNexus", action: "query" });
+    expect(bareExternalToolHeader("external", "python")).toEqual({ provider: "python", action: undefined });
+  });
+  test("bare frame keeps output-shaped first lines in the body", () => {
+    const rows = renderExternalToolBackgroundLines(["[Serena] done", "ok"], 80, "serena", false, "read_file", 5, "success", true);
+    const plain = rows.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain.split("\n")[0]).toContain("read_file");
+    expect(plain).toContain("[Serena] done");
+  });
 });

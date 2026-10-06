@@ -472,7 +472,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 29;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 30;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -531,23 +531,12 @@ function getToolArgs(component: PatchableToolExecutionComponent): Record<string,
 }
 
 function summarizeExternalToolPending(toolName: string | undefined, input: Record<string, unknown>): string {
+  // Bare header doctrine (CORE-2358): the header is provider + tool, nothing
+  // more. Subjects, commands and paths stay in the output, never the header.
   const name = toolName ?? "tool";
-  if (name === "structured_return") {
-    return `${TOOL_ROW_MARKER} structured_return ${shortenCommand(String(input.command ?? "running"), 38)}`;
-  }
-  if (name === "process") {
-    return `${TOOL_ROW_MARKER} process ${String(input.action ?? "running")}`;
-  }
-  if (name.startsWith("gitnexus_")) {
-    const subject = summarizeSerenaSubject(name, input) ?? summarizeToolSubject(name, input);
-    return `${TOOL_ROW_MARKER} ${normalizeToolLabel(name)}${subject ? ` ${subject}` : ""}`;
-  }
-  if (SERENA_COMPACT_TOOLS.has(name)) {
-    const subject = summarizeSerenaSubject(name, input);
-    return `${TOOL_ROW_MARKER} serena ${name}${subject ? ` ${subject}` : ""}`;
-  }
-  const subject = summarizeToolSubject(name, input) ?? summarizeSerenaSubject(name, input);
-  return `${TOOL_ROW_MARKER} ${normalizeToolLabel(name)}${subject ? ` ${subject}` : ""}`;
+  if (name === "structured_return") return `${TOOL_ROW_MARKER} structured_return`;
+  if (name === "process") return `${TOOL_ROW_MARKER} process`;
+  return `${TOOL_ROW_MARKER} ${normalizeToolLabel(name)}`;
 }
 
 function extractResultTextLines(component: PatchableToolExecutionComponent): string[] | undefined {
@@ -583,7 +572,7 @@ export function externalToolContentLines(
   const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
   const dimmed = tail.map((l) => (l.trim().length > 0 ? `\x1b[2m${l}\x1b[22m` : l));
   const count = !expanded && preview.length > shown.length
-    ? [`\x1b[2m\x1b[3mshowing ${shown.length}/${preview.length} lines\x1b[23m\x1b[22m`]
+    ? [` \x1b[2m\x1b[3m< … +${preview.length - shown.length} lines>\x1b[23m\x1b[22m`]
     : [];
   return [...shown, ...count, ...dimmed];
 }
@@ -644,6 +633,7 @@ export function renderExternalToolBackgroundLines(
   toolName?: string,
   durationMs?: number,
   status: ToolRowStatus = "pending",
+  bareHeader = false,
 ): string[] {
   let displayLines = contentLines;
   const raw = contentLines.length === 1 ? contentLines[0]?.trim() : undefined;
@@ -658,8 +648,12 @@ export function renderExternalToolBackgroundLines(
   const firstLine = displayLines[0] ?? "";
   const hasHeader = /^(?:[•›●]\s+)?\[[A-Za-z][A-Za-z0-9 _-]{0,31}\]/u.test(firstLine)
     || /^[•›●]\s+\S+/u.test(firstLine);
-  const header = externalToolHeader(kind, toolName, firstLine);
-  const payloadLines = hasHeader ? displayLines.slice(1) : displayLines;
+  // Bare header doctrine: provider + tool only. Otherwise an output first
+  // line shaped like a header (`[X]`, `● word`) hijacks the header row.
+  const header = bareHeader
+    ? bareExternalToolHeader(kind, toolName)
+    : externalToolHeader(kind, toolName, firstLine);
+  const payloadLines = hasHeader && !bareHeader ? displayLines.slice(1) : displayLines;
   const headerLine = externalToolHeaderLine(status, header.provider, header.action);
   displayLines = [headerLine, ...payloadLines];
 
@@ -668,7 +662,7 @@ export function renderExternalToolBackgroundLines(
   const shown = visiblePayload.length;
   const total = payloadLines.length;
   const lineSummary = !expanded && shown < total
-    ? `showing ${shown}/${total} lines (ctrl+o expand)`
+    ? `< … +${total - shown} lines> (ctrl+o expand)`
     : total > 0 ? formatLineLabel(total, "line") : undefined;
   const footerMeta = joinMeta([
     lineSummary,
@@ -685,6 +679,19 @@ export function renderExternalToolBackgroundLines(
     : body;
 }
 
+/** Bare header: provider + tool, never sniffed from output or args. */
+export function bareExternalToolHeader(
+  kind: ExternalToolFrameKind,
+  toolName?: string,
+): { provider: string; action?: string } {
+  const provider = externalToolProvider(kind, toolName);
+  const action = externalToolAction(kind, toolName);
+  return {
+    provider,
+    action: action ?? (toolName && toolName !== provider ? toolName : undefined),
+  };
+}
+
 function renderExternalToolLines(
   lines: string[],
   width: number,
@@ -693,10 +700,11 @@ function renderExternalToolLines(
   toolName?: string,
   durationMs?: number,
   status: ToolRowStatus = "pending",
+  bareHeader = false,
 ): string[] {
   const contentLines = trimRenderedToolLines(lines).filter((line) => !isBlankRenderedLine(line));
   return contentLines.length > 0
-    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status)
+    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, bareHeader)
     : [];
 }
 
@@ -745,6 +753,7 @@ async function installExternalToolFramePatch(): Promise<void> {
     const leading = firstContentIndex > 0 ? rendered.slice(0, firstContentIndex) : [];
     const isExpanded = Boolean(this.expanded);
     const content = externalToolContentLines(this, rendered, isExpanded);
+    const bareHeader = !externalToolCodePreview(this.toolName, getToolArgs(this));
     const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
     let styled: string[];
     try {
@@ -756,6 +765,7 @@ async function installExternalToolFramePatch(): Promise<void> {
         this.toolName,
         this.__xtrmExternalDurationMs,
         status,
+        bareHeader,
       );
     } catch {
       // A patched renderer must never take the interactive mode down.
@@ -875,7 +885,7 @@ function summarizeCount(text: string): number {
 
 function previewSummary(shown: number, total: number, noun: string, expanded: boolean): string {
   return !expanded && shown < total
-    ? `showing ${shown}/${total} ${noun}s (ctrl+o expand)`
+    ? `< … +${total - shown} ${noun}s> (ctrl+o expand)`
     : formatLineLabel(total, noun);
 }
 
