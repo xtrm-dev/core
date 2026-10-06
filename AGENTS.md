@@ -96,7 +96,7 @@ Durable work lives in Substrate, not in chat task lists. Runtime-local task plan
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **core**.
+This project is indexed by GitNexus as **core** (16498 symbols, 36702 relationships, 560 execution flows).
 
 > Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
 
