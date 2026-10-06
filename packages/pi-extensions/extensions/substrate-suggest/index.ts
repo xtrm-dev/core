@@ -53,12 +53,16 @@ import {
   jevRoster,
   formatSuggestionCard,
   TERMINAL_LIFECYCLE,
+  systemOne,
+  classifyViaRegistry,
+  readApiKey,
   type Cooldowns,
   type StateSnapshot,
   type VerbId,
   type VerbSpec,
-} from "./catalog.ts";
-import { systemOne, classifyViaRegistry, readApiKey, type Question, type RegistryLike } from "./jev.ts";
+  type Question,
+  type RegistryLike,
+} from "../../shared/suggest.ts";
 import {
   discoverSkillPacks,
   isMonitorSetter,
