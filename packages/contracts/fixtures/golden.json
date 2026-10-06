@@ -23,7 +23,7 @@
     "xtrm.pi-extension-manifest.v1": {
         "schema_version": "xtrm.pi-extension-manifest.v1",
         "active": [
-            { "id": "beads", "displayName": "beads", "required": true, "ownership": "xtrm" }
+            { "id": "read-line-numbers", "displayName": "read-line-numbers", "required": true, "ownership": "xtrm" }
         ],
         "disabled": { "gitnexus": "Retired; provided by the npm:pi-gitnexus package." }
     },

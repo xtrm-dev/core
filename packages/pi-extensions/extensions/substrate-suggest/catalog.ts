@@ -418,7 +418,17 @@ export function parseContextBlock(content: string): ContextBlockMeta | null {
  */
 export function contextBlock(
   kind: "skill-doctrine" | "agent-settlement" | string,
-  meta: { about?: string; source?: string; model?: string; confidence?: number | null; skill?: string; level?: string; body: string },
+  meta: {
+    about?: string;
+    source?: string;
+    model?: string;
+    confidence?: number | null;
+    skill?: string;
+    level?: string;
+    body: string;
+    /** Optional bounded router: where to look, never what it says. */
+    router?: string | null;
+  },
 ): string {
   const attrs = [
     `kind="${kind}"`,
@@ -435,8 +445,11 @@ export function contextBlock(
     `<xtrm_context ${attrs}>`,
     `Injected context, not the operator's words:`,
     meta.body,
+    meta.router ?? null,
     `</xtrm_context>`,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export interface SuggestionCard {
@@ -451,7 +464,10 @@ export interface SuggestionCard {
 
 export function formatSuggestionCard(c: SuggestionCard): string {
   const glyph = c.verb.severity === "high" ? WARN : DOT;
-  const header = `${c.verb.action} · ${c.ref}`;
+  // CORE-2367: a missing ref must not leave a dangling separator or the `· —`
+  // placeholder. Every skill and service card passes ref "—"; the header simply
+  // carries nothing when there is nothing to carry.
+  const header = c.ref && c.ref !== "—" ? `${c.verb.action} · ${c.ref}` : c.verb.action;
   const parts = [
     c.confidence != null ? `${CONF_LABEL}: ${c.confidence.toFixed(2)}` : null,
     c.revision != null ? `rev ${c.revision}` : null,

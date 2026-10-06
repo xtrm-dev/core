@@ -1,14 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import manifest from "./manifest.json" with { type: "json" };
-import beadsExtension from "./extensions/beads.ts";
 import compactHeaderExtension from "./extensions/compact-header.ts";
 import customFooterExtension from "./extensions/custom-footer.ts";
 import gitCheckpointExtension from "./extensions/git-checkpoint.ts";
 import pythonKernelExtension from "./extensions/python-kernel.ts";
 import qualityGatesExtension from "./extensions/quality-gates.ts";
 import readLineNumbersExtension from "./extensions/read-line-numbers.ts";
-import sessionFlowExtension from "./extensions/session-flow.ts";
 import spTerminalOverlayExtension from "./extensions/sp-terminal-overlay.ts";
 import substrateSuggestExtension from "./extensions/substrate-suggest.ts";
 import skillSuggestExtension from "./extensions/skill-suggest.ts";
@@ -22,14 +20,12 @@ export type ManagedPiExtension = {
 };
 
 const availableManagedPiExtensions: readonly ManagedPiExtension[] = [
-  { id: "beads", register: beadsExtension },
   { id: "compact-header", register: compactHeaderExtension },
   { id: "custom-footer", register: customFooterExtension },
   { id: "git-checkpoint", register: gitCheckpointExtension },
   { id: "python-kernel", register: pythonKernelExtension },
   { id: "quality-gates", register: qualityGatesExtension },
   { id: "read-line-numbers", register: readLineNumbersExtension },
-  { id: "session-flow", register: sessionFlowExtension },
   { id: "sp-terminal-overlay", register: spTerminalOverlayExtension },
   { id: "substrate-suggest", register: substrateSuggestExtension },
   { id: "skill-suggest", register: skillSuggestExtension },

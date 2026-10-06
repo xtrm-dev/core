@@ -205,23 +205,23 @@ describe('inventoryPiRuntime', () => {
     });
 
     it('detects missing extensions', async () => {
-        await makeExtension(sourceDir, 'beads');
-        await makeExtension(sourceDir, 'session-flow');
+        await makeExtension(sourceDir, 'read-line-numbers');
+        await makeExtension(sourceDir, 'custom-footer');
 
         const plan = await inventoryPiRuntime(sourceDir, targetDir);
 
         expect(plan.missingExtensions.length).toBeGreaterThan(0);
-        expect(plan.missingExtensions.some(s => s.ext.id === 'beads')).toBe(true);
+        expect(plan.missingExtensions.some(s => s.ext.id === 'read-line-numbers')).toBe(true);
     });
 
     it('detects stale extensions', async () => {
-        await makeExtension(sourceDir, 'beads', { 'extra.ts': 'export const x = 1;' });
-        await makeExtension(targetDir, 'beads'); // No extra.ts
+        await makeExtension(sourceDir, 'read-line-numbers', { 'extra.ts': 'export const x = 1;' });
+        await makeExtension(targetDir, 'read-line-numbers'); // No extra.ts
 
         const plan = await inventoryPiRuntime(sourceDir, targetDir);
 
         expect(plan.staleExtensions.length).toBeGreaterThan(0);
-        expect(plan.staleExtensions.some(s => s.ext.id === 'beads')).toBe(true);
+        expect(plan.staleExtensions.some(s => s.ext.id === 'read-line-numbers')).toBe(true);
     });
 
     it('detects retired managed extensions without treating user extensions as orphans', async () => {
@@ -234,24 +234,24 @@ describe('inventoryPiRuntime', () => {
     });
 
     it('reports allPresent when everything is synced', async () => {
-        await makeExtension(sourceDir, 'beads');
-        await makeExtension(targetDir, 'beads');
+        await makeExtension(sourceDir, 'read-line-numbers');
+        await makeExtension(targetDir, 'read-line-numbers');
 
         const plan = await inventoryPiRuntime(sourceDir, targetDir);
 
-        // Only beads is in both, other managed extensions are missing
+        // Only read-line-numbers is in both, other managed extensions are missing
         // So allPresent will be false unless all MANAGED_EXTENSIONS are present
         expect(plan.allPresent).toBe(false);
     });
 
     it('computes allRequiredPresent correctly', async () => {
         // Create source for required extension
-        await makeExtension(sourceDir, 'beads');
-        await makeExtension(targetDir, 'beads');
+        await makeExtension(sourceDir, 'read-line-numbers');
+        await makeExtension(targetDir, 'read-line-numbers');
 
         const plan = await inventoryPiRuntime(sourceDir, targetDir);
 
-        // beads is required and present, but other required extensions are missing
+        // read-line-numbers is required and present, but other required extensions are missing
         expect(plan.allRequiredPresent).toBe(false);
     });
 });
@@ -319,24 +319,24 @@ describe('executePiSync', () => {
     });
 
     it('copies missing extensions', async () => {
-        await makeExtension(sourceDir, 'beads');
+        await makeExtension(sourceDir, 'read-line-numbers');
         const plan = await inventoryPiRuntime(sourceDir, targetDir);
 
         const result = await executePiSync(plan, sourceDir, targetDir, { dryRun: false });
 
-        expect(result.extensionsAdded).toContain('beads');
-        expect(await fs.pathExists(path.join(targetDir, 'beads', 'index.ts'))).toBe(true);
+        expect(result.extensionsAdded).toContain('read-line-numbers');
+        expect(await fs.pathExists(path.join(targetDir, 'read-line-numbers', 'index.ts'))).toBe(true);
     });
 
     it('updates stale extensions', async () => {
-        await makeExtension(sourceDir, 'beads', { 'extra.ts': 'export const x = 1;' });
-        await makeExtension(targetDir, 'beads'); // stale - missing extra.ts
+        await makeExtension(sourceDir, 'read-line-numbers', { 'extra.ts': 'export const x = 1;' });
+        await makeExtension(targetDir, 'read-line-numbers'); // stale - missing extra.ts
 
         const plan = await inventoryPiRuntime(sourceDir, targetDir);
         const result = await executePiSync(plan, sourceDir, targetDir);
 
-        expect(result.extensionsUpdated).toContain('beads');
-        expect(await fs.pathExists(path.join(targetDir, 'beads', 'extra.ts'))).toBe(true);
+        expect(result.extensionsUpdated).toContain('read-line-numbers');
+        expect(await fs.pathExists(path.join(targetDir, 'read-line-numbers', 'extra.ts'))).toBe(true);
     });
 
     it('removes retired managed extensions without touching user extensions', async () => {

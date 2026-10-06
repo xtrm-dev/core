@@ -154,6 +154,60 @@ describe("duty gate observability (CORE-2359)", () => {
   });
 });
 
+describe("service-knowledge pack discovery", () => {
+  it("reads a repo-local pack and does not answer for another repo from cache", async () => {
+    const mod = await import("../extensions/substrate-suggest/duties.ts");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+
+    const repoWithPack = (entries: string[]): string => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "sk-pack-"));
+      fs.mkdirSync(path.join(root, ".git"), { recursive: true });
+      const pack = path.join(root, ".xtrm", "skills", "svc", "service-knowledge");
+      fs.mkdirSync(pack, { recursive: true });
+      for (const id of entries) {
+        fs.mkdirSync(path.join(pack, "services", id), { recursive: true });
+        fs.writeFileSync(path.join(pack, "services", id, "SKILL.md"), `# ${id}\n`);
+      }
+      fs.writeFileSync(
+        path.join(pack, "service-registry.json"),
+        JSON.stringify({
+          services: Object.fromEntries(
+            entries.map((id) => [id, { description: `${id} service knowledge` }]),
+          ),
+        }),
+      );
+      return root;
+    };
+
+    const a = repoWithPack(["alpha"]);
+    const b = repoWithPack(["beta", "gamma"]);
+    try {
+      const discoverIds = (repo: string) => mod.discoverSkillPacks(repo).flatMap((p) => p.entries).map((e) => e.id);
+      mod.resetRosterCache();
+      expect(discoverIds(a)).toEqual(["alpha"]);
+      // No reset: the cache must be keyed by repo, not a single slot that answers for
+      // whichever repo was scanned first.
+      expect(discoverIds(b)).toEqual(["beta", "gamma"]);
+      expect(discoverIds(a)).toEqual(["alpha"]);
+      // A service whose skill file is missing must not become a card: the instruction
+      // would name a path the agent cannot read.
+      const withGap = repoWithPack(["present"]);
+      fs.writeFileSync(
+        path.join(withGap, ".xtrm", "skills", "svc", "service-knowledge", "service-registry.json"),
+        JSON.stringify({ services: { present: { description: "has a skill" }, ghost: { description: "no skill file" } } }),
+      );
+      mod.resetRosterCache();
+      const ids = discoverIds(withGap);
+      expect(ids).toEqual(["present"]);
+      fs.rmSync(withGap, { recursive: true, force: true });
+    } finally {
+      for (const dir of [a, b]) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("wake card", () => {
   const verb = CATALOG.find((v) => v.id === "journal_decision")!;
 
