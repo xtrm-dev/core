@@ -470,3 +470,32 @@ describe("CORE-2358 expanded bash shows the whole command", async () => {
     expect(expanded.join("\n")).toContain("e &&");
   });
 });
+
+describe("CORE-2358 global defaults", async () => {
+  const { normalizePrefs, readGlobalXtrmUi, DEFAULT_PREFS } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+
+  test("explicit base beats built-ins, session beats base", () => {
+    const base = { ...DEFAULT_PREFS, commandPreviewLines: 7 };
+    expect(normalizePrefs({}, base).commandPreviewLines).toBe(7);
+    expect(normalizePrefs({ commandPreviewLines: 2 }, base).commandPreviewLines).toBe(2);
+  });
+  test("global reader is fail-open and scoped to xtrmUi", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xtrm-ui-test-"));
+    try {
+      const good = path.join(dir, "good.json");
+      fs.writeFileSync(good, JSON.stringify({ xtrmUi: { resultPreviewLines: 9 }, other: 1 }));
+      expect(readGlobalXtrmUi(good)).toEqual({ resultPreviewLines: 9 });
+      const broken = path.join(dir, "broken.json");
+      fs.writeFileSync(broken, "{nope");
+      expect(readGlobalXtrmUi(broken)).toEqual({});
+      expect(readGlobalXtrmUi(path.join(dir, "missing.json"))).toEqual({});
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

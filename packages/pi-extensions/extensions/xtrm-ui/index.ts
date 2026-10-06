@@ -96,8 +96,8 @@ type MaybeCustomEntry = {
   data?: unknown;
 };
 
-export function normalizePrefs(input: unknown): XtrmUiPrefs {
-  if (!input || typeof input !== "object") return { ...DEFAULT_PREFS };
+export function normalizePrefs(input: unknown, base: XtrmUiPrefs = DEFAULT_PREFS): XtrmUiPrefs {
+  if (!input || typeof input !== "object") return { ...base };
   const source = input as Partial<XtrmUiPrefs>;
   // Persisted prefs may still hold retired theme names; compare the raw value.
   const themeName: unknown = (input as { themeName?: unknown }).themeName;
@@ -111,35 +111,42 @@ export function normalizePrefs(input: unknown): XtrmUiPrefs {
     showHeader: source.showHeader ?? DEFAULT_PREFS.showHeader,
     forceTheme: source.forceTheme ?? DEFAULT_PREFS.forceTheme,
     toolRowBg: source.toolRowBg ?? DEFAULT_PREFS.toolRowBg,
-    commandPreviewLines: normalizeCommandPreviewLines(source.commandPreviewLines),
-    resultPreviewLines: normalizeResultPreviewLines((source as { resultPreviewLines?: unknown }).resultPreviewLines),
-    diffPreviewLines: normalizeDiffPreviewLines((source as { diffPreviewLines?: unknown }).diffPreviewLines),
+    commandPreviewLines: normalizeCappedLines(source.commandPreviewLines, base.commandPreviewLines, 20),
+    resultPreviewLines: normalizeCappedLines((source as { resultPreviewLines?: unknown }).resultPreviewLines, base.resultPreviewLines, 50),
+    diffPreviewLines: normalizeCappedLines((source as { diffPreviewLines?: unknown }).diffPreviewLines, base.diffPreviewLines, 50),
   };
 }
 
-function normalizeResultPreviewLines(value: unknown): number {
-  const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : DEFAULT_PREFS.resultPreviewLines;
-  return Math.min(50, Math.max(1, n));
+function normalizeCappedLines(value: unknown, fallback: number, max: number): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : fallback;
+  return Math.min(max, Math.max(1, n));
 }
 
-function normalizeDiffPreviewLines(value: unknown): number {
-  const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : DEFAULT_PREFS.diffPreviewLines;
-  return Math.min(50, Math.max(1, n));
-}
-
-function normalizeCommandPreviewLines(value: unknown): number {
-  const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : DEFAULT_COMMAND_PREVIEW_LINES;
-  return Math.min(20, Math.max(1, n));
+/** Machine-global xtrm-ui defaults from `~/.pi/settings.json` (`xtrmUi` key).
+ * Session entries win; globals beat built-ins. Fail-open: a missing or
+ * broken settings file changes nothing. */
+export function readGlobalXtrmUi(settingsPath?: string): Partial<XtrmUiPrefs> {
+  try {
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+    const raw = readFileSync(settingsPath ?? join(home, ".pi", "settings.json"), "utf8");
+    const parsed = JSON.parse(raw) as { xtrmUi?: unknown };
+    return typeof parsed.xtrmUi === "object" && parsed.xtrmUi !== null
+      ? parsed.xtrmUi as Partial<XtrmUiPrefs>
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 function loadPrefs(entries: ReadonlyArray<MaybeCustomEntry>): XtrmUiPrefs {
+  const base: XtrmUiPrefs = { ...DEFAULT_PREFS, ...readGlobalXtrmUi() };
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (entry?.type === "custom" && entry.customType === XTRM_UI_PREFS_ENTRY) {
-      return normalizePrefs(entry.data);
+      return normalizePrefs(entry.data, base);
     }
   }
-  return { ...DEFAULT_PREFS };
+  return base;
 }
 
 function persistPrefs(pi: ExtensionAPI, prefs: XtrmUiPrefs): void {
