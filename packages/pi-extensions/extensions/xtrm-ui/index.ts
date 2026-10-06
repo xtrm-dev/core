@@ -59,6 +59,7 @@ export interface XtrmUiPrefs {
   showHeader: boolean;
   forceTheme: boolean;
   toolRowBg: boolean;
+  commandPreviewLines: number;
 }
 
 // ============================================================================
@@ -73,7 +74,12 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   showHeader: true,
   forceTheme: true,
   toolRowBg: false,
+  commandPreviewLines: 4,
 };
+
+/** Collapsed command/code lines before the hidden-count line. Agent context is
+ * never capped — this is display only; the model still receives full args. */
+export const DEFAULT_COMMAND_PREVIEW_LINES = 4;
 
 
 // ============================================================================
@@ -86,7 +92,7 @@ type MaybeCustomEntry = {
   data?: unknown;
 };
 
-function normalizePrefs(input: unknown): XtrmUiPrefs {
+export function normalizePrefs(input: unknown): XtrmUiPrefs {
   if (!input || typeof input !== "object") return { ...DEFAULT_PREFS };
   const source = input as Partial<XtrmUiPrefs>;
   // Persisted prefs may still hold retired theme names; compare the raw value.
@@ -101,7 +107,13 @@ function normalizePrefs(input: unknown): XtrmUiPrefs {
     showHeader: source.showHeader ?? DEFAULT_PREFS.showHeader,
     forceTheme: source.forceTheme ?? DEFAULT_PREFS.forceTheme,
     toolRowBg: source.toolRowBg ?? DEFAULT_PREFS.toolRowBg,
+    commandPreviewLines: normalizeCommandPreviewLines(source.commandPreviewLines),
   };
+}
+
+function normalizeCommandPreviewLines(value: unknown): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : DEFAULT_COMMAND_PREVIEW_LINES;
+  return Math.min(20, Math.max(1, n));
 }
 
 function loadPrefs(entries: ReadonlyArray<MaybeCustomEntry>): XtrmUiPrefs {
@@ -472,7 +484,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 31;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 32;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -971,6 +983,7 @@ function registerCommands(
         `Show header: ${prefs.showHeader ? "yes" : "no"}`,
         `Force theme: ${prefs.forceTheme ? "on" : "off"}`,
         `Tool row background: ${prefs.toolRowBg ? "on" : "off"}`,
+      `Command lines: ${prefs.commandPreviewLines}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ].join("\n"));
@@ -1077,6 +1090,22 @@ function registerCommands(
     },
   });
 
+  pi.registerCommand("xtrm-ui-command-lines", {
+    description: "Collapsed command/code lines before the hidden-count: 1-20",
+    handler: async (args, ctx) => {
+      const n = Math.floor(Number(args.trim()));
+      if (!Number.isFinite(n) || n < 1 || n > 20) {
+        ctx.ui.notify("Usage: /xtrm-ui-command-lines <1-20>", "warning");
+        return;
+      }
+      const prefs = { ...getPrefs(), commandPreviewLines: n };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      applyXtrmChrome(ctx, prefs, getThinkingLevel);
+      ctx.ui.notify(`Collapsed command lines set to ${n}.`, "info");
+    },
+  });
+
   pi.registerCommand("xtrm-ui-reset", {
     description: "Restore XTRM UI defaults",
     handler: async (_args, ctx) => {
@@ -1178,20 +1207,26 @@ function appendToolTree(
   return lines.join("\n");
 }
 
-function renderBashTree(
+export function renderBashTree(
   theme: any,
   statusColor: string,
   command: string,
   outputLines: string[] = [],
   meta?: string,
+  commandCap: number = DEFAULT_COMMAND_PREVIEW_LINES,
 ): string {
   const commandColor = statusColor === "success" ? "text" : "dim";
-  const [firstCommand = "", ...continuedCommands] = command.split("\n");
+  const allCommands = command.split("\n");
+  const cap = Math.min(Math.max(1, commandCap), allCommands.length);
+  const [firstCommand = "", ...continuedCommands] = allCommands.slice(0, cap);
+  const hiddenCommands = allCommands.length - cap;
   // theme.bold is a chalk no-op in pi's runtime; emit the SGR escape directly.
   const boldCommand = (text: string) => `\x1b[1m${text}\x1b[22m`;
+  const countLine = hiddenCommands > 0 ? ` \x1b[2m\x1b[3m … +${hiddenCommands} lines\x1b[23m\x1b[22m` : undefined;
   return appendToolTree(theme, [
     `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, theme.bold("Ran"))} ${boldCommand(theme.fg(commandColor, firstCommand))}`,
     ...continuedCommands.map((line) => boldCommand(theme.fg(commandColor, line))),
+    ...(countLine ? [countLine] : []),
   ], outputLines, meta);
 }
 
@@ -1209,9 +1244,9 @@ function renderNamedToolTree(
   ], outputLines, meta);
 }
 
-function renderPendingCall(toolName: string, args: Record<string, unknown>, theme: any): Text {
+function renderPendingCall(toolName: string, args: Record<string, unknown>, theme: any, commandCap: number = DEFAULT_COMMAND_PREVIEW_LINES): Text {
   if (toolName === "bash") {
-    return new Text(renderBashTree(theme, "accent", String(args.command ?? "")), 0, 0);
+    return new Text(renderBashTree(theme, "accent", String(args.command ?? ""), [], undefined, commandCap), 0, 0);
   }
   return new Text(renderNamedToolTree(theme, "accent", toolName, summarizeToolSubject(toolName, args) ?? ""), 0, 0);
 }
@@ -1379,7 +1414,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
   ) => {
     context.state.startedAt ??= Date.now();
     return context.isPartial && !context.executionStarted
-      ? renderPendingCall(toolName, args, theme)
+      ? renderPendingCall(toolName, args, theme, getPrefs().commandPreviewLines)
       : toolRowText(theme, "");
   };
   const renderDuration = (context: XtrmToolRenderContext) =>
@@ -1399,7 +1434,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const command = String(args.command ?? "");
       if (isPartial) {
-        return toolRowText(theme, renderBashTree(theme, "accent", command));
+        return toolRowText(theme, renderBashTree(theme, "accent", command, [], undefined, getPrefs().commandPreviewLines));
       }
       const output = getTextContent(result as any);
       const outputLines = cleanOutputLines(output);
@@ -1411,7 +1446,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         renderDuration(context),
         formatPayloadSize(output),
         details.truncation?.truncated ? "truncated" : undefined,
-      ]));
+      ]), getPrefs().commandPreviewLines);
       return toolRowText(theme, text);
     },
   });

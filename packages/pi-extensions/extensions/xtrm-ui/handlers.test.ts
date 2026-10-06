@@ -382,3 +382,28 @@ describe("CORE-2358 bare headers for non-code tools", async () => {
     expect(plain).toContain("[Serena] done");
   });
 });
+
+describe("CORE-2358 bash command cap and pref", async () => {
+  const { renderBashTree, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+
+  test("long commands cap at 4 with a hidden-count line", () => {
+    const out = renderBashTree(theme, "success", "l1\nl2\nl3\nl4\nl5\nl6", [], undefined, 4);
+    expect(out).toContain("l4");
+    expect(out).not.toContain("l5");
+    expect(out).toContain(" … +2 lines");
+  });
+  test("short commands render whole, no count", () => {
+    const out = renderBashTree(theme, "success", "a\nb", [], undefined, 4);
+    expect(out).toContain("b");
+    expect(out).not.toContain("+");
+  });
+  test("pref defaults to 4 and clamps 1-20", () => {
+    expect(DEFAULT_PREFS.commandPreviewLines).toBe(4);
+    expect(normalizePrefs({}).commandPreviewLines).toBe(4);
+    expect(normalizePrefs({ commandPreviewLines: 99 }).commandPreviewLines).toBe(20);
+    expect(normalizePrefs({ commandPreviewLines: 0 }).commandPreviewLines).toBe(1);
+  });
+});
