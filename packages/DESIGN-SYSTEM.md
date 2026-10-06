@@ -105,6 +105,27 @@ bandHeader(`\x1b[1m${name} ${sub('·')} ${sub(state)}\x1b[22m`);
 Facts built by a helper (`costFacts`) bring their own escapes; strip and re-apply them
 through the same helper rather than trusting them to compose.
 
+## Tool rows
+
+Native (`Ran`) and external (`used <provider> <tool>`) rows share one grammar:
+
+- **Header flush, payload indented.** The header sits at column 0; every line
+  below it — continued command, code, output, count, footer — carries two
+  spaces, exactly like suggester card bodies.
+- **Bare headers.** Provider plus tool, nothing sniffed from output or args.
+  The call content lives in the body, never the header.
+- **Hidden counts, not shown counts.** Collapsed rows say ` … +N lines`
+  (leading space, dim italic) where N is hidden lines; footers say
+  `showing X/Y lines (ctrl+o expand)`. Expand always reveals everything.
+- **Display only, always.** Capping hides pixels from the operator, never
+  tokens from the model: the agent context is built from raw args and result
+  objects, which renderers receive read-only. A row that mutates args or
+  results to achieve its look is a defect, not a style.
+- **Three collapsible surfaces, three settings.** Command/code lines
+  (`/xtrm-ui-command-lines`, default 4), result lines (`/xtrm-ui-result-lines`,
+  default 6), diff lines (`/xtrm-ui-diff-lines`, default 18). Precedence:
+  session entry → `~/.pi/settings.json` (`xtrmUi` key) → built-ins.
+
 ## Voice
 
 Terse, specific, imperative. The card is a colleague leaning in, not a notification.
@@ -183,6 +204,8 @@ Injected context, not the operator's words:
 - [ ] Bold spans the full header; the only `\x1b[22m` inside the band is the one that
       closes it.
 - [ ] Body italic, unbanded, no trailing padding.
+- [ ] Tool rows: header flush, payload indented two, expand reveals all.
+- [ ] Capping is display-only: args and result objects unmutated.
 - [ ] A test asserts accent-on-line-one and no-accent-below — a renderer that throws falls
       back to raw content, and only a test catches the regression.
 - [ ] Every fact is labelled; every command is copyable.
