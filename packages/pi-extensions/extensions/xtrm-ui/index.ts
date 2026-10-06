@@ -472,7 +472,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 28;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 29;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -557,12 +557,12 @@ function extractResultTextLines(component: PatchableToolExecutionComponent): str
     : [summarizeExternalToolPending(component.toolName, getToolArgs(component))];
 }
 
-// CORE-2358: code-carrying external tools pass the program in `code`.
-// The framed row must show it above the output — otherwise the operator
-// never sees what ran. Scoped to python: codemode is Pi core's renderer
-// and already shows its script.
+// CORE-2358: the framed row must show what ran above the output — otherwise the
+// operator never sees it. Generic rule, no per-tool list: any external tool
+// carrying its program in a `code` string arg (python, codemode-style) gets
+// the preview. Codemode included: its Pi core renderer is shadowed by this
+// frame exactly like python's was.
 export function externalToolCodePreview(toolName: string | undefined, args: Record<string, unknown>): string[] | undefined {
-  if (toolName !== "python") return undefined;
   const code = args.code;
   if (typeof code !== "string" || code.trim().length === 0) return undefined;
   return code.split("\n");
@@ -583,7 +583,7 @@ export function externalToolContentLines(
   const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
   const dimmed = tail.map((l) => (l.trim().length > 0 ? `\x1b[2m${l}\x1b[22m` : l));
   const count = !expanded && preview.length > shown.length
-    ? [`\x1b[2mshowing ${shown.length}/${preview.length} lines\x1b[22m`]
+    ? [`\x1b[2m\x1b[3mshowing ${shown.length}/${preview.length} lines\x1b[23m\x1b[22m`]
     : [];
   return [...shown, ...count, ...dimmed];
 }

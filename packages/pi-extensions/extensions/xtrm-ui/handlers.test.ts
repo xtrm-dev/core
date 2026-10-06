@@ -332,8 +332,9 @@ describe("CORE-2358 external frame shows executed code", async () => {
   test("python code is previewed line by line", () => {
     expect(externalToolCodePreview("python", { code: "a = 1\nprint(a)" })).toEqual(["a = 1", "print(a)"]);
   });
-  test("other tools and empty code get no preview", () => {
+  test("any tool with a code string gets the preview, no per-tool list", () => {
     expect(externalToolCodePreview("bash", { command: "ls" })).toBeUndefined();
+    expect(externalToolCodePreview("somecode_tool", { code: "x = 1" })).toEqual(["x = 1"]);
     expect(externalToolCodePreview("python", { code: "  " })).toBeUndefined();
     expect(externalToolCodePreview("python", {})).toBeUndefined();
   });
@@ -359,7 +360,7 @@ describe("CORE-2358 collapsed code cap and dimmed output", async () => {
   test("collapsed shows 4 code lines plus a showing X/N count, expanded shows all", () => {
     const code = "l1\nl2\nl3\nl4\nl5";
     const component = { toolName: "python", args: { code }, result: { content: [{ type: "text", text: "out" }] } };
-    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "l4", "\x1b[2mshowing 4/5 lines\x1b[22m", "\x1b[2mout\x1b[22m"]);
+    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "l4", "\x1b[2m\x1b[3mshowing 4/5 lines\x1b[23m\x1b[22m", "\x1b[2mout\x1b[22m"]);
     expect(externalToolContentLines(component as never, [], true)).toEqual(["l1", "l2", "l3", "l4", "l5", "\x1b[2mout\x1b[22m"]);
   });
 
