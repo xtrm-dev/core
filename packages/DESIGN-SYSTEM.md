@@ -52,7 +52,7 @@ token changes, both copies change in the same commit.**
 | Severity glyph | `!` in `#33` | replaces the dot on `high` |
 | Header text | dark bold, spanning the whole band | |
 | Header separator | `·` dim (`\x1b[2m·\x1b[1m`) | never white — white fights the band |
-| Body | italic (`\x1b[3m`) on normal background | never banded, never ends in `.` before facts
+| Body | italic (`\x1b[3m`) in soft gray `#D0D0D0` on normal background | never banded, never ends in `.` before facts
 | Facts | dim | labelled, always; never preceded by a period
 | Accent | `#9A8BFF` | footer chrome, thinking level, live spinner only |
 | Section chip | bg `#D0D0D6`, fg `#16161A` | footer `SPECIALISTS` label |

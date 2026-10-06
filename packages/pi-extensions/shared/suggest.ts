@@ -564,6 +564,10 @@ const BAND_OFF = "\x1b[49m\x1b[39m";
 const DOT = "\x1b[1m●\x1b[22m"; // white, out of the gold block
 const WARN = "\x1b[33m!\x1b[0m";
 const WHITE = (t: string) => `\x1b[37m${t}\x1b[39m`;
+/** Body ink: soft gray — a step below full-bright, a step above dim facts. */
+const BODY_FG = [208, 208, 208] as const;
+const BODY_ON = `\x1b[38;2;${BODY_FG[0]};${BODY_FG[1]};${BODY_FG[2]}m`;
+const BODY_OFF = "\x1b[39m";
 const DIM = (t: string) => `\x1b[2m${t}\x1b[22m`;
 const INDENT = "  ";
 const CARD_MIN = 44;
@@ -611,7 +615,7 @@ function goldCard(glyph: string, header: string, rows: string[], facts: string |
   const lines = rows.map((r, i) => {
     const last = i === rows.length - 1;
     const tail = last && facts ? `  ${DIM(facts)}` : "";
-    return `${INDENT}${italic(r)}${tail}`;
+    return `${INDENT}${BODY_ON}${italic(r)}${BODY_OFF}${tail}`;
   });
   return [`${glyph} ${head}`, ...lines].join("\n");
 }
