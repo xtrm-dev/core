@@ -34,8 +34,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, type VerbSpec } from "../substrate-suggest/catalog.ts";
-import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../substrate-suggest/jev.ts";
+import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, stripEndPeriod, SKILL_ACCENT, type VerbSpec } from "../../shared/suggest.ts";
+import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
 /**
@@ -195,25 +195,30 @@ export function conversationContext(
   return recent.join("\n").slice(-maxChars);
 }
 
-/** Shared Jev runner for both seams: Pi-native classifier first, REST second. */
+/** Shared Jev runner for both seams: Pi-native classifier first, REST second.
+ *  Returns spend telemetry with the answer: elapsed ms and which path served. */
 async function askJev(
   registry: RegistryLike | null,
   state: Record<string, unknown>,
   questions: Record<string, Question>,
 ) {
+  const start = Date.now();
   let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
+  const path = result ? "registry" : "fallback";
   if (!result) result = await systemOne(state, questions);
-  return result;
+  return { result, jevMs: Date.now() - start, jevPath: path };
+}
+
+/** Full load subpath for the card header (operator directive, CORE-2348). */
+function skillLoadPath(entry: RosterEntry): string {
+  return entry.level === "skill" ? `${entry.skill}/SKILL.md` : entry.id;
 }
 
 function skillVerb(entry: RosterEntry, confidence: number | null): VerbSpec {
   return {
     id: "skill_suggest",
-    // CORE-2361: the header states what to load or read, up front.
-    action:
-      entry.level === "skill"
-        ? `skill loaded /skill:${entry.skill}`
-        : `reference to read · ${entry.id}`,
+    // CORE-2348: the header states the full load subpath, up front.
+    action: `load /skill:${skillLoadPath(entry)}`,
     oneLine: entry.description,
     instruction: () =>
       `Load /skill:${entry.skill} or read ${entry.path}; apply what fits. Ignore this if it does not fit.`,
@@ -246,8 +251,8 @@ export function doctrineBlock(
       `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
       entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
       // What this skill is, in its own words — the description the roster
-      // ranked on, restored for the reader.
-      `\x1b[3m${entry.description}\x1b[23m`,
+      // ranked on, restored for the reader. No trailing period (CORE-2348).
+      `\x1b[3m${stripEndPeriod(entry.description)}\x1b[23m`,
     ].filter(Boolean).join("\n"),
   });
 }
@@ -276,18 +281,17 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           // gets a compact card parsed from it. Drawing the raw XML in a box
           // clipped the frame and buried the operator's prompt.
           const meta = parseContextBlock(String(content));
-          if (!meta) return renderCardBox(String(content)).split("\n");
+          if (!meta) return renderCardBox(String(content), SKILL_ACCENT).split("\n");
           return formatSuggestionCard({
             verb: {
               id: "skill_suggest",
-              // CORE-2361: header states the target — /skill:<name> for a
-              // skill, the doc id for a nested reference.
+              // CORE-2348: header carries the full load subpath.
               action:
                 meta.kind === "agent-settlement"
                   ? "result settled"
                   : meta.level === "reference"
-                    ? `reference to read · ${meta.source ?? "—"}`
-                    : `skill loaded /skill:${meta.skill ?? meta.source ?? "—"}`,
+                    ? `load /skill:${meta.source ?? "—"}`
+                    : `load /skill:${meta.skill ?? meta.source ?? "—"}/SKILL.md`,
               oneLine: meta.body ?? "",
               instruction: () => "",
               severity: "normal",
@@ -297,7 +301,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
             ref: "—",
             confidence: meta.confidence,
             compact: true,
-          })
+          }, SKILL_ACCENT)
             .split("\n");
         },
       };
@@ -350,11 +354,17 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), INJECT_TIMEOUT_MS);
       let result: Awaited<ReturnType<typeof classifyViaRegistry>> = null;
+      let jevPath: string | null = null;
+      const jevStart = Date.now();
       try {
         result = (await Promise.race([
           (async () => {
             let r = registry ? await classifyViaRegistry(registry, state, questions) : null;
-            if (!r) r = await systemOne(state, questions);
+            if (r) jevPath = "registry";
+            if (!r) {
+              r = await systemOne(state, questions);
+              if (r) jevPath = "fallback";
+            }
             return r;
           })(),
           new Promise<null>((resolve) => { controller.signal.addEventListener("abort", () => resolve(null)); }),
@@ -362,6 +372,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       } finally {
         clearTimeout(timer);
       }
+      const jevMs = Date.now() - jevStart;
       if (!result) return { action: "continue" } as const;
 
       const gate = [
@@ -381,6 +392,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         confidence: result.choice.confidence,
         injected: Boolean(entry) && gateMean >= GATE_THRESHOLD,
         prompt_chars: prompt.length,
+        jev_ms: jevMs,
+        jev_path: jevPath,
       });
       if (gateMean < GATE_THRESHOLD || !entry) return { action: "continue" } as const;
       // Sub-gate choice confidence stays silent: a high procedural gate with a
@@ -473,7 +486,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const roster = discoverRoster(process.cwd());
       if (roster.length === 0) return;
 
-      const result = await askJev(registry, {
+      const { result, jevMs, jevPath } = await askJev(registry, {
         agent_final_message: lastAssistant.slice(0, 1500),
         working_turn_excerpt: turn.excerpt.slice(0, 6000),
         edited_files: turn.editedFiles.slice(0, 8),
@@ -505,13 +518,13 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
       // Pointer, not content (input seam parity).
       const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)) });
+      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)), jev_ms: jevMs, jev_path: jevPath });
       // One message carries both audiences: the model reads the doctrine
       // block; the operator sees the house card around it.
       pi.sendMessage(
         {
           customType: CUSTOM_TYPE,
-          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence, compact: true }),
+          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence, compact: true }, SKILL_ACCENT),
           display: true,
           details: { skill: entry.id, level: entry.level, seam: "agent_end" },
         },

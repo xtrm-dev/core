@@ -16,7 +16,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import type { VerbSpec } from "./catalog.ts";
+import type { VerbSpec } from "../../shared/suggest.ts";
 
 // ── provenance duty ──────────────────────────────────────────────────────────
 

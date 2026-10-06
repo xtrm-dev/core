@@ -323,3 +323,179 @@ describe("xtrm-ui presentation-only boundary", () => {
     });
   });
 });
+
+describe("CORE-2358 external frame shows executed code", async () => {
+  const { externalToolCodePreview, externalToolContentLines } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("python code is previewed line by line", () => {
+    expect(externalToolCodePreview("python", { code: "a = 1\nprint(a)" })).toEqual(["a = 1", "print(a)"]);
+  });
+  test("any tool with a code string gets the preview, no per-tool list", () => {
+    expect(externalToolCodePreview("bash", { command: "ls" })).toBeUndefined();
+    expect(externalToolCodePreview("somecode_tool", { code: "x = 1" })).toEqual(["x = 1"]);
+    expect(externalToolCodePreview("python", { code: "  " })).toBeUndefined();
+    expect(externalToolCodePreview("python", {})).toBeUndefined();
+  });
+  test("content is program above output once resolved", () => {
+    const component = {
+      toolName: "python",
+      args: { code: "print(1)" },
+      result: { content: [{ type: "text", text: "1" }] },
+    };
+    expect(externalToolContentLines(component as never, [])).toEqual(["print(1)", "\x1b[2m1\x1b[22m"]);
+  });
+  test("pending content is the program alone", () => {
+    const component = { toolName: "python", args: { code: "print(1)" }, result: null };
+    expect(externalToolContentLines(component as never, ["fallback"])).toEqual(["print(1)"]);
+  });
+});
+
+describe("CORE-2358 collapsed code cap and dimmed output", async () => {
+  const { externalToolContentLines } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("collapsed shows 4 code lines plus a showing X/N count, expanded shows all", () => {
+    const code = "l1\nl2\nl3\nl4\nl5";
+    const component = { toolName: "python", args: { code }, result: { content: [{ type: "text", text: "out" }] } };
+    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "l4", " \x1b[2m\x1b[3m … +1 lines\x1b[23m\x1b[22m", "\x1b[2mout\x1b[22m"]);
+    expect(externalToolContentLines(component as never, [], true)).toEqual(["l1", "l2", "l3", "l4", "l5", "\x1b[2mout\x1b[22m"]);
+  });
+
+});
+
+describe("CORE-2358 bare headers for non-code tools", async () => {
+  const { bareExternalToolHeader, renderExternalToolBackgroundLines } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("gitnexus header is provider plus tool, nothing sniffed", () => {
+    expect(bareExternalToolHeader("gitnexus", "gitnexus_query")).toEqual({ provider: "GitNexus", action: "query" });
+    expect(bareExternalToolHeader("external", "python")).toEqual({ provider: "python", action: undefined });
+  });
+  test("bare frame keeps output-shaped first lines in the body", () => {
+    const rows = renderExternalToolBackgroundLines(["[Serena] done", "ok"], 80, "serena", false, "read_file", 5, "success", true);
+    const plain = rows.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain.split("\n")[0]).toContain("read_file");
+    expect(plain).toContain("[Serena] done");
+  });
+});
+
+describe("CORE-2358 bash command cap and pref", async () => {
+  const { renderBashTree, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+
+  test("long commands cap at 4 with a hidden-count line", () => {
+    const out = renderBashTree(theme, "success", "l1\nl2\nl3\nl4\nl5\nl6", [], undefined, 4);
+    expect(out).toContain("l4");
+    expect(out).not.toContain("l5");
+    expect(out).toContain(" … +2 lines");
+  });
+  test("short commands render whole, no count", () => {
+    const out = renderBashTree(theme, "success", "a\nb", [], undefined, 4);
+    expect(out).toContain("b");
+    expect(out).not.toContain("+");
+  });
+  test("pref defaults to 4 and clamps 1-20", () => {
+    expect(DEFAULT_PREFS.commandPreviewLines).toBe(4);
+    expect(normalizePrefs({}).commandPreviewLines).toBe(4);
+    expect(normalizePrefs({ commandPreviewLines: 99 }).commandPreviewLines).toBe(20);
+    expect(normalizePrefs({ commandPreviewLines: 0 }).commandPreviewLines).toBe(1);
+  });
+});
+
+describe("CORE-2358 result-lines pref and payload indent", async () => {
+  const { renderExternalToolBackgroundLines, renderBashTree, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+  const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
+
+  test("frame payload indents two spaces under a flush header", () => {
+    const rows = renderExternalToolBackgroundLines(["out1", "out2"], 80, "external", false, "some_tool", 5, "success", true, 6);
+    expect(strip(rows[0]).startsWith("●")).toBe(true);
+    expect(strip(rows[1]).startsWith("  out1")).toBe(true);
+  });
+  test("bash continued lines indent, header stays flush", () => {
+    const out = renderBashTree(theme, "success", "c1\nc2", ["o1"], undefined, 4);
+    const lines = out.split("\n").map(strip);
+    expect(lines[0].startsWith("●")).toBe(true);
+    expect(lines[1]).toBe("  c2");
+    expect(lines[2]).toBe("  └ o1");
+  });
+  test("result pref defaults 6, clamps 1-50", () => {
+    expect(DEFAULT_PREFS.resultPreviewLines).toBe(6);
+    expect(normalizePrefs({}).resultPreviewLines).toBe(6);
+    expect(normalizePrefs({ resultPreviewLines: 99 }).resultPreviewLines).toBe(50);
+    expect(normalizePrefs({}).diffPreviewLines).toBe(18);
+    expect(normalizePrefs({ diffPreviewLines: 99 }).diffPreviewLines).toBe(50);
+  });
+});
+
+describe("CORE-2358 chained commands segment before capping", async () => {
+  const { renderBashTree, splitCommandSegments } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+  const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
+
+  test("&& chains split keeping the operator", () => {
+    expect(splitCommandSegments('echo a && echo b || echo c')).toEqual(['echo a &&', 'echo b ||', 'echo c']);
+  });
+  test("six chained segments cap at 4 with hidden count", () => {
+    const cmd = 'echo 1 && echo 2 && echo 3 && echo 4 && echo 5 && echo 6';
+    const lines = renderBashTree(theme, "success", cmd, [], undefined, 4).split("\n").map(strip);
+    expect(lines.length).toBe(5);
+    expect(lines[4]).toContain(" … +2 lines");
+  });
+});
+
+describe("CORE-2358 expanded bash shows the whole command", async () => {
+  const { renderBashTree } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+  const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
+
+  test("expanded ignores the cap, collapsed keeps it", () => {
+    const cmd = "a && b && c && d && e && f";
+    const collapsed = renderBashTree(theme, "success", cmd, [], undefined, 2, false).split("\n").map(strip);
+    expect(collapsed.some((l) => l.includes("+"))).toBe(true);
+    const expanded = renderBashTree(theme, "success", cmd, [], undefined, 2, true).split("\n").map(strip);
+    expect(expanded.some((l) => l.includes("+"))).toBe(false);
+    expect(expanded.join("\n")).toContain("e &&");
+  });
+});
+
+describe("CORE-2358 global defaults", async () => {
+  const { normalizePrefs, readGlobalXtrmUi, DEFAULT_PREFS } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+
+  test("explicit base beats built-ins, session beats base", () => {
+    const base = { ...DEFAULT_PREFS, commandPreviewLines: 7 };
+    expect(normalizePrefs({}, base).commandPreviewLines).toBe(7);
+    expect(normalizePrefs({ commandPreviewLines: 2 }, base).commandPreviewLines).toBe(2);
+  });
+  test("global reader is fail-open and scoped to xtrmUi", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xtrm-ui-test-"));
+    try {
+      const good = path.join(dir, "good.json");
+      fs.writeFileSync(good, JSON.stringify({ xtrmUi: { resultPreviewLines: 9 }, other: 1 }));
+      expect(readGlobalXtrmUi(good)).toEqual({ resultPreviewLines: 9 });
+      const broken = path.join(dir, "broken.json");
+      fs.writeFileSync(broken, "{nope");
+      expect(readGlobalXtrmUi(broken)).toEqual({});
+      expect(readGlobalXtrmUi(path.join(dir, "missing.json"))).toEqual({});
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

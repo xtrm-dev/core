@@ -138,10 +138,13 @@ const context = (args: Record<string, unknown>, overrides: Record<string, unknow
 describe("xtrm-ui commands", () => {
   const supportedCommands = [
     "xtrm-ui",
+    "xtrm-ui-command-lines",
     "xtrm-ui-density",
+    "xtrm-ui-diff-lines",
     "xtrm-ui-forcetheme",
     "xtrm-ui-header",
     "xtrm-ui-reset",
+    "xtrm-ui-result-lines",
     "xtrm-ui-rowbg",
     "xtrm-ui-theme",
   ];
@@ -236,6 +239,9 @@ describe("xtrm-ui commands", () => {
     expect(DEFAULT_PREFS).toEqual({
       themeName: "xtrm-dark",
       density: "compact",
+      commandPreviewLines: 4,
+      diffPreviewLines: 18,
+      resultPreviewLines: 6,
       showHeader: true,
       forceTheme: true,
       toolRowBg: false,
@@ -371,8 +377,8 @@ describe("xtrm-ui built-in tool rendering", () => {
     const lines = component.render(200);
     expect(lines.slice(0, 3)).toEqual([
       "● Ran \x1b[1mecho one\x1b[22m",
-      "\x1b[1mecho two\x1b[22m",
-      "└ line 3",
+      "  \x1b[1mecho two\x1b[22m",
+      "  └ line 3",
     ]);
     expect(lines.at(-1)).toContain("showing 6/8 lines (ctrl+o expand)");
   });
@@ -429,8 +435,8 @@ describe("xtrm-ui built-in tool rendering", () => {
 
     const lines = component.render(200);
     expect(lines[0]).toBe(`● ${name} ${subject}`);
-    expect(lines[1]).toBe("└ line 1");
-    expect(lines[6]).toBe("  line 6");
+    expect(lines[1]).toBe("  └ line 1");
+    expect(lines[6]).toBe("    line 6");
     expect(lines.at(-1)).toContain(`showing 6/8 ${noun}s (ctrl+o expand)`);
   });
 
@@ -445,8 +451,8 @@ describe("xtrm-ui built-in tool rendering", () => {
 
     expect(lines).toEqual([
       "● find *.ts",
-      "└ only.ts",
-      "1 match · 7B",
+      "  └ only.ts",
+      "  1 match · 7B",
     ]);
     expect(lines.join("\n")).not.toContain("ctrl+o expand");
   });
@@ -472,7 +478,7 @@ describe("xtrm-ui built-in tool rendering", () => {
     ).render(200);
 
     expect(write[0]).toBe(`● write ${path}`);
-    expect(write[1]).toBe("└ line 1");
+    expect(write[1]).toBe("  └ line 1");
     expect(write.at(-1)).toContain("showing 6/8 lines (ctrl+o expand)");
     expect(edit[0]).toBe(`● edit ${path}`);
     expect(edit[1]).toMatch(/│ /); // diff line-number gutter, not the tool tree

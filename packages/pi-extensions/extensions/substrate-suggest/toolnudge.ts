@@ -7,7 +7,7 @@
  * inefficiency happens — no model call, per-kind session cooldown.
  */
 
-import type { VerbSpec } from "./catalog.ts";
+import type { VerbSpec } from "../../shared/suggest.ts";
 
 export interface ToolCounters {
   grepCount: number;

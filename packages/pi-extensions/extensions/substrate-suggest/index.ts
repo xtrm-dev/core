@@ -53,12 +53,16 @@ import {
   jevRoster,
   formatSuggestionCard,
   TERMINAL_LIFECYCLE,
+  systemOne,
+  classifyViaRegistry,
+  readApiKey,
   type Cooldowns,
   type StateSnapshot,
   type VerbId,
   type VerbSpec,
-} from "./catalog.ts";
-import { systemOne, classifyViaRegistry, readApiKey, type Question, type RegistryLike } from "./jev.ts";
+  type Question,
+  type RegistryLike,
+} from "../../shared/suggest.ts";
 import {
   discoverSkillPacks,
   isMonitorSetter,
@@ -526,8 +530,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
               none: "No monitor is warranted.",
             },
           },
-          wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for an external event (CI, deploy, review, another agent's reply, a long job) rather than actively working or merely narrating?" },
-          monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here, instead of relying on the agent remembering?" },
+          wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for a specific external event (CI, deploy, review, another agent's reply, a long job) with no other continuation path? Waiting on the operator's next message inside an active conversation is NOT waiting — the conversation is the continuation path. Narrating observation ('watch for it', 'let's see what happens') is NOT a wait commitment." },
+          monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here — i.e. is there something pending that the conversation itself will not surface? If the only continuation is the operator replying, answer no." },
         } as Record<string, Question>);
         const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
         if (result && g >= GATE_THRESHOLD) {
