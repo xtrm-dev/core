@@ -466,10 +466,13 @@ type PatchableToolExecutionComponent = {
 
 type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | "external";
 
+// Bump this on EVERY change to patchedRender/patchedGetRenderShell: a reload
+// keeps the prototype (and its marker), so an unchanged version leaves the
+// OLD closure installed and the fix silently absent (CORE-2358).
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 23;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 24;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
