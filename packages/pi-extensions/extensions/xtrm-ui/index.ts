@@ -1581,7 +1581,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         "success",
         "edit",
         path,
-        details.diff ? renderRichDiffPreview(theme, details.diff, 18).split("\n") : [],
+        details.diff ? renderRichDiffPreview(theme, details.diff, getPrefs().resultPreviewLines).split("\n") : [],
         joinMeta([`+${stats.additions}`, `-${stats.removals}`, renderDuration(context)]),
       );
       return toolRowText(theme, text);
@@ -1637,7 +1637,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
           "success",
           "write",
           path,
-          preview.diff ? renderRichDiffPreview(theme, preview.diff, 18).split("\n") : [],
+          preview.diff ? renderRichDiffPreview(theme, preview.diff, getPrefs().resultPreviewLines).split("\n") : [],
           joinMeta([`+${preview.additions}`, `-${preview.removals}`, renderDuration(context)]),
         ));
       }
