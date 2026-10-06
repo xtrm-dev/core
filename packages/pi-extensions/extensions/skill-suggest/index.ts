@@ -34,7 +34,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, type VerbSpec } from "../../shared/suggest.ts";
+import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, stripEndPeriod, SKILL_ACCENT, type VerbSpec } from "../../shared/suggest.ts";
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
@@ -206,14 +206,16 @@ async function askJev(
   return result;
 }
 
+/** Full load subpath for the card header (operator directive, CORE-2348). */
+function skillLoadPath(entry: RosterEntry): string {
+  return entry.level === "skill" ? `${entry.skill}/SKILL.md` : entry.id;
+}
+
 function skillVerb(entry: RosterEntry, confidence: number | null): VerbSpec {
   return {
     id: "skill_suggest",
-    // CORE-2361: the header states what to load or read, up front.
-    action:
-      entry.level === "skill"
-        ? `skill loaded /skill:${entry.skill}`
-        : `reference to read · ${entry.id}`,
+    // CORE-2348: the header states the full load subpath, up front.
+    action: `load /skill:${skillLoadPath(entry)}`,
     oneLine: entry.description,
     instruction: () =>
       `Load /skill:${entry.skill} or read ${entry.path}; apply what fits. Ignore this if it does not fit.`,
@@ -246,8 +248,8 @@ export function doctrineBlock(
       `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
       entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
       // What this skill is, in its own words — the description the roster
-      // ranked on, restored for the reader.
-      `\x1b[3m${entry.description}\x1b[23m`,
+      // ranked on, restored for the reader. No trailing period (CORE-2348).
+      `\x1b[3m${stripEndPeriod(entry.description)}\x1b[23m`,
     ].filter(Boolean).join("\n"),
   });
 }
@@ -276,18 +278,17 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           // gets a compact card parsed from it. Drawing the raw XML in a box
           // clipped the frame and buried the operator's prompt.
           const meta = parseContextBlock(String(content));
-          if (!meta) return renderCardBox(String(content)).split("\n");
+          if (!meta) return renderCardBox(String(content), SKILL_ACCENT).split("\n");
           return formatSuggestionCard({
             verb: {
               id: "skill_suggest",
-              // CORE-2361: header states the target — /skill:<name> for a
-              // skill, the doc id for a nested reference.
+              // CORE-2348: header carries the full load subpath.
               action:
                 meta.kind === "agent-settlement"
                   ? "result settled"
                   : meta.level === "reference"
-                    ? `reference to read · ${meta.source ?? "—"}`
-                    : `skill loaded /skill:${meta.skill ?? meta.source ?? "—"}`,
+                    ? `load /skill:${meta.source ?? "—"}`
+                    : `load /skill:${meta.skill ?? meta.source ?? "—"}/SKILL.md`,
               oneLine: meta.body ?? "",
               instruction: () => "",
               severity: "normal",
@@ -297,7 +298,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
             ref: "—",
             confidence: meta.confidence,
             compact: true,
-          })
+          }, SKILL_ACCENT)
             .split("\n");
         },
       };
@@ -511,7 +512,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       pi.sendMessage(
         {
           customType: CUSTOM_TYPE,
-          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence, compact: true }),
+          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence, compact: true }, SKILL_ACCENT),
           display: true,
           details: { skill: entry.id, level: entry.level, seam: "agent_end" },
         },

@@ -553,11 +553,14 @@ export function resetCooldowns(cd: Cooldowns): void {
 // ── Wake-card chrome: purple dot on a tool row, indented gold block ─────────
 
 const PURPLE = "\x1b[38;2;141;127;232m";
-/** Full yellow, deliberately not brilliant: reads as a signal, not a highlighter. */
-const BG = [201, 162, 39] as const;
+/** Header-band accents per suggester (operator directive, CORE-2348). */
+export const SKILL_ACCENT = [0, 103, 188] as const; // 0067BC blue
+/** Header-band accents per suggester (operator directive, CORE-2348). */
+export const SUBSTRATE_ACCENT = [255, 112, 52] as const; // FF7034 bright orange
+export type CardAccent = readonly [number, number, number];
 const FG = [24, 20, 16] as const;
-const YELLOW_ON = `\x1b[48;2;${BG[0]};${BG[1]};${BG[2]}m\x1b[38;2;${FG[0]};${FG[1]};${FG[2]}m`;
-const YELLOW_OFF = "\x1b[49m\x1b[39m";
+const bandOn = (bg: CardAccent) => `\x1b[48;2;${bg[0]};${bg[1]};${bg[2]}m\x1b[38;2;${FG[0]};${FG[1]};${FG[2]}m`;
+const BAND_OFF = "\x1b[49m\x1b[39m";
 const DOT = "\x1b[1m●\x1b[22m"; // white, out of the gold block
 const WARN = "\x1b[33m!\x1b[0m";
 const WHITE = (t: string) => `\x1b[37m${t}\x1b[39m`;
@@ -569,9 +572,9 @@ const CONF_LABEL = "jev_confidence";
 
 const stripAnsi = (v: string) => v.replace(/\x1b\[[0-9;]*m/g, "");
 
-/** Gold background, dark foreground. Used for the header band only. */
-function paint(text: string, bold = false): string {
-  return `${YELLOW_ON}${bold ? "\x1b[1m" : ""}${text}${bold ? "\x1b[22m" : ""}${YELLOW_OFF}`;
+/** Accent background, dark foreground. Used for the header band only. */
+function paint(text: string, bold = false, bg: CardAccent = SUBSTRATE_ACCENT): string {
+  return `${bandOn(bg)}${bold ? "\x1b[1m" : ""}${text}${bold ? "\x1b[22m" : ""}${BAND_OFF}`;
 }
 
 /** Body text: italic on the normal background — no gold, no box. */
@@ -599,12 +602,12 @@ function wrapPlain(plain: string, max: number): string[] {
 }
 
 /**
- * A dot, then the header on a gold band with a dark bold foreground, then the
- * body italic on the normal background. Only the header text carries the gold —
+ * A dot, then the header on an accent band with a dark bold foreground, then the
+ * body italic on the normal background. Only the header text carries the band —
  * the dot and everything below it stay unbanded.
  */
-function goldCard(glyph: string, header: string, rows: string[], facts: string | null): string {
-  const head = paint(header, true);
+function goldCard(glyph: string, header: string, rows: string[], facts: string | null, bg: CardAccent = SUBSTRATE_ACCENT): string {
+  const head = paint(header, true, bg);
   const lines = rows.map((r, i) => {
     const last = i === rows.length - 1;
     const tail = last && facts ? `  ${DIM(facts)}` : "";
@@ -691,7 +694,12 @@ export interface SuggestionCard {
   compact?: boolean;
 }
 
-export function formatSuggestionCard(c: SuggestionCard): string {
+/** Trailing period stripped: descriptions end sentences, the facts trailer must not stutter. */
+export function stripEndPeriod(s: string): string {
+  return s.replace(/\.+$/, "");
+}
+
+export function formatSuggestionCard(c: SuggestionCard, accent: CardAccent = SUBSTRATE_ACCENT): string {
   const glyph = c.verb.severity === "high" ? WARN : DOT;
   const header = `${c.verb.action} · ${c.ref}`;
   const parts = [
@@ -701,21 +709,21 @@ export function formatSuggestionCard(c: SuggestionCard): string {
   const facts = parts.length ? parts.join(" · ") : null;
 
   if (c.compact) {
-    // FYI: one gold row carrying the summary, nothing more.
-    return goldCard(glyph, header, wrapPlain(c.verb.oneLine || c.verb.action, CARD_MAX), facts);
+    // FYI: one accent row carrying the summary, nothing more.
+    return goldCard(glyph, header, wrapPlain(stripEndPeriod(c.verb.oneLine || c.verb.action), CARD_MAX), facts, accent);
   }
   const instr = `${c.verb.instruction(c.ref).replace(/[.]?$/, "")}. Ignore this if it does not fit what actually happened.`;
   // Reserve the facts room before wrapping so the last row never overruns.
   const factsLen = facts ? [...facts].length + 2 : 0;
-  return goldCard(glyph, header, wrapPlain(instr, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts);
+  return goldCard(glyph, header, wrapPlain(instr, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts, accent);
 }
 
 /** Render arbitrary message content in the house style (renderer fallback). */
-export function renderCardBox(content: string): string {
+export function renderCardBox(content: string, accent: CardAccent = SUBSTRATE_ACCENT): string {
   const [first, ...rest] = content.split("\n");
   const header = first.startsWith("<") ? "context" : first;
   const body = rest.length ? rest.join(" ") : content;
-  return goldCard(DOT, header, wrapPlain(body, CARD_MAX), null);
+  return goldCard(DOT, header, wrapPlain(body, CARD_MAX), null, accent);
 }
 
 /** Model-visible plain text (what lands in the transcript strip/exports). */

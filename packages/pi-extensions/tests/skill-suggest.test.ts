@@ -71,9 +71,9 @@ describe("input seam decides, never mutates", () => {
     expect(deliver).not.toContain("triggerTurn: true");
   });
 
-  it("restores the skill description, italic, at the end of the block", async () => {
+  it("restores the skill description, italic and period-stripped, at the end of the block", async () => {
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
-    expect(src).toContain("\\x1b[3m${entry.description}\\x1b[23m");
+    expect(src).toContain("\\x1b[3m${stripEndPeriod(entry.description)}\\x1b[23m");
   });
 });
 

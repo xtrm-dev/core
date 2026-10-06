@@ -13,6 +13,9 @@ import {
   cooldownKey,
   type StateSnapshot,
   type Cooldowns,
+  stripEndPeriod,
+  SKILL_ACCENT,
+  SUBSTRATE_ACCENT,
 } from "../extensions/substrate-suggest/catalog.ts";
 import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
 import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb } from "../extensions/substrate-suggest/duties.ts";
@@ -157,24 +160,24 @@ describe("duty gate observability (CORE-2359)", () => {
 describe("wake card", () => {
   const verb = CATALOG.find((v) => v.id === "journal_decision")!;
 
-  it("bands the header text in gold and leaves the dot and body unbanded", () => {
+  it("bands the header text in the substrate accent and leaves the dot and body unbanded", () => {
     const card = formatSuggestionCard({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
     const plain = formatSuggestionPlain({ verb, ref: "CORE-9", confidence: 0.72, revision: 3 });
     const [head, ...body] = plain.split("\n");
 
-    // dot first, white, then the gold band begins at the header text
+    // dot first, white, then the accent band begins at the header text
     expect(head.startsWith("●")).toBe(true);
     expect(card).toContain("\x1b[1m●\x1b[22m");
     expect(head).toContain("sb journal append");
     expect(head).toContain("CORE-9");
 
-    // gold + dark foreground + bold, on the header only
+    // accent + dark foreground + bold, on the header only
     const banded = card.split("\n")[0];
-    expect(banded).toContain("\x1b[48;2;201;162;39m");
+    expect(banded).toContain("\x1b[48;2;255;112;52m");
     expect(banded).toContain("\x1b[38;2;24;20;16m");
     expect(banded).toContain("\x1b[1m");
     for (const line of card.split("\n").slice(1)) {
-      expect(line).not.toContain("\x1b[48;2;201;162;39m");
+      expect(line).not.toContain("\x1b[48;2;255;112;52m");
       expect(line).toContain("\x1b[3m"); // italic, normal background
     }
 
@@ -211,3 +214,22 @@ describe("wake card", () => {
   });
 });
 
+
+describe("CORE-2348 card polish", () => {
+  const base = CATALOG.find((v) => v.id === "journal_decision")!;
+  const dotted = { ...base, oneLine: "Turn intent into dispatchable contracts." };
+  it("strips the trailing period before the facts trailer", () => {
+    expect(stripEndPeriod("Ends with a period.")).toBe("Ends with a period");
+    expect(stripEndPeriod("No period")).toBe("No period");
+    const plain = formatSuggestionPlain({ verb: dotted, ref: "CORE-1", confidence: 0.66, compact: true });
+    expect(plain).not.toContain("contracts.  jev_confidence");
+    expect(plain).toContain("contracts  jev_confidence: 0.66");
+  });
+  it("bands substrate orange by default and skill blue on request", () => {
+    const sub = formatSuggestionCard({ verb: base, ref: "CORE-9", confidence: 0.72 });
+    expect(sub.split("\n")[0]).toContain("\x1b[48;2;255;112;52m");
+    const skill = formatSuggestionCard({ verb: dotted, ref: "—", confidence: 0.66, compact: true }, SKILL_ACCENT);
+    expect(skill.split("\n")[0]).toContain("\x1b[48;2;0;103;188m");
+    expect(SUBSTRATE_ACCENT).toEqual([255, 112, 52]);
+  });
+});
