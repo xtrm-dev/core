@@ -472,7 +472,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 30;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 31;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -572,7 +572,7 @@ export function externalToolContentLines(
   const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
   const dimmed = tail.map((l) => (l.trim().length > 0 ? `\x1b[2m${l}\x1b[22m` : l));
   const count = !expanded && preview.length > shown.length
-    ? [` \x1b[2m\x1b[3m< … +${preview.length - shown.length} lines>\x1b[23m\x1b[22m`]
+    ? [` \x1b[2m\x1b[3m … +${preview.length - shown.length} lines\x1b[23m\x1b[22m`]
     : [];
   return [...shown, ...count, ...dimmed];
 }
@@ -662,7 +662,7 @@ export function renderExternalToolBackgroundLines(
   const shown = visiblePayload.length;
   const total = payloadLines.length;
   const lineSummary = !expanded && shown < total
-    ? `< … +${total - shown} lines> (ctrl+o expand)`
+    ? `showing ${shown}/${total} lines (ctrl+o expand)`
     : total > 0 ? formatLineLabel(total, "line") : undefined;
   const footerMeta = joinMeta([
     lineSummary,
@@ -885,7 +885,7 @@ function summarizeCount(text: string): number {
 
 function previewSummary(shown: number, total: number, noun: string, expanded: boolean): string {
   return !expanded && shown < total
-    ? `< … +${total - shown} ${noun}s> (ctrl+o expand)`
+    ? `showing ${shown}/${total} ${noun}s (ctrl+o expand)`
     : formatLineLabel(total, noun);
 }
 
