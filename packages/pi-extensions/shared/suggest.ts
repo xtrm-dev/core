@@ -714,8 +714,10 @@ export function formatSuggestionCard(c: SuggestionCard, accent: CardAccent = SUB
   }
   const instr = `${c.verb.instruction(c.ref).replace(/[.]?$/, "")}. Ignore this if it does not fit what actually happened.`;
   // Reserve the facts room before wrapping so the last row never overruns.
+  // No stutter: a facts trailer never follows a period (CORE-2348).
+  const body = facts ? stripEndPeriod(instr) : instr;
   const factsLen = facts ? [...facts].length + 2 : 0;
-  return goldCard(glyph, header, wrapPlain(instr, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts, accent);
+  return goldCard(glyph, header, wrapPlain(body, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts, accent);
 }
 
 /** Render arbitrary message content in the house style (renderer fallback). */

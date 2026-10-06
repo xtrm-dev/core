@@ -18,7 +18,7 @@ import {
   SUBSTRATE_ACCENT,
 } from "../extensions/substrate-suggest/catalog.ts";
 import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
-import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb } from "../extensions/substrate-suggest/duties.ts";
+import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb } from "../extensions/substrate-suggest/duties.ts";
 
 function snap(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
   return {
@@ -231,5 +231,15 @@ describe("CORE-2348 card polish", () => {
     const skill = formatSuggestionCard({ verb: dotted, ref: "—", confidence: 0.66, compact: true }, SKILL_ACCENT);
     expect(skill.split("\n")[0]).toContain("\x1b[48;2;0;103;188m");
     expect(SUBSTRATE_ACCENT).toEqual([255, 112, 52]);
+  });
+});
+
+describe("CORE-2348 non-compact trailer", () => {
+  it("never ends the body with a period before facts", () => {
+    const v = waitGuardVerb();
+    const plain = formatSuggestionPlain({ verb: v, ref: "—", confidence: 0.87 });
+    const last = plain.split("\n").pop()!;
+    expect(last).not.toMatch(/\.\s{2}/);
+    expect(last).toMatch(/[^.]  jev_confidence/);
   });
 });
