@@ -1242,6 +1242,20 @@ export function activeResultPreviewLines(): number {
   return activePrefsSnapshot?.resultPreviewLines ?? DEFAULT_PREFS.resultPreviewLines;
 }
 
+/** Display-only segmentation: a `&&`/`||` chain is one string, so split it
+ * into visual segments before capping — otherwise chained writes never
+ * compact. The model still receives the raw command; a `&&` inside quotes
+ * may mis-split on screen and nowhere else. */
+export function splitCommandSegments(command: string): string[] {
+  const parts = command.split(/ (&&|\|\|) /);
+  const segments: string[] = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    const op = parts[i + 1];
+    segments.push(op ? `${parts[i]} ${op}` : (parts[i] ?? ""));
+  }
+  return segments.filter((s) => s.length > 0);
+}
+
 export function renderBashTree(
   theme: any,
   statusColor: string,
@@ -1251,7 +1265,7 @@ export function renderBashTree(
   commandCap: number = DEFAULT_COMMAND_PREVIEW_LINES,
 ): string {
   const commandColor = statusColor === "success" ? "text" : "dim";
-  const allCommands = command.split("\n");
+  const allCommands = splitCommandSegments(command).flatMap((seg) => seg.split("\n"));
   const cap = Math.min(Math.max(1, commandCap), allCommands.length);
   const [firstCommand = "", ...continuedCommands] = allCommands.slice(0, cap);
   const hiddenCommands = allCommands.length - cap;

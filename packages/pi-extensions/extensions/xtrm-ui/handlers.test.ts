@@ -433,3 +433,21 @@ describe("CORE-2358 result-lines pref and payload indent", async () => {
     expect(normalizePrefs({ resultPreviewLines: 99 }).resultPreviewLines).toBe(50);
   });
 });
+
+describe("CORE-2358 chained commands segment before capping", async () => {
+  const { renderBashTree, splitCommandSegments } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+  const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
+
+  test("&& chains split keeping the operator", () => {
+    expect(splitCommandSegments('echo a && echo b || echo c')).toEqual(['echo a &&', 'echo b ||', 'echo c']);
+  });
+  test("six chained segments cap at 4 with hidden count", () => {
+    const cmd = 'echo 1 && echo 2 && echo 3 && echo 4 && echo 5 && echo 6';
+    const lines = renderBashTree(theme, "success", cmd, [], undefined, 4).split("\n").map(strip);
+    expect(lines.length).toBe(5);
+    expect(lines[4]).toContain(" … +2 lines");
+  });
+});
