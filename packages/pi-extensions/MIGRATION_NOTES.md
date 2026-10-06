@@ -4,13 +4,11 @@
 
 | Legacy path | New path | Notes |
 |---|---|---|
-| `packages/pi-extensions/extensions/beads` | `packages/pi-extensions/extensions/beads` | now imports `../../src/core` |
 | `packages/pi-extensions/extensions/compact-header` | `packages/pi-extensions/extensions/compact-header` | extension source moved unchanged |
 | `packages/pi-extensions/extensions/custom-footer` | `packages/pi-extensions/extensions/custom-footer` | now imports `../../src/core` |
 | `packages/pi-extensions/extensions/git-checkpoint` | `packages/pi-extensions/extensions/git-checkpoint` | extension source moved unchanged |
 | `packages/pi-extensions/extensions/quality-gates` | `packages/pi-extensions/extensions/quality-gates` | now imports `../../src/core` |
 | `packages/pi-extensions/extensions/service-skills` | `packages/pi-extensions/extensions/service-knowledge` | retired service-skills; replaced by self-gating service-knowledge (xtrm-6z6.1) |
-| `packages/pi-extensions/extensions/session-flow` | `packages/pi-extensions/extensions/session-flow` | now imports `../../src/core` |
 | `packages/pi-extensions/extensions/xtrm-loader` | `packages/pi-extensions/extensions/xtrm-loader` | now imports `../../src/core` |
 | `packages/pi-extensions/extensions/xtrm-ui` | `packages/pi-extensions/extensions/xtrm-ui` | theme assets moved to package-level `themes/xtrm-ui` |
 | `packages/pi-extensions/src/core` | `packages/pi-extensions/src/core` | internal helpers; no separate `@xtrm/pi-core` package required |
@@ -31,6 +29,23 @@
   the same managed package and will not register the npm copy beside it.
 
 ## Retired extensions
+
+## Retired extensions
+
+- `beads` and `session-flow` were retired (CORE-2372). The `beads` extension blocked
+  every mutating file tool while `cwd/.beads` existed and no active `bd` claim (or
+  Substrate fallback marker) was present, and blocked `git commit` while a claim was
+  open. `session-flow` carried the Beads claim-sync notice and the Beads stop gate.
+  Beads is a retired board and Substrate owns work authorization, so the gates are
+  removed rather than ported: no edit, commit or stop gate replaces them. Both sources,
+  their `src/extensions/*.ts` shims, `policies/beads.json`, `policies/session-flow.json`,
+  the legacy-path-map entries and `src/core/adapter.ts`'s `isBeadsProject` /
+  `parseBdCounts` helpers are deleted, and both ids are recorded in
+  `src/manifest.json.disabled` with reasons. `cli/src/core/plugin-era-cleanup.ts` still
+  names `beads` and `session-flow` as stale-install cleanup targets for
+  `~/.pi/agent/extensions`; that is inventory, not enrollment. The `xt end` worktree
+  reminder from `session-flow` is not preserved anywhere and must be re-added as its own
+  non-Beads surface if it is wanted back.
 
 - `auto-session-name` was retired (xtrm-rhmm1): the launcher now passes
   `--name <worktree-slug>` to pi/claude directly, so the extension's

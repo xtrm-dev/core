@@ -2,12 +2,6 @@
   "schema_version": "xtrm.pi-extension-manifest.v1",
   "active": [
     {
-      "id": "beads",
-      "displayName": "beads",
-      "required": true,
-      "ownership": "xtrm"
-    },
-    {
       "id": "compact-header",
       "displayName": "compact-header",
       "required": false,
@@ -31,12 +25,6 @@
       "required": false,
       "ownership": "xtrm",
       "description": "Persistent python3 kernel: skills-as-imports, prelude, output truncation, audit seam"
-    },
-    {
-      "id": "session-flow",
-      "displayName": "session-flow",
-      "required": true,
-      "ownership": "xtrm"
     },
     {
       "id": "sp-terminal-overlay",
@@ -92,6 +80,8 @@
     "gitnexus": "Retired extension; functionality is provided by the npm:pi-gitnexus package.",
     "serena": "Retired extension; XTRM no longer manages Serena MCP integration.",
     "service-knowledge": "Relocated to @jaggerxtrm/pi-service-knowledge (xtrm-6z6.5): co-locates with the service-knowledge Python package in the xtrm repo. See packages/service-knowledge-ext in xtrm.",
-    "xtrm-loader": "Retired (bd-memory retirement): doctrine-only loader with no remaining injection behavior."
+    "xtrm-loader": "Retired (bd-memory retirement): doctrine-only loader with no remaining injection behavior.",
+    "beads": "Retired (CORE-2372): the bd-claim edit gate and the open-claim commit gate blocked edits and commits on the retired Beads board. Substrate owns work authorization; a gate is not replaced. Sources, policy, shim and legacy-path-map entry removed.",
+    "session-flow": "Retired (CORE-2372): Beads claim-sync notice and Beads stop gate only. Sources, policy, shim and legacy-path-map entry removed with the beads gate."
   }
 }

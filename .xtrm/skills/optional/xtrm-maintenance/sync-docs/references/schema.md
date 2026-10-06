@@ -96,7 +96,6 @@ updated: 2026-03-18
 description: "All hook events, scripts, and behavior for the xtrm plugin"
 source_of_truth_for:
   - "hooks/**/*.mjs"
-  - "policies/beads.json"
   - "policies/main-guard.json"
 domain: [hooks, claude, enforcement]
 ---
