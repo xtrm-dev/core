@@ -431,6 +431,8 @@ describe("CORE-2358 result-lines pref and payload indent", async () => {
     expect(DEFAULT_PREFS.resultPreviewLines).toBe(6);
     expect(normalizePrefs({}).resultPreviewLines).toBe(6);
     expect(normalizePrefs({ resultPreviewLines: 99 }).resultPreviewLines).toBe(50);
+    expect(normalizePrefs({}).diffPreviewLines).toBe(18);
+    expect(normalizePrefs({ diffPreviewLines: 99 }).diffPreviewLines).toBe(50);
   });
 });
 

@@ -61,6 +61,7 @@ export interface XtrmUiPrefs {
   toolRowBg: boolean;
   commandPreviewLines: number;
   resultPreviewLines: number;
+  diffPreviewLines: number;
 }
 
 // ============================================================================
@@ -77,6 +78,7 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   toolRowBg: false,
   commandPreviewLines: 4,
   resultPreviewLines: 6,
+  diffPreviewLines: 18,
 };
 
 /** Collapsed command/code lines before the hidden-count line. Agent context is
@@ -111,11 +113,17 @@ export function normalizePrefs(input: unknown): XtrmUiPrefs {
     toolRowBg: source.toolRowBg ?? DEFAULT_PREFS.toolRowBg,
     commandPreviewLines: normalizeCommandPreviewLines(source.commandPreviewLines),
     resultPreviewLines: normalizeResultPreviewLines((source as { resultPreviewLines?: unknown }).resultPreviewLines),
+    diffPreviewLines: normalizeDiffPreviewLines((source as { diffPreviewLines?: unknown }).diffPreviewLines),
   };
 }
 
 function normalizeResultPreviewLines(value: unknown): number {
   const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : DEFAULT_PREFS.resultPreviewLines;
+  return Math.min(50, Math.max(1, n));
+}
+
+function normalizeDiffPreviewLines(value: unknown): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : DEFAULT_PREFS.diffPreviewLines;
   return Math.min(50, Math.max(1, n));
 }
 
@@ -995,6 +1003,7 @@ function registerCommands(
         `Tool row background: ${prefs.toolRowBg ? "on" : "off"}`,
       `Command lines: ${prefs.commandPreviewLines}`,
       `Result lines: ${prefs.resultPreviewLines}`,
+      `Diff lines: ${prefs.diffPreviewLines}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ].join("\n"));
@@ -1130,6 +1139,22 @@ function registerCommands(
       persistPrefs(pi, prefs);
       applyXtrmChrome(ctx, prefs, getThinkingLevel);
       ctx.ui.notify(`Collapsed result lines set to ${n}.`, "info");
+    },
+  });
+
+  pi.registerCommand("xtrm-ui-diff-lines", {
+    description: "Diff preview lines for edit/write rows: 1-50",
+    handler: async (args, ctx) => {
+      const n = Math.floor(Number(args.trim()));
+      if (!Number.isFinite(n) || n < 1 || n > 50) {
+        ctx.ui.notify("Usage: /xtrm-ui-diff-lines <1-50>", "warning");
+        return;
+      }
+      const prefs = { ...getPrefs(), diffPreviewLines: n };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      applyXtrmChrome(ctx, prefs, getThinkingLevel);
+      ctx.ui.notify(`Diff preview lines set to ${n}.`, "info");
     },
   });
 
@@ -1581,7 +1606,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         "success",
         "edit",
         path,
-        details.diff ? renderRichDiffPreview(theme, details.diff, getPrefs().resultPreviewLines).split("\n") : [],
+        details.diff ? renderRichDiffPreview(theme, details.diff, getPrefs().diffPreviewLines).split("\n") : [],
         joinMeta([`+${stats.additions}`, `-${stats.removals}`, renderDuration(context)]),
       );
       return toolRowText(theme, text);
@@ -1637,7 +1662,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
           "success",
           "write",
           path,
-          preview.diff ? renderRichDiffPreview(theme, preview.diff, getPrefs().resultPreviewLines).split("\n") : [],
+          preview.diff ? renderRichDiffPreview(theme, preview.diff, getPrefs().diffPreviewLines).split("\n") : [],
           joinMeta([`+${preview.additions}`, `-${preview.removals}`, renderDuration(context)]),
         ));
       }
