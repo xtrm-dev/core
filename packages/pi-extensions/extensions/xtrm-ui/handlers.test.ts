@@ -451,3 +451,20 @@ describe("CORE-2358 chained commands segment before capping", async () => {
     expect(lines[4]).toContain(" … +2 lines");
   });
 });
+
+describe("CORE-2358 expanded bash shows the whole command", async () => {
+  const { renderBashTree } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+  const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
+
+  test("expanded ignores the cap, collapsed keeps it", () => {
+    const cmd = "a && b && c && d && e && f";
+    const collapsed = renderBashTree(theme, "success", cmd, [], undefined, 2, false).split("\n").map(strip);
+    expect(collapsed.some((l) => l.includes("+"))).toBe(true);
+    const expanded = renderBashTree(theme, "success", cmd, [], undefined, 2, true).split("\n").map(strip);
+    expect(expanded.some((l) => l.includes("+"))).toBe(false);
+    expect(expanded.join("\n")).toContain("e &&");
+  });
+});

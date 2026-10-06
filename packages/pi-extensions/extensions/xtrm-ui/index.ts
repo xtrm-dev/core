@@ -492,7 +492,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 33;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 34;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -1263,10 +1263,11 @@ export function renderBashTree(
   outputLines: string[] = [],
   meta?: string,
   commandCap: number = DEFAULT_COMMAND_PREVIEW_LINES,
+  expanded = false,
 ): string {
   const commandColor = statusColor === "success" ? "text" : "dim";
   const allCommands = splitCommandSegments(command).flatMap((seg) => seg.split("\n"));
-  const cap = Math.min(Math.max(1, commandCap), allCommands.length);
+  const cap = expanded ? allCommands.length : Math.min(Math.max(1, commandCap), allCommands.length);
   const [firstCommand = "", ...continuedCommands] = allCommands.slice(0, cap);
   const hiddenCommands = allCommands.length - cap;
   // theme.bold is a chalk no-op in pi's runtime; emit the SGR escape directly.
@@ -1293,9 +1294,9 @@ function renderNamedToolTree(
   ], outputLines, meta);
 }
 
-function renderPendingCall(toolName: string, args: Record<string, unknown>, theme: any, commandCap: number = DEFAULT_COMMAND_PREVIEW_LINES): Text {
+function renderPendingCall(toolName: string, args: Record<string, unknown>, theme: any, commandCap: number = DEFAULT_COMMAND_PREVIEW_LINES, expanded = false): Text {
   if (toolName === "bash") {
-    return new Text(renderBashTree(theme, "accent", String(args.command ?? ""), [], undefined, commandCap), 0, 0);
+    return new Text(renderBashTree(theme, "accent", String(args.command ?? ""), [], undefined, commandCap, expanded), 0, 0);
   }
   return new Text(renderNamedToolTree(theme, "accent", toolName, summarizeToolSubject(toolName, args) ?? ""), 0, 0);
 }
@@ -1483,7 +1484,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const command = String(args.command ?? "");
       if (isPartial) {
-        return toolRowText(theme, renderBashTree(theme, "accent", command, [], undefined, getPrefs().commandPreviewLines));
+        return toolRowText(theme, renderBashTree(theme, "accent", command, [], undefined, getPrefs().commandPreviewLines, expanded));
       }
       const output = getTextContent(result as any);
       const outputLines = cleanOutputLines(output);
@@ -1495,7 +1496,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         renderDuration(context),
         formatPayloadSize(output),
         details.truncation?.truncated ? "truncated" : undefined,
-      ]), getPrefs().commandPreviewLines);
+      ]), getPrefs().commandPreviewLines, expanded);
       return toolRowText(theme, text);
     },
   });
