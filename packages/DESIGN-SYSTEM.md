@@ -32,9 +32,10 @@ survives both. The cost is that the helpers must live in one place and be import
 re-invented per file.
 
 ```ts
-// packages/pi-extensions/extensions/substrate-suggest/catalog.ts
-const GOLD_ON = "\x1b[48;2;201;162;39m\x1b[38;2;24;20;16m";
-const GOLD_OFF = "\x1b[49m\x1b[39m";
+// packages/pi-extensions/shared/suggest.ts
+const bandOn = (bg: CardAccent) => `\x1b[48;2;${bg[0]};${bg[1]};${bg[2]}m\x1b[38;2;24;20;16m`;
+export const SKILL_ACCENT = [0, 103, 188] as const; // #0067BC blue
+export const SUBSTRATE_ACCENT = [255, 112, 52] as const; // #FF7034 bright orange
 ```
 
 The Specialists repo (`@jaggerxtrm/specialists`) cannot import from `packages/`, so it
@@ -45,19 +46,21 @@ token changes, both copies change in the same commit.**
 
 | Role | Value | Notes |
 |---|---|---|
-| Signal band | bg `#C9A227`, fg `#181410` | the only background on a card |
+| Signal band (skill) | bg `#0067BC`, fg `#181410` | skill-suggest headers only |
+| Signal band (substrate) | bg `#FF7034`, fg `#181410` | substrate-suggest headers only |
 | Dot | `●` (`\x1b[1m●\x1b[22m`) | white, **never** inside the band |
 | Severity glyph | `!` in `#33` | replaces the dot on `high` |
 | Header text | dark bold, spanning the whole band | |
-| Header separator | `·` dim (`\x1b[2m·\x1b[1m`) | never white — white fights the gold |
-| Body | italic (`\x1b[3m`) on normal background | never banded |
-| Facts | dim | labelled, always |
+| Header separator | `·` dim (`\x1b[2m·\x1b[1m`) | never white — white fights the band |
+| Body | italic (`\x1b[3m`) on normal background | never banded, never ends in `.` before facts
+| Facts | dim | labelled, always; never preceded by a period
 | Accent | `#9A8BFF` | footer chrome, thinking level, live spinner only |
 | Section chip | bg `#D0D0D6`, fg `#16161A` | footer `SPECIALISTS` label |
 | Semantic text | `#4FB88A` / `#D9A441` / `#D9534F` | success / warning / failure |
 
 **Colour proportion.** A card is roughly 90% normal background and ink, a few percent dim
-facts, and at most 5% gold — and the gold is **only** the header band. A second background
+facts, and at most 5% band — and the band is **only** the header band, one accent per
+suggester. A second background
 on the same card is a defect, not a style.
 
 ## Rules that make a surface read as ours
@@ -167,7 +170,7 @@ Injected context, not the operator's words:
 
 | Thing | Path |
 |---|---|
-| Card chrome, tokens, context blocks | `packages/pi-extensions/extensions/substrate-suggest/catalog.ts` |
+| Card chrome, tokens, context blocks | `packages/pi-extensions/shared/suggest.ts` |
 | Specialist cards (copy of the tokens) | `@jaggerxtrm/specialists/config/pi-extensions/native-specialists/index.mjs` |
 | Footer chips, accent | `packages/pi-extensions/extensions/xtrm-ui`, `custom-footer` |
 | Extension enrolment | `packages/pi-extensions/src/manifest.json` |
@@ -176,11 +179,11 @@ Injected context, not the operator's words:
 ## Before you call it done
 
 - [ ] Rendered sample checked in a real terminal, not only in a test.
-- [ ] Gold appears on the header line and on **no other** line.
+- [ ] The suggester's accent appears on the header line and on **no other** line.
 - [ ] Bold spans the full header; the only `\x1b[22m` inside the band is the one that
       closes it.
 - [ ] Body italic, unbanded, no trailing padding.
-- [ ] A test asserts gold-on-line-one and no-gold-below — a renderer that throws falls
+- [ ] A test asserts accent-on-line-one and no-accent-below — a renderer that throws falls
       back to raw content, and only a test catches the regression.
 - [ ] Every fact is labelled; every command is copyable.
 - [ ] Nothing the operator typed has been altered.
