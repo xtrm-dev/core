@@ -34,8 +34,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, type VerbSpec } from "../substrate-suggest/catalog.ts";
-import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../substrate-suggest/jev.ts";
+import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, type VerbSpec } from "../../shared/suggest.ts";
+import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
 /**
