@@ -30,6 +30,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 const DRIVER = `
@@ -867,6 +868,16 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 			"For a project's own tests, scripts, and CLIs, use the project's documented environment (uv run, .venv/bin/python, npm run) rather than the kernel.",
 		],
 		executionMode: "sequential",
+		// CORE-2358: without a renderCall Pi falls back to a 100-char
+		// JSON preview of args — the executed code is effectively hidden.
+		// Show it the way bash shows its command: the full text.
+		renderCall: (args, theme) => {
+			const code = String((args as { code?: unknown }).code ?? "");
+			const head = theme.fg("toolTitle", theme.bold("python"));
+			if (!code) return new Text(head, 0, 0);
+			const lines = code.split("\n").map((l) => `  ${theme.fg("muted", l)}`);
+			return new Text([head, ...lines].join("\n"), 0, 0);
+		},
 		parameters: Type.Object({
 			code: Type.String({ description: "Python code to execute in the persistent kernel." }),
 			reset: Type.Optional(

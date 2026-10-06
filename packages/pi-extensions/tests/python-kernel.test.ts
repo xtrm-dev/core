@@ -657,3 +657,16 @@ describe("python-kernel managed extension", () => {
     }
   });
 });
+
+describe("CORE-2358 python call rendering", () => {
+  test("renderCall shows the full executed code, not a truncated preview", () => {
+    const pi = fakePi();
+    extension.default(pi as any);
+    const tool = pi.tools.find((t: any) => t.name === "python");
+    const theme = { fg: (_name: string, t: string) => t, bold: (t: string) => t };
+    const code = "import json\nprint(json.dumps({'a': 1}))\n# third line proves no truncation";
+    const component = tool.renderCall({ code }, theme, {}) as { text: string };
+    expect(component.text).toContain("import json");
+    expect(component.text).toContain("third line proves no truncation");
+  });
+});
