@@ -431,6 +431,15 @@ describe("CORE-2358 result-lines pref and payload indent", async () => {
     expect(lines[1]).toBe("  c2");
     expect(lines[2]).toBe("  └ o1");
   });
+  test("extension frame prefs default, clamp, and fail open", () => {
+    expect(DEFAULT_PREFS.extPreviewLines).toBe(6);
+    expect(DEFAULT_PREFS.extNoCompact).toBe(false);
+    expect(normalizePrefs({}).extPreviewLines).toBe(6);
+    expect(normalizePrefs({ extPreviewLines: 99 }).extPreviewLines).toBe(50);
+    expect(normalizePrefs({ extPreviewLines: 0 }).extPreviewLines).toBe(1);
+    expect(normalizePrefs({}).extNoCompact).toBe(false);
+    expect(normalizePrefs({ extNoCompact: true }).extNoCompact).toBe(true);
+  });
   test("result pref defaults 6, clamps 1-50", () => {
     expect(DEFAULT_PREFS.resultPreviewLines).toBe(6);
     expect(normalizePrefs({}).resultPreviewLines).toBe(6);

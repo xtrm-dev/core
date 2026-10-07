@@ -141,6 +141,8 @@ describe("xtrm-ui commands", () => {
     "xtrm-ui-command-lines",
     "xtrm-ui-density",
     "xtrm-ui-diff-lines",
+    "xtrm-ui-ext-compact",
+    "xtrm-ui-ext-lines",
     "xtrm-ui-forcetheme",
     "xtrm-ui-header",
     "xtrm-ui-reset",
@@ -241,11 +243,33 @@ describe("xtrm-ui commands", () => {
       density: "compact",
       commandPreviewLines: 4,
       diffPreviewLines: 18,
+      extNoCompact: false,
+      extPreviewLines: 6,
       resultPreviewLines: 6,
       showHeader: true,
       forceTheme: true,
       toolRowBg: false,
     });
+  });
+
+  it("regulates extension compaction with two dedicated commands", async () => {
+    const { commands, entries } = loadExtension();
+    const { context, notifications } = commandContext();
+
+    await commands["xtrm-ui-ext-lines"].handler("3", context);
+    expect(entries.at(-1)).toMatchObject({ customType: "xtrm-ui-prefs", data: { extPreviewLines: 3 } });
+
+    await commands["xtrm-ui-ext-lines"].handler("99", context);
+    expect(notifications.at(-1)).toEqual(["Usage: /xtrm-ui-ext-lines <1-50>", "warning"]);
+
+    await commands["xtrm-ui-ext-compact"].handler("off", context);
+    expect(entries.at(-1)).toMatchObject({ customType: "xtrm-ui-prefs", data: { extNoCompact: true } });
+
+    await commands["xtrm-ui-ext-compact"].handler("on", context);
+    expect(entries.at(-1)).toMatchObject({ customType: "xtrm-ui-prefs", data: { extNoCompact: false } });
+
+    await commands["xtrm-ui-ext-compact"].handler("maybe", context);
+    expect(notifications.at(-1)).toEqual(["Usage: /xtrm-ui-ext-compact on|off", "warning"]);
   });
 
   it("migrates legacy session themes without restoring obsolete preferences", async () => {

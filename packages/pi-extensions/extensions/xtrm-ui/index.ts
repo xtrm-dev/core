@@ -62,6 +62,8 @@ export interface XtrmUiPrefs {
   commandPreviewLines: number;
   resultPreviewLines: number;
   diffPreviewLines: number;
+  extPreviewLines: number;
+  extNoCompact: boolean;
 }
 
 // ============================================================================
@@ -79,6 +81,8 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   commandPreviewLines: 4,
   resultPreviewLines: 6,
   diffPreviewLines: 18,
+  extPreviewLines: 6,
+  extNoCompact: false,
 };
 
 /** Collapsed command/code lines before the hidden-count line. Agent context is
@@ -114,6 +118,8 @@ export function normalizePrefs(input: unknown, base: XtrmUiPrefs = DEFAULT_PREFS
     commandPreviewLines: normalizeCappedLines(source.commandPreviewLines, base.commandPreviewLines, 20),
     resultPreviewLines: normalizeCappedLines((source as { resultPreviewLines?: unknown }).resultPreviewLines, base.resultPreviewLines, 50),
     diffPreviewLines: normalizeCappedLines((source as { diffPreviewLines?: unknown }).diffPreviewLines, base.diffPreviewLines, 50),
+    extPreviewLines: normalizeCappedLines((source as { extPreviewLines?: unknown }).extPreviewLines, base.extPreviewLines, 50),
+    extNoCompact: source.extNoCompact ?? DEFAULT_PREFS.extNoCompact,
   };
 }
 
@@ -795,7 +801,7 @@ async function installExternalToolFramePatch(): Promise<void> {
     }
     const firstContentIndex = rendered.findIndex((line) => !isBlankRenderedLine(line));
     const leading = firstContentIndex > 0 ? rendered.slice(0, firstContentIndex) : [];
-    const isExpanded = Boolean(this.expanded);
+    const isExpanded = Boolean(this.expanded) || activeExtNoCompact();
     const content = externalToolContentLines(this, rendered, isExpanded);
     const preview = externalToolCodePreview(this.toolName, getToolArgs(this));
     const bareHeader = !preview;
@@ -812,7 +818,7 @@ async function installExternalToolFramePatch(): Promise<void> {
         this.__xtrmExternalDurationMs,
         status,
         bareHeader,
-        activeResultPreviewLines(),
+        activeExtPreviewLines(),
         callSummary,
       );
     } catch {
@@ -1021,6 +1027,8 @@ function registerCommands(
       `Command lines: ${prefs.commandPreviewLines}`,
       `Result lines: ${prefs.resultPreviewLines}`,
       `Diff lines: ${prefs.diffPreviewLines}`,
+      `Extension lines: ${prefs.extPreviewLines}`,
+      `Extension compaction: ${prefs.extNoCompact ? "off" : "on"}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ].join("\n"));
@@ -1159,6 +1167,42 @@ function registerCommands(
     },
   });
 
+  pi.registerCommand("xtrm-ui-ext-lines", {
+    description: "Compacted visible lines for extension tool frames: 1-50",
+    handler: async (args, ctx) => {
+      const n = Math.floor(Number(args.trim()));
+      if (!Number.isFinite(n) || n < 1 || n > 50) {
+        ctx.ui.notify("Usage: /xtrm-ui-ext-lines <1-50>", "warning");
+        return;
+      }
+      const prefs = { ...getPrefs(), extPreviewLines: n };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      applyXtrmChrome(ctx, prefs, getThinkingLevel);
+      ctx.ui.notify(`Extension compacted lines set to ${n}.`, "info");
+    },
+  });
+
+  pi.registerCommand("xtrm-ui-ext-compact", {
+    description: "Compact extension tool output: on|off (off never compacts)",
+    getArgumentCompletions: (prefix) => {
+      const values = ["on", "off"].filter((item) => item.startsWith(prefix));
+      return values.length > 0 ? values.map((value) => ({ value, label: value })) : null;
+    },
+    handler: async (args, ctx) => {
+      const on = parseToggleArg(args);
+      if (on === undefined) {
+        ctx.ui.notify("Usage: /xtrm-ui-ext-compact on|off", "warning");
+        return;
+      }
+      const prefs = { ...getPrefs(), extNoCompact: !on };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      applyXtrmChrome(ctx, prefs, getThinkingLevel);
+      ctx.ui.notify(`Extension compaction ${on ? "enabled" : "disabled"}.`, "info");
+    },
+  });
+
   pi.registerCommand("xtrm-ui-diff-lines", {
     description: "Diff preview lines for edit/write rows: 1-50",
     handler: async (args, ctx) => {
@@ -1282,6 +1326,16 @@ function appendToolTree(
 let activePrefsSnapshot: XtrmUiPrefs | null = null;
 export function activeResultPreviewLines(): number {
   return activePrefsSnapshot?.resultPreviewLines ?? DEFAULT_PREFS.resultPreviewLines;
+}
+
+/** Compacted visible-line cap for extension frames (`/xtrm-ui-ext-lines`). */
+export function activeExtPreviewLines(): number {
+  return activePrefsSnapshot?.extPreviewLines ?? DEFAULT_PREFS.extPreviewLines;
+}
+
+/** Never compact extension output (`/xtrm-ui-ext-compact off`). */
+export function activeExtNoCompact(): boolean {
+  return activePrefsSnapshot?.extNoCompact ?? DEFAULT_PREFS.extNoCompact;
 }
 
 /** Display-only segmentation: a `&&`/`||` chain is one string, so split it

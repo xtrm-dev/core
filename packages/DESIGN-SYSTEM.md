@@ -121,9 +121,11 @@ Native (`Ran`) and external (`used <provider> <tool>`) rows share one grammar:
   tokens from the model: the agent context is built from raw args and result
   objects, which renderers receive read-only. A row that mutates args or
   results to achieve its look is a defect, not a style.
-- **Three collapsible surfaces, three settings.** Command/code lines
+- **Collapsible surfaces, one per renderer.** Command/code lines
   (`/xtrm-ui-command-lines`, default 4), result lines (`/xtrm-ui-result-lines`,
-  default 6), diff lines (`/xtrm-ui-diff-lines`, default 18). Precedence:
+  default 6), diff lines (`/xtrm-ui-diff-lines`, default 18), extension frames
+  (`/xtrm-ui-ext-lines`, default 6). Extension compaction can be switched off
+  entirely (`/xtrm-ui-ext-compact off` shows full output). Precedence:
   session entry → `~/.pi/settings.json` (`xtrmUi` key) → built-ins.
 
 ## Voice
