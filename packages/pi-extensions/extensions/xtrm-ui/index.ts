@@ -600,16 +600,18 @@ export function externalToolContentLines(
   const preview = externalToolCodePreview(component.toolName, getToolArgs(component));
   if (!preview) return extractResultTextLines(component) ?? rendered;
   // Pending: the program is the content. Resolved: program above output.
-  // The output block renders dimmed: the call above is the eye anchor.
-  // Collapsed: 4 code lines + a `showing X/N lines` count (N = code lines),
-  // no expand hint — the footer already carries it.
+  // The output block renders dimmed with no indentation: the call above is
+  // the eye anchor. Collapsed: 4 code lines + a ` … +N lines` count (same shape as the
+  // bash frame), no expand hint — the footer already carries it.
   const shown = expanded ? preview : preview.slice(0, 4);
   const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
   const dimmed = tail.map((l) => (l.trim().length > 0 ? `\x1b[2m${l}\x1b[22m` : l));
-  const count = !expanded && preview.length > shown.length
-    ? [` \x1b[2m\x1b[3m … +${preview.length - shown.length} lines\x1b[23m\x1b[22m`]
+  const hidden = preview.length - shown.length;
+  const count = !expanded && hidden > 0
+    ? [` \x1b[2m\x1b[3m … +${hidden} lines\x1b[23m\x1b[22m`]
     : [];
-  return [...shown, ...count, ...dimmed];
+  const indentedCode = shown.map((l) => (l.length > 0 ? `  ${l}` : l));
+  return [...indentedCode, ...count, ...dimmed];
 }
 
 function trimRenderedToolLines(lines: string[]): string[] {
@@ -651,12 +653,13 @@ function externalToolHeader(
   kind: ExternalToolFrameKind,
   toolName: string | undefined,
   firstLine: string,
+  callSummary?: string,
 ): { provider: string; action?: string } {
   const bracketHeader = firstLine.match(/^(?:[•›●]\s+)?\[([A-Za-z][A-Za-z0-9 _-]{0,31})\](?:\s+(\S+))?/u);
   const markerHeader = firstLine.match(/^[•›●]\s+(\S+)(?:\s+(\S+))?/u);
   return {
     provider: bracketHeader?.[1] ?? externalToolProvider(kind, toolName),
-    action: externalToolAction(kind, toolName) ?? bracketHeader?.[2] ?? markerHeader?.[2],
+    action: externalToolAction(kind, toolName) ?? bracketHeader?.[2] ?? markerHeader?.[2] ?? callSummary,
   };
 }
 
@@ -670,6 +673,7 @@ export function renderExternalToolBackgroundLines(
   status: ToolRowStatus = "pending",
   bareHeader = false,
   resultCap: number = DEFAULT_PREFS.resultPreviewLines,
+  callSummary?: string,
 ): string[] {
   let displayLines = contentLines;
   const raw = contentLines.length === 1 ? contentLines[0]?.trim() : undefined;
@@ -688,7 +692,7 @@ export function renderExternalToolBackgroundLines(
   // line shaped like a header (`[X]`, `● word`) hijacks the header row.
   const header = bareHeader
     ? bareExternalToolHeader(kind, toolName)
-    : externalToolHeader(kind, toolName, firstLine);
+    : externalToolHeader(kind, toolName, firstLine, callSummary);
   const payloadLines = hasHeader && !bareHeader ? displayLines.slice(1) : displayLines;
   const headerLine = externalToolHeaderLine(status, header.provider, header.action);
   displayLines = [headerLine, ...payloadLines];
@@ -706,9 +710,11 @@ export function renderExternalToolBackgroundLines(
     formatPayloadSize(contentLines.join("\n")),
   ]);
   const renderWidth = Math.max(8, width);
+  // Payload lines carry their own indentation (code previews indent at
+  // creation); the frame never adds any — output sits flush under the call.
   const body = [
     truncateToWidth(renderedHeader, renderWidth),
-    ...visiblePayload.map((rawLine) => truncateToWidth(rawLine.length > 0 ? `  ${rawLine}` : rawLine, renderWidth)),
+    ...visiblePayload.map((rawLine) => truncateToWidth(rawLine, renderWidth)),
   ];
   return footerMeta
     ? [...body, `\x1b[2m${truncateToWidth(`└─ ${footerMeta}`, renderWidth)}\x1b[22m`]
@@ -738,10 +744,11 @@ function renderExternalToolLines(
   status: ToolRowStatus = "pending",
   bareHeader = false,
   resultCap: number = DEFAULT_PREFS.resultPreviewLines,
+  callSummary?: string,
 ): string[] {
   const contentLines = trimRenderedToolLines(lines).filter((line) => !isBlankRenderedLine(line));
   return contentLines.length > 0
-    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, bareHeader, resultCap)
+    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, bareHeader, resultCap, callSummary)
     : [];
 }
 
@@ -790,7 +797,9 @@ async function installExternalToolFramePatch(): Promise<void> {
     const leading = firstContentIndex > 0 ? rendered.slice(0, firstContentIndex) : [];
     const isExpanded = Boolean(this.expanded);
     const content = externalToolContentLines(this, rendered, isExpanded);
-    const bareHeader = !externalToolCodePreview(this.toolName, getToolArgs(this));
+    const preview = externalToolCodePreview(this.toolName, getToolArgs(this));
+    const bareHeader = !preview;
+    const callSummary = preview?.[0]?.trim() || undefined;
     const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
     let styled: string[];
     try {
@@ -804,6 +813,7 @@ async function installExternalToolFramePatch(): Promise<void> {
         status,
         bareHeader,
         activeResultPreviewLines(),
+        callSummary,
       );
     } catch {
       // A patched renderer must never take the interactive mode down.
