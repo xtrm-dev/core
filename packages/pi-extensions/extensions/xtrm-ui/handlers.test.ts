@@ -344,11 +344,11 @@ describe("CORE-2358 external frame shows executed code", async () => {
       args: { code: "print(1)" },
       result: { content: [{ type: "text", text: "1" }] },
     };
-    expect(externalToolContentLines(component as never, [])).toEqual(["print(1)", "\x1b[2m1\x1b[22m"]);
+    expect(externalToolContentLines(component as never, [])).toEqual(["  print(1)", "\x1b[2m1\x1b[22m"]);
   });
   test("pending content is the program alone", () => {
     const component = { toolName: "python", args: { code: "print(1)" }, result: null };
-    expect(externalToolContentLines(component as never, ["fallback"])).toEqual(["print(1)"]);
+    expect(externalToolContentLines(component as never, ["fallback"])).toEqual(["  print(1)"]);
   });
 });
 
@@ -357,11 +357,11 @@ describe("CORE-2358 collapsed code cap and dimmed output", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("collapsed shows 4 code lines plus a showing X/N count, expanded shows all", () => {
+  test("collapsed shows 4 code lines plus a native-style hidden count, expanded shows all", () => {
     const code = "l1\nl2\nl3\nl4\nl5";
     const component = { toolName: "python", args: { code }, result: { content: [{ type: "text", text: "out" }] } };
-    expect(externalToolContentLines(component as never, [], false)).toEqual(["l1", "l2", "l3", "l4", " \x1b[2m\x1b[3m … +1 lines\x1b[23m\x1b[22m", "\x1b[2mout\x1b[22m"]);
-    expect(externalToolContentLines(component as never, [], true)).toEqual(["l1", "l2", "l3", "l4", "l5", "\x1b[2mout\x1b[22m"]);
+    expect(externalToolContentLines(component as never, [], false)).toEqual(["  l1", "  l2", "  l3", "  l4", " \x1b[2m\x1b[3m … +1 lines\x1b[23m\x1b[22m", "\x1b[2mout\x1b[22m"]);
+    expect(externalToolContentLines(component as never, [], true)).toEqual(["  l1", "  l2", "  l3", "  l4", "  l5", "\x1b[2mout\x1b[22m"]);
   });
 
 });
@@ -415,10 +415,14 @@ describe("CORE-2358 result-lines pref and payload indent", async () => {
   const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
   const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
 
-  test("frame payload indents two spaces under a flush header", () => {
+  test("frame output sits flush under the call, code keeps its indent", () => {
     const rows = renderExternalToolBackgroundLines(["out1", "out2"], 80, "external", false, "some_tool", 5, "success", true, 6);
     expect(strip(rows[0]).startsWith("●")).toBe(true);
-    expect(strip(rows[1]).startsWith("  out1")).toBe(true);
+    expect(strip(rows[1])).toBe("out1");
+  });
+  test("header carries the first code line as summary", () => {
+    const rows = renderExternalToolBackgroundLines(["  import json", "\x1b[2m2\x1b[22m"], 80, "external", false, "python", 903, "success", false, 6, "import json");
+    expect(strip(rows[0])).toContain("import json");
   });
   test("bash continued lines indent, header stays flush", () => {
     const out = renderBashTree(theme, "success", "c1\nc2", ["o1"], undefined, 4);
@@ -426,6 +430,15 @@ describe("CORE-2358 result-lines pref and payload indent", async () => {
     expect(lines[0].startsWith("●")).toBe(true);
     expect(lines[1]).toBe("  c2");
     expect(lines[2]).toBe("  └ o1");
+  });
+  test("extension frame prefs default, clamp, and fail open", () => {
+    expect(DEFAULT_PREFS.extPreviewLines).toBe(6);
+    expect(DEFAULT_PREFS.extNoCompact).toBe(false);
+    expect(normalizePrefs({}).extPreviewLines).toBe(6);
+    expect(normalizePrefs({ extPreviewLines: 99 }).extPreviewLines).toBe(50);
+    expect(normalizePrefs({ extPreviewLines: 0 }).extPreviewLines).toBe(1);
+    expect(normalizePrefs({}).extNoCompact).toBe(false);
+    expect(normalizePrefs({ extNoCompact: true }).extNoCompact).toBe(true);
   });
   test("result pref defaults 6, clamps 1-50", () => {
     expect(DEFAULT_PREFS.resultPreviewLines).toBe(6);
