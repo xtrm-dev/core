@@ -3,7 +3,9 @@
 - Source: `alibaba/open-code-review`, `plugins/open-code-review/skills/` (SKILL.md +
   DELEGATE.md, skill version 1.0.0), upstream HEAD `4a3844c42fe0` at fetch 2026-10-13.
   Local layout: `SKILL.md` root, delegation contract at `references/delegate.md`,
-  this record at `references/provenance.md` (vendored content unmodified).
+  usage/arguments/gotchas at `references/usage.md`, this record at `references/provenance.md`
+  (vendored content unmodified; sections relocated into `references/` to satisfy the
+  universal skill-root budget).
 - License: Apache-2.0 (repo LICENSE + skill frontmatter). Compatible with XTRM use.
 - Upstream files vendored unmodified. Local wiring (not upstream): `ocr` CLI installed
   globally (v1.12.13); durable provider `shimgo` → localhost shim → opencode.ai subscription

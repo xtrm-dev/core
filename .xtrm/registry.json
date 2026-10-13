@@ -81,6 +81,14 @@
       "install_mode": "copy",
       "install_scope": "global",
       "files": {
+        "codemode/references/runtime-shapes.md": {
+          "hash": "1ba443fbae9c5c79cca160010483c2d25056ca30d95078213b097d34b5a472a3",
+          "version": "0.15.2"
+        },
+        "codemode/SKILL.md": {
+          "hash": "7e97f4abdcf2129df18adc84974440f3e1632692eb6528f2fefbf832f4bb2607",
+          "version": "0.15.2"
+        },
         "engineering-quality/references/causal-debugging.md": {
           "hash": "097477d5061af6baab68bfe63a8b47c513c70df2762b0d04a443d42045665530",
           "version": "0.15.2"
@@ -90,7 +98,7 @@
           "version": "0.15.2"
         },
         "engineering-quality/references/review.md": {
-          "hash": "2d1ce01777895d7b7637445b9a5cc68a94e16e54b17607fc15ed28fb5a44a1fa",
+          "hash": "93b8304e8dfb716ec0446af91660763719da00d1646853b384f6c87d16e21211",
           "version": "0.15.2"
         },
         "engineering-quality/references/testing.md": {
@@ -106,7 +114,7 @@
           "version": "0.15.2"
         },
         "engineering-quality/SKILL.md": {
-          "hash": "6651666928a4947b1fc06c87e4290e6d345b36132d340abb542227158eda7918",
+          "hash": "da8d47c35da9c68d4213cb6ac10a49424b102263dc4bf12700a9c522e23a64c0",
           "version": "0.15.2"
         },
         "find-skills/SKILL.md": {
@@ -229,6 +237,22 @@
           "hash": "e2fda094b28672bfa31c480317cd2442c177999dbdef87b0dce92130ccc38b40",
           "version": "0.15.2"
         },
+        "open-code-review/references/delegate.md": {
+          "hash": "26b5badb00381839f0b25e6cdb5bad4a44dbb10b58fd49ebafd697fda461628f",
+          "version": "0.15.2"
+        },
+        "open-code-review/references/provenance.md": {
+          "hash": "2aa8d104dda0f0614c3c9e948b23810fcc8cc7edebbb39118500bc6dd1ae4354",
+          "version": "0.15.2"
+        },
+        "open-code-review/references/usage.md": {
+          "hash": "3f32f3d01ceb7302cb9970bffe177c341c9049cd6a0838b447aa04dc0d23c966",
+          "version": "0.15.2"
+        },
+        "open-code-review/SKILL.md": {
+          "hash": "36acb24bb5aed5bb0ee74f1a617ff2f5cd6f110ba7d87eb690eada63f22f94b0",
+          "version": "0.15.2"
+        },
         "planning/references/board-triage.md": {
           "hash": "e75e868b86975ec6eecc299b47799807fe05cf6b711848c29911776517bdd514",
           "version": "0.15.2"
@@ -254,7 +278,7 @@
           "version": "0.15.2"
         },
         "README.txt": {
-          "hash": "8342d811627c6a2d70c0bad49dea6f30d072ce5047d9dc8bf80f7e94e34000dc",
+          "hash": "1fc9be0c7af66125f1dc97b490b28d1bd485c475ab28194a78b388f5083a68dc",
           "version": "0.15.2"
         },
         "skill-creator/agents/analyzer.md": {
@@ -960,7 +984,11 @@
           "version": "0.15.2"
         },
         "instructions/global-system-prompt.md": {
-          "hash": "8f1237caa169d8a085cfd5a362c9dbfe05d495e606e12ec36bbb1fc81c8ec679",
+          "hash": "9483521513fee7c5cc15b2b0632e57c53ebdf1a96aa2861a5eb1fc6cf81e3f99",
+          "version": "0.15.2"
+        },
+        "instructions/global-system-prompt.pi.md": {
+          "hash": "1cd84353c21224b792d28838502ab313ed844d71f1674e18c15d1a978d95afa1",
           "version": "0.15.2"
         },
         "pi.mcp.json": {
