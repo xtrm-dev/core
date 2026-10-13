@@ -56,8 +56,8 @@ resolution; all review judgment stays in this document. Do not call `ocr review`
    accounting (total, reviewed, skipped, coverage rate).
 
 Delegation output is evidence, never the verdict; do not invent gate semantics on top of it.
-The `open-code-review` skill (`SKILL.md`, `DELEGATE.md`) is a pack, not a default skill —
-declare its path explicitly when a run needs it.
+The `open-code-review` skill is vendored as a default skill: its delegation contract is
+`references/delegate.md` under `~/.xtrm/skills/default/open-code-review/`.
 
 ## AgentRun evidence (explicit scope only)
 

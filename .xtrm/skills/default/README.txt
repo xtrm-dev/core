@@ -12,6 +12,7 @@ Current core routers:
 - using-specialists — Specialists execution backend (vendored from xtrm-dev/specialists)
 - gitnexus — code-graph workflow router
 - codemode — programmatic tool calling: batch, filter and classify tool work in one JavaScript cell, composing the python kernel
+- open-code-review — LLM-free delegation lane over the `ocr` CLI (deterministic file selection and rules; the host agent judges)
 - skill-creator — skill authoring/evaluation
 - find-skills — governed third-party discovery/import
 
