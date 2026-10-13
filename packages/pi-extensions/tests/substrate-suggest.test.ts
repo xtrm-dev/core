@@ -18,7 +18,7 @@ import {
   SUBSTRATE_ACCENT,
 } from "../extensions/substrate-suggest/catalog.ts";
 import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
-import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb } from "../extensions/substrate-suggest/duties.ts";
+import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb, partitionTracked, trackedEditedFiles, buildProvenanceEvidence } from "../extensions/substrate-suggest/duties.ts";
 
 function snap(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
   return {
@@ -242,5 +242,55 @@ describe("CORE-2348 non-compact trailer", () => {
     const last = plain.split("\n").pop()!;
     expect(last).not.toMatch(/\.\s{2}/);
     expect(last).toMatch(/[^.]  jev_confidence/);
+  });
+});
+
+describe("provenance steer gates", () => {
+  it("partitionTracked splits on the injected check; unknown means untracked", () => {
+    const r = partitionTracked(["a.ts", "b.ts", "c.ts"], (f) => f !== "b.ts");
+    expect(r.tracked).toEqual(["a.ts", "c.ts"]);
+    expect(r.untracked).toEqual(["b.ts"]);
+    expect(partitionTracked([], () => true)).toEqual({ tracked: [], untracked: [] });
+  });
+
+  it("trackedEditedFiles keeps only git-tracked paths (temp repo)", () => {
+    const dir = `${process.env.TMPDIR ?? "/tmp"}/prov-gate-${Date.now()}`;
+    const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+    const fs = require("node:fs") as typeof import("node:fs");
+    fs.mkdirSync(dir, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["config", "user.email", "t@t"], { cwd: dir });
+    execFileSync("git", ["config", "user.name", "t"], { cwd: dir });
+    fs.writeFileSync(`${dir}/tracked.ts`, "export const a = 1;\n");
+    fs.writeFileSync(`${dir}/new.ts`, "export const b = 2;\n");
+    execFileSync("git", ["add", "tracked.ts"], { cwd: dir });
+    execFileSync("git", ["commit", "-qm", "seed tracked history"], { cwd: dir });
+    expect(trackedEditedFiles([`${dir}/tracked.ts`, `${dir}/new.ts`], dir)).toEqual([`${dir}/tracked.ts`]);
+    expect(trackedEditedFiles([`${dir}/new.ts`], dir)).toEqual([]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("trackedEditedFiles stays silent outside a repo", () => {
+    expect(trackedEditedFiles(["/tmp/ocr-shim/shim.js"], "/tmp")).toEqual([]);
+  });
+
+  it("buildProvenanceEvidence carries diffstat, last touch, and next commands", () => {
+    const dir = `${process.env.TMPDIR ?? "/tmp"}/prov-ev-${Date.now()}`;
+    const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+    const fs = require("node:fs") as typeof import("node:fs");
+    fs.mkdirSync(dir, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["config", "user.email", "t@t"], { cwd: dir });
+    execFileSync("git", ["config", "user.name", "t"], { cwd: dir });
+    fs.writeFileSync(`${dir}/f.ts`, "export const a = 1;\n");
+    execFileSync("git", ["add", "."], { cwd: dir });
+    execFileSync("git", ["commit", "-qm", "seed the why"], { cwd: dir });
+    fs.writeFileSync(`${dir}/f.ts`, "export const a = 2;\n");
+    const body = buildProvenanceEvidence([`${dir}/f.ts`], dir);
+    expect(body).toMatch(/1 insertion/);
+    expect(body).toMatch(/seed the why/);
+    expect(body).toMatch(/git log -p --follow/);
+    expect(body.length).toBeLessThanOrEqual(2000);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

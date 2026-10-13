@@ -71,7 +71,9 @@ import {
   waitGuardVerb,
   isEditor,
   isProvenanceReader,
+  buildProvenanceEvidence,
   provenanceDutyVerb,
+  trackedEditedFiles,
   type SkillEntry,
 } from "./duties.ts";
 import { evaluateToolNudge, newCounters, observeTool, type ToolCounters } from "./toolnudge.ts";
@@ -301,6 +303,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   let lastClaimScan = { at: 0, ref: null as string | null };
   let turnMonitorSet = false;
   let turnEditedFiles: string[] = [];
+  let turnSteeredFiles: string[] = [];
   let turnProvenanceSeen = false;
   const counters: ToolCounters = newCounters();
 
@@ -479,6 +482,51 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           return { content, structuredContent: e.structuredContent } as never;
         }
       }
+      // Provenance steer: tracked files edited this turn get evidence, not a
+      // nag — diffstat, last-touch lines, and the exact history commands to run
+      // next. Decided here at the tool_result seam (the agent reads it in the
+      // moment) and delivered as a display-only card; fire-and-forget with
+      // fail-open so slow git or Jev never breaks the turn. Untracked files
+      // and history-consulted turns stay silent by construction.
+      try {
+        const fresh = turnEditedFiles.filter((f) => !turnSteeredFiles.includes(f));
+        if (fresh.length > 0 && !turnProvenanceSeen) {
+          const tracked = trackedEditedFiles(fresh, process.cwd());
+          if (tracked.length > 0) {
+            turnSteeredFiles.push(...tracked);
+            const files = tracked;
+            void (async () => {
+              try {
+                const verb = provenanceDutyVerb(files);
+                if (!cooldownAllows(cooldowns, "prov", verb.id, Date.now(), verb)) return;
+                const result = await askJev(null, { edited_files: files.slice(0, 5) }, {
+                  provenance_source: {
+                    type: "choice",
+                    instructions: "Which history source should be consulted for these files, if any?",
+                    criteria: {
+                      git_log: "Commit messages on the touched paths.",
+                      pr_history: "Reviews and discussions on past PRs touching these files.",
+                      both: "Both git log and PR history.",
+                      none: "History would not change this change.",
+                    },
+                  },
+                  provenance_materially_helpful: { type: "noul", instructions: "Given these files were changed this turn without consulting commit or PR history, would the history plausibly change what the change should be or reveal it repeats a past mistake?" },
+                  sonata_harm: { type: "noul", instructions: "Is the change clearly the provenance-free kind (mechanical refactor, asked-for rename) where history consultation would be noise? (Untracked files never reach this question.)" },
+                } as Record<string, Question>);
+                const g = result ? ((result.nouls["provenance_materially_helpful"] ?? 0) + (1 - (result.nouls["sonata_harm"] ?? 0))) / 2 : 0;
+                if (!result || g < GATE_THRESHOLD) return;
+                applyCooldown(cooldowns, "prov", verb);
+                const evidence = buildProvenanceEvidence(files, process.cwd());
+                logDecision({ ts: new Date().toISOString(), issue: null, verb: verb.id, source: "jev", model: result.model ?? null });
+                pi.sendMessage(
+                  { customType: CUSTOM_TYPE, content: evidence, display: true, details: { verb: verb.id, midTurn: true } },
+                  { deliverAs: "followUp", triggerTurn: false },
+                );
+              } catch { /* fail-open: the turn continues without the steer */ }
+            })();
+          }
+        }
+      } catch { /* observation is best-effort */ }
     } catch {
       /* observation is best-effort */
     }
@@ -492,14 +540,17 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
 
   pi.on("agent_end", async (event, ctx) => {
     if (off()) return;
+    // A run that will retry is not over: keep accumulating turn state and
+    // evaluate duties once at the final end. Firing mid-stream nags about
+    // work that has not settled and repeats across continuations.
+    if ((event as { willRetry?: boolean }).willRetry === true) return;
     const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
     const { excerpt, lastAssistant, wasActive, nextIdx } = turnEvidence(messages, messageCursor);
     messageCursor = nextIdx;
     const monitorSet = turnMonitorSet;
     turnMonitorSet = false;
-    const edited = turnEditedFiles;
     turnEditedFiles = [];
-    const provenanceSeen = turnProvenanceSeen;
+    turnSteeredFiles = [];
     turnProvenanceSeen = false;
 
     const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
@@ -541,38 +592,9 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       }
     }
 
-    // Duty 0.5 — provenance unread. XTRM doctrine (engineering-quality):
-    // commits and PRs are memory of why. Editing behavior without consulting
-    // that history is a duty the moment the turn shows it happened.
-    if (jevAvailable && edited.length > 0 && !provenanceSeen) {
-      const verb = provenanceDutyVerb(edited);
-      if (cooldownAllows(cooldowns, "prov", verb.id, Date.now(), verb)) {
-        const result = await askJev(registry, {
-          edited_files: edited.slice(0, 5),
-          final_message: lastAssistant.slice(0, 1200),
-        }, {
-          // CORE-2361: same mandatory-choice rule as wait-guard — a noul-only
-          // question set can never produce a non-null result.
-          provenance_source: {
-            type: "choice",
-            instructions: "Which history source should be consulted for these files, if any?",
-            criteria: {
-              git_log: "Commit messages on the touched paths.",
-              pr_history: "Reviews and discussions on past PRs touching these files.",
-              both: "Both git log and PR history.",
-              none: "History would not change this change.",
-            },
-          },
-          provenance_materially_helpful: { type: "noul", instructions: "Given these files were changed this turn without consulting commit or PR history, would the history plausibly change what the change should be or reveal it repeats a past mistake?" },
-          sonata_harm: { type: "noul", instructions: "Is the change clearly the provenance-free kind (new file, mechanical refactor, asked-for rename) where history consultation would be noise?" },
-        } as Record<string, Question>);
-        const g = result ? ((result.nouls["provenance_materially_helpful"] ?? 0) + (1 - (result.nouls["sonata_harm"] ?? 0))) / 2 : 0;
-        if (result && g >= GATE_THRESHOLD) {
-          emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
-          return;
-        }
-      }
-    }
+    // Duty 0.5 — provenance steer moved mid-turn: the tool_result seam above
+    // delivers evidence (diffstat, last-touch lines, exact history commands)
+    // for tracked edits as they happen. Nothing fires here by design.
 
     // Duty 1 — service skill (turn end). Also pre-binding: skills are repo
     // knowledge, not issue knowledge.

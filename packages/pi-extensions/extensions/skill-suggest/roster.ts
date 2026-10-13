@@ -29,9 +29,10 @@ export interface RosterEntry {
 const CACHE_TTL_MS = 5 * 60_000;
 // CORE-2361: the real union (repo packs 131 + top-level home skills) is ~163
 // today; the old bound of 60 silently hid more than half the catalog from
-// ranking. 200 covers the union with headroom; one-line criteria keep the
-// classifier call bounded (~30 tokens per entry).
-const ROSTER_MAX = 200;
+// ranking. 280 covers the union plus global packs (~/.xtrm/skills) and
+// personal pi skills (~/.pi/agent/skills) with headroom; one-line criteria
+// keep the classifier call bounded (~30 tokens per entry).
+const ROSTER_MAX = 280;
 const DESC_MAX = 240;
 let cache: { at: number; entries: RosterEntry[] } = { at: 0, entries: [] };
 
@@ -100,6 +101,12 @@ function skillDirs(repoRoot: string): string[] {
     join(repoRoot, ".xtrm", "skills"),
     join(repoRoot, ".agents", "skills"),
     join(home, ".agents", "skills"),
+    // Global user packs (incl. third-party installs like open-code-review
+    // and agentrun) and personal pi skills (incl. codemode): without these
+    // roots the suggestor can never rank them, however well their triggers
+    // are written.
+    join(home, ".xtrm", "skills"),
+    join(home, ".pi", "agent", "skills"),
   ].filter((d) => existsSync(d));
 }
 
