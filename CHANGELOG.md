@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-10-13
+
+### Added
+- Give the classifier recent conversation at the input seam ([581fd24](https://github.com/xtrm-dev/core/commit/581fd24f4628727bb2e622332f997acdd9c3857b))
+- Agent_end judges the whole turn, not just its finale ([8544119](https://github.com/xtrm-dev/core/commit/8544119af54266dae6a06a7d0078fda7dcf40d55))
+- Serve a live tmux topology feed (XTRM-629) ([f5711b9](https://github.com/xtrm-dev/core/commit/f5711b9501bb493800f677d1c77d444a11650e7a))
+- Deliver at the first tool_result, loud card, description restored (#720) ([af5325f](https://github.com/xtrm-dev/core/commit/af5325f0b28922adc94eeb4478adc79ef8576560))
+- Suggestor upgrades — full roster, load-path cards, live advisors (#725) ([4ed11aa](https://github.com/xtrm-dev/core/commit/4ed11aa9299909a750c938bc700fa6054ddb2e32))
+- Discover pack-container skills (optional/<pack>/<skill>); skip active runtime view in roster ([6c6a812](https://github.com/xtrm-dev/core/commit/6c6a8124b2da7d6ad5a8623b1079034a48c21790))
+- Roster home roots + mid-turn provenance steer (#732) ([c448582](https://github.com/xtrm-dev/core/commit/c4485823b9b3758e3edcb80f4f70398db900db9c))
+- Make codemode doctrine mandatory, shipped per target (#731) ([a544bde](https://github.com/xtrm-dev/core/commit/a544bdeb199724ab79fcfdcb75b8b2f3759909b6))
+
+### Fixed
+- Input seam uses the ordered prompt transform, no card ([0a2c0c3](https://github.com/xtrm-dev/core/commit/0a2c0c346d625d3f3c70df2b83b5a7c1e6ec38cf))
+- Describe list-shaped reference docs by their first step ([bbf7a5a](https://github.com/xtrm-dev/core/commit/bbf7a5ad50d59146e9524af6ec60ac52c2165a82))
+- Bare control nudges never trigger a doctrine ([31badcb](https://github.com/xtrm-dev/core/commit/31badcb7b854b56c5d51694a47c1c32ed1cfedc9))
+- Correct two real pi-extension bun failures + close the CI gap (#716) ([dbb09f6](https://github.com/xtrm-dev/core/commit/dbb09f6178257bf9d77c72336224d687d71bc984))
+- Stop pi install from duplicating a package the settings already provide (#719) ([9486622](https://github.com/xtrm-dev/core/commit/948662284c950150dcb055203397945357fb8747))
+- Edit gate honors sb claims where bd is dead (#722) ([659de5b](https://github.com/xtrm-dev/core/commit/659de5becff1038ca988ce37a2158c9ce71c8986))
+- Align pi-coding-agent mock factories across test files (#723) ([f8385f9](https://github.com/xtrm-dev/core/commit/f8385f9ee6132903c71233f9c012cf1aa5dc29ec))
+- Restore /tmp/tst.md frame design for code tools (#730) ([5e8fb8e](https://github.com/xtrm-dev/core/commit/5e8fb8e534b8b47999d5fbf35ed9d32c13b5e340))
+
+### Other changes
+- CORE UI stack: xtrm-ui rendering, skill-suggest/substrate-suggest foundation (28 commits) (#728) ([a8017c2](https://github.com/xtrm-dev/core/commit/a8017c2e9d96bbb0dc22a3da56d6f7da1487fa98))
+- Tool row grammar and settings (#729) ([c4d0cb3](https://github.com/xtrm-dev/core/commit/c4d0cb3006b240537277f3371066c70bb2c34b42))
+
+### Project maintenance
+- Cross-link substrate-suggest and skill-suggest README sections ([5a5b1aa](https://github.com/xtrm-dev/core/commit/5a5b1aa1d7b4e38003fe9850d7cf01b7c21bef6e))
+- Gold-block chrome — purple dot on a tool row, jev_confidence label ([eccd174](https://github.com/xtrm-dev/core/commit/eccd17478eb83a417a3689e0097a324240f747a1))
+- Gold-chrome assertions after rebase ([754f443](https://github.com/xtrm-dev/core/commit/754f443bb73f90e011c717942b06756d6c73b358))
+- White dot and header, out of the gold block ([0f35a43](https://github.com/xtrm-dev/core/commit/0f35a4357f05e9fcb619fbeb5ab2dcf0698d1e17))
+- Import isControlNudge after rebase ([065e241](https://github.com/xtrm-dev/core/commit/065e2415218bc96d0ad34672bf7bf9230b579dd4))
+- The operator-surface design system (#721) ([f61fc21](https://github.com/xtrm-dev/core/commit/f61fc21f118df5c6c32360892f1480184257f5e2))
+
 ## [0.15.2] - 2026-10-04
 
 ### Fixed
