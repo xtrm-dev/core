@@ -15,7 +15,8 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { execFileSync } from "node:child_process";
+import { join, relative, resolve } from "node:path";
 import type { VerbSpec } from "../../shared/suggest.ts";
 
 // ── provenance duty ──────────────────────────────────────────────────────────
@@ -51,6 +52,85 @@ export function provenanceDutyVerb(editedFiles: string[]): VerbSpec {
     cooldownMin: 45,
     source: "jev",
   };
+}
+
+/**
+ * Partition edited paths into tracked vs untracked using an injected check.
+ * Pure — the git call lives in trackedEditedFiles so tests inject a stub.
+ * Unknown means untracked: the duty must stay silent, never loud on unknown.
+ */
+export function partitionTracked(
+  edited: string[],
+  isTracked: (file: string) => boolean,
+): { tracked: string[]; untracked: string[] } {
+  const tracked: string[] = [];
+  const untracked: string[] = [];
+  for (const f of edited) (isTracked(f) ? tracked : untracked).push(f);
+  return { tracked, untracked };
+}
+
+/**
+ * Build the evidence body for a mid-turn provenance steer: what changed
+ * (working-tree diffstat, bounded), who last touched each file and why
+ * (one commit line each, bounded), and the exact history commands to run
+ * next. All subprocesses are capped and fail-open: on any git failure the
+ * steer degrades to the file list rather than erroring the turn.
+ */
+export function buildProvenanceEvidence(files: string[], cwd: string): string {
+  const run = (args: string[]): string => {
+    try {
+      return execFileSync("git", args, {
+        cwd,
+        encoding: "utf8",
+        timeout: 10_000,
+        maxBuffer: 64 * 1024,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      return "";
+    }
+  };
+  const lines: string[] = [];
+  const stat = run(["diff", "--stat", "--", ...files.slice(0, 8)]).trim();
+  if (stat) lines.push(stat.split("\n").slice(0, 12).join("\n"));
+  for (const f of files.slice(0, 4)) {
+    const last = run(["log", "-1", "--format=%h %ad %s", "--date=short", "--", f]).trim();
+    if (last) lines.push(`${f}: last ${last}`);
+  }
+  if (lines.length === 0) return files.slice(0, 5).join(", ");
+  const first = files[0];
+  lines.push(
+    `History that may matter: git log -p --follow -- ${first}; ` +
+      `blast radius: gitnexus impact on the touched exports before editing further.`,
+  );
+  return lines.join("\n").slice(0, 2000);
+}
+
+/**
+ * Keep only the edited files git tracks under cwd. One subprocess per
+ * steer at most. Non-repo cwd or any git failure means no trackable
+ * history exists, so the duty must stay silent.
+ */
+export function trackedEditedFiles(edited: string[], cwd: string): string[] {
+  if (edited.length === 0) return [];
+  try {
+    const out = execFileSync("git", ["ls-files", "--", ...edited], {
+      cwd,
+      encoding: "utf8",
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const tracked = new Set(
+      out
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => resolve(cwd, l)),
+    );
+    return edited.filter((f) => tracked.has(resolve(cwd, f)));
+  } catch {
+    return [];
+  }
 }
 
 // ── wait-guard ───────────────────────────────────────────────────────────────

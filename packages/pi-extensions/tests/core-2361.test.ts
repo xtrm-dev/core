@@ -209,3 +209,36 @@ describe("the two silent advisors fire through a fake registry (CORE-2361)", () 
     expect(sent.length).toBe(0);
   });
 });
+
+describe("home roots (global packs + personal pi skills)", () => {
+  test("~/.xtrm/skills packs and ~/.pi/agent/skills join the roster", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "roster-homes-"));
+    try {
+      mkdirSync(join(tmp, ".xtrm", "skills", "oc-pack"), { recursive: true });
+      writeFileSync(
+        join(tmp, ".xtrm", "skills", "oc-pack", "SKILL.md"),
+        "---\nname: oc-pack\ndescription: Global pack skill for review orchestration.\n---\n",
+      );
+      mkdirSync(join(tmp, ".pi", "agent", "skills", "codemode"), { recursive: true });
+      writeFileSync(
+        join(tmp, ".pi", "agent", "skills", "codemode", "SKILL.md"),
+        "---\nname: codemode\ndescription: Batch tool calls in one JavaScript cell.\n---\n",
+      );
+      mkdirSync(join(tmp, "repo"), { recursive: true });
+      // os.homedir() binds at process start: the fake HOME must be set for
+      // a child process, not assigned mid-test.
+      const rosterModule = join(import.meta.dir, "..", "extensions", "skill-suggest", "roster.ts");
+      const probe = `import { discoverRoster, resetRosterCache } from ${JSON.stringify(rosterModule)}; resetRosterCache(); const f = discoverRoster(${JSON.stringify(join(tmp, "repo"))}); console.log(JSON.stringify(f.map((e) => e.id)));`;
+      const out = Bun.spawnSync(["bun", "-e", probe], {
+        env: { ...process.env, HOME: tmp },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const ids = JSON.parse(out.stdout.toString()) as string[];
+      expect(ids).toContain("oc-pack");
+      expect(ids).toContain("codemode");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
