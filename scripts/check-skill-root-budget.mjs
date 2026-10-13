@@ -19,6 +19,8 @@ const BUDGETS = {
   'skill-creator':              180,
   'find-skills':                140,
   'goal-prompt':                180,
+  codemode:                      90,
+  'open-code-review':           200,
 };
 
 let failed = false;

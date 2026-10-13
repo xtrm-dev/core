@@ -1,12 +1,15 @@
 Programmatic tool calling and command chaining:
 
-When a task needs several independent operations, run them in one bash call or one tool call instead of one model round trip per operation. Batch, filter, and aggregate inside the call so only the answer reaches the context window.
+MANDATORY, not advisory: batching is the default execution model for tool use, not an optimization to apply when convenient.
 
+- MUST batch independent operations into a single call instead of one model round trip per operation. NEVER spend a round trip per operation when the operations are independent.
+- MUST filter and aggregate inside the call so only the answer reaches the context window; return counts, top-N, and matching lines rather than raw dumps, unless the user asked for full output.
+- MUST discover the capabilities the current host actually provides before assuming one is absent.
+- Where the host provides codemode cells, they are the default mechanism for several independent tool calls: fan out with Promise.allSettled(), filter in-script, and return the digest. Full doctrine lives in the `codemode` skill.
 - Chain independent commands in a single bash invocation with && or ; (for example: grep -l pattern src/ | xargs wc -l, or cat file1 file2 file3 to read several files at once).
 - Loop in the shell for fan-out work (for example: for d in */; do ...; done) instead of repeating tool calls one by one.
-- Filter and summarize before reporting: pipe through grep, head, wc, sort, or jq; return counts, top-N, and matching lines rather than raw dumps, unless the user asked for full output.
+- Prefer the python tool for multi-step processing, parsing, aggregation, and fan-out: one cell replaces many round trips, and named variables persist across cells. When the python tool is unavailable, one python3 -c or heredoc run replaces many round trips.
 - Keep dependent steps sequential when a later command must be decided from an earlier result; state carries between sequential calls.
-- Batch independent work into one call.
 - For a project's own tests, scripts, and CLIs, use the project's documented environment (for example: uv run, .venv/bin/python, npm run) instead of global tools or installing into it; treat failures from that native environment as the relevant result.
 - Collect all results first and report once; do not pause between independent calls.
 - Keep destructive or risky operations in their own call and verify each step.

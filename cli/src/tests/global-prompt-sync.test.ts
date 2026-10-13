@@ -6,6 +6,7 @@ import {
   GLOBAL_PROMPT_END_MARKER as END,
   GLOBAL_PROMPT_START_MARKER as START,
   GlobalPromptSyncError,
+  readCanonicalGlobalPromptBody,
   renderManagedGlobalPrompt,
   syncGlobalPrompts,
 } from '../core/global-prompt-sync.js';
@@ -44,6 +45,10 @@ When a task needs several independent operations, run them in one bash call or o
 - Use ; instead of && when you must see partial output after a failure.`;
 
 const BLOCK = `${START}\n${CANONICAL.trim()}\n${END}`;
+
+// Phrasing that only the pi-specific canonical asset carries: it must reach the
+// pi prompt and must never appear in another host's prompt.
+const PI_ONLY_MARKER = 'every session tool is a tools.* method';
 
 let tempRoot = '';
 let previousHome: string | undefined;
@@ -169,6 +174,33 @@ describe('renderManagedGlobalPrompt', () => {
     const result = renderManagedGlobalPrompt(user, CANONICAL);
     expect(result.action).toBe('prepend');
     expect(result.next).toBe(`${START}\r\n${CANONICAL.trim()}\r\n${END}\r\n\r\n${user}`);
+  });
+});
+
+describe('per-target canonical assets', () => {
+  it('prefers a target-specific asset and falls back to the shared body', async () => {
+    const pi = await readCanonicalGlobalPromptBody('pi');
+    const claude = await readCanonicalGlobalPromptBody('claude');
+    const shared = await readCanonicalGlobalPromptBody();
+
+    expect(pi).toContain(PI_ONLY_MARKER);
+    expect(claude).not.toContain(PI_ONLY_MARKER);
+    expect(claude).toBe(shared);
+  });
+
+  it('carries the mandatory framing in every canonical body', async () => {
+    expect(await readCanonicalGlobalPromptBody('pi')).toContain('MANDATORY');
+    expect(await readCanonicalGlobalPromptBody()).toContain('MANDATORY');
+  });
+
+  it('injects host-specific doctrine only into the host that declares it', async () => {
+    const result = await syncGlobalPrompts({ home: process.env.HOME as string });
+    expect(result.targets.map((t) => t.label)).toEqual(['pi', 'claude']);
+
+    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
+    const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
+    expect(await fs.readFile(piFile, 'utf8')).toContain(PI_ONLY_MARKER);
+    expect(await fs.readFile(claudeFile, 'utf8')).not.toContain(PI_ONLY_MARKER);
   });
 });
 

@@ -37,3 +37,33 @@ project convention or materially affect readability/maintenance.
 Final review should distinguish blocking findings, non-blocking follow-ups, and external
 blocks. Never reinterpret a valid failing test/security/contract gate as advisory because
 the implementation looks plausible.
+
+## ocr delegation lane (explicit scope only)
+
+OFF unless the pinned contract or scope explicitly names ocr delegation evidence, AgentRun
+evidence, or both. When unnamed, review exactly as above.
+
+Delegation is LLM-free on the OCR side: `ocr` supplies deterministic file selection and rule
+resolution; all review judgment stays in this document. Do not call `ocr review` here.
+
+1. `ocr delegate preview --format json [--from <ref> --to <ref> | --commit <hash>]` — mode,
+   refs, reviewable files, and excluded files with their reason.
+2. `ocr delegate rule --format json <reviewable paths>` — resolved rule groups, grouped by
+   content.
+3. Read the diffs with `git --no-pager diff` or `git show` for the reported mode.
+4. Report a per-file reviewed-or-skipped checklist with a concrete skip reason per skip, JSON
+   comments carrying `path`, `content`, line range, `category` and `severity`, and coverage
+   accounting (total, reviewed, skipped, coverage rate).
+
+Delegation output is evidence, never the verdict; do not invent gate semantics on top of it.
+The `open-code-review` skill is vendored as a default skill: its delegation contract is
+`references/delegate.md` under `~/.xtrm/skills/default/open-code-review/`.
+
+## AgentRun evidence (explicit scope only)
+
+Inspect before running: call the agentrun tool with `describe`, then `inspect` with the
+workflow and its input. Run only the inspected definition, with the input only. Code, call and
+shell nodes and mutating tools run only after the operator issues the trusted-run command for
+that run — never assume it. Experimental workflow flags stay off by default. The receipt is the
+inspected revision digest plus the run result, or the failure evidence when a run fails; record
+it verbatim and invent nothing.

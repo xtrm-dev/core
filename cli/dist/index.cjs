@@ -60780,13 +60780,25 @@ function resolveGlobalPromptTargets(opts = {}) {
     }
   ];
 }
-async function readCanonicalGlobalPromptBody() {
-  const assetPath = import_node_path18.default.join(resolvePackageRoot2(), ".xtrm", "config", "instructions", "global-system-prompt.md");
-  try {
-    return await import_fs_extra17.default.readFile(assetPath, "utf8");
-  } catch (error51) {
-    throw new GlobalPromptSyncError(`cannot read canonical global prompt asset ${assetPath}: ${error51.message}`);
+async function readCanonicalGlobalPromptBody(label) {
+  const candidates = label ? [`global-system-prompt.${label}.md`, "global-system-prompt.md"] : ["global-system-prompt.md"];
+  let lastError;
+  for (const fileName of candidates) {
+    const assetPath = import_node_path18.default.join(resolvePackageRoot2(), ".xtrm", "config", "instructions", fileName);
+    try {
+      return await import_fs_extra17.default.readFile(assetPath, "utf8");
+    } catch (error51) {
+      if (error51.code !== "ENOENT") {
+        throw new GlobalPromptSyncError(`cannot read canonical global prompt asset ${assetPath}: ${error51.message}`);
+      }
+      lastError = error51;
+    }
   }
+  const fallback = candidates[candidates.length - 1];
+  const fallbackPath = import_node_path18.default.join(resolvePackageRoot2(), ".xtrm", "config", "instructions", fallback);
+  throw new GlobalPromptSyncError(
+    `cannot read canonical global prompt asset ${fallbackPath}: ${lastError?.message ?? "not found"}`
+  );
 }
 async function syncOneTarget(target, canonicalBody, opts) {
   const base = { label: target.label, file: target.file };
@@ -60846,10 +60858,10 @@ async function syncOneTarget(target, canonicalBody, opts) {
   return { ...base, action: rendered.action, changed: true };
 }
 async function syncGlobalPrompts(opts = {}) {
-  const canonicalBody = opts.canonicalBody ?? await readCanonicalGlobalPromptBody();
   const targets = resolveGlobalPromptTargets(opts);
   const results = [];
   for (const target of targets) {
+    const canonicalBody = opts.canonicalBody ?? await readCanonicalGlobalPromptBody(target.label);
     results.push(await syncOneTarget(target, canonicalBody, opts));
   }
   return { targets: results };

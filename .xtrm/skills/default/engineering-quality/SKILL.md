@@ -28,6 +28,9 @@ not only in a dedicated audit.
 | About to claim success | `references/verification.md` |
 | Reduce complexity/performance waste | `references/reduction.md` |
 
+When a pinned contract explicitly names ocr delegation evidence, AgentRun evidence, or
+both, `references/review.md` carries that lane. It stays off otherwise.
+
 Load only the relevant reference. Runtime hooks own deterministic lint/typecheck/format
 checks; this skill owns engineering judgment.
 
