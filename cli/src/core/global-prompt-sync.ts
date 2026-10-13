@@ -13,6 +13,11 @@ import { resolvePackageRoot } from './registry-scaffold.js';
  *   - ~/.pi/agent/APPEND_SYSTEM.md
  *   - ~/.claude/CLAUDE.md
  *
+ * Body selection: a target-specific asset
+ * (`.xtrm/config/instructions/global-system-prompt.<label>.md`) wins when
+ * present, so host-specific doctrine never leaks into another host's prompt;
+ * the shared `global-system-prompt.md` is the fallback for every target.
+ *
  * Contract:
  *   - All bytes outside one exact marker pair are preserved verbatim.
  *   - A markerless file whose trimmed content is the canonical body or the
@@ -168,13 +173,29 @@ export function resolveGlobalPromptTargets(opts: GlobalPromptSyncOptions = {}): 
   ];
 }
 
-export async function readCanonicalGlobalPromptBody(): Promise<string> {
-  const assetPath = path.join(resolvePackageRoot(), '.xtrm', 'config', 'instructions', 'global-system-prompt.md');
-  try {
-    return await fs.readFile(assetPath, 'utf8');
-  } catch (error) {
-    throw new GlobalPromptSyncError(`cannot read canonical global prompt asset ${assetPath}: ${(error as Error).message}`);
+export async function readCanonicalGlobalPromptBody(label?: string): Promise<string> {
+  // A target-specific asset wins when present so host-specific doctrine (for
+  // example pi's codemode cell model) never leaks into another host's prompt.
+  const candidates = label
+    ? [`global-system-prompt.${label}.md`, 'global-system-prompt.md']
+    : ['global-system-prompt.md'];
+  let lastError: unknown;
+  for (const fileName of candidates) {
+    const assetPath = path.join(resolvePackageRoot(), '.xtrm', 'config', 'instructions', fileName);
+    try {
+      return await fs.readFile(assetPath, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new GlobalPromptSyncError(`cannot read canonical global prompt asset ${assetPath}: ${(error as Error).message}`);
+      }
+      lastError = error;
+    }
   }
+  const fallback = candidates[candidates.length - 1];
+  const fallbackPath = path.join(resolvePackageRoot(), '.xtrm', 'config', 'instructions', fallback);
+  throw new GlobalPromptSyncError(
+    `cannot read canonical global prompt asset ${fallbackPath}: ${(lastError as Error)?.message ?? 'not found'}`,
+  );
 }
 
 async function syncOneTarget(
@@ -255,10 +276,10 @@ async function syncOneTarget(
  * repo (xtrm-3ljgz.2).
  */
 export async function syncGlobalPrompts(opts: GlobalPromptSyncOptions = {}): Promise<GlobalPromptSyncResult> {
-  const canonicalBody = opts.canonicalBody ?? await readCanonicalGlobalPromptBody();
   const targets = resolveGlobalPromptTargets(opts);
   const results: GlobalPromptTargetResult[] = [];
   for (const target of targets) {
+    const canonicalBody = opts.canonicalBody ?? await readCanonicalGlobalPromptBody(target.label);
     results.push(await syncOneTarget(target, canonicalBody, opts));
   }
   return { targets: results };
