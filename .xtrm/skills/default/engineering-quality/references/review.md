@@ -74,6 +74,8 @@ gets its deterministic value without `ocr review` token cost:
 1. `node <engineering-quality-skill-dir>/scripts/ocr-preflight.mjs preflight [--from <ref> --to
    <ref> | --commit <sha>]` — reviewable files, excluded files by reason, and one resolved rule
    checklist per group. It writes `preview.json` and `rules.json` for the `check` step.
+   The digest keeps each checklist's first line; the full text is in `rules.json`. Read it
+   for Go, Python and Rust (substantive, 6-11 KB); the JS/TS default rule is frontend-oriented.
 2. Apply each group's checklist to your own diff while it is still cheap to change.
 3. Run the repo's own lint, typecheck and tests; those are the deterministic defect checks.
 4. Before handoff, record your self-review as a ledger and run `check`.
