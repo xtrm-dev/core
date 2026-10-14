@@ -81,12 +81,16 @@
       "install_mode": "copy",
       "install_scope": "global",
       "files": {
+        "codemode/references/kernel-mechanics.md": {
+          "hash": "8ed79613b827b54f9ff974483c117e96606ec474cb7927fdc5b549b34a0cb035",
+          "version": "0.15.3"
+        },
         "codemode/references/runtime-shapes.md": {
-          "hash": "1ba443fbae9c5c79cca160010483c2d25056ca30d95078213b097d34b5a472a3",
+          "hash": "e0a451ac366549681c6b0dad5e8b625f7e46f85fe045fac75b1462dce514565b",
           "version": "0.15.3"
         },
         "codemode/SKILL.md": {
-          "hash": "7e97f4abdcf2129df18adc84974440f3e1632692eb6528f2fefbf832f4bb2607",
+          "hash": "c10d8472a35e0899448a1e1012e36f917943c16bc320e3b0adb968ac6784c9ef",
           "version": "0.15.3"
         },
         "engineering-quality/references/causal-debugging.md": {
