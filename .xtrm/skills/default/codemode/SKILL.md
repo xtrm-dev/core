@@ -47,6 +47,9 @@ Tool surfaces differ between Pi releases. Read `references/runtime-shapes.md`
 before assuming resolve shapes or globals, and probe cheaply (5-line cells)
 when a call fails: the error text is the contract.
 
+Python kernel limits (120 s cell timeout kills the kernel and its state, 20,000-char
+output cap, not sandboxed, `skillbridge`, `_AUDIT`): `references/kernel-mechanics.md`.
+
 ## Evaluation record
 
 Built from a live session (2026-10-12/13): ~15 tool calls collapsed into 6 cells
