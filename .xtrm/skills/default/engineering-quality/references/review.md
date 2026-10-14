@@ -56,6 +56,8 @@ resolution; all review judgment stays in this document. Do not call `ocr review`
    accounting (total, reviewed, skipped, coverage rate).
 
 Delegation output is evidence, never the verdict; do not invent gate semantics on top of it.
+In Pi, run the OCR steps inside one codemode cell (`tools.bash` fan-out, digest returned;
+see the `codemode` skill); in Claude Code, batch them into one Bash call.
 The `open-code-review` skill is vendored as a default skill: its delegation contract is
 `references/delegate.md` under `~/.xtrm/skills/default/open-code-review/`.
 
@@ -79,6 +81,9 @@ gets its deterministic value without `ocr review` token cost:
 2. Apply each group's checklist to your own diff while it is still cheap to change.
 3. Run the repo's own lint, typecheck and tests; those are the deterministic defect checks.
 4. Before handoff, record your self-review as a ledger and run `check`.
+
+Steps 1 and 3 run in one codemode cell (`codemode` skill, "writer pre-flight"). A repo with no
+linter or typecheck has a gap in its floor: see `quality-baseline.md`.
 
 Reviewers and seconders keep `ocr review` or full delegation as independent scrutiny; the
 writer pre-flight does not replace them.

@@ -61,6 +61,7 @@ return { reviewable: d.reviewable, excluded: d.excluded_by_reason,
 
 Apply the checklists, then run `ocr-preflight.mjs check` on your ledger. Fixes go in a
 later cell: they change the diff, so rerun `preflight` before `check`.
+Reviewers run the same cell for the ocr delegation lane and add `check` on their ledger.
 
 ## Runtime variance (verified, not documented)
 

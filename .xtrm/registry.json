@@ -90,11 +90,15 @@
           "version": "0.15.3"
         },
         "codemode/SKILL.md": {
-          "hash": "0f80a670617b62d5d9b0247779125e1b0aeb91da92df574071943fd12ec08758",
+          "hash": "6f62bbba3e7d5ae8b06a2cad41edb5aad93ceb2755783ff1c6a177edd8359105",
           "version": "0.15.3"
         },
         "engineering-quality/references/causal-debugging.md": {
           "hash": "097477d5061af6baab68bfe63a8b47c513c70df2762b0d04a443d42045665530",
+          "version": "0.15.3"
+        },
+        "engineering-quality/references/quality-baseline.md": {
+          "hash": "89b1e4d3ec5aa00108366ab8851c8c8376265680b1a34044958b4ec2c232249f",
           "version": "0.15.3"
         },
         "engineering-quality/references/reduction.md": {
@@ -102,7 +106,7 @@
           "version": "0.15.3"
         },
         "engineering-quality/references/review.md": {
-          "hash": "58e609f1d7227c89557dc7f3ae3812ba510444411ddd7d12447326a21a2c542b",
+          "hash": "119f2da9172f5d5009264b99d66f4d8ca096184e75568a532237c89d0dacf2aa",
           "version": "0.15.3"
         },
         "engineering-quality/references/testing.md": {
@@ -122,7 +126,7 @@
           "version": "0.15.3"
         },
         "engineering-quality/SKILL.md": {
-          "hash": "da8d47c35da9c68d4213cb6ac10a49424b102263dc4bf12700a9c522e23a64c0",
+          "hash": "599f8b2fd089facb7f5513a522beb97a5e3ca2ad1d80488cf90d1a71f11fac04",
           "version": "0.15.3"
         },
         "find-skills/SKILL.md": {
