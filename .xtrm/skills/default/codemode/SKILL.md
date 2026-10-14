@@ -53,10 +53,11 @@ const [pre, lint] = await Promise.allSettled([
   tools.bash({ command: `node ${pf} preflight --from origin/main --to HEAD` }),
   tools.bash({ command: "<repo lint && typecheck> 2>&1 | tail -40" }),
 ]);
-const d = pre.status === "fulfilled" ? JSON.parse(out(pre.value)) : pre.reason.message;
+const lintOut = lint.status === "fulfilled" ? out(lint.value) : lint.reason.message;
+if (pre.status === "rejected") return { preflight_error: pre.reason.message, lint: lintOut };
+const d = JSON.parse(out(pre.value));
 store("ocr_preflight", d.files);
-return { reviewable: d.reviewable, excluded: d.excluded_by_reason,
-  checklists: d.rule_groups, lint: lint.status === "fulfilled" ? out(lint.value) : lint.reason.message };
+return { reviewable: d.reviewable, excluded: d.excluded_by_reason, checklists: d.rule_groups, lint: lintOut };
 ```
 
 Apply the checklists, then run `ocr-preflight.mjs check` on your ledger. Fixes go in a

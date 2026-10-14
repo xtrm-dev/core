@@ -98,7 +98,7 @@ export function validate(preview, ledger, findings = []) {
   if (s) {
     // coverage_rate is accepted as a fraction (0..1) or a percentage; the contract does not fix the unit.
     const reported = s.coverage_rate > 1 ? s.coverage_rate / 100 : s.coverage_rate;
-    if (s.total_files !== total || s.reviewed_files !== reviewed || s.skipped_files !== skipped || Math.abs(reported - rate) > 0.005) {
+    if (s.total_files !== total || s.reviewed_files !== reviewed || s.skipped_files !== skipped || !Number.isFinite(reported) || Math.abs(reported - rate) > 0.005) {
       violations.push({ code: 'summary_mismatch', reported: s, recomputed: { total_files: total, reviewed_files: reviewed, skipped_files: skipped, coverage_rate: rate } });
     }
   }
@@ -146,6 +146,8 @@ function selftest() {
     ['bad state', { ...clone(good), files: [{ ...good.files[0], state: 'done' }, good.files[1]], summary: undefined }, [], ['bad_state']],
     ['skip without reason', { ...clone(good), files: [good.files[0], { ...good.files[1], reason: ' ' }] }, [], ['skip_without_reason']],
     ['summary mismatch', { ...clone(good), summary: { ...good.summary, coverage_rate: 100 } }, [], ['summary_mismatch']],
+    ['summary without rate', { ...clone(good), summary: { ...good.summary, coverage_rate: undefined } }, [], ['summary_mismatch']],
+    ['summary non-numeric rate', { ...clone(good), summary: { ...good.summary, coverage_rate: 'x' } }, [], ['summary_mismatch']],
     ['finding outside set', good, [{ ...finding, path: 'README.md' }], ['finding_path_not_reviewable']],
     ['finding without content', good, [{ ...finding, content: '' }], ['finding_without_content']],
     ['bad category', good, [{ ...finding, category: 'nit' }], ['bad_category']],
