@@ -972,15 +972,15 @@
           "version": "0.15.3"
         },
         "instructions/agent-contract.md": {
-          "hash": "f23c490c26304824ab271a0c7a9b922637b668f85a70c45e3bf4f7a59a4b4947",
+          "hash": "44f0c1ee9101d8bef64649e7c4241818f3ba085861e139a844fb4c78c75b3647",
           "version": "0.15.3"
         },
         "instructions/agents-top.md": {
-          "hash": "120870fd5f4fef6f25b0f5ff7eeecd0ca09aec985d8cfe577394e21551f0eab5",
+          "hash": "8364fc1982bea9d9e9c87368bc2bff86edd829cf3b35b1f41d0d7d9282aea5ba",
           "version": "0.15.3"
         },
         "instructions/claude-top.md": {
-          "hash": "99280d9e875bd254d840c3f844665c694d0a9c4cfccf56f3a495f7f93fabba66",
+          "hash": "c60985e44eddfb80ecf1c71f288913588d33e8e293feb8850e956e12fe42418a",
           "version": "0.15.3"
         },
         "instructions/global-system-prompt.md": {
