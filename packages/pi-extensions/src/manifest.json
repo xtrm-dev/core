@@ -82,6 +82,13 @@
       "required": false,
       "ownership": "xtrm",
       "description": "Streams session lifecycle events to the local XTRM agent host and executes host commands; silent when no host runs"
+    },
+    {
+      "id": "xtrm-primer",
+      "displayName": "xtrm-primer",
+      "required": false,
+      "ownership": "xtrm",
+      "description": "Injects the XTRM operating primer (excerpts of the global using-xtrm and multiplexing skills) once per session; Pi counterpart of the Claude SessionStart primer (XTRM-637)"
     }
   ],
   "disabled": {
