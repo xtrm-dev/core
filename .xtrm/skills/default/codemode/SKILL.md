@@ -41,6 +41,27 @@ context** — fan out with `Promise.allSettled`, filter in-script, return the di
   check `stopReason`/`errorMessage`. Paid tiers can 402 — fall back to free
   classifiers; thin state rightly returns no-match.
 
+## Pattern: writer pre-flight (no OCR LLM)
+
+One cell gives a writer OCR's deterministic scaffolding plus the repo's own checks,
+with no `ocr review` token cost (see `engineering-quality/references/review.md`):
+
+```js
+const out = (r) => (typeof r === "string" ? r : r.output); // shape varies by release
+const pf = "~/.xtrm/skills/default/engineering-quality/scripts/ocr-preflight.mjs";
+const [pre, lint] = await Promise.allSettled([
+  tools.bash({ command: `node ${pf} preflight --from origin/main --to HEAD` }),
+  tools.bash({ command: "<repo lint && typecheck> 2>&1 | tail -40" }),
+]);
+const d = pre.status === "fulfilled" ? JSON.parse(out(pre.value)) : pre.reason.message;
+store("ocr_preflight", d.files);
+return { reviewable: d.reviewable, excluded: d.excluded_by_reason,
+  checklists: d.rule_groups, lint: lint.status === "fulfilled" ? out(lint.value) : lint.reason.message };
+```
+
+Apply the checklists, then run `ocr-preflight.mjs check` on your ledger. Fixes go in a
+later cell: they change the diff, so rerun `preflight` before `check`.
+
 ## Runtime variance (verified, not documented)
 
 Tool surfaces differ between Pi releases. Read `references/runtime-shapes.md`

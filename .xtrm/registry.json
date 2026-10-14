@@ -90,7 +90,7 @@
           "version": "0.15.3"
         },
         "codemode/SKILL.md": {
-          "hash": "c10d8472a35e0899448a1e1012e36f917943c16bc320e3b0adb968ac6784c9ef",
+          "hash": "0f80a670617b62d5d9b0247779125e1b0aeb91da92df574071943fd12ec08758",
           "version": "0.15.3"
         },
         "engineering-quality/references/causal-debugging.md": {
@@ -102,7 +102,7 @@
           "version": "0.15.3"
         },
         "engineering-quality/references/review.md": {
-          "hash": "93b8304e8dfb716ec0446af91660763719da00d1646853b384f6c87d16e21211",
+          "hash": "bff350183833bbf9862d79ebcf478f2023fcdff4cea269acc58e4b4cc814d28b",
           "version": "0.15.3"
         },
         "engineering-quality/references/testing.md": {
@@ -115,6 +115,10 @@
         },
         "engineering-quality/scripts/change-provenance.mjs": {
           "hash": "0526105f082c99383ccb51c617400c0f6065b7ba8b1583f78ba9234ac296aadc",
+          "version": "0.15.3"
+        },
+        "engineering-quality/scripts/ocr-preflight.mjs": {
+          "hash": "76c264a08f61b96f097b42b5f24598e4984ab8f25d71e2f75a209e6da290048e",
           "version": "0.15.3"
         },
         "engineering-quality/SKILL.md": {
