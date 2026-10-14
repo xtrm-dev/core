@@ -7,8 +7,11 @@
   (vendored content unmodified; sections relocated into `references/` to satisfy the
   universal skill-root budget).
 - License: Apache-2.0 (repo LICENSE + skill frontmatter). Compatible with XTRM use.
+- Re-check 2026-10-14: both upstream skill files unchanged since `25af21ce37af`
+  (2026-10-10); vendored text still identical. Local addition: the marked
+  "XTRM local additions" section at the end of `references/usage.md`.
 - Upstream files vendored unmodified. Local wiring (not upstream): `ocr` CLI installed
-  globally (v1.12.13); durable provider `shimgo` → localhost shim → opencode.ai subscription
+  globally (v1.12.13 at vendoring; v1.13.0 since 2026-10-13); durable provider `shimgo` → localhost shim → opencode.ai subscription
   (`openai-responses`, model `muse-spark-1.3-contributor`); systemd unit `ocr-zen-shim`.
 - Audit 2026-10-13 (find-skills): no overlap with existing XTRM skills (reviewer exists
   as runtime role, not skill); no bundled scripts/assets; network use = configured LLM
