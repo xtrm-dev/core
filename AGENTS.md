@@ -56,7 +56,7 @@ Example native task list mirroring Substrate:
 
 ## Operating rules
 
-- Release authority on completion: close or release the claimed Issue through Substrate (see `sb help --json` for current lifecycle syntax); the claim/edit/commit gates still guard edits and commits.
+- Release authority on completion: close the claimed Issue through Substrate with a real outcome (`sb issue close --outcome …`), citing validation and Journal evidence; the claim/edit/commit gates still guard edits and commits (`sb help --json` for current syntax).
 - Before editing existing symbols run GitNexus impact (`gitnexus_impact`) when available; before commit, run `gitnexus_detect_changes`.
 - Ask before destructive, irreversible, production-impacting, or history-rewriting actions; skip repetitive "Proceed?" confirmations once scope is clear.
 - Run targeted tests/build/typecheck for changed files; fix quality failures before commit.
@@ -85,12 +85,15 @@ Durable work lives in Substrate, not in chat task lists. Runtime-local task plan
 
 <!-- contract:end -->
 
-## Runtime notes (Pi / runtime-neutral)
+## Runtime notes (Claude Code + Pi)
 
-- Project skills catalog: Pi's native `<available_skills>` metadata; force-load a skill's body at turn 1 via `/skill:<name>`.
-- Full workflow examples + prompt-shaping guidance: `/skill:using-xtrm` (on demand — no longer eager-injected on Pi).
-- Use background process tooling for long-running servers, watchers, and log tails instead of shell backgrounding.
-- Worktree launch: `xt pi` — launch Pi in a sandboxed worktree; `xt pi --role <specialist>` for an interactive specialist session (e.g. `chain-coordinator`, `pr-reviewer`, `sre-triage`). Coordination and escalation live in `/multiplexing` Pattern 7 and `/using-specialists`.
+- Claude Code reads this file directly when no `CLAUDE.md` exists (2.1.277+); an existing `CLAUDE.md` that imports it with `@AGENTS.md` still works, and both files carry the same contract body from one source.
+- Claude Code skills: native discovery (`~/.claude/skills/`); force-load a skill's body at turn 1 via `/skill-<name>`. Hook and skill work: `/hook-development`, `/skill-creator`.
+- Claude Code worktree launch: `xt claude` — Claude Code in a sandboxed worktree; `xt claude --role <specialist>` for an interactive specialist session.
+- Pi skills: native `<available_skills>` metadata; force-load a skill's body at turn 1 via `/skill:<name>`.
+- Pi worktree launch: `xt pi` — Pi in a sandboxed worktree; `xt pi --role <specialist>` for an interactive specialist session (e.g. `chain-coordinator`, `pr-reviewer`, `sre-triage`).
+- Pi tooling: use background process tooling for long-running servers, watchers, and log tails instead of shell backgrounding.
+- Both runtimes: full workflow examples and prompt-shaping guidance live in `/using-xtrm` (on demand); coordination and escalation in `/multiplexing` Pattern 7 and `/using-specialists`.
 <!-- xtrm:end -->
 
 <!-- gitnexus:start -->

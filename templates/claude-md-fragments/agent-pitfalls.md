@@ -1,6 +1,6 @@
 ---
 name: agent-pitfalls
-version: 1.1.0
+version: 1.1.1
 description: Common pitfalls learned the hard way across recent sessions
 ---
 ## Common Pitfalls
@@ -11,7 +11,7 @@ Rules learned the hard way across recent sessions. Each entry: short rule, why i
   ```bash
   sb issue create --project <id> --parent CORE-10 --title "..." --kind task --contract <file|json>
   ```
-  (`bd create --parent` below describes the retired Beads board; use it only for migration/history work.)
+  (`bd create --parent` describes the retired Beads board; use it only for migration/history work.)
 
 - **`sp stop` cleans `status.json`; `sp merge` then fails to resolve the chain.** Known limitation (unitAI-ofjvj, P0). For doc-only chains, fall back to manual merge — but accept that `tsc` and conflict-reporting gates are skipped.
   ```bash

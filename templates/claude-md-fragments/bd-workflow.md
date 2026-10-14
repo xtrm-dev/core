@@ -1,12 +1,12 @@
 ---
 name: bd-workflow
-version: 2.0.0
+version: 2.1.0
 description: targeted Substrate workflow + XTRM lifecycle gates (bd-workflow name retained for compatibility)
 ---
 # XTRM Agent Workflow
 
 > Full reference: `/using-xtrm` skill (or `XTRM-GUIDE.md` where present).
-> Substrate owns durable work; `bd`/`bv` below describe the retired Beads board (migration/history only).
+> Substrate owns durable work. The retired Beads board (`bd`/`bv`) is migration history only and is not part of this fragment's workflow.
 
 ## Session start
 

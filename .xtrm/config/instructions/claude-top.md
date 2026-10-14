@@ -30,7 +30,7 @@
 
 ## Operating rules
 
-- Release authority on completion: close or release the claimed Issue through Substrate (see `sb help --json` for current lifecycle syntax); the claim/edit/commit gates still guard edits and commits.
+- Release authority on completion: close the claimed Issue through Substrate with a real outcome (`sb issue close --outcome …`), citing validation and Journal evidence; the claim/edit/commit gates still guard edits and commits (`sb help --json` for current syntax).
 - Before editing existing symbols run GitNexus impact (`gitnexus_impact`) when available; before commit, run `gitnexus_detect_changes`.
 - Ask before destructive, irreversible, production-impacting, or history-rewriting actions; skip repetitive "Proceed?" confirmations once scope is clear.
 - Run targeted tests/build/typecheck for changed files; fix quality failures before commit.
