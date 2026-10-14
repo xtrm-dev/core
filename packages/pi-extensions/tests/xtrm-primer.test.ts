@@ -65,13 +65,32 @@ describe("xtrm-primer extension", () => {
     try {
       const handlers: Record<string, (...a: any[]) => any> = {};
       register({ on: (e: string, h: any) => (handlers[e] = h) } as any);
-      await handlers.session_start({}, { sessionManager: { getBranch: () => [] } });
+      await handlers.session_start({}, { sessionManager: { getBranch: () => [], getSessionId: () => "s-once" } });
       const first = await handlers.before_agent_start({});
       expect(first.message.customType).toBe(CUSTOM_TYPE);
       expect(first.message.display).toBe(false);
       expect(await handlers.before_agent_start({})).toBeUndefined();
-      await handlers.session_start({}, { sessionManager: { getBranch: () => [{ customType: CUSTOM_TYPE }] } });
+      await handlers.session_start({}, { sessionManager: { getBranch: () => [{ customType: CUSTOM_TYPE }], getSessionId: () => "s-once" } });
       expect(await handlers.before_agent_start({})).toBeUndefined();
+    } finally {
+      process.env.HOME = prev;
+    }
+  });
+
+  test("two loaded copies inject once per session", async () => {
+    const prev = process.env.HOME;
+    process.env.HOME = home({ "using-xtrm": USING });
+    try {
+      const copies = [0, 1].map(() => {
+        const h: Record<string, (...a: any[]) => any> = {};
+        register({ on: (e: string, fn: any) => (h[e] = fn) } as any);
+        return h;
+      });
+      const ctx = { sessionManager: { getBranch: () => [], getSessionId: () => "s-dup" } };
+      for (const h of copies) await h.session_start({}, ctx);
+      const results = [];
+      for (const h of copies) results.push(await h.before_agent_start({}));
+      expect(results.filter((r) => r?.message?.customType === CUSTOM_TYPE)).toHaveLength(1);
     } finally {
       process.env.HOME = prev;
     }

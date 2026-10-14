@@ -78,10 +78,29 @@ export function buildPrimer(home: string = homedir()): string | null {
   }
 }
 
+// Shared by every loaded copy of this extension in one process: two copies (a local path and an npm
+// install) would otherwise both inject on the first turn, before either entry is on the branch.
+const CLAIMS = Symbol.for("xtrm-primer.injected-sessions");
+
+function claim(sessionId: string | undefined): boolean {
+  if (!sessionId) return true;
+  const g = globalThis as { [CLAIMS]?: Set<string> };
+  const seen = (g[CLAIMS] ??= new Set<string>());
+  if (seen.has(sessionId)) return false;
+  seen.add(sessionId);
+  return true;
+}
+
 export default function (pi: ExtensionAPI): void {
   let armed = true;
+  let sessionId: string | undefined;
 
   pi.on("session_start", async (_event, ctx) => {
+    try {
+      sessionId = ctx.sessionManager.getSessionId();
+    } catch {
+      sessionId = undefined;
+    }
     try {
       const branch = ctx.sessionManager.getBranch() as Array<{ customType?: string }>;
       armed = !branch.some((entry) => entry.customType === CUSTOM_TYPE);
@@ -95,6 +114,7 @@ export default function (pi: ExtensionAPI): void {
     const content = buildPrimer();
     if (!content) return undefined;
     armed = false;
+    if (!claim(sessionId)) return undefined;
     return { message: { customType: CUSTOM_TYPE, content, display: false } };
   });
 }
