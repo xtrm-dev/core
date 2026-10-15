@@ -90,15 +90,16 @@ Journal writes take identity from the environment: `SUBSTRATE_HOLDER` becomes `p
 `SUBSTRATE_HOLDER=w1 XTRM_SESSION_NAME=w1`, a new entry reads
 `participantId: w1, xtrmSessionName: w1`. Without them the participant is `(none recorded)`.
 
-`xt` already publishes `XTRM_SESSION_ID` and `XTRM_SESSION_NAME` at launch
-(`cli/src/core/session-identity.ts`), so no one types session ids. It does not publish a participant.
-Specialists get theirs automatically (`specialist::<role>`, activation and attempt too). A worker
-launched by `xt claude` needs `SUBSTRATE_HOLDER` set by hand until `xt` does it.
+`xt` publishes `XTRM_SESSION_ID` and `XTRM_SESSION_NAME` at launch
+(`cli/src/core/session-identity.ts`), and since CORE-2390 it also exports `SUBSTRATE_HOLDER=<worker>`
+on every `xt claude|pi|codex` launch, so no one types an identity. Specialists get theirs
+automatically (`specialist::<role>`, activation and attempt too).
 
 Workers share the coordinator's tmux session, so the session name is the same for all of them.
-**The worker name must come from `SUBSTRATE_HOLDER`** (set it in the window command, see
-`fleet.md`) and match `sb issue claim --holder`. Check a worker's first entry:
-`sb journal latest <ref> --json` shows `participantId`.
+**The worker name is `SUBSTRATE_HOLDER`**; claim with the same name: `sb issue claim --holder <name>`.
+Launch with `xt <runtime> <name> --window` (see `fleet.md`): a raw `tmux new-window 'xt …'` loses
+the dispatcher identity. Check a worker's first entry: `sb journal latest <ref> --json` shows
+`participantId`.
 
 For commit and PR evidence use provenance: `sb provenance dispatch <ref> --participant <name>`
 before work, then `allocate` and `bind <receipt> <sha>`. `sb provenance trace <ref>` shows the
