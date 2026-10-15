@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1",
+  "name": "programme",
+  "version": "1.0.0",
+  "description": "Run multi-week engineering programmes with a coordinator, Substrate as the single record and Jira as the operator view",
+  "skills": [
+    "programme-coordination"
+  ]
+}

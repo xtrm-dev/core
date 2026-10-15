@@ -524,6 +524,34 @@
           "hash": "fe4e5287982be10acc2439727b4b8add7052b037a7c67fb48e7bcf214cc54214",
           "version": "0.15.3"
         },
+        "programme/PACK.json": {
+          "hash": "9cc07a74368b1cd6c785344bbe974f62857a9371cd95da9b7d56ece41fe3439b",
+          "version": "0.15.3"
+        },
+        "programme/programme-coordination/references/fleet.md": {
+          "hash": "18e218f57871bf16ee9effedd17d8d3588ed535b132e7eac736a9f14219b7775",
+          "version": "0.15.3"
+        },
+        "programme/programme-coordination/references/jira.md": {
+          "hash": "2ddaf17caa45781d93fd0363e4d3e75374c251d785f4d663c1f021033bfd64ac",
+          "version": "0.15.3"
+        },
+        "programme/programme-coordination/references/substrate.md": {
+          "hash": "de77ffeeee660c5677ec34f4007f1d307f00b54f1f584ba4e3115f69f765b22f",
+          "version": "0.15.3"
+        },
+        "programme/programme-coordination/references/worked-example.md": {
+          "hash": "59a2292f61b814d2b77a0b572cbc5d18ed03c5d4138f791d96b5dffc5315d0cb",
+          "version": "0.15.3"
+        },
+        "programme/programme-coordination/scripts/jira.py": {
+          "hash": "d9fc00adf8b0c4cd539f2030b57bce3dbf580f8cc916b1ead7c15f3a76627b33",
+          "version": "0.15.3"
+        },
+        "programme/programme-coordination/SKILL.md": {
+          "hash": "286d56c74eae35efc9684b6354b44b50cb122e2a3c695c4e325339d527b3e0df",
+          "version": "0.15.3"
+        },
         "README.txt": {
           "hash": "4eb5182b790a60a7826d625348b69203156df899cd0776cc0b8fed3e95fbd513",
           "version": "0.15.3"
