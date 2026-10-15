@@ -32,6 +32,7 @@ interface Harness {
   setEnvCalls: string[][];
   loadedPayload: Record<string, unknown> | null;
   piSpawnEnv: Record<string, string> | null;
+  newWindowArgs?: string[] | null;
 }
 
 function installMock(h: Harness, opts: { sessionIdAnswer?: string | null } = {}): void {
@@ -64,6 +65,10 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null } = {})
     if (command === 'tmux' && args[0] === 'new-session') {
       h.newSessionArgs = [...args];
       return { status: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'tmux' && args[0] === 'new-window') {
+      h.newWindowArgs = [...args];
+      return { status: 0, stdout: '%21\n', stderr: '' };
     }
     if (command === 'tmux' && args[0] === 'display-message') {
       if (joined.includes('#{pane_id}')) return { status: 0, stdout: '%9\n', stderr: '' };
@@ -124,7 +129,26 @@ describe('xt/tmux launcher session-identity propagation', () => {
   let previousHome: string | undefined;
   let previousTmux: string | undefined;
   let previousCompat: string | undefined;
+  let previousDispatchEnv: Record<string, string | undefined> = {};
   let h: Harness;
+  const DISPATCH_KEYS = ['SUBSTRATE_HOLDER', 'XTRM_DISPATCHER_NAME', 'XTRM_DISPATCHER_ADDRESS', 'XTRM_PARENT_SESSION_ID', 'XTRM_PARENT_PANE_ID', 'TMUX_PANE'];
+
+  // CORE-2390: the test worker's parent pid is a "Claude session" with a
+  // socket, and the launching env carries a dispatcher's own holder.
+  function armDispatcher(): void {
+    const dir = path.join(homeRoot, '.claude', 'sessions');
+    fs.ensureDirSync(dir);
+    fs.writeJsonSync(path.join(dir, `${process.ppid}.json`), {
+      pid: process.ppid, name: 'coord-1', messagingSocketPath: '/run/user/1000/cc-socks/77.sock',
+    });
+    process.env.SUBSTRATE_HOLDER = 'coord-1-self';
+  }
+
+  function expectDispatcher(env: Record<string, string> | null | undefined, holder: string): void {
+    expect(env?.['SUBSTRATE_HOLDER']).toBe(holder);
+    expect(env?.['XTRM_DISPATCHER_NAME']).toBe('coord-1');
+    expect(env?.['XTRM_DISPATCHER_ADDRESS']).toBe('uds:/run/user/1000/cc-socks/77.sock');
+  }
 
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-session-id-'));
@@ -136,6 +160,8 @@ describe('xt/tmux launcher session-identity propagation', () => {
     previousHome = process.env.HOME;
     previousTmux = process.env.TMUX;
     previousCompat = process.env.XTRM_SKIP_RUNTIME_COMPAT;
+    previousDispatchEnv = Object.fromEntries(DISPATCH_KEYS.map((k) => [k, process.env[k]]));
+    for (const k of DISPATCH_KEYS) delete process.env[k];
     process.env.HOME = homeRoot;
     process.env.XTRM_SKIP_RUNTIME_COMPAT = '1';
     delete process.env.TMUX;
@@ -159,6 +185,10 @@ describe('xt/tmux launcher session-identity propagation', () => {
     else process.env.TMUX = previousTmux;
     if (previousCompat === undefined) delete process.env.XTRM_SKIP_RUNTIME_COMPAT;
     else process.env.XTRM_SKIP_RUNTIME_COMPAT = previousCompat;
+    for (const [k, v] of Object.entries(previousDispatchEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
     await fs.remove(tempRoot);
     vi.restoreAllMocks();
   });
@@ -260,5 +290,91 @@ describe('xt/tmux launcher session-identity propagation', () => {
     expect(h.setEnvCalls).toHaveLength(0);
     const flat = (h.newSessionArgs ?? []).join('\n');
     expect(flat).not.toContain('XTRM_SESSION_ID');
+  });
+
+  describe('dispatcher identity (CORE-2390)', () => {
+    it('direct spawn carries dispatcher and overrides an inherited SUBSTRATE_HOLDER', async () => {
+      armDispatcher();
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'claude', name: 'dwk1' })).rejects.toThrow('exit:0');
+
+      expect(h.newSessionArgs).toBeNull();
+      expectDispatcher(h.piSpawnEnv, 'dwk1');
+      // Outside tmux there is no parent pane to name.
+      expect(h.piSpawnEnv?.['XTRM_PARENT_PANE_ID']).toBeUndefined();
+    });
+
+    it('current-pane tmux launch carries dispatcher and parent pane/session', async () => {
+      armDispatcher();
+      process.env.TMUX = '/tmp/tmux-1000/default,9,0';
+      process.env.TMUX_PANE = '%9';
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk2', prompt: 'hi' })).rejects.toThrow('exit:0');
+
+      expectDispatcher(h.piSpawnEnv, 'dwk2');
+      expect(h.piSpawnEnv?.['XTRM_PARENT_PANE_ID']).toBe('%9');
+      expect(h.piSpawnEnv?.['XTRM_PARENT_SESSION_ID']).toBe('$7');
+    });
+
+    it('bare and role new-session launches pass the identity with -e', async () => {
+      armDispatcher();
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk3', attach: false })).rejects.toThrow('exit:0');
+      expectDispatcher(envPairs(h.newSessionArgs), 'dwk3');
+
+      h.newSessionArgs = null;
+      await expect(launchWorktreeSession({ runtime: 'claude', name: 'dwk4', role: 'testrole', attach: false })).rejects.toThrow('exit:0');
+      expectDispatcher(envPairs(h.newSessionArgs), 'dwk4');
+      // The role payload keeps its XTRM_SESSION_* contract; the holder rides -e only.
+      expect(Object.keys((h.loadedPayload?.['sessionEnv'] ?? {}) as object).every((k) => k.startsWith('XTRM_SESSION_'))).toBe(true);
+    });
+
+    it('--window opens a detached window in the caller session with the identity in -e', async () => {
+      armDispatcher();
+      process.env.TMUX = '/tmp/tmux-1000/default,9,0';
+      process.env.TMUX_PANE = '%9';
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk5', window: true })).rejects.toThrow('exit:0');
+
+      expect(h.newSessionArgs).toBeNull();
+      const args = h.newWindowArgs ?? [];
+      expect(args.slice(0, 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', '$3:']);
+      expect(args[args.indexOf('-n') + 1]).toBe('pi-dwk5');
+      const env = envPairs(args);
+      expectDispatcher(env, 'dwk5');
+      expect(env['XTRM_PARENT_PANE_ID']).toBe('%9');
+      expect(env['XTRM_PARENT_SESSION_ID']).toBe('$7');
+      // The window lives in the caller's session and says so.
+      expect(env['XTRM_SESSION_NAME']).toBe('cur-sess');
+      expect(process.stdout.write).toHaveBeenCalledWith('cur-sess:%21\n');
+    });
+
+    it('--window outside tmux is refused before any worktree exists', async () => {
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk6', window: true })).rejects.toThrow('exit:1');
+      expect(mocked.spawnSync.mock.calls.some(([c, a]) => c === 'git' && a?.[0] === 'worktree')).toBe(false);
+    });
+
+    it('no dispatcher: only the holder is exported, inherited holder never leaks', async () => {
+      process.env.SUBSTRATE_HOLDER = 'someone-else';
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk7' })).rejects.toThrow('exit:0');
+
+      expect(h.piSpawnEnv?.['SUBSTRATE_HOLDER']).toBe('dwk7');
+      expect(h.piSpawnEnv?.['XTRM_DISPATCHER_NAME']).toBeUndefined();
+      expect(h.piSpawnEnv?.['XTRM_DISPATCHER_ADDRESS']).toBeUndefined();
+    });
   });
 });

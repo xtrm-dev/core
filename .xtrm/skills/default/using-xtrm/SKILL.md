@@ -39,9 +39,11 @@ it up without reconstructing your private context.
    prepare continuation before the context becomes unreliable.
 7. **Debug causally.** For regressions, reconstruct symptom -> runtime/code path -> recent
    change -> commit/PR/Issue/worker intent -> causal mechanism before proposing a fix.
-8. **Name the worker on the journal.** Start a worker with `SUBSTRATE_HOLDER=<name>` in its
-   environment and claim its Issue with `--holder <name>` (same name). `--holder` records
-   ownership only; without the env var journal entries show `(none recorded)`.
+8. **Name the worker on the journal.** `xt claude|pi|codex <name>` exports
+   `SUBSTRATE_HOLDER=<name>` to the worker, and the worker claims its Issue with
+   `--holder <name>` (same name). `--holder` records ownership only; without the env var
+   journal entries show `(none recorded)`. For a worker not started by `xt`, set the env var
+   yourself.
 
 ## Contract quality applies to every worker
 

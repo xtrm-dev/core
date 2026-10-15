@@ -73,10 +73,14 @@ should point to them. Durable authority is Issue/Journal/Closure; messages are c
 activation/attempt identity is execution identity; Git is code truth. Never treat pane
 identity, tmux lineage, or a message payload as work authority.
 
-Worker identity on the journal: launch each worker with `SUBSTRATE_HOLDER=<name>` set, and
-claim its Issue with `sb issue claim <ref> --holder <name>`. xt workers in one tmux session
-share its `XTRM_SESSION_NAME`; only the holder tells them apart. Verify with
+Worker identity on the journal: `xt claude|pi|codex <name>` exports `SUBSTRATE_HOLDER=<name>`
+(it overrides any value inherited from the dispatcher), and the worker claims its Issue with
+`sb issue claim <ref> --holder <name>`. xt workers in one tmux session share its
+`XTRM_SESSION_NAME`; only the holder tells them apart. Verify with
 `sb journal latest <ref> --json` (`participantId`).
+
+`xt` also exports the dispatcher's name and reply address, which the primer shows the worker;
+env names and `--window`: `references/fleet-window-dispatch.md`.
 
 ## Coordinator responsibilities
 

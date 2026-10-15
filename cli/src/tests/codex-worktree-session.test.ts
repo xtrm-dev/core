@@ -199,6 +199,81 @@ describe('Codex worktree launcher', () => {
         expect(exitSpy).toHaveBeenCalledWith(0);
     });
 
+    it('--window opens a detached window in the caller session carrying the dispatcher identity (CORE-2390)', async () => {
+        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-window-'));
+        roots.push(repoRoot);
+        const codexHome = path.join(repoRoot, 'codex-home');
+        const homeRoot = path.join(repoRoot, 'home');
+        const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', `${path.basename(repoRoot)}-xt-codex-win`);
+        const saved = { HOME: process.env.HOME, TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE, SUBSTRATE_HOLDER: process.env.SUBSTRATE_HOLDER };
+        process.env.CODEX_HOME = codexHome;
+        process.env.HOME = homeRoot;
+        process.env.TMUX = '/tmp/tmux-1000/default,1,0';
+        process.env.TMUX_PANE = '%5';
+        process.env.SUBSTRATE_HOLDER = 'coord-self';
+        fs.ensureDirSync(path.join(homeRoot, '.claude', 'sessions'));
+        fs.writeJsonSync(path.join(homeRoot, '.claude', 'sessions', `${process.ppid}.json`), {
+            pid: process.ppid, name: 'coord-1', messagingSocketPath: '/run/cc/77.sock',
+        });
+        process.chdir(repoRoot);
+
+        let windowArgs: string[] = [];
+        mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            const joined = args.join(' ');
+            if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
+            if (command === 'git' && joined.startsWith('show-ref --verify')) return { status: 1, stdout: '', stderr: '' };
+            if (command === 'git' && args[0] === 'worktree') {
+                fs.ensureDirSync(worktreePath);
+                return { status: 0, stdout: '', stderr: '' };
+            }
+            if (command === 'tmux' && args[0] === 'new-window') {
+                windowArgs = [...args];
+                return { status: 0, stdout: '%21\n', stderr: '' };
+            }
+            if (command === 'tmux' && args[0] === 'wait-for' && args[1] === '-S') {
+                const sessions = path.join(codexHome, 'sessions', '2026', '10', '15');
+                fs.ensureDirSync(sessions);
+                fs.writeFileSync(path.join(sessions, 'rollout.jsonl'), `${JSON.stringify({
+                    type: 'session_meta',
+                    payload: { id: '019fc3bc-fb7a-7ae0-9536-125624bf726c', timestamp: new Date().toISOString(), cwd: worktreePath },
+                })}\n`);
+                return { status: 0, stdout: '', stderr: '' };
+            }
+            if (command === 'tmux' && args[0] === 'display-message') {
+                return { status: 0, stdout: joined.includes('session_name') ? 'coord-sess\n' : '$42\n', stderr: '' };
+            }
+            return { status: 0, stdout: '', stderr: '' };
+        });
+
+        const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+        vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        exitByThrow();
+        try {
+            const { launchCodexWorktreeSession } = await import('../utils/codex-worktree-session.js');
+            await expect(launchCodexWorktreeSession({ name: 'win', attach: false, yolo: true, window: true })).rejects.toThrow('exit:0');
+        } finally {
+            for (const [k, v] of Object.entries(saved)) {
+                if (v === undefined) delete process.env[k];
+                else process.env[k] = v;
+            }
+        }
+
+        expect(windowArgs.slice(0, 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', '$42:']);
+        const env = Object.fromEntries(windowArgs.flatMap((a, i) => (windowArgs[i - 1] === '-e' ? [a.split(/=(.*)/s, 2)] : [])));
+        expect(env).toMatchObject({
+            SUBSTRATE_HOLDER: 'win',
+            XTRM_DISPATCHER_NAME: 'coord-1',
+            XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/77.sock',
+            XTRM_PARENT_PANE_ID: '%5',
+            XTRM_PARENT_SESSION_ID: '$42',
+            XTMUX_AGENT_RUNTIME: 'codex',
+        });
+        expect(mocked.spawnSync.mock.calls.some(([c, a]) => c === 'tmux' && a?.[0] === 'new-session')).toBe(false);
+        expect(stdoutSpy).toHaveBeenCalledWith('coord-sess:%21\n');
+    });
+
     it('removes the worktree and branch after a post-creation tmux failure', async () => {
         const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-cleanup-'));
         roots.push(repoRoot);

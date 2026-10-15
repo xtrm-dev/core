@@ -8,20 +8,29 @@ separate sessions per worker. The operator sees the whole programme in one place
 
 ## Launch
 
+Run from the coordinator's own repo checkout:
+
 ```
-S=$(tmux display-message -p '#S')                      # the coordinator's session name
-P=$(tmux new-window -d -P -F '#{pane_id}' -t "$S" -n <name> -c <repo-or-worktree> \
-  "SUBSTRATE_HOLDER=<name> xt claude <name> --prompt '<skills> Resume CORE-2401 and follow its contract. Dispatched by <your ListAgents name>: report to it with SendMessage and journal on your issue. /goal ...'")
-tmux set-option -p -t "$P" @agent_parent_session "$(tmux display-message -p '#{session_id}')"
+xt claude <name> --window --prompt '<skills> Resume CORE-2401 and follow its contract. Report with SendMessage and journal on your issue. /goal ...'
 ```
 
-The prompt must say who dispatched the worker, by the exact name `ListAgents` shows for the
-coordinator's session. `@agent_parent_session` (the parent link that topology and `xt` read) is set by
-`xt` only for `--role` launches, so set it by hand for a plain worker. Both are manual today; the
-launcher should publish the dispatcher itself (follow-up).
+`--window` opens a detached window `claude-<name>` in the caller's tmux session and prints
+`<session>:<pane_id>`. Every `xt` launch from an agent session exports, with no typing:
 
-- `-d` keeps the coordinator's window in front. `-n <name>` names the window; use the same name
-  for the claim holder and `SUBSTRATE_HOLDER`. Start the name with the Story's Jira key
+| Variable | Value |
+|---|---|
+| `SUBSTRATE_HOLDER` | `<name>`; overrides the coordinator's own value |
+| `XTRM_DISPATCHER_NAME` | the coordinator's messaging name (its `ListAgents` name) |
+| `XTRM_DISPATCHER_ADDRESS` | `uds:<socket>`, the address `SendMessage` accepts |
+| `XTRM_PARENT_SESSION_ID`, `XTRM_PARENT_PANE_ID` | the coordinator's tmux session and pane |
+
+Unknown values are absent. The worker's session-start primer names the dispatcher and the reply
+address, and `@agent_parent_session` is set on the worker's pane. Do not start a worker with a raw
+`tmux new-window 'xt claude <name>'`: the tmux server spawns that command, so the coordinator is
+not its ancestor and the dispatcher stays unknown.
+
+- `--window` never takes focus, so the coordinator's window stays in front. Use the same `<name>`
+  for the claim holder. Start the name with the Story's Jira key
   (`ISSUE-260-pi-runtime`): `xt claude` makes the branch `xt/<name>`, and the key in the branch name,
   PR title and commit trailer is what the Jira dev panel links on, once GitHub for Jira is connected
   (an open decision in XTRM-110).

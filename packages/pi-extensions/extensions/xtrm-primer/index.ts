@@ -16,6 +16,11 @@
  *
  * DRIFT: SKILLS below is copied from xtrm-primer.mjs (XTRM-637); the two repos
  * share no module. Change both together.
+ *
+ * Dispatcher line (CORE-2390): when `xt pi` exported XTRM_DISPATCHER_NAME or
+ * XTRM_DISPATCHER_ADDRESS, the primer opens with who dispatched this worker,
+ * where to reply and its Substrate participant name (SUBSTRATE_HOLDER). The
+ * line stands alone when no skill yields a section.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -49,9 +54,27 @@ export function excerpt(text: string, sections: readonly string[]): string {
     .trim();
 }
 
-/** Builds the primer from `<home>/.xtrm/skills/default`; null when no skill yields a section. Never throws. */
+/** One line naming the dispatcher, its reply address and this worker's holder; null without dispatcher env. */
+export function dispatcherLine(env: NodeJS.ProcessEnv = process.env): string | null {
+  const name = env.XTRM_DISPATCHER_NAME?.trim();
+  const address = env.XTRM_DISPATCHER_ADDRESS?.trim();
+  if (!name && !address) return null;
+  const holder = env.SUBSTRATE_HOLDER?.trim();
+  const parts = [`Dispatcher: ${name || "an agent session"} launched you.`];
+  if (address) parts.push(`Reply to it at ${address}.`);
+  if (holder) parts.push(`Your Substrate participant name is ${holder} (SUBSTRATE_HOLDER); claim Issues with --holder ${holder}.`);
+  return parts.join(" ");
+}
+
+/** Builds the primer from `<home>/.xtrm/skills/default`; null when no skill yields a section and no dispatcher env is set. Never throws. */
 // ponytail: read HOME per call; Bun caches os.homedir(), so a runtime HOME change is invisible to it.
-export function buildPrimer(home: string = process.env.HOME || homedir()): string | null {
+export function buildPrimer(home: string = process.env.HOME || homedir(), env: NodeJS.ProcessEnv = process.env): string | null {
+  let dispatcher: string | null = null;
+  try {
+    dispatcher = dispatcherLine(env);
+  } catch {
+    dispatcher = null;
+  }
   try {
     const root = join(home, ".xtrm", "skills", "default");
     const loads: string[] = [];
@@ -68,14 +91,15 @@ export function buildPrimer(home: string = process.env.HOME || homedir()): strin
       loads.push(`- /skill:${name}: ${load}`);
       blocks.push(`### ${name} (excerpt)\n\n${body}`);
     }
-    if (blocks.length === 0) return null;
+    if (blocks.length === 0) return dispatcher;
     return [
+      ...(dispatcher ? [dispatcher] : []),
       "XTRM operating primer, condensed from the global skills in ~/.xtrm/skills/default. This is an excerpt, not the full doctrine. Load the full skill with its slash command:",
       loads.join("\n"),
       ...blocks,
     ].join("\n\n");
   } catch {
-    return null;
+    return dispatcher;
   }
 }
 
