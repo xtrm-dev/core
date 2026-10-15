@@ -60,6 +60,16 @@ describe('resolveDispatcher', () => {
         expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess, env: {} })).toEqual({});
     });
 
+    it('a Pi dispatcher registered by pi-claude-link (date-string procStart) resolves', () => {
+        writeSession(200, {
+            name: 'pi-coord', messagingSocketPath: '/run/cc/200.sock',
+            procStart: 'Thu Oct 15 19:40:44 2026', entrypoint: 'pi', version: 'pi-claude-link',
+        });
+        writeSession(100, { name: 'grand', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess, env: {} }))
+            .toEqual({ name: 'pi-coord', address: 'uds:/run/cc/200.sock' });
+    });
+
     it('no ancestor: falls back to inherited XTRM_DISPATCHER_*', () => {
         expect(resolveDispatcher({
             startPid: 300, sessionsDir, readProcess,

@@ -57273,7 +57273,7 @@ function readSessionEntry(sessionsDir, pid, startTime) {
   if (!socket) return null;
   if (typeof entry.pid === "number" && entry.pid !== pid) return null;
   const procStart = clean(entry.procStart);
-  if (procStart && startTime && procStart !== startTime) return null;
+  if (procStart && /^\d+$/.test(procStart) && startTime && procStart !== startTime) return null;
   const identity = { address: `uds:${socket}` };
   const name = clean(entry.name);
   if (name) identity.name = name;

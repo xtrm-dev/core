@@ -4,6 +4,25 @@ For coordinated bounded work — an epic, a wave of related Issues, a batch of v
 
 **When it fits.** A parent coordinator drives 3–10 short-to-medium-lived workers whose lifetime is bounded by the current task. Not for long-lived independent peers that must outlive the coordinator, and not when workers must survive an accidental parent-session kill — those still want separate sessions.
 
+**Canonical recipe: `xt <runtime> <slug> --window`.** Run it from the coordinator's own shell
+(the agent's Bash tool), at the main repo root. It opens a detached window `<runtime>-<slug>` in
+the caller's tmux session and prints `<session>:<pane_id>`. Because the coordinator runs `xt`
+itself, `xt` resolves the dispatcher and exports to the worker, with no typing:
+
+| Variable | Value |
+|---|---|
+| `SUBSTRATE_HOLDER` | `<slug>`; overrides the coordinator's own value |
+| `XTRM_DISPATCHER_NAME` | the nearest ancestor session registered in `~/.claude/sessions/` (Claude Code, or Pi with pi-claude-link) |
+| `XTRM_DISPATCHER_ADDRESS` | `uds:<messagingSocketPath>` of that session |
+| `XTRM_PARENT_SESSION_ID`, `XTRM_PARENT_PANE_ID` | the coordinator's tmux session and pane |
+
+Unknown values are absent. When no ancestor is registered, inherited `XTRM_DISPATCHER_*` is used.
+The worker's session-start primer names the dispatcher and the reply address.
+
+**Manual recipe (no dispatcher identity).** The recipe below makes the tmux server, not the
+coordinator, the parent of `xt`, so the dispatcher stays unknown. Use it only when `--window`
+is unavailable.
+
 **Canonical recipe (proven).** Run from the parent's shell. `xt claude` / `xt pi` refuse to create nested worktrees, so the launch command MUST `cd` to the main repo root before invoking `xt`. New windows must be created empty then sent the command; `tmux new-window "cmd"` runs the cmd in the window's default shell and exits when it returns, which kills the pane before the agent boots.
 
 ```bash

@@ -79,12 +79,8 @@ Worker identity on the journal: `xt claude|pi|codex <name>` exports `SUBSTRATE_H
 `XTRM_SESSION_NAME`; only the holder tells them apart. Verify with
 `sb journal latest <ref> --json` (`participantId`).
 
-Dispatcher identity: an `xt` launch made from inside an agent session also exports
-`XTRM_DISPATCHER_NAME` and `XTRM_DISPATCHER_ADDRESS` (`uds:<socket>` of the nearest Claude
-session above it), plus `XTRM_PARENT_SESSION_ID` and `XTRM_PARENT_PANE_ID` when tmux answers.
-The session-start primer tells the worker who dispatched it and where to reply. Unknown
-values are absent, never empty. `xt <runtime> <name> --window` opens the worker as a detached
-window in the caller's tmux session with the same identity.
+`xt` also exports the dispatcher's name and reply address, which the primer shows the worker;
+env names and `--window`: `references/fleet-window-dispatch.md`.
 
 ## Coordinator responsibilities
 
