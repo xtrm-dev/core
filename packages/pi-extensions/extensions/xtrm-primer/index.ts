@@ -50,7 +50,8 @@ export function excerpt(text: string, sections: readonly string[]): string {
 }
 
 /** Builds the primer from `<home>/.xtrm/skills/default`; null when no skill yields a section. Never throws. */
-export function buildPrimer(home: string = homedir()): string | null {
+// ponytail: read HOME per call; Bun caches os.homedir(), so a runtime HOME change is invisible to it.
+export function buildPrimer(home: string = process.env.HOME || homedir()): string | null {
   try {
     const root = join(home, ".xtrm", "skills", "default");
     const loads: string[] = [];
