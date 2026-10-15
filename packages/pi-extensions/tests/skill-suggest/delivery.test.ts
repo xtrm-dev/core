@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { deliverySeam, type Situation } from "../../extensions/skill-suggest/index.ts";
 
 const at = (o: Partial<Situation>): Situation => ({ prompted: false, pending: false, usedTool: false, activeTurn: false, ...o });
@@ -27,27 +30,122 @@ describe("delivery covers every situation", () => {
   });
 });
 
-describe("CORE-2367: the card signals a suggestion, it does not claim a load", () => {
-  const SRC = "../../extensions/skill-suggest/index.ts";
+// ---- behavioural harness: drive the registered handlers of a real extension instance ----
 
-  it("uses imperative wording, never a completed load", async () => {
-    const src = await Bun.file(new URL(SRC, import.meta.url)).text();
-    expect(src).toContain("load /skill:");
-    expect(src).not.toContain("skill loaded /skill:");
+type Handler = (event: unknown, ctx?: unknown) => unknown;
+interface Sent { content: string; details: Record<string, unknown> }
+
+const LOG_PATH = join(homedir(), ".xtrm", "skill-suggest", "log.jsonl");
+const readLogSize = () => (existsSync(LOG_PATH) ? statSync(LOG_PATH).size : 0);
+const readLogSince = (size: number): Array<Record<string, unknown>> =>
+  readFileSync(LOG_PATH, "utf8").slice(size).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+
+const CLASSIFIER_ANSWERS = {
+  skill: { type: "choice", choice: "demo-skill", probabilities: { "demo-skill": 0.9, none: 0.1 }, confidence: 0.9 },
+  would_follow_documented_procedure: { type: "bool", probability: 0.9 },
+  prose_suffices: { type: "bool", probability: 0.1 },
+};
+const stubRegistry = {
+  getAvailableOfType: async () => [{ id: "jev-test", provider: "typesafe" }],
+  classify: async () => ({ stopReason: "stop", answers: CLASSIFIER_ANSWERS, model: "typesafe/jev-test" }),
+};
+
+const WORKING_TURN = {
+  messages: [{
+    role: "assistant",
+    content: [{ type: "text", text: "Next I will follow the demo procedure." }, { type: "tool_call", toolName: "edit", input: { path: "a.ts" } }],
+  }],
+};
+
+let repo: string;
+let prevCwd: string;
+beforeEach(async () => {
+  prevCwd = process.cwd();
+  repo = mkdtempSync(join(tmpdir(), "skill-suggest-"));
+  mkdirSync(join(repo, ".git"));
+  mkdirSync(join(repo, ".xtrm", "skills", "demo-skill"), { recursive: true });
+  writeFileSync(join(repo, ".xtrm", "skills", "demo-skill", "SKILL.md"), "---\nname: demo-skill\ndescription: Demo procedure for tests.\n---\n# Demo\n## Step one\n");
+  process.chdir(repo);
+  (await import("../../extensions/skill-suggest/roster.ts")).resetRosterCache();
+});
+afterEach(() => {
+  process.chdir(prevCwd);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+async function boot() {
+  const handlers: Record<string, Handler> = {};
+  const sent: Sent[] = [];
+  let renderer: ((m: { content?: unknown }) => { render: () => string[] }) | null = null;
+  const pi = {
+    getFlag: () => false,
+    on: (name: string, fn: Handler) => { handlers[name] = fn; },
+    sendMessage: (m: Sent) => { sent.push(m); },
+    registerMessageRenderer: (_t: string, fn: typeof renderer) => { renderer = fn; },
+  };
+  const { default: ext } = await import("../../extensions/skill-suggest/index.ts");
+  ext(pi as never);
+  const ctx = { modelRegistry: stubRegistry };
+  return { handlers, sent, ctx, render: (m: Sent) => (renderer ? renderer(m).render().join("\n") : "") };
+}
+
+describe("CORE-2367: agent_end delivers the doctrine to the model", () => {
+  it("sends the <xtrm_context payload as message content, not an empty or card-only body", async () => {
+    const { handlers, sent, ctx } = await boot();
+    await handlers["agent_end"]!(WORKING_TURN, ctx);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.content).toContain("<xtrm_context");
+    expect(sent[0]!.content).toContain('source="demo-skill"');
+    // The opening hint is a /skill: command Pi actually resolves.
+    expect(sent[0]!.content).toContain("Load this skill: /skill:demo-skill");
   });
 
-  it("opens the body with the /skill: load hint Pi actually resolves", async () => {
-    const src = await Bun.file(new URL(SRC, import.meta.url)).text();
-    expect(src).toContain("Load this skill: /skill:${entry.skill}");
+  it("renders an imperative header, never a completed load", async () => {
+    const { handlers, sent, ctx, render } = await boot();
+    await handlers["agent_end"]!(WORKING_TURN, ctx);
+    const card = render(sent[0]!);
+    expect(card).toContain("load /skill:demo-skill/SKILL.md");
+    expect(card).not.toContain("skill loaded");
+  });
+});
+
+describe("CORE-2367: read-after-suggest accounting", () => {
+  it("counts a real Pi read event ({toolName, input}) of the suggested path", async () => {
+    const { handlers, ctx } = await boot();
+    const before = readLogSize();
+    await handlers["agent_end"]!(WORKING_TURN, ctx);
+    const skillPath = join(repo, ".xtrm", "skills", "demo-skill", "SKILL.md");
+    handlers["tool_call"]!({ toolName: "read", input: { path: skillPath } });
+    const rows = readLogSince(before).filter((r) => r["seam"] === "read_after_suggest");
+    expect(rows.map((r) => r["outcome"])).toEqual(["read"]);
+    expect(rows[0]!["pick"]).toBe("demo-skill");
   });
 
-  it("no longer discards the doctrine block at agent_end", async () => {
-    const src = await Bun.file(new URL(SRC, import.meta.url)).text();
-    // The bug: a block was built, then only the rendered card was sent, so the
-    // model received nothing from the intention seam.
-    const seam = src.slice(src.indexOf('seam: "agent_end"') - 4000);
-    expect(seam).toContain("content: block");
-    expect(seam).not.toMatch(/const block = doctrineBlock\([^;]+;\s*(?:logDecision[\s\S]{0,400}?)?content: formatSuggestionCard/);
+  it("logs 'expired' once the window of turns passes with no read", async () => {
+    const { handlers, ctx } = await boot();
+    const before = readLogSize();
+    await handlers["agent_end"]!(WORKING_TURN, ctx); // arms the watch
+    await handlers["agent_end"]!({ messages: [] }, ctx); // turn 1 after
+    expect(readLogSince(before).some((r) => r["outcome"] === "expired")).toBe(false);
+    await handlers["agent_end"]!({ messages: [] }, ctx); // turn 2 after: window over
+    const expired = readLogSince(before).filter((r) => r["outcome"] === "expired");
+    expect(expired).toHaveLength(1);
+    expect(expired[0]!["pick"]).toBe("demo-skill");
+    // A read after expiry is no longer credited.
+    handlers["tool_call"]!({ toolName: "read", input: { path: join(repo, ".xtrm", "skills", "demo-skill", "SKILL.md") } });
+    expect(readLogSince(before).some((r) => r["outcome"] === "read")).toBe(false);
+  });
+
+  it("a cooldown-suppressed suggestion arms no watch", async () => {
+    const { handlers, ctx } = await boot();
+    await handlers["agent_end"]!(WORKING_TURN, ctx); // fires, arms, sets cooldown
+    await handlers["agent_end"]!({ messages: [] }, ctx);
+    await handlers["agent_end"]!({ messages: [] }, ctx); // watch expires
+    const before = readLogSize();
+    await handlers["agent_end"]!(WORKING_TURN, ctx); // same id within cooldown: suppressed
+    await handlers["agent_end"]!({ messages: [] }, ctx);
+    await handlers["agent_end"]!({ messages: [] }, ctx);
+    expect(readLogSince(before).filter((r) => r["outcome"] === "expired")).toHaveLength(0);
   });
 });
 

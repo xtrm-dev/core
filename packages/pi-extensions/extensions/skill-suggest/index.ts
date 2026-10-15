@@ -429,7 +429,6 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   let pending: PendingDoctrine | null = null;
   /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
   let readWatch: ReadWatch | null = null;
-  let lastSuggestedId: string | null = null;
   const READ_WINDOW_TURNS = 2;
   const cooldownOk = (id: string, now: number) => (cooldowns[id] === undefined || now >= cooldowns[id]);
   const cooldownSet = (id: string) => { cooldowns[id] = Date.now() + COOLDOWN_MIN * 60_000; };
@@ -582,7 +581,6 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       // operator's prompt outright.
       pending = { entry, block, confidence: result.choice.confidence };
       readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
-      lastSuggestedId = entry.id;
       logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "deferred-to-tool-result" });
 
       return { action: "continue" } as const;
@@ -597,19 +595,15 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // CORE-2367: did the suggestion actually get read? A path-identical read inside
   // the window counts; nothing else does.
   pi.on("tool_call", (event) => {
-    const e = event as { toolName?: string; args?: unknown };
-    const path = readPathOf(String(e.toolName ?? ""), e.args);
+    // Pi's ToolCallEvent carries `input`; `args` is the legacy shape.
+    const e = event as { toolName?: string; input?: unknown; args?: unknown };
+    const path = readPathOf(String(e.toolName ?? ""), e.input ?? e.args);
     if (!path || !readWatch) return;
+    const id = readWatch.id;
     const next = watchRead(readWatch, path, false);
     readWatch = next.watch;
     if (next.read) {
-      logDecision({
-        ts: new Date().toISOString(),
-        seam: "read_after_suggest",
-        pick: readWatch?.id ?? lastSuggestedId,
-        outcome: "read",
-        path,
-      });
+      logDecision({ ts: new Date().toISOString(), seam: "read_after_suggest", pick: id, outcome: "read", path });
     }
   });
 
@@ -715,10 +709,9 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         });
         return;
       }
-      readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
-      lastSuggestedId = entry.id;
       if (!cooldownOk(entry.id, Date.now())) return;
       cooldownSet(entry.id);
+      readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
 
       // CORE-2367: this block used to be built and DISCARDED, so the intention
       // seam showed the operator a card while sending the model nothing at all -
@@ -745,6 +738,13 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // Coverage: a turn with no tool call would otherwise drop what submit
   // decided, so agent_end flushes it before its own decision runs.
   pi.on("agent_end", async (event: unknown, ctx: unknown) => {
+    // Turn boundary: age the read watch BEFORE this turn's own decision can arm a new one.
+    if (readWatch) {
+      const id = readWatch.id;
+      const next = watchRead(readWatch, null, true);
+      readWatch = next.watch;
+      if (next.expired) logDecision({ ts: new Date().toISOString(), seam: "read_after_suggest", pick: id, outcome: "expired" });
+    }
     if (pending && deliverySeam({ prompted: true, pending: true, usedTool: false, activeTurn: true }) === "agent_end_flush") {
       const item = pending;
       pending = null;
