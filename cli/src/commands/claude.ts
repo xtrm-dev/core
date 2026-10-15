@@ -56,6 +56,7 @@ export function createClaudeCommand(): Command {
         .option('--child', 'With --role: explicit form of the auto-behavior — @agent_parent_session = current pane\'s session_id')
         .option('--reuse', 'With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one')
         .option('--subordinate', 'Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch')
+        .option('--window', 'Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>')
         .option('--base <ref>', 'Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)')
         .allowExcessArguments(true)
         .allowUnknownOption(true)
@@ -93,6 +94,7 @@ Examples:
             reuse?: boolean;
             subordinate?: boolean;
             base?: string;
+            window?: boolean;
         }) => {
             // claude has no --thinking flag; if the operator was explicit,
             // warn and continue (specialist.execution.thinking_level from
@@ -121,6 +123,7 @@ Examples:
                 reuse: Boolean(opts.reuse),
                 subordinate: Boolean(opts.subordinate),
                 base: opts.base,
+                window: opts.window,
                 passthrough,
             });
         });

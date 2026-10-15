@@ -18,6 +18,8 @@ import {
     writeCodexWorktreeSession,
     type CodexTrustProfile,
 } from '../core/codex-session.js';
+import { buildDispatcherEnv } from '../core/dispatcher-identity.js';
+import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import {
     checkStructuredLaunchOptions,
     checkStructuredLaunchPaths,
@@ -48,6 +50,8 @@ export interface CodexWorktreeSessionOptions {
     passthrough?: string[];
     /** Explicit branch start point (e.g. origin/stable). Default: fresh origin/<default>, fetched first (CORE-2340). */
     base?: string;
+    /** Open as a detached new window in the caller's tmux session (CORE-2390). */
+    window?: boolean;
 }
 
 const SESSION_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -180,6 +184,9 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     });
     if (!optionCheck.ok) fail(optionCheck.error);
     if (opts.role && opts.bead && opts.prompt) fail('--bead and --prompt are mutually exclusive with --role');
+    const window = Boolean(opts.window);
+    if (window && !process.env.TMUX) fail('--window requires running inside tmux');
+    if (window && structured) fail('--window cannot combine with --json');
 
     const passthrough = checkCodexPassthrough(opts.passthrough ?? []);
     if (!passthrough.ok) fail(passthrough.error);
@@ -271,7 +278,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     const sessionName = roleName
         ? `role-codex-${slugify(roleName)}${opts.bead ? `-${slugify(opts.bead)}` : ''}`
         : `codex-${slugify(slug)}`;
-    if (spawnSync('tmux', ['has-session', '-t', `=${sessionName}`], { stdio: 'pipe' }).status === 0) {
+    if (!window && spawnSync('tmux', ['has-session', '-t', `=${sessionName}`], { stdio: 'pipe' }).status === 0) {
         fail(`tmux session already exists: ${sessionName}`);
     }
 
@@ -364,9 +371,22 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         ...(opts.bead ? [{ key: '@agent_bead', value: opts.bead }] : []),
         ...(roleName ? [{ key: '@agent_role', value: roleName }] : []),
     ];
-    const agentEnv = { ...buildAgentEnv(paneOptions), XTMUX_AGENT_RUNTIME: 'codex' };
+    // CORE-2390: dispatcher identity; a --window worker also carries the
+    // caller session's identity, since that is the session it runs in.
+    const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
+    const agentEnv = {
+        ...buildAgentEnv(paneOptions),
+        XTMUX_AGENT_RUNTIME: 'codex',
+        ...(windowIdentity ? buildSessionIdentityEnv(windowIdentity) : {}),
+        ...buildDispatcherEnv(slug),
+    };
     const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
+    let windowPaneId = '';
+    const killWindow = (): void => {
+        if (windowPaneId) spawnSync('tmux', ['kill-pane', '-t', windowPaneId], { stdio: 'ignore' });
+    };
     const cleanupOnSignal = (): void => {
+        killWindow();
         cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
         process.exit(1);
     };
@@ -377,6 +397,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     };
     const cleanupAndFail = (message: string): never => {
         removeSignalCleanup();
+        killWindow();
         cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
         return fail(message);
     };
@@ -388,12 +409,12 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     } catch (error) {
         cleanupAndFail(error instanceof Error ? error.message : String(error));
     }
-    const launched = spawnSync('tmux', [
-        'new-session', '-d', '-s', sessionName, '-c', worktreePath,
-        ...envArgs,
-        codexBufferCommand(buffer),
-    ], { stdio: 'pipe', encoding: 'utf8' });
-    if (launched.status !== 0) cleanupAndFail((launched.stderr ?? '').trim() || 'tmux new-session failed');
+    const createArgs = window
+        ? ['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', `${parentSession}:`, '-n', sessionName, '-c', worktreePath]
+        : ['new-session', '-d', '-s', sessionName, '-c', worktreePath];
+    const launched = spawnSync('tmux', [...createArgs, ...envArgs, codexBufferCommand(buffer)], { stdio: 'pipe', encoding: 'utf8' });
+    if (launched.status !== 0) cleanupAndFail((launched.stderr ?? '').trim() || `tmux ${createArgs[0]} failed`);
+    if (window) windowPaneId = (launched.stdout ?? '').trim();
 
     const consumer = spawnSync('tmux', ['wait-for', `${buffer}-consumer-ready`], {
         stdio: 'pipe', encoding: 'utf8', timeout: 5_000, killSignal: 'SIGTERM',
@@ -409,10 +430,11 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         : null;
     if (loaded.status !== 0 || signaled?.status !== 0) cleanupAndFail('Codex prompt transport failed');
 
-    const pane = spawnSync('tmux', ['list-panes', '-t', sessionName, '-F', '#{pane_id}'], {
-        stdio: 'pipe', encoding: 'utf8',
-    });
-    const paneId = (pane.stdout ?? '').trim().split(/\r?\n/, 1)[0] ?? '';
+    const paneId = window
+        ? windowPaneId
+        : (spawnSync('tmux', ['list-panes', '-t', sessionName, '-F', '#{pane_id}'], {
+            stdio: 'pipe', encoding: 'utf8',
+        }).stdout ?? '').trim().split(/\r?\n/, 1)[0] ?? '';
     if (!/^%[0-9]+$/.test(paneId)) cleanupAndFail('Could not resolve Codex pane id');
     for (const { key, value } of paneOptions) {
         spawnSync('tmux', ['set-option', '-p', '-t', paneId, key, value], { stdio: 'pipe' });
@@ -434,6 +456,12 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         profileName: trustProfile.name,
         profilePath: trustProfile.path,
     })) cleanupAndFail('Could not persist Codex worktree session metadata');
+
+    if (window) {
+        removeSignalCleanup();
+        process.stdout.write(`${windowIdentity?.sessionName ?? parentSession}:${paneId}\n`);
+        process.exit(0);
+    }
 
     const sessionQuery = spawnSync('tmux', ['list-sessions', '-F', '#{session_name}\t#{session_id}'], {
         stdio: 'pipe', encoding: 'utf8',

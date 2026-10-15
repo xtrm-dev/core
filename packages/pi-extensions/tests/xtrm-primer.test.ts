@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import register, { buildPrimer, CUSTOM_TYPE } from "../extensions/xtrm-primer/index.ts";
+import register, { buildPrimer, CUSTOM_TYPE, dispatcherLine } from "../extensions/xtrm-primer/index.ts";
 
 const homes: string[] = [];
 
@@ -49,12 +49,40 @@ describe("buildPrimer", () => {
   });
 
   test("no skills or an unreadable file emits nothing and does not throw", () => {
-    expect(buildPrimer(home({}))).toBeNull();
+    expect(buildPrimer(home({}), {})).toBeNull();
     const h = home({});
     // SKILL.md as a directory: readFileSync throws EISDIR.
     mkdirSync(join(h, ".xtrm", "skills", "default", "using-xtrm", "SKILL.md"), { recursive: true });
-    expect(buildPrimer(h)).toBeNull();
-    expect(buildPrimer(join(tmpdir(), "xtrm-primer-nonexistent-home"))).toBeNull();
+    expect(buildPrimer(h, {})).toBeNull();
+    expect(buildPrimer(join(tmpdir(), "xtrm-primer-nonexistent-home"), {})).toBeNull();
+  });
+});
+
+describe("dispatcher line (CORE-2390)", () => {
+  const ENV = {
+    XTRM_DISPATCHER_NAME: "coord-1",
+    XTRM_DISPATCHER_ADDRESS: "uds:/run/user/1000/cc-socks/42.sock",
+    SUBSTRATE_HOLDER: "worker-a",
+  };
+
+  test("present when dispatcher env is set: names dispatcher, reply address and holder", () => {
+    const out = buildPrimer(home({ "using-xtrm": USING }), ENV) as string;
+    const first = out.split("\n", 1)[0];
+    expect(first).toContain("coord-1");
+    expect(first).toContain("uds:/run/user/1000/cc-socks/42.sock");
+    expect(first).toContain("--holder worker-a");
+    expect(out).toContain("CONTRACT-BODY");
+  });
+
+  test("absent without dispatcher env, even with SUBSTRATE_HOLDER set", () => {
+    expect(dispatcherLine({})).toBeNull();
+    expect(dispatcherLine({ SUBSTRATE_HOLDER: "worker-a" })).toBeNull();
+    const out = buildPrimer(home({ "using-xtrm": USING }), { SUBSTRATE_HOLDER: "worker-a" }) as string;
+    expect(out).not.toContain("Dispatcher:");
+  });
+
+  test("stands alone when no skill yields a section", () => {
+    expect(buildPrimer(home({}), ENV)).toBe(dispatcherLine(ENV));
   });
 });
 

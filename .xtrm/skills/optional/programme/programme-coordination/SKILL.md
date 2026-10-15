@@ -110,20 +110,18 @@ Keep all workers in the coordinator's own tmux session, one window each. Details
 launch command: `references/fleet.md`. Short form:
 
 ```
-S=$(tmux display-message -p '#S')
-tmux new-window -d -t "$S" -n <name> -c <repo> \
-  "SUBSTRATE_HOLDER=<name> xt claude <name> --prompt '<skills> ... /goal ...'"
+xt claude <name> --window --prompt '<skills> ... /goal ...'
 ```
 
 - Every worker gets its own attested issue before launch. That contract is its brief.
-- **Identify yourself in every dispatch.** The launch prompt names the coordinator: its exact
-  messaging name (the first line of `ListAgents`) and "reply with `SendMessage` to that name, and
-  journal on your issue". A worker that does not know who dispatched it cannot report, and its
-  result goes nowhere. The same applies to any message that expects a reply.
-- `SUBSTRATE_HOLDER=<name>` stamps the worker's name on every journal entry it writes, and the
-  worker claims with `--holder <name>` (same name). This is manual today: `xt` publishes the session
-  identity but not a participant, so the prefix is required (follow-up: have `xt` set it). Verified
-  with `sb` directly, not through `xt claude`: after each launch check the worker's first entry.
+- **The worker knows who dispatched it.** `xt` exports the coordinator's messaging name and
+  address (`XTRM_DISPATCHER_NAME`, `XTRM_DISPATCHER_ADDRESS`) and the worker's primer names them,
+  so the prompt does not need to. Keep "report with `SendMessage` and journal on your issue" in
+  the prompt. A worker that cannot report sends its result nowhere; the same applies to any
+  message that expects a reply.
+- `xt` exports `SUBSTRATE_HOLDER=<name>`, which stamps the worker's name on every journal entry
+  it writes, and the worker claims with `--holder <name>` (same name). After each launch check
+  the worker's first entry.
 - Name the worker `<story-key>-<slug>` (for example `ISSUE-260-pi-runtime`). The branch is
   `xt/<name>`, so the Jira key reaches branch names, PR titles and commit trailers, which is what
   the Jira dev panel reads once GitHub for Jira is connected.
