@@ -81,8 +81,8 @@ interface ReadonlySessionManagerLike {
 }
 
 const CUSTOM_TYPE = "skill_suggestion";
-const LOG_DIR = join(homedir(), ".xtrm", "skill-suggest");
-const LOG_FILE = join(LOG_DIR, "log.jsonl");
+// Resolved per call so tests can redirect the log (SKILL_SUGGEST_LOG_DIR) after import.
+const logDir = (): string => process.env["SKILL_SUGGEST_LOG_DIR"] ?? join(homedir(), ".xtrm", "skill-suggest");
 
 /**
  * The gate, as one pure function (CORE-2366).
@@ -189,8 +189,9 @@ export function isControlNudge(prompt: string): boolean {
 
 function logDecision(row: Record<string, unknown>): void {
   try {
-    mkdirSync(LOG_DIR, { recursive: true });
-    appendFileSync(LOG_FILE, `${JSON.stringify(row)}\n`);
+    const dir = logDir();
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(row)}\n`);
   } catch {
     /* logging is best-effort */
   }
@@ -429,7 +430,11 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   let pending: PendingDoctrine | null = null;
   /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
   let readWatch: ReadWatch | null = null;
+  /** Turns AFTER the arming turn in which a read still counts. */
   const READ_WINDOW_TURNS = 2;
+  // The input seam arms mid-turn, and that same turn's agent_end ages the watch once,
+  // so it gets one extra tick; the agent_end seam arms after the tick already ran.
+  const INPUT_SEAM_TURNS = READ_WINDOW_TURNS + 1;
   const cooldownOk = (id: string, now: number) => (cooldowns[id] === undefined || now >= cooldowns[id]);
   const cooldownSet = (id: string) => { cooldowns[id] = Date.now() + COOLDOWN_MIN * 60_000; };
 
@@ -580,7 +585,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       // in-flight turn ("Agent is already processing") and displaced the
       // operator's prompt outright.
       pending = { entry, block, confidence: result.choice.confidence };
-      readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
+      readWatch = { id: entry.id, path: entry.path, turnsLeft: INPUT_SEAM_TURNS };
       logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "deferred-to-tool-result" });
 
       return { action: "continue" } as const;

@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deliverySeam, type Situation } from "../../extensions/skill-suggest/index.ts";
 
@@ -35,7 +35,11 @@ describe("delivery covers every situation", () => {
 type Handler = (event: unknown, ctx?: unknown) => unknown;
 interface Sent { content: string; details: Record<string, unknown> }
 
-const LOG_PATH = join(homedir(), ".xtrm", "skill-suggest", "log.jsonl");
+// Redirect the extension's decision log away from the operator's real one.
+const LOG_DIR = mkdtempSync(join(tmpdir(), "skill-suggest-log-"));
+process.env["SKILL_SUGGEST_LOG_DIR"] = LOG_DIR;
+afterAll(() => rmSync(LOG_DIR, { recursive: true, force: true }));
+const LOG_PATH = join(LOG_DIR, "log.jsonl");
 const readLogSize = () => (existsSync(LOG_PATH) ? statSync(LOG_PATH).size : 0);
 const readLogSince = (size: number): Array<Record<string, unknown>> =>
   readFileSync(LOG_PATH, "utf8").slice(size).split("\n").filter(Boolean).map((l) => JSON.parse(l));
