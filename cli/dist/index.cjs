@@ -60538,6 +60538,19 @@ async function pruneRetiredManagedSkills(params) {
   }
   return { removed };
 }
+var RETIRED_OPTIONAL_SKILLS = ["xtrm-maintenance/update-specialists"];
+async function pruneRetiredOptionalSkills(params) {
+  const { userXtrmDir, dryRun } = params;
+  const removed = [];
+  for (const relPath of RETIRED_OPTIONAL_SKILLS) {
+    const entryPath = import_path5.default.join(userXtrmDir, "skills", "optional", relPath);
+    const entryStat = await import_fs_extra16.default.lstat(entryPath).catch(() => null);
+    if (!entryStat?.isDirectory()) continue;
+    removed.push(relPath);
+    if (!dryRun) await import_fs_extra16.default.remove(entryPath);
+  }
+  return { removed };
+}
 async function appendGlobalSkillsSkipLog(asset, count) {
   const logPath = import_path5.default.join(import_path5.default.dirname(resolveGlobalSkillsRoot()), "logs", "skills-migration.jsonl");
   await import_fs_extra16.default.ensureDir(import_path5.default.dirname(logPath));
@@ -73074,6 +73087,11 @@ async function runInstall(opts = {}) {
   if (pruneResult.removed.length > 0) {
     const verb = dryRun ? "Would remove" : "Removed";
     console.log(kleur_default.dim(`  \u2022 ${verb} ${pruneResult.removed.length} retired managed skill(s): ${pruneResult.removed.join(", ")}`));
+  }
+  const optionalPrune = await pruneRetiredOptionalSkills({ userXtrmDir, dryRun });
+  if (optionalPrune.removed.length > 0) {
+    const verb = dryRun ? "Would remove" : "Removed";
+    console.log(kleur_default.dim(`  \u2022 ${verb} ${optionalPrune.removed.length} retired optional skill(s): ${optionalPrune.removed.join(", ")}`));
   }
   const stats = await installFromRegistry({
     packageRoot,

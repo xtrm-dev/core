@@ -13,7 +13,6 @@ These skills stay canonical in `specialists` and ship as vendored copies at publ
 | Skill | Placement | Reason |
 |---|---|---|
 | `using-specialists` | `default` | Universal Specialists execution-backend doctrine used by ordinary XTRM agents. |
-| `update-specialists` | `optional/xtrm-maintenance` | Explicit distribution/runtime maintenance workflow. |
 
 Publish flow refreshes `~/.xtrm/skills/default/` (global SSOT) from `specialists` before registry generation. The publish workflow (`publish.yml`) additionally verifies the vendored mirror against the specialists-side `dist/asset-contract.json` (deterministic sha256 manifest) via `scripts/verify-asset-contract.mjs`, so drift between the npm tarball payload and the specialists release cannot ship. See [`release.md`](release.md) for the full gate chain.
 

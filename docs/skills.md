@@ -75,7 +75,7 @@ The current package ships these managed packs:
 | `sre-ops` | live SRE/observability, causal production debugging, deploy/capacity workflows |
 | `xt-optional` | specialized XTRM CLI/operator helpers that should not be universal |
 | `xtrm-development` | XTRM runtime/hook/workflow development; includes `hook-development` |
-| `xtrm-maintenance` | releases, dependency updates, docs sync, Specialists update and maintenance |
+| `xtrm-maintenance` | releases, dependency updates, docs sync, and maintenance |
 
 Inspect the live pack rather than relying on a frozen skill list:
 

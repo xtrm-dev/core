@@ -76,7 +76,7 @@ The npm tarball that ships to users must match the specialists package the proje
 | `verify-asset-contract.mjs` | specialists' `dist/asset-contract.json` (per-file sha256) | A skill in `.xtrm/skills/default/` has the right path but a stale content hash |
 | `fresh-machine-smoke.yml` | live `npm install` + `xt init -y` + `sp init` end-to-end | A fresh user can't get to a working repo (PATH bug, missing prerequisite, broken bootstrap step) |
 
-`verify-asset-contract.mjs` enforces sha256 only for `shipped_skills[]` entries owned-by-specialists (per `docs/skills-ownership.json`). The two must-have skills are hard-named: `using-specialists` and `update-specialists` — their absence is a fail.
+`verify-asset-contract.mjs` enforces sha256 only for `shipped_skills[]` entries owned-by-specialists (per `docs/skills-ownership.json`). The sole must-have skill is hard-named: `using-specialists` — its absence is a fail.
 
 ---
 
@@ -266,7 +266,7 @@ docs/skills-ownership.json
 
 6. **`verify-asset-contract.mjs` parses paths, not skill names.** The specialists `asset-contract.json` schema has `shipped_skills[].path` (e.g. `config/skills/using-specialists/SKILL.md`) and `shipped_skills[].sha256` — there is no `entry.skill` or `entry.name` field. Skill name = `path.basename(path.dirname(entry.path))`, file basename = `path.basename(entry.path)`. Vendor mirror = `.xtrm/skills/default/<skill>/<basename>`.
 
-7. **Must-have skills are hardcoded by name in the verifier.** `using-specialists` and `update-specialists`. If the bead asks you to drop or rename a must-have, push back — these are the two skills xtrm-tools cannot ship without breaking the agent install flow.
+7. **Must-have skills are hardcoded by name in the verifier.** `using-specialists`. If the bead asks you to drop or rename the must-have, push back — this is the skill xtrm-tools cannot ship without breaking the agent install flow.
 
 8. **Never run a destructive shell command (`rm -rf`, `git reset --hard`, force-push, drop table) inside any of these workflows.** Operator confirmation only.
 
@@ -290,7 +290,7 @@ The three previously-deferred items are all closed as of `xtrm-lhqy`:
 
 `fresh-machine-smoke.yml` runs the full bootstrap (`xt init -y`, `xt doctor`, `xt update`, `sp init/doctor/list`) and captures every output. But its **gate assertions** are deliberately narrow — only the three things the release contract actually owns:
 
-1. The three must-have specialists skills exist under `.xtrm/skills/default/<skill>/SKILL.md` (`using-specialists`, `update-specialists`, `using-specialists-auto`).
+1. The must-have specialists skill exists at `.xtrm/skills/default/using-specialists/SKILL.md`, and `update-specialists` no longer ships.
 2. No symlinks anywhere under `.xtrm/`.
 3. No "Source and destination must not be the same" regression in any log.
 
