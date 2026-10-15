@@ -17,6 +17,7 @@ const mocked = vi.hoisted(() => ({
   resolvePackageRoot: vi.fn(),
   scaffoldSkillsDefaultFromPackage: vi.fn(),
   pruneRetiredManagedSkills: vi.fn(async () => ({ removed: [] })),
+  pruneRetiredOptionalSkills: vi.fn(async () => ({ removed: [] })),
   runPiInstall: vi.fn(async () => undefined),
   syncProjectMcpConfig: vi.fn(async () => ({ wroteFile: false, createdFile: false, mcpPath: '.mcp.json', addedServers: [], missingEnvWarnings: [] })),
   syncPiMcpConfig: vi.fn(async () => ({ wroteFile: false, createdFile: false, mcpPath: '.pi/mcp.json', addedServers: [], missingEnvWarnings: [] })),
@@ -39,6 +40,7 @@ vi.mock('../core/registry-scaffold.js', () => ({
   resolvePackageRoot: mocked.resolvePackageRoot,
   scaffoldSkillsDefaultFromPackage: mocked.scaffoldSkillsDefaultFromPackage,
   pruneRetiredManagedSkills: mocked.pruneRetiredManagedSkills,
+  pruneRetiredOptionalSkills: mocked.pruneRetiredOptionalSkills,
 }));
 vi.mock('../core/project-mcp-sync.js', () => ({
   syncProjectMcpConfig: mocked.syncProjectMcpConfig,
