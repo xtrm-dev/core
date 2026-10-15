@@ -33,8 +33,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, stripEndPeriod, SKILL_ACCENT, type VerbSpec } from "../../shared/suggest.ts";
+import { join, resolve } from "node:path";
+import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, stripEndPeriod, SKILL_ACCENT } from "../../shared/suggest.ts";
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
@@ -81,11 +81,95 @@ interface ReadonlySessionManagerLike {
 }
 
 const CUSTOM_TYPE = "skill_suggestion";
-const LOG_DIR = join(homedir(), ".xtrm", "skill-suggest");
-const LOG_FILE = join(LOG_DIR, "log.jsonl");
+// Resolved per call so tests can redirect the log (SKILL_SUGGEST_LOG_DIR) after import.
+const logDir = (): string => process.env["SKILL_SUGGEST_LOG_DIR"] ?? join(homedir(), ".xtrm", "skill-suggest");
+
+/**
+ * The gate, as one pure function (CORE-2366).
+ *
+ * The defect: every noul defaulted to 0, so a NEGATING noul contributed
+ * 1.0 - the strongest possible vote to fire. A classifier that answered
+ * nothing scored 0.5 and cleared a 0.3 bar. Missing evidence was the
+ * strongest evidence there was.
+ *
+ * The fix is asymmetric, and deliberately NOT blanket fail-closed: Jev
+ * degrades partially under timeout and fallback, so abstaining on every
+ * partial answer would starve legitimate weak signal and trade a visible
+ * error for an invisible one.
+ *   - a missing POSITIVE noul has no evidence, so the gate fails;
+ *   - a missing NEGATING noul is imputed NEUTRAL (0.5), never maximal.
+ */
+export function gateTerms(nouls: Record<string, number | null | undefined>): {
+  terms: number[];
+  abstain: string | null;
+} {
+  const terms: number[] = [];
+  let abstain: string | null = null;
+
+  // Positive noul: absent evidence cannot support firing.
+  const positive = nouls["would_follow_documented_procedure"];
+  if (typeof positive !== "number") {
+    abstain = "missing-positive-noul";
+    terms.push(0);
+  } else {
+    terms.push(positive);
+  }
+
+  // Negating nouls: absent evidence is neutral, not maximal.
+  for (const key of ["prose_suffices", "asks_about_the_tooling"] as const) {
+    const raw = nouls[key];
+    terms.push(typeof raw === "number" ? 1 - raw : 0.5);
+  }
+
+  return { terms, abstain };
+}
+
+/** Would this entry be suggested? The reason is returned so it can be logged. */
+export function evaluateGate(input: {
+  nouls: Record<string, number | null | undefined>;
+  confidence: number | null;
+  noneConfidence?: number | null;
+  hasEntry: boolean;
+}): { fire: boolean; gateMean: number; reason: string } {
+  const { terms, abstain } = gateTerms(input.nouls);
+  const gateMean = terms.reduce((a, b) => a + b, 0) / terms.length;
+
+  if (abstain) return { fire: false, gateMean, reason: abstain };
+
+  // A mean hides a unanimous veto. With a strong positive (1.0) and BOTH negators
+  // maxed (0.0 each) the mean lands exactly on GATE_THRESHOLD, so a strict `<`
+  // comparison let "prose fully suffices AND this is pure tooling chatter" fire.
+  // Two independent negators at their extreme outrank one positive; a mean cannot
+  // express that, so it is stated explicitly.
+  const proseMax = input.nouls["prose_suffices"] ?? 0;
+  const toolingMax = input.nouls["asks_about_the_tooling"] ?? 0;
+  if (proseMax >= 0.9 && toolingMax >= 0.9) {
+    return { fire: false, gateMean, reason: "vetoed-by-negators" };
+  }
+
+  if (gateMean < GATE_THRESHOLD) return { fire: false, gateMean, reason: "below-gate" };
+  if (!input.hasEntry) return { fire: false, gateMean, reason: "unknown-entry" };
+
+  // The agent_end seam had NO confidence sub-gate at all, so a near-zero pick with
+  // a healthy gate injected there by design. Both seams require it now.
+  const confidence = input.confidence;
+  if (typeof confidence !== "number") return { fire: false, gateMean, reason: "missing-confidence" };
+  if (confidence < FITS_THRESHOLD) return { fire: false, gateMean, reason: "below-fits" };
+
+  // Confidence alone is insufficient: the winner must BEAT the explicit `none`
+  // option, not merely clear an absolute bar. `none` is otherwise just another
+  // entry in the choice, so a weak winner fires against nothing.
+  const none = input.noneConfidence;
+  if (typeof none === "number" && confidence - none < NONE_MARGIN) {
+    return { fire: false, gateMean, reason: "below-none-margin" };
+  }
+
+  return { fire: true, gateMean, reason: "fire" };
+}
 
 const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
-const FITS_THRESHOLD = 0.3; // winner's verify noul under this -> nothing
+const FITS_THRESHOLD = 0.3; // winner's own confidence under this -> nothing (both seams, CORE-2366)
+const NONE_MARGIN = 0.05; // the winner must BEAT `none`, not merely clear a bar
 const INJECT_TIMEOUT_MS = 2500;
 
 const COOLDOWN_MIN = 30;
@@ -105,8 +189,9 @@ export function isControlNudge(prompt: string): boolean {
 
 function logDecision(row: Record<string, unknown>): void {
   try {
-    mkdirSync(LOG_DIR, { recursive: true });
-    appendFileSync(LOG_FILE, `${JSON.stringify(row)}\n`);
+    const dir = logDir();
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(row)}\n`);
   } catch {
     /* logging is best-effort */
   }
@@ -209,26 +294,91 @@ async function askJev(
   return { result, jevMs: Date.now() - start, jevPath: path };
 }
 
-/** Full load subpath for the card header (operator directive, CORE-2348). */
-function skillLoadPath(entry: RosterEntry): string {
-  return entry.level === "skill" ? `${entry.skill}/SKILL.md` : entry.id;
+/**
+ * Read-after-suggest accounting (CORE-2367).
+ *
+ * A suggestion that is never read is a working card that changed nothing, and
+ * until this existed nothing in the system could tell the two apart. The rule
+ * is deliberately narrow: a PATH-IDENTICAL read of the suggested file within
+ * N turns. Counting card renders would make the metric agree with itself.
+ */
+export interface ReadWatch {
+  id: string;
+  path: string;
+  turnsLeft: number;
 }
 
-function skillVerb(entry: RosterEntry, confidence: number | null): VerbSpec {
-  return {
-    id: "skill_suggest",
-    // CORE-2348: the header states the full load subpath, up front.
-    action: `load /skill:${skillLoadPath(entry)}`,
-    oneLine: entry.description,
-    instruction: () =>
-      `Load /skill:${entry.skill} or read ${entry.path}; apply what fits. Ignore this if it does not fit.`,
-    severity: "normal",
-    cooldownMin: COOLDOWN_MIN,
-    source: "jev",
+export function watchRead(
+  watch: ReadWatch | null,
+  readPath: string | null,
+  turnBoundary: boolean,
+): { watch: ReadWatch | null; read: boolean; expired: boolean } {
+  if (!watch) return { watch: null, read: false, expired: false };
+  if (readPath && samePath(readPath, watch.path)) {
+    return { watch: null, read: true, expired: false };
+  }
+  if (turnBoundary) {
+    const left = watch.turnsLeft - 1;
+    if (left <= 0) return { watch: null, read: false, expired: true };
+    return { watch: { ...watch, turnsLeft: left }, read: false, expired: false };
+  }
+  return { watch, read: false, expired: false };
+}
+
+/** Path comparison tolerant of relative-vs-absolute and `.` segments. */
+export function samePath(a: string, b: string): boolean {
+  const norm = (v: string) => {
+    try {
+      return resolve(v);
+    } catch {
+      return v;
+    }
   };
+  return norm(a) === norm(b);
+}
+
+/** The path a `read`-shaped tool call targeted, or null. */
+export function readPathOf(tool: string, args: unknown): string | null {
+  if (tool !== "read" && tool !== "read_file" && tool !== "view") return null;
+  const a = (args ?? {}) as { path?: unknown; file_path?: unknown };
+  const p = typeof a.path === "string" ? a.path : typeof a.file_path === "string" ? a.file_path : null;
+  return p;
+}
+
+/** A registry-backed entry: the service-knowledge CLI is a valid route to its evidence. */
+export function isServiceEntry(entry: { id: string; skill: string }): boolean {
+  return entry.id.includes("service-knowledge/") || entry.skill.includes("service-knowledge");
 }
 
 /** The labelled doctrine block for a roster hit — one shape for both seams. */
+/**
+ * The section headings of a skill file, bounded (CORE-2367).
+ *
+ * A ROUTER, not an excerpt: the source records that "a bounded excerpt
+ * duplicated the doc badly", so this deliberately carries structure and no
+ * prose. It answers "where do I look" for the price of a readdir-sized scan,
+ * and it cannot go stale in the way quoted paragraphs do.
+ */
+export function routerSections(md: string, max = 12): string[] {
+  const out: string[] = [];
+  for (const line of md.split("\n")) {
+    // H2/H3 only: the H1 is the document title, not a place to look.
+    const m = /^#{2,3}\s+(.{1,80}?)\s*$/.exec(line);
+    if (m && !out.includes(m[1])) out.push(m[1]);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Sections for the entry's own file, or [] when it cannot be read. */
+function sectionsFor(entry: RosterEntry): string[] {
+  try {
+    return routerSections(readFileSync(entry.path, "utf-8"));
+  } catch {
+    return [];
+  }
+}
+
 export function doctrineBlock(
   entry: RosterEntry,
   about: string,
@@ -239,6 +389,16 @@ export function doctrineBlock(
     entry.level === "skill"
       ? `Load this skill: /skill:${entry.skill}. Ignore this if it does not fit what you were asked to do.`
       : `Read: ${entry.path} — nested under /skill:${entry.skill}. Ignore this if it does not fit.`;
+  // The router: where to look, not what it says. A service-backed entry also
+  // names the CLI, because the registry is queryable and a file read is only
+  // one of the two routes to the evidence.
+  const sections = sectionsFor(entry);
+  const router = [
+    sections.length ? `Sections: ${sections.join(" \u00b7 ")}` : null,
+    isServiceEntry(entry)
+      ? `Service CLI: service-knowledge index query "<3-5 terms>" --bundle (see service-knowledge --help).`
+      : null,
+  ].filter(Boolean).join("\n");
   return contextBlock("skill-doctrine", {
     about,
     source: entry.id,
@@ -246,6 +406,7 @@ export function doctrineBlock(
     level: entry.level,
     model: model ?? "jev",
     confidence,
+    router: router || null,
     body: [
       lead,
       `Its instructions: read ${entry.path} and apply what fits before proceeding.`,
@@ -267,6 +428,13 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   let messageCursor = 0;
   /** Set by the input seam, consumed by the first tool_result of the turn. */
   let pending: PendingDoctrine | null = null;
+  /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
+  let readWatch: ReadWatch | null = null;
+  /** Turns AFTER the arming turn in which a read still counts. */
+  const READ_WINDOW_TURNS = 2;
+  // The input seam arms mid-turn, and that same turn's agent_end ages the watch once,
+  // so it gets one extra tick; the agent_end seam arms after the tick already ran.
+  const INPUT_SEAM_TURNS = READ_WINDOW_TURNS + 1;
   const cooldownOk = (id: string, now: number) => (cooldowns[id] === undefined || now >= cooldowns[id]);
   const cooldownSet = (id: string) => { cooldowns[id] = Date.now() + COOLDOWN_MIN * 60_000; };
 
@@ -375,30 +543,35 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const jevMs = Date.now() - jevStart;
       if (!result) return { action: "continue" } as const;
 
-      const gate = [
-        (result.nouls["would_follow_documented_procedure"] ?? 0),
-        1 - (result.nouls["prose_suffices"] ?? 0),
-        1 - (result.nouls["asks_about_the_tooling"] ?? 0),
-      ];
-      const gateMean = gate.reduce((a, b) => a + b, 0) / gate.length;
       const pick = result.choice.choice;
       const entry = roster.find((r) => r.id === pick);
-      // Log every evaluation — negatives are the tuning signal.
+      const verdict = evaluateGate({
+        nouls: result.nouls,
+        confidence: result.choice.confidence,
+        noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        hasEntry: Boolean(entry),
+      });
+      const gateMean = verdict.gateMean;
+      // Log every evaluation — negatives are the tuning signal. An ABSTAIN is
+      // recorded distinctly from a genuine `none` answer: collapsing the two
+      // reintroduces this defect in a new shape, because both would otherwise
+      // read as "the classifier considered and declined".
+      const noneConfidence = result.choice.probabilities?.["none"] ?? null;
       logDecision({
         ts: new Date().toISOString(),
         seam: "input",
-        pick: entry?.id ?? pick ?? "none",
+        pick: pick ?? "none",
+        outcome: verdict.fire ? "fire" : "abstain",
+        reason: verdict.reason,
         gate: Number(gateMean.toFixed(3)),
         confidence: result.choice.confidence,
-        injected: Boolean(entry) && gateMean >= GATE_THRESHOLD,
+        noneConfidence,
+        injected: verdict.fire,
         prompt_chars: prompt.length,
         jev_ms: jevMs,
         jev_path: jevPath,
       });
-      if (gateMean < GATE_THRESHOLD || !entry) return { action: "continue" } as const;
-      // Sub-gate choice confidence stays silent: a high procedural gate with a
-      // barely-confident pick injected wrong doctrine in live use (0.19/0.20 hits).
-      if (result.choice.confidence !== null && result.choice.confidence < FITS_THRESHOLD) return { action: "continue" } as const;
+      if (!verdict.fire || !entry) return { action: "continue" } as const;
 
       // One card per prompt, per catalog id.
       if (!cooldownOk(entry.id, Date.now())) return { action: "continue" } as const;
@@ -412,6 +585,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       // in-flight turn ("Agent is already processing") and displaced the
       // operator's prompt outright.
       pending = { entry, block, confidence: result.choice.confidence };
+      readWatch = { id: entry.id, path: entry.path, turnsLeft: INPUT_SEAM_TURNS };
       logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "deferred-to-tool-result" });
 
       return { action: "continue" } as const;
@@ -422,6 +596,21 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
   // The input seam decides; it never mutates the prompt.
   pi.on("input", handler as never);
+
+  // CORE-2367: did the suggestion actually get read? A path-identical read inside
+  // the window counts; nothing else does.
+  pi.on("tool_call", (event) => {
+    // Pi's ToolCallEvent carries `input`; `args` is the legacy shape.
+    const e = event as { toolName?: string; input?: unknown; args?: unknown };
+    const path = readPathOf(String(e.toolName ?? ""), e.input ?? e.args);
+    if (!path || !readWatch) return;
+    const id = readWatch.id;
+    const next = watchRead(readWatch, path, false);
+    readWatch = next.watch;
+    if (next.read) {
+      logDecision({ ts: new Date().toISOString(), seam: "read_after_suggest", pick: id, outcome: "read", path });
+    }
+  });
 
   // Delivery: the first tool_result of the turn is the first ordered point
   // inside the turn, and the card is a context-bearing custom message, so the
@@ -504,27 +693,43 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
       } as Record<string, Question>);
       if (!result) return;
-      const gate = [
-        (result.nouls["would_follow_documented_procedure"] ?? 0),
-        1 - (result.nouls["prose_suffices"] ?? 0),
-        1 - (result.nouls["asks_about_the_tooling"] ?? 0),
-      ];
-      const gateMean = gate.reduce((a, b) => a + b, 0) / gate.length;
       const pick = result.choice.choice;
       const entry = roster.find((r) => r.id === pick);
-      if (gateMean < GATE_THRESHOLD || !entry) return;
+      const verdict = evaluateGate({
+        nouls: result.nouls,
+        confidence: result.choice.confidence,
+        noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        hasEntry: Boolean(entry),
+      });
+      if (!verdict.fire || !entry) {
+        logDecision({
+          ts: new Date().toISOString(),
+          seam: "agent_end",
+          pick: pick ?? "none",
+          outcome: "abstain",
+          reason: verdict.reason,
+          gate: Number(verdict.gateMean.toFixed(3)),
+          confidence: result.choice.confidence,
+          noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        });
+        return;
+      }
       if (!cooldownOk(entry.id, Date.now())) return;
       cooldownSet(entry.id);
+      readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
 
-      // Pointer, not content (input seam parity).
+      // CORE-2367: this block used to be built and DISCARDED, so the intention
+      // seam showed the operator a card while sending the model nothing at all -
+      // which is why "the agent never reads it" looked like disobedience rather
+      // than the delivery that actually happened. Both audiences get it now.
       const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(gateMean.toFixed(3)), jev_ms: jevMs, jev_path: jevPath });
-      // One message carries both audiences: the model reads the doctrine
-      // block; the operator sees the house card around it.
+      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(verdict.gateMean.toFixed(3)), jev_ms: jevMs, jev_path: jevPath });
+      // The renderer draws the card from the labelled block's fields, so the model
+      // receives the doctrine and the operator still sees the house card.
       pi.sendMessage(
         {
           customType: CUSTOM_TYPE,
-          content: formatSuggestionCard({ verb: skillVerb(entry, result.choice.confidence), ref: "—", confidence: result.choice.confidence, compact: true }, SKILL_ACCENT),
+          content: block,
           display: true,
           details: { skill: entry.id, level: entry.level, seam: "agent_end" },
         },
@@ -538,6 +743,13 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // Coverage: a turn with no tool call would otherwise drop what submit
   // decided, so agent_end flushes it before its own decision runs.
   pi.on("agent_end", async (event: unknown, ctx: unknown) => {
+    // Turn boundary: age the read watch BEFORE this turn's own decision can arm a new one.
+    if (readWatch) {
+      const id = readWatch.id;
+      const next = watchRead(readWatch, null, true);
+      readWatch = next.watch;
+      if (next.expired) logDecision({ ts: new Date().toISOString(), seam: "read_after_suggest", pick: id, outcome: "expired" });
+    }
     if (pending && deliverySeam({ prompted: true, pending: true, usedTool: false, activeTurn: true }) === "agent_end_flush") {
       const item = pending;
       pending = null;

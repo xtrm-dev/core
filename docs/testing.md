@@ -33,7 +33,7 @@ source_of_truth_for:
 | [Project Setup](#project-setup) | - [ ] In target repo, run: |
 | [Hook Wiring Verification](#hook-wiring-verification) | - [ ] Open ` |
 | [Live Skill Tests](#live-skill-tests) | **Python:** |
-| [Main-Guard / Beads Gate (Global Hook Sanity)](#main-guard-beads-gate-global-hook-sanity) | - [ ] On protected branch (`main`/`master`), file-edit attempts are blocked |
+| [Main-Guard (Global Hook Sanity)](#main-guard-global-hook-sanity) | - [ ] On protected branch (`main`/`master`), file-edit attempts are blocked |
 | [CI Gates (Release-Contract)](#ci-gates-release-contract) | - [ ] All prepublishOnly gates pass locally |
 | [Fresh-Machine Smoke](#fresh-machine-smoke) | - [ ] `gh workflow run fresh-machine-smoke.yml` completes green |
 | [Security Pipeline](#security-pipeline) | - [ ] `gitleaks.yml` scan on push/PR |
@@ -75,8 +75,7 @@ Default skills covered (nine universal v4 defaults — see `skills.md` §Univers
 ## Hook Wiring Verification
 
 - [ ] Open `~/.claude/settings.json` and verify these hook entries exist (see `hooks.md`):
-  - [ ] `PostToolUse` entries for `quality-check.cjs` (JS/TS) and `quality-check.py` (Python) on write/edit tools.
-  - [ ] `PostToolUse` entry for `beads-claim-sync.mjs` after Beads commands.
+  - [ ] `PostToolUse` entry for `quality-check.cjs` (JS/TS) and `quality-check.py` (Python) on write/edit tools.
   - [ ] `PostToolUse` entry for `gitnexus/gitnexus-hook.cjs` on search/read tools.
 
 ---
@@ -114,11 +113,13 @@ Default skills covered (nine universal v4 defaults — see `skills.md` §Univers
 
 ---
 
-## Main-Guard / Beads Gate (Global Hook Sanity)
+## Main-Guard (Global Hook Sanity)
 
 - [ ] On protected branch (`main`/`master`), file-edit attempts are blocked.
-- [ ] In `.beads` project without active claim, edit gate blocks as expected.
-- [ ] After claim (`bd update <id> --status=in_progress` + kv claim), edit is allowed.
+
+No Beads claim gate is expected: `beads` and `session-flow` are retired (CORE-2372) and
+no edit, commit or stop gate replaces them. A `.beads` directory in the checkout must not
+gate an edit.
 
 ---
 
