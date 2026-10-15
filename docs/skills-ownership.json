@@ -7,15 +7,6 @@
       "source": "xtrm-tools",
       "kind": "skill"
     },
-    "update-specialists": {
-      "owner": "specialists",
-      "source": "specialists",
-      "kind": "skill",
-      "placement": {
-        "tier": "optional",
-        "pack": "xtrm-maintenance"
-      }
-    },
     "using-specialists": {
       "owner": "specialists",
       "source": "specialists",
@@ -31,7 +22,7 @@
       "source_path": "config/skills",
       "release": {
         "package": "specialists",
-        "sha": "5d2f2907f49877f6c4dcf32de95e8cb945c067c7"
+        "sha": "37746f682844c3aa24ab4aa372e5179a7478074c"
       }
     }
   }

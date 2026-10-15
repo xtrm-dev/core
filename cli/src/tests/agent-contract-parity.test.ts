@@ -134,4 +134,32 @@ describe('agent-contract parity (ISSUE-136 + skills-v4 + substrate doctrine)', (
       expect(n).toBeLessThanOrEqual(MAX_SUFFIX_LINES);
     }
   });
+
+  // CORE-2369: Claude Code 2.1.277+ reads AGENTS.md directly when a project has
+  // no CLAUDE.md (default `claude-md-or-agents-md`). The AGENTS.md variant is
+  // therefore a complete runtime surface, not a Pi-only one: it must carry the
+  // Claude Code notes next to Pi's, and the rendered copy in this repo must
+  // carry them too.
+  it('AGENTS.md variant is runtime-complete (Claude Code + Pi)', () => {
+    const agents = fs.readFileSync(AGENTS_TOP, 'utf8');
+    const rendered = fs.readFileSync(ROOT_AGENTS, 'utf8');
+    for (const marker of [
+      /Claude Code/,
+      /~\/\.claude\/skills\//,
+      /\/skill-<name>/,
+      /\/hook-development/,
+      /`xt claude`/,
+      /available_skills/,
+      /\/skill:<name>/,
+      /`xt pi`/,
+    ]) {
+      expect(agents).toMatch(marker);
+      expect(rendered).toMatch(marker);
+    }
+    const heading = agents.indexOf('## Runtime notes');
+    expect(heading).toBeGreaterThan(-1);
+    const runtimeNotes = agents.slice(heading).trim();
+    expect(runtimeNotes.length).toBeGreaterThan(0);
+    expect(rendered).toContain(runtimeNotes);
+  });
 });

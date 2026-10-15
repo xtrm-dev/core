@@ -23,7 +23,7 @@
 
 ## Overview
 
-XTRM-Tools is a **dual-runtime workflow system** — a Claude Code plugin and a Pi extension suite that implement the same policies in parallel. Both runtimes receive identical enforcement rules (beads gates, session flow, quality gates) compiled from a shared `policies/` source. Claude Code and Pi are peers: neither is downstream of the other.
+XTRM-Tools is a **dual-runtime workflow system** — a Claude Code plugin and a Pi extension suite that implement the same policies in parallel. Both runtimes receive identical enforcement rules (hook dispatch, quality gates, session flow) compiled from a shared `policies/` source. Claude Code and Pi are peers: neither is downstream of the other.
 
 ### Key Features
 
@@ -147,8 +147,6 @@ Policies are the **single source of truth** for all enforcement rules.
 | Policy | Runtime | Order | Purpose |
 |--------|---------|-------|---------|
 | `hook-dispatcher.json` | claude | 10 | One process per Claude Code event: boundary guard, agent guard, quality gates, GitNexus enrichment, debug loggers (CORE-2339), agent host presence reporter and Stop inbox reminder (XTRM-592) |
-| `session-flow.json` | both | 19 | Claim sync, stop gate (blocks with unclosed in_progress claim), `xt end` reminder in worktrees |
-| `beads.json` | both | 20 | Issue tracking gates (edit/commit/memory/compact) |
 | `quality-gates.json` | pi | 30 | Linting/typechecking (Pi); the Claude side runs inside `hook-dispatcher` |
 | `service-skills.json` | pi | 40 | Territory-based skill activation |
 
@@ -215,9 +213,7 @@ Enriches tool output with knowledge graph context via `gitnexus augment`.
 
 | Extension | Events | Purpose |
 |-----------|--------|---------|
-| `beads.ts` | session_start, tool_call, tool_result, agent_end, session_shutdown | Issue tracking gates + memory gate |
-| `session-flow.ts` | tool_result, agent_end | Claim sync, stop gate, `xt end` reminder in worktrees |
-| `quality-gates.ts` | tool_result | Linting/typechecking after file edits |
+| `quality-gates.ts` | `tool_result` | Linting/typechecking after file edits |
 | `service-skills.ts` | before_agent_start, tool_result | Territory-based skill activation |
 
 ---

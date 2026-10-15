@@ -69,8 +69,8 @@ ignore entirely (bead `xtrm-wiy5n.4.32`):
 - The installed `@jaggerxtrm/specialists` package ships at least five
   `.specialist.json` files in `config/specialists/`.
 
-Globally it also asserts the three specialists-owned skills
-(`using-specialists`, `update-specialists`, `using-specialists-auto`) landed in
+Globally it also asserts the specialists-owned skill
+(`using-specialists`) landed in
 `~/.xtrm/skills/default`, runs the core clone's own
 `scripts/check-skill-root-budget.mjs` (so the budgets live in one place, not
 duplicated here), and asserts that the `Source and destination must not be the

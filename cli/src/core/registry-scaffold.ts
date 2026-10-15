@@ -293,6 +293,27 @@ export async function pruneRetiredManagedSkills(params: {
     return { removed };
 }
 
+// Optional-tier skills xtrm once shipped and no longer does (pack/skill, relative to skills/optional).
+// Explicit list: the optional tier has no installer manifest, so retirement cannot be inferred.
+const RETIRED_OPTIONAL_SKILLS: readonly string[] = ['xtrm-maintenance/update-specialists'];
+
+export async function pruneRetiredOptionalSkills(params: {
+    userXtrmDir: string;
+    dryRun: boolean;
+}): Promise<{ removed: string[] }> {
+    const { userXtrmDir, dryRun } = params;
+    const removed: string[] = [];
+    for (const relPath of RETIRED_OPTIONAL_SKILLS) {
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+        const entryPath = path.join(userXtrmDir, 'skills', 'optional', relPath);
+        const entryStat = await fs.lstat(entryPath).catch(() => null);
+        if (!entryStat?.isDirectory()) continue; // symlinks and files are user-owned
+        removed.push(relPath);
+        if (!dryRun) await fs.remove(entryPath);
+    }
+    return { removed };
+}
+
 async function appendGlobalSkillsSkipLog(asset: string, count: number): Promise<void> {
     const logPath = path.join(path.dirname(resolveGlobalSkillsRoot()), 'logs', 'skills-migration.jsonl');
     await fs.ensureDir(path.dirname(logPath));

@@ -85,3 +85,17 @@ Verify connectivity with `ocr llm test`. Stop here and ask the user to provide c
 - Full docs: https://github.com/alibaba/open-code-review
 - NPM package: https://www.npmjs.com/package/@alibaba-group/open-code-review
 - Issue tracker: https://github.com/alibaba/open-code-review/issues
+
+## XTRM local additions (not upstream)
+
+CLI surface in ocr v1.13.0 that the upstream skill does not document; verified against `--help`:
+
+- `ocr review --effort low|medium|high` — sets review rounds (1/2/3) and so the main LLM
+  cost. Use `low` for a cheap independent pass; the default is `medium`.
+- `ocr session compare --json <before-id> <after-id>` — groups two sessions' findings into
+  new, persisting, resolved and not-reviewed, matched on path, category and snippet. Use it
+  to re-review after fixes instead of reading two full reports.
+- `ocr scan --path <dirs|files>` — full-file review with no diff; `--no-plan`,
+  `--no-summary` and `--no-dedup` skip LLM passes. For audits, not PR review.
+- Writers: `engineering-quality/scripts/ocr-preflight.mjs` runs delegation preview and rule
+  in one call, and its `check` proves a delegation coverage ledger.

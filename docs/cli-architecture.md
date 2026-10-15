@@ -191,7 +191,7 @@ lookup as defined by the canonical contract and `/using-xtrm`.
 
 ## Specialists ownership
 
-Core vendors the Specialist-owned skills `using-specialists` and `update-specialists` from
+Core vendors the Specialist-owned skill `using-specialists` from
 a pinned Specialists commit. The pin and per-file source digests live in:
 
 ```text

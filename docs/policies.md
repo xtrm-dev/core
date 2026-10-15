@@ -59,8 +59,6 @@ Other event groups retain the standard wrapper shape without the `script` field.
 | Policy | Runtime | Description |
 |---|---|---|
 | `hook-dispatcher.json` | claude | One `dispatch.mjs` process per Claude Code event. Runs the worktree-boundary guard, the specialists-agent-guard, the quality gates, GitNexus enrichment and the xt debug loggers in-process (CORE-2339), plus the agent host presence reporter on every reported event and the Stop inbox reminder (XTRM-592). |
-| `session-flow.json` | both | Claim sync + stop gate + worktree session end workflow |
-| `beads.json` | both | Edit/commit/compact enforcement. Includes `PreCompact` (save) and `SessionStart` (restore) hooks for beads-compact state persistence. |
 | `quality-gates.json` | pi | JS/TS + Python quality checks after mutating edits (Pi). The Claude side runs inside `hook-dispatcher`. |
 
 ## Add / Update Workflow

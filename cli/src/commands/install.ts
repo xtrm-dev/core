@@ -24,6 +24,7 @@ import {
     resolvePackageRoot,
     scaffoldSkillsDefaultFromPackage,
     pruneRetiredManagedSkills,
+    pruneRetiredOptionalSkills,
     type InstallStats,
     type RegistryManifest,
 } from '../core/registry-scaffold.js';
@@ -199,6 +200,12 @@ export async function runInstall(opts: InstallOpts = {}): Promise<InstallResult>
     if (pruneResult.removed.length > 0) {
         const verb = dryRun ? 'Would remove' : 'Removed';
         console.log(kleur.dim(`  • ${verb} ${pruneResult.removed.length} retired managed skill(s): ${pruneResult.removed.join(', ')}`));
+    }
+
+    const optionalPrune = await pruneRetiredOptionalSkills({ userXtrmDir, dryRun });
+    if (optionalPrune.removed.length > 0) {
+        const verb = dryRun ? 'Would remove' : 'Removed';
+        console.log(kleur.dim(`  • ${verb} ${optionalPrune.removed.length} retired optional skill(s): ${optionalPrune.removed.join(', ')}`));
     }
 
     const stats = await installFromRegistry({

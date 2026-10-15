@@ -22,12 +22,11 @@ and then merely label the result with a pin.
 
 ## Specialists-owned distributed surface
 
-The v4 distribution intentionally exposes only two Specialists-owned skill roots:
+The v4 distribution intentionally exposes only one Specialists-owned skill root:
 
 | Skill | Placement | Reason |
 |---|---|---|
 | `using-specialists` | `default` | Universal Specialists execution-backend doctrine used by ordinary XTRM agents. |
-| `update-specialists` | `optional/xtrm-maintenance` | Explicit distribution/runtime maintenance workflow. |
 
 KPI analysis, NodeSupervisor, script-class execution, and Specialist-definition authoring
 are advanced surfaces of the same execution backend and therefore live under
