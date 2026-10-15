@@ -169,10 +169,10 @@ jobs:
 
           # Specialists-owned skills land at their declared placements
           # (docs/skills-ownership.json, enforced by check:skills-ownership):
-          # using-specialists is default tier; update-specialists is
-          # optional/xtrm-maintenance. using-specialists-auto no longer ships.
+          # using-specialists is default tier; it is the only
+          # Specialists-owned skill (update-specialists no longer ships).
           test -f "$pkg_root/skills/default/using-specialists/SKILL.md"
-          test -f "$pkg_root/skills/optional/xtrm-maintenance/update-specialists/SKILL.md"
+          ! test -e "$pkg_root/skills/optional/xtrm-maintenance/update-specialists"
 
           # No symlink leaks anywhere under the shipped payload.
           ! find "$pkg_root" -type l | grep -q .

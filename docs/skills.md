@@ -96,9 +96,9 @@ Use `xt skills --help` for runtime-specific flags supported by the installed ver
 
 ## Specialists ownership
 
-`using-specialists` and `update-specialists` are authored in `xtrm-dev/specialists` and
-vendored into Core from a pinned Git commit. Only `using-specialists` is default;
-`update-specialists` lives in `xtrm-maintenance`.
+`using-specialists` is authored in `xtrm-dev/specialists` and
+vendored into Core from a pinned Git commit. It is the only
+Specialists-owned skill and lives in `default`.
 
 Advanced Specialists surfaces no longer consume separate active skill roots:
 

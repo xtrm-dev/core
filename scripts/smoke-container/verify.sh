@@ -630,7 +630,7 @@ for entry in "${REPOS[@]}"; do
 done
 
 # The release contract: specialists-owned skills must land in the global mirror.
-for s in using-specialists update-specialists using-specialists-auto; do
+for s in using-specialists; do
   [ -f "$HOME/.xtrm/skills/default/$s/SKILL.md" ] \
     && ok "global skill mirror has $s" \
     || fail "global skill mirror is missing $s/SKILL.md"

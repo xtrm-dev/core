@@ -3,8 +3,8 @@
   "digest": "git-blob-sha1",
   "source": {
     "kind": "repo",
-    "ref": "remove-redundant-specialist-skills",
-    "resolved_sha": "74c81fe04f0439183ed0bc9e34cde8693891969c",
+    "ref": "master",
+    "resolved_sha": "37746f682844c3aa24ab4aa372e5179a7478074c",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
