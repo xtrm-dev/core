@@ -513,7 +513,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 34;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 37;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -581,10 +581,18 @@ function summarizeExternalToolPending(toolName: string | undefined, input: Recor
 }
 
 function extractResultTextLines(component: PatchableToolExecutionComponent): string[] | undefined {
-  const text = component.result?.content?.find((content) => content.type === "text")?.text;
-  return text
-    ? text.split("\n")
-    : [summarizeExternalToolPending(component.toolName, getToolArgs(component))];
+  // Join EVERY text block: codemode ships its result as a wrapper block
+  // ("Script completed\nWall time …\nOutput:\n") plus the script output in
+  // later blocks — first-block-only would render the wrapper and drop the
+  // actual output. Blank seams from the join are filtered downstream.
+  const texts = component.result?.content
+    ?.filter((content) => content.type === "text" && typeof content.text === "string")
+    .map((content) => content.text as string)
+    .filter((text) => text.length > 0);
+  if (!texts || texts.length === 0) {
+    return [summarizeExternalToolPending(component.toolName, getToolArgs(component))];
+  }
+  return texts.join("\n").split("\n");
 }
 
 // CORE-2358: the framed row must show what ran above the output — otherwise the
@@ -602,30 +610,30 @@ export function externalToolContentLines(
   component: PatchableToolExecutionComponent,
   rendered: string[],
   expanded = false,
+  codeCap: number = DEFAULT_COMMAND_PREVIEW_LINES,
 ): string[] {
   const preview = externalToolCodePreview(component.toolName, getToolArgs(component));
   if (!preview) return extractResultTextLines(component) ?? rendered;
   // Pending: the program is the content. Resolved: program above output.
-  // The output block renders dimmed with no indentation: the call above is
-  // the eye anchor. Collapsed: 4 code lines + a ` … +N lines` count (same shape as the
-  // bash frame), no expand hint — the footer already carries it.
-  const shown = expanded ? preview : preview.slice(0, 4);
+  // Collapsed: the header carries line 1, the body shows lines 2..codeCap
+  // plus a ` … +N lines` count (same shape as the bash frame), no expand
+  // hint — the footer already carries it. The result tail is intentionally
+  // NOT capped here: the frame renderer caps code and result against
+  // separate budgets, so execution never starves output (or vice versa).
+  const cap = Math.max(1, Math.floor(codeCap));
+  // Bash semantics: the header carries the first line (via callSummary),
+  // so the body starts at the second — otherwise line 1 renders twice.
+  const shown = expanded ? preview.slice(1) : preview.slice(1, cap);
   const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
-  const dimmed = tail.map((l) => (l.trim().length > 0 ? `\x1b[2m${l}\x1b[22m` : l));
-  const hidden = preview.length - shown.length;
+  // The tail stays plain: the frame renders it bash-style (muted └ tree,
+  // toolOutput color), so dimming here would fight the output treatment.
+  // Hidden counts the header line as shown (bash: hidden = total - cap).
+  const hidden = preview.length - shown.length - 1;
   const count = !expanded && hidden > 0
     ? [` \x1b[2m\x1b[3m … +${hidden} lines\x1b[23m\x1b[22m`]
     : [];
   const indentedCode = shown.map((l) => (l.length > 0 ? `  ${l}` : l));
-  return [...indentedCode, ...count, ...dimmed];
-}
-
-function trimRenderedToolLines(lines: string[]): string[] {
-  let start = 0;
-  let end = lines.length;
-  while (start < end && isBlankRenderedLine(lines[start] ?? "")) start++;
-  while (end > start && isBlankRenderedLine(lines[end - 1] ?? "")) end--;
-  return lines.slice(start, end).map((line) => line.replace(/\s+$/u, ""));
+  return [...indentedCode, ...count, ...tail];
 }
 
 export function collapsedExternalToolLines(contentLines: string[], expanded: boolean, resultCap: number = DEFAULT_PREFS.resultPreviewLines): string[] {
@@ -680,9 +688,10 @@ export function renderExternalToolBackgroundLines(
   bareHeader = false,
   resultCap: number = DEFAULT_PREFS.resultPreviewLines,
   callSummary?: string,
+  codeCount = 0,
 ): string[] {
   let displayLines = contentLines;
-  const raw = contentLines.length === 1 ? contentLines[0]?.trim() : undefined;
+  const raw = contentLines.length === 1 && codeCount === 0 ? contentLines[0]?.trim() : undefined;
   if (raw?.startsWith("{") || raw?.startsWith("[")) {
     try {
       displayLines = JSON.stringify(JSON.parse(raw), null, 2).split("\n");
@@ -696,20 +705,36 @@ export function renderExternalToolBackgroundLines(
     || /^[•›●]\s+\S+/u.test(firstLine);
   // Bare header doctrine: provider + tool only. Otherwise an output first
   // line shaped like a header (`[X]`, `● word`) hijacks the header row.
-  const header = bareHeader
-    ? bareExternalToolHeader(kind, toolName)
+  // Code tools always take the bare path: the first content line is program
+  // text from args (never sniffable), with the first code line carried as
+  // the header summary instead — a code line shaped like `[X]` must neither
+  // hijack the header nor eat the payload slice below.
+  const bare = bareHeader ? bareExternalToolHeader(kind, toolName) : undefined;
+  const header = bareHeader && bare
+    ? { provider: bare.provider, action: callSummary ?? bare.action }
     : externalToolHeader(kind, toolName, firstLine, callSummary);
   const payloadLines = hasHeader && !bareHeader ? displayLines.slice(1) : displayLines;
   const headerLine = externalToolHeaderLine(status, header.provider, header.action);
-  displayLines = [headerLine, ...payloadLines];
+  // Code tools (codemode, python): the leading codeCount payload lines are
+  // the executed program — outside the result budget. Collapsing caps the
+  // result block only, so a long program never starves output to one line.
+  const codeLines = codeCount > 0 ? payloadLines.slice(0, codeCount) : [];
+  const resultLines = codeCount > 0 ? payloadLines.slice(codeCount) : payloadLines;
+  displayLines = [headerLine, ...codeLines, ...resultLines];
 
   const renderedHeader = displayLines[0] ?? "";
-  const visiblePayload = expanded ? payloadLines : payloadLines.slice(0, resultCap);
+  const visibleResult = expanded ? resultLines : resultLines.slice(0, resultCap);
+  const visiblePayload = [...codeLines, ...visibleResult];
   const shown = visiblePayload.length;
   const total = payloadLines.length;
-  const lineSummary = !expanded && shown < total
+  const shownResult = visibleResult.length;
+  const totalResult = resultLines.length;
+  const resultSummary = !expanded && shownResult < totalResult
+    ? `showing ${shownResult}/${totalResult} lines (ctrl+o expand)`
+    : totalResult > 0 ? formatLineLabel(totalResult, "line") : undefined;
+  const lineSummary = codeCount > 0 ? resultSummary : (!expanded && shown < total
     ? `showing ${shown}/${total} lines (ctrl+o expand)`
-    : total > 0 ? formatLineLabel(total, "line") : undefined;
+    : total > 0 ? formatLineLabel(total, "line") : undefined);
   const footerMeta = joinMeta([
     lineSummary,
     formatDuration(durationMs),
@@ -718,6 +743,24 @@ export function renderExternalToolBackgroundLines(
   const renderWidth = Math.max(8, width);
   // Payload lines carry their own indentation (code previews indent at
   // creation); the frame never adds any — output sits flush under the call.
+  // Code tools (codemode, python) are the exception: native-tool parity.
+  // The header above is untouched (dot + provider colors as-is); everything
+  // below mirrors the bash tree — bold execution lines, muted └ output
+  // anchor, plain dim meta footer with no └─ prefix.
+  if (codeCount > 0) {
+    const boldCode = (line: string) =>
+      status === "success" ? boldSgr(line) : `\x1b[2m${boldSgr(line)}\x1b[22m`;
+    const treeOutput = visibleResult.map((line, index) =>
+      index === 0 ? `  \x1b[2m└\x1b[22m ${line}` : `    ${line}`,
+    );
+    const body = [
+      truncateToWidth(renderedHeader, renderWidth),
+      ...[...codeLines.map(boldCode), ...treeOutput].map((line) => truncateToWidth(line, renderWidth)),
+    ];
+    return footerMeta
+      ? [...body, `\x1b[2m${truncateToWidth(`  ${footerMeta}`, renderWidth)}\x1b[22m`]
+      : body;
+  }
   const body = [
     truncateToWidth(renderedHeader, renderWidth),
     ...visiblePayload.map((rawLine) => truncateToWidth(rawLine, renderWidth)),
@@ -740,7 +783,7 @@ export function bareExternalToolHeader(
   };
 }
 
-function renderExternalToolLines(
+export function renderExternalToolLines(
   lines: string[],
   width: number,
   kind: ExternalToolFrameKind,
@@ -751,10 +794,18 @@ function renderExternalToolLines(
   bareHeader = false,
   resultCap: number = DEFAULT_PREFS.resultPreviewLines,
   callSummary?: string,
+  codeCount = 0,
 ): string[] {
-  const contentLines = trimRenderedToolLines(lines).filter((line) => !isBlankRenderedLine(line));
+  // Blank filtering is per-section so the code/result boundary survives it:
+  // codeCount indexes pre-filter lines, and the frame needs the post-filter
+  // code length to keep the result budget off the program lines.
+  const rtrimmed = lines.map((line) => line.replace(/\s+$/u, ""));
+  const codeSection = codeCount > 0 ? rtrimmed.slice(0, codeCount) : [];
+  const resultSection = codeCount > 0 ? rtrimmed.slice(codeCount) : rtrimmed;
+  const keptCode = codeSection.filter((line) => !isBlankRenderedLine(line));
+  const contentLines = [...keptCode, ...resultSection.filter((line) => !isBlankRenderedLine(line))];
   return contentLines.length > 0
-    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, bareHeader, resultCap, callSummary)
+    ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, bareHeader, resultCap, callSummary, keptCode.length)
     : [];
 }
 
@@ -802,10 +853,18 @@ async function installExternalToolFramePatch(): Promise<void> {
     const firstContentIndex = rendered.findIndex((line) => !isBlankRenderedLine(line));
     const leading = firstContentIndex > 0 ? rendered.slice(0, firstContentIndex) : [];
     const isExpanded = Boolean(this.expanded) || activeExtNoCompact();
-    const content = externalToolContentLines(this, rendered, isExpanded);
+    const codeCap = activeCommandPreviewLines();
+    const content = externalToolContentLines(this, rendered, isExpanded, codeCap);
     const preview = externalToolCodePreview(this.toolName, getToolArgs(this));
-    const bareHeader = !preview;
+    // Code tools always take the bare header path (first content line is
+    // program text, never a sniffable output header); the first code line
+    // still rides along as the header summary via callSummary.
+    const bareHeader = true;
     const callSummary = preview?.[0]?.trim() || undefined;
+    // Pre-filter code-section length: renderExternalToolLines filters blanks
+    // per-section and re-derives the boundary, so this stays valid.
+    const tailLength = preview && this.result ? (extractResultTextLines(this)?.length ?? 0) : 0;
+    const codeCount = preview ? Math.max(0, content.length - tailLength) : 0;
     const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
     let styled: string[];
     try {
@@ -820,6 +879,7 @@ async function installExternalToolFramePatch(): Promise<void> {
         bareHeader,
         activeExtPreviewLines(),
         callSummary,
+        codeCount,
       );
     } catch {
       // A patched renderer must never take the interactive mode down.
@@ -1326,6 +1386,12 @@ function appendToolTree(
 let activePrefsSnapshot: XtrmUiPrefs | null = null;
 export function activeResultPreviewLines(): number {
   return activePrefsSnapshot?.resultPreviewLines ?? DEFAULT_PREFS.resultPreviewLines;
+}
+
+/** Display-only cap for the executed-program section of code tools
+ * (`/xtrm-ui-command-lines`). Mirrors the native bash command cap. */
+export function activeCommandPreviewLines(): number {
+  return activePrefsSnapshot?.commandPreviewLines ?? DEFAULT_PREFS.commandPreviewLines;
 }
 
 /** Compacted visible-line cap for extension frames (`/xtrm-ui-ext-lines`). */
