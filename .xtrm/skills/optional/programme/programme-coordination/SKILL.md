@@ -116,6 +116,10 @@ tmux new-window -d -t "$S" -n <name> -c <repo> \
 ```
 
 - Every worker gets its own attested issue before launch. That contract is its brief.
+- **Identify yourself in every dispatch.** The launch prompt names the coordinator: its exact
+  messaging name (the first line of `ListAgents`) and "reply with `SendMessage` to that name, and
+  journal on your issue". A worker that does not know who dispatched it cannot report, and its
+  result goes nowhere. The same applies to any message that expects a reply.
 - `SUBSTRATE_HOLDER=<name>` stamps the worker's name on every journal entry it writes, and the
   worker claims with `--holder <name>` (same name). This is manual today: `xt` publishes the session
   identity but not a participant, so the prefix is required (follow-up: have `xt` set it). Verified

@@ -10,9 +10,15 @@ separate sessions per worker. The operator sees the whole programme in one place
 
 ```
 S=$(tmux display-message -p '#S')                      # the coordinator's session name
-tmux new-window -d -t "$S" -n <name> -c <repo-or-worktree> \
-  "SUBSTRATE_HOLDER=<name> xt claude <name> --prompt '<skills> Resume CORE-2401 and follow its contract. /goal ...'"
+P=$(tmux new-window -d -P -F '#{pane_id}' -t "$S" -n <name> -c <repo-or-worktree> \
+  "SUBSTRATE_HOLDER=<name> xt claude <name> --prompt '<skills> Resume CORE-2401 and follow its contract. Dispatched by <your ListAgents name>: report to it with SendMessage and journal on your issue. /goal ...'")
+tmux set-option -p -t "$P" @agent_parent_session "$(tmux display-message -p '#{session_id}')"
 ```
+
+The prompt must say who dispatched the worker, by the exact name `ListAgents` shows for the
+coordinator's session. `@agent_parent_session` (the parent link that topology and `xt` read) is set by
+`xt` only for `--role` launches, so set it by hand for a plain worker. Both are manual today; the
+launcher should publish the dispatcher itself (follow-up).
 
 - `-d` keeps the coordinator's window in front. `-n <name>` names the window; use the same name
   for the claim holder and `SUBSTRATE_HOLDER`. Start the name with the Story's Jira key
