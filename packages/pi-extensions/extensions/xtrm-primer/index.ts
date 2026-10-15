@@ -9,10 +9,13 @@
  * drops that section, a missing skill drops that skill, no skill emits nothing,
  * any error emits nothing.
  *
- * Injection point: `before_agent_start` may return a `message` that Pi adds to the
- * run and persists in the transcript (extensions.md, "Events and concurrency").
- * `session_start` cannot return context, so it only checks whether the session
- * branch already carries the primer (resume, fork) and arms the next run.
+ * Injection point (CORE-2394): `before_agent_start` returns `systemPrompt` =
+ * event.systemPrompt + primer, a per-turn override (extensions.md, "Events and
+ * concurrency"), so the primer is system context on every turn, including after
+ * resume and compaction. It used to be a custom `message`, which Pi hands the
+ * model in the user role; cautious models then refused the dispatcher reply
+ * address as user-pasted text. MARKER in event.systemPrompt keeps a second loaded
+ * copy of this extension (later handlers see the override) from appending twice.
  *
  * DRIFT: SKILLS below is copied from xtrm-primer.mjs (XTRM-637); the two repos
  * share no module. Change both together.
@@ -28,7 +31,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const CUSTOM_TYPE = "xtrm-primer";
+export const MARKER = "<!-- xtrm-primer -->";
 
 export const SKILLS = [
   {
@@ -103,43 +106,16 @@ export function buildPrimer(home: string = process.env.HOME || homedir(), env: N
   }
 }
 
-// Shared by every loaded copy of this extension in one process: two copies (a local path and an npm
-// install) would otherwise both inject on the first turn, before either entry is on the branch.
-const CLAIMS = Symbol.for("xtrm-primer.injected-sessions");
-
-function claim(sessionId: string | undefined): boolean {
-  if (!sessionId) return true;
-  const g = globalThis as { [CLAIMS]?: Set<string> };
-  const seen = (g[CLAIMS] ??= new Set<string>());
-  if (seen.has(sessionId)) return false;
-  seen.add(sessionId);
-  return true;
-}
-
 export default function (pi: ExtensionAPI): void {
-  let armed = true;
-  let sessionId: string | undefined;
-
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("before_agent_start", async (event) => {
     try {
-      sessionId = ctx.sessionManager.getSessionId();
+      const base = event.systemPrompt;
+      if (typeof base !== "string" || base.includes(MARKER)) return undefined;
+      const primer = buildPrimer();
+      if (!primer) return undefined;
+      return { systemPrompt: `${base}\n\n${MARKER}\n${primer}` };
     } catch {
-      sessionId = undefined;
+      return undefined;
     }
-    try {
-      const branch = ctx.sessionManager.getBranch() as Array<{ customType?: string }>;
-      armed = !branch.some((entry) => entry.customType === CUSTOM_TYPE);
-    } catch {
-      armed = true;
-    }
-  });
-
-  pi.on("before_agent_start", async () => {
-    if (!armed) return undefined;
-    const content = buildPrimer();
-    if (!content) return undefined;
-    armed = false;
-    if (!claim(sessionId)) return undefined;
-    return { message: { customType: CUSTOM_TYPE, content, display: false } };
   });
 }

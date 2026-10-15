@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import register, { buildPrimer, CUSTOM_TYPE, dispatcherLine } from "../extensions/xtrm-primer/index.ts";
+import register, { buildPrimer, dispatcherLine, MARKER } from "../extensions/xtrm-primer/index.ts";
 
 const homes: string[] = [];
 
@@ -86,41 +86,64 @@ describe("dispatcher line (CORE-2390)", () => {
   });
 });
 
-describe("xtrm-primer extension", () => {
-  test("injects once per session and not again when the branch already carries it", async () => {
-    const prev = process.env.HOME;
-    process.env.HOME = home({ "using-xtrm": USING });
-    try {
-      const handlers: Record<string, (...a: any[]) => any> = {};
-      register({ on: (e: string, h: any) => (handlers[e] = h) } as any);
-      await handlers.session_start({}, { sessionManager: { getBranch: () => [], getSessionId: () => "s-once" } });
-      const first = await handlers.before_agent_start({});
-      expect(first.message.customType).toBe(CUSTOM_TYPE);
-      expect(first.message.display).toBe(false);
-      expect(await handlers.before_agent_start({})).toBeUndefined();
-      await handlers.session_start({}, { sessionManager: { getBranch: () => [{ customType: CUSTOM_TYPE }], getSessionId: () => "s-once" } });
-      expect(await handlers.before_agent_start({})).toBeUndefined();
-    } finally {
-      process.env.HOME = prev;
+describe("xtrm-primer extension (CORE-2394)", () => {
+  const ENV = {
+    XTRM_DISPATCHER_NAME: "coord-1",
+    XTRM_DISPATCHER_ADDRESS: "uds:/run/user/1000/cc-socks/42.sock",
+    SUBSTRATE_HOLDER: "worker-a",
+  };
+  const KEYS = ["HOME", ...Object.keys(ENV)] as const;
+  let saved: Record<string, string | undefined> = {};
+
+  function withEnv(vars: Record<string, string>): void {
+    saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
+    Object.assign(process.env, vars);
+  }
+
+  afterEach(() => {
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
     }
+    saved = {};
   });
 
-  test("two loaded copies inject once per session", async () => {
-    const prev = process.env.HOME;
-    process.env.HOME = home({ "using-xtrm": USING });
-    try {
-      const copies = [0, 1].map(() => {
-        const h: Record<string, (...a: any[]) => any> = {};
-        register({ on: (e: string, fn: any) => (h[e] = fn) } as any);
-        return h;
-      });
-      const ctx = { sessionManager: { getBranch: () => [], getSessionId: () => "s-dup" } };
-      for (const h of copies) await h.session_start({}, ctx);
-      const results = [];
-      for (const h of copies) results.push(await h.before_agent_start({}));
-      expect(results.filter((r) => r?.message?.customType === CUSTOM_TYPE)).toHaveLength(1);
-    } finally {
-      process.env.HOME = prev;
-    }
+  function load(): (event: any) => Promise<any> {
+    let handler: any;
+    register({ on: (e: string, h: any) => e === "before_agent_start" && (handler = h) } as any);
+    return handler;
+  }
+
+  test("appends the primer and dispatcher line to the system prompt, with no user-role message", async () => {
+    withEnv({ HOME: home({ "using-xtrm": USING }), ...ENV });
+    const result = await load()({ systemPrompt: "BASE" });
+    expect(result.message).toBeUndefined();
+    expect(result.systemPrompt.startsWith("BASE\n\n")).toBe(true);
+    expect(result.systemPrompt).toContain(MARKER);
+    expect(result.systemPrompt).toContain("CONTRACT-BODY");
+    expect(result.systemPrompt).toContain(dispatcherLine(ENV));
+  });
+
+  test("applies on every turn (resume, compaction) because the override is per turn", async () => {
+    withEnv({ HOME: home({ "using-xtrm": USING }) });
+    const handler = load();
+    expect((await handler({ systemPrompt: "BASE" })).systemPrompt).toContain("CONTRACT-BODY");
+    expect((await handler({ systemPrompt: "BASE" })).systemPrompt).toContain("CONTRACT-BODY");
+  });
+
+  test("two loaded copies append once per turn: the second sees the marker", async () => {
+    withEnv({ HOME: home({ "using-xtrm": USING }) });
+    const [a, b] = [load(), load()];
+    const first = await a({ systemPrompt: "BASE" });
+    expect(await b({ systemPrompt: first.systemPrompt })).toBeUndefined();
+    expect(first.systemPrompt.split(MARKER)).toHaveLength(2);
+  });
+
+  test("no skills and no dispatcher env, or a malformed event, leave the turn untouched", async () => {
+    withEnv({ HOME: home({}) });
+    for (const k of Object.keys(ENV)) delete process.env[k];
+    const handler = load();
+    expect(await handler({ systemPrompt: "BASE" })).toBeUndefined();
+    expect(await handler({})).toBeUndefined();
   });
 });
