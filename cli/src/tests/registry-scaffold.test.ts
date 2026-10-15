@@ -10,6 +10,7 @@ import {
   isSkillsDefaultPath,
   isUserOwnedPath,
   pruneRetiredManagedSkills,
+  pruneRetiredOptionalSkills,
   scaffoldSkillsDefaultFromPackage,
   stripXtrmPrefix,
   toPosix,
@@ -254,6 +255,29 @@ describe('scaffoldSkillsDefaultFromPackage', () => {
       process.env.HOME = previousHome;
       process.env.XTRM_GLOBAL_SKILLS = previousFlag;
     }
+  });
+});
+
+describe('pruneRetiredOptionalSkills', () => {
+  it('removes the retired update-specialists dir and keeps other optional skills', async () => {
+    const userXtrmDir = path.join(await createTempDir(), 'user-xtrm');
+    const packRoot = path.join(userXtrmDir, 'skills', 'optional', 'xtrm-maintenance');
+    await writeSkill(packRoot, 'update-specialists');
+    await writeSkill(packRoot, 'user-authored');
+
+    const dry = await pruneRetiredOptionalSkills({ userXtrmDir, dryRun: true });
+    expect(dry.removed).toEqual(['xtrm-maintenance/update-specialists']);
+    expect(await fs.pathExists(path.join(packRoot, 'update-specialists'))).toBe(true);
+
+    const result = await pruneRetiredOptionalSkills({ userXtrmDir, dryRun: false });
+    expect(result.removed).toEqual(['xtrm-maintenance/update-specialists']);
+    expect(await fs.pathExists(path.join(packRoot, 'update-specialists'))).toBe(false);
+    expect(await fs.pathExists(path.join(packRoot, 'user-authored'))).toBe(true);
+  });
+
+  it('noop when the optional tier is absent', async () => {
+    const userXtrmDir = path.join(await createTempDir(), 'user-xtrm');
+    expect((await pruneRetiredOptionalSkills({ userXtrmDir, dryRun: false })).removed).toEqual([]);
   });
 });
 

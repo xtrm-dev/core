@@ -50,7 +50,7 @@ preserved when they remain useful even if the old prompt/manual is rewritten.
 | `using-script-specialists` | absorbed | `using-specialists/references/script-class.md` | `sp script`/`sp serve` guidance preserved. |
 | `specialists-creator` | absorbed + assets preserved | `using-specialists/references/specialist-definitions.md` + `scripts/specialist-definitions/*` | Schema-driven scaffold/validate/audit helpers preserved. |
 | `using-specialists-auto` | retired | normal XTRM routing | Automatic duplicate routing surface removed intentionally. |
-| `update-specialists` | moved | `optional/xtrm-maintenance/update-specialists` | Distinct maintainer workflow remains opt-in and Specialists-owned. |
+| `update-specialists` | retired | none | Removed upstream; `xt update --apply` prunes the orphaned optional-tier copy. |
 | `sre-triage` | moved/absorbed | `optional/sre-ops/sre-ops` | Live causal SRE workflow; historical alert scripts preserved. |
 | `deploy-monitor` | absorbed | `sre-ops/references/deploy-monitoring.md` | Deploy verification is one SRE incident/change mode. |
 | `capacity-reclaim` | absorbed | `sre-ops/references/capacity.md` | Capacity/host-pressure workflow remains available. |

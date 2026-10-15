@@ -12,7 +12,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const ownershipPath = path.join(repoRoot, 'docs', 'skills-ownership.json');
 const DEFAULT_CONTRACT_PATH = path.join(repoRoot, 'specialists-src', 'dist', 'asset-contract.json');
 const DEFAULT_VENDOR_ROOT = path.join(repoRoot, '.xtrm', 'skills', 'default');
-const MUST_HAVE_SKILLS = new Set(['using-specialists', 'update-specialists']);
+const MUST_HAVE_SKILLS = new Set(['using-specialists']);
 
 function parseArgs(argv) {
   const result = {

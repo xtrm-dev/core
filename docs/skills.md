@@ -75,7 +75,7 @@ The current package ships these managed packs:
 | `sre-ops` | live SRE/observability, causal production debugging, deploy/capacity workflows |
 | `xt-optional` | specialized XTRM CLI/operator helpers that should not be universal |
 | `xtrm-development` | XTRM runtime/hook/workflow development; includes `hook-development` |
-| `xtrm-maintenance` | releases, dependency updates, docs sync, Specialists update and maintenance |
+| `xtrm-maintenance` | releases, dependency updates, docs sync, and maintenance |
 
 Inspect the live pack rather than relying on a frozen skill list:
 
@@ -96,9 +96,9 @@ Use `xt skills --help` for runtime-specific flags supported by the installed ver
 
 ## Specialists ownership
 
-`using-specialists` and `update-specialists` are authored in `xtrm-dev/specialists` and
-vendored into Core from a pinned Git commit. Only `using-specialists` is default;
-`update-specialists` lives in `xtrm-maintenance`.
+`using-specialists` is authored in `xtrm-dev/specialists` and
+vendored into Core from a pinned Git commit. It is the only
+Specialists-owned skill and lives in `default`.
 
 Advanced Specialists surfaces no longer consume separate active skill roots:
 

@@ -145,7 +145,7 @@ End-to-end validation on a clean ubuntu-latest runner:
 - [ ] `gh workflow run fresh-machine-smoke.yml` — Operator-triggered smoke test.
 - [ ] Assert: `xt init -y` completes all 5 phases (Machine → Claude → Pi → Project → Doctor).
 - [ ] Assert: `sp init` / `sp doctor` succeed after `sp` installs Bun runtime.
-- [ ] Assert: Two must-have Specialists skills exist (`using-specialists` in global `default/`, `update-specialists` in `optional/xtrm-maintenance`).
+- [ ] Assert: The must-have Specialists skill exists (`using-specialists` in global `default/`).
 - [ ] Assert: No symlinks under `.xtrm/` (flat-active-view invariant).
 - [ ] Workflow triggered automatically in `publish.yml` via `workflow_call` before npm publish.
 
