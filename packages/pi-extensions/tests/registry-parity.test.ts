@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import manifest from "../src/manifest.json" with { type: "json" };
 
 mock.module("@earendil-works/pi-ai", () => ({ complete: async () => ({}) }));
@@ -45,7 +46,20 @@ describe("Pi extension ownership parity", () => {
     const sourceDir = resolveManagedPiExtensionsSourceDir(repoRoot);
     if (!sourceDir) throw new Error("Managed Pi extension source is missing");
 
-    const globalPlan = await inventoryPiRuntime(sourceDir, sourceDir);
+    // inventoryPiRuntime also spawns `pi list`; a host Pi makes this test slow and
+    // machine-dependent, so a failing stub keeps it hermetic (CORE-2371).
+    const stubDir = mkdtempSync(join(tmpdir(), "pi-stub-"));
+    writeFileSync(join(stubDir, "pi"), "#!/bin/sh\nexit 1\n");
+    chmodSync(join(stubDir, "pi"), 0o755);
+    const savedPath = process.env.PATH;
+    process.env.PATH = `${stubDir}${delimiter}${savedPath ?? ""}`;
+    let globalPlan;
+    try {
+      globalPlan = await inventoryPiRuntime(sourceDir, sourceDir);
+    } finally {
+      process.env.PATH = savedPath;
+      rmSync(stubDir, { recursive: true, force: true });
+    }
 
     expect(packageIds).toEqual(activeIds());
     expect(globalPlan.extensions.map((status) => status.ext.id)).toEqual(activeIds());
