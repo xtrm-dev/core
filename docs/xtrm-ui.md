@@ -79,6 +79,12 @@ GitNexus, structured-return, process, and generic tools. Their collapsed output 
 bounded and retains the `└─` metadata footer. Ctrl+O reveals hidden content.
 Rendering does not mutate tool-result payloads.
 
+Code-carrying tools (`codemode`, `python`) keep the `● used <tool>` header
+unchanged but render the body like native bash rows: bold execution lines with
+their own hidden-count, output hung off a muted `└` tree, and a plain dim meta
+footer. Execution and result cap independently (`commandPreviewLines` and
+`extPreviewLines`), so a long program never starves its output.
+
 Pending tools have no metadata footer. Expansion hints appear only when content is hidden.
 
 ## Preferences

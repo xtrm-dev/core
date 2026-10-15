@@ -344,11 +344,13 @@ describe("CORE-2358 external frame shows executed code", async () => {
       args: { code: "print(1)" },
       result: { content: [{ type: "text", text: "1" }] },
     };
-    expect(externalToolContentLines(component as never, [])).toEqual(["  print(1)", "\x1b[2m1\x1b[22m"]);
+    // Single-line program: the header carries it, the body holds output only.
+    expect(externalToolContentLines(component as never, [])).toEqual(["1"]);
   });
   test("pending content is the program alone", () => {
     const component = { toolName: "python", args: { code: "print(1)" }, result: null };
-    expect(externalToolContentLines(component as never, ["fallback"])).toEqual(["  print(1)"]);
+    // Single-line program: the header carries it, so the body is empty.
+    expect(externalToolContentLines(component as never, ["fallback"])).toEqual([]);
   });
 });
 
@@ -357,13 +359,112 @@ describe("CORE-2358 collapsed code cap and dimmed output", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("collapsed shows 4 code lines plus a native-style hidden count, expanded shows all", () => {
+  test("collapsed shows lines 2..cap plus a native-style hidden count, expanded shows all", () => {
     const code = "l1\nl2\nl3\nl4\nl5";
     const component = { toolName: "python", args: { code }, result: { content: [{ type: "text", text: "out" }] } };
-    expect(externalToolContentLines(component as never, [], false)).toEqual(["  l1", "  l2", "  l3", "  l4", " \x1b[2m\x1b[3m … +1 lines\x1b[23m\x1b[22m", "\x1b[2mout\x1b[22m"]);
-    expect(externalToolContentLines(component as never, [], true)).toEqual(["  l1", "  l2", "  l3", "  l4", "  l5", "\x1b[2mout\x1b[22m"]);
+    // Line 1 lives in the header; hidden counts it as shown (5-4=1).
+    expect(externalToolContentLines(component as never, [], false)).toEqual(["  l2", "  l3", "  l4", " \x1b[2m\x1b[3m … +1 lines\x1b[23m\x1b[22m", "out"]);
+    expect(externalToolContentLines(component as never, [], true)).toEqual(["  l2", "  l3", "  l4", "  l5", "out"]);
   });
 
+});
+
+describe("xtrm-ui code tools cap execution and result independently", async () => {
+  const { externalToolContentLines, renderExternalToolLines, activeCommandPreviewLines, DEFAULT_PREFS } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+  const code = Array.from({ length: 10 }, (_, i) => `line${i + 1} = ${i + 1}`).join("\n");
+  const output = Array.from({ length: 20 }, (_, i) => `result${i + 1}`).join("\n");
+  const component = {
+    toolName: "codemode",
+    args: { code },
+    result: { content: [{ type: "text", text: output }] },
+  };
+  // Same codeCount derivation as the frame patch: pre-filter code-section length.
+  const codeCountOf = (content: string[]) => content.length - output.split("\n").length;
+  const render = (expanded: boolean) => {
+    const content = externalToolContentLines(component as never, [], expanded);
+    return renderExternalToolLines(content, 200, "external", expanded, "codemode", 10, "success", true, 6, "line1 = 1", codeCountOf(content));
+  };
+
+  test("collapsed shows the code budget plus a full result budget", () => {
+    const plain = render(false).map(strip);
+    expect(plain[0]).toContain("codemode");
+    expect(plain[0]).toContain("line1 = 1");
+    // Line 1 renders once, in the header — never again in the body.
+    expect(plain.slice(1).some((l) => l.includes("line1 = 1"))).toBe(false);
+    expect(plain).toContain("  line2 = 2");
+    expect(plain).toContain("  line4 = 4");
+    expect(plain.some((l) => l.includes("… +6 lines"))).toBe(true);
+    expect(plain).toContain("  └ result1");
+    for (let i = 2; i <= 6; i++) expect(plain).toContain(`    result${i}`);
+    expect(plain.some((l) => l.includes("result7"))).toBe(false);
+    expect(plain.at(-1)).toContain("showing 6/20 lines");
+  });
+
+  test("code body mirrors the bash tree: bold execution, └ output, bare meta", () => {
+    const raw = render(false);
+    const plain = raw.map(strip);
+    expect(raw[1]).toContain("\x1b[1m");
+    expect(plain.some((l) => l.includes("└ result1"))).toBe(true);
+    expect(raw.some((l) => l.includes("└─"))).toBe(false);
+    expect(plain[0]).toContain("codemode");
+  });
+
+  test("multi-block results join: codemode wrapper plus script output", () => {
+    const component = {
+      toolName: "codemode",
+      args: { code: "return 1" },
+      result: {
+        content: [
+          { type: "text", text: "Script completed\nWall time 0.2 seconds\nOutput:\n" },
+          { type: "text", text: "probe-result-1\nprobe-result-2" },
+        ],
+      },
+    };
+    const content = externalToolContentLines(component as never, [], false);
+    expect(content).toContain("probe-result-1");
+    expect(content).toContain("probe-result-2");
+  });
+
+  test("pending code renders dim-bold execution with the header untouched", () => {
+    const pending = { toolName: "python", args: { code: "x = 1\ny = 2" }, result: null };
+    const content = externalToolContentLines(pending as never, [], false);
+    expect(content).toEqual(["  y = 2"]);
+    const codeCount = content.length;
+    const raw = renderExternalToolLines(content, 200, "external", false, "python", undefined, "pending", true, 6, "x = 1", codeCount);
+    expect(raw[0]).toContain("python");
+    expect(raw[1]).toContain("\x1b[2m\x1b[1m");
+    expect(raw[1]).toContain("y = 2");
+  });
+
+  test("expanded shows the whole program and the whole output", () => {
+    const plain = render(true).map(strip);
+    expect(plain).toContain("  line2 = 2");
+    expect(plain).toContain("  line10 = 10");
+    expect(plain).toContain("    result20");
+    expect(plain.some((l) => l.includes("+"))).toBe(false);
+    expect(plain.at(-1)).toContain("20 lines");
+  });
+
+  test("code cap follows the command-lines pref", () => {
+    expect(activeCommandPreviewLines()).toBe(DEFAULT_PREFS.commandPreviewLines);
+    const content = externalToolContentLines(component as never, [], false, 2);
+    expect(content.slice(0, 1)).toEqual(["  line2 = 2"]);
+    expect(content[1]).toContain("… +8 lines");
+  });
+
+  test("code shaped like a header never hijacks the frame", () => {
+    const tricky = { toolName: "codemode", args: { code: "[note] hello\nsecond" }, result: { content: [{ type: "text", text: "ok" }] } };
+    const content = externalToolContentLines(tricky as never, [], false);
+    const rows = renderExternalToolLines(content, 200, "external", false, "codemode", 10, "success", true, 6, "[note] hello", content.length - 1).map(strip);
+    expect(rows[0]).toContain("codemode");
+    expect(rows[0]).not.toMatch(/used note\b/);
+    expect(rows).toContain("  second");
+    expect(rows.slice(1).some((l) => l.includes("[note] hello"))).toBe(false);
+  });
 });
 
 describe("CORE-2358 bare headers for non-code tools", async () => {
