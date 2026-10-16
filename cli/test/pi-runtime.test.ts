@@ -1,8 +1,59 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
 import { cleanupConflictingPiPackageSettings, inventoryPiRuntime, executePiSync, ensureAlwaysGlobalPiPackages, getXtManagedPiPackages, parseNpmPackageName, syncManagedPiThemes, updatePiSettings } from '../src/core/pi-runtime.js';
+
+// CORE-2408: this suite reached the real `pi` binary. `pi` ships in
+// node_modules/.bin, so `inventoryPiRuntime` shelled out to the machine's
+// `pi list` and `executePiSync` then ran `pi install <pkg>` — a real network
+// install — for every package the machine reported missing. That is the 30s
+// timeout on the self-hosted runner, and it is intermittent because the test
+// mutates the very state it reads (after one install, `pi list` reports it).
+// The PATH stub below puts a `pi` that reports the whole managed set first, so
+// no install is ever attempted and the plan no longer depends on the runner.
+const REAL_PATH = process.env.PATH;
+let stubBinDir = '';
+let stubLog = '';
+
+function createPiStub(): { binDir: string; log: string } {
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-runtime-stub-'));
+    const log = path.join(binDir, 'calls.log');
+    const listIds = getXtManagedPiPackages().map((pkg) => pkg.id);
+    const script = [
+        '#!/bin/sh',
+        `printf '%s\\n' "$*" >> '${log}'`,
+        'if [ "$1" = "list" ]; then',
+        '  echo "User packages:"',
+        ...listIds.map((id) => `  echo "  ${id}"`),
+        '  exit 0',
+        'fi',
+        'exit 0',
+        '',
+    ].join('\n');
+    const file = path.join(binDir, 'pi');
+    fs.writeFileSync(file, script);
+    fs.chmodSync(file, 0o755);
+    return { binDir, log };
+}
+
+beforeEach(() => {
+    const stub = createPiStub();
+    stubBinDir = stub.binDir;
+    stubLog = stub.log;
+    // Prepend AFTER vitest has put node_modules/.bin first, so the stub wins
+    // over the real `pi` that ships with the SDK.
+    process.env.PATH = `${stubBinDir}${path.delimiter}${process.env.PATH ?? ''}`;
+});
+
+afterEach(() => {
+    if (REAL_PATH === undefined) delete process.env.PATH;
+    else process.env.PATH = REAL_PATH;
+    if (stubBinDir) fs.removeSync(stubBinDir);
+    stubBinDir = '';
+    stubLog = '';
+});
 
 async function makeExtension(baseDir: string, name: string, extraFiles: Record<string, string> = {}): Promise<void> {
     const extDir = path.join(baseDir, name);
@@ -378,5 +429,41 @@ describe('executePiSync', () => {
         expect(logs.join('\n')).not.toContain('quality-gates');
         expect(logs.join('\n')).not.toContain('core');
         expect(await fs.pathExists(path.join(targetDir, 'quality-gates'))).toBe(false);
+    });
+});
+
+// CORE-2408: proves the run is hermetic. If the stub above is removed this
+// fails, because the real `pi` (node_modules/.bin) answers instead.
+describe('hermetic pi stub (CORE-2408)', () => {
+    it('resolves the PATH stub, not the real pi shipped with the SDK', () => {
+        const which = spawnSync('sh', ['-c', 'command -v pi'], { encoding: 'utf8' });
+        expect(which.stdout.trim()).toBe(path.join(stubBinDir, 'pi'));
+
+        const listed = spawnSync('pi', ['list'], { encoding: 'utf8' });
+        expect(listed.status).toBe(0);
+        for (const pkg of getXtManagedPiPackages()) {
+            expect(listed.stdout).toContain(pkg.id);
+        }
+    });
+
+    it('copies extensions without invoking pi install at all', async () => {
+        const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-src-'));
+        const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-dst-'));
+        try {
+            await makeExtension(sourceDir, 'read-line-numbers');
+            const plan = await inventoryPiRuntime(sourceDir, targetDir);
+            expect(plan.missingPackages).toEqual([]);
+
+            const result = await executePiSync(plan, sourceDir, targetDir, { dryRun: false });
+            expect(result.extensionsAdded).toContain('read-line-numbers');
+            expect(result.packagesInstalled).toEqual([]);
+
+            const calls = fs.readFileSync(stubLog, 'utf8').trim().split('\n').filter(Boolean);
+            expect(calls.some((line) => line.startsWith('list'))).toBe(true);
+            expect(calls.filter((line) => line.startsWith('install'))).toEqual([]);
+        } finally {
+            await fs.remove(sourceDir);
+            await fs.remove(targetDir);
+        }
     });
 });
