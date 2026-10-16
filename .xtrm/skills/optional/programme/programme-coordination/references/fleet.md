@@ -129,7 +129,10 @@ A finished worker's window never stays open.
 1. A worker is finished when its issue is closed, or when it is `done` and the coordinator has
    collected its result.
 2. Confirm the `result` entry exists: `sb journal latest <ref> --kind result`.
-3. Close the window in the same cycle: `tmux kill-window -t <pane-id>`.
+3. Close the worker's pane in the same cycle: `tmux kill-pane -t <pane-id>`, using the pane id that
+   `--window` printed. Never use `tmux kill-window`: a window can hold split panes, and a
+   kill-window once closed the coordinator itself and the operator's monitor pane. Before you kill,
+   check that the id is the worker's pane: `tmux display-message -p -t <pane-id> '#{window_name}'`.
 4. Do not close a window whose result entry is missing. Steer the worker or restart it from the
    capsule first.
 5. List the open windows (`tmux list-windows -t "$S" -F '#{window_name} #{pane_id}'`) in every
@@ -137,8 +140,9 @@ A finished worker's window never stays open.
 
 ## Limits and health
 
-- At most 3 own worker windows open at once. The cap counts open windows, not active issues: reap
-  before you launch. Shared model quotas stop everyone. On a quota 429: pause dispatch and tell the
+- At most 3 own worker windows open at once. The cap counts every live agent process in the
+  session (builders, reviewers, monitors, idle sessions), not active issues: once, 10 agent
+  processes were live while the coordinator counted 3 workers. Reap before you launch. Shared model quotas stop everyone. On a quota 429: pause dispatch and tell the
   operator in one line.
 - Worker context at 25-30%: `/compact` once, then a fresh window resumes from `sb issue resume`.
 - Reviewer, investigator, release or monitor roles are ordinary workers with their own issue.
