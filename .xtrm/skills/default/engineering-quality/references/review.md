@@ -68,7 +68,10 @@ Prove the coverage accounting instead of reporting it:
 line range, or a summary that does not recompute. It prints excluded counts next to
 `coverage_rate`: 100% of one reviewable file with three `.md` files excluded is not a full review.
 
-## Writer pre-flight (no OCR LLM)
+## Writer pre-flight (explicit scope only — no OCR LLM)
+
+OFF unless the pinned contract or scope explicitly names ocr delegation evidence, AgentRun
+evidence, or both. When unnamed, review exactly as above and ignore this lane.
 
 OCR's system rules are prose checklists for a model; OCR runs no static analysis. A writer
 gets its deterministic value without `ocr review` token cost:
