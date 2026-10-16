@@ -52,7 +52,10 @@ with no `ocr review` token cost (see `engineering-quality/references/review.md`)
 
 ```js
 const out = (r) => (typeof r === "string" ? r : r.output); // shape varies by release
-const pf = "~/.xtrm/skills/default/engineering-quality/scripts/ocr-preflight.mjs";
+const { homedir } = await import("node:os");
+const { join } = await import("node:path");
+// ~ never expands inside a JS string; resolve from homedir instead (CORE-2402).
+const pf = join(homedir(), ".xtrm", "skills", "default", "engineering-quality", "scripts", "ocr-preflight.mjs");
 const [pre, lint] = await Promise.allSettled([
   tools.bash({ command: `node ${pf} preflight --from origin/main --to HEAD` }),
   tools.bash({ command: "<repo lint && typecheck> 2>&1 | tail -40" }),

@@ -4,8 +4,8 @@
 // `check` proves the delegation coverage invariant (delegate.md Step 6) instead of
 // trusting a self-reported summary.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 
 const CATEGORIES = ['bug', 'security', 'performance', 'maintainability', 'test', 'style', 'documentation', 'other'];
@@ -22,7 +22,8 @@ function usage(message) {
 ledger.json: { "files": [{ "path", "status", "state": "reviewed"|"skipped", "reason"? }],
                "summary"?: { "total_files", "reviewed_files", "skipped_files", "coverage_rate" } }
 findings.json: [{ "path", "content", "start_line"?, "end_line"?, "category"?, "severity"? }]
-Outputs JSON. check exits 1 on any violation. Requires ocr >= 1.9 (--format json) for preflight.`);
+Outputs JSON. check exits 1 on any violation. Requires ocr >= 1.9 (--format json) for preflight.
+preflight --out defaults to ${path.join(homedir(), '.xtrm', 'cache', 'ocr-preflight')}.`);
   process.exit(message ? 64 : 0);
 }
 
@@ -37,21 +38,87 @@ function parseArgs(argv) {
   return args;
 }
 
+class InputError extends Error {}
+
+function parseJson(text, what) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new InputError(`${what}: invalid JSON (${e.message})`);
+  }
+}
+
+function need(cond, what, source = 'ocr delegate output') {
+  if (!cond) throw new InputError(`${what}: unexpected shape in ${source}`);
+}
+
+/** Shape-check the preview payload; throws InputError on anything preflight/check dereferences. */
+function asPreview(p) {
+  need(p && typeof p === 'object', 'preview');
+  need(Array.isArray(p.reviewable_files), 'preview.reviewable_files');
+  need(Array.isArray(p.excluded_files), 'preview.excluded_files');
+  return p;
+}
+
+/** Shape-check the rule payload; throws InputError on anything preflight dereferences. */
+function asRules(r) {
+  need(r && typeof r === 'object', 'rules');
+  need(Array.isArray(r.groups), 'rules.groups');
+  for (const g of r.groups) {
+    need(g && typeof g === 'object' && typeof g.rule === 'string', 'rules.groups[].rule');
+  }
+  return r;
+}
+
 function ocrJson(sub, args, extra = []) {
   const flags = REF_FLAGS.flatMap((f) => (args[f.slice(2)] ? [f, args[f.slice(2)]] : []));
-  const out = execFileSync('ocr', ['delegate', sub, '--format', 'json', ...flags, ...extra], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return JSON.parse(out);
+  let out;
+  try {
+    out = execFileSync('ocr', ['delegate', sub, '--format', 'json', ...flags, ...extra], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (e) {
+    throw new InputError(`ocr delegate ${sub} failed: ${(e.stderr || e.message || '').toString().split('\n')[0]}`);
+  }
+  return parseJson(out, `ocr delegate ${sub}`);
+}
+
+/** Shape-check the ledger; validate() dereferences files/summary. */
+function asLedger(l) {
+  need(l && typeof l === 'object' && !Array.isArray(l), 'ledger', '--ledger');
+  need(l.files === undefined || Array.isArray(l.files), 'ledger.files', '--ledger');
+  need(l.summary === undefined || (l.summary && typeof l.summary === 'object' && !Array.isArray(l.summary)), 'ledger.summary', '--ledger');
+  return l;
+}
+
+/** Shape-check findings; validate() iterates them with forEach. */
+function asFindings(f) {
+  need(Array.isArray(f), 'findings', '--findings');
+  return f;
+}
+
+/**
+ * Default output dir for preflight artifacts. Stable by construction: a
+ * mkdtemp path is gone when tmp is reaped, so a later `check` cell reading the
+ * stored preview.json path fails with ENOENT (CORE-2402).
+ */
+export function defaultOutDir() {
+  return path.join(homedir(), '.xtrm', 'cache', 'ocr-preflight');
+}
+
+/** Create the output dir (recursively) so a user-supplied --out that does not exist yet is usable. */
+export function ensureOutDir(out) {
+  mkdirSync(out, { recursive: true });
+  return out;
 }
 
 function preflight(args) {
-  const out = args.out || mkdtempSync(path.join(tmpdir(), 'ocr-preflight-'));
-  const preview = ocrJson('preview', args);
+  const out = ensureOutDir(args.out || defaultOutDir());
+  const preview = asPreview(ocrJson('preview', args));
   const paths = preview.reviewable_files.map((f) => f.path);
   // ponytail: one rule call for all paths; batch it if a diff ever exceeds ARG_MAX.
-  const rules = paths.length ? ocrJson('rule', args, paths) : { groups: [] };
+  const rules = paths.length ? asRules(ocrJson('rule', args, paths)) : { groups: [] };
   writeFileSync(path.join(out, 'preview.json'), JSON.stringify(preview, null, 2));
   writeFileSync(path.join(out, 'rules.json'), JSON.stringify(rules, null, 2));
   const excluded = {};
@@ -160,20 +227,80 @@ function selftest() {
     const got = validate(preview, ledger, findings).violations.map((v) => v.code).sort();
     if (JSON.stringify(got) !== JSON.stringify([...want].sort())) failures.push({ name, want, got });
   }
+  // CORE-2402: input guards must throw InputError with a clear message, never TypeError.
+  const guardCases = [
+    ['preview malformed JSON', () => parseJson('{nope', 'preview'), /invalid JSON/],
+    ['preview null', () => asPreview(null), /preview/],
+    ['preview missing reviewable_files', () => asPreview({ excluded_files: [] }), /reviewable_files/],
+    ['preview reviewable_files object', () => asPreview({ reviewable_files: {}, excluded_files: [] }), /reviewable_files/],
+    ['preview missing excluded_files', () => asPreview({ reviewable_files: [] }), /excluded_files/],
+    ['rules groups object', () => asRules({ groups: {} }), /rules\.groups/],
+    ['group rule non-string', () => asRules({ groups: [{ rule: 42 }] }), /rule/],
+    ['ledger null', () => asLedger(null), /ledger/],
+    ['ledger array', () => asLedger([]), /ledger/],
+    ['ledger files object', () => asLedger({ files: {} }), /ledger\.files/],
+    ['ledger summary array', () => asLedger({ summary: [] }), /ledger\.summary/],
+    ['findings object', () => asFindings({ path: 'a.ts' }), /findings/],
+  ];
+  for (const [name, fn, want] of guardCases) {
+    try {
+      fn();
+      failures.push({ name, want: String(want), got: 'no throw' });
+    } catch (e) {
+      if (!(e instanceof InputError) || !want.test(e.message)) {
+        failures.push({ name, want: String(want), got: `${e.constructor.name}: ${e.message}` });
+      }
+    }
+  }
   const cov = validate(preview, good).coverage;
   if (cov.excluded_files !== 1 || cov.changed_files !== 3) failures.push({ name: 'excluded counts', got: cov });
-  return { ok: failures.length === 0, cases: cases.length + 1, failures };
+  // CORE-2402: the default --out must be stable (no random component), and a
+  // user-supplied --out that does not exist yet must still be writable.
+  if (defaultOutDir() !== defaultOutDir()) failures.push({ name: 'default out not stable', got: defaultOutDir() });
+  // CORE-2402: the out-dir cases must not touch the real home, and the whole
+  // fixture base is removed — not just the nested leaf.
+  const outBase = mkdtempSync(path.join(tmpdir(), 'ocr-preflight-selftest-'));
+  const nested = path.join(outBase, 'a', 'b');
+  try {
+    ensureOutDir(nested);
+    if (!existsSync(nested)) failures.push({ name: 'ensureOutDir did not create', got: nested });
+  } catch (e) {
+    failures.push({ name: 'ensureOutDir threw', got: e.message });
+  } finally {
+    rmSync(outBase, { recursive: true, force: true });
+  }
+  return { ok: failures.length === 0, cases: cases.length + guardCases.length + 3, failures };
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
 if (isMain) {
+  try {
+    main();
+  } catch (e) {
+    if (e instanceof InputError) {
+      console.log(JSON.stringify({ ok: false, error: e.message }));
+      process.exit(2);
+    }
+    throw e;
+  }
+}
+
+function main() {
   const args = parseArgs(process.argv.slice(2));
   let result;
   if (args.cmd === 'preflight') result = preflight(args);
   else if (args.cmd === 'check') {
     if (!args.preview || !args.ledger) usage('check needs --preview and --ledger');
-    const read = (f) => JSON.parse(readFileSync(f, 'utf8'));
-    result = validate(read(args.preview), read(args.ledger), args.findings ? read(args.findings) : []);
+    const read = (f) => {
+      let text;
+      try {
+        text = readFileSync(f, 'utf8');
+      } catch (err) {
+        throw new InputError(`${f}: cannot read (${err.message})`);
+      }
+      return parseJson(text, f);
+    };
+    result = validate(asPreview(read(args.preview)), asLedger(read(args.ledger)), args.findings ? asFindings(read(args.findings)) : []);
   } else if (args.cmd === 'selftest') result = selftest();
   else usage(args.cmd ? `unknown command: ${args.cmd}` : undefined);
   console.log(JSON.stringify(result, null, 2));

@@ -115,6 +115,9 @@ jobs:
       run: |
         npm test --prefix cli
         npm run test:scripts
+        # OCR pre-flight has no other harness: its selftest (validate + input
+        # guards, CORE-2402) runs here on stock node, no ocr binary needed.
+        node .xtrm/skills/default/engineering-quality/scripts/ocr-preflight.mjs selftest
         # packages/pi-extensions ships bun:test suites (colocated and under
         # tests/); they were previously unrun by CI, which is how two real
         # failures survived on main — see CORE-2352. npm ci above provides the
