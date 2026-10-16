@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import register, { buildPrimer, dispatcherLine, excerpt, MARKER, missingSections, resolveHome } from "../extensions/xtrm-primer/index.ts";
+import register, { buildPrimer, dispatcherLine, excerpt, MARKER, missingSections, resetPrimerWarnings, resolveHome } from "../extensions/xtrm-primer/index.ts";
 
 const homes: string[] = [];
 
@@ -19,6 +19,9 @@ function home(skills: Record<string, string>): string {
 
 afterEach(() => {
   while (homes.length) rmSync(homes.pop() as string, { recursive: true, force: true });
+  // The warn cache is process-wide: without this, an earlier test that warns
+  // for a skill would silence the warning in a later one.
+  resetPrimerWarnings();
 });
 
 const USING = "---\nname: using-xtrm\n---\n# Using\n\nPreamble U.\n\n## The system contract\n\nCONTRACT-BODY\n\n## Completion rule\n\nCOMPLETION-BODY\n\n## Other\n\nOTHER-U\n";
@@ -170,6 +173,29 @@ describe("renamed heading detectable", () => {
     } finally {
       console.warn = orig;
     }
+  });
+});
+
+describe("heading-rename warning dedup (CORE-2405)", () => {
+  test("two turns warn once per skill per process (CORE-2405)", async () => {
+    resetPrimerWarnings();
+    const prevHome = process.env.HOME;
+    const warns: string[] = [];
+    const orig = console.warn;
+    try {
+      process.env.HOME = home({ "using-xtrm": USING.replace("## Completion rule", "## Completion rules"), multiplexing: MUX });
+      console.warn = (...args: unknown[]) => void warns.push(args.map(String).join(" "));
+      let handler: any;
+      register({ on: (e: string, hh: any) => e === "before_agent_start" && (handler = hh) } as any);
+      await handler({ systemPrompt: "BASE" });
+      await handler({ systemPrompt: "BASE" });
+    } finally {
+      console.warn = orig;
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+    }
+    expect(warns.join("\n")).toContain("Completion rule");
+    expect(warns.filter((w) => w.includes("using-xtrm"))).toHaveLength(1);
   });
 });
 

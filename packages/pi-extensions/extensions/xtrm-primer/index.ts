@@ -46,6 +46,18 @@ export const SKILLS = [
   },
 ];
 
+/**
+ * Skills already warned about in this process. CORE-2405: buildPrimer runs on
+ * every before_agent_start, so an unguarded warn repeats on every turn; the
+ * first occurrence is the actionable one.
+ */
+const WARNED_MISSING_SECTIONS = new Set<string>();
+
+/** Test seam: the warn cache is process-wide, so tests must be able to reset it. */
+export function resetPrimerWarnings(): void {
+  WARNED_MISSING_SECTIONS.clear();
+}
+
 export function excerpt(text: string, sections: readonly string[]): string {
   const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
   const body = normalized.replace(/^---[ \t]*\n[\s\S]*?\n---[ \t]*\n/, "");
@@ -109,7 +121,8 @@ export function buildPrimer(home?: string, env: NodeJS.ProcessEnv = process.env)
         continue;
       }
       const missing = missingSections(text, sections);
-      if (missing.length > 0) {
+      if (missing.length > 0 && !WARNED_MISSING_SECTIONS.has(name)) {
+        WARNED_MISSING_SECTIONS.add(name);
         try {
           console.warn(`[xtrm-primer] skill '${name}' missing sections: ${missing.join(", ")} (heading renamed?)`);
         } catch {
