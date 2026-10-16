@@ -8,8 +8,10 @@ import {
   GlobalPromptSyncError,
   readCanonicalGlobalPromptBody,
   renderManagedGlobalPrompt,
+  resolveGlobalPromptTargets,
   syncGlobalPrompts,
 } from '../core/global-prompt-sync.js';
+import { resolvePackageRoot } from '../core/registry-scaffold.js';
 
 // Frozen copy of the pre-marker APPEND_SYSTEM.md body (as it ships today) so
 // the legacy-migration behavior is tested against the real historical shape,
@@ -313,5 +315,78 @@ describe('syncGlobalPrompts', () => {
     await expect(syncGlobalPrompts(opts())).rejects.toThrow(/concurrent modification/);
     readSpy.mockRestore();
     expect(await fs.readFile(piFile, 'utf8')).toBe(original); // untouched
+  });
+});
+
+describe('per-target routing (production path, no canonicalBody)', () => {
+  it('resolves exactly pi and claude targets — fails if a target is mis-wired', () => {
+    const targets = resolveGlobalPromptTargets({ home: process.env.HOME as string });
+    expect(targets.map((t) => t.label)).toEqual(['pi', 'claude']);
+  });
+
+  it('syncs production assets per target: pi gets pi doctrine, claude gets shared fallback', async () => {
+    const result = await syncGlobalPrompts({ home: process.env.HOME as string });
+    expect(result.targets.map((t) => t.label)).toEqual(['pi', 'claude']);
+
+    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
+    const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
+    const piContent = await fs.readFile(piFile, 'utf8');
+    const claudeContent = await fs.readFile(claudeFile, 'utf8');
+
+    expect(piContent).toContain(PI_ONLY_MARKER);
+    expect(piContent).toContain('MANDATORY');
+    expect(claudeContent).not.toContain(PI_ONLY_MARKER);
+    expect(claudeContent).toContain('MANDATORY');
+    // Mis-wired routing (both targets receiving the same body) must fail here.
+    expect(piContent).not.toBe(claudeContent);
+  });
+
+  it('falls back to the shared body for claude, codex, and unknown labels', async () => {
+    const shared = await readCanonicalGlobalPromptBody();
+    expect(await readCanonicalGlobalPromptBody('claude')).toBe(shared);
+    // Codex has no managed global file; its doctrine travels per launch via
+    // developer_instructions, so it intentionally falls back to shared.
+    expect(await readCanonicalGlobalPromptBody('codex')).toBe(shared);
+    expect(await readCanonicalGlobalPromptBody('unknown-host')).toBe(shared);
+    expect(await readCanonicalGlobalPromptBody('pi')).not.toBe(shared);
+  });
+
+  it('shared fallback never names the pi-only codemode skill', async () => {
+    const shared = await readCanonicalGlobalPromptBody();
+    expect(shared).toContain('MANDATORY');
+    expect(shared).not.toContain('`codemode`');
+  });
+
+  it('pi asset is a router, not a doctrine duplicate (one doctrine source)', async () => {
+    const pi = await readCanonicalGlobalPromptBody('pi');
+    expect(pi).toContain('MANDATORY');
+    expect(pi).toContain(PI_ONLY_MARKER);
+    // Cell-discipline detail lives in the `codemode` skill only. If the pi
+    // asset re-duplicates it, this fails and the assets have re-diverged.
+    expect(pi).not.toContain('Promise.allSettled');
+    // Stale harness probe phrasing belongs in references/runtime-shapes.md only.
+    expect(pi).not.toContain('structured output');
+  });
+
+  it('codemode skill gates the writer pre-flight pattern behind explicit scope', async () => {
+    const skillPath = path.join(resolvePackageRoot(), '.xtrm', 'skills', 'default', 'codemode', 'SKILL.md');
+    const skill = await fs.readFile(skillPath, 'utf8');
+    expect(skill).toMatch(/writer pre-flight.*explicit scope only/i);
+    expect(skill).toMatch(/OFF unless the pinned contract/i);
+  });
+
+  it('review writer pre-flight lane is explicit-scope only', async () => {
+    const reviewPath = path.join(
+      resolvePackageRoot(),
+      '.xtrm',
+      'skills',
+      'default',
+      'engineering-quality',
+      'references',
+      'review.md',
+    );
+    const review = await fs.readFile(reviewPath, 'utf8');
+    expect(review).toMatch(/Writer pre-flight.*explicit scope only/i);
+    expect(review).toMatch(/OFF unless the pinned contract/i);
   });
 });
