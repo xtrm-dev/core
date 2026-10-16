@@ -37,6 +37,17 @@ test('ensureOutDir creates a user-supplied --out that does not exist yet', () =>
   }
 });
 
+// The old selftest created its fixture under the REAL ~/.xtrm/cache and removed
+// only the nested leaf, so every run (CI included) left ocr-preflight-selftest
+// behind. This fails on that behaviour.
+test('selftest leaves no fixture behind in the real home cache', () => {
+  const base = path.join(homedir(), '.xtrm', 'cache', 'ocr-preflight-selftest');
+  const before = existsSync(base);
+  const run = spawnSync(process.execPath, [script, 'selftest'], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(existsSync(base), before, 'selftest must not create or leave the fixture base under the real home');
+});
+
 // The guards are unit-tested through selftest, but that does not prove they are
 // wired into `check`: reverting the wiring leaves the unit cases green and makes
 // `check` throw a TypeError stack again.

@@ -4,8 +4,8 @@
 // `check` proves the delegation coverage invariant (delegate.md Step 6) instead of
 // trusting a self-reported summary.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 
 const CATEGORIES = ['bug', 'security', 'performance', 'maintainability', 'test', 'style', 'documentation', 'other'];
@@ -257,14 +257,17 @@ function selftest() {
   // CORE-2402: the default --out must be stable (no random component), and a
   // user-supplied --out that does not exist yet must still be writable.
   if (defaultOutDir() !== defaultOutDir()) failures.push({ name: 'default out not stable', got: defaultOutDir() });
-  const nested = path.join(path.dirname(defaultOutDir()), 'ocr-preflight-selftest', 'nested');
+  // CORE-2402: the out-dir cases must not touch the real home, and the whole
+  // fixture base is removed — not just the nested leaf.
+  const outBase = mkdtempSync(path.join(tmpdir(), 'ocr-preflight-selftest-'));
+  const nested = path.join(outBase, 'a', 'b');
   try {
     ensureOutDir(nested);
     if (!existsSync(nested)) failures.push({ name: 'ensureOutDir did not create', got: nested });
   } catch (e) {
     failures.push({ name: 'ensureOutDir threw', got: e.message });
   } finally {
-    rmSync(nested, { recursive: true, force: true });
+    rmSync(outBase, { recursive: true, force: true });
   }
   return { ok: failures.length === 0, cases: cases.length + guardCases.length + 3, failures };
 }
