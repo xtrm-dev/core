@@ -9,14 +9,13 @@
  * drops that section, a missing skill drops that skill, no skill emits nothing,
  * any error emits nothing.
  *
- * Injection point (CORE-2394, CORE-2396): `before_agent_start` sets
- * event.systemPromptOptions.sections[SECTION] to the primer, so Pi renders it as a
- * tagged system-prompt section on every run, including after resume and compaction,
- * and appends only a section delta instead of replacing the whole prompt (which can
- * invalidate the provider's cached prefix). It used to be a custom `message`, which
- * Pi hands the model in the user role; cautious models then refused the dispatcher
- * reply address as user-pasted text. A second loaded copy of this extension writes
- * the same key, so it cannot add the primer twice.
+ * Injection point (CORE-2394): `before_agent_start` returns `systemPrompt` =
+ * event.systemPrompt + primer, a per-turn override (extensions.md, "Events and
+ * concurrency"), so the primer is system context on every turn, including after
+ * resume and compaction. It used to be a custom `message`, which Pi hands the
+ * model in the user role; cautious models then refused the dispatcher reply
+ * address as user-pasted text. MARKER in event.systemPrompt keeps a second loaded
+ * copy of this extension (later handlers see the override) from appending twice.
  *
  * DRIFT: SKILLS below is copied from xtrm-primer.mjs (XTRM-637); the two repos
  * share no module. Change both together.
@@ -32,8 +31,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Pi section names match /^[a-z][a-z0-9_-]*$/ (pi-coding-agent system-prompt.js).
-export const SECTION = "xtrm-primer";
+export const MARKER = "<!-- xtrm-primer -->";
 
 export const SKILLS = [
   {
@@ -111,12 +109,13 @@ export function buildPrimer(home: string = process.env.HOME || homedir(), env: N
 export default function (pi: ExtensionAPI): void {
   pi.on("before_agent_start", async (event) => {
     try {
-      const sections = event.systemPromptOptions.sections;
+      const base = event.systemPrompt;
+      if (typeof base !== "string" || base.includes(MARKER)) return undefined;
       const primer = buildPrimer();
-      if (primer) sections[SECTION] = primer;
-      else delete sections[SECTION];
+      if (!primer) return undefined;
+      return { systemPrompt: `${base}\n\n${MARKER}\n${primer}` };
     } catch {
-      // No primer rather than a broken run.
+      return undefined;
     }
   });
 }
