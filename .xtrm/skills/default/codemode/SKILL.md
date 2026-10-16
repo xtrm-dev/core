@@ -41,7 +41,11 @@ context** — fan out with `Promise.allSettled`, filter in-script, return the di
   check `stopReason`/`errorMessage`. Paid tiers can 402 — fall back to free
   classifiers; thin state rightly returns no-match.
 
-## Pattern: writer pre-flight (no OCR LLM)
+## Pattern: writer pre-flight (explicit scope only — no OCR LLM)
+
+OFF unless the pinned contract or scope explicitly names ocr delegation evidence, AgentRun
+evidence, or both. When unnamed, ignore this pattern and review exactly per
+`engineering-quality/references/review.md` above the lane sections.
 
 One cell gives a writer OCR's deterministic scaffolding plus the repo's own checks,
 with no `ocr review` token cost (see `engineering-quality/references/review.md`):

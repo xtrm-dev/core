@@ -133,9 +133,10 @@ xt claude <name> --window --prompt '<skills> ... /goal ...'
   matches confirmation prompts and silence with `tmux capture-pane`, and re-arm it after every launch
   or handoff. The operator answers destructive or privileged prompts.
 - **Reap finished workers.** When a worker's issue closes, or it is `done` with its result
-  collected, confirm the `result` entry and `tmux kill-window` it in the same cycle. List open
+  collected, confirm the `result` entry and `tmux kill-pane -t <pane-id>` it in the same cycle (never
+  `kill-window`: it can close split panes, including the coordinator). List open
   windows in every handoff (`references/fleet.md`, "Reaping").
-- At most 3 own worker windows open at once (open windows, not active issues). On a quota 429:
+- At most 3 own worker windows open at once (every live agent process, not active issues). On a quota 429:
   pause dispatch, tell the operator in one line.
 - At 25-30% worker context: `/compact` once, then a fresh worker resumes from `sb issue resume`.
 
