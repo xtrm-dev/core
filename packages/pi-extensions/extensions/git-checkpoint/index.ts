@@ -10,6 +10,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export default function (pi: ExtensionAPI) {
 	const checkpoints = new Map<string, string>();
 	let currentEntryId: string | undefined;
+	let lastWorktreeReminderCwd: string | null = null;
+
+	// CORE-2403: the `xt end` worktree reminder lived in the retired
+	// session-flow extension. It was never Beads logic, so it is restored
+	// here rather than retired with the gates.
+	function isWorktree(cwd: string): boolean {
+		return cwd.includes("/.xtrm/worktrees/") || cwd.includes("/.claude/worktrees/");
+	}
 
 	// Track the current entry ID when user messages are saved
 	pi.on("tool_result", async (_event, ctx) => {
@@ -46,8 +54,14 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("agent_end", async () => {
+	pi.on("agent_end", async (_event, ctx) => {
 		// Clear checkpoints after agent completes
 		checkpoints.clear();
+
+		const cwd = ctx?.cwd || process.cwd();
+		if (ctx?.hasUI && isWorktree(cwd) && lastWorktreeReminderCwd !== cwd) {
+			ctx.ui.notify("Run `xt end` to create a PR and clean up this worktree.", "info");
+			lastWorktreeReminderCwd = cwd;
+		}
 	});
 }
