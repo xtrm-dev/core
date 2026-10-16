@@ -63,7 +63,8 @@ Programme epic          ───── 1:1 ───  Epic
 - Epics nest in Substrate (`--kind epic --parent <epic>`). The journal levels are: programme
   (overall story and decisions), theme (that theme's story), task (one worker's detail).
 
-Jira tool: `scripts/jira.py` (REST, token read from `~/.secrets`, never printed). Field recipes,
+Jira tool: `scripts/jira.py` (REST; token file, account and site from `JIRA_TOKEN_FILE`,
+`JIRA_EMAIL`, `JIRA_SITE`, with defaults for the operator's machine; token never printed). Field recipes,
 sprint rhythm and the board profile: `references/jira.md`.
 
 ## 1. Start
@@ -92,13 +93,14 @@ sprint rhythm and the board profile: `references/jira.md`.
 - **Close** each issue with `sb issue close --outcome ... --reason ...` and cite the result
   entry and PR. A worker summary is a claim: check it against the live tree and tests first.
 - **Read the board before the first Jira write**: issue types, statuses and categories, transitions,
-  board columns, sprints, custom fields, and whether the dev panel is connected
+  board columns, sprints, custom fields, and whether the dev panel shows data
   (`references/jira.md`, "Read the board first"). Never assume a status name. Record the profile once as
   a `finding` on the programme epic.
 - **Substrate drives Jira status; nothing else does.** No Jira Automation rule and no smart commit
-  moves status. Until `sb jira` exists (XTRM-639), the coordinator moves each item by hand on the day
-  of the event, to the board's status that means: ready, being worked, in review, merged and waiting
-  for production, done, done with follow-up, parked, blocked, will not do.
+  moves status; the GitHub for Jira dev panel on ISSUE is evidence only. Until `sb jira` exists
+  (XTRM-639), the coordinator moves each item by hand on the day of the event, to the board's
+  status that means: ready, being worked, in review, merged and waiting for production, done, done
+  with follow-up, parked, blocked, will not do.
 - **Post results to Jira as comments**: findings, decisions, results and closures that the
   operator needs, with the Substrate ref. The daily report is written once, as a `result` entry on
   the programme epic, then posted as a comment on the Jira Epic. Never copy claims, journals or
@@ -124,12 +126,17 @@ xt claude <name> --window --prompt '<skills> ... /goal ...'
   the worker's first entry.
 - Name the worker `<story-key>-<slug>` (for example `ISSUE-260-pi-runtime`). The branch is
   `xt/<name>`, so the Jira key reaches branch names, PR titles and commit trailers, which is what
-  the Jira dev panel reads once GitHub for Jira is connected.
+  the Jira dev panel reads (GitHub for Jira is installed for project ISSUE). The window is
+  `claude-<name>` in lower case; target workers by the pane id `--window` prints.
 - **Never leave a worker stale.** Each cycle, check every window: working, waiting on a confirmation,
   finished, or dead, and act (`references/fleet.md`, "Liveness"). Arm a background monitor that
   matches confirmation prompts and silence with `tmux capture-pane`, and re-arm it after every launch
   or handoff. The operator answers destructive or privileged prompts.
-- At most 3 own workers at once. On a quota 429: pause dispatch, tell the operator in one line.
+- **Reap finished workers.** When a worker's issue closes, or it is `done` with its result
+  collected, confirm the `result` entry and `tmux kill-window` it in the same cycle. List open
+  windows in every handoff (`references/fleet.md`, "Reaping").
+- At most 3 own worker windows open at once (open windows, not active issues). On a quota 429:
+  pause dispatch, tell the operator in one line.
 - At 25-30% worker context: `/compact` once, then a fresh worker resumes from `sb issue resume`.
 
 ## 4. /goal keeps everyone alive

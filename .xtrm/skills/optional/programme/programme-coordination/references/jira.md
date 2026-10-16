@@ -10,9 +10,13 @@ Use project **ISSUE** (board 1, SCRUM). It has Epic, Story, Task, Subtask, weekl
 board. Project **XTRM** is a business project with only Task and Sottotask, two statuses
 (Da completare, Completata) and no sprints: it cannot show themes or sprints. The operator's
 direction (Jira XTRM-110, Substrate XTRM-639) is ISSUE as the planning board, with the label
-`prog:<programme>` to separate programmes. Still open there: move XTRM work into ISSUE or make XTRM a
-software project, and whether GitHub for Jira is installed. Check live before relying on this: `jira.py GET /rest/api/3/project/ISSUE` (issueTypes) and
+`prog:<programme>` to separate programmes. A new software space to replace XTRM is planned.
+Check live before relying on this: `jira.py GET /rest/api/3/project/ISSUE` (issueTypes) and
 `jira.py GET /rest/agile/1.0/board/1/sprint`.
+
+**GitHub for Jira** is installed for project ISSUE, so ISSUE issues show the development panel
+(branches, commits, PRs that carry the key). XTRM has no dev panel. The panel is evidence only:
+Substrate still drives every status move, and smart commits and Jira Automation stay off.
 
 ## The model
 
@@ -75,12 +79,12 @@ of the board with `jira.py` and act on what it returns:
 | Are sprints on? Which exist, with dates and goals? | `GET /rest/agile/1.0/board/<id>/sprint`; the sprint field is `customfield_10020` on ISSUE (look it up with `/rest/api/3/field`) |
 | Which custom fields exist (sprint, Substrate ref, readiness)? | `GET /rest/api/3/field` |
 | Which labels and namespaces are in use? | `GET /rest/api/3/label`, or a JQL count per `prog:` label |
-| Is the dev panel connected (GitHub for Jira)? | `GET /rest/dev-status/latest/issue/summary?issueId=<id>` (an internal Jira endpoint, not in the public API; it worked on ISSUE on 2026-10-15). Zero PRs and no tools means not connected |
+| Does the dev panel show this issue's work (GitHub for Jira, ISSUE only)? | `GET /rest/dev-status/latest/issue/summary?issueId=<id>` (an internal Jira endpoint, not in the public API; it worked on ISSUE on 2026-10-15). Zero PRs means no branch, commit or PR carries the key yet |
 | How is the programme already laid out? | JQL: `parent = <Epic> ORDER BY key`, and the Epic's Stories with their sprints |
 
 Print only what you need; responses over 6,000 characters are cut, so import `jira.py` and filter
 (see the recipes below). Then record the result once, as a `finding` on the programme epic: types
-used, the status chosen for each Substrate event, sprint ids, whether the dev panel is on.
+used, the status chosen for each Substrate event, sprint ids, whether the dev panel shows data.
 
 **Pick statuses by meaning.** Substrate is the only status driver (no Jira Automation, no smart
 commits). Until `sb jira` exists, the coordinator moves each item by hand on the day of the event.
