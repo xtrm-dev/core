@@ -37,21 +37,58 @@ function parseArgs(argv) {
   return args;
 }
 
+class InputError extends Error {}
+
+function parseJson(text, what) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new InputError(`${what}: invalid JSON (${e.message})`);
+  }
+}
+
+function need(cond, what) {
+  if (!cond) throw new InputError(`${what}: unexpected shape in ocr delegate output`);
+}
+
+/** Shape-check the preview payload; throws InputError on anything preflight/check dereferences. */
+function asPreview(p) {
+  need(p && typeof p === 'object', 'preview');
+  need(Array.isArray(p.reviewable_files), 'preview.reviewable_files');
+  need(Array.isArray(p.excluded_files), 'preview.excluded_files');
+  return p;
+}
+
+/** Shape-check the rule payload; throws InputError on anything preflight dereferences. */
+function asRules(r) {
+  need(r && typeof r === 'object', 'rules');
+  need(Array.isArray(r.groups), 'rules.groups');
+  for (const g of r.groups) {
+    need(g && typeof g === 'object' && typeof g.rule === 'string', 'rules.groups[].rule');
+  }
+  return r;
+}
+
 function ocrJson(sub, args, extra = []) {
   const flags = REF_FLAGS.flatMap((f) => (args[f.slice(2)] ? [f, args[f.slice(2)]] : []));
-  const out = execFileSync('ocr', ['delegate', sub, '--format', 'json', ...flags, ...extra], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return JSON.parse(out);
+  let out;
+  try {
+    out = execFileSync('ocr', ['delegate', sub, '--format', 'json', ...flags, ...extra], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (e) {
+    throw new InputError(`ocr delegate ${sub} failed: ${(e.stderr || e.message || '').toString().split('\n')[0]}`);
+  }
+  return parseJson(out, `ocr delegate ${sub}`);
 }
 
 function preflight(args) {
   const out = args.out || mkdtempSync(path.join(tmpdir(), 'ocr-preflight-'));
-  const preview = ocrJson('preview', args);
+  const preview = asPreview(ocrJson('preview', args));
   const paths = preview.reviewable_files.map((f) => f.path);
   // ponytail: one rule call for all paths; batch it if a diff ever exceeds ARG_MAX.
-  const rules = paths.length ? ocrJson('rule', args, paths) : { groups: [] };
+  const rules = paths.length ? asRules(ocrJson('rule', args, paths)) : { groups: [] };
   writeFileSync(path.join(out, 'preview.json'), JSON.stringify(preview, null, 2));
   writeFileSync(path.join(out, 'rules.json'), JSON.stringify(rules, null, 2));
   const excluded = {};
@@ -160,20 +197,60 @@ function selftest() {
     const got = validate(preview, ledger, findings).violations.map((v) => v.code).sort();
     if (JSON.stringify(got) !== JSON.stringify([...want].sort())) failures.push({ name, want, got });
   }
+  // CORE-2402: input guards must throw InputError with a clear message, never TypeError.
+  const guardCases = [
+    ['preview malformed JSON', () => parseJson('{nope', 'preview'), /invalid JSON/],
+    ['preview null', () => asPreview(null), /preview/],
+    ['preview missing reviewable_files', () => asPreview({ excluded_files: [] }), /reviewable_files/],
+    ['preview reviewable_files object', () => asPreview({ reviewable_files: {}, excluded_files: [] }), /reviewable_files/],
+    ['preview missing excluded_files', () => asPreview({ reviewable_files: [] }), /excluded_files/],
+    ['rules groups object', () => asRules({ groups: {} }), /rules\.groups/],
+    ['group rule non-string', () => asRules({ groups: [{ rule: 42 }] }), /rule/],
+  ];
+  for (const [name, fn, want] of guardCases) {
+    try {
+      fn();
+      failures.push({ name, want: String(want), got: 'no throw' });
+    } catch (e) {
+      if (!(e instanceof InputError) || !want.test(e.message)) {
+        failures.push({ name, want: String(want), got: `${e.constructor.name}: ${e.message}` });
+      }
+    }
+  }
   const cov = validate(preview, good).coverage;
   if (cov.excluded_files !== 1 || cov.changed_files !== 3) failures.push({ name: 'excluded counts', got: cov });
-  return { ok: failures.length === 0, cases: cases.length + 1, failures };
+  return { ok: failures.length === 0, cases: cases.length + guardCases.length + 1, failures };
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
 if (isMain) {
+  try {
+    main();
+  } catch (e) {
+    if (e instanceof InputError) {
+      console.log(JSON.stringify({ ok: false, error: e.message }));
+      process.exit(2);
+    }
+    throw e;
+  }
+}
+
+function main() {
   const args = parseArgs(process.argv.slice(2));
   let result;
   if (args.cmd === 'preflight') result = preflight(args);
   else if (args.cmd === 'check') {
     if (!args.preview || !args.ledger) usage('check needs --preview and --ledger');
-    const read = (f) => JSON.parse(readFileSync(f, 'utf8'));
-    result = validate(read(args.preview), read(args.ledger), args.findings ? read(args.findings) : []);
+    const read = (f) => {
+      let text;
+      try {
+        text = readFileSync(f, 'utf8');
+      } catch (err) {
+        throw new InputError(`${f}: cannot read (${err.message})`);
+      }
+      return parseJson(text, f);
+    };
+    result = validate(asPreview(read(args.preview)), read(args.ledger), args.findings ? read(args.findings) : []);
   } else if (args.cmd === 'selftest') result = selftest();
   else usage(args.cmd ? `unknown command: ${args.cmd}` : undefined);
   console.log(JSON.stringify(result, null, 2));
