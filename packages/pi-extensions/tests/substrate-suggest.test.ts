@@ -18,7 +18,8 @@ import {
   SUBSTRATE_ACCENT,
 } from "../extensions/substrate-suggest/catalog.ts";
 import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
-import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb, partitionTracked, trackedEditedFiles, buildProvenanceEvidence } from "../extensions/substrate-suggest/duties.ts";
+import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb, partitionTracked, trackedEditedFiles, buildProvenanceEvidence, repoRoot, createRepoRootResolver, createProvenanceSteerGate, runProvenanceSteer } from "../extensions/substrate-suggest/duties.ts";
+import substrateSuggestExtension from "../extensions/substrate-suggest/index.ts";
 
 function snap(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
   return {
@@ -346,5 +347,139 @@ describe("provenance steer gates", () => {
     expect(body).toMatch(/git log -p --follow/);
     expect(body.length).toBeLessThanOrEqual(2000);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("provenance steer ordering (CORE-2406)", () => {
+  it("a gate-blocked steer marks nothing, so it retries in-turn", async () => {
+    const cooldowns: Cooldowns = {};
+    const steered: string[] = [];
+    let calls = 0;
+    const attempt = () =>
+      runProvenanceSteer({
+        files: ["a.ts"],
+        steered,
+        cooldowns,
+        threshold: 0.3,
+        classify: async () => {
+          calls++;
+          return null;
+        },
+        deliver: () => {
+          throw new Error("must not deliver a gated steer");
+        },
+      });
+    expect(await attempt()).toBe("gated");
+    expect(steered).toEqual([]);
+    expect(await attempt()).toBe("gated");
+    expect(calls).toBe(2);
+  });
+
+  it("marks files only on delivery, then cools down", async () => {
+    const cooldowns: Cooldowns = {};
+    const steered: string[] = [];
+    const delivered: Array<{ files: string[]; model: string | null }> = [];
+    const opts = {
+      files: ["a.ts"],
+      steered,
+      cooldowns,
+      threshold: 0.3,
+      classify: async () => ({ mean: 1, model: "m" }),
+      deliver: (fs: string[], model: string | null) => {
+        delivered.push({ files: fs, model });
+      },
+    };
+    expect(await runProvenanceSteer(opts)).toBe("delivered");
+    expect(steered).toEqual(["a.ts"]);
+    expect(delivered).toEqual([{ files: ["a.ts"], model: "m" }]);
+    expect(await runProvenanceSteer(opts)).toBe("cooled");
+    expect(delivered).toHaveLength(1);
+  });
+
+  it("repoRoot resolves the git toplevel from a nested dir, and falls back outside a repo (hermetic temp repo)", () => {
+    const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+    const fs = require("node:fs") as typeof import("node:fs");
+    const outer = fs.mkdtempSync(`${process.env.TMPDIR ?? "/tmp"}/prov-root-`);
+    const dir = `${outer}/repo`;
+    const nested = `${dir}/packages`;
+    fs.mkdirSync(nested, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["config", "user.email", "t@t"], { cwd: dir });
+    execFileSync("git", ["config", "user.name", "t"], { cwd: dir });
+    const top = fs.realpathSync(dir);
+    expect(repoRoot(dir)).toBe(top);
+    expect(repoRoot(nested)).toBe(top);
+    // Not a repo: the launch directory is the only thing left to return.
+    const outside = `${outer}/outside`;
+    fs.mkdirSync(outside, { recursive: true });
+    expect(repoRoot(outside)).toBe(outside);
+    fs.rmSync(outer, { recursive: true, force: true });
+  });
+
+  it("repoRoot is resolved once per session, not once per steer (CORE-2406)", () => {
+    let calls = 0;
+    const resolve = createRepoRootResolver(() => {
+      calls += 1;
+      return "/repo";
+    });
+    expect(resolve()).toBe("/repo");
+    expect(resolve()).toBe("/repo");
+    expect(calls).toBe(1);
+  });
+
+  it("an in-flight guard makes two concurrent steers share one Jev call (CORE-2406)", async () => {
+    const cooldowns: Cooldowns = {};
+    const steered: string[] = [];
+    const gate = createProvenanceSteerGate();
+    let calls = 0;
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    const opts = {
+      files: ["a.ts"],
+      steered,
+      cooldowns,
+      threshold: 0.3,
+      gate,
+      classify: async () => {
+        calls += 1;
+        await held;
+        return { mean: 1, model: "m" };
+      },
+      deliver: () => {},
+    };
+    const first = runProvenanceSteer(opts);
+    const second = runProvenanceSteer(opts);
+    release();
+    expect(await second).toBe("inFlight");
+    expect(await first).toBe("delivered");
+    expect(calls).toBe(1);
+    expect(steered).toEqual(["a.ts"]);
+  });
+});
+
+describe("extension wiring (CORE-2406)", () => {
+  it("attaches the provenance steer to the real tool_result event", async () => {
+    type Handler = (event: never, ctx?: never) => unknown;
+    const registered = new Map<string, Handler[]>();
+    const pi = {
+      getFlag: () => false,
+      on: (name: string, handler: Handler) => {
+        registered.set(name, [...(registered.get(name) ?? []), handler]);
+        return () => {};
+      },
+      registerMessageRenderer: () => {},
+      sendMessage: () => {},
+      exec: async () => ({ stdout: "", stderr: "", code: 0 }),
+    };
+    substrateSuggestExtension(pi as never);
+    // A typo or rename here leaves the handler attached to nothing and the
+    // steer silently dead, so the real event names are pinned.
+    expect([...registered.keys()].sort()).toEqual(["agent_end", "session_before_compact", "tool_call", "tool_result"]);
+    const handler = registered.get("tool_result")?.[0];
+    expect(typeof handler).toBe("function");
+    // A real-shaped edit result rides this event; the handler accepts it.
+    await handler!({ type: "tool_result", toolName: "edit", input: { path: "x.ts" }, args: {}, content: [] } as never);
   });
 });
