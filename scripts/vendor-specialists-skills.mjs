@@ -179,7 +179,6 @@ async function main() {
 
   const requestedRef = source.ref ?? 'HEAD';
   const resolvedSha = await gitText(specialistsRepoPath, ['rev-parse', `${requestedRef}^{commit}`]);
-  const detectedRef = source.ref ?? await gitText(specialistsRepoPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
   const previousManifest = await readJsonIfExists(manifestPath);
 
   await removePreviousVendoredPaths(previousManifest, entries);
@@ -202,7 +201,10 @@ async function main() {
     digest: 'git-blob-sha1',
     source: {
       ...source,
-      ...(detectedRef && detectedRef !== 'HEAD' ? { ref: detectedRef } : {}),
+      // CORE-2407: record the immutable commit as the ref. A moving branch name
+      // (e.g. `master`) on a manifest that claims a pin lets any consumer that
+      // reads .source.ref resolve a different tree than the one vendored here.
+      ref: resolvedSha,
       resolved_sha: resolvedSha,
       repo_path: path.relative(repoRoot, specialistsRepoPath).split(path.sep).join('/'),
       source_path: sourcePath,

@@ -162,4 +162,27 @@ describe('agent-contract parity (ISSUE-136 + skills-v4 + substrate doctrine)', (
     expect(runtimeNotes.length).toBeGreaterThan(0);
     expect(rendered).toContain(runtimeNotes);
   });
+
+  // CORE-2407: the AGENTS.md variant was guarded, the CLAUDE.md variant was not.
+  // Claude Code reads CLAUDE.md directly, so its runtime notes need the same
+  // guard, and the rendered root copy must carry the template suffix verbatim.
+  it('CLAUDE.md variant keeps its Claude Code runtime notes', () => {
+    const claude = fs.readFileSync(CLAUDE_TOP, 'utf8');
+    const rendered = fs.readFileSync(ROOT_CLAUDE, 'utf8');
+    for (const marker of [
+      /Claude Code/,
+      /~\/\.claude\/skills\//,
+      /\/skill-<name>/,
+      /\/hook-development/,
+      /`xt claude`/,
+    ]) {
+      expect(claude).toMatch(marker);
+      expect(rendered).toMatch(marker);
+    }
+    const heading = claude.indexOf('## Runtime notes');
+    expect(heading).toBeGreaterThan(-1);
+    const runtimeNotes = claude.slice(heading).trim();
+    expect(runtimeNotes.length).toBeGreaterThan(0);
+    expect(rendered).toContain(runtimeNotes);
+  });
 });

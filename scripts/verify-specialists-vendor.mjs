@@ -56,6 +56,17 @@ async function main() {
   assert(manifest.digest === 'git-blob-sha1', 'manifest digest mismatch');
   assert(Array.isArray(manifest.skills) && manifest.skills.length > 0, 'manifest skills missing');
   assert(manifest.source?.resolved_sha, 'manifest source.resolved_sha missing');
+  // CORE-2407: the manifest claims a pin, so the ref it exposes to consumers
+  // (release workflows read .source.ref) must BE that pin, never a moving
+  // branch name that resolves to a different tree than the vendored one.
+  assert(
+    /^[0-9a-f]{40}$/.test(manifest.source.resolved_sha),
+    `manifest source.resolved_sha is not a 40-char commit sha: ${manifest.source.resolved_sha}`,
+  );
+  assert(
+    manifest.source.ref === manifest.source.resolved_sha,
+    `manifest source.ref must be the pinned sha, not a moving ref: ${manifest.source.ref}`,
+  );
   assert(manifest.placements && typeof manifest.placements === 'object', 'manifest placements missing');
 
   for (const skillName of manifest.skills) {
