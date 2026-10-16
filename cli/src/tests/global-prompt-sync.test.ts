@@ -354,7 +354,7 @@ describe('per-target routing (production path, no canonicalBody)', () => {
   it('shared fallback never names the pi-only codemode skill', async () => {
     const shared = await readCanonicalGlobalPromptBody();
     expect(shared).toContain('MANDATORY');
-    expect(shared).not.toContain('`codemode`');
+    expect(shared).not.toMatch(/codemode/i);
   });
 
   it('pi asset is a router, not a doctrine duplicate (one doctrine source)', async () => {
@@ -364,7 +364,7 @@ describe('per-target routing (production path, no canonicalBody)', () => {
     // Cell-discipline detail lives in the `codemode` skill only. If the pi
     // asset re-duplicates it, this fails and the assets have re-diverged.
     expect(pi).not.toContain('Promise.allSettled');
-    // Stale harness probe phrasing belongs in references/runtime-shapes.md only.
+    // Resolve-shape detail lives in the codemode skill references, not in the global prompt.
     expect(pi).not.toContain('structured output');
   });
 
