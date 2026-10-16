@@ -9,7 +9,7 @@ Site `https://mercuryintel.atlassian.net`. Tool: `scripts/jira.py` (REST, token 
 Use project **ISSUE** (board 1, SCRUM). It has Epic, Story, Task, Subtask, weekly sprints and a
 board. Project **XTRM** is a business project with only Task and Sottotask, two statuses
 (Da completare, Completata) and no sprints: it cannot show themes or sprints. The operator's
-direction (Jira XTRM-110, Substrate XTRM-639) is ISSUE as the planning board, with the label
+direction (Jira XT-110, Substrate XTRM-639) is ISSUE as the planning board, with the label
 `prog:<programme>` to separate programmes. A new software space to replace XTRM is planned.
 Check live before relying on this: `jira.py GET /rest/api/3/project/ISSUE` (issueTypes) and
 `jira.py GET /rest/agile/1.0/board/1/sprint`.
@@ -103,7 +103,7 @@ For each event, choose the board's status that means this, using its category to
 | Closure `cancelled` or `wont_fix` | will not do | Done, with a resolution |
 
 If the board has no status for an event, use the nearest one and add a comment saying what it
-stands for; ask the operator before adding a status or changing a category. Jira XTRM-110 proposes
+stands for; ask the operator before adding a status or changing a category. Jira XT-110 proposes
 names for ISSUE (Pronto, In corso, In Review, waiting-production, Completata, complete-with-followup,
 Deferred, Blocked, Won't Do), but the board may not have them yet: the profile decides.
 
