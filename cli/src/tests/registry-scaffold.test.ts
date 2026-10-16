@@ -279,6 +279,40 @@ describe('pruneRetiredOptionalSkills', () => {
     const userXtrmDir = path.join(await createTempDir(), 'user-xtrm');
     expect((await pruneRetiredOptionalSkills({ userXtrmDir, dryRun: false })).removed).toEqual([]);
   });
+
+  // CORE-2407: the optional tier can be materialized as symlinks. The release
+  // smoke asserts the retired path does not exist (`! test -e`), which follows
+  // symlinks, so prune must remove a symlink too or it reports success while
+  // the smoke fails.
+  const itIfSymlinkSupported = process.platform === 'win32' ? it.skip : it;
+  itIfSymlinkSupported('removes a symlink at the retired path, matching the release smoke', async () => {
+    const userXtrmDir = path.join(await createTempDir(), 'user-xtrm');
+    const packRoot = path.join(userXtrmDir, 'skills', 'optional', 'xtrm-maintenance');
+    const elsewhere = path.join(await createTempDir(), 'elsewhere');
+    await fs.ensureDir(packRoot);
+    await fs.ensureDir(elsewhere);
+    await writeSkill(elsewhere, 'update-specialists');
+    await fs.symlink(path.join(elsewhere, 'update-specialists'), path.join(packRoot, 'update-specialists'));
+
+    const result = await pruneRetiredOptionalSkills({ userXtrmDir, dryRun: false });
+
+    expect(result.removed).toEqual(['xtrm-maintenance/update-specialists']);
+    expect(await fs.pathExists(path.join(packRoot, 'update-specialists'))).toBe(false);
+    // The symlink target itself is user-owned and untouched.
+    expect(await fs.pathExists(path.join(elsewhere, 'update-specialists', 'SKILL.md'))).toBe(true);
+  });
+
+  it('keeps a plain file at the retired path (files stay user-owned)', async () => {
+    const userXtrmDir = path.join(await createTempDir(), 'user-xtrm');
+    const retiredPath = path.join(userXtrmDir, 'skills', 'optional', 'xtrm-maintenance', 'update-specialists');
+    await fs.ensureDir(path.dirname(retiredPath));
+    await fs.writeFile(retiredPath, 'user notes', 'utf8');
+
+    const result = await pruneRetiredOptionalSkills({ userXtrmDir, dryRun: false });
+
+    expect(result.removed).toEqual([]);
+    expect(await fs.readFile(retiredPath, 'utf8')).toBe('user notes');
+  });
 });
 
 describe('pruneRetiredManagedSkills', () => {

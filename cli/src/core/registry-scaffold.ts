@@ -307,7 +307,12 @@ export async function pruneRetiredOptionalSkills(params: {
         // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
         const entryPath = path.join(userXtrmDir, 'skills', 'optional', relPath);
         const entryStat = await fs.lstat(entryPath).catch(() => null);
-        if (!entryStat?.isDirectory()) continue; // symlinks and files are user-owned
+        // CORE-2407: the optional tier can be materialized as symlinks, so a
+        // retired skill may sit here as a symlink. The release smoke asserts the
+        // path does not exist, so leaving the symlink would make prune report
+        // success while the smoke fails. Plain files are still user-owned.
+        if (!entryStat) continue;
+        if (!entryStat.isDirectory() && !entryStat.isSymbolicLink()) continue;
         removed.push(relPath);
         if (!dryRun) await fs.remove(entryPath);
     }

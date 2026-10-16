@@ -1067,7 +1067,7 @@
     "digest": "git-blob-sha1",
     "source": {
       "kind": "repo",
-      "ref": "master",
+      "ref": "37746f682844c3aa24ab4aa372e5179a7478074c",
       "resolved_sha": "37746f682844c3aa24ab4aa372e5179a7478074c",
       "repo_path": "../specialists",
       "source_path": "config/skills"

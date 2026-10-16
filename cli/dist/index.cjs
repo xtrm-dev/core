@@ -60662,7 +60662,8 @@ async function pruneRetiredOptionalSkills(params) {
   for (const relPath of RETIRED_OPTIONAL_SKILLS) {
     const entryPath = import_path5.default.join(userXtrmDir, "skills", "optional", relPath);
     const entryStat = await import_fs_extra16.default.lstat(entryPath).catch(() => null);
-    if (!entryStat?.isDirectory()) continue;
+    if (!entryStat) continue;
+    if (!entryStat.isDirectory() && !entryStat.isSymbolicLink()) continue;
     removed.push(relPath);
     if (!dryRun) await import_fs_extra16.default.remove(entryPath);
   }
