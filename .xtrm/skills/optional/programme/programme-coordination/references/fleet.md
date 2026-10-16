@@ -14,8 +14,21 @@ Run from the coordinator's own repo checkout:
 xt claude <name> --window --prompt '<skills> Resume CORE-2401 and follow its contract. Report with SendMessage and journal on your issue. /goal ...'
 ```
 
-`--window` opens a detached window `claude-<name>` in the caller's tmux session and prints
-`<session>:<pane_id>`. Every `xt` launch from an agent session exports, with no typing:
+`--window` opens a detached window in the caller's tmux session and prints `<session>:<pane_id>`.
+Keep that pane id: it is the worker's stable target.
+
+- **Window name** is `<runtime>-<slug>`: `claude-`, `pi-` or `codex-`, then `<name>` in lower case
+  with every run of other characters turned into `-`, cut to 32 characters (64 for codex). So
+  `xt claude ISSUE-260-pi-runtime --window` opens window `claude-issue-260-pi-runtime`. With
+  `--role` the name is `role-<runtime>-<role>[-<bead>]`.
+- **Names can repeat.** `--window` adds no suffix, and tmux allows two windows with one name. Give
+  every worker a distinct `<name>`, and target the pane id, not the window name.
+- **Repo.** The worktree is made in the repo that holds the current directory, and the window starts
+  in that worktree. There is no repo flag. For a worker in another repo, change directory in a
+  subshell: `(cd ~/dev/<repo> && xt claude <name> --window --prompt '...')`. `xt codex` refuses to
+  start from inside a worktree: run it from the repo's main checkout.
+
+Every `xt` launch from an agent session exports, with no typing:
 
 | Variable | Value |
 |---|---|
@@ -30,16 +43,17 @@ address, and `@agent_parent_session` is set on the worker's pane. Do not start a
 not its ancestor and the dispatcher stays unknown.
 
 - `--window` never takes focus, so the coordinator's window stays in front. Use the same `<name>`
-  for the claim holder. Start the name with the Story's Jira key
-  (`ISSUE-260-pi-runtime`): `xt claude` makes the branch `xt/<name>`, and the key in the branch name,
-  PR title and commit trailer is what the Jira dev panel links on, once GitHub for Jira is connected
-  (an open decision in XTRM-110).
+  for the claim holder. Start the name with the Story's Jira key in upper case
+  (`ISSUE-260-pi-runtime`): the branch is `xt/<name>` with the case kept, and the key in the branch
+  name, PR title and commit trailer is what the Jira dev panel links on (project ISSUE only, see
+  `references/jira.md`). Only the window name is lower-cased.
 - `xt claude <name>` makes a sandboxed worktree on branch `xt/<name>`. Other runtimes: `xt pi <name>`,
   `xt codex <name>` take the same shape. A specialist role: `xt claude <name> --role <role>`.
 - `--prompt` starts the session. A leading `/<skill>` loads a skill on turn 1. Builder skills:
   `/using-xtrm /multiplexing /engineering-quality /gitnexus`. Investigator: `/using-xtrm
   /multiplexing /service-knowledge /sre-ops`. Add `/using-substrate` if the runtime lacks it.
-- Verify after launch: `tmux list-windows -t "$S"`, then the worker's first journal entry shows
+- Verify after launch: `tmux list-windows -t "$S" -F '#{window_name} #{pane_id}'`, then the
+  worker's first journal entry shows
   `participantId = <name>` (`sb journal latest <ref> --json`).
 
 ## The worker's brief is its issue
@@ -74,7 +88,7 @@ action.
 |---|---|---|
 | `running` | working | none; check again next cycle |
 | `needs-input` | waiting on a confirmation or a question | read the prompt (below); alert the operator in one line with window name and prompt; never approve it yourself |
-| `done` | turn finished, nothing queued | read its last journal entry (`sb journal latest <ref>`): result written and issue closing, collect it; work left, steer it with a message |
+| `done` | turn finished, nothing queued | read its last journal entry (`sb journal latest <ref>`): result written and issue closing, collect it and reap the window (below); work left, steer it with a message |
 | `off` / window dead | session ended | resume in a new window from `sb issue resume <ref>` |
 | `running` but silent | no journal entry and no pane output for a long time | look at the pane; if truly stuck, steer, then restart from the capsule |
 
@@ -97,8 +111,9 @@ worker; never relay an approval between sessions.
 
 **Monitors.** Arm a background monitor (the Monitor tool, or `run_in_background`) that loops every
 30-60 s over the coordinator's windows and prints one line per change: `WAITING <window> | <prompt>`,
-`DONE <window>`, `DEAD <window>`, `SILENT <window> <seconds>`. Print only on change, so a long wait
-does not repeat. Keep the state in the loop, not in a file. Monitors die with the session and when a
+`DONE <window>`, `DEAD <window>`, `SILENT <window> <seconds>`. Key each line on the pane id and print
+the window name beside it: window names are lower-cased (`claude-issue-260-...`) and can repeat.
+Print only on change, so a long wait does not repeat. Keep the state in the loop, not in a file. Monitors die with the session and when a
 window is replaced:
 
 - Re-arm after every worker launch, restart or handoff, and at the start of each cycle if
@@ -106,12 +121,27 @@ window is replaced:
 - List the live monitors in the `handoff` entry.
 - A monitor line is a trigger, not a verdict: look at the pane, then act.
 
+## Reaping: close finished windows
+
+Forgotten windows keep their runtimes alive. Ten of them once pushed the server load to about 700.
+A finished worker's window never stays open.
+
+1. A worker is finished when its issue is closed, or when it is `done` and the coordinator has
+   collected its result.
+2. Confirm the `result` entry exists: `sb journal latest <ref> --kind result`.
+3. Close the window in the same cycle: `tmux kill-window -t <pane-id>`.
+4. Do not close a window whose result entry is missing. Steer the worker or restart it from the
+   capsule first.
+5. List the open windows (`tmux list-windows -t "$S" -F '#{window_name} #{pane_id}'`) in every
+   `handoff` entry, with the issue ref of each.
+
 ## Limits and health
 
-- At most 3 own workers at once (shared model quotas stop everyone). On a quota 429: pause dispatch
-  and tell the operator in one line.
+- At most 3 own worker windows open at once. The cap counts open windows, not active issues: reap
+  before you launch. Shared model quotas stop everyone. On a quota 429: pause dispatch and tell the
+  operator in one line.
 - Worker context at 25-30%: `/compact` once, then a fresh window resumes from `sb issue resume`.
 - Reviewer, investigator, release or monitor roles are ordinary workers with their own issue.
 - Address peers by the exact name `ListAgents` prints; answer the newest message when two cross.
-- Stalled window: `tmux capture-pane -p -t <session>:<name> | tail`, then
+- Stalled window: `tmux capture-pane -p -t <pane-id> | tail`, then
   `sb journal since <ref> <cursor>`; decide whether to steer, restart from the capsule, or close.

@@ -1,4 +1,5 @@
-"""Jira REST helper (token from ~/.secrets, never printed).
+"""Jira REST helper (token never printed).
+env: JIRA_TOKEN_FILE (path to the API token file), JIRA_EMAIL, JIRA_SITE override the defaults below.
 usage: jira.py GET <path> | jira.py POST|PUT <path> <json-file>
        jira.py transition <KEY> "<status name>"   (looks up the transition id by target status)
        jira.py comment <KEY> <text-file>          (plain text; blank lines split paragraphs; ADF built here)
