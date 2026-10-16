@@ -17,7 +17,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
-import type { VerbSpec } from "../../shared/suggest.ts";
+import type { Cooldowns, VerbSpec } from "../../shared/suggest.ts";
+import { applyCooldown, cooldownAllows } from "../../shared/suggest.ts";
 
 // ── provenance duty ──────────────────────────────────────────────────────────
 
@@ -104,6 +105,56 @@ export function buildProvenanceEvidence(files: string[], cwd: string): string {
       `blast radius: gitnexus impact on the touched exports before editing further.`,
   );
   return lines.join("\n").slice(0, 2000);
+}
+
+/**
+ * Repo root for git-backed duties: `git rev-parse --show-toplevel` from the
+ * launch directory, falling back to it outside a repo. CORE-2406: Pi may be
+ * launched in a subdirectory (or outside the repo); process.cwd() is the
+ * launch directory, not the repo root.
+ */
+export function repoRoot(startDir: string = process.cwd()): string {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: startDir,
+      encoding: "utf8",
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.trim() || startDir;
+  } catch {
+    return startDir;
+  }
+}
+
+export interface ProvenanceClassifyResult {
+  mean: number;
+  model: string | null;
+}
+
+/**
+ * Provenance-steer ordering: cooldown → classify/gate → mark → deliver.
+ * Files are marked steered only when the steer is actually delivered, so a
+ * gate- or cooldown-blocked steer retries later in the turn instead of being
+ * silently dropped (CORE-2406). Returns the outcome for callers and tests.
+ */
+export async function runProvenanceSteer(opts: {
+  files: string[];
+  steered: string[];
+  cooldowns: Cooldowns;
+  threshold: number;
+  classify: () => Promise<ProvenanceClassifyResult | null>;
+  deliver: (files: string[], model: string | null) => void;
+}): Promise<"delivered" | "gated" | "cooled"> {
+  if (opts.files.length === 0) return "gated";
+  const verb = provenanceDutyVerb(opts.files);
+  if (!cooldownAllows(opts.cooldowns, "prov", verb.id, Date.now(), verb)) return "cooled";
+  const result = await opts.classify();
+  if (!result || result.mean < opts.threshold) return "gated";
+  opts.steered.push(...opts.files);
+  applyCooldown(opts.cooldowns, "prov", verb);
+  opts.deliver(opts.files, result.model);
+  return "delivered";
 }
 
 /**

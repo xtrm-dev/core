@@ -18,7 +18,7 @@ import {
   SUBSTRATE_ACCENT,
 } from "../extensions/substrate-suggest/catalog.ts";
 import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
-import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb, partitionTracked, trackedEditedFiles, buildProvenanceEvidence } from "../extensions/substrate-suggest/duties.ts";
+import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb, partitionTracked, trackedEditedFiles, buildProvenanceEvidence, repoRoot, runProvenanceSteer } from "../extensions/substrate-suggest/duties.ts";
 
 function snap(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
   return {
@@ -346,5 +346,60 @@ describe("provenance steer gates", () => {
     expect(body).toMatch(/git log -p --follow/);
     expect(body.length).toBeLessThanOrEqual(2000);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("provenance steer ordering (CORE-2406)", () => {
+  it("a gate-blocked steer marks nothing, so it retries in-turn", async () => {
+    const cooldowns: Cooldowns = {};
+    const steered: string[] = [];
+    let calls = 0;
+    const attempt = () =>
+      runProvenanceSteer({
+        files: ["a.ts"],
+        steered,
+        cooldowns,
+        threshold: 0.3,
+        classify: async () => {
+          calls++;
+          return null;
+        },
+        deliver: () => {
+          throw new Error("must not deliver a gated steer");
+        },
+      });
+    expect(await attempt()).toBe("gated");
+    expect(steered).toEqual([]);
+    expect(await attempt()).toBe("gated");
+    expect(calls).toBe(2);
+  });
+
+  it("marks files only on delivery, then cools down", async () => {
+    const cooldowns: Cooldowns = {};
+    const steered: string[] = [];
+    const delivered: Array<{ files: string[]; model: string | null }> = [];
+    const opts = {
+      files: ["a.ts"],
+      steered,
+      cooldowns,
+      threshold: 0.3,
+      classify: async () => ({ mean: 1, model: "m" }),
+      deliver: (fs: string[], model: string | null) => {
+        delivered.push({ files: fs, model });
+      },
+    };
+    expect(await runProvenanceSteer(opts)).toBe("delivered");
+    expect(steered).toEqual(["a.ts"]);
+    expect(delivered).toEqual([{ files: ["a.ts"], model: "m" }]);
+    expect(await runProvenanceSteer(opts)).toBe("cooled");
+    expect(delivered).toHaveLength(1);
+  });
+
+  it("repoRoot resolves the git toplevel, falls back outside a repo", () => {
+    const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim() as string;
+    expect(repoRoot()).toBe(top);
+    expect(repoRoot(`${top}/packages`)).toBe(top);
+    expect(repoRoot("/tmp")).toBe("/tmp");
   });
 });

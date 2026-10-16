@@ -73,6 +73,8 @@ import {
   isProvenanceReader,
   buildProvenanceEvidence,
   provenanceDutyVerb,
+  repoRoot,
+  runProvenanceSteer,
   trackedEditedFiles,
   type SkillEntry,
 } from "./duties.ts";
@@ -462,8 +464,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         );
         return { content, structuredContent: e.structuredContent } as never;
       }
-      const packs = discoverSkillPacks(process.cwd());
-      const hit = packs.length > 0 ? territoryHit(packs, e.input, process.cwd()) : null;
+      const packs = discoverSkillPacks(repoRoot());
+      const hit = packs.length > 0 ? territoryHit(packs, e.input, repoRoot()) : null;
       if (hit) {
         const verb = skillVerb(hit);
         // Per-service scoping: territory:<id> as the ref half of the cooldown key.
@@ -491,37 +493,48 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       try {
         const fresh = turnEditedFiles.filter((f) => !turnSteeredFiles.includes(f));
         if (fresh.length > 0 && !turnProvenanceSeen) {
-          const tracked = trackedEditedFiles(fresh, process.cwd());
+          const tracked = trackedEditedFiles(fresh, repoRoot());
           if (tracked.length > 0) {
-            turnSteeredFiles.push(...tracked);
             const files = tracked;
             void (async () => {
               try {
-                const verb = provenanceDutyVerb(files);
-                if (!cooldownAllows(cooldowns, "prov", verb.id, Date.now(), verb)) return;
-                const result = await askJev(null, { edited_files: files.slice(0, 5) }, {
-                  provenance_source: {
-                    type: "choice",
-                    instructions: "Which history source should be consulted for these files, if any?",
-                    criteria: {
-                      git_log: "Commit messages on the touched paths.",
-                      pr_history: "Reviews and discussions on past PRs touching these files.",
-                      both: "Both git log and PR history.",
-                      none: "History would not change this change.",
-                    },
+                await runProvenanceSteer({
+                  files,
+                  steered: turnSteeredFiles,
+                  cooldowns,
+                  threshold: GATE_THRESHOLD,
+                  classify: async () => {
+                    const result = await askJev(null, { edited_files: files.slice(0, 5) }, {
+                      provenance_source: {
+                        type: "choice",
+                        instructions: "Which history source should be consulted for these files, if any?",
+                        criteria: {
+                          git_log: "Commit messages on the touched paths.",
+                          pr_history: "Reviews and discussions on past PRs touching these files.",
+                          both: "Both git log and PR history.",
+                          none: "History would not change this change.",
+                        },
+                      },
+                      provenance_materially_helpful: { type: "noul", instructions: "Given these files were changed this turn without consulting commit or PR history, would the history plausibly change what the change should be or reveal it repeats a past mistake?" },
+                      sonata_harm: { type: "noul", instructions: "Is the change clearly the provenance-free kind (mechanical refactor, asked-for rename) where history consultation would be noise? (Untracked files never reach this question.)" },
+                    } as Record<string, Question>);
+                    if (!result) return null;
+                    const mean =
+                      ((result.nouls["provenance_materially_helpful"] ?? 0) +
+                        (1 - (result.nouls["sonata_harm"] ?? 0))) /
+                      2;
+                    return { mean, model: result.model ?? null };
                   },
-                  provenance_materially_helpful: { type: "noul", instructions: "Given these files were changed this turn without consulting commit or PR history, would the history plausibly change what the change should be or reveal it repeats a past mistake?" },
-                  sonata_harm: { type: "noul", instructions: "Is the change clearly the provenance-free kind (mechanical refactor, asked-for rename) where history consultation would be noise? (Untracked files never reach this question.)" },
-                } as Record<string, Question>);
-                const g = result ? ((result.nouls["provenance_materially_helpful"] ?? 0) + (1 - (result.nouls["sonata_harm"] ?? 0))) / 2 : 0;
-                if (!result || g < GATE_THRESHOLD) return;
-                applyCooldown(cooldowns, "prov", verb);
-                const evidence = buildProvenanceEvidence(files, process.cwd());
-                logDecision({ ts: new Date().toISOString(), issue: null, verb: verb.id, source: "jev", model: result.model ?? null });
-                pi.sendMessage(
-                  { customType: CUSTOM_TYPE, content: evidence, display: true, details: { verb: verb.id, midTurn: true } },
-                  { deliverAs: "followUp", triggerTurn: false },
-                );
+                  deliver: (fs, model) => {
+                    const verb = provenanceDutyVerb(fs);
+                    const evidence = buildProvenanceEvidence(fs, repoRoot());
+                    logDecision({ ts: new Date().toISOString(), issue: null, verb: verb.id, source: "jev", model });
+                    pi.sendMessage(
+                      { customType: CUSTOM_TYPE, content: evidence, display: true, details: { verb: verb.id, midTurn: true } },
+                      { deliverAs: "followUp", triggerTurn: false },
+                    );
+                  },
+                });
               } catch { /* fail-open: the turn continues without the steer */ }
             })();
           }
@@ -599,7 +612,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     // Duty 1 — service skill (turn end). Also pre-binding: skills are repo
     // knowledge, not issue knowledge.
     if (jevAvailable && wasActive) {
-      const all = discoverSkillPacks(process.cwd()).flatMap((p) => p.entries);
+      const all = discoverSkillPacks(repoRoot()).flatMap((p) => p.entries);
       if (all.length > 0 && cooldownAllows(cooldowns, "skills", SKILL_SOURCE_VERB.id, Date.now(), SKILL_SOURCE_VERB)) {
         const result = await askJev(registry, {
           working_turn_excerpt: excerpt.slice(0, 4000),
