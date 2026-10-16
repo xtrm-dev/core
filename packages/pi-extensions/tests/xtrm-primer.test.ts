@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import register, { buildPrimer, dispatcherLine, MARKER } from "../extensions/xtrm-primer/index.ts";
+import register, { buildPrimer, dispatcherLine, excerpt, MARKER, missingSections, resolveHome } from "../extensions/xtrm-primer/index.ts";
 
 const homes: string[] = [];
 
@@ -55,6 +55,142 @@ describe("buildPrimer", () => {
     mkdirSync(join(h, ".xtrm", "skills", "default", "using-xtrm", "SKILL.md"), { recursive: true });
     expect(buildPrimer(h, {})).toBeNull();
     expect(buildPrimer(join(tmpdir(), "xtrm-primer-nonexistent-home"), {})).toBeNull();
+  });
+});
+
+describe("HOME per-call regression (#741)", () => {
+  test("mutating HOME between calls changes the resolved home (fails on cached homedir)", () => {
+    const a = home({ "using-xtrm": USING });
+    const b = home({ "using-xtrm": USING.replace("CONTRACT-BODY", "SECOND-HOME-BODY") });
+    const prevHome = process.env.HOME;
+    const prevProfile = process.env.USERPROFILE;
+    try {
+      delete process.env.USERPROFILE;
+      process.env.HOME = a;
+      const first = buildPrimer(undefined, process.env) as string;
+      expect(first).toContain("CONTRACT-BODY");
+      process.env.HOME = b;
+      const second = buildPrimer(undefined, process.env) as string;
+      expect(second).toContain("SECOND-HOME-BODY");
+      expect(second).not.toContain("CONTRACT-BODY");
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+      if (prevProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = prevProfile;
+    }
+  });
+
+  test("default buildPrimer() follows runtime HOME without an explicit arg", () => {
+    const a = home({ "using-xtrm": USING });
+    const prevHome = process.env.HOME;
+    const prevProfile = process.env.USERPROFILE;
+    try {
+      delete process.env.USERPROFILE;
+      process.env.HOME = a;
+      expect(buildPrimer() as string).toContain("CONTRACT-BODY");
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+      if (prevProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = prevProfile;
+    }
+  });
+});
+
+describe("resolveHome / USERPROFILE", () => {
+  test("prefers HOME, then USERPROFILE, then homedir", () => {
+    expect(resolveHome({ HOME: "/h", USERPROFILE: "/u" })).toBe("/h");
+    expect(resolveHome({ USERPROFILE: "/u" } as any)).toBe("/u");
+  });
+
+  test("falls back to USERPROFILE when HOME is unset (Windows)", () => {
+    const h = home({ "using-xtrm": USING });
+    const prevHome = process.env.HOME;
+    const prevProfile = process.env.USERPROFILE;
+    try {
+      delete process.env.HOME;
+      process.env.USERPROFILE = h;
+      const out = buildPrimer(undefined, process.env) as string;
+      expect(out).toContain("CONTRACT-BODY");
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+      if (prevProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = prevProfile;
+    }
+  });
+});
+
+describe("frontmatter CRLF/BOM", () => {
+  const SECTIONS = ["The system contract", "Completion rule"] as const;
+  test("strips CRLF frontmatter", () => {
+    const crlf = "---\r\nname: using-xtrm\r\n---\r\n# Using\r\n\r\nPreamble U.\r\n\r\n## The system contract\r\n\r\nCONTRACT-BODY\r\n\r\n## Completion rule\r\n\r\nCOMPLETION-BODY\r\n";
+    const out = excerpt(crlf, SECTIONS);
+    expect(out).toContain("CONTRACT-BODY");
+    expect(out).toContain("COMPLETION-BODY");
+    expect(out).not.toContain("name: using-xtrm");
+  });
+
+  test("strips BOM frontmatter", () => {
+    const bom = "\uFEFF---\nname: using-xtrm\n---\n# Using\n\nPreamble U.\n\n## The system contract\n\nCONTRACT-BODY\n";
+    const out = excerpt(bom, ["The system contract"]);
+    expect(out).toContain("CONTRACT-BODY");
+    expect(out).not.toContain("name: using-xtrm");
+    expect(out).not.toContain("\uFEFF");
+  });
+
+  test("buildPrimer reads CRLF/BOM skill files", () => {
+    const crlfUsing = USING.replace(/\n/g, "\r\n");
+    const out1 = buildPrimer(home({ "using-xtrm": crlfUsing })) as string;
+    expect(out1).toContain("CONTRACT-BODY");
+    expect(out1).not.toContain("name: using-xtrm");
+    const bomUsing = `\uFEFF${USING}`;
+    const out2 = buildPrimer(home({ "using-xtrm": bomUsing })) as string;
+    expect(out2).toContain("CONTRACT-BODY");
+  });
+});
+
+describe("renamed heading detectable", () => {
+  test("missingSections lists renamed headings", () => {
+    const renamed = USING.replace("## Completion rule", "## Completion rules");
+    expect(missingSections(USING, ["The system contract", "Completion rule"])).toEqual([]);
+    expect(missingSections(renamed, ["The system contract", "Completion rule"])).toEqual(["Completion rule"]);
+  });
+
+  test("buildPrimer warns when a requested section is missing", () => {
+    const warns: string[] = [];
+    const orig = console.warn;
+    console.warn = (...args: unknown[]) => void warns.push(args.map(String).join(" "));
+    try {
+      const out = buildPrimer(home({ "using-xtrm": USING.replace("## Completion rule", "## Completion rules") })) as string;
+      expect(out).toContain("CONTRACT-BODY");
+      expect(out).not.toContain("COMPLETION-BODY");
+      expect(warns.join("\n")).toContain("Completion rule");
+    } finally {
+      console.warn = orig;
+    }
+  });
+});
+
+describe("dedup bounded", () => {
+  test("repeated turns with marker stay single-append (no accumulation)", async () => {
+    const h = home({ "using-xtrm": USING });
+    const prevHome = process.env.HOME;
+    try {
+      process.env.HOME = h;
+      let handler: any;
+      register({ on: (e: string, hh: any) => e === "before_agent_start" && (handler = hh) } as any);
+      let prompt = "BASE";
+      for (let i = 0; i < 5; i++) {
+        const res = await handler({ systemPrompt: prompt });
+        if (res) prompt = res.systemPrompt;
+      }
+      expect(prompt.split(MARKER)).toHaveLength(2);
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+    }
   });
 });
 
