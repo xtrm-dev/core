@@ -9,13 +9,10 @@
  * drops that section, a missing skill drops that skill, no skill emits nothing,
  * any error emits nothing.
  *
- * Injection point (CORE-2394): `before_agent_start` returns `systemPrompt` =
- * event.systemPrompt + primer, a per-turn override (extensions.md, "Events and
- * concurrency"), so the primer is system context on every turn, including after
- * resume and compaction. It used to be a custom `message`, which Pi hands the
- * model in the user role; cautious models then refused the dispatcher reply
- * address as user-pasted text. MARKER in event.systemPrompt keeps a second loaded
- * copy of this extension (later handlers see the override) from appending twice.
+ * Injection point: `before_agent_start` may return a `message` that Pi adds to the
+ * run and persists in the transcript (extensions.md, "Events and concurrency").
+ * `session_start` cannot return context, so it only checks whether the session
+ * branch already carries the primer (resume, fork) and arms the next run.
  *
  * DRIFT: SKILLS below is copied from xtrm-primer.mjs (XTRM-637); the two repos
  * share no module. Change both together.
@@ -31,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const MARKER = "<!-- xtrm-primer -->";
+export const CUSTOM_TYPE = "xtrm-primer";
 
 export const SKILLS = [
   {
@@ -88,7 +85,6 @@ export function dispatcherLine(env: NodeJS.ProcessEnv = process.env): string | n
 
 /** Builds the primer from `<home>/.xtrm/skills/default`; null when no skill yields a section and no dispatcher env is set. Never throws. */
 // ponytail: read HOME per call; Bun caches os.homedir(), so a runtime HOME change is invisible to it.
-// Dedup is bounded by construction: MARKER substring in systemPrompt, no global registry (no Symbol.for growth).
 export function buildPrimer(home?: string, env: NodeJS.ProcessEnv = process.env): string | null {
   const resolvedHome = home ?? resolveHome(env);
   let dispatcher: string | null = null;
@@ -133,16 +129,53 @@ export function buildPrimer(home?: string, env: NodeJS.ProcessEnv = process.env)
   }
 }
 
+// Shared by every loaded copy of this extension in one process: two copies (a local path and an npm
+// install) would otherwise both inject on the first turn, before either entry is on the branch.
+const CLAIMS = Symbol.for("xtrm-primer.injected-sessions");
+
+/** Cap on remembered sessions: bounds the cross-copy claim set in long-lived processes. */
+export const CLAIM_MAX = 100;
+
+function claim(sessionId: string | undefined): boolean {
+  if (!sessionId) return true;
+  const g = globalThis as { [CLAIMS]?: Set<string> };
+  const seen = (g[CLAIMS] ??= new Set<string>());
+  if (seen.has(sessionId)) return false;
+  seen.add(sessionId);
+  // Set preserves insertion order: evict oldest first. Re-claim of an evicted
+  // session re-injects (fail-safe duplicate, not a missed primer).
+  while (seen.size > CLAIM_MAX) {
+    const oldest = seen.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    seen.delete(oldest);
+  }
+  return true;
+}
+
 export default function (pi: ExtensionAPI): void {
-  pi.on("before_agent_start", async (event) => {
+  let armed = true;
+  let sessionId: string | undefined;
+
+  pi.on("session_start", async (_event, ctx) => {
     try {
-      const base = event.systemPrompt;
-      if (typeof base !== "string" || base.includes(MARKER)) return undefined;
-      const primer = buildPrimer();
-      if (!primer) return undefined;
-      return { systemPrompt: `${base}\n\n${MARKER}\n${primer}` };
+      sessionId = ctx.sessionManager.getSessionId();
     } catch {
-      return undefined;
+      sessionId = undefined;
     }
+    try {
+      const branch = ctx.sessionManager.getBranch() as Array<{ customType?: string }>;
+      armed = !branch.some((entry) => entry.customType === CUSTOM_TYPE);
+    } catch {
+      armed = true;
+    }
+  });
+
+  pi.on("before_agent_start", async () => {
+    if (!armed) return undefined;
+    const content = buildPrimer();
+    if (!content) return undefined;
+    armed = false;
+    if (!claim(sessionId)) return undefined;
+    return { message: { customType: CUSTOM_TYPE, content, display: false } };
   });
 }

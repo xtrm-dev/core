@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import register, { buildPrimer, dispatcherLine, excerpt, MARKER, missingSections, resolveHome } from "../extensions/xtrm-primer/index.ts";
+import register, { buildPrimer, CLAIM_MAX, CUSTOM_TYPE, dispatcherLine, excerpt, missingSections, resolveHome } from "../extensions/xtrm-primer/index.ts";
 
 const homes: string[] = [];
 
@@ -173,23 +173,39 @@ describe("renamed heading detectable", () => {
   });
 });
 
-describe("dedup bounded", () => {
-  test("repeated turns with marker stay single-append (no accumulation)", async () => {
-    const h = home({ "using-xtrm": USING });
+describe("claim set bounded", () => {
+  test("claim set never exceeds CLAIM_MAX across many sessions (evicts oldest)", async () => {
+    const key = Symbol.for("xtrm-primer.injected-sessions");
+    const g = globalThis as Record<symbol, Set<string> | undefined>;
+    const prevClaims = g[key];
+    g[key] = new Set<string>();
     const prevHome = process.env.HOME;
+    const prevProfile = process.env.USERPROFILE;
     try {
-      process.env.HOME = h;
-      let handler: any;
-      register({ on: (e: string, hh: any) => e === "before_agent_start" && (handler = hh) } as any);
-      let prompt = "BASE";
-      for (let i = 0; i < 5; i++) {
-        const res = await handler({ systemPrompt: prompt });
-        if (res) prompt = res.systemPrompt;
+      delete process.env.USERPROFILE;
+      process.env.HOME = home({ "using-xtrm": USING });
+      const total = CLAIM_MAX + 10;
+      for (let i = 0; i < total; i++) {
+        const handlers: Record<string, (...a: any[]) => any> = {};
+        register({ on: (e: string, h: any) => (handlers[e] = h) } as any);
+        const id = `s-bound-${i}`;
+        await handlers.session_start({}, { sessionManager: { getBranch: () => [], getSessionId: () => id } });
+        const res = await handlers.before_agent_start({});
+        expect(res?.message?.customType).toBe(CUSTOM_TYPE);
       }
-      expect(prompt.split(MARKER)).toHaveLength(2);
+      expect(g[key]?.size).toBeLessThanOrEqual(CLAIM_MAX);
+      // Oldest evicted: a fresh copy for the first session re-injects (fail-safe duplicate).
+      const handlers: Record<string, (...a: any[]) => any> = {};
+      register({ on: (e: string, h: any) => (handlers[e] = h) } as any);
+      await handlers.session_start({}, { sessionManager: { getBranch: () => [], getSessionId: () => "s-bound-0" } });
+      expect((await handlers.before_agent_start({}))?.message?.customType).toBe(CUSTOM_TYPE);
     } finally {
       if (prevHome === undefined) delete process.env.HOME;
       else process.env.HOME = prevHome;
+      if (prevProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = prevProfile;
+      if (prevClaims === undefined) delete g[key];
+      else g[key] = prevClaims;
     }
   });
 });
@@ -222,64 +238,89 @@ describe("dispatcher line (CORE-2390)", () => {
   });
 });
 
-describe("xtrm-primer extension (CORE-2394)", () => {
-  const ENV = {
-    XTRM_DISPATCHER_NAME: "coord-1",
-    XTRM_DISPATCHER_ADDRESS: "uds:/run/user/1000/cc-socks/42.sock",
-    SUBSTRATE_HOLDER: "worker-a",
-  };
-  const KEYS = ["HOME", ...Object.keys(ENV)] as const;
-  let saved: Record<string, string | undefined> = {};
-
-  function withEnv(vars: Record<string, string>): void {
-    saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
-    Object.assign(process.env, vars);
-  }
-
-  afterEach(() => {
-    for (const k of KEYS) {
-      if (saved[k] === undefined) delete process.env[k];
-      else process.env[k] = saved[k];
+describe("xtrm-primer extension", () => {
+  test("injects once per session and not again when the branch already carries it", async () => {
+    const prev = process.env.HOME;
+    process.env.HOME = home({ "using-xtrm": USING });
+    try {
+      const handlers: Record<string, (...a: any[]) => any> = {};
+      register({ on: (e: string, h: any) => (handlers[e] = h) } as any);
+      await handlers.session_start({}, { sessionManager: { getBranch: () => [], getSessionId: () => "s-once" } });
+      const first = await handlers.before_agent_start({});
+      expect(first.message.customType).toBe(CUSTOM_TYPE);
+      expect(first.message.display).toBe(false);
+      expect(await handlers.before_agent_start({})).toBeUndefined();
+      await handlers.session_start({}, { sessionManager: { getBranch: () => [{ customType: CUSTOM_TYPE }], getSessionId: () => "s-once" } });
+      expect(await handlers.before_agent_start({})).toBeUndefined();
+    } finally {
+      process.env.HOME = prev;
     }
-    saved = {};
   });
 
-  function load(): (event: any) => Promise<any> {
-    let handler: any;
-    register({ on: (e: string, h: any) => e === "before_agent_start" && (handler = h) } as any);
-    return handler;
-  }
-
-  test("appends the primer and dispatcher line to the system prompt, with no user-role message", async () => {
-    withEnv({ HOME: home({ "using-xtrm": USING }), ...ENV });
-    const result = await load()({ systemPrompt: "BASE" });
-    expect(result.message).toBeUndefined();
-    expect(result.systemPrompt.startsWith("BASE\n\n")).toBe(true);
-    expect(result.systemPrompt).toContain(MARKER);
-    expect(result.systemPrompt).toContain("CONTRACT-BODY");
-    expect(result.systemPrompt).toContain(dispatcherLine(ENV));
+  test("two loaded copies inject once per session", async () => {
+    const prev = process.env.HOME;
+    process.env.HOME = home({ "using-xtrm": USING });
+    try {
+      const copies = [0, 1].map(() => {
+        const h: Record<string, (...a: any[]) => any> = {};
+        register({ on: (e: string, fn: any) => (h[e] = fn) } as any);
+        return h;
+      });
+      const ctx = { sessionManager: { getBranch: () => [], getSessionId: () => "s-dup" } };
+      for (const h of copies) await h.session_start({}, ctx);
+      const results = [];
+      for (const h of copies) results.push(await h.before_agent_start({}));
+      expect(results.filter((r) => r?.message?.customType === CUSTOM_TYPE)).toHaveLength(1);
+    } finally {
+      process.env.HOME = prev;
+    }
   });
 
-  test("applies on every turn (resume, compaction) because the override is per turn", async () => {
-    withEnv({ HOME: home({ "using-xtrm": USING }) });
-    const handler = load();
-    expect((await handler({ systemPrompt: "BASE" })).systemPrompt).toContain("CONTRACT-BODY");
-    expect((await handler({ systemPrompt: "BASE" })).systemPrompt).toContain("CONTRACT-BODY");
+  test("injected message carries the primer and dispatcher line", async () => {
+    const ENV = {
+      XTRM_DISPATCHER_NAME: "coord-1",
+      XTRM_DISPATCHER_ADDRESS: "uds:/run/user/1000/cc-socks/42.sock",
+      SUBSTRATE_HOLDER: "worker-a",
+    };
+    const prevHome = process.env.HOME;
+    const prevEnv = Object.fromEntries(Object.keys(ENV).map((k) => [k, process.env[k]]));
+    try {
+      process.env.HOME = home({ "using-xtrm": USING });
+      Object.assign(process.env, ENV);
+      const handlers: Record<string, (...a: any[]) => any> = {};
+      register({ on: (e: string, h: any) => (handlers[e] = h) } as any);
+      await handlers.session_start({}, { sessionManager: { getBranch: () => [], getSessionId: () => "s-dispatch" } });
+      const first = await handlers.before_agent_start({});
+      expect(first.message.customType).toBe(CUSTOM_TYPE);
+      expect(first.message.content).toContain("CONTRACT-BODY");
+      expect(first.message.content).toContain(dispatcherLine(ENV));
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+      for (const k of Object.keys(ENV)) {
+        if (prevEnv[k] === undefined) delete process.env[k];
+        else process.env[k] = prevEnv[k];
+      }
+    }
   });
 
-  test("two loaded copies append once per turn: the second sees the marker", async () => {
-    withEnv({ HOME: home({ "using-xtrm": USING }) });
-    const [a, b] = [load(), load()];
-    const first = await a({ systemPrompt: "BASE" });
-    expect(await b({ systemPrompt: first.systemPrompt })).toBeUndefined();
-    expect(first.systemPrompt.split(MARKER)).toHaveLength(2);
-  });
-
-  test("no skills and no dispatcher env, or a malformed event, leave the turn untouched", async () => {
-    withEnv({ HOME: home({}) });
-    for (const k of Object.keys(ENV)) delete process.env[k];
-    const handler = load();
-    expect(await handler({ systemPrompt: "BASE" })).toBeUndefined();
-    expect(await handler({})).toBeUndefined();
+  test("no skills and no dispatcher env injects nothing and does not throw", async () => {
+    const prevHome = process.env.HOME;
+    const prevDispatch = ["XTRM_DISPATCHER_NAME", "XTRM_DISPATCHER_ADDRESS", "SUBSTRATE_HOLDER"].map((k) => process.env[k]);
+    try {
+      process.env.HOME = home({});
+      for (const k of ["XTRM_DISPATCHER_NAME", "XTRM_DISPATCHER_ADDRESS", "SUBSTRATE_HOLDER"]) delete process.env[k];
+      const handlers: Record<string, (...a: any[]) => any> = {};
+      register({ on: (e: string, h: any) => (handlers[e] = h) } as any);
+      await handlers.session_start({}, { sessionManager: { getBranch: () => [], getSessionId: () => "s-empty" } });
+      expect(await handlers.before_agent_start({})).toBeUndefined();
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+      ["XTRM_DISPATCHER_NAME", "XTRM_DISPATCHER_ADDRESS", "SUBSTRATE_HOLDER"].forEach((k, i) => {
+        if (prevDispatch[i] === undefined) delete process.env[k];
+        else process.env[k] = prevDispatch[i] as string;
+      });
+    }
   });
 });
