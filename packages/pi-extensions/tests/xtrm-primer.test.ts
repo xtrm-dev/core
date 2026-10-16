@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import register, { buildPrimer, dispatcherLine, SECTION } from "../extensions/xtrm-primer/index.ts";
+import register, { buildPrimer, dispatcherLine, MARKER } from "../extensions/xtrm-primer/index.ts";
 
 const homes: string[] = [];
 
@@ -86,7 +86,7 @@ describe("dispatcher line (CORE-2390)", () => {
   });
 });
 
-describe("xtrm-primer extension (CORE-2394, CORE-2396)", () => {
+describe("xtrm-primer extension (CORE-2394)", () => {
   const ENV = {
     XTRM_DISPATCHER_NAME: "coord-1",
     XTRM_DISPATCHER_ADDRESS: "uds:/run/user/1000/cc-socks/42.sock",
@@ -114,31 +114,36 @@ describe("xtrm-primer extension (CORE-2394, CORE-2396)", () => {
     return handler;
   }
 
-  const run = (sections: Record<string, string> = {}) => ({ systemPrompt: "BASE", systemPromptOptions: { sections } });
-
-  test("sets the primer section with the dispatcher line and returns no systemPrompt or message", async () => {
+  test("appends the primer and dispatcher line to the system prompt, with no user-role message", async () => {
     withEnv({ HOME: home({ "using-xtrm": USING }), ...ENV });
-    const event = run();
-    expect(await load()(event)).toBeUndefined();
-    expect(event.systemPromptOptions.sections[SECTION]).toContain("CONTRACT-BODY");
-    expect(event.systemPromptOptions.sections[SECTION]).toContain(dispatcherLine(ENV) as string);
+    const result = await load()({ systemPrompt: "BASE" });
+    expect(result.message).toBeUndefined();
+    expect(result.systemPrompt.startsWith("BASE\n\n")).toBe(true);
+    expect(result.systemPrompt).toContain(MARKER);
+    expect(result.systemPrompt).toContain("CONTRACT-BODY");
+    expect(result.systemPrompt).toContain(dispatcherLine(ENV));
   });
 
-  test("two loaded copies write the same key once", async () => {
+  test("applies on every turn (resume, compaction) because the override is per turn", async () => {
     withEnv({ HOME: home({ "using-xtrm": USING }) });
-    const event = run({ other: "KEEP" });
-    for (const handler of [load(), load()]) await handler(event);
-    expect(Object.keys(event.systemPromptOptions.sections).sort()).toEqual(["other", SECTION].sort());
-    expect(event.systemPromptOptions.sections[SECTION]).toBe(buildPrimer() as string);
+    const handler = load();
+    expect((await handler({ systemPrompt: "BASE" })).systemPrompt).toContain("CONTRACT-BODY");
+    expect((await handler({ systemPrompt: "BASE" })).systemPrompt).toContain("CONTRACT-BODY");
   });
 
-  test("removes the key when the primer is empty, and a malformed event does not throw", async () => {
+  test("two loaded copies append once per turn: the second sees the marker", async () => {
+    withEnv({ HOME: home({ "using-xtrm": USING }) });
+    const [a, b] = [load(), load()];
+    const first = await a({ systemPrompt: "BASE" });
+    expect(await b({ systemPrompt: first.systemPrompt })).toBeUndefined();
+    expect(first.systemPrompt.split(MARKER)).toHaveLength(2);
+  });
+
+  test("no skills and no dispatcher env, or a malformed event, leave the turn untouched", async () => {
     withEnv({ HOME: home({}) });
     for (const k of Object.keys(ENV)) delete process.env[k];
     const handler = load();
-    const event = run({ [SECTION]: "STALE", other: "KEEP" });
-    expect(await handler(event)).toBeUndefined();
-    expect(event.systemPromptOptions.sections).toEqual({ other: "KEEP" });
+    expect(await handler({ systemPrompt: "BASE" })).toBeUndefined();
     expect(await handler({})).toBeUndefined();
   });
 });
