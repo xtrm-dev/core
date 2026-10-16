@@ -13,6 +13,12 @@ import { resolvePackageRoot } from './registry-scaffold.js';
  *   - ~/.pi/agent/APPEND_SYSTEM.md
  *   - ~/.claude/CLAUDE.md
  *
+ * Only pi and claude have managed global files. Codex receives its doctrine
+ * per launch via developer_instructions (see cli/src/core/codex-runtime.ts),
+ * not via a synced global file, so there is intentionally no codex target
+ * here. Unknown labels (including 'codex') fall back to the shared body via
+ * readCanonicalGlobalPromptBody — see the per-target routing tests.
+ *
  * Body selection: a target-specific asset
  * (`.xtrm/config/instructions/global-system-prompt.<label>.md`) wins when
  * present, so host-specific doctrine never leaks into another host's prompt;
@@ -157,6 +163,10 @@ export interface GlobalPromptSyncOptions {
 }
 
 export function resolveGlobalPromptTargets(opts: GlobalPromptSyncOptions = {}): GlobalPromptTarget[] {
+  // Intentionally pi + claude only. Codex has no managed global file; its
+  // doctrine travels per launch via developer_instructions, so adding a
+  // codex target here without a Codex global-file contract would mis-wire
+  // routing. readCanonicalGlobalPromptBody('codex') falls back to shared.
   const home = opts.home ?? os.homedir();
   return [
     {
@@ -176,6 +186,8 @@ export function resolveGlobalPromptTargets(opts: GlobalPromptSyncOptions = {}): 
 export async function readCanonicalGlobalPromptBody(label?: string): Promise<string> {
   // A target-specific asset wins when present so host-specific doctrine (for
   // example pi's codemode cell model) never leaks into another host's prompt.
+  // Unknown labels (including 'codex', which has no managed global file)
+  // fall through to the shared host-neutral body below.
   const candidates = label
     ? [`global-system-prompt.${label}.md`, 'global-system-prompt.md']
     : ['global-system-prompt.md'];
