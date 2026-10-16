@@ -56,6 +56,37 @@ not its ancestor and the dispatcher stays unknown.
   worker's first journal entry shows
   `participantId = <name>` (`sb journal latest <ref> --json`).
 
+### When --window refuses
+
+`xt` reads `$TMUX` to find the caller's session. After a restart the coordinator's shell can lose
+`$TMUX` while the coordinator still runs in a tmux pane, and `--window` fails with "requires running
+inside tmux". Do not fall back to a raw `tmux new-window`. Restore the two variables from the pane
+that holds the coordinator, then run the same `xt` command in the same shell:
+
+```
+p=$$; pane=""
+while [ "$p" -gt 1 ]; do
+  pane=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' | awk -v p="$p" '$1==p{print $2}')
+  [ -n "$pane" ] && break
+  p=$(ps -o ppid= -p "$p" | tr -d ' ')
+done
+export TMUX_PANE="$pane" TMUX=$(tmux display -p -t "$pane" '#{socket_path},#{pid},#{session_id}' | tr -d '$')
+xt claude <name> --window --prompt '...'
+```
+
+Tested with `$TMUX` and `$TMUX_PANE` unset: the restored values pick the coordinator's own session.
+The dispatcher identity is unaffected, because `xt` finds it by walking parent processes, not
+through tmux. If the loop finds no pane, the coordinator is not in tmux at all: tell the operator.
+
+### Resume a worker
+
+`xt <runtime> <name>` refuses when the worktree already exists ("Worktree path already exists").
+To resume that worker:
+
+1. `xt attach <name>` opens its existing session.
+2. Send one line: the issue ref and "resume with `sb issue resume <ref>`". The capsule carries the
+   rest; never re-send the whole brief from chat.
+
 ## The worker's brief is its issue
 
 1. Create the worker task under its theme (`sb plan apply` or `sb issue create --parent`).
@@ -71,6 +102,9 @@ No `briefs/` folder, no brief file: if a requirement matters, it belongs in the 
 
 - Name the banned commands that dump secrets: `env`, `printenv`, `docker inspect` without a
   format, `cat .env`. Give the names-only form.
+- Say: claim with `--ttl-ms` covering your checkpoint interval and claim again at every checkpoint;
+  scratch goes under `~/.cache/<issue-ref>/` and is never deleted; leftovers are listed in the
+  closure.
 - Reviewers never `git checkout` in primary or coordinator worktrees. Use
   `git worktree add --detach ~/.cache/rev-<pr>/wt <sha>`. After a review, check `git status` and HEAD of
   the worktrees it could touch.
@@ -113,7 +147,9 @@ worker; never relay an approval between sessions.
 30-60 s over the coordinator's windows and prints one line per change: `WAITING <window> | <prompt>`,
 `DONE <window>`, `DEAD <window>`, `SILENT <window> <seconds>`. Key each line on the pane id and print
 the window name beside it: window names are lower-cased (`claude-issue-260-...`) and can repeat.
-Print only on change, so a long wait does not repeat. Keep the state in the loop, not in a file. Monitors die with the session and when a
+Print only on change, so a long wait does not repeat. Keep the state in the loop, not in a file.
+Match a bare prompt line only: a looser pattern gave false DEAD alerts. Exempt roles that are idle
+by design (keeper, deploy agent) from SILENT. Monitors die with the session and when a
 window is replaced:
 
 - Re-arm after every worker launch, restart or handoff, and at the start of each cycle if
@@ -137,6 +173,39 @@ A finished worker's window never stays open.
    capsule first.
 5. List the open windows (`tmux list-windows -t "$S" -F '#{window_name} #{pane_id}'`) in every
    `handoff` entry, with the issue ref of each.
+
+## Specialists and AgentRun
+
+Interim rules, learned on the MMD-2331 programme (October 2026). XT-132 replaces them with the final
+routing rule.
+
+**Specialists**
+
+- Dispatch through the plugin MCP (`specialist_dispatch`, `specialist_status`, `specialist_result`),
+  not the `sp` CLI. The result arrives as a channel push; `specialist_status` is the authoritative
+  read.
+- Create the issue first, under its theme (`sb issue create --parent <theme>`), attest it, then
+  dispatch with `issue_ref`. An inline `contract` creates an issue with no parent, outside the
+  programme tree, and `sb` cannot set a parent later. `issue_ref` also allows `epic_context_depth`.
+- Review and audit roles run READ_ONLY. A writer needs the workspace lease.
+- The specialist sandbox has no network, `gh` or docker. Work that needs them goes to a window
+  worker.
+- After editing a specialist definition, restart the host or rename the definition: the loader
+  caches definitions, and a list and a dispatch can disagree.
+- Long jobs: start with `bg_run`, stay silent while healthy, escalate only on a problem. Never use
+  `bg_delegate`, `bg_run_pi_attested` or `fusion_*`: they caused host-memory pressure.
+- A specialist counts toward the worker cap. Before a restart or handoff, settle or stop each
+  activation, and list the live ones in the handoff.
+
+**AgentRun**
+
+- Use it only for repeated judgment work in a workflow the operator approved (examples: a contract
+  audit, a Jira audit, the daily report).
+- Route on the decision's choice value, not on its confidence. Use Jev decisions first for semantic
+  choices, and code for exact checks.
+- A run ends. It cannot watch liveness: the monitor loop does that.
+- Report its findings as claims: check a sample before acting on them (a Jira audit run had about
+  30% false positives).
 
 ## Limits and health
 

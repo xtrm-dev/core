@@ -53,6 +53,10 @@ JSON
 2. `sb issue edit <ref> --contract <json> --expected-revision N` changes what the work IS: it bumps
    the revision and needs a new attestation. Title and priority do not.
 3. The owner claims: `sb issue claim <ref> --holder <name>`. Claim is ownership, not progress.
+   A claim is a lease of about 15 minutes by default. Pass `--ttl-ms <n>` to cover the checkpoint
+   interval, and claim again at every checkpoint: a claim by the same holder renews the lease
+   (tested on sb 0.2.2). A worker once closed its issue after its claim had lapsed, and `sb`
+   accepted the close with no warning, so the lease is not a safety net.
 4. Work, journal, checkpoint (below). Resume after a restart: `sb issue resume <ref>`.
 5. Close: `sb issue close <ref> --outcome completed|superseded|duplicate|wont_fix|invalid|cancelled|abandoned
    --reason "..." --result <journal-entry-ref> --validation ... --artifact ...`.
@@ -76,10 +80,15 @@ Nine kinds. Use the one that says what the entry is.
 | `note` | Anything else. |
 
 - Fast path: `sb issue note <ref> "text" --kind decision` (`--file -` reads stdin).
-- Structured: `sb journal append <ref> --kind <k> --semantic '{"summary": "..."}'`.
-- Read: `show` (full bodies), `since <ref> <cursor>` (delta), `latest --kind <k>`,
-  `timeline --limit n`, `render <ref>` (latest checkpoint as text).
-- Entries truncate near 2 KB with no error: one fact per entry, or split.
+- Structured: `sb journal append <ref> --kind <k> --semantic '{"summary": "..."}'`. `--semantic`,
+  `--result` and `--mechanical` take a file or JSON; plain text fails.
+- `--kind result` needs `--result <file|json>`. A checkpoint needs a mechanical row: use
+  `sb journal checkpoint`; `append --kind checkpoint` without `--mechanical` is refused.
+- Read: `show`, `since <ref> <cursor>` (delta), `latest --kind <k>`, `timeline --limit n`,
+  `render <ref>` (latest checkpoint as text).
+- The text views print a short preview of each entry (about 60 characters). Add `--json` to read
+  the full entry: a 4.4 KB entry reads back complete with `sb journal latest <ref> --json`. Storage
+  does not truncate. Still keep one fact per entry.
 - The journal never changes the contract, revision or readiness.
 
 ## Pin a worker's name on every entry
@@ -97,8 +106,8 @@ automatically (`specialist::<role>`, activation and attempt too).
 
 Workers share the coordinator's tmux session, so the session name is the same for all of them.
 **The worker name is `SUBSTRATE_HOLDER`**; claim with the same name: `sb issue claim --holder <name>`.
-Launch with `xt <runtime> <name> --window` (see `fleet.md`): a raw `tmux new-window 'xt …'` loses
-the dispatcher identity. Check a worker's first entry: `sb journal latest <ref> --json` shows
+Launch with `xt <runtime> <name> --window` (see `fleet.md`; if it refuses, follow "When --window
+refuses" there): a raw `tmux new-window 'xt …'` loses the dispatcher identity. Check a worker's first entry: `sb journal latest <ref> --json` shows
 `participantId`.
 
 For commit and PR evidence use provenance: `sb provenance dispatch <ref> --participant <name>`

@@ -6,17 +6,32 @@ Site `https://mercuryintel.atlassian.net`. Tool: `scripts/jira.py` (REST, token 
 
 ## Which project
 
-Use project **ISSUE** (board 1, SCRUM). It has Epic, Story, Task, Subtask, weekly sprints and a
-board. Project **XTRM** is a business project with only Task and Sottotask, two statuses
-(Da completare, Completata) and no sprints: it cannot show themes or sprints. The operator's
-direction (Jira XT-110, Substrate XTRM-639) is ISSUE as the planning board, with the label
-`prog:<programme>` to separate programmes. A new software space to replace XTRM is planned.
-Check live before relying on this: `jira.py GET /rest/api/3/project/ISSUE` (issueTypes) and
-`jira.py GET /rest/agile/1.0/board/1/sprint`.
+Two software projects, configured alike (2026-10-16). Use the label `prog:<programme>` to separate
+programmes inside one project.
+
+| Project | Holds | Board | Sprints | Issue types |
+|---|---|---|---|---|
+| **ISSUE** (id 10000) | Mercury and market-data programmes | 1 | weekly, "MMD Sprint n" | Epic, Story, Task, Bug, Subtask |
+| **XT** (id 10066) | xtrm tooling programmes (XT-131, XT-132, XT-91) | 34 | "XT: Sprint 1" (id 40) and on | Epic, Story, Task, Bug, Feature, Request, Spike, Sottotask |
+
+The old business project XTRM moved to XT (same numbers: XTRM-132 is XT-132) and is to be
+archived. Do not write to it. Check live before relying on this table:
+`jira.py GET /rest/api/3/project/<KEY>` (issueTypes) and `jira.py GET /rest/agile/1.0/board/<id>/sprint`.
 
 **GitHub for Jira** is installed for project ISSUE, so ISSUE issues show the development panel
-(branches, commits, PRs that carry the key). XTRM has no dev panel. The panel is evidence only:
-Substrate still drives every status move, and smart commits and Jira Automation stay off.
+(branches, commits, PRs that carry the key). XT is not checked yet: read the dev panel once before
+relying on it. The panel is evidence only: Substrate still drives every status move, and smart
+commits and Jira Automation stay off.
+
+Custom fields on both projects (global ids, added to every type except subtasks):
+
+| Field | Id | Use |
+|---|---|---|
+| Window start (UTC) | `customfield_10237` | datetime; production and operator windows |
+| Window end (UTC) | `customfield_10238` | datetime |
+| Entity | `customfield_10239` | single select: Coordinator, Worker, Keeper, Human (who acts) |
+| Start date | `customfield_10015` | date; drives the calendar view |
+| Sprint | `customfield_10020` | read only through the agile API |
 
 ## The model
 
@@ -28,8 +43,8 @@ Substrate still drives every status move, and smart commits and Jira Automation 
 | **Bug** | a defect worth an operator's attention | Substrate `bug` kind |
 | (none) | worker tasks (task, followup, decision leaves) | live in Substrate only; listed in the Story description |
 
-A research theme is a Story with label `kind:spike` (ISSUE has no Spike type). Every non-Epic issue has
-a parent: the board check is "no non-epic issue without a parent".
+A research theme is a Spike on XT, or a Story with label `kind:spike` on ISSUE (no Spike type there).
+Every non-Epic issue has a parent: the board check is "no non-epic issue without a parent".
 
 Why: Jira is read by people who ask "what is done, what is next, what do you need from me".
 Ten engineering tasks are noise to them. One Story per theme, in a sprint, answers the question.
@@ -60,7 +75,7 @@ this prevents duplicate tickets). Put the Jira key back on Substrate once:
 - A Story sits in the sprint where it will finish and moves with its slot. At sprint close, open
   Stories carry to the next sprint, and the coordinator journals a `milestone` on the epic.
 - The coordinator's `/goal` horizon is the current sprint.
-- Create: `POST /rest/agile/1.0/sprint` `{"name":..., "originBoardId":1, "startDate":..., "endDate":..., "goal":...}`.
+- Create: `POST /rest/agile/1.0/sprint` `{"name":..., "originBoardId":<1 or 34>, "startDate":..., "endDate":..., "goal":...}`.
   Move issues: `POST /rest/agile/1.0/sprint/<id>/issue` `{"issues": ["ISSUE-260"]}`.
   Read an issue's sprint: field `customfield_10020`.
 
@@ -103,9 +118,45 @@ For each event, choose the board's status that means this, using its category to
 | Closure `cancelled` or `wont_fix` | will not do | Done, with a resolution |
 
 If the board has no status for an event, use the nearest one and add a comment saying what it
-stands for; ask the operator before adding a status or changing a category. Jira XT-110 proposes
-names for ISSUE (Pronto, In corso, In Review, waiting-production, Completata, complete-with-followup,
-Deferred, Blocked, Won't Do), but the board may not have them yet: the profile decides.
+stands for; ask the operator before adding a status or changing a category.
+
+**Transition ids (read 2026-10-17).** Both projects have the same ten statuses, and every
+transition is global (allowed from any status). Move with the id, never the name: the same id
+leads to different statuses in the two projects.
+
+| Event (status meaning) | Status shown (Italian UI) | XT id | ISSUE id |
+|---|---|---|---|
+| To Do | Da completare | 21 | 11 |
+| ready | Pronto | 51 | 44 |
+| being worked | In corso | 61 | 21 |
+| in review | In revisione | 71 | 31 |
+| merged, waiting for production | Waiting Production | 81 | 43 |
+| blocked | Blocked | 91 | 101 |
+| parked | Deferred (To Do category) | 101 | 41 |
+| done | Completata | 41 | 45 |
+| done with follow-up | Done with Follow-up | 111 | 42 |
+| will not do | Won't Do | 121 | 111 |
+
+Before the first move of a programme, re-read the ids: `GET /rest/api/3/issue/<K>/transitions`
+(the `to.name` field is the target). If they differ from this table, trust the live read and record
+it in the board-profile finding. Move: `POST /rest/api/3/issue/<K>/transitions`
+`{"transition": {"id": "<id>"}}`.
+
+## Windows on the Jira calendar
+
+Jira is the only calendar (operator decision, 2026-10-16). No Google Calendar events, no Google
+Tasks. A production or operator window is:
+
+- a **Task** with label `window`, parent = the programme Epic;
+- all four date fields set: `customfield_10237` and `customfield_10238` (exact UTC times),
+  Start date `customfield_10015` and `duedate`. The calendar view reads only the two date
+  fields, so a window without them is invisible there;
+- Entity `customfield_10239` = who acts (Keeper or Coordinator; Human for an operator step);
+- the window owner keeps it current: the keeper if the programme has one, otherwise the
+  coordinator.
+
+Health check, must return 0 (replace the project key):
+`project = ISSUE AND labels = window AND (duedate is EMPTY OR cf[10237] is EMPTY)`.
 
 ## What is manual today, what XTRM-639 automates
 
@@ -122,7 +173,7 @@ not the model.
 jira.py GET  /rest/api/3/issue/K?fields=summary,status,parent,customfield_10020
 jira.py POST /rest/api/3/issue body.json        # create (Epic, or Story with "parent":{"key":"ISSUE-n"})
 jira.py PUT  /rest/api/3/issue/K body.json      # edit fields
-jira.py transition K "In corso"
+jira.py POST /rest/api/3/issue/K/transitions body.json   # {"transition":{"id":"61"}}; ids above
 jira.py comment K text.txt                      # plain text; ADF is built for you
 ```
 
