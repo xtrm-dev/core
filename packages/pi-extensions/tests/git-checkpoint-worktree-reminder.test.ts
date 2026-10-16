@@ -68,9 +68,9 @@ const notifyCtx = (cwd: string, hasUI = true) => {
   };
 };
 
-const WORKTREE = "/home/op/dev/core/.xtrm/worktrees/core-xt-pi-vyyz";
-const OTHER_WORKTREE = "/home/op/dev/core/.xtrm/worktrees/core-xt-pi-aaaa";
-const NON_WORKTREE = "/home/op/dev/core";
+const WORKTREE = "/repo/.xtrm/worktrees/wt-a";
+const OTHER_WORKTREE = "/repo/.xtrm/worktrees/wt-b";
+const NON_WORKTREE = "/repo";
 
 describe("git-checkpoint xt end worktree reminder", () => {
   test("agent_end notifies once per worktree cwd when a UI is present", async () => {
