@@ -1,72 +1,29 @@
 /**
  * XTRM Custom Footer Extension
  *
- * Layout:
+ * Layout (git-only; the retired beads claim line is gone):
  * Line 1: ~/path (branch *+↑) — with git status flags, no session name
  * Line 2: XX%/window | (provider) model • thinking — simplified stats
- * Line 3: ◐ 4843.5 Rework project bootstrap... — beads claim or ○ 6 open
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
-import { SubprocessRunner, EventAdapter } from "@xtrm/pi-core";
+import { SubprocessRunner } from "@xtrm/pi-core";
 
 export default function (pi: ExtensionAPI) {
-	interface BeadClaim {
-		id: string;
-		shortId: string;
-		title: string | null;
-		status: string;
-	}
-
-	interface BeadState {
-		claims: BeadClaim[];
-		openCount: number;
-		lastFetch: number;
-	}
-
 	interface RuntimeState {
 		branch: string | null;
 		gitStatus: string;
 		lastFetch: number;
 	}
 
-	const STATUS_ICONS: Record<string, string> = {
-		open: "○",
-		in_progress: "◐",
-		blocked: "●",
-		closed: "✓",
-	};
-
-	// Chip background colours (raw ANSI — theme has no bg() API)
-	const CHIP_BG_NEUTRAL = "\x1b[48;5;238m";
-	const CHIP_BG_ACTIVE = "\x1b[48;5;39m";
-	const CHIP_BG_BLOCKED = "\x1b[48;5;88m";
-	const CHIP_FG = "\x1b[38;5;15m";
-	const CHIP_RESET = "\x1b[0m";
-
-	const STATUS_BG: Record<string, string> = {
-		open: CHIP_BG_NEUTRAL,
-		in_progress: CHIP_BG_ACTIVE,
-		blocked: CHIP_BG_BLOCKED,
-	};
-
-	const chip = (text: string, bg = CHIP_BG_NEUTRAL): string => `${bg}${CHIP_FG} ${text} ${CHIP_RESET}`;
-
 	let capturedPi: ExtensionAPI = pi;
 	let capturedCtx: any = null;
 	let requestRender: (() => void) | null = null;
 
 	const CACHE_TTL = 5000;
-	let refreshingBeads = false;
 	let refreshingRuntime = false;
-
-	let beadState: BeadState = {
-		claims: [],
-		openCount: 0,
-		lastFetch: 0,
-	};
 
 	let runtimeState: RuntimeState = {
 		branch: null,
@@ -75,7 +32,6 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const getCwd = () => capturedCtx?.cwd || process.cwd();
-	const getShortId = (id: string) => id.split("-").pop() ?? id;
 
 	/**
 	 * Parse git status --porcelain output into status flags
@@ -159,85 +115,6 @@ export default function (pi: ExtensionAPI) {
 		return `${Math.round(count / 1000000)}M`;
 	};
 
-	const refreshBeadState = async () => {
-		if (refreshingBeads || Date.now() - beadState.lastFetch < CACHE_TTL) return;
-		const cwd = getCwd();
-		if (!EventAdapter.isBeadsProject(cwd)) return;
-		refreshingBeads = true;
-		try {
-			const inProgressResult = await SubprocessRunner.run("bd", ["list", "--status=in_progress"], { cwd });
-			const inProgressRaw = inProgressResult.code === 0 ? inProgressResult.stdout : "";
-			const ids = [...new Set([...inProgressRaw.matchAll(/^◐\s+([a-z][\w-]+)/gm)].map((m) => m[1]).filter((id) => id.includes("-")))];
-
-			let claims: BeadClaim[] = [];
-			if (ids.length === 1) {
-				const [id] = ids;
-				const showResult = await SubprocessRunner.run("bd", ["show", id, "--json"], { cwd });
-				if (showResult.code === 0) {
-					try {
-						const issue = JSON.parse(showResult.stdout)?.[0];
-						claims = [{ id, shortId: getShortId(id), title: issue?.title ?? null, status: issue?.status ?? "in_progress" }];
-					} catch {
-						claims = [{ id, shortId: getShortId(id), title: null, status: "in_progress" }];
-					}
-				} else {
-					claims = [{ id, shortId: getShortId(id), title: null, status: "in_progress" }];
-				}
-			} else if (ids.length > 1) {
-				claims = ids.map((id) => ({ id, shortId: getShortId(id), title: null, status: "in_progress" }));
-			}
-
-			let openCount = 0;
-			if (claims.length === 0) {
-				const listResult = await SubprocessRunner.run("bd", ["list"], { cwd });
-				if (listResult.code === 0) {
-					const m = listResult.stdout.match(/\((\d+)\s+open/);
-					if (m) openCount = parseInt(m[1], 10);
-				}
-			}
-
-			beadState = {
-				claims,
-				openCount,
-				lastFetch: Date.now(),
-			};
-			requestRender?.();
-		} catch {
-			// Fail soft — keep last known beads state.
-		} finally {
-			refreshingBeads = false;
-		}
-	};
-
-	/**
-	 * Build beads line: ◐ 4843.5 Rework project bootstrap... or ○ 6 open
-	 */
-	const buildBeadsLine = (width: number, theme: any): string => {
-		const { claims, openCount } = beadState;
-
-		if (claims.length === 1) {
-			const [{ shortId, title, status }] = claims;
-			const icon = STATUS_ICONS[status] ?? "◐";
-			const idChip = chip(`${icon} ${shortId}`, STATUS_BG[status] ?? CHIP_BG_NEUTRAL);
-			const cappedTitle = title ? (title.length > 40 ? `${title.slice(0, 39)}…` : title) : "";
-			const line = cappedTitle ? `${idChip} ${theme.fg("muted", cappedTitle)}` : idChip;
-			return truncateToWidth(line, width);
-		}
-
-		if (claims.length > 1) {
-			const chips = claims.map(({ shortId, status }) => {
-				const icon = STATUS_ICONS[status] ?? "◐";
-				return chip(`${icon} ${shortId}`, STATUS_BG[status] ?? CHIP_BG_ACTIVE);
-			});
-			return truncateToWidth(chips.join(" "), width);
-		}
-
-		if (openCount > 0) {
-			return truncateToWidth(`○ ${openCount} open`, width);
-		}
-
-		return truncateToWidth(`○ no open issues`, width);
-	};
 
 	let footerReapplyTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -258,7 +135,6 @@ export default function (pi: ExtensionAPI) {
 				invalidate() {},
 				render(width: number): string[] {
 					refreshRuntimeState().catch(() => {});
-					refreshBeadState().catch(() => {});
 
 					// === LINE 1: ~/path (branch *+↑) ===
 					// Like original, no session name, but with git status flags
@@ -334,10 +210,7 @@ export default function (pi: ExtensionAPI) {
 						line2 = `${colorizeUsage(contextDisplay)}${theme.fg("dim", separator)}${theme.fg("dim", truncatedRight)}`;
 					}
 
-					// === LINE 3: ◐ 4843.5 Rework project bootstrap... ===
-					const line3 = buildBeadsLine(width, theme);
-
-					return [pwdLine, line2, line3];
+					return [pwdLine, line2];
 				},
 			};
 		});
@@ -354,7 +227,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		capturedCtx = ctx;
 		runtimeState.lastFetch = 0;
-		beadState.lastFetch = 0;
 		applyCustomFooter(ctx);
 		scheduleFooterReapply(ctx);
 	});
@@ -385,10 +257,6 @@ export default function (pi: ExtensionAPI) {
 		const cmd = event?.input?.command;
 		if (!cmd) return undefined;
 
-		if (/\bbd\s+(close|update|create|claim)\b/.test(cmd)) {
-			beadState.lastFetch = 0;
-			setTimeout(() => refreshBeadState().catch(() => {}), 200);
-		}
 		if (/\bgit\s+/.test(cmd)) {
 			runtimeState.lastFetch = 0;
 			setTimeout(() => refreshRuntimeState().catch(() => {}), 200);

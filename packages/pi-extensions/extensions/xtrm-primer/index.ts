@@ -46,8 +46,21 @@ export const SKILLS = [
   },
 ];
 
+/**
+ * Skills already warned about in this process. CORE-2405: buildPrimer runs on
+ * every before_agent_start, so an unguarded warn repeats on every turn; the
+ * first occurrence is the actionable one.
+ */
+const WARNED_MISSING_SECTIONS = new Set<string>();
+
+/** Test seam: the warn cache is process-wide, so tests must be able to reset it. */
+export function resetPrimerWarnings(): void {
+  WARNED_MISSING_SECTIONS.clear();
+}
+
 export function excerpt(text: string, sections: readonly string[]): string {
-  const body = text.replace(/^---\n[\s\S]*?\n---\n/, "");
+  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  const body = normalized.replace(/^---[ \t]*\n[\s\S]*?\n---[ \t]*\n/, "");
   return body
     .split(/^(?=## )/m)
     .filter((part) => !part.startsWith("## ") || sections.includes(part.split("\n", 1)[0].slice(3).trim()))
@@ -55,6 +68,22 @@ export function excerpt(text: string, sections: readonly string[]): string {
     .join("\n\n")
     .replace(/^# .*\n+/, "")
     .trim();
+}
+
+/** Requested `##` sections absent from text (BOM/CRLF/frontmatter tolerant); surfaces heading renames. */
+export function missingSections(text: string, sections: readonly string[]): string[] {
+  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  const body = normalized.replace(/^---[ \t]*\n[\s\S]*?\n---[ \t]*\n/, "");
+  const present = new Set<string>();
+  for (const part of body.split(/^(?=## )/m)) {
+    if (part.startsWith("## ")) present.add(part.split("\n", 1)[0].slice(3).trim());
+  }
+  return sections.filter((s) => !present.has(s));
+}
+
+/** Home for primer lookup: HOME per call (Bun caches homedir()), then USERPROFILE (Windows), then homedir(). */
+export function resolveHome(env: NodeJS.ProcessEnv = process.env): string {
+  return env.HOME || env.USERPROFILE || homedir();
 }
 
 /** One line naming the dispatcher, its reply address and this worker's holder; null without dispatcher env. */
@@ -71,7 +100,9 @@ export function dispatcherLine(env: NodeJS.ProcessEnv = process.env): string | n
 
 /** Builds the primer from `<home>/.xtrm/skills/default`; null when no skill yields a section and no dispatcher env is set. Never throws. */
 // ponytail: read HOME per call; Bun caches os.homedir(), so a runtime HOME change is invisible to it.
-export function buildPrimer(home: string = process.env.HOME || homedir(), env: NodeJS.ProcessEnv = process.env): string | null {
+// Dedup is bounded by construction: MARKER substring in systemPrompt, no global registry (no Symbol.for growth).
+export function buildPrimer(home?: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const resolvedHome = home ?? resolveHome(env);
   let dispatcher: string | null = null;
   try {
     dispatcher = dispatcherLine(env);
@@ -79,7 +110,7 @@ export function buildPrimer(home: string = process.env.HOME || homedir(), env: N
     dispatcher = null;
   }
   try {
-    const root = join(home, ".xtrm", "skills", "default");
+    const root = join(resolvedHome, ".xtrm", "skills", "default");
     const loads: string[] = [];
     const blocks: string[] = [];
     for (const { name, sections, load } of SKILLS) {
@@ -88,6 +119,15 @@ export function buildPrimer(home: string = process.env.HOME || homedir(), env: N
         text = readFileSync(join(root, name, "SKILL.md"), "utf8");
       } catch {
         continue;
+      }
+      const missing = missingSections(text, sections);
+      if (missing.length > 0 && !WARNED_MISSING_SECTIONS.has(name)) {
+        WARNED_MISSING_SECTIONS.add(name);
+        try {
+          console.warn(`[xtrm-primer] skill '${name}' missing sections: ${missing.join(", ")} (heading renamed?)`);
+        } catch {
+          /* ignore warn failure */
+        }
       }
       const body = excerpt(text, sections);
       if (!body) continue;
