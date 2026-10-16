@@ -73,7 +73,8 @@ import {
   isProvenanceReader,
   buildProvenanceEvidence,
   provenanceDutyVerb,
-  repoRoot,
+  createProvenanceSteerGate,
+  createRepoRootResolver,
   runProvenanceSteer,
   trackedEditedFiles,
   type SkillEntry,
@@ -307,6 +308,11 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   let turnEditedFiles: string[] = [];
   let turnSteeredFiles: string[] = [];
   let turnProvenanceSeen = false;
+  // CORE-2406: the launch directory does not move mid-session, so git runs
+  // once per session, not once per steer; the gate stops two steers racing in
+  // one turn from each paying for a Jev call.
+  const resolveRepoRoot = createRepoRootResolver();
+  const provenanceGate = createProvenanceSteerGate();
   const counters: ToolCounters = newCounters();
 
   // Card renderer: no [customType] label, no default card box — the two
@@ -464,8 +470,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         );
         return { content, structuredContent: e.structuredContent } as never;
       }
-      const packs = discoverSkillPacks(repoRoot());
-      const hit = packs.length > 0 ? territoryHit(packs, e.input, repoRoot()) : null;
+      const packs = discoverSkillPacks(resolveRepoRoot());
+      const hit = packs.length > 0 ? territoryHit(packs, e.input, resolveRepoRoot()) : null;
       if (hit) {
         const verb = skillVerb(hit);
         // Per-service scoping: territory:<id> as the ref half of the cooldown key.
@@ -493,7 +499,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       try {
         const fresh = turnEditedFiles.filter((f) => !turnSteeredFiles.includes(f));
         if (fresh.length > 0 && !turnProvenanceSeen) {
-          const tracked = trackedEditedFiles(fresh, repoRoot());
+          const tracked = trackedEditedFiles(fresh, resolveRepoRoot());
           if (tracked.length > 0) {
             const files = tracked;
             void (async () => {
@@ -503,6 +509,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
                   steered: turnSteeredFiles,
                   cooldowns,
                   threshold: GATE_THRESHOLD,
+                  gate: provenanceGate,
                   classify: async () => {
                     const result = await askJev(null, { edited_files: files.slice(0, 5) }, {
                       provenance_source: {
@@ -527,7 +534,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
                   },
                   deliver: (fs, model) => {
                     const verb = provenanceDutyVerb(fs);
-                    const evidence = buildProvenanceEvidence(fs, repoRoot());
+                    const evidence = buildProvenanceEvidence(fs, resolveRepoRoot());
                     logDecision({ ts: new Date().toISOString(), issue: null, verb: verb.id, source: "jev", model });
                     pi.sendMessage(
                       { customType: CUSTOM_TYPE, content: evidence, display: true, details: { verb: verb.id, midTurn: true } },
@@ -612,7 +619,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     // Duty 1 — service skill (turn end). Also pre-binding: skills are repo
     // knowledge, not issue knowledge.
     if (jevAvailable && wasActive) {
-      const all = discoverSkillPacks(repoRoot()).flatMap((p) => p.entries);
+      const all = discoverSkillPacks(resolveRepoRoot()).flatMap((p) => p.entries);
       if (all.length > 0 && cooldownAllows(cooldowns, "skills", SKILL_SOURCE_VERB.id, Date.now(), SKILL_SOURCE_VERB)) {
         const result = await askJev(registry, {
           working_turn_excerpt: excerpt.slice(0, 4000),

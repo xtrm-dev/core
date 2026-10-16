@@ -127,6 +127,25 @@ export function repoRoot(startDir: string = process.cwd()): string {
   }
 }
 
+/**
+ * Session-scoped memo for repoRoot: the git call runs once per session, not
+ * once per steer. CORE-2406: the launch directory does not move mid-session,
+ * and a subprocess per steer is paid on every edited turn.
+ */
+export function createRepoRootResolver(resolve: () => string = () => repoRoot()): () => string {
+  let cached: string | null = null;
+  return () => (cached ??= resolve());
+}
+
+/** In-flight guard shared by one extension instance: concurrent steers must not each pay a Jev call. */
+export interface ProvenanceSteerGate {
+  inFlight: boolean;
+}
+
+export function createProvenanceSteerGate(): ProvenanceSteerGate {
+  return { inFlight: false };
+}
+
 export interface ProvenanceClassifyResult {
   mean: number;
   model: string | null;
@@ -137,6 +156,10 @@ export interface ProvenanceClassifyResult {
  * Files are marked steered only when the steer is actually delivered, so a
  * gate- or cooldown-blocked steer retries later in the turn instead of being
  * silently dropped (CORE-2406). Returns the outcome for callers and tests.
+ *
+ * Because marking is deferred until after the gate, two steers racing in the
+ * same turn would both classify and both pay for a Jev call; the optional
+ * `gate` serialises them, and the loser returns "inFlight" to try later.
  */
 export async function runProvenanceSteer(opts: {
   files: string[];
@@ -145,16 +168,26 @@ export async function runProvenanceSteer(opts: {
   threshold: number;
   classify: () => Promise<ProvenanceClassifyResult | null>;
   deliver: (files: string[], model: string | null) => void;
-}): Promise<"delivered" | "gated" | "cooled"> {
-  if (opts.files.length === 0) return "gated";
-  const verb = provenanceDutyVerb(opts.files);
-  if (!cooldownAllows(opts.cooldowns, "prov", verb.id, Date.now(), verb)) return "cooled";
-  const result = await opts.classify();
-  if (!result || result.mean < opts.threshold) return "gated";
-  opts.steered.push(...opts.files);
-  applyCooldown(opts.cooldowns, "prov", verb);
-  opts.deliver(opts.files, result.model);
-  return "delivered";
+  gate?: ProvenanceSteerGate;
+}): Promise<"delivered" | "gated" | "cooled" | "inFlight"> {
+  const { gate } = opts;
+  if (gate) {
+    if (gate.inFlight) return "inFlight";
+    gate.inFlight = true;
+  }
+  try {
+    if (opts.files.length === 0) return "gated";
+    const verb = provenanceDutyVerb(opts.files);
+    if (!cooldownAllows(opts.cooldowns, "prov", verb.id, Date.now(), verb)) return "cooled";
+    const result = await opts.classify();
+    if (!result || result.mean < opts.threshold) return "gated";
+    opts.steered.push(...opts.files);
+    applyCooldown(opts.cooldowns, "prov", verb);
+    opts.deliver(opts.files, result.model);
+    return "delivered";
+  } finally {
+    if (gate) gate.inFlight = false;
+  }
 }
 
 /**
