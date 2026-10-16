@@ -62,6 +62,8 @@ describe("retired Pi extensions", () => {
 
     // CORE-2372: no retired Beads gate may be reachable from a shipped
     // extension source, a policy declaration, or the Pi extension shim tree.
+    // CORE-2403: the committed mirrors carry the same contract — the
+    // adapters and footers below once re-declared the gates verbatim.
     for (const relativePath of [
       "packages/pi-extensions/src/registry.ts",
       "packages/pi-extensions/src/core/adapter.ts",
@@ -69,6 +71,8 @@ describe("retired Pi extensions", () => {
       "packages/pi-extensions/extensions/xtprompt/index.test.ts",
       ".xtrm/packages/pi-extensions/src/registry.ts",
       ".xtrm/packages/pi-extensions/src/shared/legacy-path-map.ts",
+      ".xtrm/ext-src/core/adapter.ts",
+      ".xtrm/packages/pi-extensions/src/core/adapter.ts",
     ]) {
       const content = readFileSync(join(repoRoot, relativePath), "utf8");
       for (const token of ["beads", "session-flow", "isBeadsProject", "parseBdCounts"]) {
@@ -93,6 +97,20 @@ describe("retired Pi extensions", () => {
       expect(existsSync(join(repoRoot, relativePath)), `${relativePath} should be absent`).toBe(false);
     }
 
+    // CORE-2403: the mirror footers kept a live Beads-gated branch
+    // (isBeadsProject guard + `bd` subprocess refresh) after the canonical
+    // footer went git-only. Gate-functional tokens only — a historical
+    // comment may name the retired board, live code may not gate on it.
+    for (const relativePath of [
+      ".xtrm/ext-src/custom-footer/index.ts",
+      ".xtrm/packages/pi-extensions/extensions/custom-footer/index.ts",
+    ]) {
+      const content = readFileSync(join(repoRoot, relativePath), "utf8");
+      for (const token of ["isBeadsProject", "parseBdCounts", 'SubprocessRunner.run("bd"', "bd kv", ".xtrm/claims"]) {
+        expect(content, `${relativePath} should not contain ${token}`).not.toContain(token);
+      }
+    }
+
     // The manifest names retired ids in its `disabled` block WITH the
     // retirement reason — that is documentation, not enrollment. The scan
     // checks the structured contract: no retired id may sit in `active`.
@@ -108,17 +126,29 @@ describe("retired Pi extensions", () => {
   });
 
   test("no shipped extension source authorizes edits or commits on Beads claim state", () => {
-    const extensionsRoot = join(repoRoot, "packages/pi-extensions/extensions");
-    const sources = readdirSync(extensionsRoot, { recursive: true })
-      .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".ts"));
+    // CORE-2403: the canonical tree is not the only shipped tree — walk the
+    // committed mirrors too. `.xtrm/ext-src` is deprecated but still copied
+    // into worktrees, so a gate there would still execute.
+    const extensionRoots = [
+      "packages/pi-extensions/extensions",
+      ".xtrm/ext-src",
+      ".xtrm/packages/pi-extensions/extensions",
+      ".xtrm/packages/pi-extensions/src",
+    ];
 
-    expect(sources.length).toBeGreaterThan(0);
-    for (const entry of sources) {
-      const relativePath = join("packages/pi-extensions/extensions", entry);
-      const content = readFileSync(join(repoRoot, relativePath), "utf8");
-      for (const token of ["isBeadsProject", ".xtrm/claims", 'SubprocessRunner.run("bd"', "bd kv"]) {
-        expect(content, `${relativePath} should not contain ${token}`).not.toContain(token);
+    let scanned = 0;
+    for (const root of extensionRoots) {
+      const sources = readdirSync(join(repoRoot, root), { recursive: true })
+        .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".ts"));
+      for (const entry of sources) {
+        scanned += 1;
+        const relativePath = join(root, entry);
+        const content = readFileSync(join(repoRoot, relativePath), "utf8");
+        for (const token of ["isBeadsProject", ".xtrm/claims", 'SubprocessRunner.run("bd"', "bd kv"]) {
+          expect(content, `${relativePath} should not contain ${token}`).not.toContain(token);
+        }
       }
     }
+    expect(scanned).toBeGreaterThan(0);
   });
 });
