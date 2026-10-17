@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { stableWakeMessageId } from "@xtrm/contracts";
@@ -123,10 +123,10 @@ const toolCtx = (session = "test-session") =>
 const countOf = (text: string, needle: string) => text.split(needle).length - 1;
 
 describe("background extension registration", () => {
-  test("registers only BashBackground and TaskStop, codemode-exposed, never bash/read/edit/write/find/grep/ls", () => {
+  test("registers only BashBackground, Monitor and TaskStop, codemode-exposed, never bash/read/edit/write/find/grep/ls", () => {
     const { pi, tools } = fakePi();
     startService(pi);
-    expect([...tools.keys()].sort()).toEqual(["BashBackground", "TaskStop"]);
+    expect([...tools.keys()].sort()).toEqual(["BashBackground", "Monitor", "TaskStop"]);
     for (const name of ["bash", "read", "edit", "write", "find", "grep", "ls"]) {
       expect(tools.has(name)).toBe(false);
     }
@@ -442,5 +442,118 @@ describe("formatTaskNotification", () => {
     expect(countOf(content, "<task-notification>")).toBe(1);
     expect(countOf(content, "</task-notification>")).toBe(1);
     expect(content).not.toMatch(/\x1b\[/);
+  });
+});
+
+/** A pid is gone when the signal fails or the kernel reports it a zombie. */
+function procGone(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return true;
+  }
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.split(")")[1]?.trim().split(" ")[0] === "Z";
+  } catch {
+    return true;
+  }
+}
+
+function openFdTargets(): string[] {
+  const found: string[] = [];
+  let entries: string[] = [];
+  try {
+    entries = readdirSync("/proc/self/fd");
+  } catch {
+    return found;
+  }
+  for (const entry of entries) {
+    try {
+      found.push(readlinkSync(`/proc/self/fd/${entry}`));
+    } catch {
+      /* fd closed mid-scan */
+    }
+  }
+  return found;
+}
+
+describe("B1 review follow-ups", () => {
+  test("a SIGTERM-ignoring task tree is dead on close with no orphan, verified with a grandchild", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi);
+    const grandchildFile = `${dir}/grandchild.pid`;
+    const result = await tools.get("BashBackground")!.execute(
+      "call-1",
+      { command: `trap "" TERM; sleep 60 & echo $! > ${grandchildFile}; wait` },
+      undefined,
+      undefined,
+      toolCtx(),
+    );
+    const taskId = String((result.details as Record<string, unknown>).task_id);
+    await until(() => {
+      try {
+        return readFileSync(grandchildFile, "utf8").trim().length > 0;
+      } catch {
+        return false;
+      }
+    });
+    const pid = service.store.get(taskId)?.pid;
+    expect(pid).toBeGreaterThan(0);
+    const grandchildPid = Number(readFileSync(grandchildFile, "utf8").trim());
+    expect(grandchildPid).toBeGreaterThan(0);
+    expect(grandchildPid).not.toBe(pid);
+    service.close();
+    // Synchronous: close() SIGTERMs, awaits the grace, then SIGKILLs before
+    // it returns. Both shell and grandchild trap TERM, so only the SIGKILL
+    // path can kill them; an async timer would not have fired yet.
+    expect(service.store.get(taskId)?.status).toBe("stopped");
+    await until(() => procGone(pid as number) && procGone(grandchildPid), 10000);
+    expect(procGone(pid as number)).toBe(true);
+    expect(procGone(grandchildPid)).toBe(true);
+  });
+
+  test("the shutdown grace path closes the output fd synchronously", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi);
+    const result = await tools.get("BashBackground")!.execute("call-1", { command: "sleep 30" }, undefined, undefined, toolCtx());
+    const outputFile = String((result.details as Record<string, unknown>).output_file);
+    expect(openFdTargets()).toContain(outputFile);
+    service.close();
+    expect(openFdTargets()).not.toContain(outputFile);
+  });
+
+  test("a description with < and \" is escaped in the task-notification summary", async () => {
+    const { pi, tools } = fakePi();
+    startService(pi);
+    const result = await tools.get("BashBackground")!.execute(
+      "call-1",
+      { command: "echo hi", description: '<img src="x">' },
+      undefined,
+      undefined,
+      toolCtx(),
+    );
+    const taskId = String((result.details as Record<string, unknown>).task_id);
+    await until(() => pi.sent.length >= 1);
+    const content = String(pi.sent[0].message.content);
+    expect(content).toContain(`<task-id>${taskId}</task-id>`);
+    expect(content).toContain("&lt;img src=&quot;x&quot;&gt;");
+    expect(content).not.toContain('<img src="x">');
+  });
+});
+
+describe("stop-then-quit", () => {
+  test("a stopped background task is dead after close inside the grace window", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi);
+    const result = await tools.get("BashBackground")!.execute("call-1", { command: "sleep 30" }, undefined, undefined, toolCtx());
+    const taskId = String((result.details as Record<string, unknown>).task_id);
+    const pid = service.store.get(taskId)?.pid;
+    expect(pid).toBeGreaterThan(0);
+    await tools.get("TaskStop")!.execute("call-2", { task_id: taskId }, undefined, undefined, toolCtx());
+    service.close();
+    expect(service.store.get(taskId)?.status).toBe("stopped");
+    await until(() => procGone(pid as number), 10000);
+    expect(procGone(pid as number)).toBe(true);
   });
 });
