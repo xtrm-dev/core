@@ -271,7 +271,11 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     const stream = createWriteStream(outputFile, { flags: "a" });
     let child: ChildProcess;
     try {
-      child = spawn(command, {
+      // Intentional: BashBackground IS a shell-execution tool (Claude Code Bash
+      // parity). The command comes from the model tool call under Pi's normal
+      // tool approval, output is bounded to the task file, and the child is
+      // process-group scoped so stop/timeout kill the whole tree.
+      child = spawn(command, { // nosemgrep: javascript.lang.security.audit.spawn-shell-true.spawn-shell-true
         cwd,
         shell: shellForPlatform(),
         detached: process.platform !== "win32",
