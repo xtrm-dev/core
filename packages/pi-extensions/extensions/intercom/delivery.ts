@@ -42,6 +42,35 @@ function bounded(value: unknown, max = 1024): string {
 }
 
 /**
+ * Envelope content for one wake (CORE-2437 I6, F1; N4): newlines and tabs
+ * survive (attachments are multiline), every other control character and
+ * ANSI goes. The cap applies AFTER envelope-escaping (N4: a payload full
+ * of `&`/`<`/`>` would otherwise expand past the cap); it fits the 512
+ * KiB attachment payload plus the message and the envelope lines. A cut
+ * says so with an explicit truncation line instead of losing the end
+ * silently. A cut can split an escape entity mid-way; the result stays
+ * plain inert text.
+ */
+export const MAX_WAKE_CONTENT_BYTES = 528 * 1024;
+
+function sanitizeEnvelopeText(value: unknown): string {
+  const text = typeof value === "string" ? value : "";
+  return stripAnsi(text).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+}
+
+function truncateEnvelopeText(text: string, maxBytes: number): string {
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes <= maxBytes) return text;
+  const buffer = Buffer.from(text, "utf8");
+  let end = maxBytes;
+  while (end > 0 && (buffer[end] & 0xc0) === 0x80) end -= 1;
+  const kept = buffer.subarray(0, end).toString("utf8");
+  const keptKiB = Math.floor(Buffer.byteLength(kept, "utf8") / 1024);
+  const totalKiB = Math.floor(bytes / 1024);
+  return `${kept}\n[truncated: showing the first ${keptKiB} KiB of ${totalKiB} KiB]`;
+}
+
+/**
  * Sender identity for the from-envelope (CORE-2436 I5). The address is the
  * session name `to` accepts; the display name feeds from-name. Both are
  * envelope-escaped; absent fields omit their attributes (I1-era frames).
@@ -71,7 +100,7 @@ export function buildReplyActionLine(from?: string): string {
  */
 export function buildIntercomWakeContent(messageId: string, payloadRef: string, sender: WakeSender = {}): string {
   const id = escapeEnvelope(bounded(messageId, 128) || "unknown");
-  const ref = escapeEnvelope(bounded(payloadRef, 8 * 1024));
+  const ref = truncateEnvelopeText(escapeEnvelope(sanitizeEnvelopeText(payloadRef)), MAX_WAKE_CONTENT_BYTES);
   const from = sender.from ? ` from="${escapeEnvelope(bounded(sender.from, 256))}"` : "";
   // CORE-2436 I5 review: from-name always rides with from (Contract B
   // needs both), even when the display name equals the address.
@@ -94,7 +123,7 @@ export function buildIntercomWakeDetails(
 ): { messageId: string; payloadRef: string; from?: string; fromName?: string } {
   return {
     messageId: bounded(messageId, 128),
-    payloadRef: bounded(payloadRef, 8 * 1024),
+    payloadRef: truncateEnvelopeText(sanitizeEnvelopeText(payloadRef), MAX_WAKE_CONTENT_BYTES),
     ...(sender.from ? { from: bounded(sender.from, 256) } : {}),
     ...(sender.fromName ? { fromName: bounded(sender.fromName, 256) } : {}),
   };

@@ -54,7 +54,8 @@ export type { ClaudeTransportOptions };
 export { intercomWaiting } from "./waiting.ts";
 export type { IntercomCommandDeps, RenameResult } from "./commands.ts";
 export type { ListAgentsDeps, ResolveMiss, RosterEntry, RosterRow } from "./roster.ts";
-export type { SendMessageDeps, SendMessageDetails, WakeSendRequest } from "./sendmessage.ts";
+export type { AttachmentFileRead, AttachmentInput, SendMessageDeps, SendMessageDetails, SendScope, WakeSendRequest } from "./sendmessage.ts";
+export { applySendScope, MAX_ATTACHMENTS, MAX_FILE_ATTACH_BYTES, MAX_FILE_READ_BYTES, MAX_INLINE_ATTACH_BYTES, MAX_PAYLOAD_BYTES } from "./sendmessage.ts";
 
 export default function intercomExtension(pi: ExtensionAPI, options: IntercomExtensionOptions = {}): void {
   ensureAgentHostBridge(pi, options).register();

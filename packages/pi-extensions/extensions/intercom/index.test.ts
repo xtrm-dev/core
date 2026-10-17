@@ -348,7 +348,7 @@ describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433
     }
   });
 
-  test("dispose answers a held wake as failed so the registry reports undelivered", async () => {
+  test("dispose leaves a held wake parked so a restart redelivers it (CORE-2437 F2)", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-dispose-"));
     const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
     try {
@@ -361,8 +361,21 @@ describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433
       pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
       const wake = host.registry.wake("s-dispose", "CORE-2433");
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "held");
+      // Graceful shutdown parks the wake: neither delivered (the listener is
+      // gone) nor undelivered. The session record goes away with it.
       pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
-      await until(() => host.registry.wakeStatus(wake.messageId)?.state === "undelivered");
+      await until(() => host.registry.list().length === 0);
+      expect(host.registry.wakeStatus(wake.messageId)?.state).toBe("held");
+      // Restart on a fresh bridge with the same session id: the parked wake
+      // flushes exactly once and the run accepts it.
+      const rebridge = createAgentHostBridge(pi.pi, { socketPath: host.info.socket, exec: async () => "", env: {} });
+      rebridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => host.registry.list().length === 1);
+      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      await until(() => host.registry.wakeStatus(wake.messageId)?.state === "held");
+      pi.fire("agent_start", {}, c.ctx);
+      await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
     } finally {
       await host.close();
       rmSync(dir, { recursive: true, force: true });

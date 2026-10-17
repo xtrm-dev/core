@@ -56,6 +56,9 @@ mock.module("typebox", () => ({
     Boolean: (opts: unknown) => ({ kind: "boolean", opts }),
     Array: (t: unknown, opts: unknown) => ({ kind: "array", t, opts }),
     Optional: (t: unknown) => ({ kind: "optional", t }),
+    // CORE-2437 I6: intercom SendMessage schemas use Literal/Union.
+    Literal: (v: unknown) => ({ kind: "literal", v }),
+    Union: (t: unknown, opts?: unknown) => ({ kind: "union", t, opts }),
   },
 }));
 

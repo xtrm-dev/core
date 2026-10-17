@@ -33,8 +33,18 @@ export const WAKE_STATES: readonly WakeDeliveryState[] = [
 /** How long a queued or held wake is retained before it reads as expired. */
 export const DEFAULT_WAKE_TTL_MS = 5 * 60_000;
 
+/** How often an idle host sweeps for expired wakes (CORE-2437 F3). */
+export const DEFAULT_SWEEP_INTERVAL_MS = 30_000;
+
 /** Upper bound on retained wake records; the oldest settled record is evicted first. */
 export const MAX_WAKE_RECORDS = 1024;
+
+/**
+ * Upper bound on live (queued or held) non-notice wakes per receiver
+ * (CORE-2437 F5): the 65th arrival evicts the oldest live one, and the
+ * evicted sender gets an undelivered notice instead of silence.
+ */
+export const MAX_LIVE_WAKES_PER_RECEIVER = 64;
 
 /** Minimal session shape participant matching needs. */
 export interface WakeResolvableSession {
@@ -103,6 +113,11 @@ export interface WakeRecord {
     expiresAt: number;
     /** How many times the wake frame was sent to a producer. */
     sendCount: number;
+    /**
+     * True for host-originated notices (expiry, mailbox-full). Notices are
+     * never capped per receiver and never notify again themselves.
+     */
+    notice?: true;
 }
 
 /** A queued or held record whose TTL passed reads as expired. */

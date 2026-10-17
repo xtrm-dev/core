@@ -1,10 +1,11 @@
 /**
- * SendMessage model tool (CORE-2436 I5, XT-91 ADR rev 2 + amendment 1, D-2).
+ * SendMessage model tool (CORE-2436 I5, XT-91 ADR rev 2 + amendment 1, D-2;
+ * attachments and scoped routing: CORE-2437 I6).
  *
  * One model-only tool, `SendMessage`, with Claude Code's parameters
  * (to, message, summary, notify_when_idle) plus the D-2 ask options
- * (expect_reply, timeout_s) and two threading options (reply_to, cancel).
- * Attachments stay out: they are I6 (CORE-2437), not this slice.
+ * (expect_reply, timeout_s), two threading options (reply_to, cancel),
+ * attachments (file, snippet, context) and scoped routing (scope).
  *
  * Routing: names resolve through I4's resolveRosterTarget (exact only, R7).
  * Pi targets go through the tracked registry wake (POST /v1/wake: held,
@@ -34,6 +35,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionSummary, WakeDeliveryState, WakeResult } from "@xtrm/contracts";
 import { request as httpRequest } from "node:http";
 import { readFileSync } from "node:fs";
+import { constants as fsConstants } from "node:fs";
+import { lstat, open, realpath } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -63,6 +66,29 @@ export const DEFAULT_ASK_TIMEOUT_S = 300;
 export const MAX_ASK_TIMEOUT_S = 3600;
 /** Long-poll budget for a queued wake to settle before answering. */
 export const DEFAULT_SETTLE_WAIT_MS = 5000;
+/** At most this many attachments ride one message. */
+export const MAX_ATTACHMENTS = 8;
+/** A file above this size is refused outright (never read whole). */
+export const MAX_FILE_READ_BYTES = 1024 * 1024;
+/** File content above this size is truncated, and says so. */
+export const MAX_FILE_ATTACH_BYTES = 256 * 1024;
+/** Inline snippet/context content above this size is truncated, and says so. */
+export const MAX_INLINE_ATTACH_BYTES = 32 * 1024;
+/** The message plus its rendered attachments must fit: the registry holds it whole. */
+export const MAX_PAYLOAD_BYTES = 512 * 1024;
+/** Routing scope values: the sender's Substrate project, or its programme. */
+export type SendScope = "project" | "programme";
+
+/** One SendMessage attachment (CORE-2437 I6, D-2): file, snippet or context. */
+export interface AttachmentInput {
+  type: "file" | "snippet" | "context";
+  /** File: the path to read (against the sender's worktree). Otherwise: the label. */
+  name: string;
+  /** Snippet/context: the inline content. File: filled by the sender, never the model. */
+  content?: string;
+  /** Snippet: the fence language. */
+  language?: string;
+}
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
@@ -73,6 +99,248 @@ function clean(value: unknown, max = 1024): string {
     .replace(/[\u0000-\u001F\u007F]/g, "")
     .trim()
     .slice(0, max);
+}
+
+/**
+ * Attachments (CORE-2437 I6). Shapes follow pi-intercom 0.17.1 (see
+ * ADOPTION-CREDITS.md: principal behaviour source); the safety bounds are
+ * ours: files resolve inside the sender's worktree, symlinks that escape
+ * are refused, secret-looking paths are refused unread, everything is
+ * truncated with a note instead of dropped silently, and the rendered
+ * block rides the payload so every transport (Pi wake, Claude body)
+ * carries it unchanged. Clean reimplementation otherwise.
+ */
+
+const LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  ts: "ts", tsx: "tsx", js: "js", jsx: "jsx", mjs: "js", cjs: "js", json: "json", jsonc: "json",
+  md: "md", markdown: "md", py: "py", rb: "rb", go: "go", rs: "rs", java: "java", kt: "kt",
+  swift: "swift", c: "c", h: "c", cpp: "cpp", hpp: "cpp", cs: "cs", sh: "sh", bash: "sh",
+  zsh: "sh", yaml: "yaml", yml: "yaml", toml: "toml", ini: "ini", css: "css", scss: "scss",
+  html: "html", xml: "xml", sql: "sql", vue: "vue", svelte: "svelte",
+};
+
+function inferAttachmentLanguage(name: string): string | undefined {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return (ext && LANGUAGE_BY_EXTENSION[ext]) || undefined;
+}
+
+const SECRET_BASENAMES: RegExp[] = [
+  /^\.env(\..+)?$/i,
+  /^\.envrc$/i,
+  /^\.npmrc$/i,
+  /^\.netrc$/i,
+  /^\.pypirc$/i,
+  /^\.git-credentials$/i,
+  /\.pem$/i,
+  /\.key$/i,
+  /\.p12$/i,
+  /\.pfx$/i,
+  /^id_(rsa|ed25519|ecdsa|dsa)(_.*)?$/i,
+  /^service-account.*\.json$/i,
+];
+
+/** Path segments that never contribute an attachment (fail-closed). */
+const SECRET_SEGMENTS = new Set([".secrets", "secrets", ".ssh", ".gnupg", ".aws"]);
+
+/** Basename substrings that mark a secret (fail-closed, even at false-positive cost). */
+const SECRET_SUBSTRINGS = ["credential", "secret", "token"];
+
+/** Why a resolved attachment path is refused, or null when it may be read. */
+function secretPathReason(resolvedPath: string): string | null {
+  const segments = resolvedPath.split("/").filter((s) => s.length > 0);
+  const base = segments.at(-1) ?? "";
+  if (SECRET_BASENAMES.some((re) => re.test(base))) return `attachment "${base}" looks like a secret and is refused`;
+  const lowerBase = base.toLowerCase();
+  if (SECRET_SUBSTRINGS.some((s) => lowerBase.includes(s))) return `attachment "${base}" looks like a secret and is refused`;
+  const lower = segments.map((s) => s.toLowerCase());
+  if (lower.some((s) => SECRET_SEGMENTS.has(s))) return `attachment under ${segments.find((s) => SECRET_SEGMENTS.has(s.toLowerCase()))}/ is refused`;
+  if (lower.some((s) => s.includes("credential"))) return "attachment under a credentials path is refused";
+  return null;
+}
+
+/**
+ * Safe fence (F6): a backtick run one longer than any run inside the
+ * content, so the content can never close the block early. Minimum three.
+ */
+function fenceFor(content: string): string {
+  const runs = content.match(/`+/g) ?? [];
+  const longest = runs.reduce((n, run) => Math.max(n, run.length), 0);
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
+function sanitizeInline(value: string, max: number): string {
+  return stripAnsi(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").slice(0, max);
+}
+
+export interface AttachmentFileRead {
+  realPath: string;
+  size: number;
+  content: string;
+}
+
+/**
+ * Read one attachment file, safely ordered (CORE-2437 F4; N5): lstat and
+ * realpath first, the containment check next, then open with O_NONBLOCK
+ * (a FIFO open never hangs) and fstat the handle itself — isFile and size
+ * come from the open file, closing the stat-to-open race — and only then
+ * a bounded read (never readFile whole, so /dev/zero, FIFOs and growing
+ * files cannot fill memory or hang).
+ */
+async function defaultReadAttachmentFile(absPath: string, root: string): Promise<AttachmentFileRead> {
+  await lstat(absPath);
+  const [realPath, rootReal] = await Promise.all([realpath(absPath), realpath(root)]);
+  if (realPath !== rootReal && !realPath.startsWith(rootReal + path.sep)) {
+    throw new Error("attachment is outside the sender's worktree and is refused");
+  }
+  const handle = await open(realPath, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
+  try {
+    const target = await handle.stat();
+    if (!target.isFile()) {
+      throw new Error("attachment is not a regular file and is refused");
+    }
+    if (target.size > MAX_FILE_READ_BYTES) {
+      throw new Error(`attachment is ${target.size} bytes: files above ${MAX_FILE_READ_BYTES} bytes are refused`);
+    }
+    const limit = MAX_FILE_READ_BYTES + 1;
+    const buffer = Buffer.alloc(limit);
+    let offset = 0;
+    while (offset < limit) {
+      const { bytesRead } = await handle.read(buffer, offset, limit - offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > MAX_FILE_READ_BYTES) {
+      throw new Error(`attachment grew past ${MAX_FILE_READ_BYTES} bytes while reading and is refused`);
+    }
+    return { realPath, size: target.size, content: buffer.subarray(0, offset).toString("utf8") };
+  } finally {
+    await handle.close();
+  }
+}
+
+async function defaultResolveRoot(root: string): Promise<string> {
+  return realpath(root);
+}
+
+function renderAttachmentBlock(name: string, language: string | undefined, content: string): string {
+  const head = `---\nAttachment: ${name}`;
+  if (!language) return `${head}\n${content}`;
+  const fence = fenceFor(content);
+  return `${head}\n${fence}${language}\n${content}\n${fence}`;
+}
+
+function truncateNote(limitLabel: string): string {
+  return `\n[truncated to the first ${limitLabel}]`;
+}
+
+async function resolveOneAttachment(input: AttachmentInput, env: AttachmentResolveEnv): Promise<string> {
+  const type = (input as { type?: unknown }).type;
+  if (type !== "file" && type !== "snippet" && type !== "context") {
+    throw new Error(`attachment type must be file, snippet or context; got ${JSON.stringify(type)?.slice(0, 32)}.`);
+  }
+  const name = clean(input.name, 256);
+  if (!name) throw new Error("attachment needs name: the file path or label.");
+  if (type === "file") {
+    // Refuse secret-looking names before touching the disk; the resolved
+    // target is checked again after symlinks resolve.
+    const preSecret = secretPathReason(name);
+    if (preSecret) throw new Error(preSecret);
+    const resolved = path.resolve(env.root, name);
+    let read: AttachmentFileRead;
+    try {
+      // The seam takes the root so the real implementation can order
+      // lstat/realpath, containment, regular-file and bounded read (F4).
+      read = await env.readFile(resolved, env.root);
+    } catch (error) {
+      throw new Error(`attachment "${name}" could not be read: ${(error as Error)?.message ?? String(error)}.`.slice(0, 300));
+    }
+    const rootReal = await env.resolveRoot(env.root);
+    if (read.realPath !== rootReal && !read.realPath.startsWith(rootReal + path.sep)) {
+      throw new Error(`attachment "${name}" is outside the sender's worktree and is refused`);
+    }
+    const secret = secretPathReason(path.relative(rootReal, read.realPath));
+    if (secret) throw new Error(secret);
+    if (read.content.slice(0, 8192).includes("\0")) {
+      throw new Error(`attachment "${name}" looks binary and is refused`);
+    }
+    let content = sanitizeInline(read.content, MAX_FILE_ATTACH_BYTES + 1024);
+    if (read.size > MAX_FILE_ATTACH_BYTES) {
+      content = sanitizeInline(read.content, MAX_FILE_ATTACH_BYTES) + truncateNote("256 KiB");
+    }
+    return renderAttachmentBlock(name, inferAttachmentLanguage(name), content);
+  }
+  const content = typeof input.content === "string" ? input.content : "";
+  if (!content.trim()) throw new Error(`attachment "${name}" (${type}) needs content: the inline text.`);
+  const inline = sanitizeInline(content, MAX_INLINE_ATTACH_BYTES + 1024);
+  const text = inline.length > MAX_INLINE_ATTACH_BYTES ? inline.slice(0, MAX_INLINE_ATTACH_BYTES) + truncateNote("32 KiB") : inline;
+  if (type === "snippet") {
+    const language = typeof input.language === "string" && /^[\w+-]+$/.test(input.language) ? input.language.slice(0, 32) : inferAttachmentLanguage(name);
+    return renderAttachmentBlock(name, language, text);
+  }
+  return renderAttachmentBlock(name, undefined, text);
+}
+
+export interface AttachmentResolveEnv {
+  root: string;
+  readFile: (absPath: string, root: string) => Promise<AttachmentFileRead>;
+  resolveRoot: (root: string) => Promise<string>;
+}
+
+/** Test seam: the real attachment renderer (N7 end-to-end through the envelope). */
+export function __renderAttachmentsForTests(inputs: unknown, env: AttachmentResolveEnv): Promise<string> {
+  return renderAttachments(inputs, env);
+}
+
+/** Render attachments to the payload block, or throw a sender-facing error. */
+async function renderAttachments(inputs: unknown, env: AttachmentResolveEnv): Promise<string> {
+  if (inputs === undefined) return "";
+  if (!Array.isArray(inputs)) throw new Error("attachments must be a list of file, snippet or context attachments.");
+  if (inputs.length === 0) return "";
+  if (inputs.length > MAX_ATTACHMENTS) throw new Error(`SendMessage takes at most ${MAX_ATTACHMENTS} attachments; got ${inputs.length}.`);
+  const blocks: string[] = [];
+  for (const input of inputs) {
+    blocks.push(await resolveOneAttachment(input as AttachmentInput, env));
+  }
+  return "\n\n" + blocks.join("\n\n");
+}
+
+/**
+ * Scoped routing (CORE-2437 I6): narrow resolution to the sender's
+ * Substrate project or programme. The project key is the sender issue ref's
+ * prefix (CORE-2437 -> CORE); the programme key is the sender's repository
+ * (repository, else the checkout root). Peers that carry no matching
+ * identity (unnamed work, Claude sessions with no Substrate binding) never
+ * match a scope: fail-closed, never a guess.
+ */
+
+function projectKeyOf(ref: string): string | null {
+  const key = clean(ref, 64).split("-")[0] ?? "";
+  return /^[A-Z][A-Z0-9]*$/.test(key) ? key : null;
+}
+
+function programmeKeyOf(entry: { repository?: unknown; repositoryPath?: unknown }): string | null {
+  return clean(entry.repository, 1024) || clean(entry.repositoryPath, 4096) || null;
+}
+
+export interface ScopeSender {
+  workItemRef?: string;
+  repository?: string;
+  repositoryPath?: string;
+}
+
+/** Filter roster entries to the sender's scope, or throw a sender-facing error. */
+export function applySendScope(scope: SendScope, sender: ScopeSender, entries: RosterEntry[]): RosterEntry[] {
+  if (scope === "project") {
+    const key = sender.workItemRef ? projectKeyOf(sender.workItemRef) : null;
+    if (!key) throw new Error('SendMessage scope "project" needs the sender\'s Substrate issue ref, and none was available.');
+    return entries.filter((e) => e.workItemRef !== undefined && projectKeyOf(e.workItemRef) === key);
+  }
+  const key = programmeKeyOf(sender);
+  if (!key) throw new Error('SendMessage scope "programme" needs the sender\'s repository, and none was available.');
+  return entries.filter((e) => {
+    const peer = programmeKeyOf(e);
+    return peer !== null && peer === key;
+  });
 }
 
 function defaultAgentHostInfoPath(): string {
@@ -195,6 +463,15 @@ export interface SendMessageDeps {
   now?: () => number;
   randomId?: () => string;
   infoPath?: string;
+  /**
+   * File-attachment read seam (tests); default reads the real filesystem in
+   * F4 order (lstat/realpath, containment, regular file, bounded read).
+   */
+  readAttachmentFile?: (absPath: string, root: string) => Promise<AttachmentFileRead>;
+  /** Worktree-root canonicalization seam (tests); default realpath. */
+  resolveRoot?: (root: string) => Promise<string>;
+  /** Sender worktree override (tests); default the sender's registry cwd. */
+  senderCwd?: string;
 }
 
 async function defaultSendClaude(opts: {
@@ -553,7 +830,8 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       "Message another session by its exact name or session id (see ListAgents). " +
       "Send once with to, message and an optional summary; notify_when_idle delivers one idle notice when the " +
       "recipient settles. expect_reply waits up to timeout_s for a reply; cancel removes a pending ask by message id; " +
-      "reply_to answers the ask with the given message id.",
+      "reply_to answers the ask with the given message id. attachments add file, snippet or context content; " +
+      "scope narrows resolution to the sender's Substrate project or programme.",
     parameters: Type.Object({
       to: Type.Optional(Type.String({ description: "Exact session name or session id (see ListAgents)." })),
       message: Type.Optional(Type.String({ description: "Message text for the recipient session." })),
@@ -563,6 +841,24 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       timeout_s: Type.Optional(Type.Number({ description: "Ask wait budget in seconds (default 300, at most 3600)." })),
       reply_to: Type.Optional(Type.String({ description: "Answer the ask with this message id." })),
       cancel: Type.Optional(Type.String({ description: "Cancel the pending ask with this message id." })),
+      attachments: Type.Optional(
+        Type.Array(
+          Type.Object({
+            type: Type.Union([Type.Literal("file"), Type.Literal("snippet"), Type.Literal("context")], {
+              description: "file reads a path inside the sender worktree; snippet and context carry inline text.",
+            }),
+            name: Type.String({ description: "File path to read, or the attachment label." }),
+            content: Type.Optional(Type.String({ description: "Inline text for snippet and context attachments." })),
+            language: Type.Optional(Type.String({ description: "Fence language for a snippet attachment." })),
+          }),
+          { description: "File, snippet and context attachments, rendered into the message." },
+        ),
+      ),
+      scope: Type.Optional(
+        Type.Union([Type.Literal("project"), Type.Literal("programme")], {
+          description: "Narrow resolution to the sender's Substrate project or programme.",
+        }),
+      ),
     }),
     exposure: "model-only",
     execute: async (
@@ -632,12 +928,59 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       // Noticed-undelivered entries clear when their target leaves the
       // roster or ages past the TTL, so the chip hides when nothing waits.
       sweepUndelivered(new Set([ownName ?? ownSessionId, ...built.entries.map((e) => e.name)]));
+      // The sender's own summary carries the scope keys and the worktree
+      // that file attachments resolve against. It rides the same live
+      // roster fetch: no second authority, no guessing.
+      const ownSummary = piSessions.find((s) => s.sessionId === ownSessionId);
+      const senderScope: ScopeSender = {
+        ...(typeof ownSummary?.workItem?.ref === "string" ? { workItemRef: ownSummary.workItem.ref } : {}),
+        ...(typeof ownSummary?.repository === "string" ? { repository: ownSummary.repository } : {}),
+        ...(typeof ownSummary?.repositoryPath === "string" ? { repositoryPath: ownSummary.repositoryPath } : {}),
+      };
+      // Attachments render into the payload before routing, so the Pi wake
+      // and the Claude body carry the same text (CORE-2437 I6).
+      let body = message;
+      if (params.attachments !== undefined) {
+        const root = deps.senderCwd ?? (typeof ownSummary?.cwd === "string" ? ownSummary.cwd : undefined) ?? process.cwd();
+        try {
+          body =
+            message +
+            (await renderAttachments(params.attachments, {
+              root,
+              readFile: deps.readAttachmentFile ?? defaultReadAttachmentFile,
+              resolveRoot: deps.resolveRoot ?? defaultResolveRoot,
+            }));
+        } catch (error) {
+          return fail(`SendMessage: ${(error as Error)?.message ?? String(error)}.`);
+        }
+        if (Buffer.byteLength(body, "utf8") > MAX_PAYLOAD_BYTES) {
+          return fail(`SendMessage with attachments must fit ${MAX_PAYLOAD_BYTES} bytes; split it and send again.`);
+        }
+      }
       let target: RosterEntry;
       try {
-        const resolved = resolveRosterTarget(built.entries, to);
+        // Scoped routing (CORE-2437 I6): narrow to the sender's project or
+        // programme first; resolution stays exact-only (R7) inside the scope.
+        let candidates = built.entries;
+        const scope = params.scope;
+        if (scope !== undefined) {
+          if (scope !== "project" && scope !== "programme") {
+            return fail('SendMessage scope must be "project" or "programme".');
+          }
+          try {
+            candidates = applySendScope(scope, senderScope, built.entries);
+          } catch (error) {
+            return fail(`SendMessage: ${(error as Error)?.message ?? String(error)}.`);
+          }
+          if (candidates.length === 0) {
+            return fail(`SendMessage: no live session matches "${to}" in scope "${scope}".`);
+          }
+        }
+        const resolved = resolveRosterTarget(candidates, to);
         if (!resolved.target) {
-          const candidates = resolved.candidates.length > 0 ? `: ${resolved.candidates.join(", ")}` : "";
-          return fail(`SendMessage: no live session matches "${to}"${candidates}.`);
+          const names = resolved.candidates.length > 0 ? `: ${resolved.candidates.join(", ")}` : "";
+          const where = scope !== undefined ? ` in scope "${scope}"` : "";
+          return fail(`SendMessage: no live session matches "${to}"${where}${names}.`);
         }
         target = resolved.target;
       } catch (error) {
@@ -667,7 +1010,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         const messageId = randomId();
         let receipt: ClaudeDeliveryOutcome;
         try {
-          receipt = (await sendClaude({ sock, body: message, from, fromName: from, messageId })).outcome;
+          receipt = (await sendClaude({ sock, body, from, fromName: from, messageId })).outcome;
         } catch (error) {
           return fail(`SendMessage: could not send to "${to}": ${(error as Error)?.message ?? String(error)}.`);
         }
@@ -697,7 +1040,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       try {
         sent = await postWake({
           participant,
-          payloadRef: message,
+          payloadRef: body,
           messageId,
           from,
           fromName: from,
