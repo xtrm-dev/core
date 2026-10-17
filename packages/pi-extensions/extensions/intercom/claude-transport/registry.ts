@@ -28,6 +28,8 @@ export interface ClaudePeer {
   cwd: string;
   status: string;
   kind?: string;
+  /** Claude's own tmux locator string (`session:@win.%pane`), when the entry carries one. */
+  tmux?: string;
   startedAt?: number;
   sock: string;
   live?: boolean;
@@ -39,6 +41,8 @@ export interface ClaudeRosterRow {
   ref: string;
   kind: string;
   state: string;
+  /** Claude's own tmux locator string (`session:@win.%pane`), when the entry carries one. */
+  tmux?: string;
   started?: number;
   cwd: string;
 }
@@ -170,6 +174,7 @@ function entryToPeer(entry: Record<string, unknown>): ClaudePeer | null {
     cwd: clean(entry.cwd) ?? "?",
     status: clean(entry.status) ?? "unknown",
     ...(clean(entry.kind) ? { kind: clean(entry.kind) as string } : {}),
+    ...(clean(entry.tmux) ? { tmux: clean(entry.tmux) as string } : {}),
     ...(typeof entry.startedAt === "number" ? { startedAt: entry.startedAt } : {}),
     sock: sock as string,
   };
@@ -277,6 +282,7 @@ export function toRosterRow(peer: ClaudePeer): ClaudeRosterRow {
     ref: peer.sessionId ?? peer.sock,
     kind: peer.kind ?? "claude",
     state: peer.status,
+    ...(peer.tmux ? { tmux: peer.tmux } : {}),
     ...(peer.startedAt !== undefined ? { started: peer.startedAt } : {}),
     cwd: peer.cwd,
   };

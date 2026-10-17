@@ -104,6 +104,10 @@ export interface ClaudeTransportOptions {
   hooks?: {
     /** Runs after registration, before the takeover verification (takeover tests). */
     afterRegister?: () => Promise<void> | void;
+    /** Runs once a start fully settles, successful or not (start/stop race tests). */
+    afterStart?: () => Promise<void> | void;
+    /** Runs once a stop fully settles (start/stop race tests). */
+    afterStop?: () => Promise<void> | void;
   };
 }
 
@@ -173,10 +177,28 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
   let sockPath = options.socketPath ?? "";
   let ownFrom = "";
   let started = false;
+  /** An in-flight start(): stop() joins it before closing or deregistering. */
+  let starting: Promise<void> | null = null;
+  /**
+   * Set by stop() while a start() is in flight: the tail winds down
+   * quietly (no takeover line, no started flag) instead of racing the
+   * shutdown. Reset on every fresh start.
+   */
+  let abandoned = false;
   const dedupe = new WakeDedupe();
 
   async function start(ctx: ExtensionContext): Promise<void> {
     if (started) return;
+    // One flight at a time: concurrent session_start calls join the same
+    // run instead of binding twice.
+    starting ??= runStart(ctx).finally(() => {
+      starting = null;
+    });
+    await starting;
+  }
+
+  async function runStart(ctx: ExtensionContext): Promise<void> {
+    abandoned = false;
     // Off by default behind the settings key; M1 turns it on with pi-claude-link gone.
     if (!isClaudeTransportEnabled(pi, options)) return;
     const pid = process.pid;
@@ -270,6 +292,15 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
         await registerPiPeer({ pid, sessionId, name, cwd, sockPath, status: "idle", sessionsDir: claim.sessionsDir });
       }
       await options.hooks?.afterRegister?.();
+      if (abandoned) {
+        // A shutdown landed mid-start: wind down quietly. Our socket and
+        // entry go only when still ours; a foreign socket or entry is never
+        // touched, and no takeover line fires for a race the shutdown won.
+        const identity = boundIdentity;
+        await closeListener();
+        await deregisterPiPeer(pid, sockPath || undefined, claim.sessionsDir, identity).catch(() => {});
+        return;
+      }
       // Load order is not controlled and pi-claude-link unlinks first: verify
       // after registration that the entry is still ours and the socket is
       // still the one we bound. On a takeover, close without unlinking a
@@ -288,13 +319,15 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
         await closeListener();
         // Drop our entry when it is still ours; the foreign socket is never unlinked.
         await deregisterPiPeer(pid, sockPath || undefined, claim.sessionsDir, identity).catch(() => {});
-        notify(TAKEOVER_LINE);
+        if (!abandoned) notify(TAKEOVER_LINE);
         return;
       }
-      started = true;
+      if (!abandoned) started = true;
     } catch (error) {
-      fail(error);
+      if (!abandoned) fail(error);
       await closeListener();
+    } finally {
+      await options.hooks?.afterStart?.();
     }
   }
 
@@ -307,9 +340,18 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
   }
 
   async function stop(): Promise<void> {
+    // A shutdown racing an in-flight start joins it first: closing or
+    // deregistering mid-start corrupts the post-register verify (spurious
+    // takeover line) and strands entries. The tail winds down quietly once
+    // it sees the abandonment.
+    if (starting) {
+      abandoned = true;
+      await starting;
+    }
     const identity = boundIdentity;
     await closeListener();
     await deregisterPiPeer(process.pid, sockPath || undefined, options.sessionsDir, identity).catch(() => {});
+    await options.hooks?.afterStop?.();
   }
 
   pi.on("session_start", async (_event, ctx) => {

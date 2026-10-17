@@ -1,4 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+// Complete mock: spread the real pi-tui so neighbouring suites sharing the
+// module registry under full-suite runs keep working exports (matchesKey).
+import * as realPiTui from "../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 // CORE-2403: the `xt end` worktree reminder lived in the retired
 // session-flow extension and was restored in git-checkpoint. These tests
@@ -26,9 +29,9 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isToolCallEventType: () => false,
 }));
 mock.module("@earendil-works/pi-tui", () => ({
+  ...(realPiTui as object),
   Box: class {},
   Text: class {},
-  matchesKey: () => false,
   truncateToWidth: (value: string) => value,
   visibleWidth: (value: string) => value.length,
 }));
