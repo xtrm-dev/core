@@ -28,6 +28,8 @@ import { registerIntercomCommands, type IntercomCommandDeps } from "./commands.t
 import { registerListAgentsTool, type ListAgentsDeps } from "./roster.ts";
 import { registerSendMessageTool, type SendMessageDeps } from "./sendmessage.ts";
 import { intercomWaiting, registerIntercomFooter } from "./waiting.ts";
+import { INTERCOM_MESSAGE_TYPE } from "./delivery.ts";
+import { registerEventRenderer, type EventDetails } from "../../shared/event.ts";
 
 export {
   buildIntercomWakeContent,
@@ -76,4 +78,33 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
     ...(options.claudeTransportEnabled !== undefined ? { claudeTransportEnabled: options.claudeTransportEnabled } : {}),
   });
   registerIntercomFooter(intercomWaiting);
+  // CORE-2438 I7: inbound wakes render through the shared event module.
+  registerEventRenderer(pi, INTERCOM_MESSAGE_TYPE, resolveIntercomCard);
+}
+
+/**
+ * Map an injected intercom_message to its shared card details (exported
+ * for the I7 end-to-end suite and for B3's task/monitor cards).
+ */
+export function resolveIntercomCard(message: unknown): EventDetails | null {
+  const details = (message as { details?: unknown })?.details as
+    | { messageId?: unknown; payloadRef?: unknown; from?: unknown; fromName?: unknown }
+    | undefined;
+  if (!details || typeof details !== "object") return null;
+  const name =
+    (typeof details.fromName === "string" && details.fromName) ||
+    (typeof details.from === "string" && details.from) ||
+    "unknown";
+  const preview =
+    typeof details.payloadRef === "string" && details.payloadRef ? details.payloadRef.split("\n") : [];
+  return {
+    kind: "message",
+    state: "delivered",
+    identity: `@${name}`,
+    preview,
+    facts: typeof details.messageId === "string" && details.messageId ? details.messageId : undefined,
+    from: typeof details.from === "string" ? details.from : undefined,
+    fromName: typeof details.fromName === "string" ? details.fromName : undefined,
+    messageId: typeof details.messageId === "string" ? details.messageId : undefined,
+  };
 }

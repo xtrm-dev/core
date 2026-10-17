@@ -778,6 +778,57 @@ describe("xtrm-agent-host bridge replacement and held wakes (CORE-2432 F1/F7)", 
     }
   });
 
+  test("CORE-2438 initial prompt: a wake past the grace holds until before_agent_start, then flushes", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-initial-prompt");
+    const bridge = createAgentHostBridge(pi.pi, {
+      socketPath: raw.socketPath,
+      exec: async () => "",
+      env: {},
+      firstTurnGraceMs: 60,
+      initialPromptPending: true,
+    });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 1);
+      // Past the grace with the initial turn still in startup: the wake
+      // must hold (a triggerTurn injection here would race the first turn
+      // and fail with "Agent is already processing").
+      await new Promise((r) => setTimeout(r, 150));
+      raw.send("s-initial-prompt", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2438" });
+      expect(await raw.resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(pi.sentCustom).toEqual([]);
+      // before_agent_start opens the starting window; agent_start flushes
+      // the held wake as a queued followUp, never with triggerTurn.
+      pi.fire("before_agent_start", { prompt: "initial" }, c.ctx);
+      pi.fire("agent_start", {}, c.ctx);
+      await until(
+        () => raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").length >= 2,
+      );
+      const answers = raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").map((f) => f.payload);
+      expect(answers.at(-1)).toMatchObject({ status: "accepted" });
+      expect(pi.sentCustom).toHaveLength(1);
+      expect(pi.sentCustom[0].options).toEqual({ deliverAs: "followUp" });
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+
+  test("CORE-2438 initial prompt: argv --print and positional prompts count; plain argv does not", async () => {
+    const { argvHasInitialPrompt } = await import("./index.ts");
+    expect(argvHasInitialPrompt(["pi", "--print", "say ok"])).toBe(true);
+    expect(argvHasInitialPrompt(["pi", "-p", "say ok"])).toBe(true);
+    expect(argvHasInitialPrompt(["pi", "do the thing"])).toBe(true);
+    expect(argvHasInitialPrompt(["pi", "@brief.md"])).toBe(true);
+    expect(argvHasInitialPrompt(["pi"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "--model", "some-model"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "-e", "./ext.ts"])).toBe(false);
+  });
+
   test("F7 a wake received while starting is held, then accepted only when delivered", async () => {
     const raw = await rawHost();
     const pi = fakePi();

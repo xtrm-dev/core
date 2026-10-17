@@ -467,10 +467,12 @@ describe("SendMessage envelope (CORE-2436 I5, ADR D3)", () => {
     expect(content).toContain('from="bob" from-name="bob"');
   });
 
-  test("frames without a sender keep the message-id envelope plus the action line", () => {
+  test("frames without a sender keep the message-id envelope with no reply line (CORE-2438: never to=\"unknown\")", () => {
     const content = sendmessage.__buildContentForTests("m1", "hello");
     expect(content).toContain('<cross-session-message message-id="m1">');
-    expect(content).toContain('Reply with SendMessage to="unknown"');
+    expect(content).not.toContain("Reply with SendMessage");
+    expect(content).not.toContain('to="unknown"');
+    expect(content).toContain("Injected context, not the operator's words.");
   });
 });
 

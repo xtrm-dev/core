@@ -128,6 +128,54 @@ export interface AgentHostBridgeOptions {
   exec?: ExecFn;
   /** First-turn grace in ms (tests); default FIRST_TURN_GRACE_MS. */
   firstTurnGraceMs?: number;
+  /**
+   * The process was launched with an initial prompt pending (CORE-2438 I7).
+   * Default: env XTRM_INITIAL_PROMPT=1/true, else argv sniffing
+   * (`--print`/`-p` or a positional prompt). While set and no
+   * before_agent_start has been seen, pre-first-turn wakes hold past the
+   * grace instead of racing the initial turn.
+   */
+  initialPromptPending?: boolean;
+  /** argv for initial-prompt sniffing (tests); default process.argv. */
+  argv?: readonly string[];
+}
+
+/** Environment override for the initial-prompt hold (launchers, tests). */
+export const INITIAL_PROMPT_ENV = "XTRM_INITIAL_PROMPT";
+
+/**
+ * Whether argv shows a pending initial prompt (CORE-2438 I7): an explicit
+ * print run (`--print`/`-p`, print mode processes one prompt and exits) or
+ * a positional initial prompt. Positional counts only with a space (a real
+ * prompt, not a bare word), an @file ref, or a leading slash: a lone bare
+ * word may be a flag value, and missing the hold only keeps the old race.
+ * Conservative by design: a false positive delays a wake, a false negative
+ * keeps today's behaviour.
+ */
+export function argvHasInitialPrompt(argv: readonly string[] | undefined): boolean {
+  if (!argv || argv.length === 0) return false;
+  // Drop the executable; drop the script too when launched through a JS
+  // runtime (node pi.js ...). A bare binary (pi ...) has argv = [pi, ...args].
+  const runtime = /[/\\]?((node|bun|deno)(\.exe)?)$/.test(argv[0]);
+  const args = argv.slice(runtime ? 2 : 1);
+  let print = false;
+  for (const token of args) {
+    if (token === "--print" || token === "-p") {
+      print = true;
+      break;
+    }
+    if (/^-[^-]/.test(token) && token.includes("p")) {
+      // Short-flag bundle containing p (e.g. -ap): treat like -p.
+      print = true;
+      break;
+    }
+  }
+  if (print) return true;
+  return args.some((token) => {
+    if (token.startsWith("-") || token.length === 0) return false;
+    if (token === "--") return false;
+    return token.includes(" ") || token.startsWith("@") || token.startsWith("/");
+  });
 }
 
 export function defaultAgentHostSocketPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -304,6 +352,19 @@ interface SessionBinding {
    * idle and wakes inject. Reset on every session_start.
    */
   sawAgentStart: boolean;
+  /**
+   * True once this binding saw before_agent_start (CORE-2438 I7). The
+   * initial-prompt hold lasts until the first turn observably begins;
+   * reset on every session_start.
+   */
+  sawBeforeAgentStart: boolean;
+  /**
+   * The process launched with an initial prompt pending (CORE-2438 I7):
+   * pre-first-turn wakes hold past the grace until before_agent_start
+   * instead of racing the initial turn. Cleared on before_agent_start;
+   * reset on every session_start.
+   */
+  initialPromptPending: boolean;
   /** session_start timestamp for the first-turn grace; null before the first start. */
   sessionStartedAt: number | null;
   /** Grace-expiry flush for held pre-first-turn wakes; cleared on agent_start/dispose. */
@@ -341,6 +402,19 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
   const live = (b: SessionBinding) => b.state === "connecting" || b.state === "open";
 
+  /**
+   * Initial-prompt signal (CORE-2438 I7): explicit option wins, then the
+   * XTRM_INITIAL_PROMPT env seam for launchers and tests, then argv
+   * sniffing. Recomputed per session_start; argv never changes in-process.
+   */
+  function resolveInitialPrompt(): boolean {
+    if (options.initialPromptPending !== undefined) return options.initialPromptPending;
+    const flag = String(env[INITIAL_PROMPT_ENV] ?? "").toLowerCase();
+    if (flag === "1" || flag === "true") return true;
+    if (flag === "0" || flag === "false") return false;
+    return argvHasInitialPrompt(options.argv ?? process.argv);
+  }
+
   function newBinding(sessionId: string): SessionBinding {
     return {
       sessionId,
@@ -362,6 +436,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       deferred: [],
       deferredWake: [],
       sawAgentStart: false,
+      sawBeforeAgentStart: false,
+      initialPromptPending: false,
       sessionStartedAt: null,
       graceTimer: null,
       reassertedThisConnection: false,
@@ -940,9 +1016,13 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       // starting window only: a requested run (starting) or the short grace
       // after session_start. Past the grace with no run, the session counts
       // as idle; the grace timer flushes held wakes with triggerTurn.
+      // CORE-2438 I7: with an initial prompt pending, the first turn is
+      // imminent even past the grace, so wakes hold until before_agent_start
+      // instead of racing it.
       const withinGrace =
         b.sessionStartedAt !== null && Date.now() - b.sessionStartedAt < firstTurnGraceMs;
-      const firstTurnPending = !b.sawAgentStart && (starting || withinGrace);
+      const initialTurnPending = b.initialPromptPending && !b.sawBeforeAgentStart;
+      const firstTurnPending = !b.sawAgentStart && (starting || withinGrace || initialTurnPending);
       if (starting || firstTurnPending) {
         // F7: only deferred, not delivered: hold the wake and answer accepted
         // only when a flush actually delivers it. The injected hook still
@@ -1034,6 +1114,11 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   function flushGrace(b: SessionBinding): void {
     b.graceTimer = null;
     if (disposedAll || b.sawAgentStart || isStarting(b)) return;
+    // CORE-2438 I7: with an initial prompt pending, the first turn is still
+    // coming even past the grace — leave held wakes for before_agent_start
+    // (then agent_start), never a triggerTurn race. Dispose fails them if
+    // the turn never arrives.
+    if (b.initialPromptPending && !b.sawBeforeAgentStart) return;
     const wakes = b.deferredWake;
     if (wakes.length === 0) return;
     b.deferredWake = [];
@@ -1103,6 +1188,10 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       // CORE-2436 I5: every session start opens a fresh first-turn grace
       // window; wakes hold only during a real starting window past it.
       b.sawAgentStart = false;
+      // CORE-2438 I7: a pending initial prompt holds pre-first-turn wakes
+      // past the grace until the first turn observably begins.
+      b.sawBeforeAgentStart = false;
+      b.initialPromptPending = resolveInitialPrompt();
       b.sessionStartedAt = Date.now();
       clearGrace(b);
       track(b, current);
@@ -1128,6 +1217,10 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       if (!b) return;
       track(b, current);
       b.startingAt = Date.now();
+      // CORE-2438 I7: the first turn observably began; the initial-prompt
+      // hold is over (the starting window owns later wakes until agent_start).
+      b.sawBeforeAgentStart = true;
+      b.initialPromptPending = false;
       if (!live(b)) {
         b.guiIngress = null;
         return;

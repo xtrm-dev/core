@@ -44,6 +44,7 @@ import { Type } from "typebox";
 import { onWakeInjected, type InjectedWakeNotice } from "../xtrm-agent-host/index.ts";
 import { requestFooterRender } from "../custom-footer/index.ts";
 import { buildIntercomWakeContent } from "./delivery.ts";
+import { buildDeliveryNotice, buildIdleNotice } from "../../shared/event.ts";
 import { buildRoster, fetchPiSessions, resolveRosterTarget, type RosterEntry } from "./roster.ts";
 import {
   claudeReceipts,
@@ -712,11 +713,11 @@ function fireIdleExpiry(messageId: string): void {
 }
 
 function idleNoticeText(name: string, messageId: string): string {
-  return `[Cross-session idle notice] ${name} is now idle (message ${messageId}).`;
+  return buildIdleNotice(name, messageId, false);
 }
 
 function idleExpiryText(name: string, messageId: string): string {
-  return `[Cross-session idle notice] Idle watch for ${name} expired after 12 h without an idle moment (message ${messageId}).`;
+  return buildIdleNotice(name, messageId, true);
 }
 
 /** Settle every live subscription: idle notices now, expiry notices for lapsed ones. */
@@ -753,22 +754,9 @@ export function __resetSendMessageState(): void {
   idleEnv = { pi: null, postWake: defaultPostWake, log: () => {}, ttlMs: IDLE_SUBSCRIPTION_TTL_MS, maxSubs: MAX_IDLE_SUBSCRIPTIONS, maxUndelivered: MAX_UNDELIVERED, nowMs: Date.now };
 }
 
+/** Delivery notice per wake state (CORE-2438 I7: built by the shared event module). */
 function deliveryNotice(state: WakeDeliveryState, name: string, messageId: string): string {
-  switch (state) {
-    case "held":
-      return (
-        `[Cross-session delivery notice] ${name} is not connected; ` +
-        `message ${messageId} is held and will deliver when the session registers.`
-      );
-    case "refused":
-      return `[Cross-session delivery notice] ${name} refused message ${messageId}.`;
-    case "undelivered":
-      return `[Cross-session delivery notice] Message ${messageId} to ${name} was undelivered: the session ended before it was accepted.`;
-    case "expired":
-      return `[Cross-session delivery notice] Message ${messageId} to ${name} expired before delivery.`;
-    default:
-      return `[Cross-session delivery notice] Message ${messageId} to ${name}: ${state}.`;
-  }
+  return buildDeliveryNotice(state, name, messageId);
 }
 
 export interface SendMessageDetails {
