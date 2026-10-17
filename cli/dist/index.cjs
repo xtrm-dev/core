@@ -80611,16 +80611,22 @@ var AgentHostRegistry = class {
    * one connection per hook, so they stay until session_shutdown.
    */
   disconnect(connection) {
-    for (const [commandId, entry] of this.pending) {
-      if (entry.connection === connection) {
-        if (entry.wakeId && this.sessions.has(entry.sessionId)) continue;
+    for (const [commandId, entry] of [...this.pending]) {
+      if (entry.connection !== connection) continue;
+      if (entry.wakeId) {
+        const record2 = this.wakes.get(entry.wakeId);
+        clearTimeout(entry.timer);
+        this.pending.delete(commandId);
+        if (record2 && (record2.state === "queued" || record2.state === "held")) record2.state = "held";
+        entry.resolve(this.result(commandId, "failed", "extension_disconnected", "the session producer disconnected"));
+      } else {
         this.finishPending(commandId, "failed", "extension_disconnected", "the session producer disconnected");
       }
     }
     for (const [sessionId, session] of this.sessions) {
       if (session.connection !== connection) continue;
       session.connection = null;
-      if (!isPresenceOnly(session)) this.removeSession(sessionId);
+      if (!isPresenceOnly(session)) this.removeSession(sessionId, { revokeWakes: false });
     }
     this.refusedConnections.delete(connection);
     this.pruneDisconnected();
@@ -80882,6 +80888,7 @@ var AgentHostRegistry = class {
   }
   /** Current state of one wake message; null when unknown. */
   wakeStatus(messageId) {
+    this.sweepWakes(Date.now());
     const record2 = this.wakes.get(messageId);
     return record2 ? { messageId, state: wakeStateNow(record2) } : null;
   }
@@ -80905,7 +80912,12 @@ var AgentHostRegistry = class {
     if (this.wakes.size >= MAX_WAKE_RECORDS) {
       const settled = [...this.wakes.values()].filter((r) => r.state !== "queued" && r.state !== "held").sort((a, b) => a.createdAt - b.createdAt);
       const victim = settled[0] ?? [...this.wakes.values()].sort((a, b) => a.createdAt - b.createdAt)[0];
-      if (victim && victim.messageId !== record2.messageId) this.wakes.delete(victim.messageId);
+      if (victim && victim.messageId !== record2.messageId) {
+        if (victim.state === "queued" || victim.state === "held") {
+          this.log(`mailbox full: evicted live wake ${victim.messageId} (${victim.state}) to store ${record2.messageId}`);
+        }
+        this.wakes.delete(victim.messageId);
+      }
     }
     this.wakes.set(record2.messageId, record2);
   }
@@ -80998,10 +81010,46 @@ var AgentHostRegistry = class {
     else if (status2 === "rejected") record2.state = "refused";
     else record2.state = "undelivered";
   }
+  /**
+   * CORE-2437 mailbox: a queued or held wake past its TTL reads as
+   * expired, and the sender hears about it exactly once through an
+   * expired notice addressed to its session. The notice itself carries no
+   * sender session, so its own expiry stays silent (no cascading
+   * notices). Undelivered wakes never notify: the sender already saw the
+   * undelivered state on its send.
+   */
   sweepWakes(now) {
     for (const record2 of this.wakes.values()) {
-      if ((record2.state === "queued" || record2.state === "held") && now >= record2.expiresAt) record2.state = "expired";
+      if ((record2.state === "queued" || record2.state === "held") && now >= record2.expiresAt) {
+        record2.state = "expired";
+        this.postExpiryNotice(record2, now);
+      }
     }
+  }
+  postExpiryNotice(record2, now) {
+    const sender = record2.fromSessionId;
+    if (!sender) return;
+    const noticeId = stableWakeMessageId(`expired-notice:${record2.messageId}`, record2.participant);
+    if (this.wakes.has(noticeId)) return;
+    const resolved = resolveWakeParticipant(this.wakeSessions(), sender);
+    const notice = {
+      messageId: noticeId,
+      participant: sender,
+      payloadRef: `[Cross-session delivery notice] Message ${record2.messageId} to ${record2.participant} expired before delivery.`,
+      callerMessageId: false,
+      // The expired message's addressee, for context: replying answers
+      // them by name. No fromSessionId: a notice never threads a reply
+      // and never notifies again when it expires itself.
+      from: record2.participant,
+      fromName: record2.participant,
+      sessionId: resolved?.sessionId ?? null,
+      state: "held",
+      createdAt: now,
+      expiresAt: now + this.wakeTtlMs,
+      sendCount: 0
+    };
+    this.storeWake(notice);
+    if (resolved) this.sendWake(notice);
   }
   clearPromptPending(session) {
     session.promptPending = null;
@@ -81102,8 +81150,14 @@ var AgentHostRegistry = class {
       ...message ? { message: message.slice(0, 1024) } : {}
     };
   }
-  removeSession(sessionId) {
-    this.revokeWakes(sessionId, "session_ended");
+  /**
+   * Drop one session record. `revokeWakes: false` keeps the session's
+   * queued/held wakes parked for a receiver restart (CORE-2437 mailbox,
+   * transport loss); the default revokes them as undelivered for a real
+   * session end (R4 teardown via session_shutdown).
+   */
+  removeSession(sessionId, opts = {}) {
+    if (opts.revokeWakes ?? true) this.revokeWakes(sessionId, "session_ended");
     for (const [commandId, entry] of this.pending) {
       if (entry.sessionId === sessionId) {
         this.finishPending(commandId, "failed", "session_ended", "the session ended");

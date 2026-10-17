@@ -54,6 +54,16 @@ export interface RosterEntry {
   kind: "pi" | "claude";
   sessionId?: string;
   name: string;
+  /**
+   * Substrate issue ref of the session's claimed work, when the session
+   * reports one (CORE-2437 scoped routing: the project key). Claude peers
+   * carry no Substrate identity and never match a scope.
+   */
+  workItemRef?: string;
+  /** Repository identity (CORE-2437 scoped routing: the programme key). */
+  repository?: string;
+  /** Checkout root fallback for the programme key. */
+  repositoryPath?: string;
 }
 
 /**
@@ -198,9 +208,19 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
     if (listedSessionIds.has(summary.sessionId)) continue;
     if (!LIVE_PI_STATES.has(summary.state)) continue;
     listedSessionIds.add(summary.sessionId);
+    const workItemRef = clean(summary.workItem?.ref);
+    const repository = clean(summary.repository);
+    const repositoryPath = clean(summary.repositoryPath);
     pairs.push({
       row: piRosterRow(summary, now),
-      entry: { kind: "pi", sessionId: summary.sessionId, name: clean(summary.name) || `session ${sessionRef(summary.sessionId)}` },
+      entry: {
+        kind: "pi",
+        sessionId: summary.sessionId,
+        name: clean(summary.name) || `session ${sessionRef(summary.sessionId)}`,
+        ...(workItemRef ? { workItemRef } : {}),
+        ...(repository ? { repository } : {}),
+        ...(repositoryPath ? { repositoryPath } : {}),
+      },
     });
   }
   for (const peer of sources.claudePeers) {

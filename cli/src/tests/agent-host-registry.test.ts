@@ -1,7 +1,7 @@
 // CORE-2432 I1 wake contract: one test per requirement R1-R9, named after it.
 // Registry-level tests with stub producer connections (no sockets).
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AgentHostRegistry, type ProducerConnection } from '../core/agent-host-registry.js';
 import type { AgentCommandPayload, AgentEventV1 } from '@xtrm/contracts';
 
@@ -112,7 +112,7 @@ describe('CORE-2432 wake contract', () => {
         expect(registry.wakeStatus(first.messageId)?.state).toBe('delivered');
     });
 
-    it('R4 teardown, including dispose without shutdown, revokes and reports pending as undelivered', () => {
+    it('R4 teardown, including session end without shutdown, revokes and reports pending as undelivered', () => {
         const { registry } = registryWithLog();
         const { connection } = stubConnection();
         registry.ingest(connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'a' }));
@@ -120,12 +120,28 @@ describe('CORE-2432 wake contract', () => {
         expect(queued.state).toBe('queued');
         const held = registry.wake('nobody-yet', 'ref-2');
         expect(held.state).toBe('held');
-        // Dispose without shutdown: the socket just goes away.
-        registry.disconnect(connection);
+        // Real end on a live connection: the session_shutdown frame revokes
+        // the binding and reports the session's pending wakes as undelivered.
+        registry.ingest(connection, {
+            schema: 'xtrm.agent-event.v1',
+            seq: seq++,
+            sessionId: 's-1',
+            at: Date.now(),
+            payload: { type: 'session_shutdown' } as never,
+        });
         expect(registry.wakeStatus(queued.messageId)?.state).toBe('undelivered');
-        // Host shutdown revokes everything left, including held wakes.
+        // Transport loss parks the wakes (CORE-2437 mailbox): the session is
+        // gone but the messages survive for a receiver restart.
+        const other = stubConnection();
+        registry.ingest(other.connection, identity('s-2', { pid: 200, generation: 1, sessionName: 'b' }));
+        const parked = registry.wake('b', 'ref-3');
+        expect(parked.state).toBe('queued');
+        registry.disconnect(other.connection);
+        expect(registry.wakeStatus(parked.messageId)?.state).toBe('held');
+        // Host shutdown revokes everything left, including parked and held wakes.
         registry.close();
         expect(registry.wakeStatus(held.messageId)?.state).toBe('undelivered');
+        expect(registry.wakeStatus(parked.messageId)?.state).toBe('undelivered');
     });
 
     it('R5 the registry tells a replaced listener so it can re-assert', () => {
@@ -385,6 +401,65 @@ describe('CORE-2432 wake contract', () => {
         // Terminal records never move on orphan answers.
         registry.ingest(connection, commandResult('s-1', w.messageId, 'accepted'));
         expect(registry.wakeStatus(w.messageId)?.state).toBe('undelivered');
+    });
+
+    it('CORE-2437 a receiver restart parks three queued wakes and redelivers each exactly once', () => {
+        const { registry } = registryWithLog();
+        const receiver = stubConnection();
+        registry.ingest(receiver.connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'worker' }));
+        const ids = ['m-1', 'm-2', 'm-3'];
+        for (const [index, id] of ids.entries()) {
+            expect(registry.wake('worker', `ref-${index + 1}`, { messageId: id }).state).toBe('queued');
+        }
+        expect(receiver.sent.filter((s) => s.payload.type === 'wake')).toHaveLength(3);
+        // The receiver restarts: its connection drops with no shutdown frame.
+        registry.disconnect(receiver.connection);
+        for (const id of ids) expect(registry.wakeStatus(id)?.state).toBe('held');
+        // ... and registers again on a new connection with a bumped generation.
+        const restarted = stubConnection();
+        expect(
+            registry.ingest(restarted.connection, identity('s-1', { pid: 200, generation: 2, sessionName: 'worker' })),
+        ).toBe(true);
+        const resent = restarted.sent.filter((s) => s.payload.type === 'wake');
+        expect(resent.map((s) => (s.payload as { messageId: string }).messageId).sort()).toEqual(ids);
+        // Each arrives once: the redelivery is accepted, never duplicated.
+        for (const id of ids) {
+            registry.ingest(restarted.connection, commandResult('s-1', id, 'accepted'));
+            expect(registry.wakeStatus(id)?.state).toBe('delivered');
+        }
+        expect(restarted.sent.filter((s) => s.payload.type === 'wake')).toHaveLength(3);
+    });
+
+    it('CORE-2437 an expired wake posts one expired notice to the sender, then stays silent', () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(1_000_000);
+            const { registry } = registryWithLog();
+            const sender = stubConnection();
+            registry.ingest(sender.connection, identity('s-snd', { pid: 50, generation: 1, sessionName: 'sender' }));
+            registry.wake('ghost-nobody', 'doomed-ref', {
+                messageId: 'm-doom',
+                fromSessionId: 's-snd',
+                fromName: 'sender',
+                ttlMs: 1000,
+            });
+            expect(registry.wakeStatus('m-doom')?.state).toBe('held');
+            // Past the TTL the wake reads expired and the sender is told, once.
+            vi.setSystemTime(1_000_000 + 2000);
+            expect(registry.wakeStatus('m-doom')?.state).toBe('expired');
+            const notices = sender.sent.filter((s) => s.payload.type === 'wake');
+            expect(notices).toHaveLength(1);
+            const notice = notices[0].payload as { messageId: string; payloadRef: string };
+            expect(notice.messageId).not.toBe('m-doom');
+            expect(notice.payloadRef).toContain('m-doom');
+            expect(notice.payloadRef).toMatch(/expired before delivery/);
+            // The notice itself expires without a cascading notice.
+            vi.setSystemTime(1_000_000 + 2000 + 6 * 60_000);
+            expect(registry.wakeStatus(notice.messageId)?.state).toBe('expired');
+            expect(sender.sent.filter((s) => s.payload.type === 'wake')).toHaveLength(1);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('F5 a caller-supplied message id keys dedupe', () => {
