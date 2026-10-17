@@ -5,6 +5,10 @@
  * Pi sessions send `tool: {sourceInfo, namespace?}` raw with each tool event (XTRM-564);
  * the rules below apply in the §36.7 order. Claude sessions use their own registration
  * scheme (§36.12 item 4).
+ *
+ * §36.7 rule 4 (the `pi-mcp-adapter` proxy) is retired with that package (CORE-2399); Pi's
+ * built-in MCP client (rule 2) is now the only MCP transport, so the rule numbers below stay
+ * aligned with the PRD and rule 4 is simply absent.
  */
 
 import { readFileSync } from 'node:fs';
@@ -36,9 +40,6 @@ export const COORDINATION_TOOLS: readonly (
     },
 ];
 
-const MCP_ADAPTER_PACKAGE = 'pi-mcp-adapter';
-/** The pi-mcp-adapter proxy tool; its target server is a call argument. */
-const MCP_ADAPTER_PROXY_TOOL = 'mcp';
 const UNKNOWN = 'unknown';
 /** Claude's subagent tool (§36.12 item 4); `Task` is its earlier name. */
 const CLAUDE_SUBAGENT_TOOLS = new Set(['Agent', 'Task']);
@@ -82,10 +83,6 @@ function stripPrefix(value: string, prefix: string): string {
     return value.startsWith(prefix) ? value.slice(prefix.length) : value;
 }
 
-function nonEmptyString(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
 /** Claude tool classes (§36.12 item 4): `mcp__<server>__<tool>` is Claude's own registration scheme. */
 export function classifyClaudeTool(toolName: string): AgentToolOrigin {
     if (toolName.startsWith('mcp__')) {
@@ -116,8 +113,8 @@ export class ToolOriginClassifier {
         this.readManifest = options.readManifest ?? readManifest;
     }
 
-    /** Classify one Pi tool call from its raw registration record and, for the MCP proxy tool, its args. */
-    classifyPi(toolName: string, tool: AgentToolSource | undefined, args?: unknown): AgentToolOrigin {
+    /** Classify one Pi tool call from its raw registration record. */
+    classifyPi(toolName: string, tool: AgentToolSource | undefined): AgentToolOrigin {
         const info = tool?.sourceInfo;
         // Rule 6: no record, or registered through the SDK.
         if (!info || info.source === 'sdk') return { class: 'extension', extension: UNKNOWN };
@@ -141,25 +138,6 @@ export class ToolOriginClassifier {
             extension: manifest?.name ?? info.source,
             ...(manifest?.version ? { version: manifest.version } : {}),
         };
-
-        // Rule 4: the pi-mcp-adapter package.
-        if (packageName === MCP_ADAPTER_PACKAGE) {
-            const callArgs = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
-            const server =
-                mcpServerFromNamespace(tool.namespace) ??
-                (toolName === MCP_ADAPTER_PROXY_TOOL ? nonEmptyString(callArgs.server) : undefined) ??
-                UNKNOWN;
-            // The MCP tool name: the proxy's `tool` argument, else the direct tool without its server prefix.
-            const candidates = [
-                nonEmptyString(callArgs.tool) ?? '',
-                stripPrefix(toolName, `mcp__${server}__`),
-                stripPrefix(toolName, `${server}_`),
-            ];
-            if (server !== UNKNOWN && isCoordinationMcpTool(server, candidates)) {
-                return { class: 'coordination', server, ...transport };
-            }
-            return { class: 'mcp', server };
-        }
 
         // Rule 1 for extension-transported coordination tools.
         const coordination = COORDINATION_TOOLS.some(

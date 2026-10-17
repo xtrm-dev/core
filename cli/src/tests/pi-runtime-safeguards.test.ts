@@ -144,7 +144,6 @@ describe('pi runtime safeguards', () => {
       'git:github.com/DietrichGebert/ponytail',
       'npm:@tintinweb/pi-tasks',
       'npm:pi-background-tasks@latest',
-      'npm:pi-mcp-adapter',
       'npm:pi-mermaid-viewer',
       'npm:@jaggerxtrm/pi-service-knowledge',
       'npm:pi-intercom',
@@ -206,15 +205,182 @@ describe('pi runtime safeguards', () => {
     expect(resolvedTarget).toBe(path.resolve(coreDir));
   });
 
-  it('removes a stale pi-mcp-adapter override missing commands.js', async () => {
-    const { remediateStalePiMcpAdapterOverride } = await import('../core/pi-runtime.js');
-    const overrideDir = path.join(process.env.PI_AGENT_DIR as string, 'extensions', 'pi-mcp-adapter');
+  // CORE-2399: the adapter is retired, so what used to be a stale-override repair is now a
+  // removal path that also clears the package entry from the settings files xt manages.
+  it('removes the retired pi-mcp-adapter override, the npm leftover and its settings entries', async () => {
+    const { removeRetiredPiMcpAdapter } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'agent-with-adapter');
+    const projectRoot = path.join(tempRoot, 'project-with-adapter');
+    const overrideDir = path.join(agentDir, 'extensions', 'pi-mcp-adapter');
+    const npmLeftoverDir = path.join(agentDir, 'npm', 'node_modules', 'pi-mcp-adapter');
     await fs.ensureDir(overrideDir);
     await fs.writeJson(path.join(overrideDir, 'package.json'), { name: 'pi-mcp-adapter' });
+    // What `pi remove` left behind; it kept the package readable as installed.
+    await fs.ensureDir(npmLeftoverDir);
+    await fs.writeJson(path.join(npmLeftoverDir, 'package.json'), { name: 'pi-mcp-adapter', version: '4.0.0' });
+    await fs.outputJson(path.join(agentDir, 'settings.json'), {
+      theme: 'light',
+      packages: ['npm:pi-gitnexus', 'npm:pi-mcp-adapter'],
+    });
+    await fs.outputJson(path.join(projectRoot, '.pi', 'settings.json'), {
+      packages: ['npm:pi-mcp-adapter', 'npm:pi-intercom'],
+    });
 
-    const result = await remediateStalePiMcpAdapterOverride(false);
-    expect(result).toEqual(expect.objectContaining({ stale: true, remediated: true }));
+    const result = await removeRetiredPiMcpAdapter(false, undefined, agentDir, projectRoot);
+
+    expect(result).toEqual(expect.objectContaining({ found: true, removed: true }));
+    expect(result.paths).toEqual([overrideDir, npmLeftoverDir]);
+    expect(result.removedPaths).toEqual([overrideDir, npmLeftoverDir]);
+    expect(result.settingsFiles).toEqual([
+      path.join(agentDir, 'settings.json'),
+      path.join(projectRoot, '.pi', 'settings.json'),
+    ]);
     expect(await fs.pathExists(overrideDir)).toBe(false);
+    expect(await fs.pathExists(npmLeftoverDir)).toBe(false);
+    expect(await fs.readJson(path.join(agentDir, 'settings.json'))).toEqual({
+      theme: 'light',
+      packages: ['npm:pi-gitnexus'],
+    });
+    expect((await fs.readJson(path.join(projectRoot, '.pi', 'settings.json'))).packages).toEqual(['npm:pi-intercom']);
+  });
+
+  it('removes an npm leftover with no extension override and no settings entry', async () => {
+    const { removeRetiredPiMcpAdapter } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'leftover-only-agent');
+    const npmLeftoverDir = path.join(agentDir, 'npm', 'node_modules', 'pi-mcp-adapter');
+    await fs.ensureDir(npmLeftoverDir);
+    await fs.writeJson(path.join(npmLeftoverDir, 'package.json'), { name: 'pi-mcp-adapter', version: '4.0.0' });
+
+    const result = await removeRetiredPiMcpAdapter(false, undefined, agentDir);
+
+    expect(result).toEqual(expect.objectContaining({ found: true, removed: true, settingsFiles: [] }));
+    expect(result.removedPaths).toEqual([npmLeftoverDir]);
+    expect(await fs.pathExists(npmLeftoverDir)).toBe(false);
+  });
+
+  // CORE-2399 review: settings `packages` also holds object entries (a source plus
+  // extensions/skills/prompts/themes). Dropping those on the way to removing the adapter is
+  // data loss on a live file, so the removal path must touch adapter entries and nothing else.
+  it('keeps object-form package entries intact while removing the retired adapter', async () => {
+    const { removeRetiredPiMcpAdapter } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'agent-object-entries');
+    const settingsPath = path.join(agentDir, 'settings.json');
+    const objectEntry = {
+      source: '/home/op/dev/xtmux',
+      extensions: ['extensions/pi-agent-state.ts'],
+      skills: [],
+      prompts: [],
+      themes: [],
+    };
+    await fs.outputJson(settingsPath, {
+      theme: 'xtrm-dark-flattools',
+      packages: ['npm:pi-gitnexus', 'npm:pi-mcp-adapter', objectEntry, 'npm:pi-intercom'],
+    }, { spaces: 2 });
+
+    const result = await removeRetiredPiMcpAdapter(false, undefined, agentDir);
+
+    expect(result.settingsFiles).toEqual([settingsPath]);
+    const after = await fs.readJson(settingsPath);
+    expect(after.packages).toEqual(['npm:pi-gitnexus', objectEntry, 'npm:pi-intercom']);
+    expect(after).toEqual({
+      theme: 'xtrm-dark-flattools',
+      packages: ['npm:pi-gitnexus', objectEntry, 'npm:pi-intercom'],
+    });
+  });
+
+  it('removes the versioned string and object forms of the retired adapter', async () => {
+    const { removeRetiredPiMcpAdapter } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'agent-versioned-forms');
+    const settingsPath = path.join(agentDir, 'settings.json');
+    await fs.outputJson(settingsPath, {
+      packages: [
+        'npm:pi-mcp-adapter@4.0.0',
+        { source: 'npm:pi-mcp-adapter@4.0.0', extensions: ['cli.js'] },
+        'npm:pi-gitnexus@latest',
+      ],
+    }, { spaces: 2 });
+
+    const result = await removeRetiredPiMcpAdapter(false, undefined, agentDir);
+
+    expect(result.removed).toBe(true);
+    expect((await fs.readJson(settingsPath)).packages).toEqual(['npm:pi-gitnexus@latest']);
+  });
+
+  it('leaves a settings file byte-identical when the adapter is not listed', async () => {
+    const { removeRetiredPiMcpAdapter } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'agent-no-match');
+    const settingsPath = path.join(agentDir, 'settings.json');
+    // 4-space indent, no trailing newline: a file the path does not change must not be reformatted.
+    const text = JSON.stringify({
+      theme: 'light',
+      packages: ['npm:pi-gitnexus', { source: '/repo/packages/pi-extensions', extensions: [] }],
+    }, null, 4);
+    await fs.ensureDir(agentDir);
+    await fs.writeFile(settingsPath, text, 'utf8');
+
+    const result = await removeRetiredPiMcpAdapter(false, undefined, agentDir);
+
+    expect(result).toEqual(expect.objectContaining({ found: false, removed: false, settingsFiles: [] }));
+    expect(await fs.readFile(settingsPath, 'utf8')).toBe(text);
+  });
+
+  it('preserves the settings file indentation when it does remove the adapter', async () => {
+    const { removeRetiredPiMcpAdapter } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'agent-indent');
+    const settingsPath = path.join(agentDir, 'settings.json');
+    await fs.ensureDir(agentDir);
+    await fs.writeFile(settingsPath, `${JSON.stringify({
+      packages: ['npm:pi-mcp-adapter', 'npm:pi-gitnexus'],
+    }, null, 4)}\n`, 'utf8');
+
+    await removeRetiredPiMcpAdapter(false, undefined, agentDir);
+
+    expect(await fs.readFile(settingsPath, 'utf8'))
+      .toBe(`${JSON.stringify({ packages: ['npm:pi-gitnexus'] }, null, 4)}\n`);
+  });
+
+  it('is a silent no-op when the adapter is already gone', async () => {
+    const { removeRetiredPiMcpAdapter } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'clean-agent');
+    const projectRoot = path.join(tempRoot, 'clean-project');
+    await fs.outputJson(path.join(agentDir, 'settings.json'), { packages: ['npm:pi-gitnexus'] });
+    await fs.outputJson(path.join(projectRoot, '.pi', 'settings.json'), { packages: ['npm:pi-intercom'] });
+    const beforeAgent = await fs.readFile(path.join(agentDir, 'settings.json'), 'utf8');
+    const beforeProject = await fs.readFile(path.join(projectRoot, '.pi', 'settings.json'), 'utf8');
+    const logs: string[] = [];
+
+    const result = await removeRetiredPiMcpAdapter(false, (message) => logs.push(message), agentDir, projectRoot);
+
+    expect(result).toEqual(expect.objectContaining({ found: false, removed: false, settingsFiles: [], removedPaths: [] }));
+    expect(logs).toEqual([]);
+    expect(await fs.pathExists(path.join(agentDir, 'npm', 'node_modules', 'pi-mcp-adapter'))).toBe(false);
+    expect(await fs.readFile(path.join(agentDir, 'settings.json'), 'utf8')).toBe(beforeAgent);
+    expect(await fs.readFile(path.join(projectRoot, '.pi', 'settings.json'), 'utf8')).toBe(beforeProject);
+  });
+
+  it('reports the removal in a dry run and writes nothing', async () => {
+    const { removeRetiredPiMcpAdapter } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'dry-agent');
+    const overrideDir = path.join(agentDir, 'extensions', 'pi-mcp-adapter');
+    const npmLeftoverDir = path.join(agentDir, 'npm', 'node_modules', 'pi-mcp-adapter');
+    await fs.ensureDir(overrideDir);
+    await fs.ensureDir(npmLeftoverDir);
+    await fs.outputJson(path.join(agentDir, 'settings.json'), { packages: ['npm:pi-mcp-adapter'] });
+    const logs: string[] = [];
+
+    const result = await removeRetiredPiMcpAdapter(true, (message) => logs.push(message), agentDir);
+
+    expect(result).toEqual(expect.objectContaining({
+      found: true,
+      removed: false,
+      removedPaths: [],
+      settingsFiles: [path.join(agentDir, 'settings.json')],
+    }));
+    expect(await fs.pathExists(overrideDir)).toBe(true);
+    expect(await fs.pathExists(npmLeftoverDir)).toBe(true);
+    expect((await fs.readJson(path.join(agentDir, 'settings.json'))).packages).toEqual(['npm:pi-mcp-adapter']);
+    expect(logs.join('\n')).toContain('would remove');
+    expect(logs.join('\n')).toContain(npmLeftoverDir);
   });
 
   it('preserves user skill paths while removing retired managed skill pointers', async () => {

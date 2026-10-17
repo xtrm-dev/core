@@ -38,12 +38,13 @@ The runtime also marks packages as either required or optional for health semant
 | `git:github.com/DietrichGebert/ponytail` | managed optional | minimal-engineering/reduction guidance |
 | `npm:@tintinweb/pi-tasks` | managed optional | task tracking / task UI and optional task execution integration |
 | `npm:pi-background-tasks@latest` | required | durable background jobs, delegated investigations and background workflows |
-| `npm:pi-mcp-adapter` | required | MCP access from Pi |
 | `npm:pi-mermaid-viewer` | managed optional | Mermaid rendering in the Pi TUI |
 | `npm:@jaggerxtrm/pi-service-knowledge` | required | XTRM service-knowledge runtime integration |
 | `npm:pi-intercom` | required | targeted Pi ↔ Pi live coordination |
 | `git:github.com/alonw0/pi-claude-link` | required | Pi ↔ Claude Code cross-session communication |
 | `npm:pi-ast-grep` | required | compact read-only structural code search |
+
+`npm:pi-mcp-adapter` is retired (CORE-2399): Pi has built-in MCP, so the managed baseline no longer installs an adapter and `xt update` removes the package entry and the `~/.pi/agent/extensions/pi-mcp-adapter` override from machines that still carry them.
 
 The developer checkout path `packages/pi-extensions` can satisfy the first row while working inside Core. A machine-specific absolute path such as `/home/.../core/packages/pi-extensions` is never a portable managed selector.
 
@@ -55,7 +56,7 @@ The baseline is intentionally biased toward removing repeated setup/reconstructi
 codebase intelligence   pi-gitnexus + pi-ast-grep
 structured execution    structured-return + guardrails
 continuation/work        goal + tasks + background-tasks
-runtime access           pi-mcp-adapter
+runtime access           Pi built-in MCP (`pi.mcp.json`)
 coordination             pi-intercom + pi-claude-link
 XTRM context/runtime     pi-extensions + pi-service-knowledge
 operator UX              pi-mermaid-viewer + xtrm-ui (inside pi-extensions)

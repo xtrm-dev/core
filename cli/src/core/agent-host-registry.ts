@@ -408,7 +408,7 @@ export class AgentHostRegistry {
 
     /**
      * PRD §36.7: the host, not the producer, sets origin from the registration record.
-     * The class is fixed at tool_execution_start, whose args name the MCP proxy's server.
+     * The class is fixed at tool_execution_start.
      */
     private toolOrigin(
         session: LiveSession,
@@ -416,11 +416,10 @@ export class AgentHostRegistry {
     ): AgentToolOrigin {
         let origin = session.toolOrigins.get(payload.toolCallId);
         if (!origin) {
-            const args = 'args' in payload ? payload.args : undefined;
             origin =
                 session.identity.runtime.name === 'claude'
                     ? classifyClaudeTool(payload.toolName)
-                    : this.classifier.classifyPi(payload.toolName, payload.tool, args);
+                    : this.classifier.classifyPi(payload.toolName, payload.tool);
             if (payload.type !== 'tool_execution_end') session.toolOrigins.set(payload.toolCallId, origin);
         }
         if (payload.type === 'tool_execution_end') session.toolOrigins.delete(payload.toolCallId);

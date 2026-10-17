@@ -32,7 +32,7 @@ function fakePi() {
       {
         name: "mcp__x__y",
         namespace: { name: "mcp__x", description: "x server" },
-        sourceInfo: { path: "/pkg/index.ts", source: "npm:pi-mcp-adapter", scope: "user", origin: "package", baseDir: "/pkg" },
+        sourceInfo: { path: "builtin:mcp", source: "builtin", scope: "temporary", origin: "top-level" },
       },
     ],
   };
@@ -149,7 +149,7 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     const toolStart = frames.find((f) => f.payload.type === "tool_execution_start").payload;
     expect(toolStart.parentToolCallId).toBe("p0");
     expect(toolStart.tool).toEqual({
-      sourceInfo: { path: "/pkg/index.ts", source: "npm:pi-mcp-adapter", scope: "user", origin: "package", baseDir: "/pkg" },
+      sourceInfo: { path: "builtin:mcp", source: "builtin", scope: "temporary", origin: "top-level" },
       namespace: { name: "mcp__x", description: "x server" },
     });
     const lastUpdate = frames.filter((f) => f.payload.type === "message_update").at(-1).payload;

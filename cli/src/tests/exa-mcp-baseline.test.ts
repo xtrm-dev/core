@@ -34,8 +34,8 @@ describe('managed Exa MCP baseline', () => {
   });
 
   it('ships Exa as a native Pi HTTP MCP without embedding credentials', async () => {
-    // pi-mcp-adapter 2.x has no positional-URL server mode (it rejects the
-    // URL as an unknown command), so remote Pi entries use native HTTP.
+    // Remote Pi entries use native HTTP servers, served by Pi's built-in MCP client
+    // (CORE-2399). The retired adapter bridge rejected a positional URL as an unknown command.
     const config = await fs.readJson(piConfig);
     const exa = config.mcpServers.exa;
 
@@ -46,5 +46,20 @@ describe('managed Exa MCP baseline', () => {
     expect(exa.headers?.['x-api-key']).toBe('${EXA_API_KEY}');
     expect(JSON.stringify(exa)).not.toContain('exaApiKey=');
     expect(JSON.stringify(exa)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+  });
+
+  it('serves deepwiki and github-grep as built-in Pi HTTP MCP servers, never an npx bridge', async () => {
+    // CORE-2399: Pi has built-in MCP, so no server may pass a URL as an npx argument
+    // (the retired bridge shape) and both remote servers must be native `url` entries.
+    const config = await fs.readJson(piConfig);
+
+    expect(config.mcpServers.deepwiki).toMatchObject({ type: 'http', url: 'https://mcp.deepwiki.com/mcp' });
+    expect(config.mcpServers['github-grep']).toMatchObject({ type: 'http', url: 'https://mcp.grep.app' });
+
+    const bridged = Object.entries(config.mcpServers as Record<string, { args?: unknown }>)
+      .filter(([, server]) => Array.isArray(server.args)
+        && (server.args as unknown[]).some((arg) => typeof arg === 'string' && arg.startsWith('http')))
+      .map(([name]) => name);
+    expect(bridged).toEqual([]);
   });
 });

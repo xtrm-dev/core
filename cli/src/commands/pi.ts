@@ -10,7 +10,7 @@ import { runPiInstall } from './pi-install.js';
 import {
     ensureCorePackageSymlink,
     inventoryPiRuntime,
-    remediateStalePiMcpAdapterOverride,
+    removeRetiredPiMcpAdapter,
     resolveManagedPiCoreSourceDir,
     resolveManagedPiExtensionsSourceDir,
 } from '../core/pi-runtime.js';
@@ -329,17 +329,15 @@ Examples:
             const globalTargetDir = path.join(PI_AGENT_DIR, 'extensions');
 
             try {
-                const staleOverride = await remediateStalePiMcpAdapterOverride(false);
-                if (staleOverride.stale && staleOverride.remediated) {
-                    console.log(t.success('  ✓ removed stale ~/.pi/agent/extensions/pi-mcp-adapter override'));
-                } else if (staleOverride.stale) {
-                    console.log(kleur.yellow('  ⚠ stale ~/.pi/agent/extensions/pi-mcp-adapter override detected'));
-                    allOk = false;
-                } else {
-                    console.log(t.success('  ✓ pi-mcp-adapter override check passed'));
+                // CORE-2399: the adapter is retired, so this is a removal path. Nothing
+                // found means nothing to report; a machine without it stays quiet.
+                const retiredAdapter = await removeRetiredPiMcpAdapter(false, undefined, PI_AGENT_DIR, projectRoot);
+                if (retiredAdapter.found) {
+                    const where = [...retiredAdapter.removedPaths, ...retiredAdapter.settingsFiles];
+                    console.log(t.success(`  ✓ removed retired pi-mcp-adapter: ${where.join(', ')}`));
                 }
             } catch (error) {
-                console.log(kleur.yellow(`  ⚠ failed to remediate pi-mcp-adapter override: ${error}`));
+                console.log(kleur.yellow(`  ⚠ failed to remove retired pi-mcp-adapter leftovers: ${error}`));
                 allOk = false;
             }
 

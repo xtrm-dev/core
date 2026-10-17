@@ -1,7 +1,7 @@
 {
   "$metadata": {
     "description": "Canonical MCP servers for Pi runtime sync",
-    "format": "Pi-native mcpServers entries (command/args + lifecycle + idleTimeout)",
+    "format": "Pi-native mcpServers entries (command/args or url + lifecycle + idleTimeout)",
     "note": "This file is for .pi/mcp.json sync. Claude uses .xtrm/config/claude.mcp.json instead."
   },
   "mcpServers": {
@@ -12,14 +12,14 @@
       "idleTimeout": 10
     },
     "deepwiki": {
-      "command": "npx",
-      "args": ["-y", "pi-mcp-adapter", "https://mcp.deepwiki.com/mcp"],
+      "type": "http",
+      "url": "https://mcp.deepwiki.com/mcp",
       "lifecycle": "lazy",
       "idleTimeout": 10
     },
     "github-grep": {
-      "command": "npx",
-      "args": ["-y", "pi-mcp-adapter", "https://mcp.grep.app"],
+      "type": "http",
+      "url": "https://mcp.grep.app",
       "lifecycle": "lazy",
       "idleTimeout": 10
     },

@@ -66,7 +66,8 @@ describe('pi launch preflight theme isolation (XTRM-581)', () => {
       expect(fs.existsSync(link)).toBe(true);
       expect(path.basename(fs.realpathSync(link))).toBe(name);
     }
-    expect(result.staleOverride.path).toBe(path.join(isolatedAgent, 'extensions', 'pi-mcp-adapter'));
+    expect(result.retiredAdapter.paths).toContain(path.join(isolatedAgent, 'extensions', 'pi-mcp-adapter'));
+    expect(result.retiredAdapter.paths).toContain(path.join(isolatedAgent, 'npm', 'node_modules', 'pi-mcp-adapter'));
     expect(readLinks(globalThemes)).toEqual(before);
   });
 

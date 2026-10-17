@@ -128,7 +128,6 @@
       "git:github.com/DietrichGebert/ponytail",
       "npm:@tintinweb/pi-tasks",
       "npm:pi-background-tasks@latest",
-      "npm:pi-mcp-adapter",
       "npm:pi-mermaid-viewer",
       "npm:@jaggerxtrm/pi-service-knowledge",
       "npm:pi-intercom",

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentToolSource } from '@xtrm/contracts';
 import { classifyClaudeTool, packageNameFromSpec, ToolOriginClassifier } from '../core/agent-host-origin.js';
+import { RETIRED_PI_MCP_ADAPTER_EXTENSION } from '../core/pi-runtime.js';
 
 const NPM = '/home/op/.pi/agent/npm/node_modules';
 const pkg = (source: string, baseDir: string, file = 'index.ts', scope: 'user' | 'project' = 'user'): AgentToolSource => ({
@@ -14,7 +15,6 @@ const builtin = (name: string): AgentToolSource => ({
 });
 
 const manifests: Record<string, { name?: string; version?: string }> = {
-    [`${NPM}/pi-mcp-adapter`]: { name: 'pi-mcp-adapter', version: '2.38.0' },
     [`${NPM}/pi-ast-grep`]: { name: 'pi-ast-grep', version: '0.1.0' },
     [`${NPM}/pi-intercom`]: { name: 'pi-intercom', version: '0.16.0' },
     [`${NPM}/@jaggerxtrm/pi-extensions`]: { name: '@jaggerxtrm/pi-extensions', version: '1.4.0' },
@@ -51,7 +51,7 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
             extension: 'pi-ast-grep',
             version: '0.1.0',
         });
-        // Specialists over MCP, both MCP paths.
+        // Specialists over MCP, through Pi's built-in client.
         const builtinMcp = { ...builtin('mcp'), namespace: { name: 'mcp__specialists' } };
         expect(c.classifyPi('mcp__specialists__specialist_dispatch', builtinMcp)).toEqual({
             class: 'coordination',
@@ -59,13 +59,6 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
             extension: 'builtin:mcp',
         });
         expect(c.classifyPi('mcp__specialists__substrate_issue', builtinMcp)).toEqual({ class: 'mcp', server: 'specialists' });
-        expect(
-            c.classifyPi('mcp', pkg('npm:pi-mcp-adapter', `${NPM}/pi-mcp-adapter`), { server: 'specialists', tool: 'specialist_reply' }),
-        ).toEqual({ class: 'coordination', server: 'specialists', extension: 'pi-mcp-adapter', version: '2.38.0' });
-        // A coordination tool name on another MCP server stays mcp.
-        expect(
-            c.classifyPi('mcp', pkg('npm:pi-mcp-adapter', `${NPM}/pi-mcp-adapter`), { server: 'other', tool: 'specialist_reply' }),
-        ).toEqual({ class: 'mcp', server: 'other' });
     });
 
     it('rule 2: builtin:mcp with namespace mcp__github is mcp with server github', () => {
@@ -79,21 +72,26 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
         expect(classifier().classifyPi('tool_search', builtin('tool-search'))).toEqual({ class: 'native' });
     });
 
-    it('rule 4: pi-mcp-adapter tools are mcp; server from namespace, else proxy args, else unknown', () => {
-        const adapter = pkg('npm:pi-mcp-adapter', `${NPM}/pi-mcp-adapter`);
+    it('rule 4 retired (CORE-2399): the adapter package is an ordinary extension, not an MCP transport', () => {
         const c = classifier();
-        expect(c.classifyPi('context7_query', { ...adapter, namespace: { name: 'mcp__context7' } })).toEqual({
-            class: 'mcp',
-            server: 'context7',
-        });
-        expect(c.classifyPi('mcp', adapter, { server: 'everything', tool: 'echo', args: {} })).toEqual({ class: 'mcp', server: 'everything' });
-        expect(c.classifyPi('mcp', adapter, { search: 'echo' })).toEqual({ class: 'mcp', server: 'unknown' });
-        expect(c.classifyPi('mcp', adapter)).toEqual({ class: 'mcp', server: 'unknown' });
-        // A direct tool with toolPrefix none: no namespace, never a guessed server.
-        expect(c.classifyPi('query_docs', adapter, { server: 'context7' })).toEqual({ class: 'mcp', server: 'unknown' });
-        expect(c.classifyPi('mcpScript', adapter)).toEqual({ class: 'mcp', server: 'unknown' });
+        const retired = pkg(`npm:${RETIRED_PI_MCP_ADAPTER_EXTENSION}`, `${NPM}/${RETIRED_PI_MCP_ADAPTER_EXTENSION}`);
+        // The adapter rule is gone, so its registration record classifies like any other package
+        // extension: no MCP server, and no server guessed from a call argument.
+        expect(c.classifyPi('mcp', retired)).toEqual({ class: 'extension', extension: `npm:${RETIRED_PI_MCP_ADAPTER_EXTENSION}` });
         // The class is never taken from the name: an mcp__-named tool from another package is an extension.
         expect(c.classifyPi('mcp__github__x', pkg('npm:pi-ast-grep', `${NPM}/pi-ast-grep`))).toMatchObject({ class: 'extension' });
+    });
+
+    it('rule 2 is the only MCP transport: built-in mcp__ names carry the server', () => {
+        const c = classifier();
+        const server = (name: string) => ({ ...builtin('mcp'), namespace: { name: `mcp__${name}`, description: `${name} MCP server` } });
+        expect(c.classifyPi('mcp__deepwiki__ask_wiki_question', server('deepwiki'))).toEqual({ class: 'mcp', server: 'deepwiki' });
+        expect(c.classifyPi('mcp__github-grep__searchGitHub', server('github-grep'))).toEqual({ class: 'mcp', server: 'github-grep' });
+        expect(c.classifyPi('mcp__specialists__specialist_reply', server('specialists'))).toEqual({
+            class: 'coordination',
+            server: 'specialists',
+            extension: 'builtin:mcp',
+        });
     });
 
     it('rule 5: a package extension carries its package and version, read once per package', () => {

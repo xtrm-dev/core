@@ -254,14 +254,13 @@ describe('xt host agent host (XTRM-563)', () => {
         const events = await openEvents(host);
         const ext = await FakeExtension.connect(socketPath);
         ext.push(identity);
-        const adapterDir = path.join(dir, 'pi-mcp-adapter');
-        mkdirSync(adapterDir);
-        writeFileSync(path.join(adapterDir, 'package.json'), JSON.stringify({ name: 'pi-mcp-adapter', version: '2.38.0' }));
-        const adapter = { sourceInfo: { path: `${adapterDir}/index.ts`, source: 'npm:pi-mcp-adapter', scope: 'user', origin: 'package', baseDir: adapterDir } };
+        // Pi's built-in MCP client (CORE-2399): the server lives in the namespace of a
+        // builtin:mcp registration, not in the call arguments of an adapter proxy.
+        const mcpTool = { sourceInfo: { path: 'builtin:mcp', source: 'builtin', scope: 'temporary', origin: 'top-level' }, namespace: { name: 'mcp__everything' } };
         // A producer-supplied origin is replaced: the host owns classification.
-        ext.payload('tool_execution_start', { toolCallId: 'p1', toolName: 'mcp', args: { server: 'everything', tool: 'echo' }, tool: adapter, origin: { class: 'native' } });
-        ext.payload('tool_execution_update', { toolCallId: 'p1', toolName: 'mcp', args: {}, partialResult: {}, tool: adapter });
-        ext.payload('tool_execution_end', { toolCallId: 'p1', toolName: 'mcp', result: {}, isError: false, tool: adapter });
+        ext.payload('tool_execution_start', { toolCallId: 'p1', toolName: 'mcp__everything__echo', args: {}, tool: mcpTool, origin: { class: 'native' } });
+        ext.payload('tool_execution_update', { toolCallId: 'p1', toolName: 'mcp__everything__echo', args: {}, partialResult: {}, tool: mcpTool });
+        ext.payload('tool_execution_end', { toolCallId: 'p1', toolName: 'mcp__everything__echo', result: {}, isError: false, tool: mcpTool });
         ext.payload('tool_execution_start', { toolCallId: 'r1', toolName: 'read', args: { path: 'a' }, tool: { sourceInfo: { path: 'builtin:read', source: 'builtin', scope: 'temporary', origin: 'top-level' } } });
         ext.payload('tool_execution_start', { toolCallId: 'x1', toolName: 'intercom', args: {}, tool: { sourceInfo: { path: '/p/pi-intercom/index.ts', source: 'npm:pi-intercom', scope: 'user', origin: 'package', baseDir: '/p/pi-intercom' } } });
         ext.payload('tool_execution_start', { toolCallId: 's1', toolName: 'custom', args: {} });

@@ -1028,7 +1028,7 @@
           "version": "0.15.3"
         },
         "pi.mcp.json": {
-          "hash": "da24e43fd9398ea9cfdd4f2ab3a31f666e8c4a2665c69f4d358c9aad654e9b9c",
+          "hash": "78223cddf447571adb9dba1a1a5bf223065fa68d975d868eac85f5e691dc0757",
           "version": "0.15.3"
         },
         "pi/auth.json.template": {
@@ -1036,7 +1036,7 @@
           "version": "0.15.3"
         },
         "pi/install-schema.json": {
-          "hash": "52c41b77cf19397bc7028b236ffced2ab791d517b121a79ea2e3386b017bca52",
+          "hash": "87d07acbbf9de1ce806d3367060c29c654a5da5bdf0c3c94c5fe9bd9099eaf74",
           "version": "0.15.3"
         },
         "pi/models.json.template": {
@@ -1048,7 +1048,7 @@
           "version": "0.15.3"
         },
         "pi/settings.json.template": {
-          "hash": "eb50df73e0568784aef4c8e3b278d4f3287e3fc5eb84ee90329c4c25e16742ea",
+          "hash": "fb97d88a50a86cc10120c13bd3379288d9a79d29ec2fdc30c24d7b5c39b07c59",
           "version": "0.15.3"
         },
         "README.md": {

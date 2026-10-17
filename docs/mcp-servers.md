@@ -74,15 +74,15 @@ Project `.pi/mcp.json` (synced from `.xtrm/config/pi.mcp.json`):
 | Server | Transport | Description |
 |--------|-----------|-------------|
 | `context7` | npx stdio | Upstash context7 MCP for docs lookup |
-| `deepwiki` | npx adapter | Wiki/docs lookup via `pi-mcp-adapter` |
-| `github-grep` | npx adapter | GitHub code search via `pi-mcp-adapter` |
+| `deepwiki` | http | Wiki/docs lookup via `https://mcp.deepwiki.com/mcp` |
+| `github-grep` | http | GitHub code search via `https://mcp.grep.app` |
 | `exa` | http | Semantic web search/fetch, advanced retrieval and authenticated multi-step research via `https://mcp.exa.ai/mcp` |
 | `gitnexus` | gitnexus stdio | Code intelligence MCP |
 | `specialists` | specialists stdio | Specialists workflow orchestration |
 
-All remote Pi MCP entries are lazy and use a short idle timeout. `pi-mcp-adapter` is a
-Core-managed Pi package; Specialist sessions that run with isolated extension loading must
-still opt into that extension explicitly in their package-canonical Specialist config.
+All remote Pi MCP entries are lazy and use a short idle timeout. They are native HTTP `url`
+servers served by Pi's built-in MCP client (CORE-2399), so no MCP bridge extension takes part
+and a Specialist session with isolated extension loading needs no extra opt-in.
 
 This baseline ensures Pi specialists (especially researcher workflows) can use precise docs,
 code search and semantic web research without each Specialist owning duplicate server config.
