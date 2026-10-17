@@ -14,6 +14,7 @@ type Handler = (event: any, ctx: any) => unknown;
 function fakePi() {
   const handlers = new Map<string, Handler[]>();
   const sent: Array<{ content: unknown; options?: unknown }> = [];
+  const sentCustom: Array<{ message: unknown; options?: unknown }> = [];
   const pi = {
     on(name: string, handler: Handler) {
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
@@ -21,6 +22,9 @@ function fakePi() {
     },
     sendUserMessage(content: unknown, options?: unknown) {
       sent.push({ content, options });
+    },
+    sendMessage(message: unknown, options?: unknown) {
+      sentCustom.push({ message, options });
     },
     getSessionName: () => "probe",
     thinkingLevel: "medium",
@@ -39,7 +43,7 @@ function fakePi() {
   const fire = (name: string, event: any, ctx: any) => {
     for (const handler of handlers.get(name) ?? []) handler({ type: name, ...event }, ctx);
   };
-  return { pi: pi as any, sent, fire, handlers, setThinking: (level: string) => (pi.thinkingLevel = level) };
+  return { pi: pi as any, sent, sentCustom, fire, handlers, setThinking: (level: string) => (pi.thinkingLevel = level) };
 }
 
 function fakeCtx(sessionId: string) {
@@ -378,7 +382,10 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     s.fire("session_shutdown", { reason: "quit" }, s.ctx);
     await until(() => host.registry.list().length === 0);
     expect(s.ctx.ui.confirm).not.toBe(patched);
-    expect(s.bridge.state).toBe("closed");
+    // I2: teardown is per session now — the bridge outlives one session's
+    // shutdown so sibling sessions keep their listeners; with no live
+    // session the seam reads idle instead of closed.
+    expect(s.bridge.state).toBe("idle");
   });
 });
 
@@ -601,9 +608,16 @@ describe("xtrm-agent-host bridge wake contract (CORE-2432)", () => {
       await until(() => bridge.state === "open" && raw.frames.length >= 2);
       raw.send("s-wake-r3", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2432" });
       expect(await raw.resultFor("w1")).toMatchObject({ status: "accepted" });
-      // The payload reference travels as plain model input: no ANSI escapes.
-      expect(pi.sent).toEqual([{ content: "CORE-2432", options: undefined }]);
-      expect(pi.sent[0].content).not.toMatch(/\u001b/);
+      // I2 delivery: the payload reference injects as customType intercom_message with the
+      // D2 provenance line, never as a plain user message; no ANSI escapes reach the model.
+      expect(pi.sent).toEqual([]);
+      expect(pi.sentCustom).toHaveLength(1);
+      expect(pi.sentCustom[0].options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+      const posted = pi.sentCustom[0].message as any;
+      expect(posted.customType).toBe("intercom_message");
+      expect(String(posted.content)).toContain("CORE-2432");
+      expect(String(posted.content)).toContain("Injected context, not the operator's words.");
+      expect(String(posted.content)).not.toMatch(/\u001b/);
     } finally {
       pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
       await raw.close();
@@ -704,14 +718,17 @@ describe("xtrm-agent-host bridge replacement and held wakes (CORE-2432 F1/F7)", 
       // Held, not accepted, and nothing delivered into the operator session yet.
       expect(await raw.resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
       expect(pi.sent).toEqual([]);
-      // agent_start delivers it as a follow-up, and only now is it accepted.
+      // agent_start delivers it as an intercom_message follow-up, and only now is it accepted.
       pi.fire("agent_start", {}, c.ctx);
       await until(
         () => raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").length >= 2,
       );
       const answers = raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").map((f) => f.payload);
       expect(answers.at(-1)).toMatchObject({ status: "accepted" });
-      expect(pi.sent).toEqual([{ content: "CORE-2432", options: { deliverAs: "followUp" } }]);
+      expect(pi.sent).toEqual([]);
+      expect(pi.sentCustom).toHaveLength(1);
+      expect(pi.sentCustom[0].options).toEqual({ deliverAs: "followUp" });
+      expect((pi.sentCustom[0].message as any).customType).toBe("intercom_message");
     } finally {
       pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
       await raw.close();

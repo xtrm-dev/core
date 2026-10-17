@@ -72,6 +72,13 @@
       "description": "Streams session lifecycle events to the local XTRM agent host and executes host commands; silent when no host runs"
     },
     {
+      "id": "intercom",
+      "displayName": "intercom",
+      "required": false,
+      "ownership": "xtrm",
+      "description": "Delivers intercom wakes to the session as intercom_message with agent-level acknowledgement; one listener per session, silent when no host runs"
+    },
+    {
       "id": "xtrm-primer",
       "displayName": "xtrm-primer",
       "required": false,
