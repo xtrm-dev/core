@@ -508,4 +508,30 @@ describe('resolvePiAgentDir laziness (CORE-2412)', () => {
             await fs.remove(second);
         }
     });
+    // Caller-level: resolvePiAgentDir() alone was always lazy; the defect was
+    // callers capturing the dir at import. Modules are imported (statically
+    // above) BEFORE the env points at a decoy, then the real writer runs.
+    it('updatePiSettings writes the global settings into a PI_AGENT_DIR set after import', async () => {
+        const decoyHome = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-decoy-home-'));
+        const decoyAgent = path.join(decoyHome, 'agent');
+        const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-decoy-project-'));
+        const previousHome = process.env.HOME;
+        try {
+            process.env.HOME = decoyHome;
+            process.env.PI_AGENT_DIR = decoyAgent;
+            process.env.PI_CODING_AGENT_DIR = decoyAgent;
+
+            await updatePiSettings(projectRoot, false);
+
+            const written = await fs.readJson(path.join(decoyAgent, 'settings.json'));
+            expect(JSON.stringify(written.packages)).toContain('pi-extensions');
+            expect(await fs.pathExists(path.join(sandboxAgentDir, 'settings.json'))).toBe(false);
+            expect(await fs.pathExists(path.join(decoyHome, '.pi'))).toBe(false);
+        } finally {
+            if (previousHome === undefined) delete process.env.HOME;
+            else process.env.HOME = previousHome;
+            await fs.remove(decoyHome);
+            await fs.remove(projectRoot);
+        }
+    });
 });
