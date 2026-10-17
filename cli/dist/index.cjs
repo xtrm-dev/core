@@ -56097,11 +56097,8 @@ var MANAGED_PACKAGES = [
   { id: "npm:@narumitw/pi-goal", displayName: "pi-goal", required: false },
   { id: "git:github.com/DietrichGebert/ponytail", displayName: "ponytail", required: false },
   { id: "npm:@tintinweb/pi-tasks", displayName: "pi-tasks", required: false },
-  { id: "npm:pi-background-tasks@latest", displayName: "pi-background-tasks", required: true },
   { id: "npm:pi-mermaid-viewer", displayName: "pi-mermaid-viewer", required: false },
   { id: "npm:@jaggerxtrm/pi-service-knowledge", displayName: "pi-service-knowledge", required: true },
-  { id: "npm:pi-intercom", displayName: "pi-intercom", required: true },
-  { id: "git:github.com/alonw0/pi-claude-link", displayName: "pi-claude-link", required: true },
   { id: "npm:pi-ast-grep", displayName: "pi-ast-grep", required: true }
 ];
 var PROJECT_REQUIRED_PACKAGE_IDS = [
@@ -56473,6 +56470,7 @@ async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = resolvePiAge
 }
 async function assureXtManagedPiPackages(dryRun, log, agentDir = resolvePiAgentDir(), installRunner = runPiPackageInstall, versionProvider, projectRoots) {
   const npmRootDir = await resolveGlobalNpmRootDir();
+  const retiredM1 = await removeRetiredM1Packages(dryRun, log, agentDir, projectRoots);
   const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
     installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? void 0),
     expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
@@ -56517,7 +56515,7 @@ async function assureXtManagedPiPackages(dryRun, log, agentDir = resolvePiAgentD
       log?.(kleur_default.yellow("  \u2192 " + hint));
     }
   }
-  return { statuses, missing, outdated, installed, refreshed, failed: failed2, provided };
+  return { statuses, missing, outdated, installed, refreshed, failed: failed2, provided, retiredM1 };
 }
 async function getXtManagedPiPackageDoctorReport(versionProvider) {
   const npmRootDir = await resolveGlobalNpmRootDir();
@@ -56656,6 +56654,101 @@ async function dropRetiredPiMcpAdapterEntry(settingsPath, dryRun, log) {
   await import_fs_extra13.default.writeFile(settingsPath, serializeLikeOriginal(text, { ...settings, packages: kept }), "utf8");
   log?.(kleur_default.dim(`Removed ${RETIRED_PI_MCP_ADAPTER_PACKAGE} from ${settingsPath}`));
   return true;
+}
+var RETIRED_M1_NPM_PACKAGES = ["pi-intercom", "pi-background-tasks", "@aliou/pi-processes"];
+function isRetiredM1Package(entry) {
+  const spec = packageEntrySpec(entry);
+  if (spec === null) return false;
+  if (spec.startsWith("git:")) return isRetiredM1GitSpec(spec.slice("git:".length));
+  if (isRetiredM1GitSpec(spec)) return true;
+  return RETIRED_M1_NPM_PACKAGES.includes(parseNpmPackageName(spec) ?? "");
+}
+function isRetiredM1GitSpec(rest) {
+  const noFrag = rest.split("#", 1)[0];
+  const onGithub = noFrag.match(/github\.com[/:](.+)$/);
+  if (!onGithub) return false;
+  const repoPath = onGithub[1].replace(/^\/+/, "").replace(/@[^/]*$/, "").replace(/\.git$/, "");
+  return repoPath === "alonw0/pi-claude-link";
+}
+function retiredM1InstallDirs(agentDir) {
+  const dirs = RETIRED_M1_NPM_PACKAGES.map(
+    (name) => (
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaf segments are M1-retired package constants.
+      import_path3.default.join(agentDir, "npm", "node_modules", name)
+    )
+  );
+  dirs.push(import_path3.default.join(agentDir, "git", "github.com", "alonw0", "pi-claude-link"));
+  for (const name of [...RETIRED_M1_NPM_PACKAGES.map((entry) => entry.split("/").pop()), "pi-claude-link"]) {
+    dirs.push(import_path3.default.join(agentDir, "extensions", name));
+  }
+  return dirs;
+}
+async function backupSettingsOnce(settingsPath, log) {
+  const backupPath = `${settingsPath}.pre-m1-retire.bak`;
+  if (await import_fs_extra13.default.pathExists(backupPath)) return;
+  await import_fs_extra13.default.copy(settingsPath, backupPath);
+  log?.(kleur_default.dim(`Backed up ${settingsPath} to ${backupPath}`));
+}
+async function dropRetiredM1Entries(settingsPath, dryRun, log) {
+  let text;
+  let settings;
+  try {
+    text = await import_fs_extra13.default.readFile(settingsPath, "utf8");
+    settings = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (typeof settings !== "object" || settings === null || Array.isArray(settings)) return false;
+  const packages = settings.packages;
+  if (!Array.isArray(packages) || !packages.some(isRetiredM1Package)) return false;
+  if (dryRun) {
+    log?.(kleur_default.dim(`[DRY RUN] would remove retired M1 packages from ${settingsPath}`));
+    return true;
+  }
+  await backupSettingsOnce(settingsPath, log);
+  await backupSettingsOnce(settingsPath, log);
+  const kept = packages.filter((entry) => !isRetiredM1Package(entry));
+  const tmpPath = `${settingsPath}.tmp-m1-retire`;
+  await import_fs_extra13.default.writeFile(tmpPath, serializeLikeOriginal(text, { ...settings, packages: kept }), "utf8");
+  await import_fs_extra13.default.move(tmpPath, settingsPath, { overwrite: true });
+  for (const entry of packages.filter(isRetiredM1Package)) {
+    log?.(kleur_default.dim(`Removed ${packageEntrySpec(entry)} from ${settingsPath}`));
+  }
+  return true;
+}
+async function removeRetiredM1Packages(dryRun, log, agentDir = resolvePiAgentDir(), projectRoots) {
+  const paths = retiredM1InstallDirs(agentDir);
+  const presentPaths = [];
+  const removedPaths = [];
+  for (const retiredPath of paths) {
+    const stat3 = await import_fs_extra13.default.lstat(retiredPath).catch(() => null);
+    if (!stat3) continue;
+    presentPaths.push(retiredPath);
+    if (dryRun) {
+      log?.(kleur_default.dim(`[DRY RUN] would remove retired M1 package at ${retiredPath}`));
+      continue;
+    }
+    await import_fs_extra13.default.remove(retiredPath);
+    removedPaths.push(retiredPath);
+    log?.(kleur_default.dim(`Removed retired M1 package at ${retiredPath}`));
+  }
+  const settingsFiles = [];
+  const roots = projectRoots === void 0 ? [] : Array.isArray(projectRoots) ? projectRoots : [projectRoots];
+  for (const settingsPath of [
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaf is constant.
+    import_path3.default.join(agentDir, "settings.json"),
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- each root is a repo xt is updating; the leaf is constant.
+    ...roots.map((root) => import_path3.default.join(root, ".pi", "settings.json"))
+  ]) {
+    if (await dropRetiredM1Entries(settingsPath, dryRun, log)) settingsFiles.push(settingsPath);
+  }
+  return {
+    paths,
+    removedPaths,
+    found: presentPaths.length > 0 || settingsFiles.length > 0,
+    removed: !dryRun && (removedPaths.length > 0 || settingsFiles.length > 0),
+    settingsFiles
+  };
 }
 async function runPiLaunchPreflight(projectRoot, dryRun, log) {
   const agentDir = resolvePiLaunchAgentDir();
@@ -73650,6 +73743,14 @@ function formatRegistrySourceMismatchReason(error51, strictRegistry) {
   return `${prefix} ${visiblePaths.join(", ")}${remaining > 0 ? ` (+${remaining} more)` : ""}`;
 }
 function printPiPackages(packageAssurance) {
+  if (packageAssurance.retiredM1?.found) {
+    for (const settingsFile of packageAssurance.retiredM1.settingsFiles) {
+      console.log(kleur_default.dim(`  retired M1 packages swept from ${settingsFile}`));
+    }
+    for (const removedPath of packageAssurance.retiredM1.removedPaths) {
+      console.log(kleur_default.dim(`  retired M1 package dir removed: ${removedPath}`));
+    }
+  }
   if (packageAssurance.missing.length === 0 && packageAssurance.outdated.length === 0 && packageAssurance.provided.length === 0) {
     return;
   }
@@ -80286,8 +80387,10 @@ function bounded(value) {
 var import_node_fs26 = require("fs");
 var import_node_path68 = __toESM(require("path"), 1);
 var COORDINATION_TOOLS = [
-  { extension: "pi-intercom", tools: ["intercom", "contact_supervisor"] },
-  { extension: "pi-claude-link", tools: ["claude-link"] },
+  // First-party coordination tools (CORE-2443 M1: pi-intercom and
+  // pi-claude-link retired; SendMessage/ListAgents are registered by the
+  // first-party @jaggerxtrm/pi-extensions intercom extension).
+  { extension: "@jaggerxtrm/pi-extensions", tools: ["SendMessage", "ListAgents"] },
   {
     mcpServer: "specialists",
     tools: [

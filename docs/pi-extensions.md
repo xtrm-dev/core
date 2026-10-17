@@ -75,7 +75,7 @@ The baseline spans:
 - goals, task management, background work, and subagents;
 - MCP access and Mermaid rendering;
 - XTRM's extension and service-knowledge packages;
-- Pi↔Pi and Pi↔Claude coordination (`pi-intercom`, `pi-claude-link`);
+- Pi↔Pi and Pi↔Claude coordination plus background work (first-party `intercom` and `background` extensions inside `@jaggerxtrm/pi-extensions`);
 - worktree and process helpers;
 - Ponytail minimal-engineering guidance.
 

@@ -66,5 +66,5 @@ Durable work lives in Substrate, not in chat task lists. Runtime-local task plan
 - Claude Code worktree launch: `xt claude` — Claude Code in a sandboxed worktree; `xt claude --role <specialist>` for an interactive specialist session.
 - Pi skills: native `<available_skills>` metadata; force-load a skill's body at turn 1 via `/skill:<name>`.
 - Pi worktree launch: `xt pi` — Pi in a sandboxed worktree; `xt pi --role <specialist>` for an interactive specialist session (e.g. `chain-coordinator`, `pr-reviewer`, `sre-triage`).
-- Pi tooling: use background process tooling for long-running servers, watchers, and log tails instead of shell backgrounding.
+- Pi tooling: use `BashBackground` for long-running servers, watchers, and log tails (watched with `Monitor`) instead of shell backgrounding; Claude Code tooling: use `Bash` `run_in_background` plus `Monitor`.
 - Both runtimes: full workflow examples and prompt-shaping guidance live in `/using-xtrm` (on demand); coordination and escalation in `/multiplexing` Pattern 7 and `/using-specialists`.

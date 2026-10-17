@@ -8,18 +8,17 @@
  * sessions appear in the Pi roster (the ListAgents tool itself is I4,
  * CORE-2435; SendMessage is I5, CORE-2436).
  *
- * Off by default behind `intercom.claudeTransport` (M1 turns it on when it
- * removes pi-claude-link). Until then pi-claude-link owns the registry entry,
- * so "Pi sessions appear in Claude Code's ListAgents" through this adapter
- * is not proven here; that proof moves to M1.
+ * Off by default behind `intercom.claudeTransport` (enabled on machines
+ * after M1 retired pi-claude-link). A live foreign entry for our pid is
+ * never overwritten: the transport prints one operator line and stays off.
  *
  * Protocol interoperability credit: pi-claude-link (see ADOPTION-CREDITS.md).
  * Adapted from pi-claude-link under the MIT license — full notice in
  * ./transport.ts.
  *
- * Coexistence: pi-claude-link stays installed until M1 retires it and writes
- * the same `~/.claude/sessions/<pid>.json`. A foreign entry for our pid is
- * never overwritten: the transport prints one operator line and stays off.
+ * Coexistence: no third-party writer remains post-M1, but any live foreign
+ * entry for our pid (stale litter from another writer) is never overwritten:
+ * the transport prints one operator line and stays off.
  *
  * Inbound Claude messages are peer text: they are injected through the I2
  * envelope path (`injectIntercomWake`) with the D2 provenance line and are
@@ -207,7 +206,8 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
 
   async function runStart(ctx: ExtensionContext): Promise<void> {
     abandoned = false;
-    // Off by default behind the settings key; M1 turns it on with pi-claude-link gone.
+    // Off by default behind the settings key; M1 removed the third-party
+    // writer, so enabling the key is what turns the transport on.
     if (!isClaudeTransportEnabled(pi, options)) return;
     const pid = process.pid;
     const notify = (line: string) => {
@@ -221,8 +221,8 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
       notify(`Claude transport unavailable: ${(error as Error)?.message ?? String(error)}`);
     };
     // Coexistence first: a live foreign entry means another extension
-    // (pi-claude-link until M1) owns this session's socket. Never overwrite
-    // it, never bind its path: print one operator line and stay off.
+    // owns this session's socket. Never overwrite it, never bind its path:
+    // print one operator line and stay off.
     let claim;
     try {
       claim = await claimPiPeerEntry(pid, options.sessionsDir);
@@ -317,8 +317,8 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
         await deregisterPiPeer(pid, sockPath || undefined, claim.sessionsDir, identity).catch(() => {});
         return;
       }
-      // Load order is not controlled and pi-claude-link unlinks first: verify
-      // after registration that the entry is still ours and the socket is
+      // Load order is not controlled and a foreign writer may unlink first:
+      // verify after registration that the entry is still ours and the socket is
       // still the one we bound. On a takeover, close without unlinking a
       // path we no longer own, print one operator line, and stay off.
       const entryNow = await readPeerEntry(pid, claim.sessionsDir).catch(() => null);

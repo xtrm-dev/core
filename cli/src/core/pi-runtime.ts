@@ -286,11 +286,8 @@ const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:@narumitw/pi-goal', displayName: 'pi-goal', required: false },
     { id: 'git:github.com/DietrichGebert/ponytail', displayName: 'ponytail', required: false },
     { id: 'npm:@tintinweb/pi-tasks', displayName: 'pi-tasks', required: false },
-    { id: 'npm:pi-background-tasks@latest', displayName: 'pi-background-tasks', required: true },
     { id: 'npm:pi-mermaid-viewer', displayName: 'pi-mermaid-viewer', required: false },
     { id: 'npm:@jaggerxtrm/pi-service-knowledge', displayName: 'pi-service-knowledge', required: true },
-    { id: 'npm:pi-intercom', displayName: 'pi-intercom', required: true },
-    { id: 'git:github.com/alonw0/pi-claude-link', displayName: 'pi-claude-link', required: true },
     { id: 'npm:pi-ast-grep', displayName: 'pi-ast-grep', required: true },
 ];
 
@@ -336,6 +333,8 @@ export interface PiPackageAssuranceResult {
     failed: string[];
     /** Packages a configured source already provides (CORE-2342); never installed. */
     provided: string[];
+    /** CORE-2443 M1 retired packages swept from settings and install dirs. */
+    retiredM1: PiRetiredPackageRemoval;
 }
 
 export interface XtManagedPiPackageDoctorIssue {
@@ -925,6 +924,9 @@ export async function assureXtManagedPiPackages(
     projectRoots?: string | readonly string[],
 ): Promise<PiPackageAssuranceResult> {
     const npmRootDir = await resolveGlobalNpmRootDir();
+    // CORE-2443 M1: sweep the retired packages' settings entries and installed
+    // dirs on every assurance; xt update --apply persists the removals.
+    const retiredM1 = await removeRetiredM1Packages(dryRun, log, agentDir, projectRoots);
     const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
         installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? undefined),
         expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
@@ -980,7 +982,7 @@ export async function assureXtManagedPiPackages(
         }
     }
 
-    return { statuses, missing, outdated, installed, refreshed, failed, provided };
+    return { statuses, missing, outdated, installed, refreshed, failed, provided, retiredM1 };
 }
 
 export async function getXtManagedPiPackageDoctorReport(
@@ -1074,6 +1076,9 @@ export interface PiRetiredMcpAdapterRemoval {
     /** Settings files whose `packages` list still named the retired package. */
     settingsFiles: string[];
 }
+
+/** CORE-2443 M1 sweep result; same shape as the adapter sweep it mirrors. */
+export type PiRetiredPackageRemoval = PiRetiredMcpAdapterRemoval;
 
 export interface PiLaunchPreflightResult {
     coreSymlinkStatus: CoreSymlinkStatus;
@@ -1203,6 +1208,141 @@ async function dropRetiredPiMcpAdapterEntry(
     await fs.writeFile(settingsPath, serializeLikeOriginal(text, { ...settings, packages: kept }), 'utf8');
     log?.(kleur.dim(`Removed ${RETIRED_PI_MCP_ADAPTER_PACKAGE} from ${settingsPath}`));
     return true;
+}
+
+/**
+ * CORE-2443 M1 retired packages: the first-party intercom/background extensions
+ * replace pi-intercom, pi-claude-link, pi-background-tasks and pi-processes.
+ * `xt update --apply` sweeps their settings entries and installed dirs, mirroring
+ * the pi-mcp-adapter sweep: installed dirs are removed (same as the adapter sweep),
+ * each settings file is backed up once (`.pre-m1-retire.bak`) before its first
+ * write, and every removal is logged.
+ */
+const RETIRED_M1_NPM_PACKAGES = ['pi-intercom', 'pi-background-tasks', '@aliou/pi-processes'];
+
+/** A settings `packages` entry names an M1-retired package: npm name match (any
+ * version selector) or the retired git repo in any Pi spec form. */
+function isRetiredM1Package(entry: unknown): boolean {
+    const spec = packageEntrySpec(entry);
+    if (spec === null) return false;
+    if (spec.startsWith('git:')) return isRetiredM1GitSpec(spec.slice('git:'.length));
+    // Bare and URL forms without the `git:` prefix (settings carry both).
+    if (isRetiredM1GitSpec(spec)) return true;
+    return RETIRED_M1_NPM_PACKAGES.includes(parseNpmPackageName(spec) ?? '');
+}
+
+/**
+ * The retired pi-claude-link repo in any Pi git-spec form: with or without the
+ * `git:` prefix, `https://`, `ssh://` or scp-like `git@` transport, an optional
+ * `.git` suffix, and any `#ref` or `@ref` pin. Anything else on github.com —
+ * including look-alike repo names — is not a match.
+ */
+function isRetiredM1GitSpec(rest: string): boolean {
+    const noFrag = rest.split('#', 1)[0];
+    const onGithub = noFrag.match(/github\.com[/:](.+)$/);
+    if (!onGithub) return false;
+    const repoPath = onGithub[1].replace(/^\/+/, '').replace(/@[^/]*$/, '').replace(/\.git$/, '');
+    return repoPath === 'alonw0/pi-claude-link';
+}
+
+/** Install dirs the M1 sweep checks: npm trees, the git checkout, and extension overrides. */
+function retiredM1InstallDirs(agentDir: string): string[] {
+    const dirs = RETIRED_M1_NPM_PACKAGES.map((name) =>
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaf segments are M1-retired package constants.
+        path.join(agentDir, 'npm', 'node_modules', name),
+    );
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- same agent dir; constant retired git path.
+    dirs.push(path.join(agentDir, 'git', 'github.com', 'alonw0', 'pi-claude-link'));
+    for (const name of [...RETIRED_M1_NPM_PACKAGES.map((entry) => entry.split('/').pop() as string), 'pi-claude-link']) {
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- same agent dir; constant retired extension names.
+        dirs.push(path.join(agentDir, 'extensions', name));
+    }
+    return dirs;
+}
+
+/** Copy a settings file to `<path>.pre-m1-retire.bak` once; never overwrite an existing backup. */
+async function backupSettingsOnce(settingsPath: string, log?: (message: string) => void): Promise<void> {
+    const backupPath = `${settingsPath}.pre-m1-retire.bak`;
+    if (await fs.pathExists(backupPath)) return;
+    await fs.copy(settingsPath, backupPath);
+    log?.(kleur.dim(`Backed up ${settingsPath} to ${backupPath}`));
+}
+
+/** Drop the retired packages from one settings file; true when that file still listed one. */
+async function dropRetiredM1Entries(
+    settingsPath: string,
+    dryRun: boolean,
+    log?: (message: string) => void,
+): Promise<boolean> {
+    let text: string;
+    let settings: PiSettingsShape;
+    try {
+        text = await fs.readFile(settingsPath, 'utf8');
+        settings = JSON.parse(text) as PiSettingsShape;
+    } catch {
+        return false;
+    }
+    if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return false;
+    const packages = settings.packages;
+    if (!Array.isArray(packages) || !packages.some(isRetiredM1Package)) return false;
+    if (dryRun) {
+        log?.(kleur.dim(`[DRY RUN] would remove retired M1 packages from ${settingsPath}`));
+        return true;
+    }
+    await backupSettingsOnce(settingsPath, log);
+    await backupSettingsOnce(settingsPath, log);
+    const kept = packages.filter((entry) => !isRetiredM1Package(entry));
+    // Atomic write: the backup above is the rollback; a crash mid-write must
+    // never leave a half-written settings file behind.
+    const tmpPath = `${settingsPath}.tmp-m1-retire`;
+    await fs.writeFile(tmpPath, serializeLikeOriginal(text, { ...settings, packages: kept }), 'utf8');
+    await fs.move(tmpPath, settingsPath, { overwrite: true });
+    for (const entry of packages.filter(isRetiredM1Package)) {
+        log?.(kleur.dim(`Removed ${packageEntrySpec(entry)} from ${settingsPath}`));
+    }
+    return true;
+}
+
+export async function removeRetiredM1Packages(
+    dryRun: boolean,
+    log?: (message: string) => void,
+    agentDir: string = resolvePiAgentDir(),
+    projectRoots?: string | readonly string[],
+): Promise<PiRetiredPackageRemoval> {
+    const paths = retiredM1InstallDirs(agentDir);
+    const presentPaths: string[] = [];
+    const removedPaths: string[] = [];
+    for (const retiredPath of paths) {
+        const stat = await fs.lstat(retiredPath).catch(() => null);
+        if (!stat) continue;
+        presentPaths.push(retiredPath);
+        if (dryRun) {
+            log?.(kleur.dim(`[DRY RUN] would remove retired M1 package at ${retiredPath}`));
+            continue;
+        }
+        await fs.remove(retiredPath);
+        removedPaths.push(retiredPath);
+        log?.(kleur.dim(`Removed retired M1 package at ${retiredPath}`));
+    }
+
+    const settingsFiles: string[] = [];
+    const roots = projectRoots === undefined ? [] : Array.isArray(projectRoots) ? projectRoots : [projectRoots];
+    for (const settingsPath of [
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaf is constant.
+        path.join(agentDir, 'settings.json'),
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- each root is a repo xt is updating; the leaf is constant.
+        ...roots.map((root) => path.join(root, '.pi', 'settings.json')),
+    ]) {
+        if (await dropRetiredM1Entries(settingsPath, dryRun, log)) settingsFiles.push(settingsPath);
+    }
+
+    return {
+        paths,
+        removedPaths,
+        found: presentPaths.length > 0 || settingsFiles.length > 0,
+        removed: !dryRun && (removedPaths.length > 0 || settingsFiles.length > 0),
+        settingsFiles,
+    };
 }
 
 export async function runPiLaunchPreflight(

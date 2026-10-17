@@ -137,11 +137,13 @@ The normal choice is the smallest execution shape that fits the job:
 
 XTRM does not require tmux message scraping to make agents talk to each other. The `multiplexing` skill defines coordination semantics—ownership, send/ask/reply behavior, continuation, wakeup, and durable handoff—while using the best native or extension transport available.
 
-In the Pi environment I use:
+In the Pi environment I use the first-party `intercom` extension inside `@jaggerxtrm/pi-extensions`:
 
-- [`pi-intercom`](https://github.com/nicobailon/pi-intercom) by [@nicopreme](https://x.com/nicopreme) for targeted Pi ↔ Pi communication;
-- [`pi-claude-link`](https://github.com/alonw0/pi-claude-link) by [@alonw0](https://github.com/alonw0) for Pi ↔ Claude Code communication through Claude's cross-session messaging protocol;
-- Claude Code's own peer/team messaging (`SendMessage` and related native surfaces) for Claude ↔ Claude coordination when available.
+- `SendMessage` (send/ask/reply), `ListAgents` (roster), `/intercom` and `/rename` for targeted Pi ↔ Pi communication;
+- the first-party Claude transport for Pi ↔ Claude Code communication through Claude's cross-session messaging protocol (enabled with `intercom.claudeTransport`);
+- Claude Code's own peer/team messaging for Claude ↔ Claude coordination when available.
+
+The retired `pi-intercom` and `pi-claude-link` packages stay credited as design/behavior sources in the adoption-credits ledger; they are no longer installed.
 
 Peer messages are coordination input, not a substitute for user authority or durable work state. The durable source remains the contract, repository, Bead, and recorded execution evidence.
 
@@ -176,7 +178,7 @@ It uses deterministic rules first and queries Jev (Typesafe System One Choice an
 - **Service knowledge:** points agents toward relevant service skills defined in `.xtrm/skills/<pack>/service-knowledge/service-registry.json`.
 - **Tool nudges:** gently steers recursive `grep` and ad-hoc `python3` invocations toward faster, indexed alternatives (`ast-grep`, `GitNexus`, and `python-kernel`).
 
-Suggestions appear as house cards: a dim purple box (`#8d7fe8`) with a `(● suggestion)` title, italic interior, and magenta-bold highlights on the tokens you act on (issue refs, `sb`/`bg_run`/`intercom` calls, file paths). Every injected block carries `<xtrm_context>` provenance so injected doctrine never blurs with the operator's own words. Suggestions are purely advisory, fail open, enforce per-scope cooldowns, log decisions to `~/.xtrm/substrate-suggest/log.jsonl`, and can be disabled with `--no-substrate-suggest` or `SUBSTRATE_SUGGEST=off`.
+Suggestions appear as house cards: a dim purple box (`#8d7fe8`) with a `(● suggestion)` title, italic interior, and magenta-bold highlights on the tokens you act on (issue refs, `sb`/`SendMessage`/`BashBackground` calls, file paths). Every injected block carries `<xtrm_context>` provenance so injected doctrine never blurs with the operator's own words. Suggestions are purely advisory, fail open, enforce per-scope cooldowns, log decisions to `~/.xtrm/substrate-suggest/log.jsonl`, and can be disabled with `--no-substrate-suggest` or `SUBSTRATE_SUGGEST=off`.
 
 ### `skill-suggest`
 
@@ -205,16 +207,12 @@ pi-gitnexus
 @narumitw/pi-goal
 DietrichGebert/ponytail
 @tintinweb/pi-tasks
-pi-background-tasks
 @gotgenes/pi-subagents
 pi-mermaid-viewer
 @jaggerxtrm/pi-extensions
 @jaggerxtrm/pi-service-knowledge
-pi-intercom
-alonw0/pi-claude-link
 pi-ast-grep
 @zenobius/pi-worktrees
-@aliou/pi-processes
 ```
 
 The live managed registry in Core is authority for exact install selectors. Local Core development may load `packages/pi-extensions` from the checkout, but the portable managed identity is `npm:@jaggerxtrm/pi-extensions`—never a developer-specific absolute path.

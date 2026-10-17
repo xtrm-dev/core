@@ -6,13 +6,13 @@
  * the overlay is I5's (SendMessage), not this slice's. Without a TUI the
  * command notifies the roster text instead of opening anything.
  *
- * /rename sets this session's name, replacing pi-intercom's /alias (there is
- * deliberately no /alias, no /intercom-pool and no /handover). The rename
+ * /rename sets this session's name, replacing the retired third-party /alias
+ * (there is deliberately no /alias, no pool command and no /handover). The rename
  * reaches both registries the roster reads: pi.setSessionName fires
  * session_info_changed, which the agent-host bridge re-emits as identity so
  * the Pi roster updates; the Claude entry is patched through updatePiPeer,
  * which only touches the entry this session owns and leaves foreign entries
- * (pi-claude-link until M1) alone.
+ * alone.
  *
  * Lineage: the overlay and rename behaviours are informed by pi-intercom
  * 0.17.1 (ADOPTION-CREDITS.md: principal behaviour source). Clean

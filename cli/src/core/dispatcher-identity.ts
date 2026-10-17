@@ -8,7 +8,8 @@
  *   worker's, never the dispatcher's inherited value.
  * - `XTRM_DISPATCHER_NAME` / `XTRM_DISPATCHER_ADDRESS` — the nearest ancestor
  *   session in `~/.claude/sessions/<pid>.json` carrying a `messagingSocketPath`
- *   (Claude Code, or Pi via pi-claude-link, which writes the same registry);
+ *   (Claude Code, or Pi via the first-party intercom Claude transport, which
+ *   writes the same registry);
  *   the address is `uds:<messagingSocketPath>`, the
  *   form SendMessage accepts. Inherited `XTRM_DISPATCHER_*` is the fallback
  *   only when no ancestor resolves, so nested dispatch names the nearest
@@ -105,7 +106,7 @@ function readSessionEntry(sessionsDir: string, pid: number, startTime: string | 
     if (!socket) return null;
     // A stale file whose pid was reused by an unrelated ancestor is not a dispatcher.
     if (typeof entry.pid === 'number' && entry.pid !== pid) return null;
-    // Claude Code writes procStart as /proc clock ticks; pi-claude-link writes a
+    // Claude Code writes procStart as /proc clock ticks; pre-M1 writers wrote a
     // `ps lstart` date string, which cannot be compared to ticks.
     // ponytail: Pi entries rely on the pid match alone; convert lstart via btime + CLK_TCK if pid reuse bites.
     const procStart = clean(entry.procStart);

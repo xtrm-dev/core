@@ -193,8 +193,8 @@ export interface RosterSources {
  * One roster for Pi and Claude sessions alike. The own session heads the
  * text and never appears below it; our own Claude entry (same pid or same
  * socket) is dropped for the same reason. A Pi session that also has a
- * Claude entry (pi-claude-link, or I3) lists once, from the host registry:
- * Claude rows whose session id already listed are dropped, so R7 never
+ * Claude entry lists once, from the host registry: Claude rows whose
+ * session id already listed are dropped, so R7 never
  * throws "ambiguous" on a session's own duplicate. Only live Pi sessions
  * list (LIVE_PI_STATES). Peers sort newest first; rows without a start
  * time sort last, stable.

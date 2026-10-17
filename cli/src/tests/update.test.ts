@@ -149,6 +149,7 @@ beforeEach(() => {
     refreshed: [],
     failed: [],
     provided: [],
+    retiredM1: { paths: [], removedPaths: [], found: false, removed: false, settingsFiles: [] },
   });
   planSubstrateMigrationMock.mockResolvedValue({ needed: false, hasBeads: false, alreadyMigrated: false, sbAvailable: false, reason: 'no .beads directory' });
   runDependencyMaintenanceMock.mockResolvedValue({
@@ -676,7 +677,7 @@ describe('xtrm update', () => {
         maintenance: { tools: [], substrateDoctor: { state: 'checked' }, gitnexusIndex: { state: 'current' } },
         migration: { needed: false, status: 'planned', reason: 'no .beads directory' },
       }],
-      packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [], provided: [] },
+      packages: { statuses: [], missing: [], outdated: [], installed: [], refreshed: [], failed: [], provided: [], retiredM1: { paths: [], removedPaths: [], found: false, removed: false, settingsFiles: [] } },
       piStartupSmoke: null,
       promptSync: { targets: [] },
     });

@@ -16,9 +16,7 @@ const builtin = (name: string): AgentToolSource => ({
 
 const manifests: Record<string, { name?: string; version?: string }> = {
     [`${NPM}/pi-ast-grep`]: { name: 'pi-ast-grep', version: '0.1.0' },
-    [`${NPM}/pi-intercom`]: { name: 'pi-intercom', version: '0.16.0' },
     [`${NPM}/@jaggerxtrm/pi-extensions`]: { name: '@jaggerxtrm/pi-extensions', version: '1.4.0' },
-    '/home/op/.pi/agent/git/github.com/alonw0/pi-claude-link': { name: 'pi-claude-link', version: '0.1.0' },
 };
 
 function classifier(reads: string[] = []) {
@@ -33,20 +31,21 @@ function classifier(reads: string[] = []) {
 describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
     it('rule 1: coordination tools keep their transport extension name and version', () => {
         const c = classifier();
-        expect(c.classifyPi('intercom', pkg('npm:pi-intercom', `${NPM}/pi-intercom`))).toEqual({
+        // First-party intercom tools (CORE-2443 M1: third-party transports retired).
+        expect(c.classifyPi('SendMessage', pkg('npm:@jaggerxtrm/pi-extensions', `${NPM}/@jaggerxtrm/pi-extensions`))).toEqual({
             class: 'coordination',
-            extension: 'pi-intercom',
-            version: '0.16.0',
+            extension: '@jaggerxtrm/pi-extensions',
+            version: '1.4.0',
         });
         expect(
-            c.classifyPi('claude-link', pkg('git:github.com/alonw0/pi-claude-link', '/home/op/.pi/agent/git/github.com/alonw0/pi-claude-link')),
-        ).toMatchObject({ class: 'coordination', extension: 'pi-claude-link' });
+            c.classifyPi('ListAgents', pkg('npm:@jaggerxtrm/pi-extensions', `${NPM}/@jaggerxtrm/pi-extensions`)),
+        ).toMatchObject({ class: 'coordination', extension: '@jaggerxtrm/pi-extensions' });
     });
 
     it('rule 1: coordination is keyed by registering source plus name, not by name alone', () => {
         const c = classifier();
         // Same tool name registered by a different package is not coordination.
-        expect(c.classifyPi('intercom', pkg('npm:pi-ast-grep', `${NPM}/pi-ast-grep`))).toEqual({
+        expect(c.classifyPi('SendMessage', pkg('npm:pi-ast-grep', `${NPM}/pi-ast-grep`))).toEqual({
             class: 'extension',
             extension: 'pi-ast-grep',
             version: '0.1.0',
@@ -111,15 +110,15 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
     });
 
     it('rule 5 (XTRM-575): extension is the package.json name, the raw spec only without one', () => {
-        // Path install, as recorded in the XTRM-571 E2E: source is an absolute install path.
-        const pathDir = '/home/op/.pi/agent/npm/node_modules/pi-intercom';
+        // Path install of the first-party extensions, as recorded in the XTRM-571 E2E.
+        const pathDir = '/home/op/.pi/agent/npm/node_modules/@jaggerxtrm/pi-extensions';
         const c = new ToolOriginClassifier({
-            readManifest: (dir) => (dir === pathDir ? { name: 'pi-intercom', version: '0.16.0' } : manifests[dir] ?? null),
+            readManifest: (dir) => (dir === pathDir ? { name: '@jaggerxtrm/pi-extensions', version: '1.4.0' } : manifests[dir] ?? null),
         });
-        expect(c.classifyPi('intercom', pkg(pathDir, pathDir))).toEqual({
+        expect(c.classifyPi('SendMessage', pkg(pathDir, pathDir))).toEqual({
             class: 'coordination',
-            extension: 'pi-intercom',
-            version: '0.16.0',
+            extension: '@jaggerxtrm/pi-extensions',
+            version: '1.4.0',
         });
         // npm install: source is an npm: spec.
         expect(c.classifyPi('ast_grep', pkg('npm:pi-ast-grep@0.1.0', `${NPM}/pi-ast-grep`))).toEqual({
@@ -148,15 +147,15 @@ describe('ToolOriginClassifier (PRD §36.7 rules 1-6)', () => {
     });
 
     it('falls back to the package spec when package.json has no name', () => {
-        expect(packageNameFromSpec('npm:pi-background-tasks@latest')).toBe('pi-background-tasks');
+        expect(packageNameFromSpec('npm:pi-ast-grep@0.1.0')).toBe('pi-ast-grep');
         expect(packageNameFromSpec('npm:@scope/name@1.2.0')).toBe('@scope/name');
         expect(packageNameFromSpec('npm:@scope/name')).toBe('@scope/name');
-        expect(packageNameFromSpec('git:github.com/alonw0/pi-claude-link@v1')).toBe('pi-claude-link');
-        expect(packageNameFromSpec('https://github.com/o/pi-intercom.git')).toBe('pi-intercom');
+        expect(packageNameFromSpec('git:github.com/o/some-ext@v1')).toBe('some-ext');
+        expect(packageNameFromSpec('https://github.com/o/some-ext.git')).toBe('some-ext');
         const c = new ToolOriginClassifier({ readManifest: () => null });
-        expect(c.classifyPi('intercom', pkg('npm:pi-intercom@0.16.0', '/nowhere'))).toEqual({
+        expect(c.classifyPi('SendMessage', pkg('npm:@jaggerxtrm/pi-extensions@1.4.0', '/nowhere'))).toEqual({
             class: 'coordination',
-            extension: 'npm:pi-intercom@0.16.0',
+            extension: 'npm:@jaggerxtrm/pi-extensions@1.4.0',
         });
     });
 });

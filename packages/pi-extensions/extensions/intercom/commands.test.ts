@@ -42,7 +42,7 @@ function fakePi(name = "coordinator") {
   };
 }
 
-describe("/rename (CORE-2435 I4, replaces pi-intercom /alias)", () => {
+describe("/rename (CORE-2435 I4, replaces the retired third-party /alias)", () => {
   // Every rename test injects its roster sources: the defaults would read
   // the live agent host and the live Claude registry.
   const emptyRoster = { fetchPi: async () => [], fetchClaude: async () => [] };

@@ -51,11 +51,14 @@ describe('createInstallPiCommand', () => {
         expect(settings.packages).not.toContain('npm:pi-serena-tools');
     });
 
-    it('settings.json.template pins the managed package inventory with background-tasks required', () => {
+    it('settings.json.template pins the managed package inventory without the retired M1 packages', () => {
         const fs = require('node:fs');
         const p = require('node:path');
         const settings = JSON.parse(fs.readFileSync(p.resolve(__dirname, '..', '..', 'config', 'pi', 'settings.json.template'), 'utf8'));
-        expect(settings.packages).toContain('npm:pi-background-tasks@latest');
+        expect(settings.packages).toContain('npm:pi-ast-grep');
+        expect(settings.packages).not.toContain('npm:pi-background-tasks@latest');
+        expect(settings.packages).not.toContain('npm:pi-intercom');
+        expect(settings.packages).not.toContain('git:github.com/alonw0/pi-claude-link');
         expect(settings.packages).not.toContain('npm:@gotgenes/pi-subagents');
         expect(settings.packages).not.toContain('npm:@zenobius/pi-worktrees');
         expect(settings.packages).not.toContain('npm:@aliou/pi-processes');

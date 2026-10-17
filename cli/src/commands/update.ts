@@ -325,6 +325,14 @@ function formatRegistrySourceMismatchReason(error: unknown, strictRegistry: bool
 }
 
 function printPiPackages(packageAssurance: Awaited<ReturnType<typeof assureXtManagedPiPackages>>): void {
+    if (packageAssurance.retiredM1?.found) {
+        for (const settingsFile of packageAssurance.retiredM1.settingsFiles) {
+            console.log(kleur.dim(`  retired M1 packages swept from ${settingsFile}`));
+        }
+        for (const removedPath of packageAssurance.retiredM1.removedPaths) {
+            console.log(kleur.dim(`  retired M1 package dir removed: ${removedPath}`));
+        }
+    }
     if (packageAssurance.missing.length === 0
         && packageAssurance.outdated.length === 0
         && packageAssurance.provided.length === 0) {

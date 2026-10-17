@@ -404,8 +404,7 @@ async function writeEntryAtomic(file: string, entry: Record<string, unknown>): P
 
 /**
  * Claim this pid's registry entry. A live foreign entry (written by another
- * extension, for example pi-claude-link until M1 retires it, whose pid
- * passes the guard) is never overwritten: the claim reports unowned and the
+ * extension, whose pid passes the guard) is never overwritten: the claim reports unowned and the
  * caller keeps the transport off. An absent entry, an owned one, or a stale
  * foreign entry (dead pid or procStart mismatch: litter, not a peer) is
  * owned and may be written.

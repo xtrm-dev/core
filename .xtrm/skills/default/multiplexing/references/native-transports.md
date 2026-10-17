@@ -4,16 +4,16 @@ Use exactly one primary route per conversation.
 
 | Sender → target | Primary transport | Why |
 |---|---|---|
-| Pi → Pi | `pi-intercom` | strongest existing Pi 1:1 ask/reply/receipt/dedupe semantics |
+| Pi → Pi | first-party `SendMessage` / `ListAgents` | strongest existing Pi 1:1 ask/reply/receipt/dedupe semantics |
 | Claude → Claude | Claude `ListAgents` + `SendMessage` | native per-session transport and wake behavior |
-| Pi → Claude | `pi-claude-link` | Pi tool talks directly to Claude peer sockets |
-| Claude → Pi | Claude `SendMessage` to the Pi peer registered by `pi-claude-link` | Pi appears as a native Claude peer |
+| Pi → Claude | first-party Claude transport (`SendMessage` to Claude peers) | Pi tool talks directly to Claude peer sockets |
+| Claude → Pi | Claude `SendMessage` to the Pi peer registered by the first-party transport | Pi appears as a native Claude peer |
 | shell/vim/REPL/unsupported runtime | tmux terminal fallback | no provider-native agent transport exists |
 
 Rules:
 
 1. If a native route exists and the target is visible on it, **do not also inject the same message through tmux**.
-2. Do not duplicate one logical handoff across `pi-intercom` and `pi-claude-link`.
+2. Do not duplicate one logical handoff across Pi and Claude transports.
 3. Do not treat transport success as work completion.
 4. Do not treat an idle notice as a semantic reply.
 5. Do not auto-retry an ambiguous send. First establish whether the original may already have been delivered.
@@ -44,9 +44,8 @@ Persistent main sessions may keep short stable names. Collisions append `-2`, `-
 
 Pi:
 
-- set a meaningful Pi session name with Pi's local naming surface (`/name` in current Pi);
-- `pi-intercom` uses that identity for human targeting;
-- `pi-claude-link` also derives its Claude peer name from the Pi session name when available.
+- set a meaningful Pi session name with Pi's local naming surface (`/rename` in current Pi);
+- the first-party transport uses that identity for human targeting on both the Pi roster and the Claude peer list.
 
 Claude:
 
@@ -55,51 +54,46 @@ Claude:
 
 Never use a tmux pane id as the durable peer identity when the native transport exposes a session identity.
 
-## Pi ↔ Pi — `pi-intercom`
-Use `pi-intercom` as the default Pi peer transport.
+## Pi ↔ Pi — first-party `SendMessage`
+Use the first-party `SendMessage` tool as the default Pi peer transport (`ListAgents` for discovery).
 
 ### Non-blocking handoff / status
 
 ```typescript
-intercom({
-  action: "send",
+SendMessage({
   to: "worker",
   message: "TASK: ...\nAUTHORITY: ...\nSCOPE: ...\nOUTPUT: ...\nREPLY: send completion summary; ask if blocked."
 })
 ```
 
-`send` is fire-and-forget. Use it for delegation, findings, and status where the sender can keep working.
+`SendMessage` without `expect_reply` is fire-and-forget. Use it for delegation, findings, and status where the sender can keep working.
 
 ### Blocking question
 
 ```typescript
-intercom({
-  action: "ask",
+SendMessage({
   to: "planner",
-  message: "Need decision: ..."
+  message: "Need decision: ...",
+  expect_reply: true,
+  timeout_s: 300
 })
 ```
 
-Use `ask` only when the caller truly cannot proceed without the answer. It waits for a correlated reply and returns the answer as the tool result.
+Use `expect_reply` only when the caller truly cannot proceed without the answer. It waits for a correlated reply and returns the answer as the tool result.
 
-Do **not** use a blocking `ask` for a long implementation merely to simulate a monitor. Prefer `send`; the worker sends a completion message later.
+Do **not** use a blocking `expect_reply` for a long implementation merely to simulate a monitor. Prefer a one-way send plus `Monitor`; the worker sends a completion message later.
 
-Only one pending outbound `ask` is allowed per Pi session. Resolve or cancel it before creating another.
+Only one pending outbound ask is allowed per Pi session. Resolve (`reply_to`) or cancel (`cancel` with the message id) it before creating another.
 
 ### Replying
 
-When an inbound Pi intercom ask wakes you, reply through the native correlation path before ending the work that depends on it:
+When an inbound Pi ask wakes you, reply through the native correlation path before ending the work that depends on it:
 
 ```typescript
-intercom({ action: "reply", message: "..." })
+SendMessage({ reply_to: "<message-id>", message: "..." })
 ```
 
-If the turn is no longer associated with the original ask or several asks are pending:
-
-```typescript
-intercom({ action: "pending" })
-intercom({ action: "reply", to: "planner", message: "..." })
-```
+If the turn is no longer associated with the original ask or several asks are pending, resolve the target first and reply with its message id.
 
 Do not merely write the answer in your local transcript and assume the requester sees it.
 
@@ -107,7 +101,7 @@ Do not merely write the answer in your local transcript and assume the requester
 
 An `ask` timeout is not proof that the receiver never saw the message. Do not automatically resend.
 
-If the request should no longer be acted on, use the transport's explicit cancel path with the original message id. If already injected, cancellation may become a visible cancellation request rather than erasing work already observed.
+If the request should no longer be acted on, cancel it with the transport's explicit cancel path (`cancel` with the original message id). If already injected, cancellation may become a visible cancellation request rather than erasing work already observed.
 
 ## Claude ↔ Claude — native cross-session messaging
 Use Claude Code's built-in `ListAgents` and `SendMessage` tools. Do not use tmux input injection for normal Claude-to-Claude coordination.
@@ -131,24 +125,23 @@ Properties to rely on:
 
 Do not send slash commands to another Claude session; they arrive as plain text.
 
-## Claude ↔ Pi — `pi-claude-link`
-`pi-claude-link` makes a Pi process a first-class peer in Claude Code's local peer registry.
+## Claude ↔ Pi — first-party Claude transport
+The first-party Claude transport makes a Pi process a first-class peer in Claude Code's local peer registry (enabled with `intercom.claudeTransport`).
 
-Use it only as an experimental transport adapter. It is not durable semantic authority.
+Use it only as a transport adapter. It is not durable semantic authority.
 
 ### Pi → Claude
 
 Discover:
 
 ```typescript
-claude-link({ action: "list" })
+ListAgents()
 ```
 
 Non-blocking send:
 
 ```typescript
-claude-link({
-  action: "send",
+SendMessage({
   to: "api-review",
   message: "TASK/FINDING: ..."
 })
@@ -157,25 +150,26 @@ claude-link({
 Short blocking question:
 
 ```typescript
-claude-link({
-  action: "ask",
+SendMessage({
   to: "api-review",
-  message: "Need a quick decision: ..."
+  message: "Need a quick decision: ...",
+  expect_reply: true,
+  timeout_s: 120
 })
 ```
 
-`ask` is bounded and non-durable. Use it for short Q&A, not long work.
+`expect_reply` is bounded and non-durable. Use it for short Q&A, not long work.
 
 ### Claude → Pi
 
-A Pi session with `pi-claude-link` should appear in Claude `ListAgents`. Claude sends to it with ordinary `SendMessage`.
+A Pi session with the Claude transport enabled should appear in Claude `ListAgents`. Claude sends to it with ordinary `SendMessage`.
 
-The bridge injects the message into Pi as peer input:
+The transport injects the message into Pi as peer input:
 
 - idle Pi → starts a turn;
 - busy Pi → steers at Pi's safe delivery boundary.
 
-For a normal inbound Claude message, `pi-claude-link` automatically relays Pi's final assistant text from that turn back to the recorded Claude sender. **Do not also send a second `claude-link` reply for the same inbound message unless you intentionally want an additional message.**
+The transport acks delivery automatically from the real injection state — delivered, held or refused — but relays no content back (sendmessage.ts `ackForWakeState`, claude-transport/index.ts:169-180). To answer, the Pi model must call `SendMessage` itself; for an ask, pass `reply_to` with the inbound message id, which resolves the asker's pending ask (sendmessage.ts:629-643). **Do not send a second message for the same inbound message unless you intentionally want an additional message.**
 
 ### Bridge concurrency ceiling
 
@@ -185,9 +179,7 @@ Enforce:
 one active Claude↔Pi conversation per Pi bridge session
 ```
 
-Do not fan multiple simultaneous Claude requesters into one Pi bridge session. The current bridge's automatic reply relay is sender/socket based rather than an XTRM-grade obligation ledger; concurrent requests can become ambiguous.
-
-If parallel Claude work needs Pi help, use separate named Pi sessions.
+Correlate every reply by message id (`reply_to`). Concurrent requests stay unambiguous only when each reply names its ask; if parallel Claude work needs Pi help, prefer separate named Pi sessions.
 
 ### Bridge compatibility / failure
 
@@ -195,4 +187,4 @@ The bridge speaks Claude's local peer protocol and maintains a Pi entry in Claud
 
 A successful socket write means transport acceptance only. It is not proof that the peer processed the request.
 
-If a bridge `ask` times out, classify the outcome as unknown from the caller's perspective until you inspect peer state or receive a later reply. Never blindly duplicate the request.
+If a `SendMessage` `expect_reply` times out, classify the outcome as unknown from the caller's perspective until you inspect peer state or receive a later reply. Never blindly duplicate the request.

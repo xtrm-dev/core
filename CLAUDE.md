@@ -142,7 +142,7 @@ For full Substrate workflow details, load `/using-xtrm` and use `sb --help`, `sb
 | Hook work | `/hook-development` |
 | Service routing | `/scope`, `/using-service-skills` when service territories exist |
 | GitNexus exploration/debug/refactor | matching `/gitnexus-*` skill |
-| Pi long-running commands | `/pi-processes`; use the `process` tool |
+| Pi long-running commands | `/tasks` and the prompt indicator; start with `BashBackground`, watch with `Monitor`, stop with `TaskStop` |
 
 ## Project map
 
@@ -207,7 +207,7 @@ Keep only the commands an agent needs without another manual. Use `--help` for f
 - For service/documentation context, route through `/scope` and the canonical service-skills skill set first.
 - Use GitNexus for unfamiliar code execution flows before grepping large trees.
 - Use `structured_return` for tests, builds, lint, typecheck, and other quality commands.
-- Use `process` for long-running servers/watchers/log tails.
+- Run long-running servers/watchers/log tails with `Bash` `run_in_background`; watch them with `Monitor`.
 - Do not create markdown TODO lists for work tracking; use Substrate Issues.
 
 <!-- gitnexus:start -->

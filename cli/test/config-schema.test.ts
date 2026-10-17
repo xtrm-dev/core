@@ -32,7 +32,7 @@ describe('config schema integrity', () => {
             const expected = [
                 'npm:pi-gitnexus',
                 'npm:@robhowley/pi-structured-return',
-                'npm:pi-background-tasks@latest',
+                'npm:pi-ast-grep',
             ];
             for (const pkg of expected) {
                 expect(schema.packages).toContain(pkg);

@@ -228,23 +228,26 @@ const WAIT_TARGET_RE =
 
 /** Tool evidence that a monitor or wake seam actually exists for the thing being awaited. */
 export function isMonitorSetter(toolName: string, args: Record<string, unknown> | undefined, input: Record<string, unknown> | undefined): boolean {
-  if (/^(bg_run|bg_delegate|process)$/.test(toolName)) return true;
-  // An intercom ask/send IS a wake seam: the peer's reply re-enters this
-  // session as a follow-up turn. Awaiting "the reply arrives" behind an
-  // intercom send is monitored by construction.
-  if (toolName === "intercom") {
-    const action = String(args?.["action"] ?? input?.["action"] ?? "");
-    if (action === "ask" || action === "send") return true;
+  // Claude Code backgrounds Bash itself; Pi backgrounds through the first-party tools.
+  if (args?.["run_in_background"] === true || input?.["run_in_background"] === true) return true;
+  if (/^(BashBackground|Monitor)$/.test(toolName)) return true;
+  // A SendMessage that waits for the peer IS a wake seam: the reply or the
+  // idle notice re-enters this session as a follow-up turn. A one-way send
+  // with no wait is not.
+  if (toolName === "SendMessage") {
+    if (args?.["expect_reply"] === true || input?.["expect_reply"] === true) return true;
+    if (args?.["notify_when_idle"] === true || input?.["notify_when_idle"] === true) return true;
+    return false;
   }
   const cmd = String(args?.["command"] ?? input?.["command"] ?? "");
   if (!cmd) return false;
   // Foreground `sleep N; check` poll loops are NOT monitors: they block the
   // turn and force a fresh decision every cycle. Real wake seams are
-  // backgrounded or parked: bg_run/process/nohup, `&\s*$`, watch -n (runs
+  // backgrounded or parked: nohup, `&\s*$`, watch -n (runs
   // behind), sleep infinity, `at now`. A plain foreground while-sleep or
   // timed sleep still lets the wait-guard fire; Jev then decides whether a
   // proper background monitor would materially help.
-  return /\b(bg_run|bg_delegate|process start|nohup|watch\s+-?\d|systemd-run|at now|sleep infinity)\b/.test(cmd) || /&\s*$/.test(cmd);
+  return /\b(nohup|watch\s+-?\d|systemd-run|at now|sleep infinity)\b/.test(cmd) || /&\s*$/.test(cmd);
 }
 
 export function waitCommitment(text: string): boolean {
@@ -257,7 +260,7 @@ export function waitGuardVerb(): VerbSpec {
     action: "wait without a monitor",
     oneLine: "The agent committed to waiting for an external event with no monitor or timer set.",
     instruction: () =>
-      "You committed to wait for an external event with nothing watching it: start a monitor (bg_run/process) or journal a blocker so a resumed session knows what is pending.",
+      "You committed to wait for an external event with nothing watching it: start a monitor (Monitor, or BashBackground for shell work) or journal a blocker so a resumed session knows what is pending.",
     severity: "normal",
     cooldownMin: 45,
     source: "jev",
