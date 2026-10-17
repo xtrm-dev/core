@@ -1,4 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+// Complete mock: spread the real pi-tui so neighbouring suites sharing the
+// module registry under full-suite runs keep working exports (matchesKey).
+import * as realPiTui from "../../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 mock.module("@earendil-works/pi-ai", () => ({ complete: async () => ({}) }));
 mock.module("@earendil-works/pi-coding-agent", () => ({
@@ -16,11 +19,11 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isToolCallEventType: () => false,
 }));
 mock.module("@earendil-works/pi-tui", () => ({
+  ...(realPiTui as object),
   Box: class {},
   Text: class {
     constructor(public text: string) {}
   },
-  matchesKey: () => false,
   truncateToWidth: (value: string) => value,
   visibleWidth: (value: string) => value.length,
 }));

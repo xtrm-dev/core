@@ -6,7 +6,7 @@ import path from "node:path";
 mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" }));
 
 const delivery = await import("./delivery.ts");
-const { createAgentHostBridge } = await import("../xtrm-agent-host/index.ts");
+const { createAgentHostBridge, ensureAgentHostBridge } = await import("../xtrm-agent-host/index.ts");
 const { default: intercomExtension } = await import("./index.ts");
 const { startAgentHost } = await import("../../../../cli/src/core/agent-host.ts");
 
@@ -478,7 +478,10 @@ describe("intercom Claude transport wiring (CORE-2434 delta review)", () => {
       });
       pi.fire("session_start", { reason: "startup" }, c.ctx);
       await until(() => host.registry.list().length === 1);
-      await new Promise((r) => setTimeout(r, 150));
+      // Started state, not a sleep: the bridge is open, so the session_start
+      // dispatch (including the disabled Claude start's off-decision) fully
+      // settled before asserting nothing was bound or written.
+      await until(() => ensureAgentHostBridge(pi.pi).state === "open");
       expect(existsSync(claudeSock)).toBe(false);
       expect(existsSync(path.join(claudeSessions, `${process.pid}.json`))).toBe(false);
       pi.fire("session_shutdown", { reason: "quit" }, c.ctx);

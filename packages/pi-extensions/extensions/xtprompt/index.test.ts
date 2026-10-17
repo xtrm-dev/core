@@ -1,6 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+// Complete mock: spread the real pi-tui so neighbouring suites sharing the
+// module registry under full-suite runs keep working exports (matchesKey).
+import * as realPiTui from "../../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 const streamCalls: unknown[][] = [];
 let streamImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
@@ -33,9 +36,9 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
 }));
 
 mock.module("@earendil-works/pi-tui", () => ({
+  ...(realPiTui as object),
   Box: () => null,
   Text: () => null,
-  matchesKey: () => false,
   truncateToWidth: (value: string) => value,
   visibleWidth: (value: string) => value.length,
 }));

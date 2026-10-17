@@ -3,6 +3,9 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import manifest from "../src/manifest.json" with { type: "json" };
+// Complete mock: spread the real pi-tui so neighbouring suites sharing the
+// module registry under full-suite runs keep working exports (matchesKey).
+import * as realPiTui from "../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 mock.module("@earendil-works/pi-ai", () => ({ complete: async () => ({}) }));
 mock.module("@earendil-works/pi-coding-agent", () => ({
@@ -21,9 +24,9 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isToolCallEventType: () => false,
 }));
 mock.module("@earendil-works/pi-tui", () => ({
+  ...(realPiTui as object),
   Box: class {},
   Text: class {},
-  matchesKey: () => false,
   truncateToWidth: (value: string) => value,
   visibleWidth: (value: string) => value.length,
 }));

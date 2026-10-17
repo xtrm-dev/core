@@ -327,10 +327,7 @@ describe("claude-transport send and receive (CORE-2434 I3)", () => {
 
 describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
   type Handler = (event: any, ctx: any) => unknown;
-  // Generous under CI load: shutdown assertions wait on socket close plus
-  // registry writes, and a loaded runner starves a tight polling loop
-  // (CORE-2435 review: rare timeout on the entry-removal wait below).
-  const until = async (check: () => boolean, ms = 30000) => {
+  const until = async (check: () => boolean, ms = 5000) => {
     const start = Date.now();
     while (!check()) {
       if (Date.now() - start > ms) throw new Error("timed out");
@@ -445,10 +442,20 @@ describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
       const { pi, fire } = fakePi();
       const notices: Array<{ line: string; level: string }> = [];
       const ctx = fakeCtx(notices);
-      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
+      // Gate on full start: the entry existing does not mean the
+      // post-register verify settled, and shutdown must not race it.
+      let resolveStarted!: () => void;
+      const startedP = new Promise<void>((resolve) => {
+        resolveStarted = resolve;
+      });
+      adapter.default(pi, {
+        socketPath: sockPath,
+        sessionsDir: dir,
+        enabled: true,
+        hooks: { afterStart: () => resolveStarted() },
+      });
       fire("session_start", { reason: "startup" }, ctx);
-      await until(() => existsSync(sockPath));
-      await until(() => existsSync(entryFile(dir)));
+      await startedP;
       expect(notices).toEqual([]);
       expect(String(JSON.parse(readFileSync(entryFile(dir), "utf8")).version)).toMatch(/^intercom /);
       fire("session_shutdown", { reason: "quit" }, ctx);
@@ -513,8 +520,7 @@ describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
 
 describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
   type Handler = (event: any, ctx: any) => unknown;
-  // Same load rationale as the wiring block above (CORE-2435 review).
-  const until = async (check: () => boolean, ms = 30000) => {
+  const until = async (check: () => boolean, ms = 5000) => {
     const start = Date.now();
     while (!check()) {
       if (Date.now() - start > ms) throw new Error("timed out");
@@ -663,10 +669,25 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
       const { pi, fire } = fakePi();
       const notices: Array<{ line: string; level: string }> = [];
       const ctx = fakeCtx(notices);
-      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
+      // Gate on full start AND full stop: the entry existing does not mean
+      // the verify settled, and the foreign write must land strictly between
+      // a settled start and a settled stop, never inside either.
+      let resolveStarted!: () => void;
+      const startedP = new Promise<void>((resolve) => {
+        resolveStarted = resolve;
+      });
+      let resolveStopped!: () => void;
+      const stoppedP = new Promise<void>((resolve) => {
+        resolveStopped = resolve;
+      });
+      adapter.default(pi, {
+        socketPath: sockPath,
+        sessionsDir: dir,
+        enabled: true,
+        hooks: { afterStart: () => resolveStarted(), afterStop: () => resolveStopped() },
+      });
       fire("session_start", { reason: "startup" }, ctx);
-      await until(() => existsSync(sockPath));
-      await until(() => existsSync(entryFile(dir)));
+      await startedP;
       // pi-claude-link loads second: it unlinks first, takes the path and the entry.
       rmSync(sockPath, { force: true });
       const net = await import("node:net");
@@ -675,7 +696,7 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
       const foreignEntry = JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "pi-claude-link" });
       writeFileSync(entryFile(dir), foreignEntry);
       fire("session_shutdown", { reason: "quit" }, ctx);
-      await new Promise((r) => setTimeout(r, 150));
+      await stoppedP;
       expect(readFileSync(entryFile(dir), "utf8")).toBe(foreignEntry);
       expect(existsSync(sockPath)).toBe(true);
       expect(notices.filter((n) => n.line === adapter.TAKEOVER_LINE)).toHaveLength(0);

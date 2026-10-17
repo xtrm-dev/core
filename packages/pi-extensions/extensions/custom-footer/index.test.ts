@@ -1,6 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
+// Complete mock: spread the real pi-tui so neighbouring suites sharing the
+// module registry under full-suite runs keep working exports (matchesKey).
+import * as realPiTui from "../../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 mock.module("@earendil-works/pi-tui", () => ({
+	...(realPiTui as object),
 	truncateToWidth: (value: string, width: number) => (value.length > width ? value.slice(0, width) : value),
 }));
 

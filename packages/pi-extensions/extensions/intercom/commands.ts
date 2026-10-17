@@ -20,7 +20,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { listClaudeSessions, updatePiPeer } from "./claude-transport/index.ts";
 import { buildRoster, fetchPiSessions } from "./roster.ts";
 
@@ -86,23 +86,7 @@ async function rosterEntries(
   return { ownSessionId, entries: built.entries, text: built.text };
 }
 
-/**
- * The overlay's whole keyboard: literal input sequences, no keybinding
- * table. A shared matcher (pi-tui matchesKey) reads false under the
- * process-wide test mocks of neighbouring suites, which broke this overlay
- * in full-suite runs; these six keys have stable sequences.
- */
-function overlayKey(data: string): "close" | "up" | "down" | "pageUp" | "pageDown" | "home" | "end" | null {
-  if (data === "\u001b" || data === "q" || data === "Q" || data === "\u0003" || data === "\r") return "close";
-  if (data === "\u001b[A") return "up";
-  if (data === "\u001b[B") return "down";
-  if (data === "\u001b[5~") return "pageUp";
-  if (data === "\u001b[6~") return "pageDown";
-  if (data === "\u001b[H" || data === "\u001b[1~") return "home";
-  if (data === "\u001b[F" || data === "\u001b[4~") return "end";
-  return null;
-}
-
+/** Read-only roster overlay: the ListAgents text, scrollable, esc closes. */
 export interface RosterOverlayOptions {
   lines: string[];
   theme: { fg(color: string, text: string): string; bold(text: string): string };
@@ -119,18 +103,17 @@ export class IntercomRosterOverlay {
   constructor(private readonly options: RosterOverlayOptions) {}
 
   handleInput(data: string): void {
-    const key = overlayKey(data);
-    if (key === "close") {
+    if (matchesKey(data, "escape") || matchesKey(data, "q") || matchesKey(data, "ctrl+c") || matchesKey(data, "enter")) {
       this.options.close();
       return;
     }
     const maxOffset = Math.max(0, this.options.lines.length - OVERLAY_VISIBLE_LINES);
-    if (key === "up") this.scrollOffset = Math.min(this.scrollOffset + 1, maxOffset);
-    else if (key === "down") this.scrollOffset = Math.max(0, this.scrollOffset - 1);
-    else if (key === "pageUp") this.scrollOffset = Math.min(this.scrollOffset + OVERLAY_VISIBLE_LINES, maxOffset);
-    else if (key === "pageDown") this.scrollOffset = Math.max(0, this.scrollOffset - OVERLAY_VISIBLE_LINES);
-    else if (key === "home") this.scrollOffset = maxOffset;
-    else if (key === "end") this.scrollOffset = 0;
+    if (matchesKey(data, "up")) this.scrollOffset = Math.min(this.scrollOffset + 1, maxOffset);
+    else if (matchesKey(data, "down")) this.scrollOffset = Math.max(0, this.scrollOffset - 1);
+    else if (matchesKey(data, "pageUp")) this.scrollOffset = Math.min(this.scrollOffset + OVERLAY_VISIBLE_LINES, maxOffset);
+    else if (matchesKey(data, "pageDown")) this.scrollOffset = Math.max(0, this.scrollOffset - OVERLAY_VISIBLE_LINES);
+    else if (matchesKey(data, "home")) this.scrollOffset = maxOffset;
+    else if (matchesKey(data, "end")) this.scrollOffset = 0;
     else return;
     this.options.requestRender?.();
   }
