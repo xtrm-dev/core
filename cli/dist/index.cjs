@@ -56097,11 +56097,8 @@ var MANAGED_PACKAGES = [
   { id: "npm:@narumitw/pi-goal", displayName: "pi-goal", required: false },
   { id: "git:github.com/DietrichGebert/ponytail", displayName: "ponytail", required: false },
   { id: "npm:@tintinweb/pi-tasks", displayName: "pi-tasks", required: false },
-  { id: "npm:pi-background-tasks@latest", displayName: "pi-background-tasks", required: true },
   { id: "npm:pi-mermaid-viewer", displayName: "pi-mermaid-viewer", required: false },
   { id: "npm:@jaggerxtrm/pi-service-knowledge", displayName: "pi-service-knowledge", required: true },
-  { id: "npm:pi-intercom", displayName: "pi-intercom", required: true },
-  { id: "git:github.com/alonw0/pi-claude-link", displayName: "pi-claude-link", required: true },
   { id: "npm:pi-ast-grep", displayName: "pi-ast-grep", required: true }
 ];
 var PROJECT_REQUIRED_PACKAGE_IDS = [
@@ -80286,8 +80283,10 @@ function bounded(value) {
 var import_node_fs26 = require("fs");
 var import_node_path68 = __toESM(require("path"), 1);
 var COORDINATION_TOOLS = [
-  { extension: "pi-intercom", tools: ["intercom", "contact_supervisor"] },
-  { extension: "pi-claude-link", tools: ["claude-link"] },
+  // First-party coordination tools (CORE-2443 M1: pi-intercom and
+  // pi-claude-link retired; SendMessage/ListAgents are registered by the
+  // first-party @jaggerxtrm/pi-extensions intercom extension).
+  { extension: "@jaggerxtrm/pi-extensions", tools: ["SendMessage", "ListAgents"] },
   {
     mcpServer: "specialists",
     tools: [

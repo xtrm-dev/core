@@ -51,24 +51,24 @@ describe('pi runtime safeguards', () => {
   it('normalizes npm selectors without losing scoped package names', async () => {
     const { normalizePiPackageIdentity, parseNpmPackageName } = await import('../core/pi-runtime.js');
 
-    expect(parseNpmPackageName('npm:pi-background-tasks@latest')).toBe('pi-background-tasks');
+    expect(parseNpmPackageName('npm:pi-ast-grep@latest')).toBe('pi-ast-grep');
     expect(parseNpmPackageName('npm:@scope/pkg@next')).toBe('@scope/pkg');
     expect(parseNpmPackageName('npm:@scope/pkg')).toBe('@scope/pkg');
-    expect(parseNpmPackageName('git:github.com/alonw0/pi-claude-link')).toBeNull();
+    expect(parseNpmPackageName('git:github.com/DietrichGebert/ponytail')).toBeNull();
 
-    expect(normalizePiPackageIdentity('npm:pi-background-tasks@latest')).toBe('npm:pi-background-tasks');
+    expect(normalizePiPackageIdentity('npm:pi-ast-grep@latest')).toBe('npm:pi-ast-grep');
     expect(normalizePiPackageIdentity('npm:@scope/pkg@next')).toBe('npm:@scope/pkg');
-    expect(normalizePiPackageIdentity('git:github.com/alonw0/pi-claude-link.git#main')).toBe('git:github.com/alonw0/pi-claude-link');
+    expect(normalizePiPackageIdentity('git:github.com/DietrichGebert/ponytail#main')).toBe('git:github.com/DietrichGebert/ponytail');
   });
 
   it('resolves npm-backed packages from global npm root and strips install selectors', async () => {
     const { getInstalledPiPackageVersion, isPackagePresentInPiAgent } = await import('../core/pi-runtime.js');
     const npmRootDir = path.join(tempRoot, 'global-npm-root', 'node_modules');
-    const packageDir = path.join(npmRootDir, 'pi-background-tasks');
+    const packageDir = path.join(npmRootDir, 'pi-ast-grep');
     await fs.outputJson(path.join(packageDir, 'package.json'), { version: '2.3.4' });
 
-    await expect(getInstalledPiPackageVersion(process.env.PI_AGENT_DIR as string, 'pi-background-tasks', npmRootDir)).resolves.toBe('2.3.4');
-    await expect(isPackagePresentInPiAgent(process.env.PI_AGENT_DIR as string, 'npm:pi-background-tasks@latest', npmRootDir)).resolves.toBe(true);
+    await expect(getInstalledPiPackageVersion(process.env.PI_AGENT_DIR as string, 'pi-ast-grep', npmRootDir)).resolves.toBe('2.3.4');
+    await expect(isPackagePresentInPiAgent(process.env.PI_AGENT_DIR as string, 'npm:pi-ast-grep@latest', npmRootDir)).resolves.toBe(true);
   });
 
   it('classifies npm freshness with an injectable provider', async () => {
@@ -102,15 +102,15 @@ describe('pi runtime safeguards', () => {
 
     const statuses = await getManagedPiPackageFreshness(provider, [
       { id: 'git:github.com/DietrichGebert/ponytail', displayName: 'ponytail', required: false },
-      { id: 'git:github.com/alonw0/pi-claude-link', displayName: 'pi-claude-link', required: true },
+      { id: 'git:github.com/example/other-ext', displayName: 'other-ext', required: true },
     ], [
       'git:github.com/DietrichGebert/ponytail',
-      'git:github.com/alonw0/pi-claude-link',
+      'git:github.com/example/other-ext',
     ]);
 
     expect(statuses.map(status => [status.pkg.id, status.state])).toEqual([
       ['git:github.com/DietrichGebert/ponytail', 'current'],
-      ['git:github.com/alonw0/pi-claude-link', 'current'],
+      ['git:github.com/example/other-ext', 'current'],
     ]);
     expect(provider).not.toHaveBeenCalled();
   });
@@ -120,7 +120,7 @@ describe('pi runtime safeguards', () => {
     const provider = vi.fn();
 
     const [status] = await getManagedPiPackageFreshness(provider, [
-      { id: 'git:github.com/alonw0/pi-claude-link', displayName: 'pi-claude-link', required: true },
+      { id: 'git:github.com/example/other-ext', displayName: 'other-ext', required: true },
     ], []);
 
     expect(status).toEqual(expect.objectContaining({
@@ -143,11 +143,8 @@ describe('pi runtime safeguards', () => {
       'npm:@narumitw/pi-goal',
       'git:github.com/DietrichGebert/ponytail',
       'npm:@tintinweb/pi-tasks',
-      'npm:pi-background-tasks@latest',
       'npm:pi-mermaid-viewer',
       'npm:@jaggerxtrm/pi-service-knowledge',
-      'npm:pi-intercom',
-      'git:github.com/alonw0/pi-claude-link',
       'npm:pi-ast-grep',
     ]);
   });
@@ -223,7 +220,7 @@ describe('pi runtime safeguards', () => {
       packages: ['npm:pi-gitnexus', 'npm:pi-mcp-adapter'],
     });
     await fs.outputJson(path.join(projectRoot, '.pi', 'settings.json'), {
-      packages: ['npm:pi-mcp-adapter', 'npm:pi-intercom'],
+      packages: ['npm:pi-mcp-adapter', 'npm:pi-ast-grep'],
     });
 
     const result = await removeRetiredPiMcpAdapter(false, undefined, agentDir, projectRoot);
@@ -241,7 +238,7 @@ describe('pi runtime safeguards', () => {
       theme: 'light',
       packages: ['npm:pi-gitnexus'],
     });
-    expect((await fs.readJson(path.join(projectRoot, '.pi', 'settings.json'))).packages).toEqual(['npm:pi-intercom']);
+    expect((await fs.readJson(path.join(projectRoot, '.pi', 'settings.json'))).packages).toEqual(['npm:pi-ast-grep']);
   });
 
   it('removes an npm leftover with no extension override and no settings entry', async () => {
@@ -274,17 +271,17 @@ describe('pi runtime safeguards', () => {
     };
     await fs.outputJson(settingsPath, {
       theme: 'xtrm-dark-flattools',
-      packages: ['npm:pi-gitnexus', 'npm:pi-mcp-adapter', objectEntry, 'npm:pi-intercom'],
+      packages: ['npm:pi-gitnexus', 'npm:pi-mcp-adapter', objectEntry, 'npm:pi-ast-grep'],
     }, { spaces: 2 });
 
     const result = await removeRetiredPiMcpAdapter(false, undefined, agentDir);
 
     expect(result.settingsFiles).toEqual([settingsPath]);
     const after = await fs.readJson(settingsPath);
-    expect(after.packages).toEqual(['npm:pi-gitnexus', objectEntry, 'npm:pi-intercom']);
+    expect(after.packages).toEqual(['npm:pi-gitnexus', objectEntry, 'npm:pi-ast-grep']);
     expect(after).toEqual({
       theme: 'xtrm-dark-flattools',
-      packages: ['npm:pi-gitnexus', objectEntry, 'npm:pi-intercom'],
+      packages: ['npm:pi-gitnexus', objectEntry, 'npm:pi-ast-grep'],
     });
   });
 
@@ -344,7 +341,7 @@ describe('pi runtime safeguards', () => {
     const agentDir = path.join(tempRoot, 'clean-agent');
     const projectRoot = path.join(tempRoot, 'clean-project');
     await fs.outputJson(path.join(agentDir, 'settings.json'), { packages: ['npm:pi-gitnexus'] });
-    await fs.outputJson(path.join(projectRoot, '.pi', 'settings.json'), { packages: ['npm:pi-intercom'] });
+    await fs.outputJson(path.join(projectRoot, '.pi', 'settings.json'), { packages: ['npm:pi-ast-grep'] });
     const beforeAgent = await fs.readFile(path.join(agentDir, 'settings.json'), 'utf8');
     const beforeProject = await fs.readFile(path.join(projectRoot, '.pi', 'settings.json'), 'utf8');
     const logs: string[] = [];
@@ -452,9 +449,9 @@ describe('pi runtime safeguards', () => {
       const { pruneConflictingPiPackageEntries } = await import('../core/pi-runtime.js');
       const versionedObject = { source: 'npm:pi-dex@2.1.0', extensions: ['x.ts'] };
       const result = pruneConflictingPiPackageEntries([
-        'npm:pi-dex@1.0.0', objectEntry, versionedObject, 'npm:pi-dex', 'npm:pi-intercom',
+        'npm:pi-dex@1.0.0', objectEntry, versionedObject, 'npm:pi-dex', 'npm:pi-ast-grep',
       ]);
-      expect(result.kept).toEqual([objectEntry, 'npm:pi-intercom']);
+      expect(result.kept).toEqual([objectEntry, 'npm:pi-ast-grep']);
       expect(result.removed).toEqual(['npm:pi-dex@1.0.0', versionedObject, 'npm:pi-dex']);
     });
 
@@ -462,8 +459,8 @@ describe('pi runtime safeguards', () => {
       const { cleanupConflictingPiPackageSettings } = await import('../core/pi-runtime.js');
       const agentDir = path.join(tempRoot, 'prune-agent');
       const projectRoot = path.join(tempRoot, 'prune-project');
-      const before = { theme: 'light', packages: ['npm:pi-intercom', 'npm:pi-dex@1.0.0', objectEntry, { source: 'npm:pi-dex', extensions: [] }, 'npm:pi-lens'] };
-      const after = { theme: 'light', packages: ['npm:pi-intercom', objectEntry, 'npm:pi-lens'] };
+      const before = { theme: 'light', packages: ['npm:pi-ast-grep', 'npm:pi-dex@1.0.0', objectEntry, { source: 'npm:pi-dex', extensions: [] }, 'npm:pi-lens'] };
+      const after = { theme: 'light', packages: ['npm:pi-ast-grep', objectEntry, 'npm:pi-lens'] };
       await writeText(path.join(agentDir, 'settings.json'), `${asText(before)}\n`);
       await writeText(path.join(projectRoot, '.pi', 'settings.json'), asText(before));
 
@@ -478,7 +475,7 @@ describe('pi runtime safeguards', () => {
       const { cleanupConflictingPiPackageSettings } = await import('../core/pi-runtime.js');
       const agentDir = path.join(tempRoot, 'prune-noop-agent');
       const projectRoot = path.join(tempRoot, 'prune-noop-project');
-      const text = asText({ theme: 'xtrm-dark', packages: ['npm:pi-intercom', objectEntry] });
+      const text = asText({ theme: 'xtrm-dark', packages: ['npm:pi-ast-grep', objectEntry] });
       await writeText(path.join(agentDir, 'settings.json'), text);
       await writeText(path.join(projectRoot, '.pi', 'settings.json'), text);
 
@@ -498,7 +495,7 @@ describe('pi runtime safeguards', () => {
       await writeText(globalPath, `${asText({ packages: ['../../dev/core/packages/pi-extensions'] })}\n`);
       await writeText(settingsPath, `${asText({
         extensions: [skillObject, 'npm:@xtrm/pi-extensions'],
-        packages: ['npm:@xtrm/pi-extensions', objectEntry, 'npm:pi-dex', { source: 'npm:pi-dex@1.0.0' }, 'npm:pi-intercom'],
+        packages: ['npm:@xtrm/pi-extensions', objectEntry, 'npm:pi-dex', { source: 'npm:pi-dex@1.0.0' }, 'npm:pi-ast-grep'],
         skills: ['./my-custom-skills', skillObject],
       })}\n`);
 
@@ -506,7 +503,7 @@ describe('pi runtime safeguards', () => {
 
       const text = await fs.readFile(settingsPath, 'utf8');
       const after = JSON.parse(text);
-      expect(after.packages).toEqual([objectEntry, 'npm:pi-intercom']);
+      expect(after.packages).toEqual([objectEntry, 'npm:pi-ast-grep']);
       expect(after.skills).toEqual(['./my-custom-skills', skillObject]);
       expect(after.extensions).toContainEqual(skillObject);
       expect(text.startsWith('{\n    "')).toBe(true);
@@ -518,7 +515,7 @@ describe('pi runtime safeguards', () => {
       const settingsPath = path.join(projectRoot, '.pi', 'settings.json');
       const globalPath = path.join(process.env.PI_AGENT_DIR as string, 'settings.json');
       await writeText(globalPath, `${asText({ packages: ['../../dev/core/packages/pi-extensions'] })}\n`);
-      const text = asText({ extensions: [], packages: ['npm:pi-intercom', objectEntry], theme: 'xtrm-dark' });
+      const text = asText({ extensions: [], packages: ['npm:pi-ast-grep', objectEntry], theme: 'xtrm-dark' });
       await writeText(settingsPath, text);
 
       expect(await updatePiSettings(projectRoot, false)).toBe(false);
@@ -530,12 +527,12 @@ describe('pi runtime safeguards', () => {
       const projectRoot = path.join(tempRoot, 'update-global-append');
       await fs.ensureDir(projectRoot);
       const globalPath = path.join(process.env.PI_AGENT_DIR as string, 'settings.json');
-      await writeText(globalPath, asText({ theme: 'light', packages: [objectEntry, 'npm:pi-intercom'] }));
+      await writeText(globalPath, asText({ theme: 'light', packages: [objectEntry, 'npm:pi-ast-grep'] }));
 
       await updatePiSettings(projectRoot, false);
 
       expect(JSON.parse(await fs.readFile(globalPath, 'utf8')).packages)
-        .toEqual([objectEntry, 'npm:pi-intercom', 'npm:@jaggerxtrm/pi-extensions']);
+        .toEqual([objectEntry, 'npm:pi-ast-grep', 'npm:@jaggerxtrm/pi-extensions']);
     });
 
     it('updatePiSettings treats an object-form pi-extensions source as already declared globally', async () => {

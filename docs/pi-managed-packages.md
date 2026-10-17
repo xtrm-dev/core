@@ -2,8 +2,8 @@
 title: Managed Pi Package Baseline
 scope: pi-runtime
 category: reference
-version: 1.0.0
-updated: 2026-09-05
+version: 1.1.0
+updated: 2026-10-17
 description: "XTRM-managed Pi packages, ownership, install selectors, health semantics, and known compatibility boundaries"
 source_of_truth_for:
   - "cli/src/core/pi-runtime.ts"
@@ -37,14 +37,13 @@ The runtime also marks packages as either required or optional for health semant
 | `npm:@narumitw/pi-goal` | managed optional | session goal workflow |
 | `git:github.com/DietrichGebert/ponytail` | managed optional | minimal-engineering/reduction guidance |
 | `npm:@tintinweb/pi-tasks` | managed optional | task tracking / task UI and optional task execution integration |
-| `npm:pi-background-tasks@latest` | required | durable background jobs, delegated investigations and background workflows |
 | `npm:pi-mermaid-viewer` | managed optional | Mermaid rendering in the Pi TUI |
 | `npm:@jaggerxtrm/pi-service-knowledge` | required | XTRM service-knowledge runtime integration |
-| `npm:pi-intercom` | required | targeted Pi ↔ Pi live coordination |
-| `git:github.com/alonw0/pi-claude-link` | required | Pi ↔ Claude Code cross-session communication |
 | `npm:pi-ast-grep` | required | compact read-only structural code search |
 
 `npm:pi-mcp-adapter` is retired (CORE-2399): Pi has built-in MCP, so the managed baseline no longer installs an adapter and `xt update` removes the package entry and the `~/.pi/agent/extensions/pi-mcp-adapter` override from machines that still carry them.
+
+`npm:pi-background-tasks@latest`, `npm:pi-intercom` and `git:github.com/alonw0/pi-claude-link` are retired (CORE-2443 M1): the first-party `intercom` and `background` extensions inside `@jaggerxtrm/pi-extensions` replace them (SendMessage, ListAgents, BashBackground, Monitor, TaskStop, `/tasks`, `/intercom`, `/rename`), so the managed baseline no longer installs the third-party packages and `xt update` removes their entries from machines that still carry them.
 
 The developer checkout path `packages/pi-extensions` can satisfy the first row while working inside Core. A machine-specific absolute path such as `/home/.../core/packages/pi-extensions` is never a portable managed selector.
 
@@ -55,9 +54,9 @@ The baseline is intentionally biased toward removing repeated setup/reconstructi
 ```text
 codebase intelligence   pi-gitnexus + pi-ast-grep
 structured execution    structured-return + guardrails
-continuation/work        goal + tasks + background-tasks
+continuation/work        goal + tasks + first-party background extension
 runtime access           Pi built-in MCP (`pi.mcp.json`)
-coordination             pi-intercom + pi-claude-link
+coordination             first-party intercom extension (SendMessage, ListAgents)
 XTRM context/runtime     pi-extensions + pi-service-knowledge
 operator UX              pi-mermaid-viewer + xtrm-ui (inside pi-extensions)
 engineering posture      ponytail + XTRM engineering-quality doctrine
@@ -76,7 +75,7 @@ Examples:
 ```text
 npm:pi-gitnexus
 npm:@scope/package
-npm:pi-background-tasks@latest
+npm:pi-ast-grep@latest
 ```
 
 For an npm selector such as `@latest`, XTRM keeps the full selector for installation but resolves the bare npm package name for installed-file/version checks.
@@ -87,26 +86,24 @@ Examples:
 
 ```text
 git:github.com/DietrichGebert/ponytail
-git:github.com/alonw0/pi-claude-link
 ```
 
 Pi stores Git packages separately from npm packages and `pi list` reports their configured sources. XTRM uses that source identity for presence checks rather than pretending a Git source has an npm version.
 
 Pi itself owns Git clone/ref reconciliation. If a future managed selector pins `@tag` or `@commit`, that pin should remain stable until XTRM deliberately changes it.
 
-## Coordination packages
+## Coordination (first-party)
 
-### `pi-intercom`
+Targeted messaging and background work ship in the first-party `intercom` and `background` extensions inside `@jaggerxtrm/pi-extensions`; no third-party coordination package is managed. XTRM's `multiplexing` doctrine owns higher-level behavior—when to send, ask, reply, wake, wait, persist, or hand off—rather than reimplementing the transport.
 
-`pi-intercom` is the preferred Pi ↔ Pi targeted messaging transport in the current XTRM environment. XTRM's `multiplexing` doctrine owns higher-level behavior—when to send, ask, reply, wake, wait, persist, or hand off—rather than reimplementing the transport.
-
-### `pi-claude-link`
-
-`pi-claude-link` lets Pi and Claude Code sessions discover/message one another through Claude Code's cross-session messaging protocol. It should not be described as a Claude Agent SDK integration unless its implementation changes to use that SDK.
+- Pi ↔ Pi and Pi ↔ Claude Code messaging: `SendMessage` (send/ask/reply), `ListAgents` (roster), `/intercom` and `/rename` commands, durable mailbox. The Pi ↔ Claude Code leg runs over the first-party Claude transport (Claude Code cross-session registry/socket interoperability), enabled with `intercom.claudeTransport`.
+- Background work: `BashBackground` (start), `Monitor` (watch), `TaskStop` (stop), `/tasks` and the prompt indicator.
 
 Claude ↔ Claude work should prefer Claude Code's native peer/team messaging when available.
 
 Peer messages are coordination input, not user authority. The durable work contract and repository/Bead state remain authoritative.
+
+The retired `pi-intercom` and `pi-claude-link` packages stay credited as design/behavior sources in the adoption-credits ledger; they are no longer installed.
 
 ## `pi-tasks` (subagent delegation retired)
 

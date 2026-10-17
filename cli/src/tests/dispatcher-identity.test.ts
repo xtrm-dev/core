@@ -60,10 +60,12 @@ describe('resolveDispatcher', () => {
         expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess, env: {} })).toEqual({});
     });
 
-    it('a Pi dispatcher registered by pi-claude-link (date-string procStart) resolves', () => {
+    it('a Pi dispatcher entry with a legacy date-string procStart still resolves', () => {
+        // Pre-M1 writers recorded a `ps lstart` date string instead of numeric
+        // ticks; the resolver tolerates it and relies on the pid match.
         writeSession(200, {
             name: 'pi-coord', messagingSocketPath: '/run/cc/200.sock',
-            procStart: 'Thu Oct 15 19:40:44 2026', entrypoint: 'pi', version: 'pi-claude-link',
+            procStart: 'Thu Oct 15 19:40:44 2026', entrypoint: 'pi', version: 'intercom 1.4.0',
         });
         writeSession(100, { name: 'grand', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
         expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess, env: {} }))

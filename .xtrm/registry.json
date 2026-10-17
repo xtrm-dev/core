@@ -178,7 +178,7 @@
           "version": "0.15.3"
         },
         "multiplexing/references/discovery-and-preflight.md": {
-          "hash": "ef7bf358add52dd07def8737cd69cf9dac9913e479008f70ecc9dddbd6f681e5",
+          "hash": "a0a7efd29fa24bf05b1eecf7953846e838de410443851c44ca41a60450cd81dd",
           "version": "0.15.3"
         },
         "multiplexing/references/end-of-session-hygiene.md": {
@@ -210,7 +210,7 @@
           "version": "0.15.3"
         },
         "multiplexing/references/native-transports.md": {
-          "hash": "c3fbc2ebbfec2c5575dd1d54c93a75ba8f7c38527d1bd7294bf238aa3cd5002e",
+          "hash": "9a9c0f2548d9640588d926d863f70231cd504040fe6d515954647205ba266387",
           "version": "0.15.3"
         },
         "multiplexing/references/native-waiting.md": {
@@ -246,7 +246,7 @@
           "version": "0.15.3"
         },
         "multiplexing/SKILL.md": {
-          "hash": "5e8c00486e1f02dcf06f5a8ea6868060ae317ae8210a1dc3ce1857a163cbf425",
+          "hash": "09fde6278103798d1e616ef2295b6a709b66471fe5414326033b568c588ce9fb",
           "version": "0.15.3"
         },
         "open-code-review/references/delegate.md": {
@@ -529,7 +529,7 @@
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/fleet.md": {
-          "hash": "4c7fd17e19999838bcfecc0f578823e3eb2b6d0c7f60ba5e9f32598f15a28a29",
+          "hash": "485db7ec8c042ea829d41a19aac94bb65d9df5ad29db0d9fd5359d3b6087818a",
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/jira.md": {
@@ -1036,7 +1036,7 @@
           "version": "0.15.3"
         },
         "pi/install-schema.json": {
-          "hash": "87d07acbbf9de1ce806d3367060c29c654a5da5bdf0c3c94c5fe9bd9099eaf74",
+          "hash": "e3bd283a4b702ebdc801181a1d5b88ff1b8756cc024580d666f11e3c44f36d4c",
           "version": "0.15.3"
         },
         "pi/models.json.template": {
@@ -1048,7 +1048,7 @@
           "version": "0.15.3"
         },
         "pi/settings.json.template": {
-          "hash": "fb97d88a50a86cc10120c13bd3379288d9a79d29ec2fdc30c24d7b5c39b07c59",
+          "hash": "c5a35f0ce4ee6bdf5f1e47578db7cb4e41e92b84da030037fc3f8267fdd7aa9d",
           "version": "0.15.3"
         },
         "README.md": {

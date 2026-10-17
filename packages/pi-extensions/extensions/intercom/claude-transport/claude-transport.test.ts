@@ -368,7 +368,7 @@ describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
     try {
       writeFileSync(
         entryFile(dir),
-        JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "pi-claude-link" }),
+        JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "other-ext 0.0.0" }),
       );
       const before = readFileSync(entryFile(dir), "utf8");
       const { pi, fire } = fakePi();
@@ -600,17 +600,17 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
       const deadPid = 42424241;
       writeFileSync(
         path.join(dir, `${deadPid}.json`),
-        JSON.stringify({ pid: deadPid, name: "gone", messagingSocketPath: "/tmp/gone.sock", version: "pi-claude-link" }),
+        JSON.stringify({ pid: deadPid, name: "gone", messagingSocketPath: "/tmp/gone.sock", version: "other-ext 0.0.0" }),
       );
       expect((await transport.claimPiPeerEntry(deadPid, dir)).owned).toBe(true);
       writeFileSync(
         entryFile(dir),
-        JSON.stringify({ pid: process.pid, name: "live-foreign", messagingSocketPath: "/tmp/x.sock", version: "pi-claude-link", procStart: "1" }),
+        JSON.stringify({ pid: process.pid, name: "live-foreign", messagingSocketPath: "/tmp/x.sock", version: "other-ext 0.0.0", procStart: "1" }),
       );
       expect((await transport.claimPiPeerEntry(process.pid, dir)).owned).toBe(true);
       writeFileSync(
         entryFile(dir),
-        JSON.stringify({ pid: process.pid, name: "live-foreign", messagingSocketPath: "/tmp/x.sock", version: "pi-claude-link" }),
+        JSON.stringify({ pid: process.pid, name: "live-foreign", messagingSocketPath: "/tmp/x.sock", version: "other-ext 0.0.0" }),
       );
       expect((await transport.claimPiPeerEntry(process.pid, dir)).owned).toBe(false);
     } finally {
@@ -624,7 +624,7 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
     const entryFile = (d: string) => path.join(d, `${process.pid}.json`);
     let squatter: import("node:net").Server | null = null;
     const foreignEntry = () =>
-      JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "pi-claude-link" });
+      JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "other-ext 0.0.0" });
     try {
       const { pi, fire } = fakePi();
       const notices: Array<{ line: string; level: string }> = [];
@@ -635,7 +635,7 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
         enabled: true,
         hooks: {
           afterRegister: async () => {
-            // pi-claude-link wins the race after our register: it unlinks
+            // the foreign writer wins the race after our register: it unlinks
             // first, takes the path and overwrites the entry.
             rmSync(sockPath, { force: true });
             const net = await import("node:net");
@@ -688,12 +688,12 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
       });
       fire("session_start", { reason: "startup" }, ctx);
       await startedP;
-      // pi-claude-link loads second: it unlinks first, takes the path and the entry.
+      // the foreign writer loads second: it unlinks first, takes the path and the entry.
       rmSync(sockPath, { force: true });
       const net = await import("node:net");
       const squatter = net.createServer(() => {});
       await new Promise<void>((resolve) => squatter.listen(sockPath, resolve));
-      const foreignEntry = JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "pi-claude-link" });
+      const foreignEntry = JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "other-ext 0.0.0" });
       writeFileSync(entryFile(dir), foreignEntry);
       fire("session_shutdown", { reason: "quit" }, ctx);
       await stoppedP;

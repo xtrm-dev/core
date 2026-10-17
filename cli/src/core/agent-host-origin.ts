@@ -24,8 +24,10 @@ export const COORDINATION_TOOLS: readonly (
     | { extension: string; tools: readonly string[] }
     | { mcpServer: string; tools: readonly string[] }
 )[] = [
-    { extension: 'pi-intercom', tools: ['intercom', 'contact_supervisor'] },
-    { extension: 'pi-claude-link', tools: ['claude-link'] },
+    // First-party coordination tools (CORE-2443 M1: pi-intercom and
+    // pi-claude-link retired; SendMessage/ListAgents are registered by the
+    // first-party @jaggerxtrm/pi-extensions intercom extension).
+    { extension: '@jaggerxtrm/pi-extensions', tools: ['SendMessage', 'ListAgents'] },
     {
         mcpServer: 'specialists',
         tools: [

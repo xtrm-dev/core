@@ -262,7 +262,7 @@ describe('xt host agent host (XTRM-563)', () => {
         ext.payload('tool_execution_update', { toolCallId: 'p1', toolName: 'mcp__everything__echo', args: {}, partialResult: {}, tool: mcpTool });
         ext.payload('tool_execution_end', { toolCallId: 'p1', toolName: 'mcp__everything__echo', result: {}, isError: false, tool: mcpTool });
         ext.payload('tool_execution_start', { toolCallId: 'r1', toolName: 'read', args: { path: 'a' }, tool: { sourceInfo: { path: 'builtin:read', source: 'builtin', scope: 'temporary', origin: 'top-level' } } });
-        ext.payload('tool_execution_start', { toolCallId: 'x1', toolName: 'intercom', args: {}, tool: { sourceInfo: { path: '/p/pi-intercom/index.ts', source: 'npm:pi-intercom', scope: 'user', origin: 'package', baseDir: '/p/pi-intercom' } } });
+        ext.payload('tool_execution_start', { toolCallId: 'x1', toolName: 'SendMessage', args: {}, tool: { sourceInfo: { path: '/p/pi-extensions/intercom/index.ts', source: 'npm:@jaggerxtrm/pi-extensions', scope: 'user', origin: 'package', baseDir: '/p/pi-extensions' } } });
         ext.payload('tool_execution_start', { toolCallId: 's1', toolName: 'custom', args: {} });
 
         const tools = await until(() => {
@@ -275,7 +275,7 @@ describe('xt host agent host (XTRM-563)', () => {
             { class: 'mcp', server: 'everything' },
             { class: 'mcp', server: 'everything' },
             { class: 'native' },
-            { class: 'coordination', extension: 'npm:pi-intercom' },
+            { class: 'coordination', extension: 'npm:@jaggerxtrm/pi-extensions' },
             { class: 'extension', extension: 'unknown' },
         ]);
         events.close();

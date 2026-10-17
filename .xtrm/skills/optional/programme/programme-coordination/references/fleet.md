@@ -192,8 +192,7 @@ routing rule.
   worker.
 - After editing a specialist definition, restart the host or rename the definition: the loader
   caches definitions, and a list and a dispatch can disagree.
-- Long jobs: start with `bg_run`, stay silent while healthy, escalate only on a problem. Never use
-  `bg_delegate`, `bg_run_pi_attested` or `fusion_*`: they caused host-memory pressure.
+- Long jobs: start with `bg_run` (in a Pi worker session: `BashBackground`, watched with `Monitor`), stay silent while healthy, escalate only on a problem. Delegated-agent (`bg_delegate`) and `fusion_*` workflows are retired (CORE-2443 M1): they caused host-memory pressure and no longer exist — monitor with completion notices instead.
 - A specialist counts toward the worker cap. Before a restart or handoff, settle or stop each
   activation, and list the live ones in the handoff.
 
