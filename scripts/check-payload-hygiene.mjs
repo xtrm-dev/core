@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises';
+import { lstatSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +28,8 @@ const ABSOLUTE_PATH_PATTERNS = [
   /file:\/\/\/Users\//,
 ];
 
+const TAR_READ_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
 const allowlist = new Set([]);
 
 // Files that intentionally mention absolute-path strings as documentation
@@ -35,6 +38,14 @@ const allowlist = new Set([]);
 const ABSOLUTE_PATH_LEAK_ALLOWLIST = new Set([
   'CHANGELOG.md',
   'scripts/check-payload-hygiene.mjs',
+]);
+
+// In-repo symlinks whose targets are installed by the specialists runtime (untracked), so they
+// dangle in a clean checkout. Exempt from the dangling check only.
+const DANGLING_SYMLINK_ALLOWLIST = new Set([
+  '.claude/hooks/specialists-complete.mjs',
+  '.claude/hooks/specialists-memory-cache-sync.mjs',
+  '.claude/hooks/specialists-session-start.mjs',
 ]);
 
 const __filename = fileURLToPath(import.meta.url);
@@ -67,6 +78,29 @@ export function findAbsolutePathLeaks(textByFile) {
   return leaks;
 }
 
+// Tracked symlinks (git mode 120000) must really resolve (realpath, so links through symlinked
+// directories are followed) to an existing path inside the repo; machine-specific links
+// (e.g. into ../lib/node_modules) are invisible to git grep.
+export function findBadTrackedSymlinks(root = repoRoot) {
+  // The tar read limit is reused deliberately as a generous bound for the file listing.
+  const listing = execFileSync('git', ['ls-files', '-s', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: TAR_READ_MAX_BUFFER_BYTES });
+  const links = listing.split('\0').filter((entry) => entry.startsWith('120000 ')).map((entry) => entry.split('\t')[1]);
+  const realRoot = realpathSync(root);
+  return links.flatMap((filePath) => {
+    const absolute = path.join(root, filePath);
+    if (!lstatSync(absolute, { throwIfNoEntry: false })) return [{ filePath, reason: 'missing from working tree' }];
+    let real;
+    try {
+      real = realpathSync(absolute);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return DANGLING_SYMLINK_ALLOWLIST.has(filePath) ? [] : [{ filePath, reason: 'dangling target' }];
+    }
+    const relative = path.relative(realRoot, real);
+    return relative.startsWith('..') || path.isAbsolute(relative) ? [{ filePath, reason: 'target outside repo' }] : [];
+  });
+}
+
 function formatList(title, items, formatItem) {
   if (items.length === 0) return `${title}: none`;
   return `${title}:\n${items.map((item) => `- ${formatItem(item)}`).join('\n')}`;
@@ -91,8 +125,6 @@ function listTarballFiles(tarballPath) {
   const output = execFileSync('tar', ['-tf', tarballPath], { encoding: 'utf8' });
   return output.trim().split('\n').filter(Boolean).map((entry) => entry.replace(/^package\//, ''));
 }
-
-const TAR_READ_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 export function readTarballFile(tarballPath, filePath) {
   // Large packed files need more than execFileSync default 1MB buffer.
@@ -121,9 +153,11 @@ async function main() {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 
-  const ok = forbiddenFiles.length === 0 && textLeaks.length === 0;
+  const badSymlinks = findBadTrackedSymlinks();
+
+  const ok = forbiddenFiles.length === 0 && textLeaks.length === 0 && badSymlinks.length === 0;
   if (jsonOutput) {
-    console.log(JSON.stringify({ ok, forbiddenFiles, textLeaks }, null, 2));
+    console.log(JSON.stringify({ ok, forbiddenFiles, textLeaks, badSymlinks }, null, 2));
   } else if (ok) {
     console.log(`Payload hygiene ok: ${packFiles.length} packed files`);
   }
@@ -131,6 +165,7 @@ async function main() {
   if (!ok) {
     if (!jsonOutput) {
       console.error(formatList('Forbidden packed paths', forbiddenFiles, (item) => `${item.filePath} (${item.reason})`));
+      console.error(formatList('Bad tracked symlinks', badSymlinks, (item) => `${item.filePath} (${item.reason})`));
       console.error(formatList('Absolute path leaks', textLeaks, (item) => `${item.filePath}: ${item.match}`));
     }
     if (!reportOnly) process.exit(1);
