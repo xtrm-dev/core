@@ -676,3 +676,27 @@ describe("Monitor item 6 and 8 (N3)", () => {
     expect(notice).not.toContain("(exit code null)");
   });
 });
+
+describe("Monitor terminal drain", () => {
+  test("250 lines pending at TaskStop drain as 100, 100 and 50 before the notice, then silence", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi);
+    const started = await tools
+      .get("Monitor")!
+      .execute("call-1", { command: "seq 1 250; sleep 30", timeout_ms: 30000, description: "drain probe" }, undefined, undefined, toolCtx());
+    const monitorId = String((started.details as Record<string, unknown>).monitor_id);
+    // Stop while all 250 lines are still waiting for the batch window.
+    await until(() => (service.store.getMonitor(monitorId)?.lineCount ?? 0) >= 250);
+    await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    await until(() => monitorNotices(pi.sent).length >= 1);
+    const events = monitorEvents(pi.sent);
+    expect(events.map((s) => (String(s.message.content).match(/<line>/g) ?? []).length)).toEqual([100, 100, 50]);
+    expect(monitorNotices(pi.sent).length).toBe(1);
+    expect(String(monitorNotices(pi.sent)[0].message.content)).toContain("3 events");
+    // No re-armed timer may flush after the notice: silence afterwards.
+    const sentAfterNotice = pi.sent.length;
+    await new Promise((r) => setTimeout(r, 400));
+    expect(pi.sent.length).toBe(sentAfterNotice);
+    expect(service.store.getMonitor(monitorId)?.status).toBe("stopped");
+  });
+});

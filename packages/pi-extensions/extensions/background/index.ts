@@ -616,10 +616,20 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         record.lineCount += 1;
         mon.partial = "";
       }
-      // Force: terminal lines bypass the minimum wake interval (N1).
-      flushMonitorEvent(record, true);
-      // The flush may have found the session gone and stopped the monitor
-      // silently (no notice could be delivered either).
+      // Force: drain the whole buffer in bounded batches before the notice.
+      // A single forced flush would leave the remainder to a re-armed timer
+      // that can never fire once the monitor below is terminal and deleted.
+      let guard = 0;
+      while (mon.buffer.length > 0 && guard++ < 10000) {
+        flushMonitorEvent(record, true);
+        // The flush may have found the session gone and stopped the monitor
+        // silently (no notice could be delivered either).
+        if (record.notified) return;
+        if (mon.batchTimer !== undefined) {
+          clearTimeout(mon.batchTimer);
+          mon.batchTimer = undefined;
+        }
+      }
       if (record.notified) return;
     }
     record.status = terminal;
