@@ -15,6 +15,15 @@
  *   every request so the host leaves waiting_for_input. ctx.ui.editor is not proxied: Pi 1.0.0
  *   gives editor() no AbortSignal, so a host answer could not dismiss the terminal editor.
  *
+ * One listener per Pi session (CORE-2433 I2): the bridge keeps a binding per
+ * session id, keyed (pid, sessionId, generation). An in-process child session
+ * (native specialist) gets its own binding and can never replace its parent's
+ * listener; the parent binding — socket, generation, deferred queues — is
+ * untouched while the child runs. Inbound wakes inject with pi.sendMessage as
+ * customType "intercom_message" (see ../intercom/delivery.ts) and are
+ * acknowledged only after the injection succeeded; an injection failure
+ * answers `failed` so the registry reports the wake `undelivered`.
+ *
  * It never blocks or slows the turn loop: handlers are synchronous, socket writes are fire-and-forget,
  * streaming updates are coalesced, and a slow host loses update frames instead of stalling Pi. With no
  * host the handlers return after one state check and nothing is printed.
@@ -36,6 +45,7 @@ import { randomUUID } from "node:crypto";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { injectIntercomWake, wakeDeliveryOptions, WakeDedupe } from "../intercom/delivery.ts";
 import pkg from "../../package.json" with { type: "json" };
 
 export const PRODUCER_NAME = "@jaggerxtrm/pi-extensions/xtrm-agent-host";
@@ -195,61 +205,141 @@ interface PendingUi {
   resolve: (answer: UiAnswer) => void;
 }
 
+/**
+ * One listener: all mutable state of a single Pi session's host binding.
+ * A child session gets its own binding; it never touches its parent's.
+ */
+interface SessionBinding {
+  sessionId: string;
+  /** connecting: frames queue; open: frames are written; down: frames are dropped; closed: disposed. */
+  state: "idle" | "connecting" | "open" | "down" | "closed";
+  ctx: ExtensionContext | null;
+  identity: AgentSessionIdentity | null;
+  /** JSON of the last session_status sent on the current connection; null forces the next one out. */
+  lastStatus: string | null;
+  socket: net.Socket | null;
+  seq: number;
+  reconnectDelay: number;
+  reconnectTimer: NodeJS.Timeout | null;
+  flushTimer: NodeJS.Timeout | null;
+  queue: string[];
+  /** Coalesced streaming updates, keyed by stream; insertion order is preserved. */
+  updates: Map<string, { at: number; payload: Payload }>;
+  pendingUi: Map<string, PendingUi>;
+  toolCache: Map<string, AgentToolSource | undefined> | null;
+  guiIngress: { commandId: string; message: string; at: number } | null;
+  /**
+   * Set when a run is requested (an idle submit or before_agent_start) and cleared on agent_start. Pi 1.0.0 marks
+   * the run active only after the before_agent_start handlers, image normalization and the tool loadout (6-8 s
+   * observed), so ctx.isIdle() is true in that window; a message sent then starts a second run (XTRM-607).
+   */
+  startingAt: number | null;
+  /** Steer, follow_up and abort received in the startup window; run on agent_start, when Pi can queue them. */
+  deferred: Array<() => void>;
+  /**
+   * Wakes received while starting (F7): held, not delivered. Each is answered
+   * accepted only when agent_start actually delivers it; a run that never
+   * starts re-holds them so the registry keeps them instead of forgetting.
+   */
+  deferredWake: Array<{ messageId: string; ref: string; accept: () => void; hold: () => void; fail: (reason: string, message: string) => void }>;
+  /** A replaced listener re-asserts once per connection; never ping-pongs a replacement (F1). */
+  reassertedThisConnection: boolean;
+  readBuffer: string;
+  /**
+   * Listener incarnation (CORE-2432 R1): the registry compares-and-swaps writes
+   * on generation (R6). One per binding; bumped when the registry reports this
+   * listener replaced so the re-assert wins (R5).
+   */
+  generation: number;
+  /** Message ids already injected into this session (§5 double-delivery guard). */
+  deliveredWakes: WakeDedupe;
+}
+
 export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridgeOptions = {}) {
   const env = options.env ?? process.env;
   const exec = options.exec ?? defaultExec;
   const socketPath = options.socketPath ?? defaultAgentHostSocketPath(env);
   const disabled = ["0", "off", "false"].includes(String(env[DISABLE_ENV] ?? "").toLowerCase());
 
-  /** connecting: frames queue; open: frames are written; down: frames are dropped; closed: disposed. */
-  let state: "idle" | "connecting" | "open" | "down" | "closed" = "idle";
-  let ctx: ExtensionContext | null = null;
-  let sessionId: string | null = null;
-  let identity: AgentSessionIdentity | null = null;
-  /** JSON of the last session_status sent on the current connection; null forces the next one out. */
-  let lastStatus: string | null = null;
-  let socket: net.Socket | null = null;
-  let seq = 0;
-  let reconnectDelay = RECONNECT_MIN_MS;
-  let reconnectTimer: NodeJS.Timeout | null = null;
-  let flushTimer: NodeJS.Timeout | null = null;
-  let queue: string[] = [];
-  /** Coalesced streaming updates, keyed by stream; insertion order is preserved. */
-  const updates = new Map<string, { at: number; payload: Payload }>();
-  const pendingUi = new Map<string, PendingUi>();
-  const patchedUis = new Map<object, Record<string, unknown>>();
-  let toolCache: Map<string, AgentToolSource | undefined> | null = null;
-  let guiIngress: { commandId: string; message: string; at: number } | null = null;
-  /**
-   * Set when a run is requested (an idle submit or before_agent_start) and cleared on agent_start. Pi 1.0.0 marks
-   * the run active only after the before_agent_start handlers, image normalization and the tool loadout (6-8 s
-   * observed), so ctx.isIdle() is true in that window; a message sent then starts a second run (XTRM-607).
-   */
-  let startingAt: number | null = null;
-  /** Steer, follow_up and abort received in the startup window; run on agent_start, when Pi can queue them. */
-  let deferred: Array<() => void> = [];
-  /**
-   * Wakes received while starting (F7): held, not delivered. Each is answered
-   * accepted only when agent_start actually delivers it; a run that never
-   * starts re-holds them so the registry keeps them instead of forgetting.
-   */
-  let deferredWake: Array<{ ref: string; accept: () => void; hold: () => void }> = [];
-  /** A replaced listener re-asserts once per connection; never ping-pongs a replacement (F1). */
-  let reassertedThisConnection = false;
-  let readBuffer = "";
-  /**
-   * Listener incarnation (CORE-2432 R1): the registry compares-and-swaps writes
-   * on generation (R6). One per bridge; bumped when the registry reports this
-   * listener replaced so the re-assert wins (R5).
-   */
-  let generation = 1;
+  /** One listener per Pi session, keyed by session id (CORE-2433 I2). */
+  const bindings = new Map<string, SessionBinding>();
+  /** Most-recently-active session first for ctx-less events; the tail is the active binding. */
+  const recency: string[] = [];
+  let activeId: string | null = null;
+  let handlersInstalled = false;
+  let disposedAll = false;
+  const patchedUis = new Map<object, { originals: Record<string, unknown>; bindingId: string }>();
 
-  const live = () => state === "connecting" || state === "open";
+  const live = (b: SessionBinding) => b.state === "connecting" || b.state === "open";
+
+  function newBinding(sessionId: string): SessionBinding {
+    return {
+      sessionId,
+      state: "idle",
+      ctx: null,
+      identity: null,
+      lastStatus: null,
+      socket: null,
+      seq: 0,
+      reconnectDelay: RECONNECT_MIN_MS,
+      reconnectTimer: null,
+      flushTimer: null,
+      queue: [],
+      updates: new Map(),
+      pendingUi: new Map(),
+      toolCache: null,
+      guiIngress: null,
+      startingAt: null,
+      deferred: [],
+      deferredWake: [],
+      reassertedThisConnection: false,
+      readBuffer: "",
+      generation: 1,
+      deliveredWakes: new WakeDedupe(),
+    };
+  }
+
+  function touch(id: string): void {
+    const at = recency.indexOf(id);
+    if (at !== -1) recency.splice(at, 1);
+    recency.push(id);
+    activeId = id;
+  }
+
+  function activeBinding(): SessionBinding | null {
+    if (!activeId) return null;
+    return bindings.get(activeId) ?? null;
+  }
+
+  function sessionIdOf(current: ExtensionContext | undefined): string | null {
+    if (!current) return null;
+    try {
+      const id = current.sessionManager.getSessionId();
+      return typeof id === "string" && id.length > 0 ? id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Binding for an event carrying a context; notes an unseen session without stealing activity. */
+  function bindingFor(current: ExtensionContext | undefined): SessionBinding | null {
+    const id = sessionIdOf(current) ?? activeId;
+    if (!id) return null;
+    const existing = bindings.get(id);
+    if (existing) {
+      touch(id);
+      return existing;
+    }
+    const b = newBinding(id);
+    bindings.set(id, b);
+    connect(b);
+    return b;
+  }
 
   // --- framing -----------------------------------------------------------------------------
 
-  function frame(at: number, payloadJson: string): string {
-    return `{"schema":"xtrm.agent-event.v1","seq":${seq++},"sessionId":${JSON.stringify(sessionId)},"at":${at},"payload":${payloadJson}}\n`;
+  function frame(b: SessionBinding, at: number, payloadJson: string): string {
+    return `{"schema":"xtrm.agent-event.v1","seq":${b.seq++},"sessionId":${JSON.stringify(b.sessionId)},"at":${at},"payload":${payloadJson}}\n`;
   }
 
   function serialize(payload: Payload): string | null {
@@ -262,130 +352,149 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     }
   }
 
-  function write(line: string): void {
-    if (!socket) return;
-    if (socket.writableLength > HARD_BACKLOG_BYTES) {
-      socket.destroy();
+  function write(b: SessionBinding, line: string): void {
+    if (!b.socket) return;
+    if (b.socket.writableLength > HARD_BACKLOG_BYTES) {
+      b.socket.destroy();
       return;
     }
-    socket.write(line);
+    b.socket.write(line);
   }
 
   /** Emit one event in order: pending updates go first so the stream order is preserved. */
-  function emit(payload: Payload, at = Date.now()): void {
-    if (!live() || !sessionId) return;
-    flushUpdates();
+  function emit(b: SessionBinding, payload: Payload, at = Date.now()): void {
+    if (!live(b)) return;
+    flushUpdates(b);
     const json = serialize(payload);
     if (json === null) return;
-    if (state === "open") write(frame(at, json));
+    if (b.state === "open") write(b, frame(b, at, json));
     else {
-      queue.push(`${at}\u0000${json}`);
-      if (queue.length > MAX_CONNECT_QUEUE) queue.shift();
+      b.queue.push(`${at}\u0000${json}`);
+      if (b.queue.length > MAX_CONNECT_QUEUE) b.queue.shift();
     }
   }
 
-  function emitUpdate(key: string, payload: Payload): void {
-    if (!live() || !sessionId) return;
-    if (!updates.has(key)) updates.set(key, { at: Date.now(), payload });
-    else updates.get(key)!.payload = payload;
-    if (!flushTimer) {
-      flushTimer = setTimeout(flushUpdates, UPDATE_COALESCE_MS);
-      flushTimer.unref?.();
+  function emitUpdate(b: SessionBinding, key: string, payload: Payload): void {
+    if (!live(b)) return;
+    if (!b.updates.has(key)) b.updates.set(key, { at: Date.now(), payload });
+    else b.updates.get(key)!.payload = payload;
+    if (!b.flushTimer) {
+      b.flushTimer = setTimeout(() => flushUpdates(b), UPDATE_COALESCE_MS);
+      b.flushTimer.unref?.();
     }
   }
 
-  function flushUpdates(): void {
-    if (flushTimer) {
-      clearTimeout(flushTimer);
-      flushTimer = null;
+  function flushUpdates(b: SessionBinding): void {
+    if (b.flushTimer) {
+      clearTimeout(b.flushTimer);
+      b.flushTimer = null;
     }
-    if (updates.size === 0) return;
-    const pending = [...updates.values()];
-    updates.clear();
-    if (state !== "open" || !socket || socket.writableLength > SOFT_BACKLOG_BYTES) return;
+    if (b.updates.size === 0) return;
+    const pending = [...b.updates.values()];
+    b.updates.clear();
+    if (b.state !== "open" || !b.socket || b.socket.writableLength > SOFT_BACKLOG_BYTES) return;
     for (const { at, payload } of pending) {
       const json = serialize(payload);
-      if (json !== null) write(frame(at, json));
+      if (json !== null) write(b, frame(b, at, json));
     }
   }
 
   // --- connection --------------------------------------------------------------------------
 
-  function connect(): void {
-    if (state === "closed" || state === "open" || !sessionId || !ctx || socket) return;
-    state = "connecting";
+  function connect(b: SessionBinding): void {
+    if (disposedAll || b.state === "closed" || b.state === "open" || !b.ctx || b.socket) return;
+    b.state = "connecting";
     const conn = net.createConnection(socketPath);
-    socket = conn;
+    b.socket = conn;
     conn.setEncoding("utf8");
     conn.on("connect", async () => {
-      if (socket !== conn) return;
+      if (b.socket !== conn) return;
       conn.unref();
-      reassertedThisConnection = false;
+      b.reassertedThisConnection = false;
       // Identity costs tmux/git subprocesses: build it only once a host answers.
-      if (!identity) {
-        const id = sessionId!;
-        const built = await buildIdentity(ctx!, id);
-        if (socket !== conn || state === "closed" || sessionId !== id) return;
-        identity = built;
+      if (!b.identity) {
+        const built = await buildIdentity(b.ctx!, b.sessionId, b.generation);
+        if (b.socket !== conn || disposedAll || b.state === "closed") return;
+        b.identity = built;
       }
-      state = "open";
-      seq = 0;
-      reconnectDelay = RECONNECT_MIN_MS;
-      write(frame(Date.now(), JSON.stringify(identity)));
-      lastStatus = JSON.stringify(buildStatus(ctx!));
-      write(frame(Date.now(), lastStatus));
-      const queued = queue;
-      queue = [];
+      b.state = "open";
+      b.seq = 0;
+      b.reconnectDelay = RECONNECT_MIN_MS;
+      write(b, frame(b, Date.now(), JSON.stringify(b.identity)));
+      b.lastStatus = JSON.stringify(buildStatus(b.ctx!));
+      write(b, frame(b, Date.now(), b.lastStatus));
+      const queued = b.queue;
+      b.queue = [];
       for (const entry of queued) {
         const split = entry.indexOf("\u0000");
-        write(frame(Number(entry.slice(0, split)), entry.slice(split + 1)));
+        write(b, frame(b, Number(entry.slice(0, split)), entry.slice(split + 1)));
       }
-      flushUpdates();
+      flushUpdates(b);
     });
-    conn.on("data", (chunk: string) => onData(chunk));
+    conn.on("data", (chunk: string) => onData(b, chunk));
     // A missing or refused host is the normal no-host case: never print anything.
     conn.on("error", () => {});
     conn.on("close", () => {
-      if (socket !== conn) return;
-      socket = null;
-      readBuffer = "";
-      lastStatus = null;
-      queue = [];
-      updates.clear();
-      pendingUi.clear();
-      if (state === "closed") return;
-      state = "down";
-      scheduleReconnect();
+      if (b.socket !== conn) return;
+      b.socket = null;
+      b.readBuffer = "";
+      b.lastStatus = null;
+      b.queue = [];
+      b.updates.clear();
+      b.pendingUi.clear();
+      if (disposedAll || b.state === "closed") return;
+      b.state = "down";
+      scheduleReconnect(b);
     });
   }
 
-  function scheduleReconnect(): void {
-    if (reconnectTimer || state === "closed") return;
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      connect();
-    }, reconnectDelay);
-    reconnectTimer.unref?.();
-    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+  function scheduleReconnect(b: SessionBinding): void {
+    if (b.reconnectTimer || disposedAll || b.state === "closed") return;
+    b.reconnectTimer = setTimeout(() => {
+      b.reconnectTimer = null;
+      connect(b);
+    }, b.reconnectDelay);
+    b.reconnectTimer.unref?.();
+    b.reconnectDelay = Math.min(b.reconnectDelay * 2, RECONNECT_MAX_MS);
+  }
+
+  function unpatchBinding(bindingId: string): void {
+    for (const [ui, patched] of [...patchedUis]) {
+      if (patched.bindingId !== bindingId) continue;
+      Object.assign(ui, patched.originals);
+      patchedUis.delete(ui);
+    }
+  }
+
+  function disposeBinding(b: SessionBinding): void {
+    b.state = "closed";
+    if (b.reconnectTimer) clearTimeout(b.reconnectTimer);
+    if (b.flushTimer) clearTimeout(b.flushTimer);
+    b.reconnectTimer = b.flushTimer = null;
+    b.socket?.end();
+    b.socket = null;
+    b.pendingUi.clear();
+    b.deferred = [];
+    b.deferredWake = [];
+    unpatchBinding(b.sessionId);
+    bindings.delete(b.sessionId);
+    const at = recency.indexOf(b.sessionId);
+    if (at !== -1) recency.splice(at, 1);
+    if (activeId === b.sessionId) activeId = recency.length > 0 ? recency[recency.length - 1]! : null;
   }
 
   function dispose(): void {
-    state = "closed";
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (flushTimer) clearTimeout(flushTimer);
-    reconnectTimer = flushTimer = null;
-    socket?.end();
-    socket = null;
-    pendingUi.clear();
-    deferred = [];
-    deferredWake = [];
-    for (const [ui, originals] of patchedUis) Object.assign(ui, originals);
-    patchedUis.clear();
+    disposedAll = true;
+    for (const b of [...bindings.values()]) disposeBinding(b);
+    for (const [ui, { originals }] of [...patchedUis]) {
+      Object.assign(ui, originals);
+      patchedUis.delete(ui);
+    }
   }
 
   // --- identity ----------------------------------------------------------------------------
 
-  async function buildIdentity(current: ExtensionContext, id: string): Promise<AgentSessionIdentity> {
+  async function buildIdentity(current: ExtensionContext, id: string, generation: number): Promise<AgentSessionIdentity> {
     const pane = env.TMUX && /^%[0-9]+$/.test(env.TMUX_PANE ?? "") ? (env.TMUX_PANE as string) : null;
     const cwd = current.cwd;
     let tmuxSession: string | undefined;
@@ -496,36 +605,36 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   }
 
   /** Send session_status when it differs from the last one sent on this connection. */
-  function emitStatus(override?: { model?: any; thinkingLevel?: unknown }): void {
-    if (state !== "open" || !ctx) return;
-    const status = buildStatus(ctx, override);
+  function emitStatus(b: SessionBinding, override?: { model?: any; thinkingLevel?: unknown }): void {
+    if (b.state !== "open" || !b.ctx) return;
+    const status = buildStatus(b.ctx, override);
     const json = JSON.stringify(status);
-    if (json === lastStatus) return;
-    lastStatus = json;
-    emit(status);
+    if (json === b.lastStatus) return;
+    b.lastStatus = json;
+    emit(b, status);
   }
 
   // --- tools ------------------------------------------------------------------------------
 
-  function lookupTool(name: string): AgentToolSource | undefined {
-    if (toolCache?.has(name)) return toolCache.get(name);
-    toolCache = new Map();
+  function lookupTool(b: SessionBinding, name: string): AgentToolSource | undefined {
+    if (b.toolCache?.has(name)) return b.toolCache.get(name);
+    b.toolCache = new Map();
     try {
-      for (const info of pi.getAllTools()) if (!toolCache.has(info.name)) toolCache.set(info.name, toolSource(info));
+      for (const info of pi.getAllTools()) if (!b.toolCache.has(info.name)) b.toolCache.set(info.name, toolSource(info));
     } catch {
       /* tool registry unavailable */
     }
-    if (!toolCache.has(name)) toolCache.set(name, undefined);
-    return toolCache.get(name);
+    if (!b.toolCache.has(name)) b.toolCache.set(name, undefined);
+    return b.toolCache.get(name);
   }
 
-  function toolPayload(type: "tool_execution_start" | "tool_execution_update" | "tool_execution_end", event: any): Payload {
+  function toolPayload(b: SessionBinding, type: "tool_execution_start" | "tool_execution_update" | "tool_execution_end", event: any): Payload {
     const base = {
       type,
       toolCallId: String(event.toolCallId).slice(0, 512),
       toolName: bounded(event.toolName) ?? "unknown",
       parentToolCallId: typeof event.parentToolCallId === "string" && event.parentToolCallId ? event.parentToolCallId.slice(0, 512) : undefined,
-      tool: lookupTool(event.toolName),
+      tool: lookupTool(b, event.toolName),
     };
     if (type === "tool_execution_start") return compact({ ...base, args: event.args ?? null }) as Payload;
     if (type === "tool_execution_update") return compact({ ...base, args: event.args ?? null, partialResult: event.partialResult ?? null }) as Payload;
@@ -535,18 +644,20 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   // --- ctx.ui proxy ------------------------------------------------------------------------
 
   /** Ask the host and the local dialog at once; the first answer wins and dismisses the other. */
-  async function race<T>(
+  async function race(
+    b: SessionBinding,
     method: UiMethod,
     request: { title: string; message?: string; options?: string[]; placeholder?: string; timeout?: number },
     opts: { signal?: AbortSignal; timeout?: number } | undefined,
-    local: (opts: { signal?: AbortSignal; timeout?: number } | undefined) => Promise<T>,
-  ): Promise<T> {
-    if (state !== "open" || !ctx?.hasUI) return local(opts);
+    local: (opts: { signal?: AbortSignal; timeout?: number } | undefined) => Promise<unknown>,
+  ): Promise<unknown> {
+    if (b.state !== "open" || !b.ctx?.hasUI) return local(opts);
     const id = randomUUID();
     const controller = new AbortController();
     const signal = opts?.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
-    const hostAnswer = new Promise<UiAnswer>((resolve) => pendingUi.set(id, { method, options: request.options, resolve }));
+    const hostAnswer = new Promise<UiAnswer>((resolve) => b.pendingUi.set(id, { method, options: request.options, resolve }));
     emit(
+      b,
       compact({
         type: "extension_ui_request" as const,
         id,
@@ -565,7 +676,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       const localAnswer = local({ ...opts, signal });
       const winner = await Promise.race([
         localAnswer.then((value) => ({ from: "local" as const, value, cancelled: localCancelled(value, opts?.signal) })),
-        hostAnswer.then((answer) => ({ from: "host" as const, value: answer.value as T, cancelled: answer.cancelled })),
+        hostAnswer.then((answer) => ({ from: "host" as const, value: answer.value, cancelled: answer.cancelled })),
       ]);
       if (winner.from === "host") {
         controller.abort();
@@ -575,8 +686,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       outcome = winner.cancelled ? "cancelled" : "answered";
       return winner.value;
     } finally {
-      pendingUi.delete(id);
-      emit({ type: "extension_ui_resolved", id, resolvedBy, outcome });
+      b.pendingUi.delete(id);
+      emit(b, { type: "extension_ui_resolved", id, resolvedBy, outcome });
     }
   }
 
@@ -588,18 +699,24 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     return value === undefined || callerSignal?.aborted === true;
   }
 
-  function patchUi(current: ExtensionContext): void {
+  function patchUi(b: SessionBinding, current: ExtensionContext): void {
     const ui = current.ui as any;
-    if (!ui || patchedUis.has(ui)) return;
+    if (!ui) return;
+    const patched = patchedUis.get(ui);
+    if (patched) {
+      if (patched.bindingId === b.sessionId) return;
+      Object.assign(ui, patched.originals);
+      patchedUis.delete(ui);
+    }
     const original = { select: ui.select, confirm: ui.confirm, input: ui.input };
     if (typeof original.select !== "function" || typeof original.confirm !== "function" || typeof original.input !== "function") return;
-    patchedUis.set(ui, original);
+    patchedUis.set(ui, { originals: original, bindingId: b.sessionId });
     ui.select = (title: string, choices: string[], opts?: any) =>
-      race("select", { title, options: choices, timeout: opts?.timeout }, opts, (o) => original.select.call(ui, title, choices, o));
+      race(b, "select", { title, options: choices, timeout: opts?.timeout }, opts, (o) => original.select.call(ui, title, choices, o));
     ui.confirm = (title: string, message: string, opts?: any) =>
-      race("confirm", { title, message, timeout: opts?.timeout }, opts, (o) => original.confirm.call(ui, title, message, o));
+      race(b, "confirm", { title, message, timeout: opts?.timeout }, opts, (o) => original.confirm.call(ui, title, message, o));
     ui.input = (title: string, placeholder?: string, opts?: any) =>
-      race("input", { title, placeholder, timeout: opts?.timeout }, opts, (o) => original.input.call(ui, title, placeholder, o));
+      race(b, "input", { title, placeholder, timeout: opts?.timeout }, opts, (o) => original.input.call(ui, title, placeholder, o));
   }
 
   /** Map an RpcExtensionUIResponse onto the ctx.ui return value; null means the answer does not fit. */
@@ -614,19 +731,19 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
   // --- commands -----------------------------------------------------------------------------
 
-  function onData(chunk: string): void {
-    readBuffer += chunk;
-    let newline = readBuffer.indexOf("\n");
+  function onData(b: SessionBinding, chunk: string): void {
+    b.readBuffer += chunk;
+    let newline = b.readBuffer.indexOf("\n");
     while (newline !== -1) {
-      const line = readBuffer.slice(0, newline);
-      readBuffer = readBuffer.slice(newline + 1);
-      if (line.trim()) handleCommandLine(line);
-      newline = readBuffer.indexOf("\n");
+      const line = b.readBuffer.slice(0, newline);
+      b.readBuffer = b.readBuffer.slice(newline + 1);
+      if (line.trim()) handleCommandLine(b, line);
+      newline = b.readBuffer.indexOf("\n");
     }
-    if (readBuffer.length > MAX_FRAME_CHARS) readBuffer = "";
+    if (b.readBuffer.length > MAX_FRAME_CHARS) b.readBuffer = "";
   }
 
-  function handleCommandLine(line: string): void {
+  function handleCommandLine(b: SessionBinding, line: string): void {
     let frameIn: any;
     try {
       frameIn = JSON.parse(line);
@@ -636,34 +753,35 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const command = frameIn?.payload;
     if (frameIn?.schema !== "xtrm.agent-command.v1" || typeof command?.commandId !== "string") return;
     const result = (status: "accepted" | "rejected" | "failed", reason?: string, message?: string) =>
-      emit(compact({ type: "command_result" as const, commandId: command.commandId, status, reason, message: message?.slice(0, 1024) }));
-    if (frameIn.sessionId !== sessionId) return result("rejected", "session_mismatch", `this producer serves ${sessionId}`);
+      emit(b, compact({ type: "command_result" as const, commandId: command.commandId, status, reason, message: message?.slice(0, 1024) }));
+    if (frameIn.sessionId !== b.sessionId) return result("rejected", "session_mismatch", `this listener serves ${b.sessionId}`);
     try {
-      executeCommand(command as AgentCommandPayload, result);
+      executeCommand(b, command as AgentCommandPayload, result);
     } catch (error) {
       result("failed", "command_error", error instanceof Error ? error.message : String(error));
     }
   }
 
   function executeCommand(
+    b: SessionBinding,
     command: AgentCommandPayload,
     result: (status: "accepted" | "rejected" | "failed", reason?: string, message?: string) => void,
   ): void {
     if (command.type === "extension_ui_response") {
-      const entry = pendingUi.get(command.id);
+      const entry = b.pendingUi.get(command.id);
       if (!entry) return result("rejected", "unknown_ui_request", `no pending extension UI request ${command.id}`);
       const mapped = uiValue(entry, command);
       if (!mapped) return result("rejected", "invalid_ui_response", `the answer does not fit a ${entry.method} prompt`);
-      pendingUi.delete(command.id);
+      b.pendingUi.delete(command.id);
       entry.resolve(mapped);
       return result("accepted");
     }
-    if (!ctx) return result("failed", "no_session_context", "the session is not ready");
-    const current = ctx;
-    const starting = isStarting();
+    if (!b.ctx) return result("failed", "no_session_context", "the session is not ready");
+    const current = b.ctx;
+    const starting = isStarting(b);
     if (command.type === "abort") {
       // Pi ignores abort() before agent_start: the run it would stop is not active yet.
-      if (starting) deferred.push(() => current.abort());
+      if (starting) b.deferred.push(() => current.abort());
       else current.abort();
       return result("accepted");
     }
@@ -673,39 +791,49 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       // one; a second notice is acknowledged but never wins back, so two live
       // listeners cannot replace each other without end. Replacement is not a
       // reason to win back: the registry also refuses the ping-pong.
-      if (reassertedThisConnection) return result("accepted");
-      reassertedThisConnection = true;
+      if (b.reassertedThisConnection) return result("accepted");
+      b.reassertedThisConnection = true;
       const seen = typeof (command as { generation?: unknown }).generation === "number" ? (command as { generation: number }).generation : 0;
-      generation = Math.max(generation, seen) + 1;
-      if (identity) {
-        identity = compact({ ...identity, generation });
-        emit(identity);
+      b.generation = Math.max(b.generation, seen) + 1;
+      if (b.identity) {
+        b.identity = compact({ ...b.identity, generation: b.generation });
+        emit(b, b.identity);
       }
       return result("accepted");
     }
     if (command.type === "wake") {
-      // Wake delivery carries a payload reference only, never a contract or a
-      // decision. Accepted here means delivered (R3); the reference text is
-      // plain model input with no ANSI escapes.
+      // I2 delivery: the wake carries a payload reference only, never a
+      // contract or a decision. It injects as customType "intercom_message"
+      // with the D2 provenance line (never a plain user message), and the ack
+      // answers only after the injection succeeded; an injection failure
+      // answers failed so the registry reports the wake undelivered (R3).
       const ref = typeof command.payloadRef === "string" ? command.payloadRef : "";
       if (!ref) return result("rejected", "invalid_command", "payload reference is empty");
-      const idle = !starting && current.isIdle();
+      const messageId = typeof command.messageId === "string" && command.messageId ? command.messageId : command.commandId;
+      // §5: a held wake the registry flushes while still deferred injects once.
+      if (!b.deliveredWakes.mark(messageId)) return result("accepted");
+      const fail = (reason: string, message: string) => result("failed", reason, message);
       if (starting) {
         // F7: only deferred, not delivered: hold the wake and answer accepted
         // only when agent_start actually delivers it.
-        deferredWake.push({
+        b.deferredWake.push({
+          messageId,
           ref,
           accept: () => result("accepted"),
           hold: () => result("rejected", "held", "the session never started; the wake stays held"),
+          fail,
         });
         return result("rejected", "held", "the session is starting; the wake stays held until it is delivered");
       }
+      const idle = current.isIdle();
       if (idle) {
-        guiIngress = { commandId: command.commandId, message: ref, at: Date.now() };
-        startingAt = Date.now();
-        pi.sendUserMessage(ref);
-      } else {
-        pi.sendUserMessage(ref, { deliverAs: "followUp" });
+        b.guiIngress = { commandId: command.commandId, message: ref, at: Date.now() };
+        b.startingAt = Date.now();
+      }
+      try {
+        injectIntercomWake(pi, messageId, ref, wakeDeliveryOptions({ idle }));
+      } catch (error) {
+        return fail("injection_failed", error instanceof Error ? error.message : String(error));
       }
       return result("accepted");
     }
@@ -720,13 +848,13 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const content = attached ? [{ type: "text" as const, text: command.message }, ...attached] : command.message;
     const deliverAs = command.type === "steer" ? "steer" : "followUp";
     if (starting) {
-      deferred.push(() => pi.sendUserMessage(content, { deliverAs }));
+      b.deferred.push(() => pi.sendUserMessage(content, { deliverAs }));
       return result("accepted");
     }
     // An idle session starts a new Frame from this message; mark it as GUI ingress.
     if (idle) {
-      guiIngress = { commandId: command.commandId, message: command.message, at: Date.now() };
-      startingAt = Date.now();
+      b.guiIngress = { commandId: command.commandId, message: command.message, at: Date.now() };
+      b.startingAt = Date.now();
     }
     if (command.type === "prompt") pi.sendUserMessage(content);
     else pi.sendUserMessage(content, { deliverAs });
@@ -734,22 +862,22 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   }
 
   /** Whether a requested run has not reached agent_start yet; a run Pi never started stops counting after STARTUP_STALE_MS. */
-  function isStarting(): boolean {
-    if (startingAt !== null && Date.now() - startingAt > STARTUP_STALE_MS && ctx?.isIdle() !== false) {
-      startingAt = null;
-      deferred = [];
+  function isStarting(b: SessionBinding): boolean {
+    if (b.startingAt !== null && Date.now() - b.startingAt > STARTUP_STALE_MS && b.ctx?.isIdle() !== false) {
+      b.startingAt = null;
+      b.deferred = [];
       // The run never started, so deferred wakes were never delivered: re-hold
       // them instead of answering accepted for work that never happened (F7).
-      const staleWakes = deferredWake;
-      deferredWake = [];
+      const staleWakes = b.deferredWake;
+      b.deferredWake = [];
       for (const wake of staleWakes) wake.hold();
     }
-    return startingAt !== null;
+    return b.startingAt !== null;
   }
 
-  function ingressFor(prompt: string): { origin: "gui" | "terminal"; commandId?: string } {
-    const pending = guiIngress;
-    guiIngress = null;
+  function ingressFor(b: SessionBinding, prompt: string): { origin: "gui" | "terminal"; commandId?: string } {
+    const pending = b.guiIngress;
+    b.guiIngress = null;
     if (pending && (pending.message === prompt || Date.now() - pending.at < GUI_INGRESS_WINDOW_MS)) {
       return { origin: "gui", commandId: pending.commandId.slice(0, 1024) };
     }
@@ -758,114 +886,153 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
   // --- Pi events ----------------------------------------------------------------------------
 
-  function track(current: ExtensionContext | undefined): void {
+  function track(b: SessionBinding, current: ExtensionContext | undefined): void {
     if (!current) return;
-    ctx = current;
-    patchUi(current);
+    b.ctx = current;
+    patchUi(b, current);
+    // A session whose start was missed still binds on first contact.
+    if (b.state === "idle") connect(b);
   }
 
   function register(): void {
-    if (disabled) return;
+    if (disabled || handlersInstalled) return;
+    handlersInstalled = true;
 
     pi.on("session_start", (event, current) => {
-      if (state === "closed") return;
+      if (disposedAll) return;
       let id: string | undefined;
       try {
-        id = bounded(current.sessionManager.getSessionId(), 256);
+        id = bounded(sessionIdOf(current), 256) ?? undefined;
       } catch {
         id = undefined;
       }
       if (!id) return;
-      sessionId = id;
-      track(current);
-      state = "connecting";
-      emit(compact({ type: "session_start" as const, reason: event.reason, previousSessionFile: bounded(event.previousSessionFile, 4096) }));
-      connect();
+      let b = bindings.get(id);
+      if (!b) {
+        // A new session — including an in-process child — gets its own
+        // listener. Existing bindings are never rebound (CORE-2433 I2).
+        b = newBinding(id);
+        bindings.set(id, b);
+      }
+      touch(id);
+      track(b, current);
+      if (b.state === "closed") return;
+      // A live socket stays live: only a binding without one (re)connects.
+      if (!b.socket && b.state !== "open") b.state = "connecting";
+      emit(b, compact({ type: "session_start" as const, reason: event.reason, previousSessionFile: bounded(event.previousSessionFile, 4096) }));
+      connect(b);
     });
 
     pi.on("session_info_changed", (_event, current) => {
-      track(current);
-      if (!identity) return;
+      const b = bindingFor(current);
+      if (!b) return;
+      track(b, current);
+      if (!b.identity) return;
       const name = bounded(pi.getSessionName());
-      identity = compact({ ...identity, sessionName: name ?? identity.sessionName });
-      emit(identity);
+      b.identity = compact({ ...b.identity, sessionName: name ?? b.identity.sessionName });
+      emit(b, b.identity);
     });
 
     pi.on("before_agent_start", (event, current) => {
-      track(current);
-      startingAt = Date.now();
-      if (!live()) {
-        guiIngress = null;
+      const b = bindingFor(current);
+      if (!b) return;
+      track(b, current);
+      b.startingAt = Date.now();
+      if (!live(b)) {
+        b.guiIngress = null;
         return;
       }
-      emit(compact({ type: "before_agent_start" as const, prompt: event.prompt, images: images(event.images), ingress: ingressFor(event.prompt) }));
+      emit(b, compact({ type: "before_agent_start" as const, prompt: event.prompt, images: images(event.images), ingress: ingressFor(b, event.prompt) }));
     });
 
     pi.on("agent_start", (_event, current) => {
-      track(current);
-      toolCache = null;
-      emit({ type: "agent_start" });
-      startingAt = null;
-      const run = deferred;
-      deferred = [];
+      const b = bindingFor(current);
+      if (!b) return;
+      track(b, current);
+      b.toolCache = null;
+      emit(b, { type: "agent_start" });
+      b.startingAt = null;
+      const run = b.deferred;
+      b.deferred = [];
       for (const action of run) action();
       // F7: wakes held while starting are delivered into the fresh run, and
-      // only now answered accepted.
-      const wakes = deferredWake;
-      deferredWake = [];
+      // only now answered accepted. A failed injection answers failed so the
+      // registry reports the wake undelivered instead of delivered.
+      const wakes = b.deferredWake;
+      b.deferredWake = [];
       for (const wake of wakes) {
-        pi.sendUserMessage(wake.ref, { deliverAs: "followUp" });
-        wake.accept();
+        try {
+          injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: false }));
+          wake.accept();
+        } catch (error) {
+          wake.fail("injection_failed", error instanceof Error ? error.message : String(error));
+        }
       }
     });
 
     pi.on("turn_start", (event, current) => {
-      track(current);
-      emit({ type: "turn_start", turnIndex: event.turnIndex, timestamp: Math.floor(event.timestamp) });
+      const b = bindingFor(current) ?? activeBinding();
+      if (!b) return;
+      track(b, current);
+      emit(b, { type: "turn_start", turnIndex: event.turnIndex, timestamp: Math.floor(event.timestamp) });
     });
 
     pi.on("message_start", (event) => {
-      emit({ type: "message_start", message: event.message as any });
+      const b = activeBinding();
+      if (!b) return;
+      emit(b, { type: "message_start", message: event.message as any });
     });
 
     pi.on("message_update", (event) => {
-      if (!live()) return;
-      emitUpdate("message", { type: "message_update", message: event.message as any, assistantMessageEvent: assistantEvent(event.assistantMessageEvent) });
+      const b = activeBinding();
+      if (!b) return;
+      emitUpdate(b, "message", { type: "message_update", message: event.message as any, assistantMessageEvent: assistantEvent(event.assistantMessageEvent) });
     });
 
     pi.on("message_end", (event) => {
-      emit({ type: "message_end", message: event.message as any });
+      const b = activeBinding();
+      if (!b) return;
+      emit(b, { type: "message_end", message: event.message as any });
     });
 
     pi.on("tool_execution_start", (event) => {
-      if (!live()) return;
-      emit(toolPayload("tool_execution_start", event));
+      const b = activeBinding();
+      if (!b) return;
+      emit(b, toolPayload(b, "tool_execution_start", event));
     });
 
     pi.on("tool_execution_update", (event) => {
-      if (!live()) return;
-      emitUpdate(`tool:${event.toolCallId}`, toolPayload("tool_execution_update", event));
+      const b = activeBinding();
+      if (!b) return;
+      emitUpdate(b, `tool:${event.toolCallId}`, toolPayload(b, "tool_execution_update", event));
     });
 
     pi.on("tool_execution_end", (event) => {
-      if (!live()) return;
-      updates.delete(`tool:${event.toolCallId}`);
-      emit(toolPayload("tool_execution_end", event));
+      const b = activeBinding();
+      if (!b) return;
+      b.updates.delete(`tool:${event.toolCallId}`);
+      emit(b, toolPayload(b, "tool_execution_end", event));
     });
 
     pi.on("model_select", (event, current) => {
-      track(current);
-      emitStatus({ model: event.model });
+      const b = bindingFor(current) ?? activeBinding();
+      if (!b) return;
+      track(b, current);
+      emitStatus(b, { model: event.model });
     });
 
     pi.on("thinking_level_select", (event, current) => {
-      track(current);
-      emitStatus({ thinkingLevel: event.level });
+      const b = bindingFor(current) ?? activeBinding();
+      if (!b) return;
+      track(b, current);
+      emitStatus(b, { thinkingLevel: event.level });
     });
 
     pi.on("turn_end", (event) => {
-      if (!live()) return;
+      const b = activeBinding();
+      if (!b) return;
       emit(
+        b,
         compact({
           type: "turn_end" as const,
           turnIndex: event.turnIndex,
@@ -875,26 +1042,31 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
           toolResultEntryIds: Array.isArray((event as any).toolResultEntryIds) ? (event as any).toolResultEntryIds.map((e: unknown) => String(e).slice(0, 256)) : undefined,
         }),
       );
-      emitStatus();
+      emitStatus(b);
     });
 
     // Pi extensions never see willRetry on agent_end; only agent_settled closes a Frame.
     pi.on("agent_end", (event) => {
-      if (!live()) return;
-      emit({ type: "agent_end", messages: (event.messages ?? []) as any[] });
+      const b = activeBinding();
+      if (!b) return;
+      emit(b, { type: "agent_end", messages: (event.messages ?? []) as any[] });
     });
 
     pi.on("agent_settled", (_event, current) => {
-      track(current);
-      startingAt = null;
-      deferred = [];
-      emitStatus();
-      emit({ type: "agent_settled" });
+      const b = bindingFor(current) ?? activeBinding();
+      if (!b) return;
+      track(b, current);
+      b.startingAt = null;
+      b.deferred = [];
+      emitStatus(b);
+      emit(b, { type: "agent_settled" });
     });
 
     pi.on("session_compact", (event) => {
-      if (!live()) return;
+      const b = activeBinding();
+      if (!b) return;
       emit(
+        b,
         compact({
           type: "session_compact" as const,
           reason: event.reason,
@@ -903,12 +1075,14 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
           compactionEntryId: typeof event.compactionEntry?.id === "string" ? event.compactionEntry.id.slice(0, 256) : undefined,
         }),
       );
-      emitStatus();
+      emitStatus(b);
     });
 
     pi.on("session_compact_failed", (event) => {
-      if (!live()) return;
+      const b = activeBinding();
+      if (!b) return;
       emit(
+        b,
         compact({
           type: "session_compact_failed" as const,
           reason: event.reason,
@@ -920,24 +1094,39 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       );
     });
 
-    // The extension runtime is torn down after this event; a replacement session gets a fresh bridge.
+    // The extension runtime is torn down after this event; a replacement session gets a fresh binding.
+    // Without a context the shutdown belongs to the active session — the one Pi is leaving.
     pi.on("session_shutdown", (event) => {
-      emit(compact({ type: "session_shutdown" as const, reason: event.reason, targetSessionFile: bounded(event.targetSessionFile, 4096) }));
-      flushUpdates();
-      dispose();
+      const b = activeBinding();
+      if (!b) return;
+      emit(b, compact({ type: "session_shutdown" as const, reason: event.reason, targetSessionFile: bounded(event.targetSessionFile, 4096) }));
+      flushUpdates(b);
+      disposeBinding(b);
     });
   }
 
   return {
     register,
     dispose,
-    /** Test seam: current connection state. */
+    /** Test seam: connection state of the active session binding. */
     get state() {
-      return state;
+      return activeBinding()?.state ?? "idle";
     },
   };
 }
 
-export default function xtrmAgentHostExtension(pi: ExtensionAPI): void {
-  createAgentHostBridge(pi).register();
+/** One bridge per Pi host: both the agent-host and intercom entries share it, so two active entries never open two listeners. */
+const sharedBridges = new WeakMap<object, ReturnType<typeof createAgentHostBridge>>();
+
+export function ensureAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridgeOptions = {}) {
+  let bridge = sharedBridges.get(pi);
+  if (!bridge) {
+    bridge = createAgentHostBridge(pi, options);
+    sharedBridges.set(pi, bridge);
+  }
+  return bridge;
+}
+
+export default function xtrmAgentHostExtension(pi: ExtensionAPI, options: AgentHostBridgeOptions = {}): void {
+  ensureAgentHostBridge(pi, options).register();
 }
