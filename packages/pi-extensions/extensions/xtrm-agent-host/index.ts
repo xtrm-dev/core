@@ -253,6 +253,8 @@ interface SessionBinding {
   generation: number;
   /** Message ids already injected into this session (§5 double-delivery guard). */
   deliveredWakes: WakeDedupe;
+  /** True between agent_start and agent_settled: owns ctx-less stream events (F6). */
+  streaming: boolean;
 }
 
 export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridgeOptions = {}) {
@@ -296,6 +298,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       readBuffer: "",
       generation: 1,
       deliveredWakes: new WakeDedupe(),
+      streaming: false,
     };
   }
 
@@ -304,6 +307,17 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     if (at !== -1) recency.splice(at, 1);
     recency.push(id);
     activeId = id;
+  }
+
+  /** The single session with an open run, if exactly one: owns ctx-less stream events (F6). */
+  function streamingBinding(): SessionBinding | null {
+    const open = [...bindings.values()].filter((b) => b.streaming && b.state !== "closed");
+    return open.length === 1 ? open[0]! : null;
+  }
+
+  /** Binding for events without a context: the streaming session, else the active one. */
+  function streamBinding(): SessionBinding | null {
+    return streamingBinding() ?? activeBinding();
   }
 
   function activeBinding(): SessionBinding | null {
@@ -810,8 +824,12 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       const ref = typeof command.payloadRef === "string" ? command.payloadRef : "";
       if (!ref) return result("rejected", "invalid_command", "payload reference is empty");
       const messageId = typeof command.messageId === "string" && command.messageId ? command.messageId : command.commandId;
-      // §5: a held wake the registry flushes while still deferred injects once.
-      if (!b.deliveredWakes.mark(messageId)) return result("accepted");
+      // F1: answer a duplicate from its real state — held while still
+      // deferred, accepted once injected — and never mark before injecting,
+      // so a held-then-flushed or failed-then-resent wake still injects.
+      if (b.deliveredWakes.has(messageId)) return result("accepted");
+      if (b.deferredWake.some((wake) => wake.messageId === messageId))
+        return result("rejected", "held", "the wake is already held for this session");
       const fail = (reason: string, message: string) => result("failed", reason, message);
       if (starting) {
         // F7: only deferred, not delivered: hold the wake and answer accepted
@@ -826,15 +844,16 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         return result("rejected", "held", "the session is starting; the wake stays held until it is delivered");
       }
       const idle = current.isIdle();
-      if (idle) {
-        b.guiIngress = { commandId: command.commandId, message: ref, at: Date.now() };
-        b.startingAt = Date.now();
-      }
+      // F5: a peer wake never counts as GUI ingress. A wake that starts a
+      // run marks the startup window only after its injection succeeded, so
+      // a failed injection leaves no stale starting state behind (F1).
       try {
         injectIntercomWake(pi, messageId, ref, wakeDeliveryOptions({ idle }));
       } catch (error) {
         return fail("injection_failed", error instanceof Error ? error.message : String(error));
       }
+      b.deliveredWakes.mark(messageId);
+      if (idle) b.startingAt = Date.now();
       return result("accepted");
     }
     if (command.type !== "prompt" && command.type !== "steer" && command.type !== "follow_up") {
@@ -950,19 +969,23 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       if (!b) return;
       track(b, current);
       b.toolCache = null;
+      b.streaming = true;
       emit(b, { type: "agent_start" });
       b.startingAt = null;
       const run = b.deferred;
       b.deferred = [];
       for (const action of run) action();
       // F7: wakes held while starting are delivered into the fresh run, and
-      // only now answered accepted. A failed injection answers failed so the
-      // registry reports the wake undelivered instead of delivered.
+      // only now answered accepted. A successful injection marks the id so a
+      // registry flush of the same wake answers from state instead of
+      // injecting twice; a failed injection stays unmarked so a resend can
+      // inject, and the registry reports the wake undelivered.
       const wakes = b.deferredWake;
       b.deferredWake = [];
       for (const wake of wakes) {
         try {
           injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: false }));
+          b.deliveredWakes.mark(wake.messageId);
           wake.accept();
         } catch (error) {
           wake.fail("injection_failed", error instanceof Error ? error.message : String(error));
@@ -978,37 +1001,37 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     });
 
     pi.on("message_start", (event) => {
-      const b = activeBinding();
+      const b = streamBinding();
       if (!b) return;
       emit(b, { type: "message_start", message: event.message as any });
     });
 
     pi.on("message_update", (event) => {
-      const b = activeBinding();
+      const b = streamBinding();
       if (!b) return;
       emitUpdate(b, "message", { type: "message_update", message: event.message as any, assistantMessageEvent: assistantEvent(event.assistantMessageEvent) });
     });
 
     pi.on("message_end", (event) => {
-      const b = activeBinding();
+      const b = streamBinding();
       if (!b) return;
       emit(b, { type: "message_end", message: event.message as any });
     });
 
     pi.on("tool_execution_start", (event) => {
-      const b = activeBinding();
+      const b = streamBinding();
       if (!b) return;
       emit(b, toolPayload(b, "tool_execution_start", event));
     });
 
     pi.on("tool_execution_update", (event) => {
-      const b = activeBinding();
+      const b = streamBinding();
       if (!b) return;
       emitUpdate(b, `tool:${event.toolCallId}`, toolPayload(b, "tool_execution_update", event));
     });
 
     pi.on("tool_execution_end", (event) => {
-      const b = activeBinding();
+      const b = streamBinding();
       if (!b) return;
       b.updates.delete(`tool:${event.toolCallId}`);
       emit(b, toolPayload(b, "tool_execution_end", event));
@@ -1029,7 +1052,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     });
 
     pi.on("turn_end", (event) => {
-      const b = activeBinding();
+      const b = streamBinding();
       if (!b) return;
       emit(
         b,
@@ -1047,7 +1070,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
     // Pi extensions never see willRetry on agent_end; only agent_settled closes a Frame.
     pi.on("agent_end", (event) => {
-      const b = activeBinding();
+      const b = streamBinding();
       if (!b) return;
       emit(b, { type: "agent_end", messages: (event.messages ?? []) as any[] });
     });
@@ -1058,6 +1081,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       track(b, current);
       b.startingAt = null;
       b.deferred = [];
+      b.streaming = false;
       emitStatus(b);
       emit(b, { type: "agent_settled" });
     });
