@@ -42,11 +42,14 @@ function bounded(value: unknown, max = 1024): string {
 }
 
 /**
- * Envelope content for one wake (CORE-2437 I6, F1): newlines and tabs
+ * Envelope content for one wake (CORE-2437 I6, F1; N4): newlines and tabs
  * survive (attachments are multiline), every other control character and
- * ANSI goes. The cap fits the 512 KiB attachment payload plus the message
- * and the envelope lines; a cut says so with an explicit truncation line
- * instead of losing the end silently.
+ * ANSI goes. The cap applies AFTER envelope-escaping (N4: a payload full
+ * of `&`/`<`/`>` would otherwise expand past the cap); it fits the 512
+ * KiB attachment payload plus the message and the envelope lines. A cut
+ * says so with an explicit truncation line instead of losing the end
+ * silently. A cut can split an escape entity mid-way; the result stays
+ * plain inert text.
  */
 export const MAX_WAKE_CONTENT_BYTES = 528 * 1024;
 
@@ -97,7 +100,7 @@ export function buildReplyActionLine(from?: string): string {
  */
 export function buildIntercomWakeContent(messageId: string, payloadRef: string, sender: WakeSender = {}): string {
   const id = escapeEnvelope(bounded(messageId, 128) || "unknown");
-  const ref = escapeEnvelope(truncateEnvelopeText(sanitizeEnvelopeText(payloadRef), MAX_WAKE_CONTENT_BYTES));
+  const ref = truncateEnvelopeText(escapeEnvelope(sanitizeEnvelopeText(payloadRef)), MAX_WAKE_CONTENT_BYTES);
   const from = sender.from ? ` from="${escapeEnvelope(bounded(sender.from, 256))}"` : "";
   // CORE-2436 I5 review: from-name always rides with from (Contract B
   // needs both), even when the display name equals the address.

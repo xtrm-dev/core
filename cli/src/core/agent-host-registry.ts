@@ -774,28 +774,40 @@ export class AgentHostRegistry {
     }
 
     private storeWake(record: WakeRecord): void {
-        if (!record.notice && (record.state === 'queued' || record.state === 'held')) {
-            // CORE-2437 F5: per-receiver bound first, so one crowded receiver
-            // never evicts another receiver's wakes.
-            const key = this.wakeReceiverKey(record);
-            if (this.countLiveForReceiver(key) >= MAX_LIVE_WAKES_PER_RECEIVER) {
-                this.evictForReceiver(key, Date.now());
-            }
-        }
-        if (this.wakes.size >= MAX_WAKE_RECORDS) {
-            const settled = [...this.wakes.values()]
-                .filter((r) => r.state !== 'queued' && r.state !== 'held')
-                .sort((a, b) => a.createdAt - b.createdAt);
-            const victim = settled[0] ?? [...this.wakes.values()].sort((a, b) => a.createdAt - b.createdAt)[0];
-            if (victim && victim.messageId !== record.messageId) {
-                // CORE-2437 bounded retention: settled records evict first;
-                // a live victim only drops under a full mailbox of live
-                // wakes. Either way the evicted sender is told, loudly.
-                if (victim.state === 'queued' || victim.state === 'held') {
-                    this.log(`mailbox full: evicted live wake ${victim.messageId} (${victim.state}) to store ${record.messageId}`);
-                    this.postMailboxNotice(victim, Date.now(), 'undelivered');
+        // N1: notices never trigger eviction. They are the honesty
+        // mechanism; evicting on their behalf re-selected the same victim
+        // and recursed to a stack overflow on a full live mailbox. A notice
+        // that arrives at a full map still stores; notices are transient
+        // (TTL-bound) so the overflow is bounded.
+        if (!record.notice) {
+            if (record.state === 'queued' || record.state === 'held') {
+                // CORE-2437 F5: per-receiver bound first, so one crowded receiver
+                // never evicts another receiver's wakes.
+                const key = this.wakeReceiverKey(record);
+                if (this.countLiveForReceiver(key) >= MAX_LIVE_WAKES_PER_RECEIVER) {
+                    this.evictForReceiver(key, Date.now());
                 }
-                this.wakes.delete(victim.messageId);
+            }
+            if (this.wakes.size >= MAX_WAKE_RECORDS) {
+                const candidates = [...this.wakes.values()].filter((r) => !r.notice);
+                const settled = candidates
+                    .filter((r) => r.state !== 'queued' && r.state !== 'held')
+                    .sort((a, b) => a.createdAt - b.createdAt);
+                const victim =
+                    settled[0] ??
+                    candidates.filter((r) => r.state === 'queued' || r.state === 'held').sort((a, b) => a.createdAt - b.createdAt)[0];
+                if (victim && victim.messageId !== record.messageId) {
+                    // N1: delete FIRST, then notify. Posting before
+                    // deleting re-selected the same victim and recursed.
+                    // CORE-2437 bounded retention: settled records evict
+                    // first; a live victim only drops under a full mailbox of
+                    // live wakes. Either way the evicted sender is told.
+                    this.wakes.delete(victim.messageId);
+                    if (victim.state === 'queued' || victim.state === 'held') {
+                        this.log(`mailbox full: evicted live wake ${victim.messageId} (${victim.state}) to store ${record.messageId}`);
+                        this.postMailboxNotice(victim, Date.now(), 'undelivered');
+                    }
+                }
             }
         }
         this.wakes.set(record.messageId, record);
@@ -952,9 +964,15 @@ export class AgentHostRegistry {
         this.postMailboxNotice(record, now, 'expired');
     }
 
-    /** Live-mailbox key: the bound session when known, else the participant string. */
+    /**
+     * Live-mailbox key (N3): the participant string, stable across a
+     * receiver restart. A wake parked under a participant and later bound
+     * to a session id shares the 64 cap. (One session addressed by both
+     * id and name counts under two keys; exact-only addressing rarely
+     * mixes both for the same peer.)
+     */
     private wakeReceiverKey(record: WakeRecord): string {
-        return record.sessionId ?? record.participant;
+        return record.participant;
     }
 
     /**

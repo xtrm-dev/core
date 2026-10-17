@@ -431,6 +431,23 @@ describe('CORE-2432 wake contract', () => {
         expect(restarted.sent.filter((s) => s.payload.type === 'wake')).toHaveLength(3);
     });
 
+    it('CORE-2437 N1 a full live mailbox evicts without recursing', () => {
+        const { registry } = registryWithLog();
+        const sender = stubConnection();
+        registry.ingest(sender.connection, identity('s-snd', { pid: 50, generation: 1, sessionName: 'sender' }));
+        // 17 receivers of 64 live wakes each: past the 1024 global cap with
+        // no settled record to evict. On the pre-N1 code this threw
+        // RangeError (the notice re-selected its own victim, forever).
+        for (let r = 0; r < 17; r += 1) {
+            for (let i = 0; i < 64; i += 1) {
+                registry.wake(`crowded-${r}`, `fill-${r}-${i}`, { messageId: `n1-${r}-${i}`, fromSessionId: 's-snd' });
+            }
+        }
+        const notices = sender.sent.filter((s) => s.payload.type === 'wake');
+        expect(notices.length).toBeGreaterThan(0);
+        expect((notices[0].payload as { payloadRef: string }).payloadRef).toMatch(/mailbox is full/);
+    });
+
     it('CORE-2437 F5 a full per-receiver mailbox evicts the oldest with an undelivered notice', () => {
         const { registry } = registryWithLog();
         const sender = stubConnection();

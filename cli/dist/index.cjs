@@ -80929,21 +80929,24 @@ var AgentHostRegistry = class {
     }));
   }
   storeWake(record2) {
-    if (!record2.notice && (record2.state === "queued" || record2.state === "held")) {
-      const key = this.wakeReceiverKey(record2);
-      if (this.countLiveForReceiver(key) >= MAX_LIVE_WAKES_PER_RECEIVER) {
-        this.evictForReceiver(key, Date.now());
-      }
-    }
-    if (this.wakes.size >= MAX_WAKE_RECORDS) {
-      const settled = [...this.wakes.values()].filter((r) => r.state !== "queued" && r.state !== "held").sort((a, b) => a.createdAt - b.createdAt);
-      const victim = settled[0] ?? [...this.wakes.values()].sort((a, b) => a.createdAt - b.createdAt)[0];
-      if (victim && victim.messageId !== record2.messageId) {
-        if (victim.state === "queued" || victim.state === "held") {
-          this.log(`mailbox full: evicted live wake ${victim.messageId} (${victim.state}) to store ${record2.messageId}`);
-          this.postMailboxNotice(victim, Date.now(), "undelivered");
+    if (!record2.notice) {
+      if (record2.state === "queued" || record2.state === "held") {
+        const key = this.wakeReceiverKey(record2);
+        if (this.countLiveForReceiver(key) >= MAX_LIVE_WAKES_PER_RECEIVER) {
+          this.evictForReceiver(key, Date.now());
         }
-        this.wakes.delete(victim.messageId);
+      }
+      if (this.wakes.size >= MAX_WAKE_RECORDS) {
+        const candidates = [...this.wakes.values()].filter((r) => !r.notice);
+        const settled = candidates.filter((r) => r.state !== "queued" && r.state !== "held").sort((a, b) => a.createdAt - b.createdAt);
+        const victim = settled[0] ?? candidates.filter((r) => r.state === "queued" || r.state === "held").sort((a, b) => a.createdAt - b.createdAt)[0];
+        if (victim && victim.messageId !== record2.messageId) {
+          this.wakes.delete(victim.messageId);
+          if (victim.state === "queued" || victim.state === "held") {
+            this.log(`mailbox full: evicted live wake ${victim.messageId} (${victim.state}) to store ${record2.messageId}`);
+            this.postMailboxNotice(victim, Date.now(), "undelivered");
+          }
+        }
       }
     }
     this.wakes.set(record2.messageId, record2);
@@ -81090,9 +81093,15 @@ var AgentHostRegistry = class {
   postExpiryNotice(record2, now) {
     this.postMailboxNotice(record2, now, "expired");
   }
-  /** Live-mailbox key: the bound session when known, else the participant string. */
+  /**
+   * Live-mailbox key (N3): the participant string, stable across a
+   * receiver restart. A wake parked under a participant and later bound
+   * to a session id shares the 64 cap. (One session addressed by both
+   * id and name counts under two keys; exact-only addressing rarely
+   * mixes both for the same peer.)
+   */
   wakeReceiverKey(record2) {
-    return record2.sessionId ?? record2.participant;
+    return record2.participant;
   }
   /**
    * Evict the oldest live non-notice wake for one receiver when its

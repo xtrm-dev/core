@@ -35,7 +35,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionSummary, WakeDeliveryState, WakeResult } from "@xtrm/contracts";
 import { request as httpRequest } from "node:http";
 import { readFileSync } from "node:fs";
-import { lstat, open, realpath, stat } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { lstat, open, realpath } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -139,7 +140,7 @@ const SECRET_BASENAMES: RegExp[] = [
 ];
 
 /** Path segments that never contribute an attachment (fail-closed). */
-const SECRET_SEGMENTS = new Set([".secrets", ".ssh", ".gnupg"]);
+const SECRET_SEGMENTS = new Set([".secrets", "secrets", ".ssh", ".gnupg", ".aws"]);
 
 /** Basename substrings that mark a secret (fail-closed, even at false-positive cost). */
 const SECRET_SUBSTRINGS = ["credential", "secret", "token"];
@@ -178,10 +179,12 @@ export interface AttachmentFileRead {
 }
 
 /**
- * Read one attachment file, safely ordered (CORE-2437 F4): lstat/realpath
- * first, the containment check next, a regular-file check after that, and
- * only then a bounded read through an open handle (never readFile whole,
- * so /dev/zero, FIFOs and growing files cannot fill memory or hang).
+ * Read one attachment file, safely ordered (CORE-2437 F4; N5): lstat and
+ * realpath first, the containment check next, then open with O_NONBLOCK
+ * (a FIFO open never hangs) and fstat the handle itself — isFile and size
+ * come from the open file, closing the stat-to-open race — and only then
+ * a bounded read (never readFile whole, so /dev/zero, FIFOs and growing
+ * files cannot fill memory or hang).
  */
 async function defaultReadAttachmentFile(absPath: string, root: string): Promise<AttachmentFileRead> {
   await lstat(absPath);
@@ -189,17 +192,17 @@ async function defaultReadAttachmentFile(absPath: string, root: string): Promise
   if (realPath !== rootReal && !realPath.startsWith(rootReal + path.sep)) {
     throw new Error("attachment is outside the sender's worktree and is refused");
   }
-  const target = await stat(realPath);
-  if (!target.isFile()) {
-    throw new Error("attachment is not a regular file and is refused");
-  }
-  if (target.size > MAX_FILE_READ_BYTES) {
-    throw new Error(`attachment is ${target.size} bytes: files above ${MAX_FILE_READ_BYTES} bytes are refused`);
-  }
-  const limit = MAX_FILE_READ_BYTES + 1;
-  const buffer = Buffer.alloc(limit);
-  const handle = await open(realPath, "r");
+  const handle = await open(realPath, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
   try {
+    const target = await handle.stat();
+    if (!target.isFile()) {
+      throw new Error("attachment is not a regular file and is refused");
+    }
+    if (target.size > MAX_FILE_READ_BYTES) {
+      throw new Error(`attachment is ${target.size} bytes: files above ${MAX_FILE_READ_BYTES} bytes are refused`);
+    }
+    const limit = MAX_FILE_READ_BYTES + 1;
+    const buffer = Buffer.alloc(limit);
     let offset = 0;
     while (offset < limit) {
       const { bytesRead } = await handle.read(buffer, offset, limit - offset);
@@ -217,12 +220,6 @@ async function defaultReadAttachmentFile(absPath: string, root: string): Promise
 
 async function defaultResolveRoot(root: string): Promise<string> {
   return realpath(root);
-}
-
-interface AttachmentResolveEnv {
-  root: string;
-  readFile: (absPath: string, root: string) => Promise<AttachmentFileRead>;
-  resolveRoot: (root: string) => Promise<string>;
 }
 
 function renderAttachmentBlock(name: string, language: string | undefined, content: string): string {
@@ -281,6 +278,17 @@ async function resolveOneAttachment(input: AttachmentInput, env: AttachmentResol
     return renderAttachmentBlock(name, language, text);
   }
   return renderAttachmentBlock(name, undefined, text);
+}
+
+export interface AttachmentResolveEnv {
+  root: string;
+  readFile: (absPath: string, root: string) => Promise<AttachmentFileRead>;
+  resolveRoot: (root: string) => Promise<string>;
+}
+
+/** Test seam: the real attachment renderer (N7 end-to-end through the envelope). */
+export function __renderAttachmentsForTests(inputs: unknown, env: AttachmentResolveEnv): Promise<string> {
+  return renderAttachments(inputs, env);
 }
 
 /** Render attachments to the payload block, or throw a sender-facing error. */
