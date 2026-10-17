@@ -73,10 +73,9 @@ export function buildIntercomWakeContent(messageId: string, payloadRef: string, 
   const id = escapeEnvelope(bounded(messageId, 128) || "unknown");
   const ref = escapeEnvelope(bounded(payloadRef, 8 * 1024));
   const from = sender.from ? ` from="${escapeEnvelope(bounded(sender.from, 256))}"` : "";
-  const fromName =
-    sender.fromName && sender.fromName !== sender.from
-      ? ` from-name="${escapeEnvelope(bounded(sender.fromName, 256))}"`
-      : "";
+  // CORE-2436 I5 review: from-name always rides with from (Contract B
+  // needs both), even when the display name equals the address.
+  const fromName = sender.fromName ? ` from-name="${escapeEnvelope(bounded(sender.fromName, 256))}"` : "";
   return (
     `<cross-session-message message-id="${id}"${from}${fromName}>\n${ref}\n</cross-session-message>\n\n` +
     `${buildReplyActionLine(sender.from)}\n\n${PROVENANCE_LINE}`

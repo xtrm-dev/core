@@ -369,6 +369,24 @@ describe('CORE-2432 wake contract', () => {
         expect(registry.ingest(c.connection, identity('s-1', { pid: 3, generation: 3 }))).toBe(true);
     });
 
+    it('CORE-2436 a flush-time failure after held settles the wake as undelivered', () => {
+        const { registry } = registryWithLog();
+        const { connection } = stubConnection();
+        registry.ingest(connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'worker' }));
+        const w = registry.wake('worker', 'ref-1');
+        expect(w.state).toBe('queued');
+        // The bridge defers and answers held: the pending settles, the record stays held.
+        registry.ingest(connection, commandResult('s-1', w.messageId, 'rejected', 'held'));
+        expect(registry.wakeStatus(w.messageId)?.state).toBe('held');
+        // The flush-time injection fails after the pending is gone: the
+        // orphan failure must report undelivered, never strand the wake.
+        registry.ingest(connection, commandResult('s-1', w.messageId, 'failed', 'injection_failed'));
+        expect(registry.wakeStatus(w.messageId)?.state).toBe('undelivered');
+        // Terminal records never move on orphan answers.
+        registry.ingest(connection, commandResult('s-1', w.messageId, 'accepted'));
+        expect(registry.wakeStatus(w.messageId)?.state).toBe('undelivered');
+    });
+
     it('F5 a caller-supplied message id keys dedupe', () => {
         const { registry } = registryWithLog();
         const { connection, sent } = stubConnection();

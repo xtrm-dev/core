@@ -193,6 +193,57 @@ describe("SendMessage to Pi sessions (CORE-2436 I5)", () => {
     expect(intercomWaiting.total()).toBe(1);
   });
 
+  test("an undelivered entry clears when its target leaves the roster", async () => {
+    let peers: any[] = [piSummary("s-bob", "bob"), piSummary("s-alice", "alice")];
+    let state = "undelivered";
+    const { deps } = baseDeps({
+      fetchPi: async () => peers,
+      postWake: async (req: any) => ({ messageId: req.messageId ?? "m-x", state }),
+    });
+    const { tool } = register(deps);
+    await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(intercomWaiting.getUndelivered()).toBe(1);
+    // Bob leaves; a send to alice sweeps the stale entry.
+    peers = [piSummary("s-alice", "alice")];
+    state = "delivered";
+    await tool.execute("c2", { to: "alice", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(intercomWaiting.getUndelivered()).toBe(0);
+  });
+
+  test("an undelivered entry clears after the TTL", async () => {
+    let now = 1_000_000;
+    let peers: any[] = [piSummary("s-bob", "bob"), piSummary("s-alice", "alice")];
+    let states: Record<string, string> = { bob: "undelivered", alice: "delivered" };
+    let n = 0;
+    const { deps } = baseDeps({
+      now: () => now,
+      fetchPi: async () => peers,
+      postWake: async (req: any) => ({ messageId: req.messageId ?? `m-${++n}`, state: states[req.participant === "s-bob" ? "bob" : "alice"] ?? "delivered" }),
+    });
+    const { tool } = register(deps);
+    await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(intercomWaiting.getUndelivered()).toBe(1);
+    // 25 h later a send to alice sweeps bob's aged entry (noteDelivered
+    // cannot clear it: different target).
+    now += 25 * 3600 * 1000;
+    await tool.execute("c2", { to: "alice", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(intercomWaiting.getUndelivered()).toBe(0);
+  });
+
+  test("the undelivered map is capped, oldest evicted first", async () => {
+    let n = 0;
+    const { deps } = baseDeps({
+      maxUndelivered: 2,
+      randomId: () => `m-u-${++n}`,
+      postWake: async (req: any) => ({ messageId: req.messageId, state: "undelivered" }),
+    });
+    const { tool } = register(deps);
+    for (let i = 0; i < 3; i++) {
+      await tool.execute(`c${i}`, { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    }
+    expect(intercomWaiting.getUndelivered()).toBe(2);
+  });
+
   test("a later delivery to the same target clears its undelivered count", async () => {
     let state: string = "undelivered";
     const { deps } = baseDeps({
@@ -247,6 +298,45 @@ describe("SendMessage ask/pending/cancel (CORE-2436 I5, D-2)", () => {
     expect(String(r.content[0].text)).toMatch(/Reply from bob/);
     expect(String(r.content[0].text)).toContain("all green");
     expect(intercomWaiting.getPendingAsks()).toBe(0);
+  });
+
+  test("a reply landing during the post still resolves the ask (no lost race)", async () => {
+    const { deps } = baseDeps({
+      postWake: async (req: any) => {
+        // The reply arrives before the post even resolves.
+        sendmessage.__inboundWakeForTests({ messageId: "m-fast", ref: "fast reply", replyTo: "m-test-1", from: "bob" });
+        return { messageId: "m-test-1", state: "delivered" };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute(
+      "c1",
+      { to: "bob", message: "status?", expect_reply: true, timeout_s: 30 },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    expect(String(r.content[0].text)).toMatch(/Reply from bob/);
+    expect(String(r.content[0].text)).toContain("fast reply");
+  });
+
+  test("a reply_to from another session does not resolve the ask", async () => {
+    const { deps } = baseDeps();
+    const { tool } = register(deps);
+    const pending = tool.execute(
+      "c1",
+      { to: "bob", message: "status?", expect_reply: true, timeout_s: 30 },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    sendmessage.__inboundWakeForTests({ messageId: "m-x", ref: "not yours", replyTo: "m-test-1", from: "mallory" });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(intercomWaiting.getPendingAsks()).toBe(1);
+    sendmessage.__inboundWakeForTests({ messageId: "m-r", ref: "yours", replyTo: "m-test-1", from: "bob" });
+    const r = await pending;
+    expect(String(r.content[0].text)).toContain("yours");
   });
 
   test("an ask times out with the last known state", async () => {
@@ -324,6 +414,21 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     expect(sent[0]).toMatchObject({ sock: "/tmp/cass.sock", body: "hi" });
   });
 
+  test("notify_when_idle and reply_to fail loudly for Claude targets", async () => {
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
+      claudeTransportEnabled: true,
+      sendClaude: async () => ({ outcome: "delivered" as const }),
+    });
+    const { tool } = register(deps);
+    const r1 = await tool.execute("c1", { to: "cass", message: "hi", notify_when_idle: true }, undefined, undefined, fakeCtx("s-me"));
+    expect(r1.isError).toBe(true);
+    expect(String(r1.content[0].text)).toMatch(/not supported for Claude targets yet/);
+    const r2 = await tool.execute("c2", { to: "cass", message: "hi", reply_to: "m-1" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r2.isError).toBe(true);
+    expect(String(r2.content[0].text)).toMatch(/not supported for Claude targets yet/);
+  });
   test("an ask to a Claude session sends but does not wait (no reply threading)", async () => {
     const { deps } = baseDeps({
       fetchPi: async () => [],
@@ -354,6 +459,11 @@ describe("SendMessage envelope (CORE-2436 I5, ADR D3)", () => {
     expect(content.match(/<cross-session-message/g)).toHaveLength(1);
   });
 
+  test("from-name always rides with from, even when they are equal", () => {
+    const content = sendmessage.__buildContentForTests("m1", "hello", { from: "bob", fromName: "bob" });
+    expect(content).toContain('from="bob" from-name="bob"');
+  });
+
   test("frames without a sender keep the message-id envelope plus the action line", () => {
     const content = sendmessage.__buildContentForTests("m1", "hello");
     expect(content).toContain('<cross-session-message message-id="m1">');
@@ -379,6 +489,8 @@ describe("SendMessage idle subscriptions (CORE-2436 I5)", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(posted).toHaveLength(1);
     expect(posted[0]).toMatchObject({ participant: "s-bob" });
+    // The notice carries from, so the receiver's action line is addressable.
+    expect(posted[0]).toMatchObject({ from: "coordinator", fromName: "coordinator" });
     expect(String(posted[0].payloadRef)).toContain("[Cross-session idle notice]");
     await fire("agent_settled", {}, ctx);
     await new Promise((r) => setTimeout(r, 10));
@@ -404,6 +516,63 @@ describe("SendMessage idle subscriptions (CORE-2436 I5)", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(posted).toHaveLength(1);
     expect(String(posted[0].payloadRef)).toMatch(/expired after 12 h/);
+  });
+
+  test("a real timer fires the expiry notice with no settle", async () => {
+    const { deps, posted } = baseDeps({ idleTtlMs: 40 });
+    const { fire } = register(deps);
+    sendmessage.__inboundWakeForTests({
+      messageId: "m-timer",
+      ref: "watch me",
+      from: "bob",
+      fromSessionId: "s-bob",
+      notifyWhenIdle: true,
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(posted).toHaveLength(1);
+    expect(String(posted[0].payloadRef)).toMatch(/expired after 12 h/);
+    // The timer consumed the subscription: a later settle posts nothing.
+    await fire("agent_settled", {}, fakeCtx("s-me"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(posted).toHaveLength(1);
+  });
+
+  test("the subscription cap drops the oldest with a log", async () => {
+    const lines: string[] = [];
+    const { deps, posted } = baseDeps({ maxIdleSubs: 2, log: (l: string) => lines.push(l) });
+    const { fire } = register(deps);
+    for (const id of ["m-1", "m-2", "m-3"]) {
+      sendmessage.__inboundWakeForTests({
+        messageId: id,
+        ref: "watch",
+        from: "bob",
+        fromSessionId: "s-bob",
+        notifyWhenIdle: true,
+      });
+    }
+    expect(lines.join("\n")).toMatch(/dropped oldest idle subscription m-1/);
+    await fire("agent_settled", {}, fakeCtx("s-me"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(posted).toHaveLength(2);
+  });
+
+  test("recipient exit sends the expiry notice instead of losing it", async () => {
+    const { deps, posted } = baseDeps();
+    const { fire } = register(deps);
+    sendmessage.__inboundWakeForTests({
+      messageId: "m-exit",
+      ref: "watch me",
+      from: "bob",
+      fromSessionId: "s-bob",
+      notifyWhenIdle: true,
+    });
+    await fire("session_shutdown", { reason: "quit" }, fakeCtx("s-me"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(posted).toHaveLength(1);
+    expect(String(posted[0].payloadRef)).toMatch(/expired after 12 h/);
+    await fire("session_shutdown", { reason: "quit" }, fakeCtx("s-me"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(posted).toHaveLength(1);
   });
 });
 
@@ -491,7 +660,47 @@ describe("SendMessage live through the agent host (CORE-2436 I5)", () => {
       expect(idleInjected).toHaveLength(1);
       expect(idleInjected[0].options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
       expect(String((idleInjected[0].message as any)?.content)).toContain("hello live");
-      expect(String((idleInjected[0].message as any)?.content)).toContain('from="coordinator"');
+      expect(String((idleInjected[0].message as any)?.content)).toContain('from="coordinator" from-name="coordinator"');
+      // The action line's to= resolves on the receiver's roster: bind the
+      // sender too, then resolve the address straight from the live roster.
+      const senderHandlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
+      const senderBridgePi = {
+        on: (name: string, handler: (event: any, ctx: any) => unknown) => {
+          senderHandlers.set(name, [...(senderHandlers.get(name) ?? []), handler]);
+          return () => {};
+        },
+        sendUserMessage: () => {},
+        sendMessage: () => {},
+        getSessionName: () => "coordinator",
+        getSettings: () => ({}),
+        getThinkingLevel: () => "medium",
+        getAllTools: () => [],
+        registerTool: () => {},
+        registerCommand: () => {},
+        setSessionName: () => {},
+      };
+      const senderBridge = createAgentHostBridge(senderBridgePi as any, {
+        socketPath: host.info.socket,
+        exec: async () => "",
+        env: {},
+      });
+      senderBridge.register();
+      const sctx = {
+        ...rctx,
+        sessionManager: { getSessionId: () => "s-sender", getSessionFile: () => "/tmp/s-sender.jsonl" },
+      };
+      for (const handler of senderHandlers.get("session_start") ?? []) {
+        handler({ type: "session_start", reason: "startup" }, sctx);
+      }
+      await liveUntil(() => host.registry.list().length === 2);
+      const { buildRoster: liveBuildRoster, resolveRosterTarget: liveResolve } = await import("./roster.ts");
+      const liveRoster = liveBuildRoster({
+        ownSessionId: "s-live",
+        ownName: "livebob",
+        piSessions: await fetchPiSessions({ address: host.info.address, port: host.info.port }),
+        claudePeers: [],
+      });
+      expect(liveResolve(liveRoster.entries, "coordinator")).toMatchObject({ target: { sessionId: "s-sender" } });
 
       // The triggered run starts, clearing the startup window.
       rfire("agent_start", {}, rctx);

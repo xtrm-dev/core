@@ -108,6 +108,14 @@ const EXEC_TIMEOUT_MS = 1_500;
 const GUI_INGRESS_WINDOW_MS = 10_000;
 /** A requested run that has not reached agent_start this long after the request, while Pi is idle, never started. */
 const STARTUP_STALE_MS = 60_000;
+/**
+ * First-turn grace (CORE-2436 I5 review): after session_start, wakes hold
+ * only until the first agent_start or this long with no run starting.
+ * Past the grace with no run, the session counts as an idle interactive
+ * session and wakes inject with triggerTurn. Short enough to keep sends
+ * snappy, long enough to cover the initial-turn loadout race.
+ */
+const FIRST_TURN_GRACE_MS = 1_500;
 
 type Payload = AgentEventPayload;
 type UiMethod = "select" | "confirm" | "input";
@@ -118,6 +126,8 @@ export interface AgentHostBridgeOptions {
   env?: NodeJS.ProcessEnv;
   socketPath?: string;
   exec?: ExecFn;
+  /** First-turn grace in ms (tests); default FIRST_TURN_GRACE_MS. */
+  firstTurnGraceMs?: number;
 }
 
 export function defaultAgentHostSocketPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -288,10 +298,16 @@ interface SessionBinding {
    * True once this binding saw agent_start (CORE-2436 I5 first-turn race).
    * Pi reports isIdle() === true until the first agent_start (tool loadout),
    * so a wake injected with triggerTurn before it starts a second run and
-   * fails with "Agent is already processing". Wakes wait until the session
-   * can accept them; reset on every session_start.
+   * fails with "Agent is already processing". Wakes hold during the real
+   * starting window only: a requested run (startingAt) or the short grace
+   * after session_start. Past the grace with no run, the session counts as
+   * idle and wakes inject. Reset on every session_start.
    */
   sawAgentStart: boolean;
+  /** session_start timestamp for the first-turn grace; null before the first start. */
+  sessionStartedAt: number | null;
+  /** Grace-expiry flush for held pre-first-turn wakes; cleared on agent_start/dispose. */
+  graceTimer: ReturnType<typeof setTimeout> | null;
   /** A replaced listener re-asserts once per connection; never ping-pongs a replacement (F1). */
   reassertedThisConnection: boolean;
   readBuffer: string;
@@ -308,6 +324,7 @@ interface SessionBinding {
 }
 
 export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridgeOptions = {}) {
+  const firstTurnGraceMs = options.firstTurnGraceMs ?? FIRST_TURN_GRACE_MS;
   const env = options.env ?? process.env;
   const exec = options.exec ?? defaultExec;
   const socketPath = options.socketPath ?? defaultAgentHostSocketPath(env);
@@ -345,6 +362,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       deferred: [],
       deferredWake: [],
       sawAgentStart: false,
+      sessionStartedAt: null,
+      graceTimer: null,
       reassertedThisConnection: false,
       readBuffer: "",
       generation: 1,
@@ -534,7 +553,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   function disposeBinding(b: SessionBinding): void {
     if (b.reconnectTimer) clearTimeout(b.reconnectTimer);
     if (b.flushTimer) clearTimeout(b.flushTimer);
+    if (b.graceTimer) clearTimeout(b.graceTimer);
     b.reconnectTimer = b.flushTimer = null;
+    b.graceTimer = null;
     // Held wakes never deliver now: answer them failed while the socket
     // still writes, so the registry records them undelivered instead of
     // leaving them held. A dead socket drops the frame and the host-side
@@ -912,18 +933,23 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       if (b.deferredWake.some((wake) => wake.messageId === messageId))
         return result("rejected", "held", "the wake is already held for this session");
       const fail = (reason: string, message: string) => result("failed", reason, message);
-      // CORE-2436 I5 first-turn race: before the first agent_start Pi
-      // reports idle while its initial turn is already starting, so a
-      // triggerTurn injection would start a second run and fail with
-      // "Agent is already processing". Hold such wakes like any starting
-      // wake; agent_start flushes them into the fresh run.
-      const firstTurnPending = !b.sawAgentStart;
+      // CORE-2436 I5 first-turn race (review: grace window): before the
+      // first agent_start Pi reports idle while its initial turn may already
+      // be starting, so a triggerTurn injection could start a second run
+      // and fail with "Agent is already processing". Hold during a real
+      // starting window only: a requested run (starting) or the short grace
+      // after session_start. Past the grace with no run, the session counts
+      // as idle; the grace timer flushes held wakes with triggerTurn.
+      const withinGrace =
+        b.sessionStartedAt !== null && Date.now() - b.sessionStartedAt < firstTurnGraceMs;
+      const firstTurnPending = !b.sawAgentStart && (starting || withinGrace);
       if (starting || firstTurnPending) {
         // F7: only deferred, not delivered: hold the wake and answer accepted
-        // only when agent_start actually delivers it. The injected hook still
+        // only when a flush actually delivers it. The injected hook still
         // fires: a threaded reply (replyTo) resolves its waiting ask from the
         // frame alone, and an idle subscription arms now (re-armed on flush).
         emitWakeInjected({ messageId, ref, ...sender });
+        if (!starting) armGrace(b);
         b.deferredWake.push({
           messageId,
           ref,
@@ -992,6 +1018,48 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     return b.startingAt !== null;
   }
 
+  function clearGrace(b: SessionBinding): void {
+    if (b.graceTimer) clearTimeout(b.graceTimer);
+    b.graceTimer = null;
+  }
+
+  /**
+   * Grace-expiry flush (CORE-2436 I5 review): no run started within the
+   * grace, so the session counts as an idle interactive session. Held
+   * pre-first-turn wakes inject with triggerTurn now. A run that started
+   * meanwhile owns the flush instead (isStarting/agent_start), so this is
+   * a no-op for it. Failures answer failed so the registry reports
+   * undelivered, exactly like the agent_start flush.
+   */
+  function flushGrace(b: SessionBinding): void {
+    b.graceTimer = null;
+    if (disposedAll || b.sawAgentStart || isStarting(b)) return;
+    const wakes = b.deferredWake;
+    if (wakes.length === 0) return;
+    b.deferredWake = [];
+    let idleInjected = false;
+    for (const wake of wakes) {
+      try {
+        injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: true }), wake.sender);
+        b.deliveredWakes.mark(wake.messageId);
+        emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender });
+        idleInjected = true;
+        wake.accept();
+      } catch (error) {
+        wake.fail("injection_failed", error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (idleInjected) b.startingAt = Date.now();
+  }
+
+  function armGrace(b: SessionBinding): void {
+    if (b.graceTimer || b.sessionStartedAt === null) return;
+    const wait = Math.max(0, b.sessionStartedAt + firstTurnGraceMs - Date.now());
+    const timer = setTimeout(() => flushGrace(b), wait);
+    timer.unref?.();
+    b.graceTimer = timer;
+  }
+
   function ingressFor(b: SessionBinding, prompt: string): { origin: "gui" | "terminal"; commandId?: string } {
     const pending = b.guiIngress;
     b.guiIngress = null;
@@ -1032,9 +1100,11 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         bindings.set(id, b);
       }
       touch(id);
-      // CORE-2436 I5: every session start precedes a potential first turn;
-      // wakes hold until agent_start proves the session can accept them.
+      // CORE-2436 I5: every session start opens a fresh first-turn grace
+      // window; wakes hold only during a real starting window past it.
       b.sawAgentStart = false;
+      b.sessionStartedAt = Date.now();
+      clearGrace(b);
       track(b, current);
       if (b.state === "closed") return;
       // A live socket stays live: only a binding without one (re)connects.
@@ -1073,6 +1143,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       b.streaming = true;
       emit(b, { type: "agent_start" });
       b.sawAgentStart = true;
+      clearGrace(b);
       b.startingAt = null;
       const run = b.deferred;
       b.deferred = [];

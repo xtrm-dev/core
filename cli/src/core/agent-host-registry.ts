@@ -891,9 +891,34 @@ export class AgentHostRegistry {
             // F7: a late acceptance for a held wake that was actually sent
             // still completes it as delivered.
             if (status === 'accepted') this.acceptHeldWake(sessionId, commandId);
+            // CORE-2436 I5 review: a flush-time answer (grace or agent_start)
+            // for a wake whose pending already settled on held still settles
+            // the record: failed answers must report undelivered, never strand
+            // the wake as held until expiry.
+            else this.settleOrphanWake(sessionId, commandId, status, reason);
             return;
         }
         this.finishPending(commandId, status, reason, message);
+    }
+
+    /**
+     * Settle a wake record from a command_result with no open pending (a
+     * flush-time answer after the original pending settled on held).
+     * Terminal records never move; queued/held ones follow the same mapping
+     * as settleWake.
+     */
+    private settleOrphanWake(
+        sessionId: string,
+        commandId: string,
+        status: 'accepted' | 'rejected' | 'failed',
+        reason?: string,
+    ): void {
+        const record = this.wakes.get(commandId);
+        if (!record || record.sessionId !== sessionId) return;
+        if (record.state !== 'queued' && record.state !== 'held') return;
+        if (status === 'rejected' && reason === 'held') record.state = 'held';
+        else if (status === 'rejected') record.state = 'refused';
+        else if (status === 'failed') record.state = 'undelivered';
     }
 
     private acceptHeldWake(sessionId: string, commandId: string): void {

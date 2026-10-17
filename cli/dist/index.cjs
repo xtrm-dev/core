@@ -81045,9 +81045,24 @@ var AgentHostRegistry = class {
     const entry = this.pending.get(commandId);
     if (!entry || entry.sessionId !== sessionId) {
       if (status2 === "accepted") this.acceptHeldWake(sessionId, commandId);
+      else this.settleOrphanWake(sessionId, commandId, status2, reason);
       return;
     }
     this.finishPending(commandId, status2, reason, message);
+  }
+  /**
+   * Settle a wake record from a command_result with no open pending (a
+   * flush-time answer after the original pending settled on held).
+   * Terminal records never move; queued/held ones follow the same mapping
+   * as settleWake.
+   */
+  settleOrphanWake(sessionId, commandId, status2, reason) {
+    const record2 = this.wakes.get(commandId);
+    if (!record2 || record2.sessionId !== sessionId) return;
+    if (record2.state !== "queued" && record2.state !== "held") return;
+    if (status2 === "rejected" && reason === "held") record2.state = "held";
+    else if (status2 === "rejected") record2.state = "refused";
+    else if (status2 === "failed") record2.state = "undelivered";
   }
   acceptHeldWake(sessionId, commandId) {
     const record2 = this.wakes.get(commandId);

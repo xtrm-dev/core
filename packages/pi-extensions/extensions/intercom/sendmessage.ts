@@ -184,6 +184,14 @@ export interface SendMessageDeps {
   }>;
   /** Long-poll budget for a queued wake to settle; 0 disables polling (tests). */
   settleWaitMs?: number;
+  /** Idle-notice backstop override in ms (tests); default 12 h. */
+  idleTtlMs?: number;
+  /** Idle-subscription cap override (tests); default 256. */
+  maxIdleSubs?: number;
+  /** Noticed-undelivered cap override (tests); default 1024. */
+  maxUndelivered?: number;
+  /** Drop/notice log; default silent. */
+  log?: (line: string) => void;
   now?: () => number;
   randomId?: () => string;
   infoPath?: string;
@@ -208,8 +216,9 @@ async function defaultSendClaude(opts: {
 
 interface PendingAsk {
   messageId: string;
-  target: string;
-  resolve: (text: string) => void;
+  targetName: string;
+  targetSessionId?: string;
+  resolve: (result: { text: string; replied: boolean }) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -219,12 +228,36 @@ interface IdleSubscription {
   participant: string;
   name: string;
   expiresAt: number;
+  /** Real 12 h backstop (unref'd): fires the expiry notice without a settle. */
+  timer: ReturnType<typeof setTimeout>;
 }
+
+/** Cap on live idle subscriptions: the oldest drops with a log when full. */
+export const MAX_IDLE_SUBSCRIPTIONS = 256;
+/** Undelivered chip entries older than this clear on the next send. */
+export const UNDELIVERED_TTL_MS = 24 * 3600 * 1000;
+/** Cap on noticed-undelivered ids; the oldest evict first. */
+export const MAX_UNDELIVERED = 1024;
+
+interface IdleEnv {
+  pi: ExtensionAPI | null;
+  postWake: (req: WakeSendRequest) => Promise<WakeResult>;
+  log: (line: string) => void;
+  ttlMs: number;
+  maxSubs: number;
+  maxUndelivered: number;
+  nowMs: () => number;
+}
+
+let idleEnv: IdleEnv = { pi: null, postWake: defaultPostWake, log: () => {}, ttlMs: IDLE_SUBSCRIPTION_TTL_MS, maxSubs: MAX_IDLE_SUBSCRIPTIONS, maxUndelivered: MAX_UNDELIVERED, nowMs: Date.now };
 
 const pendingAsks = new Map<string, PendingAsk>();
 const idleSubscriptions = new Map<string, IdleSubscription>();
-/** Owned sends noticed undelivered/expired, by target name; a later delivery clears the target. */
-const undeliveredByTarget = new Map<string, Set<string>>();
+/**
+ * Owned sends noticed undelivered/expired, by target name with timestamps
+ * (CORE-2436 I5 review: sweep clears roster-leavers and TTL-aged entries).
+ */
+const undeliveredByTarget = new Map<string, Map<string, number>>();
 let wiredUnsubscribe: (() => void) | null = null;
 
 function refreshWaitingStore(): void {
@@ -238,11 +271,64 @@ function refreshWaitingStore(): void {
 function noteUndelivered(target: string, messageId: string): void {
   let ids = undeliveredByTarget.get(target);
   if (!ids) {
-    ids = new Set();
+    ids = new Map();
     undeliveredByTarget.set(target, ids);
   }
-  ids.add(messageId);
+  ids.set(messageId, idleEnv.nowMs());
+  evictUndeliveredOverflow();
   refreshWaitingStore();
+}
+
+function evictUndeliveredOverflow(): void {
+  let total = 0;
+  for (const ids of undeliveredByTarget.values()) total += ids.size;
+  while (total > idleEnv.maxUndelivered) {
+    let oldestTarget: string | null = null;
+    let oldestId: string | null = null;
+    let oldestAt = Infinity;
+    for (const [target, ids] of undeliveredByTarget) {
+      for (const [id, at] of ids) {
+        if (at < oldestAt) {
+          oldestAt = at;
+          oldestTarget = target;
+          oldestId = id;
+        }
+      }
+    }
+    if (oldestTarget === null || oldestId === null) break;
+    const ids = undeliveredByTarget.get(oldestTarget);
+    ids?.delete(oldestId);
+    if (ids && ids.size === 0) undeliveredByTarget.delete(oldestTarget);
+    total -= 1;
+  }
+}
+
+/**
+ * Sweep noticed-undelivered entries (CORE-2436 I5 review): a target that
+ * left the roster clears, and so do entries past the TTL. Runs on every
+ * send, so the chip hides when nothing waits anymore.
+ */
+function sweepUndelivered(knownNames: Set<string>): void {
+  const nowMs = idleEnv.nowMs();
+  let changed = false;
+  for (const [target, ids] of [...undeliveredByTarget]) {
+    if (!knownNames.has(target)) {
+      undeliveredByTarget.delete(target);
+      changed = true;
+      continue;
+    }
+    for (const [id, at] of [...ids]) {
+      if (nowMs - at >= UNDELIVERED_TTL_MS) {
+        ids.delete(id);
+        changed = true;
+      }
+    }
+    if (ids.size === 0) {
+      undeliveredByTarget.delete(target);
+      changed = true;
+    }
+  }
+  if (changed) refreshWaitingStore();
 }
 
 function noteDelivered(target: string): void {
@@ -256,7 +342,7 @@ export function cancelPendingAsk(messageId: string): boolean {
   clearTimeout(ask.timer);
   pendingAsks.delete(messageId);
   refreshWaitingStore();
-  ask.resolve(`Ask to ${ask.target} (message ${messageId}) was cancelled.`);
+  ask.resolve({ text: `Ask to ${ask.targetName} (message ${messageId}) was cancelled.`, replied: false });
   return true;
 }
 
@@ -268,26 +354,84 @@ export function cancelPendingAsk(messageId: string): boolean {
 export function inboundWakeListener(notice: InjectedWakeNotice, nowMs: number = Date.now()): void {
   if (notice.replyTo) {
     const ask = pendingAsks.get(notice.replyTo);
-    if (ask) {
+    // CORE-2436 I5 review: a reply resolves the ask only when its sender
+    // is the ask's target (exact session id wins, else the exact name).
+    // Anything else is another conversation; the ask keeps waiting.
+    const senderId = clean(notice.fromSessionId ?? "", 256);
+    const senderName = clean(notice.from ?? "", 256);
+    const idMatch = senderId !== "" && ask?.targetSessionId !== undefined && senderId === ask.targetSessionId;
+    const nameMatch = senderName !== "" && senderName === ask?.targetName;
+    if (ask && (idMatch || nameMatch)) {
       clearTimeout(ask.timer);
       pendingAsks.delete(notice.replyTo);
       refreshWaitingStore();
-      const from = clean(notice.from ?? notice.fromName, 256) || "unknown";
-      ask.resolve(`Reply from ${from} (message ${notice.messageId}): ${notice.ref}`);
+      const from = senderName || "unknown";
+      ask.resolve({ text: `Reply from ${from} (message ${notice.messageId}): ${notice.ref}`, replied: true });
     }
   }
   if (notice.notifyWhenIdle === true) {
     const participant = clean(notice.fromSessionId ?? "", 256) || clean(notice.from ?? "", 256);
     const name = clean(notice.fromName ?? notice.from ?? "", 256) || participant || "unknown";
     if (participant && notice.messageId) {
-      idleSubscriptions.set(notice.messageId, {
-        messageId: notice.messageId,
-        participant,
-        name,
-        expiresAt: nowMs + IDLE_SUBSCRIPTION_TTL_MS,
-      });
+      armIdleSubscription(notice.messageId, participant, name, nowMs);
     }
   }
+}
+
+/** Our own address for an outbound idle notice (never to="unknown"). */
+function ownNoticeSender(): { from?: string; fromName?: string; fromSessionId?: string } {
+  let name = "";
+  try {
+    name = clean(idleEnv.pi?.getSessionName?.(), 256);
+  } catch {
+    name = "";
+  }
+  return name ? { from: name, fromName: name } : {};
+}
+
+function armIdleSubscription(messageId: string, participant: string, name: string, nowMs: number): void {
+  if (idleSubscriptions.has(messageId)) return;
+  while (idleSubscriptions.size >= idleEnv.maxSubs) {
+    const oldest = idleSubscriptions.keys().next().value;
+    if (oldest === undefined) break;
+    const dropped = idleSubscriptions.get(oldest);
+    if (dropped) clearTimeout(dropped.timer);
+    idleSubscriptions.delete(oldest);
+    idleEnv.log(`SendMessage: dropped oldest idle subscription ${oldest} (cap ${idleEnv.maxSubs})`);
+  }
+  const timer = setTimeout(() => {
+    fireIdleExpiry(messageId);
+  }, Math.max(0, nowMs + idleEnv.ttlMs - Date.now()));
+  timer.unref?.();
+  idleSubscriptions.set(messageId, { messageId, participant, name, expiresAt: nowMs + idleEnv.ttlMs, timer });
+}
+
+/** Post one notice for a subscription and forget it (exactly-once per id). */
+async function postIdleNotice(sub: IdleSubscription, expired: boolean): Promise<void> {
+  try {
+    await idleEnv.postWake({
+      participant: sub.participant,
+      payloadRef: expired ? idleExpiryText(sub.name, sub.messageId) : idleNoticeText(sub.name, sub.messageId),
+      messageId: randomUUID(),
+      ...ownNoticeSender(),
+    });
+  } catch {
+    /* exactly one attempt: a failing post still clears the subscription */
+  }
+}
+
+function takeIdleSubscription(messageId: string): IdleSubscription | undefined {
+  const sub = idleSubscriptions.get(messageId);
+  if (!sub) return undefined;
+  clearTimeout(sub.timer);
+  idleSubscriptions.delete(messageId);
+  return sub;
+}
+
+function fireIdleExpiry(messageId: string): void {
+  const sub = takeIdleSubscription(messageId);
+  if (!sub) return;
+  void postIdleNotice(sub, true).catch(() => {});
 }
 
 function idleNoticeText(name: string, messageId: string): string {
@@ -298,21 +442,15 @@ function idleExpiryText(name: string, messageId: string): string {
   return `[Cross-session idle notice] Idle watch for ${name} expired after 12 h without an idle moment (message ${messageId}).`;
 }
 
-async function settleIdleSubscriptions(postWake: (req: WakeSendRequest) => Promise<WakeResult>, nowMs: number): Promise<void> {
+/** Settle every live subscription: idle notices now, expiry notices for lapsed ones. */
+async function settleIdleSubscriptions(nowMs?: number, forceExpired = false): Promise<void> {
   if (idleSubscriptions.size === 0) return;
   const due = [...idleSubscriptions.values()];
   idleSubscriptions.clear();
   for (const sub of due) {
-    const expired = nowMs >= sub.expiresAt;
-    try {
-      await postWake({
-        participant: sub.participant,
-        payloadRef: expired ? idleExpiryText(sub.name, sub.messageId) : idleNoticeText(sub.name, sub.messageId),
-        messageId: randomUUID(),
-      });
-    } catch {
-      /* exactly one attempt: a failing post still clears the subscription */
-    }
+    clearTimeout(sub.timer);
+    const expired = forceExpired || (nowMs ?? Date.now()) >= sub.expiresAt;
+    await postIdleNotice(sub, expired);
   }
 }
 
@@ -330,10 +468,12 @@ export function __buildContentForTests(messageId: string, ref: string, sender?: 
 export function __resetSendMessageState(): void {
   for (const ask of pendingAsks.values()) clearTimeout(ask.timer);
   pendingAsks.clear();
+  for (const sub of idleSubscriptions.values()) clearTimeout(sub.timer);
   idleSubscriptions.clear();
   undeliveredByTarget.clear();
   wiredUnsubscribe?.();
   wiredUnsubscribe = null;
+  idleEnv = { pi: null, postWake: defaultPostWake, log: () => {}, ttlMs: IDLE_SUBSCRIPTION_TTL_MS, maxSubs: MAX_IDLE_SUBSCRIPTIONS, maxUndelivered: MAX_UNDELIVERED, nowMs: Date.now };
 }
 
 function deliveryNotice(state: WakeDeliveryState, name: string, messageId: string): string {
@@ -380,15 +520,30 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
   const now = deps.now ?? Date.now;
   const randomId = deps.randomId ?? randomUUID;
 
+  idleEnv = {
+    pi,
+    postWake,
+    log: deps.log ?? (() => {}),
+    ttlMs: deps.idleTtlMs ?? IDLE_SUBSCRIPTION_TTL_MS,
+    maxSubs: deps.maxIdleSubs ?? MAX_IDLE_SUBSCRIPTIONS,
+    maxUndelivered: deps.maxUndelivered ?? MAX_UNDELIVERED,
+    nowMs: deps.now ?? Date.now,
+  };
+
   if (!wiredUnsubscribe) wiredUnsubscribe = onWakeInjected((notice) => inboundWakeListener(notice));
 
   const settleIdle = () => {
-    void settleIdleSubscriptions(postWake, now()).catch(() => {});
+    void settleIdleSubscriptions(now()).catch(() => {});
   };
   pi.on("agent_settled", () => settleIdle());
   pi.on("session_start", () => {
     // Expiry only: live subscriptions wait for the next settle.
-    if ([...idleSubscriptions.values()].some((sub) => now() >= sub.expiresAt)) void settleIdleSubscriptions(postWake, now()).catch(() => {});
+    if ([...idleSubscriptions.values()].some((sub) => now() >= sub.expiresAt)) void settleIdleSubscriptions(now()).catch(() => {});
+  });
+  pi.on("session_shutdown", () => {
+    // CORE-2436 I5 review: the watched session exits before going idle.
+    // Its watchers still get exactly one notice: the expiry notice.
+    void settleIdleSubscriptions(undefined, true).catch(() => {});
   });
 
   pi.registerTool({
@@ -474,6 +629,9 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         claudePeers,
         ...(deps.excludeSock ? { excludeSock: deps.excludeSock } : {}),
       });
+      // Noticed-undelivered entries clear when their target leaves the
+      // roster or ages past the TTL, so the chip hides when nothing waits.
+      sweepUndelivered(new Set([ownName ?? ownSessionId, ...built.entries.map((e) => e.name)]));
       let target: RosterEntry;
       try {
         const resolved = resolveRosterTarget(built.entries, to);
@@ -497,7 +655,15 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         const peer = claudePeers.find((p) => (target.sessionId && p.sessionId === target.sessionId) || p.name === target.name);
         const sock = peer?.sock;
         if (!sock) return fail(`SendMessage: session "${to}" has no reachable Claude socket.`);
-        const from = ownName ?? `session ${ownSessionId.slice(0, 8)}`;
+        // CORE-2436 I5 review: no silent drops — ask threading and idle
+        // subscriptions need the Pi wake frame, so they fail loudly here.
+        if (notifyWhenIdle || replyTo) {
+          return fail(`SendMessage: notify_when_idle and reply_to are not supported for Claude targets yet.`);
+        }
+        // CORE-2436 I5 review: from is the resolvable address (the exact
+        // roster name, or the session id when unnamed: resolveRosterTarget
+        // accepts exact ids, so an unnamed sender stays addressable).
+        const from = ownName ?? ownSessionId;
         const messageId = randomId();
         let receipt: ClaudeDeliveryOutcome;
         try {
@@ -520,8 +686,13 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       }
 
       const participant = target.sessionId ?? target.name;
-      const from = ownName ?? `session ${ownSessionId.slice(0, 8)}`;
+      // CORE-2436 I5 review: resolvable address, as above.
+      const from = ownName ?? ownSessionId;
       const messageId = randomId();
+      // CORE-2436 I5 review (reply race): the ask registers BEFORE the
+      // post, so a reply that lands during the post or the settle poll
+      // still finds its waiter. Terminal outcomes disarm it again below.
+      const ask = expectReply ? armAsk(target, messageId, timeoutS, signal) : null;
       let sent: WakeResult;
       try {
         sent = await postWake({
@@ -535,6 +706,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           ...(notifyWhenIdle ? { notifyWhenIdle: true as const } : {}),
         });
       } catch (error) {
+        ask?.disarm();
         return fail(`SendMessage: could not reach the agent host: ${(error as Error)?.message ?? String(error)}.`);
       }
 
@@ -559,7 +731,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         let text = `Delivered to ${target.name} (message ${sent.messageId}).`;
         if (notifyWhenIdle) text += ` You will get one idle notice when ${target.name} goes idle.`;
         if (!expectReply) return ok(text, details);
-        return await waitForReply(target.name, sent.messageId, timeoutS, signal);
+        return ask!.promise;
       }
       if (state === "queued") {
         if (!expectReply) {
@@ -568,63 +740,89 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
             details,
           );
         }
-        return await waitForReply(target.name, sent.messageId, timeoutS, signal);
+        return ask!.promise;
       }
       if (state === "held") {
         if (expectReply) {
           // Held now, still answerable later: the ask waits for the flush.
           const heldText = deliveryNotice(state, target.name, sent.messageId);
-          const reply = await waitForReply(target.name, sent.messageId, timeoutS, signal);
+          const reply = await ask!.promise;
           if (reply.details.ask === "replied") return reply;
           return ok(`${heldText} ${reply.content[0].text}`, { message: details.message, ask: reply.details.ask });
         }
         return ok(deliveryNotice(state, target.name, sent.messageId), details);
       }
       if (state === "undelivered" || state === "expired") noteUndelivered(target.name, sent.messageId);
+      ask?.disarm();
       return ok(deliveryNotice(state, target.name, sent.messageId), details);
     },
   });
 
-  function waitForReply(target: string, messageId: string, timeoutS: number, signal: unknown): Promise<ToolResult> {
-    return new Promise<ToolResult>((resolve) => {
-      const done = (text: string, ask: SendMessageDetails["ask"]) => {
+  /**
+   * Register an ask waiter BEFORE the post (CORE-2436 I5 review: a reply
+   * landing during the post or the settle poll must find its waiter).
+   * Terminal outcomes call disarm() instead of waiting.
+   */
+  function armAsk(
+    target: RosterEntry,
+    messageId: string,
+    timeoutS: number,
+    signal: unknown,
+  ): { promise: Promise<ToolResult>; disarm: () => void } {
+    let settled = false;
+    let resolvePromise!: (value: ToolResult) => void;
+    const promise = new Promise<ToolResult>((resolve) => {
+      resolvePromise = resolve;
+    });
+    const done = (text: string, ask: NonNullable<SendMessageDetails["ask"]>) => {
+      if (settled) return;
+      settled = true;
+      pendingAsks.delete(messageId);
+      refreshWaitingStore();
+      resolvePromise(ok(text, { message: { id: messageId, state: "asked", to: target.name }, ask }));
+    };
+    const timer = setTimeout(() => {
+      void (async () => {
+        let lastKnown = "unknown";
+        try {
+          const latest = await getWakeStatus(messageId);
+          if (latest) lastKnown = latest.state;
+        } catch {
+          /* the timeout text stands on its own */
+        }
+        done(
+          `Ask to ${target.name} timed out after ${timeoutS} s (last known state: ${lastKnown}). ` +
+            `This waiter timeout is not cancellation; the delivered message may still be queued or actionable in the recipient session.`,
+          "timeout",
+        );
+      })();
+    }, timeoutS * 1000);
+    pendingAsks.set(messageId, {
+      messageId,
+      targetName: target.name,
+      ...(target.sessionId ? { targetSessionId: target.sessionId } : {}),
+      resolve: ({ text, replied }) => {
+        clearTimeout(timer);
+        done(text, replied ? "replied" : "cancelled");
+      },
+      timer,
+    });
+    refreshWaitingStore();
+    const abortable = signal as { addEventListener?: (name: string, fn: () => void) => void } | undefined;
+    try {
+      abortable?.addEventListener?.("abort", () => cancelPendingAsk(messageId));
+    } catch {
+      /* abort is best effort */
+    }
+    return {
+      promise,
+      disarm: () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         pendingAsks.delete(messageId);
         refreshWaitingStore();
-        resolve(ok(text, { message: { id: messageId, state: "asked", to: target }, ask }));
-      };
-      const timer = setTimeout(() => {
-        void (async () => {
-          let lastKnown = "unknown";
-          try {
-            const latest = await getWakeStatus(messageId);
-            if (latest) lastKnown = latest.state;
-          } catch {
-            /* the timeout text stands on its own */
-          }
-          done(
-            `Ask to ${target} timed out after ${timeoutS} s (last known state: ${lastKnown}). ` +
-              `This waiter timeout is not cancellation; the delivered message may still be queued or actionable in the recipient session.`,
-            "timeout",
-          );
-        })();
-      }, timeoutS * 1000);
-      pendingAsks.set(messageId, {
-        messageId,
-        target,
-        resolve: (text: string) => {
-          clearTimeout(timer);
-          const replied = text.startsWith("Reply from");
-          done(text, replied ? "replied" : "cancelled");
-        },
-        timer,
-      });
-      refreshWaitingStore();
-      const abortable = signal as { addEventListener?: (name: string, fn: () => void) => void } | undefined;
-      try {
-        abortable?.addEventListener?.("abort", () => cancelPendingAsk(messageId));
-      } catch {
-        /* abort is best effort */
-      }
-    });
+      },
+    };
   }
 }
