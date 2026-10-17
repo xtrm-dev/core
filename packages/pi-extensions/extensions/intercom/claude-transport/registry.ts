@@ -143,6 +143,7 @@ export function pidGuardPasses(entry: Record<string, unknown>, filePid?: number)
   if (typeof entry.pid !== "number") return true;
   const procStart = clean(entry.procStart);
   const stem = filePid ?? Number(path.basename(String(entry.__file ?? "")).replace(/\.json$/, ""));
+  if (Number.isInteger(stem) && entry.pid !== stem) return false;
   let stat: string | null = null;
   try {
     stat = readFileSync(`/proc/${entry.pid}/stat`, "utf8");

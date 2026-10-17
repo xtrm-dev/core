@@ -100,6 +100,11 @@ export interface ClaudeTransportOptions {
   sessionsDir?: string;
   /** Force the transport on/off, winning over the settings key and env (tests, M1). */
   enabled?: boolean;
+  /** Test-only hooks. Never set in production. */
+  hooks?: {
+    /** Runs after registration, before the takeover verification (takeover tests). */
+    afterRegister?: () => Promise<void> | void;
+  };
 }
 
 /** Settings key gating the Claude transport. Off by default; M1 turns it on. */
@@ -264,6 +269,7 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
       } else {
         await registerPiPeer({ pid, sessionId, name, cwd, sockPath, status: "idle", sessionsDir: claim.sessionsDir });
       }
+      await options.hooks?.afterRegister?.();
       // Load order is not controlled and pi-claude-link unlinks first: verify
       // after registration that the entry is still ours and the socket is
       // still the one we bound. On a takeover, close without unlinking a
@@ -278,7 +284,10 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
         socketNow.dev === boundIdentity.dev &&
         socketNow.ino === boundIdentity.ino;
       if (!kept) {
+        const identity = boundIdentity;
         await closeListener();
+        // Drop our entry when it is still ours; the foreign socket is never unlinked.
+        await deregisterPiPeer(pid, sockPath || undefined, claim.sessionsDir, identity).catch(() => {});
         notify(TAKEOVER_LINE);
         return;
       }
@@ -298,8 +307,9 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
   }
 
   async function stop(): Promise<void> {
+    const identity = boundIdentity;
     await closeListener();
-    await deregisterPiPeer(process.pid, sockPath || undefined, options.sessionsDir).catch(() => {});
+    await deregisterPiPeer(process.pid, sockPath || undefined, options.sessionsDir, identity).catch(() => {});
   }
 
   pi.on("session_start", async (_event, ctx) => {

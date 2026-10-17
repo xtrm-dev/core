@@ -476,18 +476,23 @@ export async function updatePiPeer(
   await writeEntryAtomic(file, { ...current, ...patch });
 }
 
-/** Remove the Pi peer entry and socket on shutdown. Foreign entries are left alone. */
-export async function deregisterPiPeer(pid: number, sockPath?: string, sessionsDir?: string): Promise<void> {
+/** Remove the Pi peer entry and socket on shutdown. The entry goes only when
+ * it is still ours; the socket goes only when its identity still matches a
+ * bound socket we pass in. A missing/unreadable entry removes nothing. */
+export async function deregisterPiPeer(
+  pid: number,
+  sockPath?: string,
+  sessionsDir?: string,
+  identity?: { dev: number; ino: number } | null,
+): Promise<void> {
   const dir = sessionsDir ?? path.join(osHomedir(), ".claude", "sessions");
   const file = peerFile(dir, pid);
-  try {
-    const current = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
-    if (!isOwnPeerEntry(current)) return;
-  } catch {
-    /* absent or unreadable: fall through to socket cleanup */
-  }
+  const current = await readPeerEntry(pid, dir);
+  if (!current || !isOwnPeerEntry(current)) return;
   await unlink(file).catch(() => {});
-  if (sockPath) await unlink(sockPath).catch(() => {});
+  if (sockPath && identity && (await sameSocket(sockPath, identity).catch(() => false))) {
+    await unlink(sockPath).catch(() => {});
+  }
 }
 
 /**

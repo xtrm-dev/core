@@ -180,6 +180,27 @@ describe("claude-transport registry (CORE-2434 I3, pid-reuse guard)", () => {
     }
   });
 
+  test("a file whose name disagrees with a live pid is excluded", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-stem-"));
+    try {
+      writeFileSync(
+        path.join(dir, "424243.json"),
+        JSON.stringify({
+          pid: process.pid,
+          sessionId: "s-mismatch",
+          name: "mismatch-peer",
+          cwd: "/tmp",
+          status: "idle",
+          messagingSocketPath: "/tmp/nowhere-mismatch.sock",
+        }),
+      );
+      const peers = await registry.listClaudeSessions({ sessionsDir: dir, checkLive: false });
+      expect(peers.map((p) => p.name)).not.toContain("mismatch-peer");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("only sockets that accept a connection list as live", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-live-"));
     try {
@@ -587,7 +608,51 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
     }
   });
 
-  test("a foreign write after ours stops the transport without touching foreign state", async () => {
+  test("a foreign swap before verification stops the transport with one takeover line", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-preverify-"));
+    const sockPath = path.join(dir, "i3.sock");
+    const entryFile = (d: string) => path.join(d, `${process.pid}.json`);
+    let squatter: import("node:net").Server | null = null;
+    const foreignEntry = () =>
+      JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "pi-claude-link" });
+    try {
+      const { pi, fire } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      const ctx = fakeCtx(notices);
+      adapter.default(pi, {
+        socketPath: sockPath,
+        sessionsDir: dir,
+        enabled: true,
+        hooks: {
+          afterRegister: async () => {
+            // pi-claude-link wins the race after our register: it unlinks
+            // first, takes the path and overwrites the entry.
+            rmSync(sockPath, { force: true });
+            const net = await import("node:net");
+            squatter = net.createServer(() => {});
+            await new Promise<void>((resolve) => squatter!.listen(sockPath, resolve));
+            writeFileSync(entryFile(dir), foreignEntry());
+          },
+        },
+      });
+      fire("session_start", { reason: "startup" }, ctx);
+      await until(() => notices.filter((n) => n.line === adapter.TAKEOVER_LINE).length >= 1);
+      expect(notices).toHaveLength(1);
+      expect(readFileSync(entryFile(dir), "utf8")).toBe(foreignEntry());
+      expect(existsSync(sockPath)).toBe(true);
+      // Shutdown removes nothing of ours and touches nothing foreign.
+      fire("session_shutdown", { reason: "quit" }, ctx);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(readFileSync(entryFile(dir), "utf8")).toBe(foreignEntry());
+      expect(existsSync(sockPath)).toBe(true);
+      expect(notices).toHaveLength(1);
+    } finally {
+      if (squatter) await new Promise<void>((resolve) => squatter!.close(() => resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a foreign write after start survives shutdown untouched", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-takeover-"));
     const sockPath = path.join(dir, "i3.sock");
     try {
@@ -612,6 +677,62 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
       expect(notices.filter((n) => n.line === adapter.TAKEOVER_LINE)).toHaveLength(0);
       await new Promise<void>((resolve) => squatter.close(() => resolve()));
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("shutdown with only the socket swapped removes our entry but keeps the foreign socket", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-sockonly-"));
+    const sockPath = path.join(dir, "i3.sock");
+    const entryFile = (d: string) => path.join(d, `${process.pid}.json`);
+    let squatter: import("node:net").Server | null = null;
+    try {
+      const { pi, fire } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      const ctx = fakeCtx(notices);
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
+      fire("session_start", { reason: "startup" }, ctx);
+      await until(() => existsSync(sockPath));
+      await until(() => existsSync(entryFile(dir)));
+      // Only the socket is swapped; our entry stays.
+      rmSync(sockPath, { force: true });
+      const net = await import("node:net");
+      squatter = net.createServer(() => {});
+      await new Promise<void>((resolve) => squatter!.listen(sockPath, resolve));
+      fire("session_shutdown", { reason: "quit" }, ctx);
+      await until(() => !existsSync(entryFile(dir)));
+      expect(existsSync(sockPath)).toBe(true);
+    } finally {
+      if (squatter) await new Promise<void>((resolve) => squatter!.close(() => resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("shutdown with the entry missing and the socket foreign keeps the socket", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-noentry-"));
+    const sockPath = path.join(dir, "i3.sock");
+    const entryFile = (d: string) => path.join(d, `${process.pid}.json`);
+    let squatter: import("node:net").Server | null = null;
+    try {
+      const { pi, fire } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      const ctx = fakeCtx(notices);
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
+      fire("session_start", { reason: "startup" }, ctx);
+      await until(() => existsSync(sockPath));
+      await until(() => existsSync(entryFile(dir)));
+      // Entry gone and socket taken: shutdown must prove nothing and remove nothing.
+      rmSync(entryFile(dir), { force: true });
+      rmSync(sockPath, { force: true });
+      const net = await import("node:net");
+      squatter = net.createServer(() => {});
+      await new Promise<void>((resolve) => squatter!.listen(sockPath, resolve));
+      fire("session_shutdown", { reason: "quit" }, ctx);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(existsSync(sockPath)).toBe(true);
+      expect(existsSync(entryFile(dir))).toBe(false);
+    } finally {
+      if (squatter) await new Promise<void>((resolve) => squatter!.close(() => resolve()));
       rmSync(dir, { recursive: true, force: true });
     }
   });
