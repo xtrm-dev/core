@@ -136,9 +136,6 @@ export function resolvePiAgentDir(env: NodeJS.ProcessEnv = process.env): string 
     return env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
 }
 
-// Back-compat export; do not use in new defaults — it is still import-time.
-export const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
-
 /**
  * Agent dir the launched Pi will actually read: Pi's own PI_CODING_AGENT_DIR
  * override wins, then PI_AGENT_DIR, then ~/.pi/agent. Resolved per call (not

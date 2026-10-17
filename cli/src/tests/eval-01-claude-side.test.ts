@@ -7,6 +7,7 @@
 // spawned as a child process against a fake `xtmux` picker and a fake `tmux` on
 // PATH, so nothing here touches a real database, a real pane, or the network.
 
+import { createHash } from 'node:crypto';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
@@ -763,13 +764,29 @@ esac
 });
 
 describe('EVAL-01 Claude column vendoring', () => {
-  // CORE-2412: deterministic repo-source check. The vendored fixtures are
-  // checked into the repo and are the oracle; nothing here reads
-  // machine-installed hooks, so the suite passes identically on CI, on main,
-  // and under full-suite load.
-  it.each(VENDORED_HOOKS)('vendored fixture %s is present and non-empty', (name) => {
+  // CORE-2412: deterministic repo-source check backed by the SHA256SUMS
+  // manifest next to the fixtures. Nothing here reads machine-installed
+  // hooks, so the suite passes identically on CI, on main, and under
+  // full-suite load. A fixture edit without a manifest refresh fails;
+  // refresh both via the README re-vendoring step.
+  const manifest = fs.readFileSync(path.join(HOOKS_DIR, 'SHA256SUMS'), 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [hash, ...rest] = line.split(/\s+/);
+      return { hash, name: rest.join(' ') };
+    });
+  it('manifest covers every vendored hook', () => {
+    const names = new Set(manifest.map((entry) => entry.name));
+    for (const name of VENDORED_HOOKS) {
+      expect(names.has(name), `${name} missing from SHA256SUMS`).toBe(true);
+    }
+  });
+  it.each(manifest)('vendored fixture $name matches SHA256SUMS', ({ hash, name }) => {
     const fixture = path.join(HOOKS_DIR, name);
     expect(fs.existsSync(fixture), `${name} missing from repo fixtures`).toBe(true);
-    expect(fs.readFileSync(fixture, 'utf8').length).toBeGreaterThan(0);
+    const actual = createHash('sha256').update(fs.readFileSync(fixture)).digest('hex');
+    expect(actual, `${name} content drifted without a SHA256SUMS refresh (see README re-vendoring step)`).toBe(hash);
   });
 });

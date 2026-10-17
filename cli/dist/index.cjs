@@ -56000,7 +56000,6 @@ function resolveManagedPiCoreSourceDir(pkgRoot = resolvePkgRoot()) {
 function resolvePiAgentDir(env3 = process.env) {
   return env3.PI_AGENT_DIR || import_path3.default.join((0, import_node_os6.homedir)(), ".pi", "agent");
 }
-var PI_AGENT_DIR = process.env.PI_AGENT_DIR || import_path3.default.join((0, import_node_os6.homedir)(), ".pi", "agent");
 function resolvePiLaunchAgentDir(env3 = process.env) {
   return env3.PI_CODING_AGENT_DIR || env3.PI_AGENT_DIR || import_path3.default.join((0, import_node_os6.homedir)(), ".pi", "agent");
 }

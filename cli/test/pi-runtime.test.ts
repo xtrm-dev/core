@@ -487,3 +487,25 @@ describe('hermetic pi stub (CORE-2408)', () => {
         }
     });
 });
+
+// CORE-2412: the agent dir must resolve lazily. The pre-fix code captured
+// `const PI_AGENT_DIR = ...` at import time, so a test that set PI_AGENT_DIR
+// in beforeEach still wrote to the operator's real ~/.pi/agent/settings.json.
+// This test uses the file's static import on purpose: it fails against the
+// import-time capture and passes with resolvePiAgentDir().
+describe('resolvePiAgentDir laziness (CORE-2412)', () => {
+    it('follows a PI_AGENT_DIR change made after import', async () => {
+        const { resolvePiAgentDir } = await import('../src/core/pi-runtime.js');
+        const first = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-lazy-a-'));
+        const second = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-lazy-b-'));
+        try {
+            process.env.PI_AGENT_DIR = first;
+            expect(resolvePiAgentDir()).toBe(first);
+            process.env.PI_AGENT_DIR = second;
+            expect(resolvePiAgentDir()).toBe(second);
+        } finally {
+            await fs.remove(first);
+            await fs.remove(second);
+        }
+    });
+});
