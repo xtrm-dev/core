@@ -1,6 +1,7 @@
 /**
  * Intercom Pi transport (CORE-2433 I2, XT-91 ADR rev 2 + amendment 1)
- * with the Claude transport adapter (CORE-2434 I3).
+ * with the Claude transport adapter (CORE-2434 I3) and the ListAgents
+ * roster (CORE-2435 I4).
  *
  * Registers one listener per Pi session through the shared agent-host
  * connection (`ensureAgentHostBridge`): a second active entry never opens a
@@ -12,15 +13,20 @@
  * registry behind an ownership check, so Pi sessions appear in Claude Code's
  * ListAgents while pi-claude-link coexists until M1.
  *
- * This slice carries no model tools (ListAgents/SendMessage are I4/I5,
- * CORE-2435/CORE-2436) and no card renderer beyond the plain fallback (I7,
- * CORE-2438). It never registers the names xtrm-ui owns (bash, read, edit,
- * write, find, grep, ls).
+ * This slice adds the model-only ListAgents tool (./roster.ts: this
+ * session's name first, then one Claude-shaped row per Pi and Claude peer),
+ * the /intercom roster overlay and /rename (./commands.ts), and the
+ * waiting-only footer chip (./waiting.ts). Sending is I5 (CORE-2436), the
+ * card renderer is I7 (CORE-2438). It never registers the names xtrm-ui
+ * owns (bash, read, edit, write, find, grep, ls).
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type AgentHostBridgeOptions, ensureAgentHostBridge } from "../xtrm-agent-host/index.ts";
 import claudeTransportExtension, { type ClaudeTransportOptions } from "./claude-transport/index.ts";
+import { registerIntercomCommands, type IntercomCommandDeps } from "./commands.ts";
+import { registerListAgentsTool, type ListAgentsDeps } from "./roster.ts";
+import { intercomWaiting, registerIntercomFooter } from "./waiting.ts";
 
 export {
   buildIntercomWakeContent,
@@ -44,6 +50,9 @@ export interface IntercomExtensionOptions extends AgentHostBridgeOptions {
 }
 
 export type { ClaudeTransportOptions };
+export { intercomWaiting } from "./waiting.ts";
+export type { IntercomCommandDeps, RenameResult } from "./commands.ts";
+export type { ListAgentsDeps, ResolveMiss, RosterEntry, RosterRow } from "./roster.ts";
 
 export default function intercomExtension(pi: ExtensionAPI, options: IntercomExtensionOptions = {}): void {
   ensureAgentHostBridge(pi, options).register();
@@ -52,4 +61,10 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
     ...(options.claudeSessionsDir ? { sessionsDir: options.claudeSessionsDir } : {}),
     ...(options.claudeTransportEnabled !== undefined ? { enabled: options.claudeTransportEnabled } : {}),
   });
+  const rosterDeps: ListAgentsDeps & IntercomCommandDeps = {
+    ...(options.claudeSocketPath ? { excludeSock: options.claudeSocketPath } : {}),
+  };
+  registerListAgentsTool(pi, rosterDeps);
+  registerIntercomCommands(pi, rosterDeps);
+  registerIntercomFooter(intercomWaiting);
 }

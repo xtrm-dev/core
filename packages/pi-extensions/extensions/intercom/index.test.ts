@@ -34,6 +34,9 @@ function fakePi() {
       return this.thinkingLevel;
     },
     getAllTools: () => [],
+    registerTool: () => {},
+    registerCommand: () => {},
+    setSessionName: () => {},
   };
   const fire = (name: string, event: any, ctx: any) => {
     for (const handler of handlers.get(name) ?? []) handler({ type: name, ...event }, ctx);
