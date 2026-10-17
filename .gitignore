@@ -189,3 +189,6 @@ cli/.gemini/
 
 # Beads / Dolt files (added by bd init)
 *.gate.lock*
+
+# Legacy specialists hook links (CORE-2414): never installed in-repo, unwired; do not track
+.claude/hooks/specialists-*.mjs
