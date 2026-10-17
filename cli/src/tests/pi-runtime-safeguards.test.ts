@@ -599,6 +599,41 @@ describe('pi runtime safeguards', () => {
       expect(logs.join('\n')).toContain('Removed npm:pi-intercom');
     });
 
+    it('removes every git-spec form of the retired repo but keeps look-alikes', async () => {
+      const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'm1-git-forms-agent');
+      await fs.outputJson(path.join(agentDir, 'settings.json'), {
+        packages: [
+          'git:github.com/alonw0/pi-claude-link',
+          'git:github.com/alonw0/pi-claude-link@v1',
+          'git:github.com/alonw0/pi-claude-link.git@v2',
+          { source: 'git:github.com/alonw0/pi-claude-link#v3', extensions: ['index.ts'] },
+          'https://github.com/alonw0/pi-claude-link',
+          'https://github.com/alonw0/pi-claude-link.git',
+          'git:https://github.com/alonw0/pi-claude-link@v1',
+          'git:git@github.com:alonw0/pi-claude-link.git',
+          'ssh://git@github.com/alonw0/pi-claude-link',
+          'ssh://git@github.com/alonw0/pi-claude-link.git',
+          // Look-alikes: different repo names or owners stay.
+          'git:github.com/alonw0/pi-claude-link-extra',
+          'git:github.com/other/pi-claude-link',
+          'npm:pi-claude-link',
+        ],
+      });
+
+      const result = await removeRetiredM1Packages(false, undefined, agentDir);
+
+      expect(result.found).toBe(true);
+      expect(result.removed).toBe(true);
+      expect((await fs.readJson(path.join(agentDir, 'settings.json'))).packages).toEqual([
+        'git:github.com/alonw0/pi-claude-link-extra',
+        'git:github.com/other/pi-claude-link',
+        'npm:pi-claude-link',
+      ]);
+      // No tmp file left behind: the write is atomic.
+      expect(await fs.pathExists(path.join(agentDir, 'settings.json.tmp-m1-retire'))).toBe(false);
+    });
+
     it('never overwrites an existing backup', async () => {
       const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
       const agentDir = path.join(tempRoot, 'm1-bak-agent');

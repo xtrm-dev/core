@@ -56656,12 +56656,19 @@ async function dropRetiredPiMcpAdapterEntry(settingsPath, dryRun, log) {
   return true;
 }
 var RETIRED_M1_NPM_PACKAGES = ["pi-intercom", "pi-background-tasks", "@aliou/pi-processes"];
-var RETIRED_M1_GIT_PACKAGE = "git:github.com/alonw0/pi-claude-link";
 function isRetiredM1Package(entry) {
   const spec = packageEntrySpec(entry);
   if (spec === null) return false;
-  if (spec.startsWith("git:")) return normalizePiPackageIdentity(spec) === RETIRED_M1_GIT_PACKAGE;
+  if (spec.startsWith("git:")) return isRetiredM1GitSpec(spec.slice("git:".length));
+  if (isRetiredM1GitSpec(spec)) return true;
   return RETIRED_M1_NPM_PACKAGES.includes(parseNpmPackageName(spec) ?? "");
+}
+function isRetiredM1GitSpec(rest) {
+  const noFrag = rest.split("#", 1)[0];
+  const onGithub = noFrag.match(/github\.com[/:](.+)$/);
+  if (!onGithub) return false;
+  const repoPath = onGithub[1].replace(/^\/+/, "").replace(/@[^/]*$/, "").replace(/\.git$/, "");
+  return repoPath === "alonw0/pi-claude-link";
 }
 function retiredM1InstallDirs(agentDir) {
   const dirs = RETIRED_M1_NPM_PACKAGES.map(
@@ -56699,8 +56706,11 @@ async function dropRetiredM1Entries(settingsPath, dryRun, log) {
     return true;
   }
   await backupSettingsOnce(settingsPath, log);
+  await backupSettingsOnce(settingsPath, log);
   const kept = packages.filter((entry) => !isRetiredM1Package(entry));
-  await import_fs_extra13.default.writeFile(settingsPath, serializeLikeOriginal(text, { ...settings, packages: kept }), "utf8");
+  const tmpPath = `${settingsPath}.tmp-m1-retire`;
+  await import_fs_extra13.default.writeFile(tmpPath, serializeLikeOriginal(text, { ...settings, packages: kept }), "utf8");
+  await import_fs_extra13.default.move(tmpPath, settingsPath, { overwrite: true });
   for (const entry of packages.filter(isRetiredM1Package)) {
     log?.(kleur_default.dim(`Removed ${packageEntrySpec(entry)} from ${settingsPath}`));
   }

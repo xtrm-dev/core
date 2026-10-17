@@ -1219,15 +1219,30 @@ async function dropRetiredPiMcpAdapterEntry(
  * write, and every removal is logged.
  */
 const RETIRED_M1_NPM_PACKAGES = ['pi-intercom', 'pi-background-tasks', '@aliou/pi-processes'];
-const RETIRED_M1_GIT_PACKAGE = 'git:github.com/alonw0/pi-claude-link';
 
 /** A settings `packages` entry names an M1-retired package: npm name match (any
- * version selector) or the retired git identity (any ref, via normalization). */
+ * version selector) or the retired git repo in any Pi spec form. */
 function isRetiredM1Package(entry: unknown): boolean {
     const spec = packageEntrySpec(entry);
     if (spec === null) return false;
-    if (spec.startsWith('git:')) return normalizePiPackageIdentity(spec) === RETIRED_M1_GIT_PACKAGE;
+    if (spec.startsWith('git:')) return isRetiredM1GitSpec(spec.slice('git:'.length));
+    // Bare and URL forms without the `git:` prefix (settings carry both).
+    if (isRetiredM1GitSpec(spec)) return true;
     return RETIRED_M1_NPM_PACKAGES.includes(parseNpmPackageName(spec) ?? '');
+}
+
+/**
+ * The retired pi-claude-link repo in any Pi git-spec form: with or without the
+ * `git:` prefix, `https://`, `ssh://` or scp-like `git@` transport, an optional
+ * `.git` suffix, and any `#ref` or `@ref` pin. Anything else on github.com —
+ * including look-alike repo names — is not a match.
+ */
+function isRetiredM1GitSpec(rest: string): boolean {
+    const noFrag = rest.split('#', 1)[0];
+    const onGithub = noFrag.match(/github\.com[/:](.+)$/);
+    if (!onGithub) return false;
+    const repoPath = onGithub[1].replace(/^\/+/, '').replace(/@[^/]*$/, '').replace(/\.git$/, '');
+    return repoPath === 'alonw0/pi-claude-link';
 }
 
 /** Install dirs the M1 sweep checks: npm trees, the git checkout, and extension overrides. */
@@ -1275,8 +1290,13 @@ async function dropRetiredM1Entries(
         return true;
     }
     await backupSettingsOnce(settingsPath, log);
+    await backupSettingsOnce(settingsPath, log);
     const kept = packages.filter((entry) => !isRetiredM1Package(entry));
-    await fs.writeFile(settingsPath, serializeLikeOriginal(text, { ...settings, packages: kept }), 'utf8');
+    // Atomic write: the backup above is the rollback; a crash mid-write must
+    // never leave a half-written settings file behind.
+    const tmpPath = `${settingsPath}.tmp-m1-retire`;
+    await fs.writeFile(tmpPath, serializeLikeOriginal(text, { ...settings, packages: kept }), 'utf8');
+    await fs.move(tmpPath, settingsPath, { overwrite: true });
     for (const entry of packages.filter(isRetiredM1Package)) {
         log?.(kleur.dim(`Removed ${packageEntrySpec(entry)} from ${settingsPath}`));
     }
