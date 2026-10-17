@@ -27,11 +27,13 @@ type ToolDef = {
 function fakePi(opts: { sendMessage?: (message: any, options: any) => void } = {}) {
   const tools = new Map<string, ToolDef>();
   const renderers = new Map<string, unknown>();
+  const commands = new Map<string, unknown>();
   const handlers = new Map<string, Array<(...args: any[]) => unknown>>();
   const sent: SentMessage[] = [];
   const pi = {
     tools,
     renderers,
+    commands,
     handlers,
     sent,
     registerTool(tool: ToolDef) {
@@ -39,6 +41,12 @@ function fakePi(opts: { sendMessage?: (message: any, options: any) => void } = {
     },
     registerMessageRenderer(type: string, renderer: unknown) {
       renderers.set(type, renderer);
+    },
+    registerCommand(name: string, options: unknown) {
+      commands.set(name, options);
+    },
+    getSettings() {
+      return {};
     },
     sendMessage(message: Record<string, unknown>, options: Record<string, unknown>) {
       if (opts.sendMessage) {
@@ -52,7 +60,7 @@ function fakePi(opts: { sendMessage?: (message: any, options: any) => void } = {
       return () => {};
     },
   };
-  return { pi: pi as any, tools, renderers, handlers, sent };
+  return { pi: pi as any, tools, renderers, commands, handlers, sent };
 }
 
 const until = async (check: () => boolean, ms = 8000) => {
@@ -402,7 +410,254 @@ describe("TaskStop", () => {
   });
 });
 
+describe("rerunTask", () => {
+  test("reruns a finished task as a new id with the same command", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const first = await service.runBackground({ command: "echo hi", description: "echo hi" }, toolCtx());
+    const firstId = String((first.details as Record<string, unknown>).task_id);
+    await until(() => service.store.get(firstId)?.status === "completed");
+    const rerun = await service.rerunTask(firstId);
+    const secondId = String((rerun.details as Record<string, unknown>).task_id);
+    expect(secondId).toBeTruthy();
+    expect(secondId).not.toBe(firstId);
+    expect(service.store.get(secondId)?.command).toBe("echo hi");
+    expect(service.store.get(secondId)?.status).toBe("running");
+    await until(() => service.store.get(secondId)?.status === "completed");
+  });
+
+  test("rerunning a running task refuses with stop-it-first", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const first = await service.runBackground({ command: "sleep 30", description: "sleep 30" }, toolCtx());
+    const firstId = String((first.details as Record<string, unknown>).task_id);
+    await expect(service.rerunTask(firstId)).rejects.toThrow(/stop it first/);
+  });
+
+  test("rerunning an unknown id fails loudly", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    await expect(service.rerunTask("bg_doesnotexist")).rejects.toThrow(/unknown task/);
+  });
+
+  test("rerunning a ws monitor replays its subprotocols", async () => {
+    const { pi } = fakePi();
+    const seenSockets: Array<{ url: string; protocols?: string[] }> = [];
+    const service = startService(pi, {
+      createWebSocket: ((url: string, protocols?: string[]) => {
+        seenSockets.push({ url, protocols });
+        return { onmessage: null, onclose: null, onerror: null, close: () => {} };
+      }) as never,
+    });
+    const first = await service.runMonitor({ ws: { url: "ws://localhost:9/x", protocols: ["p1"] }, description: "ws" }, toolCtx());
+    const firstId = String((first.details as Record<string, unknown>).monitor_id);
+    await service.stopTask(firstId);
+    const rerun = await service.rerunTask(firstId);
+    const secondId = String((rerun.details as Record<string, unknown>).monitor_id);
+    expect(secondId).not.toBe(firstId);
+    expect(seenSockets).toHaveLength(2);
+    expect(seenSockets[1]).toEqual({ url: "ws://localhost:9/x", protocols: ["p1"] });
+    expect(service.store.getMonitor(secondId)?.wsProtocols).toEqual(["p1"]);
+  });
+
+  test("reruns a finished command monitor as a new armed id", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const first = await service.runMonitor({ command: "echo hi", description: "echo hi" }, toolCtx());
+    const firstId = String((first.details as Record<string, unknown>).monitor_id);
+    await until(() => {
+      const status = service.store.getMonitor(firstId)?.status;
+      return status === "stopped" || status === "expired";
+    });
+    const rerun = await service.rerunTask(firstId);
+    const secondId = String((rerun.details as Record<string, unknown>).monitor_id);
+    expect(secondId).toBeTruthy();
+    expect(secondId).not.toBe(firstId);
+    const status = service.store.getMonitor(secondId)?.status;
+    expect(status === "armed" || status === "event").toBe(true);
+  });
+});
+
+describe("seen across the lifecycle (F2a)", () => {
+  test("a failure after markAllSeen still pins the indicator", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const started = await service.runBackground(
+      { command: "sleep 0.3; exit 3", description: "late failure" },
+      toolCtx(),
+    );
+    const taskId = String((started.details as Record<string, unknown>).task_id);
+    // The operator looks while the task still runs: nothing flips.
+    expect(service.store.get(taskId)?.status).toBe("running");
+    expect(service.store.markAllSeen()).toBe(0);
+    expect(service.store.get(taskId)?.seen).toBe(false);
+    await until(() => service.store.get(taskId)?.status === "failed");
+    // The fresh failure counts even though the operator looked earlier.
+    expect(service.store.get(taskId)?.seen).toBe(false);
+    const { summarizeBackground } = await import("./widget.ts");
+    expect(summarizeBackground(service.store.list(), service.store.listMonitors()).unseenFailures).toBe(1);
+  });
+});
+
+describe("rerun replays cwd and timeout (F5)", () => {
+  test("a rerun task respawns in the original cwd with the original timeout", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const first = await service.runBackground(
+      { command: "pwd", description: "whereami", timeout: 60000 },
+      { cwd: dir, sessionManager: { getSessionId: () => "f5" } },
+    );
+    const firstId = String((first.details as Record<string, unknown>).task_id);
+    expect(service.store.get(firstId)?.cwd).toBe(dir);
+    expect(service.store.get(firstId)?.timeoutMs).toBe(60000);
+    await until(() => service.store.get(firstId)?.status === "completed");
+    const rerun = await service.rerunTask(firstId);
+    const secondId = String((rerun.details as Record<string, unknown>).task_id);
+    expect(service.store.get(secondId)?.cwd).toBe(dir);
+    expect(service.store.get(secondId)?.timeoutMs).toBe(60000);
+    await until(() => service.store.get(secondId)?.status === "completed");
+    const output = readFileSync(service.store.get(secondId)?.outputFile as string, "utf8");
+    expect(output.trim()).toBe(dir);
+  });
+
+  test("a rerun monitor keeps its cwd and timeout", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const first = await service.runMonitor(
+      { command: "echo hi", description: "hi", timeout_ms: 45000 },
+      { cwd: dir, sessionManager: { getSessionId: () => "f5m" } },
+    );
+    const firstId = String((first.details as Record<string, unknown>).monitor_id);
+    expect(service.store.getMonitor(firstId)?.cwd).toBe(dir);
+    expect(service.store.getMonitor(firstId)?.timeoutMs).toBe(45000);
+    await service.stopTask(firstId);
+    const rerun = await service.rerunTask(firstId);
+    const secondId = String((rerun.details as Record<string, unknown>).monitor_id);
+    expect(service.store.getMonitor(secondId)?.cwd).toBe(dir);
+    expect(service.store.getMonitor(secondId)?.timeoutMs).toBe(45000);
+  });
+});
+
+describe("process exit hook (F2b)", () => {
+  test("installs at most one exit hook no matter how many services register", () => {
+    const { pi } = fakePi();
+    const before = process.listenerCount("exit");
+    const a = startService(pi);
+    const b = startService(pi);
+    const c = startService(pi);
+    // An earlier suite may have installed the process hook already; what
+    // matters is N services never add N listeners.
+    expect(process.listenerCount("exit") - before).toBeLessThanOrEqual(1);
+    a.close();
+    b.close();
+    c.close();
+    expect(process.listenerCount("exit") - before).toBeLessThanOrEqual(1);
+  });
+
+  test("a quit after close still SIGKILLs a TERM-trapping tree (child bun process)", { timeout: 30000 }, async () => {
+    const childDir = mkdtempSync(path.join(os.tmpdir(), "background-exit-child-"));
+    const pidFile = path.join(childDir, "child.pid");
+    const grandchildFile = path.join(childDir, "grandchild.pid");
+    const closedFile = path.join(childDir, "closed");
+    const outDir = path.join(childDir, "out");
+    mkdirSync(outDir, { recursive: true });
+    // File-relative, never process.cwd(): CI runs the suite from the repo
+    // root while local runs use packages/pi-extensions (CORE-2352).
+    const indexTs = new URL("./index.ts", import.meta.url).pathname;
+    const script = [
+      `const { registerBackgroundExtension } = await import(${JSON.stringify(indexTs)});`,
+      `const pi = { registerTool() {}, registerMessageRenderer() {}, registerCommand() {}, getSettings: () => ({}), sendMessage() {}, on() {} };`,
+      `const svc = registerBackgroundExtension(pi, { outputDir: ${JSON.stringify(outDir)}, killGraceMs: 5000 });`,
+      `await svc.runBackground({ command: ${JSON.stringify(`echo $$ > ${pidFile}; trap "" TERM; sleep 60 & echo $! > ${grandchildFile}; wait`) } }, { cwd: ${JSON.stringify(childDir)}, sessionManager: { getSessionId: () => "exit-probe" } });`,
+      `while (true) { try { const t = (await import("node:fs")).readFileSync(${JSON.stringify(grandchildFile)}, "utf8").trim(); if (t) break; } catch {} await new Promise((r) => setTimeout(r, 20)); }`,
+      `svc.close();`,
+      `(await import("node:fs")).writeFileSync(${JSON.stringify(closedFile)}, "closed\\n");`,
+      `process.exit(0);`,
+    ].join("\n");
+    const { spawn } = await import("node:child_process");
+    const child = spawn("bun", ["-e", script], { cwd: childDir, stdio: "ignore", detached: true });
+    child.unref();
+    try {
+      // The child closes (non-blocking) and exits at once; the 5 s sweep
+      // never fires. Only the synchronous exit hook can kill the tree.
+      await until(() => {
+        try {
+          return readFileSync(closedFile, "utf8").trim() === "closed";
+        } catch {
+          return false;
+        }
+      }, 15000);
+      const grandchildPid = Number(readFileSync(grandchildFile, "utf8").trim());
+      expect(grandchildPid).toBeGreaterThan(0);
+      await until(() => procGone(grandchildPid), 10000);
+      expect(procGone(grandchildPid)).toBe(true);
+    } finally {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* already gone */
+      }
+      rmSync(childDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("exit hook sharing across re-evaluations (N4)", () => {
+  test("fifteen module evaluations share one exit hook", async () => {
+    const before = process.listenerCount("exit");
+    const { pi } = fakePi();
+    // Dynamic specifiers defeat TS module resolution on purpose: each
+    // query busts bun's module cache and re-evaluates index.ts.
+    const reimport = (n: number): Promise<typeof import("./index.ts")> =>
+      Function("s", "return import(s);")(`./index.ts?n4reval=${n}`) as Promise<typeof import("./index.ts")>;
+    for (let i = 0; i < 15; i += 1) {
+      const mod = await reimport(i);
+      const service = mod.registerBackgroundExtension(pi, { outputDir: dir, killGraceMs: 50 });
+      services.push(service as never);
+    }
+    expect(process.listenerCount("exit") - before).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("tasks command registration", () => {
+  test("registers /tasks once, with no xtrm- slug and no tool-name collisions", () => {
+    const { pi, tools, commands } = fakePi();
+    startService(pi);
+    expect([...commands.keys()]).toEqual(["tasks"]);
+    expect(tools.has("tasks")).toBe(false);
+    for (const name of ["bash", "read", "edit", "write", "find", "grep", "ls"]) {
+      expect(tools.has(name)).toBe(false);
+    }
+  });
+});
+
 describe("session_shutdown", () => {
+  test("never blocks the event loop for the kill grace, sends no wake, settles stopped (B2 follow-up 7)", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi, { killGraceMs: 2000 });
+    const started = await tools.get("BashBackground")!.execute(
+      "call-1",
+      { command: `trap "" TERM; sleep 60`, description: "term trapper" },
+      undefined,
+      undefined,
+      toolCtx(),
+    );
+    const taskId = String((started.details as Record<string, unknown>).task_id);
+    const pid = service.store.get(taskId)?.pid;
+    expect(pid).toBeGreaterThan(0);
+    const sentBefore = pi.sent.length;
+    const startedAt = Date.now();
+    service.close();
+    // Returns at once even though the child traps TERM and the grace is 2 s.
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(service.store.get(taskId)?.status).toBe("stopped");
+    // No wake follows: the session is going away.
+    expect(pi.sent.length).toBe(sentBefore);
+    // The sweep still SIGKILLs the trapper after the grace: no orphan.
+    await until(() => procGone(pid as number), 10000);
+    expect(procGone(pid as number)).toBe(true);
+  });
+
   test("SIGTERMs running tasks with a short grace, then kills, and names them on one line", async () => {
     const { pi, tools, handlers } = fakePi();
     const service = startService(pi);
@@ -479,7 +734,7 @@ function openFdTargets(): string[] {
 }
 
 describe("B1 review follow-ups", () => {
-  test("a SIGTERM-ignoring task tree is dead on close with no orphan, verified with a grandchild", async () => {
+  test("close returns at once and a SIGTERM-ignoring tree dies after the grace, no orphan", async () => {
     const { pi, tools } = fakePi();
     const service = startService(pi);
     const grandchildFile = `${dir}/grandchild.pid`;
@@ -503,10 +758,11 @@ describe("B1 review follow-ups", () => {
     const grandchildPid = Number(readFileSync(grandchildFile, "utf8").trim());
     expect(grandchildPid).toBeGreaterThan(0);
     expect(grandchildPid).not.toBe(pid);
+    // B3 follow-up 7: non-blocking shutdown. close() SIGTERMs, settles the
+    // record and returns; the sweep SIGKILLs the TERM-trapping tree later.
+    const closedAt = Date.now();
     service.close();
-    // Synchronous: close() SIGTERMs, awaits the grace, then SIGKILLs before
-    // it returns. Both shell and grandchild trap TERM, so only the SIGKILL
-    // path can kill them; an async timer would not have fired yet.
+    expect(Date.now() - closedAt).toBeLessThan(500);
     expect(service.store.get(taskId)?.status).toBe("stopped");
     await until(() => procGone(pid as number) && procGone(grandchildPid), 10000);
     expect(procGone(pid as number)).toBe(true);
