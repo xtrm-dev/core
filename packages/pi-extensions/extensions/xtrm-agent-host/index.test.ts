@@ -778,6 +778,132 @@ describe("xtrm-agent-host bridge replacement and held wakes (CORE-2432 F1/F7)", 
     }
   });
 
+  test("CORE-2438 initial prompt: a wake past the grace holds until before_agent_start, then flushes", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-initial-prompt");
+    const bridge = createAgentHostBridge(pi.pi, {
+      socketPath: raw.socketPath,
+      exec: async () => "",
+      env: {},
+      firstTurnGraceMs: 60,
+      initialPromptPending: true,
+    });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 1);
+      // Past the grace with the initial turn still in startup: the wake
+      // must hold (a triggerTurn injection here would race the first turn
+      // and fail with "Agent is already processing").
+      await new Promise((r) => setTimeout(r, 150));
+      raw.send("s-initial-prompt", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2438" });
+      expect(await raw.resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(pi.sentCustom).toEqual([]);
+      // before_agent_start opens the starting window; agent_start flushes
+      // the held wake as a queued followUp, never with triggerTurn.
+      pi.fire("before_agent_start", { prompt: "initial" }, c.ctx);
+      pi.fire("agent_start", {}, c.ctx);
+      await until(
+        () => raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").length >= 2,
+      );
+      const answers = raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").map((f) => f.payload);
+      expect(answers.at(-1)).toMatchObject({ status: "accepted" });
+      expect(pi.sentCustom).toHaveLength(1);
+      expect(pi.sentCustom[0].options).toEqual({ deliverAs: "followUp" });
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+
+  test("CORE-2438 initial prompt: only --print/-p counts; flag values never do", async () => {
+    const { argvHasInitialPrompt } = await import("./index.ts");
+    expect(argvHasInitialPrompt(["pi", "--print", "say ok"])).toBe(true);
+    expect(argvHasInitialPrompt(["pi", "-p", "say ok"])).toBe(true);
+    expect(argvHasInitialPrompt(["node", "pi.js", "-p", "say ok"])).toBe(true);
+    // Review HIGH-1: none of these is a prompt.
+    expect(argvHasInitialPrompt(["pi"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "--model", "some-model"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "-e", "/abs/ext.ts"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "--session-dir", "/tmp/x"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "--append-system-prompt", "be nice and brief"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "do the thing"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "@brief.md"])).toBe(false);
+    expect(argvHasInitialPrompt(["pi", "/abs/path"])).toBe(false);
+  });
+
+  test("CORE-2438 flag-value argv never holds: the wake delivers within the grace", async () => {
+    for (const argv of [
+      ["pi", "-e", "/abs/ext.ts"],
+      ["pi", "--session-dir", "/tmp/x"],
+      ["pi", "--append-system-prompt", "be nice and brief"],
+    ]) {
+      const raw = await rawHost();
+      const pi = fakePi();
+      const c = fakeCtx(`s-flag-${argv[1].replace(/[^a-z]/g, "")}`);
+      const bridge = createAgentHostBridge(pi.pi, {
+        socketPath: raw.socketPath,
+        exec: async () => "",
+        env: {},
+        argv,
+        firstTurnGraceMs: 60,
+      });
+      try {
+        bridge.register();
+        pi.fire("session_start", { reason: "startup" }, c.ctx);
+        await until(() => bridge.state === "open" && raw.frames.length >= 1);
+        // Past the grace with no prompt pending: idle, no hold, the wake
+        // injects at once with triggerTurn.
+        await new Promise((r) => setTimeout(r, 150));
+        raw.send(c.ctx.sessionManager.getSessionId(), { type: "wake", commandId: "w1", messageId: `m-${argv[1]}`, payloadRef: "CORE-2438" });
+        expect(await raw.resultsFor("w1")).toMatchObject([{ status: "accepted" }]);
+        expect(pi.sentCustom).toHaveLength(1);
+        expect(pi.sentCustom[0].options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+      } finally {
+        pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+        await raw.close();
+      }
+    }
+  });
+
+  test("CORE-2438 initial-prompt hold is capped: past the cap the wake flushes with triggerTurn", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-prompt-cap");
+    const bridge = createAgentHostBridge(pi.pi, {
+      socketPath: raw.socketPath,
+      exec: async () => "",
+      env: {},
+      firstTurnGraceMs: 60,
+      initialPromptPending: true,
+      initialPromptCapMs: 150,
+    });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 1);
+      // Past the grace the wake holds on the initial-prompt prediction...
+      await new Promise((r) => setTimeout(r, 120));
+      raw.send("s-prompt-cap", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2438" });
+      expect(await raw.resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
+      expect(pi.sentCustom).toEqual([]);
+      // ...but the cap falls back to the normal grace flush: no agent_start
+      // ever fired, yet the wake injects with triggerTurn and is accepted.
+      await until(
+        () => raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").length >= 2,
+      );
+      const answers = raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").map((f) => f.payload);
+      expect(answers.at(-1)).toMatchObject({ status: "accepted" });
+      expect(pi.sentCustom).toHaveLength(1);
+      expect(pi.sentCustom[0].options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+
   test("F7 a wake received while starting is held, then accepted only when delivered", async () => {
     const raw = await rawHost();
     const pi = fakePi();
