@@ -186,8 +186,6 @@ export async function syncManagedPiThemes(
     return true;
 }
 
-const PI_MCP_ADAPTER_REQUIRED_ENTRY = 'commands.js';
-
 async function resolveGlobalNpmRootDir(): Promise<string | null> {
     const result = spawnSync('npm', ['root', '-g'], { encoding: 'utf8', stdio: 'pipe' });
     if (result.status !== 0) return null;
@@ -276,7 +274,6 @@ const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'git:github.com/DietrichGebert/ponytail', displayName: 'ponytail', required: false },
     { id: 'npm:@tintinweb/pi-tasks', displayName: 'pi-tasks', required: false },
     { id: 'npm:pi-background-tasks@latest', displayName: 'pi-background-tasks', required: true },
-    { id: 'npm:pi-mcp-adapter', displayName: 'pi-mcp-adapter', required: true },
     { id: 'npm:pi-mermaid-viewer', displayName: 'pi-mermaid-viewer', required: false },
     { id: 'npm:@jaggerxtrm/pi-service-knowledge', displayName: 'pi-service-knowledge', required: true },
     { id: 'npm:pi-intercom', displayName: 'pi-intercom', required: true },
@@ -1047,51 +1044,138 @@ export async function ensureCorePackageSymlink(
     return 'created';
 }
 
-export interface PiMcpAdapterOverrideCheck {
-    path: string;
+const RETIRED_PI_MCP_ADAPTER_PACKAGE = 'npm:pi-mcp-adapter';
+/** Retired adapter extension id; exported so callers and tests need no literal. */
+export const RETIRED_PI_MCP_ADAPTER_EXTENSION = 'pi-mcp-adapter';
+
+export interface PiRetiredMcpAdapterRemoval {
+    /** Retired install locations checked: the extension override and the npm install dir. */
+    paths: string[];
+    /** The locations that were present and got removed; empty in a dry run. */
+    removedPaths: string[];
+    /** True when a retired path or a settings package entry was present. */
     found: boolean;
-    stale: boolean;
-    remediated: boolean;
-    reason?: string;
+    /** True when something was removed — a retired path or a settings entry; always false in a dry run. */
+    removed: boolean;
+    /** Settings files whose `packages` list still named the retired package. */
+    settingsFiles: string[];
 }
 
 export interface PiLaunchPreflightResult {
     coreSymlinkStatus: CoreSymlinkStatus;
-    staleOverride: PiMcpAdapterOverrideCheck;
+    retiredAdapter: PiRetiredMcpAdapterRemoval;
     themesChanged: boolean;
 }
 
-export async function remediateStalePiMcpAdapterOverride(
+/**
+ * CORE-2399: Pi has built-in MCP, so `pi-mcp-adapter` is retired. Remove what an earlier
+ * xt put on this machine — the extension override under the agent dir and the package
+ * entry in the settings files xt manages — and stay a silent no-op where it is gone.
+ */
+export async function removeRetiredPiMcpAdapter(
     dryRun: boolean,
     log?: (message: string) => void,
     agentDir: string = PI_AGENT_DIR,
-): Promise<PiMcpAdapterOverrideCheck> {
-    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir (PI_CODING_AGENT_DIR/PI_AGENT_DIR or ~/.pi/agent); the leaf is constant.
-    const overrideDir = path.join(agentDir, 'extensions', 'pi-mcp-adapter');
-    const stat = await fs.lstat(overrideDir).catch(() => null);
-    if (!stat) {
-        return { path: overrideDir, found: false, stale: false, remediated: false };
+    projectRoot?: string,
+): Promise<PiRetiredMcpAdapterRemoval> {
+    const paths = [
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir (PI_CODING_AGENT_DIR/PI_AGENT_DIR or ~/.pi/agent); both leaf segments are constants.
+        path.join(agentDir, 'extensions', RETIRED_PI_MCP_ADAPTER_EXTENSION),
+        // `pi remove` can leave the npm install tree behind, and that leftover made the
+        // package read as installed/outdated, which is how it kept coming back.
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- same agent dir; leaf segments are constants.
+        path.join(agentDir, 'npm', 'node_modules', RETIRED_PI_MCP_ADAPTER_EXTENSION),
+    ];
+    const presentPaths: string[] = [];
+    const removedPaths: string[] = [];
+    for (const retiredPath of paths) {
+        const stat = await fs.lstat(retiredPath).catch(() => null);
+        if (!stat) continue;
+        presentPaths.push(retiredPath);
+        if (dryRun) {
+            log?.(kleur.dim(`[DRY RUN] would remove retired ${RETIRED_PI_MCP_ADAPTER_EXTENSION} at ${retiredPath}`));
+            continue;
+        }
+        await fs.remove(retiredPath);
+        removedPaths.push(retiredPath);
+        log?.(kleur.dim(`Removed retired ${RETIRED_PI_MCP_ADAPTER_EXTENSION} at ${retiredPath}`));
     }
 
-    if (stat.isSymbolicLink()) {
-        return { path: overrideDir, found: true, stale: false, remediated: false };
+    const settingsFiles: string[] = [];
+    for (const settingsPath of [
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- same agent dir; the leaf is constant.
+        path.join(agentDir, 'settings.json'),
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `projectRoot` is the repo xt is updating; the leaf is constant.
+        ...(projectRoot ? [path.join(projectRoot, '.pi', 'settings.json')] : []),
+    ]) {
+        if (await dropRetiredPiMcpAdapterEntry(settingsPath, dryRun, log)) settingsFiles.push(settingsPath);
     }
 
-    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `overrideDir` is derived above; the entry name is a module constant.
-    const hasRequiredEntry = await fs.pathExists(path.join(overrideDir, PI_MCP_ADAPTER_REQUIRED_ENTRY));
-    if (stat.isDirectory() && hasRequiredEntry) {
-        return { path: overrideDir, found: true, stale: false, remediated: false };
-    }
+    return {
+        paths,
+        removedPaths,
+        found: presentPaths.length > 0 || settingsFiles.length > 0,
+        removed: !dryRun && (removedPaths.length > 0 || settingsFiles.length > 0),
+        settingsFiles,
+    };
+}
 
-    const reason = stat.isDirectory() ? `missing ${PI_MCP_ADAPTER_REQUIRED_ENTRY}` : 'not a directory/symlink';
+/**
+ * CORE-2399 review: a settings `packages` entry is either a spec string or an object
+ * (`{source, extensions, skills, prompts, themes}`). An entry names the retired adapter when
+ * its spec — or its `source` — is `npm:pi-mcp-adapter`, with or without a version selector.
+ */
+function isRetiredPiMcpAdapterPackage(entry: unknown): boolean {
+    const spec = typeof entry === 'string'
+        ? entry
+        : entry !== null && typeof entry === 'object' && typeof (entry as { source?: unknown }).source === 'string'
+            ? (entry as { source: string }).source
+            : null;
+    return spec !== null && parseNpmPackageName(spec) === RETIRED_PI_MCP_ADAPTER_EXTENSION;
+}
+
+/** Indentation of a JSON file's first indented key; the writer's default when there is none. */
+function detectJsonIndent(text: string): string | number {
+    const match = text.match(/\n([ \t]+)"/);
+    return match ? match[1] : 2;
+}
+
+/**
+ * Drop the retired package from one settings file; true when that file still listed it.
+ *
+ * The `packages` array also holds object entries, so this filters the raw array: every other
+ * entry survives unchanged and in its original order, the file's own indentation is kept, and
+ * a file with no match is never written at all.
+ */
+async function dropRetiredPiMcpAdapterEntry(
+    settingsPath: string,
+    dryRun: boolean,
+    log?: (message: string) => void,
+): Promise<boolean> {
+    let text: string;
+    let settings: PiSettingsShape;
+    try {
+        text = await fs.readFile(settingsPath, 'utf8');
+        settings = JSON.parse(text) as PiSettingsShape;
+    } catch {
+        return false;
+    }
+    if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return false;
+    const packages = settings.packages;
+    if (!Array.isArray(packages) || !packages.some(isRetiredPiMcpAdapterPackage)) return false;
     if (dryRun) {
-        log?.(kleur.dim(`[DRY RUN] would remove stale pi-mcp-adapter override (${reason})`));
-        return { path: overrideDir, found: true, stale: true, remediated: false, reason };
+        log?.(kleur.dim(`[DRY RUN] would remove ${RETIRED_PI_MCP_ADAPTER_PACKAGE} from ${settingsPath}`));
+        return true;
     }
-
-    await fs.remove(overrideDir);
-    log?.(kleur.dim(`Removed stale pi-mcp-adapter override (${reason})`));
-    return { path: overrideDir, found: true, stale: true, remediated: true, reason };
+    const kept = packages.filter((entry) => !isRetiredPiMcpAdapterPackage(entry));
+    const trailingNewline = text.endsWith('\n') ? '\n' : '';
+    await fs.writeFile(
+        settingsPath,
+        `${JSON.stringify({ ...settings, packages: kept }, null, detectJsonIndent(text))}${trailingNewline}`,
+        'utf8',
+    );
+    log?.(kleur.dim(`Removed ${RETIRED_PI_MCP_ADAPTER_PACKAGE} from ${settingsPath}`));
+    return true;
 }
 
 export async function runPiLaunchPreflight(
@@ -1112,7 +1196,7 @@ export async function runPiLaunchPreflight(
             resolveManagedPiThemesSourceDir(pkgRoot), dryRun, log, path.join(agentDir, 'themes'),
         );
     }
-    const staleOverride = await remediateStalePiMcpAdapterOverride(dryRun, log, agentDir);
+    const retiredAdapter = await removeRetiredPiMcpAdapter(dryRun, log, agentDir, projectRoot);
     const coreSymlinkStatus = await ensureCorePackageSymlink(
         path.join(projectRoot, '.xtrm', 'extensions', 'core'),
         projectRoot,
@@ -1120,7 +1204,7 @@ export async function runPiLaunchPreflight(
         log,
     );
 
-    return { coreSymlinkStatus, staleOverride, themesChanged };
+    return { coreSymlinkStatus, retiredAdapter, themesChanged };
 }
 
 function isXtrmExtensionsSetting(entry: string): boolean {
@@ -1281,6 +1365,7 @@ export async function cleanupConflictingPiPackageSettings(
     agentDir = PI_AGENT_DIR,
 ): Promise<string[]> {
     const globalRemoved = await pruneConflictingPiPackagesFromSettings(
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir (PI_CODING_AGENT_DIR/PI_AGENT_DIR or ~/.pi/agent); the leaf is constant.
         path.join(agentDir, 'settings.json'),
         '~/.pi/agent/settings.json',
         dryRun,
@@ -1288,6 +1373,7 @@ export async function cleanupConflictingPiPackageSettings(
         log,
     );
     const projectRemoved = await pruneConflictingPiPackagesFromSettings(
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `projectRoot` is the repo xt is updating; the leaf is constant.
         path.join(projectRoot, '.pi', 'settings.json'),
         `${projectRoot}/.pi/settings.json`,
         dryRun,
@@ -1548,8 +1634,8 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
     const preflight = await runPiLaunchPreflight(resolvedProjectRoot, dryRun, log);
     result.changed = preflight.themesChanged
         || (preflight.coreSymlinkStatus !== 'ok' && preflight.coreSymlinkStatus !== 'missing-source')
-        || preflight.staleOverride.stale;
-    if (preflight.staleOverride.remediated) result.extensionsRemoved.push('pi-mcp-adapter');
+        || preflight.retiredAdapter.found;
+    if (preflight.retiredAdapter.removed) result.extensionsRemoved.push(RETIRED_PI_MCP_ADAPTER_EXTENSION);
 
     const conflictingPackages = await cleanupConflictingPiPackageSettings(resolvedProjectRoot, dryRun, isGlobal, log);
     result.changed ||= conflictingPackages.length > 0;

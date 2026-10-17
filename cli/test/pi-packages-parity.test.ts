@@ -27,11 +27,6 @@ const EXCEPTIONS: Array<PackageParityException> = [
         missingFrom: ['install-schema', 'settings'],
         reason: 'runtime-managed only; not mirrored in Pi setup templates',
     },
-    {
-        package: 'npm:pi-mcp-adapter',
-        missingFrom: ['package.json', 'settings'],
-        reason: 'runtime override repair handles it instead of static package lists',
-    },
 ];
 
 function assertStringArray(value: unknown, filePath: string, fieldName: string): asserts value is string[] {
@@ -94,5 +89,20 @@ describe('Pi package-list parity', () => {
         assertParity('package.json', runtimePackages, packageJsonPackages);
         assertParity('install-schema', runtimePackages, installSchemaPackages);
         assertParity('settings', runtimePackages, settingsTemplatePackages);
+    });
+
+    // CORE-2399: the retired adapter must not come back through any install surface.
+    it('lists no retired MCP adapter in any install surface', () => {
+        const surfaces: ReadonlyArray<readonly [string, readonly string[]]> = [
+            ['package.json', readSurfacePackages(PACKAGE_JSON_PATH, 'package.json')],
+            ['install-schema', readSurfacePackages(INSTALL_SCHEMA_PATH, 'install-schema')],
+            ['settings', readSurfacePackages(SETTINGS_TEMPLATE_PATH, 'settings')],
+            ['runtime', getXtManagedPiPackages().map(pkg => pkg.id)],
+        ];
+
+        const offenders = surfaces.flatMap(([name, packages]) =>
+            packages.filter(packageId => /mcp-adapter/i.test(packageId)).map(packageId => `${name}: ${packageId}`));
+
+        expect(offenders).toEqual([]);
     });
 });

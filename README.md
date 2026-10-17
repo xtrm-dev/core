@@ -207,7 +207,6 @@ DietrichGebert/ponytail
 @tintinweb/pi-tasks
 pi-background-tasks
 @gotgenes/pi-subagents
-pi-mcp-adapter
 pi-mermaid-viewer
 @jaggerxtrm/pi-extensions
 @jaggerxtrm/pi-service-knowledge

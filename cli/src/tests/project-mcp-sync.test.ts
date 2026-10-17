@@ -49,14 +49,14 @@ beforeEach(async () => {
         _note: 'sanitized',
       },
       deepwiki: {
-        command: 'npx',
-        args: ['-y', 'pi-mcp-adapter', 'https://mcp.deepwiki.com/mcp'],
+        type: 'http',
+        url: 'https://mcp.deepwiki.com/mcp',
         lifecycle: 'lazy',
         idleTimeout: 10,
       },
       'github-grep': {
-        command: 'npx',
-        args: ['-y', 'pi-mcp-adapter', 'https://mcp.grep.app'],
+        type: 'http',
+        url: 'https://mcp.grep.app',
         lifecycle: 'lazy',
         idleTimeout: 10,
       },
@@ -192,6 +192,9 @@ describe('syncPiMcpConfig', () => {
     expect(content.mcpServers.context7.lifecycle).toBe('lazy');
     expect(content.mcpServers.context7.idleTimeout).toBe(10);
     expect(content.mcpServers.context7._note).toBeUndefined();
+    // CORE-2399: the synced remote entries stay native HTTP url servers, never an npx bridge.
+    expect(content.mcpServers.deepwiki).toMatchObject({ type: 'http', url: 'https://mcp.deepwiki.com/mcp' });
+    expect(content.mcpServers['github-grep']).toMatchObject({ type: 'http', url: 'https://mcp.grep.app' });
   });
 
   it('preserves existing user entries and settings on rerun', async () => {
