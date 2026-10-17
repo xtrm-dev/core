@@ -606,6 +606,10 @@ describe("xtrm-agent-host bridge wake contract (CORE-2432)", () => {
       bridge.register();
       pi.fire("session_start", { reason: "startup" }, c.ctx);
       await until(() => bridge.state === "open" && raw.frames.length >= 2);
+      // A started session (first turn ran) takes wakes immediately; the
+      // pre-first-turn grace path is covered by the CORE-2436 grace test.
+      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      pi.fire("agent_start", {}, c.ctx);
       raw.send("s-wake-r3", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2432" });
       expect(await raw.resultFor("w1")).toMatchObject({ status: "accepted" });
       // I2 delivery: the payload reference injects as customType intercom_message with the
@@ -697,6 +701,77 @@ describe("xtrm-agent-host bridge replacement and held wakes (CORE-2432 F1/F7)", 
       expect(await raw.resultsFor("lr-2")).toMatchObject([{ status: "accepted" }]);
       await new Promise((r) => setTimeout(r, 50));
       expect(raw.frames.filter((f) => f.payload.type === "session_identity" && f.payload.generation > 1)).toHaveLength(1);
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+
+  test("CORE-2436 first-turn race: a wake before the first agent_start holds, then flushes without triggerTurn", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-first-turn");
+    const bridge = createAgentHostBridge(pi.pi, { socketPath: raw.socketPath, exec: async () => "", env: {} });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 1);
+      // Pi reports idle during the tool loadout before the first agent_start:
+      // the live probe saw a triggerTurn injection here start a second run
+      // and fail with "Agent is already processing". The wake must hold.
+      expect(c.ctx.isIdle()).toBe(true);
+      raw.send("s-first-turn", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2436" });
+      expect(await raw.resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
+      expect(pi.sentCustom).toEqual([]);
+      // The first turn begins: the held wake flushes into the fresh run as a
+      // queued followUp (never triggerTurn into a starting run) and is accepted.
+      pi.fire("agent_start", {}, c.ctx);
+      await until(
+        () => raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").length >= 2,
+      );
+      const answers = raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").map((f) => f.payload);
+      expect(answers.at(-1)).toMatchObject({ status: "accepted" });
+      expect(pi.sentCustom).toHaveLength(1);
+      expect(pi.sentCustom[0].options).toEqual({ deliverAs: "followUp" });
+      expect((pi.sentCustom[0].message as any).customType).toBe("intercom_message");
+      expect(String((pi.sentCustom[0].message as any).content)).toContain("CORE-2436");
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+
+  test("CORE-2436 grace: an interactive session with no first prompt gets its held wake with triggerTurn after the grace", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-grace");
+    const bridge = createAgentHostBridge(pi.pi, {
+      socketPath: raw.socketPath,
+      exec: async () => "",
+      env: {},
+      firstTurnGraceMs: 60,
+    });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 1);
+      // No run starts: Pi stays idle at an empty prompt. The wake holds
+      // through the grace instead of racing a loadout that never comes.
+      expect(c.ctx.isIdle()).toBe(true);
+      raw.send("s-grace", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2436" });
+      expect(await raw.resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
+      expect(pi.sentCustom).toEqual([]);
+      // Past the grace with still no run, the session counts as idle: the
+      // held wake flushes with triggerTurn, and only then is it accepted.
+      // No agent_start ever fired.
+      await until(
+        () => raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").length >= 2,
+      );
+      const answers = raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").map((f) => f.payload);
+      expect(answers.at(-1)).toMatchObject({ status: "accepted" });
+      expect(pi.sentCustom).toHaveLength(1);
+      expect(pi.sentCustom[0].options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+      expect(String((pi.sentCustom[0].message as any).content)).toContain("CORE-2436");
     } finally {
       pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
       await raw.close();

@@ -690,8 +690,28 @@ export type AgentCommandPayload =
     | { type: 'steer'; commandId: string; message: string; images?: AgentImageContent[] }
     | { type: 'follow_up'; commandId: string; message: string; images?: AgentImageContent[] }
     | { type: 'abort'; commandId: string }
-    /** Wake delivery: carries a payload reference only, never a contract or a decision. */
-    | { type: 'wake'; commandId: string; messageId: string; payloadRef: string }
+    /**
+     * Wake delivery (CORE-2432 I1, sender fields CORE-2436 I5). The payload
+     * reference stays the only content; the optional sender fields let the
+     * receiver build the from-envelope with one action line (ADR D3) and
+     * route replies and idle notices back. All optional: I1 senders omit them.
+     */
+    | {
+          type: 'wake';
+          commandId: string;
+          messageId: string;
+          payloadRef: string;
+          /** Sender address: the session name `to` accepts. */
+          from?: string;
+          /** Sender display name for the from-name attribute. */
+          fromName?: string;
+          /** Sender session id for exact reply routing (names can collide). */
+          fromSessionId?: string;
+          /** This message answers an earlier ask with this message id. */
+          replyTo?: string;
+          /** The sender wants one idle notice (or the 12 h expiry notice). */
+          notifyWhenIdle?: boolean;
+      }
     /** The registry replaced this listener; it should re-assert with a bumped generation (R5). */
     | { type: 'listener_replaced'; commandId: string; generation: number; reason: string }
     /** Exactly one of value / confirmed / cancelled (Pi RpcExtensionUIResponse); id = request id. */

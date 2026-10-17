@@ -36,6 +36,7 @@ import {
   ackClaudeMessage,
   bindClaudeTransportSocket,
   claimPiPeerEntry,
+  ClaudeReceiptWaiter,
   closeBoundSocket,
   deregisterPiPeer,
   isOwnPeer,
@@ -150,6 +151,13 @@ export async function claudeRoster(excludeSock?: string): Promise<ClaudePeer[]> 
   }
 }
 
+/**
+ * Process-wide Claude receipt rendezvous (CORE-2436 I5): SendMessage awaits
+ * the async peer_message_status receipt for the frame it just flushed, and
+ * the bound socket resolves it here. A receipt with no waiter is dropped.
+ */
+export const claudeReceipts = new ClaudeReceiptWaiter();
+
 /** Line printed when a foreign extension owns this session's registry entry. */
 export const FOREIGN_ENTRY_LINE =
   "Claude transport inactive: another extension owns this session's registry entry";
@@ -261,6 +269,11 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
               message.messageId || "unknown",
               message.body,
               wakeDeliveryOptions({ idle }),
+              // CORE-2436 I5: the Claude sender rides the from-envelope.
+              {
+                ...(message.from ? { from: message.from } : {}),
+                ...(message.fromName ? { fromName: message.fromName } : {}),
+              },
             );
           } catch {
             dedupe.remove(message.messageId || key);
@@ -280,6 +293,9 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
         onUnknownVersion: (seen) => {
           const rendered = seen === undefined ? "absent" : JSON.stringify(seen) ?? String(seen);
           notify(`Claude transport: unsupported frame version ${rendered}: this adapter speaks msgV 1`);
+        },
+        onReceipt: (receipt) => {
+          claudeReceipts.resolveReceipt(receipt);
         },
       });
       boundIdentity = await socketIdentity(sockPath).catch(() => null);

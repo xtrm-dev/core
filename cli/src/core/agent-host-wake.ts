@@ -11,8 +11,12 @@
  * `AgentHostRegistry` owns the live wake records and delivery.
  */
 
-import { createHash } from 'node:crypto';
 import type { WakeDeliveryState, WakeResult } from '@xtrm/contracts';
+/**
+ * Single stable-id helper (CORE-2436 I5 unification): the duplicate that
+ * lived here now re-exports the @xtrm/contracts copy (packages/contracts/src/wake.ts).
+ */
+export { stableWakeMessageId } from '@xtrm/contracts';
 
 export type { WakeDeliveryState, WakeResult };
 
@@ -31,15 +35,6 @@ export const DEFAULT_WAKE_TTL_MS = 5 * 60_000;
 
 /** Upper bound on retained wake records; the oldest settled record is evicted first. */
 export const MAX_WAKE_RECORDS = 1024;
-
-/**
- * Stable message id for one (participant, payloadRef) pair (R9). Redelivery of
- * the same pair computes the same id, so the registry deduplicates instead of
- * sending twice. Hex sha256 over the pair joined by a NUL separator.
- */
-export function stableWakeMessageId(participant: string, payloadRef: string): string {
-    return createHash('sha256').update(`${participant}\0${payloadRef}`, 'utf8').digest('hex').slice(0, 32);
-}
 
 /** Minimal session shape participant matching needs. */
 export interface WakeResolvableSession {
@@ -84,6 +79,23 @@ export interface WakeRecord {
     messageId: string;
     participant: string;
     payloadRef: string;
+    /**
+     * True when the message id was caller-supplied (CORE-2436 I5 follow-up b):
+     * the id is an idempotency key across terminal states, so a retry with
+     * the same id returns the recorded state and never resends. Stable
+     * (derived) ids keep the F5 resend-after-terminal behaviour.
+     */
+    callerMessageId: boolean;
+    /** Sender address for the from-envelope (CORE-2436 I5). */
+    from?: string;
+    /** Sender display name for the from-name attribute. */
+    fromName?: string;
+    /** Sender session id for exact reply routing. */
+    fromSessionId?: string;
+    /** This message answers an earlier ask with this message id. */
+    replyTo?: string;
+    /** The sender wants one idle notice (or the 12 h expiry notice). */
+    notifyWhenIdle?: boolean;
     /** Live session the wake is addressed to; null while held for an unknown participant. */
     sessionId: string | null;
     state: WakeDeliveryState;

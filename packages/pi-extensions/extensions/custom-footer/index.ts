@@ -27,6 +27,22 @@ export type FooterSectionRenderer = (width: number) => string[];
 
 const footerSections = new Map<string, FooterSectionRenderer>();
 let footerDisabled = false;
+/**
+ * Latest live footer render trigger (CORE-2436 I5): sections like the
+ * intercom waiting chip change outside the footer's own refresh causes
+ * (git, branch, tool results), so they call requestFooterRender() after
+ * updating their store. Null when no footer is applied; never throws.
+ */
+let activeRequestRender: (() => void) | null = null;
+
+/** Re-render the footer now when one is applied; a silent no-op otherwise. */
+export function requestFooterRender(): void {
+  try {
+    activeRequestRender?.();
+  } catch {
+    /* render is best effort */
+  }
+}
 
 // Fleet composition seam (unitAI-beqby.2): registers lines rendered below the
 // statusline. Re-registering a key replaces it. When the footer is
@@ -144,6 +160,7 @@ export default function registerCustomFooter(pi: ExtensionAPI): void {
 		ctx.ui.setFooter((tui: any, theme: any, footerData: any) => {
 			const instanceRender = () => tui.requestRender();
 			requestRender = instanceRender;
+			activeRequestRender = instanceRender;
 			branchChangeUnsub?.();
 			const unsubscribe = footerData.onBranchChange(() => {
 				runtimeState.lastFetch = 0;
@@ -155,6 +172,7 @@ export default function registerCustomFooter(pi: ExtensionAPI): void {
 					unsubscribe?.();
 					if (branchChangeUnsub === unsubscribe) branchChangeUnsub = null;
 					if (requestRender === instanceRender) requestRender = null;
+					if (activeRequestRender === instanceRender) activeRequestRender = null;
 				},
 				invalidate() {},
 				render(width: number): string[] {
@@ -247,6 +265,7 @@ export default function registerCustomFooter(pi: ExtensionAPI): void {
 		branchChangeUnsub?.();
 		branchChangeUnsub = null;
 		requestRender = null;
+		activeRequestRender = null;
 		footerDisabled = false;
 	});
 }

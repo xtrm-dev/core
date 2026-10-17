@@ -38,7 +38,14 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { decodeFrame, encodeFrame } from '@xtrm/contracts';
-import type { AgentCommandPayload, AgentEventV1, AgentHostApiV1, AgentSessionSummary, TopologyAgentSession } from '@xtrm/contracts';
+import type {
+    AgentCommandPayload,
+    AgentEventV1,
+    AgentHostApiV1,
+    AgentSessionSummary,
+    TopologyAgentSession,
+    WakeResult,
+} from '@xtrm/contracts';
 import {
     AGENT_HOST_AUTH_SCHEMA,
     bearerToken,
@@ -339,6 +346,78 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
             sendJson(res, 200, await registry.submit(decoded.value as SubmitRequest));
             return;
         }
+        if (route === 'POST /v1/wake') {
+            // CORE-2436 I5: the model tool's path to the TRACKED wake
+            // contract (registry.wake: held/expiry/flush/dedupe). Client
+            // submit(wake) routes the raw frame only and is unsuitable for
+            // senders that need a delivery state.
+            const body = await readJsonBody(req, res);
+            if (body === null) return;
+            let wakeRequest: Record<string, unknown>;
+            try {
+                const parsed: unknown = JSON.parse(body);
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
+                wakeRequest = parsed as Record<string, unknown>;
+            } catch {
+                sendJson(res, 400, apiError('invalid_request', 'wake body must be a JSON object'));
+                return;
+            }
+            const stringField = (name: string, max: number, required: boolean): string | undefined => {
+                const value = wakeRequest[name];
+                if (value === undefined) {
+                    if (required) throw new Error(`wake needs ${name}`);
+                    return undefined;
+                }
+                if (typeof value !== 'string' || !value.trim() || value.length > max) {
+                    throw new Error(`wake needs a valid ${name}`);
+                }
+                return name === 'messageId' ? value.trim() : value;
+            };
+            try {
+                const participant = stringField('participant', 512, true) as string;
+                const payloadRef = stringField('payloadRef', 32 * 1024, true) as string;
+                const messageId = stringField('messageId', 128, false);
+                const from = stringField('from', 256, false);
+                const fromName = stringField('fromName', 256, false);
+                const fromSessionId = stringField('fromSessionId', 256, false);
+                const replyTo = stringField('replyTo', 128, false);
+                const { notifyWhenIdle } = wakeRequest;
+                if (notifyWhenIdle !== undefined && typeof notifyWhenIdle !== 'boolean') {
+                    throw new Error('wake needs a valid notifyWhenIdle');
+                }
+                sendJson(
+                    res,
+                    200,
+                    registry.wake(participant, payloadRef, {
+                        ...(messageId !== undefined ? { messageId } : {}),
+                        ...(from !== undefined ? { from } : {}),
+                        ...(fromName !== undefined ? { fromName } : {}),
+                        ...(fromSessionId !== undefined ? { fromSessionId } : {}),
+                        ...(replyTo !== undefined ? { replyTo } : {}),
+                        ...(notifyWhenIdle !== undefined ? { notifyWhenIdle } : {}),
+                    }),
+                );
+            } catch (error) {
+                sendJson(res, 400, apiError('invalid_request', (error as Error).message));
+            }
+            return;
+        }
+        if (route === 'GET /v1/wake') {
+            // CORE-2436 I5: last known delivery state for one wake message
+            // (an ask reports it when its reply wait times out).
+            const messageId = url.searchParams.get('messageId') ?? '';
+            if (!messageId) {
+                sendJson(res, 400, apiError('invalid_request', 'wake status needs a messageId query parameter'));
+                return;
+            }
+            const status = registry.wakeStatus(messageId);
+            if (!status) {
+                sendJson(res, 404, apiError('wake_not_found', `no wake ${messageId}`));
+                return;
+            }
+            sendJson(res, 200, status);
+            return;
+        }
         if (route === 'POST /v1/launch') {
             const body = await readJsonBody(req, res);
             if (body === null) return;
@@ -616,7 +695,8 @@ function apiError(code: string, message: string): Extract<AgentHostApiV1, { kind
 function sendJson(
     res: http.ServerResponse,
     status: number,
-    body: AgentHostApiV1 | AgentHostAuthMessage,
+    // WakeResult rides the same JSON seam for the I5 model tool (POST/GET /v1/wake).
+    body: AgentHostApiV1 | AgentHostAuthMessage | WakeResult,
     headers: Record<string, string> = {},
 ): void {
     const text = JSON.stringify(body);
