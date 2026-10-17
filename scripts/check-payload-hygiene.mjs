@@ -40,14 +40,6 @@ const ABSOLUTE_PATH_LEAK_ALLOWLIST = new Set([
   'scripts/check-payload-hygiene.mjs',
 ]);
 
-// In-repo symlinks whose targets are installed by the specialists runtime (untracked), so they
-// dangle in a clean checkout. Exempt from the dangling check only.
-const DANGLING_SYMLINK_ALLOWLIST = new Set([
-  '.claude/hooks/specialists-complete.mjs',
-  '.claude/hooks/specialists-memory-cache-sync.mjs',
-  '.claude/hooks/specialists-session-start.mjs',
-]);
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
@@ -94,7 +86,7 @@ export function findBadTrackedSymlinks(root = repoRoot) {
       real = realpathSync(absolute);
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
-      return DANGLING_SYMLINK_ALLOWLIST.has(filePath) ? [] : [{ filePath, reason: 'dangling target' }];
+      return [{ filePath, reason: 'dangling target' }];
     }
     const relative = path.relative(realRoot, real);
     return relative.startsWith('..') || path.isAbsolute(relative) ? [{ filePath, reason: 'target outside repo' }] : [];
