@@ -1,5 +1,9 @@
 /**
- * Background runs and monitors for Pi (B1 CORE-2439, B2 CORE-2440).
+ * Background runs and monitors for Pi (B1 CORE-2439, B2 CORE-2440) with the
+ * B3 operator surface (CORE-2441): /tasks (./commands.ts), the one-line
+ * indicator above the prompt (./widget.ts), task and monitor cards through
+ * the I7 shared event module (./cards.ts), and the off switch
+ * (background.enabled=false or BACKGROUND_TASKS=off).
  *
  * Model tools: BashBackground{command, description, timeout} starts one shell
  * command without blocking and returns at once with a task id and an output
@@ -30,7 +34,6 @@
 import { StringDecoder } from "node:string_decoder";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { stableWakeMessageId, type WakeDeliveryState } from "@xtrm/contracts";
-import { Text } from "@earendil-works/pi-tui";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -40,12 +43,15 @@ import { Type, type Static } from "typebox";
 
 import {
   createBackgroundStore,
+  formatElapsed,
   formatMonitorEvent,
   formatMonitorExpired,
   formatMonitorStopped,
   formatTaskNotification,
+  MONITOR_EVENT_TYPE,
   MONITOR_STATES,
   sanitizeModelText,
+  TASK_NOTIFICATION_TYPE,
   TASK_STATES,
   type BackgroundMonitorRecord,
   type BackgroundStore,
@@ -53,19 +59,29 @@ import {
   type MonitorKillReason,
   type TaskStatus,
 } from "./store.ts";
+import { registerBackgroundCards } from "./cards.ts";
+import { readOutput, registerTasksCommand, type OutputView } from "./commands.ts";
+import { createBackgroundWidget, type BackgroundWidgetUi } from "./widget.ts";
 
-export { TASK_STATES, MONITOR_STATES, formatTaskNotification, formatMonitorEvent, formatMonitorExpired, formatMonitorStopped, sanitizeModelText };
+export {
+  TASK_STATES,
+  MONITOR_STATES,
+  TASK_NOTIFICATION_TYPE,
+  MONITOR_EVENT_TYPE,
+  formatTaskNotification,
+  formatMonitorEvent,
+  formatMonitorExpired,
+  formatMonitorStopped,
+  sanitizeModelText,
+};
 export { createBackgroundStore };
 export type { BackgroundStore, BackgroundTaskRecord, BackgroundMonitorRecord, MonitorKillReason, TaskStatus };
 
-/** Model-visible custom type for the completion wake. Bare name: no xtrm- slug. */
-export const TASK_NOTIFICATION_TYPE = "task_notification";
-
-/** Model-visible custom type for monitor events and notices. Bare name: no xtrm- slug. */
-export const MONITOR_EVENT_TYPE = "monitor_event";
-
 /** Log prefix. Bare name: no xtrm- slug. */
 export const LOG_PREFIX = "[background]";
+
+/** Environment gate for the off switch (operators without settings access). */
+export const BACKGROUND_TASKS_ENV = "BACKGROUND_TASKS";
 
 /** Claude Code background default: 30 min. */
 export const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
@@ -165,6 +181,8 @@ export interface BackgroundServiceOptions {
   now?: () => number;
   /** Override the WebSocket constructor (tests inject a fake or a local server URL works as-is). */
   createWebSocket?: MonitorSocketFactory;
+  /** Force the extension on/off, winning over env and settings (tests). */
+  enabled?: boolean;
 }
 
 export interface BackgroundService {
@@ -172,7 +190,32 @@ export interface BackgroundService {
   runBackground(args: BashBackgroundArgs, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }): Promise<Record<string, unknown>>;
   runMonitor(args: MonitorArgs, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }): Promise<Record<string, unknown>>;
   stopTask(taskId: string): Promise<Record<string, unknown>>;
+  rerunTask(taskId: string): Promise<Record<string, unknown>>;
   close(): void;
+}
+
+/**
+ * Whether the background extension starts. Precedence: explicit option,
+ * then BACKGROUND_TASKS env, then the `background.enabled` settings key;
+ * default true (the Claude Code analogue is
+ * CLAUDE_CODE_DISABLE_BACKGROUND_TASKS). Off registers nothing: no tools,
+ * no /tasks, no widget, no renderers.
+ */
+export function isBackgroundEnabled(pi: ExtensionAPI, options: BackgroundServiceOptions = {}): boolean {
+  if (options.enabled !== undefined) return options.enabled;
+  const env = process.env[BACKGROUND_TASKS_ENV];
+  if (env !== undefined) {
+    if (/^(1|true|on|yes)$/i.test(env.trim())) return true;
+    if (/^(0|false|off|no)$/i.test(env.trim())) return false;
+  }
+  try {
+    const settings = pi.getSettings?.() as Record<string, unknown> | undefined;
+    const background = settings?.background as Record<string, unknown> | undefined;
+    if (typeof background?.enabled === "boolean") return background.enabled;
+  } catch {
+    /* unreadable settings read as on */
+  }
+  return true;
 }
 
 interface LiveHandle {
@@ -204,10 +247,17 @@ interface LiveMonitor {
 }
 
 export function registerBackgroundExtension(pi: ExtensionAPI, options: BackgroundServiceOptions = {}): BackgroundService {
+  const store = createBackgroundStore({ now: options.now ?? Date.now, makeId: options.makeId, outputDir: options.outputDir ?? "" });
+  if (!isBackgroundEnabled(pi, options)) {
+    const disabled = `${LOG_PREFIX} background extension is disabled (background.enabled=false or BACKGROUND_TASKS=off).`;
+    const refuse = async (): Promise<Record<string, unknown>> => {
+      throw new Error(disabled);
+    };
+    return { store, runBackground: refuse, runMonitor: refuse, stopTask: refuse, rerunTask: refuse, close: () => {} };
+  }
   const killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   const outputMaxBytes = options.outputMaxBytes ?? OUTPUT_MAX_BYTES;
   const now = options.now ?? Date.now;
-  const store = createBackgroundStore({ now, makeId: options.makeId, outputDir: options.outputDir ?? "" });
   const live = new Map<string, LiveHandle>();
   const monitors = new Map<string, LiveMonitor>();
   /**
@@ -384,22 +434,28 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
   function notify(record: BackgroundTaskRecord): void {
     if (record.notified || disposed) return;
     record.notified = true;
+    const summary = summaryFor(record);
     const content = formatTaskNotification({
       taskId: record.id,
       status: record.status,
-      summary: summaryFor(record),
+      summary,
       outputFile: record.outputFile,
       exitCode: record.exitCode,
     });
     const details = {
       task_id: record.id,
       status: record.status,
+      summary,
       output_file: record.outputFile,
+      elapsed: formatElapsed((record.endedAt ?? now()) - record.startedAt),
       message_id: record.messageId,
       exit_code: record.exitCode,
       delivery: "delivered" as WakeDeliveryState,
     };
     try {
+      // Busy-versus-idle is owned by the runtime: deliverAs followUp queues
+      // behind a streaming turn, triggerTurn wakes an idle session. The
+      // extension pins exactly these options (see delivery.test.ts).
       (pi as { sendMessage: (message: unknown, options: unknown) => void }).sendMessage(
         { customType: TASK_NOTIFICATION_TYPE, content, display: true, details },
         { deliverAs: "followUp", triggerTurn: true },
@@ -413,6 +469,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         `${LOG_PREFIX} task_notification for ${record.id} undelivered: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    store.changed("task", record.id);
   }
 
   function finalize(record: BackgroundTaskRecord, status: TaskStatus, exitCode: number | null): void {
@@ -478,6 +535,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     const dir = runDir(sessionId);
     const record = store.create(command, description, "", sessionId);
     record.messageId = stableWakeMessageId(sessionId, record.id);
+    store.changed("task", record.id);
 
     let fd: number;
     try {
@@ -665,6 +723,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
           delivery: "delivered" as WakeDeliveryState,
         });
     record.delivery = delivered ? "delivered" : "undelivered";
+    store.changed("monitor", record.id);
   }
 
   function flushMonitorEvent(record: BackgroundMonitorRecord, force = false): void {
@@ -713,6 +772,8 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
           kind: "event",
           event_index: eventIndex,
           line_count: kept.length,
+          // The card preview reads these, never re-parsed from the envelope.
+          lines: kept,
           message_id: record.messageId,
           delivery: "delivered" as WakeDeliveryState,
         });
@@ -743,12 +804,14 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         /* already closed */
       }
       closeFd(mon);
+      store.changed("monitor", record.id);
       return;
     }
     mon.lastWakeAt = now();
     record.eventCount += 1;
     record.status = "event";
     record.delivery = "delivered";
+    store.changed("monitor", record.id);
     // A kept-behind remainder still needs its wake: re-arm the batch window.
     if (mon.buffer.length > 0 && mon.batchTimer === undefined && !isMonitorTerminal(record)) {
       mon.batchTimer = setTimeout(() => {
@@ -876,6 +939,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     const record = store.createMonitor({
       command: source.command,
       wsUrl: source.wsUrl,
+      ...(args.ws?.protocols ? { wsProtocols: [...args.ws.protocols] } : {}),
       description,
       outputFile: "",
       sessionId,
@@ -893,6 +957,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }
     const outputFile = path.join(dir, `monitor-${record.id}.log`);
     record.outputFile = outputFile;
+    store.changed("monitor", record.id);
 
     const mon: LiveMonitor = {
       child: undefined,
@@ -1075,15 +1140,63 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }) as Record<string, unknown>;
   }
 
+  /**
+   * Operator-only rerun (the model has no rerun tool): respawn a finished
+   * task or monitor from its record as a new id. Running rows refuse loudly
+   * with "stop it first" instead of doubling the command.
+   */
+  async function rerunTask(taskId: string): Promise<Record<string, unknown>> {
+    const rerunCtx = (sessionId: string): { cwd: string; sessionManager: { getSessionId: () => string } } => ({
+      cwd: process.cwd(),
+      sessionManager: { getSessionId: () => sessionId },
+    });
+    const monitor = store.getMonitor(taskId);
+    if (monitor) {
+      if (!isMonitorTerminal(monitor)) {
+        throw new Error(`${LOG_PREFIX} monitor ${monitor.id} is still ${monitor.status}; stop it first.`);
+      }
+      const source =
+        monitor.command !== null && monitor.command.trim().length > 0
+          ? { command: monitor.command }
+          : { ws: { url: monitor.wsUrl ?? "", ...(monitor.wsProtocols ? { protocols: [...monitor.wsProtocols] } : {}) } };
+      const started = (await runMonitor(
+        { ...source, description: monitor.description },
+        rerunCtx(monitor.sessionId),
+      )) as { details?: { monitor_id?: string; output_file?: string } };
+      const newId = started.details?.monitor_id ?? "";
+      return textResult(`Reran monitor ${monitor.id} as ${newId}.`, {
+        monitor_id: newId,
+        reran_from: monitor.id,
+        status: "armed",
+      }) as Record<string, unknown>;
+    }
+    const record = store.get(taskId);
+    if (!record) throw new Error(`${LOG_PREFIX} unknown task ${JSON.stringify(taskId)}.`);
+    if (record.status === "running") {
+      throw new Error(`${LOG_PREFIX} background task ${record.id} is still running; stop it first.`);
+    }
+    const started = (await runBackground(
+      { command: record.command, description: record.description },
+      rerunCtx(record.sessionId),
+    )) as { details?: { task_id?: string; output_file?: string } };
+    const newId = started.details?.task_id ?? "";
+    return textResult(`Reran background task ${record.id} as ${newId}.`, {
+      task_id: newId,
+      reran_from: record.id,
+      status: "running",
+    }) as Record<string, unknown>;
+  }
+
   function close(): void {
     disposed = true;
     const running = [...live.keys(), ...monitors.keys()];
-    // Synchronous shutdown kill: Pi is quitting, so no timer scheduled here
-    // would ever fire. SIGTERM the whole groups first, await one short grace
-    // synchronously, then SIGKILL whatever ignores SIGTERM. No orphan
-    // survives, even a grandchild that traps TERM; every fd is closed and
-    // every record settles as stopped before this returns. No wake follows:
-    // the session is going away.
+    // Non-blocking shutdown (B3 follow-up 7): SIGTERM the whole groups now,
+    // settle every record as stopped and close every fd synchronously, then
+    // return. The SIGKILL sweep for TERM-trappers rides an unref'd timer so
+    // a reload never blocks the event loop for the kill grace. No wake
+    // follows: the session is going away. Tradeoff: on full process exit
+    // the sweep may not fire; the groups already got SIGTERM above.
+    const victims: ChildProcess[] = [];
     for (const [, handle] of live) {
       if (handle.timer !== undefined) clearTimeout(handle.timer);
       if (handle.graceTimer !== undefined) clearTimeout(handle.graceTimer);
@@ -1094,6 +1207,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       } catch {
         /* best effort on shutdown */
       }
+      victims.push(handle.child);
     }
     for (const [, mon] of monitors) {
       clearMonitorTimers(mon);
@@ -1103,6 +1217,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         } catch {
           /* best effort on shutdown */
         }
+        victims.push(mon.child);
       }
       try {
         mon.socket?.close();
@@ -1110,62 +1225,80 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         /* best effort on shutdown */
       }
     }
+    for (const [child, timer] of reaping) {
+      clearTimeout(timer);
+      victims.push(child);
+    }
+    reaping.clear();
     for (const [id, handle] of live) {
-      const record = store.get(id);
-      if (record && record.status === "running") record.killReason = "stop";
-    }
-    for (const [id] of monitors) {
-      const record = store.getMonitor(id);
-      if (record && !isMonitorTerminal(record) && !record.notified) record.killReason = "stop";
-    }
-    if (running.length > 0 && killGraceMs > 0) {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, killGraceMs);
-    }
-    for (const [id, handle] of live) {
-      try {
-        killTreeForce(handle.child);
-      } catch {
-        /* best effort on shutdown */
-      }
+      // Seal the handle first: a lingering child write after closeFd must
+      // drop here, never into a recycled fd number.
+      handle.truncated = true;
       closeFd(handle);
       const record = store.get(id);
       if (record && record.status === "running") {
+        record.killReason = "stop";
         record.status = "stopped";
         record.endedAt = now();
         record.pid = undefined;
+        store.changed("task", id);
       }
     }
     live.clear();
     for (const [id, mon] of monitors) {
-      if (mon.child) {
-        try {
-          killTreeForce(mon.child);
-        } catch {
-          /* best effort on shutdown */
-        }
-      }
+      mon.truncated = true;
       closeFd(mon);
       const record = store.getMonitor(id);
       if (record && !isMonitorTerminal(record)) {
+        record.killReason = "stop";
         record.status = "stopped";
         record.endedAt = now();
         record.pid = undefined;
+        store.changed("monitor", id);
       }
     }
     monitors.clear();
-    for (const [child, timer] of reaping) {
-      clearTimeout(timer);
-      try {
-        killTreeForce(child);
-      } catch {
-        /* best effort on shutdown */
+    // The late close/exit events of killed children land here: records are
+    // already terminal, so settle paths no-op and no wake follows.
+    if (victims.length > 0) {
+      if (killGraceMs > 0) {
+        const sweep = setTimeout(() => {
+          for (const child of victims) {
+            try {
+              killTreeForce(child);
+            } catch {
+              /* already gone */
+            }
+          }
+        }, killGraceMs);
+        try {
+          (sweep as unknown as { unref?: () => void }).unref?.();
+        } catch {
+          /* runtimes without unref */
+        }
+      } else {
+        for (const child of victims) {
+          try {
+            killTreeForce(child);
+          } catch {
+            /* best effort on shutdown */
+          }
+        }
       }
     }
-    reaping.clear();
     if (running.length > 0) {
       console.error(`${LOG_PREFIX} session shutdown: stopping background task(s) ${running.join(", ")}`);
     }
   }
+
+  // The widget follows the store without polling. The ui handle arrives
+  // with session_start and is refreshed from every tool/command context;
+  // every store change then re-renders through the latest handle.
+  let currentUi: BackgroundWidgetUi | undefined;
+  const noteUi = (ui: unknown): void => {
+    if (ui && typeof (ui as BackgroundWidgetUi).setWidget === "function") currentUi = ui as BackgroundWidgetUi;
+  };
+  const widget = createBackgroundWidget(store, () => currentUi);
 
   pi.registerTool({
     name: "BashBackground",
@@ -1177,7 +1310,8 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     promptGuidelines: [
       "Do not poll a background task; end the turn. The notification wakes you when the task exits, then read the output file.",
     ],
-    execute: async (_toolCallId: string, params: BashBackgroundArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }) => {
+    execute: async (_toolCallId: string, params: BashBackgroundArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string }; ui?: unknown }) => {
+      noteUi(ctx?.ui);
       return (await runBackground(params, ctx)) as never;
     },
   });
@@ -1192,7 +1326,8 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     promptGuidelines: [
       "Do not poll a monitor; end the turn. Each matching line wakes you with one event. The filter must match failure states too; silence is not success.",
     ],
-    execute: async (_toolCallId: string, params: MonitorArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }) => {
+    execute: async (_toolCallId: string, params: MonitorArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string }; ui?: unknown }) => {
+      noteUi(ctx?.ui);
       return (await runMonitor(params, ctx)) as never;
     },
   });
@@ -1208,40 +1343,19 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     },
   });
 
-  pi.registerMessageRenderer(TASK_NOTIFICATION_TYPE, (message, _options, theme) => {
-    const details = (message.details ?? {}) as { task_id?: string; status?: string; output_file?: string };
-    const status = String(details.status ?? "");
-    const color = status === "completed" ? "success" : status === "failed" ? "error" : status === "running" ? "text" : "warning";
-    const head = `◐ background ${String(details.task_id ?? "")} ${status}`;
-    const facts = `Output: ${String(details.output_file ?? "")}`;
-    try {
-      return new Text(`${theme.fg(color, head)}\n${theme.fg("dim", facts)}`, 0, 0);
-    } catch {
-      return new Text(`${head}\n${facts}`, 0, 0);
-    }
-  });
+  // B3 operator surface: I7 cards and /tasks (the widget is wired above).
+  registerBackgroundCards(pi);
 
-  pi.registerMessageRenderer(MONITOR_EVENT_TYPE, (message, _options, theme) => {
-    const details = (message.details ?? {}) as {
-      monitor_id?: string;
-      kind?: string;
-      event_index?: number;
-      line_count?: number;
-      event_count?: number;
-      reason?: string;
-    };
-    const kind = String(details.kind ?? "event");
-    const color = kind === "event" ? "text" : "warning";
-    const head = `◉ monitor ${String(details.monitor_id ?? "")} ${kind}`;
-    const facts =
-      kind === "event"
-        ? `event #${String(details.event_index ?? 0)} · ${String(details.line_count ?? 0)} lines`
-        : `${String(details.event_count ?? 0)} events · ${String(details.reason ?? "")}`;
-    try {
-      return new Text(`${theme.fg(color, head)}\n${theme.fg("dim", facts)}`, 0, 0);
-    } catch {
-      return new Text(`${head}\n${facts}`, 0, 0);
-    }
+  const resultText = (result: Record<string, unknown>): string => {
+    const content = (result as { content?: Array<{ text?: unknown }> }).content;
+    const first = content?.[0]?.text;
+    return typeof first === "string" ? first : JSON.stringify(result);
+  };
+  registerTasksCommand(pi, {
+    store,
+    stopTask: async (id: string) => resultText(await stopTask(id)),
+    rerunTask: async (id: string) => resultText(await rerunTask(id)),
+    readOutputView: (id: string): Promise<OutputView> => readOutput(store, id),
   });
 
   if (typeof pi.on === "function") {
@@ -1250,9 +1364,21 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     } catch {
       /* older runtimes without this event; close() stays available to the host */
     }
+    try {
+      pi.on("session_start", (_event, ctx) => {
+        try {
+          noteUi((ctx as unknown as { ui?: unknown } | undefined)?.ui);
+          widget.refresh();
+        } catch {
+          /* a failed refresh must never fail session start */
+        }
+      });
+    } catch {
+      /* older runtimes without this event; tool/command contexts still feed the widget */
+    }
   }
 
-  return { store, runBackground, runMonitor, stopTask, close };
+  return { store, runBackground, runMonitor, stopTask, rerunTask, close };
 }
 
 export default function backgroundExtension(pi: ExtensionAPI, options: BackgroundServiceOptions = {}): void {

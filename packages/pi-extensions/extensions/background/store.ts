@@ -15,6 +15,12 @@
 import type { WakeDeliveryState } from "@xtrm/contracts";
 import { randomBytes } from "node:crypto";
 
+/** Model-visible custom type for the completion wake. Bare name: no xtrm- slug. */
+export const TASK_NOTIFICATION_TYPE = "task_notification";
+
+/** Model-visible custom type for monitor events and notices. Bare name: no xtrm- slug. */
+export const MONITOR_EVENT_TYPE = "monitor_event";
+
 /** Fixed task-state vocabulary (ADR rev 2, D7 as amended). */
 export const TASK_STATES = ["running", "completed", "failed", "stopped", "timed_out"] as const;
 
@@ -41,6 +47,12 @@ export interface BackgroundTaskSnapshot {
 export interface BackgroundTaskRecord extends BackgroundTaskSnapshot {
   killReason: "stop" | "timeout" | null;
   notified: boolean;
+  /**
+   * The operator opened /tasks (or the record's output) after it finished.
+   * A failure counts for the indicator until seen; auto-eviction only
+   * takes seen records.
+   */
+  seen: boolean;
 }
 
 export interface BackgroundStoreOptions {
@@ -110,6 +122,8 @@ export interface BackgroundMonitorRecord {
   command: string | null;
   /** WebSocket URL in ws mode; null in command mode. */
   wsUrl: string | null;
+  /** WebSocket subprotocols in ws mode; null otherwise (kept so rerun replays them). */
+  wsProtocols: string[] | null;
   description: string;
   status: MonitorStatus;
   outputFile: string;
@@ -129,6 +143,8 @@ export interface BackgroundMonitorRecord {
   killReason: MonitorKillReason;
   /** Terminal notice (expired/stopped) sent exactly once. */
   notified: boolean;
+  /** Same seen rule as tasks: unseen failures pin the indicator. */
+  seen: boolean;
 }
 
 export interface MonitorEventFields {
@@ -193,6 +209,33 @@ export function formatElapsed(ms: number): string {
   return `${(ms / 3_600_000).toFixed(1)}h`;
 }
 
+/** Which collection a store change belongs to. */
+export type StoreRecordKind = "task" | "monitor";
+
+/** One store mutation the indicator and /tasks refresh from (no polling). */
+export interface StoreChangeEvent {
+  kind: StoreRecordKind;
+  id: string;
+}
+
+export type StoreChangeListener = (event: StoreChangeEvent) => void;
+
+/**
+ * Bound on retained finished records per kind (tasks, monitors). Past it,
+ * the oldest *seen* finished records evict; unseen ones stay until the
+ * operator sees or clears them, so a failure the indicator shows is never
+ * silently dropped.
+ */
+export const MAX_RETAINED_FINISHED = 50;
+
+export function isTaskTerminal(status: TaskStatus): boolean {
+  return status !== "running";
+}
+
+export function isMonitorTerminalStatus(status: MonitorStatus): boolean {
+  return status === "expired" || status === "stopped";
+}
+
 export interface BackgroundStore {
   create(command: string, description: string, outputFile: string, sessionId: string): BackgroundTaskRecord;
   get(id: string): BackgroundTaskRecord | undefined;
@@ -200,12 +243,33 @@ export interface BackgroundStore {
   createMonitor(init: {
     command: string | null;
     wsUrl: string | null;
+    wsProtocols?: string[] | null;
     description: string;
     outputFile: string;
     sessionId: string;
   }): BackgroundMonitorRecord;
   getMonitor(id: string): BackgroundMonitorRecord | undefined;
   listMonitors(): BackgroundMonitorRecord[];
+  /**
+   * Follow the store without polling: every create, UI-relevant mutation
+   * (via changed), seen flip, eviction and clear emits one event per
+   * record. A throwing listener is dropped loudly to console, never into
+   * the mutation path.
+   */
+  subscribe(listener: StoreChangeListener): () => void;
+  /**
+   * Report a UI-relevant mutation of one record (status, delivery,
+   * notified, counts): emits, then enforces the finished bound for that
+   * kind. Call it after every mutation the indicator or /tasks shows;
+   * per-line monitor churn (lineCount) deliberately does not call it.
+   */
+  changed(kind: StoreRecordKind, id: string): void;
+  /** Mark one record seen (a failure stops counting for the indicator). */
+  markSeen(id: string): boolean;
+  /** Mark every unseen record seen; returns how many flipped. */
+  markAllSeen(): number;
+  /** Evict every finished task and monitor; returns the counts removed. */
+  clearFinished(): { tasks: number; monitors: number };
   outputDir: string;
 }
 
@@ -214,8 +278,93 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
   const makeId = options.makeId ?? (() => `bg_${randomBytes(4).toString("hex")}`);
   const tasks = new Map<string, BackgroundTaskRecord>();
   const monitors = new Map<string, BackgroundMonitorRecord>();
+  const listeners = new Set<StoreChangeListener>();
+  const emit = (event: StoreChangeEvent): void => {
+    for (const listener of [...listeners]) {
+      try {
+        listener(event);
+      } catch (error) {
+        console.error(
+          `[background] store listener failed for ${event.kind} ${event.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  };
+  /** Drop the oldest seen finished records past the bound; unseen stay. */
+  const enforceFinishedBound = (kind: StoreRecordKind): void => {
+    const entries = kind === "task" ? tasks : monitors;
+    const terminal = (status: string): boolean =>
+      kind === "task" ? isTaskTerminal(status as TaskStatus) : isMonitorTerminalStatus(status as MonitorStatus);
+    const finished = [...entries.values()].filter((record) => terminal(record.status));
+    let over = finished.length - MAX_RETAINED_FINISHED;
+    if (over <= 0) return;
+    const victims = finished
+      .filter((record) => record.seen)
+      .sort((a, b) => (a.endedAt ?? a.startedAt) - (b.endedAt ?? b.startedAt));
+    for (const victim of victims) {
+      if (over <= 0) break;
+      entries.delete(victim.id);
+      over -= 1;
+      emit({ kind, id: victim.id });
+    }
+  };
   return {
     outputDir: options.outputDir ?? "",
+    subscribe(listener: StoreChangeListener): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    changed(kind: StoreRecordKind, id: string): void {
+      emit({ kind, id });
+      enforceFinishedBound(kind);
+    },
+    markSeen(id: string): boolean {
+      const record = tasks.get(id) ?? monitors.get(id);
+      if (!record) return false;
+      if (record.seen) return true;
+      record.seen = true;
+      emit({ kind: tasks.has(id) ? "task" : "monitor", id });
+      return true;
+    },
+    markAllSeen(): number {
+      let flipped = 0;
+      for (const [id, record] of tasks) {
+        if (!record.seen) {
+          record.seen = true;
+          flipped += 1;
+          emit({ kind: "task", id });
+        }
+      }
+      for (const [id, record] of monitors) {
+        if (!record.seen) {
+          record.seen = true;
+          flipped += 1;
+          emit({ kind: "monitor", id });
+        }
+      }
+      return flipped;
+    },
+    clearFinished(): { tasks: number; monitors: number } {
+      let clearedTasks = 0;
+      let clearedMonitors = 0;
+      for (const [id, record] of [...tasks]) {
+        if (isTaskTerminal(record.status)) {
+          tasks.delete(id);
+          clearedTasks += 1;
+          emit({ kind: "task", id });
+        }
+      }
+      for (const [id, record] of [...monitors]) {
+        if (isMonitorTerminalStatus(record.status)) {
+          monitors.delete(id);
+          clearedMonitors += 1;
+          emit({ kind: "monitor", id });
+        }
+      }
+      return { tasks: clearedTasks, monitors: clearedMonitors };
+    },
     create(command: string, description: string, outputFile: string, sessionId: string): BackgroundTaskRecord {
       let id = makeId();
       while (tasks.has(id)) id = makeId();
@@ -234,8 +383,10 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
         pid: undefined,
         killReason: null,
         notified: false,
+        seen: false,
       };
       tasks.set(id, record);
+      emit({ kind: "task", id });
       return record;
     },
     get(id: string): BackgroundTaskRecord | undefined {
@@ -247,6 +398,7 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
     createMonitor(init: {
       command: string | null;
       wsUrl: string | null;
+      wsProtocols?: string[] | null;
       description: string;
       outputFile: string;
       sessionId: string;
@@ -257,6 +409,7 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
         id,
         command: init.command,
         wsUrl: init.wsUrl,
+        wsProtocols: init.wsProtocols ?? null,
         description: init.description,
         status: "armed",
         outputFile: init.outputFile,
@@ -270,8 +423,10 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
         pid: undefined,
         killReason: null,
         notified: false,
+        seen: false,
       };
       monitors.set(id, record);
+      emit({ kind: "monitor", id });
       return record;
     },
     getMonitor(id: string): BackgroundMonitorRecord | undefined {

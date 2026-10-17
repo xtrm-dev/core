@@ -26,11 +26,13 @@ type ToolDef = {
 function fakePi() {
   const tools = new Map<string, ToolDef>();
   const renderers = new Map<string, unknown>();
+  const commands = new Map<string, unknown>();
   const handlers = new Map<string, Array<(...args: any[]) => unknown>>();
   const sent: SentMessage[] = [];
   const pi = {
     tools,
     renderers,
+    commands,
     handlers,
     sent,
     registerTool(tool: ToolDef) {
@@ -38,6 +40,12 @@ function fakePi() {
     },
     registerMessageRenderer(type: string, renderer: unknown) {
       renderers.set(type, renderer);
+    },
+    registerCommand(name: string, options: unknown) {
+      commands.set(name, options);
+    },
+    getSettings() {
+      return {};
     },
     sendMessage(message: Record<string, unknown>, options: Record<string, unknown>) {
       sent.push({ message, options });
@@ -47,7 +55,7 @@ function fakePi() {
       return () => {};
     },
   };
-  return { pi: pi as any, tools, renderers, handlers, sent };
+  return { pi: pi as any, tools, renderers, commands, handlers, sent };
 }
 
 const until = async (check: () => boolean, ms = 8000) => {
@@ -457,14 +465,16 @@ describe("Monitor review fixes", () => {
     expect(pid).toBeGreaterThan(0);
     const grandchildPid = Number(readFileSync(grandchildFile, "utf8").trim());
     expect(grandchildPid).toBeGreaterThan(0);
-    // Stop, then quit inside the SIGKILL grace window: the reaping set must
-    // still own the child so close() force-kills it.
+    // Stop, then quit inside the SIGKILL grace window. B3 follow-up 7:
+    // close() never blocks for the grace — it returns at once with the
+    // record stopped, and the unref'd sweep SIGKILLs the group later.
     await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    const startedAt = Date.now();
     service.close();
+    expect(Date.now() - startedAt).toBeLessThan(500);
     expect(service.store.getMonitor(monitorId)?.status).toBe("stopped");
-    // Well inside the 2 s grace: only the reaping set + synchronous close
-    // kill can already be dead here.
-    await until(() => procGone(pid as number) && procGone(grandchildPid), 1000);
+    // After the 2 s grace the whole TERM-trapping tree is dead, no orphan.
+    await until(() => procGone(pid as number) && procGone(grandchildPid), 10000);
     expect(procGone(pid as number)).toBe(true);
     expect(procGone(grandchildPid)).toBe(true);
   });
