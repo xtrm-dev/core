@@ -1,16 +1,22 @@
 /**
- * Background runs for Pi (B1, CORE-2439).
+ * Background runs and monitors for Pi (B1 CORE-2439, B2 CORE-2440).
  *
  * Model tools: BashBackground{command, description, timeout} starts one shell
  * command without blocking and returns at once with a task id and an output
- * file path; TaskStop{task_id} stops it. On exit exactly one
- * <task-notification> wakes the owning session through pi.sendMessage with
- * {triggerTurn: true, deliverAs: "followUp"} (D6). The model reads the output
- * file with read. Prompt guidance keeps the rule: do not poll, end the turn,
+ * file path; Monitor{command | ws{url, protocols}, description, timeout_ms}
+ * streams one event per stdout line (or WebSocket text frame) until the
+ * command exits or the monitor expires; TaskStop{task_id} stops either one.
+ * On exit exactly one <task-notification> wakes the owning session through
+ * pi.sendMessage with {triggerTurn: true, deliverAs: "followUp"} (D6); each
+ * monitor batch wakes it with one <monitor-event>. The model reads output
+ * files with read. Prompt guidance keeps the rule: do not poll, end the turn,
  * the notification wakes you.
  *
  * On Pi, use BashBackground where Claude Code uses Bash with
- * run_in_background. Defaults follow Claude Code: 30 min, at most 2 h.
+ * run_in_background. Defaults follow Claude Code: background runs 30 min, at
+ * most 2 h; monitors 5 min, at most 30 min, lines within 200 ms batched into
+ * one event, one expiry notice with the event count, a firehose stopped with
+ * a notice.
  *
  * Lineage: the start/output-file/single-completion method is informed by
  * `pi-background-tasks` (ADOPTION-CREDITS.md: background-process UX subset
@@ -21,6 +27,7 @@
  * otherwise.
  */
 
+import { StringDecoder } from "node:string_decoder";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { stableWakeMessageId, type WakeDeliveryState } from "@xtrm/contracts";
 import { Text } from "@earendil-works/pi-tui";
@@ -33,20 +40,29 @@ import { Type, type Static } from "typebox";
 
 import {
   createBackgroundStore,
+  formatMonitorEvent,
+  formatMonitorExpired,
+  formatMonitorStopped,
   formatTaskNotification,
+  MONITOR_STATES,
   sanitizeModelText,
   TASK_STATES,
+  type BackgroundMonitorRecord,
   type BackgroundStore,
   type BackgroundTaskRecord,
+  type MonitorKillReason,
   type TaskStatus,
 } from "./store.ts";
 
-export { TASK_STATES, formatTaskNotification, sanitizeModelText };
+export { TASK_STATES, MONITOR_STATES, formatTaskNotification, formatMonitorEvent, formatMonitorExpired, formatMonitorStopped, sanitizeModelText };
 export { createBackgroundStore };
-export type { BackgroundStore, BackgroundTaskRecord, TaskStatus };
+export type { BackgroundStore, BackgroundTaskRecord, BackgroundMonitorRecord, MonitorKillReason, TaskStatus };
 
 /** Model-visible custom type for the completion wake. Bare name: no xtrm- slug. */
 export const TASK_NOTIFICATION_TYPE = "task_notification";
+
+/** Model-visible custom type for monitor events and notices. Bare name: no xtrm- slug. */
+export const MONITOR_EVENT_TYPE = "monitor_event";
 
 /** Log prefix. Bare name: no xtrm- slug. */
 export const LOG_PREFIX = "[background]";
@@ -55,6 +71,18 @@ export const LOG_PREFIX = "[background]";
 export const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 /** Claude Code background maximum: 2 h. Values above fail loudly. */
 export const MAX_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+/** Claude Code monitor default: 5 min. */
+export const MONITOR_DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+/** Claude Code monitor maximum: 30 min. Values above fail loudly. */
+export const MONITOR_MAX_TIMEOUT_MS = 30 * 60 * 1000;
+/** Lines arriving within this window batch into one monitor event. */
+export const MONITOR_BATCH_WINDOW_MS = 200;
+/** A batch flushes early once it holds this many lines. */
+export const MONITOR_MAX_EVENT_LINES = 100;
+/** One monitor event carries at most this many sanitized characters. */
+export const MONITOR_MAX_EVENT_CHARS = 8000;
+/** Total observed lines above this stop the monitor as a firehose. */
+export const MONITOR_FIREHOSE_MAX_LINES = 2000;
 /** Ceiling for one task output file; writing stops here with one truncation line. */
 export const OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
 /** Grace between SIGTERM and SIGKILL for stop, timeout and shutdown kills. */
@@ -74,8 +102,31 @@ const BashBackgroundParams = Type.Object({
 });
 
 const TaskStopParams = Type.Object({
-  task_id: Type.String({ minLength: 1, description: "Background task id to stop" }),
+  task_id: Type.String({ minLength: 1, description: "Background task or monitor id to stop" }),
 });
+
+const MonitorParams = Type.Object({
+  command: Type.Optional(
+    Type.String({ minLength: 1, description: "Shell command whose stdout lines are streamed as events" }),
+  ),
+  ws: Type.Optional(
+    Type.Object({
+      url: Type.String({ minLength: 1, description: "WebSocket URL whose text frames are streamed as events" }),
+      protocols: Type.Optional(Type.Array(Type.String(), { description: "WebSocket subprotocols" })),
+    }),
+  ),
+  description: Type.Optional(
+    Type.String({ description: "Short human-readable description of the monitor" }),
+  ),
+  timeout_ms: Type.Optional(
+    Type.Number({
+      description:
+        "Timeout in milliseconds (default 5 min, maximum 30 min). The monitor expires with one notice and the event count.",
+    }),
+  ),
+});
+
+type MonitorArgs = Static<typeof MonitorParams>;
 
 type BashBackgroundArgs = Static<typeof BashBackgroundParams>;
 type TaskStopArgs = Static<typeof TaskStopParams>;
@@ -88,17 +139,30 @@ function shellForPlatform(): true | string {
   return process.platform === "win32" ? true : "/bin/sh";
 }
 
+/** Minimal WebSocket surface a monitor needs (the global WebSocket satisfies it). */
+export interface MonitorSocket {
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onclose: ((event: unknown) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  close(): void;
+}
+
+export type MonitorSocketFactory = (url: string, protocols?: string[]) => MonitorSocket;
+
 export interface BackgroundServiceOptions {
   outputDir?: string;
   killGraceMs?: number;
   outputMaxBytes?: number;
   makeId?: () => string;
   now?: () => number;
+  /** Override the WebSocket constructor (tests inject a fake or a local server URL works as-is). */
+  createWebSocket?: MonitorSocketFactory;
 }
 
 export interface BackgroundService {
   store: BackgroundStore;
   runBackground(args: BashBackgroundArgs, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }): Promise<Record<string, unknown>>;
+  runMonitor(args: MonitorArgs, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }): Promise<Record<string, unknown>>;
   stopTask(taskId: string): Promise<Record<string, unknown>>;
   close(): void;
 }
@@ -112,14 +176,32 @@ interface LiveHandle {
   graceTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
+interface LiveMonitor {
+  child: ChildProcess | undefined;
+  socket: MonitorSocket | undefined;
+  decoder: StringDecoder;
+  partial: string;
+  buffer: string[];
+  fd: number;
+  written: number;
+  truncated: boolean;
+  expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  batchTimer: ReturnType<typeof setTimeout> | undefined;
+  graceTimer: ReturnType<typeof setTimeout> | undefined;
+  wakeBroken: boolean;
+}
+
 export function registerBackgroundExtension(pi: ExtensionAPI, options: BackgroundServiceOptions = {}): BackgroundService {
   const killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   const outputMaxBytes = options.outputMaxBytes ?? OUTPUT_MAX_BYTES;
   const now = options.now ?? Date.now;
   const store = createBackgroundStore({ now, makeId: options.makeId, outputDir: options.outputDir ?? "" });
   const live = new Map<string, LiveHandle>();
+  const monitors = new Map<string, LiveMonitor>();
   const sessionDirs = new Map<string, string>();
   let disposed = false;
+  const createSocket: MonitorSocketFactory =
+    options.createWebSocket ?? ((url, protocols) => new WebSocket(url, protocols) as unknown as MonitorSocket);
 
   function truncationLine(): string {
     return `\n[background: output truncated at ${outputMaxBytes} bytes]\n`;
@@ -150,11 +232,11 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
    * Open the task output file 0600 with O_EXCL: an existing path (including a
    * planted symlink) fails loudly instead of being followed or truncated.
    */
-  function openOutputFile(dir: string, id: string): number {
-    return openSync(path.join(dir, `background-${id}.log`), "wx", 0o600);
+  function openOutputFile(dir: string, prefix: string, id: string): number {
+    return openSync(path.join(dir, `${prefix}-${id}.log`), "wx", 0o600);
   }
 
-  function writeChunk(handle: LiveHandle, chunk: Buffer): void {
+  function writeChunk(handle: { fd: number; written: number; truncated: boolean }, chunk: Buffer): void {
     if (handle.truncated) return;
     const room = outputMaxBytes - handle.written;
     if (room <= 0) {
@@ -184,7 +266,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }
   }
 
-  function closeFd(handle: LiveHandle): void {
+  function closeFd(handle: { fd: number }): void {
     try {
       closeSync(handle.fd);
     } catch {
@@ -355,7 +437,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
 
     let fd: number;
     try {
-      fd = openOutputFile(dir, record.id);
+      fd = openOutputFile(dir, "background", record.id);
     } catch (error) {
       record.status = "failed";
       record.endedAt = now();
@@ -438,7 +520,390 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }) as Record<string, unknown>;
   }
 
+  function isMonitorTerminal(record: BackgroundMonitorRecord): boolean {
+    return record.status === "expired" || record.status === "stopped";
+  }
+
+  function sendMonitorWake(
+    record: BackgroundMonitorRecord,
+    content: string,
+    details: Record<string, unknown>,
+  ): boolean {
+    try {
+      (pi as { sendMessage: (message: unknown, options: unknown) => void }).sendMessage(
+        { customType: MONITOR_EVENT_TYPE, content, display: true, details },
+        { deliverAs: "followUp", triggerTurn: true },
+      );
+      return true;
+    } catch (error) {
+      record.delivery = "undelivered";
+      console.error(
+        `${LOG_PREFIX} monitor_event for ${record.id} undelivered: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+  }
+
+  function clearMonitorTimers(mon: LiveMonitor): void {
+    if (mon.expiryTimer !== undefined) clearTimeout(mon.expiryTimer);
+    if (mon.batchTimer !== undefined) clearTimeout(mon.batchTimer);
+    if (mon.graceTimer !== undefined) clearTimeout(mon.graceTimer);
+    mon.expiryTimer = undefined;
+    mon.batchTimer = undefined;
+    mon.graceTimer = undefined;
+  }
+
+  /**
+   * Terminal monitor path: exactly one notice, the fd closed, the child
+   * reaped after a grace. The child's later close event is ignored: the
+   * terminal state owns the exit.
+   */
+  function finalizeMonitor(
+    record: BackgroundMonitorRecord,
+    terminal: "expired" | "stopped",
+    reason: string,
+  ): void {
+    if (isMonitorTerminal(record) || record.notified) return;
+    record.status = terminal;
+    record.endedAt = now();
+    record.pid = undefined;
+    record.notified = true;
+    const mon = monitors.get(record.id);
+    monitors.delete(record.id);
+    if (mon) {
+      if (mon.expiryTimer !== undefined) clearTimeout(mon.expiryTimer);
+      if (mon.batchTimer !== undefined) clearTimeout(mon.batchTimer);
+      mon.expiryTimer = undefined;
+      mon.batchTimer = undefined;
+      // Reap a lingering child: SIGTERM now, SIGKILL after the grace.
+      // The record is already terminal, so the close event settles nothing.
+      if (mon.child) {
+        killTree(mon.child);
+        const child = mon.child;
+        mon.graceTimer = setTimeout(() => {
+          try {
+            killTreeForce(child);
+          } catch {
+            /* already gone */
+          }
+        }, killGraceMs);
+      }
+      try {
+        mon.socket?.close();
+      } catch {
+        /* already closed */
+      }
+      closeFd(mon);
+    }
+    const content =
+      terminal === "expired"
+        ? formatMonitorExpired({ monitorId: record.id, reason, eventCount: record.eventCount, lineCount: record.lineCount })
+        : formatMonitorStopped({ monitorId: record.id, reason, eventCount: record.eventCount, lineCount: record.lineCount });
+    record.messageId = stableWakeMessageId(record.sessionId, `${record.id}:end`);
+    const delivered = disposed
+      ? false
+      : sendMonitorWake(record, content, {
+          monitor_id: record.id,
+          kind: terminal,
+          reason,
+          event_count: record.eventCount,
+          line_count: record.lineCount,
+          message_id: record.messageId,
+          delivery: "delivered" as WakeDeliveryState,
+        });
+    record.delivery = delivered ? "delivered" : "undelivered";
+  }
+
+  function flushMonitorEvent(record: BackgroundMonitorRecord): void {
+    const mon = monitors.get(record.id);
+    if (!mon || isMonitorTerminal(record) || mon.wakeBroken) return;
+    if (mon.buffer.length === 0) return;
+    const raw = mon.buffer.splice(0, mon.buffer.length);
+    // Bound the event: at most MONITOR_MAX_EVENT_LINES lines and
+    // MONITOR_MAX_EVENT_CHARS sanitized characters; the rest is counted.
+    const kept: string[] = [];
+    let chars = 0;
+    let dropped = 0;
+    for (const line of raw) {
+      const clean = sanitizeModelText(line);
+      if (kept.length >= MONITOR_MAX_EVENT_LINES || chars + clean.length > MONITOR_MAX_EVENT_CHARS) {
+        dropped += 1;
+        continue;
+      }
+      kept.push(line);
+      chars += clean.length;
+    }
+    if (dropped > 0) kept.push(`[+${dropped} more lines]`);
+    const eventIndex = record.eventCount;
+    record.messageId = stableWakeMessageId(record.sessionId, `${record.id}:${eventIndex}`);
+    const content = formatMonitorEvent({ monitorId: record.id, eventIndex, lines: kept });
+    const delivered = disposed
+      ? false
+      : sendMonitorWake(record, content, {
+          monitor_id: record.id,
+          kind: "event",
+          event_index: eventIndex,
+          line_count: kept.length,
+          message_id: record.messageId,
+          delivery: "delivered" as WakeDeliveryState,
+        });
+    if (!delivered) {
+      // The session is gone: no point streaming further. The terminal state
+      // owns the exit; no notice follows (it could not be delivered either).
+      mon.wakeBroken = true;
+      record.status = "stopped";
+      record.endedAt = now();
+      record.pid = undefined;
+      record.notified = true;
+      clearMonitorTimers(mon);
+      monitors.delete(record.id);
+      if (mon.child) killTree(mon.child);
+      try {
+        mon.socket?.close();
+      } catch {
+        /* already closed */
+      }
+      closeFd(mon);
+      return;
+    }
+    record.eventCount += 1;
+    record.status = "event";
+    record.delivery = "delivered";
+  }
+
+  function observeMonitorLine(record: BackgroundMonitorRecord, line: string): void {
+    const mon = monitors.get(record.id);
+    if (!mon || isMonitorTerminal(record)) return;
+    record.lineCount += 1;
+    if (record.lineCount > MONITOR_FIREHOSE_MAX_LINES) {
+      record.killReason = "firehose";
+      finalizeMonitor(record, "stopped", `firehose: output exceeded ${MONITOR_FIREHOSE_MAX_LINES} lines`);
+      return;
+    }
+    mon.buffer.push(line);
+    if (mon.buffer.length >= MONITOR_MAX_EVENT_LINES) {
+      if (mon.batchTimer !== undefined) clearTimeout(mon.batchTimer);
+      mon.batchTimer = undefined;
+      flushMonitorEvent(record);
+      return;
+    }
+    if (mon.batchTimer === undefined) {
+      mon.batchTimer = setTimeout(() => {
+        mon.batchTimer = undefined;
+        flushMonitorEvent(record);
+      }, MONITOR_BATCH_WINDOW_MS);
+    }
+  }
+
+  function observeMonitorChunk(record: BackgroundMonitorRecord, chunk: Buffer): void {
+    const mon = monitors.get(record.id);
+    if (!mon || isMonitorTerminal(record)) return;
+    writeChunk(mon, chunk);
+    mon.partial += mon.decoder.write(chunk);
+    const parts = mon.partial.split("\n");
+    mon.partial = parts.pop() ?? "";
+    for (const line of parts) observeMonitorLine(record, line);
+  }
+
+  function describeMonitorSource(args: MonitorArgs): { command: string | null; wsUrl: string | null; label: string } {
+    if (args.command !== undefined && args.command.trim().length > 0) {
+      return { command: args.command, wsUrl: null, label: args.command };
+    }
+    if (args.ws !== undefined && typeof args.ws.url === "string" && args.ws.url.trim().length > 0) {
+      return { command: null, wsUrl: args.ws.url, label: args.ws.url };
+    }
+    throw new Error(`${LOG_PREFIX} Monitor requires exactly one of command and ws{url}.`);
+  }
+
+  async function runMonitor(
+    args: MonitorArgs,
+    ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } },
+  ): Promise<Record<string, unknown>> {
+    const hasCommand = args.command !== undefined && args.command.trim().length > 0;
+    const hasWs = args.ws !== undefined && typeof args.ws.url === "string" && args.ws.url.trim().length > 0;
+    if (hasCommand === hasWs) {
+      throw new Error(`${LOG_PREFIX} Monitor requires exactly one of command and ws{url}.`);
+    }
+    let timeoutMs = MONITOR_DEFAULT_TIMEOUT_MS;
+    if (args.timeout_ms !== undefined) {
+      if (!Number.isFinite(args.timeout_ms) || args.timeout_ms <= 0) {
+        throw new Error(`${LOG_PREFIX} timeout_ms must be a positive number of milliseconds.`);
+      }
+      if (args.timeout_ms > MONITOR_MAX_TIMEOUT_MS) {
+        throw new Error(
+          `${LOG_PREFIX} timeout_ms ${args.timeout_ms}ms exceeds the 30 min maximum (${MONITOR_MAX_TIMEOUT_MS}ms).`,
+        );
+      }
+      timeoutMs = args.timeout_ms;
+    }
+    if (disposed) throw new Error(`${LOG_PREFIX} background extension is disposed.`);
+    const sessionId = sessionIdOf(ctx);
+    const source = describeMonitorSource(args);
+    const description = args.description?.trim()
+      ? args.description.trim()
+      : source.label.length > 90
+        ? `${source.label.slice(0, 90)}...`
+        : source.label;
+    const dir = runDir(sessionId);
+    const record = store.createMonitor({
+      command: source.command,
+      wsUrl: source.wsUrl,
+      description,
+      outputFile: "",
+      sessionId,
+    });
+
+    let fd: number;
+    try {
+      fd = openOutputFile(dir, "monitor", record.id);
+    } catch (error) {
+      record.status = "stopped";
+      record.endedAt = now();
+      throw new Error(
+        `${LOG_PREFIX} could not open output file for ${record.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const outputFile = path.join(dir, `monitor-${record.id}.log`);
+    record.outputFile = outputFile;
+
+    const mon: LiveMonitor = {
+      child: undefined,
+      socket: undefined,
+      decoder: new StringDecoder("utf8"),
+      partial: "",
+      buffer: [],
+      fd,
+      written: 0,
+      truncated: false,
+      expiryTimer: undefined,
+      batchTimer: undefined,
+      graceTimer: undefined,
+      wakeBroken: false,
+    };
+    monitors.set(record.id, mon);
+
+    const expiryReason = `${timeoutMs}ms timeout`;
+    mon.expiryTimer = setTimeout(() => {
+      if (isMonitorTerminal(record)) return;
+      record.killReason = "timeout";
+      finalizeMonitor(record, "expired", expiryReason);
+    }, timeoutMs);
+
+    if (source.command !== null) {
+      const cwd = ctx?.cwd && ctx.cwd.length > 0 ? ctx.cwd : process.cwd();
+      let child: ChildProcess;
+      try {
+        // Intentional: Monitor IS a shell-execution tool (Claude Code Monitor
+        // parity). The command comes from the model tool call under Pi's
+        // normal tool approval, output is bounded to the monitor file and to
+        // bounded event payloads, and the child is process-group scoped so
+        // stop/expiry kill the whole tree.
+        child = spawn(source.command, { // nosemgrep: javascript.lang.security.audit.spawn-shell-true.spawn-shell-true
+          cwd,
+          shell: shellForPlatform(),
+          detached: process.platform !== "win32",
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+        });
+      } catch (error) {
+        closeFd(mon);
+        monitors.delete(record.id);
+        record.status = "stopped";
+        record.endedAt = now();
+        throw error;
+      }
+      mon.child = child;
+      record.pid = child.pid;
+      child.stdout?.on("data", (chunk: Buffer) => observeMonitorChunk(record, chunk));
+      child.stderr?.on("data", (chunk: Buffer) => observeMonitorChunk(record, chunk));
+      try {
+        child.unref();
+      } catch {
+        /* keep running without holding the loop when supported */
+      }
+      child.on("error", (error: Error) => {
+        if (isMonitorTerminal(record)) return;
+        try {
+          writeSync(fd, `Failed to start: ${error.message}\n`);
+        } catch {
+          /* output file unavailable; the notice still carries the counts */
+        }
+        record.killReason = record.killReason ?? "stop";
+        finalizeMonitor(record, "stopped", `command failed to start: ${sanitizeModelText(error.message, 200)}`);
+      });
+      child.on("close", (code: number | null) => {
+        if (isMonitorTerminal(record)) return;
+        // A leftover partial line still counts: the command is done.
+        if (mon.partial.length > 0) observeMonitorLine(record, mon.partial);
+        mon.partial = "";
+        flushMonitorEvent(record);
+        finalizeMonitor(record, "stopped", `command exited (exit code ${code})`);
+      });
+    } else {
+      let socket: MonitorSocket;
+      try {
+        socket = createSocket(source.wsUrl as string, args.ws?.protocols);
+      } catch (error) {
+        closeFd(mon);
+        monitors.delete(record.id);
+        record.status = "stopped";
+        record.endedAt = now();
+        throw error;
+      }
+      mon.socket = socket;
+      socket.onmessage = (event: { data: unknown }) => {
+        if (isMonitorTerminal(record)) return;
+        const data = event.data;
+        if (typeof data !== "string") return;
+        try {
+          writeSync(fd, `${data}\n`);
+        } catch {
+          /* output file unavailable; events still stream */
+        }
+        observeMonitorLine(record, data);
+      };
+      const closedNotice = (): void => {
+        if (isMonitorTerminal(record)) return;
+        flushMonitorEvent(record);
+        finalizeMonitor(record, "stopped", "connection closed");
+      };
+      socket.onclose = closedNotice;
+      socket.onerror = closedNotice;
+    }
+
+    const sourceLine = source.command !== null ? `Command: ${source.command}` : `WebSocket: ${source.wsUrl}`;
+    const message =
+      `Started monitor ${record.id}.\n` +
+      `${sourceLine}\n` +
+      `Do not poll; end the turn. Each matching line wakes you with one event; the filter must match failure states too, silence is not success.`;
+    return textResult(message, {
+      monitor_id: record.id,
+      output_file: outputFile,
+      status: "armed",
+      message_id: stableWakeMessageId(sessionId, record.id),
+    }) as Record<string, unknown>;
+  }
+
   async function stopTask(taskId: string): Promise<Record<string, unknown>> {
+    const monitor = store.getMonitor(taskId);
+    if (monitor) {
+      if (isMonitorTerminal(monitor)) {
+        return textResult(`Monitor ${monitor.id} already ${monitor.status}.`, {
+          task_id: monitor.id,
+          monitor_id: monitor.id,
+          status: monitor.status,
+          message_id: monitor.messageId,
+        }) as Record<string, unknown>;
+      }
+      monitor.killReason = "stop";
+      finalizeMonitor(monitor, "stopped", "stopped by TaskStop");
+      return textResult(`Stopped monitor ${monitor.id}.`, {
+        task_id: monitor.id,
+        monitor_id: monitor.id,
+        status: "stopped",
+        message_id: monitor.messageId,
+      }) as Record<string, unknown>;
+    }
     const record = store.get(taskId);
     if (!record) throw new Error(`${LOG_PREFIX} unknown task ${JSON.stringify(taskId)}.`);
     if (record.status !== "running") {
@@ -476,35 +941,82 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
 
   function close(): void {
     disposed = true;
-    const running = [...live.keys()];
-    for (const [id, handle] of live) {
+    const running = [...live.keys(), ...monitors.keys()];
+    // Synchronous shutdown kill: Pi is quitting, so no timer scheduled here
+    // would ever fire. SIGTERM the whole groups first, await one short grace
+    // synchronously, then SIGKILL whatever ignores SIGTERM. No orphan
+    // survives, even a grandchild that traps TERM; every fd is closed and
+    // every record settles as stopped before this returns. No wake follows:
+    // the session is going away.
+    for (const [, handle] of live) {
       if (handle.timer !== undefined) clearTimeout(handle.timer);
       if (handle.graceTimer !== undefined) clearTimeout(handle.graceTimer);
-      // The shutdown kill owns the exit: the close event settles as stopped,
-      // not failed, and no wake follows (the session is going away).
-      const record = store.get(id);
-      if (record && record.status === "running") record.killReason = "stop";
+      handle.timer = undefined;
+      handle.graceTimer = undefined;
       try {
         killTree(handle.child);
       } catch {
         /* best effort on shutdown */
       }
-      const child = handle.child;
-      handle.graceTimer = setTimeout(() => {
+    }
+    for (const [, mon] of monitors) {
+      clearMonitorTimers(mon);
+      if (mon.child) {
         try {
-          killTreeForce(child);
+          killTree(mon.child);
         } catch {
           /* best effort on shutdown */
         }
-        const rec = store.get(id);
-        if (rec && rec.status === "running") {
-          rec.status = "stopped";
-          rec.endedAt = now();
-          rec.pid = undefined;
-        }
-        live.delete(id);
-      }, killGraceMs);
+      }
+      try {
+        mon.socket?.close();
+      } catch {
+        /* best effort on shutdown */
+      }
     }
+    for (const [id, handle] of live) {
+      const record = store.get(id);
+      if (record && record.status === "running") record.killReason = "stop";
+    }
+    for (const [id] of monitors) {
+      const record = store.getMonitor(id);
+      if (record && !isMonitorTerminal(record) && !record.notified) record.killReason = "stop";
+    }
+    if (running.length > 0 && killGraceMs > 0) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, killGraceMs);
+    }
+    for (const [id, handle] of live) {
+      try {
+        killTreeForce(handle.child);
+      } catch {
+        /* best effort on shutdown */
+      }
+      closeFd(handle);
+      const record = store.get(id);
+      if (record && record.status === "running") {
+        record.status = "stopped";
+        record.endedAt = now();
+        record.pid = undefined;
+      }
+    }
+    live.clear();
+    for (const [id, mon] of monitors) {
+      if (mon.child) {
+        try {
+          killTreeForce(mon.child);
+        } catch {
+          /* best effort on shutdown */
+        }
+      }
+      closeFd(mon);
+      const record = store.getMonitor(id);
+      if (record && !isMonitorTerminal(record)) {
+        record.status = "stopped";
+        record.endedAt = now();
+        record.pid = undefined;
+      }
+    }
+    monitors.clear();
     if (running.length > 0) {
       console.error(`${LOG_PREFIX} session shutdown: stopping background task(s) ${running.join(", ")}`);
     }
@@ -526,9 +1038,24 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
   });
 
   pi.registerTool({
+    name: "Monitor",
+    label: "Monitor",
+    description:
+      "Monitor a shell command's stdout lines or a WebSocket stream without blocking. Returns at once with a monitor id. Each line (or text frame) wakes the session with one event; lines within 200 ms batch into one event. The monitor expires at timeout_ms (default 5 min, maximum 30 min) with one notice and the event count; a firehose is stopped with a notice; TaskStop cancels it.",
+    parameters: MonitorParams,
+    exposure: "codemode",
+    promptGuidelines: [
+      "Do not poll a monitor; end the turn. Each matching line wakes you with one event. The filter must match failure states too; silence is not success.",
+    ],
+    execute: async (_toolCallId: string, params: MonitorArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }) => {
+      return (await runMonitor(params, ctx)) as never;
+    },
+  });
+
+  pi.registerTool({
     name: "TaskStop",
     label: "TaskStop",
-    description: "Stop a running background task by id. The task ends with status stopped.",
+    description: "Stop a running background task or monitor by id. The task or monitor ends with status stopped.",
     parameters: TaskStopParams,
     exposure: "codemode",
     execute: async (_toolCallId: string, params: TaskStopArgs) => {
@@ -549,6 +1076,29 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }
   });
 
+  pi.registerMessageRenderer(MONITOR_EVENT_TYPE, (message, _options, theme) => {
+    const details = (message.details ?? {}) as {
+      monitor_id?: string;
+      kind?: string;
+      event_index?: number;
+      line_count?: number;
+      event_count?: number;
+      reason?: string;
+    };
+    const kind = String(details.kind ?? "event");
+    const color = kind === "event" ? "text" : "warning";
+    const head = `◉ monitor ${String(details.monitor_id ?? "")} ${kind}`;
+    const facts =
+      kind === "event"
+        ? `event #${String(details.event_index ?? 0)} · ${String(details.line_count ?? 0)} lines`
+        : `${String(details.event_count ?? 0)} events · ${String(details.reason ?? "")}`;
+    try {
+      return new Text(`${theme.fg(color, head)}\n${theme.fg("dim", facts)}`, 0, 0);
+    } catch {
+      return new Text(`${head}\n${facts}`, 0, 0);
+    }
+  });
+
   if (typeof pi.on === "function") {
     try {
       pi.on("session_shutdown", () => close());
@@ -557,7 +1107,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }
   }
 
-  return { store, runBackground, stopTask, close };
+  return { store, runBackground, runMonitor, stopTask, close };
 }
 
 export default function backgroundExtension(pi: ExtensionAPI, options: BackgroundServiceOptions = {}): void {
