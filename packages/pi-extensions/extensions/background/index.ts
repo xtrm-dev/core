@@ -616,7 +616,8 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         record.lineCount += 1;
         mon.partial = "";
       }
-      flushMonitorEvent(record);
+      // Force: terminal lines bypass the minimum wake interval (N1).
+      flushMonitorEvent(record, true);
       // The flush may have found the session gone and stopped the monitor
       // silently (no notice could be delivered either).
       if (record.notified) return;
@@ -656,14 +657,16 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     record.delivery = delivered ? "delivered" : "undelivered";
   }
 
-  function flushMonitorEvent(record: BackgroundMonitorRecord): void {
+  function flushMonitorEvent(record: BackgroundMonitorRecord, force = false): void {
     const mon = monitors.get(record.id);
     if (!mon || isMonitorTerminal(record) || mon.wakeBroken) return;
     if (mon.buffer.length === 0) return;
     // Wakes go out at most every MONITOR_MIN_WAKE_INTERVAL_MS: a full batch
     // that fills up right after a wake waits out the interval instead of
-    // waking twice in a row. The batch keeps accumulating meanwhile.
-    if (mon.lastWakeAt !== undefined && now() - mon.lastWakeAt < MONITOR_MIN_WAKE_INTERVAL_MS) {
+    // waking twice in a row. The batch keeps accumulating meanwhile. The
+    // finalize path passes force: terminal lines are never dropped because
+    // of the interval (N1).
+    if (!force && mon.lastWakeAt !== undefined && now() - mon.lastWakeAt < MONITOR_MIN_WAKE_INTERVAL_MS) {
       if (mon.batchTimer === undefined) {
         const wait = MONITOR_MIN_WAKE_INTERVAL_MS - (now() - mon.lastWakeAt);
         mon.batchTimer = setTimeout(() => {
@@ -673,22 +676,23 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       }
       return;
     }
+    // Bounded wakes, lossless stream (N2): at most MONITOR_MAX_EVENT_LINES
+    // lines / MONITOR_MAX_EVENT_CHARS chars go out per wake; the remainder
+    // stays buffered (front) for the next wake. Only the rate firehose stop
+    // discards, and it always leaves a notice.
     const raw = mon.buffer.splice(0, mon.buffer.length);
-    // Bound the event: at most MONITOR_MAX_EVENT_LINES lines and
-    // MONITOR_MAX_EVENT_CHARS sanitized characters; the rest is counted.
     const kept: string[] = [];
     let chars = 0;
-    let dropped = 0;
+    let keptCount = 0;
     for (const line of raw) {
       const clean = sanitizeModelText(line);
-      if (kept.length >= MONITOR_MAX_EVENT_LINES || chars + clean.length > MONITOR_MAX_EVENT_CHARS) {
-        dropped += 1;
-        continue;
-      }
+      if (keptCount >= MONITOR_MAX_EVENT_LINES || chars + clean.length > MONITOR_MAX_EVENT_CHARS) break;
       kept.push(line);
       chars += clean.length;
+      keptCount += 1;
     }
-    if (dropped > 0) kept.push(`[+${dropped} more lines]`);
+    const rest = raw.slice(keptCount);
+    if (rest.length > 0) mon.buffer.unshift(...rest);
     const eventIndex = record.eventCount;
     record.messageId = stableWakeMessageId(record.sessionId, `${record.id}:${eventIndex}`);
     const content = formatMonitorEvent({ monitorId: record.id, eventIndex, lines: kept });
@@ -735,6 +739,13 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     record.eventCount += 1;
     record.status = "event";
     record.delivery = "delivered";
+    // A kept-behind remainder still needs its wake: re-arm the batch window.
+    if (mon.buffer.length > 0 && mon.batchTimer === undefined && !isMonitorTerminal(record)) {
+      mon.batchTimer = setTimeout(() => {
+        mon.batchTimer = undefined;
+        flushMonitorEvent(record);
+      }, MONITOR_BATCH_WINDOW_MS);
+    }
   }
 
   function observeMonitorLine(record: BackgroundMonitorRecord, line: string): void {

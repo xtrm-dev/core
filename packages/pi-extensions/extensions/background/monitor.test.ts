@@ -112,8 +112,17 @@ function startFrameServer(frames: string[]): Promise<{ server: Server; url: stri
     );
     for (const frame of frames) {
       const payload = Buffer.from(frame, "utf8");
-      if (payload.length >= 126) throw new Error("test frame too long");
-      socket.write(Buffer.concat([Buffer.from([0x81, payload.length]), payload]));
+      if (payload.length < 126) {
+        socket.write(Buffer.concat([Buffer.from([0x81, payload.length]), payload]));
+      } else if (payload.length < 65536) {
+        const header = Buffer.alloc(4);
+        header[0] = 0x81;
+        header[1] = 126;
+        header.writeUInt16BE(payload.length, 2);
+        socket.write(Buffer.concat([header, payload]));
+      } else {
+        throw new Error("test frame too long");
+      }
     }
     socket.end();
   });
@@ -517,17 +526,69 @@ describe("Monitor review fixes", () => {
     await tools
       .get("Monitor")!
       .execute("call-1", { command: "seq 1 250; sleep 30", timeout_ms: 30000, description: "wake interval probe" }, undefined, undefined, toolCtx());
-    await until(() => monitorEvents(pi.sent).length >= 2, 10000);
+    await until(() => monitorEvents(pi.sent).length >= 3, 10000);
     const eventTimes = monitorEvents(pi.sent).map((_, i) => times[i]);
-    expect(eventTimes.length).toBeGreaterThanOrEqual(2);
+    expect(eventTimes.length).toBeGreaterThanOrEqual(3);
     expect(eventTimes[1] - eventTimes[0]).toBeGreaterThanOrEqual(150);
-    // The 250-line burst arrives at once: the first 100 go out immediately,
-    // the rest waits out the minimum wake interval. Every event stays
-    // bounded (100 lines), the overflow counted in a trailer line.
-    const first = String(monitorEvents(pi.sent)[0].message.content);
-    expect(first.match(/<line>/g)).toHaveLength(100);
-    const second = String(monitorEvents(pi.sent)[1].message.content);
-    expect(second).toContain("[+50 more lines]");
+    expect(eventTimes[2] - eventTimes[1]).toBeGreaterThanOrEqual(150);
+    // Lossless across wakes (N2): the 250-line burst arrives as 100 + 100 +
+    // 50 with no drop trailer; only the rate firehose stop discards.
+    const counts = monitorEvents(pi.sent).map((s) => (String(s.message.content).match(/<line>/g) ?? []).length);
+    expect(counts).toEqual([100, 100, 50]);
+    expect(monitorEvents(pi.sent).map((s) => String(s.message.content)).join("\n")).not.toContain("[+");
+  });
+
+  test("an exit within 200 ms of a wake still delivers every line (N1)", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi);
+    const result = await tools
+      .get("Monitor")!
+      .execute(
+        "call-1",
+        { command: "echo n1-a; sleep 0.25; echo n1-b; sleep 0.05", timeout_ms: 30000, description: "exit race probe" },
+        undefined,
+        undefined,
+        toolCtx(),
+      );
+    const monitorId = String((result.details as Record<string, unknown>).monitor_id);
+    await until(() => monitorNotices(pi.sent).length >= 1);
+    await new Promise((r) => setTimeout(r, 300));
+    const combined = monitorEvents(pi.sent).map((s) => String(s.message.content)).join("\n");
+    expect(combined).toContain("<line>n1-a</line>");
+    expect(combined).toContain("<line>n1-b</line>");
+    expect(monitorNotices(pi.sent).length).toBe(1);
+    const notice = String(monitorNotices(pi.sent)[0].message.content);
+    expect(notice).toContain("2 events");
+    expect(notice).toContain("2 lines");
+    expect(service.store.getMonitor(monitorId)?.status).toBe("stopped");
+  });
+
+  test("a TaskStop within 200 ms of a wake still delivers every line (N1)", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi);
+    const started = await tools
+      .get("Monitor")!
+      .execute(
+        "call-1",
+        { command: "echo n2-a; sleep 0.25; echo n2-b; sleep 30", timeout_ms: 30000, description: "stop race probe" },
+        undefined,
+        undefined,
+        toolCtx(),
+      );
+    const monitorId = String((started.details as Record<string, unknown>).monitor_id);
+    // Stop right after both lines arrived: the first wake is ~60 ms old,
+    // inside the minimum interval, so only a forced finalize flush keeps b.
+    await until(() => (service.store.getMonitor(monitorId)?.lineCount ?? 0) >= 2);
+    await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    await until(() => monitorNotices(pi.sent).length >= 1);
+    await new Promise((r) => setTimeout(r, 300));
+    const combined = monitorEvents(pi.sent).map((s) => String(s.message.content)).join("\n");
+    expect(combined).toContain("<line>n2-a</line>");
+    expect(combined).toContain("<line>n2-b</line>");
+    expect(monitorNotices(pi.sent).length).toBe(1);
+    const notice = String(monitorNotices(pi.sent)[0].message.content);
+    expect(notice).toContain("2 events");
+    expect(notice).toContain("2 lines");
   });
 
   test("stderr reaches the output file but never becomes an event", async () => {
@@ -551,5 +612,67 @@ describe("Monitor review fixes", () => {
     const body = readFileSync(outputFile, "utf8");
     expect(body).toContain("out-line");
     expect(body).toContain("err-line");
+  });
+});
+
+describe("Monitor item 6 and 8 (N3)", () => {
+  test("a ws frame write respects the output-file ceiling", async () => {
+    const big = `frame-${"F".repeat(500)}`;
+    const { server, url } = await startFrameServer([big]);
+    try {
+      const { pi, tools } = fakePi();
+      startService(pi, { outputMaxBytes: 64 });
+      const result = await tools
+        .get("Monitor")!
+        .execute("call-1", { ws: { url }, timeout_ms: 10000, description: "ws ceiling probe" }, undefined, undefined, toolCtx());
+      const outputFile = String((result.details as Record<string, unknown>).output_file);
+      await until(() => monitorEvents(pi.sent).length >= 1);
+      const body = readFileSync(outputFile, "utf8");
+      expect(body).toContain("[background: output truncated at 64 bytes]");
+      expect(body.length).toBeLessThan(256);
+    } finally {
+      server.close();
+    }
+  });
+
+  test("a socket creation failure ends stopped with no wake and no later expiry", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi, {
+      createWebSocket: () => {
+        throw new Error("connection refused by probe");
+      },
+    });
+    let error: unknown;
+    try {
+      await tools
+        .get("Monitor")!
+        .execute(
+          "call-1",
+          { ws: { url: "wss://example.invalid/events" }, timeout_ms: 150, description: "ws failure probe" },
+          undefined,
+          undefined,
+          toolCtx(),
+        );
+    } catch (e) {
+      error = e;
+    }
+    expect(String(error)).toMatch(/connection refused by probe/);
+    expect(service.store.listMonitors()[0]?.status).toBe("stopped");
+    // Past the 150 ms expiry: no expiry timer survived setup to wake anyone.
+    await new Promise((r) => setTimeout(r, 400));
+    expect(pi.sent).toEqual([]);
+  });
+
+  test("an exit by signal names the signal, not (exit code null)", async () => {
+    const { pi, tools } = fakePi();
+    startService(pi);
+    await tools
+      .get("Monitor")!
+      .execute("call-1", { command: "kill -TERM $$", timeout_ms: 10000, description: "signal probe" }, undefined, undefined, toolCtx());
+    await until(() => monitorNotices(pi.sent).length >= 1);
+    const notice = String(monitorNotices(pi.sent)[0].message.content);
+    expect(notice).toContain("[monitor stopped]");
+    expect(notice).toContain("(signal SIGTERM)");
+    expect(notice).not.toContain("(exit code null)");
   });
 });
