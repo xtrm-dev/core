@@ -77,6 +77,13 @@
       "required": false,
       "ownership": "xtrm",
       "description": "Injects the XTRM operating primer (excerpts of the global using-xtrm and multiplexing skills) once per session; Pi counterpart of the Claude SessionStart primer (XTRM-637)"
+    },
+    {
+      "id": "background",
+      "displayName": "background",
+      "required": false,
+      "ownership": "xtrm",
+      "description": "Local background shell runs: BashBackground starts a command with an output file, TaskStop stops it, one task notification wakes the session on exit"
     }
   ],
   "disabled": {
