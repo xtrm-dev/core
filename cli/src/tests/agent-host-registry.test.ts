@@ -112,7 +112,7 @@ describe('CORE-2432 wake contract', () => {
         expect(registry.wakeStatus(first.messageId)?.state).toBe('delivered');
     });
 
-    it('R4 teardown, including session end without shutdown, revokes and reports pending as undelivered', () => {
+    it('R4 only a host shutdown reports pending wakes as undelivered', () => {
         const { registry } = registryWithLog();
         const { connection } = stubConnection();
         registry.ingest(connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'a' }));
@@ -120,8 +120,8 @@ describe('CORE-2432 wake contract', () => {
         expect(queued.state).toBe('queued');
         const held = registry.wake('nobody-yet', 'ref-2');
         expect(held.state).toBe('held');
-        // Real end on a live connection: the session_shutdown frame revokes
-        // the binding and reports the session's pending wakes as undelivered.
+        // Graceful end parks the session's wakes for a receiver restart
+        // (CORE-2437 F2), exactly like a transport loss.
         registry.ingest(connection, {
             schema: 'xtrm.agent-event.v1',
             seq: seq++,
@@ -129,9 +129,9 @@ describe('CORE-2432 wake contract', () => {
             at: Date.now(),
             payload: { type: 'session_shutdown' } as never,
         });
-        expect(registry.wakeStatus(queued.messageId)?.state).toBe('undelivered');
-        // Transport loss parks the wakes (CORE-2437 mailbox): the session is
-        // gone but the messages survive for a receiver restart.
+        expect(registry.wakeStatus(queued.messageId)?.state).toBe('held');
+        // Transport loss parks the wakes too: the session is gone but the
+        // messages survive for a receiver restart.
         const other = stubConnection();
         registry.ingest(other.connection, identity('s-2', { pid: 200, generation: 1, sessionName: 'b' }));
         const parked = registry.wake('b', 'ref-3');
@@ -142,6 +142,7 @@ describe('CORE-2432 wake contract', () => {
         registry.close();
         expect(registry.wakeStatus(held.messageId)?.state).toBe('undelivered');
         expect(registry.wakeStatus(parked.messageId)?.state).toBe('undelivered');
+        expect(registry.wakeStatus(queued.messageId)?.state).toBe('undelivered');
     });
 
     it('R5 the registry tells a replaced listener so it can re-assert', () => {
@@ -423,6 +424,77 @@ describe('CORE-2432 wake contract', () => {
         const resent = restarted.sent.filter((s) => s.payload.type === 'wake');
         expect(resent.map((s) => (s.payload as { messageId: string }).messageId).sort()).toEqual(ids);
         // Each arrives once: the redelivery is accepted, never duplicated.
+        for (const id of ids) {
+            registry.ingest(restarted.connection, commandResult('s-1', id, 'accepted'));
+            expect(registry.wakeStatus(id)?.state).toBe('delivered');
+        }
+        expect(restarted.sent.filter((s) => s.payload.type === 'wake')).toHaveLength(3);
+    });
+
+    it('CORE-2437 F5 a full per-receiver mailbox evicts the oldest with an undelivered notice', () => {
+        const { registry } = registryWithLog();
+        const sender = stubConnection();
+        registry.ingest(sender.connection, identity('s-snd', { pid: 50, generation: 1, sessionName: 'sender' }));
+        for (let i = 0; i < 64; i += 1) {
+            expect(registry.wake('crowded', `fill-${i}`, { messageId: `fill-${i}`, fromSessionId: 's-snd' }).state).toBe('held');
+        }
+        // The 65th arrival evicts the oldest live wake for this receiver.
+        expect(registry.wake('crowded', 'fill-64', { messageId: 'fill-64', fromSessionId: 's-snd' }).state).toBe('held');
+        expect(registry.wakeStatus('fill-0')).toBeNull();
+        expect(registry.wakeStatus('fill-64')?.state).toBe('held');
+        const notices = sender.sent.filter((s) => s.payload.type === 'wake');
+        expect(notices).toHaveLength(1);
+        const notice = notices[0].payload as { messageId: string; payloadRef: string };
+        expect(notice.payloadRef).toContain('fill-0');
+        expect(notice.payloadRef).toMatch(/mailbox is full/);
+    });
+
+    it('CORE-2437 F3 the idle sweep expires wakes and notifies without any send or poll', () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(2_000_000);
+            const { registry } = registryWithLog({ sweepIntervalMs: 30_000 });
+            const sender = stubConnection();
+            registry.ingest(sender.connection, identity('s-snd', { pid: 50, generation: 1, sessionName: 'sender' }));
+            registry.wake('ghost-nobody', 'idle-ref', { messageId: 'm-idle', fromSessionId: 's-snd', ttlMs: 10_000 });
+            expect(registry.wakeStatus('m-idle')?.state).toBe('held');
+            // Nobody sends or polls; the unref'd sweep still fires on schedule.
+            vi.setSystemTime(2_000_000 + 31_000);
+            vi.advanceTimersByTime(31_000);
+            expect(sender.sent.filter((s) => s.payload.type === 'wake')).toHaveLength(1);
+            const notice = sender.sent[0].payload as { payloadRef: string };
+            expect(notice.payloadRef).toContain('m-idle');
+            expect(notice.payloadRef).toMatch(/expired before delivery/);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('CORE-2437 a graceful shutdown parks three queued wakes and redelivers each exactly once', () => {
+        const { registry } = registryWithLog();
+        const receiver = stubConnection();
+        registry.ingest(receiver.connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'worker' }));
+        const ids = ['g-1', 'g-2', 'g-3'];
+        for (const [index, id] of ids.entries()) {
+            expect(registry.wake('worker', `gref-${index + 1}`, { messageId: id }).state).toBe('queued');
+        }
+        expect(receiver.sent.filter((s) => s.payload.type === 'wake')).toHaveLength(3);
+        // The receiver quits gracefully: a session_shutdown frame, no crash.
+        registry.ingest(receiver.connection, {
+            schema: 'xtrm.agent-event.v1',
+            seq: seq++,
+            sessionId: 's-1',
+            at: Date.now(),
+            payload: { type: 'session_shutdown' } as never,
+        });
+        for (const id of ids) expect(registry.wakeStatus(id)?.state).toBe('held');
+        // ... and registers again on a new connection with a bumped generation.
+        const restarted = stubConnection();
+        expect(
+            registry.ingest(restarted.connection, identity('s-1', { pid: 200, generation: 2, sessionName: 'worker' })),
+        ).toBe(true);
+        const resent = restarted.sent.filter((s) => s.payload.type === 'wake');
+        expect(resent.map((s) => (s.payload as { messageId: string }).messageId).sort()).toEqual(ids);
         for (const id of ids) {
             registry.ingest(restarted.connection, commandResult('s-1', id, 'accepted'));
             expect(registry.wakeStatus(id)?.state).toBe('delivered');

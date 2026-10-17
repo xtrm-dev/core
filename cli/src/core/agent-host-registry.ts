@@ -24,7 +24,9 @@ import type {
 } from '@xtrm/contracts';
 import { classifyClaudeTool, ToolOriginClassifier } from './agent-host-origin.js';
 import {
+    DEFAULT_SWEEP_INTERVAL_MS,
     DEFAULT_WAKE_TTL_MS,
+    MAX_LIVE_WAKES_PER_RECEIVER,
     MAX_WAKE_RECORDS,
     resolveWakeParticipant,
     stableWakeMessageId,
@@ -151,6 +153,12 @@ export interface AgentHostRegistryOptions {
     duplicateListener?: 'refuse' | 'handover';
     /** How long a queued or held wake is retained before it reads as expired. */
     wakeTtlMs?: number;
+    /**
+     * How often the registry sweeps for expired wakes on an idle host
+     * (CORE-2437 F3): expiry (and its notice) must reach the sender within
+     * a bounded time even when nobody sends or polls. Unref'd.
+     */
+    sweepIntervalMs?: number;
 }
 
 export class AgentHostRegistry {
@@ -167,6 +175,8 @@ export class AgentHostRegistry {
     private readonly wakeTtlMs: number;
     /** Retained wake messages by stable message id (CORE-2432 R9). */
     private readonly wakes = new Map<string, WakeRecord>();
+    /** Unref'd periodic expiry sweep (CORE-2437 F3); cleared on close(). */
+    private readonly sweepTimer: ReturnType<typeof setInterval> | null;
     private wakeCommandSeq = 0;
     /**
      * Connections whose listener binding was refused (duplicate, stale,
@@ -181,6 +191,15 @@ export class AgentHostRegistry {
         this.log = options.log ?? (() => {});
         this.duplicateListener = options.duplicateListener ?? 'refuse';
         this.wakeTtlMs = options.wakeTtlMs ?? DEFAULT_WAKE_TTL_MS;
+        // CORE-2437 F3: expiry must fire on an idle host too. Unref'd, so a
+        // registry never holds the process open; cleared on close().
+        const sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
+        if (sweepIntervalMs > 0) {
+            this.sweepTimer = setInterval(() => this.sweepWakes(Date.now()), sweepIntervalMs);
+            this.sweepTimer.unref?.();
+        } else {
+            this.sweepTimer = null;
+        }
     }
 
     /** Subscribe to every accepted event frame, in arrival order. Returns an unsubscribe function. */
@@ -356,7 +375,11 @@ export class AgentHostRegistry {
 
         for (const listener of this.listeners) listener(frame);
 
-        if (payload.type === 'session_shutdown') this.removeSession(sessionId);
+        // CORE-2437 F2: a graceful shutdown parks the session's wakes as
+        // held (same as a transport loss); they flush to the next session
+        // with that name or id, or expire by TTL with the expired notice.
+        // Only a host shutdown reports pending wakes as undelivered.
+        if (payload.type === 'session_shutdown') this.removeSession(sessionId, { revokeWakes: false });
         return true;
     }
 
@@ -365,19 +388,24 @@ export class AgentHostRegistry {
      * beyond presence) are gone from the live registry; presence-only sessions report through
      * one connection per hook, so they stay until session_shutdown.
      */
+    /**
+     * CORE-2437 mailbox (F2): park one in-flight wake as held for a receiver
+     * restart instead of failing it. The submit still answers failed (the
+     * frame was never accepted); only a host shutdown reports undelivered.
+     */
+    private parkWakeEntry(commandId: string, entry: PendingCommand, reason: string, message: string): void {
+        const record = entry.wakeId ? this.wakes.get(entry.wakeId) : undefined;
+        clearTimeout(entry.timer);
+        this.pending.delete(commandId);
+        if (record && (record.state === 'queued' || record.state === 'held')) record.state = 'held';
+        entry.resolve(this.result(commandId, 'failed', reason, message));
+    }
+
     disconnect(connection: ProducerConnection): void {
         for (const [commandId, entry] of [...this.pending]) {
             if (entry.connection !== connection) continue;
             if (entry.wakeId) {
-                // CORE-2437 mailbox: transport loss parks the wake as held so
-                // a receiver restart redelivers it. The submit still answers
-                // failed (the frame was never accepted); only real teardown
-                // (session_shutdown, close) reports undelivered (R4).
-                const record = this.wakes.get(entry.wakeId);
-                clearTimeout(entry.timer);
-                this.pending.delete(commandId);
-                if (record && (record.state === 'queued' || record.state === 'held')) record.state = 'held';
-                entry.resolve(this.result(commandId, 'failed', 'extension_disconnected', 'the session producer disconnected'));
+                this.parkWakeEntry(commandId, entry, 'extension_disconnected', 'the session producer disconnected');
             } else {
                 this.finishPending(commandId, 'failed', 'extension_disconnected', 'the session producer disconnected');
             }
@@ -388,8 +416,8 @@ export class AgentHostRegistry {
             // Presence-only sessions stay (unchanged). A persistent producer
             // may re-register on a new connection and flush its parked
             // wakes; the session record itself goes away so dead sessions
-            // never list, and only an explicit session_shutdown ends the
-            // session and reports its pending wakes as undelivered.
+            // never list. Only a host shutdown reports pending wakes as
+            // undelivered; session end parks them for a restart (F2).
             if (!isPresenceOnly(session)) this.removeSession(sessionId, { revokeWakes: false });
         }
         this.refusedConnections.delete(connection);
@@ -626,6 +654,7 @@ export class AgentHostRegistry {
 
     /** Fail every in-flight command; used on host shutdown. */
     close(): void {
+        if (this.sweepTimer) clearInterval(this.sweepTimer);
         for (const commandId of [...this.pending.keys()]) {
             this.finishPending(commandId, 'failed', 'host_shutdown', 'the agent host is shutting down');
         }
@@ -745,6 +774,14 @@ export class AgentHostRegistry {
     }
 
     private storeWake(record: WakeRecord): void {
+        if (!record.notice && (record.state === 'queued' || record.state === 'held')) {
+            // CORE-2437 F5: per-receiver bound first, so one crowded receiver
+            // never evicts another receiver's wakes.
+            const key = this.wakeReceiverKey(record);
+            if (this.countLiveForReceiver(key) >= MAX_LIVE_WAKES_PER_RECEIVER) {
+                this.evictForReceiver(key, Date.now());
+            }
+        }
         if (this.wakes.size >= MAX_WAKE_RECORDS) {
             const settled = [...this.wakes.values()]
                 .filter((r) => r.state !== 'queued' && r.state !== 'held')
@@ -753,9 +790,10 @@ export class AgentHostRegistry {
             if (victim && victim.messageId !== record.messageId) {
                 // CORE-2437 bounded retention: settled records evict first;
                 // a live victim only drops under a full mailbox of live
-                // wakes, and says so loudly instead of vanishing silently.
+                // wakes. Either way the evicted sender is told, loudly.
                 if (victim.state === 'queued' || victim.state === 'held') {
                     this.log(`mailbox full: evicted live wake ${victim.messageId} (${victim.state}) to store ${record.messageId}`);
+                    this.postMailboxNotice(victim, Date.now(), 'undelivered');
                 }
                 this.wakes.delete(victim.messageId);
             }
@@ -872,18 +910,29 @@ export class AgentHostRegistry {
         }
     }
 
-    private postExpiryNotice(record: WakeRecord, now: number): void {
+    /**
+     * Host-originated notice to the sender of one dead wake (CORE-2437 F5):
+     * `expired` when its TTL passed, `undelivered` when its receiver's
+     * mailbox evicted it. The notice carries no sender session, so its own
+     * expiry stays silent, and it is marked so the per-receiver cap never
+     * counts it.
+     */
+    private postMailboxNotice(record: WakeRecord, now: number, kind: 'expired' | 'undelivered'): void {
         const sender = record.fromSessionId;
         if (!sender) return;
-        const noticeId = stableWakeMessageId(`expired-notice:${record.messageId}`, record.participant);
+        const noticeId = stableWakeMessageId(`${kind}-notice:${record.messageId}`, record.participant);
         if (this.wakes.has(noticeId)) return;
         const resolved = resolveWakeParticipant(this.wakeSessions(), sender);
+        const payloadRef =
+            kind === 'expired'
+                ? `[Cross-session delivery notice] Message ${record.messageId} to ${record.participant} expired before delivery.`
+                : `[Cross-session delivery notice] Message ${record.messageId} to ${record.participant} was undelivered: the receiver's mailbox is full.`;
         const notice: WakeRecord = {
             messageId: noticeId,
             participant: sender,
-            payloadRef: `[Cross-session delivery notice] Message ${record.messageId} to ${record.participant} expired before delivery.`,
+            payloadRef,
             callerMessageId: false,
-            // The expired message's addressee, for context: replying answers
+            // The dead message's addressee, for context: replying answers
             // them by name. No fromSessionId: a notice never threads a reply
             // and never notifies again when it expires itself.
             from: record.participant,
@@ -893,9 +942,44 @@ export class AgentHostRegistry {
             createdAt: now,
             expiresAt: now + this.wakeTtlMs,
             sendCount: 0,
+            notice: true,
         };
         this.storeWake(notice);
         if (resolved) this.sendWake(notice);
+    }
+
+    private postExpiryNotice(record: WakeRecord, now: number): void {
+        this.postMailboxNotice(record, now, 'expired');
+    }
+
+    /** Live-mailbox key: the bound session when known, else the participant string. */
+    private wakeReceiverKey(record: WakeRecord): string {
+        return record.sessionId ?? record.participant;
+    }
+
+    /**
+     * Evict the oldest live non-notice wake for one receiver when its
+     * mailbox is full (CORE-2437 F5). The evicted sender gets an
+     * undelivered notice, never silence.
+     */
+    private evictForReceiver(key: string, now: number): void {
+        const oldest = [...this.wakes.values()]
+            .filter((r) => !r.notice && (r.state === 'queued' || r.state === 'held') && this.wakeReceiverKey(r) === key)
+            .sort((a, b) => a.createdAt - b.createdAt)[0];
+        if (!oldest) return;
+        this.log(`mailbox full for receiver ${key}: evicted live wake ${oldest.messageId}`);
+        this.wakes.delete(oldest.messageId);
+        this.postMailboxNotice(oldest, now, 'undelivered');
+    }
+
+    private countLiveForReceiver(key: string): number {
+        let count = 0;
+        for (const record of this.wakes.values()) {
+            if (!record.notice && (record.state === 'queued' || record.state === 'held') && this.wakeReceiverKey(record) === key) {
+                count += 1;
+            }
+        }
+        return count;
     }
 
     private clearPromptPending(session: LiveSession): void {
@@ -1035,10 +1119,14 @@ export class AgentHostRegistry {
      * session end (R4 teardown via session_shutdown).
      */
     private removeSession(sessionId: string, opts: { revokeWakes?: boolean } = {}): void {
-        // R4: ending the session reports its pending wakes as undelivered.
         if (opts.revokeWakes ?? true) this.revokeWakes(sessionId, 'session_ended');
-        for (const [commandId, entry] of this.pending) {
-            if (entry.sessionId === sessionId) {
+        for (const [commandId, entry] of [...this.pending]) {
+            if (entry.sessionId !== sessionId) continue;
+            // CORE-2437 F2: without revocation the wake parks as held for a
+            // receiver restart; the submit still answers failed.
+            if (entry.wakeId && !(opts.revokeWakes ?? true)) {
+                this.parkWakeEntry(commandId, entry, 'session_ended', 'the session ended');
+            } else {
                 this.finishPending(commandId, 'failed', 'session_ended', 'the session ended');
             }
         }

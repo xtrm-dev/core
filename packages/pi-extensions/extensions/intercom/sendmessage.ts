@@ -35,7 +35,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionSummary, WakeDeliveryState, WakeResult } from "@xtrm/contracts";
 import { request as httpRequest } from "node:http";
 import { readFileSync } from "node:fs";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { lstat, open, realpath, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -125,22 +125,46 @@ function inferAttachmentLanguage(name: string): string | undefined {
 
 const SECRET_BASENAMES: RegExp[] = [
   /^\.env(\..+)?$/i,
+  /^\.envrc$/i,
+  /^\.npmrc$/i,
+  /^\.netrc$/i,
+  /^\.pypirc$/i,
+  /^\.git-credentials$/i,
   /\.pem$/i,
   /\.key$/i,
   /\.p12$/i,
   /\.pfx$/i,
   /^id_(rsa|ed25519|ecdsa|dsa)(_.*)?$/i,
+  /^service-account.*\.json$/i,
 ];
+
+/** Path segments that never contribute an attachment (fail-closed). */
+const SECRET_SEGMENTS = new Set([".secrets", ".ssh", ".gnupg"]);
+
+/** Basename substrings that mark a secret (fail-closed, even at false-positive cost). */
+const SECRET_SUBSTRINGS = ["credential", "secret", "token"];
 
 /** Why a resolved attachment path is refused, or null when it may be read. */
 function secretPathReason(resolvedPath: string): string | null {
   const segments = resolvedPath.split("/").filter((s) => s.length > 0);
   const base = segments.at(-1) ?? "";
   if (SECRET_BASENAMES.some((re) => re.test(base))) return `attachment "${base}" looks like a secret and is refused`;
+  const lowerBase = base.toLowerCase();
+  if (SECRET_SUBSTRINGS.some((s) => lowerBase.includes(s))) return `attachment "${base}" looks like a secret and is refused`;
   const lower = segments.map((s) => s.toLowerCase());
-  if (lower.includes(".secrets")) return "attachment under .secrets/ is refused";
+  if (lower.some((s) => SECRET_SEGMENTS.has(s))) return `attachment under ${segments.find((s) => SECRET_SEGMENTS.has(s.toLowerCase()))}/ is refused`;
   if (lower.some((s) => s.includes("credential"))) return "attachment under a credentials path is refused";
   return null;
+}
+
+/**
+ * Safe fence (F6): a backtick run one longer than any run inside the
+ * content, so the content can never close the block early. Minimum three.
+ */
+function fenceFor(content: string): string {
+  const runs = content.match(/`+/g) ?? [];
+  const longest = runs.reduce((n, run) => Math.max(n, run.length), 0);
+  return "`".repeat(Math.max(3, longest + 1));
 }
 
 function sanitizeInline(value: string, max: number): string {
@@ -153,13 +177,42 @@ export interface AttachmentFileRead {
   content: string;
 }
 
-async function defaultReadAttachmentFile(absPath: string): Promise<AttachmentFileRead> {
-  const realPath = await realpath(absPath);
-  const size = (await stat(realPath)).size;
-  if (size > MAX_FILE_READ_BYTES) {
-    throw new Error(`attachment is ${size} bytes: files above ${MAX_FILE_READ_BYTES} bytes are refused`);
+/**
+ * Read one attachment file, safely ordered (CORE-2437 F4): lstat/realpath
+ * first, the containment check next, a regular-file check after that, and
+ * only then a bounded read through an open handle (never readFile whole,
+ * so /dev/zero, FIFOs and growing files cannot fill memory or hang).
+ */
+async function defaultReadAttachmentFile(absPath: string, root: string): Promise<AttachmentFileRead> {
+  await lstat(absPath);
+  const [realPath, rootReal] = await Promise.all([realpath(absPath), realpath(root)]);
+  if (realPath !== rootReal && !realPath.startsWith(rootReal + path.sep)) {
+    throw new Error("attachment is outside the sender's worktree and is refused");
   }
-  return { realPath, size, content: await readFile(realPath, "utf8") };
+  const target = await stat(realPath);
+  if (!target.isFile()) {
+    throw new Error("attachment is not a regular file and is refused");
+  }
+  if (target.size > MAX_FILE_READ_BYTES) {
+    throw new Error(`attachment is ${target.size} bytes: files above ${MAX_FILE_READ_BYTES} bytes are refused`);
+  }
+  const limit = MAX_FILE_READ_BYTES + 1;
+  const buffer = Buffer.alloc(limit);
+  const handle = await open(realPath, "r");
+  try {
+    let offset = 0;
+    while (offset < limit) {
+      const { bytesRead } = await handle.read(buffer, offset, limit - offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > MAX_FILE_READ_BYTES) {
+      throw new Error(`attachment grew past ${MAX_FILE_READ_BYTES} bytes while reading and is refused`);
+    }
+    return { realPath, size: target.size, content: buffer.subarray(0, offset).toString("utf8") };
+  } finally {
+    await handle.close();
+  }
 }
 
 async function defaultResolveRoot(root: string): Promise<string> {
@@ -168,13 +221,15 @@ async function defaultResolveRoot(root: string): Promise<string> {
 
 interface AttachmentResolveEnv {
   root: string;
-  readFile: (absPath: string) => Promise<AttachmentFileRead>;
+  readFile: (absPath: string, root: string) => Promise<AttachmentFileRead>;
   resolveRoot: (root: string) => Promise<string>;
 }
 
 function renderAttachmentBlock(name: string, language: string | undefined, content: string): string {
   const head = `---\nAttachment: ${name}`;
-  return language ? `${head}\n~~~${language}\n${content}\n~~~` : `${head}\n${content}`;
+  if (!language) return `${head}\n${content}`;
+  const fence = fenceFor(content);
+  return `${head}\n${fence}${language}\n${content}\n${fence}`;
 }
 
 function truncateNote(limitLabel: string): string {
@@ -196,7 +251,9 @@ async function resolveOneAttachment(input: AttachmentInput, env: AttachmentResol
     const resolved = path.resolve(env.root, name);
     let read: AttachmentFileRead;
     try {
-      read = await env.readFile(resolved);
+      // The seam takes the root so the real implementation can order
+      // lstat/realpath, containment, regular-file and bounded read (F4).
+      read = await env.readFile(resolved, env.root);
     } catch (error) {
       throw new Error(`attachment "${name}" could not be read: ${(error as Error)?.message ?? String(error)}.`.slice(0, 300));
     }
@@ -206,6 +263,9 @@ async function resolveOneAttachment(input: AttachmentInput, env: AttachmentResol
     }
     const secret = secretPathReason(path.relative(rootReal, read.realPath));
     if (secret) throw new Error(secret);
+    if (read.content.slice(0, 8192).includes("\0")) {
+      throw new Error(`attachment "${name}" looks binary and is refused`);
+    }
     let content = sanitizeInline(read.content, MAX_FILE_ATTACH_BYTES + 1024);
     if (read.size > MAX_FILE_ATTACH_BYTES) {
       content = sanitizeInline(read.content, MAX_FILE_ATTACH_BYTES) + truncateNote("256 KiB");
@@ -395,8 +455,11 @@ export interface SendMessageDeps {
   now?: () => number;
   randomId?: () => string;
   infoPath?: string;
-  /** File-attachment read seam (tests); default reads the real filesystem. */
-  readAttachmentFile?: (absPath: string) => Promise<AttachmentFileRead>;
+  /**
+   * File-attachment read seam (tests); default reads the real filesystem in
+   * F4 order (lstat/realpath, containment, regular file, bounded read).
+   */
+  readAttachmentFile?: (absPath: string, root: string) => Promise<AttachmentFileRead>;
   /** Worktree-root canonicalization seam (tests); default realpath. */
   resolveRoot?: (root: string) => Promise<string>;
   /** Sender worktree override (tests); default the sender's registry cwd. */

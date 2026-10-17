@@ -1,4 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+import nodeFs from "node:fs";
+import nodeOs from "node:os";
+import nodePath from "node:path";
 
 mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" }));
 
@@ -767,7 +770,7 @@ describe("SendMessage attachments (CORE-2437 I6)", () => {
     expect(posted).toHaveLength(1);
     expect(posted[0].payloadRef).toContain("review this");
     expect(posted[0].payloadRef).toContain("Attachment: fix.ts");
-    expect(posted[0].payloadRef).toContain("~~~ts\nconst x = 1;\n~~~");
+    expect(posted[0].payloadRef).toContain("```ts\nconst x = 1;\n```");
     expect(posted[0].payloadRef).toContain("Attachment: goal");
     expect(posted[0].payloadRef).toContain("ship I6");
   });
@@ -911,5 +914,128 @@ describe("SendMessage scoped routing (CORE-2437 I6)", () => {
     expect(r.isError).toBe(true);
     expect(String(r.content[0].text)).toMatch(/sender.*project|project.*sender/i);
     expect(posted).toHaveLength(0);
+  });
+});
+
+describe("SendMessage attachments on the real filesystem (CORE-2437 I6 F4/F6)", () => {
+  function tmpRoot(): string {
+    return nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), "xtrm-attach-"));
+  }
+
+  test("a real file reads, a symlink escape is refused without reading", async () => {
+    const root = tmpRoot();
+    try {
+      nodeFs.writeFileSync(nodePath.join(root, "notes.txt"), "real content here");
+      nodeFs.symlinkSync("/etc/hostname", nodePath.join(root, "evil-link"));
+      const { deps, posted } = baseDeps({ senderCwd: root });
+      delete (deps as any).readAttachmentFile;
+      delete (deps as any).resolveRoot;
+      const { tool } = register(deps);
+      const ok = await tool.execute(
+        "c1",
+        { to: "bob", message: "see", attachments: [{ type: "file", name: "notes.txt" }] },
+        undefined,
+        undefined,
+        fakeCtx("s-me"),
+      );
+      expect(ok.isError).toBeFalsy();
+      expect(posted[0].payloadRef).toContain("real content here");
+      const bad = await tool.execute(
+        "c2",
+        { to: "bob", message: "see", attachments: [{ type: "file", name: "evil-link" }] },
+        undefined,
+        undefined,
+        fakeCtx("s-me"),
+      );
+      expect(bad.isError).toBe(true);
+      expect(String(bad.content[0].text)).toMatch(/outside the sender's worktree/);
+      expect(posted).toHaveLength(1);
+    } finally {
+      nodeFs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("/dev/zero and a FIFO are refused fast, never read or followed", async () => {
+    const root = tmpRoot();
+    try {
+      if (nodeFs.existsSync("/dev/zero")) {
+        nodeFs.symlinkSync("/dev/zero", nodePath.join(root, "zero"));
+      }
+      const mkfifo = Bun.spawnSync(["mkfifo", nodePath.join(root, "pipe")]);
+      expect(mkfifo.exitCode).toBe(0);
+      const { deps, posted } = baseDeps({ senderCwd: root });
+      delete (deps as any).readAttachmentFile;
+      delete (deps as any).resolveRoot;
+      const { tool } = register(deps);
+      if (nodeFs.existsSync(nodePath.join(root, "zero"))) {
+        const zero = await tool.execute(
+          "c1",
+          { to: "bob", message: "see", attachments: [{ type: "file", name: "zero" }] },
+          undefined,
+          undefined,
+          fakeCtx("s-me"),
+        );
+        expect(zero.isError).toBe(true);
+      }
+      const pipeEntries = nodeFs.existsSync(nodePath.join(root, "pipe")) ? [{ type: "file", name: "pipe" }] : [];
+      if (pipeEntries.length > 0) {
+        const fifo = await tool.execute("c2", { to: "bob", message: "see", attachments: pipeEntries }, undefined, undefined, fakeCtx("s-me"));
+        expect(fifo.isError).toBe(true);
+        expect(String(fifo.content[0].text)).toMatch(/outside|regular file/);
+      }
+      expect(posted).toHaveLength(0);
+    } finally {
+      nodeFs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("widened secret refusals and binary refusal", async () => {
+    const root = tmpRoot();
+    try {
+      nodeFs.writeFileSync(nodePath.join(root, "tokenizer.txt"), "innocent");
+      nodeFs.writeFileSync(nodePath.join(root, "blob.bin"), Buffer.from([0x68, 0x69, 0x00, 0x21]));
+      const { deps, posted } = baseDeps({ senderCwd: root });
+      delete (deps as any).readAttachmentFile;
+      delete (deps as any).resolveRoot;
+      const { tool } = register(deps);
+      for (const name of [".envrc", ".npmrc", ".netrc", ".pypirc", ".git-credentials", "id_ed25519", "keys/api.key", "vault.p12", "service-account-prod.json", ".ssh/config", "my-secret-note.txt", "tokenizer.txt"]) {
+        const r = await tool.execute(
+          `c-${name}`,
+          { to: "bob", message: "see", attachments: [{ type: "file", name }] },
+          undefined,
+          undefined,
+          fakeCtx("s-me"),
+        );
+        expect(r.isError).toBe(true);
+        expect(String(r.content[0].text)).toMatch(/refused/i);
+      }
+      const bin = await tool.execute(
+        "c-bin",
+        { to: "bob", message: "see", attachments: [{ type: "file", name: "blob.bin" }] },
+        undefined,
+        undefined,
+        fakeCtx("s-me"),
+      );
+      expect(bin.isError).toBe(true);
+      expect(String(bin.content[0].text)).toMatch(/binary/);
+      expect(posted).toHaveLength(0);
+    } finally {
+      nodeFs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a fence longer than any backtick run in the content", async () => {
+    const { deps, posted } = baseDeps();
+    const { tool } = register(deps);
+    const r = await tool.execute(
+      "c1",
+      { to: "bob", message: "code", attachments: [{ type: "snippet", name: "doc.md", language: "md", content: "fenced:\n```\ncode\n```\ndone" }] },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    expect(r.isError).toBeFalsy();
+    expect(posted[0].payloadRef).toContain("````md\nfenced:");
+    expect(posted[0].payloadRef).toMatch(/\n````$/);
   });
 });
