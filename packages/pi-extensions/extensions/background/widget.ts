@@ -15,7 +15,7 @@
  */
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
   type BackgroundMonitorRecord,
@@ -81,6 +81,42 @@ export function formatIndicator(summary: BackgroundSummary): string | null {
 }
 
 /**
+ * Width-safe cut with a repair fallback. Several older suites stub
+ * pi-tui process-wide through bun's mock.module (identity or naive-slice
+ * truncateToWidth), and which stub wins depends on scheduling: the real
+ * library locally, a stub in CI. First try truncateToWidth; if the result
+ * still overflows per visibleWidth, hard-cut the longest fitting raw
+ * prefix plus "...". The repair loop always terminates (the prefix
+ * shrinks every pass; "..." fits any maxWidth >= 8, which every caller
+ * guarantees). The width invariant holds under every stub; the exact cut
+ * point and ellipsis styling may differ, so tests assert widths, never
+ * the literal cut text.
+ */
+/**
+ * Engine-proof hard cut: the longest raw prefix plus "..." that fits per
+ * visibleWidth. Uses only the width ruler (never segmentation), so it
+ * converges on any engine; the loop always terminates on the shrinking
+ * prefix, and "..." fits every width >= 8.
+ */
+export function hardCut(line: string, maxWidth: number): string {
+  const width = Math.max(8, Math.floor(maxWidth) || 80);
+  if (visibleWidth(line) <= width) return line;
+  const ellipsis = "...";
+  let prefix = line;
+  while (prefix.length > 0 && visibleWidth(`${prefix}${ellipsis}`) > width) {
+    prefix = prefix.slice(0, -1);
+  }
+  return `${prefix}${ellipsis}`;
+}
+
+export function fitToWidth(line: string, maxWidth: number): string {
+  const width = Math.max(8, Math.floor(maxWidth) || 80);
+  const first = truncateToWidth(line, width);
+  if (visibleWidth(first) <= width) return first;
+  return hardCut(line, width);
+}
+
+/**
  * Width-safe render: zero lines when idle, exactly one otherwise (stable
  * height). Every line fits the width by display width.
  */
@@ -88,7 +124,7 @@ export function renderIndicator(summary: BackgroundSummary, width: number): stri
   const line = formatIndicator(summary);
   if (!line) return [];
   const safe = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
-  return [truncateToWidth(line, Math.max(8, safe))];
+  return [fitToWidth(line, Math.max(8, safe))];
 }
 
 /** The ui surface the widget needs (duck-typed; tests inject a fake). */

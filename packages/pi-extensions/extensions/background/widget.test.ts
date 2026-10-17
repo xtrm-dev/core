@@ -4,7 +4,9 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   BACKGROUND_WIDGET_KEY,
   createBackgroundWidget,
+  fitToWidth,
   formatIndicator,
+  hardCut,
   renderIndicator,
   summarizeBackground,
   type BackgroundSummary,
@@ -83,6 +85,37 @@ describe("background summary", () => {
     stopped.killReason = "stop";
     stopped.endedAt = NOW + 2;
     expect(summarizeBackground([], store.listMonitors()).unseenFailures).toBe(1);
+  });
+});
+
+describe("fitToWidth", () => {
+  test("short lines pass through untouched", () => {
+    expect(fitToWidth("◐ 3 tasks running · /tasks", 80)).toBe("◐ 3 tasks running · /tasks");
+  });
+
+  test("long lines fit, measured by the same ruler the tests use", () => {
+    // Width only: under the process-wide pi-tui stubs the cut point and
+    // ellipsis styling vary (identity stub, naive slice, real library).
+    const out = fitToWidth("◐ 12345 tasks running · 67890 monitors · ! 42 failed · /tasks", 20);
+    expect(visibleWidth(out)).toBeLessThanOrEqual(20);
+    expect(out.length).toBeGreaterThan(0);
+  });
+
+  test("the repair path holds even for adversarial widths", () => {
+    for (const width of [8, 12, 20, 40]) {
+      const out = fitToWidth(`${"x".repeat(200)} · ${"y".repeat(200)}`, width);
+      expect(visibleWidth(out)).toBeLessThanOrEqual(width);
+    }
+  });
+
+  test("hardCut converges on its own: longest fitting prefix plus ellipsis", () => {
+    // The CI-engine regression proof in miniature: hardCut uses only the
+    // width ruler, so it holds even where truncateToWidth no-ops.
+    for (const width of [8, 20]) {
+      const out = hardCut("◐ 12345 tasks running · 67890 monitors · ! 42 failed · /tasks", width);
+      expect(visibleWidth(out)).toBeLessThanOrEqual(width);
+    }
+    expect(hardCut("short", 80)).toBe("short");
   });
 });
 

@@ -15,7 +15,8 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { fitToWidth } from "./widget.ts";
 
 import {
   formatElapsed,
@@ -149,15 +150,15 @@ export function buildTasksRows(
 export function formatTasksRow(row: TasksRow, width: number): string {
   const safe = Math.max(20, Math.floor(width) || 80);
   const line = `${row.glyph} ${row.label} ${row.id} ${row.state} · ${row.elapsed}${row.extra ? ` · ${row.extra}` : ""}`;
-  return truncateToWidth(line, safe);
+  return fitToWidth(line, safe);
 }
 
 /** Header plus rows, every line within the width. */
 export function formatTasksList(rows: TasksRow[], width: number): string[] {
   const safe = Math.max(20, Math.floor(width) || 80);
-  const out = [truncateToWidth("tasks", safe)];
+  const out = [fitToWidth("tasks", safe)];
   if (rows.length === 0) {
-    out.push(truncateToWidth("Nothing running.", safe));
+    out.push(fitToWidth("Nothing running.", safe));
     return out;
   }
   for (const row of rows) out.push(formatTasksRow(row, safe));
@@ -387,7 +388,7 @@ export class TasksOverlay {
   render(width: number): string[] {
     const { theme } = this.options;
     const safe = Math.max(20, Math.floor(width) || 80);
-    const cut = (line: string): string => truncateToWidth(line, safe);
+    const cut = (line: string): string => fitToWidth(line, safe);
     if (this.mode === "output") {
       const out = [cut(theme.bold(`output ${this.output?.view.id ?? ""}`)), ""];
       const view = this.output?.view;
