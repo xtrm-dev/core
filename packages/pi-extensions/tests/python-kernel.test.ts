@@ -11,6 +11,7 @@ mock.module("typebox", () => ({
     String: (opts: unknown) => ({ kind: "string", opts }),
     Number: (opts: unknown) => ({ kind: "number", opts }),
     Boolean: (opts: unknown) => ({ kind: "boolean", opts }),
+    Array: (t: unknown, opts: unknown) => ({ kind: "array", t, opts }),
     Optional: (t: unknown) => ({ kind: "optional", t }),
   },
 }));
