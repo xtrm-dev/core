@@ -308,3 +308,112 @@ describe("intercom live regression: specialist dispatch keeps the parent listene
     }
   });
 });
+
+describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433 I2)", () => {
+  test("sessions shut down in non-LIFO order: the parent shutdown disposes only the parent", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-nonlifo-"));
+    const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
+    try {
+      const pi = fakePi();
+      const parent = fakeCtx("s-shut-parent");
+      const child = fakeCtx("s-shut-child");
+      const bridge = createAgentHostBridge(pi.pi, { socketPath: host.info.socket, exec: async () => "", env: {} });
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, parent.ctx);
+      await until(() => host.registry.list().length === 1);
+      pi.fire("session_start", { reason: "startup" }, child.ctx);
+      await until(() => host.registry.list().length === 2);
+      // The parent shuts down first, while the child is active.
+      pi.fire("session_shutdown", { reason: "quit" }, parent.ctx);
+      await until(() => host.registry.list().length === 1);
+      expect(host.registry.list()[0]?.sessionId).toBe("s-shut-child");
+      // The surviving child still receives and acks.
+      const wake = host.registry.wake("s-shut-child", "CORE-2433");
+      await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
+      pi.fire("session_shutdown", { reason: "quit" }, child.ctx);
+      await until(() => host.registry.list().length === 0);
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("dispose answers a held wake as failed so the registry reports undelivered", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-dispose-"));
+    const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
+    try {
+      const pi = fakePi();
+      const c = fakeCtx("s-dispose");
+      const bridge = createAgentHostBridge(pi.pi, { socketPath: host.info.socket, exec: async () => "", env: {} });
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => host.registry.list().length === 1);
+      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      const wake = host.registry.wake("s-dispose", "CORE-2433");
+      await until(() => host.registry.wakeStatus(wake.messageId)?.state === "held");
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await until(() => host.registry.wakeStatus(wake.messageId)?.state === "undelivered");
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("F5: a peer wake leaves guiIngress unset: the triggered run reports terminal ingress", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-guiingress-"));
+    const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
+    const frames: any[] = [];
+    host.registry.subscribe((f: any) => frames.push(f));
+    try {
+      const pi = fakePi();
+      const c = fakeCtx("s-ingress");
+      const bridge = createAgentHostBridge(pi.pi, { socketPath: host.info.socket, exec: async () => "", env: {} });
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => host.registry.list().length === 1);
+      const wake = host.registry.wake("s-ingress", "CORE-2433");
+      await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
+      pi.fire("before_agent_start", { prompt: "CORE-2433" }, c.ctx);
+      await until(() => frames.some((f) => f.payload.type === "before_agent_start"));
+      expect(frames.find((f) => f.payload.type === "before_agent_start").payload.ingress).toEqual({ origin: "terminal" });
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("F6: ctx-less stream events route to the one session with an open run", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-stream-"));
+    const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
+    const frames: any[] = [];
+    host.registry.subscribe((f: any) => frames.push(f));
+    try {
+      const pi = fakePi();
+      const parent = fakeCtx("s-stream-parent");
+      const child = fakeCtx("s-stream-child");
+      const bridge = createAgentHostBridge(pi.pi, { socketPath: host.info.socket, exec: async () => "", env: {} });
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, parent.ctx);
+      pi.fire("session_start", { reason: "startup" }, child.ctx);
+      await until(() => host.registry.list().length === 2);
+      // Only the child runs: its stream owns ctx-less events even though the
+      // parent started first.
+      pi.fire("agent_start", {}, child.ctx);
+      pi.fire("message_update", { message: { role: "assistant", content: [] }, assistantMessageEvent: { type: "text_delta" } }, child.ctx);
+      await until(() => frames.some((f) => f.payload.type === "message_update"));
+      expect(frames.filter((f) => f.payload.type === "message_update").map((f) => f.sessionId)).toEqual(["s-stream-child"]);
+      // The child settles and the parent runs: ownership follows.
+      pi.fire("agent_settled", {}, child.ctx);
+      pi.fire("agent_start", {}, parent.ctx);
+      pi.fire("message_update", { message: { role: "assistant", content: [] }, assistantMessageEvent: { type: "text_delta" } }, parent.ctx);
+      await until(() => frames.filter((f) => f.payload.type === "message_update").length >= 2);
+      expect(frames.filter((f) => f.payload.type === "message_update").map((f) => f.sessionId)).toEqual([
+        "s-stream-child",
+        "s-stream-parent",
+      ]);
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

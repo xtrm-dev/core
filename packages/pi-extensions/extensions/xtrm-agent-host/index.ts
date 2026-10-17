@@ -481,15 +481,27 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   }
 
   function disposeBinding(b: SessionBinding): void {
-    b.state = "closed";
     if (b.reconnectTimer) clearTimeout(b.reconnectTimer);
     if (b.flushTimer) clearTimeout(b.flushTimer);
     b.reconnectTimer = b.flushTimer = null;
+    // Held wakes never deliver now: answer them failed while the socket
+    // still writes, so the registry records them undelivered instead of
+    // leaving them held. A dead socket drops the frame and the host-side
+    // revocation reports them undelivered instead.
+    const unanswered = b.deferredWake;
+    b.deferredWake = [];
+    for (const wake of unanswered) {
+      try {
+        wake.fail("session_ended", "the session ended before the wake was delivered");
+      } catch {
+        /* answering must not break teardown */
+      }
+    }
+    b.state = "closed";
     b.socket?.end();
     b.socket = null;
     b.pendingUi.clear();
     b.deferred = [];
-    b.deferredWake = [];
     unpatchBinding(b.sessionId);
     bindings.delete(b.sessionId);
     const at = recency.indexOf(b.sessionId);
@@ -1118,10 +1130,10 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       );
     });
 
-    // The extension runtime is torn down after this event; a replacement session gets a fresh binding.
-    // Without a context the shutdown belongs to the active session — the one Pi is leaving.
-    pi.on("session_shutdown", (event) => {
-      const b = activeBinding();
+    // The shutdown belongs to the session in the event context; without one
+    // it belongs to the active session — the one Pi is leaving.
+    pi.on("session_shutdown", (event, current) => {
+      const b = bindingFor(current) ?? activeBinding();
       if (!b) return;
       emit(b, compact({ type: "session_shutdown" as const, reason: event.reason, targetSessionFile: bounded(event.targetSessionFile, 4096) }));
       flushUpdates(b);
