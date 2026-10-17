@@ -223,10 +223,14 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
   const longUrl = `https://example.com/${"p".repeat(150)}/tail`;
   const cjk = "日本語のプレビュー行は表示幅で折り返されなければなりません".repeat(3);
   const longIdentity = `@${"n".repeat(200)}`;
+  const longFacts = `m9 · ${"x".repeat(200)}`;
+  const cjkFacts = `m9 · ${"事".repeat(120)}`;
   const adversarial: Array<{ name: string; details: EventDetails }> = [
     { name: "long-url", details: { kind: "message", state: "delivered", identity: "@probe", fromName: "Probe", preview: [longUrl] } },
     { name: "cjk", details: { kind: "message", state: "delivered", identity: "@probe", fromName: "Probe", preview: [cjk] } },
     { name: "long-identity", details: { kind: "task", state: "running", identity: longIdentity, preview: ["working"] } },
+    { name: "long-facts", details: { kind: "message", state: "delivered", identity: "@probe", fromName: "Probe", preview: ["hi"], facts: longFacts } },
+    { name: "cjk-facts", details: { kind: "message", state: "delivered", identity: "@probe", fromName: "Probe", preview: ["hi"], facts: cjkFacts } },
   ];
   const long =
     "a long preview line that must wrap somewhere in the middle because it far exceeds even the wider snapshot width";
@@ -272,6 +276,11 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
     const head = visible(formatEventCard(adversarial[2].details, light, 80))[0];
     expect(head.startsWith("◐ ")).toBe(true);
     expect(head.endsWith("running")).toBe(true);
+    // Oversized facts truncate with an ellipsis instead of overrunning.
+    const asciiFacts = visible(formatEventCard(adversarial[3].details, light, 80));
+    expect(asciiFacts.some((l) => l.trimEnd().endsWith("..."))).toBe(true);
+    const cjkFactsLines = visible(formatEventCard(adversarial[4].details, light, 80));
+    for (const line of cjkFactsLines) expect(visibleWidth(line)).toBeLessThanOrEqual(80);
   });
 
   test("one run against Pi's real light and dark themes", async () => {

@@ -331,7 +331,9 @@ function layoutCard(details: EventDetails, width: number): CardLayout {
   const hidden = Math.max(0, total - shown.length);
   const bodyLines = shown.flatMap((body) => wrapDisplay(body, inner).map((line) => `${INDENT}${line}`));
   const rawFacts = details.facts?.trim();
-  const facts = rawFacts ? sanitizeCardLine(rawFacts) : null;
+  // Facts truncate to the inner width like every other line: a 200-char
+  // (or CJK) facts trailer must never overrun the card on its own line.
+  const facts = rawFacts ? truncateToWidth(sanitizeCardLine(rawFacts), inner) : null;
   // Facts ride the last content line when they fit by display width, else
   // their own line — every visible line stays within the width.
   const last = bodyLines[bodyLines.length - 1];
