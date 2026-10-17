@@ -57418,10 +57418,16 @@ function findLiveDispatchers(participant, deps = {}) {
     const socket = clean(entry.messagingSocketPath);
     if (!socket) continue;
     if (typeof entry.pid === "number") {
+      const filePid = Number(file2.replace(/\.json$/, ""));
+      if (Number.isInteger(filePid) && entry.pid !== filePid) continue;
+      let info = null;
       try {
-        if (!readProcess(entry.pid)) continue;
+        info = readProcess(entry.pid);
       } catch {
       }
+      if (!info) continue;
+      const procStart = clean(entry.procStart);
+      if (procStart && /^\d+$/.test(procStart) && info.startTime && procStart !== info.startTime) continue;
     }
     found.push({ pid: entry.pid, address: `uds:${socket}` });
   }
@@ -57443,7 +57449,9 @@ function refreshDispatcherEnv(deps = {}) {
         out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
         return out;
       }
-    } catch {
+    } catch (error51) {
+      process.stderr.write(`xt attach: ${error51.message}; falling back to ancestor resolution
+`);
     }
   }
   const dispatcher = resolveDispatcher(deps);
@@ -80483,6 +80491,7 @@ var AgentHostRegistry = class {
           this.log(
             `refused win-back session_identity for session ${sessionId} (${describeListener(identity)}): replacement is not a reason to win the binding back`
           );
+          this.notifyRefused(sessionId, connection, "winback_refused", session?.identity.generation);
         } else {
           this.log(
             `refused legacy session_identity for session ${sessionId}: the live binding carries pid+generation; re-assert with both`
@@ -80658,11 +80667,11 @@ var AgentHostRegistry = class {
     return "adopt";
   }
   /** F3: tell a refused producer why, on its own connection. */
-  notifyRefused(sessionId, connection, reason) {
+  notifyRefused(sessionId, connection, reason, generation) {
     const command = {
       type: "listener_replaced",
       commandId: `lr-${++this.wakeCommandSeq}`,
-      generation: 1,
+      generation: generation ?? 1,
       reason
     };
     try {

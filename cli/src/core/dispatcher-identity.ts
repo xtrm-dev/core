@@ -197,11 +197,20 @@ function findLiveDispatchers(
         if (clean(entry.name) !== participant) continue;
         const socket = clean(entry.messagingSocketPath);
         if (!socket) continue;
-        // Skip dead pids; a probe failure keeps the entry (unknown, not dead).
+        // Pid liveness with reuse protection, as readSessionEntry does: a
+        // dead pid is skipped, and a numeric procStart that disagrees with
+        // the live process start time means the pid was reused. A probe
+        // failure keeps the entry (unknown, not dead).
         if (typeof entry.pid === 'number') {
+            const filePid = Number(file.replace(/\.json$/, ''));
+            if (Number.isInteger(filePid) && entry.pid !== filePid) continue;
+            let info: ProcessInfo | null = null;
             try {
-                if (!readProcess(entry.pid)) continue;
-            } catch { /* keep */ }
+                info = readProcess(entry.pid);
+            } catch { /* keep on probe failure */ }
+            if (!info) continue;
+            const procStart = clean(entry.procStart);
+            if (procStart && /^\d+$/.test(procStart) && info.startTime && procStart !== info.startTime) continue;
         }
         found.push({ pid: entry.pid, address: `uds:${socket}` });
     }
@@ -248,7 +257,10 @@ export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<
                 out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
                 return out;
             }
-        } catch { /* ambiguous: fall through to ancestor resolution */ }
+        } catch (error) {
+            // Ambiguous: say so on stderr, then fall back to ancestor resolution.
+            process.stderr.write(`xt attach: ${(error as Error).message}; falling back to ancestor resolution\n`);
+        }
     }
     const dispatcher = resolveDispatcher(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;

@@ -199,9 +199,13 @@ describe('CORE-2432 wake contract', () => {
         expect(registry.ingest(a.connection, identity('s-1', { pid: 1, generation: 1 }))).toBe(true);
         expect(registry.ingest(b.connection, identity('s-1', { pid: 2, generation: 2 }))).toBe(true);
         expect(a.sent.filter((s) => s.payload.type === 'listener_replaced')).toHaveLength(1);
-        // A bumps and tries to win it back: refused, loudly, with no new notice to B.
+        // A bumps and tries to win it back: refused, loudly, told by frame,
+        // with no new notice to B and no further replacements.
         expect(registry.ingest(a.connection, identity('s-1', { pid: 1, generation: 3 }))).toBe(false);
         expect(lines.join('\n')).toMatch(/refused win-back session_identity for session s-1/);
+        const notices = a.sent.filter((s) => s.payload.type === 'listener_replaced');
+        expect(notices).toHaveLength(2);
+        expect(notices[1].payload).toMatchObject({ reason: 'winback_refused', generation: 2 });
         expect(b.sent.filter((s) => s.payload.type === 'listener_replaced')).toHaveLength(0);
         expect(registry.detail('s-1')?.identity).toMatchObject({ pid: 2, generation: 2 });
         // The refused loser cannot hijack the binding with later frames either.

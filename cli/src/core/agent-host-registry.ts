@@ -218,11 +218,13 @@ export class AgentHostRegistry {
                             `generation ${identity.generation} < ${session?.identity.generation}`,
                     );
                 } else if (verdict === 'winback') {
-                    // F1: replacement is not a reason to win back; refuse the ping-pong.
+                    // F1: replacement is not a reason to win back; refuse the
+                    // ping-pong and tell the producer, as for legacy refusals.
                     this.log(
                         `refused win-back session_identity for session ${sessionId} (${describeListener(identity)}): ` +
                             `replacement is not a reason to win the binding back`,
                     );
+                    this.notifyRefused(sessionId, connection, 'winback_refused', session?.identity.generation);
                 } else {
                     // F3: a legacy frame must not displace a pid+generation binding.
                     this.log(
@@ -435,11 +437,11 @@ export class AgentHostRegistry {
     }
 
     /** F3: tell a refused producer why, on its own connection. */
-    private notifyRefused(sessionId: string, connection: ProducerConnection, reason: string): void {
+    private notifyRefused(sessionId: string, connection: ProducerConnection, reason: string, generation?: number): void {
         const command: AgentCommandPayload = {
             type: 'listener_replaced',
             commandId: `lr-${++this.wakeCommandSeq}`,
-            generation: 1,
+            generation: generation ?? 1,
             reason,
         };
         try {

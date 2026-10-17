@@ -5,7 +5,7 @@
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     buildDispatcherEnv,
     refreshDispatcherEnv,
@@ -126,6 +126,55 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
         expect(env.XTRM_DISPATCHER_ADDRESS).toBe('uds:/run/cc/100.sock');
         // The worker keeps its own holder name from the launch, not from attach.
         expect(buildDispatcherEnv('worker-name', deps).SUBSTRATE_HOLDER).toBe('worker-name');
+    });
+
+    it('pid reuse at attach: a numeric procStart disagreeing with the live process is skipped', () => {
+        // Same file pid, but the live process started at a different time:
+        // the pid was reused by an unrelated process, not the dispatcher.
+        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock', procStart: '999' });
+        const deps = {
+            sessionsDir,
+            readProcess: (_pid: number): ProcessInfo | null => ({ ppid: 1, startTime: '10' }),
+        };
+        expect(resolveDispatcherByParticipant('coord', deps)).toBeNull();
+        // Agreeing procStart resolves.
+        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        expect(resolveDispatcherByParticipant('coord', deps)).toEqual({
+            name: 'coord',
+            address: 'uds:/run/cc/100.sock',
+        });
+        // An entry pid disagreeing with its file is a reused-pid leftover too.
+        writeSession(200, { pid: 4242, name: 'coord', messagingSocketPath: '/run/cc/200.sock' });
+        expect(resolveDispatcherByParticipant('coord', deps)).toEqual({
+            name: 'coord',
+            address: 'uds:/run/cc/100.sock',
+        });
+    });
+
+    it('ambiguity at attach prints one stderr line naming the candidates, then falls back', () => {
+        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock' });
+        writeSession(200, { name: 'coord', messagingSocketPath: '/run/cc/200.sock' });
+        const lines: string[] = [];
+        const spy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+            lines.push(String(chunk));
+            return true;
+        }) as never);
+        try {
+            const got = refreshDispatcherEnv({
+                sessionsDir,
+                readProcess: allAlive,
+                startPid: 999,
+                env: { XTRM_DISPATCHER_NAME: 'coord', XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock' },
+            });
+            // No ancestor either: inherited last resort, after the stderr line.
+            expect(got).toEqual({
+                XTRM_DISPATCHER_NAME: 'coord',
+                XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock',
+            });
+        } finally {
+            spy.mockRestore();
+        }
+        expect(lines.join('')).toMatch(/ambiguous dispatcher participant "coord".*uds:\/run\/cc\/100\.sock.*uds:\/run\/cc\/200\.sock/);
     });
 
     it('F2 a dead participant entry falls back to ancestor resolution', () => {
