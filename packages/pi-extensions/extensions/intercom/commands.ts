@@ -20,7 +20,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { listClaudeSessions, updatePiPeer } from "./claude-transport/index.ts";
 import { buildRoster, fetchPiSessions } from "./roster.ts";
 
@@ -41,16 +41,27 @@ export interface IntercomCommandDeps {
   fetchPi?: () => Promise<any[]>;
   fetchClaude?: (excludeSock?: string) => Promise<any[]>;
   excludeSock?: string;
+  /** Claude registry directory override (tests, alternate hosts); default is ~/.claude/sessions. */
+  sessionsDir?: string;
   now?: number;
   updateName?: (pid: number, patch: { name: string }) => Promise<void>;
 }
 
-async function rosterText(
+function ownSessionIdOf(ctx: CommandCtx): string | undefined {
+  try {
+    const id = ctx.sessionManager?.getSessionId?.();
+    return typeof id === "string" && id.length > 0 ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function rosterEntries(
   pi: ExtensionAPI,
   ctx: CommandCtx,
   deps: IntercomCommandDeps,
-): Promise<string> {
-  const ownSessionId = ctx.sessionManager?.getSessionId?.() ?? "session";
+): Promise<{ ownSessionId?: string; entries: Array<{ kind: "pi" | "claude"; sessionId?: string; name: string }>; text: string }> {
+  const ownSessionId = ownSessionIdOf(ctx);
   let ownName: string | undefined;
   try {
     ownName = pi.getSessionName?.() || undefined;
@@ -61,14 +72,35 @@ async function rosterText(
     (deps.fetchPi ?? (() => fetchPiSessions()))().catch(() => []),
     (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(deps.excludeSock).catch(() => []),
   ]);
-  return buildRoster({
+  // Without the real own id there is no roster: a fallback id would list
+  // the own session as a peer and misresolve names.
+  if (!ownSessionId) throw new Error("Intercom needs the current session id, and none was available.");
+  const built = buildRoster({
     ownSessionId,
     ...(ownName ? { ownName } : {}),
     piSessions,
     claudePeers,
     ...(deps.excludeSock ? { excludeSock: deps.excludeSock } : {}),
     ...(deps.now !== undefined ? { now: deps.now } : {}),
-  }).text;
+  });
+  return { ownSessionId, entries: built.entries, text: built.text };
+}
+
+/**
+ * The overlay's whole keyboard: literal input sequences, no keybinding
+ * table. A shared matcher (pi-tui matchesKey) reads false under the
+ * process-wide test mocks of neighbouring suites, which broke this overlay
+ * in full-suite runs; these six keys have stable sequences.
+ */
+function overlayKey(data: string): "close" | "up" | "down" | "pageUp" | "pageDown" | "home" | "end" | null {
+  if (data === "\u001b" || data === "q" || data === "Q" || data === "\u0003" || data === "\r") return "close";
+  if (data === "\u001b[A") return "up";
+  if (data === "\u001b[B") return "down";
+  if (data === "\u001b[5~") return "pageUp";
+  if (data === "\u001b[6~") return "pageDown";
+  if (data === "\u001b[H" || data === "\u001b[1~") return "home";
+  if (data === "\u001b[F" || data === "\u001b[4~") return "end";
+  return null;
 }
 
 export interface RosterOverlayOptions {
@@ -87,17 +119,18 @@ export class IntercomRosterOverlay {
   constructor(private readonly options: RosterOverlayOptions) {}
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "q") || matchesKey(data, "ctrl+c") || matchesKey(data, "enter")) {
+    const key = overlayKey(data);
+    if (key === "close") {
       this.options.close();
       return;
     }
     const maxOffset = Math.max(0, this.options.lines.length - OVERLAY_VISIBLE_LINES);
-    if (matchesKey(data, "up")) this.scrollOffset = Math.min(this.scrollOffset + 1, maxOffset);
-    else if (matchesKey(data, "down")) this.scrollOffset = Math.max(0, this.scrollOffset - 1);
-    else if (matchesKey(data, "pageUp")) this.scrollOffset = Math.min(this.scrollOffset + OVERLAY_VISIBLE_LINES, maxOffset);
-    else if (matchesKey(data, "pageDown")) this.scrollOffset = Math.max(0, this.scrollOffset - OVERLAY_VISIBLE_LINES);
-    else if (matchesKey(data, "home")) this.scrollOffset = maxOffset;
-    else if (matchesKey(data, "end")) this.scrollOffset = 0;
+    if (key === "up") this.scrollOffset = Math.min(this.scrollOffset + 1, maxOffset);
+    else if (key === "down") this.scrollOffset = Math.max(0, this.scrollOffset - 1);
+    else if (key === "pageUp") this.scrollOffset = Math.min(this.scrollOffset + OVERLAY_VISIBLE_LINES, maxOffset);
+    else if (key === "pageDown") this.scrollOffset = Math.max(0, this.scrollOffset - OVERLAY_VISIBLE_LINES);
+    else if (key === "home") this.scrollOffset = maxOffset;
+    else if (key === "end") this.scrollOffset = 0;
     else return;
     this.options.requestRender?.();
   }
@@ -120,7 +153,13 @@ export class IntercomRosterOverlay {
 
 /** /intercom: the roster overlay on a TUI, the roster text otherwise. */
 export async function runIntercom(pi: ExtensionAPI, ctx: CommandCtx, deps: IntercomCommandDeps = {}): Promise<void> {
-  const text = await rosterText(pi, ctx, deps);
+  let text: string;
+  try {
+    text = (await rosterEntries(pi, ctx, deps)).text;
+  } catch (error) {
+    ctx.ui.notify((error as Error)?.message ?? String(error), "error");
+    return;
+  }
   const lines = text.split("\n");
   const custom = ctx.ui.custom;
   const canOverlay = ctx.mode === "tui" && ctx.hasUI === true && typeof custom === "function";
@@ -190,9 +229,28 @@ export async function runRename(pi: ExtensionAPI, args: string, ctx: CommandCtx,
     );
     return { ok: false, error: "empty" };
   }
+  // A name another live session already has is refused R7-style, before
+  // anything is renamed: the roster (and I5's SendMessage) could not
+  // address either session by it. Entries sharing the own session id are
+  // the own session on both transports, never a conflict. Without the own
+  // id the check cannot attribute self, so it is skipped.
+  const ownSessionId = ownSessionIdOf(ctx);
+  if (ownSessionId) {
+    try {
+      const { entries } = await rosterEntries(pi, ctx, deps);
+      const holders = entries.filter((entry) => entry.name === wanted && entry.sessionId !== ownSessionId);
+      if (holders.length > 0) {
+        const named = holders.map((entry) => `${entry.name} [${entry.sessionId ?? entry.kind}]`).join(", ");
+        ctx.ui.notify(`Session name "${wanted}" is already taken by another live session: ${named}`, "warning");
+        return { ok: false, error: "taken" };
+      }
+    } catch {
+      /* an unreadable roster never blocks the local rename */
+    }
+  }
   pi.setSessionName(wanted);
   try {
-    await (deps.updateName ?? updatePiPeer)(process.pid, { name: wanted });
+    await (deps.updateName ?? ((pid: number, patch: { name: string }) => updatePiPeer(pid, patch, deps.sessionsDir)))(process.pid, { name: wanted });
   } catch (error) {
     ctx.ui.notify(`Session name set to ${wanted}, but the Claude registry entry kept its old name: ${(error as Error)?.message ?? String(error)}`, "warning");
     return { ok: true, name: wanted };

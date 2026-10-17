@@ -63,6 +63,7 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
   });
   const rosterDeps: ListAgentsDeps & IntercomCommandDeps = {
     ...(options.claudeSocketPath ? { excludeSock: options.claudeSocketPath } : {}),
+    ...(options.claudeSessionsDir ? { sessionsDir: options.claudeSessionsDir } : {}),
   };
   registerListAgentsTool(pi, rosterDeps);
   registerIntercomCommands(pi, rosterDeps);

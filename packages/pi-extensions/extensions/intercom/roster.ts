@@ -31,6 +31,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionSummary } from "@xtrm/contracts";
+import { createHash } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { readFileSync } from "node:fs";
 import os from "node:os";
@@ -55,9 +56,14 @@ export interface RosterEntry {
   name: string;
 }
 
-/** Display ref: the leading 6 characters of a session id. */
-export function shortRef(id: string): string {
-  return id.slice(0, 6);
+/**
+ * Display ref: the first 6 hex of sha256(sessionId). Pi ids are UUIDv7,
+ * so the leading characters collide for every session started within
+ * hours of each other; the hash spreads them. Opaque by design: our refs
+ * do not equal Claude Code's own refs.
+ */
+export function sessionRef(id: string): string {
+  return createHash("sha256").update(id, "utf8").digest("hex").slice(0, 6);
 }
 
 function stripAnsi(value: string): string {
@@ -103,13 +109,14 @@ export function formatRosterRow(row: RosterRow, now: number = Date.now()): strin
   return `  ${segments.join("  ·  ")}`;
 }
 
-/** Pi registry summary to a roster row. Kind is always interactive: the same word this session advertises in Claude's registry. */
+/** Pi registry summary to a roster row. Kind is always interactive: the same word this session advertises in Claude's registry. The where segment is tmux only, in Claude's shape; anything else is omitted, never the cwd. */
 export function piRosterRow(summary: AgentSessionSummary, _now?: number): RosterRow {
-  const ref = shortRef(summary.sessionId);
+  const ref = sessionRef(summary.sessionId);
   const name = clean(summary.name) || `session ${ref}`;
   const tmux = (summary as { tmux?: { session?: string; paneId?: string } }).tmux;
-  const where =
-    tmux && clean(tmux.session) ? `tmux ${clean(tmux.session)}${clean(tmux.paneId) ? `:${clean(tmux.paneId)}` : ""}` : clean(summary.cwd) || undefined;
+  const session = clean(tmux?.session);
+  const paneId = clean(tmux?.paneId);
+  const where = session ? `tmux ${session}${paneId ? `:${paneId}` : ""}` : undefined;
   return {
     name,
     ref,
@@ -120,23 +127,24 @@ export function piRosterRow(summary: AgentSessionSummary, _now?: number): Roster
   };
 }
 
-/** Claude peer to a roster row. State passes through: where Claude shows a value, Claude's word wins. */
+/** Claude peer to a roster row. State passes through: where Claude shows a value, Claude's word wins. The where segment is Claude's own tmux locator, verbatim; anything else is omitted, never the cwd. Refs are opaque hashes, not Claude's refs. */
 export function claudeRosterRow(peer: ClaudePeer, _now?: number): RosterRow {
   const base = toRosterRow(peer);
+  const tmux = clean(base.tmux);
   return {
     name: clean(base.name) || "unknown",
-    ref: peer.sessionId ? shortRef(peer.sessionId) : clean(base.ref, 128) || "?",
+    ref: sessionRef(peer.sessionId ?? peer.sock),
     kind: clean(base.kind) || "?",
     state: clean(base.state) || "?",
-    ...(clean(base.cwd) ? { where: clean(base.cwd) } : {}),
+    ...(tmux ? { where: `tmux ${tmux}` } : {}),
     ...(typeof base.started === "number" ? { started: base.started } : {}),
   };
 }
 
 /** Claude Code's own-session header, word for word. */
 export function buildOwnLine(own: { sessionId: string; name?: string }): string {
-  const name = clean(own.name) || `session ${shortRef(own.sessionId)}`;
-  return `This session is ${name} [${shortRef(own.sessionId)}] — the name other sessions use to message it (it is not listed below; a message to it would be a message to yourself).`;
+  const name = clean(own.name) || `session ${sessionRef(own.sessionId)}`;
+  return `This session is ${name} [${sessionRef(own.sessionId)}] — the name other sessions use to message it (it is not listed below; a message to it would be a message to yourself).`;
 }
 
 /** Full ListAgents text: the own header first, then the peer rows. */
@@ -146,6 +154,13 @@ export function buildListAgentsText(own: { sessionId: string; name?: string }, p
   else for (const peer of peers) lines.push(formatRosterRow(peer, now));
   return lines.join("\n");
 }
+
+/**
+ * Only live Pi sessions list: history_only rows (journal replays from the
+ * session index) and failed ones are not addressable peers, so they stay
+ * out of the roster and the resolver alike.
+ */
+export const LIVE_PI_STATES = new Set(["working", "waiting_for_input", "settled"]);
 
 export interface BuiltRoster {
   own: { sessionId: string; name?: string };
@@ -167,23 +182,33 @@ export interface RosterSources {
 /**
  * One roster for Pi and Claude sessions alike. The own session heads the
  * text and never appears below it; our own Claude entry (same pid or same
- * socket) is dropped for the same reason. Peers sort newest first; rows
- * without a start time sort last, stable.
+ * socket) is dropped for the same reason. A Pi session that also has a
+ * Claude entry (pi-claude-link, or I3) lists once, from the host registry:
+ * Claude rows whose session id already listed are dropped, so R7 never
+ * throws "ambiguous" on a session's own duplicate. Only live Pi sessions
+ * list (LIVE_PI_STATES). Peers sort newest first; rows without a start
+ * time sort last, stable.
  */
 export function buildRoster(sources: RosterSources): BuiltRoster {
   const now = sources.now ?? Date.now();
   const own = { sessionId: sources.ownSessionId, ...(sources.ownName ? { name: sources.ownName } : {}) };
   const pairs: Array<{ row: RosterRow; entry: RosterEntry }> = [];
+  const listedSessionIds = new Set<string>([sources.ownSessionId]);
   for (const summary of sources.piSessions) {
-    if (summary.sessionId === sources.ownSessionId) continue;
+    if (listedSessionIds.has(summary.sessionId)) continue;
+    if (!LIVE_PI_STATES.has(summary.state)) continue;
+    listedSessionIds.add(summary.sessionId);
     pairs.push({
       row: piRosterRow(summary, now),
-      entry: { kind: "pi", sessionId: summary.sessionId, name: clean(summary.name) || `session ${shortRef(summary.sessionId)}` },
+      entry: { kind: "pi", sessionId: summary.sessionId, name: clean(summary.name) || `session ${sessionRef(summary.sessionId)}` },
     });
   }
   for (const peer of sources.claudePeers) {
     if (peer.pid === process.pid) continue;
     if (sources.excludeSock && peer.sock === sources.excludeSock) continue;
+    // A session already listed from the host registry never lists twice.
+    if (peer.sessionId && listedSessionIds.has(peer.sessionId)) continue;
+    if (peer.sessionId) listedSessionIds.add(peer.sessionId);
     pairs.push({
       row: claudeRosterRow(peer, now),
       entry: { kind: "claude", ...(peer.sessionId ? { sessionId: peer.sessionId } : {}), name: clean(peer.name) || "unknown" },
@@ -309,6 +334,12 @@ export interface ListAgentsDeps {
   now?: () => number;
 }
 
+/** Details shape of the ListAgents result: a roster count, or an error flag. */
+export interface ListAgentsDetails {
+  roster?: { peers: number; total: number };
+  error?: boolean;
+}
+
 /** The model-only ListAgents tool. No parameters, like Claude Code's. */
 export function registerListAgentsTool(pi: ExtensionAPI, deps: ListAgentsDeps = {}): void {
   pi.registerTool({
@@ -318,8 +349,28 @@ export function registerListAgentsTool(pi: ExtensionAPI, deps: ListAgentsDeps = 
       "List live Pi and Claude Code sessions on this machine. This session prints first, then one row per peer: name [ref] · kind · state · started. Address a peer by its exact name or session id.",
     parameters: Type.Object({}),
     exposure: "model-only",
-    execute: async (_toolCallId: string, _params: Record<string, never>, _signal: unknown, _onUpdate: unknown, ctx?: { sessionManager?: { getSessionId?: () => string } }) => {
-      const ownSessionId = ctx?.sessionManager?.getSessionId?.() ?? "session";
+    execute: async (
+      _toolCallId: string,
+      _params: Record<string, never>,
+      _signal: unknown,
+      _onUpdate: unknown,
+      ctx?: { sessionManager?: { getSessionId?: () => string } },
+    ): Promise<{ content: [{ type: "text"; text: string }]; details: ListAgentsDetails; isError?: boolean }> => {
+      // No fallback id: a roster without the real own id would list the own
+      // session as a peer and misresolve names.
+      let ownSessionId: string | undefined;
+      try {
+        ownSessionId = ctx?.sessionManager?.getSessionId?.();
+      } catch {
+        ownSessionId = undefined;
+      }
+      if (!ownSessionId) {
+        return {
+          content: [{ type: "text" as const, text: "ListAgents needs the current session id, and none was available." }],
+          details: { error: true },
+          isError: true,
+        };
+      }
       let ownName: string | undefined;
       try {
         ownName = pi.getSessionName?.() || undefined;

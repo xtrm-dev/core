@@ -327,7 +327,10 @@ describe("claude-transport send and receive (CORE-2434 I3)", () => {
 
 describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
   type Handler = (event: any, ctx: any) => unknown;
-  const until = async (check: () => boolean, ms = 5000) => {
+  // Generous under CI load: shutdown assertions wait on socket close plus
+  // registry writes, and a loaded runner starves a tight polling loop
+  // (CORE-2435 review: rare timeout on the entry-removal wait below).
+  const until = async (check: () => boolean, ms = 30000) => {
     const start = Date.now();
     while (!check()) {
       if (Date.now() - start > ms) throw new Error("timed out");
@@ -510,7 +513,8 @@ describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
 
 describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
   type Handler = (event: any, ctx: any) => unknown;
-  const until = async (check: () => boolean, ms = 5000) => {
+  // Same load rationale as the wiring block above (CORE-2435 review).
+  const until = async (check: () => boolean, ms = 30000) => {
     const start = Date.now();
     while (!check()) {
       if (Date.now() - start > ms) throw new Error("timed out");
