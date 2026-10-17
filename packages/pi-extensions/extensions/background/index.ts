@@ -77,12 +77,20 @@ export const MONITOR_DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 export const MONITOR_MAX_TIMEOUT_MS = 30 * 60 * 1000;
 /** Lines arriving within this window batch into one monitor event. */
 export const MONITOR_BATCH_WINDOW_MS = 200;
+/** Wakes go out at most this often; a full batch waits for the interval. */
+export const MONITOR_MIN_WAKE_INTERVAL_MS = 200;
 /** A batch flushes early once it holds this many lines. */
 export const MONITOR_MAX_EVENT_LINES = 100;
 /** One monitor event carries at most this many sanitized characters. */
 export const MONITOR_MAX_EVENT_CHARS = 8000;
-/** Total observed lines above this stop the monitor as a firehose. */
-export const MONITOR_FIREHOSE_MAX_LINES = 2000;
+/** A command-mode line buffered past this without a newline is emitted
+ * truncated and the rest dropped until the next newline (unbounded partial
+ * lines stalled the event loop). */
+export const MONITOR_PARTIAL_MAX_CHARS = 16 * 1024;
+/** Firehose trip: more than this many lines in any rolling window. A steady
+ * tail never trips it; only a burst does (lifetime caps killed healthy tails). */
+export const MONITOR_FIREHOSE_WINDOW_MS = 10_000;
+export const MONITOR_FIREHOSE_MAX_LINES = 5000;
 /** Ceiling for one task output file; writing stops here with one truncation line. */
 export const OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
 /** Grace between SIGTERM and SIGKILL for stop, timeout and shutdown kills. */
@@ -181,13 +189,17 @@ interface LiveMonitor {
   socket: MonitorSocket | undefined;
   decoder: StringDecoder;
   partial: string;
+  /** True while dropping an overlong line until its newline arrives. */
+  dropping: boolean;
   buffer: string[];
+  /** Observed-line timestamps for the rolling firehose window. */
+  lineTimes: number[];
+  lastWakeAt: number | undefined;
   fd: number;
   written: number;
   truncated: boolean;
   expiryTimer: ReturnType<typeof setTimeout> | undefined;
   batchTimer: ReturnType<typeof setTimeout> | undefined;
-  graceTimer: ReturnType<typeof setTimeout> | undefined;
   wakeBroken: boolean;
 }
 
@@ -198,6 +210,13 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
   const store = createBackgroundStore({ now, makeId: options.makeId, outputDir: options.outputDir ?? "" });
   const live = new Map<string, LiveHandle>();
   const monitors = new Map<string, LiveMonitor>();
+  /**
+   * Children terminated (stop/expiry/firehose/wake-broken) but not yet dead:
+   * their SIGKILL grace timer is pending and no live map owns them anymore.
+   * close() force-kills everything here, so a quit inside the grace window
+   * cannot orphan a TERM-trapping tree.
+   */
+  const reaping = new Map<ChildProcess, ReturnType<typeof setTimeout>>();
   const sessionDirs = new Map<string, string>();
   let disposed = false;
   const createSocket: MonitorSocketFactory =
@@ -330,6 +349,31 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         /* already gone */
       }
     }
+  }
+
+  /**
+   * Own a terminated child until it is dead: SIGTERM now, SIGKILL after the
+   * grace. The child stays in the reaping set so close() can force-kill it
+   * even when no live map owns it anymore.
+   */
+  function reapLater(child: ChildProcess): void {
+    if (reaping.has(child)) return;
+    killTree(child);
+    const timer = setTimeout(() => {
+      reaping.delete(child);
+      try {
+        killTreeForce(child);
+      } catch {
+        /* already gone */
+      }
+    }, killGraceMs);
+    // A reaped child must never hold the loop open on its own.
+    try {
+      (timer as unknown as { unref?: () => void }).unref?.();
+    } catch {
+      /* runtimes without unref */
+    }
+    reaping.set(child, timer);
   }
 
   function summaryFor(record: BackgroundTaskRecord): string {
@@ -547,16 +591,15 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
   function clearMonitorTimers(mon: LiveMonitor): void {
     if (mon.expiryTimer !== undefined) clearTimeout(mon.expiryTimer);
     if (mon.batchTimer !== undefined) clearTimeout(mon.batchTimer);
-    if (mon.graceTimer !== undefined) clearTimeout(mon.graceTimer);
     mon.expiryTimer = undefined;
     mon.batchTimer = undefined;
-    mon.graceTimer = undefined;
   }
 
   /**
-   * Terminal monitor path: exactly one notice, the fd closed, the child
-   * reaped after a grace. The child's later close event is ignored: the
-   * terminal state owns the exit.
+   * Terminal monitor path: flush pending lines first (a TaskStop or expiry
+   * with a waiting batch still reports its lines), then exactly one notice,
+   * the fd closed, the child owned by the reaping set. The child's later
+   * close event is ignored: the terminal state owns the exit.
    */
   function finalizeMonitor(
     record: BackgroundMonitorRecord,
@@ -564,30 +607,29 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     reason: string,
   ): void {
     if (isMonitorTerminal(record) || record.notified) return;
+    const mon = monitors.get(record.id);
+    if (mon && !mon.wakeBroken) {
+      if (mon.batchTimer !== undefined) clearTimeout(mon.batchTimer);
+      mon.batchTimer = undefined;
+      if (mon.partial.length > 0) {
+        mon.buffer.push(mon.partial);
+        record.lineCount += 1;
+        mon.partial = "";
+      }
+      flushMonitorEvent(record);
+      // The flush may have found the session gone and stopped the monitor
+      // silently (no notice could be delivered either).
+      if (record.notified) return;
+    }
     record.status = terminal;
     record.endedAt = now();
     record.pid = undefined;
     record.notified = true;
-    const mon = monitors.get(record.id);
     monitors.delete(record.id);
     if (mon) {
       if (mon.expiryTimer !== undefined) clearTimeout(mon.expiryTimer);
-      if (mon.batchTimer !== undefined) clearTimeout(mon.batchTimer);
       mon.expiryTimer = undefined;
-      mon.batchTimer = undefined;
-      // Reap a lingering child: SIGTERM now, SIGKILL after the grace.
-      // The record is already terminal, so the close event settles nothing.
-      if (mon.child) {
-        killTree(mon.child);
-        const child = mon.child;
-        mon.graceTimer = setTimeout(() => {
-          try {
-            killTreeForce(child);
-          } catch {
-            /* already gone */
-          }
-        }, killGraceMs);
-      }
+      if (mon.child) reapLater(mon.child);
       try {
         mon.socket?.close();
       } catch {
@@ -618,6 +660,19 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     const mon = monitors.get(record.id);
     if (!mon || isMonitorTerminal(record) || mon.wakeBroken) return;
     if (mon.buffer.length === 0) return;
+    // Wakes go out at most every MONITOR_MIN_WAKE_INTERVAL_MS: a full batch
+    // that fills up right after a wake waits out the interval instead of
+    // waking twice in a row. The batch keeps accumulating meanwhile.
+    if (mon.lastWakeAt !== undefined && now() - mon.lastWakeAt < MONITOR_MIN_WAKE_INTERVAL_MS) {
+      if (mon.batchTimer === undefined) {
+        const wait = MONITOR_MIN_WAKE_INTERVAL_MS - (now() - mon.lastWakeAt);
+        mon.batchTimer = setTimeout(() => {
+          mon.batchTimer = undefined;
+          flushMonitorEvent(record);
+        }, wait);
+      }
+      return;
+    }
     const raw = mon.buffer.splice(0, mon.buffer.length);
     // Bound the event: at most MONITOR_MAX_EVENT_LINES lines and
     // MONITOR_MAX_EVENT_CHARS sanitized characters; the rest is counted.
@@ -648,8 +703,11 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
           delivery: "delivered" as WakeDeliveryState,
         });
     if (!delivered) {
-      // The session is gone: no point streaming further. The terminal state
-      // owns the exit; no notice follows (it could not be delivered either).
+      // The session is gone: no point streaming further. SIGKILL at once
+      // (no one is left to be graceful for) and own the child in the
+      // reaping set so a quit in this window still cannot orphan it. The
+      // terminal state owns the exit; no notice follows (it could not be
+      // delivered either).
       mon.wakeBroken = true;
       record.status = "stopped";
       record.endedAt = now();
@@ -657,7 +715,14 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       record.notified = true;
       clearMonitorTimers(mon);
       monitors.delete(record.id);
-      if (mon.child) killTree(mon.child);
+      if (mon.child) {
+        try {
+          killTreeForce(mon.child);
+        } catch {
+          /* already gone */
+        }
+        reapLater(mon.child);
+      }
       try {
         mon.socket?.close();
       } catch {
@@ -666,6 +731,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       closeFd(mon);
       return;
     }
+    mon.lastWakeAt = now();
     record.eventCount += 1;
     record.status = "event";
     record.delivery = "delivered";
@@ -675,9 +741,21 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     const mon = monitors.get(record.id);
     if (!mon || isMonitorTerminal(record)) return;
     record.lineCount += 1;
-    if (record.lineCount > MONITOR_FIREHOSE_MAX_LINES) {
+    // Rate-based firehose trip: more than MONITOR_FIREHOSE_MAX_LINES in any
+    // rolling MONITOR_FIREHOSE_WINDOW_MS window. A steady tail never trips
+    // it no matter how long it runs; only a burst does.
+    const windowStart = now() - MONITOR_FIREHOSE_WINDOW_MS;
+    while (mon.lineTimes.length > 0 && (mon.lineTimes[0] as number) <= windowStart) {
+      mon.lineTimes.shift();
+    }
+    mon.lineTimes.push(now());
+    if (mon.lineTimes.length > MONITOR_FIREHOSE_MAX_LINES) {
       record.killReason = "firehose";
-      finalizeMonitor(record, "stopped", `firehose: output exceeded ${MONITOR_FIREHOSE_MAX_LINES} lines`);
+      finalizeMonitor(
+        record,
+        "stopped",
+        `firehose: more than ${MONITOR_FIREHOSE_MAX_LINES} lines in ${MONITOR_FIREHOSE_WINDOW_MS / 1000}s`,
+      );
       return;
     }
     mon.buffer.push(line);
@@ -695,11 +773,40 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }
   }
 
+  /** Head emitted for an overlong line cut at MONITOR_PARTIAL_MAX_CHARS:
+   * the marker leads (the per-line sanitize cap would amputate a trailing
+   * one) followed by a short sample of the dropped line. */
+  function truncatedLineHead(sample: string): string {
+    return `[+line truncated at ${MONITOR_PARTIAL_MAX_CHARS} chars without a newline; dropped until next newline] ${sample.slice(0, 200)}`;
+  }
+
   function observeMonitorChunk(record: BackgroundMonitorRecord, chunk: Buffer): void {
     const mon = monitors.get(record.id);
     if (!mon || isMonitorTerminal(record)) return;
     writeChunk(mon, chunk);
-    mon.partial += mon.decoder.write(chunk);
+    // The partial line buffer is capped: a newline-free flood must not grow
+    // it without bound. An overlong head is emitted truncated and the rest
+    // dropped until the next newline.
+    let text = mon.decoder.write(chunk);
+    let guard = 0;
+    while (text.length > 0 && guard++ < 32) {
+      if (mon.dropping) {
+        const newline = text.indexOf("\n");
+        if (newline === -1) return;
+        text = text.slice(newline + 1);
+        mon.dropping = false;
+      }
+      mon.partial += text;
+      text = "";
+      if (mon.partial.length <= MONITOR_PARTIAL_MAX_CHARS) break;
+      const rest = mon.partial.slice(MONITOR_PARTIAL_MAX_CHARS);
+      observeMonitorLine(record, truncatedLineHead(mon.partial.slice(0, MONITOR_PARTIAL_MAX_CHARS)));
+      if (isMonitorTerminal(record)) return;
+      mon.partial = "";
+      mon.dropping = true;
+      text = rest;
+    }
+    if (mon.dropping) return;
     const parts = mon.partial.split("\n");
     mon.partial = parts.pop() ?? "";
     for (const line of parts) observeMonitorLine(record, line);
@@ -771,13 +878,15 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       socket: undefined,
       decoder: new StringDecoder("utf8"),
       partial: "",
+      dropping: false,
       buffer: [],
+      lineTimes: [],
+      lastWakeAt: undefined,
       fd,
       written: 0,
       truncated: false,
       expiryTimer: undefined,
       batchTimer: undefined,
-      graceTimer: undefined,
       wakeBroken: false,
     };
     monitors.set(record.id, mon);
@@ -806,6 +915,8 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
           windowsHide: true,
         });
       } catch (error) {
+        if (mon.expiryTimer !== undefined) clearTimeout(mon.expiryTimer);
+        mon.expiryTimer = undefined;
         closeFd(mon);
         monitors.delete(record.id);
         record.status = "stopped";
@@ -814,8 +925,13 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       }
       mon.child = child;
       record.pid = child.pid;
+      // Only stdout is the event stream (Claude Code parity); stderr lands
+      // in the output file, each stream with its own accounting below.
       child.stdout?.on("data", (chunk: Buffer) => observeMonitorChunk(record, chunk));
-      child.stderr?.on("data", (chunk: Buffer) => observeMonitorChunk(record, chunk));
+      child.stderr?.on("data", (chunk: Buffer) => {
+        if (isMonitorTerminal(record)) return;
+        writeChunk(mon, chunk);
+      });
       try {
         child.unref();
       } catch {
@@ -831,19 +947,22 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         record.killReason = record.killReason ?? "stop";
         finalizeMonitor(record, "stopped", `command failed to start: ${sanitizeModelText(error.message, 200)}`);
       });
-      child.on("close", (code: number | null) => {
+      child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
         if (isMonitorTerminal(record)) return;
-        // A leftover partial line still counts: the command is done.
-        if (mon.partial.length > 0) observeMonitorLine(record, mon.partial);
-        mon.partial = "";
-        flushMonitorEvent(record);
-        finalizeMonitor(record, "stopped", `command exited (exit code ${code})`);
+        // finalizeMonitor flushes the leftover partial line and any waiting
+        // batch before the notice, so the counts line up.
+        const reason = signal !== null && signal !== undefined
+          ? `command exited (signal ${signal})`
+          : `command exited (exit code ${code})`;
+        finalizeMonitor(record, "stopped", reason);
       });
     } else {
       let socket: MonitorSocket;
       try {
         socket = createSocket(source.wsUrl as string, args.ws?.protocols);
       } catch (error) {
+        if (mon.expiryTimer !== undefined) clearTimeout(mon.expiryTimer);
+        mon.expiryTimer = undefined;
         closeFd(mon);
         monitors.delete(record.id);
         record.status = "stopped";
@@ -855,16 +974,12 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         if (isMonitorTerminal(record)) return;
         const data = event.data;
         if (typeof data !== "string") return;
-        try {
-          writeSync(fd, `${data}\n`);
-        } catch {
-          /* output file unavailable; events still stream */
-        }
+        // Frames share the output-file ceiling with command output.
+        writeChunk(mon, Buffer.from(`${data}\n`, "utf8"));
         observeMonitorLine(record, data);
       };
       const closedNotice = (): void => {
         if (isMonitorTerminal(record)) return;
-        flushMonitorEvent(record);
         finalizeMonitor(record, "stopped", "connection closed");
       };
       socket.onclose = closedNotice;
@@ -1017,6 +1132,15 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       }
     }
     monitors.clear();
+    for (const [child, timer] of reaping) {
+      clearTimeout(timer);
+      try {
+        killTreeForce(child);
+      } catch {
+        /* best effort on shutdown */
+      }
+    }
+    reaping.clear();
     if (running.length > 0) {
       console.error(`${LOG_PREFIX} session shutdown: stopping background task(s) ${running.join(", ")}`);
     }

@@ -541,3 +541,19 @@ describe("B1 review follow-ups", () => {
     expect(content).not.toContain('<img src="x">');
   });
 });
+
+describe("stop-then-quit", () => {
+  test("a stopped background task is dead after close inside the grace window", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi);
+    const result = await tools.get("BashBackground")!.execute("call-1", { command: "sleep 30" }, undefined, undefined, toolCtx());
+    const taskId = String((result.details as Record<string, unknown>).task_id);
+    const pid = service.store.get(taskId)?.pid;
+    expect(pid).toBeGreaterThan(0);
+    await tools.get("TaskStop")!.execute("call-2", { task_id: taskId }, undefined, undefined, toolCtx());
+    service.close();
+    expect(service.store.get(taskId)?.status).toBe("stopped");
+    await until(() => procGone(pid as number), 10000);
+    expect(procGone(pid as number)).toBe(true);
+  });
+});
