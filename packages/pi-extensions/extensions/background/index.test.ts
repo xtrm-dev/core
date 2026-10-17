@@ -561,7 +561,9 @@ describe("process exit hook (F2b)", () => {
     const closedFile = path.join(childDir, "closed");
     const outDir = path.join(childDir, "out");
     mkdirSync(outDir, { recursive: true });
-    const indexTs = path.join(process.cwd(), "extensions/background/index.ts");
+    // File-relative, never process.cwd(): CI runs the suite from the repo
+    // root while local runs use packages/pi-extensions (CORE-2352).
+    const indexTs = new URL("./index.ts", import.meta.url).pathname;
     const script = [
       `const { registerBackgroundExtension } = await import(${JSON.stringify(indexTs)});`,
       `const pi = { registerTool() {}, registerMessageRenderer() {}, registerCommand() {}, getSettings: () => ({}), sendMessage() {}, on() {} };`,
@@ -573,7 +575,7 @@ describe("process exit hook (F2b)", () => {
       `process.exit(0);`,
     ].join("\n");
     const { spawn } = await import("node:child_process");
-    const child = spawn("bun", ["-e", script], { cwd: process.cwd(), stdio: "ignore", detached: true });
+    const child = spawn("bun", ["-e", script], { cwd: childDir, stdio: "ignore", detached: true });
     child.unref();
     try {
       // The child closes (non-blocking) and exits at once; the 5 s sweep
