@@ -875,9 +875,9 @@ describe("SendMessage attachments (CORE-2437 I6)", () => {
 
 describe("SendMessage scoped routing (CORE-2437 I6)", () => {
   const scopedPi = () => [
-    { ...piSummary("s-me", "me"), workItem: { ref: "CORE-2437", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/home/dawid/dev/core" },
-    { ...piSummary("s-sib", "sibling"), workItem: { ref: "CORE-2435", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/home/dawid/dev/core" },
-    { ...piSummary("s-far", "faraway"), workItem: { ref: "XTRM-12", system: "substrate" }, repository: "github.com/xtrm-dev/xtrm", repositoryPath: "/home/dawid/dev/xtrm" },
+    { ...piSummary("s-me", "me"), workItem: { ref: "CORE-2437", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/repo/core" },
+    { ...piSummary("s-sib", "sibling"), workItem: { ref: "CORE-2435", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/repo/core" },
+    { ...piSummary("s-far", "faraway"), workItem: { ref: "XTRM-12", system: "substrate" }, repository: "github.com/xtrm-dev/xtrm", repositoryPath: "/repo/xtrm" },
     { ...piSummary("s-bare", "bare") },
   ];
 
