@@ -14,6 +14,7 @@ import xtrmUiExtension from "./extensions/xtrm-ui.ts";
 import xtpromptExtension from "./extensions/xtprompt.ts";
 import xtrmAgentHostExtension from "./extensions/xtrm-agent-host.ts";
 import xtrmPrimerExtension from "./extensions/xtrm-primer.ts";
+import backgroundExtension from "./extensions/background.ts";
 
 export type ManagedPiExtension = {
   readonly id: string;
@@ -34,6 +35,7 @@ const availableManagedPiExtensions: readonly ManagedPiExtension[] = [
   { id: "xtprompt", register: xtpromptExtension },
   { id: "xtrm-agent-host", register: xtrmAgentHostExtension },
   { id: "xtrm-primer", register: xtrmPrimerExtension },
+  { id: "background", register: backgroundExtension },
 ];
 
 const extensionsById = new Map(availableManagedPiExtensions.map((extension) => [extension.id, extension]));

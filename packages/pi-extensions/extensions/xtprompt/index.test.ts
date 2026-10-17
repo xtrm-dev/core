@@ -49,6 +49,7 @@ mock.module("typebox", () => ({
   Type: {
     Object: (shape: unknown) => ({ kind: "object", shape }),
     String: (opts: unknown) => ({ kind: "string", opts }),
+    Number: (opts: unknown) => ({ kind: "number", opts }),
     Boolean: (opts: unknown) => ({ kind: "boolean", opts }),
     Optional: (t: unknown) => ({ kind: "optional", t }),
   },

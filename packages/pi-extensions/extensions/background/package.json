@@ -1,0 +1,15 @@
+{
+  "name": "@xtrm/pi-background",
+  "version": "0.1.0",
+  "description": "Local background shell runs for Pi: BashBackground, TaskStop, one task notification wake on exit",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
