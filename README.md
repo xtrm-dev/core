@@ -178,7 +178,7 @@ It uses deterministic rules first and queries Jev (Typesafe System One Choice an
 - **Service knowledge:** points agents toward relevant service skills defined in `.xtrm/skills/<pack>/service-knowledge/service-registry.json`.
 - **Tool nudges:** gently steers recursive `grep` and ad-hoc `python3` invocations toward faster, indexed alternatives (`ast-grep`, `GitNexus`, and `python-kernel`).
 
-Suggestions appear as house cards: a dim purple box (`#8d7fe8`) with a `(● suggestion)` title, italic interior, and magenta-bold highlights on the tokens you act on (issue refs, `sb`/`bg_run`/`intercom` calls, file paths). Every injected block carries `<xtrm_context>` provenance so injected doctrine never blurs with the operator's own words. Suggestions are purely advisory, fail open, enforce per-scope cooldowns, log decisions to `~/.xtrm/substrate-suggest/log.jsonl`, and can be disabled with `--no-substrate-suggest` or `SUBSTRATE_SUGGEST=off`.
+Suggestions appear as house cards: a dim purple box (`#8d7fe8`) with a `(● suggestion)` title, italic interior, and magenta-bold highlights on the tokens you act on (issue refs, `sb`/`SendMessage`/`BashBackground` calls, file paths). Every injected block carries `<xtrm_context>` provenance so injected doctrine never blurs with the operator's own words. Suggestions are purely advisory, fail open, enforce per-scope cooldowns, log decisions to `~/.xtrm/substrate-suggest/log.jsonl`, and can be disabled with `--no-substrate-suggest` or `SUBSTRATE_SUGGEST=off`.
 
 ### `skill-suggest`
 

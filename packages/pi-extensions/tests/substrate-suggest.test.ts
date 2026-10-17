@@ -300,6 +300,29 @@ describe("CORE-2348 non-compact trailer", () => {
   });
 });
 
+describe("wait-guard monitor setters (CORE-2443 M1 first-party surface)", () => {
+  it("treats first-party background and waiting sends as wake seams", () => {
+    expect(isMonitorSetter("BashBackground", { command: "npm test" }, undefined)).toBe(true);
+    expect(isMonitorSetter("Monitor", { command: "npm test" }, undefined)).toBe(true);
+    expect(isMonitorSetter("SendMessage", { to: "w", message: "hi", expect_reply: true }, undefined)).toBe(true);
+    expect(isMonitorSetter("SendMessage", { to: "w", message: "hi", notify_when_idle: true }, undefined)).toBe(true);
+    expect(isMonitorSetter("Bash", { run_in_background: true }, undefined)).toBe(true);
+  });
+  it("rejects one-way sends and the retired tool names", () => {
+    expect(isMonitorSetter("SendMessage", { to: "w", message: "hi" }, undefined)).toBe(false);
+    expect(isMonitorSetter("bg_run", { command: "x" }, undefined)).toBe(false);
+    expect(isMonitorSetter("bg_delegate", { command: "x" }, undefined)).toBe(false);
+    expect(isMonitorSetter("process", { command: "x" }, undefined)).toBe(false);
+    expect(isMonitorSetter("intercom", { action: "send" }, undefined)).toBe(false);
+  });
+  it("keeps shell parking idioms and rejects foreground poll loops", () => {
+    expect(isMonitorSetter("bash", { command: "make watch &" }, undefined)).toBe(true);
+    expect(isMonitorSetter("bash", { command: "nohup ./srv &" }, undefined)).toBe(true);
+    expect(isMonitorSetter("bash", { command: "sleep 60; check" }, undefined)).toBe(false);
+    expect(isMonitorSetter("bash", {}, undefined)).toBe(false);
+  });
+});
+
 describe("provenance steer gates", () => {
   it("partitionTracked splits on the injected check; unknown means untracked", () => {
     const r = partitionTracked(["a.ts", "b.ts", "c.ts"], (f) => f !== "b.ts");

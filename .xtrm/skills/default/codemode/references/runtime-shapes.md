@@ -14,8 +14,8 @@ Pi releases differ. Two observed shapes (2026-10-13 observation; reconciled
   `tools.bash`/`tools.read` resolved to **plain strings**; `searchTools`,
   `describeTool`, `ALL_TOOLS` did **not** exist. Enumerate with
   `Object.keys(tools)` (Task*, ast_grep, bash, grep, find, ls, read, write,
-  edit, python, process, subagent/bg_*, specialist_*, fusion_*, intercom,
-  claude-link, MCP `mcp__server__tool` names, `agentrun`, `models`). Not
+  edit, python, BashBackground, Monitor, TaskStop, subagent, specialist_*, SendMessage,
+  ListAgents, MCP `mcp__server__tool` names, `agentrun`, `models`). Not
   reproducible from the 1.2.0 install; treat as a fallback shape, and probe
   before relying on either.
 - `models` classifiers: live-tested only in the older build (jev-1.13 paid → 402;

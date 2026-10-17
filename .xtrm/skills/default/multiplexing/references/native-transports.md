@@ -169,7 +169,7 @@ The transport injects the message into Pi as peer input:
 - idle Pi → starts a turn;
 - busy Pi → steers at Pi's safe delivery boundary.
 
-Delivery notices and the durable mailbox record what happened; a reply from Pi routes back through the same transport. **Do not send a second message for the same inbound message unless you intentionally want an additional message.**
+The transport acks delivery automatically from the real injection state — delivered, held or refused — but relays no content back (sendmessage.ts `ackForWakeState`, claude-transport/index.ts:169-180). To answer, the Pi model must call `SendMessage` itself; for an ask, pass `reply_to` with the inbound message id, which resolves the asker's pending ask (sendmessage.ts:629-643). **Do not send a second message for the same inbound message unless you intentionally want an additional message.**
 
 ### Bridge concurrency ceiling
 

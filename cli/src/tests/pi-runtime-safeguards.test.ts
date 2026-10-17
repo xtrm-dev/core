@@ -548,4 +548,99 @@ describe('pi runtime safeguards', () => {
       expect(await fs.readFile(globalPath, 'utf8')).toBe(text);
     });
   });
+
+  describe('removeRetiredM1Packages (CORE-2443)', () => {
+    it('removes every retired selector form from settings and installed dirs, with a backup', async () => {
+      const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'm1-agent');
+      const projectRoot = path.join(tempRoot, 'm1-project');
+      const npmIntercom = path.join(agentDir, 'npm', 'node_modules', 'pi-intercom');
+      const gitLink = path.join(agentDir, 'git', 'github.com', 'alonw0', 'pi-claude-link');
+      const extOverride = path.join(agentDir, 'extensions', 'pi-background-tasks');
+      await fs.ensureDir(npmIntercom);
+      await fs.ensureDir(gitLink);
+      await fs.ensureDir(extOverride);
+      await fs.outputJson(path.join(agentDir, 'settings.json'), {
+        theme: 'light',
+        packages: [
+          'npm:pi-gitnexus',
+          'npm:pi-intercom',
+          'npm:pi-background-tasks@2.0.0',
+          'npm:@aliou/pi-processes',
+          { source: 'git:github.com/alonw0/pi-claude-link#v0.1.0', extensions: ['index.ts'] },
+          { source: '/dev/core/packages/pi-extensions', extensions: ['a.ts'] },
+        ],
+      });
+      await fs.outputJson(path.join(projectRoot, '.pi', 'settings.json'), {
+        packages: ['npm:pi-intercom', 'npm:pi-ast-grep'],
+      });
+      const logs: string[] = [];
+
+      const result = await removeRetiredM1Packages(false, (message) => logs.push(message), agentDir, projectRoot);
+
+      expect(result.found).toBe(true);
+      expect(result.removed).toBe(true);
+      expect(result.removedPaths).toEqual(expect.arrayContaining([npmIntercom, gitLink, extOverride]));
+      expect(result.settingsFiles).toEqual(expect.arrayContaining([
+        path.join(agentDir, 'settings.json'),
+        path.join(projectRoot, '.pi', 'settings.json'),
+      ]));
+      expect(await fs.pathExists(npmIntercom)).toBe(false);
+      expect(await fs.pathExists(gitLink)).toBe(false);
+      expect(await fs.pathExists(extOverride)).toBe(false);
+      expect((await fs.readJson(path.join(agentDir, 'settings.json'))).packages).toEqual([
+        'npm:pi-gitnexus',
+        { source: '/dev/core/packages/pi-extensions', extensions: ['a.ts'] },
+      ]);
+      expect((await fs.readJson(path.join(projectRoot, '.pi', 'settings.json'))).packages).toEqual(['npm:pi-ast-grep']);
+      // Backed up once before the first write.
+      expect(await fs.pathExists(path.join(agentDir, 'settings.json.pre-m1-retire.bak'))).toBe(true);
+      expect(logs.join('\n')).toContain('Backed up');
+      expect(logs.join('\n')).toContain('Removed npm:pi-intercom');
+    });
+
+    it('never overwrites an existing backup', async () => {
+      const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'm1-bak-agent');
+      const settingsPath = path.join(agentDir, 'settings.json');
+      await fs.outputJson(settingsPath, { packages: ['npm:pi-intercom'] });
+      await fs.writeFile(`${settingsPath}.pre-m1-retire.bak`, 'operator backup', 'utf8');
+
+      await removeRetiredM1Packages(false, undefined, agentDir);
+
+      expect(await fs.readFile(`${settingsPath}.pre-m1-retire.bak`, 'utf8')).toBe('operator backup');
+      expect((await fs.readJson(settingsPath)).packages).toEqual([]);
+    });
+
+    it('reports in a dry run and writes nothing', async () => {
+      const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'm1-dry-agent');
+      const npmDir = path.join(agentDir, 'npm', 'node_modules', 'pi-intercom');
+      await fs.ensureDir(npmDir);
+      await fs.outputJson(path.join(agentDir, 'settings.json'), { packages: ['npm:pi-intercom'] });
+      const logs: string[] = [];
+
+      const result = await removeRetiredM1Packages(true, (message) => logs.push(message), agentDir);
+
+      expect(result).toEqual(expect.objectContaining({ found: true, removed: false, removedPaths: [] }));
+      expect(await fs.pathExists(npmDir)).toBe(true);
+      expect((await fs.readJson(path.join(agentDir, 'settings.json'))).packages).toEqual(['npm:pi-intercom']);
+      expect(await fs.pathExists(path.join(agentDir, 'settings.json.pre-m1-retire.bak'))).toBe(false);
+      expect(logs.join('\n')).toContain('would remove');
+    });
+
+    it('is a silent no-op when the retired packages are already gone', async () => {
+      const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'm1-clean-agent');
+      await fs.outputJson(path.join(agentDir, 'settings.json'), { packages: ['npm:pi-gitnexus'] });
+      const before = await fs.readFile(path.join(agentDir, 'settings.json'), 'utf8');
+      const logs: string[] = [];
+
+      const result = await removeRetiredM1Packages(false, (message) => logs.push(message), agentDir);
+
+      expect(result).toEqual(expect.objectContaining({ found: false, removed: false, settingsFiles: [], removedPaths: [] }));
+      expect(logs).toEqual([]);
+      expect(await fs.readFile(path.join(agentDir, 'settings.json'), 'utf8')).toBe(before);
+    });
+  });
 });

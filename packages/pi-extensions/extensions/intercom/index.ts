@@ -10,9 +10,10 @@
  * with `pi.sendMessage` as `customType: "intercom_message"` and are
  * acknowledged only after the injection succeeded (see ./delivery.ts).
  * The Claude side (./claude-transport) registers the Pi session in Claude's
- * registry behind an ownership check, so Pi sessions appear in Claude Code's
- * ListAgents with no competing writer post-M1 (a live foreign entry keeps
- * the transport off).
+ * registry behind an ownership check — off by default, enabled per machine
+ * by setting intercom.claudeTransport — so Pi sessions appear in Claude
+ * Code's ListAgents with no competing writer post-M1 (a live foreign entry
+ * keeps the transport off).
  *
  * This slice adds the model-only ListAgents tool (./roster.ts: this
  * session's name first, then one Claude-shaped row per Pi and Claude peer),
