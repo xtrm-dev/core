@@ -87,11 +87,16 @@ describe("tasks list snapshots", () => {
 
   test("every width holds every line; light and dark lay out identically", () => {
     const { light, dark } = themedPair();
-    void light;
-    void dark;
     const { store } = fixtureStore();
+    // F6: CJK, emoji and ANSI labels ride the same rows.
+    const cjk = store.create("make translations", "ビルド 翻訳 更新", "/tmp/d.log", "session");
+    const emoji = store.create("notify", "🚀 deploy gate", "/tmp/e.log", "session");
+    const ansi = store.create("evil", "evil\n\x1b[2J\x1b]0;pwned\x07done", "/tmp/f.log", "session");
+    void cjk;
+    void emoji;
+    void ansi;
     const rows = buildTasksRows(store.list(), store.listMonitors(), 1_700_000_000_000 + 12_500);
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(6);
     for (const width of WIDTHS) {
       for (const line of formatTasksList(rows, width)) {
         expect(visibleWidth(line)).toBeLessThanOrEqual(width);
@@ -100,6 +105,76 @@ describe("tasks list snapshots", () => {
     const at80 = formatTasksList(rows, 80);
     expect(at80.join("\n")).toContain("tasks");
     expect(at80.join("\n")).toContain("make build");
+    expect(at80.join("\n")).toContain("ビルド");
+    expect(at80.join("\n")).toContain("🚀");
+    // Labels contribute no escapes: pi-tui's own CSI ellipsis styling
+    // strips away, while a raw OSC/CSI remnant would survive stripping.
+    expect(stripStyling(at80.join("\n"))).not.toMatch(/\x1b/);
+    // Both themes run: the I7 cards for one task and one monitor row lay
+    // out identically once styling is stripped.
+    const taskCard = resolveTaskCard({
+      details: { task_id: "bg_2", status: "failed", summary: "f", output_file: "/tmp/x", elapsed: "1s" },
+    });
+    const monitorCard = resolveMonitorCard({
+      details: { monitor_id: "mn_1", kind: "event", event_index: 0, line_count: 1, lines: ["ビルド ok 🚀"] },
+    });
+    if (!taskCard || !monitorCard) throw new Error("fixture cards must resolve");
+    for (const width of WIDTHS) {
+      for (const theme of [light, dark]) {
+        for (const details of [taskCard, monitorCard]) {
+          for (const line of formatEventCard(details, theme, width).split("\n")) {
+            expect(visibleWidth(stripStyling(line))).toBeLessThanOrEqual(width);
+          }
+        }
+      }
+      const plain = (theme: EventTheme) =>
+        [taskCard, monitorCard].map((d) => formatEventCard(d, theme, width).split("\n").map(stripStyling).join("\n")).join("\n");
+      expect(plain(light)).toBe(plain(dark));
+    }
+  });
+});
+
+describe("tasks overlay snapshot", () => {
+  test("one overlay render holds the width and shows rows, hints and status", async () => {
+    const { TasksOverlay } = await import("./commands.ts");
+    let n = 0;
+    const store = createBackgroundStore({ now: () => 1_700_000_000_000, makeId: () => `bg_${(n += 1)}` });
+    store.create("sleep 30", "sleep 30", "/tmp/a.log", "session");
+    const failed = store.create("make build", "make build", "/tmp/b.log", "session");
+    failed.status = "failed";
+    failed.endedAt = 1_700_000_000_000 + 1000;
+    const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
+    const overlay = new TasksOverlay({
+      store,
+      theme,
+      close: () => {},
+      actions: {
+        async stop(id: string) {
+          return `Stopped ${id}.`;
+        },
+        async rerun(id: string) {
+          return `Reran ${id}.`;
+        },
+        async clear() {
+          return "Cleared 0 finished.";
+        },
+        async readOutput(id: string) {
+          const { readOutput } = await import("./commands.ts");
+          return readOutput(store, id);
+        },
+      },
+      now: () => 1_700_000_000_000 + 12_500,
+    });
+    const lines = overlay.render(80);
+    for (const line of lines) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(80);
+    }
+    const text = lines.join("\n");
+    expect(text).toContain("tasks");
+    expect(text).toContain("sleep 30");
+    expect(text).toContain("make build");
+    expect(text).toContain("enter output · s stop · r rerun · c clear · esc closes");
+    overlay.dispose();
   });
 });
 

@@ -478,6 +478,128 @@ describe("rerunTask", () => {
   });
 });
 
+describe("seen across the lifecycle (F2a)", () => {
+  test("a failure after markAllSeen still pins the indicator", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const started = await service.runBackground(
+      { command: "sleep 0.3; exit 3", description: "late failure" },
+      toolCtx(),
+    );
+    const taskId = String((started.details as Record<string, unknown>).task_id);
+    // The operator looks while the task still runs: nothing flips.
+    expect(service.store.get(taskId)?.status).toBe("running");
+    expect(service.store.markAllSeen()).toBe(0);
+    expect(service.store.get(taskId)?.seen).toBe(false);
+    await until(() => service.store.get(taskId)?.status === "failed");
+    // The fresh failure counts even though the operator looked earlier.
+    expect(service.store.get(taskId)?.seen).toBe(false);
+    const { summarizeBackground } = await import("./widget.ts");
+    expect(summarizeBackground(service.store.list(), service.store.listMonitors()).unseenFailures).toBe(1);
+  });
+});
+
+describe("rerun replays cwd and timeout (F5)", () => {
+  test("a rerun task respawns in the original cwd with the original timeout", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const first = await service.runBackground(
+      { command: "pwd", description: "whereami", timeout: 60000 },
+      { cwd: dir, sessionManager: { getSessionId: () => "f5" } },
+    );
+    const firstId = String((first.details as Record<string, unknown>).task_id);
+    expect(service.store.get(firstId)?.cwd).toBe(dir);
+    expect(service.store.get(firstId)?.timeoutMs).toBe(60000);
+    await until(() => service.store.get(firstId)?.status === "completed");
+    const rerun = await service.rerunTask(firstId);
+    const secondId = String((rerun.details as Record<string, unknown>).task_id);
+    expect(service.store.get(secondId)?.cwd).toBe(dir);
+    expect(service.store.get(secondId)?.timeoutMs).toBe(60000);
+    await until(() => service.store.get(secondId)?.status === "completed");
+    const output = readFileSync(service.store.get(secondId)?.outputFile as string, "utf8");
+    expect(output.trim()).toBe(dir);
+  });
+
+  test("a rerun monitor keeps its cwd and timeout", async () => {
+    const { pi } = fakePi();
+    const service = startService(pi);
+    const first = await service.runMonitor(
+      { command: "echo hi", description: "hi", timeout_ms: 45000 },
+      { cwd: dir, sessionManager: { getSessionId: () => "f5m" } },
+    );
+    const firstId = String((first.details as Record<string, unknown>).monitor_id);
+    expect(service.store.getMonitor(firstId)?.cwd).toBe(dir);
+    expect(service.store.getMonitor(firstId)?.timeoutMs).toBe(45000);
+    await service.stopTask(firstId);
+    const rerun = await service.rerunTask(firstId);
+    const secondId = String((rerun.details as Record<string, unknown>).monitor_id);
+    expect(service.store.getMonitor(secondId)?.cwd).toBe(dir);
+    expect(service.store.getMonitor(secondId)?.timeoutMs).toBe(45000);
+  });
+});
+
+describe("process exit hook (F2b)", () => {
+  test("installs at most one exit hook no matter how many services register", () => {
+    const { pi } = fakePi();
+    const before = process.listenerCount("exit");
+    const a = startService(pi);
+    const b = startService(pi);
+    const c = startService(pi);
+    // An earlier suite may have installed the process hook already; what
+    // matters is N services never add N listeners.
+    expect(process.listenerCount("exit") - before).toBeLessThanOrEqual(1);
+    a.close();
+    b.close();
+    c.close();
+    expect(process.listenerCount("exit") - before).toBeLessThanOrEqual(1);
+  });
+
+  test("a quit after close still SIGKILLs a TERM-trapping tree (child bun process)", { timeout: 30000 }, async () => {
+    const childDir = mkdtempSync(path.join(os.tmpdir(), "background-exit-child-"));
+    const pidFile = path.join(childDir, "child.pid");
+    const grandchildFile = path.join(childDir, "grandchild.pid");
+    const closedFile = path.join(childDir, "closed");
+    const outDir = path.join(childDir, "out");
+    mkdirSync(outDir, { recursive: true });
+    const indexTs = path.join(process.cwd(), "extensions/background/index.ts");
+    const script = [
+      `const { registerBackgroundExtension } = await import(${JSON.stringify(indexTs)});`,
+      `const pi = { registerTool() {}, registerMessageRenderer() {}, registerCommand() {}, getSettings: () => ({}), sendMessage() {}, on() {} };`,
+      `const svc = registerBackgroundExtension(pi, { outputDir: ${JSON.stringify(outDir)}, killGraceMs: 5000 });`,
+      `await svc.runBackground({ command: ${JSON.stringify(`echo $$ > ${pidFile}; trap "" TERM; sleep 60 & echo $! > ${grandchildFile}; wait`) } }, { cwd: ${JSON.stringify(childDir)}, sessionManager: { getSessionId: () => "exit-probe" } });`,
+      `while (true) { try { const t = (await import("node:fs")).readFileSync(${JSON.stringify(grandchildFile)}, "utf8").trim(); if (t) break; } catch {} await new Promise((r) => setTimeout(r, 20)); }`,
+      `svc.close();`,
+      `(await import("node:fs")).writeFileSync(${JSON.stringify(closedFile)}, "closed\\n");`,
+      `process.exit(0);`,
+    ].join("\n");
+    const { spawn } = await import("node:child_process");
+    const child = spawn("bun", ["-e", script], { cwd: process.cwd(), stdio: "ignore", detached: true });
+    child.unref();
+    try {
+      // The child closes (non-blocking) and exits at once; the 5 s sweep
+      // never fires. Only the synchronous exit hook can kill the tree.
+      await until(() => {
+        try {
+          return readFileSync(closedFile, "utf8").trim() === "closed";
+        } catch {
+          return false;
+        }
+      }, 15000);
+      const grandchildPid = Number(readFileSync(grandchildFile, "utf8").trim());
+      expect(grandchildPid).toBeGreaterThan(0);
+      await until(() => procGone(grandchildPid), 10000);
+      expect(procGone(grandchildPid)).toBe(true);
+    } finally {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* already gone */
+      }
+      rmSync(childDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("tasks command registration", () => {
   test("registers /tasks once, with no xtrm- slug and no tool-name collisions", () => {
     const { pi, tools, commands } = fakePi();

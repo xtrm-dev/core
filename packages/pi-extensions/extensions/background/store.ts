@@ -49,10 +49,15 @@ export interface BackgroundTaskRecord extends BackgroundTaskSnapshot {
   notified: boolean;
   /**
    * The operator opened /tasks (or the record's output) after it finished.
-   * A failure counts for the indicator until seen; auto-eviction only
-   * takes seen records.
+   * Only terminal records flip seen (F2a): a running record can never be
+   * "already seen" when it later fails. A failure counts for the
+   * indicator until seen.
    */
   seen: boolean;
+  /** Resolved cwd the command spawned in (replayed by rerun, F5). */
+  cwd: string;
+  /** Timeout in ms the run was armed with (replayed by rerun, F5). */
+  timeoutMs: number;
 }
 
 export interface BackgroundStoreOptions {
@@ -145,6 +150,10 @@ export interface BackgroundMonitorRecord {
   notified: boolean;
   /** Same seen rule as tasks: unseen failures pin the indicator. */
   seen: boolean;
+  /** Resolved cwd in command mode (replayed by rerun, F5); "" in ws mode. */
+  cwd: string;
+  /** Timeout in ms the monitor was armed with (replayed by rerun, F5). */
+  timeoutMs: number;
 }
 
 export interface MonitorEventFields {
@@ -222,11 +231,36 @@ export type StoreChangeListener = (event: StoreChangeEvent) => void;
 
 /**
  * Bound on retained finished records per kind (tasks, monitors). Past it,
- * the oldest *seen* finished records evict; unseen ones stay until the
- * operator sees or clears them, so a failure the indicator shows is never
- * silently dropped.
+ * the oldest finished records evict first (F4: every finished record is
+ * bounded, not only seen ones).
  */
 export const MAX_RETAINED_FINISHED = 50;
+
+/**
+ * Cap on retained *unseen* failures per kind. A failure the operator never
+ * saw pins the indicator, so unseen failures evict last — but they still
+ * evict past this cap, oldest first (an evicted unseen failure stops
+ * counting for the indicator; the bound is on memory, the count follows).
+ */
+export const MAX_RETAINED_UNSEEN_FAILURES = 20;
+
+/** Tasks that pin the ! part until seen: unexpected ends, not operator stops. */
+export function isTaskFailure(status: TaskStatus): boolean {
+  return status === "failed" || status === "timed_out";
+}
+
+/** Monitors that pin the ! part: firehose stops, not exits, stops or expiry. */
+export function isMonitorFailureStatus(status: MonitorStatus, killReason: MonitorKillReason): boolean {
+  return status === "stopped" && killReason === "firehose";
+}
+
+export function isUnseenFailureTask(record: Pick<BackgroundTaskRecord, "status" | "seen">): boolean {
+  return isTaskFailure(record.status) && !record.seen;
+}
+
+export function isUnseenFailureMonitor(record: Pick<BackgroundMonitorRecord, "status" | "killReason" | "seen">): boolean {
+  return isMonitorFailureStatus(record.status, record.killReason) && !record.seen;
+}
 
 export function isTaskTerminal(status: TaskStatus): boolean {
   return status !== "running";
@@ -237,7 +271,13 @@ export function isMonitorTerminalStatus(status: MonitorStatus): boolean {
 }
 
 export interface BackgroundStore {
-  create(command: string, description: string, outputFile: string, sessionId: string): BackgroundTaskRecord;
+  create(
+    command: string,
+    description: string,
+    outputFile: string,
+    sessionId: string,
+    init?: { cwd?: string; timeoutMs?: number },
+  ): BackgroundTaskRecord;
   get(id: string): BackgroundTaskRecord | undefined;
   list(): BackgroundTaskRecord[];
   createMonitor(init: {
@@ -247,6 +287,8 @@ export interface BackgroundStore {
     description: string;
     outputFile: string;
     sessionId: string;
+    cwd?: string;
+    timeoutMs?: number;
   }): BackgroundMonitorRecord;
   getMonitor(id: string): BackgroundMonitorRecord | undefined;
   listMonitors(): BackgroundMonitorRecord[];
@@ -290,22 +332,39 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
       }
     }
   };
-  /** Drop the oldest seen finished records past the bound; unseen stay. */
+  /**
+   * Bound every finished record (F4). First cap unseen failures at
+   * MAX_RETAINED_UNSEEN_FAILURES (oldest first; the indicator keeps
+   * counting what survives), then evict the oldest remaining finished
+   * records past MAX_RETAINED_FINISHED — unseen failures are exempt from
+   * this second pass, and one always exists to spare while the total is
+   * over bound (unseen are at most 20 of 50).
+   */
   const enforceFinishedBound = (kind: StoreRecordKind): void => {
-    const entries = kind === "task" ? tasks : monitors;
-    const terminal = (status: string): boolean =>
-      kind === "task" ? isTaskTerminal(status as TaskStatus) : isMonitorTerminalStatus(status as MonitorStatus);
-    const finished = [...entries.values()].filter((record) => terminal(record.status));
-    let over = finished.length - MAX_RETAINED_FINISHED;
-    if (over <= 0) return;
-    const victims = finished
-      .filter((record) => record.seen)
-      .sort((a, b) => (a.endedAt ?? a.startedAt) - (b.endedAt ?? b.startedAt));
-    for (const victim of victims) {
-      if (over <= 0) break;
+    const entries: Map<string, BackgroundTaskRecord | BackgroundMonitorRecord> =
+      kind === "task" ? tasks : monitors;
+    const unseenOf = (record: BackgroundTaskRecord | BackgroundMonitorRecord): boolean =>
+      kind === "task"
+        ? isUnseenFailureTask(record as BackgroundTaskRecord)
+        : isUnseenFailureMonitor(record as BackgroundMonitorRecord);
+    const terminal = (record: BackgroundTaskRecord | BackgroundMonitorRecord): boolean =>
+      kind === "task" ? isTaskTerminal((record as BackgroundTaskRecord).status) : isMonitorTerminalStatus((record as BackgroundMonitorRecord).status);
+    const byAge = (a: BackgroundTaskRecord | BackgroundMonitorRecord, b: BackgroundTaskRecord | BackgroundMonitorRecord): number =>
+      (a.endedAt ?? a.startedAt) - (b.endedAt ?? b.startedAt);
+    let finished = [...entries.values()].filter(terminal).sort(byAge);
+    let unseen = finished.filter(unseenOf);
+    while (unseen.length > MAX_RETAINED_UNSEEN_FAILURES) {
+      const victim = unseen.shift() as BackgroundTaskRecord | BackgroundMonitorRecord;
       entries.delete(victim.id);
-      over -= 1;
       emit({ kind, id: victim.id });
+    }
+    finished = [...entries.values()].filter(terminal).sort(byAge);
+    while (finished.length > MAX_RETAINED_FINISHED) {
+      const victim = finished.find((record) => !unseenOf(record));
+      if (!victim) break;
+      entries.delete(victim.id);
+      emit({ kind, id: victim.id });
+      finished = finished.filter((record) => record.id !== victim.id);
     }
   };
   return {
@@ -324,6 +383,10 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
       const record = tasks.get(id) ?? monitors.get(id);
       if (!record) return false;
       if (record.seen) return true;
+      // F2a: only terminal records flip. A running record marked "seen"
+      // would never show its later failure in the indicator.
+      const terminal = tasks.has(id) ? isTaskTerminal((record as BackgroundTaskRecord).status) : isMonitorTerminalStatus((record as BackgroundMonitorRecord).status);
+      if (!terminal) return true;
       record.seen = true;
       emit({ kind: tasks.has(id) ? "task" : "monitor", id });
       return true;
@@ -331,14 +394,14 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
     markAllSeen(): number {
       let flipped = 0;
       for (const [id, record] of tasks) {
-        if (!record.seen) {
+        if (!record.seen && isTaskTerminal(record.status)) {
           record.seen = true;
           flipped += 1;
           emit({ kind: "task", id });
         }
       }
       for (const [id, record] of monitors) {
-        if (!record.seen) {
+        if (!record.seen && isMonitorTerminalStatus(record.status)) {
           record.seen = true;
           flipped += 1;
           emit({ kind: "monitor", id });
@@ -365,7 +428,13 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
       }
       return { tasks: clearedTasks, monitors: clearedMonitors };
     },
-    create(command: string, description: string, outputFile: string, sessionId: string): BackgroundTaskRecord {
+    create(
+      command: string,
+      description: string,
+      outputFile: string,
+      sessionId: string,
+      init?: { cwd?: string; timeoutMs?: number },
+    ): BackgroundTaskRecord {
       let id = makeId();
       while (tasks.has(id)) id = makeId();
       const record: BackgroundTaskRecord = {
@@ -384,6 +453,8 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
         killReason: null,
         notified: false,
         seen: false,
+        cwd: init?.cwd ?? "",
+        timeoutMs: init?.timeoutMs ?? 0,
       };
       tasks.set(id, record);
       emit({ kind: "task", id });
@@ -402,6 +473,8 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
       description: string;
       outputFile: string;
       sessionId: string;
+      cwd?: string;
+      timeoutMs?: number;
     }): BackgroundMonitorRecord {
       let id = makeId();
       while (tasks.has(id) || monitors.has(id)) id = makeId();
@@ -424,6 +497,8 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
         killReason: null,
         notified: false,
         seen: false,
+        cwd: init.cwd ?? "",
+        timeoutMs: init.timeoutMs ?? 0,
       };
       monitors.set(id, record);
       emit({ kind: "monitor", id });

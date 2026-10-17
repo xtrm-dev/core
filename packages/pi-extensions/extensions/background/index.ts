@@ -159,6 +159,81 @@ function textResult(text: string, details: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
+function killTree(child: ChildProcess): void {
+  const pid = child.pid;
+  if (pid === undefined) {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already gone */
+    }
+    return;
+  }
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], { windowsHide: true });
+    return;
+  }
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+function killTreeForce(child: ChildProcess): void {
+  const pid = child.pid;
+  if (pid === undefined) {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+    return;
+  }
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], { windowsHide: true });
+    return;
+  }
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+/**
+ * Process groups that must die on process exit (F2b). close() moves every
+ * live, monitored and reaping child here; the unref'd sweep SIGKILLs them
+ * after the grace on reload, and the synchronous exit hook below covers a
+ * quit (process.kill is synchronous and works in exit handlers; no timers
+ * or async work may run there). One hook per process ever: modules reload,
+ * the hook must not leak a listener per service.
+ */
+const exitVictims = new Set<ChildProcess>();
+let exitHookInstalled = false;
+
+function installExitHook(): void {
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.on("exit", () => {
+    for (const child of exitVictims) {
+      try {
+        killTreeForce(child);
+      } catch {
+        /* already gone; exit handlers must never throw */
+      }
+    }
+  });
+}
+
 function shellForPlatform(): true | string {
   return process.platform === "win32" ? true : "/bin/sh";
 }
@@ -255,6 +330,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     };
     return { store, runBackground: refuse, runMonitor: refuse, stopTask: refuse, rerunTask: refuse, close: () => {} };
   }
+  installExitHook();
   const killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   const outputMaxBytes = options.outputMaxBytes ?? OUTPUT_MAX_BYTES;
   const now = options.now ?? Date.now;
@@ -351,66 +427,19 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }
   }
 
-  function killTree(child: ChildProcess): void {
-    const pid = child.pid;
-    if (pid === undefined) {
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        /* already gone */
-      }
-      return;
-    }
-    if (process.platform === "win32") {
-      spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], { windowsHide: true });
-      return;
-    }
-    try {
-      process.kill(-pid, "SIGTERM");
-    } catch {
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        /* already gone */
-      }
-    }
-  }
-
-  function killTreeForce(child: ChildProcess): void {
-    const pid = child.pid;
-    if (pid === undefined) {
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        /* already gone */
-      }
-      return;
-    }
-    if (process.platform === "win32") {
-      spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], { windowsHide: true });
-      return;
-    }
-    try {
-      process.kill(-pid, "SIGKILL");
-    } catch {
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        /* already gone */
-      }
-    }
-  }
-
   /**
    * Own a terminated child until it is dead: SIGTERM now, SIGKILL after the
    * grace. The child stays in the reaping set so close() can force-kill it
-   * even when no live map owns it anymore.
+   * even when no live map owns it anymore. Reaped children join the exit
+   * victims so a quit inside the grace window still kills them (F2b).
    */
   function reapLater(child: ChildProcess): void {
     if (reaping.has(child)) return;
+    exitVictims.add(child);
     killTree(child);
     const timer = setTimeout(() => {
       reaping.delete(child);
+      exitVictims.delete(child);
       try {
         killTreeForce(child);
       } catch {
@@ -478,6 +507,9 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     record.exitCode = exitCode;
     record.endedAt = now();
     record.pid = undefined;
+    // F2a: a fresh terminal state is never already seen. A failure that
+    // lands after the operator looked still pins the indicator.
+    record.seen = false;
     const handle = live.get(record.id);
     live.delete(record.id);
     if (handle) {
@@ -574,6 +606,9 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }
     handle.child = child;
     record.pid = child.pid;
+    record.cwd = cwd;
+    record.timeoutMs = timeoutMs;
+    exitVictims.add(child);
     child.stdout?.on("data", (chunk: Buffer) => writeChunk(handle, chunk));
     child.stderr?.on("data", (chunk: Buffer) => writeChunk(handle, chunk));
     try {
@@ -606,6 +641,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       settleFromExit(record, null);
     });
     child.on("close", (code: number | null) => {
+      exitVictims.delete(child);
       settleFromExit(record, code);
     });
 
@@ -694,6 +730,8 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     record.endedAt = now();
     record.pid = undefined;
     record.notified = true;
+    // F2a: like tasks, a fresh terminal state is never already seen.
+    record.seen = false;
     monitors.delete(record.id);
     if (mon) {
       if (mon.expiryTimer !== undefined) clearTimeout(mon.expiryTimer);
@@ -1011,6 +1049,9 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       }
       mon.child = child;
       record.pid = child.pid;
+      record.cwd = cwd;
+      record.timeoutMs = timeoutMs;
+      exitVictims.add(child);
       // Only stdout is the event stream (Claude Code parity); stderr lands
       // in the output file, each stream with its own accounting below.
       child.stdout?.on("data", (chunk: Buffer) => observeMonitorChunk(record, chunk));
@@ -1034,6 +1075,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         finalizeMonitor(record, "stopped", `command failed to start: ${sanitizeModelText(error.message, 200)}`);
       });
       child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
+        exitVictims.delete(child);
         if (isMonitorTerminal(record)) return;
         // finalizeMonitor flushes the leftover partial line and any waiting
         // batch before the notice, so the counts line up.
@@ -1146,8 +1188,12 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
    * with "stop it first" instead of doubling the command.
    */
   async function rerunTask(taskId: string): Promise<Record<string, unknown>> {
-    const rerunCtx = (sessionId: string): { cwd: string; sessionManager: { getSessionId: () => string } } => ({
-      cwd: process.cwd(),
+    // F5: rerun replays the original cwd and timeout, not the ambient ones.
+    const rerunCtx = (
+      sessionId: string,
+      cwd: string,
+    ): { cwd: string; sessionManager: { getSessionId: () => string } } => ({
+      cwd: cwd || process.cwd(),
       sessionManager: { getSessionId: () => sessionId },
     });
     const monitor = store.getMonitor(taskId);
@@ -1160,8 +1206,12 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
           ? { command: monitor.command }
           : { ws: { url: monitor.wsUrl ?? "", ...(monitor.wsProtocols ? { protocols: [...monitor.wsProtocols] } : {}) } };
       const started = (await runMonitor(
-        { ...source, description: monitor.description },
-        rerunCtx(monitor.sessionId),
+        {
+          ...source,
+          description: monitor.description,
+          ...(monitor.timeoutMs > 0 ? { timeout_ms: monitor.timeoutMs } : {}),
+        },
+        rerunCtx(monitor.sessionId, monitor.cwd),
       )) as { details?: { monitor_id?: string; output_file?: string } };
       const newId = started.details?.monitor_id ?? "";
       return textResult(`Reran monitor ${monitor.id} as ${newId}.`, {
@@ -1176,8 +1226,12 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       throw new Error(`${LOG_PREFIX} background task ${record.id} is still running; stop it first.`);
     }
     const started = (await runBackground(
-      { command: record.command, description: record.description },
-      rerunCtx(record.sessionId),
+      {
+        command: record.command,
+        description: record.description,
+        ...(record.timeoutMs > 0 ? { timeout: record.timeoutMs } : {}),
+      },
+      rerunCtx(record.sessionId, record.cwd),
     )) as { details?: { task_id?: string; output_file?: string } };
     const newId = started.details?.task_id ?? "";
     return textResult(`Reran background task ${record.id} as ${newId}.`, {
@@ -1228,6 +1282,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     for (const [child, timer] of reaping) {
       clearTimeout(timer);
       victims.push(child);
+      exitVictims.add(child);
     }
     reaping.clear();
     for (const [id, handle] of live) {
@@ -1264,6 +1319,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       if (killGraceMs > 0) {
         const sweep = setTimeout(() => {
           for (const child of victims) {
+            exitVictims.delete(child);
             try {
               killTreeForce(child);
             } catch {
@@ -1278,6 +1334,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         }
       } else {
         for (const child of victims) {
+          exitVictims.delete(child);
           try {
             killTreeForce(child);
           } catch {

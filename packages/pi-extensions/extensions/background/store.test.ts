@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   MAX_RETAINED_FINISHED,
+  MAX_RETAINED_UNSEEN_FAILURES,
   createBackgroundStore,
   type StoreChangeEvent,
 } from "./store.ts";
@@ -72,9 +73,12 @@ describe("background store seen state", () => {
     expect(monitor.seen).toBe(false);
   });
 
-  test("markSeen flips unseen to seen with one event; unknown ids read false", () => {
+  test("markSeen flips finished records with one event; running records never flip (F2a)", () => {
     const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
-    const task = store.create("sleep 1", "sleep 1", "", "session");
+    const running = store.create("sleep 1", "sleep 1", "", "session");
+    const done = store.create("true", "true", "", "session");
+    done.status = "completed";
+    done.endedAt = NOW + 1;
     const monitor = store.createMonitor({
       command: null,
       wsUrl: "ws://localhost:9",
@@ -84,28 +88,32 @@ describe("background store seen state", () => {
     });
     const events: StoreChangeEvent[] = [];
     store.subscribe((event) => events.push(event));
-    expect(store.markSeen(task.id)).toBe(true);
+    // A running record is found but never flips: its later failure must count.
+    expect(store.markSeen(running.id)).toBe(true);
+    expect(store.get(running.id)?.seen).toBe(false);
+    expect(store.markSeen(done.id)).toBe(true);
     expect(store.markSeen(monitor.id)).toBe(true);
     expect(store.markSeen("bg_missing")).toBe(false);
-    expect(store.get(task.id)?.seen).toBe(true);
-    expect(store.getMonitor(monitor.id)?.seen).toBe(true);
-    expect(events).toEqual([
-      { kind: "task", id: task.id },
-      { kind: "monitor", id: monitor.id },
-    ]);
+    expect(store.get(done.id)?.seen).toBe(true);
+    expect(store.getMonitor(monitor.id)?.seen).toBe(false);
+    expect(events).toEqual([{ kind: "task", id: done.id }]);
     // Marking an already-seen record is still found, but emits nothing new.
-    expect(store.markSeen(task.id)).toBe(true);
-    expect(events).toHaveLength(2);
+    expect(store.markSeen(done.id)).toBe(true);
+    expect(events).toHaveLength(1);
   });
 
-  test("markAllSeen flips every unseen record and returns the count", () => {
+  test("markAllSeen flips only terminal records and returns the count", () => {
     const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
-    const a = store.create("a", "a", "", "session");
-    store.create("b", "b", "", "session");
+    const running = store.create("sleep 1", "sleep 1", "", "session");
+    const done = store.create("true", "true", "", "session");
+    done.status = "completed";
+    done.endedAt = NOW + 1;
     const m = store.createMonitor({ command: "c", wsUrl: null, description: "c", outputFile: "", sessionId: "session" });
-    store.markSeen(a.id);
+    m.status = "expired";
+    m.endedAt = NOW + 2;
     expect(store.markAllSeen()).toBe(2);
-    expect(store.get(a.id)?.seen).toBe(true);
+    expect(store.get(running.id)?.seen).toBe(false);
+    expect(store.get(done.id)?.seen).toBe(true);
     expect(store.getMonitor(m.id)?.seen).toBe(true);
     expect(store.markAllSeen()).toBe(0);
   });
@@ -162,16 +170,31 @@ describe("background store eviction", () => {
     expect(store.get(ids[3])?.id).toBe(ids[3]);
   });
 
-  test("unseen finished records are never auto-evicted past the bound", () => {
+  test("every finished record is bounded; unseen failures keep a smaller cap (F4)", () => {
     const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
-    const ids: string[] = [];
-    for (let i = 0; i < MAX_RETAINED_FINISHED + 5; i += 1) {
-      ids.push(store.create(`cmd-${i}`, `cmd-${i}`, "", "session").id);
+    expect(MAX_RETAINED_UNSEEN_FAILURES).toBeLessThan(MAX_RETAINED_FINISHED);
+    // 500 unseen completed tasks: all bounded, none of them failures.
+    const completed: string[] = [];
+    for (let i = 0; i < 500; i += 1) {
+      const record = store.create(`cmd-${i}`, `cmd-${i}`, "", "session");
+      record.status = "completed";
+      record.endedAt = NOW + i;
+      store.changed("task", record.id);
+      completed.push(record.id);
     }
-    ids.forEach((id, i) => finishTask(store, id, false, NOW + i));
-    // A failure the operator never saw must survive for the indicator,
-    // even past the bound.
-    expect(store.list()).toHaveLength(MAX_RETAINED_FINISHED + 5);
+    void completed;
+    expect(store.list()).toHaveLength(MAX_RETAINED_FINISHED);
+    // Unseen failures survive up to their cap, then evict oldest-first.
+    const failures: string[] = [];
+    for (let i = 0; i < MAX_RETAINED_UNSEEN_FAILURES + 5; i += 1) {
+      failures.push(store.create(`fail-${i}`, `fail-${i}`, "", "session").id);
+    }
+    failures.forEach((id, i) => finishTask(store, id, false, NOW + 1_000_000 + i));
+    const kept = store.list().filter((record) => record.status === "failed");
+    expect(kept).toHaveLength(MAX_RETAINED_UNSEEN_FAILURES);
+    // The oldest unseen failures evicted; the newest survive and still count.
+    expect(store.get(failures[0])).toBeUndefined();
+    expect(store.get(failures[failures.length - 1])?.seen).toBe(false);
   });
 
   test("monitors share the same bound independently of tasks", () => {

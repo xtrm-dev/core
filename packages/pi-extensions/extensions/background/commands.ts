@@ -14,7 +14,7 @@
  * clears once the operator looked. Viewing one record's output marks it.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, statSync, watch } from "node:fs";
 import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { fitToWidth } from "./widget.ts";
 
@@ -97,6 +97,21 @@ function outputSizeExtra(outputFile: string): string {
   }
 }
 
+/**
+ * Operator-row label hygiene (F3): the description/command is
+ * model-controlled, so it renders sanitized — CSI and OSC sequences
+ * stripped, newlines collapsed to spaces, length bounded. A probe label
+ * carrying an OSC title or a CSI clear must arrive as inert text.
+ */
+const OSC_PATTERN = "\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$)";
+
+export function sanitizeLabel(value: string, maxLength = 120): string {
+  const noOsc = value.replace(new RegExp(OSC_PATTERN, "g"), "");
+  const singleLine = noOsc.replace(/[\r\n]+/g, " ");
+  const clean = sanitizeModelText(singleLine, maxLength);
+  return clean.length > 0 ? clean : "(unnamed)";
+}
+
 function taskRow(record: BackgroundTaskRecord, now: number): TasksRow {
   const size = outputSizeExtra(record.outputFile);
   return {
@@ -104,7 +119,7 @@ function taskRow(record: BackgroundTaskRecord, now: number): TasksRow {
     id: record.id,
     glyph: stateGlyph("task", record.status),
     state: record.status,
-    label: record.description || record.command || record.id,
+    label: sanitizeLabel(record.description || record.command || record.id),
     elapsed: formatElapsed((record.endedAt ?? now) - record.startedAt),
     extra: size,
   };
@@ -116,7 +131,7 @@ function monitorRow(record: BackgroundMonitorRecord, now: number): TasksRow {
     id: record.id,
     glyph: stateGlyph("monitor", record.status, record.killReason),
     state: record.status,
-    label: record.description || record.command || record.wsUrl || record.id,
+    label: sanitizeLabel(record.description || record.command || record.wsUrl || record.id),
     elapsed: formatElapsed((record.endedAt ?? now) - record.startedAt),
     extra: `${record.eventCount} events · ${record.lineCount} lines`,
   };
@@ -171,18 +186,144 @@ export interface OutputView {
   label: string;
   running: boolean;
   lines: string[];
-  totalLines: number;
+  /** Exact line count for small files; null when the tail window cut the head off. */
+  totalLines: number | null;
   truncated: boolean;
 }
 
 /** Tail lines shown per output view; the file itself is unbounded (64 MiB cap). */
 export const OUTPUT_TAIL_LINES = 50;
 
+/** Tail window for opening an output view: the head past this is never loaded. */
+export const OUTPUT_TAIL_WINDOW_BYTES = 256 * 1024;
+
+/** Cap per follower update: live lines stream in bounded chunks. */
+export const FOLLOW_MAX_BYTES_PER_UPDATE = 256 * 1024;
+
+/** Cap on lines kept per output view; older live lines drop off the top. */
+export const OUTPUT_VIEW_MAX_LINES = 500;
+
 /**
  * Tail one record's output file, bounded. Display-only: ANSI and C0
  * controls are stripped so a hostile child cannot redraw the operator's
- * terminal; the file on disk is untouched.
+ * terminal; the file on disk is untouched. Reads at most the last
+ * OUTPUT_TAIL_WINDOW_BYTES (never the whole 64 MiB file on the TUI
+ * thread); totalLines is exact for small files, null when the window cut
+ * the head off.
  */
+export interface TailResult {
+  lines: string[];
+  totalLines: number | null;
+  truncated: boolean;
+  endOffset: number;
+}
+
+export function readTailLines(outputFile: string, maxLines: number, windowBytes: number = OUTPUT_TAIL_WINDOW_BYTES): TailResult {
+  let size: number;
+  try {
+    size = statSync(outputFile).size;
+  } catch (error) {
+    throw new Error(`[background] could not read output file ${outputFile}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const start = Math.max(0, size - Math.max(1, windowBytes));
+  const fd = openSync(outputFile, "r");
+  try {
+    const buffer = Buffer.alloc(size - start);
+    let read = 0;
+    while (read < buffer.length) {
+      const n = readSync(fd, buffer, read, buffer.length - read, start + read);
+      if (n <= 0) break;
+      read += n;
+    }
+    const raw = buffer.subarray(0, read).toString("utf8");
+    const all = raw.split("\n");
+    if (all.length > 0 && all[all.length - 1] === "") all.pop();
+    const complete = start > 0 ? all.slice(1) : all;
+    const totalLines = start > 0 ? null : complete.length;
+    const tail = complete.slice(Math.max(0, complete.length - Math.max(1, maxLines)));
+    return {
+      lines: tail.map((line) => sanitizeModelText(line, Number.POSITIVE_INFINITY)),
+      totalLines,
+      truncated: totalLines === null || totalLines > tail.length,
+      endOffset: size,
+    };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Append-only follower for one output file (F1). Tracks a byte offset and
+ * a leftover partial line; each update reads only the new tail bytes
+ * (capped), never the whole file. A shrunk file resets to zero.
+ */
+export interface OutputFollower {
+  update(): string[];
+  readonly offset: number;
+  close(): void;
+}
+
+export function followOutputFile(
+  outputFile: string,
+  fromOffset: number,
+  opts: { maxBytesPerUpdate?: number } = {},
+): OutputFollower {
+  const cap = Math.max(1024, opts.maxBytesPerUpdate ?? FOLLOW_MAX_BYTES_PER_UPDATE);
+  const fd = openSync(outputFile, "r");
+  let offset = Math.max(0, fromOffset);
+  let leftover = "";
+  let closed = false;
+  return {
+    get offset() {
+      return offset;
+    },
+    update(): string[] {
+      if (closed) return [];
+      let size: number;
+      try {
+        size = statSync(outputFile).size;
+      } catch {
+        return [];
+      }
+      if (size < offset) {
+        offset = 0;
+        leftover = "";
+      }
+      if (size <= offset) return [];
+      const want = Math.min(size - offset, cap);
+      const buffer = Buffer.alloc(want);
+      let read = 0;
+      while (read < want) {
+        const n = readSync(fd, buffer, read, want - read, offset + read);
+        if (n <= 0) break;
+        read += n;
+      }
+      offset += read;
+      const text = leftover + buffer.subarray(0, read).toString("utf8");
+      const parts = text.split("\n");
+      leftover = parts.pop() ?? "";
+      return parts.map((line) => sanitizeModelText(line, Number.POSITIVE_INFINITY));
+    },
+    close(): void {
+      if (closed) return;
+      closed = true;
+      try {
+        closeSync(fd);
+      } catch {
+        /* already closed */
+      }
+    },
+  };
+}
+
+export function outputFileOf(store: Pick<BackgroundStore, "get" | "getMonitor">, id: string): string | null {
+  const task = store.get(id);
+  if (task) return task.outputFile || null;
+  const monitor = store.getMonitor(id);
+  if (monitor) return monitor.outputFile || null;
+  return null;
+}
+
 export async function readOutput(
   store: Pick<BackgroundStore, "get" | "getMonitor">,
   id: string,
@@ -192,25 +333,20 @@ export async function readOutput(
   const monitor = task ? undefined : store.getMonitor(id);
   if (!task && !monitor) throw new Error(`[background] unknown task ${JSON.stringify(id)}.`);
   const outputFile = (task ?? monitor)?.outputFile ?? "";
-  let raw: string;
+  let tail: TailResult;
   try {
-    raw = readFileSync(outputFile, "utf8");
+    tail = readTailLines(outputFile, maxLines);
   } catch (error) {
     throw new Error(`[background] could not read output file for ${id}: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const all = raw.split("\n");
-  if (all.length > 0 && all[all.length - 1] === "") all.pop();
-  const totalLines = all.length;
-  const tail = all.slice(Math.max(0, totalLines - Math.max(1, maxLines)));
-  const lines = tail.map((line) => sanitizeModelText(line, Number.POSITIVE_INFINITY));
   return {
     id,
     kind: task ? "task" : "monitor",
-    label: (task?.description ?? monitor?.description ?? "") || id,
+    label: sanitizeLabel((task?.description ?? monitor?.description ?? "") || id),
     running: task ? task.status === "running" : monitor?.status === "armed" || monitor?.status === "event",
-    lines,
-    totalLines,
-    truncated: totalLines > lines.length,
+    lines: tail.lines,
+    totalLines: tail.totalLines,
+    truncated: tail.truncated,
   };
 }
 
@@ -222,12 +358,16 @@ export interface TasksOverlayActions {
 }
 
 export interface TasksOverlayOptions {
-  store: Pick<BackgroundStore, "list" | "listMonitors" | "subscribe" | "markSeen">;
+  store: Pick<BackgroundStore, "get" | "getMonitor" | "list" | "listMonitors" | "subscribe" | "markSeen">;
   theme: { fg(color: string, text: string): string; bold(text: string): string };
   close: () => void;
   requestRender?: () => void;
   actions: TasksOverlayActions;
   now?: () => number;
+  /** Follow source for a running record; null means no live follow. Tests inject a fake. */
+  createFollower?: (id: string) => OutputFollower | null;
+  /** File watcher; tests inject a manual trigger. Defaults to node:fs watch. */
+  watchFile?: (path: string, listener: () => void) => { close(): void };
 }
 
 const OVERLAY_VISIBLE_ROWS = 16;
@@ -236,6 +376,8 @@ interface OutputState {
   view: OutputView;
   scroll: number;
   following: boolean;
+  follower: OutputFollower | null;
+  watcher: { close(): void } | null;
 }
 
 /** /tasks overlay: the list, an output/follow view, and the action keys. */
@@ -252,6 +394,7 @@ export class TasksOverlay {
   }
 
   dispose(): void {
+    this.teardownFollow();
     this.unsubscribe();
   }
 
@@ -267,21 +410,71 @@ export class TasksOverlay {
     }
   }
 
+  private defaultFollower(id: string): OutputFollower | null {
+    if (this.options.createFollower) return this.options.createFollower(id);
+    const file = outputFileOf(this.options.store, id);
+    if (!file) return null;
+    try {
+      return followOutputFile(file, statSync(file).size);
+    } catch {
+      return null;
+    }
+  }
+
+  private teardownFollow(): void {
+    if (!this.output) return;
+    this.output.following = false;
+    try {
+      this.output.watcher?.close();
+    } catch {
+      /* already closed */
+    }
+    try {
+      this.output.follower?.close();
+    } catch {
+      /* already closed */
+    }
+    this.output.watcher = null;
+    this.output.follower = null;
+  }
+
+  /** Drain new tail bytes into the view (F1); ends the follow at terminal state. */
+  private pumpFollow(id: string): void {
+    const state = this.mode === "output" && this.output?.view.id === id ? this.output : null;
+    if (!state || !state.following || !state.follower) return;
+    let fresh: string[] = [];
+    try {
+      fresh = state.follower.update();
+    } catch {
+      this.teardownFollow();
+      this.rerender();
+      return;
+    }
+    if (fresh.length > 0) {
+      state.view.lines.push(...fresh);
+      if (state.view.lines.length > OUTPUT_VIEW_MAX_LINES) {
+        state.view.lines.splice(0, state.view.lines.length - OUTPUT_VIEW_MAX_LINES);
+      }
+      if (typeof state.view.totalLines === "number") state.view.totalLines += fresh.length;
+      state.scroll = 0;
+    }
+    if (!this.isRunning(id)) this.teardownFollow();
+    this.rerender();
+  }
+
+  private isRunning(id: string): boolean {
+    const task = this.options.store.get(id);
+    if (task) return task.status === "running";
+    const monitor = this.options.store.getMonitor(id);
+    if (monitor) return monitor.status === "armed" || monitor.status === "event";
+    return false;
+  }
+
   private onStoreChange(): void {
+    // Store events still refresh a follow (a notice may carry the terminal
+    // state), but the file watcher below owns the live lines (F1).
     if (this.mode === "output" && this.output?.following) {
-      const id = this.output.view.id;
-      this.options.actions
-        .readOutput(id)
-        .then((view) => {
-          if (this.mode === "output" && this.output?.view.id === id) {
-            // Follow mode pins the tail: a live view always shows the newest lines.
-            this.output = { view, scroll: 0, following: view.running };
-            this.rerender();
-          }
-        })
-        .catch(() => {
-          /* a cleared record ends the follow below */
-        });
+      this.pumpFollow(this.output.view.id);
     }
     const count = this.rows().length;
     if (this.selected >= count) this.selected = Math.max(0, count - 1);
@@ -298,6 +491,7 @@ export class TasksOverlay {
   }
 
   private openOutput(row: TasksRow): void {
+    this.teardownFollow();
     this.mode = "output";
     this.output = null;
     this.status = `Loading ${row.id}…`;
@@ -306,7 +500,25 @@ export class TasksOverlay {
     this.options.actions.readOutput(row.id).then(
       (view) => {
         if (this.mode !== "output") return;
-        this.output = { view, scroll: 0, following: view.running };
+        const state: OutputState = { view, scroll: 0, following: false, follower: null, watcher: null };
+        this.output = state;
+        // F1: a running record streams its file. The watcher owns the live
+        // lines; the follower reads only new tail bytes, never the whole
+        // file. Either half failing degrades to a static snapshot.
+        if (view.running) {
+          try {
+            const follower = this.defaultFollower(row.id);
+            if (follower) {
+              state.follower = follower;
+              state.following = true;
+              const file = outputFileOf(this.options.store, row.id);
+              const watchFile = this.options.watchFile ?? ((path: string, listener: () => void) => watch(path, () => listener()));
+              if (file) state.watcher = watchFile(file, () => this.pumpFollow(row.id));
+            }
+          } catch {
+            this.teardownFollow();
+          }
+        }
         this.status = "";
         this.rerender();
       },
@@ -330,6 +542,7 @@ export class TasksOverlay {
   handleInput(data: string): void {
     if (this.mode === "output") {
       if (matchesKey(data, "escape") || matchesKey(data, "q") || matchesKey(data, "ctrl+c")) {
+        this.teardownFollow();
         this.mode = "list";
         this.output = null;
         this.status = "";
@@ -400,8 +613,19 @@ export class TasksOverlay {
         const scroll = Math.min(this.output?.scroll ?? 0, maxScroll);
         const visible = view.lines.slice(Math.max(0, total - OVERLAY_VISIBLE_ROWS - scroll), total - scroll || total);
         for (const line of visible) out.push(cut(line));
-        if (view.truncated) out.push(cut(theme.fg("dim", `… showing the last ${view.lines.length} of ${view.totalLines} lines`)));
-        if (view.running) out.push(cut(theme.fg("dim", "following — new lines appear live · esc back")));
+        if (view.truncated) {
+          out.push(
+            cut(
+              theme.fg(
+                "dim",
+                view.totalLines === null
+                  ? `… showing the last ${view.lines.length} lines (older lines not counted)`
+                  : `… showing the last ${view.lines.length} of ${view.totalLines} lines`,
+              ),
+            ),
+          );
+        }
+        if (this.output?.following) out.push(cut(theme.fg("dim", "following — new lines appear live · esc back")));
       }
       if (this.status && view) out.push(cut(theme.fg("dim", this.status)));
       out.push(cut(theme.fg("dim", "esc back · ↑↓ scroll")));
@@ -532,7 +756,13 @@ export async function runTasksCommand(args: string, ctx: TasksCommandCtx, deps: 
         const view = deps.readOutputView ? await deps.readOutputView(parsed.id) : await readOutput(deps.store, parsed.id);
         deps.store.markSeen(parsed.id);
         const lines = [...view.lines];
-        if (view.truncated) lines.push(`… showing the last ${view.lines.length} of ${view.totalLines} lines`);
+        if (view.truncated) {
+          lines.push(
+            view.totalLines === null
+              ? `… showing the last ${view.lines.length} lines (older lines not counted)`
+              : `… showing the last ${view.lines.length} of ${view.totalLines} lines`,
+          );
+        }
         ctx.ui.notify(lines.join("\n") || "(empty output)", "info");
       } catch (error) {
         ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");

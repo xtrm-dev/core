@@ -7,13 +7,17 @@ import {
   TASKS_USAGE,
   TasksOverlay,
   buildTasksRows,
+  followOutputFile,
   formatTasksList,
   formatTasksRow,
   parseTasksArgs,
   readOutput,
+  readTailLines,
   registerTasksCommand,
   runTasksCommand,
+  sanitizeLabel,
   stateGlyph,
+  type OutputFollower,
   type OutputView,
 } from "./commands.ts";
 import { createBackgroundStore } from "./store.ts";
@@ -227,6 +231,73 @@ describe("tasks overlay keys", () => {
     expect(overlay.render(80).join("\n")).toMatch(/Stopped bg_/);
     overlay.dispose();
   });
+
+  test("follow shows appended file lines live without reopening the file (F1)", async () => {
+    const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
+    const task = store.create("sleep 30", "sleep 30", "/tmp/follow-placeholder.log", "session");
+    const live: string[] = ["line1"];
+    const follower: OutputFollower = {
+      get offset() {
+        return 0;
+      },
+      update: () => live.splice(0),
+      close: () => {},
+    };
+    let listener: (() => void) | null = null;
+    const overlay = new TasksOverlay({
+      store,
+      theme,
+      close: () => {},
+      actions: {
+        async stop(id: string) {
+          return `Stopped ${id}.`;
+        },
+        async rerun(id: string) {
+          return `Reran ${id}.`;
+        },
+        async clear() {
+          return "Cleared 0 finished.";
+        },
+        async readOutput(id: string): Promise<OutputView> {
+          return { id, kind: "task", label: id, running: true, lines: [], totalLines: 0, truncated: false };
+        },
+      },
+      createFollower: () => follower,
+      watchFile: (_path: string, cb: () => void) => {
+        listener = cb;
+        return {
+          close: () => {
+            listener = null;
+          },
+        };
+      },
+      now: () => NOW,
+    });
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    overlay.handleInput("\r");
+    await tick();
+    // The initial view arrived through readOutput; the follower drains live lines.
+    listener?.();
+    await tick();
+    let rendered = overlay.render(80).join("\n");
+    expect(rendered).toContain("line1");
+    expect(rendered).toContain("following — new lines appear live");
+    // The probe appends: the same render shows the new line (F1's case).
+    live.push("line2");
+    listener?.();
+    await tick();
+    rendered = overlay.render(80).join("\n");
+    expect(rendered).toContain("line2");
+    // The task ends: the follow tears itself down.
+    task.status = "failed";
+    task.endedAt = NOW + 1;
+    store.changed("task", task.id);
+    await tick();
+    rendered = overlay.render(80).join("\n");
+    expect(rendered).not.toContain("following — new lines appear live");
+    overlay.dispose();
+    expect(listener).toBeNull();
+  });
 });
 
 describe("tasks text forms", () => {
@@ -307,6 +378,114 @@ describe("tasks text forms", () => {
     const { deps } = textDeps();
     registerTasksCommand(pi as never, { store: deps.store, stopTask: deps.stopTask, rerunTask: deps.rerunTask, readOutputView: deps.readOutputView });
     expect([...commands.keys()]).toEqual(["tasks"]);
+  });
+});
+
+describe("readTailLines", () => {
+  test("reads only the tail window of a big file and reports an unknown total", async () => {
+    const { writeFileSync, mkdtempSync, rmSync } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dir = mkdtempSync(path.join(os.tmpdir(), "tasks-tail-test-"));
+    try {
+      const file = path.join(dir, "big.log");
+      const lines = Array.from({ length: 20000 }, (_, i) => `line ${i} with padding xxxxxxxxxxxxxxxxxx`);
+      writeFileSync(file, `${lines.join("\n")}\n`);
+      const tail = readTailLines(file, 50, 8192);
+      expect(tail.lines).toHaveLength(50);
+      expect(tail.lines[tail.lines.length - 1]).toBe("line 19999 with padding xxxxxxxxxxxxxxxxxx");
+      expect(tail.totalLines).toBeNull();
+      expect(tail.truncated).toBe(true);
+      expect(tail.endOffset).toBeGreaterThan(8192);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("small files keep an exact total", async () => {
+    const { writeFileSync, mkdtempSync, rmSync } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dir = mkdtempSync(path.join(os.tmpdir(), "tasks-tail-small-"));
+    try {
+      const file = path.join(dir, "small.log");
+      writeFileSync(file, "a\nb\nc\n");
+      const tail = readTailLines(file, 50);
+      expect(tail.lines).toEqual(["a", "b", "c"]);
+      expect(tail.totalLines).toBe(3);
+      expect(tail.truncated).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("followOutputFile", () => {
+  test("drains only new tail bytes; a partial line waits for its newline (F1)", async () => {
+    const { writeFileSync, appendFileSync, mkdtempSync, rmSync } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dir = mkdtempSync(path.join(os.tmpdir(), "tasks-follow-test-"));
+    let follower: OutputFollower | null = null;
+    try {
+      const file = path.join(dir, "out.log");
+      writeFileSync(file, "line1\n");
+      follower = followOutputFile(file, 0);
+      expect(follower.update()).toEqual(["line1"]);
+      expect(follower.update()).toEqual([]);
+      appendFileSync(file, "line2\nline3\n");
+      expect(follower.update()).toEqual(["line2", "line3"]);
+      // A partial line is held back until its newline arrives.
+      appendFileSync(file, "half");
+      expect(follower.update()).toEqual([]);
+      appendFileSync(file, "-done\n");
+      expect(follower.update()).toEqual(["half-done"]);
+      expect(follower.offset).toBeGreaterThan(0);
+    } finally {
+      follower?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("one update never loads the whole file", async () => {
+    const { writeFileSync, mkdtempSync, rmSync } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dir = mkdtempSync(path.join(os.tmpdir(), "tasks-follow-cap-"));
+    let follower: OutputFollower | null = null;
+    try {
+      const file = path.join(dir, "out.log");
+      writeFileSync(file, `${"z".repeat(300 * 1024)}\n`);
+      follower = followOutputFile(file, 0, { maxBytesPerUpdate: 4096 });
+      const first = follower.update();
+      expect(first.join("\n").length).toBeLessThanOrEqual(8192);
+      // The rest streams on later updates; the offset always advances.
+      const before = follower.offset;
+      expect(before).toBeGreaterThan(0);
+      follower.update();
+      expect(follower.offset).toBeGreaterThan(before);
+    } finally {
+      follower?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("sanitizeLabel", () => {
+  test("an OSC title, a CSI clear and newlines arrive as inert one-line text (F3)", () => {
+    const label = sanitizeLabel("make build\n\x1b[2J\x1b]0;pwned\x07more");
+    expect(label).not.toContain("\n");
+    expect(label).not.toContain("\x1b");
+    expect(label).toContain("make build");
+    expect(label).toContain("more");
+  });
+
+  test("rows carry sanitized labels", () => {
+    const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
+    store.create("echo hi\n\x1b[2J", "echo hi\n\x1b[2J", "", "session");
+    const rows = buildTasksRows(store.list(), store.listMonitors(), NOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.label).not.toMatch(/[\n\x1b]/);
   });
 });
 

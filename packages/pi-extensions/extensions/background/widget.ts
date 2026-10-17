@@ -18,11 +18,14 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
+  isMonitorFailureStatus,
+  isTaskFailure,
   type BackgroundMonitorRecord,
   type BackgroundStore,
   type BackgroundTaskRecord,
-  type TaskStatus,
 } from "./store.ts";
+
+export { isTaskFailure };
 
 /** Widget slot key. Bare name: no xtrm- slug. */
 export const BACKGROUND_WIDGET_KEY = "background";
@@ -33,14 +36,9 @@ export interface BackgroundSummary {
   unseenFailures: number;
 }
 
-/** Tasks that pin the ! part until seen: unexpected ends, not operator stops. */
-export function isTaskFailure(status: TaskStatus): boolean {
-  return status === "failed" || status === "timed_out";
-}
-
 /** Monitors that pin the ! part: firehose stops, not exits, stops or expiry. */
 export function isMonitorFailure(record: Pick<BackgroundMonitorRecord, "status" | "killReason" | "seen">): boolean {
-  return record.status === "stopped" && record.killReason === "firehose" && !record.seen;
+  return isMonitorFailureStatus(record.status, record.killReason) && !record.seen;
 }
 
 export function summarizeBackground(
@@ -92,12 +90,7 @@ export function formatIndicator(summary: BackgroundSummary): string | null {
  * point and ellipsis styling may differ, so tests assert widths, never
  * the literal cut text.
  */
-/**
- * Engine-proof hard cut: the longest raw prefix plus "..." that fits per
- * visibleWidth. Uses only the width ruler (never segmentation), so it
- * converges on any engine; the loop always terminates on the shrinking
- * prefix, and "..." fits every width >= 8.
- */
+/** Repair primitive for fitToWidth below: longest fitting raw prefix plus "...". */
 export function hardCut(line: string, maxWidth: number): string {
   const width = Math.max(8, Math.floor(maxWidth) || 80);
   if (visibleWidth(line) <= width) return line;
