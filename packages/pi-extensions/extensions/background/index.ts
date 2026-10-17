@@ -14,31 +14,34 @@
  *
  * Lineage: the start/output-file/single-completion method is informed by
  * `pi-background-tasks` (ADOPTION-CREDITS.md: background-process UX subset
- * only). Nothing else is carried over: no bg_status, bg_logs, attestation,
- * fusion_*, bg_delegate or provider override. Method and envelope parity with
- * Claude Code; clean reimplementation otherwise.
+ * only). The message id and the wake delivery vocabulary come from the I1
+ * wake contract in @xtrm/contracts. Nothing else is carried over: no
+ * bg_status, bg_logs, attestation, fusion_*, bg_delegate or provider override.
+ * Method and envelope parity with Claude Code; clean reimplementation
+ * otherwise.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { stableWakeMessageId, type WakeDeliveryState } from "@xtrm/contracts";
 import { Text } from "@earendil-works/pi-tui";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { appendFileSync, createWriteStream, mkdirSync, readFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { Type, type Static } from "typebox";
 
 import {
   createBackgroundStore,
-  formatElapsed,
   formatTaskNotification,
-  stableBackgroundMessageId,
+  sanitizeModelText,
   TASK_STATES,
   type BackgroundStore,
   type BackgroundTaskRecord,
   type TaskStatus,
 } from "./store.ts";
 
-export { TASK_STATES, stableBackgroundMessageId, formatTaskNotification };
+export { TASK_STATES, formatTaskNotification, sanitizeModelText };
 export { createBackgroundStore };
 export type { BackgroundStore, BackgroundTaskRecord, TaskStatus };
 
@@ -52,11 +55,9 @@ export const LOG_PREFIX = "[background]";
 export const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 /** Claude Code background maximum: 2 h. Values above fail loudly. */
 export const MAX_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-
-/** Bounded preview of the output file inside the notification. */
-const PREVIEW_MAX_BYTES = 4096;
-const PREVIEW_MAX_LINES = 10;
-/** Grace between SIGTERM and SIGKILL for stop and timeout kills. */
+/** Ceiling for one task output file; writing stops here with one truncation line. */
+export const OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
+/** Grace between SIGTERM and SIGKILL for stop, timeout and shutdown kills. */
 const DEFAULT_KILL_GRACE_MS = 2000;
 
 const BashBackgroundParams = Type.Object({
@@ -90,37 +91,112 @@ function shellForPlatform(): true | string {
 export interface BackgroundServiceOptions {
   outputDir?: string;
   killGraceMs?: number;
+  outputMaxBytes?: number;
+  makeId?: () => string;
   now?: () => number;
 }
 
 export interface BackgroundService {
   store: BackgroundStore;
-  runBackground(args: BashBackgroundArgs, ctx?: { cwd?: string }): Promise<Record<string, unknown>>;
+  runBackground(args: BashBackgroundArgs, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }): Promise<Record<string, unknown>>;
   stopTask(taskId: string): Promise<Record<string, unknown>>;
   close(): void;
 }
 
+interface LiveHandle {
+  child: ChildProcess;
+  fd: number;
+  written: number;
+  truncated: boolean;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  graceTimer: ReturnType<typeof setTimeout> | undefined;
+}
+
 export function registerBackgroundExtension(pi: ExtensionAPI, options: BackgroundServiceOptions = {}): BackgroundService {
-  const outputDir = options.outputDir ?? os.tmpdir();
   const killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
+  const outputMaxBytes = options.outputMaxBytes ?? OUTPUT_MAX_BYTES;
   const now = options.now ?? Date.now;
-  const store = createBackgroundStore({ now, outputDir });
-  const live = new Map<string, { child: ChildProcess; timer: ReturnType<typeof setTimeout> | undefined; graceTimer: ReturnType<typeof setTimeout> | undefined }>();
+  const store = createBackgroundStore({ now, makeId: options.makeId, outputDir: options.outputDir ?? "" });
+  const live = new Map<string, LiveHandle>();
+  const sessionDirs = new Map<string, string>();
   let disposed = false;
 
-  function outputFileFor(id: string): string {
-    return path.join(outputDir, `background-${id}.log`);
+  function truncationLine(): string {
+    return `\n[background: output truncated at ${outputMaxBytes} bytes]\n`;
   }
 
-  function previewOf(outputFile: string): string[] {
+  /** Per-session output directory, mode 0700. Tests pass outputDir and skip this. */
+  function runDir(sessionId: string): string {
+    if (options.outputDir) {
+      mkdirSync(options.outputDir, { recursive: true });
+      return options.outputDir;
+    }
+    const cached = sessionDirs.get(sessionId);
+    if (cached) return cached;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const dir = path.join(os.tmpdir(), `background-${sessionId}-${randomBytes(4).toString("hex")}`);
+      try {
+        mkdirSync(dir, { mode: 0o700 });
+        sessionDirs.set(sessionId, dir);
+        return dir;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    }
+    throw new Error(`${LOG_PREFIX} could not create a session output directory.`);
+  }
+
+  /**
+   * Open the task output file 0600 with O_EXCL: an existing path (including a
+   * planted symlink) fails loudly instead of being followed or truncated.
+   */
+  function openOutputFile(dir: string, id: string): number {
+    return openSync(path.join(dir, `background-${id}.log`), "wx", 0o600);
+  }
+
+  function writeChunk(handle: LiveHandle, chunk: Buffer): void {
+    if (handle.truncated) return;
+    const room = outputMaxBytes - handle.written;
+    if (room <= 0) {
+      try {
+        writeSync(handle.fd, truncationLine());
+      } catch {
+        /* output file unavailable; the notification still carries the status */
+      }
+      handle.truncated = true;
+      return;
+    }
+    const slice = chunk.length > room ? chunk.subarray(0, room) : chunk;
     try {
-      const data = readFileSync(outputFile, "utf8");
-      const tail = data.length > PREVIEW_MAX_BYTES ? data.slice(data.length - PREVIEW_MAX_BYTES) : data;
-      const lines = tail.split("\n");
-      if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-      return lines.slice(-PREVIEW_MAX_LINES);
+      writeSync(handle.fd, slice);
     } catch {
-      return [];
+      handle.truncated = true;
+      return;
+    }
+    handle.written += slice.length;
+    if (chunk.length > room) {
+      try {
+        writeSync(handle.fd, truncationLine());
+      } catch {
+        /* output file unavailable; the notification still carries the status */
+      }
+      handle.truncated = true;
+    }
+  }
+
+  function closeFd(handle: LiveHandle): void {
+    try {
+      closeSync(handle.fd);
+    } catch {
+      /* already closed */
+    }
+  }
+
+  function sessionIdOf(ctx?: { sessionManager?: { getSessionId?: () => string } }): string {
+    try {
+      return ctx?.sessionManager?.getSessionId?.() ?? "session";
+    } catch {
+      return "session";
     }
   }
 
@@ -174,39 +250,42 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }
   }
 
+  function summaryFor(record: BackgroundTaskRecord): string {
+    const exit = record.exitCode === null ? "(no exit code)" : `(exit code ${record.exitCode})`;
+    return `Background command "${sanitizeModelText(record.description)}" ${record.status} ${exit}`;
+  }
+
   function notify(record: BackgroundTaskRecord): void {
     if (record.notified || disposed) return;
     record.notified = true;
-    const elapsedMs = (record.endedAt ?? now()) - record.startedAt;
-    const summary = `Background task ${JSON.stringify(record.description)} ${record.status} after ${formatElapsed(elapsedMs)}.`;
     const content = formatTaskNotification({
       taskId: record.id,
       status: record.status,
-      summary,
+      summary: summaryFor(record),
       outputFile: record.outputFile,
       exitCode: record.exitCode,
-      elapsedMs,
-      preview: previewOf(record.outputFile),
     });
+    const details = {
+      task_id: record.id,
+      status: record.status,
+      output_file: record.outputFile,
+      message_id: record.messageId,
+      exit_code: record.exitCode,
+      delivery: "delivered" as WakeDeliveryState,
+    };
     try {
       (pi as { sendMessage: (message: unknown, options: unknown) => void }).sendMessage(
-        {
-          customType: TASK_NOTIFICATION_TYPE,
-          content,
-          display: true,
-          details: {
-            task_id: record.id,
-            status: record.status,
-            output_file: record.outputFile,
-            message_id: record.messageId,
-            exit_code: record.exitCode,
-          },
-        },
+        { customType: TASK_NOTIFICATION_TYPE, content, display: true, details },
         { deliverAs: "followUp", triggerTurn: true },
       );
+      record.delivery = "delivered";
     } catch (error) {
-      record.notified = false;
-      console.error(`${LOG_PREFIX} failed to wake session for ${record.id}: ${error instanceof Error ? error.message : String(error)}`);
+      // One loud line, then the wake is recorded as undelivered: the session
+      // is gone, and a second injection attempt would only add noise.
+      record.delivery = "undelivered";
+      console.error(
+        `${LOG_PREFIX} task_notification for ${record.id} undelivered: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -215,10 +294,14 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     record.status = status;
     record.exitCode = exitCode;
     record.endedAt = now();
+    record.pid = undefined;
     const handle = live.get(record.id);
     live.delete(record.id);
-    if (handle?.timer !== undefined) clearTimeout(handle.timer);
-    if (handle?.graceTimer !== undefined) clearTimeout(handle.graceTimer);
+    if (handle) {
+      if (handle.timer !== undefined) clearTimeout(handle.timer);
+      if (handle.graceTimer !== undefined) clearTimeout(handle.graceTimer);
+      closeFd(handle);
+    }
     notify(record);
   }
 
@@ -243,7 +326,10 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     }, killGraceMs);
   }
 
-  async function runBackground(args: BashBackgroundArgs, ctx?: { cwd?: string }): Promise<Record<string, unknown>> {
+  async function runBackground(
+    args: BashBackgroundArgs,
+    ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } },
+  ): Promise<Record<string, unknown>> {
     const command = args.command;
     if (typeof command !== "string" || command.trim().length === 0) {
       throw new Error(`${LOG_PREFIX} BashBackground requires a non-empty command.`);
@@ -261,14 +347,27 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       timeoutMs = args.timeout;
     }
     if (disposed) throw new Error(`${LOG_PREFIX} background extension is disposed.`);
+    const sessionId = sessionIdOf(ctx);
     const description = args.description?.trim() ? args.description.trim() : command.length > 90 ? `${command.slice(0, 90)}...` : command;
-    mkdirSync(outputDir, { recursive: true });
-    const record = store.create(command, description, "");
-    const outputFile = outputFileFor(record.id);
+    const dir = runDir(sessionId);
+    const record = store.create(command, description, "", sessionId);
+    record.messageId = stableWakeMessageId(sessionId, record.id);
+
+    let fd: number;
+    try {
+      fd = openOutputFile(dir, record.id);
+    } catch (error) {
+      record.status = "failed";
+      record.endedAt = now();
+      throw new Error(
+        `${LOG_PREFIX} could not open output file for ${record.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const outputFile = path.join(dir, `background-${record.id}.log`);
     record.outputFile = outputFile;
 
     const cwd = ctx?.cwd && ctx.cwd.length > 0 ? ctx.cwd : process.cwd();
-    const stream = createWriteStream(outputFile, { flags: "a" });
+    const handle: LiveHandle = { child: undefined as never, fd, written: 0, truncated: false, timer: undefined, graceTimer: undefined };
     let child: ChildProcess;
     try {
       // Intentional: BashBackground IS a shell-execution tool (Claude Code Bash
@@ -283,15 +382,16 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         windowsHide: true,
       });
     } catch (error) {
-      stream.close();
+      // Single report: the throw below is the report; no wake follows.
+      closeFd(handle);
       record.status = "failed";
       record.endedAt = now();
-      appendFileSync(outputFile, `Failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
-      notify(record);
       throw error;
     }
-    child.stdout?.pipe(stream);
-    child.stderr?.pipe(stream);
+    handle.child = child;
+    record.pid = child.pid;
+    child.stdout?.on("data", (chunk: Buffer) => writeChunk(handle, chunk));
+    child.stderr?.on("data", (chunk: Buffer) => writeChunk(handle, chunk));
     try {
       child.unref();
     } catch {
@@ -300,31 +400,28 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
 
     const timer = setTimeout(() => {
       if (record.status !== "running") return;
-      const handle = live.get(record.id);
-      if (handle?.child.exitCode !== null && handle?.child.exitCode !== undefined) {
-        settleFromExit(record, handle.child.exitCode);
+      const current = live.get(record.id);
+      if (current && current.child.exitCode !== null && current.child.exitCode !== undefined) {
+        settleFromExit(record, current.child.exitCode);
         return;
       }
       record.killReason = "timeout";
       killTree(child);
       armGraceKill(record, child);
     }, timeoutMs);
-    live.set(record.id, { child, timer, graceTimer: undefined });
+    handle.timer = timer;
+    live.set(record.id, handle);
 
     child.on("error", (error: Error) => {
+      // Single report: the wake below is the report; nothing is thrown.
       try {
-        appendFileSync(outputFile, `Failed to start: ${error.message}\n`);
+        writeSync(fd, `Failed to start: ${error.message}\n`);
       } catch {
         /* output file unavailable; the notification still carries the status */
       }
       settleFromExit(record, null);
     });
     child.on("close", (code: number | null) => {
-      try {
-        stream.close();
-      } catch {
-        /* already closed */
-      }
       settleFromExit(record, code);
     });
 
@@ -379,20 +476,37 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
 
   function close(): void {
     disposed = true;
+    const running = [...live.keys()];
     for (const [id, handle] of live) {
       if (handle.timer !== undefined) clearTimeout(handle.timer);
       if (handle.graceTimer !== undefined) clearTimeout(handle.graceTimer);
+      // The shutdown kill owns the exit: the close event settles as stopped,
+      // not failed, and no wake follows (the session is going away).
+      const record = store.get(id);
+      if (record && record.status === "running") record.killReason = "stop";
       try {
-        killTreeForce(handle.child);
+        killTree(handle.child);
       } catch {
         /* best effort on shutdown */
       }
-      live.delete(id);
-      const record = store.get(id);
-      if (record && record.status === "running") {
-        record.status = "stopped";
-        record.endedAt = now();
-      }
+      const child = handle.child;
+      handle.graceTimer = setTimeout(() => {
+        try {
+          killTreeForce(child);
+        } catch {
+          /* best effort on shutdown */
+        }
+        const rec = store.get(id);
+        if (rec && rec.status === "running") {
+          rec.status = "stopped";
+          rec.endedAt = now();
+          rec.pid = undefined;
+        }
+        live.delete(id);
+      }, killGraceMs);
+    }
+    if (running.length > 0) {
+      console.error(`${LOG_PREFIX} session shutdown: stopping background task(s) ${running.join(", ")}`);
     }
   }
 
@@ -406,7 +520,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     promptGuidelines: [
       "Do not poll a background task; end the turn. The notification wakes you when the task exits, then read the output file.",
     ],
-    execute: async (_toolCallId: string, params: BashBackgroundArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string }) => {
+    execute: async (_toolCallId: string, params: BashBackgroundArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string } }) => {
       return (await runBackground(params, ctx)) as never;
     },
   });

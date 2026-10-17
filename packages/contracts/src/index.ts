@@ -23,6 +23,7 @@ export {
     type DecodeResult,
 } from './agent-protocol.js';
 export { diffTopology, applyTopologyUpdate, type TopologyDiff } from './topology-feed.js';
+export { stableWakeMessageId } from './wake.js';
 
 import { validate } from './validate.js';
 import type { ContractTypeMap } from './types.js';

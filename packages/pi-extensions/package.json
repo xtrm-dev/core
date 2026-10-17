@@ -44,6 +44,9 @@
     "typebox": "*",
     "@jaggerxtrm/substrate": "*"
   },
+  "dependencies": {
+    "@xtrm/contracts": "^0.13.0"
+  },
   "devDependencies": {
     "@earendil-works/pi-ai": "^1.0.0",
     "@earendil-works/pi-coding-agent": "^1.0.0",

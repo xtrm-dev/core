@@ -1,5 +1,5 @@
 {
-  "name": "@xtrm/pi-background",
+  "name": "xtrm-background",
   "version": "0.1.0",
   "description": "Local background shell runs for Pi: BashBackground, TaskStop, one task notification wake on exit",
   "type": "module",
