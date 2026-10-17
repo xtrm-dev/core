@@ -13,6 +13,7 @@ import skillSuggestExtension from "./extensions/skill-suggest.ts";
 import xtrmUiExtension from "./extensions/xtrm-ui.ts";
 import xtpromptExtension from "./extensions/xtprompt.ts";
 import xtrmAgentHostExtension from "./extensions/xtrm-agent-host.ts";
+import intercomExtension from "./extensions/intercom.ts";
 import xtrmPrimerExtension from "./extensions/xtrm-primer.ts";
 import backgroundExtension from "./extensions/background.ts";
 
@@ -34,6 +35,7 @@ const availableManagedPiExtensions: readonly ManagedPiExtension[] = [
   { id: "xtrm-ui", register: xtrmUiExtension },
   { id: "xtprompt", register: xtpromptExtension },
   { id: "xtrm-agent-host", register: xtrmAgentHostExtension },
+  { id: "intercom", register: intercomExtension },
   { id: "xtrm-primer", register: xtrmPrimerExtension },
   { id: "background", register: backgroundExtension },
 ];

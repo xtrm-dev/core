@@ -14,6 +14,14 @@ Connects every Pi session to the local XTRM agent host (`xt host start`, PRD xtr
 
 `message_update` and `tool_execution_update` are coalesced (50 ms). The `message` field is authoritative, and `assistantMessageEvent.partial` is dropped. Identity reads the `xt pi` pane options (`@agent_role`, `@agent_bead`, `@agent_parent_session`, `@agent_worktree`, `@agent_branch`), with `XTMUX_AGENT_ROLE` / `XTMUX_AGENT_BEAD` as fallbacks. The extension publishes `@xtrm_agent_session_id` on its pane so that child sessions can resolve `parentSessionId`. `XTRM_AGENT_LAUNCH=gui` marks a GUI launch, and `XTRM_AGENT_HOST=off` disables the bridge. When no host runs, the extension spawns no subprocess and prints nothing. It retries the socket with backoff (1 s → 30 s).
 
+## intercom
+
+Pi transport for intercom wakes (CORE-2433, XT-91 ADR rev 2 + amendment 1). Shares the agent-host connection: one listener per Pi session, keyed (pid, sessionId, generation), so an in-process child session (native specialist) can never replace its parent's listener.
+
+Inbound wakes inject with `pi.sendMessage` as `customType: "intercom_message"` — `{ triggerTurn: true, deliverAs: "followUp" }` when idle, queued `followUp` when busy (`steer` is reserved for priority-next wakes; the wake frame carries no priority marker). The model payload is a `<cross-session-message>` envelope with the payload reference plus the D2 provenance line; no ANSI, no timestamps in model text. The ack answers `accepted` only after the injection succeeded; an injection failure answers `failed` so the registry reports the wake `undelivered`. A redelivered message id injects once.
+
+No model tools here (ListAgents/SendMessage are later slices), no Claude transport, no card renderer beyond the plain fallback.
+
 ## sp-terminal-overlay
 
 Streaming terminal-style overlay for specialist/process monitoring commands.
