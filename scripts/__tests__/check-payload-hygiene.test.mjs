@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { findAbsolutePathLeaks, findForbiddenPackFiles, readTarballFile } from '../check-payload-hygiene.mjs';
+import { findBadTrackedSymlinks, findAbsolutePathLeaks, findForbiddenPackFiles, readTarballFile } from '../check-payload-hygiene.mjs';
 
 test('flags forbidden packed paths', () => {
   const hits = findForbiddenPackFiles([
@@ -61,6 +61,27 @@ test('reads large tarball files without buffer exhaustion', async () => {
 
     const content = readTarballFile(tarballPath, 'big.txt');
     assert.equal(content.length, 2 * 1024 * 1024 + 1);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('flags tracked symlinks that point outside the repo or dangle, passes in-repo ones', async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-symlink-test-'));
+  try {
+    const repo = path.join(tempDir, 'repo');
+    await fs.mkdir(path.join(repo, 'bin'), { recursive: true });
+    await fs.writeFile(path.join(repo, 'real.js'), '');
+    await fs.symlink('../real.js', path.join(repo, 'bin', 'ok'));
+    await fs.symlink('../../lib/node_modules/x/cli.js', path.join(repo, 'bin', 'outside'));
+    await fs.symlink('../missing.js', path.join(repo, 'bin', 'dangling'));
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+
+    assert.deepEqual(findBadTrackedSymlinks(repo).sort((a, b) => a.filePath.localeCompare(b.filePath)), [
+      { filePath: 'bin/dangling', reason: 'dangling target' },
+      { filePath: 'bin/outside', reason: 'target outside repo' },
+    ]);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
