@@ -13,11 +13,11 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { t } from '../utils/theme.js';
-import { runPiRuntimeSync, type PiSyncResult } from '../core/pi-runtime.js';
+import { runPiRuntimeSync, resolvePiAgentDir, type PiSyncResult } from '../core/pi-runtime.js';
 import { isPiInstalled, isPnpmInstalled } from '../core/machine-bootstrap.js';
 import { printGlobalPromptSyncSummary, syncGlobalPrompts } from '../core/global-prompt-sync.js';
 
-const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+// CORE-2412: never capture PI_AGENT_DIR at import — resolve lazily per call.
 
 function ensurePnpm(dryRun: boolean): void {
     if (isPnpmInstalled()) {
@@ -116,7 +116,8 @@ export async function runPiInstall(
 
     // Detect unconfigured Pi — nudge to run setup
     const configFiles = ['models.json', 'auth.json', 'settings.json'];
-    const missingConfig = configFiles.filter(f => !require('fs').existsSync(path.join(PI_AGENT_DIR, f)));
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `f` is a closed package-owned allowlist; agent dir is the operator's own Pi agent dir.
+    const missingConfig = configFiles.filter(f => !require('fs').existsSync(path.join(resolvePiAgentDir(), f)));
     if (missingConfig.length > 0) {
         console.log(kleur.yellow(`\n  ⚠ Pi is not fully configured (missing: ${missingConfig.join(', ')})`));
         console.log(kleur.yellow('    Run: xt pi setup   to complete first-time configuration'));

@@ -22,6 +22,8 @@ async function auditProject() {
     return auditSettings({ scope: 'project', projectRoot, home });
 }
 
+let previousAgentDir: string | undefined;
+
 beforeEach(async () => {
     home = await fs.mkdtemp(path.join(os.tmpdir(), 'xt-settings-fix-'));
     projectRoot = path.join(home, 'dev', 'demo');
@@ -29,11 +31,15 @@ beforeEach(async () => {
     await fs.ensureDir(agentDir);
     await fs.ensureDir(path.join(projectRoot, '.pi'));
     await fs.writeJson(path.join(agentDir, 'settings.json'), { packages: [PKG] });
+    // CORE-2412: auditSettings prefers PI_AGENT_DIR over <home>/.pi/agent.
+    previousAgentDir = process.env.PI_AGENT_DIR;
+    process.env.PI_AGENT_DIR = agentDir;
 });
 
 afterEach(async () => {
     await fs.remove(home);
-    delete process.env.PI_AGENT_DIR;
+    if (previousAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+    else process.env.PI_AGENT_DIR = previousAgentDir;
 });
 
 describe('applySettingsFixes', () => {

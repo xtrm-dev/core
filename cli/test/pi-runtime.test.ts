@@ -16,6 +16,15 @@ import { cleanupConflictingPiPackageSettings, inventoryPiRuntime, executePiSync,
 const REAL_PATH = process.env.PATH;
 let stubBinDir = '';
 let stubLog = '';
+// CORE-2412: this suite calls updatePiSettings(projectRoot) without an
+// explicit agentDir, so the global side (ensureGlobalDeclaresExtensionPackage)
+// would hit the operator's real ~/.pi/agent/settings.json unless PI_AGENT_DIR
+// is sandboxed. Lazy resolvePiAgentDir() reads this per call (no import-time
+// capture), so setting it here isolates the writer. This was the 2026-10-17
+// 02:14:18 rewrite.
+let sandboxAgentDir = '';
+let previousAgentDir: string | undefined;
+let previousCodingAgentDir: string | undefined;
 
 function createPiStub(): { binDir: string; log: string } {
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-runtime-stub-'));
@@ -45,6 +54,11 @@ beforeEach(() => {
     // Prepend AFTER vitest has put node_modules/.bin first, so the stub wins
     // over the real `pi` that ships with the SDK.
     process.env.PATH = `${stubBinDir}${path.delimiter}${process.env.PATH ?? ''}`;
+    previousAgentDir = process.env.PI_AGENT_DIR;
+    previousCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
+    sandboxAgentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-runtime-agent-'));
+    process.env.PI_AGENT_DIR = sandboxAgentDir;
+    process.env.PI_CODING_AGENT_DIR = sandboxAgentDir;
 });
 
 afterEach(() => {
@@ -53,6 +67,12 @@ afterEach(() => {
     if (stubBinDir) fs.removeSync(stubBinDir);
     stubBinDir = '';
     stubLog = '';
+    if (previousAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+    else process.env.PI_AGENT_DIR = previousAgentDir;
+    if (previousCodingAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousCodingAgentDir;
+    if (sandboxAgentDir) fs.removeSync(sandboxAgentDir);
+    sandboxAgentDir = '';
 });
 
 async function makeExtension(baseDir: string, name: string, extraFiles: Record<string, string> = {}): Promise<void> {

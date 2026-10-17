@@ -26,6 +26,9 @@ vi.mock('node:child_process', () => ({ spawnSync: spawnSyncMock }));
 
 vi.mock('../core/pi-runtime.js', () => ({
   runPiRuntimeSync: runPiRuntimeSyncMock,
+  // CORE-2412: pi-install.ts resolves the agent dir lazily; the mock must
+  // provide it so runPiInstall never touches the real ~/.pi/agent.
+  resolvePiAgentDir: () => process.env.PI_AGENT_DIR ?? '/tmp/pi-agent-test',
 }));
 
 vi.mock('../core/global-prompt-sync.js', () => ({

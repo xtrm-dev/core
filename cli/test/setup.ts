@@ -26,6 +26,33 @@ const guardedTrees = [
   path.join(realHome, '.xtrm', 'skills', 'default'),
 ];
 
+// CORE-2412: the CLI suite must never touch the operator's real home.
+// Snapshot the two load-bearing settings files before any test runs and
+// fail the suite if a test rewrites them. The writer on 2026-10-17 was
+// cli/test/pi-runtime.test.ts via updatePiSettings →
+// ensureGlobalDeclaresExtensionPackage, which resolved PI_AGENT_DIR once at
+// import time (cli/src/core/pi-runtime.ts:124) before the test set any env.
+const guardedFiles = [
+  path.join(realHome, '.pi', 'agent', 'settings.json'),
+  path.join(realHome, '.claude', 'settings.json'),
+];
+
+function fileSnapshot(file: string): string {
+  try {
+    const stat = fsSync.statSync(file);
+    const content = fsSync.readFileSync(file);
+    const hash = crypto.createHash('sha256').update(content).digest('hex');
+    return `${stat.mtimeMs}:${stat.size}:${hash}`;
+  } catch {
+    return 'missing';
+  }
+}
+
+const initialFileSnapshots = new Map<string, string>();
+for (const file of guardedFiles) {
+  initialFileSnapshots.set(file, fileSnapshot(file));
+}
+
 async function treeHash(dir: string): Promise<string> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -72,7 +99,38 @@ async function assertRealHomeUntouched(): Promise<void> {
       );
     }
   }
+  for (const file of guardedFiles) {
+    const now = fileSnapshot(file);
+    const initial = initialFileSnapshots.get(file) ?? 'missing';
+    if (now !== initial) {
+      initialFileSnapshots.set(file, now);
+      throw new Error(
+        `test setup: real user's ${file} was modified during a test `
+        + `(snapshot ${initial.slice(0, 24)} -> ${now.slice(0, 24)}). `
+        + `This is the CORE-2412 class of leak (2026-10-17 rewrite of `
+        + `~/.pi/agent/settings.json via import-time PI_AGENT_DIR). `
+        + `Sandbox HOME/PI_AGENT_DIR/CLAUDE_CONFIG_DIR in this test's beforeEach, `
+        + `or rely on the suite sandbox in cli/test/setup.ts. `
+        + `Never write the operator's real ~/.pi/agent/settings.json.`,
+      );
+    }
+  }
 }
+
+// CORE-2412: isolate agent dir and HOME per test file. This setup file runs
+// before every test file, so exporting a sandbox HOME/PI_AGENT_DIR/
+// CLAUDE_CONFIG_DIR here keeps the whole suite off the operator's real
+// ~/.pi, ~/.claude and ~/.xtrm even when a single test forgets its own
+// sandbox. Per-test sandboxes (beforeEach mkdtemp) still win where present;
+// this is the backstop, not a replacement.
+const sandboxHome = fsSync.mkdtempSync(path.join(tempRoot, 'xtrm-cli-home-'));
+fsSync.mkdirSync(path.join(sandboxHome, '.pi', 'agent'), { recursive: true });
+fsSync.mkdirSync(path.join(sandboxHome, '.claude'), { recursive: true });
+fsSync.mkdirSync(path.join(sandboxHome, '.xtrm'), { recursive: true });
+process.env.HOME = sandboxHome;
+process.env.PI_AGENT_DIR = path.join(sandboxHome, '.pi', 'agent');
+process.env.PI_CODING_AGENT_DIR = process.env.PI_AGENT_DIR;
+process.env.CLAUDE_CONFIG_DIR = path.join(sandboxHome, '.claude');
 
 // A stale /tmp/.git makes git treat /tmp as a project root. FAIL-CLOSED guard
 // (exact-06ca security): the test setup must never MUTATE the host — it
@@ -103,6 +161,22 @@ delete process.env.XTRM_GLOBAL_SKILLS;
 beforeEach(() => {
   delete process.env.XTRM_GLOBAL_HOOKS;
   delete process.env.XTRM_GLOBAL_SKILLS;
+  // Backstop: a test that restores the real HOME (or unsets the sandbox)
+  // goes straight back to the sandbox. Per-test temp HOME dirs are left
+  // alone — only the real home is forbidden.
+  if (!process.env.HOME || process.env.HOME === realHome) {
+    process.env.HOME = sandboxHome;
+  }
+  const sandboxAgent = path.join(sandboxHome, '.pi', 'agent');
+  if (!process.env.PI_AGENT_DIR || process.env.PI_AGENT_DIR === path.join(realHome, '.pi', 'agent')) {
+    process.env.PI_AGENT_DIR = sandboxAgent;
+  }
+  if (!process.env.PI_CODING_AGENT_DIR || process.env.PI_CODING_AGENT_DIR === path.join(realHome, '.pi', 'agent')) {
+    process.env.PI_CODING_AGENT_DIR = process.env.PI_AGENT_DIR;
+  }
+  if (!process.env.CLAUDE_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR === path.join(realHome, '.claude')) {
+    process.env.CLAUDE_CONFIG_DIR = path.join(sandboxHome, '.claude');
+  }
   return assertNoTmpGitPollution();
 });
 afterEach(async () => {

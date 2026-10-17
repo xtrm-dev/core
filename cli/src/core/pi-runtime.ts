@@ -121,7 +121,23 @@ export function resolveManagedPiCoreSourceDir(pkgRoot: string = resolvePkgRoot()
     ]);
 }
 
-const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+/**
+ * CORE-2412: agent-dir resolution must be lazy. The previous
+ * `const PI_AGENT_DIR = ...` captured the env at import time, so a test that
+ * set PI_AGENT_DIR in beforeEach still wrote to the operator's real
+ * ~/.pi/agent/settings.json via default params and direct uses.
+ * All defaults and direct uses now go through resolvePiAgentDir().
+ */
+export function resolvePiAgentDir(env: NodeJS.ProcessEnv = process.env): string {
+    // NB: PI_AGENT_DIR only — not PI_CODING_AGENT_DIR. The launch dir
+    // (resolvePiLaunchAgentDir) honors both, but settings writers must keep
+    // PI_AGENT_DIR semantics so a test that sandboxes PI_AGENT_DIR alone
+    // is not shadowed by a suite-level PI_CODING_AGENT_DIR (CORE-2412).
+    return env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+}
+
+// Back-compat export; do not use in new defaults — it is still import-time.
+export const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
 
 /**
  * Agent dir the launched Pi will actually read: Pi's own PI_CODING_AGENT_DIR
@@ -149,7 +165,7 @@ export async function syncManagedPiThemes(
     sourceDir: string | null,
     dryRun: boolean,
     log?: (message: string) => void,
-    themeDir = path.join(PI_AGENT_DIR, 'themes'),
+    themeDir = path.join(resolvePiAgentDir(), 'themes'),
 ): Promise<boolean> {
     if (!sourceDir || !await fs.pathExists(sourceDir)) return false;
 
@@ -472,7 +488,7 @@ export interface DuplicatePiPackageProvider {
 
 export async function findDeclaredDuplicatePiPackageProvider(
     pkgId: string,
-    agentDir: string = PI_AGENT_DIR,
+    agentDir: string = resolvePiAgentDir(),
     projectRoots?: string | readonly string[],
 ): Promise<DuplicatePiPackageProvider | null> {
     // Both roots are chosen by xt (the agent dir, the repo being updated) and
@@ -863,7 +879,7 @@ function installPiPackageWithFallback(
 export async function ensureAlwaysGlobalPiPackages(
     dryRun: boolean,
     log?: (message: string) => void,
-    agentDir: string = PI_AGENT_DIR,
+    agentDir: string = resolvePiAgentDir(),
     installRunner: PiPackageInstallRunner = runPiPackageInstall,
     npmRootDir?: string | null,
     installedPackageIds?: readonly string[],
@@ -906,7 +922,7 @@ export async function ensureAlwaysGlobalPiPackages(
 export async function assureXtManagedPiPackages(
     dryRun: boolean,
     log?: (message: string) => void,
-    agentDir: string = PI_AGENT_DIR,
+    agentDir: string = resolvePiAgentDir(),
     installRunner: PiPackageInstallRunner = runPiPackageInstall,
     versionProvider?: PiPackageVersionProvider,
     projectRoots?: string | readonly string[],
@@ -974,8 +990,9 @@ export async function getXtManagedPiPackageDoctorReport(
     versionProvider?: PiPackageVersionProvider,
 ): Promise<XtManagedPiPackageDoctorReport> {
     const npmRootDir = await resolveGlobalNpmRootDir();
+    const resolvedAgentDir = resolvePiAgentDir();
     const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
-        installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName, npmRootDir ?? undefined),
+        installedVersion: await getInstalledPiPackageVersion(resolvedAgentDir, npmPackageName, npmRootDir ?? undefined),
         expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
     }));
 
@@ -1075,7 +1092,7 @@ export interface PiLaunchPreflightResult {
 export async function removeRetiredPiMcpAdapter(
     dryRun: boolean,
     log?: (message: string) => void,
-    agentDir: string = PI_AGENT_DIR,
+    agentDir: string = resolvePiAgentDir(),
     projectRoot?: string,
 ): Promise<PiRetiredMcpAdapterRemoval> {
     const paths = [
@@ -1381,7 +1398,7 @@ export async function cleanupConflictingPiPackageSettings(
     dryRun: boolean,
     isGlobal: boolean,
     log?: (message: string) => void,
-    agentDir = PI_AGENT_DIR,
+    agentDir = resolvePiAgentDir(),
 ): Promise<string[]> {
     const globalRemoved = await pruneConflictingPiPackagesFromSettings(
         // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir (PI_CODING_AGENT_DIR/PI_AGENT_DIR or ~/.pi/agent); the leaf is constant.
@@ -1426,7 +1443,8 @@ async function ensureGlobalDeclaresExtensionPackage(
     dryRun: boolean,
     log?: (message: string) => void,
 ): Promise<boolean> {
-    const settingsPath = path.join(PI_AGENT_DIR, 'settings.json');
+    const agentDir = resolvePiAgentDir();
+    const settingsPath = path.join(agentDir, 'settings.json');
     let settings: PiSettingsShape;
     let text: string | null = null;
     try {
@@ -1448,7 +1466,7 @@ async function ensureGlobalDeclaresExtensionPackage(
     if (dryRun) return true;
 
     try {
-        await fs.ensureDir(PI_AGENT_DIR);
+        await fs.ensureDir(agentDir);
         await fs.writeFile(settingsPath, serializeLikeOriginal(text, { ...settings, packages: [...globalPackages, PROJECT_EXTENSION_PACKAGE_ID] }), 'utf8');
         return true;
     } catch (error) {
@@ -1664,7 +1682,7 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
     result.changed ||= conflictingPackages.length > 0;
 
     if (isGlobal) {
-        const targetDir = path.join(PI_AGENT_DIR, 'extensions');
+        const targetDir = path.join(resolvePiAgentDir(), 'extensions');
         const plan = await inventoryPiRuntime(sourceDir, targetDir);
         renderPiRuntimePlan(plan);
 
@@ -1712,7 +1730,7 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
     result.failed.push(...legacyCleanup.failed);
     result.changed ||= legacyCleanup.removed.length > 0 || legacyCleanup.pending.length > 0;
 
-    const globalExtDir = path.join(PI_AGENT_DIR, 'extensions');
+    const globalExtDir = path.join(resolvePiAgentDir(), 'extensions');
     if (await fs.pathExists(globalExtDir)) {
         const globalEntries = await fs.readdir(globalExtDir, { withFileTypes: true });
         for (const entry of globalEntries) {
@@ -1734,7 +1752,7 @@ export async function runPiRuntimeSync(opts: PiRuntimeOptions = {}): Promise<PiS
     if (!skipGlobalPackageAssurance) {
         for (const status of missingPackages) {
             const { pkg } = status;
-            const duplicate = await findDeclaredDuplicatePiPackageProvider(pkg.id, PI_AGENT_DIR, resolvedProjectRoot);
+            const duplicate = await findDeclaredDuplicatePiPackageProvider(pkg.id, resolvePiAgentDir(), resolvedProjectRoot);
             if (duplicate) {
                 log(kleur.dim(`${pkg.displayName}: provided by '${duplicate.entry}' in ${duplicate.file}; skipping pi install`));
                 continue;

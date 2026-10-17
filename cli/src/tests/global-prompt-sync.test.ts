@@ -54,16 +54,30 @@ const PI_ONLY_MARKER = 'every session tool is a tools.* method';
 
 let tempRoot = '';
 let previousHome: string | undefined;
+let previousAgentDir: string | undefined;
+let previousCodingAgentDir: string | undefined;
 
 beforeEach(async () => {
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-global-prompt-'));
   previousHome = process.env.HOME;
-  process.env.HOME = path.join(tempRoot, 'home');
+  previousAgentDir = process.env.PI_AGENT_DIR;
+  previousCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const testHome = path.join(tempRoot, 'home');
+  process.env.HOME = testHome;
+  // CORE-2412: resolveGlobalPromptTargets prefers PI_AGENT_DIR over
+  // <home>/.pi/agent, so HOME-only sandboxing leaks the pi target into the
+  // suite-shared sandbox (create vs replace-block flakes). Keep both together.
+  process.env.PI_AGENT_DIR = path.join(testHome, '.pi', 'agent');
+  delete process.env.PI_CODING_AGENT_DIR;
 });
 
 afterEach(async () => {
   if (previousHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousHome;
+  if (previousAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+  else process.env.PI_AGENT_DIR = previousAgentDir;
+  if (previousCodingAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+  else process.env.PI_CODING_AGENT_DIR = previousCodingAgentDir;
   await fs.remove(tempRoot);
   vi.restoreAllMocks();
 });
