@@ -28,6 +28,7 @@ function fakePi() {
       sentCustom.push({ message, options });
     },
     getSessionName: () => "probe",
+    getSettings: () => ({}),
     thinkingLevel: "medium",
     getThinkingLevel(this: { thinkingLevel: string }) {
       return this.thinkingLevel;
@@ -116,7 +117,13 @@ describe("intercom transport registration (CORE-2433 I2)", () => {
     try {
       const pi = fakePi();
       const c = fakeCtx("s-reg");
-      const opts = { socketPath: host.info.socket, exec: async () => "", env: {} };
+      const opts = {
+        socketPath: host.info.socket,
+        exec: async () => "",
+        env: {},
+        claudeSocketPath: path.join(dir, "claude.sock"),
+        claudeSessionsDir: path.join(dir, "claude-sessions"),
+      };
       intercomExtension(pi.pi, opts);
       const { default: agentHostExtension } = await import("../xtrm-agent-host/index.ts");
       agentHostExtension(pi.pi, opts);
@@ -411,6 +418,67 @@ describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433
         "s-stream-child",
         "s-stream-parent",
       ]);
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("intercom Claude transport wiring (CORE-2434 delta review)", () => {
+  test("the setting on starts the Claude transport through intercomExtension", async () => {
+    const { existsSync, readFileSync } = await import("node:fs");
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-claude-on-"));
+    const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
+    try {
+      const pi = fakePi();
+      (pi.pi as any).getSettings = () => ({ intercom: { claudeTransport: true } });
+      const c = fakeCtx("s-claude-on");
+      const claudeSock = path.join(dir, "claude.sock");
+      const claudeSessions = path.join(dir, "claude-sessions");
+      intercomExtension(pi.pi, {
+        socketPath: host.info.socket,
+        exec: async () => "",
+        env: {},
+        claudeSocketPath: claudeSock,
+        claudeSessionsDir: claudeSessions,
+      });
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => existsSync(claudeSock));
+      await until(() => existsSync(path.join(claudeSessions, `${process.pid}.json`)));
+      const entry = JSON.parse(readFileSync(path.join(claudeSessions, `${process.pid}.json`), "utf8"));
+      expect(String(entry.version)).toMatch(/^intercom /);
+      expect(entry.messagingSocketPath).toBe(claudeSock);
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await until(() => !existsSync(path.join(claudeSessions, `${process.pid}.json`)));
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("default off: intercomExtension binds no Claude socket and writes no entry", async () => {
+    const { existsSync } = await import("node:fs");
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-claude-off-"));
+    const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
+    try {
+      const pi = fakePi();
+      const c = fakeCtx("s-claude-off");
+      const claudeSock = path.join(dir, "claude.sock");
+      const claudeSessions = path.join(dir, "claude-sessions");
+      intercomExtension(pi.pi, {
+        socketPath: host.info.socket,
+        exec: async () => "",
+        env: {},
+        claudeSocketPath: claudeSock,
+        claudeSessionsDir: claudeSessions,
+      });
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => host.registry.list().length === 1);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(existsSync(claudeSock)).toBe(false);
+      expect(existsSync(path.join(claudeSessions, `${process.pid}.json`))).toBe(false);
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
     } finally {
       await host.close();
       rmSync(dir, { recursive: true, force: true });
