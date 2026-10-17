@@ -111,6 +111,9 @@ jobs:
     - name: Vendored Specialists skill parity guard
       run: npm run check:vendored-specialists-parity
 
+    - name: Payload hygiene guard
+      run: npm run check:payload-hygiene
+
     - name: Run Tests
       run: |
         npm test --prefix cli

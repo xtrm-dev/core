@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises';
-import { existsSync, readlinkSync } from 'node:fs';
+import { lstatSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,14 +41,14 @@ const ABSOLUTE_PATH_LEAK_ALLOWLIST = new Set([
 ]);
 
 // In-repo symlinks whose targets are installed by the specialists runtime (untracked), so they
-// dangle in a clean checkout. Still subject to the outside-repo check.
+// dangle in a clean checkout. Exempt from the dangling check only.
 const DANGLING_SYMLINK_ALLOWLIST = new Set([
   '.claude/hooks/specialists-complete.mjs',
   '.claude/hooks/specialists-memory-cache-sync.mjs',
   '.claude/hooks/specialists-session-start.mjs',
 ]);
 
-const __filename =fileURLToPath(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -78,18 +78,26 @@ export function findAbsolutePathLeaks(textByFile) {
   return leaks;
 }
 
-// Tracked symlinks (git mode 120000) must resolve to an existing path inside the repo;
-// machine-specific links (e.g. into ../lib/node_modules) are invisible to git grep.
+// Tracked symlinks (git mode 120000) must really resolve (realpath, so links through symlinked
+// directories are followed) to an existing path inside the repo; machine-specific links
+// (e.g. into ../lib/node_modules) are invisible to git grep.
 export function findBadTrackedSymlinks(root = repoRoot) {
+  // The tar read limit is reused deliberately as a generous bound for the file listing.
   const listing = execFileSync('git', ['ls-files', '-s', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: TAR_READ_MAX_BUFFER_BYTES });
   const links = listing.split('\0').filter((entry) => entry.startsWith('120000 ')).map((entry) => entry.split('\t')[1]);
+  const realRoot = realpathSync(root);
   return links.flatMap((filePath) => {
     const absolute = path.join(root, filePath);
-    const resolved = path.resolve(path.dirname(absolute), readlinkSync(absolute));
-    const relative = path.relative(root, resolved);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) return [{ filePath, reason: 'target outside repo' }];
-    if (DANGLING_SYMLINK_ALLOWLIST.has(filePath) || existsSync(resolved)) return [];
-    return [{ filePath, reason: 'dangling target' }];
+    if (!lstatSync(absolute, { throwIfNoEntry: false })) return [{ filePath, reason: 'missing from working tree' }];
+    let real;
+    try {
+      real = realpathSync(absolute);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return DANGLING_SYMLINK_ALLOWLIST.has(filePath) ? [] : [{ filePath, reason: 'dangling target' }];
+    }
+    const relative = path.relative(realRoot, real);
+    return relative.startsWith('..') || path.isAbsolute(relative) ? [{ filePath, reason: 'target outside repo' }] : [];
   });
 }
 

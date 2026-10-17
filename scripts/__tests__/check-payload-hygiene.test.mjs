@@ -73,14 +73,23 @@ test('flags tracked symlinks that point outside the repo or dangle, passes in-re
     await fs.mkdir(path.join(repo, 'bin'), { recursive: true });
     await fs.writeFile(path.join(repo, 'real.js'), '');
     await fs.symlink('../real.js', path.join(repo, 'bin', 'ok'));
-    await fs.symlink('../../lib/node_modules/x/cli.js', path.join(repo, 'bin', 'outside'));
+    await fs.mkdir(path.join(tempDir, 'out'));
+    await fs.writeFile(path.join(tempDir, 'out', 'f'), '');
+    await fs.symlink('../../out/f', path.join(repo, 'bin', 'outside'));
     await fs.symlink('../missing.js', path.join(repo, 'bin', 'dangling'));
+    await fs.symlink('../../out', path.join(repo, 'bin', 'dirlink'));
+    await fs.symlink('dirlink/f', path.join(repo, 'bin', 'via'));
+    await fs.symlink('../real.js', path.join(repo, 'bin', 'gone'));
     execFileSync('git', ['init', '-q'], { cwd: repo });
     execFileSync('git', ['add', '-A'], { cwd: repo });
+    await fs.rm(path.join(repo, 'bin', 'gone'));
 
     assert.deepEqual(findBadTrackedSymlinks(repo).sort((a, b) => a.filePath.localeCompare(b.filePath)), [
       { filePath: 'bin/dangling', reason: 'dangling target' },
+      { filePath: 'bin/dirlink', reason: 'target outside repo' },
+      { filePath: 'bin/gone', reason: 'missing from working tree' },
       { filePath: 'bin/outside', reason: 'target outside repo' },
+      { filePath: 'bin/via', reason: 'target outside repo' },
     ]);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
