@@ -22,7 +22,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -165,6 +165,106 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
             if (sessionId && /^\$\d+$/.test(sessionId)) out[XTRM_PARENT_SESSION_ID_VAR] = sessionId;
         } catch { /* absent */ }
     }
+    return out;
+}
+
+/**
+ * Live dispatcher sessions for one participant name (CORE-2432 R8/F4): every
+ * session-registry entry with that exact name carrying a messaging socket,
+ * skipping dead pids. Several live candidates are an error naming them all;
+ * mtime order never decides. Throws only on ambiguity.
+ */
+function findLiveDispatchers(
+    participant: string,
+    deps: DispatcherIdentityDeps = {},
+): DispatcherIdentity[] {
+    const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
+    const readProcess = deps.readProcess ?? readProcessInfo;
+    const found: { pid: unknown; address: string }[] = [];
+    let files: string[];
+    try {
+        files = readdirSync(sessionsDir).filter((f) => f.endsWith('.json'));
+    } catch {
+        return [];
+    }
+    for (const file of files) {
+        let entry: Record<string, unknown>;
+        try {
+            entry = JSON.parse(readFileSync(path.join(sessionsDir, file), 'utf8')) as Record<string, unknown>;
+        } catch {
+            continue;
+        }
+        if (clean(entry.name) !== participant) continue;
+        const socket = clean(entry.messagingSocketPath);
+        if (!socket) continue;
+        // Pid liveness with reuse protection, as readSessionEntry does: a
+        // dead pid is skipped, and a numeric procStart that disagrees with
+        // the live process start time means the pid was reused. A probe
+        // failure keeps the entry (unknown, not dead).
+        if (typeof entry.pid === 'number') {
+            const filePid = Number(file.replace(/\.json$/, ''));
+            if (Number.isInteger(filePid) && entry.pid !== filePid) continue;
+            let info: ProcessInfo | null = null;
+            try {
+                info = readProcess(entry.pid);
+            } catch { /* keep on probe failure */ }
+            if (!info) continue;
+            const procStart = clean(entry.procStart);
+            if (procStart && /^\d+$/.test(procStart) && info.startTime && procStart !== info.startTime) continue;
+        }
+        found.push({ pid: entry.pid, address: `uds:${socket}` });
+    }
+    if (found.length > 1) {
+        const candidates = found.map((f) => `pid ${String(f.pid)} at ${f.address}`).join(', ');
+        throw new Error(`ambiguous dispatcher participant "${participant}": ${candidates}`);
+    }
+    return found.map((f) => ({ name: participant, address: f.address }));
+}
+
+/**
+ * Resolve a dispatcher participant by name after it restarted (CORE-2432 R8).
+ * A worker that only knows its dispatcher's participant name scans the live
+ * sessions for that exact name. One live hit wins; several throw naming every
+ * candidate (F4); none returns null so the caller can fall back. Never throws
+ * except on ambiguity.
+ */
+export function resolveDispatcherByParticipant(
+    participant: string,
+    deps: DispatcherIdentityDeps = {},
+): DispatcherIdentity | null {
+    const want = clean(participant);
+    if (!want) return null;
+    return findLiveDispatchers(want, deps)[0] ?? null;
+}
+
+/**
+ * Fresh dispatcher env for a resumed session (CORE-2432 R8/F2): `xt attach`
+ * resolves the dispatcher by participant (XTRM_DISPATCHER_NAME) against the
+ * live sessions with a pid liveness check, and refreshes the env from that
+ * hit instead of inheriting stale values across a dispatcher restart. When no
+ * live entry matches, the nearest-ancestor (else inherited) resolution applies.
+ * Unknown stays absent; ambiguity falls back the same way. Never throws.
+ */
+export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<string, string> {
+    const out: Record<string, string> = {};
+    const env = deps.env ?? process.env;
+    const participant = clean(env[XTRM_DISPATCHER_NAME_VAR]);
+    if (participant) {
+        try {
+            const live = findLiveDispatchers(participant, deps)[0];
+            if (live?.address) {
+                out[XTRM_DISPATCHER_NAME_VAR] = live.name ?? participant;
+                out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
+                return out;
+            }
+        } catch (error) {
+            // Ambiguous: say so on stderr, then fall back to ancestor resolution.
+            process.stderr.write(`xt attach: ${(error as Error).message}; falling back to ancestor resolution\n`);
+        }
+    }
+    const dispatcher = resolveDispatcher(deps);
+    if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
+    if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
     return out;
 }
 

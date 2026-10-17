@@ -163,6 +163,16 @@
             "version": { "$ref": "#/definitions/boundedString" }
           }
         },
+        "pid": {
+          "description": "OS pid of the process hosting the listener (CORE-2432 R1: identity = pid + sessionId + generation).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "generation": {
+          "description": "Listener incarnation, starting at 1. Registry writes are compare-and-swap on generation (R6).",
+          "type": "integer",
+          "minimum": 1
+        },
         "sessionFile": { "$ref": "#/definitions/path" },
         "sessionName": { "$ref": "#/definitions/boundedString" },
         "cwd": { "$ref": "#/definitions/path" },

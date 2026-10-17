@@ -560,6 +560,10 @@ export interface AgentSessionIdentity {
     type: 'session_identity';
     runtime: { name: 'pi' | 'claude' | 'codex'; version: string | null };
     producer?: { name: string; version: string };
+    /** OS pid of the process hosting the listener (CORE-2432 R1: identity = pid + sessionId + generation). */
+    pid?: number;
+    /** Listener incarnation, starting at 1. Registry writes are compare-and-swap on generation (R6). */
+    generation?: number;
     sessionFile?: string;
     sessionName?: string;
     cwd: string;
@@ -664,11 +668,32 @@ export type AgentEventPayload =
 export type AgentEventType = AgentEventPayload['type'];
 export type AgentEventV1 = AgentProtocolFrame<'xtrm.agent-event.v1', AgentEventPayload>;
 
+/** Wake contract delivery vocabulary (CORE-2432): wake(participant, payloadRef) returns a message id and one of these states. */
+export type WakeDeliveryState = 'queued' | 'held' | 'delivered' | 'refused' | 'undelivered' | 'expired';
+export const WAKE_DELIVERY_STATES: readonly WakeDeliveryState[] = [
+    'queued',
+    'held',
+    'delivered',
+    'refused',
+    'undelivered',
+    'expired',
+];
+
+/** wake(participant, payloadRef) outcome: a stable message id plus one delivery state. */
+export interface WakeResult {
+    messageId: string;
+    state: WakeDeliveryState;
+}
+
 export type AgentCommandPayload =
     | { type: 'prompt'; commandId: string; message: string; images?: AgentImageContent[] }
     | { type: 'steer'; commandId: string; message: string; images?: AgentImageContent[] }
     | { type: 'follow_up'; commandId: string; message: string; images?: AgentImageContent[] }
     | { type: 'abort'; commandId: string }
+    /** Wake delivery: carries a payload reference only, never a contract or a decision. */
+    | { type: 'wake'; commandId: string; messageId: string; payloadRef: string }
+    /** The registry replaced this listener; it should re-assert with a bumped generation (R5). */
+    | { type: 'listener_replaced'; commandId: string; generation: number; reason: string }
     /** Exactly one of value / confirmed / cancelled (Pi RpcExtensionUIResponse); id = request id. */
     | { type: 'extension_ui_response'; commandId: string; id: string; value: string }
     | { type: 'extension_ui_response'; commandId: string; id: string; confirmed: boolean }

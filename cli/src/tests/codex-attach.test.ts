@@ -15,6 +15,14 @@ vi.mock('../commands/worktree.js', () => ({
     getRepoRoot: mocked.getRepoRoot,
 }));
 
+// CORE-2432 R8: hermetic dispatcher refresh; the live lookup is covered in attach-dispatcher.test.ts.
+vi.mock('../core/dispatcher-identity.js', () => ({
+    refreshDispatcherEnv: vi.fn(() => ({
+        XTRM_DISPATCHER_NAME: 'test-dispatcher',
+        XTRM_DISPATCHER_ADDRESS: 'uds:/test.sock',
+    })),
+}));
+
 const roots: string[] = [];
 
 afterEach(() => {
@@ -48,6 +56,7 @@ describe('xt attach Codex resume', () => {
         }) as never);
 
         const { createAttachCommand } = await import('../commands/attach.js');
+        // CORE-2432 R8: attach refreshes dispatcher identity into the resume env.
         await expect(createAttachCommand().parseAsync(['node', 'xt', 'demo'])).rejects.toThrow('exit:0');
 
         expect(mocked.spawnSync).toHaveBeenCalledWith(
@@ -59,7 +68,14 @@ describe('xt attach Codex resume', () => {
                 '--dangerously-bypass-approvals-and-sandbox',
                 '019fc3bc-fb7a-7ae0-9536-125624bf726b',
             ],
-            { cwd: worktree, stdio: 'inherit' },
+            {
+                cwd: worktree,
+                stdio: 'inherit',
+                env: expect.objectContaining({
+                    XTRM_DISPATCHER_NAME: 'test-dispatcher',
+                    XTRM_DISPATCHER_ADDRESS: 'uds:/test.sock',
+                }),
+            },
         );
         expect(mocked.spawnSync.mock.calls.flat(2)).not.toContain('--last');
         expect(exitSpy).toHaveBeenCalledWith(0);

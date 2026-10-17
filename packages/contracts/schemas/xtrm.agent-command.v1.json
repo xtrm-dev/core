@@ -31,6 +31,8 @@
         { "$ref": "#/definitions/steer" },
         { "$ref": "#/definitions/follow_up" },
         { "$ref": "#/definitions/abort" },
+        { "$ref": "#/definitions/wake" },
+        { "$ref": "#/definitions/listener_replaced" },
         { "$ref": "#/definitions/extension_ui_response" }
       ]
     },
@@ -75,6 +77,30 @@
       "properties": {
         "type": { "const": "abort" },
         "commandId": { "$ref": "#/definitions/commandId" }
+      }
+    },
+    "wake": {
+      "description": "Wake delivery (CORE-2432): carries a payload reference only, never a contract or a decision. The extension answers accepted once it took the reference; only then is the wake delivered (R3).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "commandId", "messageId", "payloadRef"],
+      "properties": {
+        "type": { "const": "wake" },
+        "commandId": { "$ref": "#/definitions/commandId" },
+        "messageId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "payloadRef": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      }
+    },
+    "listener_replaced": {
+      "description": "The registry replaced this listener; it should re-assert with a bumped generation (R5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "commandId", "generation", "reason"],
+      "properties": {
+        "type": { "const": "listener_replaced" },
+        "commandId": { "$ref": "#/definitions/commandId" },
+        "generation": { "type": "integer", "minimum": 1 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 64 }
       }
     },
     "extension_ui_response": {

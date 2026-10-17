@@ -9,6 +9,7 @@ import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
 import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled } from '../utils/worktree-session.js';
+import { refreshDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import type { WorktreeInfo } from './worktree.js';
 
 /** Last-activity timestamp, for recency ordering. */
@@ -31,6 +32,20 @@ export function matchWorktree(worktrees: WorktreeInfo[], name: string): Worktree
     return worktrees.find(wt => wt.branch === norm || wt.branch === `refs/heads/${shortBranch}` || wt.branch === shortBranch)
         ?? worktrees.find(wt => basename(wt.path) === name)
         ?? worktrees.find(wt => basename(wt.path).endsWith(`-${name}`));
+}
+
+/**
+ * Spawn environment for a resumed session (CORE-2432 R8): freshly resolved
+ * dispatcher identity on top of the base env, plus the Claude MCP env for
+ * claude resumes. Separated for tests; the action passes no deps (live lookup).
+ */
+export function buildAttachEnv(
+    base: NodeJS.ProcessEnv,
+    runtime: string,
+    dispatcherDeps: DispatcherIdentityDeps = {},
+): NodeJS.ProcessEnv {
+    const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
+    return runtime === 'claude' ? { ...base, ...dispatcherEnv, ...claudeMcpEnv(runtime) } : { ...base, ...dispatcherEnv };
 }
 
 export function createAttachCommand(): Command {
@@ -131,9 +146,9 @@ export function createAttachCommand(): Command {
             }
 
             // Substrate MCP needs these before the process starts; claude only. CORE-2290.
-            const result = spawnSync(runtime, resumeArgs, runtime === 'claude'
-                ? { cwd: target.path, stdio: 'inherit', env: { ...process.env, ...claudeMcpEnv(runtime) } }
-                : { cwd: target.path, stdio: 'inherit' });
+            // CORE-2432 R8: a resumed session gets freshly resolved dispatcher
+            // identity instead of stale inherited XTRM_DISPATCHER_* values.
+            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime) });
 
             process.exit(result.status ?? 0);
         });
