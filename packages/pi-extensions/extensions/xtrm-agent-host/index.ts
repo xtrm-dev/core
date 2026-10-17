@@ -116,6 +116,12 @@ const STARTUP_STALE_MS = 60_000;
  * snappy, long enough to cover the initial-turn loadout race.
  */
 const FIRST_TURN_GRACE_MS = 1_500;
+/**
+ * Hard cap on the initial-prompt hold (CORE-2438 review): even with a
+ * prompt pending, a wake falls back to the normal grace flush after this
+ * long, so a session that never starts its first turn still receives it.
+ */
+const INITIAL_PROMPT_HOLD_CAP_MS = 30_000;
 
 type Payload = AgentEventPayload;
 type UiMethod = "select" | "confirm" | "input";
@@ -128,6 +134,12 @@ export interface AgentHostBridgeOptions {
   exec?: ExecFn;
   /** First-turn grace in ms (tests); default FIRST_TURN_GRACE_MS. */
   firstTurnGraceMs?: number;
+  /**
+   * Hard cap on the initial-prompt hold in ms (tests); default
+   * INITIAL_PROMPT_HOLD_CAP_MS. Past it the hold falls back to the normal
+   * grace flush, so a mispredicted prompt never parks a wake forever.
+   */
+  initialPromptCapMs?: number;
   /**
    * The process was launched with an initial prompt pending (CORE-2438 I7).
    * Default: env XTRM_INITIAL_PROMPT=1/true, else argv sniffing
@@ -144,13 +156,18 @@ export interface AgentHostBridgeOptions {
 export const INITIAL_PROMPT_ENV = "XTRM_INITIAL_PROMPT";
 
 /**
- * Whether argv shows a pending initial prompt (CORE-2438 I7): an explicit
- * print run (`--print`/`-p`, print mode processes one prompt and exits) or
- * a positional initial prompt. Positional counts only with a space (a real
- * prompt, not a bare word), an @file ref, or a leading slash: a lone bare
- * word may be a flag value, and missing the hold only keeps the old race.
- * Conservative by design: a false positive delays a wake, a false negative
- * keeps today's behaviour.
+ * Whether argv shows a pending initial prompt (CORE-2438 I7 review): an
+ * explicit print run only (`--print`/`-p`, or a short-flag bundle
+ * containing p). Positional prompts, @files and flag values are
+ * deliberately NOT sniffed: `-e /abs/ext.ts`, `--session-dir /tmp/x` and
+ * `--append-system-prompt "be nice"` must never read as a prompt, and a
+ * missed prompt only keeps the old race while a false hold could park a
+ * wake forever. Pi SDK 1.3.0 exposes no initial-message API
+ * (SessionStartEvent carries reason/previousSessionFile only,
+ * extensions/types.d.ts:575-581; ExtensionContext has no prompt field,
+ * :215-252; ReadonlySessionManager lists history accessors only,
+ * core/session-manager.d.ts:178), so launchers forward the signal via
+ * XTRM_INITIAL_PROMPT (proposed; xt to ticket).
  */
 export function argvHasInitialPrompt(argv: readonly string[] | undefined): boolean {
   if (!argv || argv.length === 0) return false;
@@ -158,23 +175,11 @@ export function argvHasInitialPrompt(argv: readonly string[] | undefined): boole
   // runtime (node pi.js ...). A bare binary (pi ...) has argv = [pi, ...args].
   const runtime = /[/\\]?((node|bun|deno)(\.exe)?)$/.test(argv[0]);
   const args = argv.slice(runtime ? 2 : 1);
-  let print = false;
-  for (const token of args) {
-    if (token === "--print" || token === "-p") {
-      print = true;
-      break;
-    }
-    if (/^-[^-]/.test(token) && token.includes("p")) {
-      // Short-flag bundle containing p (e.g. -ap): treat like -p.
-      print = true;
-      break;
-    }
-  }
-  if (print) return true;
   return args.some((token) => {
-    if (token.startsWith("-") || token.length === 0) return false;
-    if (token === "--") return false;
-    return token.includes(" ") || token.startsWith("@") || token.startsWith("/");
+    if (token === "--print" || token === "-p") return true;
+    // Short-flag bundle containing p (e.g. -ap): treat like -p.
+    if (/^-[^-]/.test(token) && token.includes("p")) return true;
+    return false;
   });
 }
 
@@ -369,6 +374,8 @@ interface SessionBinding {
   sessionStartedAt: number | null;
   /** Grace-expiry flush for held pre-first-turn wakes; cleared on agent_start/dispose. */
   graceTimer: ReturnType<typeof setTimeout> | null;
+  /** Hard-cap flush for the initial-prompt hold; cleared with the grace timer. */
+  promptCapTimer: ReturnType<typeof setTimeout> | null;
   /** A replaced listener re-asserts once per connection; never ping-pongs a replacement (F1). */
   reassertedThisConnection: boolean;
   readBuffer: string;
@@ -386,6 +393,7 @@ interface SessionBinding {
 
 export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridgeOptions = {}) {
   const firstTurnGraceMs = options.firstTurnGraceMs ?? FIRST_TURN_GRACE_MS;
+  const initialPromptCapMs = options.initialPromptCapMs ?? INITIAL_PROMPT_HOLD_CAP_MS;
   const env = options.env ?? process.env;
   const exec = options.exec ?? defaultExec;
   const socketPath = options.socketPath ?? defaultAgentHostSocketPath(env);
@@ -438,6 +446,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       sawAgentStart: false,
       sawBeforeAgentStart: false,
       initialPromptPending: false,
+      promptCapTimer: null,
       sessionStartedAt: null,
       graceTimer: null,
       reassertedThisConnection: false,
@@ -632,6 +641,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     if (b.graceTimer) clearTimeout(b.graceTimer);
     b.reconnectTimer = b.flushTimer = null;
     b.graceTimer = null;
+    clearPromptCap(b);
     // Held wakes never deliver now: answer them failed while the socket
     // still writes, so the registry records them undelivered instead of
     // leaving them held. A dead socket drops the frame and the host-side
@@ -1030,6 +1040,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         // frame alone, and an idle subscription arms now (re-armed on flush).
         emitWakeInjected({ messageId, ref, ...sender });
         if (!starting) armGrace(b);
+        // The initial-prompt hold is bounded: a mispredicted prompt must
+        // not park the wake past the cap (review HIGH-1a).
+        if (initialTurnPending && !starting) armPromptCap(b);
         b.deferredWake.push({
           messageId,
           ref,
@@ -1101,6 +1114,33 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   function clearGrace(b: SessionBinding): void {
     if (b.graceTimer) clearTimeout(b.graceTimer);
     b.graceTimer = null;
+    clearPromptCap(b);
+  }
+
+  function clearPromptCap(b: SessionBinding): void {
+    if (b.promptCapTimer) clearTimeout(b.promptCapTimer);
+    b.promptCapTimer = null;
+  }
+
+  /**
+   * Hard-cap expiry (CORE-2438 review): the first turn never observably
+   * began, so the initial-prompt prediction was wrong or the turn died.
+   * Drop the hold and flush through the normal grace path (triggerTurn
+   * into the idle session), exactly as if no prompt had been pending.
+   */
+  function flushPromptCap(b: SessionBinding): void {
+    b.promptCapTimer = null;
+    if (disposedAll || b.sawAgentStart) return;
+    b.initialPromptPending = false;
+    flushGrace(b);
+  }
+
+  function armPromptCap(b: SessionBinding): void {
+    if (b.promptCapTimer) return;
+    const wait = Math.max(0, initialPromptCapMs);
+    const timer = setTimeout(() => flushPromptCap(b), wait);
+    timer.unref?.();
+    b.promptCapTimer = timer;
   }
 
   /**
@@ -1221,6 +1261,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       // hold is over (the starting window owns later wakes until agent_start).
       b.sawBeforeAgentStart = true;
       b.initialPromptPending = false;
+      clearPromptCap(b);
       if (!live(b)) {
         b.guiIngress = null;
         return;

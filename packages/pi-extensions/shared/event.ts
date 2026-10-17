@@ -19,6 +19,8 @@
  * adopts this module's card renderer; nothing here changes their bytes.
  */
 
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+
 export const MESSAGE_STATES = ["queued", "held", "delivered", "refused", "undelivered", "expired"] as const;
 
 export const TASK_STATES = ["running", "completed", "failed", "stopped", "timed_out"] as const;
@@ -237,35 +239,88 @@ export const MAX_PREVIEW_LINES = 3;
 const INDENT = "  ";
 const EXPAND_SUFFIX = "· ctrl+o expands";
 
-function wrapPlain(plain: string, max: number): string[] {
+/**
+ * Operator-card text hygiene: pasted ANSI must never reach the terminal
+ * raw, and widths below are always measured on sanitized text.
+ */
+function sanitizeCardLine(value: string): string {
+  return stripAnsi(value).replace(CONTROLS_RE, "");
+}
+
+/** Hard-split one over-wide token by display width (long URLs, CJK runs). */
+function splitWideToken(token: string, max: number): string[] {
+  const width = Math.max(1, max);
+  const parts: string[] = [];
+  let cur = "";
+  let curWidth = 0;
+  for (const ch of token) {
+    const w = visibleWidth(ch);
+    if (curWidth + w > width && cur) {
+      parts.push(cur);
+      cur = "";
+      curWidth = 0;
+    }
+    cur += ch;
+    curWidth += w;
+  }
+  if (cur) parts.push(cur);
+  return parts.length ? parts : [""];
+}
+
+/** Wrap one body line by display width; over-wide tokens hard-split. */
+function wrapDisplay(plain: string, max: number): string[] {
   const width = Math.max(8, max);
   const out: string[] = [];
   let cur = "";
+  let curWidth = 0;
   for (const word of plain.split(" ")) {
-    const next = cur ? `${cur} ${word}` : word;
-    if (next.length > width && cur) {
-      out.push(cur);
-      cur = word;
+    const wordWidth = visibleWidth(word);
+    if (wordWidth > width) {
+      if (cur) {
+        out.push(cur);
+        cur = "";
+        curWidth = 0;
+      }
+      out.push(...splitWideToken(word, width));
       continue;
     }
-    cur = next;
+    const nextWidth = cur ? curWidth + 1 + wordWidth : wordWidth;
+    if (nextWidth > width && cur) {
+      out.push(cur);
+      cur = word;
+      curWidth = wordWidth;
+    } else {
+      cur = cur ? `${cur} ${word}` : word;
+      curWidth = nextWidth;
+    }
   }
   if (cur) out.push(cur);
   return out.length ? out : [""];
 }
 
-/** Operator-card text hygiene: pasted ANSI must never reach the terminal raw. */
-function sanitizeCardLine(value: string): string {
-  return stripAnsi(value).replace(CONTROLS_RE, "");
+/** One laid-out card: plain segments, every line within width by display width. */
+interface CardLayout {
+  glyph: string;
+  identity: string;
+  state: string;
+  bodyLines: string[];
+  facts: string | null;
+  factsOnLast: boolean;
+  hidden: number;
 }
 
-function plainHeader(details: EventDetails): string {
-  const state = details.state ? ` ${details.state}` : "";
-  return `${glyphFor(details)} ${details.identity}${state}`;
-}
-
-function plainBody(details: EventDetails, width: number): { lines: string[]; hidden: number } {
-  const inner = Math.max(8, width - INDENT.length);
+/** Lay out one card from the details object (shared by plain and themed render). */
+function layoutCard(details: EventDetails, width: number): CardLayout {
+  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
+  const glyph = glyphFor(details);
+  const state = details.state ?? "";
+  // The identity truncates by display width so the header never overruns:
+  // a 200-char identity (or CJK text) keeps glyph, ellipsis and state.
+  const fixedWidth = visibleWidth(glyph) + 1 + (state ? 1 + visibleWidth(state) : 0);
+  const maxIdent = Math.max(1, w - fixedWidth);
+  const identity =
+    visibleWidth(details.identity) <= maxIdent ? details.identity : truncateToWidth(details.identity, maxIdent);
+  const inner = Math.max(8, w - visibleWidth(INDENT));
   const bodies = details.preview.map(sanitizeCardLine);
   if (details.kind === "message" && bodies.length > 0) {
     const name = details.fromName || details.from;
@@ -274,59 +329,48 @@ function plainBody(details: EventDetails, width: number): { lines: string[]; hid
   const shown = bodies.slice(0, MAX_PREVIEW_LINES);
   const total = details.totalLines ?? bodies.length;
   const hidden = Math.max(0, total - shown.length);
-  const lines = shown.flatMap((body) => wrapPlain(body, inner).map((w) => `${INDENT}${w}`));
-  return { lines, hidden };
+  const bodyLines = shown.flatMap((body) => wrapDisplay(body, inner).map((line) => `${INDENT}${line}`));
+  const rawFacts = details.facts?.trim();
+  const facts = rawFacts ? sanitizeCardLine(rawFacts) : null;
+  // Facts ride the last content line when they fit by display width, else
+  // their own line — every visible line stays within the width.
+  const last = bodyLines[bodyLines.length - 1];
+  const factsOnLast =
+    facts !== null && last !== undefined && visibleWidth(last) + 2 + visibleWidth(facts) <= w;
+  return { glyph, identity, state, bodyLines, facts, factsOnLast, hidden };
 }
 
-function plainFactsTrailer(details: EventDetails): string | null {
-  const facts = details.facts?.trim();
-  return facts ? sanitizeCardLine(facts) : null;
-}
-
-/** Plain card layout (no theme): the shape every themed card shares. */
-export function formatEventCardPlain(details: EventDetails, width: number): string {
-  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
-  const { lines, hidden } = plainBody(details, w);
-  const facts = plainFactsTrailer(details);
-  // Dim facts ride the last content line when they fit, else their own line —
-  // every visible line stays within the width.
-  if (facts) {
-    const last = lines[lines.length - 1];
-    if (last !== undefined && last.length + 2 + facts.length <= w) lines[lines.length - 1] = `${last}  ${facts}`;
-    else lines.push(`${INDENT}${facts}`);
+/** Body lines shared by both renders: facts ride last or stand alone, then the expander. */
+function layoutBodyLines(layout: CardLayout, styleFacts: (text: string) => string): string[] {
+  const lines = [...layout.bodyLines];
+  if (layout.facts !== null) {
+    if (layout.factsOnLast && lines.length > 0) lines[lines.length - 1] = `${lines[lines.length - 1]}${styleFacts(`  ${layout.facts}`)}`;
+    else lines.push(`${INDENT}${styleFacts(layout.facts)}`);
   }
-  if (hidden > 0) lines.push(`${INDENT}+${hidden} lines ${EXPAND_SUFFIX}`);
-  return [plainHeader(details), ...lines].join("\n");
+  if (layout.hidden > 0) lines.push(styleFacts(`${INDENT}+${layout.hidden} lines ${EXPAND_SUFFIX}`));
+  return lines;
+}
+
+/** Plain card (no theme): the layout every themed card shares. */
+export function formatEventCardPlain(details: EventDetails, width: number): string {
+  const layout = layoutCard(details, width);
+  const header = `${layout.glyph} ${layout.identity}${layout.state ? ` ${layout.state}` : ""}`;
+  return [header, ...layoutBodyLines(layout, (s) => s)].join("\n");
 }
 
 /**
  * Operator card (D4): glyph, bold identity, tinted state, dim facts,
  * up to 3 preview lines, "+N lines · ctrl+o expands". Theme tokens only —
- * this file holds no SGR. The layout matches `formatEventCardPlain` line
- * for line; only the styling differs.
+ * this file holds no SGR. Both renders share `layoutCard`, so the themed
+ * card matches the plain layout line for line; only styling differs.
  */
 export function formatEventCard(details: EventDetails, theme: EventTheme, width: number): string {
-  const plain = formatEventCardPlain(details, width);
-  const [header, ...rest] = plain.split("\n");
-  const glyph = glyphFor(details);
-  const identity = theme.bold(details.identity);
-  const state = details.state ? ` ${theme.fg(stateToken(details.state), details.state)}` : "";
-  const head = `${glyph} ${identity}${state}`;
-  void header;
-  const facts = plainFactsTrailer(details);
-  const body: string[] = [];
-  const { hidden } = plainBody(details, Number.isFinite(width) && width > 0 ? Math.floor(width) : 80);
-  const contentLines = hidden > 0 ? rest.slice(0, -1) : rest;
-  const expandLine = hidden > 0 ? rest[rest.length - 1] : null;
-  for (const line of contentLines) {
-    if (facts && line.endsWith(`  ${facts}`)) {
-      body.push(`${line.slice(0, line.length - 2 - facts.length)}${theme.fg("dim", `  ${facts}`)}`);
-    } else {
-      body.push(line);
-    }
-  }
-  if (expandLine !== null && expandLine !== undefined) body.push(theme.fg("dim", expandLine));
-  return [head, ...body].join("\n");
+  const layout = layoutCard(details, width);
+  const head =
+    `${layout.glyph} ${theme.bold(layout.identity)}` +
+    (layout.state ? ` ${theme.fg(stateToken(details.state), layout.state)}` : "");
+  const dim = (text: string) => theme.fg("dim", text);
+  return [head, ...layoutBodyLines(layout, dim)].join("\n");
 }
 
 type MessageRenderer = (message: unknown, options: unknown, theme: EventTheme) => unknown;

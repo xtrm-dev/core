@@ -51,7 +51,7 @@ function bounded(value: unknown, max = 1024): string {
  * silently. A cut can split an escape entity mid-way; the result stays
  * plain inert text.
  */
-/** Cap on the escaped payload reference (shared event module value, kept under this slice's name). */
+// Shared event module value, kept under this slice's name.
 export const MAX_WAKE_CONTENT_BYTES: number = MAX_ENVELOPE_BYTES;
 
 function sanitizeEnvelopeText(value: unknown): string {

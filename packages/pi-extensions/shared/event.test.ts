@@ -8,6 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 import {
   EVENT_GLYPHS,
@@ -216,6 +218,16 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
 });
 
 describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", () => {
+  // Review 2/3: widths assert by display width (CJK counts double), with
+  // adversarial cases — a long URL, CJK text, and a long identity.
+  const longUrl = `https://example.com/${"p".repeat(150)}/tail`;
+  const cjk = "日本語のプレビュー行は表示幅で折り返されなければなりません".repeat(3);
+  const longIdentity = `@${"n".repeat(200)}`;
+  const adversarial: Array<{ name: string; details: EventDetails }> = [
+    { name: "long-url", details: { kind: "message", state: "delivered", identity: "@probe", fromName: "Probe", preview: [longUrl] } },
+    { name: "cjk", details: { kind: "message", state: "delivered", identity: "@probe", fromName: "Probe", preview: [cjk] } },
+    { name: "long-identity", details: { kind: "task", state: "running", identity: longIdentity, preview: ["working"] } },
+  ];
   const long =
     "a long preview line that must wrap somewhere in the middle because it far exceeds even the wider snapshot width";
   const cases: Array<{ width: 80 | 120; theme: EventTheme; name: string }> = [
@@ -238,11 +250,61 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
       const raw = formatEventCard(details, theme, width);
       const lines = visible(raw);
       expect(lines.length).toBeGreaterThan(3);
-      for (const line of lines) expect(line.length).toBeLessThanOrEqual(width);
+      for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
       // The theme is really used: the tags name the mode.
       expect(raw).toContain(`<${name}:`);
     });
+
+    for (const { name: caseName, details } of adversarial) {
+      test(`snapshot at ${width} cols ${name}: ${caseName} never overruns`, () => {
+        const raw = formatEventCard(details, theme, width);
+        const lines = visible(raw);
+        expect(lines.length).toBeGreaterThan(0);
+        for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+      });
+    }
   }
+
+  test("adversarial cases keep their meaning: URL survives split, identity keeps state", () => {
+    const url = visible(formatEventCard(adversarial[0].details, light, 80)).join("").replace(/ /g, "");
+    expect(url).toContain("https://example.com/");
+    expect(url).toContain("/tail");
+    const head = visible(formatEventCard(adversarial[2].details, light, 80))[0];
+    expect(head.startsWith("◐ ")).toBe(true);
+    expect(head.endsWith("running")).toBe(true);
+  });
+
+  test("one run against Pi's real light and dark themes", async () => {
+    const piIndex = import.meta.resolve("@earendil-works/pi-coding-agent");
+    const themeMod = await import(new URL("./modes/interactive/theme/theme.js", piIndex).href);
+    const themeDir = new URL("./modes/interactive/theme/", piIndex).href;
+    const { loadThemeFromPath } = themeMod as unknown as {
+      loadThemeFromPath: (path: string, mode?: unknown) => EventTheme;
+    };
+    for (const file of ["dark.json", "light.json"]) {
+      const theme = loadThemeFromPath(fileURLToPath(new URL(file, themeDir)));
+      const details: EventDetails = {
+        kind: "message",
+        state: "delivered",
+        identity: "@probe",
+        fromName: "Probe",
+        preview: [long, cjk],
+        facts: "m1 · 1.2s · 3 KiB",
+      };
+      for (const width of [80, 120]) {
+        const lines = visible(formatEventCard(details, theme, width));
+        for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+      }
+      // The real theme styles: bold identity, tinted state, dim facts.
+      const raw = formatEventCard(
+        { kind: "task", state: "failed", identity: "task ab12", preview: ["boom"] },
+        theme,
+        80,
+      );
+      expect(raw).toMatch(/\u001b\[/);
+      expect(visible(raw)[0][0]).toBe("!");
+    }
+  });
 
   test("120 cols fits more per line than 80 cols", () => {
     // Prefixed (~23 chars) this wraps at 80 (78 inner) but fits at 120 (118 inner).
