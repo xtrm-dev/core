@@ -56179,7 +56179,7 @@ async function findDeclaredDuplicatePiPackageProvider(pkgId, agentDir = PI_AGENT
     } catch {
       continue;
     }
-    const entry = findDuplicatePiPackageProvider(pkgId, normalizeStringArray(settings.packages));
+    const entry = findDuplicatePiPackageProvider(pkgId, packageSpecs(settings.packages));
     if (entry) return { entry, file: file2 };
   }
   return null;
@@ -56610,12 +56610,28 @@ async function removeRetiredPiMcpAdapter(dryRun, log, agentDir = PI_AGENT_DIR, p
   };
 }
 function isRetiredPiMcpAdapterPackage(entry) {
-  const spec = typeof entry === "string" ? entry : entry !== null && typeof entry === "object" && typeof entry.source === "string" ? entry.source : null;
+  const spec = packageEntrySpec(entry);
   return spec !== null && parseNpmPackageName(spec) === RETIRED_PI_MCP_ADAPTER_EXTENSION;
+}
+function packageEntrySpec(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry !== null && typeof entry === "object" && typeof entry.source === "string") {
+    return entry.source;
+  }
+  return null;
+}
+function packageSpecs(packages) {
+  if (!Array.isArray(packages)) return [];
+  return packages.flatMap((entry) => packageEntrySpec(entry) ?? []);
 }
 function detectJsonIndent(text) {
   const match = text.match(/\n([ \t]+)"/);
   return match ? match[1] : 2;
+}
+function serializeLikeOriginal(originalText, value) {
+  const indent = originalText === null ? 2 : detectJsonIndent(originalText);
+  const trailingNewline = originalText === null || originalText.endsWith("\n") ? "\n" : "";
+  return `${JSON.stringify(value, null, indent)}${trailingNewline}`;
 }
 async function dropRetiredPiMcpAdapterEntry(settingsPath, dryRun, log) {
   let text;
@@ -56634,12 +56650,7 @@ async function dropRetiredPiMcpAdapterEntry(settingsPath, dryRun, log) {
     return true;
   }
   const kept = packages.filter((entry) => !isRetiredPiMcpAdapterPackage(entry));
-  const trailingNewline = text.endsWith("\n") ? "\n" : "";
-  await import_fs_extra13.default.writeFile(
-    settingsPath,
-    `${JSON.stringify({ ...settings, packages: kept }, null, detectJsonIndent(text))}${trailingNewline}`,
-    "utf8"
-  );
+  await import_fs_extra13.default.writeFile(settingsPath, serializeLikeOriginal(text, { ...settings, packages: kept }), "utf8");
   log?.(kleur_default.dim(`Removed ${RETIRED_PI_MCP_ADAPTER_PACKAGE} from ${settingsPath}`));
   return true;
 }
@@ -56715,12 +56726,11 @@ var LEGACY_XTRM_THEMES = {
 function normalizeXtrmTheme(theme) {
   return typeof theme === "string" ? LEGACY_XTRM_THEMES[theme] ?? theme : theme;
 }
-function normalizeStringArray(value) {
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry) => typeof entry === "string");
+function rawArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 function normalizePiSkillsEntries(existingSkills) {
-  return existingSkills.filter((entry, index) => existingSkills.indexOf(entry) === index && !LEGACY_XTRM_SKILLS_ENTRIES.has(entry));
+  return existingSkills.filter((entry, index) => existingSkills.indexOf(entry) === index && !(typeof entry === "string" && LEGACY_XTRM_SKILLS_ENTRIES.has(entry)));
 }
 async function appendSkillsPointerLog(event) {
   const logPath = import_path3.default.join((0, import_node_os6.homedir)(), ".xtrm", "logs", "skills-migration.jsonl");
@@ -56741,21 +56751,25 @@ function pruneConflictingPiPackageEntries(entries) {
   const kept = [];
   const removed = [];
   for (const entry of entries) {
-    if (CONFLICTING_PI_PACKAGE_IDS.has(entry)) removed.push(entry);
+    const spec = packageEntrySpec(entry);
+    if (spec !== null && CONFLICTING_PI_PACKAGE_IDS.has(normalizePiPackageIdentity(spec))) removed.push(entry);
     else kept.push(entry);
   }
   return { kept, removed };
 }
 async function pruneConflictingPiPackagesFromSettings(settingsPath, scopeLabel, dryRun, migrateXtrmPreferences = false, log) {
   if (!await import_fs_extra13.default.pathExists(settingsPath)) return [];
-  let existingSettings = {};
+  let text;
+  let existingSettings;
   try {
-    existingSettings = await import_fs_extra13.default.readJson(settingsPath);
+    text = await import_fs_extra13.default.readFile(settingsPath, "utf8");
+    existingSettings = JSON.parse(text);
   } catch {
     return [];
   }
-  const existingPackages = normalizeStringArray(existingSettings.packages);
-  const { kept, removed } = pruneConflictingPiPackageEntries(existingPackages);
+  if (typeof existingSettings !== "object" || existingSettings === null || Array.isArray(existingSettings)) return [];
+  const { kept, removed: removedEntries } = pruneConflictingPiPackageEntries(rawArray(existingSettings.packages));
+  const removed = removedEntries.flatMap((entry) => packageEntrySpec(entry) ?? []);
   const theme = migrateXtrmPreferences ? normalizeXtrmTheme(existingSettings.theme) : existingSettings.theme;
   const themeChanged = theme !== existingSettings.theme;
   const hasObsoleteCompactSetting = migrateXtrmPreferences && "xtrmExternalCompact" in existingSettings;
@@ -56770,7 +56784,7 @@ async function pruneConflictingPiPackagesFromSettings(settingsPath, scopeLabel, 
   if (removed.length > 0) nextSettings.packages = kept;
   if (themeChanged) nextSettings.theme = theme;
   if (hasObsoleteCompactSetting) delete nextSettings.xtrmExternalCompact;
-  await import_fs_extra13.default.writeJson(settingsPath, nextSettings, { spaces: 2 });
+  await import_fs_extra13.default.writeFile(settingsPath, serializeLikeOriginal(text, nextSettings), "utf8");
   if (removed.length > 0) log?.(kleur_default.dim(`Removed conflicting Pi package(s) from ${scopeLabel}: ${removed.join(", ")}`));
   if (themeChanged) log?.(kleur_default.dim(`Migrated Pi theme in ${scopeLabel}: ${String(existingSettings.theme)} \u2192 ${String(theme)}`));
   return removed;
@@ -56811,8 +56825,10 @@ function isManagedPiExtensionsPackageEntry(entry) {
 async function ensureGlobalDeclaresExtensionPackage(dryRun, log) {
   const settingsPath = import_path3.default.join(PI_AGENT_DIR, "settings.json");
   let settings;
+  let text = null;
   try {
-    settings = await import_fs_extra13.default.readJson(settingsPath);
+    text = await import_fs_extra13.default.readFile(settingsPath, "utf8");
+    settings = JSON.parse(text);
   } catch (error51) {
     const errno = error51.code;
     if (errno !== "ENOENT") {
@@ -56823,12 +56839,12 @@ async function ensureGlobalDeclaresExtensionPackage(dryRun, log) {
     }
     settings = {};
   }
-  const globalPackages = normalizeStringArray(settings.packages);
-  if (globalPackages.some((entry) => isManagedPiExtensionsPackageEntry(entry))) return true;
+  const globalPackages = rawArray(settings.packages);
+  if (packageSpecs(globalPackages).some((spec) => isManagedPiExtensionsPackageEntry(spec))) return true;
   if (dryRun) return true;
   try {
     await import_fs_extra13.default.ensureDir(PI_AGENT_DIR);
-    await import_fs_extra13.default.writeJson(settingsPath, { ...settings, packages: [...globalPackages, PROJECT_EXTENSION_PACKAGE_ID] }, { spaces: 2 });
+    await import_fs_extra13.default.writeFile(settingsPath, serializeLikeOriginal(text, { ...settings, packages: [...globalPackages, PROJECT_EXTENSION_PACKAGE_ID] }), "utf8");
     return true;
   } catch (error51) {
     const msg = `\u26A0 cannot ensure global registration of ${PROJECT_EXTENSION_PACKAGE_ID}: write to ${settingsPath} failed (${error51.message}). Leaving per-repo entry in place.`;
@@ -56841,18 +56857,20 @@ async function updatePiSettings(projectRoot, dryRun, log) {
   const piDirPath = import_path3.default.join(projectRoot, ".pi");
   const piSettingsPath = import_path3.default.join(piDirPath, "settings.json");
   let existingSettings = {};
+  let originalText = null;
   try {
-    existingSettings = await import_fs_extra13.default.readJson(piSettingsPath);
+    originalText = await import_fs_extra13.default.readFile(piSettingsPath, "utf8");
+    existingSettings = JSON.parse(originalText);
   } catch (error51) {
     if (error51.code !== "ENOENT") throw error51;
   }
   const LEGACY_PACKAGE_IDS = /* @__PURE__ */ new Set(["npm:@xtrm/pi-extensions", "./extensions/"]);
-  const existingProjectPackages = normalizeStringArray(existingSettings.packages).filter((entry) => !LEGACY_PACKAGE_IDS.has(entry) && !entry.startsWith("./extensions/"));
+  const existingProjectPackages = rawArray(existingSettings.packages).filter((entry) => typeof entry !== "string" || !LEGACY_PACKAGE_IDS.has(entry) && !entry.startsWith("./extensions/"));
   const { kept } = pruneConflictingPiPackageEntries(existingProjectPackages);
   const existingPackages = await reconcileProjectExtensionPackageEntry(kept, dryRun, log);
-  const existingSkills = normalizeStringArray(existingSettings.skills);
+  const existingSkills = rawArray(existingSettings.skills);
   const normalizedSkills = normalizePiSkillsEntries(existingSkills);
-  const existingExtensions = normalizeStringArray(existingSettings.extensions).filter((entry) => !LEGACY_PROJECT_EXTENSION_ENTRIES.has(entry));
+  const existingExtensions = rawArray(existingSettings.extensions).filter((entry) => typeof entry !== "string" || !LEGACY_PROJECT_EXTENSION_ENTRIES.has(entry));
   const nextSettings = {
     ...existingSettings,
     extensions: existingExtensions,
@@ -56878,7 +56896,7 @@ async function updatePiSettings(projectRoot, dryRun, log) {
     });
   }
   await import_fs_extra13.default.ensureDir(piDirPath);
-  await import_fs_extra13.default.writeJson(piSettingsPath, nextSettings, { spaces: 2 });
+  await import_fs_extra13.default.writeFile(piSettingsPath, serializeLikeOriginal(originalText, nextSettings), "utf8");
   log?.(kleur_default.dim(`Updated .pi/settings.json \u2192 ${existingPackages.join(" + ") || "no project packages"} + ${normalizedSkills.join(" + ")}`));
   return true;
 }
