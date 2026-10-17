@@ -59,8 +59,12 @@ export interface ProducerConnection {
 
 interface LiveSession {
     identity: AgentSessionIdentity;
-    /** Pid most recently replaced on this session; its win-back re-asserts are refused (F1). */
-    replacedPid?: number;
+    /**
+     * Pids this session replaced (CORE-2436 I5 follow-up c): every pid ever
+     * replaced on this session, so after A→B→C replacements neither A nor B
+     * can win the binding back. A set, never a single slot.
+     */
+    replacedPids: Set<number>;
     /** The latest session_status (model, thinking level, context usage); each one replaces the last. */
     status: AgentSessionStatus | null;
     connection: ProducerConnection | null;
@@ -242,7 +246,7 @@ export class AgentHostRegistry {
                 // F1: remember whom this session just replaced, so a win-back
                 // re-assert from that pid is refused instead of ping-ponging.
                 if (previousConnection && (verdict === 'replace' || verdict === 'handover')) {
-                    if (typeof session.identity.pid === 'number') session.replacedPid = session.identity.pid;
+                    if (typeof session.identity.pid === 'number') session.replacedPids.add(session.identity.pid);
                 }
                 session.identity = identity;
                 session.connection = connection;
@@ -255,6 +259,7 @@ export class AgentHostRegistry {
             } else {
                 session = {
                     identity,
+                    replacedPids: new Set(),
                     status: null,
                     connection,
                     frameOpen: false,
@@ -423,7 +428,7 @@ export class AgentHostRegistry {
             if (identity.generation! > stored.generation!) {
                 // F1: the pid this session just replaced does not win the
                 // binding back by bumping its generation (ping-pong refusal).
-                if (identity.pid === previous.replacedPid) return 'winback';
+                if (typeof identity.pid === 'number' && previous.replacedPids.has(identity.pid)) return 'winback';
                 return 'replace';
             }
             // Equal generation on another connection: a re-assert after the old
@@ -634,7 +639,15 @@ export class AgentHostRegistry {
     wake(
         participant: string,
         payloadRef: string,
-        opts: { ttlMs?: number; messageId?: string } = {},
+        opts: {
+            ttlMs?: number;
+            messageId?: string;
+            from?: string;
+            fromName?: string;
+            fromSessionId?: string;
+            replyTo?: string;
+            notifyWhenIdle?: boolean;
+        } = {},
     ): WakeResult {
         if (!participant || !participant.trim()) throw new Error('wake needs a participant');
         if (!payloadRef || !payloadRef.trim()) throw new Error('wake needs a payload reference');
@@ -656,12 +669,25 @@ export class AgentHostRegistry {
             // F5: dedupe only while queued or held; a new wake after a
             // terminal state sends again under the same stable id.
             if (state === 'queued' || state === 'held') return { messageId, state };
+            // CORE-2436 I5 (b): a caller-supplied id is an idempotency key
+            // across terminal states. A retry with the same id after
+            // delivered/refused/undelivered/expired returns the recorded
+            // state and does not resend; a new id resends.
+            if (existing.callerMessageId && opts.messageId !== undefined && opts.messageId.trim() === messageId) {
+                return { messageId, state };
+            }
             this.wakes.delete(messageId);
         }
         const record: WakeRecord = {
             messageId,
             participant,
             payloadRef,
+            callerMessageId: opts.messageId !== undefined,
+            ...(opts.from !== undefined ? { from: opts.from } : {}),
+            ...(opts.fromName !== undefined ? { fromName: opts.fromName } : {}),
+            ...(opts.fromSessionId !== undefined ? { fromSessionId: opts.fromSessionId } : {}),
+            ...(opts.replyTo !== undefined ? { replyTo: opts.replyTo } : {}),
+            ...(opts.notifyWhenIdle !== undefined ? { notifyWhenIdle: opts.notifyWhenIdle } : {}),
             sessionId: null,
             state: 'held',
             createdAt: now,
@@ -671,7 +697,7 @@ export class AgentHostRegistry {
         const resolved = resolveWakeParticipant(this.wakeSessions(), participant);
         if (!resolved) {
             this.storeWake(record);
-            return { messageId, state: 'held' };
+            return { messageId, state: wakeStateNow(record, now) };
         }
         record.sessionId = resolved.sessionId;
         this.storeWake(record);
@@ -730,6 +756,11 @@ export class AgentHostRegistry {
             commandId: record.messageId,
             messageId: record.messageId,
             payloadRef: record.payloadRef,
+            ...(record.from !== undefined ? { from: record.from } : {}),
+            ...(record.fromName !== undefined ? { fromName: record.fromName } : {}),
+            ...(record.fromSessionId !== undefined ? { fromSessionId: record.fromSessionId } : {}),
+            ...(record.replyTo !== undefined ? { replyTo: record.replyTo } : {}),
+            ...(record.notifyWhenIdle !== undefined ? { notifyWhenIdle: record.notifyWhenIdle } : {}),
         };
         if (this.pending.has(command.commandId)) return;
         record.state = 'queued';

@@ -46,6 +46,41 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { injectIntercomWake, wakeDeliveryOptions, WakeDedupe } from "../intercom/delivery.ts";
+import type { WakeSender } from "../intercom/delivery.ts";
+
+/**
+ * One successfully injected inbound wake (CORE-2436 I5). The intercom
+ * extension registers a listener to resolve pending asks (replyTo) and to
+ * arm idle-notice subscriptions (notifyWhenIdle); the bridge itself never
+ * imports the intercom tool, so the layering stays one-directional.
+ */
+export interface InjectedWakeNotice extends WakeSender {
+  messageId: string;
+  ref: string;
+  fromSessionId?: string;
+  replyTo?: string;
+  notifyWhenIdle?: boolean;
+}
+
+const wakeInjectedListeners = new Set<(notice: InjectedWakeNotice) => void>();
+
+/** Register a listener for injected inbound wakes. Returns an unsubscribe function. */
+export function onWakeInjected(listener: (notice: InjectedWakeNotice) => void): () => void {
+  wakeInjectedListeners.add(listener);
+  return () => {
+    wakeInjectedListeners.delete(listener);
+  };
+}
+
+function emitWakeInjected(notice: InjectedWakeNotice): void {
+  for (const listener of [...wakeInjectedListeners]) {
+    try {
+      listener(notice);
+    } catch {
+      /* a faulty listener must never break delivery */
+    }
+  }
+}
 import pkg from "../../package.json" with { type: "json" };
 
 export const PRODUCER_NAME = "@jaggerxtrm/pi-extensions/xtrm-agent-host";
@@ -241,7 +276,22 @@ interface SessionBinding {
    * accepted only when agent_start actually delivers it; a run that never
    * starts re-holds them so the registry keeps them instead of forgetting.
    */
-  deferredWake: Array<{ messageId: string; ref: string; accept: () => void; hold: () => void; fail: (reason: string, message: string) => void }>;
+  deferredWake: Array<{
+    messageId: string;
+    ref: string;
+    sender: WakeSender & { fromSessionId?: string; replyTo?: string; notifyWhenIdle?: boolean };
+    accept: () => void;
+    hold: () => void;
+    fail: (reason: string, message: string) => void;
+  }>;
+  /**
+   * True once this binding saw agent_start (CORE-2436 I5 first-turn race).
+   * Pi reports isIdle() === true until the first agent_start (tool loadout),
+   * so a wake injected with triggerTurn before it starts a second run and
+   * fails with "Agent is already processing". Wakes wait until the session
+   * can accept them; reset on every session_start.
+   */
+  sawAgentStart: boolean;
   /** A replaced listener re-asserts once per connection; never ping-pongs a replacement (F1). */
   reassertedThisConnection: boolean;
   readBuffer: string;
@@ -294,6 +344,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       startingAt: null,
       deferred: [],
       deferredWake: [],
+      sawAgentStart: false,
       reassertedThisConnection: false,
       readBuffer: "",
       generation: 1,
@@ -836,6 +887,24 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       const ref = typeof command.payloadRef === "string" ? command.payloadRef : "";
       if (!ref) return result("rejected", "invalid_command", "payload reference is empty");
       const messageId = typeof command.messageId === "string" && command.messageId ? command.messageId : command.commandId;
+      // CORE-2436 I5 sender fields ride the wake frame (optional: I1 senders omit them).
+      const optText = (value: unknown, max: number): string | undefined =>
+        typeof value === "string" && value.length > 0 ? value.slice(0, max) : undefined;
+      const sender = {
+        ...(optText((command as { from?: unknown }).from, 256) !== undefined
+          ? { from: optText((command as { from?: unknown }).from, 256) as string }
+          : {}),
+        ...(optText((command as { fromName?: unknown }).fromName, 256) !== undefined
+          ? { fromName: optText((command as { fromName?: unknown }).fromName, 256) as string }
+          : {}),
+        ...(optText((command as { fromSessionId?: unknown }).fromSessionId, 256) !== undefined
+          ? { fromSessionId: optText((command as { fromSessionId?: unknown }).fromSessionId, 256) as string }
+          : {}),
+        ...(optText((command as { replyTo?: unknown }).replyTo, 128) !== undefined
+          ? { replyTo: optText((command as { replyTo?: unknown }).replyTo, 128) as string }
+          : {}),
+        ...((command as { notifyWhenIdle?: unknown }).notifyWhenIdle === true ? { notifyWhenIdle: true as const } : {}),
+      };
       // F1: answer a duplicate from its real state — held while still
       // deferred, accepted once injected — and never mark before injecting,
       // so a held-then-flushed or failed-then-resent wake still injects.
@@ -843,28 +912,45 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       if (b.deferredWake.some((wake) => wake.messageId === messageId))
         return result("rejected", "held", "the wake is already held for this session");
       const fail = (reason: string, message: string) => result("failed", reason, message);
-      if (starting) {
+      // CORE-2436 I5 first-turn race: before the first agent_start Pi
+      // reports idle while its initial turn is already starting, so a
+      // triggerTurn injection would start a second run and fail with
+      // "Agent is already processing". Hold such wakes like any starting
+      // wake; agent_start flushes them into the fresh run.
+      const firstTurnPending = !b.sawAgentStart;
+      if (starting || firstTurnPending) {
         // F7: only deferred, not delivered: hold the wake and answer accepted
-        // only when agent_start actually delivers it.
+        // only when agent_start actually delivers it. The injected hook still
+        // fires: a threaded reply (replyTo) resolves its waiting ask from the
+        // frame alone, and an idle subscription arms now (re-armed on flush).
+        emitWakeInjected({ messageId, ref, ...sender });
         b.deferredWake.push({
           messageId,
           ref,
+          sender,
           accept: () => result("accepted"),
           hold: () => result("rejected", "held", "the session never started; the wake stays held"),
           fail,
         });
-        return result("rejected", "held", "the session is starting; the wake stays held until it is delivered");
+        return result(
+          "rejected",
+          "held",
+          firstTurnPending && !starting
+            ? "the session has not started its first turn; the wake stays held until it is delivered"
+            : "the session is starting; the wake stays held until it is delivered",
+        );
       }
       const idle = current.isIdle();
       // F5: a peer wake never counts as GUI ingress. A wake that starts a
       // run marks the startup window only after its injection succeeded, so
       // a failed injection leaves no stale starting state behind (F1).
       try {
-        injectIntercomWake(pi, messageId, ref, wakeDeliveryOptions({ idle }));
+        injectIntercomWake(pi, messageId, ref, wakeDeliveryOptions({ idle }), sender);
       } catch (error) {
         return fail("injection_failed", error instanceof Error ? error.message : String(error));
       }
       b.deliveredWakes.mark(messageId);
+      emitWakeInjected({ messageId, ref, ...sender });
       if (idle) b.startingAt = Date.now();
       return result("accepted");
     }
@@ -946,6 +1032,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         bindings.set(id, b);
       }
       touch(id);
+      // CORE-2436 I5: every session start precedes a potential first turn;
+      // wakes hold until agent_start proves the session can accept them.
+      b.sawAgentStart = false;
       track(b, current);
       if (b.state === "closed") return;
       // A live socket stays live: only a binding without one (re)connects.
@@ -983,6 +1072,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       b.toolCache = null;
       b.streaming = true;
       emit(b, { type: "agent_start" });
+      b.sawAgentStart = true;
       b.startingAt = null;
       const run = b.deferred;
       b.deferred = [];
@@ -996,8 +1086,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       b.deferredWake = [];
       for (const wake of wakes) {
         try {
-          injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: false }));
+          injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: false }), wake.sender);
           b.deliveredWakes.mark(wake.messageId);
+          emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender });
           wake.accept();
         } catch (error) {
           wake.fail("injection_failed", error instanceof Error ? error.message : String(error));

@@ -42,16 +42,45 @@ function bounded(value: unknown, max = 1024): string {
 }
 
 /**
+ * Sender identity for the from-envelope (CORE-2436 I5). The address is the
+ * session name `to` accepts; the display name feeds from-name. Both are
+ * envelope-escaped; absent fields omit their attributes (I1-era frames).
+ */
+export interface WakeSender {
+  from?: string;
+  fromName?: string;
+}
+
+/**
+ * The one action line every inbound message carries (ADR D3): how to reply.
+ * The address is the sender's `to`-address; unknown only for I1-era frames
+ * that carry no sender.
+ */
+export function buildReplyActionLine(from?: string): string {
+  const target = escapeEnvelope(bounded(from ?? "", 256) || "unknown");
+  return `Reply with SendMessage to="${target}"`;
+}
+
+/**
  * Model-visible content for one wake: the payload reference inside a
- * `<cross-session-message>` envelope (Claude Code's inbound tag, D1),
- * followed by the D2 provenance line. Plain fallback text; the house card
- * renderer is I7 (CORE-2438), not this slice. Both interpolated values are
+ * `<cross-session-message>` envelope (Claude Code's inbound tag, D1) with
+ * the sender's from-attributes when known, followed by the one D3 action
+ * line and the D2 provenance line. Plain fallback text; the house card
+ * renderer is I7 (CORE-2438), not this slice. Every interpolated value is
  * envelope-escaped so a forged closing/opening tag stays inert text.
  */
-export function buildIntercomWakeContent(messageId: string, payloadRef: string): string {
+export function buildIntercomWakeContent(messageId: string, payloadRef: string, sender: WakeSender = {}): string {
   const id = escapeEnvelope(bounded(messageId, 128) || "unknown");
-  const ref = escapeEnvelope(bounded(payloadRef));
-  return `<cross-session-message message-id="${id}">\n${ref}\n</cross-session-message>\n\n${PROVENANCE_LINE}`;
+  const ref = escapeEnvelope(bounded(payloadRef, 8 * 1024));
+  const from = sender.from ? ` from="${escapeEnvelope(bounded(sender.from, 256))}"` : "";
+  const fromName =
+    sender.fromName && sender.fromName !== sender.from
+      ? ` from-name="${escapeEnvelope(bounded(sender.fromName, 256))}"`
+      : "";
+  return (
+    `<cross-session-message message-id="${id}"${from}${fromName}>\n${ref}\n</cross-session-message>\n\n` +
+    `${buildReplyActionLine(sender.from)}\n\n${PROVENANCE_LINE}`
+  );
 }
 
 function escapeEnvelope(value: string): string {
@@ -59,8 +88,17 @@ function escapeEnvelope(value: string): string {
 }
 
 /** Non-model details carried alongside the injected message for later renderers. */
-export function buildIntercomWakeDetails(messageId: string, payloadRef: string): { messageId: string; payloadRef: string } {
-  return { messageId: bounded(messageId, 128), payloadRef: bounded(payloadRef) };
+export function buildIntercomWakeDetails(
+  messageId: string,
+  payloadRef: string,
+  sender: WakeSender = {},
+): { messageId: string; payloadRef: string; from?: string; fromName?: string } {
+  return {
+    messageId: bounded(messageId, 128),
+    payloadRef: bounded(payloadRef, 8 * 1024),
+    ...(sender.from ? { from: bounded(sender.from, 256) } : {}),
+    ...(sender.fromName ? { fromName: bounded(sender.fromName, 256) } : {}),
+  };
 }
 
 /** D6 delivery choice: followUp (+ triggerTurn) when idle, queued followUp when busy. */
@@ -82,13 +120,14 @@ export function injectIntercomWake(
   messageId: string,
   payloadRef: string,
   options: WakeDelivery,
+  sender: WakeSender = {},
 ): void {
   pi.sendMessage(
     {
       customType: INTERCOM_MESSAGE_TYPE,
-      content: buildIntercomWakeContent(messageId, payloadRef),
+      content: buildIntercomWakeContent(messageId, payloadRef, sender),
       display: true,
-      details: buildIntercomWakeDetails(messageId, payloadRef),
+      details: buildIntercomWakeDetails(messageId, payloadRef, sender),
     },
     { ...options },
   );

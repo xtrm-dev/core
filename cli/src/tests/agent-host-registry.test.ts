@@ -293,6 +293,82 @@ describe('CORE-2432 wake contract', () => {
         expect(registry.wakeStatus(w.messageId)?.state).toBe('delivered');
     });
 
+    it('CORE-2436 (b) a caller-supplied id is an idempotency key across terminal states', () => {
+        const { registry } = registryWithLog();
+        const { connection, sent } = stubConnection();
+        registry.ingest(connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'worker' }));
+        const wakes = () => sent.filter((s) => s.payload.type === 'wake');
+        expect(registry.wake('worker', 'CORE-1', { messageId: 'ask-1' })).toEqual({
+            messageId: 'ask-1',
+            state: 'queued',
+        });
+        expect(wakes()).toHaveLength(1);
+        // Delivered: a retry with the same id returns the recorded state and does not resend.
+        registry.ingest(connection, commandResult('s-1', 'ask-1', 'accepted'));
+        expect(registry.wake('worker', 'CORE-1', { messageId: 'ask-1' })).toEqual({
+            messageId: 'ask-1',
+            state: 'delivered',
+        });
+        expect(wakes()).toHaveLength(1);
+        // Refused: same rule.
+        expect(registry.wake('worker', 'CORE-2', { messageId: 'ask-2' }).state).toBe('queued');
+        registry.ingest(connection, commandResult('s-1', 'ask-2', 'rejected', 'nope'));
+        expect(registry.wake('worker', 'CORE-2', { messageId: 'ask-2' })).toEqual({
+            messageId: 'ask-2',
+            state: 'refused',
+        });
+        expect(wakes()).toHaveLength(2);
+        // Expired: same rule (unknown participant, ttlMs 0: held-then-expired, never sent).
+        expect(registry.wake('nobody-here', 'CORE-3', { messageId: 'ask-3', ttlMs: 0 }).state).toBe('expired');
+        expect(registry.wake('nobody-here', 'CORE-3', { messageId: 'ask-3' })).toEqual({
+            messageId: 'ask-3',
+            state: 'expired',
+        });
+        expect(wakes()).toHaveLength(2);
+        // Undelivered: same rule.
+        expect(registry.wake('worker', 'CORE-4', { messageId: 'ask-4' }).state).toBe('queued');
+        registry.close();
+        expect(registry.wake('worker', 'CORE-4', { messageId: 'ask-4' })).toEqual({
+            messageId: 'ask-4',
+            state: 'undelivered',
+        });
+        // A new id still resends (the stub connection is still bound after close).
+        const sentBefore = wakes().length;
+        const fresh = registry.wake('worker', 'CORE-1', { messageId: 'ask-5' });
+        expect(fresh.messageId).toBe('ask-5');
+        expect(wakes().length).toBe(sentBefore + 1);
+    });
+
+    it('CORE-2436 (b) stable ids keep the F5 resend-after-terminal behaviour', () => {
+        const { registry } = registryWithLog();
+        const { connection, sent } = stubConnection();
+        registry.ingest(connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'worker' }));
+        const wakes = () => sent.filter((s) => s.payload.type === 'wake');
+        const first = registry.wake('worker', 'CORE-9');
+        registry.ingest(connection, commandResult('s-1', first.messageId, 'accepted'));
+        const second = registry.wake('worker', 'CORE-9');
+        expect(second).toEqual({ messageId: first.messageId, state: 'queued' });
+        expect(wakes()).toHaveLength(2);
+    });
+
+    it('CORE-2436 (c) after A→B→C replacements neither A nor B wins the binding back', () => {
+        const { registry, lines } = registryWithLog();
+        const a = stubConnection();
+        const b = stubConnection();
+        const c = stubConnection();
+        expect(registry.ingest(a.connection, identity('s-1', { pid: 1, generation: 1 }))).toBe(true);
+        expect(registry.ingest(b.connection, identity('s-1', { pid: 2, generation: 2 }))).toBe(true);
+        expect(registry.ingest(c.connection, identity('s-1', { pid: 3, generation: 3 }))).toBe(true);
+        // A tries with a bumped generation: refused.
+        expect(registry.ingest(a.connection, identity('s-1', { pid: 1, generation: 4 }))).toBe(false);
+        // B tries with a bumped generation: refused too (single-slot code would let B back in).
+        expect(registry.ingest(b.connection, identity('s-1', { pid: 2, generation: 4 }))).toBe(false);
+        expect(lines.join('\n')).toMatch(/refused win-back session_identity for session s-1/);
+        expect(registry.detail('s-1')?.identity).toMatchObject({ pid: 3, generation: 3 });
+        // The owner re-asserting over its own socket still adopts.
+        expect(registry.ingest(c.connection, identity('s-1', { pid: 3, generation: 3 }))).toBe(true);
+    });
+
     it('F5 a caller-supplied message id keys dedupe', () => {
         const { registry } = registryWithLog();
         const { connection, sent } = stubConnection();

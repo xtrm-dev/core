@@ -77034,6 +77034,7 @@ var import_node_path65 = __toESM(require("path"), 1);
 
 // ../packages/contracts/dist/index.js
 var import_ajv2 = __toESM(require_ajv(), 1);
+var import_crypto2 = require("crypto");
 var SCHEMA_ID = {
   runtimeCompatibility: "xtrm.runtime-compatibility.v1",
   interactiveRoleEnvelope: "xtrm.interactive-role-envelope.v1",
@@ -79381,6 +79382,9 @@ function diffTopology(prev, next) {
   if (!same(prev.orphans, next.orphans)) diff.orphans = next.orphans;
   return diff;
 }
+function stableWakeMessageId(participant, payloadRef) {
+  return (0, import_crypto2.createHash)("sha256").update(`${participant}\0${payloadRef}`, "utf8").digest("hex").slice(0, 32);
+}
 
 // src/core/agent-host-auth.ts
 var PAIRING_TOKEN_PREFIX = "xtp_";
@@ -80382,12 +80386,8 @@ var ToolOriginClassifier = class {
 };
 
 // src/core/agent-host-wake.ts
-var import_node_crypto20 = require("crypto");
 var DEFAULT_WAKE_TTL_MS = 5 * 6e4;
 var MAX_WAKE_RECORDS = 1024;
-function stableWakeMessageId(participant, payloadRef) {
-  return (0, import_node_crypto20.createHash)("sha256").update(`${participant}\0${payloadRef}`, "utf8").digest("hex").slice(0, 32);
-}
 function resolveWakeParticipant(sessions, participant) {
   const direct = sessions.find((s) => s.sessionId === participant);
   if (direct) return { sessionId: direct.sessionId };
@@ -80504,7 +80504,7 @@ var AgentHostRegistry = class {
       const previousConnection = session && session.connection !== null && session.connection !== connection ? session.connection : null;
       if (session) {
         if (previousConnection && (verdict === "replace" || verdict === "handover")) {
-          if (typeof session.identity.pid === "number") session.replacedPid = session.identity.pid;
+          if (typeof session.identity.pid === "number") session.replacedPids.add(session.identity.pid);
         }
         session.identity = identity;
         session.connection = connection;
@@ -80516,6 +80516,7 @@ var AgentHostRegistry = class {
       } else {
         session = {
           identity,
+          replacedPids: /* @__PURE__ */ new Set(),
           status: null,
           connection,
           frameOpen: false,
@@ -80657,7 +80658,7 @@ var AgentHostRegistry = class {
     if (incomingScoped && storedScoped) {
       if (identity.generation < stored.generation) return "stale";
       if (identity.generation > stored.generation) {
-        if (identity.pid === previous.replacedPid) return "winback";
+        if (typeof identity.pid === "number" && previous.replacedPids.has(identity.pid)) return "winback";
         return "replace";
       }
       if (previous.connection === null) return "adopt";
@@ -80848,12 +80849,21 @@ var AgentHostRegistry = class {
     if (existing) {
       const state = wakeStateNow(existing, now);
       if (state === "queued" || state === "held") return { messageId, state };
+      if (existing.callerMessageId && opts.messageId !== void 0 && opts.messageId.trim() === messageId) {
+        return { messageId, state };
+      }
       this.wakes.delete(messageId);
     }
     const record2 = {
       messageId,
       participant,
       payloadRef,
+      callerMessageId: opts.messageId !== void 0,
+      ...opts.from !== void 0 ? { from: opts.from } : {},
+      ...opts.fromName !== void 0 ? { fromName: opts.fromName } : {},
+      ...opts.fromSessionId !== void 0 ? { fromSessionId: opts.fromSessionId } : {},
+      ...opts.replyTo !== void 0 ? { replyTo: opts.replyTo } : {},
+      ...opts.notifyWhenIdle !== void 0 ? { notifyWhenIdle: opts.notifyWhenIdle } : {},
       sessionId: null,
       state: "held",
       createdAt: now,
@@ -80863,7 +80873,7 @@ var AgentHostRegistry = class {
     const resolved = resolveWakeParticipant(this.wakeSessions(), participant);
     if (!resolved) {
       this.storeWake(record2);
-      return { messageId, state: "held" };
+      return { messageId, state: wakeStateNow(record2, now) };
     }
     record2.sessionId = resolved.sessionId;
     this.storeWake(record2);
@@ -80914,7 +80924,12 @@ var AgentHostRegistry = class {
       type: "wake",
       commandId: record2.messageId,
       messageId: record2.messageId,
-      payloadRef: record2.payloadRef
+      payloadRef: record2.payloadRef,
+      ...record2.from !== void 0 ? { from: record2.from } : {},
+      ...record2.fromName !== void 0 ? { fromName: record2.fromName } : {},
+      ...record2.fromSessionId !== void 0 ? { fromSessionId: record2.fromSessionId } : {},
+      ...record2.replyTo !== void 0 ? { replyTo: record2.replyTo } : {},
+      ...record2.notifyWhenIdle !== void 0 ? { notifyWhenIdle: record2.notifyWhenIdle } : {}
     };
     if (this.pending.has(command.commandId)) return;
     record2.state = "queued";
@@ -81707,7 +81722,7 @@ function bounded2(value, max) {
 
 // src/core/topology-feed.ts
 var import_node_child_process40 = require("child_process");
-var import_node_crypto21 = require("crypto");
+var import_node_crypto20 = require("crypto");
 var import_node_readline2 = require("readline");
 var TOPOLOGY_UPDATE_MAX_BYTES = 64 * 1024;
 var TOPOLOGY_SNAPSHOT_MAX_BYTES = 4 * 1024 * 1024;
@@ -81723,7 +81738,7 @@ function topologyRevision(projection) {
     generated_at_ms: 0,
     sources: projection.sources.map((source) => ({ ...source, duration_ms: 0 }))
   };
-  return (0, import_node_crypto21.createHash)("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 16);
+  return (0, import_node_crypto20.createHash)("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 16);
 }
 function buildSnapshot(projection, seq, revision) {
   let message = {
@@ -82220,6 +82235,72 @@ async function startAgentHost(options = {}) {
       sendJson(res, 200, await registry2.submit(decoded.value));
       return;
     }
+    if (route === "POST /v1/wake") {
+      const body = await readJsonBody(req, res);
+      if (body === null) return;
+      let wakeRequest;
+      try {
+        const parsed = JSON.parse(body);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+        wakeRequest = parsed;
+      } catch {
+        sendJson(res, 400, apiError("invalid_request", "wake body must be a JSON object"));
+        return;
+      }
+      const stringField = (name, max, required2) => {
+        const value = wakeRequest[name];
+        if (value === void 0) {
+          if (required2) throw new Error(`wake needs ${name}`);
+          return void 0;
+        }
+        if (typeof value !== "string" || !value.trim() || value.length > max) {
+          throw new Error(`wake needs a valid ${name}`);
+        }
+        return name === "messageId" ? value.trim() : value;
+      };
+      try {
+        const participant = stringField("participant", 512, true);
+        const payloadRef = stringField("payloadRef", 32 * 1024, true);
+        const messageId = stringField("messageId", 128, false);
+        const from = stringField("from", 256, false);
+        const fromName = stringField("fromName", 256, false);
+        const fromSessionId = stringField("fromSessionId", 256, false);
+        const replyTo = stringField("replyTo", 128, false);
+        const { notifyWhenIdle } = wakeRequest;
+        if (notifyWhenIdle !== void 0 && typeof notifyWhenIdle !== "boolean") {
+          throw new Error("wake needs a valid notifyWhenIdle");
+        }
+        sendJson(
+          res,
+          200,
+          registry2.wake(participant, payloadRef, {
+            ...messageId !== void 0 ? { messageId } : {},
+            ...from !== void 0 ? { from } : {},
+            ...fromName !== void 0 ? { fromName } : {},
+            ...fromSessionId !== void 0 ? { fromSessionId } : {},
+            ...replyTo !== void 0 ? { replyTo } : {},
+            ...notifyWhenIdle !== void 0 ? { notifyWhenIdle } : {}
+          })
+        );
+      } catch (error51) {
+        sendJson(res, 400, apiError("invalid_request", error51.message));
+      }
+      return;
+    }
+    if (route === "GET /v1/wake") {
+      const messageId = url2.searchParams.get("messageId") ?? "";
+      if (!messageId) {
+        sendJson(res, 400, apiError("invalid_request", "wake status needs a messageId query parameter"));
+        return;
+      }
+      const status2 = registry2.wakeStatus(messageId);
+      if (!status2) {
+        sendJson(res, 404, apiError("wake_not_found", `no wake ${messageId}`));
+        return;
+      }
+      sendJson(res, 200, status2);
+      return;
+    }
     if (route === "POST /v1/launch") {
       const body = await readJsonBody(req, res);
       if (body === null) return;
@@ -82505,7 +82586,7 @@ function safeUnlink(file2) {
 
 // src/core/agent-host-ensure.ts
 var import_node_child_process41 = require("child_process");
-var import_node_crypto22 = require("crypto");
+var import_node_crypto21 = require("crypto");
 var import_node_fs29 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
 var import_node_path71 = __toESM(require("path"), 1);
@@ -82645,7 +82726,7 @@ function logTail(logPath, from) {
   }
 }
 async function acquireLock(lockPath, deadline) {
-  const token = `${process.pid} ${(0, import_node_crypto22.randomUUID)()}`;
+  const token = `${process.pid} ${(0, import_node_crypto21.randomUUID)()}`;
   for (; ; ) {
     try {
       (0, import_node_fs29.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
@@ -82675,7 +82756,7 @@ function breakStaleLock(lockPath) {
       return;
     }
   }
-  const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto22.randomUUID)()}.stale`;
+  const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto21.randomUUID)()}.stale`;
   try {
     (0, import_node_fs29.renameSync)(lockPath, aside);
   } catch {

@@ -171,6 +171,8 @@ describe("intercom live regression: specialist dispatch keeps the parent listene
       expect(host.registry.detail("s-parent")?.identity).toMatchObject({ pid: process.pid, generation: 1 });
 
       // A message to the parent is injected as intercom_message and acknowledged.
+      // CORE-2436 I5: the parent had its first turn (before it, the wake would hold).
+      pi.fire("agent_start", {}, parent.ctx);
       const wake = host.registry.wake("s-parent", "CORE-2433");
       expect(wake.messageId).toBeTruthy();
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
@@ -259,6 +261,7 @@ describe("intercom live regression: specialist dispatch keeps the parent listene
       bridge.register();
       pi.fire("session_start", { reason: "startup" }, c.ctx);
       await until(() => host.registry.list().length === 1);
+      pi.fire("agent_start", {}, c.ctx);
       const wake = host.registry.wake("s-fail", "CORE-2433");
       await until(() => {
         const state = host.registry.wakeStatus(wake.messageId)?.state;
@@ -305,6 +308,7 @@ describe("intercom live regression: specialist dispatch keeps the parent listene
       childPi.fire("session_shutdown", { reason: "quit" }, child.ctx);
       await until(() => host.registry.list().length === 1);
       // A wake to the parent injects into the parent session and is accepted.
+      parentPi.fire("agent_start", {}, parent.ctx);
       const wake = host.registry.wake("s-twoparent", "CORE-2433");
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
       const parentInjected = parentPi.sentCustom.filter((s) => (s.message as any)?.customType === "intercom_message");
@@ -338,6 +342,7 @@ describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433
       await until(() => host.registry.list().length === 1);
       expect(host.registry.list()[0]?.sessionId).toBe("s-shut-child");
       // The surviving child still receives and acks.
+      pi.fire("agent_start", {}, child.ctx);
       const wake = host.registry.wake("s-shut-child", "CORE-2433");
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
       pi.fire("session_shutdown", { reason: "quit" }, child.ctx);
@@ -381,6 +386,7 @@ describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433
       bridge.register();
       pi.fire("session_start", { reason: "startup" }, c.ctx);
       await until(() => host.registry.list().length === 1);
+      pi.fire("agent_start", {}, c.ctx);
       const wake = host.registry.wake("s-ingress", "CORE-2433");
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
       pi.fire("before_agent_start", { prompt: "CORE-2433" }, c.ctx);

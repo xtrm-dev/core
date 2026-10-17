@@ -26,6 +26,7 @@ import { type AgentHostBridgeOptions, ensureAgentHostBridge } from "../xtrm-agen
 import claudeTransportExtension, { type ClaudeTransportOptions } from "./claude-transport/index.ts";
 import { registerIntercomCommands, type IntercomCommandDeps } from "./commands.ts";
 import { registerListAgentsTool, type ListAgentsDeps } from "./roster.ts";
+import { registerSendMessageTool, type SendMessageDeps } from "./sendmessage.ts";
 import { intercomWaiting, registerIntercomFooter } from "./waiting.ts";
 
 export {
@@ -40,7 +41,7 @@ export {
 } from "./delivery.ts";
 export type { WakeDelivery } from "./delivery.ts";
 
-export interface IntercomExtensionOptions extends AgentHostBridgeOptions {
+export interface IntercomExtensionOptions extends AgentHostBridgeOptions, SendMessageDeps {
   /** Socket override forwarded to the Claude transport (tests). */
   claudeSocketPath?: string;
   /** Registry override forwarded to the Claude transport (tests). */
@@ -53,6 +54,7 @@ export type { ClaudeTransportOptions };
 export { intercomWaiting } from "./waiting.ts";
 export type { IntercomCommandDeps, RenameResult } from "./commands.ts";
 export type { ListAgentsDeps, ResolveMiss, RosterEntry, RosterRow } from "./roster.ts";
+export type { SendMessageDeps, SendMessageDetails, WakeSendRequest } from "./sendmessage.ts";
 
 export default function intercomExtension(pi: ExtensionAPI, options: IntercomExtensionOptions = {}): void {
   ensureAgentHostBridge(pi, options).register();
@@ -67,5 +69,10 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
   };
   registerListAgentsTool(pi, rosterDeps);
   registerIntercomCommands(pi, rosterDeps);
+  registerSendMessageTool(pi, {
+    ...(options.claudeSocketPath ? { excludeSock: options.claudeSocketPath } : {}),
+    ...(options.claudeSessionsDir ? { sessionsDir: options.claudeSessionsDir } : {}),
+    ...(options.claudeTransportEnabled !== undefined ? { claudeTransportEnabled: options.claudeTransportEnabled } : {}),
+  });
   registerIntercomFooter(intercomWaiting);
 }
