@@ -28251,7 +28251,7 @@ function _supportsColor(haveStream, { streamIsTTY, sniffFlags = true } = {}) {
     return min;
   }
   if (import_node_process7.default.platform === "win32") {
-    const osRelease = import_node_os19.default.release().split(".");
+    const osRelease = import_node_os17.default.release().split(".");
     if (Number(osRelease[0]) >= 10 && Number(osRelease[2]) >= 10586) {
       return Number(osRelease[2]) >= 14931 ? 3 : 2;
     }
@@ -28310,12 +28310,12 @@ function createSupportsColor(stream, options = {}) {
   });
   return translateLevel(level);
 }
-var import_node_process7, import_node_os19, import_node_tty, env2, flagForceColor, supportsColor, supports_color_default;
+var import_node_process7, import_node_os17, import_node_tty, env2, flagForceColor, supportsColor, supports_color_default;
 var init_supports_color = __esm({
   "../node_modules/chalk/source/vendor/supports-color/index.js"() {
     "use strict";
     import_node_process7 = __toESM(require("process"), 1);
-    import_node_os19 = __toESM(require("os"), 1);
+    import_node_os17 = __toESM(require("os"), 1);
     import_node_tty = __toESM(require("tty"), 1);
     ({ env: env2 } = import_node_process7.default);
     if (hasFlag("no-color") || hasFlag("no-colors") || hasFlag("color=false") || hasFlag("color=never")) {
@@ -55997,7 +55997,9 @@ function resolveManagedPiCoreSourceDir(pkgRoot = resolvePkgRoot()) {
     ["packages", "pi-extensions", "src", "core"]
   ]);
 }
-var PI_AGENT_DIR = process.env.PI_AGENT_DIR || import_path3.default.join((0, import_node_os6.homedir)(), ".pi", "agent");
+function resolvePiAgentDir(env3 = process.env) {
+  return env3.PI_AGENT_DIR || import_path3.default.join((0, import_node_os6.homedir)(), ".pi", "agent");
+}
 function resolvePiLaunchAgentDir(env3 = process.env) {
   return env3.PI_CODING_AGENT_DIR || env3.PI_AGENT_DIR || import_path3.default.join((0, import_node_os6.homedir)(), ".pi", "agent");
 }
@@ -56010,7 +56012,7 @@ var MANAGED_XTRM_THEME_FILES = [
   "xtrm-light.json",
   "xtrm-light-flattools.json"
 ];
-async function syncManagedPiThemes(sourceDir, dryRun, log, themeDir = import_path3.default.join(PI_AGENT_DIR, "themes")) {
+async function syncManagedPiThemes(sourceDir, dryRun, log, themeDir = import_path3.default.join(resolvePiAgentDir(), "themes")) {
   if (!sourceDir || !await import_fs_extra13.default.pathExists(sourceDir)) return false;
   const missing = MANAGED_XTRM_THEME_FILES.filter((name) => !import_fs_extra13.default.existsSync(import_path3.default.join(sourceDir, name)));
   if (missing.length > 0) {
@@ -56164,7 +56166,7 @@ function findDuplicatePiPackageProvider(pkgId, entries) {
   if (!identity) return null;
   return entries.find((entry) => entry !== pkgId && resolvePiPackageEntryIdentity(entry) === identity) ?? null;
 }
-async function findDeclaredDuplicatePiPackageProvider(pkgId, agentDir = PI_AGENT_DIR, projectRoots) {
+async function findDeclaredDuplicatePiPackageProvider(pkgId, agentDir = resolvePiAgentDir(), projectRoots) {
   const agentSettings = import_path3.default.join(agentDir, "settings.json");
   const projectSettings = typeof projectRoots === "string" ? [projectRoots] : [...projectRoots ?? []];
   const files = [
@@ -56439,7 +56441,7 @@ function installPiPackageWithFallback(piPackageId, log, installRunner = runPiPac
     retriedWithNpmjs: true
   };
 }
-async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, npmRootDir, installedPackageIds) {
+async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = resolvePiAgentDir(), installRunner = runPiPackageInstall, npmRootDir, installedPackageIds) {
   const installed = [];
   const failed2 = [];
   const resolvedNpmRootDir = npmRootDir === void 0 ? await resolveGlobalNpmRootDir() : npmRootDir;
@@ -56469,7 +56471,7 @@ async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = PI_AGENT_DIR
   }
   return { installed, failed: failed2 };
 }
-async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, installRunner = runPiPackageInstall, versionProvider, projectRoots) {
+async function assureXtManagedPiPackages(dryRun, log, agentDir = resolvePiAgentDir(), installRunner = runPiPackageInstall, versionProvider, projectRoots) {
   const npmRootDir = await resolveGlobalNpmRootDir();
   const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
     installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? void 0),
@@ -56519,8 +56521,9 @@ async function assureXtManagedPiPackages(dryRun, log, agentDir = PI_AGENT_DIR, i
 }
 async function getXtManagedPiPackageDoctorReport(versionProvider) {
   const npmRootDir = await resolveGlobalNpmRootDir();
+  const resolvedAgentDir = resolvePiAgentDir();
   const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
-    installedVersion: await getInstalledPiPackageVersion(PI_AGENT_DIR, npmPackageName, npmRootDir ?? void 0),
+    installedVersion: await getInstalledPiPackageVersion(resolvedAgentDir, npmPackageName, npmRootDir ?? void 0),
     expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
   }));
   const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider, getXtManagedPiPackages());
@@ -56569,7 +56572,7 @@ async function ensureCorePackageSymlink(coreSrcDir, projectRoot, dryRun, log) {
 }
 var RETIRED_PI_MCP_ADAPTER_PACKAGE = "npm:pi-mcp-adapter";
 var RETIRED_PI_MCP_ADAPTER_EXTENSION = "pi-mcp-adapter";
-async function removeRetiredPiMcpAdapter(dryRun, log, agentDir = PI_AGENT_DIR, projectRoot) {
+async function removeRetiredPiMcpAdapter(dryRun, log, agentDir = resolvePiAgentDir(), projectRoot) {
   const paths = [
     // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir (PI_CODING_AGENT_DIR/PI_AGENT_DIR or ~/.pi/agent); both leaf segments are constants.
     import_path3.default.join(agentDir, "extensions", RETIRED_PI_MCP_ADAPTER_EXTENSION),
@@ -56789,7 +56792,7 @@ async function pruneConflictingPiPackagesFromSettings(settingsPath, scopeLabel, 
   if (themeChanged) log?.(kleur_default.dim(`Migrated Pi theme in ${scopeLabel}: ${String(existingSettings.theme)} \u2192 ${String(theme)}`));
   return removed;
 }
-async function cleanupConflictingPiPackageSettings(projectRoot, dryRun, isGlobal, log, agentDir = PI_AGENT_DIR) {
+async function cleanupConflictingPiPackageSettings(projectRoot, dryRun, isGlobal, log, agentDir = resolvePiAgentDir()) {
   const globalRemoved = await pruneConflictingPiPackagesFromSettings(
     // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir (PI_CODING_AGENT_DIR/PI_AGENT_DIR or ~/.pi/agent); the leaf is constant.
     import_path3.default.join(agentDir, "settings.json"),
@@ -56823,7 +56826,8 @@ function isManagedPiExtensionsPackageEntry(entry) {
   return segments.length === 1 || segments[segments.length - 2] === "packages";
 }
 async function ensureGlobalDeclaresExtensionPackage(dryRun, log) {
-  const settingsPath = import_path3.default.join(PI_AGENT_DIR, "settings.json");
+  const agentDir = resolvePiAgentDir();
+  const settingsPath = import_path3.default.join(agentDir, "settings.json");
   let settings;
   let text = null;
   try {
@@ -56843,7 +56847,7 @@ async function ensureGlobalDeclaresExtensionPackage(dryRun, log) {
   if (packageSpecs(globalPackages).some((spec) => isManagedPiExtensionsPackageEntry(spec))) return true;
   if (dryRun) return true;
   try {
-    await import_fs_extra13.default.ensureDir(PI_AGENT_DIR);
+    await import_fs_extra13.default.ensureDir(agentDir);
     await import_fs_extra13.default.writeFile(settingsPath, serializeLikeOriginal(text, { ...settings, packages: [...globalPackages, PROJECT_EXTENSION_PACKAGE_ID] }), "utf8");
     return true;
   } catch (error51) {
@@ -57012,7 +57016,7 @@ async function runPiRuntimeSync(opts = {}) {
   const conflictingPackages = await cleanupConflictingPiPackageSettings(resolvedProjectRoot, dryRun, isGlobal, log);
   result.changed ||= conflictingPackages.length > 0;
   if (isGlobal) {
-    const targetDir = import_path3.default.join(PI_AGENT_DIR, "extensions");
+    const targetDir = import_path3.default.join(resolvePiAgentDir(), "extensions");
     const plan = await inventoryPiRuntime(sourceDir, targetDir);
     renderPiRuntimePlan(plan);
     if (!plan.allPresent) {
@@ -57051,7 +57055,7 @@ async function runPiRuntimeSync(opts = {}) {
   result.extensionsRemoved.push(...legacyCleanup.removed);
   result.failed.push(...legacyCleanup.failed);
   result.changed ||= legacyCleanup.removed.length > 0 || legacyCleanup.pending.length > 0;
-  const globalExtDir = import_path3.default.join(PI_AGENT_DIR, "extensions");
+  const globalExtDir = import_path3.default.join(resolvePiAgentDir(), "extensions");
   if (await import_fs_extra13.default.pathExists(globalExtDir)) {
     const globalEntries = await import_fs_extra13.default.readdir(globalExtDir, { withFileTypes: true });
     for (const entry of globalEntries) {
@@ -57071,7 +57075,7 @@ async function runPiRuntimeSync(opts = {}) {
   if (!skipGlobalPackageAssurance) {
     for (const status2 of missingPackages) {
       const { pkg } = status2;
-      const duplicate = await findDeclaredDuplicatePiPackageProvider(pkg.id, PI_AGENT_DIR, resolvedProjectRoot);
+      const duplicate = await findDeclaredDuplicatePiPackageProvider(pkg.id, resolvePiAgentDir(), resolvedProjectRoot);
       if (duplicate) {
         log(kleur_default.dim(`${pkg.displayName}: provided by '${duplicate.entry}' in ${duplicate.file}; skipping pi install`));
         continue;
@@ -60475,7 +60479,6 @@ Examples:
 init_kleur();
 var import_path8 = __toESM(require("path"), 1);
 var import_node_child_process8 = require("child_process");
-var import_node_os12 = require("os");
 var import_fs_extra19 = __toESM(require_lib(), 1);
 
 // src/commands/pi-install.ts
@@ -61080,7 +61083,6 @@ function printGlobalPromptSyncSummary(result) {
 }
 
 // src/commands/pi-install.ts
-var PI_AGENT_DIR2 = process.env.PI_AGENT_DIR || import_path6.default.join((0, import_node_os10.homedir)(), ".pi", "agent");
 function ensurePnpm(dryRun) {
   if (isPnpmInstalled()) {
     const v = (0, import_node_child_process6.spawnSync)("pnpm", ["--version"], { encoding: "utf8", stdio: "pipe" });
@@ -61146,7 +61148,7 @@ async function runPiInstall(dryRun = false, isGlobal = false, projectRoot, optio
   }
   seedGitnexusDefaults(dryRun);
   const configFiles = ["models.json", "auth.json", "settings.json"];
-  const missingConfig = configFiles.filter((f) => !require("fs").existsSync(import_path6.default.join(PI_AGENT_DIR2, f)));
+  const missingConfig = configFiles.filter((f) => !require("fs").existsSync(import_path6.default.join(resolvePiAgentDir(), f)));
   if (missingConfig.length > 0) {
     console.log(kleur_default.yellow(`
   \u26A0 Pi is not fully configured (missing: ${missingConfig.join(", ")})`));
@@ -61178,8 +61180,6 @@ var import_prompts2 = __toESM(require_prompts3(), 1);
 var import_fs_extra18 = __toESM(require_lib(), 1);
 var import_path7 = __toESM(require("path"), 1);
 var import_node_child_process7 = require("child_process");
-var import_node_os11 = require("os");
-var PI_AGENT_DIR3 = process.env.PI_AGENT_DIR || import_path7.default.join((0, import_node_os11.homedir)(), ".pi", "agent");
 function fillTemplate(template, values) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? "");
 }
@@ -61228,7 +61228,7 @@ function createInstallPiCommand() {
     if (check2) {
       console.error("xt pi setup --check is deprecated \u2014 use: xt pi status (planned removal: v0.13.0)");
       const sourceDir2 = resolveManagedPiExtensionsSourceDir();
-      const targetDir2 = import_path7.default.join(PI_AGENT_DIR3, "extensions");
+      const targetDir2 = import_path7.default.join(resolvePiAgentDir(), "extensions");
       if (!sourceDir2) {
         console.log(kleur_default.dim("\n  Managed extensions: skipped (not bundled in npm package)\n"));
         return;
@@ -61242,7 +61242,7 @@ function createInstallPiCommand() {
       }
       return;
     }
-    if (setup || !import_fs_extra18.default.pathExists(import_path7.default.join(PI_AGENT_DIR3, "auth.json"))) {
+    if (setup || !import_fs_extra18.default.pathExists(import_path7.default.join(resolvePiAgentDir(), "auth.json"))) {
       console.log(t.bold("\n  Pi Coding Agent Setup\n"));
       if (!isPiInstalled()) {
         console.log(kleur_default.yellow("  pi not found \u2014 installing oh-pi globally...\n"));
@@ -61260,7 +61260,7 @@ function createInstallPiCommand() {
       console.log(t.bold("  pnpm\n"));
       ensurePnpm2();
       const schema2 = await import_fs_extra18.default.readJson(import_path7.default.join(piConfigDir, "install-schema.json"));
-      const existing = readExistingPiValues(PI_AGENT_DIR3);
+      const existing = readExistingPiValues(resolvePiAgentDir());
       const values = { ...existing };
       console.log(t.bold("\n  API Keys\n"));
       for (const field of schema2.fields) {
@@ -61286,11 +61286,11 @@ function createInstallPiCommand() {
         });
         if (value) values[field.key] = value;
       }
-      await import_fs_extra18.default.ensureDir(PI_AGENT_DIR3);
+      await import_fs_extra18.default.ensureDir(resolvePiAgentDir());
       console.log(t.muted(`
-  Writing config to ${PI_AGENT_DIR3}`));
+  Writing config to ${resolvePiAgentDir()}`));
       for (const name of ["models.json", "auth.json", "settings.json"]) {
-        const destPath = import_path7.default.join(PI_AGENT_DIR3, name);
+        const destPath = import_path7.default.join(resolvePiAgentDir(), name);
         if (name === "auth.json" && await import_fs_extra18.default.pathExists(destPath) && !yes) {
           const { overwrite } = await (0, import_prompts2.default)({
             type: "confirm",
@@ -61309,7 +61309,7 @@ function createInstallPiCommand() {
       }
     }
     const sourceDir = resolveManagedPiExtensionsSourceDir();
-    const targetDir = import_path7.default.join(PI_AGENT_DIR3, "extensions");
+    const targetDir = import_path7.default.join(resolvePiAgentDir(), "extensions");
     if (!sourceDir) {
       console.log(kleur_default.dim("\n  Managed extensions: skipped (not bundled in npm package)\n"));
     } else {
@@ -61340,7 +61340,6 @@ function createInstallPiCommand() {
 }
 
 // src/commands/pi.ts
-var PI_AGENT_DIR4 = process.env.PI_AGENT_DIR || import_path8.default.join((0, import_node_os12.homedir)(), ".pi", "agent");
 var RETIRED_PI_COMMANDS = /* @__PURE__ */ new Set(["install"]);
 var RETIRED_PI_INSTALL_REDIRECT = "xt pi install is retired \u2014 run: xt update --apply --repo <path> (planned removal: v0.13.0)";
 var EXTENSION_PACKAGE_ID = "npm:@jaggerxtrm/pi-extensions";
@@ -61361,7 +61360,7 @@ function hasSettingsEntry(entries, expectedEntry) {
 }
 async function globalDeclaresExtensionPackage() {
   try {
-    const settings = await import_fs_extra19.default.readJson(import_path8.default.join(PI_AGENT_DIR4, "settings.json"));
+    const settings = await import_fs_extra19.default.readJson(import_path8.default.join(resolvePiAgentDir(), "settings.json"));
     const packages = Array.isArray(settings.packages) ? settings.packages.filter((entry) => typeof entry === "string") : [];
     return packages.includes(EXTENSION_PACKAGE_ID);
   } catch {
@@ -61464,7 +61463,7 @@ Examples:
     const pointer = await getPiProjectPointer(projectRoot);
     const bundleRoot = await findRepoRoot();
     const sourceDir = resolveManagedPiExtensionsSourceDir(bundleRoot);
-    const globalTargetDir = import_path8.default.join(PI_AGENT_DIR4, "extensions");
+    const globalTargetDir = import_path8.default.join(resolvePiAgentDir(), "extensions");
     if (!sourceDir || !await import_fs_extra19.default.pathExists(sourceDir)) {
       console.log(kleur_default.dim("  \u25CB managed extensions not bundled in this install\n"));
       return;
@@ -61538,7 +61537,7 @@ Examples:
       allOk = false;
     }
     const configFiles = ["models.json", "auth.json", "settings.json"];
-    const missingConfig = configFiles.filter((f) => !import_fs_extra19.default.existsSync(import_path8.default.join(PI_AGENT_DIR4, f)));
+    const missingConfig = configFiles.filter((f) => !import_fs_extra19.default.existsSync(import_path8.default.join(resolvePiAgentDir(), f)));
     if (missingConfig.length === 0) {
       console.log(t.success("  \u2713 config files present"));
     } else {
@@ -61550,9 +61549,9 @@ Examples:
     const bundleRoot = await findRepoRoot();
     const sourceDir = resolveManagedPiExtensionsSourceDir(bundleRoot);
     const coreSourceDir = resolveManagedPiCoreSourceDir(bundleRoot);
-    const globalTargetDir = import_path8.default.join(PI_AGENT_DIR4, "extensions");
+    const globalTargetDir = import_path8.default.join(resolvePiAgentDir(), "extensions");
     try {
-      const retiredAdapter = await removeRetiredPiMcpAdapter(false, void 0, PI_AGENT_DIR4, projectRoot);
+      const retiredAdapter = await removeRetiredPiMcpAdapter(false, void 0, resolvePiAgentDir(), projectRoot);
       if (retiredAdapter.found) {
         const where = [...retiredAdapter.removedPaths, ...retiredAdapter.settingsFiles];
         console.log(t.success(`  \u2713 removed retired pi-mcp-adapter: ${where.join(", ")}`));
@@ -61646,7 +61645,7 @@ Examples:
 
 // src/utils/codex-worktree-session.ts
 init_kleur();
-var import_node_os13 = __toESM(require("os"), 1);
+var import_node_os11 = __toESM(require("os"), 1);
 var import_node_path21 = __toESM(require("path"), 1);
 var import_node_crypto12 = require("crypto");
 var import_node_fs6 = require("fs");
@@ -62043,7 +62042,7 @@ async function launchCodexWorktreeSession(opts) {
   const slug = opts.name ?? (0, import_node_crypto12.randomBytes)(2).toString("hex");
   const branchName = `xt/${slug}`;
   const worktreePath = import_node_path21.default.join(mainRoot, ".xtrm", "worktrees", `${import_node_path21.default.basename(mainRoot)}-xt-codex-${slugify2(slug)}`);
-  const codexHome = process.env.CODEX_HOME || import_node_path21.default.join(import_node_os13.default.homedir(), ".codex");
+  const codexHome = process.env.CODEX_HOME || import_node_path21.default.join(import_node_os11.default.homedir(), ".codex");
   const trustProfile = codexTrustProfile(codexHome, worktreePath);
   const pathCheck = checkStructuredLaunchPaths({ json: structured, worktreePath, branchName });
   if (!pathCheck.ok) fail(pathCheck.error);
@@ -62768,7 +62767,7 @@ async function getManagedAgentSkillNames(repoRoot) {
 // src/core/global-skills-bootstrap.ts
 var import_node_crypto13 = __toESM(require("crypto"), 1);
 var import_node_child_process10 = require("child_process");
-var import_node_os14 = __toESM(require("os"), 1);
+var import_node_os12 = __toESM(require("os"), 1);
 var import_fs_extra22 = __toESM(require_lib(), 1);
 var import_node_path23 = __toESM(require("path"), 1);
 
@@ -63121,7 +63120,7 @@ async function restoreSkillsBackup(globalSkillsRoot, backup) {
     throw new Error(`Skills backup digest mismatch for ${backup.archivePath}`);
   }
   inspectBackupArchive(backup.archivePath, "skills", { allowSymlinks: true });
-  const staging = await import_fs_extra22.default.mkdtemp(import_node_path23.default.join(import_node_os14.default.tmpdir(), "xtrm-global-skills-restore-"));
+  const staging = await import_fs_extra22.default.mkdtemp(import_node_path23.default.join(import_node_os12.default.tmpdir(), "xtrm-global-skills-restore-"));
   try {
     extractValidatedBackup(backup.archivePath, "skills", staging, { allowSymlinks: true });
     await assertStagedTreeSafe(staging, "skills", { allowSymlinks: true });
@@ -63293,12 +63292,12 @@ async function ensureGlobalSkillsBootstrapped(pkgRoot, opts = {}) {
 
 // src/core/pi-runtime-hooks.ts
 var import_fs_extra23 = __toESM(require_lib(), 1);
-var import_node_os15 = __toESM(require("os"), 1);
+var import_node_os13 = __toESM(require("os"), 1);
 var import_node_path24 = __toESM(require("path"), 1);
 async function reconcileGlobalPiHooks(opts = {}) {
   const { dryRun = false } = opts;
   const startedAt = Date.now();
-  const settingsPath = import_node_path24.default.join(import_node_os15.default.homedir(), ".pi", "agent", "settings.json");
+  const settingsPath = import_node_path24.default.join(import_node_os13.default.homedir(), ".pi", "agent", "settings.json");
   const hooksConfig = await readGlobalHooksConfig(resolveGlobalHooksConfigPath());
   const generatedHooks = resolveHooksForGlobalRuntime(hooksConfig.hooks ?? {}, resolveGlobalHooksRoot());
   await appendHookLog({
@@ -63471,7 +63470,7 @@ var import_path10 = __toESM(require("path"), 1);
 // src/core/substrate.ts
 var import_node_child_process12 = require("child_process");
 var import_fs_extra25 = __toESM(require_lib(), 1);
-var import_node_os16 = __toESM(require("os"), 1);
+var import_node_os14 = __toESM(require("os"), 1);
 var import_node_path26 = __toESM(require("path"), 1);
 function resolveSbBin() {
   return process.env.XTRM_SB_BIN ?? "sb";
@@ -63509,7 +63508,7 @@ function getSbVersion(run5 = defaultSbRunner) {
 ${result.stderr ?? ""}`.trim().split("\n")[0]?.trim() ?? "";
   return { available: true, version: extractSbVersion(raw), raw };
 }
-function defaultStateDbPath(home = import_node_os16.default.homedir()) {
+function defaultStateDbPath(home = import_node_os14.default.homedir()) {
   return import_node_path26.default.join(home, ".xtrm", "state.db");
 }
 function stateDbPresent(dbPath = defaultStateDbPath()) {
@@ -63782,7 +63781,7 @@ function executePlanCommands(commands, opts = {}) {
 
 // src/core/skills-runtime-views.ts
 var import_fs_extra26 = __toESM(require_lib(), 1);
-var import_node_os17 = __toESM(require("os"), 1);
+var import_node_os15 = __toESM(require("os"), 1);
 var import_node_path27 = __toESM(require("path"), 1);
 function getRuntimePointerTarget(options) {
   return options.scope === "global" ? import_node_path27.default.join(resolveGlobalSkillsRoot(), "active", "<runtime>") : "real .claude/skills, .pi/skills, and .agents/skills directories";
@@ -63836,8 +63835,8 @@ async function managedEntries(projectRoot, runtime) {
   return true;
 }
 async function checkRuntimeSkillsViews(projectRoot) {
-  const globalClaudePointerReady = await pointsIntoGlobalSkillsRoot(import_node_path27.default.join(import_node_os17.default.homedir(), ".claude", "skills"));
-  const globalPiPointerReady = await pointsIntoGlobalSkillsRoot(import_node_path27.default.join(import_node_os17.default.homedir(), ".pi", "agent", "skills"));
+  const globalClaudePointerReady = await pointsIntoGlobalSkillsRoot(import_node_path27.default.join(import_node_os15.default.homedir(), ".claude", "skills"));
+  const globalPiPointerReady = await pointsIntoGlobalSkillsRoot(import_node_path27.default.join(import_node_os15.default.homedir(), ".pi", "agent", "skills"));
   const globalActivation = await globalActivationReady();
   const projectClaudeSkillsReady = await isRealDirectory(import_node_path27.default.join(projectRoot, ".claude", "skills")) && await managedEntries(projectRoot, "claude");
   const projectPiSkillsReady = await isRealDirectory(import_node_path27.default.join(projectRoot, ".pi", "skills")) && await managedEntries(projectRoot, "pi");
@@ -64451,13 +64450,13 @@ function hasProperty(object2, path87) {
 
 // ../node_modules/env-paths/index.js
 var import_node_path29 = __toESM(require("path"), 1);
-var import_node_os18 = __toESM(require("os"), 1);
+var import_node_os16 = __toESM(require("os"), 1);
 var import_node_process = __toESM(require("process"), 1);
-var homedir5 = import_node_os18.default.homedir();
-var tmpdir = import_node_os18.default.tmpdir();
+var homedir3 = import_node_os16.default.homedir();
+var tmpdir = import_node_os16.default.tmpdir();
 var { env } = import_node_process.default;
 var macos = (name) => {
-  const library = import_node_path29.default.join(homedir5, "Library");
+  const library = import_node_path29.default.join(homedir3, "Library");
   return {
     data: import_node_path29.default.join(library, "Application Support", name),
     config: import_node_path29.default.join(library, "Preferences", name),
@@ -64467,8 +64466,8 @@ var macos = (name) => {
   };
 };
 var windows = (name) => {
-  const appData = env.APPDATA || import_node_path29.default.join(homedir5, "AppData", "Roaming");
-  const localAppData = env.LOCALAPPDATA || import_node_path29.default.join(homedir5, "AppData", "Local");
+  const appData = env.APPDATA || import_node_path29.default.join(homedir3, "AppData", "Roaming");
+  const localAppData = env.LOCALAPPDATA || import_node_path29.default.join(homedir3, "AppData", "Local");
   return {
     // Data/config/cache/log are invented by me as Windows isn't opinionated about this
     data: import_node_path29.default.join(localAppData, name, "Data"),
@@ -64479,13 +64478,13 @@ var windows = (name) => {
   };
 };
 var linux = (name) => {
-  const username = import_node_path29.default.basename(homedir5);
+  const username = import_node_path29.default.basename(homedir3);
   return {
-    data: import_node_path29.default.join(env.XDG_DATA_HOME || import_node_path29.default.join(homedir5, ".local", "share"), name),
-    config: import_node_path29.default.join(env.XDG_CONFIG_HOME || import_node_path29.default.join(homedir5, ".config"), name),
-    cache: import_node_path29.default.join(env.XDG_CACHE_HOME || import_node_path29.default.join(homedir5, ".cache"), name),
+    data: import_node_path29.default.join(env.XDG_DATA_HOME || import_node_path29.default.join(homedir3, ".local", "share"), name),
+    config: import_node_path29.default.join(env.XDG_CONFIG_HOME || import_node_path29.default.join(homedir3, ".config"), name),
+    cache: import_node_path29.default.join(env.XDG_CACHE_HOME || import_node_path29.default.join(homedir3, ".cache"), name),
     // https://wiki.debian.org/XDGBaseDirectorySpecification#state
-    log: import_node_path29.default.join(env.XDG_STATE_HOME || import_node_path29.default.join(homedir5, ".local", "state"), name),
+    log: import_node_path29.default.join(env.XDG_STATE_HOME || import_node_path29.default.join(homedir3, ".local", "state"), name),
     temp: import_node_path29.default.join(tmpdir, username, name)
   };
 };
@@ -68432,7 +68431,7 @@ function createEndCommand() {
 init_kleur();
 var import_node_child_process17 = require("child_process");
 var import_node_fs14 = require("fs");
-var import_node_os20 = require("os");
+var import_node_os18 = require("os");
 var import_node_path37 = require("path");
 function git4(args, cwd) {
   const r = (0, import_node_child_process17.spawnSync)("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
@@ -69207,7 +69206,7 @@ function resolveXtBinary() {
   return `${process.execPath} ${process.argv[1] ?? "xt"}`;
 }
 function installReapTimer(opts) {
-  const unitDir = (0, import_node_path37.join)((0, import_node_os20.homedir)(), ".config", "systemd", "user");
+  const unitDir = (0, import_node_path37.join)((0, import_node_os18.homedir)(), ".config", "systemd", "user");
   const exec3 = `${resolveXtBinary()} worktree reap --all-repos --roots ${opts.roots} --artifacts-older-than ${opts.artifactsOlderThan} --worktrees-older-than ${opts.worktreesOlderThan} --apply --yes`;
   const units = [
     {
@@ -69507,7 +69506,7 @@ function createWorktreeCommand() {
   \u2713 Cleanup complete (${removedCount} item(s) removed)
 `));
   });
-  cmd.command("reap").description("Reclaim abandoned worktrees and regenerable artifacts under a validated safety predicate").option("--artifacts-older-than <age>", "Reclaim node_modules/.venv/.gitnexus past this idle age", "7d").option("--worktrees-older-than <age>", "Remove whole worktrees past this idle age", "14d").option("--all-repos", "Sweep every git repo under --roots, not just the current one", false).option("--roots <dirs>", "Comma-separated parents to discover repos in with --all-repos", (0, import_node_path37.join)((0, import_node_os20.homedir)(), "dev")).option("--apply", "Reclaim (default is dry-run)", false).option("-y, --yes", "Skip confirmation with --apply", false).option("--dry-run", "Explicit dry run (default)", false).option("--json", "Print machine-readable reap plan", false).action(async (opts) => {
+  cmd.command("reap").description("Reclaim abandoned worktrees and regenerable artifacts under a validated safety predicate").option("--artifacts-older-than <age>", "Reclaim node_modules/.venv/.gitnexus past this idle age", "7d").option("--worktrees-older-than <age>", "Remove whole worktrees past this idle age", "14d").option("--all-repos", "Sweep every git repo under --roots, not just the current one", false).option("--roots <dirs>", "Comma-separated parents to discover repos in with --all-repos", (0, import_node_path37.join)((0, import_node_os18.homedir)(), "dev")).option("--apply", "Reclaim (default is dry-run)", false).option("-y, --yes", "Skip confirmation with --apply", false).option("--dry-run", "Explicit dry run (default)", false).option("--json", "Print machine-readable reap plan", false).action(async (opts) => {
     const currentPath = process.cwd();
     const repos = opts.allRepos ? discoverRepos(opts.roots.split(",").map((root) => root.trim()).filter(Boolean)) : [getRepoRoot(currentPath)];
     let plan = planReap({
@@ -69536,7 +69535,7 @@ function createWorktreeCommand() {
     }
     printReapHuman(plan, outcomes);
   });
-  cmd.command("install-timer").description("Install the systemd user timer that runs xt worktree reap out of band").option("--artifacts-older-than <age>", "Artifact reclaim threshold for the timer", "7d").option("--worktrees-older-than <age>", "Worktree reclaim threshold for the timer", "14d").option("--roots <dirs>", "Comma-separated repo parents to sweep", (0, import_node_path37.join)((0, import_node_os20.homedir)(), "dev")).option("--dry-run", "Print the unit files without writing them", false).action((opts) => {
+  cmd.command("install-timer").description("Install the systemd user timer that runs xt worktree reap out of band").option("--artifacts-older-than <age>", "Artifact reclaim threshold for the timer", "7d").option("--worktrees-older-than <age>", "Worktree reclaim threshold for the timer", "14d").option("--roots <dirs>", "Comma-separated repo parents to sweep", (0, import_node_path37.join)((0, import_node_os18.homedir)(), "dev")).option("--dry-run", "Print the unit files without writing them", false).action((opts) => {
     const result = installReapTimer(opts);
     if (opts.dryRun) {
       console.log(t.bold("\n  xt worktree reap timer (dry run)\n"));
@@ -71201,11 +71200,11 @@ function createReportCommand() {
 
 // src/commands/skills.ts
 var import_fs_extra44 = __toESM(require_lib(), 1);
-var import_node_os21 = __toESM(require("os"), 1);
+var import_node_os19 = __toESM(require("os"), 1);
 var import_node_path41 = __toESM(require("path"), 1);
 init_kleur();
 function resolveSkillsLogPath() {
-  return import_node_path41.default.join(import_node_os21.default.homedir(), ".xtrm", "logs", "skills-state.jsonl");
+  return import_node_path41.default.join(import_node_os19.default.homedir(), ".xtrm", "logs", "skills-state.jsonl");
 }
 async function appendSkillsLog(event) {
   const logPath = resolveSkillsLogPath();
@@ -71224,7 +71223,7 @@ function resolveScope(opts, defaultScope = "global") {
 }
 async function resolveScopeRoot(scope) {
   if (scope === "global") {
-    return import_node_os21.default.homedir();
+    return import_node_os19.default.homedir();
   }
   return findProjectRoot();
 }
@@ -71250,7 +71249,7 @@ async function assertSkillsInvariants(skillsRoot, opts = {}) {
   return violations.filter((violation) => nonBlockingCodes.has(violation.code));
 }
 async function collectListState(skillsRoot, runtimes, scope) {
-  const globalSkillsRoot = resolveSkillsRoot(import_node_os21.default.homedir());
+  const globalSkillsRoot = resolveSkillsRoot(import_node_os19.default.homedir());
   const isLocalScope = scope === "local" && skillsRoot !== globalSkillsRoot;
   const [globalState, localState, globalDefaultSkills, localDefaultSkills, globalOptionalPacks, localOptionalPacks, globalUserPacks, localUserPacks] = await Promise.all([
     import_fs_extra44.default.pathExists(resolveStateFilePath(globalSkillsRoot)).then((exists) => exists ? readSkillsState(globalSkillsRoot) : createDefaultSkillsState()),
@@ -71388,7 +71387,7 @@ function ensureValidPackName(name) {
   }
 }
 function resolvePackResolutionRoots(skillsRoot) {
-  const roots = [skillsRoot, resolveSkillsRoot(import_node_os21.default.homedir())].map((root) => import_node_path41.default.resolve(root));
+  const roots = [skillsRoot, resolveSkillsRoot(import_node_os19.default.homedir())].map((root) => import_node_path41.default.resolve(root));
   return [...new Set(roots)];
 }
 async function resolveAvailablePackNames(skillsRoot) {
@@ -71418,7 +71417,7 @@ async function resolveRequestedPacks(skillsRoot, packArg, action2) {
 async function mutatePacks(opts) {
   const { skillsRoot, action: action2, packArg, runtimes, scope } = opts;
   if (action2 === "disable" && scope === "local") {
-    const globalSkillsRoot = resolveSkillsRoot(import_node_os21.default.homedir());
+    const globalSkillsRoot = resolveSkillsRoot(import_node_os19.default.homedir());
     const globalState = await readStateOrDefault(globalSkillsRoot);
     const isGloballyEnabled = globalState.enabledPacks.claude.includes(packArg) || globalState.enabledPacks.pi.includes(packArg) || globalState.enabledPacks.codex.includes(packArg);
     if (isGloballyEnabled) {
@@ -71974,7 +71973,7 @@ async function ensureBeadsSharedServerEnabled(repoRoot, apply) {
 
 // src/core/settings-audit.ts
 var import_fs_extra47 = __toESM(require_lib(), 1);
-var import_node_os22 = __toESM(require("os"), 1);
+var import_node_os20 = __toESM(require("os"), 1);
 var import_node_path44 = __toESM(require("path"), 1);
 var PI_ARRAY_FIELDS = ["packages", "extensions", "skills"];
 var LEGACY_PATTERNS = [
@@ -72218,7 +72217,7 @@ async function applySettingsFixes(outcome, opts = {}) {
     (finding) => Boolean(finding.fix)
   );
   if (fixable.length === 0 || !opts.apply) return outcome;
-  const home = opts.home ?? import_node_os22.default.homedir();
+  const home = opts.home ?? import_node_os20.default.homedir();
   const stamp = opts.stamp ?? (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
   const byFile = /* @__PURE__ */ new Map();
   for (const finding of fixable) {
@@ -72278,7 +72277,7 @@ async function discoverConsumerProjects(home) {
   return found.sort((a, b) => a.localeCompare(b));
 }
 async function auditSettings(opts) {
-  const home = opts.home ?? import_node_os22.default.homedir();
+  const home = opts.home ?? import_node_os20.default.homedir();
   const outcome = {
     schema: "ReconciliationOutcome/1",
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -72308,13 +72307,13 @@ async function auditSettings(opts) {
 
 // src/core/claude-channel-status.ts
 var import_node_fs17 = require("fs");
-var import_node_os23 = require("os");
+var import_node_os21 = require("os");
 var import_node_path45 = __toESM(require("path"), 1);
 function defaultManagedSettingsPath(platform = process.platform) {
   if (platform === "darwin") return "/Library/Application Support/ClaudeCode/managed-settings.json";
   return "/etc/claude-code/managed-settings.json";
 }
-function defaultInstalledPluginsPath(homeDir = (0, import_node_os23.homedir)()) {
+function defaultInstalledPluginsPath(homeDir = (0, import_node_os21.homedir)()) {
   return import_node_path45.default.join(homeDir, ".claude", "plugins", "installed_plugins.json");
 }
 var CLAUDE_CHANNEL_POLICY_JSON = `{
@@ -72402,7 +72401,7 @@ function getClaudeChannelStatus(paths) {
 var import_node_fs18 = require("fs");
 var import_node_child_process25 = require("child_process");
 var import_node_path46 = __toESM(require("path"), 1);
-var import_node_os24 = __toESM(require("os"), 1);
+var import_node_os22 = __toESM(require("os"), 1);
 var XTRM_PACKAGES = [
   "xtrm-tools",
   "@jaggerxtrm/xtmux",
@@ -72412,7 +72411,7 @@ var DEFAULT_TTL_MS2 = 24 * 60 * 60 * 1e3;
 var NPM_VIEW_TIMEOUT_MS = 5e3;
 var NPMJS_REGISTRY = "https://registry.npmjs.org";
 function defaultCacheFile() {
-  return import_node_path46.default.join(import_node_os24.default.homedir(), ".xtrm", "cache", "npm-latest.json");
+  return import_node_path46.default.join(import_node_os22.default.homedir(), ".xtrm", "cache", "npm-latest.json");
 }
 function readCache2(file2) {
   try {
@@ -73369,11 +73368,11 @@ async function runInstall(opts = {}) {
 
 // src/utils/nudge.ts
 var import_fs_extra52 = __toESM(require_lib(), 1);
-var import_node_os25 = __toESM(require("os"), 1);
+var import_node_os23 = __toESM(require("os"), 1);
 var import_node_path50 = __toESM(require("path"), 1);
 var printedNudges = /* @__PURE__ */ new Set();
 function getNudgeStatePath(key) {
-  return import_node_path50.default.join(import_node_os25.default.homedir(), ".xtrm", "nudges", `${key}.json`);
+  return import_node_path50.default.join(import_node_os23.default.homedir(), ".xtrm", "nudges", `${key}.json`);
 }
 async function printNudgeOnce(key, lines) {
   if (printedNudges.has(key)) {
@@ -75194,7 +75193,7 @@ init_kleur();
 var import_fs_extra62 = __toESM(require_lib(), 1);
 var import_node_path62 = __toESM(require("path"), 1);
 var import_node_crypto16 = __toESM(require("crypto"), 1);
-var import_node_os26 = __toESM(require("os"), 1);
+var import_node_os24 = __toESM(require("os"), 1);
 var import_child_process8 = require("child_process");
 init_git_staging();
 function detectRestoreComponent(backupPath) {
@@ -75207,7 +75206,7 @@ async function restoreBackup2(repoPath, backupPath, opts) {
   if (!import_node_path62.default.isAbsolute(backupPath) && !backupPath.startsWith("~")) {
     throw new Error(`Backup path must be absolute or ~-expandable: ${backupPath}`);
   }
-  const resolvedBackup = backupPath.startsWith("~") ? import_node_path62.default.join(import_node_os26.default.homedir(), backupPath.slice(1).replace(/^\//, "")) : backupPath;
+  const resolvedBackup = backupPath.startsWith("~") ? import_node_path62.default.join(import_node_os24.default.homedir(), backupPath.slice(1).replace(/^\//, "")) : backupPath;
   if (!await import_fs_extra62.default.pathExists(resolvedBackup)) {
     throw new Error(`Backup not found: ${resolvedBackup}`);
   }
@@ -75238,7 +75237,7 @@ async function restoreBackup2(repoPath, backupPath, opts) {
     return { component, targetDir };
   }
   inspectBackupArchive(resolvedBackup, component);
-  const staging = await import_fs_extra62.default.mkdtemp(import_node_path62.default.join(import_node_os26.default.tmpdir(), "xtrm-restore-"));
+  const staging = await import_fs_extra62.default.mkdtemp(import_node_path62.default.join(import_node_os24.default.tmpdir(), "xtrm-restore-"));
   try {
     extractValidatedBackup(resolvedBackup, component, staging);
     await assertStagedTreeSafe(staging, component);
@@ -75276,7 +75275,7 @@ async function detectSourceRepoMarker(repoPath) {
   return null;
 }
 function resolveLogPath2() {
-  return import_node_path62.default.join(import_node_os26.default.homedir(), ".xtrm", "logs", "skills-migration.jsonl");
+  return import_node_path62.default.join(import_node_os24.default.homedir(), ".xtrm", "logs", "skills-migration.jsonl");
 }
 async function appendMigrationLog(event) {
   const logPath = resolveLogPath2();
@@ -75289,7 +75288,7 @@ function hashFile4(filePath) {
   return import_node_crypto16.default.createHash("sha256").update(content).digest("hex");
 }
 async function createTarballBackup(sourceDir, backupName) {
-  const backupRoot = import_node_path62.default.join(import_node_os26.default.homedir(), ".xtrm", "migration-backups");
+  const backupRoot = import_node_path62.default.join(import_node_os24.default.homedir(), ".xtrm", "migration-backups");
   await import_fs_extra62.default.ensureDir(backupRoot);
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
   const backupPath = import_node_path62.default.join(backupRoot, `${backupName}-${timestamp}.tgz`);
@@ -76228,7 +76227,7 @@ init_kleur();
 
 // src/core/topology-projection.ts
 var import_node_child_process36 = require("child_process");
-var import_node_os27 = require("os");
+var import_node_os25 = require("os");
 var import_node_path64 = __toESM(require("path"), 1);
 var import_node_util3 = require("util");
 var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process36.execFile);
@@ -76393,7 +76392,7 @@ var flagOrNull = (v) => v === "1" ? true : v === "0" ? false : null;
 function parseXtmuxHost(stdout) {
   const parsed = JSON.parse(stdout);
   return {
-    host_id: parsed.host?.host_id || (0, import_node_os27.hostname)(),
+    host_id: parsed.host?.host_id || (0, import_node_os25.hostname)(),
     tmux_server_id: parsed.host?.tmux_server_id ?? null
   };
 }
@@ -76672,7 +76671,7 @@ function joinProjection(paneRead, enrichment, options = {}) {
     schema_version: "xtrm.topology.projection.v1",
     generated_at_ms: now(),
     host: {
-      host_id: enrichment.xtmux.data?.host_id ?? (0, import_node_os27.hostname)(),
+      host_id: enrichment.xtmux.data?.host_id ?? (0, import_node_os25.hostname)(),
       tmux_server_id: enrichment.xtmux.data?.tmux_server_id ?? null
     },
     sources: [
@@ -76964,7 +76963,7 @@ init_kleur();
 var import_node_crypto17 = require("crypto");
 var import_node_fs22 = require("fs");
 var import_node_net = __toESM(require("net"), 1);
-var import_node_os28 = __toESM(require("os"), 1);
+var import_node_os26 = __toESM(require("os"), 1);
 var import_node_path65 = __toESM(require("path"), 1);
 
 // ../packages/contracts/dist/index.js
@@ -79303,7 +79302,7 @@ var PROXY_HEADERS = [
 ];
 var LOOPBACK_HOSTNAMES = /* @__PURE__ */ new Set(["127.0.0.1", "localhost", "[::1]"]);
 function defaultDeviceStorePath() {
-  return import_node_path65.default.join(import_node_os28.default.homedir(), ".xtrm", "agent-host", "devices.json");
+  return import_node_path65.default.join(import_node_os26.default.homedir(), ".xtrm", "agent-host", "devices.json");
 }
 function normalizeDirectHostname(value) {
   const name = value.trim().toLowerCase();
@@ -79481,7 +79480,7 @@ function parsePairRequest(text) {
 var import_node_fs28 = require("fs");
 var import_node_http = __toESM(require("http"), 1);
 var import_node_net2 = __toESM(require("net"), 1);
-var import_node_os30 = __toESM(require("os"), 1);
+var import_node_os28 = __toESM(require("os"), 1);
 var import_node_path70 = __toESM(require("path"), 1);
 
 // src/core/agent-host-history.ts
@@ -80724,7 +80723,7 @@ function boundText(text) {
 var import_node_child_process39 = require("child_process");
 var import_node_fs27 = require("fs");
 var import_promises2 = require("fs/promises");
-var import_node_os29 = __toESM(require("os"), 1);
+var import_node_os27 = __toESM(require("os"), 1);
 var import_node_path69 = __toESM(require("path"), 1);
 var CACHE_VERSION = 2;
 var READ_CHUNK_BYTES = 4 * 1024 * 1024;
@@ -80736,7 +80735,7 @@ var CONTROL_CHARS2 = /[\u0000-\u001F\u007F]+/g;
 var HAS_CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
 var REPO_LOOKUP_TIMEOUT_MS = 2e3;
 var REPO_TTL_MS = 6e4;
-function defaultSessionIndexOptions(home = import_node_os29.default.homedir()) {
+function defaultSessionIndexOptions(home = import_node_os27.default.homedir()) {
   return {
     roots: [
       { provider: "pi", dir: import_node_path69.default.join(home, ".pi", "agent", "sessions") },
@@ -81590,10 +81589,10 @@ var DEFAULT_REPLAY_LIMIT = 1024;
 function defaultSocketPath(env3 = process.env) {
   const runtimeDir = env3.XDG_RUNTIME_DIR;
   if (runtimeDir) return import_node_path70.default.join(runtimeDir, "xtrm", "agent-host.sock");
-  return import_node_path70.default.join(import_node_os30.default.homedir(), ".xtrm", "run", "agent-host.sock");
+  return import_node_path70.default.join(import_node_os28.default.homedir(), ".xtrm", "run", "agent-host.sock");
 }
 function defaultInfoPath() {
-  return import_node_path70.default.join(import_node_os30.default.homedir(), ".xtrm", "run", "agent-host.json");
+  return import_node_path70.default.join(import_node_os28.default.homedir(), ".xtrm", "run", "agent-host.json");
 }
 function agentSessionsByPane(sessions) {
   const best = /* @__PURE__ */ new Map();

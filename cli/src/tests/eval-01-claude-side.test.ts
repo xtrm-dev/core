@@ -7,6 +7,7 @@
 // spawned as a child process against a fake `xtmux` picker and a fake `tmux` on
 // PATH, so nothing here touches a real database, a real pane, or the network.
 
+import { createHash } from 'node:crypto';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,7 +16,9 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const HOOKS_DIR = fileURLToPath(new URL('./fixtures/xtmux-claude-hooks/', import.meta.url));
-const INSTALLED_HOOKS_DIR = path.join(os.homedir(), '.claude', 'hooks', 'xtmux');
+// CORE-2412: no installed-hooks oracle. The fixtures below are the repo
+// source of truth (vendored from @jaggerxtrm/xtmux 0.2.2; see README); the
+// previous guard read ~/.claude/hooks/xtmux on the operator machine.
 const VENDORED_HOOKS = [
   'auto-monitor-drain-stop.mjs',
   'auto-monitor-on-send.mjs',
@@ -761,20 +764,29 @@ esac
 });
 
 describe('EVAL-01 Claude column vendoring', () => {
-  // Local-only drift guard: CI has no xtmux install, but any developer machine
-  // that does must not let the vendored copies rot.
-  it.skipIf(Boolean(process.env.CI) || !fs.existsSync(INSTALLED_HOOKS_DIR))(
-    'vendored hook fixtures match the installed xtmux Claude hooks',
-    () => {
-      for (const name of VENDORED_HOOKS) {
-        const installed = path.join(INSTALLED_HOOKS_DIR, name);
-        // A removed or renamed hook is drift too — it would leave the suite
-        // testing a vendored copy of something that no longer ships.
-        expect(fs.existsSync(installed), `${name} missing from ${INSTALLED_HOOKS_DIR}`).toBe(true);
-        expect(fs.readFileSync(path.join(HOOKS_DIR, name), 'utf8')).toBe(
-          fs.readFileSync(installed, 'utf8'),
-        );
-      }
-    },
-  );
+  // CORE-2412: deterministic repo-source check backed by the SHA256SUMS
+  // manifest next to the fixtures. Nothing here reads machine-installed
+  // hooks, so the suite passes identically on CI, on main, and under
+  // full-suite load. A fixture edit without a manifest refresh fails;
+  // refresh both via the README re-vendoring step.
+  const manifest = fs.readFileSync(path.join(HOOKS_DIR, 'SHA256SUMS'), 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [hash, ...rest] = line.split(/\s+/);
+      return { hash, name: rest.join(' ') };
+    });
+  it('manifest covers every vendored hook', () => {
+    const names = new Set(manifest.map((entry) => entry.name));
+    for (const name of VENDORED_HOOKS) {
+      expect(names.has(name), `${name} missing from SHA256SUMS`).toBe(true);
+    }
+  });
+  it.each(manifest)('vendored fixture $name matches SHA256SUMS', ({ hash, name }) => {
+    const fixture = path.join(HOOKS_DIR, name);
+    expect(fs.existsSync(fixture), `${name} missing from repo fixtures`).toBe(true);
+    const actual = createHash('sha256').update(fs.readFileSync(fixture)).digest('hex');
+    expect(actual, `${name} content drifted without a SHA256SUMS refresh (see README re-vendoring step)`).toBe(hash);
+  });
 });

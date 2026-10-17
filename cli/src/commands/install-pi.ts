@@ -13,13 +13,12 @@ import prompts from 'prompts';
 import fs from 'fs-extra';
 import path from 'path';
 import { spawnSync } from 'node:child_process';
-import { homedir } from 'node:os';
 import { t, sym } from '../utils/theme.js';
-import { inventoryPiRuntime, executePiSync, renderPiRuntimePlan, resolveManagedPiExtensionsSourceDir } from '../core/pi-runtime.js';
+import { inventoryPiRuntime, executePiSync, renderPiRuntimePlan, resolveManagedPiExtensionsSourceDir, resolvePiAgentDir } from '../core/pi-runtime.js';
 import { isPiInstalled, isPnpmInstalled } from '../core/machine-bootstrap.js';
 import { resolvePackageRoot } from '../core/registry-scaffold.js';
 
-const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+// CORE-2412: never capture PI_AGENT_DIR at import — resolve lazily per call.
 
 interface SchemaField { key: string; label: string; hint: string; secret: boolean; required: boolean; }
 interface OAuthProvider { key: string; instruction: string; }
@@ -95,7 +94,7 @@ export function createInstallPiCommand(): Command {
             if (check) {
                 console.error('xt pi setup --check is deprecated — use: xt pi status (planned removal: v0.13.0)');
                 const sourceDir = resolveManagedPiExtensionsSourceDir();
-                const targetDir = path.join(PI_AGENT_DIR, 'extensions');
+                const targetDir = path.join(resolvePiAgentDir(), 'extensions');
 
                 if (!sourceDir) {
                     console.log(kleur.dim('\n  Managed extensions: skipped (not bundled in npm package)\n'));
@@ -114,7 +113,7 @@ export function createInstallPiCommand(): Command {
             }
 
             // ── First-Time Setup Mode ───────────────────────────────────────────────────
-            if (setup || !fs.pathExists(path.join(PI_AGENT_DIR, 'auth.json'))) {
+            if (setup || !fs.pathExists(path.join(resolvePiAgentDir(), 'auth.json'))) {
                 console.log(t.bold('\n  Pi Coding Agent Setup\n'));
 
                 // Ensure pi is installed
@@ -137,7 +136,7 @@ export function createInstallPiCommand(): Command {
 
                 // Load schema and configure API keys
                 const schema: InstallSchema = await fs.readJson(path.join(piConfigDir, 'install-schema.json'));
-                const existing = readExistingPiValues(PI_AGENT_DIR);
+                const existing = readExistingPiValues(resolvePiAgentDir());
                 const values: Record<string, string> = { ...existing };
 
                 console.log(t.bold('\n  API Keys\n'));
@@ -166,11 +165,11 @@ export function createInstallPiCommand(): Command {
                 }
 
                 // Write config files
-                await fs.ensureDir(PI_AGENT_DIR);
-                console.log(t.muted(`\n  Writing config to ${PI_AGENT_DIR}`));
+                await fs.ensureDir(resolvePiAgentDir());
+                console.log(t.muted(`\n  Writing config to ${resolvePiAgentDir()}`));
 
                 for (const name of ['models.json', 'auth.json', 'settings.json']) {
-                    const destPath = path.join(PI_AGENT_DIR, name);
+                    const destPath = path.join(resolvePiAgentDir(), name);
                     if (name === 'auth.json' && await fs.pathExists(destPath) && !yes) {
                         const { overwrite } = await prompts({
                             type: 'confirm',
@@ -191,7 +190,7 @@ export function createInstallPiCommand(): Command {
 
             // ── Extension & Package Sync ───────────────────────────────────────────────
             const sourceDir = resolveManagedPiExtensionsSourceDir();
-            const targetDir = path.join(PI_AGENT_DIR, 'extensions');
+            const targetDir = path.join(resolvePiAgentDir(), 'extensions');
 
             if (!sourceDir) {
                 console.log(kleur.dim('\n  Managed extensions: skipped (not bundled in npm package)\n'));

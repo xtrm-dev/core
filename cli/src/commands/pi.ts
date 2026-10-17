@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import path from 'path';
 import { spawnSync } from 'node:child_process';
-import { homedir } from 'node:os';
 import fs from 'fs-extra';
 import { findRepoRoot } from '../utils/repo-root.js';
 import { t } from '../utils/theme.js';
@@ -13,12 +12,13 @@ import {
     removeRetiredPiMcpAdapter,
     resolveManagedPiCoreSourceDir,
     resolveManagedPiExtensionsSourceDir,
+    resolvePiAgentDir,
 } from '../core/pi-runtime.js';
 import { createInstallPiCommand } from './install-pi.js';
 import { launchWorktreeSession } from '../utils/worktree-session.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
 
-const PI_AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+// CORE-2412: never capture PI_AGENT_DIR at import — resolve lazily per call.
 const RETIRED_PI_COMMANDS = new Set(['install']);
 const RETIRED_PI_INSTALL_REDIRECT = 'xt pi install is retired — run: xt update --apply --repo <path> (planned removal: v0.13.0)';
 
@@ -50,7 +50,7 @@ function hasSettingsEntry(entries: unknown, expectedEntry: string): boolean {
 
 async function globalDeclaresExtensionPackage(): Promise<boolean> {
     try {
-        const settings = await fs.readJson(path.join(PI_AGENT_DIR, 'settings.json')) as { packages?: unknown };
+        const settings = await fs.readJson(path.join(resolvePiAgentDir(), 'settings.json')) as { packages?: unknown };
         const packages = Array.isArray(settings.packages)
             ? settings.packages.filter((entry): entry is string => typeof entry === 'string')
             : [];
@@ -218,7 +218,7 @@ Examples:
 
             const bundleRoot = await findRepoRoot();
             const sourceDir = resolveManagedPiExtensionsSourceDir(bundleRoot);
-            const globalTargetDir = path.join(PI_AGENT_DIR, 'extensions');
+            const globalTargetDir = path.join(resolvePiAgentDir(), 'extensions');
 
             if (!sourceDir || !await fs.pathExists(sourceDir)) {
                 console.log(kleur.dim('  ○ managed extensions not bundled in this install\n'));
@@ -313,7 +313,7 @@ Examples:
             }
 
             const configFiles = ['models.json', 'auth.json', 'settings.json'];
-            const missingConfig = configFiles.filter(f => !fs.existsSync(path.join(PI_AGENT_DIR, f)));
+            const missingConfig = configFiles.filter(f => !fs.existsSync(path.join(resolvePiAgentDir(), f)));
             if (missingConfig.length === 0) {
                 console.log(t.success('  ✓ config files present'));
             } else {
@@ -326,12 +326,12 @@ Examples:
             const bundleRoot = await findRepoRoot();
             const sourceDir = resolveManagedPiExtensionsSourceDir(bundleRoot);
             const coreSourceDir = resolveManagedPiCoreSourceDir(bundleRoot);
-            const globalTargetDir = path.join(PI_AGENT_DIR, 'extensions');
+            const globalTargetDir = path.join(resolvePiAgentDir(), 'extensions');
 
             try {
                 // CORE-2399: the adapter is retired, so this is a removal path. Nothing
                 // found means nothing to report; a machine without it stays quiet.
-                const retiredAdapter = await removeRetiredPiMcpAdapter(false, undefined, PI_AGENT_DIR, projectRoot);
+                const retiredAdapter = await removeRetiredPiMcpAdapter(false, undefined, resolvePiAgentDir(), projectRoot);
                 if (retiredAdapter.found) {
                     const where = [...retiredAdapter.removedPaths, ...retiredAdapter.settingsFiles];
                     console.log(t.success(`  ✓ removed retired pi-mcp-adapter: ${where.join(', ')}`));

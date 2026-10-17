@@ -80,16 +80,17 @@ afterAll(() => {
     else process.env.XTRM_SUBSTRATE_DIR = __prevSubstrateDir;
 });
 
-function run(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number } = {}): { stdout: string; stderr: string; status: number; duration: number } {
-    const start = Date.now();
+// CORE-2412: no wall-clock assertion. run() intentionally returns no
+// duration — the deterministic oracle is "no prompt was shown / confirmation
+// was bypassed", never "init was fast" (25.5s alone, 76s under load).
+function run(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number } = {}): { stdout: string; stderr: string; status: number } {
     const r = spawnSync('node', [CLI_BIN, ...args], {
         encoding: 'utf8',
         timeout: opts.timeout ?? 30000,
         cwd: opts.cwd,
         env: { ...process.env, ...opts.env },
     });
-    const duration = Date.now() - start;
-    return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', status: r.status ?? -1, duration };
+    return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', status: r.status ?? -1 };
 }
 
 function git(args: string[], cwd: string): void {
@@ -241,24 +242,20 @@ describe('xt init banner non-blocking', () => {
         expect(r.status).toBe(0);
     });
 
-    it('xt init --yes bypasses confirmation and completes quickly', () => {
-        // This test may fail if external tools (bd, gitnexus) aren't available
-        // but should not hang waiting for confirmation.
-        // Wall-clock can reach ~30s on slow CI runners because spawnSync's
-        // timeout cleanup waits for the child after SIGTERM; the assertion
-        // we care about is "no interactive prompt", not "init was fast".
-        // Bump vitest test timeout to 120s so we don't flake on CI. HOME is
-        // sandboxed for this suite (xtrm-8zsi1) so xt init --yes does real
-        // bootstrap work into an empty tmp HOME, which is slower than against
-        // a warm real HOME. 60s occasionally flaked; 120s covers observed
-        // ~70s worst-case runs. Assertion is still "no interactive prompt".
-        // (xtrm-qdsx / xtrm-x12p3)
+    it('xt init --yes bypasses confirmation without prompting', () => {
+        // CORE-2412: deterministic no-prompt oracle. Wall-clock can reach ~30s
+        // on slow runners (and ~76s under full-suite load), so duration is
+        // never asserted — only that no interactive prompt appeared and the
+        // --yes bypass completed. (xtrm-qdsx / xtrm-x12p3)
+        // Spawn timeout sits just under the 120s vitest timeout so the
+        // deterministic check survives full-suite contention (45s flaked with
+        // status -1 when 150 files run in parallel).
         // R4: no project flags exist. The fake sb answers `init --json`, so
         // a fresh checkout onboards without prompting or failing.
-        const r = run(['init', '--yes'], { cwd: repoDir, timeout: 45000, env: { SB_STATE_FILE: path.join(repoDir, '.sb-state') } });
+        const r = run(['init', '--yes'], { cwd: repoDir, timeout: 110000, env: { SB_STATE_FILE: path.join(repoDir, '.sb-state') } });
         // Should not hang on confirmation prompt
         const combined = r.stdout + r.stderr;
-        expect(combined).not.toMatch(/press any key|continue\?/i);
+        expect(combined).not.toMatch(/press any key|continue\?|Proceed with xtrm init\?/i);
         expect(r.status).toBe(0);
         expect(combined).toContain('sb init');
     }, 120000);

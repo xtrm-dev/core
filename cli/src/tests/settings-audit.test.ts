@@ -16,6 +16,8 @@ function hookEntry(command: string, matcher = '') {
     return { matcher, hooks: [{ type: 'command', command }] };
 }
 
+let previousAgentDir: string | undefined;
+
 beforeEach(async () => {
     home = await fs.mkdtemp(path.join(os.tmpdir(), 'xt-settings-audit-'));
     projectRoot = path.join(home, 'dev', 'demo');
@@ -24,10 +26,17 @@ beforeEach(async () => {
     await fs.ensureDir(path.join(projectRoot, '.claude'));
     await fs.ensureDir(path.join(projectRoot, '.pi'));
     await fs.writeJson(path.join(home, '.claude', 'settings.json'), { hooks: {} });
+    // CORE-2412: settings-audit prefers PI_AGENT_DIR over <home>/.pi/agent.
+    // HOME-only sandboxing would read the suite sandbox instead of this
+    // test's home, so keep the agent dir with the test home.
+    previousAgentDir = process.env.PI_AGENT_DIR;
+    process.env.PI_AGENT_DIR = path.join(home, '.pi', 'agent');
 });
 
 afterEach(async () => {
     await fs.remove(home);
+    if (previousAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+    else process.env.PI_AGENT_DIR = previousAgentDir;
 });
 
 describe('auditSettings', () => {
