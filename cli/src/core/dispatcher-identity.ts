@@ -22,7 +22,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -165,6 +165,65 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
             if (sessionId && /^\$\d+$/.test(sessionId)) out[XTRM_PARENT_SESSION_ID_VAR] = sessionId;
         } catch { /* absent */ }
     }
+    return out;
+}
+
+/**
+ * Resolve a dispatcher participant by name after it restarted (CORE-2432 R8).
+ * A worker that only knows its dispatcher's participant name scans the session
+ * registry for an entry with that exact name carrying a messaging socket, and
+ * falls back to the inherited env when the participant matches it. The newest
+ * entry wins when several share the name. Never throws.
+ */
+export function resolveDispatcherByParticipant(
+    participant: string,
+    deps: DispatcherIdentityDeps & { now?: number } = {},
+): DispatcherIdentity | null {
+    const want = clean(participant);
+    if (!want) return null;
+    const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
+    try {
+        const files = readdirSync(sessionsDir).filter((f) => f.endsWith('.json'));
+        let best: DispatcherIdentity | null = null;
+        let bestMtime = -1;
+        for (const file of files) {
+            let entry: Record<string, unknown>;
+            let mtime = 0;
+            try {
+                const full = path.join(sessionsDir, file);
+                entry = JSON.parse(readFileSync(full, 'utf8')) as Record<string, unknown>;
+                mtime = statSync(full).mtimeMs;
+            } catch {
+                continue;
+            }
+            if (clean(entry.name) !== want) continue;
+            const socket = clean(entry.messagingSocketPath);
+            if (!socket) continue;
+            if (mtime >= bestMtime) {
+                bestMtime = mtime;
+                best = { name: want, address: `uds:${socket}` };
+            }
+        }
+        if (best) return best;
+    } catch { /* fall through to inherited */ }
+    const env = deps.env ?? process.env;
+    if (clean(env[XTRM_DISPATCHER_NAME_VAR]) === want) {
+        const address = clean(env[XTRM_DISPATCHER_ADDRESS_VAR]);
+        if (address) return { name: want, address };
+    }
+    return null;
+}
+
+/**
+ * Fresh dispatcher env for a resumed session (CORE-2432 R8): `xt attach`
+ * re-resolves the dispatcher instead of inheriting stale XTRM_DISPATCHER_*
+ * values across a dispatcher restart. Unknown stays absent.
+ */
+export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<string, string> {
+    const out: Record<string, string> = {};
+    const dispatcher = resolveDispatcher(deps);
+    if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
+    if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
     return out;
 }
 

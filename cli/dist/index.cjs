@@ -4948,8 +4948,8 @@ var require_copy_sync = __commonJS({
       return getStats(destStat, src, dest, opts);
     }
     function getStats(destStat, src, dest, opts) {
-      const statSync7 = opts.dereference ? fs65.statSync : fs65.lstatSync;
-      const srcStat = statSync7(src);
+      const statSync8 = opts.dereference ? fs65.statSync : fs65.lstatSync;
+      const srcStat = statSync8(src);
       if (srcStat.isDirectory()) return onDir(srcStat, destStat, src, dest, opts);
       else if (srcStat.isFile() || srcStat.isCharacterDevice() || srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts);
       else if (srcStat.isSymbolicLink()) return onLink(destStat, src, dest, opts);
@@ -57397,6 +57397,13 @@ function buildDispatcherEnv(workerName, deps = {}) {
   }
   return out;
 }
+function refreshDispatcherEnv(deps = {}) {
+  const out = {};
+  const dispatcher = resolveDispatcher(deps);
+  if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
+  if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
+  return out;
+}
 function stripDispatcherEnv(env3) {
   const out = { ...env3 };
   for (const key of DISPATCHER_ENV_KEYS) delete out[key];
@@ -69613,6 +69620,10 @@ function matchWorktree(worktrees, name) {
   const norm = shortBranch.startsWith("xt/") ? `refs/heads/${shortBranch}` : `refs/heads/xt/${shortBranch}`;
   return worktrees.find((wt) => wt.branch === norm || wt.branch === `refs/heads/${shortBranch}` || wt.branch === shortBranch) ?? worktrees.find((wt) => (0, import_node_path38.basename)(wt.path) === name) ?? worktrees.find((wt) => (0, import_node_path38.basename)(wt.path).endsWith(`-${name}`));
 }
+function buildAttachEnv(base, runtime, dispatcherDeps = {}) {
+  const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
+  return runtime === "claude" ? { ...base, ...dispatcherEnv, ...claudeMcpEnv(runtime) } : { ...base, ...dispatcherEnv };
+}
 function createAttachCommand() {
   return new Command("attach").description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').action(async (name) => {
     const repoRoot = getRepoRoot(process.cwd());
@@ -69688,7 +69699,7 @@ function createAttachCommand() {
         console.log(kleur_default.dim(`  warning: pi launch preflight failed (${message})`));
       }
     }
-    const result = (0, import_node_child_process18.spawnSync)(runtime, resumeArgs, runtime === "claude" ? { cwd: target.path, stdio: "inherit", env: { ...process.env, ...claudeMcpEnv(runtime) } } : { cwd: target.path, stdio: "inherit" });
+    const result = (0, import_node_child_process18.spawnSync)(runtime, resumeArgs, { cwd: target.path, stdio: "inherit", env: buildAttachEnv(process.env, runtime) });
     process.exit(result.status ?? 0);
   });
 }
@@ -77027,6 +77038,8 @@ var xtrm_agent_command_v1_default = {
         { $ref: "#/definitions/steer" },
         { $ref: "#/definitions/follow_up" },
         { $ref: "#/definitions/abort" },
+        { $ref: "#/definitions/wake" },
+        { $ref: "#/definitions/listener_replaced" },
         { $ref: "#/definitions/extension_ui_response" }
       ]
     },
@@ -77071,6 +77084,30 @@ var xtrm_agent_command_v1_default = {
       properties: {
         type: { const: "abort" },
         commandId: { $ref: "#/definitions/commandId" }
+      }
+    },
+    wake: {
+      description: "Wake delivery (CORE-2432): carries a payload reference only, never a contract or a decision. The extension answers accepted once it took the reference; only then is the wake delivered (R3).",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "commandId", "messageId", "payloadRef"],
+      properties: {
+        type: { const: "wake" },
+        commandId: { $ref: "#/definitions/commandId" },
+        messageId: { type: "string", minLength: 1, maxLength: 128 },
+        payloadRef: { type: "string", minLength: 1, maxLength: 1024 }
+      }
+    },
+    listener_replaced: {
+      description: "The registry replaced this listener; it should re-assert with a bumped generation (R5).",
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "commandId", "generation", "reason"],
+      properties: {
+        type: { const: "listener_replaced" },
+        commandId: { $ref: "#/definitions/commandId" },
+        generation: { type: "integer", minimum: 1 },
+        reason: { type: "string", minLength: 1, maxLength: 64 }
       }
     },
     extension_ui_response: {
@@ -77258,6 +77295,16 @@ var xtrm_agent_event_v1_default = {
             name: { $ref: "#/definitions/boundedString" },
             version: { $ref: "#/definitions/boundedString" }
           }
+        },
+        pid: {
+          description: "OS pid of the process hosting the listener (CORE-2432 R1: identity = pid + sessionId + generation).",
+          type: "integer",
+          minimum: 1
+        },
+        generation: {
+          description: "Listener incarnation, starting at 1. Registry writes are compare-and-swap on generation (R6).",
+          type: "integer",
+          minimum: 1
         },
         sessionFile: { $ref: "#/definitions/path" },
         sessionName: { $ref: "#/definitions/boundedString" },
@@ -80279,12 +80326,44 @@ var ToolOriginClassifier = class {
   }
 };
 
+// src/core/agent-host-wake.ts
+var import_node_crypto20 = require("crypto");
+var DEFAULT_WAKE_TTL_MS = 5 * 6e4;
+var MAX_WAKE_RECORDS = 1024;
+function stableWakeMessageId(participant, payloadRef) {
+  return (0, import_node_crypto20.createHash)("sha256").update(`${participant}\0${payloadRef}`, "utf8").digest("hex").slice(0, 32);
+}
+function resolveWakeParticipant(sessions, participant) {
+  const direct = sessions.find((s) => s.sessionId === participant);
+  if (direct) return { sessionId: direct.sessionId };
+  const named = sessions.filter((s) => s.sessionName === participant);
+  if (named.length > 1) {
+    const candidates = named.map((s) => s.sessionId).sort().join(", ");
+    throw new Error(`ambiguous participant "${participant}": ${candidates}`);
+  }
+  if (named.length === 1) return { sessionId: named[0].sessionId };
+  const byWorkItem = sessions.filter((s) => s.workItemRef === participant);
+  if (byWorkItem.length > 1) {
+    const candidates = byWorkItem.map((s) => s.sessionId).sort().join(", ");
+    throw new Error(`ambiguous participant "${participant}": ${candidates}`);
+  }
+  if (byWorkItem.length === 1) return { sessionId: byWorkItem[0].sessionId };
+  return null;
+}
+function wakeStateNow(record2, now = Date.now()) {
+  if ((record2.state === "queued" || record2.state === "held") && now >= record2.expiresAt) return "expired";
+  return record2.state;
+}
+
 // src/core/agent-host-registry.ts
 var CAPABILITY_FOR = {
   prompt: "prompt",
   steer: "steer",
   follow_up: "follow_up",
   abort: "abort",
+  // Wake delivery is a message for the agent: only sessions that take prompts can receive one.
+  wake: "prompt",
+  listener_replaced: "prompt",
   extension_ui_response: "extension_ui"
 };
 var INPUT_NOTIFICATIONS = /* @__PURE__ */ new Set(["permission_prompt", "elicitation_dialog"]);
@@ -80306,11 +80385,18 @@ var AgentHostRegistry = class {
   commandTimeoutMs;
   promptStartTimeoutMs;
   log;
+  duplicateListener;
+  wakeTtlMs;
+  /** Retained wake messages by stable message id (CORE-2432 R9). */
+  wakes = /* @__PURE__ */ new Map();
+  wakeCommandSeq = 0;
   constructor(options = {}) {
     this.commandTimeoutMs = options.commandTimeoutMs ?? 1e4;
     this.promptStartTimeoutMs = options.promptStartTimeoutMs ?? PROMPT_START_TIMEOUT_MS;
     this.log = options.log ?? (() => {
     });
+    this.duplicateListener = options.duplicateListener ?? "refuse";
+    this.wakeTtlMs = options.wakeTtlMs ?? DEFAULT_WAKE_TTL_MS;
   }
   /** Subscribe to every accepted event frame, in arrival order. Returns an unsubscribe function. */
   subscribe(listener) {
@@ -80326,9 +80412,28 @@ var AgentHostRegistry = class {
     let session = this.sessions.get(sessionId);
     if (payload.type === "session_identity") {
       const identity = this.bindLaunchedPane(sessionId, payload);
+      const verdict = this.checkListener(sessionId, session ?? null, identity, connection);
+      if (verdict === "duplicate" || verdict === "stale") {
+        if (verdict === "duplicate") {
+          this.log(
+            `refused second listener for session ${sessionId} (${describeListener(identity)}): already bound; reconnect after disconnect or use drain-and-handover`
+          );
+        } else {
+          this.log(
+            `refused stale session_identity for session ${sessionId}: generation ${identity.generation} < ${session?.identity.generation}`
+          );
+        }
+        return false;
+      }
+      const previousConnection = session && session.connection !== null && session.connection !== connection ? session.connection : null;
       if (session) {
         session.identity = identity;
         session.connection = connection;
+        if (verdict === "handover") {
+          for (const entry of this.pending.values()) {
+            if (entry.sessionId === sessionId) entry.connection = connection;
+          }
+        }
       } else {
         session = {
           identity,
@@ -80348,6 +80453,10 @@ var AgentHostRegistry = class {
         };
         this.sessions.set(sessionId, session);
       }
+      if (previousConnection && (verdict === "replace" || verdict === "handover")) {
+        this.notifyReplaced(sessionId, previousConnection, identity, verdict);
+      }
+      this.flushWakes(sessionId);
     } else if (!session) {
       this.log(`dropped ${payload.type} for session ${sessionId}: no session_identity received`);
       return false;
@@ -80424,6 +80533,7 @@ var AgentHostRegistry = class {
   disconnect(connection) {
     for (const [commandId, entry] of this.pending) {
       if (entry.connection === connection) {
+        if (entry.wakeId && this.sessions.has(entry.sessionId)) continue;
         this.finishPending(commandId, "failed", "extension_disconnected", "the session producer disconnected");
       }
     }
@@ -80448,6 +80558,39 @@ var AgentHostRegistry = class {
     for (const [sessionId, session] of this.sessions) {
       if (session.identity.tmux?.paneId !== paneId) continue;
       session.identity = this.bindLaunchedPane(sessionId, session.identity);
+    }
+  }
+  /**
+   * Listener binding verdict for one session_identity frame (CORE-2432 R2/R6).
+   * The listener identity is pid + sessionId + generation (R1). `adopt` keeps
+   * the frame, `replace` adopts a newer generation, `handover` drains an
+   * explicit takeover, `duplicate` refuses a second listener for one identity,
+   * and `stale` refuses a compare-and-swap write on an older generation.
+   */
+  checkListener(_sessionId, previous, identity, connection) {
+    if (!previous) return "adopt";
+    if (previous.connection === connection) return "adopt";
+    const stored = previous.identity;
+    if (typeof identity.pid === "number" && typeof identity.generation === "number" && typeof stored.pid === "number" && typeof stored.generation === "number") {
+      if (identity.generation < stored.generation) return "stale";
+      if (identity.generation > stored.generation) return "replace";
+      if (previous.connection === null) return "adopt";
+      if (identity.pid !== stored.pid) return "duplicate";
+      return this.duplicateListener === "handover" ? "handover" : "duplicate";
+    }
+    return "adopt";
+  }
+  notifyReplaced(sessionId, previousConnection, identity, verdict) {
+    const command = {
+      type: "listener_replaced",
+      commandId: `lr-${++this.wakeCommandSeq}`,
+      generation: identity.generation ?? 1,
+      reason: verdict === "handover" ? "handover" : "replaced_by_newer_generation"
+    };
+    try {
+      previousConnection.sendCommand(sessionId, command);
+    } catch (error51) {
+      this.log(`replaced listener for session ${sessionId} is unreachable: ${error51.message}`);
     }
   }
   bindLaunchedPane(sessionId, identity) {
@@ -80532,6 +80675,10 @@ var AgentHostRegistry = class {
           return reject("rejected", "unknown_ui_request", `no pending extension UI request ${command.id}`);
         }
         break;
+      case "wake":
+        break;
+      case "listener_replaced":
+        return reject("rejected", "registry_originated", "listener_replaced is sent by the registry, not by clients");
       case "abort":
         break;
     }
@@ -80567,7 +80714,162 @@ var AgentHostRegistry = class {
     for (const commandId of [...this.pending.keys()]) {
       this.finishPending(commandId, "failed", "host_shutdown", "the agent host is shutting down");
     }
+    for (const record2 of this.wakes.values()) {
+      if (record2.state === "queued" || record2.state === "held") record2.state = "undelivered";
+    }
     for (const session of this.sessions.values()) this.stopPromptStartTimer(session);
+  }
+  // --- wake contract (CORE-2432) --------------------------------------------------------
+  /**
+   * Wake one participant with a payload reference. Returns a stable message id
+   * (R9: the same pair always computes the same id and is never sent twice)
+   * and one delivery state: `queued` once the wake frame is sent and the
+   * receiver has not answered yet, `held` while no live listener can take it,
+   * `delivered` only after the receiver accepted (R3), `refused` when the
+   * receiver rejected it, `undelivered` after teardown with the wake pending
+   * (R4), `expired` past its TTL. Ambiguous participants throw naming every
+   * candidate (R7); unknown participants are held until they register (R8).
+   */
+  wake(participant, payloadRef, opts = {}) {
+    if (!participant || !participant.trim()) throw new Error("wake needs a participant");
+    if (!payloadRef || !payloadRef.trim()) throw new Error("wake needs a payload reference");
+    const now = Date.now();
+    this.sweepWakes(now);
+    const messageId = stableWakeMessageId(participant, payloadRef);
+    const existing = this.wakes.get(messageId);
+    if (existing) return { messageId, state: wakeStateNow(existing, now) };
+    const record2 = {
+      messageId,
+      participant,
+      payloadRef,
+      sessionId: null,
+      state: "held",
+      createdAt: now,
+      expiresAt: now + (opts.ttlMs ?? this.wakeTtlMs),
+      sendCount: 0
+    };
+    const resolved = resolveWakeParticipant(this.wakeSessions(), participant);
+    if (!resolved) {
+      this.storeWake(record2);
+      return { messageId, state: "held" };
+    }
+    record2.sessionId = resolved.sessionId;
+    this.storeWake(record2);
+    this.sendWake(record2);
+    return { messageId, state: wakeStateNow(record2, now) };
+  }
+  /** Current state of one wake message; null when unknown. */
+  wakeStatus(messageId) {
+    const record2 = this.wakes.get(messageId);
+    return record2 ? { messageId, state: wakeStateNow(record2) } : null;
+  }
+  /**
+   * Resolve a participant to one live session id (R7/R8): exact sessionId,
+   * exact sessionName, or exact work-item ref for cross-worktree resolution.
+   * Throws naming every candidate when ambiguous; null when unknown.
+   */
+  resolveParticipant(participant) {
+    return resolveWakeParticipant(this.wakeSessions(), participant)?.sessionId ?? null;
+  }
+  wakeSessions() {
+    return [...this.sessions.entries()].map(([sessionId, session]) => ({
+      sessionId,
+      sessionName: session.identity.sessionName,
+      workItemRef: session.identity.workItem?.ref,
+      lastActivityAt: session.lastActivityAt
+    }));
+  }
+  storeWake(record2) {
+    if (this.wakes.size >= MAX_WAKE_RECORDS) {
+      const settled = [...this.wakes.values()].filter((r) => r.state !== "queued" && r.state !== "held").sort((a, b) => a.createdAt - b.createdAt);
+      const victim = settled[0] ?? [...this.wakes.values()].sort((a, b) => a.createdAt - b.createdAt)[0];
+      if (victim && victim.messageId !== record2.messageId) this.wakes.delete(victim.messageId);
+    }
+    this.wakes.set(record2.messageId, record2);
+  }
+  sendWake(record2) {
+    if (record2.sessionId === null) {
+      record2.state = "held";
+      return;
+    }
+    const session = this.sessions.get(record2.sessionId);
+    const connection = session?.connection ?? null;
+    if (!session || !connection) {
+      record2.state = "held";
+      return;
+    }
+    const command = {
+      type: "wake",
+      commandId: record2.messageId,
+      messageId: record2.messageId,
+      payloadRef: record2.payloadRef
+    };
+    if (this.pending.has(command.commandId)) return;
+    record2.state = "queued";
+    record2.sendCount += 1;
+    const timer = setTimeout(
+      () => this.finishPending(command.commandId, "failed", "command_timeout", "the session producer did not answer"),
+      this.commandTimeoutMs
+    );
+    timer.unref?.();
+    this.pending.set(command.commandId, {
+      sessionId: record2.sessionId,
+      connection,
+      payload: command,
+      timer,
+      resolve: () => {
+      },
+      wakeId: record2.messageId
+    });
+    try {
+      connection.sendCommand(record2.sessionId, command);
+    } catch (error51) {
+      this.finishPending(command.commandId, "failed", "send_failed", error51.message);
+    }
+  }
+  /** Deliver held wakes addressed to one session (on bind and on re-assert). */
+  flushWakes(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.connection) return;
+    const now = Date.now();
+    for (const record2 of this.wakes.values()) {
+      if (record2.state !== "held" || now >= record2.expiresAt) continue;
+      let resolved = null;
+      try {
+        resolved = resolveWakeParticipant(this.wakeSessions(), record2.participant)?.sessionId ?? null;
+      } catch {
+        continue;
+      }
+      if (resolved !== sessionId) continue;
+      record2.sessionId = sessionId;
+      this.sendWake(record2);
+    }
+  }
+  /** R4: teardown revokes the binding and reports every pending wake as undelivered. */
+  revokeWakes(sessionId, reason) {
+    for (const [commandId, entry] of [...this.pending]) {
+      if (entry.sessionId === sessionId && entry.wakeId) {
+        this.finishPending(commandId, "failed", reason, "the session ended before the wake was accepted");
+      }
+    }
+    for (const record2 of this.wakes.values()) {
+      if (record2.sessionId === sessionId && (record2.state === "queued" || record2.state === "held")) {
+        record2.state = "undelivered";
+      }
+    }
+  }
+  /** R3: a wake is delivered only after the receiver accepted; rejected maps to refused, any failure to undelivered. */
+  settleWake(messageId, status2) {
+    const record2 = this.wakes.get(messageId);
+    if (!record2 || record2.state !== "queued") return;
+    if (status2 === "accepted") record2.state = "delivered";
+    else if (status2 === "rejected") record2.state = "refused";
+    else record2.state = "undelivered";
+  }
+  sweepWakes(now) {
+    for (const record2 of this.wakes.values()) {
+      if ((record2.state === "queued" || record2.state === "held") && now >= record2.expiresAt) record2.state = "expired";
+    }
   }
   clearPromptPending(session) {
     session.promptPending = null;
@@ -80617,6 +80919,7 @@ var AgentHostRegistry = class {
     if (!entry) return;
     this.pending.delete(commandId);
     clearTimeout(entry.timer);
+    if (entry.wakeId) this.settleWake(entry.wakeId, status2);
     const session = this.sessions.get(entry.sessionId);
     if (session) {
       const { payload } = entry;
@@ -80644,6 +80947,7 @@ var AgentHostRegistry = class {
     };
   }
   removeSession(sessionId) {
+    this.revokeWakes(sessionId, "session_ended");
     for (const [commandId, entry] of this.pending) {
       if (entry.sessionId === sessionId) {
         this.finishPending(commandId, "failed", "session_ended", "the session ended");
@@ -80697,6 +81001,9 @@ var AgentHostRegistry = class {
     };
   }
 };
+function describeListener(identity) {
+  return `pid ${identity.pid ?? "?"} generation ${identity.generation ?? "?"}`;
+}
 function messageText(message) {
   const { content } = message;
   if (typeof content === "string") return content;
@@ -81274,7 +81581,7 @@ function bounded2(value, max) {
 
 // src/core/topology-feed.ts
 var import_node_child_process40 = require("child_process");
-var import_node_crypto20 = require("crypto");
+var import_node_crypto21 = require("crypto");
 var import_node_readline2 = require("readline");
 var TOPOLOGY_UPDATE_MAX_BYTES = 64 * 1024;
 var TOPOLOGY_SNAPSHOT_MAX_BYTES = 4 * 1024 * 1024;
@@ -81290,7 +81597,7 @@ function topologyRevision(projection) {
     generated_at_ms: 0,
     sources: projection.sources.map((source) => ({ ...source, duration_ms: 0 }))
   };
-  return (0, import_node_crypto20.createHash)("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 16);
+  return (0, import_node_crypto21.createHash)("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 16);
 }
 function buildSnapshot(projection, seq, revision) {
   let message = {
@@ -82072,7 +82379,7 @@ function safeUnlink(file2) {
 
 // src/core/agent-host-ensure.ts
 var import_node_child_process41 = require("child_process");
-var import_node_crypto21 = require("crypto");
+var import_node_crypto22 = require("crypto");
 var import_node_fs29 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
 var import_node_path71 = __toESM(require("path"), 1);
@@ -82212,7 +82519,7 @@ function logTail(logPath, from) {
   }
 }
 async function acquireLock(lockPath, deadline) {
-  const token = `${process.pid} ${(0, import_node_crypto21.randomUUID)()}`;
+  const token = `${process.pid} ${(0, import_node_crypto22.randomUUID)()}`;
   for (; ; ) {
     try {
       (0, import_node_fs29.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
@@ -82242,7 +82549,7 @@ function breakStaleLock(lockPath) {
       return;
     }
   }
-  const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto21.randomUUID)()}.stale`;
+  const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto22.randomUUID)()}.stale`;
   try {
     (0, import_node_fs29.renameSync)(lockPath, aside);
   } catch {

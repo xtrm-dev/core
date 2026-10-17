@@ -20,8 +20,17 @@ import type {
     AgentSessionStatus,
     AgentSessionSummary,
     AgentToolOrigin,
+    WakeResult,
 } from '@xtrm/contracts';
 import { classifyClaudeTool, ToolOriginClassifier } from './agent-host-origin.js';
+import {
+    DEFAULT_WAKE_TTL_MS,
+    MAX_WAKE_RECORDS,
+    resolveWakeParticipant,
+    stableWakeMessageId,
+    wakeStateNow,
+    type WakeRecord,
+} from './agent-host-wake.js';
 
 export type SubmitRequest = Extract<AgentHostApiV1, { kind: 'submit_request' }>;
 export type SubmitResult = Extract<AgentHostApiV1, { kind: 'submit_result' }>;
@@ -79,6 +88,8 @@ interface PendingCommand {
     payload: AgentCommandPayload;
     timer: NodeJS.Timeout;
     resolve(result: SubmitResult): void;
+    /** Wake message id when this pending command is a wake delivery (CORE-2432). */
+    wakeId?: string;
 }
 
 const CAPABILITY_FOR: Record<AgentCommandPayload['type'], AgentCapability> = {
@@ -86,6 +97,9 @@ const CAPABILITY_FOR: Record<AgentCommandPayload['type'], AgentCapability> = {
     steer: 'steer',
     follow_up: 'follow_up',
     abort: 'abort',
+    // Wake delivery is a message for the agent: only sessions that take prompts can receive one.
+    wake: 'prompt',
+    listener_replaced: 'prompt',
     extension_ui_response: 'extension_ui',
 };
 
@@ -123,6 +137,14 @@ export interface AgentHostRegistryOptions {
     /** How long an accepted prompt may take to open its Frame before the host fails it. */
     promptStartTimeoutMs?: number;
     log?: (message: string) => void;
+    /**
+     * What a second listener for one listener identity does (CORE-2432 R2).
+     * `refuse` (default) refuses it loudly; `handover` drains the binding to the
+     * new connection explicitly. Signatures are unchanged; only the behaviour differs.
+     */
+    duplicateListener?: 'refuse' | 'handover';
+    /** How long a queued or held wake is retained before it reads as expired. */
+    wakeTtlMs?: number;
 }
 
 export class AgentHostRegistry {
@@ -135,11 +157,18 @@ export class AgentHostRegistry {
     private readonly commandTimeoutMs: number;
     private readonly promptStartTimeoutMs: number;
     private readonly log: (message: string) => void;
+    private readonly duplicateListener: 'refuse' | 'handover';
+    private readonly wakeTtlMs: number;
+    /** Retained wake messages by stable message id (CORE-2432 R9). */
+    private readonly wakes = new Map<string, WakeRecord>();
+    private wakeCommandSeq = 0;
 
     constructor(options: AgentHostRegistryOptions = {}) {
         this.commandTimeoutMs = options.commandTimeoutMs ?? 10_000;
         this.promptStartTimeoutMs = options.promptStartTimeoutMs ?? PROMPT_START_TIMEOUT_MS;
         this.log = options.log ?? (() => {});
+        this.duplicateListener = options.duplicateListener ?? 'refuse';
+        this.wakeTtlMs = options.wakeTtlMs ?? DEFAULT_WAKE_TTL_MS;
     }
 
     /** Subscribe to every accepted event frame, in arrival order. Returns an unsubscribe function. */
@@ -158,9 +187,36 @@ export class AgentHostRegistry {
 
         if (payload.type === 'session_identity') {
             const identity = this.bindLaunchedPane(sessionId, payload);
+            // CORE-2432 R2/R6: a second listener for one listener identity no
+            // longer silently overwrites the first, and writes are
+            // compare-and-swap on generation. Legacy identities without
+            // pid+generation keep the old overwrite behaviour.
+            const verdict = this.checkListener(sessionId, session ?? null, identity, connection);
+            if (verdict === 'duplicate' || verdict === 'stale') {
+                if (verdict === 'duplicate') {
+                    this.log(
+                        `refused second listener for session ${sessionId} (${describeListener(identity)}): ` +
+                            `already bound; reconnect after disconnect or use drain-and-handover`,
+                    );
+                } else {
+                    this.log(
+                        `refused stale session_identity for session ${sessionId}: ` +
+                            `generation ${identity.generation} < ${session?.identity.generation}`,
+                    );
+                }
+                return false;
+            }
+            const previousConnection =
+                session && session.connection !== null && session.connection !== connection ? session.connection : null;
             if (session) {
                 session.identity = identity;
                 session.connection = connection;
+                if (verdict === 'handover') {
+                    // Explicit drain-and-handover: in-flight commands drain to the new listener.
+                    for (const entry of this.pending.values()) {
+                        if (entry.sessionId === sessionId) entry.connection = connection;
+                    }
+                }
             } else {
                 session = {
                     identity,
@@ -180,6 +236,11 @@ export class AgentHostRegistry {
                 };
                 this.sessions.set(sessionId, session);
             }
+            if (previousConnection && (verdict === 'replace' || verdict === 'handover')) {
+                // R5: the replaced listener is told, so it can re-assert with a bumped generation.
+                this.notifyReplaced(sessionId, previousConnection, identity, verdict);
+            }
+            this.flushWakes(sessionId);
         } else if (!session) {
             this.log(`dropped ${payload.type} for session ${sessionId}: no session_identity received`);
             return false;
@@ -267,6 +328,10 @@ export class AgentHostRegistry {
     disconnect(connection: ProducerConnection): void {
         for (const [commandId, entry] of this.pending) {
             if (entry.connection === connection) {
+                // A wake addressed to a session that stays live may still be
+                // answered on its next producer connection; only sessions that
+                // are revoked here lose their in-flight wakes (R4).
+                if (entry.wakeId && this.sessions.has(entry.sessionId)) continue;
                 this.finishPending(commandId, 'failed', 'extension_disconnected', 'the session producer disconnected');
             }
         }
@@ -292,6 +357,60 @@ export class AgentHostRegistry {
         for (const [sessionId, session] of this.sessions) {
             if (session.identity.tmux?.paneId !== paneId) continue;
             session.identity = this.bindLaunchedPane(sessionId, session.identity);
+        }
+    }
+
+    /**
+     * Listener binding verdict for one session_identity frame (CORE-2432 R2/R6).
+     * The listener identity is pid + sessionId + generation (R1). `adopt` keeps
+     * the frame, `replace` adopts a newer generation, `handover` drains an
+     * explicit takeover, `duplicate` refuses a second listener for one identity,
+     * and `stale` refuses a compare-and-swap write on an older generation.
+     */
+    private checkListener(
+        _sessionId: string,
+        previous: LiveSession | null,
+        identity: AgentSessionIdentity,
+        connection: ProducerConnection,
+    ): 'adopt' | 'replace' | 'handover' | 'duplicate' | 'stale' {
+        if (!previous) return 'adopt';
+        // The same listener re-asserting over its own socket is always accepted.
+        if (previous.connection === connection) return 'adopt';
+        const stored = previous.identity;
+        if (
+            typeof identity.pid === 'number' &&
+            typeof identity.generation === 'number' &&
+            typeof stored.pid === 'number' &&
+            typeof stored.generation === 'number'
+        ) {
+            if (identity.generation < stored.generation) return 'stale';
+            if (identity.generation > stored.generation) return 'replace';
+            // Equal generation on another connection: a re-assert after the old
+            // socket went away adopts; two concurrent listeners for one identity
+            // are refused, or drained explicitly under the handover policy.
+            if (previous.connection === null) return 'adopt';
+            if (identity.pid !== stored.pid) return 'duplicate';
+            return this.duplicateListener === 'handover' ? 'handover' : 'duplicate';
+        }
+        return 'adopt';
+    }
+
+    private notifyReplaced(
+        sessionId: string,
+        previousConnection: ProducerConnection,
+        identity: AgentSessionIdentity,
+        verdict: 'replace' | 'handover',
+    ): void {
+        const command: AgentCommandPayload = {
+            type: 'listener_replaced',
+            commandId: `lr-${++this.wakeCommandSeq}`,
+            generation: identity.generation ?? 1,
+            reason: verdict === 'handover' ? 'handover' : 'replaced_by_newer_generation',
+        };
+        try {
+            previousConnection.sendCommand(sessionId, command);
+        } catch (error) {
+            this.log(`replaced listener for session ${sessionId} is unreachable: ${(error as Error).message}`);
         }
     }
 
@@ -387,6 +506,12 @@ export class AgentHostRegistry {
                     return reject('rejected', 'unknown_ui_request', `no pending extension UI request ${command.id}`);
                 }
                 break;
+            case 'wake':
+                // Client-submitted wakes route like abort (no turn-taking policy);
+                // tracked delivery with a stable message id goes through wake().
+                break;
+            case 'listener_replaced':
+                return reject('rejected', 'registry_originated', 'listener_replaced is sent by the registry, not by clients');
             case 'abort':
                 break;
         }
@@ -431,7 +556,175 @@ export class AgentHostRegistry {
         for (const commandId of [...this.pending.keys()]) {
             this.finishPending(commandId, 'failed', 'host_shutdown', 'the agent host is shutting down');
         }
+        // R4: teardown revokes the binding and reports every pending wake as undelivered.
+        for (const record of this.wakes.values()) {
+            if (record.state === 'queued' || record.state === 'held') record.state = 'undelivered';
+        }
         for (const session of this.sessions.values()) this.stopPromptStartTimer(session);
+    }
+
+    // --- wake contract (CORE-2432) --------------------------------------------------------
+
+    /**
+     * Wake one participant with a payload reference. Returns a stable message id
+     * (R9: the same pair always computes the same id and is never sent twice)
+     * and one delivery state: `queued` once the wake frame is sent and the
+     * receiver has not answered yet, `held` while no live listener can take it,
+     * `delivered` only after the receiver accepted (R3), `refused` when the
+     * receiver rejected it, `undelivered` after teardown with the wake pending
+     * (R4), `expired` past its TTL. Ambiguous participants throw naming every
+     * candidate (R7); unknown participants are held until they register (R8).
+     */
+    wake(participant: string, payloadRef: string, opts: { ttlMs?: number } = {}): WakeResult {
+        if (!participant || !participant.trim()) throw new Error('wake needs a participant');
+        if (!payloadRef || !payloadRef.trim()) throw new Error('wake needs a payload reference');
+        const now = Date.now();
+        this.sweepWakes(now);
+        const messageId = stableWakeMessageId(participant, payloadRef);
+        const existing = this.wakes.get(messageId);
+        if (existing) return { messageId, state: wakeStateNow(existing, now) };
+        const record: WakeRecord = {
+            messageId,
+            participant,
+            payloadRef,
+            sessionId: null,
+            state: 'held',
+            createdAt: now,
+            expiresAt: now + (opts.ttlMs ?? this.wakeTtlMs),
+            sendCount: 0,
+        };
+        const resolved = resolveWakeParticipant(this.wakeSessions(), participant);
+        if (!resolved) {
+            this.storeWake(record);
+            return { messageId, state: 'held' };
+        }
+        record.sessionId = resolved.sessionId;
+        this.storeWake(record);
+        this.sendWake(record);
+        return { messageId, state: wakeStateNow(record, now) };
+    }
+
+    /** Current state of one wake message; null when unknown. */
+    wakeStatus(messageId: string): WakeResult | null {
+        const record = this.wakes.get(messageId);
+        return record ? { messageId, state: wakeStateNow(record) } : null;
+    }
+
+    /**
+     * Resolve a participant to one live session id (R7/R8): exact sessionId,
+     * exact sessionName, or exact work-item ref for cross-worktree resolution.
+     * Throws naming every candidate when ambiguous; null when unknown.
+     */
+    resolveParticipant(participant: string): string | null {
+        return resolveWakeParticipant(this.wakeSessions(), participant)?.sessionId ?? null;
+    }
+
+    private wakeSessions(): { sessionId: string; sessionName?: string; workItemRef?: string; lastActivityAt?: number }[] {
+        return [...this.sessions.entries()].map(([sessionId, session]) => ({
+            sessionId,
+            sessionName: session.identity.sessionName,
+            workItemRef: session.identity.workItem?.ref,
+            lastActivityAt: session.lastActivityAt,
+        }));
+    }
+
+    private storeWake(record: WakeRecord): void {
+        if (this.wakes.size >= MAX_WAKE_RECORDS) {
+            const settled = [...this.wakes.values()]
+                .filter((r) => r.state !== 'queued' && r.state !== 'held')
+                .sort((a, b) => a.createdAt - b.createdAt);
+            const victim = settled[0] ?? [...this.wakes.values()].sort((a, b) => a.createdAt - b.createdAt)[0];
+            if (victim && victim.messageId !== record.messageId) this.wakes.delete(victim.messageId);
+        }
+        this.wakes.set(record.messageId, record);
+    }
+
+    private sendWake(record: WakeRecord): void {
+        if (record.sessionId === null) {
+            record.state = 'held';
+            return;
+        }
+        const session = this.sessions.get(record.sessionId);
+        const connection = session?.connection ?? null;
+        if (!session || !connection) {
+            record.state = 'held';
+            return;
+        }
+        const command: AgentCommandPayload = {
+            type: 'wake',
+            commandId: record.messageId,
+            messageId: record.messageId,
+            payloadRef: record.payloadRef,
+        };
+        if (this.pending.has(command.commandId)) return;
+        record.state = 'queued';
+        record.sendCount += 1;
+        const timer = setTimeout(
+            () => this.finishPending(command.commandId, 'failed', 'command_timeout', 'the session producer did not answer'),
+            this.commandTimeoutMs,
+        );
+        timer.unref?.();
+        this.pending.set(command.commandId, {
+            sessionId: record.sessionId,
+            connection,
+            payload: command,
+            timer,
+            resolve: () => {},
+            wakeId: record.messageId,
+        });
+        try {
+            connection.sendCommand(record.sessionId, command);
+        } catch (error) {
+            this.finishPending(command.commandId, 'failed', 'send_failed', (error as Error).message);
+        }
+    }
+
+    /** Deliver held wakes addressed to one session (on bind and on re-assert). */
+    private flushWakes(sessionId: string): void {
+        const session = this.sessions.get(sessionId);
+        if (!session || !session.connection) return;
+        const now = Date.now();
+        for (const record of this.wakes.values()) {
+            if (record.state !== 'held' || now >= record.expiresAt) continue;
+            let resolved: string | null = null;
+            try {
+                resolved = resolveWakeParticipant(this.wakeSessions(), record.participant)?.sessionId ?? null;
+            } catch {
+                continue; // Newly ambiguous: stays held until the operator disambiguates.
+            }
+            if (resolved !== sessionId) continue;
+            record.sessionId = sessionId;
+            this.sendWake(record);
+        }
+    }
+
+    /** R4: teardown revokes the binding and reports every pending wake as undelivered. */
+    private revokeWakes(sessionId: string, reason: string): void {
+        for (const [commandId, entry] of [...this.pending]) {
+            if (entry.sessionId === sessionId && entry.wakeId) {
+                this.finishPending(commandId, 'failed', reason, 'the session ended before the wake was accepted');
+            }
+        }
+        for (const record of this.wakes.values()) {
+            if (record.sessionId === sessionId && (record.state === 'queued' || record.state === 'held')) {
+                record.state = 'undelivered';
+            }
+        }
+    }
+
+    /** R3: a wake is delivered only after the receiver accepted; rejected maps to refused, any failure to undelivered. */
+    private settleWake(messageId: string, status: SubmitResult['status']): void {
+        const record = this.wakes.get(messageId);
+        if (!record || record.state !== 'queued') return;
+        if (status === 'accepted') record.state = 'delivered';
+        else if (status === 'rejected') record.state = 'refused';
+        else record.state = 'undelivered';
+    }
+
+    private sweepWakes(now: number): void {
+        for (const record of this.wakes.values()) {
+            if ((record.state === 'queued' || record.state === 'held') && now >= record.expiresAt) record.state = 'expired';
+        }
     }
 
     private clearPromptPending(session: LiveSession): void {
@@ -492,6 +785,7 @@ export class AgentHostRegistry {
         if (!entry) return;
         this.pending.delete(commandId);
         clearTimeout(entry.timer);
+        if (entry.wakeId) this.settleWake(entry.wakeId, status);
 
         const session = this.sessions.get(entry.sessionId);
         if (session) {
@@ -522,6 +816,8 @@ export class AgentHostRegistry {
     }
 
     private removeSession(sessionId: string): void {
+        // R4: ending the session reports its pending wakes as undelivered.
+        this.revokeWakes(sessionId, 'session_ended');
         for (const [commandId, entry] of this.pending) {
             if (entry.sessionId === sessionId) {
                 this.finishPending(commandId, 'failed', 'session_ended', 'the session ended');
@@ -583,6 +879,11 @@ export class AgentHostRegistry {
             ...(id.sessionFile ? { sessionFile: id.sessionFile } : {}),
         };
     }
+}
+
+/** `pid/generation` listener identity for loud duplicate/stale refusal logs (R1, R2). */
+function describeListener(identity: AgentSessionIdentity): string {
+    return `pid ${identity.pid ?? '?'} generation ${identity.generation ?? '?'}`;
 }
 
 /** Text parts of a provider message: a string content, or the `text` parts of a content array. */

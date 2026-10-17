@@ -309,6 +309,20 @@
             "sessionId": "019f9a10-0000-7000-8000-000000000001",
             "at": 1790000000205,
             "payload": { "type": "extension_ui_response", "commandId": "cmd-7", "id": "ui-3", "cancelled": true }
+        },
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 7,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000206,
+            "payload": { "type": "wake", "commandId": "cmd-8", "messageId": "9f2c4a1b8d3e5f60718293a4b5c6d7e8", "payloadRef": "CORE-2432" }
+        },
+        {
+            "schema": "xtrm.agent-command.v1",
+            "seq": 8,
+            "sessionId": "019f9a10-0000-7000-8000-000000000001",
+            "at": 1790000000207,
+            "payload": { "type": "listener_replaced", "commandId": "lr-1", "generation": 2, "reason": "replaced_by_newer_generation" }
         }
     ],
     "hostApi": [

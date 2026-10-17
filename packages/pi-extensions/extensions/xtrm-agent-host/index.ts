@@ -229,6 +229,12 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   /** Steer, follow_up and abort received in the startup window; run on agent_start, when Pi can queue them. */
   let deferred: Array<() => void> = [];
   let readBuffer = "";
+  /**
+   * Listener incarnation (CORE-2432 R1): the registry compares-and-swaps writes
+   * on generation (R6). One per bridge; bumped when the registry reports this
+   * listener replaced so the re-assert wins (R5).
+   */
+  let generation = 1;
 
   const live = () => state === "connecting" || state === "open";
 
@@ -431,6 +437,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       type: "session_identity" as const,
       runtime: { name: "pi" as const, version: typeof VERSION === "string" ? VERSION.slice(0, 128) : null },
       producer: { name: PRODUCER_NAME, version: String(pkg.version) },
+      pid: typeof process.pid === "number" && process.pid > 0 ? process.pid : undefined,
+      generation,
       sessionFile,
       sessionName: bounded(pi.getSessionName()) ?? bounded(env.XTRM_SESSION_NAME) ?? tmuxSession,
       cwd: bounded(cwd, 4096) ?? "/",
@@ -647,6 +655,37 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       // Pi ignores abort() before agent_start: the run it would stop is not active yet.
       if (starting) deferred.push(() => current.abort());
       else current.abort();
+      return result("accepted");
+    }
+    if (command.type === "listener_replaced") {
+      // R5: the registry replaced this listener; re-assert with a generation
+      // above both the local and the replacing one, so the re-assert wins CAS.
+      const seen = typeof (command as { generation?: unknown }).generation === "number" ? (command as { generation: number }).generation : 0;
+      generation = Math.max(generation, seen) + 1;
+      if (identity) {
+        identity = compact({ ...identity, generation });
+        emit(identity);
+      }
+      return result("accepted");
+    }
+    if (command.type === "wake") {
+      // Wake delivery carries a payload reference only, never a contract or a
+      // decision. Accepted here means delivered (R3); the reference text is
+      // plain model input with no ANSI escapes.
+      const ref = typeof command.payloadRef === "string" ? command.payloadRef : "";
+      if (!ref) return result("rejected", "invalid_command", "payload reference is empty");
+      const idle = !starting && current.isIdle();
+      if (starting) {
+        deferred.push(() => pi.sendUserMessage(ref, { deliverAs: "followUp" }));
+        return result("accepted");
+      }
+      if (idle) {
+        guiIngress = { commandId: command.commandId, message: ref, at: Date.now() };
+        startingAt = Date.now();
+        pi.sendUserMessage(ref);
+      } else {
+        pi.sendUserMessage(ref, { deliverAs: "followUp" });
+      }
       return result("accepted");
     }
     if (command.type !== "prompt" && command.type !== "steer" && command.type !== "follow_up") {

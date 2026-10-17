@@ -539,3 +539,94 @@ describe("repositoryFromRemote", () => {
     },
   );
 });
+
+describe("xtrm-agent-host bridge wake contract (CORE-2432)", () => {
+  async function rawHost() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-agent-host-wake-"));
+    const socketPath = path.join(dir, "host.sock");
+    const frames: any[] = [];
+    let peer: net.Socket | null = null;
+    let buffer = "";
+    const server = net.createServer((conn) => {
+      peer = conn;
+      conn.setEncoding("utf8");
+      conn.on("data", (chunk: string) => {
+        buffer += chunk;
+        let nl;
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          frames.push(JSON.parse(buffer.slice(0, nl)));
+          buffer = buffer.slice(nl + 1);
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    const send = (sessionId: string, payload: Record<string, unknown>) =>
+      peer!.write(`${JSON.stringify({ schema: "xtrm.agent-command.v1", sessionId, payload })}\n`);
+    const resultFor = async (commandId: string) => {
+      await until(() => frames.some((f) => f.payload.type === "command_result" && f.payload.commandId === commandId));
+      return frames.find((f) => f.payload.type === "command_result" && f.payload.commandId === commandId).payload;
+    };
+    const close = async () => {
+      peer?.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    };
+    return { socketPath, frames, send, resultFor, close };
+  }
+
+  test("R1 session_identity carries pid and generation", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-wake-r1");
+    const bridge = createAgentHostBridge(pi.pi, { socketPath: raw.socketPath, exec: async () => "", env: {} });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 1);
+      expect(raw.frames[0].payload).toMatchObject({ type: "session_identity", pid: process.pid, generation: 1 });
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+
+  test("R3 wake delivers the payload reference and answers accepted", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-wake-r3");
+    const bridge = createAgentHostBridge(pi.pi, { socketPath: raw.socketPath, exec: async () => "", env: {} });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 2);
+      raw.send("s-wake-r3", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2432" });
+      expect(await raw.resultFor("w1")).toMatchObject({ status: "accepted" });
+      // The payload reference travels as plain model input: no ANSI escapes.
+      expect(pi.sent).toEqual([{ content: "CORE-2432", options: undefined }]);
+      expect(pi.sent[0].content).not.toMatch(/\u001b/);
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+
+  test("R5 listener_replaced re-asserts with a bumped generation", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-wake-r5");
+    const bridge = createAgentHostBridge(pi.pi, { socketPath: raw.socketPath, exec: async () => "", env: {} });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 1);
+      raw.send("s-wake-r5", { type: "listener_replaced", commandId: "lr-1", generation: 7, reason: "replaced_by_newer_generation" });
+      expect(await raw.resultFor("lr-1")).toMatchObject({ status: "accepted" });
+      await until(() => raw.frames.some((f) => f.payload.type === "session_identity" && f.payload.generation === 8));
+      const reasserted = raw.frames.filter((f) => f.payload.type === "session_identity").at(-1).payload;
+      expect(reasserted).toMatchObject({ pid: process.pid, generation: 8 });
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+});
