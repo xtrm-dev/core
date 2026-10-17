@@ -145,6 +145,6 @@
     }
   },
   "devDependencies": {
-    "git-cliff": "2.13.1"
+    "git-cliff": "2.14.2"
   }
 }
