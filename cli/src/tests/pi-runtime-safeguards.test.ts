@@ -430,4 +430,125 @@ describe('pi runtime safeguards', () => {
     expect(globalSettings.packages).toEqual(['npm:pi-gitnexus', '../../dev/core/packages/pi-extensions']);
     expect(globalSettings.packages).not.toContain('npm:@jaggerxtrm/pi-extensions');
   });
+
+  // CORE-2415: the other Pi settings writers rebuilt `packages` from strings only, which deleted
+  // object-form entries. Each writer must change only what it intends to and leave the rest alone.
+  describe('settings writers keep object-form package entries (CORE-2415)', () => {
+    const objectEntry = {
+      source: '/home/op/dev/xtmux',
+      extensions: ['extensions/pi-agent-state.ts'],
+      skills: [],
+      prompts: [],
+      themes: [],
+    };
+    const asText = (value: unknown, indent = 4): string => JSON.stringify(value, null, indent);
+
+    async function writeText(file: string, text: string): Promise<void> {
+      await fs.ensureDir(path.dirname(file));
+      await fs.writeFile(file, text, 'utf8');
+    }
+
+    it('pruneConflictingPiPackageEntries matches string and object forms with or without a version', async () => {
+      const { pruneConflictingPiPackageEntries } = await import('../core/pi-runtime.js');
+      const versionedObject = { source: 'npm:pi-dex@2.1.0', extensions: ['x.ts'] };
+      const result = pruneConflictingPiPackageEntries([
+        'npm:pi-dex@1.0.0', objectEntry, versionedObject, 'npm:pi-dex', 'npm:pi-intercom',
+      ]);
+      expect(result.kept).toEqual([objectEntry, 'npm:pi-intercom']);
+      expect(result.removed).toEqual(['npm:pi-dex@1.0.0', versionedObject, 'npm:pi-dex']);
+    });
+
+    it('cleanupConflictingPiPackageSettings removes only conflicting entries, in place', async () => {
+      const { cleanupConflictingPiPackageSettings } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'prune-agent');
+      const projectRoot = path.join(tempRoot, 'prune-project');
+      const before = { theme: 'light', packages: ['npm:pi-intercom', 'npm:pi-dex@1.0.0', objectEntry, { source: 'npm:pi-dex', extensions: [] }, 'npm:pi-lens'] };
+      const after = { theme: 'light', packages: ['npm:pi-intercom', objectEntry, 'npm:pi-lens'] };
+      await writeText(path.join(agentDir, 'settings.json'), `${asText(before)}\n`);
+      await writeText(path.join(projectRoot, '.pi', 'settings.json'), asText(before));
+
+      const removed = await cleanupConflictingPiPackageSettings(projectRoot, false, false, undefined, agentDir);
+
+      expect(removed).toEqual(['npm:pi-dex@1.0.0', 'npm:pi-dex', 'npm:pi-dex@1.0.0', 'npm:pi-dex']);
+      expect(await fs.readFile(path.join(agentDir, 'settings.json'), 'utf8')).toBe(`${asText(after)}\n`);
+      expect(await fs.readFile(path.join(projectRoot, '.pi', 'settings.json'), 'utf8')).toBe(asText(after));
+    });
+
+    it('cleanupConflictingPiPackageSettings leaves a file with no conflict byte-identical', async () => {
+      const { cleanupConflictingPiPackageSettings } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'prune-noop-agent');
+      const projectRoot = path.join(tempRoot, 'prune-noop-project');
+      const text = asText({ theme: 'xtrm-dark', packages: ['npm:pi-intercom', objectEntry] });
+      await writeText(path.join(agentDir, 'settings.json'), text);
+      await writeText(path.join(projectRoot, '.pi', 'settings.json'), text);
+
+      const removed = await cleanupConflictingPiPackageSettings(projectRoot, false, true, undefined, agentDir);
+
+      expect(removed).toEqual([]);
+      expect(await fs.readFile(path.join(agentDir, 'settings.json'), 'utf8')).toBe(text);
+      expect(await fs.readFile(path.join(projectRoot, '.pi', 'settings.json'), 'utf8')).toBe(text);
+    });
+
+    it('updatePiSettings keeps object entries in packages, skills and extensions and drops only legacy strings', async () => {
+      const { updatePiSettings } = await import('../core/pi-runtime.js');
+      const projectRoot = path.join(tempRoot, 'update-object-entries');
+      const settingsPath = path.join(projectRoot, '.pi', 'settings.json');
+      const globalPath = path.join(process.env.PI_AGENT_DIR as string, 'settings.json');
+      const skillObject = { source: './my-skills', skills: ['a'] };
+      await writeText(globalPath, `${asText({ packages: ['../../dev/core/packages/pi-extensions'] })}\n`);
+      await writeText(settingsPath, `${asText({
+        extensions: [skillObject, 'npm:@xtrm/pi-extensions'],
+        packages: ['npm:@xtrm/pi-extensions', objectEntry, 'npm:pi-dex', { source: 'npm:pi-dex@1.0.0' }, 'npm:pi-intercom'],
+        skills: ['./my-custom-skills', skillObject],
+      })}\n`);
+
+      expect(await updatePiSettings(projectRoot, false)).toBe(true);
+
+      const text = await fs.readFile(settingsPath, 'utf8');
+      const after = JSON.parse(text);
+      expect(after.packages).toEqual([objectEntry, 'npm:pi-intercom']);
+      expect(after.skills).toEqual(['./my-custom-skills', skillObject]);
+      expect(after.extensions).toContainEqual(skillObject);
+      expect(text.startsWith('{\n    "')).toBe(true);
+    });
+
+    it('updatePiSettings is a byte-identical no-op on an already-normalized file', async () => {
+      const { updatePiSettings } = await import('../core/pi-runtime.js');
+      const projectRoot = path.join(tempRoot, 'update-noop');
+      const settingsPath = path.join(projectRoot, '.pi', 'settings.json');
+      const globalPath = path.join(process.env.PI_AGENT_DIR as string, 'settings.json');
+      await writeText(globalPath, `${asText({ packages: ['../../dev/core/packages/pi-extensions'] })}\n`);
+      const text = asText({ extensions: [], packages: ['npm:pi-intercom', objectEntry], theme: 'xtrm-dark' });
+      await writeText(settingsPath, text);
+
+      expect(await updatePiSettings(projectRoot, false)).toBe(false);
+      expect(await fs.readFile(settingsPath, 'utf8')).toBe(text);
+    });
+
+    it('updatePiSettings appends the extension package to global settings without touching object entries', async () => {
+      const { updatePiSettings } = await import('../core/pi-runtime.js');
+      const projectRoot = path.join(tempRoot, 'update-global-append');
+      await fs.ensureDir(projectRoot);
+      const globalPath = path.join(process.env.PI_AGENT_DIR as string, 'settings.json');
+      await writeText(globalPath, asText({ theme: 'light', packages: [objectEntry, 'npm:pi-intercom'] }));
+
+      await updatePiSettings(projectRoot, false);
+
+      expect(JSON.parse(await fs.readFile(globalPath, 'utf8')).packages)
+        .toEqual([objectEntry, 'npm:pi-intercom', 'npm:@jaggerxtrm/pi-extensions']);
+    });
+
+    it('updatePiSettings treats an object-form pi-extensions source as already declared globally', async () => {
+      const { updatePiSettings } = await import('../core/pi-runtime.js');
+      const projectRoot = path.join(tempRoot, 'update-global-object-declared');
+      await fs.ensureDir(projectRoot);
+      const globalPath = path.join(process.env.PI_AGENT_DIR as string, 'settings.json');
+      const text = asText({ packages: [{ source: '/dev/core/packages/pi-extensions', extensions: ['a.ts'] }] });
+      await writeText(globalPath, text);
+
+      await updatePiSettings(projectRoot, false);
+
+      expect(await fs.readFile(globalPath, 'utf8')).toBe(text);
+    });
+  });
 });
