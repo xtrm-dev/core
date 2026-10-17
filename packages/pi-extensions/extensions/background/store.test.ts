@@ -195,6 +195,18 @@ describe("background store eviction", () => {
     // The oldest unseen failures evicted; the newest survive and still count.
     expect(store.get(failures[0])).toBeUndefined();
     expect(store.get(failures[failures.length - 1])?.seen).toBe(false);
+    // N6: every evicted unseen failure is counted for the "+N dropped" line.
+    expect(store.droppedUnseenFailures()).toBe(failures.length - MAX_RETAINED_UNSEEN_FAILURES);
+  });
+
+  test("clearFinished counts the unseen failures it evicts (N6)", () => {
+    const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
+    const failed = store.create("false", "false", "", "session");
+    failed.status = "failed";
+    failed.endedAt = NOW + 1;
+    expect(store.droppedUnseenFailures()).toBe(0);
+    store.clearFinished();
+    expect(store.droppedUnseenFailures()).toBe(1);
   });
 
   test("monitors share the same bound independently of tasks", () => {

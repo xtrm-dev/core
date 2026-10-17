@@ -602,6 +602,23 @@ describe("process exit hook (F2b)", () => {
   });
 });
 
+describe("exit hook sharing across re-evaluations (N4)", () => {
+  test("fifteen module evaluations share one exit hook", async () => {
+    const before = process.listenerCount("exit");
+    const { pi } = fakePi();
+    // Dynamic specifiers defeat TS module resolution on purpose: each
+    // query busts bun's module cache and re-evaluates index.ts.
+    const reimport = (n: number): Promise<typeof import("./index.ts")> =>
+      Function("s", "return import(s);")(`./index.ts?n4reval=${n}`) as Promise<typeof import("./index.ts")>;
+    for (let i = 0; i < 15; i += 1) {
+      const mod = await reimport(i);
+      const service = mod.registerBackgroundExtension(pi, { outputDir: dir, killGraceMs: 50 });
+      services.push(service as never);
+    }
+    expect(process.listenerCount("exit") - before).toBeLessThanOrEqual(1);
+  });
+});
+
 describe("tasks command registration", () => {
   test("registers /tasks once, with no xtrm- slug and no tool-name collisions", () => {
     const { pi, tools, commands } = fakePi();

@@ -210,21 +210,36 @@ function killTreeForce(child: ChildProcess): void {
 }
 
 /**
- * Process groups that must die on process exit (F2b). close() moves every
- * live, monitored and reaping child here; the unref'd sweep SIGKILLs them
- * after the grace on reload, and the synchronous exit hook below covers a
- * quit (process.kill is synchronous and works in exit handlers; no timers
- * or async work may run there). One hook per process ever: modules reload,
- * the hook must not leak a listener per service.
+ * Process groups that must die on process exit (F2b, N4). close() moves
+ * every live, monitored and reaping child here; the unref'd sweep SIGKILLs
+ * them after the grace on reload, and the synchronous exit hook below
+ * covers a quit (process.kill is synchronous and works in exit handlers;
+ * no timers or async work may run there). Both the victim set and the
+ * installed flag live on globalThis under well-known symbols: module
+ * re-evaluation must neither lose tracked children nor leak one exit
+ * listener per evaluation. Bare key names: no xtrm- slug.
  */
-const exitVictims = new Set<ChildProcess>();
-let exitHookInstalled = false;
+const EXIT_HOOK_INSTALLED = Symbol.for("background.exitHookInstalled");
+const EXIT_HOOK_VICTIMS = Symbol.for("background.exitHookVictims");
 
-function installExitHook(): void {
-  if (exitHookInstalled) return;
-  exitHookInstalled = true;
+type ExitHookGlobal = Record<symbol, Set<ChildProcess> | boolean | undefined>;
+
+function exitVictimSet(): Set<ChildProcess> {
+  const g = globalThis as unknown as ExitHookGlobal;
+  let set = g[EXIT_HOOK_VICTIMS] as Set<ChildProcess> | undefined;
+  if (!set) {
+    set = new Set<ChildProcess>();
+    g[EXIT_HOOK_VICTIMS] = set;
+  }
+  return set;
+}
+
+export function installExitHook(): void {
+  const g = globalThis as unknown as ExitHookGlobal;
+  if (g[EXIT_HOOK_INSTALLED]) return;
+  g[EXIT_HOOK_INSTALLED] = true;
   process.on("exit", () => {
-    for (const child of exitVictims) {
+    for (const child of exitVictimSet()) {
       try {
         killTreeForce(child);
       } catch {
@@ -435,11 +450,11 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
    */
   function reapLater(child: ChildProcess): void {
     if (reaping.has(child)) return;
-    exitVictims.add(child);
+    exitVictimSet().add(child);
     killTree(child);
     const timer = setTimeout(() => {
       reaping.delete(child);
-      exitVictims.delete(child);
+      exitVictimSet().delete(child);
       try {
         killTreeForce(child);
       } catch {
@@ -608,7 +623,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     record.pid = child.pid;
     record.cwd = cwd;
     record.timeoutMs = timeoutMs;
-    exitVictims.add(child);
+    exitVictimSet().add(child);
     child.stdout?.on("data", (chunk: Buffer) => writeChunk(handle, chunk));
     child.stderr?.on("data", (chunk: Buffer) => writeChunk(handle, chunk));
     try {
@@ -641,7 +656,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       settleFromExit(record, null);
     });
     child.on("close", (code: number | null) => {
-      exitVictims.delete(child);
+      exitVictimSet().delete(child);
       settleFromExit(record, code);
     });
 
@@ -1051,7 +1066,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       record.pid = child.pid;
       record.cwd = cwd;
       record.timeoutMs = timeoutMs;
-      exitVictims.add(child);
+      exitVictimSet().add(child);
       // Only stdout is the event stream (Claude Code parity); stderr lands
       // in the output file, each stream with its own accounting below.
       child.stdout?.on("data", (chunk: Buffer) => observeMonitorChunk(record, chunk));
@@ -1075,7 +1090,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         finalizeMonitor(record, "stopped", `command failed to start: ${sanitizeModelText(error.message, 200)}`);
       });
       child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
-        exitVictims.delete(child);
+        exitVictimSet().delete(child);
         if (isMonitorTerminal(record)) return;
         // finalizeMonitor flushes the leftover partial line and any waiting
         // batch before the notice, so the counts line up.
@@ -1282,7 +1297,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     for (const [child, timer] of reaping) {
       clearTimeout(timer);
       victims.push(child);
-      exitVictims.add(child);
+      exitVictimSet().add(child);
     }
     reaping.clear();
     for (const [id, handle] of live) {
@@ -1319,7 +1334,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       if (killGraceMs > 0) {
         const sweep = setTimeout(() => {
           for (const child of victims) {
-            exitVictims.delete(child);
+            exitVictimSet().delete(child);
             try {
               killTreeForce(child);
             } catch {
@@ -1334,7 +1349,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         }
       } else {
         for (const child of victims) {
-          exitVictims.delete(child);
+          exitVictimSet().delete(child);
           try {
             killTreeForce(child);
           } catch {

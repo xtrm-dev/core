@@ -103,11 +103,15 @@ function outputSizeExtra(outputFile: string): string {
  * stripped, newlines collapsed to spaces, length bounded. A probe label
  * carrying an OSC title or a CSI clear must arrive as inert text.
  */
-const OSC_PATTERN = "\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$)";
+const OSC_PATTERN = "\x1b\][^\x07\x1b]*(?:\x07|\x1b\\\\)";
+
+/** C1 controls (U+0080-U+009F), including the single-char CSI U+009B. */
+const C1_PATTERN = "[\u0080-\u009f]";
 
 export function sanitizeLabel(value: string, maxLength = 120): string {
   const noOsc = value.replace(new RegExp(OSC_PATTERN, "g"), "");
-  const singleLine = noOsc.replace(/[\r\n]+/g, " ");
+  const noC1 = noOsc.replace(new RegExp(C1_PATTERN, "g"), "");
+  const singleLine = noC1.replace(/[\r\n]+/g, " ");
   const clean = sanitizeModelText(singleLine, maxLength);
   return clean.length > 0 ? clean : "(unnamed)";
 }
@@ -168,10 +172,22 @@ export function formatTasksRow(row: TasksRow, width: number): string {
   return fitToWidth(line, safe);
 }
 
-/** Header plus rows, every line within the width. */
-export function formatTasksList(rows: TasksRow[], width: number): string[] {
+/**
+ * Header plus rows, every line within the width. droppedUnseen names
+ * evicted unseen failures (N6) so the indicator never silently
+ * undercounts them.
+ */
+export function formatTasksList(rows: TasksRow[], width: number, droppedUnseen = 0): string[] {
   const safe = Math.max(20, Math.floor(width) || 80);
   const out = [fitToWidth("tasks", safe)];
+  if (droppedUnseen > 0) {
+    out.push(
+      fitToWidth(
+        droppedUnseen === 1 ? "+1 earlier failure dropped" : `+${droppedUnseen} earlier failures dropped`,
+        safe,
+      ),
+    );
+  }
   if (rows.length === 0) {
     out.push(fitToWidth("Nothing running.", safe));
     return out;
@@ -189,6 +205,8 @@ export interface OutputView {
   /** Exact line count for small files; null when the tail window cut the head off. */
   totalLines: number | null;
   truncated: boolean;
+  /** Byte offset where the tail read stopped; the follower starts here (N3). */
+  endOffset: number;
 }
 
 /** Tail lines shown per output view; the file itself is unbounded (64 MiB cap). */
@@ -202,6 +220,9 @@ export const FOLLOW_MAX_BYTES_PER_UPDATE = 256 * 1024;
 
 /** Cap on lines kept per output view; older live lines drop off the top. */
 export const OUTPUT_VIEW_MAX_LINES = 500;
+
+/** Follow poll fallback interval (N3): only while watching is unavailable. */
+export const FOLLOW_POLL_INTERVAL_MS = 500;
 
 /**
  * Tail one record's output file, bounded. Display-only: ANSI and C0
@@ -347,6 +368,7 @@ export async function readOutput(
     lines: tail.lines,
     totalLines: tail.totalLines,
     truncated: tail.truncated,
+    endOffset: tail.endOffset,
   };
 }
 
@@ -358,16 +380,16 @@ export interface TasksOverlayActions {
 }
 
 export interface TasksOverlayOptions {
-  store: Pick<BackgroundStore, "get" | "getMonitor" | "list" | "listMonitors" | "subscribe" | "markSeen">;
+  store: Pick<BackgroundStore, "droppedUnseenFailures" | "get" | "getMonitor" | "list" | "listMonitors" | "subscribe" | "markSeen">;
   theme: { fg(color: string, text: string): string; bold(text: string): string };
   close: () => void;
   requestRender?: () => void;
   actions: TasksOverlayActions;
   now?: () => number;
   /** Follow source for a running record; null means no live follow. Tests inject a fake. */
-  createFollower?: (id: string) => OutputFollower | null;
+  createFollower?: (id: string, fromOffset: number) => OutputFollower | null;
   /** File watcher; tests inject a manual trigger. Defaults to node:fs watch. */
-  watchFile?: (path: string, listener: () => void) => { close(): void };
+  watchFile?: (path: string, hooks: { onChange: () => void; onError: () => void }) => { close(): void };
 }
 
 const OVERLAY_VISIBLE_ROWS = 16;
@@ -387,6 +409,8 @@ export class TasksOverlay {
   private mode: "list" | "output" = "list";
   private output: OutputState | null = null;
   private status = "";
+  private disposed = false;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
   private readonly unsubscribe: () => void;
 
   constructor(private readonly options: TasksOverlayOptions) {
@@ -394,6 +418,8 @@ export class TasksOverlay {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.teardownFollow();
     this.unsubscribe();
   }
@@ -410,18 +436,52 @@ export class TasksOverlay {
     }
   }
 
-  private defaultFollower(id: string): OutputFollower | null {
-    if (this.options.createFollower) return this.options.createFollower(id);
+  private defaultFollower(id: string, fromOffset: number): OutputFollower | null {
+    if (this.options.createFollower) return this.options.createFollower(id, fromOffset);
     const file = outputFileOf(this.options.store, id);
     if (!file) return null;
     try {
-      return followOutputFile(file, statSync(file).size);
+      return followOutputFile(file, fromOffset);
     } catch {
       return null;
     }
   }
 
+  private defaultWatch(
+    path: string,
+    hooks: { onChange: () => void; onError: () => void },
+  ): { close(): void } {
+    const watchFile = this.options.watchFile;
+    if (watchFile) {
+      // An injected watcher that throws degrades to the poll fallback
+      // through onError, never to a silent static view.
+      try {
+        return watchFile(path, hooks);
+      } catch {
+        hooks.onError();
+        return { close: () => {} };
+      }
+    }
+    try {
+      const watcher = watch(path, () => hooks.onChange());
+      watcher.on("error", () => hooks.onError());
+      return {
+        close: () => {
+          try {
+            watcher.close();
+          } catch {
+            /* already closed */
+          }
+        },
+      };
+    } catch {
+      hooks.onError();
+      return { close: () => {} };
+    }
+  }
+
   private teardownFollow(): void {
+    this.stopPoll();
     if (!this.output) return;
     this.output.following = false;
     try {
@@ -438,27 +498,75 @@ export class TasksOverlay {
     this.output.follower = null;
   }
 
-  /** Drain new tail bytes into the view (F1); ends the follow at terminal state. */
+  /**
+   * Bounded unref'd poll fallback (N3): when the file watcher throws or
+   * errors, follow degrades to a 500 ms poll instead of going silently
+   * stale. Stops with the follow.
+   */
+  private startPoll(id: string): void {
+    if (this.pollTimer || this.disposed) return;
+    const timer = setInterval(() => {
+      if (!this.output?.following || this.disposed) {
+        this.stopPoll();
+        return;
+      }
+      this.pumpFollow(id);
+    }, FOLLOW_POLL_INTERVAL_MS);
+    try {
+      (timer as unknown as { unref?: () => void }).unref?.();
+    } catch {
+      /* runtimes without unref */
+    }
+    this.pollTimer = timer;
+  }
+
+  private stopPoll(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
+
+  private onWatcherError(id: string): void {
+    if (this.mode !== "output" || this.output?.view.id !== id || !this.output?.following) return;
+    this.setStatus("file watch unavailable — polling for new lines");
+    this.startPoll(id);
+  }
+
+  /**
+   * Drain new tail bytes into the view (F1). At terminal state, drain
+   * until the follower is empty: one 256 KiB update may end mid-burst and
+   * the terminal notice must not drop the tail. Still bounded per tick
+   * (at most 8 updates) so a firehose cannot wedge the TUI thread. Ends
+   * the follow once the record is terminal and drained.
+   */
   private pumpFollow(id: string): void {
     const state = this.mode === "output" && this.output?.view.id === id ? this.output : null;
     if (!state || !state.following || !state.follower) return;
-    let fresh: string[] = [];
-    try {
-      fresh = state.follower.update();
-    } catch {
-      this.teardownFollow();
-      this.rerender();
-      return;
-    }
-    if (fresh.length > 0) {
-      state.view.lines.push(...fresh);
-      if (state.view.lines.length > OUTPUT_VIEW_MAX_LINES) {
-        state.view.lines.splice(0, state.view.lines.length - OUTPUT_VIEW_MAX_LINES);
+    const terminal = !this.isRunning(id);
+    let guard = 0;
+    let broken = false;
+    for (;;) {
+      let fresh: string[] = [];
+      try {
+        fresh = state.follower.update();
+      } catch {
+        broken = true;
+        break;
       }
-      if (typeof state.view.totalLines === "number") state.view.totalLines += fresh.length;
-      state.scroll = 0;
+      if (fresh.length > 0) {
+        state.view.lines.push(...fresh);
+        if (state.view.lines.length > OUTPUT_VIEW_MAX_LINES) {
+          state.view.lines.splice(0, state.view.lines.length - OUTPUT_VIEW_MAX_LINES);
+          state.view.truncated = true;
+        }
+        if (typeof state.view.totalLines === "number") state.view.totalLines += fresh.length;
+        state.scroll = 0;
+      }
+      guard += 1;
+      if (fresh.length === 0 || !terminal || guard >= 8) break;
     }
-    if (!this.isRunning(id)) this.teardownFollow();
+    if (broken || terminal) this.teardownFollow();
     this.rerender();
   }
 
@@ -499,31 +607,39 @@ export class TasksOverlay {
     this.options.store.markSeen(row.id);
     this.options.actions.readOutput(row.id).then(
       (view) => {
-        if (this.mode !== "output") return;
+        // N2: a dispose during the async load must not re-arm the follow
+        // (leaked follower fd and watcher, rendering after death).
+        if (this.disposed || this.mode !== "output") return;
         const state: OutputState = { view, scroll: 0, following: false, follower: null, watcher: null };
         this.output = state;
+        this.status = "";
         // F1: a running record streams its file. The watcher owns the live
         // lines; the follower reads only new tail bytes, never the whole
-        // file. Either half failing degrades to a static snapshot.
+        // file. Either half failing degrades to a static snapshot (or the
+        // N3 poll fallback, which sets its own status below).
         if (view.running) {
           try {
-            const follower = this.defaultFollower(row.id);
+            // N3: start at the tail read's end offset, not a fresh stat.
+            const follower = this.defaultFollower(row.id, view.endOffset);
             if (follower) {
               state.follower = follower;
               state.following = true;
               const file = outputFileOf(this.options.store, row.id);
-              const watchFile = this.options.watchFile ?? ((path: string, listener: () => void) => watch(path, () => listener()));
-              if (file) state.watcher = watchFile(file, () => this.pumpFollow(row.id));
+              if (file) {
+                state.watcher = this.defaultWatch(file, {
+                  onChange: () => this.pumpFollow(row.id),
+                  onError: () => this.onWatcherError(row.id),
+                });
+              }
             }
           } catch {
             this.teardownFollow();
           }
         }
-        this.status = "";
         this.rerender();
       },
       (error) => {
-        if (this.mode !== "output") return;
+        if (this.disposed || this.mode !== "output") return;
         this.output = null;
         this.setStatus(error instanceof Error ? error.message : String(error));
       },
@@ -637,6 +753,10 @@ export class TasksOverlay {
     if (this.selected >= this.listScroll + OVERLAY_VISIBLE_ROWS) this.listScroll = this.selected - OVERLAY_VISIBLE_ROWS + 1;
     this.listScroll = Math.min(this.listScroll, maxOffset);
     const out = [cut(theme.bold("tasks")), ""];
+    const dropped = this.options.store.droppedUnseenFailures();
+    if (dropped > 0) {
+      out.push(cut(theme.fg("dim", dropped === 1 ? "+1 earlier failure dropped" : `+${dropped} earlier failures dropped`)));
+    }
     if (rows.length === 0) {
       out.push(cut(theme.fg("dim", "Nothing running.")));
     } else {
@@ -682,7 +802,7 @@ export async function openTasksList(
   const canOverlay = ctx.mode === "tui" && ctx.hasUI === true && typeof custom === "function";
   if (!canOverlay) {
     const rows = buildTasksRows(deps.store.list(), deps.store.listMonitors(), deps.now?.() ?? Date.now());
-    ctx.ui.notify(formatTasksList(rows, 120).join("\n"), "info");
+    ctx.ui.notify(formatTasksList(rows, 120, deps.store.droppedUnseenFailures()).join("\n"), "info");
     return;
   }
   const actions: TasksOverlayActions = {
@@ -720,7 +840,7 @@ export async function openTasksList(
     );
   } catch {
     const rows = buildTasksRows(deps.store.list(), deps.store.listMonitors(), deps.now?.() ?? Date.now());
-    ctx.ui.notify(formatTasksList(rows, 120).join("\n"), "info");
+    ctx.ui.notify(formatTasksList(rows, 120, deps.store.droppedUnseenFailures()).join("\n"), "info");
   }
 }
 

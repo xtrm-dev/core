@@ -20,7 +20,7 @@ import {
   type OutputFollower,
   type OutputView,
 } from "./commands.ts";
-import { createBackgroundStore } from "./store.ts";
+import { MAX_RETAINED_UNSEEN_FAILURES, createBackgroundStore } from "./store.ts";
 
 const NOW = 1_700_000_000_000;
 
@@ -150,7 +150,7 @@ describe("tasks overlay keys", () => {
         return "Cleared 0 finished.";
       },
       async readOutput(id: string): Promise<OutputView> {
-        return { id, kind: "task", label: id, running: false, lines: [`${id} line 1`, `${id} line 2`], totalLines: 2, truncated: false };
+        return { id, kind: "task", label: id, running: false, lines: [`${id} line 1`, `${id} line 2`], totalLines: 2, truncated: false, endOffset: 0 };
       },
     };
     const overlay = new TasksOverlay({
@@ -208,7 +208,7 @@ describe("tasks overlay keys", () => {
           return "Cleared 0 finished.";
         },
         async readOutput(id: string): Promise<OutputView> {
-          return { id, kind: "task", label: id, running: false, lines: [], totalLines: 0, truncated: false };
+          return { id, kind: "task", label: id, running: false, lines: [], totalLines: 0, truncated: false, endOffset: 0 };
         },
       },
       now: () => NOW,
@@ -229,6 +229,203 @@ describe("tasks overlay keys", () => {
     overlay.handleInput("s");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(overlay.render(80).join("\n")).toMatch(/Stopped bg_/);
+    overlay.dispose();
+  });
+
+  function followHarness() {
+    const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
+    const task = store.create("sleep 30", "sleep 30", "/tmp/follow-harness.log", "session");
+    const chunks: string[][] = [];
+    let followerCloses = 0;
+    let watcherCloses = 0;
+    const follower: OutputFollower = {
+      get offset() {
+        return 0;
+      },
+      update: () => chunks.shift() ?? [],
+      close: () => {
+        followerCloses += 1;
+      },
+    };
+    let followerCalls = 0;
+    const hooks: Array<{ onChange: () => void; onError: () => void }> = [];
+    const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
+    const overlay = new TasksOverlay({
+      store,
+      theme,
+      close: () => {},
+      actions: {
+        async stop(id: string) {
+          return `Stopped ${id}.`;
+        },
+        async rerun(id: string) {
+          return `Reran ${id}.`;
+        },
+        async clear() {
+          return "Cleared 0 finished.";
+        },
+        async readOutput(id: string): Promise<OutputView> {
+          return { id, kind: "task", label: id, running: true, lines: [], totalLines: 0, truncated: false, endOffset: 0 };
+        },
+      },
+      createFollower: (_id: string, _fromOffset: number) => {
+        followerCalls += 1;
+        return follower;
+      },
+      watchFile: (_path: string, hook: { onChange: () => void; onError: () => void }) => {
+        hooks.push(hook);
+        return {
+          close: () => {
+            watcherCloses += 1;
+          },
+        };
+      },
+      now: () => NOW,
+    });
+    return { store, task, overlay, chunks, hooks, counts: () => ({ followerCloses, watcherCloses, followerCalls }) };
+  }
+
+  test("at terminal state drains until empty so a burst tail is not lost (N1)", async () => {
+    const { store, task, overlay, chunks } = followHarness();
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    overlay.handleInput("\r");
+    await tick();
+    // A burst lands in three follower updates, then the task exits.
+    chunks.push(["burst-1"], ["burst-2", "LASTLINE"], []);
+    task.status = "failed";
+    task.endedAt = NOW + 1;
+    store.changed("task", task.id);
+    await tick();
+    const rendered = overlay.render(80).join("\n");
+    expect(rendered).toContain("burst-1");
+    expect(rendered).toContain("LASTLINE");
+    expect(rendered).not.toContain("following — new lines appear live");
+    overlay.dispose();
+  });
+
+  test("closing the follower is covered: esc and task end both close it (N2)", async () => {
+    const { overlay, counts } = followHarness();
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    overlay.handleInput("\r");
+    await tick();
+    expect(counts().followerCalls).toBe(1);
+    overlay.handleInput("\u001b");
+    expect(counts().followerCloses).toBeGreaterThanOrEqual(1);
+    expect(counts().watcherCloses).toBeGreaterThanOrEqual(1);
+    overlay.dispose();
+  });
+
+  test("a throwing watcher falls back to polling instead of going stale (N3)", async () => {
+    const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
+    store.create("sleep 30", "sleep 30", "/tmp/poll-fallback.log", "session");
+    const live: string[] = [];
+    let seenOffset: number | null = null;
+    const overlay = new TasksOverlay({
+      store,
+      theme,
+      close: () => {},
+      actions: {
+        async stop(id: string) {
+          return `Stopped ${id}.`;
+        },
+        async rerun(id: string) {
+          return `Reran ${id}.`;
+        },
+        async clear() {
+          return "Cleared 0 finished.";
+        },
+        async readOutput(id: string): Promise<OutputView> {
+          return { id, kind: "task", label: id, running: true, lines: [], totalLines: 0, truncated: false, endOffset: 42 };
+        },
+      },
+      createFollower: (_id: string, fromOffset: number) => {
+        seenOffset = fromOffset;
+        return {
+          get offset() {
+            return fromOffset;
+          },
+          update: () => live.splice(0),
+          close: () => {},
+        };
+      },
+      watchFile: () => {
+        throw new Error("no inotify");
+      },
+      now: () => NOW,
+    });
+    overlay.handleInput("\r");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The follower starts where the tail read stopped, not at a fresh stat.
+    expect(seenOffset).toBe(42);
+    live.push("polled-line");
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const rendered = overlay.render(80).join("\n");
+    expect(rendered).toContain("polled-line");
+    expect(rendered).toContain("polling");
+    overlay.dispose();
+  });
+
+  test("the follower starts at the tail read's end offset on a real file (N3)", async () => {
+    const { writeFileSync, appendFileSync, mkdtempSync, rmSync } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dir = mkdtempSync(path.join(os.tmpdir(), "tasks-offset-test-"));
+    try {
+      const file = path.join(dir, "out.log");
+      writeFileSync(file, "old1\nold2\n");
+      const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
+      const task = store.create("cmd", "cmd", file, "session");
+      const view = await readOutput(store, task.id);
+      expect(view.lines).toEqual(["old1", "old2"]);
+      appendFileSync(file, "new1\n");
+      const follower = followOutputFile(file, view.endOffset);
+      try {
+        expect(follower.update()).toEqual(["new1"]);
+      } finally {
+        follower.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("dispose during the async load never arms the follow (N2)", async () => {
+    const { store, overlay, counts } = followHarness();
+    let resolveView: ((view: OutputView) => void) | null = null;
+    const pending = new TasksOverlay({
+      store,
+      theme,
+      close: () => {},
+      actions: {
+        async stop(id: string) {
+          return `Stopped ${id}.`;
+        },
+        async rerun(id: string) {
+          return `Reran ${id}.`;
+        },
+        async clear() {
+          return "Cleared 0 finished.";
+        },
+        readOutput: (id: string) =>
+          new Promise<OutputView>((resolve) => {
+            resolveView = resolve;
+          }),
+      },
+      createFollower: () => {
+        throw new Error("must not arm after dispose");
+      },
+      watchFile: () => {
+        throw new Error("must not watch after dispose");
+      },
+      now: () => NOW,
+    });
+    pending.handleInput("\r");
+    pending.dispose();
+    resolveView?.({ id: "bg_1", kind: "task", label: "bg_1", running: true, lines: [], totalLines: 0, truncated: false, endOffset: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(counts().followerCalls).toBe(0);
+    expect(() => pending.render(80)).not.toThrow();
+    expect(pending.render(80).join("\n")).not.toContain("following — new lines appear live");
     overlay.dispose();
   });
 
@@ -259,12 +456,12 @@ describe("tasks overlay keys", () => {
           return "Cleared 0 finished.";
         },
         async readOutput(id: string): Promise<OutputView> {
-          return { id, kind: "task", label: id, running: true, lines: [], totalLines: 0, truncated: false };
+          return { id, kind: "task", label: id, running: true, lines: [], totalLines: 0, truncated: false, endOffset: 0 };
         },
       },
       createFollower: () => follower,
-      watchFile: (_path: string, cb: () => void) => {
-        listener = cb;
+      watchFile: (_path: string, hooks: { onChange: () => void; onError: () => void }) => {
+        listener = hooks.onChange;
         return {
           close: () => {
             listener = null;
@@ -300,6 +497,54 @@ describe("tasks overlay keys", () => {
   });
 });
 
+describe("dropped failures line (N6)", () => {
+  test("formatTasksList names evicted unseen failures, singular and plural", () => {
+    const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
+    const rows = buildTasksRows(store.list(), store.listMonitors(), NOW);
+    expect(formatTasksList(rows, 80, 0).join("\n")).not.toContain("dropped");
+    expect(formatTasksList(rows, 80, 1).join("\n")).toContain("+1 earlier failure dropped");
+    expect(formatTasksList(rows, 80, 7).join("\n")).toContain("+7 earlier failures dropped");
+    for (const width of [80, 120]) {
+      for (const line of formatTasksList(rows, width, 12345)) {
+        expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+      }
+    }
+  });
+
+  test("the overlay list shows the dropped count from the store", () => {
+    const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
+    for (let i = 0; i < MAX_RETAINED_UNSEEN_FAILURES + 3; i += 1) {
+      const record = store.create(`fail-${i}`, `fail-${i}`, "", "session");
+      record.status = "failed";
+      record.endedAt = NOW + i;
+      store.changed("task", record.id);
+    }
+    expect(store.droppedUnseenFailures()).toBe(3);
+    const overlay = new TasksOverlay({
+      store,
+      theme,
+      close: () => {},
+      actions: {
+        async stop(id: string) {
+          return `Stopped ${id}.`;
+        },
+        async rerun(id: string) {
+          return `Reran ${id}.`;
+        },
+        async clear() {
+          return "Cleared 0 finished.";
+        },
+        async readOutput(id: string): Promise<OutputView> {
+          return { id, kind: "task", label: id, running: false, lines: [], totalLines: 0, truncated: false, endOffset: 0 };
+        },
+      },
+      now: () => NOW,
+    });
+    expect(overlay.render(80).join("\n")).toContain("+3 earlier failures dropped");
+    overlay.dispose();
+  });
+});
+
 describe("tasks text forms", () => {
   function textDeps() {
     const store = createBackgroundStore({ now: () => NOW, makeId: sequentialIds() });
@@ -327,7 +572,7 @@ describe("tasks text forms", () => {
       },
       async readOutputView(id: string): Promise<OutputView> {
         if (id !== task.id) throw new Error(`[background] unknown task ${JSON.stringify(id)}.`);
-        return { id, kind: "task" as const, label: "sleep 30", running: true, lines: ["out"], totalLines: 1, truncated: false };
+        return { id, kind: "task" as const, label: "sleep 30", running: true, lines: ["out"], totalLines: 1, truncated: false, endOffset: 0 };
       },
     };
     return { store, task, notified, ctx: ctx as never, deps };
@@ -478,6 +723,20 @@ describe("sanitizeLabel", () => {
     expect(label).not.toContain("\x1b");
     expect(label).toContain("make build");
     expect(label).toContain("more");
+  });
+
+  test("an ST-terminated OSC title is stripped, not leaked (N5)", () => {
+    // Failed before the terminator fix: the payload leaked as "]0;title".
+    expect(sanitizeLabel("a\x1b]0;title\x1b\\b")).toBe("ab");
+    expect(sanitizeLabel("a\x1b]0;title\x07b")).toBe("ab");
+  });
+
+  test("C1 controls including single-char CSI are stripped (N5)", () => {
+    // Failed before the C1 range: U+009B survived verbatim.
+    const label = sanitizeLabel("a\u009B2Jb");
+    expect(label).not.toContain("\u009B");
+    expect(label).toContain("a");
+    expect(label).toContain("b");
   });
 
   test("rows carry sanitized labels", () => {

@@ -312,6 +312,12 @@ export interface BackgroundStore {
   markAllSeen(): number;
   /** Evict every finished task and monitor; returns the counts removed. */
   clearFinished(): { tasks: number; monitors: number };
+  /**
+   * Cumulative count of evicted *unseen* failures (N6). The indicator
+   * cannot count what is gone; /tasks shows "+N earlier failures
+   * dropped" instead of silently undercounting.
+   */
+  droppedUnseenFailures(): number;
   outputDir: string;
 }
 
@@ -321,6 +327,7 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
   const tasks = new Map<string, BackgroundTaskRecord>();
   const monitors = new Map<string, BackgroundMonitorRecord>();
   const listeners = new Set<StoreChangeListener>();
+  let droppedUnseen = 0;
   const emit = (event: StoreChangeEvent): void => {
     for (const listener of [...listeners]) {
       try {
@@ -356,6 +363,7 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
     while (unseen.length > MAX_RETAINED_UNSEEN_FAILURES) {
       const victim = unseen.shift() as BackgroundTaskRecord | BackgroundMonitorRecord;
       entries.delete(victim.id);
+      droppedUnseen += 1;
       emit({ kind, id: victim.id });
     }
     finished = [...entries.values()].filter(terminal).sort(byAge);
@@ -414,6 +422,7 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
       let clearedMonitors = 0;
       for (const [id, record] of [...tasks]) {
         if (isTaskTerminal(record.status)) {
+          if (isUnseenFailureTask(record)) droppedUnseen += 1;
           tasks.delete(id);
           clearedTasks += 1;
           emit({ kind: "task", id });
@@ -421,12 +430,16 @@ export function createBackgroundStore(options: BackgroundStoreOptions = {}): Bac
       }
       for (const [id, record] of [...monitors]) {
         if (isMonitorTerminalStatus(record.status)) {
+          if (isUnseenFailureMonitor(record)) droppedUnseen += 1;
           monitors.delete(id);
           clearedMonitors += 1;
           emit({ kind: "monitor", id });
         }
       }
       return { tasks: clearedTasks, monitors: clearedMonitors };
+    },
+    droppedUnseenFailures(): number {
+      return droppedUnseen;
     },
     create(
       command: string,
