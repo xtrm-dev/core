@@ -1,6 +1,37 @@
 /**
  * Claude transport socket I/O (CORE-2434 I3, XT-91 ADR rev 2 + amendment 1).
  *
+ * Adapted from pi-claude-link (https://github.com/alonw0/pi-claude-link,
+ * claude-protocol.ts) under the MIT license; behaviour credit is also
+ * recorded in ADOPTION-CREDITS.md. The socket lifecycle (bind, NDJSON
+ * framing, auth first line, registry entry read/write), the msgV: 1 user
+ * frames and the peer_message_status receipts follow pi-claude-link; the
+ * version gate, the exact-only resolution, the I1 delivery mapping and the
+ * I2 injection path are XTRM-owned. No pi-claude-link code is copied
+ * verbatim.
+ *
+ * MIT License
+ *
+ * Copyright (c) 2026 alonw0
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
  * Speaks Claude Code's cross-session socket behind the I1 wake contract:
  * send a user frame to a Claude session, receive user frames from Claude
  * sessions, and map Claude's `peer_message_status` receipts onto the I1
@@ -13,11 +44,13 @@
  * passed through in memory only and never logged or printed.
  */
 
-import { chmod, mkdir, unlink, writeFile, readFile } from "node:fs/promises";
+import { chmod, unlink, writeFile, readFile, rename } from "node:fs/promises";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { claudeSessionsDir, ensureSocketsDir, processStartTime, readPeerToken } from "./registry.ts";
+import intercomPkg from "../package.json" with { type: "json" };
 import {
   buildReceiptFrame,
   buildUserFrame,
@@ -41,6 +74,8 @@ export interface SendToClaudeOptions {
   messageId?: string;
   /** Optional pairing token for sockets that require an auth first line. Memory only. */
   authToken?: string;
+  /** Read the pairing token from the registry sidecar for this pid (memory only). */
+  authFromRegistry?: { sessionsDir?: string; pid: number };
   timeoutMs?: number;
 }
 
@@ -94,7 +129,17 @@ export async function sendToClaudeSession(options: SendToClaudeOptions): Promise
     ...(options.priority ? { priority: options.priority } : {}),
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
   });
-  await sendClaudeFrame(options.sock, frame, { authToken: options.authToken, timeoutMs: options.timeoutMs });
+  let authToken = options.authToken;
+  if (!authToken && options.authFromRegistry) {
+    authToken = await readPeerToken(
+      options.authFromRegistry.sessionsDir ?? claudeSessionsDir(),
+      options.authFromRegistry.pid,
+    );
+  }
+  await sendClaudeFrame(options.sock, frame, {
+    ...(authToken ? { authToken } : {}),
+    timeoutMs: options.timeoutMs,
+  });
   return messageId;
 }
 
@@ -157,9 +202,7 @@ export async function bindClaudeTransportSocket(
   sockPath: string,
   handlers: ClaudeTransportHandlers = {},
 ): Promise<BoundClaudeSocket> {
-  const dir = path.dirname(sockPath);
-  await mkdir(dir, { recursive: true, mode: 0o700 }).catch(() => {});
-  await chmod(dir, 0o700).catch(() => {});
+  await ensureSocketsDir(path.dirname(sockPath));
   await unlink(sockPath).catch(() => {});
   const server = createServer((conn: Socket) => {
     conn.setEncoding("utf8");
@@ -233,7 +276,12 @@ export async function bindClaudeTransportSocket(
       resolve();
     });
   });
-  await chmod(sockPath, 0o600).catch(() => {});
+  try {
+    await chmod(sockPath, 0o600);
+  } catch (error) {
+    server.close();
+    throw new Error(`Claude transport: cannot secure socket ${sockPath}: ${(error as Error).message}`);
+  }
   return {
     server,
     sockPath,
@@ -289,31 +337,78 @@ export interface PiPeerRegistration {
   cwd: string;
   sockPath: string;
   status?: string;
+  /** Registry directory override (tests). */
+  sessionsDir?: string;
+}
+
+export interface PiPeerClaim {
+  owned: boolean;
+  sessionsDir: string;
+}
+
+/** This adapter's registry marker: `intercom <xtrm-intercom package version>`. */
+export function ownPeerVersion(): string {
+  return `intercom ${(intercomPkg as { version?: string }).version ?? "0.0.0"}`;
+}
+
+function peerFile(sessionsDir: string, pid: number): string {
+  return path.join(sessionsDir, `${pid}.json`);
+}
+
+function isOwnPeerEntry(entry: Record<string, unknown>): boolean {
+  return typeof entry.version === "string" && entry.version.startsWith("intercom ");
+}
+
+/** Atomically replace one registry file (tmp + rename, mode 0600). */
+async function writeEntryAtomic(file: string, entry: Record<string, unknown>): Promise<void> {
+  const tmp = `${file}.${process.pid}.tmp`;
+  await writeFile(tmp, JSON.stringify(entry, null, 2), { mode: 0o600 });
+  await rename(tmp, file);
+}
+
+/**
+ * Claim this pid's registry entry. A foreign entry (written by another
+ * extension, for example pi-claude-link until M1 retires it) is never
+ * overwritten: the claim reports unowned and the caller keeps the transport
+ * off. An absent entry, or one carrying this adapter's marker, is owned.
+ */
+export async function claimPiPeerEntry(pid: number, sessionsDir?: string): Promise<PiPeerClaim> {
+  const dir = sessionsDir ?? path.join(osHomedir(), ".claude", "sessions");
+  let current: Record<string, unknown> | null = null;
+  try {
+    current = JSON.parse(await readFile(peerFile(dir, pid), "utf8")) as Record<string, unknown>;
+  } catch {
+    current = null;
+  }
+  if (current && !isOwnPeerEntry(current)) return { owned: false, sessionsDir: dir };
+  return { owned: true, sessionsDir: dir };
 }
 
 /**
  * Register this Pi session in Claude's registry so it appears in Claude
  * Code's ListAgents. Same file shape Claude writes for its own sessions;
- * `procStart` is the `ps lstart` form, which the pid-reuse guard treats as
- * opaque (pid match alone).
+ * `procStart` is the numeric kernel start time, which the pid-reuse guard
+ * compares directly. Throws when the entry is foreign-owned (see
+ * claimPiPeerEntry): callers check ownership first.
  */
 export async function registerPiPeer(registration: PiPeerRegistration): Promise<void> {
   const { mkdir: makeDir } = await import("node:fs/promises");
-  const { execFile } = await import("node:child_process");
-  const sessionsDir = path.join(osHomedir(), ".claude", "sessions");
-  await makeDir(sessionsDir, { recursive: true }).catch(() => {});
-  const procStart = await new Promise<string | undefined>((resolve) => {
-    execFile("ps", ["-o", "lstart=", "-p", String(registration.pid)], (error, stdout) => {
-      resolve(error ? undefined : String(stdout).trim() || undefined);
-    });
-  });
+  const dir = registration.sessionsDir ?? path.join(osHomedir(), ".claude", "sessions");
+  await makeDir(dir, { recursive: true });
+  const claim = await claimPiPeerEntry(registration.pid, dir);
+  if (!claim.owned) {
+    throw new Error(
+      `Claude transport: refusing to overwrite the registry entry for pid ${registration.pid}: another extension owns it`,
+    );
+  }
+  const procStart = processStartTime(registration.pid);
   const entry = {
     pid: registration.pid,
     sessionId: registration.sessionId || randomUUID(),
     cwd: registration.cwd || process.cwd(),
     startedAt: Date.now(),
     ...(procStart ? { procStart } : {}),
-    version: "xtrm-intercom",
+    version: ownPeerVersion(),
     peerProtocol: 1,
     kind: "interactive",
     entrypoint: "pi",
@@ -322,30 +417,42 @@ export async function registerPiPeer(registration: PiPeerRegistration): Promise<
     nameSource: "derived",
     status: registration.status || "idle",
   };
-  await writeFile(path.join(sessionsDir, `${registration.pid}.json`), JSON.stringify(entry, null, 2));
+  await writeEntryAtomic(peerFile(dir, registration.pid), entry);
 }
 
 function osHomedir(): string {
   return process.env.HOME || os.homedir();
 }
 
-/** Patch one live Pi peer entry (name, status) without touching the socket. */
-export async function updatePiPeer(pid: number, patch: { name?: string; status?: string }): Promise<void> {
-  const sessionsDir = path.join(osHomedir(), ".claude", "sessions");
-  const file = path.join(sessionsDir, `${pid}.json`);
+/** Patch one live Pi peer entry (name, status) without touching the socket. Foreign entries are left alone. */
+export async function updatePiPeer(
+  pid: number,
+  patch: { name?: string; status?: string },
+  sessionsDir?: string,
+): Promise<void> {
+  const dir = sessionsDir ?? path.join(osHomedir(), ".claude", "sessions");
+  const file = peerFile(dir, pid);
   let current: Record<string, unknown>;
   try {
     current = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
   } catch {
     return;
   }
-  await writeFile(file, JSON.stringify({ ...current, ...patch }, null, 2));
+  if (!isOwnPeerEntry(current)) return;
+  await writeEntryAtomic(file, { ...current, ...patch });
 }
 
-/** Remove the Pi peer entry and socket on shutdown. */
-export async function deregisterPiPeer(pid: number, sockPath?: string): Promise<void> {
-  const sessionsDir = path.join(osHomedir(), ".claude", "sessions");
-  await unlink(path.join(sessionsDir, `${pid}.json`)).catch(() => {});
+/** Remove the Pi peer entry and socket on shutdown. Foreign entries are left alone. */
+export async function deregisterPiPeer(pid: number, sockPath?: string, sessionsDir?: string): Promise<void> {
+  const dir = sessionsDir ?? path.join(osHomedir(), ".claude", "sessions");
+  const file = peerFile(dir, pid);
+  try {
+    const current = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
+    if (!isOwnPeerEntry(current)) return;
+  } catch {
+    /* absent or unreadable: fall through to socket cleanup */
+  }
+  await unlink(file).catch(() => {});
   if (sockPath) await unlink(sockPath).catch(() => {});
 }
 

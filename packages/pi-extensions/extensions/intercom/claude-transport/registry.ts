@@ -1,9 +1,11 @@
 /**
  * Claude session registry reading (CORE-2434 I3, XT-91 ADR rev 2 + amendment 1).
  *
- * Reads `~/.claude/sessions/<pid>.json` so Claude sessions appear in the Pi
- * roster (I4 builds the ListAgents tool on top of this; this slice exposes
- * the roster function only). The pid-reuse guard mirrors
+ * Adapted from pi-claude-link (https://github.com/alonw0/pi-claude-link,
+ * claude-protocol.ts) under the MIT license — full notice in ./transport.ts;
+ * behaviour credit is also recorded in ADOPTION-CREDITS.md. Session
+ * discovery, the socket-liveness probe and the socket-directory fallback
+ * follow pi-claude-link; the pid-reuse guard below mirrors
  * `cli/src/core/dispatcher-identity.ts` (`readSessionEntry` /
  * `findLiveDispatchers`, CORE-2432 R8): a dead pid is skipped, a numeric
  * `procStart` that disagrees with the live process start time means the pid
@@ -70,6 +72,46 @@ export function ccSocksDir(sessionsDir: string = claudeSessionsDir()): string {
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
   const base = process.env.XDG_RUNTIME_DIR || "/tmp";
   return base === "/tmp" ? path.join(base, `cc-socks-${uid}`) : path.join(base, "cc-socks");
+}
+
+/**
+ * Securely prepare one socket directory. Never follows a symlink: an
+ * lstat that finds a non-directory (or a symlink, which lstat never
+ * follows) fails loudly. An existing directory must be owned by our uid
+ * with mode 0700 (fixed when wrong, loudly when the fix fails); a missing
+ * one is created 0700. Every failure throws naming the path.
+ */
+export async function ensureSocketsDir(dir: string): Promise<string> {
+  const { lstat, mkdir, chmod } = await import("node:fs/promises");
+  const me = typeof process.getuid === "function" ? process.getuid() : -1;
+  let stat;
+  try {
+    stat = await lstat(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      throw new Error(`Claude transport: cannot inspect socket directory ${dir}: ${(error as Error).message}`);
+    }
+    try {
+      await mkdir(dir, { recursive: true, mode: 0o700 });
+    } catch (mkdirError) {
+      throw new Error(`Claude transport: cannot create socket directory ${dir}: ${(mkdirError as Error).message}`);
+    }
+    return dir;
+  }
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`Claude transport: refusing socket directory ${dir}: not a real directory`);
+  }
+  if (me >= 0 && stat.uid !== me) {
+    throw new Error(`Claude transport: refusing socket directory ${dir}: owned by uid ${stat.uid}, not ${me}`);
+  }
+  if ((stat.mode & 0o777) !== 0o700) {
+    try {
+      await chmod(dir, 0o700);
+    } catch (chmodError) {
+      throw new Error(`Claude transport: cannot secure socket directory ${dir}: ${(chmodError as Error).message}`);
+    }
+  }
+  return dir;
 }
 
 function clean(value: unknown): string | null {
@@ -205,12 +247,20 @@ export interface ResolveClaudeTargetResult {
 }
 
 /**
- * Resolve a target by exact session name or exact session id. R7: no prefix
+ * Resolve a target by exact session id or exact session name. R7: no prefix
  * fallback — a prefix that is not an exact hit is an error, never a guess.
+ * Two live sessions under one name throw naming every candidate (F4); the
+ * caller disambiguates by session id instead.
  */
 export function resolveClaudeTarget(peers: ClaudePeer[], nameOrId: string): ResolveClaudeTargetResult {
-  const hit =
-    peers.find((row) => row.sessionId === nameOrId) || peers.find((row) => row.name === nameOrId);
+  const byId = peers.find((row) => row.sessionId === nameOrId);
+  if (byId) return { target: byId };
+  const named = peers.filter((row) => row.name === nameOrId);
+  if (named.length > 1) {
+    const candidates = named.map((row) => `${row.name} (pid ${row.pid ?? "?"} at ${row.sock})`).join(", ");
+    throw new Error(`ambiguous Claude session "${nameOrId}": ${candidates}`);
+  }
+  const hit = named[0];
   if (!hit) {
     return {
       error: `no live Claude session matches "${nameOrId}"`,

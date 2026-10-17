@@ -1,21 +1,21 @@
 /**
  * Claude transport adapter contract tests (CORE-2434 I3, XT-91 ADR rev 2 + amendment 1).
  *
- * Protocol interoperability with Claude Code's cross-session socket; behaviour
- * credit goes to pi-claude-link (see ADOPTION-CREDITS.md). Clean
- * reimplementation: no pi-claude-link code is copied here.
+ * Adapted from pi-claude-link under the MIT license (full notice in
+ * ./transport.ts); behaviour credit is also recorded in ADOPTION-CREDITS.md.
  *
  * Every test below fails without the adapter (red-first TDD): the module does
  * not exist until this slice lands.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 const protocol = await import("./protocol.ts");
 const registry = await import("./registry.ts");
 const transport = await import("./transport.ts");
+const adapter = await import("./index.ts");
 
 describe("claude-transport frame version gate (CORE-2434 I3)", () => {
   test("msgV:1 user frames parse; any other version fails loudly naming the version seen", () => {
@@ -109,13 +109,27 @@ describe("claude-transport envelope (CORE-2434 I3, Claude naming parity)", () =>
   });
 
   test("model payloads carry no ANSI", () => {
-    const { content } = protocol.buildUserFrame({ body: "[31mred[0m" });
-    expect(content).not.toMatch(//);
+    const { content } = protocol.buildUserFrame({ body: "\u001b[31mred\u001b[0m" });
+    expect(content).not.toMatch(/\u001b/);
     expect(content).toContain("red");
   });
 });
 
 describe("claude-transport registry (CORE-2434 I3, pid-reuse guard)", () => {
+  test("two live sessions under one name throw naming every candidate (R7/F4)", () => {
+    const peers = [
+      { name: "dup", sock: "/tmp/a.sock", cwd: "/tmp", status: "idle", pid: 11 },
+      { name: "dup", sock: "/tmp/b.sock", cwd: "/tmp", status: "idle", pid: 22 },
+    ];
+    expect(() => registry.resolveClaudeTarget(peers as never, "dup")).toThrow(/ambiguous.*11.*\/tmp\/a\.sock.*22.*\/tmp\/b\.sock/);
+    // A session id still disambiguates.
+    const byId = registry.resolveClaudeTarget(
+      peers.map((p, i) => ({ ...p, sessionId: `s-${i}` })) as never,
+      "s-1",
+    );
+    expect(byId.target?.sock).toBe("/tmp/b.sock");
+  });
+
   test("resolve is exact-only: a name prefix never matches (R7)", async () => {
     const peers = [
       { name: "core-xt-claude-prog-skill", sock: "/tmp/a.sock", cwd: "/tmp", status: "idle" },
@@ -285,6 +299,187 @@ describe("claude-transport send and receive (CORE-2434 I3)", () => {
       expect(seen).toEqual([99]);
     } finally {
       await server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
+  type Handler = (event: any, ctx: any) => unknown;
+  const until = async (check: () => boolean, ms = 5000) => {
+    const start = Date.now();
+    while (!check()) {
+      if (Date.now() - start > ms) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+  function fakePi() {
+    const handlers = new Map<string, Handler[]>();
+    const sentCustom: Array<{ message: unknown; options?: unknown }> = [];
+    const pi = {
+      on(name: string, handler: Handler) {
+        handlers.set(name, [...(handlers.get(name) ?? []), handler]);
+        return () => {};
+      },
+      sendMessage(message: unknown, options?: unknown) {
+        sentCustom.push({ message, options });
+      },
+      getSessionName: () => "probe",
+    };
+    const fire = (name: string, event: any, ctx: any) => {
+      for (const handler of handlers.get(name) ?? []) void handler({ type: name, ...event }, ctx);
+    };
+    return { pi: pi as any, sentCustom, fire };
+  }
+  function fakeCtx(notices: Array<{ line: string; level: string }>) {
+    return {
+      cwd: "/tmp/probe",
+      sessionManager: { getSessionId: () => "s-probe" },
+      isIdle: () => true,
+      ui: { notify: (line: string, level: string) => notices.push({ line, level }) },
+    } as any;
+  }
+  const entryFile = (dir: string) => path.join(dir, `${process.pid}.json`);
+
+  test("a foreign registry entry keeps the transport off with one operator line", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-foreign-"));
+    const sockPath = path.join(dir, "i3.sock");
+    try {
+      writeFileSync(
+        entryFile(dir),
+        JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "pi-claude-link" }),
+      );
+      const before = readFileSync(entryFile(dir), "utf8");
+      const { pi, fire } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir });
+      fire("session_start", { reason: "startup" }, fakeCtx(notices));
+      await until(() => notices.length >= 1);
+      expect(notices).toHaveLength(1);
+      expect(notices[0].line).toBe(adapter.FOREIGN_ENTRY_LINE);
+      expect(existsSync(sockPath)).toBe(false);
+      expect(readFileSync(entryFile(dir), "utf8")).toBe(before);
+      fire("session_shutdown", { reason: "quit" }, fakeCtx(notices));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(readFileSync(entryFile(dir), "utf8")).toBe(before);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("no entry: the transport binds, registers an owned entry, receives, and cleans up", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-active-"));
+    const sockPath = path.join(dir, "i3.sock");
+    try {
+      const { pi, fire, sentCustom } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      const ctx = fakeCtx(notices);
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir });
+      fire("session_start", { reason: "startup" }, ctx);
+      await until(() => existsSync(sockPath));
+      const entry = JSON.parse(readFileSync(entryFile(dir), "utf8"));
+      expect(String(entry.version)).toMatch(/^intercom \d+\.\d+\.\d+/);
+      expect(entry.messagingSocketPath).toBe(sockPath);
+      expect(typeof entry.procStart).toBe("string");
+      expect(/^\d+$/.test(entry.procStart)).toBe(true);
+      expect(notices).toEqual([]);
+      // A Claude-side user frame injects through the I2 path and acks delivered with the id.
+      const acked: string[] = [];
+      const { server: sink, sockPath: sinkSock } = await transport.bindClaudeTransportSocket(path.join(dir, "sink.sock"), {
+        onReceipt: (r) => {
+          if (r.origMessageId) acked.push(`${r.status}:${r.origMessageId}`);
+        },
+      });
+      try {
+        await transport.sendToClaudeSession({
+          sock: sockPath, body: "CORE-2434", from: `uds:${sinkSock}`, fromName: "probe", messageId: "m-ack-1",
+        });
+        await until(() => sentCustom.length >= 1);
+        expect(String((sentCustom[0].message as any)?.content ?? "")).toContain("CORE-2434");
+        await until(() => acked.length >= 1);
+        expect(acked).toEqual(["delivered:m-ack-1"]);
+      } finally {
+        await sink.close();
+      }
+      fire("session_shutdown", { reason: "quit" }, ctx);
+      await until(() => !existsSync(entryFile(dir)));
+      expect(existsSync(sockPath)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an owned entry is refreshed, not treated as foreign", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-owned-"));
+    const sockPath = path.join(dir, "i3.sock");
+    try {
+      writeFileSync(
+        entryFile(dir),
+        JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "intercom 0.1.0" }),
+      );
+      const { pi, fire } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      const ctx = fakeCtx(notices);
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir });
+      fire("session_start", { reason: "startup" }, ctx);
+      await until(() => existsSync(sockPath));
+      expect(notices).toEqual([]);
+      expect(String(JSON.parse(readFileSync(entryFile(dir), "utf8")).version)).toMatch(/^intercom /);
+      fire("session_shutdown", { reason: "quit" }, ctx);
+      await until(() => !existsSync(entryFile(dir)));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ackForWakeState answers from the real state", () => {
+    expect(adapter.ackForWakeState("delivered")).toBe("delivered");
+    expect(adapter.ackForWakeState("held")).toBe("held");
+    expect(adapter.ackForWakeState("queued")).toBe("held");
+    expect(adapter.ackForWakeState("refused")).toBe("refused");
+    expect(adapter.ackForWakeState("undelivered")).toBeNull();
+    expect(adapter.ackForWakeState("expired")).toBeNull();
+  });
+
+  test("ensureSocketsDir refuses a symlink and secures a lax directory", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-dir-"));
+    try {
+      const { symlinkSync, mkdirSync, statSync } = await import("node:fs");
+      const real = path.join(dir, "real");
+      mkdirSync(real, { mode: 0o755 });
+      await registry.ensureSocketsDir(real);
+      expect(statSync(real).mode & 0o777).toBe(0o700);
+      const link = path.join(dir, "link");
+      symlinkSync(real, link);
+      await expect(registry.ensureSocketsDir(link)).rejects.toThrow(/not a real directory/);
+      await expect(transport.bindClaudeTransportSocket(path.join(link, "x.sock"), {})).rejects.toThrow(/not a real directory/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("readPeerToken feeds the optional auth line on send", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-auth-"));
+    try {
+      const sockPath = path.join(dir, "auth.sock");
+      writeFileSync(path.join(dir, "4242.abc123.key"), JSON.stringify({ peerToken: "tok-1", procStart: "1", pidDomain: "x" }));
+      expect(await registry.readPeerToken(dir, 4242)).toBe("tok-1");
+      expect(await registry.readPeerToken(dir, 9999)).toBeUndefined();
+      const received: string[] = [];
+      const bound = await transport.bindClaudeTransportSocket(sockPath, {
+        onUserMessage: (msg) => received.push(msg.body),
+      });
+      try {
+        await transport.sendToClaudeSession({
+          sock: sockPath, body: "authed", authFromRegistry: { sessionsDir: dir, pid: 4242 },
+        });
+        const start = Date.now();
+        while (!received.length && Date.now() - start < 5000) await new Promise((r) => setTimeout(r, 5));
+        expect(received).toEqual(["authed"]);
+      } finally {
+        await bound.close();
+      }
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });

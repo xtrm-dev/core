@@ -116,7 +116,13 @@ describe("intercom transport registration (CORE-2433 I2)", () => {
     try {
       const pi = fakePi();
       const c = fakeCtx("s-reg");
-      const opts = { socketPath: host.info.socket, exec: async () => "", env: {} };
+      const opts = {
+        socketPath: host.info.socket,
+        exec: async () => "",
+        env: {},
+        claudeSocketPath: path.join(dir, "claude.sock"),
+        claudeSessionsDir: path.join(dir, "claude-sessions"),
+      };
       intercomExtension(pi.pi, opts);
       const { default: agentHostExtension } = await import("../xtrm-agent-host/index.ts");
       agentHostExtension(pi.pi, opts);
