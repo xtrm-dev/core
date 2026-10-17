@@ -352,7 +352,7 @@ describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
       const before = readFileSync(entryFile(dir), "utf8");
       const { pi, fire } = fakePi();
       const notices: Array<{ line: string; level: string }> = [];
-      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir });
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
       fire("session_start", { reason: "startup" }, fakeCtx(notices));
       await until(() => notices.length >= 1);
       expect(notices).toHaveLength(1);
@@ -374,9 +374,10 @@ describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
       const { pi, fire, sentCustom } = fakePi();
       const notices: Array<{ line: string; level: string }> = [];
       const ctx = fakeCtx(notices);
-      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir });
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
       fire("session_start", { reason: "startup" }, ctx);
       await until(() => existsSync(sockPath));
+      await until(() => existsSync(entryFile(dir)));
       const entry = JSON.parse(readFileSync(entryFile(dir), "utf8"));
       expect(String(entry.version)).toMatch(/^intercom \d+\.\d+\.\d+/);
       expect(entry.messagingSocketPath).toBe(sockPath);
@@ -420,9 +421,10 @@ describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
       const { pi, fire } = fakePi();
       const notices: Array<{ line: string; level: string }> = [];
       const ctx = fakeCtx(notices);
-      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir });
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
       fire("session_start", { reason: "startup" }, ctx);
       await until(() => existsSync(sockPath));
+      await until(() => existsSync(entryFile(dir)));
       expect(notices).toEqual([]);
       expect(String(JSON.parse(readFileSync(entryFile(dir), "utf8")).version)).toMatch(/^intercom /);
       fire("session_shutdown", { reason: "quit" }, ctx);
@@ -479,6 +481,156 @@ describe("claude-transport wiring and coexistence (CORE-2434 review)", () => {
       } finally {
         await bound.close();
       }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
+  type Handler = (event: any, ctx: any) => unknown;
+  const until = async (check: () => boolean, ms = 5000) => {
+    const start = Date.now();
+    while (!check()) {
+      if (Date.now() - start > ms) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+  function fakePi(settings: unknown = {}) {
+    const handlers = new Map<string, Handler[]>();
+    const sentCustom: Array<{ message: unknown; options?: unknown }> = [];
+    const pi = {
+      on(name: string, handler: Handler) {
+        handlers.set(name, [...(handlers.get(name) ?? []), handler]);
+        return () => {};
+      },
+      sendMessage(message: unknown, options?: unknown) {
+        sentCustom.push({ message, options });
+      },
+      getSessionName: () => "probe",
+      getSettings: () => settings,
+    };
+    const fire = (name: string, event: any, ctx: any) => {
+      for (const handler of handlers.get(name) ?? []) void handler({ type: name, ...event }, ctx);
+    };
+    return { pi: pi as any, sentCustom, fire };
+  }
+  function fakeCtx(notices: Array<{ line: string; level: string }>) {
+    return {
+      cwd: "/tmp/probe",
+      sessionManager: { getSessionId: () => "s-probe" },
+      isIdle: () => true,
+      ui: { notify: (line: string, level: string) => notices.push({ line, level }) },
+    } as any;
+  }
+  const entryFile = (dir: string) => path.join(dir, `${process.pid}.json`);
+
+  test("default off: no setting means no socket and no entry", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-off-"));
+    const sockPath = path.join(dir, "i3.sock");
+    try {
+      const { pi, fire } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      const ctx = fakeCtx(notices);
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir });
+      fire("session_start", { reason: "startup" }, ctx);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(existsSync(sockPath)).toBe(false);
+      expect(existsSync(entryFile(dir))).toBe(false);
+      expect(notices).toEqual([]);
+      fire("session_shutdown", { reason: "quit" }, ctx);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the settings key turns the transport on", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-setting-"));
+    const sockPath = path.join(dir, "i3.sock");
+    try {
+      const { pi, fire } = fakePi({ intercom: { claudeTransport: true } });
+      const notices: Array<{ line: string; level: string }> = [];
+      const ctx = fakeCtx(notices);
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir });
+      fire("session_start", { reason: "startup" }, ctx);
+      await until(() => existsSync(sockPath));
+      await until(() => existsSync(entryFile(dir)));
+      expect(String(JSON.parse(readFileSync(entryFile(dir), "utf8")).version)).toMatch(/^intercom /);
+      fire("session_shutdown", { reason: "quit" }, ctx);
+      await until(() => !existsSync(entryFile(dir)));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a stale foreign entry may be replaced; a live one may not", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-stale-"));
+    try {
+      const deadPid = 42424241;
+      writeFileSync(
+        path.join(dir, `${deadPid}.json`),
+        JSON.stringify({ pid: deadPid, name: "gone", messagingSocketPath: "/tmp/gone.sock", version: "pi-claude-link" }),
+      );
+      expect((await transport.claimPiPeerEntry(deadPid, dir)).owned).toBe(true);
+      writeFileSync(
+        entryFile(dir),
+        JSON.stringify({ pid: process.pid, name: "live-foreign", messagingSocketPath: "/tmp/x.sock", version: "pi-claude-link", procStart: "1" }),
+      );
+      expect((await transport.claimPiPeerEntry(process.pid, dir)).owned).toBe(true);
+      writeFileSync(
+        entryFile(dir),
+        JSON.stringify({ pid: process.pid, name: "live-foreign", messagingSocketPath: "/tmp/x.sock", version: "pi-claude-link" }),
+      );
+      expect((await transport.claimPiPeerEntry(process.pid, dir)).owned).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a foreign write after ours stops the transport without touching foreign state", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-takeover-"));
+    const sockPath = path.join(dir, "i3.sock");
+    try {
+      const { pi, fire } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      const ctx = fakeCtx(notices);
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
+      fire("session_start", { reason: "startup" }, ctx);
+      await until(() => existsSync(sockPath));
+      await until(() => existsSync(entryFile(dir)));
+      // pi-claude-link loads second: it unlinks first, takes the path and the entry.
+      rmSync(sockPath, { force: true });
+      const net = await import("node:net");
+      const squatter = net.createServer(() => {});
+      await new Promise<void>((resolve) => squatter.listen(sockPath, resolve));
+      const foreignEntry = JSON.stringify({ pid: process.pid, name: "probe", status: "idle", messagingSocketPath: sockPath, version: "pi-claude-link" });
+      writeFileSync(entryFile(dir), foreignEntry);
+      fire("session_shutdown", { reason: "quit" }, ctx);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(readFileSync(entryFile(dir), "utf8")).toBe(foreignEntry);
+      expect(existsSync(sockPath)).toBe(true);
+      expect(notices.filter((n) => n.line === adapter.TAKEOVER_LINE)).toHaveLength(0);
+      await new Promise<void>((resolve) => squatter.close(() => resolve()));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("start failures notify one line naming the error", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-fail-"));
+    try {
+      const { symlinkSync, mkdirSync } = await import("node:fs");
+      const real = path.join(dir, "real");
+      mkdirSync(real);
+      const link = path.join(dir, "link");
+      symlinkSync(real, link);
+      const { pi, fire } = fakePi();
+      const notices: Array<{ line: string; level: string }> = [];
+      adapter.default(pi, { socketPath: path.join(link, "x.sock"), sessionsDir: dir, enabled: true });
+      fire("session_start", { reason: "startup" }, fakeCtx(notices));
+      await until(() => notices.length >= 1);
+      expect(notices).toHaveLength(1);
+      expect(notices[0].line).toMatch(/Claude transport unavailable: .*not a real directory/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

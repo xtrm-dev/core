@@ -39,6 +39,8 @@ export interface IntercomExtensionOptions extends AgentHostBridgeOptions {
   claudeSocketPath?: string;
   /** Registry override forwarded to the Claude transport (tests). */
   claudeSessionsDir?: string;
+  /** Force the Claude transport on/off (tests, M1); default reads settings. */
+  claudeTransportEnabled?: boolean;
 }
 
 export type { ClaudeTransportOptions };
@@ -48,5 +50,6 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
   claudeTransportExtension(pi, {
     ...(options.claudeSocketPath ? { socketPath: options.claudeSocketPath } : {}),
     ...(options.claudeSessionsDir ? { sessionsDir: options.claudeSessionsDir } : {}),
+    ...(options.claudeTransportEnabled !== undefined ? { enabled: options.claudeTransportEnabled } : {}),
   });
 }

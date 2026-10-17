@@ -139,11 +139,10 @@ export function processStartTime(pid: number): string | undefined {
  * `ps lstart` date string, which cannot be compared to ticks) or agrees.
  * A /proc probe failure keeps the entry: unknown, not dead.
  */
-export function pidGuardPasses(entry: Record<string, unknown>): boolean {
+export function pidGuardPasses(entry: Record<string, unknown>, filePid?: number): boolean {
   if (typeof entry.pid !== "number") return true;
   const procStart = clean(entry.procStart);
-  const filePid = Number(path.basename(String(entry.__file ?? "")).replace(/\.json$/, ""));
-  if (Number.isInteger(filePid) && entry.pid !== filePid) return false;
+  const stem = filePid ?? Number(path.basename(String(entry.__file ?? "")).replace(/\.json$/, ""));
   let stat: string | null = null;
   try {
     stat = readFileSync(`/proc/${entry.pid}/stat`, "utf8");

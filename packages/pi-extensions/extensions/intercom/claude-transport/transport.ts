@@ -49,7 +49,7 @@ import { connect, createServer, type Server, type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { claudeSessionsDir, ensureSocketsDir, processStartTime, readPeerToken } from "./registry.ts";
+import { claudeSessionsDir, ensureSocketsDir, pidGuardPasses, processStartTime, readPeerToken } from "./registry.ts";
 import intercomPkg from "../package.json" with { type: "json" };
 import {
   buildReceiptFrame,
@@ -359,6 +359,42 @@ function isOwnPeerEntry(entry: Record<string, unknown>): boolean {
   return typeof entry.version === "string" && entry.version.startsWith("intercom ");
 }
 
+export { isOwnPeerEntry as isOwnPeer };
+
+/** Read one pid's registry entry, or null when absent/unreadable. */
+export async function readPeerEntry(
+  pid: number,
+  sessionsDir?: string,
+): Promise<Record<string, unknown> | null> {
+  const dir = sessionsDir ?? path.join(osHomedir(), ".claude", "sessions");
+  try {
+    return JSON.parse(await readFile(peerFile(dir, pid), "utf8")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** Identity of one socket path (lstat: never follows a symlink). Null when absent or not a socket. */
+export async function socketIdentity(sockPath: string): Promise<{ dev: number; ino: number } | null> {
+  const { lstat } = await import("node:fs/promises");
+  try {
+    const stat = await lstat(sockPath);
+    if (!stat.isSocket() || stat.isSymbolicLink()) return null;
+    return { dev: stat.dev, ino: stat.ino };
+  } catch {
+    return null;
+  }
+}
+
+/** True while the socket at this path is still the one we bound. */
+export async function sameSocket(
+  sockPath: string,
+  identity: { dev: number; ino: number },
+): Promise<boolean> {
+  const now = await socketIdentity(sockPath);
+  return !!now && now.dev === identity.dev && now.ino === identity.ino;
+}
+
 /** Atomically replace one registry file (tmp + rename, mode 0600). */
 async function writeEntryAtomic(file: string, entry: Record<string, unknown>): Promise<void> {
   const tmp = `${file}.${process.pid}.tmp`;
@@ -367,21 +403,19 @@ async function writeEntryAtomic(file: string, entry: Record<string, unknown>): P
 }
 
 /**
- * Claim this pid's registry entry. A foreign entry (written by another
- * extension, for example pi-claude-link until M1 retires it) is never
- * overwritten: the claim reports unowned and the caller keeps the transport
- * off. An absent entry, or one carrying this adapter's marker, is owned.
+ * Claim this pid's registry entry. A live foreign entry (written by another
+ * extension, for example pi-claude-link until M1 retires it, whose pid
+ * passes the guard) is never overwritten: the claim reports unowned and the
+ * caller keeps the transport off. An absent entry, an owned one, or a stale
+ * foreign entry (dead pid or procStart mismatch: litter, not a peer) is
+ * owned and may be written.
  */
 export async function claimPiPeerEntry(pid: number, sessionsDir?: string): Promise<PiPeerClaim> {
   const dir = sessionsDir ?? path.join(osHomedir(), ".claude", "sessions");
-  let current: Record<string, unknown> | null = null;
-  try {
-    current = JSON.parse(await readFile(peerFile(dir, pid), "utf8")) as Record<string, unknown>;
-  } catch {
-    current = null;
-  }
-  if (current && !isOwnPeerEntry(current)) return { owned: false, sessionsDir: dir };
-  return { owned: true, sessionsDir: dir };
+  const current = await readPeerEntry(pid, dir);
+  if (!current || isOwnPeerEntry(current)) return { owned: true, sessionsDir: dir };
+  const stale = !pidGuardPasses(current, pid);
+  return { owned: stale, sessionsDir: dir };
 }
 
 /**
@@ -454,6 +488,35 @@ export async function deregisterPiPeer(pid: number, sockPath?: string, sessionsD
   }
   await unlink(file).catch(() => {});
   if (sockPath) await unlink(sockPath).catch(() => {});
+}
+
+/**
+ * Close a bound socket without unlinking a path we no longer own.
+ * `server.close()` unlinks the socket path unconditionally, so a foreign
+ * path (taken over after our bind) must never be closed: our orphaned
+ * listener is left for the session teardown instead. Absent paths and our
+ * own socket close normally.
+ */
+export async function closeBoundSocket(
+  bound: BoundClaudeSocket | null,
+  identity: { dev: number; ino: number } | null,
+): Promise<void> {
+  if (!bound) return;
+  if (identity) {
+    const { lstat } = await import("node:fs/promises");
+    const exists = await lstat(bound.sockPath)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) {
+      const now = await socketIdentity(bound.sockPath);
+      if (!now || now.dev !== identity.dev || now.ino !== identity.ino) return;
+    }
+  }
+  try {
+    await bound.close();
+  } catch {
+    /* already closed */
+  }
 }
 
 /** Default socket path for one pid inside Claude's socket directory. */

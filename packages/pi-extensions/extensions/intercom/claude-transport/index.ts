@@ -3,11 +3,15 @@
  *
  * One adapter module speaks Claude Code's cross-session socket behind the I1
  * wake contract: it sends to Claude sessions, receives from Claude sessions,
- * and maps Claude's receipts onto delivered, held and refused. It registers
- * the Pi session in Claude's registry so Pi sessions appear in Claude Code's
- * ListAgents, and it exposes the Claude roster so Claude sessions appear in
- * the Pi roster (the ListAgents tool itself is I4, CORE-2435; SendMessage is
- * I5, CORE-2436).
+ * and maps Claude's receipts onto delivered, held and refused. It can register
+ * the Pi session in Claude's registry and exposes the Claude roster so Claude
+ * sessions appear in the Pi roster (the ListAgents tool itself is I4,
+ * CORE-2435; SendMessage is I5, CORE-2436).
+ *
+ * Off by default behind `intercom.claudeTransport` (M1 turns it on when it
+ * removes pi-claude-link). Until then pi-claude-link owns the registry entry,
+ * so "Pi sessions appear in Claude Code's ListAgents" through this adapter
+ * is not proven here; that proof moves to M1.
  *
  * Protocol interoperability credit: pi-claude-link (see ADOPTION-CREDITS.md).
  * Adapted from pi-claude-link under the MIT license — full notice in
@@ -32,9 +36,14 @@ import {
   ackClaudeMessage,
   bindClaudeTransportSocket,
   claimPiPeerEntry,
+  closeBoundSocket,
   deregisterPiPeer,
+  isOwnPeer,
   peerSocketPath,
+  readPeerEntry,
   registerPiPeer,
+  socketIdentity,
+  updatePiPeer,
   type BoundClaudeSocket,
   type ClaudeDeliveryOutcome,
 } from "./transport.ts";
@@ -70,12 +79,17 @@ export {
   bindClaudeTransportSocket,
   claimPiPeerEntry,
   ClaudeReceiptWaiter,
+  closeBoundSocket,
   deregisterPiPeer,
+  isOwnPeer,
   ownPeerVersion,
   peerSocketPath,
+  readPeerEntry,
   registerPiPeer,
+  sameSocket,
   sendClaudeFrame,
   sendToClaudeSession,
+  socketIdentity,
   updatePiPeer,
 } from "./transport.ts";
 
@@ -84,6 +98,35 @@ export interface ClaudeTransportOptions {
   socketPath?: string;
   /** Override the Claude registry directory (tests). */
   sessionsDir?: string;
+  /** Force the transport on/off, winning over the settings key and env (tests, M1). */
+  enabled?: boolean;
+}
+
+/** Settings key gating the Claude transport. Off by default; M1 turns it on. */
+export const CLAUDE_TRANSPORT_SETTING = "intercom.claudeTransport";
+/** Environment fallback for the same gate (operators without settings access). */
+export const CLAUDE_TRANSPORT_ENV = "INTERCOM_CLAUDE_TRANSPORT";
+
+/**
+ * Whether the Claude transport starts. Precedence: explicit option, then the
+ * environment fallback, then the `intercom.claudeTransport` settings key;
+ * default false.
+ */
+export function isClaudeTransportEnabled(pi: ExtensionAPI, options: ClaudeTransportOptions = {}): boolean {
+  if (options.enabled !== undefined) return options.enabled;
+  const env = process.env[CLAUDE_TRANSPORT_ENV];
+  if (env !== undefined) {
+    if (/^(1|true|on|yes)$/i.test(env.trim())) return true;
+    if (/^(0|false|off|no)$/i.test(env.trim())) return false;
+  }
+  try {
+    const settings = pi.getSettings?.() as Record<string, unknown> | undefined;
+    const intercom = settings?.intercom as Record<string, unknown> | undefined;
+    if (typeof intercom?.claudeTransport === "boolean") return intercom.claudeTransport;
+  } catch {
+    /* unreadable settings read as off */
+  }
+  return false;
 }
 
 /**
@@ -102,6 +145,10 @@ export async function claudeRoster(excludeSock?: string): Promise<ClaudePeer[]> 
 export const FOREIGN_ENTRY_LINE =
   "Claude transport inactive: another extension owns this session's registry entry";
 
+/** Line printed when another writer takes the socket or entry after we bound. */
+export const TAKEOVER_LINE =
+  "Claude transport stopped: another extension took over this session's socket or registry entry";
+
 /**
  * The ack for one inbound message, answered from the real injection state:
  * delivered after the injection succeeded, held while deferred, refused when
@@ -117,6 +164,7 @@ export function ackForWakeState(state: WakeDeliveryState): ClaudeDeliveryOutcome
 
 export default function claudeTransportExtension(pi: ExtensionAPI, options: ClaudeTransportOptions = {}): void {
   let bound: BoundClaudeSocket | null = null;
+  let boundIdentity: { dev: number; ino: number } | null = null;
   let sockPath = options.socketPath ?? "";
   let ownFrom = "";
   let started = false;
@@ -124,6 +172,8 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
 
   async function start(ctx: ExtensionContext): Promise<void> {
     if (started) return;
+    // Off by default behind the settings key; M1 turns it on with pi-claude-link gone.
+    if (!isClaudeTransportEnabled(pi, options)) return;
     const pid = process.pid;
     const notify = (line: string) => {
       try {
@@ -132,11 +182,19 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
         /* no UI */
       }
     };
-    // Coexistence first: a foreign entry means another extension (pi-claude-link
-    // until M1) owns this session's socket. Never overwrite it, never bind its
-    // path: print one operator line and keep the transport off.
-    const claim = await claimPiPeerEntry(pid, options.sessionsDir).catch(() => null);
-    if (!claim) return;
+    const fail = (error: unknown) => {
+      notify(`Claude transport unavailable: ${(error as Error)?.message ?? String(error)}`);
+    };
+    // Coexistence first: a live foreign entry means another extension
+    // (pi-claude-link until M1) owns this session's socket. Never overwrite
+    // it, never bind its path: print one operator line and stay off.
+    let claim;
+    try {
+      claim = await claimPiPeerEntry(pid, options.sessionsDir);
+    } catch (error) {
+      fail(error);
+      return;
+    }
     if (!claim.owned) {
       notify(FOREIGN_ENTRY_LINE);
       return;
@@ -197,25 +255,50 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
           notify(`Claude transport: unsupported frame version ${rendered}: this adapter speaks msgV 1`);
         },
       });
-      await registerPiPeer({ pid, sessionId, name, cwd, sockPath, status: "idle", sessionsDir: claim.sessionsDir });
-      started = true;
-    } catch {
-      try {
-        await bound?.close();
-      } catch {
-        /* already closed */
+      boundIdentity = await socketIdentity(sockPath).catch(() => null);
+      if (!boundIdentity) throw new Error(`Claude transport: socket ${sockPath} is not usable after bind`);
+      const hadOwnEntry = isOwnPeer((await readPeerEntry(pid, claim.sessionsDir).catch(() => null)) ?? {});
+      if (hadOwnEntry) {
+        // Refresh the entry we already own: the session id stays stable.
+        await updatePiPeer(pid, { name, status: "idle" }, claim.sessionsDir);
+      } else {
+        await registerPiPeer({ pid, sessionId, name, cwd, sockPath, status: "idle", sessionsDir: claim.sessionsDir });
       }
-      bound = null;
+      // Load order is not controlled and pi-claude-link unlinks first: verify
+      // after registration that the entry is still ours and the socket is
+      // still the one we bound. On a takeover, close without unlinking a
+      // path we no longer own, print one operator line, and stay off.
+      const entryNow = await readPeerEntry(pid, claim.sessionsDir).catch(() => null);
+      const socketNow = await socketIdentity(sockPath).catch(() => null);
+      const kept =
+        !!entryNow &&
+        isOwnPeer(entryNow) &&
+        !!socketNow &&
+        !!boundIdentity &&
+        socketNow.dev === boundIdentity.dev &&
+        socketNow.ino === boundIdentity.ino;
+      if (!kept) {
+        await closeListener();
+        notify(TAKEOVER_LINE);
+        return;
+      }
+      started = true;
+    } catch (error) {
+      fail(error);
+      await closeListener();
     }
   }
 
-  async function stop(): Promise<void> {
-    try {
-      await bound?.close();
-    } catch {
-      /* already closed */
-    }
+  async function closeListener(): Promise<void> {
+    const server = bound;
+    const identity = boundIdentity;
     bound = null;
+    boundIdentity = null;
+    await closeBoundSocket(server, identity);
+  }
+
+  async function stop(): Promise<void> {
+    await closeListener();
     await deregisterPiPeer(process.pid, sockPath || undefined, options.sessionsDir).catch(() => {});
   }
 
