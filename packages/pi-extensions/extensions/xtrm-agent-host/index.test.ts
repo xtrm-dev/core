@@ -630,3 +630,91 @@ describe("xtrm-agent-host bridge wake contract (CORE-2432)", () => {
     }
   });
 });
+
+describe("xtrm-agent-host bridge replacement and held wakes (CORE-2432 F1/F7)", () => {
+  async function rawHost() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-agent-host-fup-"));
+    const socketPath = path.join(dir, "host.sock");
+    const frames: any[] = [];
+    let peer: net.Socket | null = null;
+    let buffer = "";
+    const server = net.createServer((conn) => {
+      peer = conn;
+      conn.setEncoding("utf8");
+      conn.on("data", (chunk: string) => {
+        buffer += chunk;
+        let nl;
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          frames.push(JSON.parse(buffer.slice(0, nl)));
+          buffer = buffer.slice(nl + 1);
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    const send = (sessionId: string, payload: Record<string, unknown>) =>
+      peer!.write(`${JSON.stringify({ schema: "xtrm.agent-command.v1", sessionId, payload })}\n`);
+    const resultsFor = async (commandId: string) => {
+      await until(() => frames.some((f) => f.payload.type === "command_result" && f.payload.commandId === commandId));
+      return frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === commandId).map((f) => f.payload);
+    };
+    const close = async () => {
+      peer?.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    };
+    return { socketPath, frames, send, resultsFor, close };
+  }
+
+  test("F1 a replaced listener re-asserts once: the second notice wins no generation", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-fup-f1");
+    const bridge = createAgentHostBridge(pi.pi, { socketPath: raw.socketPath, exec: async () => "", env: {} });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 1);
+      raw.send("s-fup-f1", { type: "listener_replaced", commandId: "lr-1", generation: 7, reason: "replaced_by_newer_generation" });
+      expect(await raw.resultsFor("lr-1")).toMatchObject([{ status: "accepted" }]);
+      await until(() => raw.frames.some((f) => f.payload.type === "session_identity" && f.payload.generation === 8));
+      // A second replacement notice is acknowledged but re-asserts nothing:
+      // the ping-pong stops after the single re-assert.
+      raw.send("s-fup-f1", { type: "listener_replaced", commandId: "lr-2", generation: 9, reason: "replaced_by_newer_generation" });
+      expect(await raw.resultsFor("lr-2")).toMatchObject([{ status: "accepted" }]);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(raw.frames.filter((f) => f.payload.type === "session_identity" && f.payload.generation > 1)).toHaveLength(1);
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+
+  test("F7 a wake received while starting is held, then accepted only when delivered", async () => {
+    const raw = await rawHost();
+    const pi = fakePi();
+    const c = fakeCtx("s-fup-f7");
+    const bridge = createAgentHostBridge(pi.pi, { socketPath: raw.socketPath, exec: async () => "", env: {} });
+    try {
+      bridge.register();
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => bridge.state === "open" && raw.frames.length >= 2);
+      // A terminal prompt starts a run that has not reached agent_start yet.
+      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      raw.send("s-fup-f7", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2432" });
+      // Held, not accepted, and nothing delivered into the operator session yet.
+      expect(await raw.resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
+      expect(pi.sent).toEqual([]);
+      // agent_start delivers it as a follow-up, and only now is it accepted.
+      pi.fire("agent_start", {}, c.ctx);
+      await until(
+        () => raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").length >= 2,
+      );
+      const answers = raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").map((f) => f.payload);
+      expect(answers.at(-1)).toMatchObject({ status: "accepted" });
+      expect(pi.sent).toEqual([{ content: "CORE-2432", options: { deliverAs: "followUp" } }]);
+    } finally {
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+      await raw.close();
+    }
+  });
+});

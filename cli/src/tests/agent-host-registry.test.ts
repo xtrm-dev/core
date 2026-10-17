@@ -36,13 +36,18 @@ function identity(
     };
 }
 
-function commandResult(sessionId: string, commandId: string, status: 'accepted' | 'rejected' | 'failed'): AgentEventV1 {
+function commandResult(
+    sessionId: string,
+    commandId: string,
+    status: 'accepted' | 'rejected' | 'failed',
+    reason?: string,
+): AgentEventV1 {
     return {
         schema: 'xtrm.agent-event.v1',
         seq: seq++,
         sessionId,
         at: Date.now(),
-        payload: { type: 'command_result', commandId, status } as never,
+        payload: { type: 'command_result', commandId, status, ...(reason ? { reason } : {}) } as never,
     };
 }
 
@@ -139,14 +144,14 @@ describe('CORE-2432 wake contract', () => {
         const a = stubConnection();
         const b = stubConnection();
         const c = stubConnection();
-        registry.ingest(a.connection, identity('s-1', { pid: 100, generation: 1 }));
-        // Older generation: refused, binding untouched.
-        expect(registry.ingest(b.connection, identity('s-1', { pid: 100, generation: 0 }))).toBe(false);
+        registry.ingest(a.connection, identity('s-1', { pid: 100, generation: 2 }));
+        // Older but otherwise valid generation: refused, binding untouched.
+        expect(registry.ingest(b.connection, identity('s-1', { pid: 100, generation: 1 }))).toBe(false);
         expect(lines.join('\n')).toMatch(/refused stale session_identity for session s-1/);
-        expect(registry.detail('s-1')?.identity).toMatchObject({ generation: 1 });
+        expect(registry.detail('s-1')?.identity).toMatchObject({ generation: 2 });
         // Newer generation: adopted.
-        expect(registry.ingest(c.connection, identity('s-1', { pid: 200, generation: 2 }))).toBe(true);
-        expect(registry.detail('s-1')?.identity).toMatchObject({ pid: 200, generation: 2 });
+        expect(registry.ingest(c.connection, identity('s-1', { pid: 200, generation: 3 }))).toBe(true);
+        expect(registry.detail('s-1')?.identity).toMatchObject({ pid: 200, generation: 3 });
     });
 
     it('R7 exact-name resolution; ambiguity is an error naming the candidates', () => {
@@ -172,14 +177,132 @@ describe('CORE-2432 wake contract', () => {
         const { registry } = registryWithLog();
         const { connection, sent } = stubConnection();
         registry.ingest(connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'worker' }));
+        const wakes = () => sent.filter((s) => s.payload.type === 'wake');
         const first = registry.wake('worker', 'CORE-2432');
-        const second = registry.wake('worker', 'CORE-2432');
-        expect(second.messageId).toBe(first.messageId);
-        expect(sent.filter((s) => s.payload.type === 'wake')).toHaveLength(1);
+        // F5: dedupe only while queued or held: the same pair sends once.
+        expect(registry.wake('worker', 'CORE-2432')).toEqual({ messageId: first.messageId, state: 'queued' });
+        expect(wakes()).toHaveLength(1);
         registry.ingest(connection, commandResult('s-1', first.messageId, 'accepted'));
-        // After delivery a redelivery still returns the same id and state, with no resend.
+        // F5: a new wake after the terminal state sends again under the same stable id.
         const third = registry.wake('worker', 'CORE-2432');
-        expect(third).toEqual({ messageId: first.messageId, state: 'delivered' });
-        expect(sent.filter((s) => s.payload.type === 'wake')).toHaveLength(1);
+        expect(third).toEqual({ messageId: first.messageId, state: 'queued' });
+        expect(wakes()).toHaveLength(2);
+        registry.ingest(connection, commandResult('s-1', first.messageId, 'accepted'));
+        expect(registry.wakeStatus(first.messageId)?.state).toBe('delivered');
+    });
+
+    it('F1 a replaced listener does not win the binding back: replacements stop', () => {
+        const { registry, lines } = registryWithLog();
+        const a = stubConnection();
+        const b = stubConnection();
+        // A binds; B with a newer generation replaces it and A is told once.
+        expect(registry.ingest(a.connection, identity('s-1', { pid: 1, generation: 1 }))).toBe(true);
+        expect(registry.ingest(b.connection, identity('s-1', { pid: 2, generation: 2 }))).toBe(true);
+        expect(a.sent.filter((s) => s.payload.type === 'listener_replaced')).toHaveLength(1);
+        // A bumps and tries to win it back: refused, loudly, with no new notice to B.
+        expect(registry.ingest(a.connection, identity('s-1', { pid: 1, generation: 3 }))).toBe(false);
+        expect(lines.join('\n')).toMatch(/refused win-back session_identity for session s-1/);
+        expect(b.sent.filter((s) => s.payload.type === 'listener_replaced')).toHaveLength(0);
+        expect(registry.detail('s-1')?.identity).toMatchObject({ pid: 2, generation: 2 });
+        // The refused loser cannot hijack the binding with later frames either.
+        expect(
+            registry.ingest(a.connection, {
+                schema: 'xtrm.agent-event.v1',
+                seq: seq++,
+                sessionId: 's-1',
+                at: Date.now(),
+                payload: { type: 'agent_start' } as never,
+            }),
+        ).toBe(false);
+        // The owner re-asserting over its own socket still adopts.
+        expect(registry.ingest(b.connection, identity('s-1', { pid: 2, generation: 2 }))).toBe(true);
+        expect(registry.detail('s-1')?.identity).toMatchObject({ pid: 2, generation: 2 });
+    });
+
+    it('F3 a legacy frame never displaces a pid+generation binding', () => {
+        const { registry, lines } = registryWithLog();
+        const scoped = stubConnection();
+        const legacy = stubConnection();
+        registry.ingest(scoped.connection, identity('s-1', { pid: 7, generation: 1, sessionName: 'one' }));
+        // Legacy identity for the same session: refused loudly, producer told, binding kept.
+        const legacyIdentity: AgentEventV1 = {
+            schema: 'xtrm.agent-event.v1',
+            seq: seq++,
+            sessionId: 's-1',
+            at: Date.now(),
+            payload: {
+                type: 'session_identity',
+                runtime: { name: 'pi', version: '1.0.0' },
+                cwd: '/w',
+                capabilities: ['prompt'],
+                sessionName: 'two',
+            } as never,
+        };
+        expect(registry.ingest(legacy.connection, legacyIdentity)).toBe(false);
+        expect(lines.join('\n')).toMatch(/refused legacy session_identity for session s-1/);
+        expect(legacy.sent.find((s) => s.payload.type === 'listener_replaced')?.payload).toMatchObject({
+            reason: 'legacy_identity_refused',
+        });
+        expect(registry.detail('s-1')?.identity).toMatchObject({ sessionName: 'one' });
+        // Later frames from the refused connection are dropped.
+        expect(
+            registry.ingest(legacy.connection, {
+                schema: 'xtrm.agent-event.v1',
+                seq: seq++,
+                sessionId: 's-1',
+                at: Date.now(),
+                payload: { type: 'agent_start' } as never,
+            }),
+        ).toBe(false);
+        // Legacy-over-legacy keeps the old overwrite behaviour.
+        const l1 = stubConnection();
+        const l2 = stubConnection();
+        const legacyFor = (sid: string, name: string): AgentEventV1 => ({
+            schema: 'xtrm.agent-event.v1',
+            seq: seq++,
+            sessionId: sid,
+            at: Date.now(),
+            payload: {
+                type: 'session_identity',
+                runtime: { name: 'pi', version: '1.0.0' },
+                cwd: '/w',
+                capabilities: ['prompt'],
+                sessionName: name,
+            } as never,
+        });
+        expect(registry.ingest(l1.connection, legacyFor('s-2', 'old'))).toBe(true);
+        expect(registry.ingest(l2.connection, legacyFor('s-2', 'new'))).toBe(true);
+        expect(registry.detail('s-2')?.identity).toMatchObject({ sessionName: 'new' });
+    });
+
+    it('F7 a wake held while starting completes only on accepted', () => {
+        const { registry } = registryWithLog();
+        const { connection } = stubConnection();
+        registry.ingest(connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'worker' }));
+        const w = registry.wake('worker', 'ref-1');
+        expect(w.state).toBe('queued');
+        // Deferred while starting: the extension answers held, the wake stays held.
+        registry.ingest(connection, commandResult('s-1', w.messageId, 'rejected', 'held'));
+        expect(registry.wakeStatus(w.messageId)?.state).toBe('held');
+        // A late acceptance once it is actually delivered completes it.
+        registry.ingest(connection, commandResult('s-1', w.messageId, 'accepted'));
+        expect(registry.wakeStatus(w.messageId)?.state).toBe('delivered');
+    });
+
+    it('F5 a caller-supplied message id keys dedupe', () => {
+        const { registry } = registryWithLog();
+        const { connection, sent } = stubConnection();
+        registry.ingest(connection, identity('s-1', { pid: 100, generation: 1, sessionName: 'worker' }));
+        const wakes = () => sent.filter((s) => s.payload.type === 'wake');
+        expect(registry.wake('worker', 'CORE-1', { messageId: 'custom-1' })).toEqual({
+            messageId: 'custom-1',
+            state: 'queued',
+        });
+        expect(registry.wake('worker', 'CORE-2', { messageId: 'custom-1' })).toEqual({
+            messageId: 'custom-1',
+            state: 'queued',
+        });
+        expect(wakes()).toHaveLength(1);
+        expect(() => registry.wake('worker', 'CORE-1', { messageId: '' })).toThrow();
     });
 });

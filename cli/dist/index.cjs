@@ -4948,8 +4948,8 @@ var require_copy_sync = __commonJS({
       return getStats(destStat, src, dest, opts);
     }
     function getStats(destStat, src, dest, opts) {
-      const statSync8 = opts.dereference ? fs65.statSync : fs65.lstatSync;
-      const srcStat = statSync8(src);
+      const statSync7 = opts.dereference ? fs65.statSync : fs65.lstatSync;
+      const srcStat = statSync7(src);
       if (srcStat.isDirectory()) return onDir(srcStat, destStat, src, dest, opts);
       else if (srcStat.isFile() || srcStat.isCharacterDevice() || srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts);
       else if (srcStat.isSymbolicLink()) return onLink(destStat, src, dest, opts);
@@ -57397,8 +57397,55 @@ function buildDispatcherEnv(workerName, deps = {}) {
   }
   return out;
 }
+function findLiveDispatchers(participant, deps = {}) {
+  const sessionsDir = deps.sessionsDir ?? import_node_path14.default.join(import_node_os7.default.homedir(), ".claude", "sessions");
+  const readProcess = deps.readProcess ?? readProcessInfo;
+  const found = [];
+  let files;
+  try {
+    files = (0, import_node_fs2.readdirSync)(sessionsDir).filter((f) => f.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  for (const file2 of files) {
+    let entry;
+    try {
+      entry = JSON.parse((0, import_node_fs2.readFileSync)(import_node_path14.default.join(sessionsDir, file2), "utf8"));
+    } catch {
+      continue;
+    }
+    if (clean(entry.name) !== participant) continue;
+    const socket = clean(entry.messagingSocketPath);
+    if (!socket) continue;
+    if (typeof entry.pid === "number") {
+      try {
+        if (!readProcess(entry.pid)) continue;
+      } catch {
+      }
+    }
+    found.push({ pid: entry.pid, address: `uds:${socket}` });
+  }
+  if (found.length > 1) {
+    const candidates = found.map((f) => `pid ${String(f.pid)} at ${f.address}`).join(", ");
+    throw new Error(`ambiguous dispatcher participant "${participant}": ${candidates}`);
+  }
+  return found.map((f) => ({ name: participant, address: f.address }));
+}
 function refreshDispatcherEnv(deps = {}) {
   const out = {};
+  const env3 = deps.env ?? process.env;
+  const participant = clean(env3[XTRM_DISPATCHER_NAME_VAR]);
+  if (participant) {
+    try {
+      const live = findLiveDispatchers(participant, deps)[0];
+      if (live?.address) {
+        out[XTRM_DISPATCHER_NAME_VAR] = live.name ?? participant;
+        out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
+        return out;
+      }
+    } catch {
+    }
+  }
   const dispatcher = resolveDispatcher(deps);
   if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
   if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
@@ -80390,6 +80437,12 @@ var AgentHostRegistry = class {
   /** Retained wake messages by stable message id (CORE-2432 R9). */
   wakes = /* @__PURE__ */ new Map();
   wakeCommandSeq = 0;
+  /**
+   * Connections whose listener binding was refused (duplicate, stale,
+   * win-back, legacy). Later frames from them are dropped so a refused
+   * listener can neither hijack the binding nor ping-pong a replacement (F1, F3).
+   */
+  refusedConnections = /* @__PURE__ */ new Set();
   constructor(options = {}) {
     this.commandTimeoutMs = options.commandTimeoutMs ?? 1e4;
     this.promptStartTimeoutMs = options.promptStartTimeoutMs ?? PROMPT_START_TIMEOUT_MS;
@@ -80409,24 +80462,41 @@ var AgentHostRegistry = class {
    */
   ingest(connection, frame) {
     const { payload, sessionId } = frame;
+    if (this.refusedConnections.has(connection)) {
+      this.log(`dropped ${payload.type} for session ${sessionId}: connection was refused a listener binding`);
+      return false;
+    }
     let session = this.sessions.get(sessionId);
     if (payload.type === "session_identity") {
       const identity = this.bindLaunchedPane(sessionId, payload);
       const verdict = this.checkListener(sessionId, session ?? null, identity, connection);
-      if (verdict === "duplicate" || verdict === "stale") {
+      if (verdict === "duplicate" || verdict === "stale" || verdict === "winback" || verdict === "legacy") {
         if (verdict === "duplicate") {
           this.log(
             `refused second listener for session ${sessionId} (${describeListener(identity)}): already bound; reconnect after disconnect or use drain-and-handover`
           );
-        } else {
+        } else if (verdict === "stale") {
           this.log(
             `refused stale session_identity for session ${sessionId}: generation ${identity.generation} < ${session?.identity.generation}`
           );
+        } else if (verdict === "winback") {
+          this.log(
+            `refused win-back session_identity for session ${sessionId} (${describeListener(identity)}): replacement is not a reason to win the binding back`
+          );
+        } else {
+          this.log(
+            `refused legacy session_identity for session ${sessionId}: the live binding carries pid+generation; re-assert with both`
+          );
+          this.notifyRefused(sessionId, connection, "legacy_identity_refused");
         }
+        this.refusedConnections.add(connection);
         return false;
       }
       const previousConnection = session && session.connection !== null && session.connection !== connection ? session.connection : null;
       if (session) {
+        if (previousConnection && (verdict === "replace" || verdict === "handover")) {
+          if (typeof session.identity.pid === "number") session.replacedPid = session.identity.pid;
+        }
         session.identity = identity;
         session.connection = connection;
         if (verdict === "handover") {
@@ -80542,6 +80612,7 @@ var AgentHostRegistry = class {
       session.connection = null;
       if (!isPresenceOnly(session)) this.removeSession(sessionId);
     }
+    this.refusedConnections.delete(connection);
     this.pruneDisconnected();
   }
   /**
@@ -80571,14 +80642,34 @@ var AgentHostRegistry = class {
     if (!previous) return "adopt";
     if (previous.connection === connection) return "adopt";
     const stored = previous.identity;
-    if (typeof identity.pid === "number" && typeof identity.generation === "number" && typeof stored.pid === "number" && typeof stored.generation === "number") {
+    const incomingScoped = typeof identity.pid === "number" && typeof identity.generation === "number";
+    const storedScoped = typeof stored.pid === "number" && typeof stored.generation === "number";
+    if (!incomingScoped && storedScoped) return "legacy";
+    if (incomingScoped && storedScoped) {
       if (identity.generation < stored.generation) return "stale";
-      if (identity.generation > stored.generation) return "replace";
+      if (identity.generation > stored.generation) {
+        if (identity.pid === previous.replacedPid) return "winback";
+        return "replace";
+      }
       if (previous.connection === null) return "adopt";
       if (identity.pid !== stored.pid) return "duplicate";
       return this.duplicateListener === "handover" ? "handover" : "duplicate";
     }
     return "adopt";
+  }
+  /** F3: tell a refused producer why, on its own connection. */
+  notifyRefused(sessionId, connection, reason) {
+    const command = {
+      type: "listener_replaced",
+      commandId: `lr-${++this.wakeCommandSeq}`,
+      generation: 1,
+      reason
+    };
+    try {
+      connection.sendCommand(sessionId, command);
+    } catch (error51) {
+      this.log(`refused listener for session ${sessionId} is unreachable: ${error51.message}`);
+    }
   }
   notifyReplaced(sessionId, previousConnection, identity, verdict) {
     const command = {
@@ -80735,9 +80826,21 @@ var AgentHostRegistry = class {
     if (!payloadRef || !payloadRef.trim()) throw new Error("wake needs a payload reference");
     const now = Date.now();
     this.sweepWakes(now);
-    const messageId = stableWakeMessageId(participant, payloadRef);
+    let messageId;
+    if (opts.messageId !== void 0) {
+      messageId = opts.messageId.trim();
+      if (!messageId || messageId.length > 128 || /[\u0000-\u001F\u007F]/.test(messageId)) {
+        throw new Error("wake needs a valid message id");
+      }
+    } else {
+      messageId = stableWakeMessageId(participant, payloadRef);
+    }
     const existing = this.wakes.get(messageId);
-    if (existing) return { messageId, state: wakeStateNow(existing, now) };
+    if (existing) {
+      const state = wakeStateNow(existing, now);
+      if (state === "queued" || state === "held") return { messageId, state };
+      this.wakes.delete(messageId);
+    }
     const record2 = {
       messageId,
       participant,
@@ -80858,11 +80961,16 @@ var AgentHostRegistry = class {
       }
     }
   }
-  /** R3: a wake is delivered only after the receiver accepted; rejected maps to refused, any failure to undelivered. */
-  settleWake(messageId, status2) {
+  /**
+   * R3/F7: a wake is delivered only after the receiver accepted. Rejected
+   * maps to refused, except reason `held` (deferred while the session starts:
+   * the wake stays held); any failure maps to undelivered.
+   */
+  settleWake(messageId, status2, reason) {
     const record2 = this.wakes.get(messageId);
     if (!record2 || record2.state !== "queued") return;
     if (status2 === "accepted") record2.state = "delivered";
+    else if (status2 === "rejected" && reason === "held") record2.state = "held";
     else if (status2 === "rejected") record2.state = "refused";
     else record2.state = "undelivered";
   }
@@ -80911,15 +81019,24 @@ var AgentHostRegistry = class {
   }
   settleCommand(sessionId, commandId, status2, reason, message) {
     const entry = this.pending.get(commandId);
-    if (!entry || entry.sessionId !== sessionId) return;
+    if (!entry || entry.sessionId !== sessionId) {
+      if (status2 === "accepted") this.acceptHeldWake(sessionId, commandId);
+      return;
+    }
     this.finishPending(commandId, status2, reason, message);
+  }
+  acceptHeldWake(sessionId, commandId) {
+    const record2 = this.wakes.get(commandId);
+    if (record2 && record2.sessionId === sessionId && record2.sendCount > 0 && (record2.state === "held" || record2.state === "queued")) {
+      record2.state = "delivered";
+    }
   }
   finishPending(commandId, status2, reason, message) {
     const entry = this.pending.get(commandId);
     if (!entry) return;
     this.pending.delete(commandId);
     clearTimeout(entry.timer);
-    if (entry.wakeId) this.settleWake(entry.wakeId, status2);
+    if (entry.wakeId) this.settleWake(entry.wakeId, status2, reason);
     const session = this.sessions.get(entry.sessionId);
     if (session) {
       const { payload } = entry;

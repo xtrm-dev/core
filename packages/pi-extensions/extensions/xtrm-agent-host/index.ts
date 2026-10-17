@@ -228,6 +228,14 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
   let startingAt: number | null = null;
   /** Steer, follow_up and abort received in the startup window; run on agent_start, when Pi can queue them. */
   let deferred: Array<() => void> = [];
+  /**
+   * Wakes received while starting (F7): held, not delivered. Each is answered
+   * accepted only when agent_start actually delivers it; a run that never
+   * starts re-holds them so the registry keeps them instead of forgetting.
+   */
+  let deferredWake: Array<{ ref: string; accept: () => void; hold: () => void }> = [];
+  /** A replaced listener re-asserts once per connection; never ping-pongs a replacement (F1). */
+  let reassertedThisConnection = false;
   let readBuffer = "";
   /**
    * Listener incarnation (CORE-2432 R1): the registry compares-and-swaps writes
@@ -312,6 +320,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     conn.on("connect", async () => {
       if (socket !== conn) return;
       conn.unref();
+      reassertedThisConnection = false;
       // Identity costs tmux/git subprocesses: build it only once a host answers.
       if (!identity) {
         const id = sessionId!;
@@ -369,6 +378,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     socket = null;
     pendingUi.clear();
     deferred = [];
+    deferredWake = [];
     for (const [ui, originals] of patchedUis) Object.assign(ui, originals);
     patchedUis.clear();
   }
@@ -658,8 +668,13 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       return result("accepted");
     }
     if (command.type === "listener_replaced") {
-      // R5: the registry replaced this listener; re-assert with a generation
-      // above both the local and the replacing one, so the re-assert wins CAS.
+      // R5/F1: the registry replaced this listener. Re-assert once per
+      // connection with a generation above both the local and the replacing
+      // one; a second notice is acknowledged but never wins back, so two live
+      // listeners cannot replace each other without end. Replacement is not a
+      // reason to win back: the registry also refuses the ping-pong.
+      if (reassertedThisConnection) return result("accepted");
+      reassertedThisConnection = true;
       const seen = typeof (command as { generation?: unknown }).generation === "number" ? (command as { generation: number }).generation : 0;
       generation = Math.max(generation, seen) + 1;
       if (identity) {
@@ -676,8 +691,14 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       if (!ref) return result("rejected", "invalid_command", "payload reference is empty");
       const idle = !starting && current.isIdle();
       if (starting) {
-        deferred.push(() => pi.sendUserMessage(ref, { deliverAs: "followUp" }));
-        return result("accepted");
+        // F7: only deferred, not delivered: hold the wake and answer accepted
+        // only when agent_start actually delivers it.
+        deferredWake.push({
+          ref,
+          accept: () => result("accepted"),
+          hold: () => result("rejected", "held", "the session never started; the wake stays held"),
+        });
+        return result("rejected", "held", "the session is starting; the wake stays held until it is delivered");
       }
       if (idle) {
         guiIngress = { commandId: command.commandId, message: ref, at: Date.now() };
@@ -717,6 +738,11 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     if (startingAt !== null && Date.now() - startingAt > STARTUP_STALE_MS && ctx?.isIdle() !== false) {
       startingAt = null;
       deferred = [];
+      // The run never started, so deferred wakes were never delivered: re-hold
+      // them instead of answering accepted for work that never happened (F7).
+      const staleWakes = deferredWake;
+      deferredWake = [];
+      for (const wake of staleWakes) wake.hold();
     }
     return startingAt !== null;
   }
@@ -783,6 +809,14 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       const run = deferred;
       deferred = [];
       for (const action of run) action();
+      // F7: wakes held while starting are delivered into the fresh run, and
+      // only now answered accepted.
+      const wakes = deferredWake;
+      deferredWake = [];
+      for (const wake of wakes) {
+        pi.sendUserMessage(wake.ref, { deliverAs: "followUp" });
+        wake.accept();
+      }
     });
 
     pi.on("turn_start", (event, current) => {

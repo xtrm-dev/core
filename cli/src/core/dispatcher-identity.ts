@@ -22,7 +22,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -169,58 +169,87 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
 }
 
 /**
- * Resolve a dispatcher participant by name after it restarted (CORE-2432 R8).
- * A worker that only knows its dispatcher's participant name scans the session
- * registry for an entry with that exact name carrying a messaging socket, and
- * falls back to the inherited env when the participant matches it. The newest
- * entry wins when several share the name. Never throws.
+ * Live dispatcher sessions for one participant name (CORE-2432 R8/F4): every
+ * session-registry entry with that exact name carrying a messaging socket,
+ * skipping dead pids. Several live candidates are an error naming them all;
+ * mtime order never decides. Throws only on ambiguity.
  */
-export function resolveDispatcherByParticipant(
+function findLiveDispatchers(
     participant: string,
-    deps: DispatcherIdentityDeps & { now?: number } = {},
-): DispatcherIdentity | null {
-    const want = clean(participant);
-    if (!want) return null;
+    deps: DispatcherIdentityDeps = {},
+): DispatcherIdentity[] {
     const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
+    const readProcess = deps.readProcess ?? readProcessInfo;
+    const found: { pid: unknown; address: string }[] = [];
+    let files: string[];
     try {
-        const files = readdirSync(sessionsDir).filter((f) => f.endsWith('.json'));
-        let best: DispatcherIdentity | null = null;
-        let bestMtime = -1;
-        for (const file of files) {
-            let entry: Record<string, unknown>;
-            let mtime = 0;
-            try {
-                const full = path.join(sessionsDir, file);
-                entry = JSON.parse(readFileSync(full, 'utf8')) as Record<string, unknown>;
-                mtime = statSync(full).mtimeMs;
-            } catch {
-                continue;
-            }
-            if (clean(entry.name) !== want) continue;
-            const socket = clean(entry.messagingSocketPath);
-            if (!socket) continue;
-            if (mtime >= bestMtime) {
-                bestMtime = mtime;
-                best = { name: want, address: `uds:${socket}` };
-            }
-        }
-        if (best) return best;
-    } catch { /* fall through to inherited */ }
-    const env = deps.env ?? process.env;
-    if (clean(env[XTRM_DISPATCHER_NAME_VAR]) === want) {
-        const address = clean(env[XTRM_DISPATCHER_ADDRESS_VAR]);
-        if (address) return { name: want, address };
+        files = readdirSync(sessionsDir).filter((f) => f.endsWith('.json'));
+    } catch {
+        return [];
     }
-    return null;
+    for (const file of files) {
+        let entry: Record<string, unknown>;
+        try {
+            entry = JSON.parse(readFileSync(path.join(sessionsDir, file), 'utf8')) as Record<string, unknown>;
+        } catch {
+            continue;
+        }
+        if (clean(entry.name) !== participant) continue;
+        const socket = clean(entry.messagingSocketPath);
+        if (!socket) continue;
+        // Skip dead pids; a probe failure keeps the entry (unknown, not dead).
+        if (typeof entry.pid === 'number') {
+            try {
+                if (!readProcess(entry.pid)) continue;
+            } catch { /* keep */ }
+        }
+        found.push({ pid: entry.pid, address: `uds:${socket}` });
+    }
+    if (found.length > 1) {
+        const candidates = found.map((f) => `pid ${String(f.pid)} at ${f.address}`).join(', ');
+        throw new Error(`ambiguous dispatcher participant "${participant}": ${candidates}`);
+    }
+    return found.map((f) => ({ name: participant, address: f.address }));
 }
 
 /**
- * Fresh dispatcher env for a resumed session (CORE-2432 R8): `xt attach`
- * re-resolves the dispatcher instead of inheriting stale XTRM_DISPATCHER_*
- * values across a dispatcher restart. Unknown stays absent.
+ * Resolve a dispatcher participant by name after it restarted (CORE-2432 R8).
+ * A worker that only knows its dispatcher's participant name scans the live
+ * sessions for that exact name. One live hit wins; several throw naming every
+ * candidate (F4); none returns null so the caller can fall back. Never throws
+ * except on ambiguity.
+ */
+export function resolveDispatcherByParticipant(
+    participant: string,
+    deps: DispatcherIdentityDeps = {},
+): DispatcherIdentity | null {
+    const want = clean(participant);
+    if (!want) return null;
+    return findLiveDispatchers(want, deps)[0] ?? null;
+}
+
+/**
+ * Fresh dispatcher env for a resumed session (CORE-2432 R8/F2): `xt attach`
+ * resolves the dispatcher by participant (XTRM_DISPATCHER_NAME) against the
+ * live sessions with a pid liveness check, and refreshes the env from that
+ * hit instead of inheriting stale values across a dispatcher restart. When no
+ * live entry matches, the nearest-ancestor (else inherited) resolution applies.
+ * Unknown stays absent; ambiguity falls back the same way. Never throws.
  */
 export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<string, string> {
     const out: Record<string, string> = {};
+    const env = deps.env ?? process.env;
+    const participant = clean(env[XTRM_DISPATCHER_NAME_VAR]);
+    if (participant) {
+        try {
+            const live = findLiveDispatchers(participant, deps)[0];
+            if (live?.address) {
+                out[XTRM_DISPATCHER_NAME_VAR] = live.name ?? participant;
+                out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
+                return out;
+            }
+        } catch { /* ambiguous: fall through to ancestor resolution */ }
+    }
     const dispatcher = resolveDispatcher(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
     if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;

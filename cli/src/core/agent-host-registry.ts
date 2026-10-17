@@ -59,6 +59,8 @@ export interface ProducerConnection {
 
 interface LiveSession {
     identity: AgentSessionIdentity;
+    /** Pid most recently replaced on this session; its win-back re-asserts are refused (F1). */
+    replacedPid?: number;
     /** The latest session_status (model, thinking level, context usage); each one replaces the last. */
     status: AgentSessionStatus | null;
     connection: ProducerConnection | null;
@@ -162,6 +164,12 @@ export class AgentHostRegistry {
     /** Retained wake messages by stable message id (CORE-2432 R9). */
     private readonly wakes = new Map<string, WakeRecord>();
     private wakeCommandSeq = 0;
+    /**
+     * Connections whose listener binding was refused (duplicate, stale,
+     * win-back, legacy). Later frames from them are dropped so a refused
+     * listener can neither hijack the binding nor ping-pong a replacement (F1, F3).
+     */
+    private readonly refusedConnections = new Set<ProducerConnection>();
 
     constructor(options: AgentHostRegistryOptions = {}) {
         this.commandTimeoutMs = options.commandTimeoutMs ?? 10_000;
@@ -183,6 +191,12 @@ export class AgentHostRegistry {
      */
     ingest(connection: ProducerConnection, frame: AgentEventV1): boolean {
         const { payload, sessionId } = frame;
+        // F1/F3: a refused connection stays refused; its later frames are
+        // dropped instead of hijacking the live binding.
+        if (this.refusedConnections.has(connection)) {
+            this.log(`dropped ${payload.type} for session ${sessionId}: connection was refused a listener binding`);
+            return false;
+        }
         let session = this.sessions.get(sessionId);
 
         if (payload.type === 'session_identity') {
@@ -192,23 +206,42 @@ export class AgentHostRegistry {
             // compare-and-swap on generation. Legacy identities without
             // pid+generation keep the old overwrite behaviour.
             const verdict = this.checkListener(sessionId, session ?? null, identity, connection);
-            if (verdict === 'duplicate' || verdict === 'stale') {
+            if (verdict === 'duplicate' || verdict === 'stale' || verdict === 'winback' || verdict === 'legacy') {
                 if (verdict === 'duplicate') {
                     this.log(
                         `refused second listener for session ${sessionId} (${describeListener(identity)}): ` +
                             `already bound; reconnect after disconnect or use drain-and-handover`,
                     );
-                } else {
+                } else if (verdict === 'stale') {
                     this.log(
                         `refused stale session_identity for session ${sessionId}: ` +
                             `generation ${identity.generation} < ${session?.identity.generation}`,
                     );
+                } else if (verdict === 'winback') {
+                    // F1: replacement is not a reason to win back; refuse the ping-pong.
+                    this.log(
+                        `refused win-back session_identity for session ${sessionId} (${describeListener(identity)}): ` +
+                            `replacement is not a reason to win the binding back`,
+                    );
+                } else {
+                    // F3: a legacy frame must not displace a pid+generation binding.
+                    this.log(
+                        `refused legacy session_identity for session ${sessionId}: ` +
+                            `the live binding carries pid+generation; re-assert with both`,
+                    );
+                    this.notifyRefused(sessionId, connection, 'legacy_identity_refused');
                 }
+                this.refusedConnections.add(connection);
                 return false;
             }
             const previousConnection =
                 session && session.connection !== null && session.connection !== connection ? session.connection : null;
             if (session) {
+                // F1: remember whom this session just replaced, so a win-back
+                // re-assert from that pid is refused instead of ping-ponging.
+                if (previousConnection && (verdict === 'replace' || verdict === 'handover')) {
+                    if (typeof session.identity.pid === 'number') session.replacedPid = session.identity.pid;
+                }
                 session.identity = identity;
                 session.connection = connection;
                 if (verdict === 'handover') {
@@ -340,6 +373,7 @@ export class AgentHostRegistry {
             session.connection = null;
             if (!isPresenceOnly(session)) this.removeSession(sessionId);
         }
+        this.refusedConnections.delete(connection);
         this.pruneDisconnected();
     }
 
@@ -372,19 +406,24 @@ export class AgentHostRegistry {
         previous: LiveSession | null,
         identity: AgentSessionIdentity,
         connection: ProducerConnection,
-    ): 'adopt' | 'replace' | 'handover' | 'duplicate' | 'stale' {
+    ): 'adopt' | 'replace' | 'handover' | 'duplicate' | 'stale' | 'winback' | 'legacy' {
         if (!previous) return 'adopt';
         // The same listener re-asserting over its own socket is always accepted.
         if (previous.connection === connection) return 'adopt';
         const stored = previous.identity;
-        if (
-            typeof identity.pid === 'number' &&
-            typeof identity.generation === 'number' &&
-            typeof stored.pid === 'number' &&
-            typeof stored.generation === 'number'
-        ) {
-            if (identity.generation < stored.generation) return 'stale';
-            if (identity.generation > stored.generation) return 'replace';
+        const incomingScoped =
+            typeof identity.pid === 'number' && typeof identity.generation === 'number';
+        const storedScoped = typeof stored.pid === 'number' && typeof stored.generation === 'number';
+        // F3: a legacy frame (no pid+generation) never displaces a scoped binding.
+        if (!incomingScoped && storedScoped) return 'legacy';
+        if (incomingScoped && storedScoped) {
+            if (identity.generation! < stored.generation!) return 'stale';
+            if (identity.generation! > stored.generation!) {
+                // F1: the pid this session just replaced does not win the
+                // binding back by bumping its generation (ping-pong refusal).
+                if (identity.pid === previous.replacedPid) return 'winback';
+                return 'replace';
+            }
             // Equal generation on another connection: a re-assert after the old
             // socket went away adopts; two concurrent listeners for one identity
             // are refused, or drained explicitly under the handover policy.
@@ -393,6 +432,21 @@ export class AgentHostRegistry {
             return this.duplicateListener === 'handover' ? 'handover' : 'duplicate';
         }
         return 'adopt';
+    }
+
+    /** F3: tell a refused producer why, on its own connection. */
+    private notifyRefused(sessionId: string, connection: ProducerConnection, reason: string): void {
+        const command: AgentCommandPayload = {
+            type: 'listener_replaced',
+            commandId: `lr-${++this.wakeCommandSeq}`,
+            generation: 1,
+            reason,
+        };
+        try {
+            connection.sendCommand(sessionId, command);
+        } catch (error) {
+            this.log(`refused listener for session ${sessionId} is unreachable: ${(error as Error).message}`);
+        }
     }
 
     private notifyReplaced(
@@ -575,14 +629,33 @@ export class AgentHostRegistry {
      * (R4), `expired` past its TTL. Ambiguous participants throw naming every
      * candidate (R7); unknown participants are held until they register (R8).
      */
-    wake(participant: string, payloadRef: string, opts: { ttlMs?: number } = {}): WakeResult {
+    wake(
+        participant: string,
+        payloadRef: string,
+        opts: { ttlMs?: number; messageId?: string } = {},
+    ): WakeResult {
         if (!participant || !participant.trim()) throw new Error('wake needs a participant');
         if (!payloadRef || !payloadRef.trim()) throw new Error('wake needs a payload reference');
         const now = Date.now();
         this.sweepWakes(now);
-        const messageId = stableWakeMessageId(participant, payloadRef);
+        // F5: a caller-supplied message id keys dedupe; otherwise the stable id does.
+        let messageId: string;
+        if (opts.messageId !== undefined) {
+            messageId = opts.messageId.trim();
+            if (!messageId || messageId.length > 128 || /[\u0000-\u001F\u007F]/.test(messageId)) {
+                throw new Error('wake needs a valid message id');
+            }
+        } else {
+            messageId = stableWakeMessageId(participant, payloadRef);
+        }
         const existing = this.wakes.get(messageId);
-        if (existing) return { messageId, state: wakeStateNow(existing, now) };
+        if (existing) {
+            const state = wakeStateNow(existing, now);
+            // F5: dedupe only while queued or held; a new wake after a
+            // terminal state sends again under the same stable id.
+            if (state === 'queued' || state === 'held') return { messageId, state };
+            this.wakes.delete(messageId);
+        }
         const record: WakeRecord = {
             messageId,
             participant,
@@ -712,11 +785,16 @@ export class AgentHostRegistry {
         }
     }
 
-    /** R3: a wake is delivered only after the receiver accepted; rejected maps to refused, any failure to undelivered. */
-    private settleWake(messageId: string, status: SubmitResult['status']): void {
+    /**
+     * R3/F7: a wake is delivered only after the receiver accepted. Rejected
+     * maps to refused, except reason `held` (deferred while the session starts:
+     * the wake stays held); any failure maps to undelivered.
+     */
+    private settleWake(messageId: string, status: SubmitResult['status'], reason?: string): void {
         const record = this.wakes.get(messageId);
         if (!record || record.state !== 'queued') return;
         if (status === 'accepted') record.state = 'delivered';
+        else if (status === 'rejected' && reason === 'held') record.state = 'held';
         else if (status === 'rejected') record.state = 'refused';
         else record.state = 'undelivered';
     }
@@ -776,8 +854,25 @@ export class AgentHostRegistry {
         message?: string,
     ): void {
         const entry = this.pending.get(commandId);
-        if (!entry || entry.sessionId !== sessionId) return;
+        if (!entry || entry.sessionId !== sessionId) {
+            // F7: a late acceptance for a held wake that was actually sent
+            // still completes it as delivered.
+            if (status === 'accepted') this.acceptHeldWake(sessionId, commandId);
+            return;
+        }
         this.finishPending(commandId, status, reason, message);
+    }
+
+    private acceptHeldWake(sessionId: string, commandId: string): void {
+        const record = this.wakes.get(commandId);
+        if (
+            record &&
+            record.sessionId === sessionId &&
+            record.sendCount > 0 &&
+            (record.state === 'held' || record.state === 'queued')
+        ) {
+            record.state = 'delivered';
+        }
     }
 
     private finishPending(commandId: string, status: SubmitResult['status'], reason?: string, message?: string): void {
@@ -785,7 +880,7 @@ export class AgentHostRegistry {
         if (!entry) return;
         this.pending.delete(commandId);
         clearTimeout(entry.timer);
-        if (entry.wakeId) this.settleWake(entry.wakeId, status);
+        if (entry.wakeId) this.settleWake(entry.wakeId, status, reason);
 
         const session = this.sessions.get(entry.sessionId);
         if (session) {
