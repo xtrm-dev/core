@@ -64,6 +64,13 @@ export interface RosterEntry {
   repository?: string;
   /** Checkout root fallback for the programme key. */
   repositoryPath?: string;
+  /**
+   * Live Claude-protocol socket of a Pi session's own listener (CORE-2470).
+   * A Pi peer whose host-registry record lags still resolves as Pi, and
+   * SendMessage may relay through this socket when the Pi route is down.
+   * Never set on Claude entries.
+   */
+  shadowSock?: string;
 }
 
 /**
@@ -199,6 +206,15 @@ export interface RosterSources {
  * list (LIVE_PI_STATES). Peers sort newest first; rows without a start
  * time sort last, stable.
  */
+/** How long a Pi session seen live still counts as Pi while the host registry lags or flaps (CORE-2470). */
+export const RECENT_PI_TTL_MS = 15 * 60 * 1000;
+/** sessionId -> { name, seenAt }: recently-live Pi sessions. Pruned per build. */
+const recentPi = new Map<string, { name: string; seenAt: number }>();
+/** Test seam: clear the recently-live Pi memo. */
+export function __resetRecentPi(): void {
+  recentPi.clear();
+}
+
 export function buildRoster(sources: RosterSources): BuiltRoster {
   const now = sources.now ?? Date.now();
   const own = { sessionId: sources.ownSessionId, ...(sources.ownName ? { name: sources.ownName } : {}) };
@@ -223,11 +239,47 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
       },
     });
   }
+  // CORE-2470: remember live Pi identities so a registry lag never
+  // re-resolves a Pi session as a Claude peer through its shadow socket.
+  for (const [id, seen] of recentPi) {
+    if (now - seen.seenAt > RECENT_PI_TTL_MS) recentPi.delete(id);
+  }
+  for (const summary of sources.piSessions) {
+    if (!LIVE_PI_STATES.has(summary.state)) continue;
+    if (typeof summary.sessionId === "string" && summary.sessionId) {
+      recentPi.set(summary.sessionId, {
+        name: clean(summary.name) || `session ${sessionRef(summary.sessionId)}`,
+        seenAt: now,
+      });
+    }
+  }
+  const piById = new Map<string, RosterEntry>();
+  for (const pair of pairs) {
+    if (pair.entry.sessionId) piById.set(pair.entry.sessionId, pair.entry);
+  }
   for (const peer of sources.claudePeers) {
     if (peer.pid === process.pid) continue;
     if (sources.excludeSock && peer.sock === sources.excludeSock) continue;
-    // A session already listed from the host registry never lists twice.
+    // A session already listed from the host registry never lists twice:
+    // the Pi entry stands and keeps the live socket as its relay.
+    const listed = peer.sessionId ? piById.get(peer.sessionId) : undefined;
+    if (listed) {
+      if (peer.sock && !listed.shadowSock) listed.shadowSock = peer.sock;
+      continue;
+    }
     if (peer.sessionId && listedSessionIds.has(peer.sessionId)) continue;
+    // Registry lags but this id was Pi minutes ago: resolve as Pi with
+    // the shadow relay, never as a Claude peer.
+    const memo = peer.sessionId ? recentPi.get(peer.sessionId) : undefined;
+    if (memo && peer.sock && peer.sessionId) {
+      const name = memo.name;
+      pairs.push({
+        row: { name, ref: sessionRef(peer.sessionId), kind: "pi", state: clean(peer.status) || "recent" },
+        entry: { kind: "pi", sessionId: peer.sessionId, name, shadowSock: peer.sock },
+      });
+      listedSessionIds.add(peer.sessionId);
+      continue;
+    }
     if (peer.sessionId) listedSessionIds.add(peer.sessionId);
     pairs.push({
       row: claudeRosterRow(peer, now),
