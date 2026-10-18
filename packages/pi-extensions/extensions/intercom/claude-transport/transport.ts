@@ -353,6 +353,11 @@ export interface PiPeerRegistration {
   pid: number;
   sessionId?: string;
   name: string;
+  /** Whether the name was chosen by a human (`user`) or fell back (`derived`).
+   * Claude's /list-agents withholds names (and directories) not chosen by a
+   * human, so operator-named Pi sessions must advertise `user` to appear
+   * named; the `pi-session` fallback stays `derived`. */
+  nameSource?: string;
   cwd: string;
   sockPath: string;
   status?: string;
@@ -466,7 +471,7 @@ export async function registerPiPeer(registration: PiPeerRegistration): Promise<
     entrypoint: "pi",
     messagingSocketPath: registration.sockPath,
     name: registration.name,
-    nameSource: "derived",
+    nameSource: registration.nameSource ?? "derived",
     status: registration.status || "idle",
   };
   await writeEntryAtomic(peerFile(dir, registration.pid), entry);
@@ -479,7 +484,7 @@ function osHomedir(): string {
 /** Patch one live Pi peer entry (name, status) without touching the socket. Foreign entries are left alone. */
 export async function updatePiPeer(
   pid: number,
-  patch: { name?: string; status?: string },
+  patch: { name?: string; status?: string; nameSource?: string },
   sessionsDir?: string,
 ): Promise<void> {
   const dir = sessionsDir ?? path.join(osHomedir(), ".claude", "sessions");

@@ -65,14 +65,14 @@ describe("/rename (CORE-2435 I4, replaces the retired third-party /alias)", () =
   test("the rename reaches the registry the roster reads (Claude entry patched)", async () => {
     const { pi } = fakePi();
     const { ctx } = fakeCtx();
-    const patches: Array<{ pid: number; patch: { name: string } }> = [];
+    const patches: Array<{ pid: number; patch: { name?: string; nameSource?: string } }> = [];
     await commands.runRename(pi, "renamed", ctx, {
       ...emptyRoster,
-      updateName: async (pid: number, patch: { name: string }) => {
+      updateName: async (pid: number, patch: { name?: string; nameSource?: string }) => {
         patches.push({ pid, patch });
       },
     });
-    expect(patches).toEqual([{ pid: process.pid, patch: { name: "renamed" } }]);
+    expect(patches).toEqual([{ pid: process.pid, patch: { name: "renamed", nameSource: "user" } }]);
   });
 
   test("empty args print usage with the current name, never rename to blank", async () => {
@@ -315,8 +315,12 @@ describe("/intercom roster overlay (CORE-2435 I4)", () => {
         closed = true;
       },
     });
+    // Up at the top stays; down moves into the list, up returns to the top.
     overlay.handleInput("\u001b[A");
+    expect(overlay.render(80).join("\n")).toContain("peer-0 [abcdef]");
     overlay.handleInput("\u001b[B");
+    expect(overlay.render(80).join("\n")).toContain("peer-1 [abcdef]");
+    overlay.handleInput("\u001b[A");
     overlay.handleInput("x-unhandled");
     expect(closed).toBe(false);
     expect(overlay.render(80).join("\n")).toContain("peer-0 [abcdef]");
