@@ -26,7 +26,8 @@
  *
  * It never blocks or slows the turn loop: handlers are synchronous, socket writes are fire-and-forget,
  * streaming updates are coalesced, and a slow host loses update frames instead of stalling Pi. With no
- * host the handlers return after one state check and nothing is printed.
+ * host the handlers return after one state check; session start additionally runs the bounded
+ * background self-heal (./host-ensure.ts, opt-in) which warns loudly once when the host stays down.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -47,6 +48,7 @@ import os from "node:os";
 import path from "node:path";
 import { injectIntercomWake, wakeDeliveryOptions, WakeDedupe } from "../intercom/delivery.ts";
 import type { WakeSender } from "../intercom/delivery.ts";
+import { monitorAgentHostSession, type HostEnsureOptions } from "./host-ensure.ts";
 
 /**
  * One successfully injected inbound wake (CORE-2436 I5). The intercom
@@ -150,6 +152,14 @@ export interface AgentHostBridgeOptions {
   initialPromptPending?: boolean;
   /** argv for initial-prompt sniffing (tests); default process.argv. */
   argv?: readonly string[];
+  /**
+   * Agent-host self-healing (CORE-2467 A+B). When true (or an options
+   * object), session start probes the host socket fast and, when nothing
+   * answers, runs one bounded background `xt host ensure` (single-flight,
+   * never blocking the start); failure notifies loudly with the runbook.
+   * Default false: the managed shim opts in, unit tests never spawn.
+   */
+  hostEnsure?: boolean | HostEnsureOptions;
 }
 
 /** Environment override for the initial-prompt hold (launchers, tests). */
@@ -1225,6 +1235,31 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         bindings.set(id, b);
       }
       touch(id);
+      // CORE-2467 A+B: probe the host fast and self-heal in the
+      // background. Fire-and-forget: never blocks the start path, and a
+      // missing UI only loses the loud warning, never the session.
+      try {
+        const hostEnsure = options.hostEnsure;
+        if (hostEnsure) {
+          const ensureOptions: HostEnsureOptions =
+            typeof hostEnsure === "object" ? { ...hostEnsure, enabled: true } : { enabled: true };
+          const ui = (current as { ui?: { notify?: (line: string, level: string) => void } })?.ui;
+          monitorAgentHostSession(
+            {
+              notify: (line: string) => {
+                try {
+                  ui?.notify?.(line, "warning");
+                } catch {
+                  /* notify must never break the start path */
+                }
+              },
+            },
+            ensureOptions,
+          );
+        }
+      } catch {
+        /* self-healing must never break session start */
+      }
       // CORE-2436 I5: every session start opens a fresh first-turn grace
       // window; wakes hold only during a real starting window past it.
       b.sawAgentStart = false;
