@@ -145,15 +145,15 @@ const toolCtx = (session = "test-session") =>
 const countOf = (text: string, needle: string) => text.split(needle).length - 1;
 
 describe("background extension registration", () => {
-  test("registers only BashBackground, Monitor and BackgroundStop, codemode-exposed, never bash/read/edit/write/find/grep/ls", () => {
+  test("registers only BashBackground, Monitor and BackgroundStop, direct-exposed, never bash/read/edit/write/find/grep/ls", () => {
     const { pi, tools } = fakePi();
     startService(pi);
     expect([...tools.keys()].sort()).toEqual(["BackgroundStop", "BashBackground", "Monitor"]);
     for (const name of ["bash", "read", "edit", "write", "find", "grep", "ls"]) {
       expect(tools.has(name)).toBe(false);
     }
-    expect(tools.get("BashBackground")?.exposure).toBe("codemode");
-    expect(tools.get("BackgroundStop")?.exposure).toBe("codemode");
+    expect(tools.get("BashBackground")?.exposure).toBe("direct");
+    expect(tools.get("BackgroundStop")?.exposure).toBe("direct");
     const guidelines = (tools.get("BashBackground")?.promptGuidelines ?? []).join("\n").toLowerCase();
     expect(guidelines).toContain("do not poll");
     expect(guidelines).toContain("notification wakes you");

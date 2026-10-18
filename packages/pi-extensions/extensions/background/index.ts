@@ -1399,7 +1399,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     description:
       "Run a shell command in the background without blocking. Returns at once with a task id and an output file path. On exit one task notification wakes the session; read the output file with read. (On Pi, use this where Claude Code uses Bash with run_in_background.)",
     parameters: BashBackgroundParams,
-    exposure: "codemode",
+    exposure: "direct",
     promptGuidelines: [
       "Do not poll a background task; end the turn. The notification wakes you when the task exits, then read the output file.",
     ],
@@ -1415,7 +1415,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     description:
       "Monitor a shell command's stdout lines or a WebSocket stream without blocking. Returns at once with a monitor id. Each line (or text frame) wakes the session with one event; lines within 200 ms batch into one event. The monitor expires at timeout_ms (default 5 min, maximum 30 min) with one notice and the event count; a firehose is stopped with a notice; BackgroundStop cancels it.",
     parameters: MonitorParams,
-    exposure: "codemode",
+    exposure: "direct",
     promptGuidelines: [
       "Do not poll a monitor; end the turn. Each matching line wakes you with one event. The filter must match failure states too; silence is not success.",
     ],
@@ -1430,7 +1430,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     label: "BackgroundStop",
     description: "Stop a running background task or monitor by id. The task or monitor ends with status stopped.",
     parameters: BackgroundStopParams,
-    exposure: "codemode",
+    exposure: "direct",
     execute: async (_toolCallId: string, params: BackgroundStopArgs) => {
       return (await stopTask(params.task_id)) as never;
     },
