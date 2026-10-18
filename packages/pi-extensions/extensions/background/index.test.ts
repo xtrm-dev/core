@@ -836,3 +836,50 @@ describe("stop-then-quit", () => {
     expect(procGone(pid as number)).toBe(true);
   });
 });
+
+describe("direct activation (CORE-2469)", () => {
+  const TRIO = ["BashBackground", "Monitor", "BackgroundStop"];
+  function activePi(initial: string[]) {
+    const { pi, handlers } = fakePi();
+    let active = [...initial];
+    const sets: string[][] = [];
+    (pi as any).getActiveTools = () => [...active];
+    (pi as any).setActiveTools = (names: string[]) => {
+      sets.push([...names]);
+      active = [...names];
+    };
+    return { pi, handlers, sets, getActive: () => active, lose: (names: string[]) => { active = active.filter((n) => !names.includes(n)); } };
+  }
+
+  test("adds missing tools to the active set, preserving existing entries", () => {
+    const { pi, sets } = activePi(["read"]);
+    registerBackgroundExtension(pi, { outputDir: mkdtempSync(path.join(os.tmpdir(), "bg-activate-")), killGraceMs: 50 });
+    expect(sets).toHaveLength(1);
+    expect(sets[0]).toContain("read");
+    for (const name of TRIO) expect(sets[0]).toContain(name);
+  });
+
+  test("no-op when the trio is already active", () => {
+    const { pi, sets } = activePi(["read", ...TRIO]);
+    registerBackgroundExtension(pi, { outputDir: mkdtempSync(path.join(os.tmpdir(), "bg-activate-")), killGraceMs: 50 });
+    expect(sets).toHaveLength(0);
+  });
+
+  test("session_start re-asserts after a stale restored loadout", () => {
+    const { pi, handlers, sets, lose } = activePi([]);
+    registerBackgroundExtension(pi, { outputDir: mkdtempSync(path.join(os.tmpdir(), "bg-activate-")), killGraceMs: 50 });
+    expect(sets).toHaveLength(1);
+    lose(TRIO); // the resume restore drops everything the old loadout lacked
+    const starters = handlers.get("session_start") ?? [];
+    expect(starters.length).toBeGreaterThan(0);
+    for (const fn of starters) (fn as (...a: any[]) => unknown)({}, {});
+    expect(sets).toHaveLength(2);
+    for (const name of TRIO) expect(sets[1]).toContain(name);
+  });
+
+  test("tolerates runtimes without the activation API", () => {
+    const { pi, tools } = fakePi();
+    expect(() => registerBackgroundExtension(pi, { outputDir: mkdtempSync(path.join(os.tmpdir(), "bg-activate-")), killGraceMs: 50 })).not.toThrow();
+    for (const name of TRIO) expect(tools.has(name)).toBe(true);
+  });
+});

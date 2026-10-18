@@ -1436,6 +1436,30 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     },
   });
 
+  // CORE-2469: resumed sessions restore the pre-restart tool loadout, so a
+  // tier flip alone never activates the tools there. Re-assert our tools
+  // into the active set on every load and every session start (the start
+  // handler runs after the loadout restore on resume): additive only, a
+  // no-op when already active, silent on runtimes without the API.
+  const DIRECT_TOOL_NAMES = ["BashBackground", "Monitor", "BackgroundStop"];
+  const ensureDirectActive = (): void => {
+    try {
+      if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return;
+      const active = new Set(pi.getActiveTools());
+      let changed = false;
+      for (const name of DIRECT_TOOL_NAMES) {
+        if (!active.has(name)) {
+          active.add(name);
+          changed = true;
+        }
+      }
+      if (changed) pi.setActiveTools([...active]);
+    } catch {
+      /* activation state unavailable; registration still stands */
+    }
+  };
+  ensureDirectActive();
+
   // B3 operator surface: I7 cards and /bg (the widget is wired above).
   registerBackgroundCards(pi);
 
@@ -1465,6 +1489,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         } catch {
           /* a failed refresh must never fail session start */
         }
+        ensureDirectActive();
       });
     } catch {
       /* older runtimes without this event; tool/command contexts still feed the widget */
