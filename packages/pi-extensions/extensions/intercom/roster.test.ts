@@ -300,3 +300,65 @@ describe("ListAgents tool registration", () => {
     }
   });
 });
+
+describe("shadow sockets and recent-Pi memo (CORE-2470)", () => {
+  const SID = "sess-shadow-1";
+  const live = (now: number) =>
+    roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [piSummary({ sessionId: SID, name: "worker-shadow" })],
+      claudePeers: [],
+      now,
+    });
+  const lagged = (now: number) =>
+    roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [],
+      claudePeers: [claudePeer({ sessionId: SID, name: "worker-shadow", sock: "/run/shadow.sock" })],
+      now,
+    });
+
+  test("dual-listed session: one Pi entry carrying the shadow socket", () => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [piSummary({ sessionId: SID, name: "worker-shadow" })],
+      claudePeers: [claudePeer({ sessionId: SID, name: "worker-shadow", sock: "/run/shadow.sock" })],
+      now: NOW,
+    });
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "pi", sessionId: SID, shadowSock: "/run/shadow.sock" });
+  });
+
+  test("registry lag: memoized Pi id resolves as Pi with the shadow relay", () => {
+    roster.__resetRecentPi();
+    live(NOW);
+    const built = lagged(NOW + 60_000);
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "pi", sessionId: SID, shadowSock: "/run/shadow.sock" });
+    expect(roster.resolveRosterTarget(built.entries, "worker-shadow")).toMatchObject({ target: { kind: "pi" } });
+  });
+
+  test("expired memo: shadow lists as Claude again", () => {
+    roster.__resetRecentPi();
+    live(NOW);
+    const built = lagged(NOW + roster.RECENT_PI_TTL_MS + 1);
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "claude", sessionId: SID });
+    expect(built.entries[0]).not.toHaveProperty("shadowSock");
+  });
+
+  test("unknown Claude ids still list as Claude, never Pi", () => {
+    roster.__resetRecentPi();
+    live(NOW);
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [],
+      claudePeers: [claudePeer({ sessionId: "claude-fresh-1", name: "stranger", sock: "/run/other.sock" })],
+      now: NOW + 60_000,
+    });
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "claude", sessionId: "claude-fresh-1" });
+    expect(built.entries[0]).not.toHaveProperty("shadowSock");
+  });
+});

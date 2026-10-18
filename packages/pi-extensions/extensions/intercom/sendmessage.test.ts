@@ -7,6 +7,7 @@ mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" })
 
 const sendmessage = await import("./sendmessage.ts");
 const { intercomWaiting } = await import("./waiting.ts");
+const { ClaudeReceiptTimeoutError } = await import("./claude-transport/transport.ts");
 
 type Handler = (event: any, ctx: any) => unknown;
 
@@ -1094,5 +1095,126 @@ describe("SendMessage attachments on the real filesystem (CORE-2437 I6 F4/F6)", 
     expect(r.isError).toBeFalsy();
     expect(posted[0].payloadRef).toContain("````md\nfenced:");
     expect(posted[0].payloadRef).toMatch(/\n````$/);
+  });
+});
+
+describe("Pi shadow relay (CORE-2470)", () => {
+
+  function shadowSetup(overrides: Record<string, any> = {}) {
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("bob", "/run/shadow.sock", "s-bob")],
+      postWake: async () => {
+        throw new Error("the agent host refused the wake (http 404)");
+      },
+      getClaudeSocketPath: () => "/run/user/1000/cc-socks/own.sock",
+      ...overrides,
+    });
+    return deps;
+  }
+
+  async function seedRecentPi(tool: any) {
+    // One build with the Pi record present populates the recent-Pi memo,
+    // exactly like a live registry did minutes before a lag window.
+    const { deps } = baseDeps({ fetchClaude: async () => [] });
+    sendmessage.__resetSendMessageState();
+    intercomWaiting.setPendingAsks(0);
+    intercomWaiting.setUndelivered(0);
+    const { pi, tools } = fakePi();
+    sendmessage.registerSendMessageTool(pi, deps);
+    await tools.SendMessage.execute("seed", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+  }
+
+  test("relays through the shadow socket with the Pi label when the Pi route is down", async () => {
+    const relayCalls: any[] = [];
+    const deps = shadowSetup({
+      sendClaude: async (opts: any) => {
+        relayCalls.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    await seedRecentPi(tool);
+    const again = register(deps);
+    const r = await again.tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Pi session bob");
+    expect(relayCalls).toHaveLength(1);
+    expect(relayCalls[0]).toMatchObject({ sock: "/run/shadow.sock", from: "uds:/run/user/1000/cc-socks/own.sock" });
+  });
+
+  test("shadow timeout reports unconfirmed with the Pi label, never failed, no retry", async () => {
+    const deps = shadowSetup({
+      sendClaude: async () => {
+        throw new ClaudeReceiptTimeoutError("m-test-1");
+      },
+    });
+    const { tool } = register(deps);
+    await seedRecentPi(tool);
+    const again = register(deps);
+    const r = await again.tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    const text = String(r.content[0].text);
+    expect(text).toContain("Pi session bob");
+    expect(text).toContain("could not be confirmed");
+    expect(text).toContain("do not resend");
+  });
+
+  test("reply_to/notify_when_idle with only a shadow fails loudly, never downgrades", async () => {
+    let relayed = 0;
+    const deps = shadowSetup({
+      sendClaude: async () => {
+        relayed += 1;
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    await seedRecentPi(tool);
+    const again = register(deps);
+    const r = await again.tool.execute(
+      "c1",
+      { to: "bob", message: "hi", notify_when_idle: true },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toContain("does not support reply_to/notify_when_idle");
+    expect(relayed).toBe(0);
+  });
+
+  test("no shadow keeps the existing host failure", async () => {
+    const { deps } = baseDeps({
+      fetchPi: async () => [piSummary("s-noshadow", "plain")],
+      fetchClaude: async () => [],
+      postWake: async () => {
+        throw new Error("boom");
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "plain", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toContain("could not reach the agent host");
+  });
+
+  test("expect_reply through the shadow still resolves the ask", async () => {
+    const deps = shadowSetup({
+      sendClaude: async () => ({ outcome: "delivered" as const }),
+    });
+    const { tool } = register(deps);
+    await seedRecentPi(tool);
+    const again = register(deps);
+    const pending = again.tool.execute(
+      "c1",
+      { to: "bob", message: "status?", expect_reply: true, timeout_s: 30 },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(intercomWaiting.getPendingAsks()).toBe(1);
+    sendmessage.__inboundWakeForTests({ messageId: "m-r", ref: "all green", replyTo: "m-test-1", from: "bob" });
+    const r = await pending;
+    expect(String(r.content[0].text)).toMatch(/Reply from bob/);
   });
 });

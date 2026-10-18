@@ -1066,8 +1066,44 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           ...(notifyWhenIdle ? { notifyWhenIdle: true as const } : {}),
         });
       } catch (error) {
-        ask?.disarm();
-        return fail(`SendMessage: could not reach the agent host: ${(error as Error)?.message ?? String(error)}.`);
+        const shadowSock = target.shadowSock;
+        if (!shadowSock || replyTo || notifyWhenIdle) {
+          ask?.disarm();
+          const relayNote =
+            shadowSock && (replyTo || notifyWhenIdle)
+              ? " A live relay exists but it does not support reply_to/notify_when_idle for Pi sessions."
+              : "";
+          return fail(`SendMessage: could not reach the agent host: ${(error as Error)?.message ?? String(error)}.${relayNote}`);
+        }
+        // CORE-2470: the Pi route is down but the session's own Claude
+        // listener is live. Relay the same frame there: the peer IS a Pi
+        // session, so the Pi label stands. The ask stays armed for
+        // expectReply — replies key off messageId, not transport.
+        try {
+          const ownClaudeSock = deps.getClaudeSocketPath?.();
+          const relayFrom = ownClaudeSock ? `uds:${ownClaudeSock}` : (ownName ?? ownSessionId);
+          const relay = (await sendClaude({ sock: shadowSock, body, from: relayFrom, fromName: from, messageId })).outcome;
+          if (relay === "delivered") {
+            sent = { messageId, state: "delivered" };
+          } else {
+            ask?.disarm();
+            return ok(deliveryNotice(relay === "held" ? "held" : "refused", target.name, messageId, target.kind), {
+              message: { id: messageId, state: relay, to: target.name },
+            });
+          }
+        } catch (relayError) {
+          if (isClaudeReceiptTimeout(relayError)) {
+            ask?.disarm();
+            return ok(
+              `Sent to ${sessionLabel(target)} (message ${messageId}); delivery could not be confirmed: ${(relayError as Error)?.message ?? String(relayError)}. The message may still arrive — do not resend it, or it may deliver twice.`,
+              { message: { id: messageId, state: "unconfirmed", to: target.name } },
+            );
+          }
+          ask?.disarm();
+          return fail(
+            `SendMessage: Pi route and Claude relay both failed for "${to}": ${(error as Error)?.message ?? String(error)}; relay: ${(relayError as Error)?.message ?? String(relayError)}.`
+          );
+        }
       }
 
       let state: WakeDeliveryState = sent.state;
