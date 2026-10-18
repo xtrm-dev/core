@@ -78,9 +78,11 @@ export {
   ackClaudeMessage,
   bindClaudeTransportSocket,
   claimPiPeerEntry,
+  ClaudeReceiptTimeoutError,
   ClaudeReceiptWaiter,
   closeBoundSocket,
   deregisterPiPeer,
+  isClaudeReceiptTimeout,
   isOwnPeer,
   ownPeerVersion,
   peerSocketPath,
@@ -100,6 +102,11 @@ export interface ClaudeTransportOptions {
   sessionsDir?: string;
   /** Force the transport on/off, winning over the settings key and env (tests, M1). */
   enabled?: boolean;
+  /**
+   * Reports our bound socket path (null when unbound). Senders use it as
+   * the uds: return address so receipts route back (CORE-2465).
+   */
+  onSocketPath?: (sockPath: string | null) => void;
   /** Test-only hooks. Never set in production. */
   hooks?: {
     /** Runs after registration, before the takeover verification (takeover tests). */
@@ -338,7 +345,14 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
         if (!abandoned) notify(TAKEOVER_LINE);
         return;
       }
-      if (!abandoned) started = true;
+      if (!abandoned) {
+        started = true;
+        try {
+          options.onSocketPath?.(sockPath);
+        } catch {
+          /* reporting must never break the start path */
+        }
+      }
     } catch (error) {
       if (!abandoned) fail(error);
       await closeListener();
@@ -366,6 +380,11 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
     }
     const identity = boundIdentity;
     await closeListener();
+    try {
+      options.onSocketPath?.(null);
+    } catch {
+      /* reporting must never break the stop path */
+    }
     await deregisterPiPeer(process.pid, sockPath || undefined, options.sessionsDir, identity).catch(() => {});
     await options.hooks?.afterStop?.();
   }

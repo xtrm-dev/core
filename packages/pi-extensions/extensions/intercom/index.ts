@@ -63,10 +63,16 @@ export { applySendScope, MAX_ATTACHMENTS, MAX_FILE_ATTACH_BYTES, MAX_FILE_READ_B
 
 export default function intercomExtension(pi: ExtensionAPI, options: IntercomExtensionOptions = {}): void {
   ensureAgentHostBridge(pi, options).register();
+  // Our bound Claude socket, when the transport holds one: the uds:
+  // return address for receipts (CORE-2465). Null while unbound.
+  let boundClaudeSocket: string | undefined;
   claudeTransportExtension(pi, {
     ...(options.claudeSocketPath ? { socketPath: options.claudeSocketPath } : {}),
     ...(options.claudeSessionsDir ? { sessionsDir: options.claudeSessionsDir } : {}),
     ...(options.claudeTransportEnabled !== undefined ? { enabled: options.claudeTransportEnabled } : {}),
+    onSocketPath: (sockPath) => {
+      boundClaudeSocket = sockPath ?? undefined;
+    },
   });
   const rosterDeps: ListAgentsDeps & IntercomCommandDeps = {
     ...(options.claudeSocketPath ? { excludeSock: options.claudeSocketPath } : {}),
@@ -78,6 +84,7 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
     ...(options.claudeSocketPath ? { excludeSock: options.claudeSocketPath } : {}),
     ...(options.claudeSessionsDir ? { sessionsDir: options.claudeSessionsDir } : {}),
     ...(options.claudeTransportEnabled !== undefined ? { claudeTransportEnabled: options.claudeTransportEnabled } : {}),
+    getClaudeSocketPath: () => boundClaudeSocket,
   });
   registerIntercomFooter(intercomWaiting);
   // CORE-2438 I7: inbound wakes render through the shared event module.

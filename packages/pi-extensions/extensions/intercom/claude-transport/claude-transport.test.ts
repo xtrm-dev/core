@@ -781,4 +781,22 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("reports the bound socket path (null on shutdown) for receipt addressing (CORE-2465)", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-sockpath-"));
+    const sockPath = path.join(dir, "i3.sock");
+    const seen: Array<string | null> = [];
+    try {
+      const { pi, fire } = fakePi();
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true, onSocketPath: (p) => seen.push(p) });
+      fire("session_start", { reason: "startup" }, fakeCtx([]));
+      await until(() => existsSync(sockPath));
+      await until(() => seen.length >= 1);
+      expect(seen.at(-1)).toBe(sockPath);
+      fire("session_shutdown", { reason: "quit" }, fakeCtx([]));
+      await until(() => seen.includes(null));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
