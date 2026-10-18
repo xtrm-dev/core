@@ -158,14 +158,14 @@ function startFrameServer(frames: string[]): Promise<{ server: Server; url: stri
 }
 
 describe("Monitor registration", () => {
-  test("registers BashBackground, Monitor and BackgroundStop, codemode-exposed, never bash/read/edit/write/find/grep/ls", () => {
+  test("registers BashBackground, Monitor and BackgroundStop, direct-exposed, never bash/read/edit/write/find/grep/ls", () => {
     const { pi, tools } = fakePi();
     startService(pi);
     expect([...tools.keys()].sort()).toEqual(["BackgroundStop", "BashBackground", "Monitor"]);
     for (const name of ["bash", "read", "edit", "write", "find", "grep", "ls"]) {
       expect(tools.has(name)).toBe(false);
     }
-    expect(tools.get("Monitor")?.exposure).toBe("codemode");
+    expect(tools.get("Monitor")?.exposure).toBe("direct");
     const guidelines = (tools.get("Monitor")?.promptGuidelines ?? []).join("\n").toLowerCase();
     expect(guidelines).toContain("do not poll");
     expect(guidelines).toContain("failure");
