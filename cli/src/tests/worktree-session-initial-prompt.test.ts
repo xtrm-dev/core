@@ -141,7 +141,7 @@ describe('xt pi XTRM_INITIAL_PROMPT launch env (CORE-2454)', () => {
     expect(hasInitialPromptForLaunch({ bead: 'X-1' })).toBe(false);
     expect(hasInitialPromptForLaunch({ role: 'testrole' })).toBe(false);
     expect(piInitialPromptEnv('pi', true)).toEqual({ XTRM_INITIAL_PROMPT: '1' });
-    expect(piInitialPromptEnv('pi', false)).toEqual({});
+    expect(piInitialPromptEnv('pi', false)).toEqual({ XTRM_INITIAL_PROMPT: '0' });
     expect(piInitialPromptEnv('claude', true)).toEqual({});
   });
 
@@ -154,13 +154,13 @@ describe('xt pi XTRM_INITIAL_PROMPT launch env (CORE-2454)', () => {
     expect(envPairs(h.newSessionArgs)['XTRM_INITIAL_PROMPT']).toBe('1');
   });
 
-  it('bare pi without a prompt does not export XTRM_INITIAL_PROMPT', async () => {
+  it('bare pi without a prompt exports XTRM_INITIAL_PROMPT=0', async () => {
     installMock(h);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     await expect(
       launchWorktreeSession({ runtime: 'pi', name: 'ip2', attach: false }),
     ).rejects.toThrow('exit:0');
-    expect(envPairs(h.newSessionArgs)).not.toHaveProperty('XTRM_INITIAL_PROMPT');
+    expect(envPairs(h.newSessionArgs)).toHaveProperty('XTRM_INITIAL_PROMPT', '0');
   });
 
   it('role pi with --bead exports XTRM_INITIAL_PROMPT=1', async () => {
@@ -172,13 +172,13 @@ describe('xt pi XTRM_INITIAL_PROMPT launch env (CORE-2454)', () => {
     expect(envPairs(h.newSessionArgs)['XTRM_INITIAL_PROMPT']).toBe('1');
   });
 
-  it('role pi without prompt or bead does not export XTRM_INITIAL_PROMPT', async () => {
+  it('role pi without prompt or bead exports XTRM_INITIAL_PROMPT=0', async () => {
     installMock(h);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     await expect(
       launchWorktreeSession({ runtime: 'pi', name: 'ip4', role: 'testrole', attach: false }),
     ).rejects.toThrow('exit:0');
-    expect(envPairs(h.newSessionArgs)).not.toHaveProperty('XTRM_INITIAL_PROMPT');
+    expect(envPairs(h.newSessionArgs)).toHaveProperty('XTRM_INITIAL_PROMPT', '0');
   });
 
   it('claude with --prompt never exports XTRM_INITIAL_PROMPT (Pi-only signal)', async () => {
@@ -189,12 +189,4 @@ describe('xt pi XTRM_INITIAL_PROMPT launch env (CORE-2454)', () => {
     ).rejects.toThrow('exit:0');
     expect(envPairs(h.newSessionArgs)).not.toHaveProperty('XTRM_INITIAL_PROMPT');
   });
-});
-
-describe('stripInitialPromptEnv', () => {
-    it('drops an inherited XTRM_INITIAL_PROMPT and keeps everything else', async () => {
-        const { stripInitialPromptEnv } = await import('../utils/worktree-session.js');
-        const out = stripInitialPromptEnv({ XTRM_INITIAL_PROMPT: '1', KEEP: 'x' });
-        expect(out).toEqual({ KEEP: 'x' });
-    });
 });

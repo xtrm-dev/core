@@ -59115,13 +59115,8 @@ var INITIAL_PROMPT_ENV = "XTRM_INITIAL_PROMPT";
 function hasInitialPromptForLaunch(opts) {
   return Boolean(opts.prompt) || Boolean(opts.role && opts.bead);
 }
-function stripInitialPromptEnv(env3) {
-  const out = { ...env3 };
-  delete out[INITIAL_PROMPT_ENV];
-  return out;
-}
 function piInitialPromptEnv(runtime, hasInitialPrompt) {
-  return runtime === "pi" && hasInitialPrompt ? { [INITIAL_PROMPT_ENV]: "1" } : {};
+  return runtime === "pi" ? { [INITIAL_PROMPT_ENV]: hasInitialPrompt ? "1" : "0" } : {};
 }
 var LAUNCH_FORWARDED_ENV = [
   "XTRM_SUBSTRATE_DIR",
@@ -59766,7 +59761,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process4.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug), ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug), ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -59910,7 +59905,7 @@ async function launchTmuxSession(args) {
       const runtimeResult = (0, import_node_child_process4.spawnSync)(runtimeExecutable, plan.runtimeArgs, {
         cwd: worktreePath,
         stdio: "inherit",
-        env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv }
+        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv }
       });
       process.exit(runtimeResult.status ?? 0);
     }
@@ -59918,7 +59913,7 @@ async function launchTmuxSession(args) {
     const runtimeProcess = (0, import_node_child_process4.spawn)(runtimeExecutable, plan.runtimeArgs, {
       cwd: worktreePath,
       stdio: "inherit",
-      env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv }
+      env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv }
     });
     const runtimeExit = new Promise((resolve6) => {
       runtimeProcess.once("error", () => resolve6(1));
@@ -80006,7 +80001,7 @@ var AgentHostLauncher = class {
   async launchPi(cwd, options, parent) {
     const sessionName = options.name ?? `pi-${(0, import_node_crypto18.randomBytes)(3).toString("hex")}`;
     const envArgs = ["-e", `${LAUNCH_ENV}=gui`];
-    if (options.prompt) envArgs.push("-e", `${INITIAL_PROMPT_ENV}=1`);
+    envArgs.push("-e", `${INITIAL_PROMPT_ENV}=${options.prompt ? 1 : 0}`);
     for (const [key, value] of Object.entries(forwardedLaunchEnv(this.env))) {
       if (key !== LAUNCH_ENV) envArgs.push("-e", `${key}=${value}`);
     }

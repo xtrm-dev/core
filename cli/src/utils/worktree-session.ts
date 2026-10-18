@@ -2213,7 +2213,8 @@ export function buildAgentEnv(
  * `xt pi` launches an interactive worker with an initial prompt but never
  * passes -p/--print, so the launcher exports XTRM_INITIAL_PROMPT=1 to the
  * Pi process exactly when it supplies one (--prompt, or --bead with --role).
- * Absent otherwise — every reader treats absence as "no initial prompt".
+ * Pi launches without one get XTRM_INITIAL_PROMPT=0, which the reader treats
+ * as an explicit "no initial prompt".
  */
 export const INITIAL_PROMPT_ENV = 'XTRM_INITIAL_PROMPT';
 
@@ -2225,18 +2226,13 @@ export function hasInitialPromptForLaunch(opts: {
     return Boolean(opts.prompt) || Boolean(opts.role && opts.bead);
 }
 
-/** Copy of `env` without an inherited XTRM_INITIAL_PROMPT, so a prompted parent never marks a child launched without one. */
-export function stripInitialPromptEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    const out = { ...env };
-    delete out[INITIAL_PROMPT_ENV];
-    return out;
-}
-
 export function piInitialPromptEnv(
     runtime: 'pi' | 'claude',
     hasInitialPrompt: boolean,
 ): Record<string, string> {
-    return runtime === 'pi' && hasInitialPrompt ? { [INITIAL_PROMPT_ENV]: '1' } : {};
+    // Always explicit for Pi: '0' overrides a value inherited from a prompted
+    // parent or held in a tmux server's global env (tmux -e cannot unset).
+    return runtime === 'pi' ? { [INITIAL_PROMPT_ENV]: hasInitialPrompt ? '1' : '0' } : {};
 }
 
 /**
@@ -3264,7 +3260,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug), ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug), ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3467,7 +3463,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
-                env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv },
+                env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv },
             });
             process.exit(runtimeResult.status ?? 0);
         }
@@ -3478,7 +3474,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
             stdio: 'inherit',
-            env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv },
+            env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv },
         });
         const runtimeExit = new Promise<number>((resolve) => {
             runtimeProcess.once('error', () => resolve(1));

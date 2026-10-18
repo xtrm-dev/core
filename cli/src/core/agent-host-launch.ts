@@ -226,9 +226,9 @@ export class AgentHostLauncher {
     private async launchPi(cwd: string, options: LaunchOptions, parent: string | null): Promise<LaunchResult> {
         const sessionName = options.name ?? `pi-${randomBytes(3).toString('hex')}`;
         const envArgs: string[] = ['-e', `${LAUNCH_ENV}=gui`];
-        // CORE-2454: bare `pi` carries no system prompt; a --prompt option is
-        // the initial prompt, so the Pi process gets XTRM_INITIAL_PROMPT=1.
-        if (options.prompt) envArgs.push('-e', `${INITIAL_PROMPT_ENV}=1`);
+        // CORE-2454: a --prompt option is the initial prompt (XTRM_INITIAL_PROMPT=1);
+        // without one, an explicit 0 overrides any inherited tmux server value.
+        envArgs.push('-e', `${INITIAL_PROMPT_ENV}=${options.prompt ? 1 : 0}`);
         for (const [key, value] of Object.entries(forwardedLaunchEnv(this.env))) {
             if (key !== LAUNCH_ENV) envArgs.push('-e', `${key}=${value}`);
         }
