@@ -246,8 +246,13 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
     const sessionId = ctx.sessionManager?.getSessionId?.() || undefined;
     const cwd = ctx.cwd || process.cwd();
     let name = "pi-session";
+    let namedByHuman = false;
     try {
-      name = pi.getSessionName?.() || name;
+      const sessionName = pi.getSessionName?.();
+      if (sessionName) {
+        name = sessionName;
+        namedByHuman = true;
+      }
     } catch {
       /* keep the default */
     }
@@ -310,9 +315,9 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
       const hadOwnEntry = isOwnPeer((await readPeerEntry(pid, claim.sessionsDir).catch(() => null)) ?? {});
       if (hadOwnEntry) {
         // Refresh the entry we already own: the session id stays stable.
-        await updatePiPeer(pid, { name, status: "idle" }, claim.sessionsDir);
+        await updatePiPeer(pid, { name, status: "idle", ...(namedByHuman ? { nameSource: "user" } : {}) }, claim.sessionsDir);
       } else {
-        await registerPiPeer({ pid, sessionId, name, cwd, sockPath, status: "idle", sessionsDir: claim.sessionsDir });
+        await registerPiPeer({ pid, sessionId, name, cwd, sockPath, status: "idle", sessionsDir: claim.sessionsDir, ...(namedByHuman ? { nameSource: "user" } : {}) });
       }
       await options.hooks?.afterRegister?.();
       if (abandoned) {

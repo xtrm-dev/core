@@ -49,6 +49,8 @@ export const PROVENANCE_LINE =
 export interface EventTheme {
   fg(token: string, text: string): string;
   bold(text: string): string;
+  /** Optional: Pi's Theme has it; fakes without it render bodies plain. */
+  italic?(text: string): string;
 }
 
 export type StateToken = "success" | "warning" | "error" | "text";
@@ -361,10 +363,12 @@ export function formatEventCardPlain(details: EventDetails, width: number): stri
 }
 
 /**
- * Operator card (D4): glyph, bold identity, tinted state, dim facts,
- * up to 3 preview lines, "+N lines · ctrl+o expands". Theme tokens only —
- * this file holds no SGR. Both renders share `layoutCard`, so the themed
- * card matches the plain layout line for line; only styling differs.
+ * Operator card (D4): glyph, bold identity, tinted state, italic message
+ * bodies, dim facts, up to 3 preview lines, "+N lines · ctrl+o expands".
+ * Theme tokens only — this file holds no SGR. Both renders share `layoutCard`,
+ * so the themed card matches the plain layout line for line; only styling
+ * differs. Bodies render italic (the message corpus) when the theme offers
+ * it; fakes without `italic` fall back to plain bodies so pinned tests hold.
  */
 export function formatEventCard(details: EventDetails, theme: EventTheme, width: number): string {
   const layout = layoutCard(details, width);
@@ -372,7 +376,15 @@ export function formatEventCard(details: EventDetails, theme: EventTheme, width:
     `${layout.glyph} ${theme.bold(layout.identity)}` +
     (layout.state ? ` ${theme.fg(stateToken(details.state), layout.state)}` : "");
   const dim = (text: string) => theme.fg("dim", text);
-  return [head, ...layoutBodyLines(layout, dim)].join("\n");
+  const italicize = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
+  const lines = layoutBodyLines(layout, dim);
+  // Only the corpus lines (not the facts trailer or the expander hint) read
+  // italic: header stays bold, facts stay dim.
+  const styled =
+    details.kind === "message"
+      ? lines.map((line, i) => (i < layout.bodyLines.length ? italicize(line) : line))
+      : lines;
+  return [head, ...styled].join("\n");
 }
 
 type MessageRenderer = (message: unknown, options: unknown, theme: EventTheme) => unknown;
