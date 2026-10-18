@@ -378,7 +378,12 @@ export async function fetchPiSessions(options: FetchPiSessionsOptions = {}): Pro
         done(sessions);
       }
     };
-    const req = httpRequest({ host: address, port, path: "/v1/sessions", method: "GET", timeout: timeoutMs }, (res) => {
+    // CORE-2470: no pooled keep-alive on loopback control calls. The host
+    // closes idle keep-alive sockets after its keepAliveTimeout while the
+    // client pool still hands them out; reusing one races ECONNRESET and
+    // reads as an empty session list, which silently routes Pi peers via
+    // their Claude shadow. A fresh loopback connection costs ~0.1 ms.
+    const req = httpRequest({ host: address, port, path: "/v1/sessions", method: "GET", timeout: timeoutMs, agent: false }, (res) => {
       let text = "";
       res.setEncoding("utf8");
       res.on("data", (chunk: string) => {
