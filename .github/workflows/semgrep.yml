@@ -38,7 +38,10 @@ jobs:
         run: |
           SEMGREP_VERSION=1.99.0
           python3 -m venv /tmp/semgrep-venv
-          /tmp/semgrep-venv/bin/pip install --quiet "semgrep==${SEMGREP_VERSION}"
+          # setuptools>=81 dropped pkg_resources, which semgrep's
+          # opentelemetry import still needs (cloud images ship new
+          # setuptools; self-hosted runners never hit this).
+          /tmp/semgrep-venv/bin/pip install --quiet "setuptools<81" "semgrep==${SEMGREP_VERSION}"
           /tmp/semgrep-venv/bin/semgrep --version
 
       - name: Scan
