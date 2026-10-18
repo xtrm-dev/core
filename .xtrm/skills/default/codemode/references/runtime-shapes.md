@@ -14,7 +14,7 @@ Pi releases differ. Two observed shapes (2026-10-13 observation; reconciled
   `tools.bash`/`tools.read` resolved to **plain strings**; `searchTools`,
   `describeTool`, `ALL_TOOLS` did **not** exist. Enumerate with
   `Object.keys(tools)` (Task*, ast_grep, bash, grep, find, ls, read, write,
-  edit, python, BashBackground, Monitor, TaskStop, subagent, specialist_*, SendMessage,
+  edit, python, BashBackground, Monitor, BackgroundStop, subagent, specialist_*, SendMessage,
   ListAgents, MCP `mcp__server__tool` names, `agentrun`, `models`). Not
   reproducible from the 1.2.0 install; treat as a fallback shape, and probe
   before relying on either.

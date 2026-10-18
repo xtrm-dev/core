@@ -2,7 +2,7 @@
  * Background task store (B1, CORE-2439).
  *
  * One small in-process store every background run and monitor lives in.
- * B2 (Monitor) and B3 (/tasks) come later and read this store; this module
+ * B2 (Monitor) and B3 (/bg) come later and read this store; this module
  * stays dependency-free so all three surfaces share it.
  *
  * Lineage: the start/output-file/single-notification method is informed by
@@ -48,7 +48,7 @@ export interface BackgroundTaskRecord extends BackgroundTaskSnapshot {
   killReason: "stop" | "timeout" | null;
   notified: boolean;
   /**
-   * The operator opened /tasks (or the record's output) after it finished.
+   * The operator opened /bg (or the record's output) after it finished.
    * Only terminal records flip seen (F2a): a running record can never be
    * "already seen" when it later fails. A failure counts for the
    * indicator until seen.
@@ -194,7 +194,7 @@ export interface MonitorNoticeFields {
 /**
  * Terminal monitor notices in Claude Code's bracket style (D8):
  * [monitor expired] carries the event count; [monitor stopped] names the
- * stop reason (TaskStop, command exit, firehose, connection close).
+ * stop reason (BackgroundStop, command exit, firehose, connection close).
  */
 export function formatMonitorExpired(fields: MonitorNoticeFields): string {
   return [
@@ -221,7 +221,7 @@ export function formatElapsed(ms: number): string {
 /** Which collection a store change belongs to. */
 export type StoreRecordKind = "task" | "monitor";
 
-/** One store mutation the indicator and /tasks refresh from (no polling). */
+/** One store mutation the indicator and /bg refresh from (no polling). */
 export interface StoreChangeEvent {
   kind: StoreRecordKind;
   id: string;
@@ -302,7 +302,7 @@ export interface BackgroundStore {
   /**
    * Report a UI-relevant mutation of one record (status, delivery,
    * notified, counts): emits, then enforces the finished bound for that
-   * kind. Call it after every mutation the indicator or /tasks shows;
+   * kind. Call it after every mutation the indicator or /bg shows;
    * per-line monitor churn (lineCount) deliberately does not call it.
    */
   changed(kind: StoreRecordKind, id: string): void;
@@ -314,7 +314,7 @@ export interface BackgroundStore {
   clearFinished(): { tasks: number; monitors: number };
   /**
    * Cumulative count of evicted *unseen* failures (N6). The indicator
-   * cannot count what is gone; /tasks shows "+N earlier failures
+   * cannot count what is gone; /bg shows "+N earlier failures
    * dropped" instead of silently undercounting.
    */
   droppedUnseenFailures(): number;

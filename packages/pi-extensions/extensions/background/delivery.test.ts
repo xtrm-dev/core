@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -7,6 +7,7 @@ import {
   MONITOR_EVENT_TYPE,
   TASK_NOTIFICATION_TYPE,
   isBackgroundEnabled,
+  readEnabledFromSettingsFiles,
   registerBackgroundExtension,
 } from "./index.ts";
 
@@ -52,12 +53,30 @@ const until = async (check: () => boolean, ms = 8000) => {
 
 let dir = "";
 let services: Array<{ close: () => void }> = [];
+let savedAgentDir: string | undefined;
+let sandboxAgentDir = "";
+
+function writeAgentSettings(value: unknown): void {
+  writeFileSync(path.join(sandboxAgentDir, "settings.json"), JSON.stringify(value));
+}
+
+function writeProjectSettings(cwd: string, value: unknown): void {
+  mkdirSync(path.join(cwd, ".pi"), { recursive: true });
+  writeFileSync(path.join(cwd, ".pi", "settings.json"), typeof value === "string" ? value : JSON.stringify(value));
+}
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), "background-delivery-test-"));
+  // Hermetic off-switch: the file fallback must never see the operator's real settings.
+  savedAgentDir = process.env.PI_AGENT_DIR;
+  sandboxAgentDir = mkdtempSync(path.join(os.tmpdir(), "background-delivery-agent-"));
+  process.env.PI_AGENT_DIR = sandboxAgentDir;
 });
 
 afterEach(() => {
+  if (savedAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+  else process.env.PI_AGENT_DIR = savedAgentDir;
+  rmSync(sandboxAgentDir, { recursive: true, force: true });
   for (const service of services.splice(0)) {
     try {
       service.close();
@@ -162,11 +181,44 @@ describe("background off switch", () => {
     const service = registerBackgroundExtension(pi, { outputDir: dir, killGraceMs: 50 });
     services.push(service);
     expect(isBackgroundEnabled(pi)).toBe(true);
-    expect([...tools.keys()].sort()).toEqual(["BashBackground", "Monitor", "TaskStop"]);
-    expect([...commands.keys()]).toEqual(["tasks"]);
+    expect([...tools.keys()].sort()).toEqual(["BackgroundStop", "BashBackground", "Monitor"]);
+    expect([...commands.keys()]).toEqual(["bg"]);
   });
 
-  test("precedence is explicit option, then env, then settings", () => {
+  test("the file fallback disables the extension without getSettings (CORE-2456)", () => {
+    const { pi, tools } = fakePi();
+    writeAgentSettings({ background: { enabled: false } });
+    const service = registerBackgroundExtension(pi, { outputDir: dir, killGraceMs: 50 });
+    services.push(service);
+    expect(isBackgroundEnabled(pi)).toBe(false);
+    expect(tools.size).toBe(0);
+  });
+
+  test("project settings win over global ones; broken files are ignored", () => {
+    const savedCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const { pi } = fakePi();
+      writeAgentSettings({ background: { enabled: true } });
+      expect(readEnabledFromSettingsFiles(dir, sandboxAgentDir)).toBe(true);
+      expect(isBackgroundEnabled(pi)).toBe(true);
+      writeProjectSettings(dir, { background: { enabled: false } });
+      expect(readEnabledFromSettingsFiles(dir, sandboxAgentDir)).toBe(false);
+      expect(isBackgroundEnabled(pi)).toBe(false);
+      writeProjectSettings(dir, "not json{{{");
+      expect(readEnabledFromSettingsFiles(dir, sandboxAgentDir)).toBe(true);
+    } finally {
+      process.chdir(savedCwd);
+    }
+  });
+
+  test("getSettings wins over the files when both name a value", () => {
+    const { pi } = fakePi();
+    writeAgentSettings({ background: { enabled: false } });
+    (pi as { getSettings: () => unknown }).getSettings = () => ({ background: { enabled: true } });
+    expect(isBackgroundEnabled(pi)).toBe(true);
+  });
+  test("precedence is explicit option, then env, then settings, then files", () => {
     const { pi } = fakePi();
     expect(isBackgroundEnabled(pi, { enabled: false })).toBe(false);
     process.env[ENV_KEY] = "off";

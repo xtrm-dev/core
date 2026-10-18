@@ -68,12 +68,26 @@ const until = async (check: () => boolean, ms = 8000) => {
 
 let dir = "";
 let services: Array<{ close: () => void }> = [];
+let savedAgentDir: string | undefined;
+let savedTasksEnv: string | undefined;
+let sandboxAgentDir = "";
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), "monitor-test-"));
+  // Hermetic off-switch: the file fallback must never see the operator's real settings.
+  savedAgentDir = process.env.PI_AGENT_DIR;
+  savedTasksEnv = process.env.BACKGROUND_TASKS;
+  sandboxAgentDir = mkdtempSync(path.join(os.tmpdir(), "monitor-test-agent-"));
+  process.env.PI_AGENT_DIR = sandboxAgentDir;
+  delete process.env.BACKGROUND_TASKS;
 });
 
 afterEach(() => {
+  if (savedAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+  else process.env.PI_AGENT_DIR = savedAgentDir;
+  if (savedTasksEnv === undefined) delete process.env.BACKGROUND_TASKS;
+  else process.env.BACKGROUND_TASKS = savedTasksEnv;
+  rmSync(sandboxAgentDir, { recursive: true, force: true });
   for (const service of services.splice(0)) {
     try {
       service.close();
@@ -144,10 +158,10 @@ function startFrameServer(frames: string[]): Promise<{ server: Server; url: stri
 }
 
 describe("Monitor registration", () => {
-  test("registers BashBackground, Monitor and TaskStop, codemode-exposed, never bash/read/edit/write/find/grep/ls", () => {
+  test("registers BashBackground, Monitor and BackgroundStop, codemode-exposed, never bash/read/edit/write/find/grep/ls", () => {
     const { pi, tools } = fakePi();
     startService(pi);
-    expect([...tools.keys()].sort()).toEqual(["BashBackground", "Monitor", "TaskStop"]);
+    expect([...tools.keys()].sort()).toEqual(["BackgroundStop", "BashBackground", "Monitor"]);
     for (const name of ["bash", "read", "edit", "write", "find", "grep", "ls"]) {
       expect(tools.has(name)).toBe(false);
     }
@@ -298,14 +312,14 @@ describe("Monitor command mode", () => {
     expect(service.store.getMonitor(monitorId)?.killReason).toBe("firehose");
   });
 
-  test("TaskStop cancels a monitor with exactly one stopped notice", async () => {
+  test("BackgroundStop cancels a monitor with exactly one stopped notice", async () => {
     const { pi, tools } = fakePi();
     const service = startService(pi);
     const started = await tools
       .get("Monitor")!
       .execute("call-1", { command: "sleep 30", description: "cancellable" }, undefined, undefined, toolCtx());
     const monitorId = String((started.details as Record<string, unknown>).monitor_id);
-    const stopped = await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    const stopped = await tools.get("BackgroundStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
     expect((stopped.details as Record<string, unknown>).status).toBe("stopped");
     await until(() => monitorNotices(pi.sent).length >= 1);
     await new Promise((r) => setTimeout(r, 300));
@@ -468,7 +482,7 @@ describe("Monitor review fixes", () => {
     // Stop, then quit inside the SIGKILL grace window. B3 follow-up 7:
     // close() never blocks for the grace — it returns at once with the
     // record stopped, and the unref'd sweep SIGKILLs the group later.
-    await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    await tools.get("BackgroundStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
     const startedAt = Date.now();
     service.close();
     expect(Date.now() - startedAt).toBeLessThan(500);
@@ -479,7 +493,7 @@ describe("Monitor review fixes", () => {
     expect(procGone(grandchildPid)).toBe(true);
   });
 
-  test("TaskStop flushes waiting lines before the terminal notice", async () => {
+  test("BackgroundStop flushes waiting lines before the terminal notice", async () => {
     const { pi, tools } = fakePi();
     const service = startService(pi);
     const started = await tools
@@ -489,7 +503,7 @@ describe("Monitor review fixes", () => {
     // Both lines arrive in one chunk; stop inside the batch window (and even
     // if the batch fires first, the end state is identical).
     await until(() => (service.store.getMonitor(monitorId)?.lineCount ?? 0) >= 2);
-    await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    await tools.get("BackgroundStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
     await until(() => monitorNotices(pi.sent).length >= 1);
     await new Promise((r) => setTimeout(r, 300));
     const events = monitorEvents(pi.sent);
@@ -520,7 +534,7 @@ describe("Monitor review fixes", () => {
     // Past the old 2000-line lifetime cap and still running: rate, not total.
     expect(monitorNotices(pi.sent).length).toBe(0);
     expect(["armed", "event"]).toContain(service.store.getMonitor(monitorId)?.status);
-    await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    await tools.get("BackgroundStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
     await until(() => monitorNotices(pi.sent).length >= 1);
   });
 
@@ -573,7 +587,7 @@ describe("Monitor review fixes", () => {
     expect(service.store.getMonitor(monitorId)?.status).toBe("stopped");
   });
 
-  test("a TaskStop within 200 ms of a wake still delivers every line (N1)", async () => {
+  test("a BackgroundStop within 200 ms of a wake still delivers every line (N1)", async () => {
     const { pi, tools } = fakePi();
     const service = startService(pi);
     const started = await tools
@@ -589,7 +603,7 @@ describe("Monitor review fixes", () => {
     // Stop right after both lines arrived: the first wake is ~60 ms old,
     // inside the minimum interval, so only a forced finalize flush keeps b.
     await until(() => (service.store.getMonitor(monitorId)?.lineCount ?? 0) >= 2);
-    await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    await tools.get("BackgroundStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
     await until(() => monitorNotices(pi.sent).length >= 1);
     await new Promise((r) => setTimeout(r, 300));
     const combined = monitorEvents(pi.sent).map((s) => String(s.message.content)).join("\n");
@@ -688,7 +702,7 @@ describe("Monitor item 6 and 8 (N3)", () => {
 });
 
 describe("Monitor terminal drain", () => {
-  test("250 lines pending at TaskStop drain as 100, 100 and 50 before the notice, then silence", async () => {
+  test("250 lines pending at BackgroundStop drain as 100, 100 and 50 before the notice, then silence", async () => {
     const { pi, tools } = fakePi();
     const service = startService(pi);
     const started = await tools
@@ -697,7 +711,7 @@ describe("Monitor terminal drain", () => {
     const monitorId = String((started.details as Record<string, unknown>).monitor_id);
     // Stop while all 250 lines are still waiting for the batch window.
     await until(() => (service.store.getMonitor(monitorId)?.lineCount ?? 0) >= 250);
-    await tools.get("TaskStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    await tools.get("BackgroundStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
     await until(() => monitorNotices(pi.sent).length >= 1);
     const events = monitorEvents(pi.sent);
     expect(events.map((s) => (String(s.message.content).match(/<line>/g) ?? []).length)).toEqual([100, 100, 50]);

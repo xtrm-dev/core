@@ -90,7 +90,7 @@
       "displayName": "background",
       "required": false,
       "ownership": "xtrm",
-      "description": "Local background shell runs: BashBackground starts a command with an output file, TaskStop stops it, one task notification wakes the session on exit"
+      "description": "Local background shell runs: BashBackground starts a command with an output file, BackgroundStop stops it, one task notification wakes the session on exit"
     }
   ],
   "disabled": {

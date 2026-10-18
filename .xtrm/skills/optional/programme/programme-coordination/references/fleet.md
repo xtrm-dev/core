@@ -192,7 +192,7 @@ routing rule.
   worker.
 - After editing a specialist definition, restart the host or rename the definition: the loader
   caches definitions, and a list and a dispatch can disagree.
-- Long jobs: Claude Code runs them with `Bash` `run_in_background`; Pi runs them with `BashBackground` plus `Monitor`; `TaskStop` stops either one. Stay silent while healthy, escalate only on a problem. Read the output file with `read`, never by tailing it in the turn. Delegated-agent and fusion workflows are retired (CORE-2443 M1): they caused host-memory pressure and no longer exist — monitor with completion notices instead.
+- Long jobs: Claude Code runs them with `Bash` `run_in_background`; Pi runs them with `BashBackground` plus `Monitor`; `BackgroundStop` stops either one. Stay silent while healthy, escalate only on a problem. Read the output file with `read`, never by tailing it in the turn. Delegated-agent and fusion workflows are retired (CORE-2443 M1): they caused host-memory pressure and no longer exist — monitor with completion notices instead.
 - A specialist counts toward the worker cap. Before a restart or handoff, settle or stop each
   activation, and list the live ones in the handoff.
 

@@ -77,9 +77,18 @@ let dir = "";
 let services: Array<{ close: () => void; store: { list: () => Array<{ outputFile: string; pid?: number }> } }> = [];
 let consoleErrors: string[] = [];
 const realConsoleError = console.error;
+let savedAgentDir: string | undefined;
+let savedTasksEnv: string | undefined;
+let sandboxAgentDir = "";
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), "background-test-"));
+  // Hermetic off-switch: the file fallback must never see the operator's real settings.
+  savedAgentDir = process.env.PI_AGENT_DIR;
+  savedTasksEnv = process.env.BACKGROUND_TASKS;
+  sandboxAgentDir = mkdtempSync(path.join(os.tmpdir(), "background-test-agent-"));
+  process.env.PI_AGENT_DIR = sandboxAgentDir;
+  delete process.env.BACKGROUND_TASKS;
   consoleErrors = [];
   console.error = (...args: unknown[]) => {
     consoleErrors.push(args.map(String).join(" "));
@@ -88,6 +97,11 @@ beforeEach(() => {
 
 afterEach(() => {
   console.error = realConsoleError;
+  if (savedAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+  else process.env.PI_AGENT_DIR = savedAgentDir;
+  if (savedTasksEnv === undefined) delete process.env.BACKGROUND_TASKS;
+  else process.env.BACKGROUND_TASKS = savedTasksEnv;
+  rmSync(sandboxAgentDir, { recursive: true, force: true });
   for (const service of services.splice(0)) {
     try {
       // Never touch anything outside the temp tree: a record whose output file
@@ -131,18 +145,27 @@ const toolCtx = (session = "test-session") =>
 const countOf = (text: string, needle: string) => text.split(needle).length - 1;
 
 describe("background extension registration", () => {
-  test("registers only BashBackground, Monitor and TaskStop, codemode-exposed, never bash/read/edit/write/find/grep/ls", () => {
+  test("registers only BashBackground, Monitor and BackgroundStop, codemode-exposed, never bash/read/edit/write/find/grep/ls", () => {
     const { pi, tools } = fakePi();
     startService(pi);
-    expect([...tools.keys()].sort()).toEqual(["BashBackground", "Monitor", "TaskStop"]);
+    expect([...tools.keys()].sort()).toEqual(["BackgroundStop", "BashBackground", "Monitor"]);
     for (const name of ["bash", "read", "edit", "write", "find", "grep", "ls"]) {
       expect(tools.has(name)).toBe(false);
     }
     expect(tools.get("BashBackground")?.exposure).toBe("codemode");
-    expect(tools.get("TaskStop")?.exposure).toBe("codemode");
+    expect(tools.get("BackgroundStop")?.exposure).toBe("codemode");
     const guidelines = (tools.get("BashBackground")?.promptGuidelines ?? []).join("\n").toLowerCase();
     expect(guidelines).toContain("do not poll");
     expect(guidelines).toContain("notification wakes you");
+  });
+
+  test("registers no pi-tasks name (CORE-2456: TaskStop, /tasks live there)", () => {
+    const { pi, tools } = fakePi();
+    startService(pi);
+    for (const name of ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskOutput", "TaskStop", "TaskExecute"]) {
+      expect(tools.has(name)).toBe(false);
+    }
+    expect(tools.has("BackgroundStop")).toBe(true);
   });
 
   test("registers a task_notification message renderer and no xtrm- slug user-visible", () => {
@@ -371,13 +394,13 @@ describe("BashBackground", () => {
   });
 });
 
-describe("TaskStop", () => {
+describe("BackgroundStop", () => {
   test("stops a running task with status stopped and exactly one notification", async () => {
     const { pi, tools } = fakePi();
     const service = startService(pi);
     const started = await tools.get("BashBackground")!.execute("call-1", { command: "sleep 30" }, undefined, undefined, toolCtx());
     const taskId = String((started.details as Record<string, unknown>).task_id);
-    const stopped = await tools.get("TaskStop")!.execute("call-2", { task_id: taskId }, undefined, undefined, toolCtx());
+    const stopped = await tools.get("BackgroundStop")!.execute("call-2", { task_id: taskId }, undefined, undefined, toolCtx());
     expect((stopped.details as Record<string, unknown>).status).toBe("stopped");
     await until(() => pi.sent.length >= 1);
     await new Promise((r) => setTimeout(r, 300));
@@ -392,7 +415,7 @@ describe("TaskStop", () => {
     const started = await tools.get("BashBackground")!.execute("call-1", { command: "echo done" }, undefined, undefined, toolCtx());
     const taskId = String((started.details as Record<string, unknown>).task_id);
     await until(() => pi.sent.length >= 1);
-    const again = await tools.get("TaskStop")!.execute("call-2", { task_id: taskId }, undefined, undefined, toolCtx());
+    const again = await tools.get("BackgroundStop")!.execute("call-2", { task_id: taskId }, undefined, undefined, toolCtx());
     expect((again.details as Record<string, unknown>).status).toBe("completed");
     expect(pi.sent.length).toBe(1);
   });
@@ -402,7 +425,7 @@ describe("TaskStop", () => {
     startService(pi);
     let error: unknown;
     try {
-      await tools.get("TaskStop")!.execute("call-1", { task_id: "bg_doesnotexist" }, undefined, undefined, toolCtx());
+      await tools.get("BackgroundStop")!.execute("call-1", { task_id: "bg_doesnotexist" }, undefined, undefined, toolCtx());
     } catch (e) {
       error = e;
     }
@@ -620,10 +643,10 @@ describe("exit hook sharing across re-evaluations (N4)", () => {
 });
 
 describe("tasks command registration", () => {
-  test("registers /tasks once, with no xtrm- slug and no tool-name collisions", () => {
+  test("registers /bg once, with no xtrm- slug and no tool-name collisions", () => {
     const { pi, tools, commands } = fakePi();
     startService(pi);
-    expect([...commands.keys()]).toEqual(["tasks"]);
+    expect([...commands.keys()]).toEqual(["bg"]);
     expect(tools.has("tasks")).toBe(false);
     for (const name of ["bash", "read", "edit", "write", "find", "grep", "ls"]) {
       expect(tools.has(name)).toBe(false);
@@ -806,7 +829,7 @@ describe("stop-then-quit", () => {
     const taskId = String((result.details as Record<string, unknown>).task_id);
     const pid = service.store.get(taskId)?.pid;
     expect(pid).toBeGreaterThan(0);
-    await tools.get("TaskStop")!.execute("call-2", { task_id: taskId }, undefined, undefined, toolCtx());
+    await tools.get("BackgroundStop")!.execute("call-2", { task_id: taskId }, undefined, undefined, toolCtx());
     service.close();
     expect(service.store.get(taskId)?.status).toBe("stopped");
     await until(() => procGone(pid as number), 10000);

@@ -32,8 +32,8 @@ function sequentialIds(prefix = "bg") {
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
 
 describe("tasks command parsing", () => {
-  test("bare /tasks opens; the command name carries no xtrm- slug", () => {
-    expect(TASKS_COMMAND).toBe("tasks");
+  test("bare /bg opens; the command name carries no xtrm- slug", () => {
+    expect(TASKS_COMMAND).toBe("bg");
     expect(TASKS_COMMAND.includes("xtrm")).toBe(false);
     expect(parseTasksArgs("")).toEqual({ action: "open" });
     expect(parseTasksArgs("   ")).toEqual({ action: "open" });
@@ -51,7 +51,7 @@ describe("tasks command parsing", () => {
     for (const args of ["stop", "output", "rerun", "bogus", "stop a b", "clear now"]) {
       expect(parseTasksArgs(args)).toEqual({ action: "usage" });
     }
-    expect(TASKS_USAGE).toMatch(/\/tasks/);
+    expect(TASKS_USAGE).toMatch(/\/bg/);
     expect(TASKS_USAGE).toMatch(/stop/);
     expect(TASKS_USAGE).toMatch(/output/);
     expect(TASKS_USAGE).toMatch(/rerun/);
@@ -598,7 +598,7 @@ describe("tasks text forms", () => {
     expect(notified[notified.length - 1]?.type).toBe("error");
   });
 
-  test("bare /tasks without a TUI notifies the list and marks failures seen", async () => {
+  test("bare /bg without a TUI notifies the list and marks failures seen", async () => {
     const { notified, ctx, deps, store, task } = textDeps();
     task.status = "failed";
     task.endedAt = NOW + 1000;
@@ -613,16 +613,16 @@ describe("tasks text forms", () => {
     const { notified, ctx, deps, store } = textDeps();
     const before = store.list().length;
     await runTasksCommand("bogus", ctx, deps);
-    expect(notified[notified.length - 1]?.message).toMatch(/\/tasks/);
+    expect(notified[notified.length - 1]?.message).toMatch(/\/bg/);
     expect(store.list()).toHaveLength(before);
   });
 
-  test("registerTasksCommand registers tasks and nothing else", () => {
+  test("registerTasksCommand registers bg and nothing else (CORE-2456: /tasks lives in pi-tasks)", () => {
     const commands = new Map<string, unknown>();
     const pi = { registerCommand: (name: string, options: unknown) => commands.set(name, options) };
     const { deps } = textDeps();
     registerTasksCommand(pi as never, { store: deps.store, stopTask: deps.stopTask, rerunTask: deps.rerunTask, readOutputView: deps.readOutputView });
-    expect([...commands.keys()]).toEqual(["tasks"]);
+    expect([...commands.keys()]).toEqual(["bg"]);
   });
 });
 

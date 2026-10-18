@@ -142,7 +142,7 @@ For full Substrate workflow details, load `/using-xtrm` and use `sb --help`, `sb
 | Hook work | `/hook-development` |
 | Service routing | `/scope`, `/using-service-skills` when service territories exist |
 | GitNexus exploration/debug/refactor | matching `/gitnexus-*` skill |
-| Pi long-running commands | `/tasks` and the prompt indicator; start with `BashBackground`, watch with `Monitor`, stop with `TaskStop` |
+| Pi long-running commands | `/bg` and the prompt indicator; start with `BashBackground`, watch with `Monitor`, stop with `BackgroundStop` |
 
 ## Project map
 
