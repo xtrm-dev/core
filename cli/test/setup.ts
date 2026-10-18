@@ -132,6 +132,23 @@ process.env.PI_AGENT_DIR = path.join(sandboxHome, '.pi', 'agent');
 process.env.PI_CODING_AGENT_DIR = process.env.PI_AGENT_DIR;
 process.env.CLAUDE_CONFIG_DIR = path.join(sandboxHome, '.claude');
 
+// CORE-2450: a real `npm install -g @jaggerxtrm/substrate` once landed
+// cli/bin/sb and cli/lib/node_modules in checkouts during suite runs. Fail the
+// suite the moment either path appears; the test that created it is blamed.
+const cliDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const strayInstallPaths = [path.join(cliDir, 'bin'), path.join(cliDir, 'lib', 'node_modules')];
+
+function assertNoStrayGlobalInstall(): void {
+  const found = strayInstallPaths.filter(p => fsSync.existsSync(p));
+  if (found.length > 0) {
+    throw new Error(
+      `test setup: ${found.join(', ')} appeared during the suite. A test ran a real `
+      + '`npm install -g` with an npm prefix inside the repo (CORE-2450). Stub npm '
+      + 'or inject the runner; never allow a real global install in tests.',
+    );
+  }
+}
+
 // A stale /tmp/.git makes git treat /tmp as a project root. FAIL-CLOSED guard
 // (exact-06ca security): the test setup must never MUTATE the host — it
 // asserts /tmp/.git is absent (a stale one fails the suite loudly, telling the
@@ -181,5 +198,6 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await assertNoTmpGitPollution();
+  assertNoStrayGlobalInstall();
   await assertRealHomeUntouched();
 });
