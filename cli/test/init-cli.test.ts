@@ -54,6 +54,12 @@ beforeAll(() => {
     const fakeCommands: Record<string, string> = {
         sb: '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "sb 0.0.0-init-test"; elif [ "$1" = "init" ]; then touch "${SB_STATE_FILE:-/nonexistent}"; echo \'{"schema":"substrate-cli/v1","command":"init","ok":true,"data":{"project":{"id":"XTRM-1"}}}\' ; elif [ "$1" = "doctor" ]; then if [ -f "${SB_STATE_FILE:-/nonexistent}" ]; then echo \'{"schema":"substrate-cli/v1","command":"doctor","ok":true,"data":{"dbPath":"x","schemaHealthy":true,"link":{"projectId":"XTRM-1","source":"link"}}}\'; else echo \'{"schema":"substrate-cli/v1","command":"doctor","ok":true,"data":{"dbPath":"x","schemaHealthy":true,"link":null,"linkError":"none"}}\'; fi; elif [ "$1" = "project" ]; then touch "${SB_STATE_FILE:-/nonexistent}"; if [ "$2" = "create" ]; then echo \'{"id":"prj_initcli"}\'; else echo ok; fi; else echo "{}"; fi\n',
         pi: '#!/bin/sh\necho "pi 0.0.0-init-test"\n',
+        // CORE-2450: `xt init --yes` runs real dependency maintenance. The fake
+        // sb/gitnexus are 0.0.0-init-test, so a real `npm view` (latest 0.x)
+        // reports them outdated and triggers a real network `npm install -g`.
+        // Fake npm answers `view` with the fake version (tools stay current)
+        // and fails everything else, so no install can run.
+        npm: '#!/bin/sh\necho "$*" >> "' + path.join(__sandboxBin, 'npm-argv.log') + '"\nif [ "$1" = "view" ]; then echo "0.0.0-init-test"; exit 0; fi\nexit 1\n',
         pnpm: '#!/bin/sh\necho "pnpm 0.0.0-init-test"\n',
         deepwiki: '#!/bin/sh\necho "deepwiki 0.0.0-init-test"\n',
         ctx7: '#!/bin/sh\necho "ctx7 0.0.0-init-test"\n',
@@ -258,6 +264,10 @@ describe('xt init banner non-blocking', () => {
         expect(combined).not.toMatch(/press any key|continue\?|Proceed with xtrm init\?/i);
         expect(r.status).toBe(0);
         expect(combined).toContain('sb init');
+        // CORE-2450: no global install may be attempted.
+        const npmLog = path.join(__sandboxBin, 'npm-argv.log');
+        const npmCalls = fs.existsSync(npmLog) ? fs.readFileSync(npmLog, 'utf8') : '';
+        expect(npmCalls).not.toMatch(/\binstall\b/);
     }, 120000);
 
     it('xt init help exposes no project-identity flags (R4 normal UX)', () => {

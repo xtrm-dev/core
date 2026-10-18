@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import kleur from 'kleur';
 import { getSbDoctorJson, getSbVersion } from './substrate.js';
 
@@ -105,7 +107,20 @@ function upgradeTool(tool: ToolMaintenanceStatus, cwd: string): ToolMaintenanceS
     return { ...tool, state: 'skipped', message: 'major upgrade requires operator confirmation' };
   }
 
-  const install = run('npm', ['install', '-g', tool.packageName], cwd, 120000);
+  // CORE-2450: never let an inherited npm prefix (npm_config_prefix, a
+  // workspace/npm-script environment) steer a global install into the repo.
+  // Resolve the prefix once, refuse repo-local ones, and pass it explicitly.
+  const resolved = run('npm', ['prefix', '-g'], cwd, 10000);
+  const prefix = resolved.status === 0 ? String(resolved.stdout ?? '').trim() : '';
+  const real = (p: string): string => {
+    try { return fs.realpathSync(p); } catch { return path.resolve(p); }
+  };
+  const rel = prefix ? path.relative(real(cwd), real(prefix)) : '';
+  if (!prefix || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))) {
+    return { ...tool, state: 'skipped', message: `global npm prefix unresolved or inside the repo (${prefix || 'unknown'})` };
+  }
+
+  const install = run('npm', ['install', '-g', '--prefix', prefix, tool.packageName], cwd, 120000);
   if (install.status !== 0) {
     return {
       ...tool,
