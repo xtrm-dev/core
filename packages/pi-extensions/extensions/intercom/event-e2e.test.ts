@@ -150,7 +150,7 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
           sessionManager: { getSessionId: () => "s-e2e-sender" },
         } as never;
         const r = await tool.execute("c1", { to: "e2ebob", message: "hello e2e" }, undefined, undefined, senderCtx);
-        expect(String(r.content[0].text)).toContain("Delivered to e2ebob");
+        expect(String(r.content[0].text)).toContain("Delivered to Pi session e2ebob");
 
         const injected = receiver.sentCustom.filter(
           (s) => (s.message as { customType?: string })?.customType === "intercom_message",
@@ -229,7 +229,7 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
           sessionManager: { getSessionId: () => "s-e2e-sender" },
         } as never;
         const r = await tool.execute("c1", { to: "cass", message: "hello claude" }, undefined, undefined, senderCtx);
-        expect(String(r.content[0].text)).toContain("Delivered to cass");
+        expect(String(r.content[0].text)).toContain("Delivered to Claude session cass");
         expect(got).toHaveLength(1);
         expect(got[0].body).toContain("hello claude");
         expect(String(r.content[0].text)).not.toMatch(/\u001b/);

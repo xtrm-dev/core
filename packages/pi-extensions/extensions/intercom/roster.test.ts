@@ -75,7 +75,7 @@ describe("ListAgents row format (CORE-2435 I4, Claude Code parity)", () => {
     );
     const lines = text.split("\n");
     expect(lines[1]).toBe("Peer sessions (1):");
-    expect(lines[2]).toBe(`  worker-one [${PI_REF}]  ·  interactive  ·  idle  ·  tmux xtrm-rc:%29  ·  started 3h ago`);
+    expect(lines[2]).toBe(`  worker-one [${PI_REF}]  ·  pi  ·  idle  ·  tmux xtrm-rc:%29  ·  started 3h ago`);
   });
 
   test("a Claude peer row reads its tmux locator verbatim, in Claude's shape", () => {
@@ -91,7 +91,7 @@ describe("ListAgents row format (CORE-2435 I4, Claude Code parity)", () => {
 
   test("rows without a tmux locator omit the where segment: never the cwd", () => {
     const piRow = roster.formatRosterRow(roster.piRosterRow(piSummary({ tmux: undefined }), NOW), NOW);
-    expect(piRow).toBe(`  worker-one [${PI_REF}]  ·  interactive  ·  idle  ·  started 3h ago`);
+    expect(piRow).toBe(`  worker-one [${PI_REF}]  ·  pi  ·  idle  ·  started 3h ago`);
     expect(piRow).not.toContain("/tmp/work");
     const claudeRow = roster.formatRosterRow(roster.claudeRosterRow(claudePeer({ tmux: undefined }), NOW), NOW);
     expect(claudeRow).toBe(`  helper [${CLAUDE_REF}]  ·  interactive  ·  idle  ·  started 2h ago`);
@@ -216,7 +216,7 @@ describe("R7 exact-name resolution", () => {
     const miss = roster.resolveRosterTarget(entries, "worker-");
     expect(miss.target).toBeUndefined();
     expect(miss.error).toMatch(/no live session matches "worker-"/);
-    expect(miss.candidates).toContain("worker-one");
+    expect(miss.candidates).toEqual(["worker-one (Pi session)", "worker-two (Pi session)", "worker-one (Claude session)"]);
   });
 });
 

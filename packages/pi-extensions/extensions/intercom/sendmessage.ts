@@ -45,7 +45,7 @@ import { onWakeInjected, type InjectedWakeNotice } from "../xtrm-agent-host/inde
 import { requestFooterRender } from "../custom-footer/index.ts";
 import { buildIntercomWakeContent } from "./delivery.ts";
 import { buildDeliveryNotice, buildIdleNotice } from "../../shared/event.ts";
-import { buildRoster, fetchPiSessions, resolveRosterTarget, type RosterEntry } from "./roster.ts";
+import { buildRoster, fetchPiSessions, legWord, resolveRosterTarget, type RosterEntry } from "./roster.ts";
 import {
   claudeReceipts,
   isClaudeTransportEnabled,
@@ -755,8 +755,18 @@ export function __resetSendMessageState(): void {
 }
 
 /** Delivery notice per wake state (CORE-2438 I7: built by the shared event module). */
-function deliveryNotice(state: WakeDeliveryState, name: string, messageId: string): string {
-  return buildDeliveryNotice(state, name, messageId);
+/** Name a session with its leg, so Pi and Claude targets never read alike. */
+function sessionLabel(target: Pick<RosterEntry, "name" | "kind">): string {
+  return `${legWord(target.kind)} session ${target.name}`;
+}
+
+function deliveryNotice(
+  state: WakeDeliveryState,
+  name: string,
+  messageId: string,
+  kind: RosterEntry["kind"] = "pi",
+): string {
+  return buildDeliveryNotice(state, `${name} (${legWord(kind)} session)`, messageId);
 }
 
 export interface SendMessageDetails {
@@ -1006,12 +1016,12 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           const waited = expectReply
             ? " The ask did not wait: replies from Claude sessions arrive as new messages."
             : "";
-          return ok(`Delivered to ${target.name} (message ${messageId}).${waited}`, {
+          return ok(`Delivered to ${sessionLabel(target)} (message ${messageId}).${waited}`, {
             message: { id: messageId, state: "delivered", to: target.name },
             ...(expectReply ? { ask: "not-waited" as const } : {}),
           });
         }
-        return ok(deliveryNotice(receipt === "held" ? "held" : "refused", target.name, messageId), {
+        return ok(deliveryNotice(receipt === "held" ? "held" : "refused", target.name, messageId, target.kind), {
           message: { id: messageId, state: receipt, to: target.name },
         });
       }
@@ -1059,15 +1069,15 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       const details: SendMessageDetails = { message: { id: sent.messageId, state, to: target.name } };
       if (state === "delivered") {
         noteDelivered(target.name);
-        let text = `Delivered to ${target.name} (message ${sent.messageId}).`;
-        if (notifyWhenIdle) text += ` You will get one idle notice when ${target.name} goes idle.`;
+        let text = `Delivered to ${sessionLabel(target)} (message ${sent.messageId}).`;
+        if (notifyWhenIdle) text += ` You will get one idle notice when ${sessionLabel(target)} goes idle.`;
         if (!expectReply) return ok(text, details);
         return ask!.promise;
       }
       if (state === "queued") {
         if (!expectReply) {
           return ok(
-            `Sent to ${target.name} (message ${sent.messageId}); last known state: queued — the session has the frame but has not answered yet.`,
+            `Sent to ${sessionLabel(target)} (message ${sent.messageId}); last known state: queued — the session has the frame but has not answered yet.`,
             details,
           );
         }
@@ -1076,16 +1086,16 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       if (state === "held") {
         if (expectReply) {
           // Held now, still answerable later: the ask waits for the flush.
-          const heldText = deliveryNotice(state, target.name, sent.messageId);
+          const heldText = deliveryNotice(state, target.name, sent.messageId, target.kind);
           const reply = await ask!.promise;
           if (reply.details.ask === "replied") return reply;
           return ok(`${heldText} ${reply.content[0].text}`, { message: details.message, ask: reply.details.ask });
         }
-        return ok(deliveryNotice(state, target.name, sent.messageId), details);
+        return ok(deliveryNotice(state, target.name, sent.messageId, target.kind), details);
       }
       if (state === "undelivered" || state === "expired") noteUndelivered(target.name, sent.messageId);
       ask?.disarm();
-      return ok(deliveryNotice(state, target.name, sent.messageId), details);
+      return ok(deliveryNotice(state, target.name, sent.messageId, target.kind), details);
     },
   });
 
@@ -1122,7 +1132,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           /* the timeout text stands on its own */
         }
         done(
-          `Ask to ${target.name} timed out after ${timeoutS} s (last known state: ${lastKnown}). ` +
+          `Ask to ${sessionLabel(target)} timed out after ${timeoutS} s (last known state: ${lastKnown}). ` +
             `This waiter timeout is not cancellation; the delivered message may still be queued or actionable in the recipient session.`,
           "timeout",
         );
