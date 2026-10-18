@@ -59111,6 +59111,18 @@ function buildAgentEnv(paneOptions) {
   }
   return env3;
 }
+var INITIAL_PROMPT_ENV = "XTRM_INITIAL_PROMPT";
+function hasInitialPromptForLaunch(opts) {
+  return Boolean(opts.prompt) || Boolean(opts.role && opts.bead);
+}
+function stripInitialPromptEnv(env3) {
+  const out = { ...env3 };
+  delete out[INITIAL_PROMPT_ENV];
+  return out;
+}
+function piInitialPromptEnv(runtime, hasInitialPrompt) {
+  return runtime === "pi" && hasInitialPrompt ? { [INITIAL_PROMPT_ENV]: "1" } : {};
+}
 var LAUNCH_FORWARDED_ENV = [
   "XTRM_SUBSTRATE_DIR",
   "XTRM_AGENT_LAUNCH",
@@ -59709,6 +59721,7 @@ async function launchWorktreeSession(opts) {
     rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher);
     throw error51;
   }
+  const hasInitialPrompt = hasInitialPromptForLaunch({ prompt, role: roleName, bead });
   const common = {
     runtime,
     runtimeExecutable,
@@ -59729,7 +59742,8 @@ async function launchWorktreeSession(opts) {
     parent: opts.parent,
     child,
     json: structuredOutput,
-    window: Boolean(opts.window)
+    window: Boolean(opts.window),
+    hasInitialPrompt
   };
   if (resolvedRole) {
     await launchTmuxSession({ ...common, mode: "role", role: resolvedRole, renderedTask });
@@ -59752,7 +59766,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process4.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug) }
+    env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug), ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -59809,7 +59823,8 @@ async function launchTmuxSession(args) {
     child,
     reuse,
     json: structuredOutput = false,
-    window = false
+    window = false,
+    hasInitialPrompt = false
   } = args;
   const insideTmux = Boolean(process.env.TMUX);
   const currentPaneMode = insideTmux && !newSession && !window && (args.mode === "role" || attach);
@@ -59858,6 +59873,7 @@ async function launchTmuxSession(args) {
   const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(" ");
   const agentEnv = buildAgentEnv(plan.paneOptions);
   const dispatcherEnv = buildDispatcherEnv(sessionSlug);
+  const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
   if (currentPaneMode) {
     const sessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
     const paneQuery = (0, import_node_child_process4.spawnSync)("tmux", ["display-message", "-p", "#{pane_id}"], {
@@ -59894,7 +59910,7 @@ async function launchTmuxSession(args) {
       const runtimeResult = (0, import_node_child_process4.spawnSync)(runtimeExecutable, plan.runtimeArgs, {
         cwd: worktreePath,
         stdio: "inherit",
-        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv }
+        env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv }
       });
       process.exit(runtimeResult.status ?? 0);
     }
@@ -59902,7 +59918,7 @@ async function launchTmuxSession(args) {
     const runtimeProcess = (0, import_node_child_process4.spawn)(runtimeExecutable, plan.runtimeArgs, {
       cwd: worktreePath,
       stdio: "inherit",
-      env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv }
+      env: { ...stripInitialPromptEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv }
     });
     const runtimeExit = new Promise((resolve6) => {
       runtimeProcess.once("error", () => resolve6(1));
@@ -59957,7 +59973,7 @@ async function launchTmuxSession(args) {
   const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
   const newSessionIdentityEnv = windowIdentity ? buildSessionIdentityEnv(windowIdentity) : buildSessionIdentityEnv({ sessionName: plan.sessionName });
   const envArgs = [];
-  for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv })) {
+  for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv, ...initialPromptEnv })) {
     envArgs.push("-e", `${k}=${v}`);
   }
   for (const [k, v] of Object.entries(forwardedLaunchEnv())) envArgs.push("-e", `${k}=${v}`);
@@ -79990,6 +80006,7 @@ var AgentHostLauncher = class {
   async launchPi(cwd, options, parent) {
     const sessionName = options.name ?? `pi-${(0, import_node_crypto18.randomBytes)(3).toString("hex")}`;
     const envArgs = ["-e", `${LAUNCH_ENV}=gui`];
+    if (options.prompt) envArgs.push("-e", `${INITIAL_PROMPT_ENV}=1`);
     for (const [key, value] of Object.entries(forwardedLaunchEnv(this.env))) {
       if (key !== LAUNCH_ENV) envArgs.push("-e", `${key}=${value}`);
     }

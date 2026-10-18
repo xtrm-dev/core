@@ -20,7 +20,7 @@ import path from 'node:path';
 import { validate } from '@xtrm/contracts';
 import type { AgentHostApiV1, CommandOutcomeV1 } from '@xtrm/contracts';
 import { action } from './launch-outcome.js';
-import { forwardedLaunchEnv } from '../utils/worktree-session.js';
+import { INITIAL_PROMPT_ENV, forwardedLaunchEnv } from '../utils/worktree-session.js';
 
 export type LaunchRequest = Extract<AgentHostApiV1, { kind: 'launch_request' }>;
 export type LaunchResult = Extract<AgentHostApiV1, { kind: 'launch_result' }>;
@@ -226,6 +226,9 @@ export class AgentHostLauncher {
     private async launchPi(cwd: string, options: LaunchOptions, parent: string | null): Promise<LaunchResult> {
         const sessionName = options.name ?? `pi-${randomBytes(3).toString('hex')}`;
         const envArgs: string[] = ['-e', `${LAUNCH_ENV}=gui`];
+        // CORE-2454: bare `pi` carries no system prompt; a --prompt option is
+        // the initial prompt, so the Pi process gets XTRM_INITIAL_PROMPT=1.
+        if (options.prompt) envArgs.push('-e', `${INITIAL_PROMPT_ENV}=1`);
         for (const [key, value] of Object.entries(forwardedLaunchEnv(this.env))) {
             if (key !== LAUNCH_ENV) envArgs.push('-e', `${key}=${value}`);
         }
