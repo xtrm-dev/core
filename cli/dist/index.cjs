@@ -56706,7 +56706,6 @@ async function dropRetiredM1Entries(settingsPath, dryRun, log) {
     return true;
   }
   await backupSettingsOnce(settingsPath, log);
-  await backupSettingsOnce(settingsPath, log);
   const kept = packages.filter((entry) => !isRetiredM1Package(entry));
   const tmpPath = `${settingsPath}.tmp-m1-retire`;
   await import_fs_extra13.default.writeFile(tmpPath, serializeLikeOriginal(text, { ...settings, packages: kept }), "utf8");
@@ -56714,6 +56713,36 @@ async function dropRetiredM1Entries(settingsPath, dryRun, log) {
   for (const entry of packages.filter(isRetiredM1Package)) {
     log?.(kleur_default.dim(`Removed ${packageEntrySpec(entry)} from ${settingsPath}`));
   }
+  return true;
+}
+async function dropRetiredM1NpmDeps(agentDir, dryRun, log) {
+  const manifestPath = import_path3.default.join(agentDir, "npm", "package.json");
+  let text;
+  let manifest;
+  try {
+    text = await import_fs_extra13.default.readFile(manifestPath, "utf8");
+    manifest = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) return false;
+  const deps = manifest.dependencies;
+  if (!deps || typeof deps !== "object") return false;
+  const doomed = RETIRED_M1_NPM_PACKAGES.filter((name) => typeof deps[name] === "string");
+  if (doomed.length === 0) return false;
+  if (dryRun) {
+    log?.(kleur_default.dim(`[DRY RUN] would remove ${doomed.join(", ")} from ${manifestPath}`));
+    return true;
+  }
+  await backupSettingsOnce(manifestPath, log);
+  const kept = {};
+  for (const [name, version3] of Object.entries(deps)) {
+    if (!RETIRED_M1_NPM_PACKAGES.includes(name)) kept[name] = version3;
+  }
+  const tmpPath = `${manifestPath}.tmp-m1-retire`;
+  await import_fs_extra13.default.writeFile(tmpPath, serializeLikeOriginal(text, { ...manifest, dependencies: kept }), "utf8");
+  await import_fs_extra13.default.move(tmpPath, manifestPath, { overwrite: true });
+  for (const name of doomed) log?.(kleur_default.dim(`Removed ${name} from ${manifestPath}`));
   return true;
 }
 async function removeRetiredM1Packages(dryRun, log, agentDir = resolvePiAgentDir(), projectRoots) {
@@ -56733,6 +56762,7 @@ async function removeRetiredM1Packages(dryRun, log, agentDir = resolvePiAgentDir
     log?.(kleur_default.dim(`Removed retired M1 package at ${retiredPath}`));
   }
   const settingsFiles = [];
+  const npmManifests = [];
   const roots = projectRoots === void 0 ? [] : Array.isArray(projectRoots) ? projectRoots : [projectRoots];
   for (const settingsPath of [
     // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaf is constant.
@@ -56742,12 +56772,14 @@ async function removeRetiredM1Packages(dryRun, log, agentDir = resolvePiAgentDir
   ]) {
     if (await dropRetiredM1Entries(settingsPath, dryRun, log)) settingsFiles.push(settingsPath);
   }
+  if (await dropRetiredM1NpmDeps(agentDir, dryRun, log)) npmManifests.push(import_path3.default.join(agentDir, "npm", "package.json"));
   return {
     paths,
     removedPaths,
-    found: presentPaths.length > 0 || settingsFiles.length > 0,
-    removed: !dryRun && (removedPaths.length > 0 || settingsFiles.length > 0),
-    settingsFiles
+    found: presentPaths.length > 0 || settingsFiles.length > 0 || npmManifests.length > 0,
+    removed: !dryRun && (removedPaths.length > 0 || settingsFiles.length > 0 || npmManifests.length > 0),
+    settingsFiles,
+    npmManifests
   };
 }
 async function runPiLaunchPreflight(projectRoot, dryRun, log) {
@@ -73746,6 +73778,9 @@ function printPiPackages(packageAssurance) {
   if (packageAssurance.retiredM1?.found) {
     for (const settingsFile of packageAssurance.retiredM1.settingsFiles) {
       console.log(kleur_default.dim(`  retired M1 packages swept from ${settingsFile}`));
+    }
+    for (const manifest of packageAssurance.retiredM1.npmManifests ?? []) {
+      console.log(kleur_default.dim(`  retired M1 npm deps swept from ${manifest}`));
     }
     for (const removedPath of packageAssurance.retiredM1.removedPaths) {
       console.log(kleur_default.dim(`  retired M1 package dir removed: ${removedPath}`));
