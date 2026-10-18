@@ -48,6 +48,7 @@ import { buildDeliveryNotice, buildIdleNotice } from "../../shared/event.ts";
 import { buildRoster, fetchPiSessions, legWord, resolveRosterTarget, type RosterEntry } from "./roster.ts";
 import {
   claudeReceipts,
+  isClaudeReceiptTimeout,
   isClaudeTransportEnabled,
   listClaudeSessions,
   sendToClaudeSession,
@@ -446,6 +447,11 @@ export interface SendMessageDeps {
   sessionsDir?: string;
   /** Force the Claude transport on/off; default reads settings/env. */
   claudeTransportEnabled?: boolean;
+  /**
+   * Our bound Claude socket, when the transport holds one (CORE-2465).
+   * The Claude leg addresses receipts to it; undefined while unbound.
+   */
+  getClaudeSocketPath?: () => string | undefined;
   postWake?: (req: WakeSendRequest) => Promise<WakeResult>;
   wakeStatus?: (messageId: string) => Promise<WakeResult | null>;
   sendClaude?: (opts: { sock: string; body: string; from: string; fromName: string; messageId: string }) => Promise<{
@@ -1001,15 +1007,28 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         if (notifyWhenIdle || replyTo) {
           return fail(`SendMessage: notify_when_idle and reply_to are not supported for Claude targets yet.`);
         }
-        // CORE-2436 I5 review: from is the resolvable address (the exact
-        // roster name, or the session id when unnamed: resolveRosterTarget
-        // accepts exact ids, so an unnamed sender stays addressable).
-        const from = ownName ?? ownSessionId;
+        // CORE-2465: receipts route to the sender's socket, so from must be
+        // our uds: address (pi-claude-link behavior), never the roster name:
+        // a bare name draws no ack and starves the receipt waiter. The human
+        // name stays in fromName. (The Pi leg below still uses the resolvable
+        // roster address, per the CORE-2436 I5 review.)
+        const ownClaudeSock = deps.getClaudeSocketPath?.();
+        const from = ownClaudeSock ? `uds:${ownClaudeSock}` : (ownName ?? ownSessionId);
+        const fromName = ownName ?? ownSessionId;
         const messageId = randomId();
         let receipt: ClaudeDeliveryOutcome;
         try {
-          receipt = (await sendClaude({ sock, body, from, fromName: from, messageId })).outcome;
+          receipt = (await sendClaude({ sock, body, from, fromName, messageId })).outcome;
         } catch (error) {
+          // A starved receipt wait means the frame flushed but the outcome is
+          // unknown: report unconfirmed (pi-intercom wording), never failed,
+          // and never invite a retry that would deliver twice.
+          if (isClaudeReceiptTimeout(error)) {
+            return ok(
+              `Sent to ${sessionLabel(target)} (message ${messageId}); delivery could not be confirmed: ${(error as Error)?.message ?? String(error)}. The message may still arrive — do not resend it, or it may deliver twice.`,
+              { message: { id: messageId, state: "unconfirmed", to: target.name } },
+            );
+          }
           return fail(`SendMessage: could not send to "${to}": ${(error as Error)?.message ?? String(error)}.`);
         }
         if (receipt === "delivered") {

@@ -450,6 +450,61 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     expect(String(r.content[0].text)).toContain("Delivered to Claude session cass");
     expect(String(r.content[0].text)).toMatch(/did not wait/);
   });
+
+  test("the Claude leg sends our uds: address so receipts route back (CORE-2465)", async () => {
+    const sent: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
+      claudeTransportEnabled: true,
+      getClaudeSocketPath: () => "/tmp/own.sock",
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session cass");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ sock: "/tmp/cass.sock", from: "uds:/tmp/own.sock", fromName: "coordinator", body: "hi" });
+  });
+
+  test("without a bound socket the roster name stays the fallback", async () => {
+    const sent: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
+      claudeTransportEnabled: true,
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(sent[0]).toMatchObject({ from: "coordinator", fromName: "coordinator" });
+  });
+
+  test("a starved receipt reports unconfirmed, never failed, no retry (CORE-2465)", async () => {
+    const transport = await import("./claude-transport/index.ts");
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
+      claudeTransportEnabled: true,
+      getClaudeSocketPath: () => "/tmp/own.sock",
+      sendClaude: async () => {
+        throw new transport.ClaudeReceiptTimeoutError("m-test-1");
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    const text = String(r.content[0].text);
+    expect(text).toMatch(/could not be confirmed/);
+    expect(text).toMatch(/do not resend/);
+    expect(r.details.message).toMatchObject({ id: "m-test-1", state: "unconfirmed", to: "cass" });
+  });
 });
 
 describe("SendMessage envelope (CORE-2436 I5, ADR D3)", () => {

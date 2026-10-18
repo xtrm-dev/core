@@ -293,6 +293,25 @@ export async function bindClaudeTransportSocket(
 }
 
 /**
+ * A receipt wait that outlived its budget (CORE-2465). The frame was
+ * flushed; only the async receipt is missing, so callers must report
+ * unconfirmed — never failed — and must not invite a retry.
+ */
+export class ClaudeReceiptTimeoutError extends Error {
+  readonly messageId: string;
+  constructor(messageId: string) {
+    super(`timed out waiting for a Claude receipt for message ${messageId}`);
+    this.name = "ClaudeReceiptTimeoutError";
+    this.messageId = messageId;
+  }
+}
+
+/** True for a starved receipt wait (frame flushed, outcome unknown). */
+export function isClaudeReceiptTimeout(error: unknown): boolean {
+  return error instanceof ClaudeReceiptTimeoutError;
+}
+
+/**
  * Await Claude's async receipts for sent messages, keyed by the original
  * message id. Rejects on timeout instead of hanging a turn.
  */
@@ -303,7 +322,7 @@ export class ClaudeReceiptWaiter {
     return new Promise<ClaudeDeliveryOutcome>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(messageId);
-        reject(new Error(`timed out waiting for a Claude receipt for message ${messageId}`));
+        reject(new ClaudeReceiptTimeoutError(messageId));
       }, timeoutMs);
       this.pending.set(messageId, (receipt) => {
         clearTimeout(timer);
