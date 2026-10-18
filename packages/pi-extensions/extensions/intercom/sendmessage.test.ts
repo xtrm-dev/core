@@ -120,7 +120,7 @@ describe("SendMessage to Pi sessions (CORE-2436 I5)", () => {
     const { tool } = register(deps);
     const r = await tool.execute("c1", { to: "bob", message: "hello" }, undefined, undefined, fakeCtx("s-me"));
     expect(r.isError).toBeFalsy();
-    expect(String(r.content[0].text)).toContain("Delivered to bob");
+    expect(String(r.content[0].text)).toContain("Delivered to Pi session bob");
     expect(posted).toHaveLength(1);
     expect(posted[0]).toMatchObject({
       participant: "s-bob",
@@ -150,7 +150,7 @@ describe("SendMessage to Pi sessions (CORE-2436 I5)", () => {
     });
     const { tool } = register(deps);
     const r = await tool.execute("c1", { to: "bob", message: "hello" }, undefined, undefined, fakeCtx("s-me"));
-    expect(String(r.content[0].text)).toContain("Delivered to bob");
+    expect(String(r.content[0].text)).toContain("Delivered to Pi session bob");
   });
 
   test("unknown target names candidates, never sends", async () => {
@@ -413,7 +413,7 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     });
     const { tool } = register(deps);
     const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
-    expect(String(r.content[0].text)).toContain("Delivered to cass");
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session cass");
     expect(sent[0]).toMatchObject({ sock: "/tmp/cass.sock", body: "hi" });
   });
 
@@ -447,7 +447,7 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
       undefined,
       fakeCtx("s-me"),
     );
-    expect(String(r.content[0].text)).toContain("Delivered to cass");
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session cass");
     expect(String(r.content[0].text)).toMatch(/did not wait/);
   });
 });
@@ -660,7 +660,7 @@ describe("SendMessage live through the agent host (CORE-2436 I5)", () => {
 
       // Idle: the wake injects with triggerTurn and the sender sees delivered.
       const r1 = await tool.execute("c1", { to: "livebob", message: "hello live" }, undefined, undefined, sender);
-      expect(String(r1.content[0].text)).toContain("Delivered to livebob");
+      expect(String(r1.content[0].text)).toContain("Delivered to Pi session livebob");
       const idleInjected = sentCustom.filter((s) => (s.message as any)?.customType === "intercom_message");
       expect(idleInjected).toHaveLength(1);
       expect(idleInjected[0].options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
@@ -712,7 +712,7 @@ describe("SendMessage live through the agent host (CORE-2436 I5)", () => {
       // Busy: the same send queues as followUp-only, still accepted.
       idle = false;
       const r2 = await tool.execute("c2", { to: "livebob", message: "while busy" }, undefined, undefined, sender);
-      expect(String(r2.content[0].text)).toContain("Delivered to livebob");
+      expect(String(r2.content[0].text)).toContain("Delivered to Pi session livebob");
       expect(sentCustom).toHaveLength(2);
       expect(sentCustom[1].options).toEqual({ deliverAs: "followUp" });
       idle = true;

@@ -119,7 +119,7 @@ export function formatRosterRow(row: RosterRow, now: number = Date.now()): strin
   return `  ${segments.join("  ·  ")}`;
 }
 
-/** Pi registry summary to a roster row. Kind is always interactive: the same word this session advertises in Claude's registry. The where segment is tmux only, in Claude's shape; anything else is omitted, never the cwd. */
+/** Pi registry summary to a roster row. Kind is always pi: Pi rows name their leg, while Claude rows keep Claude's advertised kind (the wire advertisement toward Claude stays interactive). The where segment is tmux only, in Claude's shape; anything else is omitted, never the cwd. */
 export function piRosterRow(summary: AgentSessionSummary, _now?: number): RosterRow {
   const ref = sessionRef(summary.sessionId);
   const name = clean(summary.name) || `session ${ref}`;
@@ -130,7 +130,7 @@ export function piRosterRow(summary: AgentSessionSummary, _now?: number): Roster
   return {
     name,
     ref,
-    kind: "interactive",
+    kind: "pi",
     state: piSessionStateWord(summary.state),
     ...(where ? { where } : {}),
     ...(typeof summary.startedAt === "number" ? { started: summary.startedAt } : {}),
@@ -251,10 +251,15 @@ export interface ResolveMiss {
   candidates: string[];
 }
 
+/** Display leg of a roster entry: Pi sessions read Pi, everything else Claude. */
+export function legWord(kind: RosterEntry["kind"]): string {
+  return kind === "pi" ? "Pi" : "Claude";
+}
+
 /**
  * R7: exact session id wins, else an exact name. Several live sessions
  * under one name throw naming every candidate; a prefix that is not an
- * exact hit is an error, never a guess.
+ * exact hit is an error, never a guess. Candidates name their leg.
  */
 export function resolveRosterTarget(entries: RosterEntry[], nameOrId: string): { target: RosterEntry } | ResolveMiss {
   const byId = entries.find((entry) => entry.sessionId === nameOrId);
@@ -262,14 +267,14 @@ export function resolveRosterTarget(entries: RosterEntry[], nameOrId: string): {
   const named = entries.filter((entry) => entry.name === nameOrId);
   if (named.length > 1) {
     // Full session ids: the caller disambiguates by session id instead.
-    const candidates = named.map((entry) => `${entry.name} [${entry.sessionId ?? entry.kind}]`).join(", ");
+    const candidates = named.map((entry) => `${entry.name} [${entry.sessionId ?? entry.kind}] (${legWord(entry.kind)} session)`).join(", ");
     throw new Error(`ambiguous session "${nameOrId}": ${candidates}`);
   }
   const hit = named[0];
   if (!hit) {
     return {
       error: `no live session matches "${nameOrId}"`,
-      candidates: [...new Set(entries.map((entry) => entry.name))],
+      candidates: [...new Set(entries.map((entry) => `${entry.name} (${legWord(entry.kind)} session)`))],
     };
   }
   return { target: hit };
