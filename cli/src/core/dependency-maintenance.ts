@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import kleur from 'kleur';
 import { getSbDoctorJson, getSbVersion } from './substrate.js';
@@ -111,8 +112,11 @@ function upgradeTool(tool: ToolMaintenanceStatus, cwd: string): ToolMaintenanceS
   // Resolve the prefix once, refuse repo-local ones, and pass it explicitly.
   const resolved = run('npm', ['prefix', '-g'], cwd, 10000);
   const prefix = resolved.status === 0 ? String(resolved.stdout ?? '').trim() : '';
-  const rel = prefix ? path.relative(path.resolve(cwd), path.resolve(prefix)) : '';
-  if (!prefix || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+  const real = (p: string): string => {
+    try { return fs.realpathSync(p); } catch { return path.resolve(p); }
+  };
+  const rel = prefix ? path.relative(real(cwd), real(prefix)) : '';
+  if (!prefix || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))) {
     return { ...tool, state: 'skipped', message: `global npm prefix unresolved or inside the repo (${prefix || 'unknown'})` };
   }
 
