@@ -362,3 +362,48 @@ describe("shadow sockets and recent-Pi memo (CORE-2470)", () => {
     expect(built.entries[0]).not.toHaveProperty("shadowSock");
   });
 });
+
+describe("fetch retry on transport failure (CORE-2470)", () => {
+  async function stubServer(onRequest: (n: number, req: any, res: any) => void) {
+    const { createServer } = await import("node:http");
+    let hits = 0;
+    const server = createServer((req: any, res: any) => {
+      hits += 1;
+      onRequest(hits, req, res);
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    return { server, port: (server.address() as any).port, hits: () => hits };
+  }
+  const payloadFor = (id: string) => JSON.stringify({ kind: "session_list", sessions: [piSummary({ sessionId: id, name: "steady" })] });
+
+  test("a dropped first connection retries once and still lists", async () => {
+    const { server, port, hits } = await stubServer((n, req, res) => {
+      if (n === 1) {
+        (req.socket as any)?.destroy();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(payloadFor("sess-retry-1"));
+    });
+    try {
+      const sessions = await roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 2000 });
+      expect(hits()).toBe(2);
+      expect(sessions.some((s: any) => s.sessionId === "sess-retry-1")).toBe(true);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test("a persistent failure still reads empty after exactly one retry", async () => {
+    const { server, port, hits } = await stubServer((n, req) => {
+      (req.socket as any)?.destroy();
+    });
+    try {
+      const sessions = await roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 500 });
+      expect(hits()).toBe(2);
+      expect(sessions).toEqual([]);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+});

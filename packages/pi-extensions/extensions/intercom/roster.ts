@@ -369,44 +369,55 @@ export async function fetchPiSessions(options: FetchPiSessionsOptions = {}): Pro
   if (typeof address !== "string" || !isLoopbackAddress(address) || typeof port !== "number" || !(port > 0 && port < 65536)) {
     return [];
   }
-  return new Promise((resolve) => {
-    const done = (sessions: AgentSessionSummary[]) => resolve(sessions);
-    let settled = false;
-    const finish = (sessions: AgentSessionSummary[]) => {
-      if (!settled) {
-        settled = true;
-        done(sessions);
-      }
-    };
-    // CORE-2470: no pooled keep-alive on loopback control calls. The host
-    // closes idle keep-alive sockets after its keepAliveTimeout while the
-    // client pool still hands them out; reusing one races ECONNRESET and
-    // reads as an empty session list, which silently routes Pi peers via
-    // their Claude shadow. A fresh loopback connection costs ~0.1 ms.
-    const req = httpRequest({ host: address, port, path: "/v1/sessions", method: "GET", timeout: timeoutMs, agent: false }, (res) => {
-      let text = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk: string) => {
-        text += chunk;
-        if (text.length > 4 * 1024 * 1024) res.destroy();
-      });
-      res.on("end", () => {
-        try {
-          const reply = JSON.parse(text) as { kind?: unknown; sessions?: unknown };
-          if (reply.kind === "session_list" && Array.isArray(reply.sessions)) finish(reply.sessions as AgentSessionSummary[]);
-          else finish([]);
-        } catch {
-          finish([]);
+  // One attempt. Transport failures (error/timeout) report transportError;
+  // a well-formed but unexpected reply reads as an empty list, never an error.
+  const attempt = (): Promise<{ sessions: AgentSessionSummary[]; transportError: boolean }> =>
+    new Promise((resolve) => {
+      const done = (sessions: AgentSessionSummary[], transportError: boolean) => resolve({ sessions, transportError });
+      let settled = false;
+      const finish = (sessions: AgentSessionSummary[], transportError = false) => {
+        if (!settled) {
+          settled = true;
+          done(sessions, transportError);
         }
+      };
+      // CORE-2470: no pooled keep-alive on loopback control calls. The host
+      // closes idle keep-alive sockets after its keepAliveTimeout while the
+      // client pool still hands them out; reusing one races ECONNRESET and
+      // reads as an empty session list, which silently routes Pi peers via
+      // their Claude shadow. A fresh loopback connection costs ~0.1 ms.
+      const req = httpRequest({ host: address, port, path: "/v1/sessions", method: "GET", timeout: timeoutMs, agent: false }, (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => {
+          text += chunk;
+          if (text.length > 4 * 1024 * 1024) res.destroy();
+        });
+        res.on("end", () => {
+          try {
+            const reply = JSON.parse(text) as { kind?: unknown; sessions?: unknown };
+            if (reply.kind === "session_list" && Array.isArray(reply.sessions)) finish(reply.sessions as AgentSessionSummary[]);
+            else finish([]);
+          } catch {
+            finish([]);
+          }
+        });
       });
+      req.on("error", () => finish([], true));
+      req.on("timeout", () => {
+        req.destroy();
+        finish([], true);
+      });
+      req.end();
     });
-    req.on("error", () => finish([]));
-    req.on("timeout", () => {
-      req.destroy();
-      finish([]);
-    });
-    req.end();
-  });
+  const first = await attempt();
+  if (!first.transportError) return first.sessions;
+  // CORE-2470: a transient stall (slow host under load) reads as "no Pi
+  // sessions" and silently routes Pi peers via their Claude shadow. One
+  // bounded retry; a persistent failure keeps today's empty read (a down
+  // host stays loud via the ensure path, never here).
+  await new Promise((r) => setTimeout(r, 500));
+  return (await attempt()).sessions;
 }
 
 export interface ListAgentsDeps {
