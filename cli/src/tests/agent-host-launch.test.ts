@@ -216,7 +216,7 @@ describe('AgentHostLauncher (XTRM-566)', () => {
         const created = calls.find((c) => c.args[0] === 'new-session')!;
         expect(created.args).toEqual([
             'new-session', '-d', '-P', '-F', '#{session_id} #{pane_id}', '-s', 'gui-worker', '-c', dir,
-            '-e', 'XTRM_AGENT_LAUNCH=gui', '-e', 'XTRM_AGENT_HOST_SOCKET=/iso/host.sock', '-e', 'PI_CODING_AGENT_DIR=/iso/agent',
+            '-e', 'XTRM_AGENT_LAUNCH=gui', '-e', 'XTRM_INITIAL_PROMPT=1', '-e', 'XTRM_AGENT_HOST_SOCKET=/iso/host.sock', '-e', 'PI_CODING_AGENT_DIR=/iso/agent',
             '--', '/bin/pi', ...buildPiArgs(options, 'gui-worker'),
         ]);
         expect(calls.find((c) => c.args[0] === 'set-option')!.args).toEqual(['set-option', '-p', '-t', '%50', '@agent_parent_session', '$7']);

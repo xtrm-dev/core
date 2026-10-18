@@ -2207,6 +2207,35 @@ export function buildAgentEnv(
 }
 
 /**
+ * First-turn hold signal for Pi workers (CORE-2454 / I7). The Pi SDK 1.3.0
+ * exposes no initial-prompt signal, so the xtrm-agent-host hold only wakes
+ * before the first turn when argv carries -p/--print or this env is present.
+ * `xt pi` launches an interactive worker with an initial prompt but never
+ * passes -p/--print, so the launcher exports XTRM_INITIAL_PROMPT=1 to the
+ * Pi process exactly when it supplies one (--prompt, or --bead with --role).
+ * Pi launches without one get XTRM_INITIAL_PROMPT=0, which the reader treats
+ * as an explicit "no initial prompt".
+ */
+export const INITIAL_PROMPT_ENV = 'XTRM_INITIAL_PROMPT';
+
+export function hasInitialPromptForLaunch(opts: {
+    prompt?: string;
+    role?: string;
+    bead?: string;
+}): boolean {
+    return Boolean(opts.prompt) || Boolean(opts.role && opts.bead);
+}
+
+export function piInitialPromptEnv(
+    runtime: 'pi' | 'claude',
+    hasInitialPrompt: boolean,
+): Record<string, string> {
+    // Always explicit for Pi: '0' overrides a value inherited from a prompted
+    // parent or held in a tmux server's global env (tmux -e cannot unset).
+    return runtime === 'pi' ? { [INITIAL_PROMPT_ENV]: hasInitialPrompt ? '1' : '0' } : {};
+}
+
+/**
  * Caller environment a detached launch forwards into the new tmux session, which
  * otherwise inherits only the tmux server's environment.
  *
@@ -3169,6 +3198,9 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // a turn-1 body, a runtime override, bead metadata, passthrough argv, or
     // a detached/forced-new session. A plain `xt claude <name>` with none of
     // those still gets a plain runtime in the current terminal. xtrm-3xgs5.
+    // CORE-2454: --prompt, or --bead with --role, is an initial prompt and
+    // exports XTRM_INITIAL_PROMPT=1 to the Pi process; anything else does not.
+    const hasInitialPrompt = hasInitialPromptForLaunch({ prompt, role: roleName, bead });
     const common = {
         runtime,
         runtimeExecutable,
@@ -3190,6 +3222,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         child,
         json: structuredOutput,
         window: Boolean(opts.window),
+        hasInitialPrompt,
     };
 
     if (resolvedRole) {
@@ -3227,7 +3260,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug) },
+        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug), ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3305,6 +3338,8 @@ type TmuxLaunchArgs = {
     json?: boolean;
     /** Open as a detached window in the caller's tmux session. */
     window?: boolean;
+    /** True when the launch carries an initial user prompt (--prompt, or --bead with --role). */
+    hasInitialPrompt?: boolean;
 } & (
     | {
         mode: 'role';
@@ -3318,7 +3353,7 @@ type TmuxLaunchArgs = {
 async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const {
         runtime, runtimeExecutable, sessionDisplayName, sessionSlug, bead, attach, worktreePath, branchName, metadataPersisted, modelOverride, thinkingOverride, turn1Body, explicitSkillPaths = [], passthrough,
-        newSession, parent, child, reuse, json: structuredOutput = false, window = false,
+        newSession, parent, child, reuse, json: structuredOutput = false, window = false, hasInitialPrompt = false,
     } = args;
 
     const insideTmux = Boolean(process.env.TMUX);
@@ -3380,6 +3415,8 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const agentEnv = buildAgentEnv(plan.paneOptions);
     // CORE-2390: who dispatched this worker and its Substrate participant name.
     const dispatcherEnv = buildDispatcherEnv(sessionSlug);
+    // CORE-2454: first-turn hold signal — only Pi, only with an initial prompt.
+    const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
 
     if (currentPaneMode) {
         // XTRM-252.4: the current session is the launched session here, so
@@ -3426,7 +3463,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
-                env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv },
+                env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv },
             });
             process.exit(runtimeResult.status ?? 0);
         }
@@ -3437,7 +3474,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
             stdio: 'inherit',
-            env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv },
+            env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv },
         });
         const runtimeExit = new Promise<number>((resolve) => {
             runtimeProcess.once('error', () => resolve(1));
@@ -3513,7 +3550,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         ? buildSessionIdentityEnv(windowIdentity)
         : buildSessionIdentityEnv({ sessionName: plan.sessionName });
     const envArgs: string[] = [];
-    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv })) {
+    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv, ...initialPromptEnv })) {
         envArgs.push('-e', `${k}=${v}`);
     }
 
