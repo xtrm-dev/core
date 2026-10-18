@@ -329,6 +329,9 @@ function printPiPackages(packageAssurance: Awaited<ReturnType<typeof assureXtMan
         for (const settingsFile of packageAssurance.retiredM1.settingsFiles) {
             console.log(kleur.dim(`  retired M1 packages swept from ${settingsFile}`));
         }
+        for (const manifest of packageAssurance.retiredM1.npmManifests ?? []) {
+            console.log(kleur.dim(`  retired M1 npm deps swept from ${manifest}`));
+        }
         for (const removedPath of packageAssurance.retiredM1.removedPaths) {
             console.log(kleur.dim(`  retired M1 package dir removed: ${removedPath}`));
         }

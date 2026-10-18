@@ -634,6 +634,59 @@ describe('pi runtime safeguards', () => {
       expect(await fs.pathExists(path.join(agentDir, 'settings.json.tmp-m1-retire'))).toBe(false);
     });
 
+    it('cleans retired deps from the npm manifest so reinstalls cannot restore them', async () => {
+      const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'm1-npm-agent');
+      await fs.outputJson(path.join(agentDir, 'npm', 'package.json'), {
+        dependencies: {
+          'pi-intercom': '^0.17.0',
+          'pi-background-tasks': '^2.6.10',
+          '@aliou/pi-processes': '^0.13.0',
+          'pi-ast-grep': '^0.1.0',
+        },
+      });
+      const logs: string[] = [];
+
+      const result = await removeRetiredM1Packages(false, (message) => logs.push(message), agentDir);
+
+      expect(result.found).toBe(true);
+      expect(result.npmManifests).toEqual([path.join(agentDir, 'npm', 'package.json')]);
+      expect(await fs.readJson(path.join(agentDir, 'npm', 'package.json'))).toEqual({
+        dependencies: { 'pi-ast-grep': '^0.1.0' },
+      });
+      expect(await fs.pathExists(path.join(agentDir, 'npm', 'package.json.pre-m1-retire.bak'))).toBe(true);
+      expect(logs.join('\n')).toContain('Removed pi-intercom from');
+    });
+
+    it('leaves the npm manifest alone when absent, malformed, or clean', async () => {
+      const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
+      const missingDir = path.join(tempRoot, 'm1-npm-missing');
+      await fs.ensureDir(missingDir);
+      expect((await removeRetiredM1Packages(false, undefined, missingDir)).npmManifests ?? []).toEqual([]);
+      const brokenDir = path.join(tempRoot, 'm1-npm-broken');
+      await fs.ensureDir(path.join(brokenDir, 'npm'));
+      await fs.writeFile(path.join(brokenDir, 'npm', 'package.json'), 'not json', 'utf8');
+      expect((await removeRetiredM1Packages(false, undefined, brokenDir)).npmManifests ?? []).toEqual([]);
+      const cleanDir = path.join(tempRoot, 'm1-npm-clean');
+      await fs.outputJson(path.join(cleanDir, 'npm', 'package.json'), { dependencies: { 'pi-ast-grep': '^0.1.0' } });
+      const result = await removeRetiredM1Packages(false, undefined, cleanDir);
+      expect(result.npmManifests ?? []).toEqual([]);
+      expect((await fs.readJson(path.join(cleanDir, 'npm', 'package.json'))).dependencies).toEqual({ 'pi-ast-grep': '^0.1.0' });
+    });
+
+    it('reports the npm manifest in a dry run and writes nothing', async () => {
+      const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'm1-npm-dry');
+      await fs.outputJson(path.join(agentDir, 'npm', 'package.json'), { dependencies: { 'pi-intercom': '^0.17.0' } });
+      const logs: string[] = [];
+
+      const result = await removeRetiredM1Packages(true, (message) => logs.push(message), agentDir);
+
+      expect(result.npmManifests).toEqual([path.join(agentDir, 'npm', 'package.json')]);
+      expect((await fs.readJson(path.join(agentDir, 'npm', 'package.json'))).dependencies).toHaveProperty('pi-intercom');
+      expect(logs.join('\n')).toContain('would remove');
+    });
+
     it('never overwrites an existing backup', async () => {
       const { removeRetiredM1Packages } = await import('../core/pi-runtime.js');
       const agentDir = path.join(tempRoot, 'm1-bak-agent');

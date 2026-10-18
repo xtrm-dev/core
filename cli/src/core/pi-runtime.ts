@@ -1075,6 +1075,8 @@ export interface PiRetiredMcpAdapterRemoval {
     removed: boolean;
     /** Settings files whose `packages` list still named the retired package. */
     settingsFiles: string[];
+    /** npm manifests (`<agentDir>/npm/package.json`) cleaned of retired deps; M1 sweep only. */
+    npmManifests?: string[];
 }
 
 /** CORE-2443 M1 sweep result; same shape as the adapter sweep it mirrors. */
@@ -1290,7 +1292,6 @@ async function dropRetiredM1Entries(
         return true;
     }
     await backupSettingsOnce(settingsPath, log);
-    await backupSettingsOnce(settingsPath, log);
     const kept = packages.filter((entry) => !isRetiredM1Package(entry));
     // Atomic write: the backup above is the rollback; a crash mid-write must
     // never leave a half-written settings file behind.
@@ -1300,6 +1301,48 @@ async function dropRetiredM1Entries(
     for (const entry of packages.filter(isRetiredM1Package)) {
         log?.(kleur.dim(`Removed ${packageEntrySpec(entry)} from ${settingsPath}`));
     }
+    return true;
+}
+
+/**
+ * Drop the retired M1 npm packages from `<agentDir>/npm/package.json`
+ * dependencies so a later npm install in that prefix cannot restore them.
+ * True when the manifest still listed one. The lockfile is left for npm to
+ * repair on its next run; only package.json is edited (backed up, atomic).
+ */
+async function dropRetiredM1NpmDeps(
+    agentDir: string,
+    dryRun: boolean,
+    log?: (message: string) => void,
+): Promise<boolean> {
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaves are constants.
+    const manifestPath = path.join(agentDir, 'npm', 'package.json');
+    let text: string;
+    let manifest: { dependencies?: Record<string, string> };
+    try {
+        text = await fs.readFile(manifestPath, 'utf8');
+        manifest = JSON.parse(text) as { dependencies?: Record<string, string> };
+    } catch {
+        return false;
+    }
+    if (typeof manifest !== 'object' || manifest === null || Array.isArray(manifest)) return false;
+    const deps = manifest.dependencies;
+    if (!deps || typeof deps !== 'object') return false;
+    const doomed = RETIRED_M1_NPM_PACKAGES.filter((name) => typeof deps[name] === 'string');
+    if (doomed.length === 0) return false;
+    if (dryRun) {
+        log?.(kleur.dim(`[DRY RUN] would remove ${doomed.join(', ')} from ${manifestPath}`));
+        return true;
+    }
+    await backupSettingsOnce(manifestPath, log);
+    const kept: Record<string, string> = {};
+    for (const [name, version] of Object.entries(deps)) {
+        if (!RETIRED_M1_NPM_PACKAGES.includes(name)) kept[name] = version;
+    }
+    const tmpPath = `${manifestPath}.tmp-m1-retire`;
+    await fs.writeFile(tmpPath, serializeLikeOriginal(text, { ...manifest, dependencies: kept }), 'utf8');
+    await fs.move(tmpPath, manifestPath, { overwrite: true });
+    for (const name of doomed) log?.(kleur.dim(`Removed ${name} from ${manifestPath}`));
     return true;
 }
 
@@ -1326,6 +1369,7 @@ export async function removeRetiredM1Packages(
     }
 
     const settingsFiles: string[] = [];
+    const npmManifests: string[] = [];
     const roots = projectRoots === undefined ? [] : Array.isArray(projectRoots) ? projectRoots : [projectRoots];
     for (const settingsPath of [
         // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaf is constant.
@@ -1336,12 +1380,18 @@ export async function removeRetiredM1Packages(
         if (await dropRetiredM1Entries(settingsPath, dryRun, log)) settingsFiles.push(settingsPath);
     }
 
+    if (await dropRetiredM1NpmDeps(agentDir, dryRun, log)) npmManifests.push(
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaves are constants.
+        path.join(agentDir, 'npm', 'package.json'),
+    );
+
     return {
         paths,
         removedPaths,
-        found: presentPaths.length > 0 || settingsFiles.length > 0,
-        removed: !dryRun && (removedPaths.length > 0 || settingsFiles.length > 0),
+        found: presentPaths.length > 0 || settingsFiles.length > 0 || npmManifests.length > 0,
+        removed: !dryRun && (removedPaths.length > 0 || settingsFiles.length > 0 || npmManifests.length > 0),
         settingsFiles,
+        npmManifests,
     };
 }
 
