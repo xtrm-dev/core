@@ -8,6 +8,7 @@ mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" })
 
 const { createAgentHostBridge, repositoryFromRemote } = await import("./index.ts");
 const { startAgentHost } = await import("../../../../cli/src/core/agent-host.ts");
+const { __resetHostEnsureState } = await import("./host-ensure.ts");
 
 type Handler = (event: any, ctx: any) => unknown;
 
@@ -934,5 +935,93 @@ describe("xtrm-agent-host bridge replacement and held wakes (CORE-2432 F1/F7)", 
       pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
       await raw.close();
     }
+  });
+});
+
+describe("agent-host self-heal (CORE-2467 A+B)", () => {
+
+  function startWithEnsure(sessionId: string, ensureOpts: any) {
+    const pi = fakePi();
+    const c = fakeCtx(sessionId);
+    const notified: Array<{ line: string; level: string }> = [];
+    const ctx = { ...c.ctx, ui: { ...c.ctx.ui, notify: (line: string, level: string) => notified.push({ line, level }) } };
+    const bridge = createAgentHostBridge(pi.pi, {
+      socketPath: path.join(dirUnused(), "host.sock"),
+      exec: async () => "",
+      env: {},
+      hostEnsure: ensureOpts,
+    });
+    bridge.register();
+    pi.fire("session_start", { reason: "startup" }, ctx);
+    return { notified };
+  }
+
+  function dirUnused(): string {
+    return mkdtempSync(path.join(os.tmpdir(), "xtrm-agent-host-heal-"));
+  }
+
+  test("a failed ensure warns loudly with the runbook and never blocks start", async () => {
+    __resetHostEnsureState();
+    const dir = dirUnused();
+    try {
+      const t0 = Date.now();
+      const { notified } = startWithEnsure("s-heal-fail", {
+        socketPath: path.join(dir, "host.sock"),
+        runEnsure: async () => ({ ok: false, detail: "spawn refused" }),
+      });
+      expect(Date.now() - t0).toBeLessThan(2000);
+      await until(() => notified.length >= 1);
+      expect(notified).toHaveLength(1);
+      expect(notified[0].level).toBe("warning");
+      expect(notified[0].line).toMatch(/agent host is not running/);
+      expect(notified[0].line).toContain("xt host ensure");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a healing ensure stays silent", async () => {
+    __resetHostEnsureState();
+    const dir = dirUnused();
+    const sock = path.join(dir, "host.sock");
+    let server: net.Server | null = null;
+    try {
+      const { notified } = startWithEnsure("s-heal-ok", {
+        socketPath: sock,
+        runEnsure: async () => {
+          server = net.createServer(() => {});
+          await new Promise<void>((resolve, reject) => {
+            server!.once("error", reject);
+            server!.listen(sock, () => resolve());
+          });
+          return { ok: true, detail: "started" };
+        },
+      });
+      await until(() => (server as unknown) !== null);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(notified).toEqual([]);
+    } finally {
+      if (server) await new Promise((r) => (server as net.Server).close(() => r(undefined)));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("explicit opt-out starts normally with no healing", async () => {
+    __resetHostEnsureState();
+    const pi = fakePi();
+    const c = fakeCtx("s-heal-off");
+    const t0 = Date.now();
+    const bridge = createAgentHostBridge(pi.pi, {
+      socketPath: path.join(dirUnused(), "host.sock"),
+      exec: async () => "",
+      env: {},
+      hostEnsure: false,
+    });
+    bridge.register();
+    pi.fire("session_start", { reason: "startup" }, c.ctx);
+    // The start path never waits on healing: a failed or absent ensure
+    // cannot slow it, and off means nothing spawns.
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(typeof bridge.state).toBe("string");
   });
 });

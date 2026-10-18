@@ -76,7 +76,7 @@
       "displayName": "intercom",
       "required": false,
       "ownership": "xtrm",
-      "description": "Delivers intercom wakes to the session as intercom_message with agent-level acknowledgement; one listener per session, silent when no host runs"
+      "description": "Delivers intercom wakes to the session as intercom_message with agent-level acknowledgement; one listener per session, warns loudly when no host runs"
     },
     {
       "id": "xtrm-primer",
