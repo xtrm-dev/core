@@ -393,6 +393,10 @@ function httpJson(
         path: urlPath,
         method,
         timeout: timeoutMs,
+        // CORE-2470: same keep-alive race as fetchPiSessions — a reused
+        // pooled socket dies server-side and the wake post fails as
+        // "could not reach the agent host" while the host is up.
+        agent: false,
         headers: body !== undefined ? { "content-type": "application/json", "content-length": Buffer.byteLength(body) } : {},
       },
       (res) => {
