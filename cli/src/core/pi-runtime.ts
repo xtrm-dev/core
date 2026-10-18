@@ -1380,7 +1380,10 @@ export async function removeRetiredM1Packages(
         if (await dropRetiredM1Entries(settingsPath, dryRun, log)) settingsFiles.push(settingsPath);
     }
 
-    if (await dropRetiredM1NpmDeps(agentDir, dryRun, log)) npmManifests.push(path.join(agentDir, 'npm', 'package.json'));
+    if (await dropRetiredM1NpmDeps(agentDir, dryRun, log)) npmManifests.push(
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaves are constants.
+        path.join(agentDir, 'npm', 'package.json'),
+    );
 
     return {
         paths,
