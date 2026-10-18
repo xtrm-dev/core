@@ -1,6 +1,6 @@
 /**
  * Background runs and monitors for Pi (B1 CORE-2439, B2 CORE-2440) with the
- * B3 operator surface (CORE-2441): /tasks (./commands.ts), the one-line
+ * B3 operator surface (CORE-2441): /bg (./commands.ts), the one-line
  * indicator above the prompt (./widget.ts), task and monitor cards through
  * the I7 shared event module (./cards.ts), and the off switch
  * (background.enabled=false or BACKGROUND_TASKS=off).
@@ -9,7 +9,7 @@
  * command without blocking and returns at once with a task id and an output
  * file path; Monitor{command | ws{url, protocols}, description, timeout_ms}
  * streams one event per stdout line (or WebSocket text frame) until the
- * command exits or the monitor expires; TaskStop{task_id} stops either one.
+ * command exits or the monitor expires; BackgroundStop{task_id} stops either one.
  * On exit exactly one <task-notification> wakes the owning session through
  * pi.sendMessage with {triggerTurn: true, deliverAs: "followUp"} (D6); each
  * monitor batch wakes it with one <monitor-event>. The model reads output
@@ -35,7 +35,7 @@ import { StringDecoder } from "node:string_decoder";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { stableWakeMessageId, type WakeDeliveryState } from "@xtrm/contracts";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -125,7 +125,7 @@ const BashBackgroundParams = Type.Object({
   ),
 });
 
-const TaskStopParams = Type.Object({
+const BackgroundStopParams = Type.Object({
   task_id: Type.String({ minLength: 1, description: "Background task or monitor id to stop" }),
 });
 
@@ -153,7 +153,7 @@ const MonitorParams = Type.Object({
 type MonitorArgs = Static<typeof MonitorParams>;
 
 type BashBackgroundArgs = Static<typeof BashBackgroundParams>;
-type TaskStopArgs = Static<typeof TaskStopParams>;
+type BackgroundStopArgs = Static<typeof BackgroundStopParams>;
 
 function textResult(text: string, details: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text }], details };
@@ -286,10 +286,13 @@ export interface BackgroundService {
 
 /**
  * Whether the background extension starts. Precedence: explicit option,
- * then BACKGROUND_TASKS env, then the `background.enabled` settings key;
- * default true (the Claude Code analogue is
- * CLAUDE_CODE_DISABLE_BACKGROUND_TASKS). Off registers nothing: no tools,
- * no /tasks, no widget, no renderers.
+ * then BACKGROUND_TASKS env, then the `background.enabled` settings key,
+ * then the same key read straight from the settings files; default true.
+ * (The file fallback exists because pi.getSettings() is not populated with
+ * the operator's keys at extension-registration time — CORE-2456 — while the
+ * env and the files are process-immediate. Project settings win over global
+ * ones. The Claude Code analogue is CLAUDE_CODE_DISABLE_BACKGROUND_TASKS.)
+ * Off registers nothing: no tools, no /bg, no widget, no renderers.
  */
 export function isBackgroundEnabled(pi: ExtensionAPI, options: BackgroundServiceOptions = {}): boolean {
   if (options.enabled !== undefined) return options.enabled;
@@ -303,9 +306,27 @@ export function isBackgroundEnabled(pi: ExtensionAPI, options: BackgroundService
     const background = settings?.background as Record<string, unknown> | undefined;
     if (typeof background?.enabled === "boolean") return background.enabled;
   } catch {
-    /* unreadable settings read as on */
+    /* unreadable settings are not a signal; the file fallback below still runs */
   }
+  const fromFiles = readEnabledFromSettingsFiles();
+  if (fromFiles !== undefined) return fromFiles;
   return true;
+}
+
+/** `background.enabled` from the settings files: project first, then global. */
+export function readEnabledFromSettingsFiles(cwd: string = process.cwd(), home: string = os.homedir()): boolean | undefined {
+  const agentDir = process.env.PI_AGENT_DIR ?? process.env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent");
+  for (const file of [path.join(cwd, ".pi", "settings.json"), path.join(agentDir, "settings.json")]) {
+    try {
+      if (!existsSync(file)) continue;
+      const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+      const background = parsed?.background as Record<string, unknown> | undefined;
+      if (typeof background?.enabled === "boolean") return background.enabled;
+    } catch {
+      /* a broken file is not a disable signal; keep looking */
+    }
+  }
+  return undefined;
 }
 
 interface LiveHandle {
@@ -705,7 +726,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
   }
 
   /**
-   * Terminal monitor path: flush pending lines first (a TaskStop or expiry
+   * Terminal monitor path: flush pending lines first (a BackgroundStop or expiry
    * with a waiting batch still reports its lines), then exactly one notice,
    * the fd closed, the child owned by the reaping set. The child's later
    * close event is ignored: the terminal state owns the exit.
@@ -1154,7 +1175,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         }) as Record<string, unknown>;
       }
       monitor.killReason = "stop";
-      finalizeMonitor(monitor, "stopped", "stopped by TaskStop");
+      finalizeMonitor(monitor, "stopped", "stopped by BackgroundStop");
       return textResult(`Stopped monitor ${monitor.id}.`, {
         task_id: monitor.id,
         monitor_id: monitor.id,
@@ -1392,7 +1413,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     name: "Monitor",
     label: "Monitor",
     description:
-      "Monitor a shell command's stdout lines or a WebSocket stream without blocking. Returns at once with a monitor id. Each line (or text frame) wakes the session with one event; lines within 200 ms batch into one event. The monitor expires at timeout_ms (default 5 min, maximum 30 min) with one notice and the event count; a firehose is stopped with a notice; TaskStop cancels it.",
+      "Monitor a shell command's stdout lines or a WebSocket stream without blocking. Returns at once with a monitor id. Each line (or text frame) wakes the session with one event; lines within 200 ms batch into one event. The monitor expires at timeout_ms (default 5 min, maximum 30 min) with one notice and the event count; a firehose is stopped with a notice; BackgroundStop cancels it.",
     parameters: MonitorParams,
     exposure: "codemode",
     promptGuidelines: [
@@ -1405,17 +1426,17 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
   });
 
   pi.registerTool({
-    name: "TaskStop",
-    label: "TaskStop",
+    name: "BackgroundStop",
+    label: "BackgroundStop",
     description: "Stop a running background task or monitor by id. The task or monitor ends with status stopped.",
-    parameters: TaskStopParams,
+    parameters: BackgroundStopParams,
     exposure: "codemode",
-    execute: async (_toolCallId: string, params: TaskStopArgs) => {
+    execute: async (_toolCallId: string, params: BackgroundStopArgs) => {
       return (await stopTask(params.task_id)) as never;
     },
   });
 
-  // B3 operator surface: I7 cards and /tasks (the widget is wired above).
+  // B3 operator surface: I7 cards and /bg (the widget is wired above).
   registerBackgroundCards(pi);
 
   const resultText = (result: Record<string, unknown>): string => {

@@ -1,12 +1,12 @@
 /**
- * /tasks operator surface (B3 CORE-2441, ADR rev 2 B2 + amendment 1).
+ * /bg operator surface (B3 CORE-2441, ADR rev 2 B2 + amendment 1).
  *
  * One list of background runs and monitors. Row: state glyph, command or
  * description, id, elapsed, output size or event count. Keys (matched with
  * pi-tui matchesKey, never literal escapes): enter shows or follows the
  * output, s stops, r reruns (finished only; a running row refuses with
  * "stop it first"), c clears finished rows, esc or q closes. Text forms for
- * scripts and muscle memory: /tasks stop|output|rerun <id>, /tasks clear.
+ * scripts and muscle memory: /bg stop|output|rerun <id>, /bg clear.
  * Theme tokens only (bold header, dim hints); no new colours, no ANSI in
  * model payloads (this module builds none).
  *
@@ -27,14 +27,14 @@ import {
 } from "./store.ts";
 
 /** Bare command name: no xtrm- slug. */
-export const TASKS_COMMAND = "tasks";
+export const TASKS_COMMAND = "bg";
 
 export const TASKS_USAGE = [
-  "/tasks — one list of background runs and monitors",
-  "/tasks stop <id> — stop a running task or monitor",
-  "/tasks output <id> — show the tail of its output file",
-  "/tasks rerun <id> — run the same command again (finished rows only)",
-  "/tasks clear — evict finished rows",
+  "/bg — one list of background runs and monitors",
+  "/bg stop <id> — stop a running task or monitor",
+  "/bg output <id> — show the tail of its output file",
+  "/bg rerun <id> — run the same command again (finished rows only)",
+  "/bg clear — evict finished rows",
   "Keys: enter shows or follows the output · s stops · r reruns · c clears finished · esc closes",
 ].join("\n");
 
@@ -46,7 +46,7 @@ export type TasksAction =
   | { action: "clear" }
   | { action: "usage" };
 
-/** Split "/tasks <verb> <id>" into an action; anything unknown is usage. */
+/** Split "/bg <verb> <id>" into an action; anything unknown is usage. */
 export function parseTasksArgs(args: string): TasksAction {
   const parts = args.trim().split(/\s+/).filter((part) => part.length > 0);
   if (parts.length === 0) return { action: "open" };
@@ -402,7 +402,7 @@ interface OutputState {
   watcher: { close(): void } | null;
 }
 
-/** /tasks overlay: the list, an output/follow view, and the action keys. */
+/** /bg overlay: the list, an output/follow view, and the action keys. */
 export class TasksOverlay {
   private selected = 0;
   private listScroll = 0;
@@ -844,7 +844,7 @@ export async function openTasksList(
   }
 }
 
-/** Run one /tasks invocation: overlay or text form. Never throws. */
+/** Run one /bg invocation: overlay or text form. Never throws. */
 export async function runTasksCommand(args: string, ctx: TasksCommandCtx, deps: TasksCommandDeps): Promise<void> {
   const parsed = parseTasksArgs(args);
   switch (parsed.action) {
@@ -899,10 +899,10 @@ export interface TasksCommandPi {
   registerCommand(name: string, options: { description?: string; handler: (args: string, ctx: unknown) => Promise<void> }): void;
 }
 
-/** Register /tasks and nothing else. No bash/read/edit/write/find/grep/ls. */
+/** Register /bg and nothing else. No bash/read/edit/write/find/grep/ls. */
 export function registerTasksCommand(pi: TasksCommandPi, deps: TasksCommandDeps): void {
   pi.registerCommand(TASKS_COMMAND, {
-    description: "List background runs and monitors (/tasks stop|output|rerun <id>, /tasks clear)",
+    description: "List background runs and monitors (/bg stop|output|rerun <id>, /bg clear)",
     handler: async (args, ctx) => {
       await runTasksCommand(args, ctx as TasksCommandCtx, deps);
     },

@@ -2,8 +2,8 @@
  * Background indicator above the prompt (B3 CORE-2441, ADR rev 2 B2 + D-5).
  *
  * While anything runs, one line reads "◐ 3 tasks running · 1 monitor ·
- * /tasks"; a failure stays as "! 1 failed" until the operator sees it
- * (opening /tasks or the record's output marks it seen). Idle means no
+ * /bg"; a failure stays as "! 1 failed" until the operator sees it
+ * (opening /bg or the record's output marks it seen). Idle means no
  * widget at all. The line is exactly one row (stable height) and truncates
  * to the render width, so it never pushes the editor off-screen at 80, 120,
  * 160 or 220 columns. Theme never touches this line: it is plain text.
@@ -65,7 +65,7 @@ function plural(count: number, one: string, many: string): string {
 
 /**
  * The D-5 line, or null when idle. Shapes (amendment 1): "◐ 3 tasks running
- * · 1 monitor · /tasks", with "! 1 failed" until seen.
+ * · 1 monitor · /bg", with "! 1 failed" until seen.
  */
 export function formatIndicator(summary: BackgroundSummary): string | null {
   const { runningTasks, activeMonitors, unseenFailures } = summary;
@@ -74,7 +74,7 @@ export function formatIndicator(summary: BackgroundSummary): string | null {
   if (runningTasks > 0) parts.push(`◐ ${plural(runningTasks, "task", "tasks")} running`);
   if (activeMonitors > 0) parts.push(plural(activeMonitors, "monitor", "monitors"));
   if (unseenFailures > 0) parts.push(`! ${unseenFailures} failed`);
-  parts.push("/tasks");
+  parts.push("/bg");
   return parts.join(" · ");
 }
 

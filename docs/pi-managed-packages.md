@@ -43,7 +43,7 @@ The runtime also marks packages as either required or optional for health semant
 
 `npm:pi-mcp-adapter` is retired (CORE-2399): Pi has built-in MCP, so the managed baseline no longer installs an adapter and `xt update` removes the package entry and the `~/.pi/agent/extensions/pi-mcp-adapter` override from machines that still carry them.
 
-`npm:pi-background-tasks@latest`, `npm:pi-intercom` and `git:github.com/alonw0/pi-claude-link` are retired (CORE-2443 M1): the first-party `intercom` and `background` extensions inside `@jaggerxtrm/pi-extensions` replace them (SendMessage, ListAgents, BashBackground, Monitor, TaskStop, `/tasks`, `/intercom`, `/rename`), so the managed baseline no longer installs the third-party packages. `xt update --apply` sweeps their settings entries and installed dirs from machines that still carry them — the npm trees, the git checkout, and same-named dirs under `<agentDir>/extensions/` (each settings file is backed up to `.pre-m1-retire.bak` before its first write; every removal is logged).
+`npm:pi-background-tasks@latest`, `npm:pi-intercom` and `git:github.com/alonw0/pi-claude-link` are retired (CORE-2443 M1): the first-party `intercom` and `background` extensions inside `@jaggerxtrm/pi-extensions` replace them (SendMessage, ListAgents, BashBackground, Monitor, BackgroundStop, `/bg`, `/intercom`, `/rename`), so the managed baseline no longer installs the third-party packages. `xt update --apply` sweeps their settings entries and installed dirs from machines that still carry them — the npm trees, the git checkout, and same-named dirs under `<agentDir>/extensions/` (each settings file is backed up to `.pre-m1-retire.bak` before its first write; every removal is logged).
 
 The developer checkout path `packages/pi-extensions` can satisfy the first row while working inside Core. A machine-specific absolute path such as `/home/.../core/packages/pi-extensions` is never a portable managed selector.
 
@@ -97,7 +97,7 @@ Pi itself owns Git clone/ref reconciliation. If a future managed selector pins `
 Targeted messaging and background work ship in the first-party `intercom` and `background` extensions inside `@jaggerxtrm/pi-extensions`; no third-party coordination package is managed. XTRM's `multiplexing` doctrine owns higher-level behavior—when to send, ask, reply, wake, wait, persist, or hand off—rather than reimplementing the transport.
 
 - Pi ↔ Pi and Pi ↔ Claude Code messaging: `SendMessage` (send/ask/reply), `ListAgents` (roster), `/intercom` and `/rename` commands, durable mailbox. The Pi ↔ Claude Code leg runs over the first-party Claude transport (Claude Code cross-session registry/socket interoperability), enabled with `intercom.claudeTransport`.
-- Background work: `BashBackground` (start), `Monitor` (watch), `TaskStop` (stop), `/tasks` and the prompt indicator.
+- Background work: `BashBackground` (start), `Monitor` (watch), `BackgroundStop` (stop), `/bg` and the prompt indicator.
 
 Claude ↔ Claude work should prefer Claude Code's native peer/team messaging when available.
 

@@ -24,14 +24,14 @@ describe("background indicator text", () => {
     expect(formatIndicator(summary())).toBeNull();
   });
 
-  test("matches the D-5 shapes: tasks, monitors, failures, /tasks", () => {
-    expect(formatIndicator(summary({ runningTasks: 3, activeMonitors: 1 }))).toBe("◐ 3 tasks running · 1 monitor · /tasks");
-    expect(formatIndicator(summary({ runningTasks: 2, unseenFailures: 1 }))).toBe("◐ 2 tasks running · ! 1 failed · /tasks");
-    expect(formatIndicator(summary({ runningTasks: 1, activeMonitors: 1 }))).toBe("◐ 1 task running · 1 monitor · /tasks");
-    expect(formatIndicator(summary({ activeMonitors: 2 }))).toBe("2 monitors · /tasks");
-    expect(formatIndicator(summary({ unseenFailures: 1 }))).toBe("! 1 failed · /tasks");
+  test("matches the D-5 shapes: tasks, monitors, failures, /bg", () => {
+    expect(formatIndicator(summary({ runningTasks: 3, activeMonitors: 1 }))).toBe("◐ 3 tasks running · 1 monitor · /bg");
+    expect(formatIndicator(summary({ runningTasks: 2, unseenFailures: 1 }))).toBe("◐ 2 tasks running · ! 1 failed · /bg");
+    expect(formatIndicator(summary({ runningTasks: 1, activeMonitors: 1 }))).toBe("◐ 1 task running · 1 monitor · /bg");
+    expect(formatIndicator(summary({ activeMonitors: 2 }))).toBe("2 monitors · /bg");
+    expect(formatIndicator(summary({ unseenFailures: 1 }))).toBe("! 1 failed · /bg");
     expect(formatIndicator(summary({ runningTasks: 2, activeMonitors: 3, unseenFailures: 2 }))).toBe(
-      "◐ 2 tasks running · 3 monitors · ! 2 failed · /tasks",
+      "◐ 2 tasks running · 3 monitors · ! 2 failed · /bg",
     );
   });
 
@@ -90,13 +90,13 @@ describe("background summary", () => {
 
 describe("fitToWidth", () => {
   test("short lines pass through untouched", () => {
-    expect(fitToWidth("◐ 3 tasks running · /tasks", 80)).toBe("◐ 3 tasks running · /tasks");
+    expect(fitToWidth("◐ 3 tasks running · /bg", 80)).toBe("◐ 3 tasks running · /bg");
   });
 
   test("long lines fit, measured by the same ruler the tests use", () => {
     // Width only: under the process-wide pi-tui stubs the cut point and
     // ellipsis styling vary (identity stub, naive slice, real library).
-    const out = fitToWidth("◐ 12345 tasks running · 67890 monitors · ! 42 failed · /tasks", 20);
+    const out = fitToWidth("◐ 12345 tasks running · 67890 monitors · ! 42 failed · /bg", 20);
     expect(visibleWidth(out)).toBeLessThanOrEqual(20);
     expect(out.length).toBeGreaterThan(0);
   });
@@ -112,7 +112,7 @@ describe("fitToWidth", () => {
     // The CI-engine regression proof in miniature: hardCut uses only the
     // width ruler, so it holds even where truncateToWidth no-ops.
     for (const width of [8, 20]) {
-      const out = hardCut("◐ 12345 tasks running · 67890 monitors · ! 42 failed · /tasks", width);
+      const out = hardCut("◐ 12345 tasks running · 67890 monitors · ! 42 failed · /bg", width);
       expect(visibleWidth(out)).toBeLessThanOrEqual(width);
     }
     expect(hardCut("short", 80)).toBe("short");
