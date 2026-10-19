@@ -508,6 +508,127 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
   });
 });
 
+describe("SendMessage peer addressing (MMD-2538: uuid/ref/uds/prefix, fail-closed, loud scope)", () => {
+  test("a Claude peer is reachable by the uds: address it reports", async () => {
+    const sent: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("market", "/run/market.sock", "market-uuid-1")],
+      claudeTransportEnabled: true,
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "uds:/run/market.sock", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session market");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ sock: "/run/market.sock" });
+  });
+
+  test("a Claude peer is reachable by the ref ListAgents prints", async () => {
+    const roster = await import("./roster.ts");
+    const ref = roster.sessionRef("market-uuid-1");
+    const sent: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("market", "/run/market.sock", "market-uuid-1")],
+      claudeTransportEnabled: true,
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: ref, message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session market");
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a Pi peer is reachable by full uuid and by unique prefix", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => [piSummary("sess-aaa111", "worker-one"), piSummary("sess-bbb222", "worker-two")],
+    });
+    const { tool } = register(deps);
+    const byId = await tool.execute("c1", { to: "sess-bbb222", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(byId.isError).toBeFalsy();
+    expect(posted[0].participant).toBe("sess-bbb222");
+    const { deps: deps2, posted: posted2 } = baseDeps({
+      fetchPi: async () => [piSummary("sess-aaa111", "worker-one"), piSummary("sess-bbb222", "worker-two")],
+    });
+    const again = register(deps2);
+    const byPrefix = await again.tool.execute("c2", { to: "sess-bbb", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(byPrefix.isError).toBeFalsy();
+    expect(posted2[0].participant).toBe("sess-bbb222");
+  });
+
+  test("four same-name live peers refuse ambiguity and never send", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => [piSummary("sess-dup-1", "agent"), piSummary("sess-dup-2", "agent"), piSummary("sess-other-4", "agent")],
+      fetchClaude: async () => [{ name: "agent", sessionId: "claude-dup-3", sock: "/run/a.sock", cwd: "/tmp/x", status: "idle", kind: "interactive" }],
+      claudeTransportEnabled: true,
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "agent", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/ambiguous session "agent"/);
+    for (const id of ["sess-dup-1", "sess-dup-2", "claude-dup-3", "sess-other-4"]) {
+      expect(String(r.content[0].text)).toContain(id);
+    }
+    expect(posted).toHaveLength(0);
+  });
+
+  test("a down Pi registry fails loudly and never sends against a partial roster", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => {
+        throw new Error("could not reach the agent host registry (GET /v1/sessions failed twice)");
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/cannot reach the agent host registry/);
+    expect(String(r.content[0].text)).toMatch(/partial roster/);
+    expect(posted).toHaveLength(0);
+  });
+
+  test("an empty scope names the excluded peers and the Claude exclusion", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => [
+        { ...piSummary("s-me", "me"), workItem: { ref: "CORE-2478", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/repo/core" },
+        { ...piSummary("s-far", "faraway"), workItem: { ref: "XTRM-12", system: "substrate" }, repository: "github.com/xtrm-dev/xtrm", repositoryPath: "/repo/xtrm" },
+      ],
+      fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "nobody-here", message: "hi", scope: "project" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    const text = String(r.content[0].text);
+    expect(text).toMatch(/in scope "project"/);
+    expect(text).toMatch(/Excluded \d+ peer/);
+    expect(text).toMatch(/Claude sessions carry no Substrate identity/);
+    expect(posted).toHaveLength(0);
+  });
+
+  test("a peer existing outside the scope says so instead of reading as missing", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => [
+        { ...piSummary("s-me", "me"), workItem: { ref: "CORE-2478", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/repo/core" },
+        { ...piSummary("s-sib", "sibling"), workItem: { ref: "CORE-2435", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/repo/core" },
+        { ...piSummary("s-far", "faraway"), workItem: { ref: "XTRM-12", system: "substrate" }, repository: "github.com/xtrm-dev/xtrm", repositoryPath: "/repo/xtrm" },
+      ],
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "faraway", message: "hi", scope: "project" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/exists outside scope "project"/);
+    expect(posted).toHaveLength(0);
+  });
+});
+
 describe("SendMessage envelope (CORE-2436 I5, ADR D3)", () => {
   test("the envelope carries from-attributes and one action line", () => {
     const content = sendmessage.__buildContentForTests("m1", "hello", { from: "bob", fromName: "Bob" });

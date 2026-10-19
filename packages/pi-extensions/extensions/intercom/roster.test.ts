@@ -191,11 +191,11 @@ describe("Pi session state words (busy/idle/offline)", () => {
   });
 });
 
-describe("R7 exact-name resolution", () => {
+describe("R7 exact-name resolution (CORE-2435 I4, MMD-2538: ref/uds/prefix arms)", () => {
   const entries = [
     { kind: "pi", sessionId: "sess-aaa111", name: "worker-one" },
     { kind: "pi", sessionId: "sess-bbb222", name: "worker-two" },
-    { kind: "claude", sessionId: "claude-ccc", name: "worker-one" },
+    { kind: "claude", sessionId: "claude-ccc", name: "worker-one", sock: "/run/cc.sock" },
   ] as any;
 
   test("an exact session id wins over names", () => {
@@ -212,11 +212,81 @@ describe("R7 exact-name resolution", () => {
     expect(() => roster.resolveRosterTarget(entries, "worker-one")).toThrow(/claude-ccc/);
   });
 
-  test("a name prefix that is not an exact hit is an error, never a guess", () => {
-    const miss = roster.resolveRosterTarget(entries, "worker-");
+  test("a shared name prefix throws naming every candidate, never a guess", () => {
+    expect(() => roster.resolveRosterTarget(entries, "worker-")).toThrow(/ambiguous session "worker-"/);
+    expect(() => roster.resolveRosterTarget(entries, "worker-")).toThrow(/sess-aaa111/);
+    expect(() => roster.resolveRosterTarget(entries, "worker-")).toThrow(/sess-bbb222/);
+  });
+
+  test("an input matching nothing is a miss listing every candidate with ref and leg", () => {
+    const miss = roster.resolveRosterTarget(entries, "zzz-no-such-peer");
     expect(miss.target).toBeUndefined();
-    expect(miss.error).toMatch(/no live session matches "worker-"/);
-    expect(miss.candidates).toEqual(["worker-one (Pi session)", "worker-two (Pi session)", "worker-one (Claude session)"]);
+    expect(miss.error).toMatch(/no live session matches "zzz-no-such-peer"/);
+    const refOf = (id: string) => roster.sessionRef(id);
+    expect(miss.candidates).toEqual([
+      `worker-one [${refOf("sess-aaa111")}] (Pi session)`,
+      `worker-two [${refOf("sess-bbb222")}] (Pi session)`,
+      `worker-one [${refOf("claude-ccc")}] (Claude session)`,
+    ]);
+  });
+
+  test("a uds: socket address resolves the Claude peer that owns it", () => {
+    expect(roster.resolveRosterTarget(entries, "uds:/run/cc.sock")).toMatchObject({
+      target: { sessionId: "claude-ccc" },
+    });
+  });
+
+  test("a uds: socket with no owner is a miss, never a guess", () => {
+    const miss = roster.resolveRosterTarget(entries, "uds:/run/nobody.sock");
+    expect(miss.target).toBeUndefined();
+    expect(miss.error).toMatch(/no live session matches/);
+    expect(miss.candidates).toHaveLength(3);
+  });
+
+  test("a uds: address resolves a Pi shadow relay socket", () => {
+    const shadowed = [{ kind: "pi", sessionId: "sess-aaa111", name: "worker-one", shadowSock: "/run/shadow.sock" }] as any;
+    expect(roster.resolveRosterTarget(shadowed, "uds:/run/shadow.sock")).toMatchObject({
+      target: { kind: "pi", sessionId: "sess-aaa111" },
+    });
+  });
+
+  test("the 6-hex ref ListAgents prints resolves exactly", () => {
+    const ref = roster.sessionRef("sess-bbb222");
+    expect(ref).toMatch(/^[0-9a-f]{6}$/);
+    expect(roster.resolveRosterTarget(entries, ref)).toMatchObject({ target: { sessionId: "sess-bbb222" } });
+    const claudeRef = roster.sessionRef("claude-ccc");
+    expect(roster.resolveRosterTarget(entries, claudeRef)).toMatchObject({ target: { sessionId: "claude-ccc" } });
+  });
+
+  test("a unique 4+ char prefix resolves: name, session id and ref", () => {
+    expect(roster.resolveRosterTarget(entries, "worker-two")).toMatchObject({ target: { sessionId: "sess-bbb222" } });
+    expect(roster.resolveRosterTarget(entries, "sess-bbb")).toMatchObject({ target: { sessionId: "sess-bbb222" } });
+    const ref = roster.sessionRef("sess-bbb222");
+    expect(roster.resolveRosterTarget(entries, ref.slice(0, 4))).toMatchObject({ target: { sessionId: "sess-bbb222" } });
+  });
+
+  test("a 3-char input never prefix-resolves: too short stays a miss", () => {
+    const miss = roster.resolveRosterTarget(entries, "ses");
+    expect(miss.target).toBeUndefined();
+    expect(miss.error).toMatch(/no live session matches/);
+  });
+
+  test("four same-name live peers across legs and counterparties refuse ambiguity", () => {
+    const four = [
+      { kind: "pi", sessionId: "sess-dup-1", name: "agent" },
+      { kind: "pi", sessionId: "sess-dup-2", name: "agent" },
+      { kind: "claude", sessionId: "claude-dup-3", name: "agent", sock: "/run/a.sock" },
+      // A different counterparty under the same name still refuses: no silent pick.
+      { kind: "pi", sessionId: "sess-other-4", name: "agent" },
+    ] as any;
+    expect(() => roster.resolveRosterTarget(four, "agent")).toThrow(/ambiguous session "agent"/);
+    for (const id of ["sess-dup-1", "sess-dup-2", "claude-dup-3", "sess-other-4"]) {
+      expect(() => roster.resolveRosterTarget(four, "agent")).toThrow(new RegExp(id.replace(/-/g, "-")));
+    }
+    // ...but each is still reachable by its own full session id.
+    expect(roster.resolveRosterTarget(four, "sess-dup-1")).toMatchObject({ target: { sessionId: "sess-dup-1" } });
+    expect(roster.resolveRosterTarget(four, "sess-other-4")).toMatchObject({ target: { sessionId: "sess-other-4" } });
+    expect(roster.resolveRosterTarget(four, "uds:/run/a.sock")).toMatchObject({ target: { sessionId: "claude-dup-3" } });
   });
 });
 
@@ -262,6 +332,22 @@ describe("ListAgents tool registration", () => {
     expect(lines[1]).toBe("Peer sessions (1):");
     expect(lines[2]).toContain(`worker-one [${PI_REF}]`);
     expect(result.isError).toBeFalsy();
+  });
+
+  test("a down Pi registry fails loudly instead of listing a partial roster", async () => {
+    const { pi, tools } = fakePi();
+    roster.registerListAgentsTool(pi, {
+      fetchPi: async () => {
+        throw new Error("could not reach the agent host registry (GET /v1/sessions failed twice)");
+      },
+      fetchClaude: async () => [],
+    });
+    const result = await tools.ListAgents.execute("call-1", {}, undefined, undefined, {
+      sessionManager: { getSessionId: () => "own-session-id-123456" },
+    });
+    expect(result.isError).toBe(true);
+    expect(String(result.content[0].text)).toMatch(/cannot reach the agent host registry/);
+    expect(String(result.content[0].text)).toMatch(/rather than partial/);
   });
 
   test("without the real session id the tool fails instead of listing self as a peer", async () => {
@@ -394,14 +480,28 @@ describe("fetch retry on transport failure (CORE-2470)", () => {
     }
   });
 
-  test("a persistent failure still reads empty after exactly one retry", async () => {
+  test("a persistent failure throws fail-closed after exactly one retry, never a silent empty", async () => {
     const { server, port, hits } = await stubServer((n, req) => {
       (req.socket as any)?.destroy();
     });
     try {
-      const sessions = await roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 500 });
+      await expect(roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 500 })).rejects.toThrow(/agent host registry/);
       expect(hits()).toBe(2);
-      expect(sessions).toEqual([]);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test("consecutive total failures stay loud: the roster never flaps to a partial list", async () => {
+    const { server, port } = await stubServer((n, req) => {
+      (req.socket as any)?.destroy();
+    });
+    try {
+      // Every attempt throws: no call ever resolves a silent [] that would
+      // flip Pi peers to their Claude shadow and back (MMD-2538 flap).
+      for (let i = 0; i < 3; i += 1) {
+        await expect(roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 500 })).rejects.toThrow(/agent host registry/);
+      }
     } finally {
       await new Promise((r) => server.close(r));
     }

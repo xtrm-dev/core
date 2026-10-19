@@ -45,7 +45,7 @@ import { onWakeInjected, type InjectedWakeNotice } from "../xtrm-agent-host/inde
 import { requestFooterRender } from "../custom-footer/index.ts";
 import { buildIntercomWakeContent } from "./delivery.ts";
 import { buildDeliveryNotice, buildIdleNotice } from "../../shared/event.ts";
-import { buildRoster, fetchPiSessions, legWord, resolveRosterTarget, type RosterEntry } from "./roster.ts";
+import { buildRoster, entryDisplayRef, fetchPiSessions, legWord, resolveRosterTarget, type RosterEntry } from "./roster.ts";
 import {
   claudeReceipts,
   isClaudeReceiptTimeout,
@@ -313,6 +313,14 @@ async function renderAttachments(inputs: unknown, env: AttachmentResolveEnv): Pr
  * (repository, else the checkout root). Peers that carry no matching
  * identity (unnamed work, Claude sessions with no Substrate binding) never
  * match a scope: fail-closed, never a guess.
+ *
+ * Claude peers are inherently out of scope: their registry entries carry a
+ * cwd but no Substrate binding, and there is no reliable host join key
+ * from a Claude socket/cwd to a repository (a cwd git lookup per peer
+ * would block the model path and still misattribute shared checkouts).
+ * Fallback is exclusion with a loud error naming what was excluded —
+ * the empty-scope path below lists the dropped peers — never silent
+ * attribution. Scope itself stays Pi-side by design (MMD-2538).
  */
 
 function projectKeyOf(ref: string): string | null {
@@ -835,14 +843,14 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
     name: "SendMessage",
     label: "SendMessage",
     description:
-      "Message another session by its exact name or session id (see ListAgents). Targets resolve to live Pi sessions and to Claude Code sessions via the Claude transport (loud failure when that transport is off). " +
+      "Message another session by exact name, session id, 6-hex ref, unique 4+ char prefix, or uds: socket (see ListAgents). Targets resolve to live Pi sessions and to Claude Code sessions via the Claude transport (loud failure when that transport is off). " +
       "Send once with to, message and an optional summary; notify_when_idle delivers one idle notice when the " +
       "recipient settles. expect_reply waits up to timeout_s for a reply; cancel removes a pending ask by message id; " +
       "reply_to answers the ask with the given message id. attachments add file, snippet or context content; " +
       "scope narrows resolution to the sender's Substrate project or programme. Coordination only: durable work stays " +
       "in the Substrate issue, delegation stays in specialist_dispatch. Never approve a privileged action across sessions.",
     parameters: Type.Object({
-      to: Type.Optional(Type.String({ description: "Exact session name or session id (see ListAgents)." })),
+      to: Type.Optional(Type.String({ description: "Exact session name, session id, 6-hex ref, unique 4+ char prefix, or uds: socket (see ListAgents)." })),
       message: Type.Optional(Type.String({ description: "Message text for the recipient session." })),
       summary: Type.Optional(Type.String({ description: "Short preview of the message." })),
       notify_when_idle: Type.Optional(Type.Boolean({ description: "Deliver one idle notice when the recipient settles." })),
@@ -921,12 +929,18 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         ownName = undefined;
       }
 
-      const [piSessions, claudePeers] = await Promise.all([
-        (deps.fetchPi ?? (() => fetchPiSessions()))().catch(() => [] as AgentSessionSummary[]),
-        (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(
-          deps.excludeSock,
-        ).catch(() => [] as ClaudePeer[]),
-      ]);
+      // Fail-closed (MMD-2538): a down Pi registry is a loud error, never
+      // a partial roster that silently drops every Pi peer. A missing
+      // Claude registry still reads as no Claude peers.
+      let piSessions: AgentSessionSummary[];
+      try {
+        piSessions = await (deps.fetchPi ?? (() => fetchPiSessions()))();
+      } catch (error) {
+        return fail(`SendMessage: cannot reach the agent host registry: ${(error as Error)?.message ?? String(error)}. Not sending against a partial roster.`);
+      }
+      const claudePeers = await (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(
+        deps.excludeSock,
+      ).catch(() => [] as ClaudePeer[]);
       const built = buildRoster({
         ownSessionId,
         ...(ownName ? { ownName } : {}),
@@ -982,14 +996,34 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
             return fail(`SendMessage: ${(error as Error)?.message ?? String(error)}.`);
           }
           if (candidates.length === 0) {
-            return fail(`SendMessage: no live session matches "${to}" in scope "${scope}".`);
+            // Fail-loud (MMD-2538): name the unattributed exclusions —
+            // Claude peers carry no Substrate identity and never match.
+            const dropped = built.entries.filter((e) => !candidates.includes(e));
+            const shown = dropped
+              .slice(0, 5)
+              .map((e) => `${e.name} [${entryDisplayRef(e)}] (${legWord(e.kind)} session)`)
+              .join(", ");
+            const more = dropped.length > 5 ? `, and ${dropped.length - 5} more` : "";
+            const detail = dropped.length > 0 ? ` Excluded ${dropped.length} peer(s) with no matching ${scope} identity: ${shown}${more}. Claude sessions carry no Substrate identity and never match a scope.` : "";
+            return fail(`SendMessage: no live session matches "${to}" in scope "${scope}".${detail}`);
           }
         }
         const resolved = resolveRosterTarget(candidates, to);
         if (!resolved.target) {
           const names = resolved.candidates.length > 0 ? `: ${resolved.candidates.join(", ")}` : "";
           const where = scope !== undefined ? ` in scope "${scope}"` : "";
-          return fail(`SendMessage: no live session matches "${to}"${where}${names}.`);
+          // A peer that exists outside the scope is an out-of-scope
+          // error, not a missing peer: say so instead of hiding it.
+          let outside = "";
+          if (scope !== undefined) {
+            try {
+              const unscoped = resolveRosterTarget(built.entries, to);
+              if (unscoped.target) outside = ` "${to}" exists outside scope "${scope}".`;
+            } catch {
+              outside = ` "${to}" is ambiguous outside scope "${scope}" too.`;
+            }
+          }
+          return fail(`SendMessage: no live session matches "${to}"${where}${names}.${outside}`);
         }
         target = resolved.target;
       } catch (error) {

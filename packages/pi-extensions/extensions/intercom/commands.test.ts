@@ -152,9 +152,13 @@ describe("/rename (CORE-2435 I4, replaces the retired third-party /alias)", () =
     const { fetchPiSessions } = await import("./roster.ts");
     const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-rename-host-"));
     const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
-    const until = async (check: () => boolean, ms = 8000) => {
+    // Await the check: an async probe (e.g. a live fetchPiSessions
+    // against the test host) must settle inside the poll, never as a
+    // background rejection after the host closes (fail-closed fetch
+    // throws, and an unawaited probe would fail a later test instead).
+    const until = async (check: () => boolean | Promise<boolean>, ms = 8000) => {
       const start = Date.now();
-      while (!check()) {
+      while (!(await check())) {
         if (Date.now() - start > ms) throw new Error("timed out");
         await new Promise((r) => setTimeout(r, 5));
       }

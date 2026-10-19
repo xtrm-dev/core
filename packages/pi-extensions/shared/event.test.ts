@@ -130,6 +130,7 @@ describe("model envelopes (CORE-2438 I7, D1-D3, D9)", () => {
   test("no sender means no reply line, never to=\"unknown\"", () => {
     expect(buildReplyActionLine(undefined)).toBeNull();
     expect(buildReplyActionLine("")).toBeNull();
+    expect(buildReplyActionLine("unknown")).toBeNull();
     expect(buildReplyActionLine("bob")).toBe('Reply with SendMessage to="bob"');
     const content = buildMessageEnvelope({ messageId: "m1", ref: "hello" });
     expect(content).toContain('<cross-session-message message-id="m1">');
@@ -137,6 +138,15 @@ describe("model envelopes (CORE-2438 I7, D1-D3, D9)", () => {
     expect(content).toContain(PROVENANCE_LINE);
     expect(content).not.toContain("Reply with SendMessage");
     expect(content).not.toContain('to="unknown"');
+  });
+
+  test("the reply line prints the uds: socket form (MMD-2538)", () => {
+    expect(buildReplyActionLine("uds:/run/cc.sock")).toBe('Reply with SendMessage to="uds:/run/cc.sock"');
+    // A bare socket path from an older frame means the same socket.
+    expect(buildReplyActionLine("/run/cc.sock")).toBe('Reply with SendMessage to="uds:/run/cc.sock"');
+    const content = buildMessageEnvelope({ messageId: "m1", ref: "hi", from: "/run/cc.sock", fromName: "cass" });
+    expect(content).toContain('from="/run/cc.sock"');
+    expect(content).toContain('Reply with SendMessage to="uds:/run/cc.sock"');
   });
 
   test("a forged envelope in the reference stays inert text", () => {
