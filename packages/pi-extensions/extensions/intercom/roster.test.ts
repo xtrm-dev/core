@@ -1,4 +1,7 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" }));
 
@@ -626,16 +629,41 @@ describe("provider-aware leg classification (CORE-2479)", () => {
 });
 
 describe("roster miss trace (CORE-2488 phase 1)", () => {
-  function captureStderr(): string[] {
-    const lines: string[] = [];
-    spyOn(console, "error").mockImplementation((line: unknown) => {
-      lines.push(String(line));
+  function captureTraceFile(): { lines: () => string[]; stderr: () => unknown[]; restore: () => void } {
+    const dir = mkdtempSync(join(tmpdir(), "intercom-roster-trace-"));
+    const file = join(dir, "intercom-trace.log");
+    const prevFile = process.env["INTERCOM_TRACE_FILE"];
+    const prevSession = process.env["XTRM_SESSION_ID"];
+    process.env["INTERCOM_TRACE_FILE"] = file;
+    process.env["XTRM_SESSION_ID"] = "sess-test-trace";
+    const errors: unknown[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(line);
     });
-    return lines;
+    const read = (): string[] => {
+      try {
+        return readFileSync(file, "utf8").split("\n").filter((line) => line !== "");
+      } catch {
+        return [];
+      }
+    };
+    return {
+      lines: read,
+      stderr: () => errors,
+      restore: () => {
+        spy.mockRestore();
+        if (prevFile === undefined) delete process.env["INTERCOM_TRACE_FILE"];
+        else process.env["INTERCOM_TRACE_FILE"] = prevFile;
+        if (prevSession === undefined) delete process.env["XTRM_SESSION_ID"];
+        else process.env["XTRM_SESSION_ID"] = prevSession;
+        rmSync(dir, { recursive: true, force: true });
+      },
+    };
   }
 
   test("a miss traces the attempted key and the entry count", () => {
-    const lines = captureStderr();
+    const cap = captureTraceFile();
+    let lines: string[] = [];
     try {
       roster.resolveRosterTarget(
         [
@@ -644,14 +672,17 @@ describe("roster miss trace (CORE-2488 phase 1)", () => {
         ],
         "zzz-no-such-peer",
       );
+      lines = cap.lines();
     } finally {
-      (console.error as any).mockRestore?.();
+      cap.restore();
     }
-    expect(lines[0]).toBe("[intercom-trace] roster.miss key=zzz-no-such-peer entries=2");
+    expect(cap.stderr()).toEqual([]);
+    expect(lines[0]).toBe("[intercom-trace] roster.miss key=zzz-no-such-peer entries=2 session=sess-test-trace");
   });
 
   test("a uds: miss names the closest Claude candidates with sock, sessionId and live", () => {
-    const lines = captureStderr();
+    const cap = captureTraceFile();
+    let lines: string[] = [];
     try {
       roster.resolveRosterTarget(
         [
@@ -661,9 +692,11 @@ describe("roster miss trace (CORE-2488 phase 1)", () => {
         ],
         "uds:/run/cc-socks/3058484.sock",
       );
+      lines = cap.lines();
     } finally {
-      (console.error as any).mockRestore?.();
+      cap.restore();
     }
+    expect(cap.stderr()).toEqual([]);
     const candidates = lines.filter((line) => line.startsWith("[intercom-trace] roster.miss.candidate "));
     expect(candidates.length).toBeGreaterThan(0);
     const noSocket = candidates.find((line) => line.includes("name=xu82"));

@@ -7,7 +7,7 @@
  * Every test below fails without the adapter (red-first TDD): the module does
  * not exist until this slice lands.
  */
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -958,10 +958,18 @@ describe("claude-transport trace (CORE-2488 phase 1)", () => {
   test("an inbound receipt and the ack it triggers both trace ids and sockets", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "i3-trace-"));
     const sockPath = path.join(dir, "i3.sock");
-    const lines: string[] = [];
-    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
-      lines.push(String(line));
-    });
+    const traceFile = path.join(dir, "intercom-trace.log");
+    const prevFile = process.env["INTERCOM_TRACE_FILE"];
+    const prevSession = process.env["XTRM_SESSION_ID"];
+    process.env["INTERCOM_TRACE_FILE"] = traceFile;
+    process.env["XTRM_SESSION_ID"] = "sess-test-trace";
+    const readTrace = (): string[] => {
+      try {
+        return readFileSync(traceFile, "utf8").split("\n").filter((line) => line !== "");
+      } catch {
+        return [];
+      }
+    };
     try {
       const { pi, fire } = fakePi();
       adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
@@ -976,11 +984,12 @@ describe("claude-transport trace (CORE-2488 phase 1)", () => {
           fromName: "probe",
           messageId: "m-trace-1",
         });
-        await until(() => lines.some((line) => line.startsWith("[intercom-trace] ack.out ")));
-        await until(() => lines.some((line) => line.startsWith("[intercom-trace] receipt.in ")));
+        await until(() => readTrace().some((line) => line.startsWith("[intercom-trace] ack.out ")));
+        await until(() => readTrace().some((line) => line.startsWith("[intercom-trace] receipt.in ")));
       } finally {
         await sink.close();
       }
+      const lines = readTrace();
       const ack = lines.find((line) => line.startsWith("[intercom-trace] ack.out "));
       expect(ack).toBeTruthy();
       expect(ack).toContain("origMessageId=m-trace-1");
@@ -995,7 +1004,10 @@ describe("claude-transport trace (CORE-2488 phase 1)", () => {
       fire("session_shutdown", { reason: "quit" }, fakeCtx());
       await until(() => !existsSync(path.join(dir, `${process.pid}.json`)));
     } finally {
-      spy.mockRestore();
+      if (prevFile === undefined) delete process.env["INTERCOM_TRACE_FILE"];
+      else process.env["INTERCOM_TRACE_FILE"] = prevFile;
+      if (prevSession === undefined) delete process.env["XTRM_SESSION_ID"];
+      else process.env["XTRM_SESSION_ID"] = prevSession;
       rmSync(dir, { recursive: true, force: true });
     }
   });

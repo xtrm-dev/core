@@ -1501,12 +1501,36 @@ describe("disconnected-extension routing and held visibility (CORE-2479)", () =>
 });
 
 describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
-  function captureStderr(): string[] {
-    const lines: string[] = [];
-    spyOn(console, "error").mockImplementation((line: unknown) => {
-      lines.push(String(line));
+  function captureTraceFile(): { lines: () => string[]; stderr: () => unknown[]; restore: () => void } {
+    const dir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), "intercom-send-trace-"));
+    const file = nodePath.join(dir, "intercom-trace.log");
+    const prevFile = process.env["INTERCOM_TRACE_FILE"];
+    const prevSession = process.env["XTRM_SESSION_ID"];
+    process.env["INTERCOM_TRACE_FILE"] = file;
+    process.env["XTRM_SESSION_ID"] = "sess-test-trace";
+    const errors: unknown[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(line);
     });
-    return lines;
+    const read = (): string[] => {
+      try {
+        return nodeFs.readFileSync(file, "utf8").split("\n").filter((line) => line !== "");
+      } catch {
+        return [];
+      }
+    };
+    return {
+      lines: read,
+      stderr: () => errors,
+      restore: () => {
+        spy.mockRestore();
+        if (prevFile === undefined) delete process.env["INTERCOM_TRACE_FILE"];
+        else process.env["INTERCOM_TRACE_FILE"] = prevFile;
+        if (prevSession === undefined) delete process.env["XTRM_SESSION_ID"];
+        else process.env["XTRM_SESSION_ID"] = prevSession;
+        nodeFs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
   }
 
   function claudePeerWithSource(name: string, sock: string, sessionId = `claude-${name}`) {
@@ -1523,7 +1547,8 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
   }
 
   test("every Claude send traces messageId, from and sock, then its outcome", async () => {
-    const lines = captureStderr();
+    const cap = captureTraceFile();
+    let lines: string[] = [];
     try {
       const { deps } = baseDeps({
         fetchPi: async () => [],
@@ -1535,11 +1560,13 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
       const { tool } = register(deps);
       const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
       expect(r.isError).toBeFalsy();
+      lines = cap.lines();
     } finally {
-      (console.error as any).mockRestore?.();
+      cap.restore();
     }
+    expect(cap.stderr()).toEqual([]);
     expect(lines).toContain(
-      "[intercom-trace] send.claude messageId=m-test-1 from=uds:/tmp/own.sock fromName=coordinator sock=/tmp/cass.sock sockSource=claude-session-json:messagingSocketPath target=cass",
+      "[intercom-trace] send.claude messageId=m-test-1 from=uds:/tmp/own.sock fromName=coordinator sock=/tmp/cass.sock sockSource=claude-session-json:messagingSocketPath target=cass session=sess-test-trace",
     );
     const result = lines.find((line) => line.startsWith("[intercom-trace] send.claude.result "));
     expect(result).toBeTruthy();
@@ -1550,7 +1577,8 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
   });
 
   test("a starved receipt traces unconfirmed, never failed", async () => {
-    const lines = captureStderr();
+    const cap = captureTraceFile();
+    let lines: string[] = [];
     try {
       const { deps } = baseDeps({
         fetchPi: async () => [],
@@ -1564,9 +1592,11 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
       const { tool } = register(deps);
       const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
       expect(String(r.content[0].text)).toContain("delivery could not be confirmed");
+      lines = cap.lines();
     } finally {
-      (console.error as any).mockRestore?.();
+      cap.restore();
     }
+    expect(cap.stderr()).toEqual([]);
     const result = lines.find((line) => line.startsWith("[intercom-trace] send.claude.result "));
     expect(result).toBeTruthy();
     expect(result).toContain("outcome=unconfirmed");
