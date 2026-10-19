@@ -61175,13 +61175,6 @@ function resolveGlobalPromptTargets(opts = {}) {
   const home = opts.home ?? import_node_os9.default.homedir();
   return [
     {
-      label: "pi",
-      // PI_AGENT_DIR keeps CI/smoke runs (and the real runtime) pointing at
-      // the same agent tree the rest of pi-runtime uses — never the real
-      // home during tests.
-      file: import_node_path19.default.join(opts.agentDir ?? process.env.PI_AGENT_DIR ?? import_node_path19.default.join(home, ".pi", "agent"), "APPEND_SYSTEM.md")
-    },
-    {
       label: "claude",
       file: import_node_path19.default.join(opts.claudeDir ?? import_node_path19.default.join(home, ".claude"), "CLAUDE.md")
     }
