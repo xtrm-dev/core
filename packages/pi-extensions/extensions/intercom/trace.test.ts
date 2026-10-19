@@ -1,20 +1,38 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const trace = await import("./trace.ts");
 
-const spies: Array<{ mockRestore(): void }> = [];
+const tmpDirs: string[] = [];
+const savedEnv = new Map<string, string | undefined>();
 
-function capture(): string[] {
-  const lines: string[] = [];
-  const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
-    lines.push(String(line));
-  });
-  spies.push(spy);
-  return lines;
+function setEnv(name: string, value: string | undefined): void {
+  if (!savedEnv.has(name)) savedEnv.set(name, process.env[name]);
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
+function tempTraceFile(): string {
+  const dir = mkdtempSync(join(tmpdir(), "intercom-trace-"));
+  tmpDirs.push(dir);
+  return join(dir, "intercom-trace.log");
+}
+
+function readLines(file: string): string[] {
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => line !== "");
 }
 
 afterEach(() => {
-  while (spies.length > 0) spies.pop()?.mockRestore();
+  for (const [name, value] of savedEnv) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  savedEnv.clear();
+  while (tmpDirs.length > 0) rmSync(tmpDirs.pop() as string, { recursive: true, force: true });
 });
 
 describe("intercom trace line (CORE-2488 phase 1)", () => {
@@ -40,17 +58,55 @@ describe("intercom trace line (CORE-2488 phase 1)", () => {
     expect(trace.traceLine("roster.miss", {})).toBe("[intercom-trace] roster.miss");
   });
 
-  test("emission writes one line to stderr", () => {
-    const lines = capture();
+  test("emission appends one line to the trace file with the session id", () => {
+    const file = tempTraceFile();
+    setEnv("INTERCOM_TRACE_FILE", file);
+    setEnv("XTRM_SESSION_ID", "sess-test-1");
     trace.intercomTrace("ack.out", { origMessageId: "m-1", sock: "/tmp/peer.sock" });
-    expect(lines).toEqual(["[intercom-trace] ack.out origMessageId=m-1 sock=/tmp/peer.sock"]);
+    expect(readLines(file)).toEqual(["[intercom-trace] ack.out origMessageId=m-1 sock=/tmp/peer.sock session=sess-test-1"]);
   });
 
-  test("a throwing stderr never breaks the caller", () => {
-    const spy = spyOn(console, "error").mockImplementation(() => {
-      throw new Error("stderr gone");
+  test("emission never touches stderr (CORE-2489: prompt stays clean)", () => {
+    const file = tempTraceFile();
+    setEnv("INTERCOM_TRACE_FILE", file);
+    setEnv("XTRM_SESSION_ID", "sess-test-1");
+    const errors: unknown[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(line);
     });
-    spies.push(spy);
-    expect(() => trace.intercomTrace("send.claude", { messageId: "m-1" })).not.toThrow();
+    try {
+      trace.intercomTrace("send.claude", { messageId: "m-1" });
+      trace.intercomTrace("send.claude.result", { messageId: "m-1", outcome: "delivered" });
+      trace.intercomTrace("roster.miss", { key: "zzz", entries: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(errors).toEqual([]);
+    expect(readLines(file)).toHaveLength(3);
+  });
+
+  test("a failing file append never breaks the caller and stays off stderr", () => {
+    const dir = mkdtempSync(join(tmpdir(), "intercom-trace-broken-"));
+    tmpDirs.push(dir);
+    setEnv("INTERCOM_TRACE_FILE", dir); // appending to a directory always fails
+    const errors: unknown[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(line);
+    });
+    try {
+      expect(() => trace.intercomTrace("send.claude", { messageId: "m-1" })).not.toThrow();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test("without session env the line falls back to the pid", () => {
+    const file = tempTraceFile();
+    setEnv("INTERCOM_TRACE_FILE", file);
+    setEnv("XTRM_SESSION_ID", undefined);
+    setEnv("XTRM_SESSION_NAME", undefined);
+    trace.intercomTrace("roster.miss", {});
+    expect(readLines(file)).toEqual([`[intercom-trace] roster.miss session=pid-${process.pid}`]);
   });
 });

@@ -1,15 +1,25 @@
 /**
  * CORE-2488 phase 1: intercom leg tracing (instrumentation only).
+ * CORE-2489: the sink is an append-only file, never stderr. The Pi extension
+ * runtime surfaces extension stderr into prompt context, so the previous
+ * stderr sink printed every trace line into the model's visible prompt area.
+ * Diagnostics must never enter the conversation.
  *
- * One machine-parseable line per leg event on stderr, so a live SendMessage
- * can be classified from its own trace instead of reconstructed afterwards.
- * The line shape is stable (`[intercom-trace] <site> key=value ...`): absent
- * values render `none`, so a missing socket reads as `sock=none` instead of
- * silently dropping the field that explains the failure.
+ * One machine-parseable line per leg event in the trace file, so a live
+ * SendMessage can be classified from its own trace instead of reconstructed
+ * afterwards. The line shape is stable (`[intercom-trace] <site> key=value ...`):
+ * absent values render `none`, so a missing socket reads as `sock=none` instead
+ * of silently dropping the field that explains the failure. Every line carries
+ * the session id (`session=...`) so sessions sharing one file stay attributable;
+ * `INTERCOM_TRACE_FILE` redirects the sink (tests pin it to a temp file).
  *
  * Nothing here decides routing, delivery or state. A trace never throws: a
  * broken trace must never break the send it describes.
  */
+
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 const TRACE_PREFIX = "[intercom-trace]";
 
@@ -30,10 +40,30 @@ function renderValue(value: TraceValue): string {
   return /\s/.test(value) ? JSON.stringify(value) : value;
 }
 
-/** Emit one trace line to stderr. Never throws. */
+/** Trace file: temp override for tests, else the shared xtrm log. Read at call time. */
+function traceFile(): string {
+  const override = process.env["INTERCOM_TRACE_FILE"];
+  if (override !== undefined && override !== "") return override;
+  return join(homedir(), ".xtrm", "logs", "intercom-trace.log");
+}
+
+/**
+ * Best-effort session identity for the `session=` field: the canonical
+ * XTRM_SESSION_ID, then XTRM_SESSION_NAME, then the pid so a line is never
+ * unattributed. Read at call time so tests can pin it per case.
+ */
+function sessionRef(): string {
+  const id = process.env["XTRM_SESSION_ID"] ?? process.env["XTRM_SESSION_NAME"];
+  if (id !== undefined && id !== "") return id;
+  return `pid-${process.pid}`;
+}
+
+/** Append one trace line to the trace file. Never throws; failures are silent. */
 export function intercomTrace(site: string, fields: Record<string, TraceValue>): void {
   try {
-    console.error(traceLine(site, fields));
+    const file = traceFile();
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, `${traceLine(site, fields)} session=${renderValue(sessionRef())}\n`, "utf8");
   } catch {
     /* tracing must never fail a send */
   }
