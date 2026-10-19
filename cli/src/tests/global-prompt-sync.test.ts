@@ -64,9 +64,9 @@ beforeEach(async () => {
   previousCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
   const testHome = path.join(tempRoot, 'home');
   process.env.HOME = testHome;
-  // CORE-2412: resolveGlobalPromptTargets prefers PI_AGENT_DIR over
-  // <home>/.pi/agent, so HOME-only sandboxing leaks the pi target into the
-  // suite-shared sandbox (create vs replace-block flakes). Keep both together.
+  // PI_AGENT_DIR is inert for this suite since the pi target was deprecated
+  // (XT-138/XT-139) — resolveGlobalPromptTargets no longer reads it — but
+  // keep it sandboxed alongside HOME so no test can touch the real agent dir.
   process.env.PI_AGENT_DIR = path.join(testHome, '.pi', 'agent');
   delete process.env.PI_CODING_AGENT_DIR;
 });
@@ -194,89 +194,92 @@ describe('renderManagedGlobalPrompt', () => {
 });
 
 describe('per-target canonical assets', () => {
-  it('prefers a target-specific asset and falls back to the shared body', async () => {
+  it('prefers the shared body for claude and keeps pi on its deprecation pointer', async () => {
     const pi = await readCanonicalGlobalPromptBody('pi');
     const claude = await readCanonicalGlobalPromptBody('claude');
     const shared = await readCanonicalGlobalPromptBody();
 
-    expect(pi).toContain(PI_ONLY_MARKER);
-    expect(claude).not.toContain(PI_ONLY_MARKER);
+    expect(pi).toContain('DEPRECATED');
+    expect(pi).toContain('xtrm-primer');
+    expect(pi).not.toBe(shared);
     expect(claude).toBe(shared);
   });
 
-  it('carries the mandatory framing in every canonical body', async () => {
-    expect(await readCanonicalGlobalPromptBody('pi')).toContain('MANDATORY');
+  it('carries the mandatory framing in the managed canonical body', async () => {
+    expect(await readCanonicalGlobalPromptBody('claude')).toContain('MANDATORY');
     expect(await readCanonicalGlobalPromptBody()).toContain('MANDATORY');
   });
 
-  it('injects host-specific doctrine only into the host that declares it', async () => {
-    const result = await syncGlobalPrompts({ home: process.env.HOME as string });
-    expect(result.targets.map((t) => t.label)).toEqual(['pi', 'claude']);
-
+  it('syncs only the claude target on the production path and leaves any pi file alone', async () => {
     const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
+    await fs.outputFile(piFile, 'operator notes stay');
+    const result = await syncGlobalPrompts({ home: process.env.HOME as string });
+    expect(result.targets.map((t) => t.label)).toEqual(['claude']);
+
     const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
-    expect(await fs.readFile(piFile, 'utf8')).toContain(PI_ONLY_MARKER);
+    expect(await fs.readFile(claudeFile, 'utf8')).toContain('MANDATORY');
     expect(await fs.readFile(claudeFile, 'utf8')).not.toContain(PI_ONLY_MARKER);
+    expect(await fs.readFile(piFile, 'utf8')).toBe('operator notes stay');
   });
 });
 
 describe('syncGlobalPrompts', () => {
-  it('creates both targets when missing', async () => {
+  it('creates the claude target when missing and never creates a pi APPEND_SYSTEM.md', async () => {
     const result = await syncGlobalPrompts(opts());
-    expect(result.targets.map((t) => t.action)).toEqual(['create', 'create']);
+    expect(result.targets.map((t) => t.action)).toEqual(['create']);
 
-    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
     const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
-    expect(await fs.readFile(piFile, 'utf8')).toBe(`${BLOCK}\n`);
     expect(await fs.readFile(claudeFile, 'utf8')).toBe(`${BLOCK}\n`);
+    expect(fs.existsSync(path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md'))).toBe(false);
   });
 
-  it('honors PI_AGENT_DIR so CI/smoke runs never touch the real agent dir (xtrm-3ljgz.2)', async () => {
-    const previousAgentDir = process.env.PI_AGENT_DIR;
-    const scratchAgent = path.join(tempRoot, 'scratch-agent');
-    process.env.PI_AGENT_DIR = scratchAgent;
-    try {
-      const result = await syncGlobalPrompts(opts());
-      expect(result.targets[0].label).toBe('pi');
-      expect(result.targets[0].file).toBe(path.join(scratchAgent, 'APPEND_SYSTEM.md'));
-      expect(await fs.readFile(path.join(scratchAgent, 'APPEND_SYSTEM.md'), 'utf8')).toBe(`${BLOCK}\n`);
-      expect(fs.existsSync(path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md'))).toBe(false);
-    } finally {
-      if (previousAgentDir === undefined) delete process.env.PI_AGENT_DIR;
-      else process.env.PI_AGENT_DIR = previousAgentDir;
-    }
+  it('leaves a legacy pi APPEND_SYSTEM.md untouched (deprecated target, transition)', async () => {
+    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
+    const legacy = `# operator notes\n\n${START}\nold doctrine\n${END}\n`;
+    await fs.outputFile(piFile, legacy);
+
+    const result = await syncGlobalPrompts(opts());
+    expect(result.targets.map((t) => t.label)).toEqual(['claude']);
+    expect(await fs.readFile(piFile, 'utf8')).toBe(legacy); // untouched
+  });
+
+  it('never manages any APPEND_SYSTEM.md, so project overrides keep Pi-native precedence', async () => {
+    await syncGlobalPrompts(opts());
+    const targets = resolveGlobalPromptTargets({ home: process.env.HOME as string });
+    expect(targets.map((t) => t.label)).toEqual(['claude']);
+    for (const target of targets) expect(path.basename(target.file)).not.toBe('APPEND_SYSTEM.md');
   });
 
   it('migrates the legacy whole-file body once and stays idempotent', async () => {
-    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
-    await fs.outputFile(piFile, `${LEGACY_BODY}\n`);
+    const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
+    await fs.outputFile(claudeFile, `${LEGACY_BODY}\n`);
 
     const first = await syncGlobalPrompts(opts());
     expect(first.targets[0].action).toBe('replace-whole-file');
-    expect(await fs.readFile(piFile, 'utf8')).toBe(`${BLOCK}\n`);
+    expect(await fs.readFile(claudeFile, 'utf8')).toBe(`${BLOCK}\n`);
 
     const second = await syncGlobalPrompts(opts());
     expect(second.targets[0].action).toBe('unchanged');
-    expect(await fs.readFile(piFile, 'utf8')).toBe(`${BLOCK}\n`);
+    expect(await fs.readFile(claudeFile, 'utf8')).toBe(`${BLOCK}\n`);
   });
 
   it('preserves user bytes outside the marked block on apply', async () => {
-    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
-    await fs.outputFile(piFile, `# user header\n\n${START}\nold\n${END}\n\nuser tail`);
+    const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
+    await fs.outputFile(claudeFile, `# user header\n\n${START}\nold\n${END}\n\nuser tail`);
 
     const result = await syncGlobalPrompts(opts());
     expect(result.targets[0].action).toBe('replace-block');
-    expect(await fs.readFile(piFile, 'utf8')).toBe(`# user header\n\n${BLOCK}\n\nuser tail`);
+    expect(await fs.readFile(claudeFile, 'utf8')).toBe(`# user header\n\n${BLOCK}\n\nuser tail`);
   });
 
   it('dry-run reports without writing', async () => {
-    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
-    await fs.outputFile(piFile, `${LEGACY_BODY}\n`);
+    const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
+    await fs.outputFile(claudeFile, `${LEGACY_BODY}\n`);
 
     const result = await syncGlobalPrompts(opts({ dryRun: true }));
     expect(result.targets[0].dryRun).toBe(true);
     expect(result.targets[0].changed).toBe(true);
-    expect(await fs.readFile(piFile, 'utf8')).toBe(`${LEGACY_BODY}\n`); // untouched
+    expect(await fs.readFile(claudeFile, 'utf8')).toBe(`${LEGACY_BODY}\n`); // untouched
   });
 
   it('fails closed on a symlink target without writing', async () => {
@@ -289,8 +292,8 @@ describe('syncGlobalPrompts', () => {
   });
 
   it('backs up the pre-write file under ~/.xtrm/migration-backups', async () => {
-    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
-    await fs.outputFile(piFile, `${LEGACY_BODY}\n`);
+    const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
+    await fs.outputFile(claudeFile, `${LEGACY_BODY}\n`);
 
     await syncGlobalPrompts(opts());
 
@@ -301,26 +304,26 @@ describe('syncGlobalPrompts', () => {
   });
 
   it('preserves the target file mode', async () => {
-    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
-    await fs.outputFile(piFile, `${LEGACY_BODY}\n`);
-    await fs.chmod(piFile, 0o600);
+    const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
+    await fs.outputFile(claudeFile, `${LEGACY_BODY}\n`);
+    await fs.chmod(claudeFile, 0o600);
 
     await syncGlobalPrompts(opts());
 
-    const stat = await fs.stat(piFile);
+    const stat = await fs.stat(claudeFile);
     expect(stat.mode & 0o777).toBe(0o600);
   });
 
   it('refuses to write when the file changed between plan and write', async () => {
-    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
+    const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
     const original = `${LEGACY_BODY}\n`;
-    await fs.outputFile(piFile, original);
+    await fs.outputFile(claudeFile, original);
 
     const readSpy = vi.spyOn(fs, 'readFile');
     readSpy.mockImplementation(async (file: any, ...rest: any[]) => {
-      if (String(file).endsWith('APPEND_SYSTEM.md')) {
+      if (String(file).endsWith('CLAUDE.md')) {
         // First call is the plan read, subsequent calls are the defense re-read.
-        readSpy.mockImplementation(async (f: any) => String(f).endsWith('APPEND_SYSTEM.md') ? `${original}// concurrent edit` : await fs.readFile(f, 'utf8'));
+        readSpy.mockImplementation(async (f: any) => String(f).endsWith('CLAUDE.md') ? `${original}// concurrent edit` : await fs.readFile(f, 'utf8'));
         return original;
       }
       return await fs.readFile(file as string, rest[0] as BufferEncoding);
@@ -328,31 +331,29 @@ describe('syncGlobalPrompts', () => {
 
     await expect(syncGlobalPrompts(opts())).rejects.toThrow(/concurrent modification/);
     readSpy.mockRestore();
-    expect(await fs.readFile(piFile, 'utf8')).toBe(original); // untouched
+    expect(await fs.readFile(claudeFile, 'utf8')).toBe(original); // untouched
   });
 });
 
 describe('per-target routing (production path, no canonicalBody)', () => {
-  it('resolves exactly pi and claude targets — fails if a target is mis-wired', () => {
+  it('resolves exactly the claude target — fails if a target is mis-wired', () => {
     const targets = resolveGlobalPromptTargets({ home: process.env.HOME as string });
-    expect(targets.map((t) => t.label)).toEqual(['pi', 'claude']);
+    expect(targets.map((t) => t.label)).toEqual(['claude']);
   });
 
-  it('syncs production assets per target: pi gets pi doctrine, claude gets shared fallback', async () => {
+  it('syncs the claude production asset and writes no pi file', async () => {
     const result = await syncGlobalPrompts({ home: process.env.HOME as string });
-    expect(result.targets.map((t) => t.label)).toEqual(['pi', 'claude']);
+    expect(result.targets.map((t) => t.label)).toEqual(['claude']);
 
-    const piFile = path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md');
     const claudeFile = path.join(process.env.HOME as string, '.claude', 'CLAUDE.md');
-    const piContent = await fs.readFile(piFile, 'utf8');
     const claudeContent = await fs.readFile(claudeFile, 'utf8');
+    const shared = await readCanonicalGlobalPromptBody();
 
-    expect(piContent).toContain(PI_ONLY_MARKER);
-    expect(piContent).toContain('MANDATORY');
-    expect(claudeContent).not.toContain(PI_ONLY_MARKER);
     expect(claudeContent).toContain('MANDATORY');
-    // Mis-wired routing (both targets receiving the same body) must fail here.
-    expect(piContent).not.toBe(claudeContent);
+    expect(claudeContent).not.toContain(PI_ONLY_MARKER);
+    // The managed claude file carries the shared body, nothing host-specific.
+    expect(claudeContent).toContain(shared.trim());
+    expect(fs.existsSync(path.join(process.env.HOME as string, '.pi', 'agent', 'APPEND_SYSTEM.md'))).toBe(false);
   });
 
   it('falls back to the shared body for claude, codex, and unknown labels', async () => {
@@ -371,15 +372,14 @@ describe('per-target routing (production path, no canonicalBody)', () => {
     expect(shared).not.toMatch(/codemode/i);
   });
 
-  it('pi asset is a router, not a doctrine duplicate (one doctrine source)', async () => {
+  it('pi asset is a deprecation pointer, not doctrine (single vehicle is the primer)', async () => {
     const pi = await readCanonicalGlobalPromptBody('pi');
-    expect(pi).toContain('MANDATORY');
-    expect(pi).toContain(PI_ONLY_MARKER);
-    // Cell-discipline detail lives in the `codemode` skill only. If the pi
-    // asset re-duplicates it, this fails and the assets have re-diverged.
+    expect(pi).toContain('DEPRECATED');
+    expect(pi).toContain('xtrm-primer');
+    // No doctrine ships here anymore: the primer folds it with audit fixes.
+    expect(pi).not.toContain('MANDATORY');
+    expect(pi).not.toContain(PI_ONLY_MARKER);
     expect(pi).not.toContain('Promise.allSettled');
-    // Resolve-shape detail lives in the codemode skill references, not in the global prompt.
-    expect(pi).not.toContain('structured output');
   });
 
   it('codemode skill gates the writer pre-flight pattern behind explicit scope', async () => {
