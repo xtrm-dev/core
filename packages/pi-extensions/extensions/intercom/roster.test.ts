@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 
 mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" }));
 
@@ -564,6 +564,13 @@ describe("provider-aware leg classification (CORE-2479)", () => {
     // Same ref on both registrations: the socket row carries the session hash, so no R7 ambiguity.
     expect(built.peers[0].ref).toBe(roster.sessionRef("sess-claude-1"));
     expect(roster.resolveRosterTarget(built.entries, "xu82")).toMatchObject({ target: { kind: "claude" } });
+    // CORE-2488: the live socket must ride the dual-registered entry. Dropping
+    // it left us-on-a-host-record addressable by name only, so a uds: address
+    // that the peer itself reports was refused in under a second.
+    expect(built.entries[0].sock).toBe("/run/xu82.sock");
+    expect(roster.resolveRosterTarget(built.entries, "uds:/run/xu82.sock")).toMatchObject({
+      target: { kind: "claude", sessionId: "sess-claude-1" },
+    });
   });
 
   test("a Pi entry carries extensionConnected for disconnected-extension routing", () => {
@@ -615,5 +622,57 @@ describe("provider-aware leg classification (CORE-2479)", () => {
     });
     expect(built.peers).toEqual([]);
     expect(built.entries).toEqual([]);
+  });
+});
+
+describe("roster miss trace (CORE-2488 phase 1)", () => {
+  function captureStderr(): string[] {
+    const lines: string[] = [];
+    spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    return lines;
+  }
+
+  test("a miss traces the attempted key and the entry count", () => {
+    const lines = captureStderr();
+    try {
+      roster.resolveRosterTarget(
+        [
+          { kind: "pi", sessionId: "sess-abc123def456", name: "worker-one" },
+          { kind: "claude", sessionId: "claude-session-9", name: "claude-nine", sock: "/run/cc-socks/9.sock", live: true },
+        ],
+        "zzz-no-such-peer",
+      );
+    } finally {
+      (console.error as any).mockRestore?.();
+    }
+    expect(lines[0]).toBe("[intercom-trace] roster.miss key=zzz-no-such-peer entries=2");
+  });
+
+  test("a uds: miss names the closest Claude candidates with sock, sessionId and live", () => {
+    const lines = captureStderr();
+    try {
+      roster.resolveRosterTarget(
+        [
+          // The failure shape: proved live, no socket on the entry.
+          { kind: "claude", sessionId: "claude-session-9", name: "xu82", live: true },
+          { kind: "claude", sessionId: "claude-session-7", name: "live-peer", sock: "/run/cc-socks/7.sock", sockSource: "claude-session-json:messagingSocketPath", live: true },
+        ],
+        "uds:/run/cc-socks/3058484.sock",
+      );
+    } finally {
+      (console.error as any).mockRestore?.();
+    }
+    const candidates = lines.filter((line) => line.startsWith("[intercom-trace] roster.miss.candidate "));
+    expect(candidates.length).toBeGreaterThan(0);
+    const noSocket = candidates.find((line) => line.includes("name=xu82"));
+    expect(noSocket).toBeTruthy();
+    expect(noSocket).toContain("sock=none");
+    expect(noSocket).toContain("live=true");
+    expect(noSocket).toContain("sessionId=claude-session-9");
+    const withSocket = candidates.find((line) => line.includes("name=live-peer"));
+    expect(withSocket).toContain("sock=/run/cc-socks/7.sock");
+    expect(withSocket).toContain("sockSource=claude-session-json:messagingSocketPath");
   });
 });

@@ -7,7 +7,7 @@
  * Every test below fails without the adapter (red-first TDD): the module does
  * not exist until this slice lands.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -917,6 +917,85 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
       fire("session_shutdown", { reason: "quit" }, fakeCtx([]));
       await until(() => seen.includes(null));
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("claude-transport trace (CORE-2488 phase 1)", () => {
+  type Handler = (event: any, ctx: any) => unknown;
+  const until = async (check: () => boolean, ms = 5000) => {
+    const start = Date.now();
+    while (!check()) {
+      if (Date.now() - start > ms) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+  function fakePi() {
+    const handlers = new Map<string, Handler[]>();
+    const pi = {
+      on(name: string, handler: Handler) {
+        handlers.set(name, [...(handlers.get(name) ?? []), handler]);
+        return () => {};
+      },
+      sendMessage: () => {},
+      getSessionName: () => "probe",
+    };
+    const fire = (name: string, event: any, ctx: any) => {
+      for (const handler of handlers.get(name) ?? []) void handler({ type: name, ...event }, ctx);
+    };
+    return { pi: pi as any, fire };
+  }
+  function fakeCtx() {
+    return {
+      cwd: "/tmp/probe",
+      sessionManager: { getSessionId: () => "s-probe" },
+      isIdle: () => true,
+      ui: { notify: () => {} },
+    } as any;
+  }
+
+  test("an inbound receipt and the ack it triggers both trace ids and sockets", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-trace-"));
+    const sockPath = path.join(dir, "i3.sock");
+    const lines: string[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      const { pi, fire } = fakePi();
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
+      fire("session_start", { reason: "startup" }, fakeCtx());
+      await until(() => existsSync(sockPath));
+      const { server: sink, sockPath: sinkSock } = await transport.bindClaudeTransportSocket(path.join(dir, "sink.sock"), {});
+      try {
+        await transport.sendToClaudeSession({
+          sock: sockPath,
+          body: "trace-probe",
+          from: `uds:${sinkSock}`,
+          fromName: "probe",
+          messageId: "m-trace-1",
+        });
+        await until(() => lines.some((line) => line.startsWith("[intercom-trace] ack.out ")));
+        await until(() => lines.some((line) => line.startsWith("[intercom-trace] receipt.in ")));
+      } finally {
+        await sink.close();
+      }
+      const ack = lines.find((line) => line.startsWith("[intercom-trace] ack.out "));
+      expect(ack).toBeTruthy();
+      expect(ack).toContain("origMessageId=m-trace-1");
+      expect(ack).toContain(`sock=${sinkSock}`);
+      expect(ack).toContain("sockSource=frame-from-envelope");
+      expect(ack).toContain("ack=delivered");
+      const receipt = lines.find((line) => line.startsWith("[intercom-trace] receipt.in "));
+      expect(receipt).toBeTruthy();
+      expect(receipt).toContain("origMessageId=m-trace-1");
+      expect(receipt).toContain("status=delivered");
+      expect(receipt).toMatch(/from=\S+/);
+      fire("session_shutdown", { reason: "quit" }, fakeCtx());
+      await until(() => !existsSync(path.join(dir, `${process.pid}.json`)));
+    } finally {
+      spy.mockRestore();
       rmSync(dir, { recursive: true, force: true });
     }
   });

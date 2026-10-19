@@ -30,7 +30,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WakeDeliveryState } from "@xtrm/contracts";
 import { injectIntercomWake, wakeDeliveryOptions, WakeDedupe } from "../delivery.ts";
-import { ccSocksDir, listClaudeSessions, resolveClaudeSenderSock, type ClaudePeer } from "./registry.ts";
+import { intercomTrace } from "../trace.ts";
+import { ccSocksDir, CLAUDE_SESSION_SOCK_SOURCE, FRAME_FROM_SOCK_SOURCE, listClaudeSessions, resolveClaudeSenderSock, type ClaudePeer } from "./registry.ts";
 import {
   ackClaudeMessage,
   bindClaudeTransportSocket,
@@ -277,6 +278,14 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
           if (!dedupe.mark(key)) {
             const senderSock = resolvedSock ?? ((message.from ?? "").startsWith("uds:") ? (message.from as string).slice(4) : "");
             if (senderSock && message.messageId) {
+              intercomTrace("ack.out", {
+                origMessageId: message.messageId,
+                sock: senderSock,
+                sockSource: resolvedSock ? CLAUDE_SESSION_SOCK_SOURCE : FRAME_FROM_SOCK_SOURCE,
+                ack: "delivered",
+                path: "duplicate",
+                from: ownFrom,
+              });
               void ackClaudeMessage(senderSock, "delivered", { from: ownFrom, origMessageId: message.messageId });
             }
             return;
@@ -304,6 +313,16 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
           const ack = ackForWakeState(state);
           const senderSock = resolvedSock ?? ((message.from ?? "").startsWith("uds:") ? (message.from as string).slice(4) : "");
           if (ack && senderSock) {
+            // CORE-2488 phase 1: every ack names the message it answers, the
+            // socket it targets and where that socket came from.
+            intercomTrace("ack.out", {
+              origMessageId: message.messageId,
+              sock: senderSock,
+              sockSource: resolvedSock ? CLAUDE_SESSION_SOCK_SOURCE : FRAME_FROM_SOCK_SOURCE,
+              ack,
+              path: "first",
+              from: ownFrom,
+            });
             void ackClaudeMessage(senderSock, ack, {
               from: ownFrom,
               ...(message.messageId ? { origMessageId: message.messageId } : {}),
