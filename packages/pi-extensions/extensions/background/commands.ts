@@ -872,7 +872,7 @@ export async function openTasksList(
         });
         return overlay as any;
       },
-      { overlay: true, overlayOptions: { width: "100%", anchor: "bottom-center" } },
+      { overlay: true, overlayOptions: { width: "100%", anchor: "bottom-center", margin: { bottom: 4 } } },
     );
   } catch {
     const rows = buildTasksRows(deps.store.list(), deps.store.listMonitors(), deps.now?.() ?? Date.now());
