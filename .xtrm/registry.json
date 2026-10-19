@@ -10,8 +10,12 @@
           "hash": "f491a52d210df5c07ecf6aace45ebcb43fb014f68a5c9c2c3af4bfe5531b5aec",
           "version": "0.15.3"
         },
+        "claude-receipt-ack.mjs": {
+          "hash": "415c5c6513b9786ba61b4c3efb628d8606b90f6c6858ad1a00b0f0ecdde7fa2c",
+          "version": "0.15.3"
+        },
         "dispatch.mjs": {
-          "hash": "94a79fd304419271bf1aff76902a13ba839d3b74ad208fb295ad64ce804fdc2d",
+          "hash": "5b942c4cc5038efc8a8cd569c079124ca4e0cdc06d14ba209d1bc70d7e5ef7fe",
           "version": "0.15.3"
         },
         "gitnexus/gitnexus-hook.cjs": {
