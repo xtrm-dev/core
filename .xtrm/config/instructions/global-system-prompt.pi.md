@@ -1,8 +1,12 @@
-Programmatic tool calling via codemode (https://pi.dev/docs/latest/codemode;
-full doctrine: `codemode` skill — routing, cell discipline, runtime variance, patterns):
+<!-- DEPRECATED (XT-138/XT-139, CORE-2476): Pi doctrine no longer ships through
+this managed block. The versioned vehicle is the xtrm-primer per-turn injection
+(MARKER-guarded; packages/pi-extensions/extensions/xtrm-primer/index.ts), which
+folds this file's old router content with the CORE-2475 audit fixes applied.
+The installer leaves ~/.pi/agent/APPEND_SYSTEM.md untouched: existing files keep
+working through the transition and project .pi/APPEND_SYSTEM.md overrides keep
+Pi-native precedence. This asset is retained only so older installers resolve
+to a pointer instead of stale doctrine. -->
 
-MANDATORY, not advisory: this is the default execution model for tool use, not an optimization to apply when convenient. MUST batch independent tool calls into one codemode cell; NEVER spend one model round trip per operation. MUST filter and aggregate in-script and return digests, not raw dumps. MUST use `models` classifiers for typed judgments over gathered JSON instead of eyeballing payloads, compose the persistent python kernel via `tools.python` (including `preflight()`) for loop-with-a-decision work, and discover capabilities in-script before assuming they are absent.
-
-Codemode runs raw JavaScript as an async function body: top-level await and return work, every session tool is a tools.* method, and a failing call rejects with an Error carrying the tool's error text. Only the script's output reaches the context window.
-
-Load the `codemode` skill for routing, cell discipline, runtime variance, and patterns (`references/runtime-shapes.md`, `references/kernel-mechanics.md`). This asset is a router; the skill is the single doctrine source. Do not duplicate its cell-discipline detail here.
+Pi system-prompt doctrine moved into the xtrm-primer extension: the primer injects
+the folded always-on rules per turn (Pi 1.3.0) instead of this file. Safe to remove
+the managed block from ~/.pi/agent/APPEND_SYSTEM.md once the primer is active.

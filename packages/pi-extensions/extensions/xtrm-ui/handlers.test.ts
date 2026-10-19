@@ -432,6 +432,16 @@ describe("xtrm-ui code tools cap execution and result independently", async () =
     expect(content).toContain("probe-result-2");
   });
 
+  test("empty partial code result renders program only, no placeholder swap", () => {
+    // Slow code tools paint once with an empty partial result before the
+    // real output lands; that must not render a `› tool` line the output
+    // then visibly replaces (the native-looking flash).
+    const partial = { toolName: "codemode", args: { code: "x = 1\ny = 2" }, result: { content: [] } };
+    const content = externalToolContentLines(partial as never, [], false);
+    expect(content).toEqual(["  y = 2"]);
+    expect(content.some((l) => l.includes("› codemode"))).toBe(false);
+  });
+
   test("pending code renders dim-bold execution with the header untouched", () => {
     const pending = { toolName: "python", args: { code: "x = 1\ny = 2" }, result: null };
     const content = externalToolContentLines(pending as never, [], false);
@@ -519,10 +529,10 @@ describe("CORE-2358 result-lines pref and payload indent", async () => {
   const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
   const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
 
-  test("frame output sits flush under the call, code keeps its indent", () => {
+  test("frame output indents under the call, code keeps its indent", () => {
     const rows = renderExternalToolBackgroundLines(["out1", "out2"], 80, "external", false, "some_tool", 5, "success", true, 6);
     expect(strip(rows[0]).startsWith("●")).toBe(true);
-    expect(strip(rows[1])).toBe("out1");
+    expect(strip(rows[1])).toBe("  out1");
   });
   test("header carries the first code line as summary", () => {
     const rows = renderExternalToolBackgroundLines(["  import json", "\x1b[2m2\x1b[22m"], 80, "external", false, "python", 903, "success", false, 6, "import json");

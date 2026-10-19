@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import nodeFs from "node:fs";
 import nodeOs from "node:os";
 import nodePath from "node:path";
@@ -505,6 +505,127 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     expect(text).toMatch(/could not be confirmed/);
     expect(text).toMatch(/do not resend/);
     expect(r.details.message).toMatchObject({ id: "m-test-1", state: "unconfirmed", to: "cass" });
+  });
+});
+
+describe("SendMessage peer addressing (MMD-2538: uuid/ref/uds/prefix, fail-closed, loud scope)", () => {
+  test("a Claude peer is reachable by the uds: address it reports", async () => {
+    const sent: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("market", "/run/market.sock", "market-uuid-1")],
+      claudeTransportEnabled: true,
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "uds:/run/market.sock", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session market");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ sock: "/run/market.sock" });
+  });
+
+  test("a Claude peer is reachable by the ref ListAgents prints", async () => {
+    const roster = await import("./roster.ts");
+    const ref = roster.sessionRef("market-uuid-1");
+    const sent: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("market", "/run/market.sock", "market-uuid-1")],
+      claudeTransportEnabled: true,
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: ref, message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session market");
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a Pi peer is reachable by full uuid and by unique prefix", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => [piSummary("sess-aaa111", "worker-one"), piSummary("sess-bbb222", "worker-two")],
+    });
+    const { tool } = register(deps);
+    const byId = await tool.execute("c1", { to: "sess-bbb222", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(byId.isError).toBeFalsy();
+    expect(posted[0].participant).toBe("sess-bbb222");
+    const { deps: deps2, posted: posted2 } = baseDeps({
+      fetchPi: async () => [piSummary("sess-aaa111", "worker-one"), piSummary("sess-bbb222", "worker-two")],
+    });
+    const again = register(deps2);
+    const byPrefix = await again.tool.execute("c2", { to: "sess-bbb", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(byPrefix.isError).toBeFalsy();
+    expect(posted2[0].participant).toBe("sess-bbb222");
+  });
+
+  test("four same-name live peers refuse ambiguity and never send", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => [piSummary("sess-dup-1", "agent"), piSummary("sess-dup-2", "agent"), piSummary("sess-other-4", "agent")],
+      fetchClaude: async () => [{ name: "agent", sessionId: "claude-dup-3", sock: "/run/a.sock", cwd: "/tmp/x", status: "idle", kind: "interactive" }],
+      claudeTransportEnabled: true,
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "agent", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/ambiguous session "agent"/);
+    for (const id of ["sess-dup-1", "sess-dup-2", "claude-dup-3", "sess-other-4"]) {
+      expect(String(r.content[0].text)).toContain(id);
+    }
+    expect(posted).toHaveLength(0);
+  });
+
+  test("a down Pi registry fails loudly and never sends against a partial roster", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => {
+        throw new Error("could not reach the agent host registry (GET /v1/sessions failed twice)");
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/cannot reach the agent host registry/);
+    expect(String(r.content[0].text)).toMatch(/partial roster/);
+    expect(posted).toHaveLength(0);
+  });
+
+  test("an empty scope names the excluded peers and the Claude exclusion", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => [
+        { ...piSummary("s-me", "me"), workItem: { ref: "CORE-2478", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/repo/core" },
+        { ...piSummary("s-far", "faraway"), workItem: { ref: "XTRM-12", system: "substrate" }, repository: "github.com/xtrm-dev/xtrm", repositoryPath: "/repo/xtrm" },
+      ],
+      fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "nobody-here", message: "hi", scope: "project" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    const text = String(r.content[0].text);
+    expect(text).toMatch(/in scope "project"/);
+    expect(text).toMatch(/Excluded \d+ peer/);
+    expect(text).toMatch(/Claude sessions carry no Substrate identity/);
+    expect(posted).toHaveLength(0);
+  });
+
+  test("a peer existing outside the scope says so instead of reading as missing", async () => {
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => [
+        { ...piSummary("s-me", "me"), workItem: { ref: "CORE-2478", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/repo/core" },
+        { ...piSummary("s-sib", "sibling"), workItem: { ref: "CORE-2435", system: "substrate" }, repository: "github.com/xtrm-dev/core", repositoryPath: "/repo/core" },
+        { ...piSummary("s-far", "faraway"), workItem: { ref: "XTRM-12", system: "substrate" }, repository: "github.com/xtrm-dev/xtrm", repositoryPath: "/repo/xtrm" },
+      ],
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "faraway", message: "hi", scope: "project" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/exists outside scope "project"/);
+    expect(posted).toHaveLength(0);
   });
 });
 
@@ -1216,5 +1337,269 @@ describe("Pi shadow relay (CORE-2470)", () => {
     sendmessage.__inboundWakeForTests({ messageId: "m-r", ref: "all green", replyTo: "m-test-1", from: "bob" });
     const r = await pending;
     expect(String(r.content[0].text)).toMatch(/Reply from bob/);
+  });
+});
+
+describe("disconnected-extension routing and held visibility (CORE-2479)", () => {
+  function hostClaudeSummary(sessionId: string, name: string) {
+    return {
+      sessionId,
+      provider: "claude",
+      state: "settled",
+      name,
+      cwd: "/tmp/x",
+      extensionConnected: false,
+      capabilities: [],
+      startedAt: Date.now() - 1000,
+      lastActivityAt: Date.now(),
+    } as any;
+  }
+
+  function downPiSetup(overrides: Record<string, any> = {}) {
+    const posted: any[] = [];
+    const relayCalls: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [{ ...piSummary("s-bob", "bob"), extensionConnected: false }],
+      fetchClaude: async () => [claudePeer("bob", "/run/shadow.sock", "s-bob")],
+      postWake: async (req: any) => {
+        posted.push(req);
+        return { messageId: "m-never", state: "held" };
+      },
+      sendClaude: async (opts: any) => {
+        relayCalls.push(opts);
+        return { outcome: "delivered" as const };
+      },
+      getClaudeSocketPath: () => "/run/user/1000/cc-socks/own.sock",
+      ...overrides,
+    });
+    return { deps, posted, relayCalls };
+  }
+
+  test("extension disconnected + live shadow relays without ever POSTing a wake", async () => {
+    const { deps, posted, relayCalls } = downPiSetup();
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Pi session bob");
+    // No registry involvement: a held-accepted wake can never double-send through the relay.
+    expect(posted).toHaveLength(0);
+    expect(relayCalls).toHaveLength(1);
+    expect(relayCalls[0]).toMatchObject({ sock: "/run/shadow.sock", from: "uds:/run/user/1000/cc-socks/own.sock" });
+  });
+
+  test("extension disconnected with no shadow still POSTs honestly (held, queryable)", async () => {
+    const { deps, posted } = downPiSetup({ fetchClaude: async () => [] });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(posted).toHaveLength(1);
+    expect(String(r.content[0].text)).toContain("[Cross-session delivery notice]");
+    expect(String(r.content[0].text)).toMatch(/held/);
+  });
+
+  test("a held wake on a connected extension never relays (relay is last-resort only)", async () => {
+    const relayCalls: any[] = [];
+    const { deps } = baseDeps({
+      postWake: async (req: any) => ({ messageId: "m-h", state: "held" }),
+      sendClaude: async (opts: any) => {
+        relayCalls.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(String(r.content[0].text)).toMatch(/held/);
+    expect(relayCalls).toHaveLength(0);
+  });
+
+  test("reply_to/notify_when_idle with a disconnected extension fails loudly, never relays", async () => {
+    const { deps, posted, relayCalls } = downPiSetup();
+    const { tool } = register(deps);
+    const r = await tool.execute(
+      "c1",
+      { to: "bob", message: "hi", notify_when_idle: true },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/does not support reply_to\/notify_when_idle/);
+    expect(relayCalls).toHaveLength(0);
+    expect(posted).toHaveLength(0);
+  });
+
+  test("expect_reply through the disconnected-extension relay still resolves the ask", async () => {
+    const { deps } = downPiSetup();
+    const { tool } = register(deps);
+    const pending = tool.execute(
+      "c1",
+      { to: "bob", message: "status?", expect_reply: true, timeout_s: 30 },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(intercomWaiting.getPendingAsks()).toBe(1);
+    sendmessage.__inboundWakeForTests({ messageId: "m-r", ref: "all green", replyTo: "m-test-1", from: "bob" });
+    const r = await pending;
+    expect(String(r.content[0].text)).toMatch(/Reply from bob/);
+  });
+
+  test("dual registration (host Claude + live socket) sends on the Claude leg, never a held Pi wake", async () => {
+    const posted: any[] = [];
+    const sent: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [hostClaudeSummary("s-xu", "xu82")],
+      fetchClaude: async () => [claudePeer("xu82", "/run/xu82.sock", "s-xu")],
+      claudeTransportEnabled: true,
+      postWake: async (req: any) => {
+        posted.push(req);
+        return { messageId: "m-ghost", state: "held" };
+      },
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "xu82", message: "just a test" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session xu82");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ sock: "/run/xu82.sock" });
+    // Held-to-ghost impossible: the dead-extension Pi leg is never attempted when the live leg exists.
+    expect(posted).toHaveLength(0);
+  });
+
+  test("status looks up the last known state of a held message", async () => {
+    const { deps } = baseDeps({
+      wakeStatus: async (messageId: string) => ({ messageId, state: "held" }),
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { status: "m-h" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toBe("Message m-h last known state: held.");
+  });
+
+  test("status for an unknown message id is an error, and status takes only status", async () => {
+    const { deps } = baseDeps({
+      wakeStatus: async (_messageId: string) => null,
+    });
+    const { tool } = register(deps);
+    const unknown = await tool.execute("c1", { status: "m-nope" }, undefined, undefined, fakeCtx("s-me"));
+    expect(unknown.isError).toBe(true);
+    expect(String(unknown.content[0].text)).toMatch(/no wake m-nope/);
+    const mixed = await tool.execute(
+      "c1",
+      { status: "m-h", to: "bob", message: "hi" },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    expect(mixed.isError).toBe(true);
+    expect(String(mixed.content[0].text)).toMatch(/takes only status/);
+  });
+});
+
+describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
+  function captureTraceFile(): { lines: () => string[]; stderr: () => unknown[]; restore: () => void } {
+    const dir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), "intercom-send-trace-"));
+    const file = nodePath.join(dir, "intercom-trace.log");
+    const prevFile = process.env["INTERCOM_TRACE_FILE"];
+    const prevSession = process.env["XTRM_SESSION_ID"];
+    process.env["INTERCOM_TRACE_FILE"] = file;
+    process.env["XTRM_SESSION_ID"] = "sess-test-trace";
+    const errors: unknown[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(line);
+    });
+    const read = (): string[] => {
+      try {
+        return nodeFs.readFileSync(file, "utf8").split("\n").filter((line) => line !== "");
+      } catch {
+        return [];
+      }
+    };
+    return {
+      lines: read,
+      stderr: () => errors,
+      restore: () => {
+        spy.mockRestore();
+        if (prevFile === undefined) delete process.env["INTERCOM_TRACE_FILE"];
+        else process.env["INTERCOM_TRACE_FILE"] = prevFile;
+        if (prevSession === undefined) delete process.env["XTRM_SESSION_ID"];
+        else process.env["XTRM_SESSION_ID"] = prevSession;
+        nodeFs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  function claudePeerWithSource(name: string, sock: string, sessionId = `claude-${name}`) {
+    return {
+      name,
+      sessionId,
+      sock,
+      sockSource: "claude-session-json:messagingSocketPath",
+      cwd: "/tmp/x",
+      status: "idle",
+      kind: "interactive",
+      live: true,
+    } as any;
+  }
+
+  test("every Claude send traces messageId, from and sock, then its outcome", async () => {
+    const cap = captureTraceFile();
+    let lines: string[] = [];
+    try {
+      const { deps } = baseDeps({
+        fetchPi: async () => [],
+        fetchClaude: async () => [claudePeerWithSource("cass", "/tmp/cass.sock")],
+        claudeTransportEnabled: true,
+        getClaudeSocketPath: () => "/tmp/own.sock",
+        sendClaude: async () => ({ outcome: "delivered" as const }),
+      });
+      const { tool } = register(deps);
+      const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+      expect(r.isError).toBeFalsy();
+      lines = cap.lines();
+    } finally {
+      cap.restore();
+    }
+    expect(cap.stderr()).toEqual([]);
+    expect(lines).toContain(
+      "[intercom-trace] send.claude messageId=m-test-1 from=uds:/tmp/own.sock fromName=coordinator sock=/tmp/cass.sock sockSource=claude-session-json:messagingSocketPath target=cass session=sess-test-trace",
+    );
+    const result = lines.find((line) => line.startsWith("[intercom-trace] send.claude.result "));
+    expect(result).toBeTruthy();
+    expect(result).toContain("messageId=m-test-1");
+    expect(result).toContain("sock=/tmp/cass.sock");
+    expect(result).toContain("outcome=delivered");
+    expect(result).toMatch(/elapsedMs=\d+/);
+  });
+
+  test("a starved receipt traces unconfirmed, never failed", async () => {
+    const cap = captureTraceFile();
+    let lines: string[] = [];
+    try {
+      const { deps } = baseDeps({
+        fetchPi: async () => [],
+        fetchClaude: async () => [claudePeerWithSource("cass", "/tmp/cass.sock")],
+        claudeTransportEnabled: true,
+        getClaudeSocketPath: () => "/tmp/own.sock",
+        sendClaude: async () => {
+          throw new ClaudeReceiptTimeoutError("m-test-1");
+        },
+      });
+      const { tool } = register(deps);
+      const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+      expect(String(r.content[0].text)).toContain("delivery could not be confirmed");
+      lines = cap.lines();
+    } finally {
+      cap.restore();
+    }
+    expect(cap.stderr()).toEqual([]);
+    const result = lines.find((line) => line.startsWith("[intercom-trace] send.claude.result "));
+    expect(result).toBeTruthy();
+    expect(result).toContain("outcome=unconfirmed");
+    expect(result).toMatch(/elapsedMs=\d+/);
   });
 });

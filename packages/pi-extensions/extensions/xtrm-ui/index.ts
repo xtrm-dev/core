@@ -513,7 +513,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 37;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 38;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -580,19 +580,34 @@ function summarizeExternalToolPending(toolName: string | undefined, input: Recor
   return `${TOOL_ROW_MARKER} ${normalizeToolLabel(name)}`;
 }
 
+function collectResultTexts(component: PatchableToolExecutionComponent): string[] {
+  return component.result?.content
+    ?.filter((content) => content.type === "text" && typeof content.text === "string")
+    .map((content) => content.text as string)
+    .filter((text) => text.length > 0) ?? [];
+}
+
 function extractResultTextLines(component: PatchableToolExecutionComponent): string[] | undefined {
   // Join EVERY text block: codemode ships its result as a wrapper block
   // ("Script completed\nWall time …\nOutput:\n") plus the script output in
   // later blocks — first-block-only would render the wrapper and drop the
   // actual output. Blank seams from the join are filtered downstream.
-  const texts = component.result?.content
-    ?.filter((content) => content.type === "text" && typeof content.text === "string")
-    .map((content) => content.text as string)
-    .filter((text) => text.length > 0);
-  if (!texts || texts.length === 0) {
+  const texts = collectResultTexts(component);
+  if (texts.length === 0) {
     return [summarizeExternalToolPending(component.toolName, getToolArgs(component))];
   }
   return texts.join("\n").split("\n");
+}
+
+/**
+ * Result text without the pending-summary fallback. Code tools show their
+ * program while waiting, so an empty or partial result must render as no
+ * output — not as a `› tool` line the real output then visibly replaces
+ * (the native-looking flash on slow code tools).
+ */
+function resultTextLinesOnly(component: PatchableToolExecutionComponent): string[] | undefined {
+  const texts = collectResultTexts(component);
+  return texts.length > 0 ? texts.join("\n").split("\n") : undefined;
 }
 
 // CORE-2358: the framed row must show what ran above the output — otherwise the
@@ -624,7 +639,7 @@ export function externalToolContentLines(
   // Bash semantics: the header carries the first line (via callSummary),
   // so the body starts at the second — otherwise line 1 renders twice.
   const shown = expanded ? preview.slice(1) : preview.slice(1, cap);
-  const tail = component.result ? (extractResultTextLines(component) ?? rendered) : [];
+  const tail = component.result ? (resultTextLinesOnly(component) ?? []) : [];
   // The tail stays plain: the frame renders it bash-style (muted └ tree,
   // toolOutput color), so dimming here would fight the output treatment.
   // Hidden counts the header line as shown (bash: hidden = total - cap).
@@ -741,8 +756,9 @@ export function renderExternalToolBackgroundLines(
     formatPayloadSize(contentLines.join("\n")),
   ]);
   const renderWidth = Math.max(8, width);
-  // Payload lines carry their own indentation (code previews indent at
-  // creation); the frame never adds any — output sits flush under the call.
+  // Payload lines indent two spaces under the flush header (design-system
+  // tool rows: header at column 0, everything below carries two spaces).
+  // Code previews indent at creation; plain result lines indent here.
   // Code tools (codemode, python) are the exception: native-tool parity.
   // The header above is untouched (dot + provider colors as-is); everything
   // below mirrors the bash tree — bold execution lines, muted └ output
@@ -761,12 +777,12 @@ export function renderExternalToolBackgroundLines(
       ? [...body, `\x1b[2m${truncateToWidth(`  ${footerMeta}`, renderWidth)}\x1b[22m`]
       : body;
   }
-  const body = [
-    truncateToWidth(renderedHeader, renderWidth),
-    ...visiblePayload.map((rawLine) => truncateToWidth(rawLine, renderWidth)),
-  ];
+  const payload = visiblePayload.map((rawLine) =>
+    truncateToWidth(rawLine.length > 0 ? `  ${rawLine}` : rawLine, renderWidth),
+  );
+  const body = [truncateToWidth(renderedHeader, renderWidth), ...payload];
   return footerMeta
-    ? [...body, `\x1b[2m${truncateToWidth(`└─ ${footerMeta}`, renderWidth)}\x1b[22m`]
+    ? [...body, `\x1b[2m${truncateToWidth(`  └─ ${footerMeta}`, renderWidth)}\x1b[22m`]
     : body;
 }
 
@@ -863,7 +879,7 @@ async function installExternalToolFramePatch(): Promise<void> {
     const callSummary = preview?.[0]?.trim() || undefined;
     // Pre-filter code-section length: renderExternalToolLines filters blanks
     // per-section and re-derives the boundary, so this stays valid.
-    const tailLength = preview && this.result ? (extractResultTextLines(this)?.length ?? 0) : 0;
+    const tailLength = preview && this.result ? (resultTextLinesOnly(this)?.length ?? 0) : 0;
     const codeCount = preview ? Math.max(0, content.length - tailLength) : 0;
     const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
     let styled: string[];

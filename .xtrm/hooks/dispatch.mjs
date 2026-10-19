@@ -344,6 +344,14 @@ async function runEvent(input) {
       if (stdout) writeSync(1, stdout);
       if (stderr) writeSync(2, stderr);
     } catch { /* best effort, never blocks Stop — as the standalone hook */ }
+  } else if (input.hook_event_name === 'UserPromptSubmit') {
+    // CORE-2492: ack Pi→Claude cross-session frames so the sender's receipt
+    // waiter resolves instead of starving to unconfirmed. Best effort, never
+    // blocks the prompt and never changes the exit code — as the Stop branch.
+    try {
+      const { claudeReceiptAck } = await import('./claude-receipt-ack.mjs');
+      await claudeReceiptAck(input);
+    } catch { /* fail-open — the prompt proceeds without a receipt */ }
   }
   return 0;
 }

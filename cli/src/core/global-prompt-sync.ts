@@ -7,17 +7,26 @@ import { resolvePackageRoot } from './registry-scaffold.js';
 
 /**
  * Ownership-safe synchronizer for the xtrm global system-prompt blocks
- * (xtrm-3ljgz.2).
+ * (xtrm-3ljgz.2; Pi target deprecated XT-138/XT-139, CORE-2476).
  *
  * Manages one marked block inside the native global prompt files:
- *   - ~/.pi/agent/APPEND_SYSTEM.md
  *   - ~/.claude/CLAUDE.md
  *
- * Only pi and claude have managed global files. Codex receives its doctrine
+ * Pi doctrine no longer ships through a managed home file. The versioned
+ * vehicle is the xtrm-primer per-turn injection (MARKER-guarded; see
+ * packages/pi-extensions/extensions/xtrm-primer/index.ts), so the installer
+ * leaves ~/.pi/agent/APPEND_SYSTEM.md untouched: existing files keep
+ * working through the transition (Pi still reads them), no new doctrine is
+ * written there, and nothing is ever deleted. Project .pi/APPEND_SYSTEM.md
+ * files were never managed here; Pi-native project override precedence is
+ * unchanged.
+ *
+ * Only claude has a managed global file. Codex receives its doctrine
  * per launch via developer_instructions (see cli/src/core/codex-runtime.ts),
  * not via a synced global file, so there is intentionally no codex target
- * here. Unknown labels (including 'codex') fall back to the shared body via
- * readCanonicalGlobalPromptBody — see the per-target routing tests.
+ * here. Unknown labels (including 'codex' and the deprecated 'pi') fall back
+ * to the shared body via readCanonicalGlobalPromptBody — see the per-target
+ * routing tests.
  *
  * Body selection: a target-specific asset
  * (`.xtrm/config/instructions/global-system-prompt.<label>.md`) wins when
@@ -154,7 +163,7 @@ export interface GlobalPromptSyncOptions {
   canonicalBody?: string;
   /** Test seam; defaults to os.homedir(). */
   home?: string;
-  /** Test seam; defaults to <home>/.pi/agent. */
+  /** Test seam; defaults to <home>/.pi/agent. Deprecated with the pi target (XT-138/XT-139): accepted, ignored. */
   agentDir?: string;
   /** Test seam; defaults to <home>/.claude. */
   claudeDir?: string;
@@ -163,19 +172,17 @@ export interface GlobalPromptSyncOptions {
 }
 
 export function resolveGlobalPromptTargets(opts: GlobalPromptSyncOptions = {}): GlobalPromptTarget[] {
-  // Intentionally pi + claude only. Codex has no managed global file; its
-  // doctrine travels per launch via developer_instructions, so adding a
-  // codex target here without a Codex global-file contract would mis-wire
-  // routing. readCanonicalGlobalPromptBody('codex') falls back to shared.
+  // Claude only since XT-138/XT-139 (CORE-2476): the Pi APPEND_SYSTEM.md
+  // target is deprecated — Pi doctrine now ships per turn via the versioned
+  // xtrm-primer injection, so the installer leaves the home Pi file untouched
+  // (existing files keep working through the transition; project
+  // .pi/APPEND_SYSTEM.md overrides were never managed here and keep
+  // Pi-native precedence). Codex has no managed global file; its doctrine
+  // travels per launch via developer_instructions, so adding a codex target
+  // here without a Codex global-file contract would mis-wire routing.
+  // readCanonicalGlobalPromptBody('codex') falls back to shared.
   const home = opts.home ?? os.homedir();
   return [
-    {
-      label: 'pi',
-      // PI_AGENT_DIR keeps CI/smoke runs (and the real runtime) pointing at
-      // the same agent tree the rest of pi-runtime uses — never the real
-      // home during tests.
-      file: path.join(opts.agentDir ?? process.env.PI_AGENT_DIR ?? path.join(home, '.pi', 'agent'), 'APPEND_SYSTEM.md'),
-    },
     {
       label: 'claude',
       file: path.join(opts.claudeDir ?? path.join(home, '.claude'), 'CLAUDE.md'),
@@ -186,8 +193,9 @@ export function resolveGlobalPromptTargets(opts: GlobalPromptSyncOptions = {}): 
 export async function readCanonicalGlobalPromptBody(label?: string): Promise<string> {
   // A target-specific asset wins when present so host-specific doctrine (for
   // example pi's codemode cell model) never leaks into another host's prompt.
-  // Unknown labels (including 'codex', which has no managed global file)
-  // fall through to the shared host-neutral body below.
+  // The pi asset is a deprecated pointer (XT-138/XT-139) — production sync no
+  // longer consumes it. Unknown labels (including 'codex', which has no
+  // managed global file) fall through to the shared host-neutral body below.
   const candidates = label
     ? [`global-system-prompt.${label}.md`, 'global-system-prompt.md']
     : ['global-system-prompt.md'];
@@ -283,7 +291,9 @@ async function syncOneTarget(
 }
 
 /**
- * Synchronize both global prompt targets exactly once per invocation.
+ * Synchronize the managed global prompt targets exactly once per invocation.
+ * Since XT-138/XT-139 (CORE-2476) that is claude only — the pi target is
+ * deprecated (Pi doctrine ships via the xtrm-primer per-turn injection).
  * Callers are responsible for invoking this once per command, never once per
  * repo (xtrm-3ljgz.2).
  */

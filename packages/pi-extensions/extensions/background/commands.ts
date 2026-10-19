@@ -17,6 +17,7 @@
 import { closeSync, openSync, readFileSync, readSync, statSync, watch } from "node:fs";
 import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { fitToWidth } from "./widget.ts";
+import { BG_TASKS_ACCENT, bandRow } from "../../shared/suggest.ts";
 
 import {
   formatElapsed,
@@ -201,6 +202,10 @@ export interface OutputView {
   kind: "task" | "monitor";
   label: string;
   running: boolean;
+  /** The exact program inspected: shell command, or ws URL for ws monitors. */
+  runLine?: string;
+  /** Labelled record facts: status, cwd, elapsed, exit/pid, file, timeout or event counts. */
+  factsLine?: string;
   lines: string[];
   /** Exact line count for small files; null when the tail window cut the head off. */
   totalLines: number | null;
@@ -354,6 +359,29 @@ export async function readOutput(
   const monitor = task ? undefined : store.getMonitor(id);
   if (!task && !monitor) throw new Error(`[background] unknown task ${JSON.stringify(id)}.`);
   const outputFile = (task ?? monitor)?.outputFile ?? "";
+  const running = task ? task.status === "running" : monitor?.status === "armed" || monitor?.status === "event";
+  const elapsed = formatElapsed(((task?.endedAt ?? monitor?.endedAt ?? null) ?? Date.now()) - (task?.startedAt ?? monitor?.startedAt ?? Date.now()));
+  const runLine = task
+    ? `$ ${task.command}`
+    : `$ ${monitor?.command ?? monitor?.wsUrl ?? id}`;
+  const factsLine = task
+    ? [
+        `status: ${task.status}`,
+        `cwd: ${task.cwd}`,
+        `elapsed: ${elapsed}`,
+        task.status === "running" ? `pid: ${task.pid ?? "?"}` : `exit: ${task.exitCode ?? "?"}`,
+        ...(task.killReason ? [`killed: ${task.killReason}`] : []),
+        `output: ${task.outputFile}`,
+        `timeout: ${formatElapsed(task.timeoutMs)}`,
+      ].join(" · ")
+    : [
+        `status: ${monitor?.status}`,
+        ...(monitor?.killReason ? [`killed: ${monitor.killReason}`] : []),
+        `elapsed: ${elapsed}`,
+        ...(monitor?.pid !== undefined ? [`pid: ${monitor?.pid}`] : []),
+        `events: ${monitor?.eventCount ?? 0} · lines: ${monitor?.lineCount ?? 0}`,
+        `output: ${monitor?.outputFile}`,
+      ].join(" · ");
   let tail: TailResult;
   try {
     tail = readTailLines(outputFile, maxLines);
@@ -364,7 +392,9 @@ export async function readOutput(
     id,
     kind: task ? "task" : "monitor",
     label: sanitizeLabel((task?.description ?? monitor?.description ?? "") || id),
-    running: task ? task.status === "running" : monitor?.status === "armed" || monitor?.status === "event",
+    running,
+    runLine: sanitizeLabel(runLine, 512),
+    factsLine: sanitizeModelText(factsLine, 1024),
     lines: tail.lines,
     totalLines: tail.totalLines,
     truncated: tail.truncated,
@@ -724,6 +754,12 @@ export class TasksOverlay {
       if (!view) {
         out.push(cut(theme.fg("dim", this.status || "Loading…")));
       } else {
+        // Inspecting a record shows what ran plus every fact: the pane is
+        // the record's full account, not just its output tail. Fields are
+        // optional so injected readers keep working with tail-only views.
+        if (view.runLine) out.push(cut(theme.bold(view.runLine)));
+        if (view.factsLine) out.push(cut(theme.fg("dim", view.factsLine)));
+        if (view.runLine || view.factsLine) out.push("");
         const total = view.lines.length;
         const maxScroll = Math.max(0, total - OVERLAY_VISIBLE_ROWS);
         const scroll = Math.min(this.output?.scroll ?? 0, maxScroll);
@@ -752,7 +788,7 @@ export class TasksOverlay {
     if (this.selected < this.listScroll) this.listScroll = this.selected;
     if (this.selected >= this.listScroll + OVERLAY_VISIBLE_ROWS) this.listScroll = this.selected - OVERLAY_VISIBLE_ROWS + 1;
     this.listScroll = Math.min(this.listScroll, maxOffset);
-    const out = [cut(theme.bold("tasks")), ""];
+    const out = [bandRow(rows.length === 1 ? "tasks · 1" : `tasks · ${rows.length}`, BG_TASKS_ACCENT, safe), ""];
     const dropped = this.options.store.droppedUnseenFailures();
     if (dropped > 0) {
       out.push(cut(theme.fg("dim", dropped === 1 ? "+1 earlier failure dropped" : `+${dropped} earlier failures dropped`)));
@@ -836,7 +872,7 @@ export async function openTasksList(
         });
         return overlay as any;
       },
-      { overlay: true, overlayOptions: { width: 88 } },
+      { overlay: true, overlayOptions: { width: "100%", anchor: "bottom-center", margin: { bottom: 4 } } },
     );
   } catch {
     const rows = buildTasksRows(deps.store.list(), deps.store.listMonitors(), deps.now?.() ?? Date.now());

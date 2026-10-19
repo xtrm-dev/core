@@ -278,6 +278,127 @@ describe("claude-transport registry (CORE-2434 I3, pid-reuse guard)", () => {
   });
 });
 
+describe("claude-transport sender resolution (MMD-2538 follow-up: uuid from= joins to uds:)", () => {
+  const SENDER_ID = "8c7262c0-a136-43ee-9964-2c905038cf93";
+  const SENDER_SOCK = "/run/user/1000/cc-socks/453853.sock";
+  function sessionsWith(entries: Array<Record<string, unknown>>): string {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-sender-"));
+    entries.forEach((entry, i) => {
+      writeFileSync(path.join(dir, `${90000 + i}.json`), JSON.stringify(entry));
+    });
+    return dir;
+  }
+  function senderEntry(overrides: Record<string, unknown> = {}) {
+    return {
+      sessionId: SENDER_ID,
+      name: "market-data-xt-claude-mmd-replan",
+      cwd: "/tmp/market-data",
+      status: "idle",
+      kind: "interactive",
+      messagingSocketPath: SENDER_SOCK,
+      ...overrides,
+    };
+  }
+
+  test("a uuid from= resolves to the sender's uds: socket", () => {
+    const dir = sessionsWith([senderEntry()]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, dir)).toBe(SENDER_SOCK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the frame session_id wins over a conflicting from=", () => {
+    const dir = sessionsWith([senderEntry(), senderEntry({ sessionId: "other-id", messagingSocketPath: "/run/other.sock" })]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: "other-id", sessionId: SENDER_ID }, dir)).toBe(SENDER_SOCK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an already-uds: sender needs no join", () => {
+    const dir = sessionsWith([senderEntry()]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: `uds:${SENDER_SOCK}` }, dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an unknown uuid keeps the verbatim value: never a guess", () => {
+    const dir = sessionsWith([senderEntry()]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: "00000000-0000-4000-8000-000000000000" }, dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("two entries naming different sockets stay unresolved (no guessing)", () => {
+    const dir = sessionsWith([
+      senderEntry(),
+      senderEntry({ name: "same-id-other-sock", messagingSocketPath: "/run/elsewhere.sock" }),
+    ]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("duplicate entries agreeing on one socket resolve to it", () => {
+    const dir = sessionsWith([senderEntry(), senderEntry({ name: "stale-dup-same-sock" })]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, dir)).toBe(SENDER_SOCK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a pid-reused stale entry cannot hijack the join", () => {
+    const dir = sessionsWith([
+      senderEntry(),
+      // Same session id, different socket, pid-reused stale entry: excluded by the guard.
+      senderEntry({ name: "stale-hijack", messagingSocketPath: "/run/hijack.sock", pid: 42424242, procStart: "1" }),
+    ]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, dir)).toBe(SENDER_SOCK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a missing registry reads as unresolved, never a throw", () => {
+    expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, "/nonexistent-dir-xyz")).toBeUndefined();
+    expect(registry.findClaudeSocketForSessionId("/nonexistent-dir-xyz", SENDER_ID)).toBeUndefined();
+  });
+
+  test("the bound socket surfaces the frame session_id for the join", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-sid-"));
+    const received: any[] = [];
+    const { server, sockPath } = await transport.bindClaudeTransportSocket(path.join(dir, "sid.sock"), {
+      onUserMessage: (msg) => received.push(msg),
+    });
+    try {
+      await transport.sendToClaudeSession({
+        sock: sockPath,
+        body: "hi",
+        from: SENDER_ID,
+        sessionId: "registry-session-9",
+      });
+      const start = Date.now();
+      while (!received.length && Date.now() - start < 5000) await new Promise((r) => setTimeout(r, 5));
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ from: SENDER_ID, sessionId: "registry-session-9" });
+    } finally {
+      await server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("claude-transport send and receive (CORE-2434 I3)", () => {
   test("a sent user frame arrives version-checked with its envelope and id", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-io-"));
@@ -818,6 +939,97 @@ describe("claude-transport gate and takeover (CORE-2434 delta review)", () => {
       fire("session_shutdown", { reason: "quit" }, fakeCtx([]));
       await until(() => seen.includes(null));
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("claude-transport trace (CORE-2488 phase 1)", () => {
+  type Handler = (event: any, ctx: any) => unknown;
+  const until = async (check: () => boolean, ms = 5000) => {
+    const start = Date.now();
+    while (!check()) {
+      if (Date.now() - start > ms) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+  function fakePi() {
+    const handlers = new Map<string, Handler[]>();
+    const pi = {
+      on(name: string, handler: Handler) {
+        handlers.set(name, [...(handlers.get(name) ?? []), handler]);
+        return () => {};
+      },
+      sendMessage: () => {},
+      getSessionName: () => "probe",
+    };
+    const fire = (name: string, event: any, ctx: any) => {
+      for (const handler of handlers.get(name) ?? []) void handler({ type: name, ...event }, ctx);
+    };
+    return { pi: pi as any, fire };
+  }
+  function fakeCtx() {
+    return {
+      cwd: "/tmp/probe",
+      sessionManager: { getSessionId: () => "s-probe" },
+      isIdle: () => true,
+      ui: { notify: () => {} },
+    } as any;
+  }
+
+  test("an inbound receipt and the ack it triggers both trace ids and sockets", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-trace-"));
+    const sockPath = path.join(dir, "i3.sock");
+    const traceFile = path.join(dir, "intercom-trace.log");
+    const prevFile = process.env["INTERCOM_TRACE_FILE"];
+    const prevSession = process.env["XTRM_SESSION_ID"];
+    process.env["INTERCOM_TRACE_FILE"] = traceFile;
+    process.env["XTRM_SESSION_ID"] = "sess-test-trace";
+    const readTrace = (): string[] => {
+      try {
+        return readFileSync(traceFile, "utf8").split("\n").filter((line) => line !== "");
+      } catch {
+        return [];
+      }
+    };
+    try {
+      const { pi, fire } = fakePi();
+      adapter.default(pi, { socketPath: sockPath, sessionsDir: dir, enabled: true });
+      fire("session_start", { reason: "startup" }, fakeCtx());
+      await until(() => existsSync(sockPath));
+      const { server: sink, sockPath: sinkSock } = await transport.bindClaudeTransportSocket(path.join(dir, "sink.sock"), {});
+      try {
+        await transport.sendToClaudeSession({
+          sock: sockPath,
+          body: "trace-probe",
+          from: `uds:${sinkSock}`,
+          fromName: "probe",
+          messageId: "m-trace-1",
+        });
+        await until(() => readTrace().some((line) => line.startsWith("[intercom-trace] ack.out ")));
+        await until(() => readTrace().some((line) => line.startsWith("[intercom-trace] receipt.in ")));
+      } finally {
+        await sink.close();
+      }
+      const lines = readTrace();
+      const ack = lines.find((line) => line.startsWith("[intercom-trace] ack.out "));
+      expect(ack).toBeTruthy();
+      expect(ack).toContain("origMessageId=m-trace-1");
+      expect(ack).toContain(`sock=${sinkSock}`);
+      expect(ack).toContain("sockSource=frame-from-envelope");
+      expect(ack).toContain("ack=delivered");
+      const receipt = lines.find((line) => line.startsWith("[intercom-trace] receipt.in "));
+      expect(receipt).toBeTruthy();
+      expect(receipt).toContain("origMessageId=m-trace-1");
+      expect(receipt).toContain("status=delivered");
+      expect(receipt).toMatch(/from=\S+/);
+      fire("session_shutdown", { reason: "quit" }, fakeCtx());
+      await until(() => !existsSync(path.join(dir, `${process.pid}.json`)));
+    } finally {
+      if (prevFile === undefined) delete process.env["INTERCOM_TRACE_FILE"];
+      else process.env["INTERCOM_TRACE_FILE"] = prevFile;
+      if (prevSession === undefined) delete process.env["XTRM_SESSION_ID"];
+      else process.env["XTRM_SESSION_ID"] = prevSession;
       rmSync(dir, { recursive: true, force: true });
     }
   });

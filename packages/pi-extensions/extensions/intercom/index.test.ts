@@ -504,3 +504,108 @@ describe("intercom Claude transport wiring (CORE-2434 delta review)", () => {
     }
   });
 });
+
+describe("intercom Claude sender resolution (MMD-2538 follow-up: uuid from= becomes uds:)", () => {
+  test("a Claude→Pi envelope carries the sender's uds: address and the reply line prints it", async () => {
+    const { existsSync, mkdirSync, writeFileSync } = await import("node:fs");
+    const net = (await import("node:net")).default;
+    // Live specimen: the sender emits its session uuid as from=.
+    const senderId = "8c7262c0-a136-43ee-9964-2c905038cf93";
+    const senderSock = "/run/user/1000/cc-socks/453853.sock";
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-claude-from-"));
+    const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
+    try {
+      const pi = fakePi();
+      (pi.pi as any).getSettings = () => ({ intercom: { claudeTransport: true } });
+      const c = fakeCtx("s-claude-from");
+      const claudeSock = path.join(dir, "claude.sock");
+      const claudeSessions = path.join(dir, "claude-sessions");
+      mkdirSync(claudeSessions, { recursive: true });
+      writeFileSync(
+        path.join(claudeSessions, "453853.json"),
+        JSON.stringify({
+          sessionId: senderId,
+          name: "market-data-xt-claude-mmd-replan",
+          cwd: "/tmp/market-data",
+          status: "idle",
+          kind: "interactive",
+          messagingSocketPath: senderSock,
+        }),
+      );
+      intercomExtension(pi.pi, {
+        socketPath: host.info.socket,
+        exec: async () => "",
+        env: {},
+        claudeSocketPath: claudeSock,
+        claudeSessionsDir: claudeSessions,
+      });
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => existsSync(claudeSock));
+      // The Claude sender emits its uuid as from= (protocol frame + envelope).
+      const { buildUserFrame } = await import("./claude-transport/protocol.ts");
+      const { frame } = buildUserFrame({ body: "status?", from: senderId, fromName: "market" });
+      await new Promise<void>((resolve, reject) => {
+        const conn = net.connect({ path: claudeSock });
+        conn.on("error", reject);
+        conn.on("connect", () => {
+          conn.end(`${JSON.stringify(frame)}\n`, () => resolve());
+        });
+      });
+      await until(() => pi.sentCustom.length === 1);
+      const injected = pi.sentCustom[0].message as any;
+      const content = String(injected?.content ?? "");
+      // Resolver-acceptable from: the uds: form, never the bare uuid.
+      expect(content).toContain(`from="uds:${senderSock}"`);
+      expect(content).not.toContain(`from="${senderId}"`);
+      expect(content).toContain(`Reply with SendMessage to="uds:${senderSock}"`);
+      expect(content).toContain("Injected context, not the operator's words.");
+      // The uuid survives only as the message identifier.
+      expect(content).toContain("message-id=");
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an unjoinable uuid keeps the verbatim value: never a guess", async () => {
+    const { existsSync } = await import("node:fs");
+    const net = (await import("node:net")).default;
+    const dir = mkdtempSync(path.join(os.tmpdir(), "xtrm-intercom-claude-noguess-"));
+    const host = await startAgentHost({ socketPath: path.join(dir, "host.sock"), infoPath: path.join(dir, "host.json"), log: () => {} });
+    try {
+      const pi = fakePi();
+      (pi.pi as any).getSettings = () => ({ intercom: { claudeTransport: true } });
+      const c = fakeCtx("s-claude-noguess");
+      const claudeSock = path.join(dir, "claude.sock");
+      const claudeSessions = path.join(dir, "claude-sessions");
+      intercomExtension(pi.pi, {
+        socketPath: host.info.socket,
+        exec: async () => "",
+        env: {},
+        claudeSocketPath: claudeSock,
+        claudeSessionsDir: claudeSessions,
+      });
+      pi.fire("session_start", { reason: "startup" }, c.ctx);
+      await until(() => existsSync(claudeSock));
+      const { buildUserFrame } = await import("./claude-transport/protocol.ts");
+      // No registry entry for this uuid: the empty sessions dir joins nothing.
+      const { frame } = buildUserFrame({ body: "hello?", from: "00000000-0000-4000-8000-000000000000", fromName: "ghost" });
+      await new Promise<void>((resolve, reject) => {
+        const conn = net.connect({ path: claudeSock });
+        conn.on("error", reject);
+        conn.on("connect", () => {
+          conn.end(`${JSON.stringify(frame)}\n`, () => resolve());
+        });
+      });
+      await until(() => pi.sentCustom.length === 1);
+      const content = String((pi.sentCustom[0].message as any)?.content ?? "");
+      expect(content).toContain('from="00000000-0000-4000-8000-000000000000"');
+      expect(content).not.toContain("uds:");
+      pi.fire("session_shutdown", { reason: "quit" }, c.ctx);
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

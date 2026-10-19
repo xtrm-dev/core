@@ -50,6 +50,7 @@ import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { claudeSessionsDir, ensureSocketsDir, pidGuardPasses, processStartTime, readPeerToken } from "./registry.ts";
+import { intercomTrace } from "../trace.ts";
 import intercomPkg from "../package.json" with { type: "json" };
 import {
   buildReceiptFrame,
@@ -166,6 +167,8 @@ export interface ClaudeUserMessage {
   from?: string;
   fromName?: string;
   fromMode?: string;
+  /** Top-level frame session_id when the sender carries one (registry join key). */
+  sessionId?: string;
 }
 
 export interface ClaudeReceipt {
@@ -238,16 +241,28 @@ export async function bindClaudeTransportSocket(
           const parsed = parseInboundFrame(decoded);
           if (parsed.kind === "user") {
             const stripped = stripEnvelope(parsed.content);
+            const frameSessionId = (parsed.frame as Record<string, unknown> | undefined)?.session_id;
             handlers.onUserMessage?.({
               messageId: parsed.messageId,
               body: stripped.body,
               from: parsed.from ?? stripped.from,
               ...(stripped.fromName ? { fromName: stripped.fromName } : {}),
               ...(stripped.fromMode ? { fromMode: stripped.fromMode } : {}),
+              ...(typeof frameSessionId === "string" && frameSessionId ? { sessionId: frameSessionId } : {}),
             });
           } else if (parsed.kind === "receipt") {
+            // CORE-2488 phase 1: every received receipt names the message it
+            // answers and the peer that sent it (wire field origMessageId).
+            const status = mapReceiptStatus(parsed.status);
+            intercomTrace("receipt.in", {
+              origMessageId: parsed.origMessageId,
+              from: parsed.from,
+              statusRaw: parsed.status,
+              status,
+              reason: parsed.reason,
+            });
             handlers.onReceipt?.({
-              status: mapReceiptStatus(parsed.status),
+              status,
               ...(parsed.origMessageId ? { origMessageId: parsed.origMessageId } : {}),
               ...(parsed.from ? { from: parsed.from } : {}),
               ...(parsed.reason ? { reason: parsed.reason } : {}),

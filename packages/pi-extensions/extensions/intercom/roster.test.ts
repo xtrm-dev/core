@@ -1,4 +1,7 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" }));
 
@@ -191,11 +194,11 @@ describe("Pi session state words (busy/idle/offline)", () => {
   });
 });
 
-describe("R7 exact-name resolution", () => {
+describe("R7 exact-name resolution (CORE-2435 I4, MMD-2538: ref/uds/prefix arms)", () => {
   const entries = [
     { kind: "pi", sessionId: "sess-aaa111", name: "worker-one" },
     { kind: "pi", sessionId: "sess-bbb222", name: "worker-two" },
-    { kind: "claude", sessionId: "claude-ccc", name: "worker-one" },
+    { kind: "claude", sessionId: "claude-ccc", name: "worker-one", sock: "/run/cc.sock" },
   ] as any;
 
   test("an exact session id wins over names", () => {
@@ -212,11 +215,81 @@ describe("R7 exact-name resolution", () => {
     expect(() => roster.resolveRosterTarget(entries, "worker-one")).toThrow(/claude-ccc/);
   });
 
-  test("a name prefix that is not an exact hit is an error, never a guess", () => {
-    const miss = roster.resolveRosterTarget(entries, "worker-");
+  test("a shared name prefix throws naming every candidate, never a guess", () => {
+    expect(() => roster.resolveRosterTarget(entries, "worker-")).toThrow(/ambiguous session "worker-"/);
+    expect(() => roster.resolveRosterTarget(entries, "worker-")).toThrow(/sess-aaa111/);
+    expect(() => roster.resolveRosterTarget(entries, "worker-")).toThrow(/sess-bbb222/);
+  });
+
+  test("an input matching nothing is a miss listing every candidate with ref and leg", () => {
+    const miss = roster.resolveRosterTarget(entries, "zzz-no-such-peer");
     expect(miss.target).toBeUndefined();
-    expect(miss.error).toMatch(/no live session matches "worker-"/);
-    expect(miss.candidates).toEqual(["worker-one (Pi session)", "worker-two (Pi session)", "worker-one (Claude session)"]);
+    expect(miss.error).toMatch(/no live session matches "zzz-no-such-peer"/);
+    const refOf = (id: string) => roster.sessionRef(id);
+    expect(miss.candidates).toEqual([
+      `worker-one [${refOf("sess-aaa111")}] (Pi session)`,
+      `worker-two [${refOf("sess-bbb222")}] (Pi session)`,
+      `worker-one [${refOf("claude-ccc")}] (Claude session)`,
+    ]);
+  });
+
+  test("a uds: socket address resolves the Claude peer that owns it", () => {
+    expect(roster.resolveRosterTarget(entries, "uds:/run/cc.sock")).toMatchObject({
+      target: { sessionId: "claude-ccc" },
+    });
+  });
+
+  test("a uds: socket with no owner is a miss, never a guess", () => {
+    const miss = roster.resolveRosterTarget(entries, "uds:/run/nobody.sock");
+    expect(miss.target).toBeUndefined();
+    expect(miss.error).toMatch(/no live session matches/);
+    expect(miss.candidates).toHaveLength(3);
+  });
+
+  test("a uds: address resolves a Pi shadow relay socket", () => {
+    const shadowed = [{ kind: "pi", sessionId: "sess-aaa111", name: "worker-one", shadowSock: "/run/shadow.sock" }] as any;
+    expect(roster.resolveRosterTarget(shadowed, "uds:/run/shadow.sock")).toMatchObject({
+      target: { kind: "pi", sessionId: "sess-aaa111" },
+    });
+  });
+
+  test("the 6-hex ref ListAgents prints resolves exactly", () => {
+    const ref = roster.sessionRef("sess-bbb222");
+    expect(ref).toMatch(/^[0-9a-f]{6}$/);
+    expect(roster.resolveRosterTarget(entries, ref)).toMatchObject({ target: { sessionId: "sess-bbb222" } });
+    const claudeRef = roster.sessionRef("claude-ccc");
+    expect(roster.resolveRosterTarget(entries, claudeRef)).toMatchObject({ target: { sessionId: "claude-ccc" } });
+  });
+
+  test("a unique 4+ char prefix resolves: name, session id and ref", () => {
+    expect(roster.resolveRosterTarget(entries, "worker-two")).toMatchObject({ target: { sessionId: "sess-bbb222" } });
+    expect(roster.resolveRosterTarget(entries, "sess-bbb")).toMatchObject({ target: { sessionId: "sess-bbb222" } });
+    const ref = roster.sessionRef("sess-bbb222");
+    expect(roster.resolveRosterTarget(entries, ref.slice(0, 4))).toMatchObject({ target: { sessionId: "sess-bbb222" } });
+  });
+
+  test("a 3-char input never prefix-resolves: too short stays a miss", () => {
+    const miss = roster.resolveRosterTarget(entries, "ses");
+    expect(miss.target).toBeUndefined();
+    expect(miss.error).toMatch(/no live session matches/);
+  });
+
+  test("four same-name live peers across legs and counterparties refuse ambiguity", () => {
+    const four = [
+      { kind: "pi", sessionId: "sess-dup-1", name: "agent" },
+      { kind: "pi", sessionId: "sess-dup-2", name: "agent" },
+      { kind: "claude", sessionId: "claude-dup-3", name: "agent", sock: "/run/a.sock" },
+      // A different counterparty under the same name still refuses: no silent pick.
+      { kind: "pi", sessionId: "sess-other-4", name: "agent" },
+    ] as any;
+    expect(() => roster.resolveRosterTarget(four, "agent")).toThrow(/ambiguous session "agent"/);
+    for (const id of ["sess-dup-1", "sess-dup-2", "claude-dup-3", "sess-other-4"]) {
+      expect(() => roster.resolveRosterTarget(four, "agent")).toThrow(new RegExp(id.replace(/-/g, "-")));
+    }
+    // ...but each is still reachable by its own full session id.
+    expect(roster.resolveRosterTarget(four, "sess-dup-1")).toMatchObject({ target: { sessionId: "sess-dup-1" } });
+    expect(roster.resolveRosterTarget(four, "sess-other-4")).toMatchObject({ target: { sessionId: "sess-other-4" } });
+    expect(roster.resolveRosterTarget(four, "uds:/run/a.sock")).toMatchObject({ target: { sessionId: "claude-dup-3" } });
   });
 });
 
@@ -262,6 +335,22 @@ describe("ListAgents tool registration", () => {
     expect(lines[1]).toBe("Peer sessions (1):");
     expect(lines[2]).toContain(`worker-one [${PI_REF}]`);
     expect(result.isError).toBeFalsy();
+  });
+
+  test("a down Pi registry fails loudly instead of listing a partial roster", async () => {
+    const { pi, tools } = fakePi();
+    roster.registerListAgentsTool(pi, {
+      fetchPi: async () => {
+        throw new Error("could not reach the agent host registry (GET /v1/sessions failed twice)");
+      },
+      fetchClaude: async () => [],
+    });
+    const result = await tools.ListAgents.execute("call-1", {}, undefined, undefined, {
+      sessionManager: { getSessionId: () => "own-session-id-123456" },
+    });
+    expect(result.isError).toBe(true);
+    expect(String(result.content[0].text)).toMatch(/cannot reach the agent host registry/);
+    expect(String(result.content[0].text)).toMatch(/rather than partial/);
   });
 
   test("without the real session id the tool fails instead of listing self as a peer", async () => {
@@ -394,16 +483,229 @@ describe("fetch retry on transport failure (CORE-2470)", () => {
     }
   });
 
-  test("a persistent failure still reads empty after exactly one retry", async () => {
+  test("a persistent failure throws fail-closed after exactly one retry, never a silent empty", async () => {
     const { server, port, hits } = await stubServer((n, req) => {
       (req.socket as any)?.destroy();
     });
     try {
-      const sessions = await roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 500 });
+      await expect(roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 500 })).rejects.toThrow(/agent host registry/);
       expect(hits()).toBe(2);
-      expect(sessions).toEqual([]);
     } finally {
       await new Promise((r) => server.close(r));
     }
+  });
+
+  test("consecutive total failures stay loud: the roster never flaps to a partial list", async () => {
+    const { server, port } = await stubServer((n, req) => {
+      (req.socket as any)?.destroy();
+    });
+    try {
+      // Every attempt throws: no call ever resolves a silent [] that would
+      // flip Pi peers to their Claude shadow and back (MMD-2538 flap).
+      for (let i = 0; i < 3; i += 1) {
+        await expect(roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 500 })).rejects.toThrow(/agent host registry/);
+      }
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+});
+
+describe("provider-aware leg classification (CORE-2479)", () => {
+  function hostClaudeSummary(overrides: Record<string, unknown> = {}) {
+    return {
+      sessionId: "sess-claude-1",
+      provider: "claude",
+      state: "settled",
+      name: "xu82",
+      cwd: "/tmp/x",
+      tmux: { session: "xtrm-rc", paneId: "%77" },
+      extensionConnected: false,
+      capabilities: [],
+      startedAt: NOW - 3 * HOUR,
+      lastActivityAt: NOW - 60_000,
+      ...overrides,
+    } as any;
+  }
+
+  test("piRosterRow names the leg from the provider, never assuming Pi", () => {
+    expect(roster.piRosterRow(piSummary({ provider: "pi" }), NOW).kind).toBe("pi");
+    expect(roster.piRosterRow(piSummary({ provider: "claude" }), NOW).kind).toBe("claude");
+    expect(roster.piRosterRow(piSummary({ provider: "codex" }), NOW).kind).toBe("claude");
+  });
+
+  test("a host Claude session lists as Claude, never Pi", () => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [hostClaudeSummary()],
+      claudePeers: [],
+      now: NOW,
+    });
+    expect(built.peers).toHaveLength(1);
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "claude", sessionId: "sess-claude-1" });
+    expect(built.peers[0]).toMatchObject({
+      kind: "claude",
+      ref: roster.sessionRef("sess-claude-1"),
+      where: "tmux xtrm-rc:%77",
+    });
+    expect(roster.resolveRosterTarget(built.entries, "xu82")).toMatchObject({ target: { kind: "claude" } });
+  });
+
+  test("dual registration (host Claude + live socket, same session) lists once on the live leg", () => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [hostClaudeSummary()],
+      claudePeers: [claudePeer({ sessionId: "sess-claude-1", name: "xu82", sock: "/run/xu82.sock" })],
+      now: NOW,
+    });
+    expect(built.peers).toHaveLength(1);
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "claude", sessionId: "sess-claude-1" });
+    // Same ref on both registrations: the socket row carries the session hash, so no R7 ambiguity.
+    expect(built.peers[0].ref).toBe(roster.sessionRef("sess-claude-1"));
+    expect(roster.resolveRosterTarget(built.entries, "xu82")).toMatchObject({ target: { kind: "claude" } });
+    // CORE-2488: the live socket must ride the dual-registered entry. Dropping
+    // it left us-on-a-host-record addressable by name only, so a uds: address
+    // that the peer itself reports was refused in under a second.
+    expect(built.entries[0].sock).toBe("/run/xu82.sock");
+    expect(roster.resolveRosterTarget(built.entries, "uds:/run/xu82.sock")).toMatchObject({
+      target: { kind: "claude", sessionId: "sess-claude-1" },
+    });
+  });
+
+  test("a Pi entry carries extensionConnected for disconnected-extension routing", () => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [piSummary({ sessionId: "sess-pi-down", extensionConnected: false })],
+      claudePeers: [claudePeer({ sessionId: "sess-pi-down", name: "worker-one", sock: "/run/shadow.sock" })],
+      now: NOW,
+    });
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({
+      kind: "pi",
+      sessionId: "sess-pi-down",
+      extensionConnected: false,
+      shadowSock: "/run/shadow.sock",
+    });
+  });
+
+  test("a Claude host record never memoizes as Pi across registry lag", () => {
+    roster.__resetRecentPi();
+    // Live window: only the Claude host record is present, no socket yet.
+    roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [hostClaudeSummary()],
+      claudePeers: [],
+      now: NOW,
+    });
+    // Lag window: the host record drops while the live socket appears.
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [],
+      claudePeers: [claudePeer({ sessionId: "sess-claude-1", name: "xu82", sock: "/run/xu82.sock" })],
+      now: NOW + 60_000,
+    });
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "claude", sessionId: "sess-claude-1" });
+    expect(built.entries[0]).not.toHaveProperty("shadowSock");
+    expect(roster.resolveRosterTarget(built.entries, "xu82")).toMatchObject({ target: { kind: "claude" } });
+  });
+
+  test.each([["failed"], ["history_only"]])("a %s host Claude record stays out of the roster", (state) => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [hostClaudeSummary({ sessionId: "sess-dead-claude", name: "ghost-claude", state })],
+      claudePeers: [],
+      now: NOW,
+    });
+    expect(built.peers).toEqual([]);
+    expect(built.entries).toEqual([]);
+  });
+});
+
+describe("roster miss trace (CORE-2488 phase 1)", () => {
+  function captureTraceFile(): { lines: () => string[]; stderr: () => unknown[]; restore: () => void } {
+    const dir = mkdtempSync(join(tmpdir(), "intercom-roster-trace-"));
+    const file = join(dir, "intercom-trace.log");
+    const prevFile = process.env["INTERCOM_TRACE_FILE"];
+    const prevSession = process.env["XTRM_SESSION_ID"];
+    process.env["INTERCOM_TRACE_FILE"] = file;
+    process.env["XTRM_SESSION_ID"] = "sess-test-trace";
+    const errors: unknown[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(line);
+    });
+    const read = (): string[] => {
+      try {
+        return readFileSync(file, "utf8").split("\n").filter((line) => line !== "");
+      } catch {
+        return [];
+      }
+    };
+    return {
+      lines: read,
+      stderr: () => errors,
+      restore: () => {
+        spy.mockRestore();
+        if (prevFile === undefined) delete process.env["INTERCOM_TRACE_FILE"];
+        else process.env["INTERCOM_TRACE_FILE"] = prevFile;
+        if (prevSession === undefined) delete process.env["XTRM_SESSION_ID"];
+        else process.env["XTRM_SESSION_ID"] = prevSession;
+        rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  test("a miss traces the attempted key and the entry count", () => {
+    const cap = captureTraceFile();
+    let lines: string[] = [];
+    try {
+      roster.resolveRosterTarget(
+        [
+          { kind: "pi", sessionId: "sess-abc123def456", name: "worker-one" },
+          { kind: "claude", sessionId: "claude-session-9", name: "claude-nine", sock: "/run/cc-socks/9.sock", live: true },
+        ],
+        "zzz-no-such-peer",
+      );
+      lines = cap.lines();
+    } finally {
+      cap.restore();
+    }
+    expect(cap.stderr()).toEqual([]);
+    expect(lines[0]).toBe("[intercom-trace] roster.miss key=zzz-no-such-peer entries=2 session=sess-test-trace");
+  });
+
+  test("a uds: miss names the closest Claude candidates with sock, sessionId and live", () => {
+    const cap = captureTraceFile();
+    let lines: string[] = [];
+    try {
+      roster.resolveRosterTarget(
+        [
+          // The failure shape: proved live, no socket on the entry.
+          { kind: "claude", sessionId: "claude-session-9", name: "xu82", live: true },
+          { kind: "claude", sessionId: "claude-session-7", name: "live-peer", sock: "/run/cc-socks/7.sock", sockSource: "claude-session-json:messagingSocketPath", live: true },
+        ],
+        "uds:/run/cc-socks/3058484.sock",
+      );
+      lines = cap.lines();
+    } finally {
+      cap.restore();
+    }
+    expect(cap.stderr()).toEqual([]);
+    const candidates = lines.filter((line) => line.startsWith("[intercom-trace] roster.miss.candidate "));
+    expect(candidates.length).toBeGreaterThan(0);
+    const noSocket = candidates.find((line) => line.includes("name=xu82"));
+    expect(noSocket).toBeTruthy();
+    expect(noSocket).toContain("sock=none");
+    expect(noSocket).toContain("live=true");
+    expect(noSocket).toContain("sessionId=claude-session-9");
+    const withSocket = candidates.find((line) => line.includes("name=live-peer"));
+    expect(withSocket).toContain("sock=/run/cc-socks/7.sock");
+    expect(withSocket).toContain("sockSource=claude-session-json:messagingSocketPath");
   });
 });

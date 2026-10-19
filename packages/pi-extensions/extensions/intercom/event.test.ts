@@ -2,7 +2,7 @@
  * Intercom rendering through the shared event module (CORE-2438 I7).
  *
  * The intercom extension registers one `intercom_message` renderer that maps
- * the injected wake details to the shared card: ● identity, tinted state,
+ * the injected wake details to the shared card: ○ identity (automatic wake), tinted state,
  * dim facts, up to 3 preview lines with the ctrl+o expander hint, and the
  * Claude-style › Message preview for incoming messages.
  */
@@ -71,7 +71,7 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
         tagTheme("dark"),
       ).render(80).join("\n"),
     );
-    expect(lines[0]).toBe("● @Bob delivered");
+    expect(lines[0]).toBe("○ @Bob delivered");
     expect(lines[1]).toBe("  › Message from @Bob: hello world");
     expect(lines[2]).toBe("  second line  m7");
   });
