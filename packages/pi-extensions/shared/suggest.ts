@@ -557,6 +557,10 @@ const PURPLE = "\x1b[38;2;141;127;232m";
 export const SKILL_ACCENT = [0, 103, 188] as const; // 0067BC blue
 /** Header-band accents per suggester (operator directive, CORE-2348). */
 export const SUBSTRATE_ACCENT = [255, 112, 52] as const; // FF7034 bright orange
+/** Panel band for background surfaces (operator directive): gold #D9B06A.
+ * NOTE for the specialists copy: this file's accent constants are mirrored
+ * byte-identically in @jaggerxtrm/specialists — carry this line there too. */
+export const BG_TASKS_ACCENT = [217, 176, 106] as const; // D9B06A gold
 export type CardAccent = readonly [number, number, number];
 const FG = [24, 20, 16] as const;
 const bandOn = (bg: CardAccent) => `\x1b[48;2;${bg[0]};${bg[1]};${bg[2]}m\x1b[38;2;${FG[0]};${FG[1]};${FG[2]}m`;
@@ -579,6 +583,19 @@ const stripAnsi = (v: string) => v.replace(/\x1b\[[0-9;]*m/g, "");
 /** Accent background, dark foreground. Used for the header band only. */
 function paint(text: string, bold = false, bg: CardAccent = SUBSTRATE_ACCENT): string {
   return `${bandOn(bg)}${bold ? "\x1b[1m" : ""}${text}${bold ? "\x1b[22m" : ""}${BAND_OFF}`;
+}
+
+/**
+ * Full-width panel title band: dark bold text on the accent, padded to the
+ * width. Used for overlay top rows (tasks gold). Intercom keeps an unbanded
+ * title so the two surfaces contrast. Single segment: bold opens once and
+ * closes once at the end of the band (design-system SGR nesting rule).
+ */
+export function bandRow(text: string, bg: CardAccent, width: number): string {
+  const safe = Math.max(1, Math.floor(width) || 80);
+  const plain = text.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
+  const padded = plain.length >= safe ? plain.slice(0, safe) : plain + " ".repeat(safe - plain.length);
+  return `${bandOn(bg)}\x1b[1m${padded}\x1b[22m${BAND_OFF}`;
 }
 
 /** Body text: italic on the normal background — no gold, no box. */

@@ -109,6 +109,9 @@ export function resolveIntercomCard(message: unknown): EventDetails | null {
   return {
     kind: "message",
     state: "delivered",
+    // Inbound wakes are automatic: the hollow dot separates them from
+    // proactive tool rows at a glance.
+    automatic: true,
     identity: `@${name}`,
     preview,
     facts: typeof details.messageId === "string" && details.messageId ? details.messageId : undefined,

@@ -163,7 +163,7 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
         expect(content).not.toContain("› Message");
 
         const lines = renderCard(receiver.renderers, "intercom_message", injected[0].message, 80);
-        expect(lines[0]).toBe("● @coordinator delivered");
+        expect(lines[0]).toBe("○ @coordinator delivered");
         expect(lines[1]).toBe("  › Message from @coordinator: hello e2e  m-e2e-1");
       } finally {
         await host.close();
@@ -295,7 +295,7 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
           expect(acked).toEqual(["delivered:m-c2p-1"]);
 
           const lines = renderCard(receiver.renderers, "intercom_message", injected, 80);
-          expect(lines[0]).toBe("● @cass delivered");
+          expect(lines[0]).toBe("○ @cass delivered");
           expect(lines[1]).toBe("  › Message from @cass: hello from claude  m-c2p-1");
         } finally {
           await sink.close();
@@ -345,7 +345,7 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
         expect(injected).toHaveLength(1);
         expect(resolveIntercomCard(injected[0].message)).toMatchObject({ kind: "message", state: "delivered" });
         const lines = renderCard(pi.renderers, "intercom_message", injected[0].message, 120);
-        expect(lines[0][0]).toBe("●");
+        expect(lines[0][0]).toBe("○");
         for (const line of lines) expect(line.length).toBeLessThanOrEqual(120);
         pi.fire("session_shutdown", { reason: "quit" }, parent);
       } finally {

@@ -85,11 +85,15 @@ describe("event design system vocabulary (CORE-2438 I7, D7)", () => {
     expect(EVENT_GLYPHS.failure).toBe("!");
   });
 
-  test("glyphFor picks ! for failures and high severity, else the kind glyph", () => {
+  test("glyphFor picks ! for failures and high severity, ○ for automatic wakes, else the kind glyph", () => {
     expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [] })).toBe("●");
+    expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [], automatic: true })).toBe("○");
     expect(glyphFor({ kind: "task", state: "running", identity: "x", preview: [] })).toBe("◐");
+    expect(glyphFor({ kind: "task", state: "running", identity: "x", preview: [], automatic: true })).toBe("○");
     expect(glyphFor({ kind: "monitor", state: "event", identity: "x", preview: [] })).toBe("◉");
+    expect(glyphFor({ kind: "monitor", state: "event", identity: "x", preview: [], automatic: true })).toBe("○");
     expect(glyphFor({ kind: "message", state: "refused", identity: "x", preview: [] })).toBe("!");
+    expect(glyphFor({ kind: "message", state: "refused", identity: "x", preview: [], automatic: true })).toBe("!");
     expect(glyphFor({ kind: "task", state: "failed", identity: "x", preview: [] })).toBe("!");
     expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [], severityHigh: true })).toBe("!");
   });
