@@ -230,7 +230,7 @@ export async function runIntercom(pi: ExtensionAPI, ctx: CommandCtx, deps: Inter
         });
         return overlay as any;
       },
-      { overlay: true, overlayOptions: { width: "100%", anchor: "bottom-center" } },
+      { overlay: true, overlayOptions: { width: "100%", anchor: "bottom-center", margin: { bottom: 4 } } },
     );
   } catch {
     ctx.ui.notify(text, "info");
