@@ -326,13 +326,17 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
       hostNonPi.delete(hostLeg.sessionId);
       pairs.push({
         row: claudeRosterRow(peer, now),
-        // CORE-2488 phase 1: `live` rides the entry even on this branch, so a
-        // refused uds: address reports live=<true> sock=none — the socket was
-        // proved live and did not reach the entry.
+        // CORE-2488: the live socket rides this branch too. A host-held peer
+        // whose socket is live is addressable by the uds: address it itself
+        // reports; dropping the socket left it name-only and refused every
+        // uds: target in under a second. `live` still rides along so the trace
+        // keeps saying whether a socket was proved reachable.
         entry: {
           kind: "claude",
           ...(peer.sessionId ? { sessionId: peer.sessionId } : {}),
           name: clean(peer.name) || "unknown",
+          sock: peer.sock,
+          ...(peer.sockSource ? { sockSource: peer.sockSource } : {}),
           ...(peer.live !== undefined ? { live: peer.live } : {}),
         },
       });

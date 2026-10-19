@@ -564,6 +564,13 @@ describe("provider-aware leg classification (CORE-2479)", () => {
     // Same ref on both registrations: the socket row carries the session hash, so no R7 ambiguity.
     expect(built.peers[0].ref).toBe(roster.sessionRef("sess-claude-1"));
     expect(roster.resolveRosterTarget(built.entries, "xu82")).toMatchObject({ target: { kind: "claude" } });
+    // CORE-2488: the live socket must ride the dual-registered entry. Dropping
+    // it left us-on-a-host-record addressable by name only, so a uds: address
+    // that the peer itself reports was refused in under a second.
+    expect(built.entries[0].sock).toBe("/run/xu82.sock");
+    expect(roster.resolveRosterTarget(built.entries, "uds:/run/xu82.sock")).toMatchObject({
+      target: { kind: "claude", sessionId: "sess-claude-1" },
+    });
   });
 
   test("a Pi entry carries extensionConnected for disconnected-extension routing", () => {
