@@ -119,30 +119,33 @@ function overlayPeerCount(lines: string[]): number | null {
 }
 
 /**
- * One peer row, styled: bold name, dim ref, italic kind, tinted state
- * (idle green, busy amber, offline dim), dim trailer. Lines that do not
- * match the row shape render as-is. Themes without `italic` fall back to
- * dim for the kind so fakes and old themes keep working.
+ * One peer row, reordered for eyeballing: invariant fields first (state,
+ * kind, ref), then the human fields (name, tmux, started). The underlying
+ * ListAgents text keeps Claude's row shape; only the overlay reorders.
+ * Styled: tinted state, italic kind, dim ref, bold name, dim trailer.
  */
 function styleOverlayRow(line: string, theme: RosterOverlayOptions["theme"]): string {
   const match = /^(\s*)([^[]+?)\s*\[([^\]]*)\](.*)$/.exec(line);
   if (!match) return line;
   const [, indent, name, ref, rest] = match;
-  const head = `${indent}${theme.bold((name ?? "").trim())} ${theme.fg("dim", `[${ref ?? ""}]`)}`;
   const segments = (rest ?? "").split("·").map((part) => part.trim()).filter(Boolean);
-  if (segments.length === 0) return head;
-  const styled = segments.map((segment, i) => {
-    if (i === 0) return theme.italic ? theme.italic(segment) : theme.fg("dim", segment);
-    if (i === 1) {
-      const lowered = segment.toLowerCase();
-      if (lowered.includes("idle")) return theme.fg("success", segment);
-      if (lowered.includes("busy")) return theme.fg("warning", segment);
-      if (lowered.includes("offline")) return theme.fg("dim", segment);
-      return segment;
-    }
-    return theme.fg("dim", segment);
-  });
-  return `${head}  ·  ${styled.join("  ·  ")}`;
+  const kind = segments[0] ?? "";
+  const state = segments[1] ?? "";
+  const tail = segments.slice(2);
+  const tintedState = (() => {
+    if (!state) return "";
+    const lowered = state.toLowerCase();
+    if (lowered.includes("idle")) return theme.fg("success", state);
+    if (lowered.includes("busy")) return theme.fg("warning", state);
+    if (lowered.includes("offline")) return theme.fg("dim", state);
+    return state;
+  })();
+  const kindPart = kind ? (theme.italic ? theme.italic(kind) : theme.fg("dim", kind)) : "";
+  const head = [tintedState, kindPart, theme.fg("dim", `[${ref ?? ""}]`)].filter(Boolean).join(" ");
+  const trailer = [theme.bold((name ?? "").trim()), ...(tail.length > 0 ? [theme.fg("dim", tail.join(" "))] : [])]
+    .filter(Boolean)
+    .join(" ");
+  return `${indent}${head} · ${trailer}`;
 }
 
 /** Read-only roster overlay: the ListAgents text, scrollable, esc closes. */
@@ -227,7 +230,7 @@ export async function runIntercom(pi: ExtensionAPI, ctx: CommandCtx, deps: Inter
         });
         return overlay as any;
       },
-      { overlay: true, overlayOptions: { width: 88 } },
+      { overlay: true, overlayOptions: { width: "100%", anchor: "bottom-center" } },
     );
   } catch {
     ctx.ui.notify(text, "info");

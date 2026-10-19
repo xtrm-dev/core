@@ -30,7 +30,7 @@ describe("task cards through the I7 module", () => {
     expect(card).toContain('Background command "make build" failed (exit code 2)');
   });
 
-  test("a completed task resolves to a ◐ card with the read line", () => {
+  test("a completed task resolves to a hollow card with the read line", () => {
     const details = resolveTaskCard({
       details: {
         task_id: "bg_1a2b",
@@ -41,7 +41,7 @@ describe("task cards through the I7 module", () => {
       },
     });
     expect(details).toMatchObject({ kind: "task", state: "completed" });
-    expect(glyphFor(details as never)).toBe("◐");
+    expect(glyphFor(details as never)).toBe("○");
     expect(formatEventCard(details as never, theme, 80)).toContain("Read /tmp/background-bg_1a2b.log");
   });
 
@@ -54,7 +54,7 @@ describe("task cards through the I7 module", () => {
 });
 
 describe("monitor cards through the I7 module", () => {
-  test("an event resolves to a ◉ card with its lines", () => {
+  test("an event resolves to a hollow card with its lines", () => {
     const details = resolveMonitorCard({
       details: {
         monitor_id: "mn_3c4d",
@@ -65,7 +65,7 @@ describe("monitor cards through the I7 module", () => {
       },
     });
     expect(details).toMatchObject({ kind: "monitor", state: "event", identity: "monitor mn_3c4d" });
-    expect(glyphFor(details as never)).toBe("◉");
+    expect(glyphFor(details as never)).toBe("○");
     const card = formatEventCard(details as never, theme, 80);
     expect(card).toContain("build ok");
     expect(card).toContain("tests ok");
