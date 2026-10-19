@@ -77,6 +77,13 @@ export interface RosterEntry {
    * Never set on Claude entries.
    */
   shadowSock?: string;
+  /**
+   * Host-registry extension state at roster time (CORE-2479). False means
+   * the Pi wake leg is definitively unroutable, so SendMessage relays via
+   * shadowSock instead of parking held. Undefined for Claude entries and
+   * memoized Pi ids, where no Pi route was ever observed.
+   */
+  extensionConnected?: boolean;
 }
 
 /**
@@ -143,7 +150,7 @@ export function formatRosterRow(row: RosterRow, now: number = Date.now()): strin
   return `  ${segments.join("  ·  ")}`;
 }
 
-/** Pi registry summary to a roster row. Kind is always pi: Pi rows name their leg, while Claude rows keep Claude's advertised kind (the wire advertisement toward Claude stays interactive). The where segment is tmux only, in Claude's shape; anything else is omitted, never the cwd. */
+/** Host summary to a roster row. Kind follows the summary's provider (CORE-2479): Pi rows name the Pi leg, while claude/codex rows read claude so a wake never parks held behind a dead extension while a live socket goes untried. Claude socket peers keep their advertised kind via claudeRosterRow. The where segment is tmux only, in Claude's shape; anything else is omitted, never the cwd. */
 export function piRosterRow(summary: AgentSessionSummary, _now?: number): RosterRow {
   const ref = sessionRef(summary.sessionId);
   const name = clean(summary.name) || `session ${ref}`;
@@ -154,7 +161,7 @@ export function piRosterRow(summary: AgentSessionSummary, _now?: number): Roster
   return {
     name,
     ref,
-    kind: "pi",
+    kind: summary.provider === "claude" || summary.provider === "codex" ? "claude" : "pi",
     state: piSessionStateWord(summary.state),
     ...(where ? { where } : {}),
     ...(typeof summary.startedAt === "number" ? { started: summary.startedAt } : {}),
@@ -237,9 +244,18 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
   const own = { sessionId: sources.ownSessionId, ...(sources.ownName ? { name: sources.ownName } : {}) };
   const pairs: Array<{ row: RosterRow; entry: RosterEntry }> = [];
   const listedSessionIds = new Set<string>([sources.ownSessionId]);
+  // CORE-2479: the host lists every bound runtime, not just Pi. Only
+  // provider "pi" rows read Pi; any other provider (claude/codex) waits
+  // below and lists with its true leg, so a wake never parks held behind
+  // a dead extension while a live socket goes untried.
+  const hostNonPi = new Map<string, AgentSessionSummary>();
   for (const summary of sources.piSessions) {
     if (listedSessionIds.has(summary.sessionId)) continue;
     if (!LIVE_PI_STATES.has(summary.state)) continue;
+    if (summary.provider === "claude" || summary.provider === "codex") {
+      if (!hostNonPi.has(summary.sessionId)) hostNonPi.set(summary.sessionId, summary);
+      continue;
+    }
     listedSessionIds.add(summary.sessionId);
     const workItemRef = clean(summary.workItem?.ref);
     const repository = clean(summary.repository);
@@ -253,6 +269,7 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
         ...(workItemRef ? { workItemRef } : {}),
         ...(repository ? { repository } : {}),
         ...(repositoryPath ? { repositoryPath } : {}),
+        ...(typeof summary.extensionConnected === "boolean" ? { extensionConnected: summary.extensionConnected } : {}),
       },
     });
   }
@@ -263,6 +280,9 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
   }
   for (const summary of sources.piSessions) {
     if (!LIVE_PI_STATES.has(summary.state)) continue;
+    // A Claude host record must never memoize as Pi: the memo is the
+    // registry-lag backstop for the Pi leg only.
+    if (summary.provider === "claude" || summary.provider === "codex") continue;
     if (typeof summary.sessionId === "string" && summary.sessionId) {
       recentPi.set(summary.sessionId, {
         name: clean(summary.name) || `session ${sessionRef(summary.sessionId)}`,
@@ -282,6 +302,19 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
     const listed = peer.sessionId ? piById.get(peer.sessionId) : undefined;
     if (listed) {
       if (peer.sock && !listed.shadowSock) listed.shadowSock = peer.sock;
+      continue;
+    }
+    // CORE-2479: dual registration — the host holds a non-Pi record for
+    // the same session the socket serves. The live socket leg stands and
+    // the host row drops, so the session lists once, as Claude, and
+    // SendMessage takes the socket instead of a held Pi wake.
+    const hostLeg = peer.sessionId ? hostNonPi.get(peer.sessionId) : undefined;
+    if (hostLeg) {
+      hostNonPi.delete(hostLeg.sessionId);
+      pairs.push({
+        row: claudeRosterRow(peer, now),
+        entry: { kind: "claude", ...(peer.sessionId ? { sessionId: peer.sessionId } : {}), name: clean(peer.name) || "unknown" },
+      });
       continue;
     }
     if (peer.sessionId && listedSessionIds.has(peer.sessionId)) continue;
@@ -304,6 +337,21 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
       // ListAgents prints refs for Claude peers but SendMessage could not
       // address them by the socket address the peer itself reports).
       entry: { kind: "claude", ...(peer.sessionId ? { sessionId: peer.sessionId } : {}), name: clean(peer.name) || "unknown", sock: peer.sock },
+    });
+  }
+  // CORE-2479: host non-Pi records with no live socket still list, with
+  // their true leg. No socket means SendMessage fails loudly (no
+  // reachable Claude socket) instead of silently parking held.
+  // Claude-leg entries carry no Substrate identity and never match a
+  // scope, like Claude socket peers.
+  for (const summary of hostNonPi.values()) {
+    pairs.push({
+      row: piRosterRow(summary, now),
+      entry: {
+        kind: "claude",
+        sessionId: summary.sessionId,
+        name: clean(summary.name) || `session ${sessionRef(summary.sessionId)}`,
+      },
     });
   }
   // Newest first; rows without a start time sort last, stable.

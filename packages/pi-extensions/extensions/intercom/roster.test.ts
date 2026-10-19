@@ -507,3 +507,113 @@ describe("fetch retry on transport failure (CORE-2470)", () => {
     }
   });
 });
+
+describe("provider-aware leg classification (CORE-2479)", () => {
+  function hostClaudeSummary(overrides: Record<string, unknown> = {}) {
+    return {
+      sessionId: "sess-claude-1",
+      provider: "claude",
+      state: "settled",
+      name: "xu82",
+      cwd: "/tmp/x",
+      tmux: { session: "xtrm-rc", paneId: "%77" },
+      extensionConnected: false,
+      capabilities: [],
+      startedAt: NOW - 3 * HOUR,
+      lastActivityAt: NOW - 60_000,
+      ...overrides,
+    } as any;
+  }
+
+  test("piRosterRow names the leg from the provider, never assuming Pi", () => {
+    expect(roster.piRosterRow(piSummary({ provider: "pi" }), NOW).kind).toBe("pi");
+    expect(roster.piRosterRow(piSummary({ provider: "claude" }), NOW).kind).toBe("claude");
+    expect(roster.piRosterRow(piSummary({ provider: "codex" }), NOW).kind).toBe("claude");
+  });
+
+  test("a host Claude session lists as Claude, never Pi", () => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [hostClaudeSummary()],
+      claudePeers: [],
+      now: NOW,
+    });
+    expect(built.peers).toHaveLength(1);
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "claude", sessionId: "sess-claude-1" });
+    expect(built.peers[0]).toMatchObject({
+      kind: "claude",
+      ref: roster.sessionRef("sess-claude-1"),
+      where: "tmux xtrm-rc:%77",
+    });
+    expect(roster.resolveRosterTarget(built.entries, "xu82")).toMatchObject({ target: { kind: "claude" } });
+  });
+
+  test("dual registration (host Claude + live socket, same session) lists once on the live leg", () => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [hostClaudeSummary()],
+      claudePeers: [claudePeer({ sessionId: "sess-claude-1", name: "xu82", sock: "/run/xu82.sock" })],
+      now: NOW,
+    });
+    expect(built.peers).toHaveLength(1);
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "claude", sessionId: "sess-claude-1" });
+    // Same ref on both registrations: the socket row carries the session hash, so no R7 ambiguity.
+    expect(built.peers[0].ref).toBe(roster.sessionRef("sess-claude-1"));
+    expect(roster.resolveRosterTarget(built.entries, "xu82")).toMatchObject({ target: { kind: "claude" } });
+  });
+
+  test("a Pi entry carries extensionConnected for disconnected-extension routing", () => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [piSummary({ sessionId: "sess-pi-down", extensionConnected: false })],
+      claudePeers: [claudePeer({ sessionId: "sess-pi-down", name: "worker-one", sock: "/run/shadow.sock" })],
+      now: NOW,
+    });
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({
+      kind: "pi",
+      sessionId: "sess-pi-down",
+      extensionConnected: false,
+      shadowSock: "/run/shadow.sock",
+    });
+  });
+
+  test("a Claude host record never memoizes as Pi across registry lag", () => {
+    roster.__resetRecentPi();
+    // Live window: only the Claude host record is present, no socket yet.
+    roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [hostClaudeSummary()],
+      claudePeers: [],
+      now: NOW,
+    });
+    // Lag window: the host record drops while the live socket appears.
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [],
+      claudePeers: [claudePeer({ sessionId: "sess-claude-1", name: "xu82", sock: "/run/xu82.sock" })],
+      now: NOW + 60_000,
+    });
+    expect(built.entries).toHaveLength(1);
+    expect(built.entries[0]).toMatchObject({ kind: "claude", sessionId: "sess-claude-1" });
+    expect(built.entries[0]).not.toHaveProperty("shadowSock");
+    expect(roster.resolveRosterTarget(built.entries, "xu82")).toMatchObject({ target: { kind: "claude" } });
+  });
+
+  test.each([["failed"], ["history_only"]])("a %s host Claude record stays out of the roster", (state) => {
+    roster.__resetRecentPi();
+    const built = roster.buildRoster({
+      ownSessionId: "own-session-id-123456",
+      piSessions: [hostClaudeSummary({ sessionId: "sess-dead-claude", name: "ghost-claude", state })],
+      claudePeers: [],
+      now: NOW,
+    });
+    expect(built.peers).toEqual([]);
+    expect(built.entries).toEqual([]);
+  });
+});

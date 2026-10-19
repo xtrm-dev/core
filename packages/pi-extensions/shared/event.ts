@@ -231,7 +231,10 @@ export function buildDeliveryNotice(state: string, name: string, messageId: stri
   const id = sanitizeField(messageId, 128) || "unknown";
   switch (state) {
     case "held":
-      return `[Cross-session delivery notice] ${who} is not connected; message ${id} is held and will deliver when the session registers.`;
+      // Expiry window: the host wake TTL (cli/src/core/agent-host-wake.ts
+      // DEFAULT_WAKE_TTL_MS, 5 minutes by default). Past it the sender
+      // hears about the expiry exactly once through an expiry notice.
+      return `[Cross-session delivery notice] ${who} is not connected; message ${id} is held and will deliver when the session registers, or expire if it never does (wake TTL is 5 minutes by default).`;
     case "refused":
       return `[Cross-session delivery notice] ${who} refused message ${id}.`;
     case "undelivered":
