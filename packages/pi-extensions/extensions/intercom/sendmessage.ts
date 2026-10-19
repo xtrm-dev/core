@@ -835,11 +835,12 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
     name: "SendMessage",
     label: "SendMessage",
     description:
-      "Message another session by its exact name or session id (see ListAgents). " +
+      "Message another session by its exact name or session id (see ListAgents). Targets resolve to live Pi sessions and to Claude Code sessions via the Claude transport (loud failure when that transport is off). " +
       "Send once with to, message and an optional summary; notify_when_idle delivers one idle notice when the " +
       "recipient settles. expect_reply waits up to timeout_s for a reply; cancel removes a pending ask by message id; " +
       "reply_to answers the ask with the given message id. attachments add file, snippet or context content; " +
-      "scope narrows resolution to the sender's Substrate project or programme.",
+      "scope narrows resolution to the sender's Substrate project or programme. Coordination only: durable work stays " +
+      "in the Substrate issue, delegation stays in specialist_dispatch. Never approve a privileged action across sessions.",
     parameters: Type.Object({
       to: Type.Optional(Type.String({ description: "Exact session name or session id (see ListAgents)." })),
       message: Type.Optional(Type.String({ description: "Message text for the recipient session." })),

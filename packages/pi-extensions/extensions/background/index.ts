@@ -1397,11 +1397,12 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     name: "BashBackground",
     label: "BashBackground",
     description:
-      "Run a shell command in the background without blocking. Returns at once with a task id and an output file path. On exit one task notification wakes the session; read the output file with read. (On Pi, use this where Claude Code uses Bash with run_in_background.)",
+      "Run a shell command in the background without blocking. Returns at once with a task id and an output file path. On exit one task notification wakes the session; read the output file with read. Use for long builds, tests, dev servers, migrations, deploy checks, and watch loops that must survive the turn. Not for per-line event watches (use Monitor) or session checklists (use Pi task tools). (On Pi, use this where Claude Code uses Bash with run_in_background.)",
     parameters: BashBackgroundParams,
     exposure: "direct",
     promptGuidelines: [
       "Do not poll a background task; end the turn. The notification wakes you when the task exits, then read the output file.",
+      "Stay silent while healthy; escalate only on failure. This extension owns background runs here, not Pi task tools.",
     ],
     execute: async (_toolCallId: string, params: BashBackgroundArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string }; ui?: unknown }) => {
       noteUi(ctx?.ui);
@@ -1413,11 +1414,12 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     name: "Monitor",
     label: "Monitor",
     description:
-      "Monitor a shell command's stdout lines or a WebSocket stream without blocking. Returns at once with a monitor id. Each line (or text frame) wakes the session with one event; lines within 200 ms batch into one event. The monitor expires at timeout_ms (default 5 min, maximum 30 min) with one notice and the event count; a firehose is stopped with a notice; BackgroundStop cancels it.",
+      "Monitor a shell command's stdout lines or a WebSocket stream without blocking. Returns at once with a monitor id. Each line (or text frame) wakes the session with one event; lines within 200 ms batch into one event. The monitor expires at timeout_ms (default 5 min, maximum 30 min) with one notice and the event count; a firehose is stopped with a notice; BackgroundStop cancels it. Use for log tails, file-watch loops, git-event polls (PR/CI status, main-branch head moves), tmux fleet-liveness loops (print only on change: WAITING/DONE/DEAD/SILENT), and WebSocket feeds. A monitor line is a trigger, not a verdict: look at the pane, then act.",
     parameters: MonitorParams,
     exposure: "direct",
     promptGuidelines: [
       "Do not poll a monitor; end the turn. Each matching line wakes you with one event. The filter must match failure states too; silence is not success.",
+      "Command and ws are exclusive: pass exactly one of them. Re-arm the monitor after every worker launch, restart or handoff, and list live monitors in the handoff.",
     ],
     execute: async (_toolCallId: string, params: MonitorArgs, _signal: unknown, _onUpdate: unknown, ctx?: { cwd?: string; sessionManager?: { getSessionId?: () => string }; ui?: unknown }) => {
       noteUi(ctx?.ui);
@@ -1428,7 +1430,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
   pi.registerTool({
     name: "BackgroundStop",
     label: "BackgroundStop",
-    description: "Stop a running background task or monitor by id. The task or monitor ends with status stopped.",
+    description: "Stop a running background task or monitor by id (the id printed at start). The task or monitor ends with status stopped. Reap finished entries the same cycle; list open tasks and monitors in every handoff.",
     parameters: BackgroundStopParams,
     exposure: "direct",
     execute: async (_toolCallId: string, params: BackgroundStopArgs) => {
