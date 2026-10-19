@@ -439,7 +439,7 @@ export function registerListAgentsTool(pi: ExtensionAPI, deps: ListAgentsDeps = 
     name: "ListAgents",
     label: "ListAgents",
     description:
-      "List live Pi and Claude Code sessions on this machine. This session prints first, then one row per peer: name [ref] · kind · state · started. Address a peer by its exact name or session id.",
+      "List live Pi and Claude Code sessions on this machine. This session prints first, then one row per peer: name [ref] · kind · state · started. Address a peer by its exact name or session id. Call this before SendMessage, and at session start with tmux list-windows and gh pr list.",
     parameters: Type.Object({}),
     exposure: "model-only",
     execute: async (
