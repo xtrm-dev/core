@@ -167,7 +167,10 @@ describe("tasks overlay snapshot", () => {
     });
     const lines = overlay.render(80);
     for (const line of lines) {
-      expect(visibleWidth(line)).toBeLessThanOrEqual(80);
+      // Strip first: neighbouring suites mock pi-tui's visibleWidth as a
+      // plain length, which counts styling escapes; the real one ignores
+      // them, so measure the visible text either way.
+      expect(visibleWidth(stripStyling(line))).toBeLessThanOrEqual(80);
     }
     const text = lines.join("\n");
     expect(text).toContain("tasks");

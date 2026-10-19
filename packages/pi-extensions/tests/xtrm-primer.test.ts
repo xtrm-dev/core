@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import register, { buildPrimer, dispatcherLine, excerpt, MARKER, missingSections, resetPrimerWarnings, resolveHome } from "../extensions/xtrm-primer/index.ts";
+import register, { ALWAYS_ON, buildPrimer, dispatcherLine, excerpt, MARKER, missingSections, resetPrimerWarnings, resolveHome } from "../extensions/xtrm-primer/index.ts";
 
 const homes: string[] = [];
 
@@ -51,13 +51,18 @@ describe("buildPrimer", () => {
     expect(out).toContain("FAILURE-BODY");
   });
 
-  test("no skills or an unreadable file emits nothing and does not throw", () => {
-    expect(buildPrimer(home({}), {})).toBeNull();
+  test("no skills or an unreadable file still emits the folded always-on block and does not throw", () => {
+    for (const out of [
+      buildPrimer(home({}), {}) as string,
+      buildPrimer(join(tmpdir(), "xtrm-primer-nonexistent-home"), {}) as string,
+    ]) {
+      expect(out).toContain(ALWAYS_ON);
+      expect(out).not.toContain("CONTRACT-BODY");
+    }
     const h = home({});
     // SKILL.md as a directory: readFileSync throws EISDIR.
     mkdirSync(join(h, ".xtrm", "skills", "default", "using-xtrm", "SKILL.md"), { recursive: true });
-    expect(buildPrimer(h, {})).toBeNull();
-    expect(buildPrimer(join(tmpdir(), "xtrm-primer-nonexistent-home"), {})).toBeNull();
+    expect(buildPrimer(h, {}) as string).toContain(ALWAYS_ON);
   });
 });
 
@@ -241,10 +246,13 @@ describe("dispatcher line (CORE-2390)", () => {
     expect(dispatcherLine({ SUBSTRATE_HOLDER: "worker-a" })).toBeNull();
     const out = buildPrimer(home({ "using-xtrm": USING }), { SUBSTRATE_HOLDER: "worker-a" }) as string;
     expect(out).not.toContain("Dispatcher:");
+    expect(out).toContain(ALWAYS_ON);
   });
 
-  test("stands alone when no skill yields a section", () => {
-    expect(buildPrimer(home({}), ENV)).toBe(dispatcherLine(ENV));
+  test("dispatcher line stands first with the always-on block following when no skill yields a section", () => {
+    const out = buildPrimer(home({}), ENV) as string;
+    expect(out.startsWith(dispatcherLine(ENV) as string)).toBe(true);
+    expect(out).toContain(ALWAYS_ON);
   });
 });
 
@@ -301,11 +309,64 @@ describe("xtrm-primer extension (CORE-2394)", () => {
     expect(first.systemPrompt.split(MARKER)).toHaveLength(2);
   });
 
-  test("no skills and no dispatcher env, or a malformed event, leave the turn untouched", async () => {
+  test("no skills and no dispatcher env still injects the always-on block; a malformed event leaves the turn untouched", async () => {
     withEnv({ HOME: home({}) });
     for (const k of Object.keys(ENV)) delete process.env[k];
     const handler = load();
-    expect(await handler({ systemPrompt: "BASE" })).toBeUndefined();
+    const result = await handler({ systemPrompt: "BASE" });
+    expect(result.systemPrompt).toContain(MARKER);
+    expect(result.systemPrompt).toContain(ALWAYS_ON);
+    expect(result.message).toBeUndefined();
     expect(await handler({})).toBeUndefined();
+  });
+});
+
+describe("folded always-on block (XT-138/XT-139, audit fixes CORE-2475)", () => {
+  test("ships unconditionally, even with no skills and no dispatcher env", () => {
+    const out = buildPrimer(home({}), {}) as string;
+    expect(out).toContain("XTRM always-on rules");
+    expect(out).toContain(ALWAYS_ON);
+  });
+
+  test("(1) rejection semantics: reject-only-on-failure, outputSchema/MCP resolve with isError+structuredContent, pinned to Pi 1.3.0", () => {
+    expect(ALWAYS_ON).toContain("rejects only when it failed, was blocked, or had invalid args");
+    expect(ALWAYS_ON).toContain("isError + structuredContent");
+    expect(ALWAYS_ON).toContain("Pi 1.3.0 docs/codemode.md:44,48, extensions.md:147");
+  });
+
+  test("(2) ast_grep guidance is session-scoped and notes its absence from Pi dist", () => {
+    expect(ALWAYS_ON).toContain("Session-scoped ast_grep");
+    expect(ALWAYS_ON).toContain("absent from Pi 1.3.0 dist/core/tools");
+  });
+
+  test("(3) background-monitor rule covers shell/streaming waits only, native agent waits excluded", () => {
+    expect(ALWAYS_ON).toContain("Shell/streaming waits only");
+    expect(ALWAYS_ON).toContain("BashBackground/Monitor");
+    expect(ALWAYS_ON).toContain("Native agent waits");
+    expect(ALWAYS_ON).toContain("excluded");
+    expect(ALWAYS_ON).not.toContain("always set background monitors");
+  });
+
+  test("(4) SendMessage/ListAgents labeled repo intercom extension, never Pi-native", () => {
+    expect(ALWAYS_ON).toContain("SendMessage + ListAgents from the repo intercom extension (never Pi-native)");
+  });
+
+  test("(5) reconcile cites the status-suggested /updating-service-knowledge action, scoped to installed packs", () => {
+    expect(ALWAYS_ON).toContain("/updating-service-knowledge");
+    expect(ALWAYS_ON).toContain("where its pack is installed");
+    expect(ALWAYS_ON).toContain("last_sync_ref");
+  });
+
+  test("(6) python/preflight/background tagged repo-extension, bun/tsx/cargo/dolt are environment guidance, runner sentence kept", () => {
+    expect(ALWAYS_ON).toContain("are repo-extension capabilities");
+    expect(ALWAYS_ON).toContain("preflight()");
+    expect(ALWAYS_ON).toContain("are environment guidance");
+    expect(ALWAYS_ON).toContain("bun/tsx");
+    expect(ALWAYS_ON).toContain("Project runner:");
+    expect(ALWAYS_ON).toContain("uv run, .venv/bin/python, npm/bun run");
+  });
+
+  test("(7) all Pi citations pin installed 1.3.0", () => {
+    expect(ALWAYS_ON).toMatch(/Pi 1\.3\.0/);
   });
 });

@@ -176,7 +176,9 @@ try {
   const dryRun = run('node', [cli, 'update', '--repo', xtrmRepo], { cwd: project, env });
   assertDryRunDriftExit('dry-run update with global prompt sync', dryRun);
   assert.match(combined(dryRun), /Global system-prompt sync/i);
-  assert.match(combined(dryRun), /pi: \[DRY RUN\] would prepend/i);
+  // CORE-2476 (XT-138/XT-139): the pi target is deprecated — Pi doctrine ships
+  // via the versioned primer, so the installer must NOT plan a pi prepend.
+  assert.doesNotMatch(combined(dryRun), /pi: \[DRY RUN\] would prepend/i);
   assert.match(combined(dryRun), /claude: \[DRY RUN\] would prepend/i);
   // Dry-run must not mutate the seeded files.
   assert.equal(readFileSync(userPrompt, 'utf8'), `# user prefix\n\n${secret}\n\n# user suffix\n`);

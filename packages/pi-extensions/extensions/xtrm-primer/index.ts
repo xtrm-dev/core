@@ -5,9 +5,10 @@
  * (XTRM-637, xtrm repo: packages/substrate/plugin/substrate/scripts/xtrm-primer.mjs).
  * Same rules: read ONLY the global skills at ~/.xtrm/skills/default/<skill>/SKILL.md,
  * keep each skill's preamble plus a fixed set of named `##` sections, and say when
- * to load the full skill. Section headings are the interface: a renamed heading
- * drops that section, a missing skill drops that skill, no skill emits nothing,
- * any error emits nothing.
+ * to load the full skill. Section headings are the excerpt interface: a renamed
+ * heading drops that section, a missing skill drops that skill's excerpt (the
+ * unconditional ALWAYS_ON block below still ships), any excerpt error emits
+ * nothing for that skill.
  *
  * Injection point (CORE-2394): `before_agent_start` returns `systemPrompt` =
  * event.systemPrompt + primer, a per-turn override (extensions.md, "Events and
@@ -17,13 +18,23 @@
  * address as user-pasted text. MARKER in event.systemPrompt keeps a second loaded
  * copy of this extension (later handlers see the override) from appending twice.
  *
+ * Single vehicle (XT-138/XT-139, CORE-2476): this primer is the only versioned
+ * Pi doctrine vehicle. The ALWAYS_ON block folds the always-on content that
+ * used to live in the unversioned ~/.pi/agent/APPEND_SYSTEM.md home file
+ * (codemode router, operator mandate, monitor rule, ast_grep, probe/kernel,
+ * memory + drift doctrine) with the CORE-2475 audit fixes applied. The
+ * installer no longer writes Pi doctrine to the home file
+ * (cli/src/core/global-prompt-sync.ts); project .pi/APPEND_SYSTEM.md
+ * overrides keep Pi-native precedence (never managed here).
+ *
  * DRIFT: SKILLS below is copied from xtrm-primer.mjs (XTRM-637); the two repos
- * share no module. Change both together.
+ * share no module. Change both together. ALWAYS_ON is Pi-primer-owned
+ * (Pi 1.3.0 citations, repo extension names) and is intentionally NOT mirrored.
  *
  * Dispatcher line (CORE-2390): when `xt pi` exported XTRM_DISPATCHER_NAME or
  * XTRM_DISPATCHER_ADDRESS, the primer opens with who dispatched this worker,
  * where to reply and its Substrate participant name (SUBSTRATE_HOLDER). The
- * line stands alone when no skill yields a section.
+ * line stands first; it no longer stands alone (ALWAYS_ON always follows).
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -45,6 +56,36 @@ export const SKILLS = [
     load: "whenever two or more live agents, subagents or xt sessions collaborate, message each other or wait on each other",
   },
 ];
+
+/**
+ * Folded always-on rules (XT-138/XT-139, CORE-2476; audit fixes CORE-2475).
+ *
+ * Versioned single vehicle for the doctrine that used to live split across
+ * the unversioned ~/.pi/agent/APPEND_SYSTEM.md home file and this primer's
+ * skill excerpts. Emitted unconditionally on every turn (unlike excerpts,
+ * which drop with a missing skill or renamed heading). Each line carries its
+ * audit fix: rejection semantics resolve-only-on-failure/block/invalid-args
+ * with isError+structuredContent for outputSchema/MCP tools (Pi 1.3.0
+ * docs/codemode.md:44,48, extensions.md:147); ast_grep guidance is
+ * session-scoped (absent from Pi 1.3.0 dist/core/tools); the
+ * background-monitor rule covers shell/streaming waits only (native agent
+ * waits excluded); SendMessage/ListAgents are the repo intercom extension,
+ * never Pi-native; the service-knowledge reconcile cites the
+ * status-suggested /updating-service-knowledge action, scoped to installed
+ * packs; python/preflight/background are tagged repo-extension capabilities
+ * while bun/tsx/cargo/dolt are environment guidance; all Pi citations pin
+ * installed 1.3.0 (repo devDeps floor is Pi SDK 1.0.0 — wording verified
+ * against the 1.3.0 install, not the bundled minimum).
+ */
+export const ALWAYS_ON = `XTRM always-on rules (primer-injected; excerpt — load the full skill before relying on it).
+
+- One programmatic cell per batch: fan out independent tool calls in a single codemode cell (Promise.allSettled), filter in-script, return the digest. A call rejects only when it failed, was blocked, or had invalid args; outputSchema and MCP tools resolve with isError + structuredContent — parse the resolved value defensively (Pi 1.3.0 docs/codemode.md:44,48, extensions.md:147).
+- Session-scoped ast_grep (absent from Pi 1.3.0 dist/core/tools): where this session provides it, prefer it for code-shape queries; otherwise use text search.
+- Shell/streaming waits only: when a background shell or streaming task runs (repo background extension: BashBackground/Monitor), register the runtime monitor and end the turn — its notification wakes you. Native agent waits (intercom asks, specialist/subagent joins) are excluded: use their native continuation, never a background monitor or an operator nudge.
+- Coordinate peers via SendMessage + ListAgents from the repo intercom extension (never Pi-native).
+- Project runner: a project's own tests, scripts, and CLIs run in the project's documented environment (uv run, .venv/bin/python, npm/bun run); treat that environment's failures as the result.
+- Capability tags: the python kernel with preflight() and background tasks/monitors are repo-extension capabilities (absent outside this repo's extensions). bun/tsx (TS probes), cargo (Rust), dolt sql (Dolt) are environment guidance — reach them through the project runner, not as model tools.
+- Memory on demand: before editing, run file-scoped preflight(); consult bd memories and the commit corpus; never bulk-prime. Service-knowledge reconcile only where its pack is installed: follow the status-suggested /updating-service-knowledge action and stamp last_sync_ref.`;
 
 /**
  * Skills already warned about in this process. CORE-2405: buildPrimer runs on
@@ -134,15 +175,22 @@ export function buildPrimer(home?: string, env: NodeJS.ProcessEnv = process.env)
       loads.push(`- /skill:${name}: ${load}`);
       blocks.push(`### ${name} (excerpt)\n\n${body}`);
     }
-    if (blocks.length === 0) return dispatcher;
+    // ALWAYS_ON is unconditional: the folded always-on rules ship on every
+    // turn even when no skill yields an excerpt. The signature keeps
+    // `| null` for caller compatibility, but this path no longer returns it.
     return [
       ...(dispatcher ? [dispatcher] : []),
-      "XTRM operating primer, condensed from the global skills in ~/.xtrm/skills/default. This is an excerpt, not the full doctrine. Load the full skill with its slash command:",
-      loads.join("\n"),
-      ...blocks,
+      ALWAYS_ON,
+      ...(blocks.length > 0
+        ? [
+            "XTRM operating primer, condensed from the global skills in ~/.xtrm/skills/default. This is an excerpt, not the full doctrine. Load the full skill with its slash command:",
+            loads.join("\n"),
+            ...blocks,
+          ]
+        : []),
     ].join("\n\n");
   } catch {
-    return dispatcher;
+    return dispatcher ? `${dispatcher}\n\n${ALWAYS_ON}` : ALWAYS_ON;
   }
 }
 

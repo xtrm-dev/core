@@ -123,10 +123,19 @@ sprint rhythm and the board profile: `references/jira.md`.
 | Work | Shape |
 |---|---|
 | Bounded role with a contract: review, exploration, audit, test run | specialist (Claude plugin MCP `specialist_dispatch`, or Pi native specialists) |
+| Long-running owned job with a contract: watcher, monitor, audit loop, background check | specialist as above — not one-off only (below) |
 | The same judgment repeated over many items, in an operator-approved workflow | AgentRun |
 | Interactive or long-owned work, or anything that needs network, `gh` or docker | tmux window worker (below) |
 
 Rules for specialists and AgentRun: `references/fleet.md`, "Specialists and AgentRun".
+
+Specialists are not one-off only. A long-running job with a clear contract
+runs as a specialist activation with the same attested issue, readiness gate,
+and journal/close discipline as a review: `specialist_list` to choose the
+role, `specialist_dispatch` with `issue_ref`, `specialist_status` to supervise,
+`specialist_stop_activation` to reap. Definitions resolve global first, then
+per-repo (for example `~/.config/specialists`, `~/.specialists`, or per repo
+`~/projects/mercury/*/.specialists` such as `market-data/.specialists`).
 
 Keep all window workers in the coordinator's own tmux session, one window each. Details and the
 exact launch command: `references/fleet.md`. Short form:
@@ -180,8 +189,9 @@ and stale. Author it with `/goal-prompt`; keep it under 4,000 characters; store 
   handoff at 55% context).
 - **Worker goal:** its issue ref, "claim, work, checkpoint after each milestone, close with a
   result", and its stop predicate.
-- **Event loop:** check every worker's liveness and re-arm the monitor; on each worker result, audit it; on each decision, journal it; at sprint end,
-  update Jira and carry open Stories to the next sprint.
+- **Event loop:** check every worker's liveness and re-arm the monitor;
+on each worker result, audit it; on each decision, journal it; at sprint end,
+update Jira and carry open Stories to the next sprint.
 
 ## 5. Continuity
 
@@ -209,6 +219,11 @@ and stale. Author it with `/goal-prompt`; keep it under 4,000 characters; store 
 
 ## Pitfalls
 
+- **Fan-out can lock the host.** Parallel subagents running test suites across several
+  coordinators swap-stormed the VPS for 4 hours on 2026-10-18. Keep at most 2 subagents per
+  coordinator (1 running tests). Run targeted tests only, under a memory cap. Gate each dispatch
+  on available memory and `/proc/pressure/memory`, not on load. Rules: `references/fleet.md`,
+  "Limits and health".
 - Run `sb` inside a git checkout of the repo, or pass `--project <id>`. Per-verb `sb help` is
   broken in 0.2.2; use `sb help <group>` or `references/substrate.md`.
 - A scripted Jira create must have no import-time side effects, and a re-run must not duplicate

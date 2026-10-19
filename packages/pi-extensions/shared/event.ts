@@ -100,11 +100,20 @@ export interface EventDetails {
   from?: string;
   fromName?: string;
   messageId?: string;
+  /**
+   * Automatic (wake) event vs a proactive one. Proactive dots stay filled
+   * (●); automatic wakes render hollow (○) so the operator can tell who
+   * acted at a glance. Failures still render ! regardless.
+   */
+  automatic?: boolean;
 }
 
-/** Glyph for one event: ! on failure or high severity, else the kind glyph. */
-export function glyphFor(details: Pick<EventDetails, "kind" | "state" | "severityHigh">): string {
+/** Glyph for one event: ! on failure or high severity, ○ on automatic
+ * wakes, else the kind glyph (● message, ◐ task, ◉ monitor). Proactive
+ * operator rows keep their own filled dot; every wake renders hollow. */
+export function glyphFor(details: Pick<EventDetails, "kind" | "state" | "severityHigh" | "automatic">): string {
   if (details.severityHigh || stateToken(details.state) === "error") return EVENT_GLYPHS.failure;
+  if (details.automatic) return "○";
   switch (details.kind) {
     case "task":
       return EVENT_GLYPHS.task;
@@ -143,9 +152,17 @@ function escapeEnvelope(value: string): string {
  * sender is resolvable — a wake posted straight to the host has no reply
  * address, and printing to="unknown" resolves to nothing (CORE-2438
  * review). The envelope and provenance still carry the message.
+ * A bare socket path prints in its uds: form (MMD-2538: the address Claude
+ * peers use is the uds: address, never the bare path). The message-id uuid
+ * stays identifier-only in its own attribute and is never a reply target.
  */
 export function buildReplyActionLine(from?: string): string | null {
-  const target = escapeEnvelope(sanitizeField(from ?? "", 256));
+  const raw = sanitizeField(from ?? "", 256);
+  if (!raw || raw === "unknown") return null;
+  // Normalize the socket form: "uds:/path.sock" is the reply address;
+  // a bare "/path.sock" from an older frame means the same socket.
+  const sock = raw.startsWith("uds:") ? raw : raw.startsWith("/") && raw.endsWith(".sock") ? `uds:${raw}` : raw;
+  const target = escapeEnvelope(sock);
   if (!target) return null;
   return `Reply with SendMessage to="${target}"`;
 }
@@ -214,7 +231,10 @@ export function buildDeliveryNotice(state: string, name: string, messageId: stri
   const id = sanitizeField(messageId, 128) || "unknown";
   switch (state) {
     case "held":
-      return `[Cross-session delivery notice] ${who} is not connected; message ${id} is held and will deliver when the session registers.`;
+      // Expiry window: the host wake TTL (cli/src/core/agent-host-wake.ts
+      // DEFAULT_WAKE_TTL_MS, 5 minutes by default). Past it the sender
+      // hears about the expiry exactly once through an expiry notice.
+      return `[Cross-session delivery notice] ${who} is not connected; message ${id} is held and will deliver when the session registers, or expire if it never does (wake TTL is 5 minutes by default).`;
     case "refused":
       return `[Cross-session delivery notice] ${who} refused message ${id}.`;
     case "undelivered":

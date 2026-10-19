@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { decodeFrame, encodeFrame } from '@xtrm/contracts';
 import type { AgentEventV1, AgentHostApiV1, AgentSessionSummary } from '@xtrm/contracts';
-import { AGENT_HOST_BIND_ADDRESS, startAgentHost, type AgentHost } from '../core/agent-host.js';
+import { AGENT_HOST_BIND_ADDRESS, agentSessionsByPane, startAgentHost, type AgentHost } from '../core/agent-host.js';
 import { SessionIndex, type SessionIndexOptions } from '../core/agent-host-session-index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -397,5 +397,41 @@ describe('session index repository identity (XTRM-608)', () => {
             return s?.repository === undefined && s?.repositoryPath === undefined ? s : undefined;
         });
         expect(gone).toEqual(expect.not.objectContaining({ repository: expect.anything(), repositoryPath: expect.anything() }));
+    });
+});
+
+describe('pane reuse never misattributes sessions (MMD-2538)', () => {
+    function summary(overrides: Partial<AgentSessionSummary>): AgentSessionSummary {
+        return {
+            sessionId: 's',
+            provider: 'pi',
+            state: 'working',
+            extensionConnected: false,
+            capabilities: [],
+            ...overrides,
+        } as AgentSessionSummary;
+    }
+
+    it('a connected session keeps its pane over a disconnected session with newer activity', () => {
+        const live = summary({ sessionId: 'live', tmux: { session: 'xtrm-rc', paneId: '%99' }, extensionConnected: true, lastActivityAt: 1000, startedAt: 900 });
+        const stale = summary({ sessionId: 'stale', state: 'settled', tmux: { session: 'xtrm-rc', paneId: '%99' }, lastActivityAt: 2000, startedAt: 1900 });
+        expect(agentSessionsByPane([stale, live]).get('%99')).toMatchObject({ session_id: 'live' });
+    });
+
+    it('a history_only journal entry never claims a pane, even with the newest activity', () => {
+        const history = summary({ sessionId: 'old', state: 'history_only', tmux: { session: 'xtrm-rc', paneId: '%42' }, lastActivityAt: 9999, startedAt: 9990 });
+        expect(agentSessionsByPane([history]).get('%42')).toBeUndefined();
+        const live = summary({ sessionId: 'live', tmux: { session: 'xtrm-rc', paneId: '%42' }, extensionConnected: true, lastActivityAt: 1000, startedAt: 900 });
+        expect(agentSessionsByPane([history, live]).get('%42')).toMatchObject({ session_id: 'live' });
+    });
+
+    it('a Pi live entry and a stale same-pane entry never merge into one id', () => {
+        // Pane reuse across tmux restarts gives two ids one pane: both key
+        // by sessionId downstream, so neither shadows the other by pane.
+        const a = summary({ sessionId: 'a', tmux: { session: 'xtrm-rc', paneId: '%7' }, extensionConnected: true });
+        const b = summary({ sessionId: 'b', state: 'settled', tmux: { session: 'xtrm-rc', paneId: '%7' }, extensionConnected: false });
+        const byPane = agentSessionsByPane([a, b]);
+        expect(byPane.get('%7')).toMatchObject({ session_id: 'a' });
+        expect([a.sessionId, b.sessionId].sort()).toEqual(['a', 'b']);
     });
 });

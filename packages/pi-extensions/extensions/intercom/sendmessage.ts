@@ -45,7 +45,7 @@ import { onWakeInjected, type InjectedWakeNotice } from "../xtrm-agent-host/inde
 import { requestFooterRender } from "../custom-footer/index.ts";
 import { buildIntercomWakeContent } from "./delivery.ts";
 import { buildDeliveryNotice, buildIdleNotice } from "../../shared/event.ts";
-import { buildRoster, fetchPiSessions, legWord, resolveRosterTarget, type RosterEntry } from "./roster.ts";
+import { buildRoster, entryDisplayRef, fetchPiSessions, legWord, resolveRosterTarget, type RosterEntry } from "./roster.ts";
 import {
   claudeReceipts,
   isClaudeReceiptTimeout,
@@ -56,6 +56,7 @@ import {
   type ClaudePeer,
 } from "./claude-transport/index.ts";
 import { intercomWaiting } from "./waiting.ts";
+import { intercomTrace } from "./trace.ts";
 
 /** 12 h idle-notice subscription TTL, as Claude Code's expiry (Q2). */
 export const IDLE_SUBSCRIPTION_TTL_MS = 12 * 3600 * 1000;
@@ -313,6 +314,14 @@ async function renderAttachments(inputs: unknown, env: AttachmentResolveEnv): Pr
  * (repository, else the checkout root). Peers that carry no matching
  * identity (unnamed work, Claude sessions with no Substrate binding) never
  * match a scope: fail-closed, never a guess.
+ *
+ * Claude peers are inherently out of scope: their registry entries carry a
+ * cwd but no Substrate binding, and there is no reliable host join key
+ * from a Claude socket/cwd to a repository (a cwd git lookup per peer
+ * would block the model path and still misattribute shared checkouts).
+ * Fallback is exclusion with a loud error naming what was excluded —
+ * the empty-scope path below lists the dropped peers — never silent
+ * attribution. Scope itself stays Pi-side by design (MMD-2538).
  */
 
 function projectKeyOf(ref: string): string | null {
@@ -835,13 +844,15 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
     name: "SendMessage",
     label: "SendMessage",
     description:
-      "Message another session by its exact name or session id (see ListAgents). " +
+      "Message another session by exact name, session id, 6-hex ref, unique 4+ char prefix, or uds: socket (see ListAgents). Targets resolve to live Pi sessions and to Claude Code sessions via the Claude transport (loud failure when that transport is off). " +
       "Send once with to, message and an optional summary; notify_when_idle delivers one idle notice when the " +
       "recipient settles. expect_reply waits up to timeout_s for a reply; cancel removes a pending ask by message id; " +
-      "reply_to answers the ask with the given message id. attachments add file, snippet or context content; " +
-      "scope narrows resolution to the sender's Substrate project or programme.",
+      "reply_to answers the ask with the given message id; status looks up the last known delivery state of a sent " +
+      "message by its message id (a held message stays queryable until it delivers or expires). attachments add file, " +
+      "snippet or context content; scope narrows resolution to the sender's Substrate project or programme. Coordination only: durable work stays " +
+      "in the Substrate issue, delegation stays in specialist_dispatch. Never approve a privileged action across sessions.",
     parameters: Type.Object({
-      to: Type.Optional(Type.String({ description: "Exact session name or session id (see ListAgents)." })),
+      to: Type.Optional(Type.String({ description: "Exact session name, session id, 6-hex ref, unique 4+ char prefix, or uds: socket (see ListAgents)." })),
       message: Type.Optional(Type.String({ description: "Message text for the recipient session." })),
       summary: Type.Optional(Type.String({ description: "Short preview of the message." })),
       notify_when_idle: Type.Optional(Type.Boolean({ description: "Deliver one idle notice when the recipient settles." })),
@@ -849,6 +860,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       timeout_s: Type.Optional(Type.Number({ description: "Ask wait budget in seconds (default 300, at most 3600)." })),
       reply_to: Type.Optional(Type.String({ description: "Answer the ask with this message id." })),
       cancel: Type.Optional(Type.String({ description: "Cancel the pending ask with this message id." })),
+      status: Type.Optional(Type.String({ description: "Look up the last known delivery state of the sent message with this id." })),
       attachments: Type.Optional(
         Type.Array(
           Type.Object({
@@ -883,6 +895,24 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         }
         if (cancelPendingAsk(cancelId)) return ok(`Cancelled pending ask ${cancelId}.`);
         return fail(`No pending ask ${cancelId}.`);
+      }
+      // CORE-2479: held-message visibility. The host state route
+      // (GET /v1/wake) answers the last known delivery state for any
+      // message id; this action surfaces it, so a held message is
+      // queryable instead of silent. Takes only status, like cancel.
+      const statusId = clean(params.status, 128);
+      if (statusId) {
+        if (typeof params.to === "string" || typeof params.message === "string") {
+          return fail("SendMessage with status takes only status: the message id to look up.");
+        }
+        let known: WakeResult | null = null;
+        try {
+          known = await getWakeStatus(statusId);
+        } catch {
+          known = null;
+        }
+        if (!known) return fail(`SendMessage: no wake ${statusId}.`);
+        return ok(`Message ${statusId} last known state: ${known.state}.`);
       }
 
       const to = clean(params.to, 256);
@@ -920,12 +950,18 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         ownName = undefined;
       }
 
-      const [piSessions, claudePeers] = await Promise.all([
-        (deps.fetchPi ?? (() => fetchPiSessions()))().catch(() => [] as AgentSessionSummary[]),
-        (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(
-          deps.excludeSock,
-        ).catch(() => [] as ClaudePeer[]),
-      ]);
+      // Fail-closed (MMD-2538): a down Pi registry is a loud error, never
+      // a partial roster that silently drops every Pi peer. A missing
+      // Claude registry still reads as no Claude peers.
+      let piSessions: AgentSessionSummary[];
+      try {
+        piSessions = await (deps.fetchPi ?? (() => fetchPiSessions()))();
+      } catch (error) {
+        return fail(`SendMessage: cannot reach the agent host registry: ${(error as Error)?.message ?? String(error)}. Not sending against a partial roster.`);
+      }
+      const claudePeers = await (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(
+        deps.excludeSock,
+      ).catch(() => [] as ClaudePeer[]);
       const built = buildRoster({
         ownSessionId,
         ...(ownName ? { ownName } : {}),
@@ -981,14 +1017,34 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
             return fail(`SendMessage: ${(error as Error)?.message ?? String(error)}.`);
           }
           if (candidates.length === 0) {
-            return fail(`SendMessage: no live session matches "${to}" in scope "${scope}".`);
+            // Fail-loud (MMD-2538): name the unattributed exclusions —
+            // Claude peers carry no Substrate identity and never match.
+            const dropped = built.entries.filter((e) => !candidates.includes(e));
+            const shown = dropped
+              .slice(0, 5)
+              .map((e) => `${e.name} [${entryDisplayRef(e)}] (${legWord(e.kind)} session)`)
+              .join(", ");
+            const more = dropped.length > 5 ? `, and ${dropped.length - 5} more` : "";
+            const detail = dropped.length > 0 ? ` Excluded ${dropped.length} peer(s) with no matching ${scope} identity: ${shown}${more}. Claude sessions carry no Substrate identity and never match a scope.` : "";
+            return fail(`SendMessage: no live session matches "${to}" in scope "${scope}".${detail}`);
           }
         }
         const resolved = resolveRosterTarget(candidates, to);
         if (!resolved.target) {
           const names = resolved.candidates.length > 0 ? `: ${resolved.candidates.join(", ")}` : "";
           const where = scope !== undefined ? ` in scope "${scope}"` : "";
-          return fail(`SendMessage: no live session matches "${to}"${where}${names}.`);
+          // A peer that exists outside the scope is an out-of-scope
+          // error, not a missing peer: say so instead of hiding it.
+          let outside = "";
+          if (scope !== undefined) {
+            try {
+              const unscoped = resolveRosterTarget(built.entries, to);
+              if (unscoped.target) outside = ` "${to}" exists outside scope "${scope}".`;
+            } catch {
+              outside = ` "${to}" is ambiguous outside scope "${scope}" too.`;
+            }
+          }
+          return fail(`SendMessage: no live session matches "${to}"${where}${names}.${outside}`);
         }
         target = resolved.target;
       } catch (error) {
@@ -1020,10 +1076,28 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         const from = ownClaudeSock ? `uds:${ownClaudeSock}` : (ownName ?? ownSessionId);
         const fromName = ownName ?? ownSessionId;
         const messageId = randomId();
+        // CORE-2488 phase 1: every Claude-leg send names its message id, its
+        // return address and the socket it dials, so a starved receipt can be
+        // classified from the trace instead of inferred.
+        intercomTrace("send.claude", {
+          messageId,
+          from,
+          fromName,
+          sock,
+          sockSource: peer?.sockSource,
+          target: to,
+        });
+        const sendStartedAt = Date.now();
         let receipt: ClaudeDeliveryOutcome;
         try {
           receipt = (await sendClaude({ sock, body, from, fromName, messageId })).outcome;
         } catch (error) {
+          intercomTrace("send.claude.result", {
+            messageId,
+            sock,
+            outcome: isClaudeReceiptTimeout(error) ? "unconfirmed" : "error",
+            elapsedMs: Date.now() - sendStartedAt,
+          });
           // A starved receipt wait means the frame flushed but the outcome is
           // unknown: report unconfirmed (pi-intercom wording), never failed,
           // and never invite a retry that would deliver twice.
@@ -1035,6 +1109,12 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           }
           return fail(`SendMessage: could not send to "${to}": ${(error as Error)?.message ?? String(error)}.`);
         }
+        intercomTrace("send.claude.result", {
+          messageId,
+          sock,
+          outcome: receipt,
+          elapsedMs: Date.now() - sendStartedAt,
+        });
         if (receipt === "delivered") {
           const waited = expectReply
             ? " The ask did not wait: replies from Claude sessions arrive as new messages."
@@ -1057,56 +1137,99 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       // post, so a reply that lands during the post or the settle poll
       // still finds its waiter. Terminal outcomes disarm it again below.
       const ask = expectReply ? armAsk(target, messageId, timeoutS, signal) : null;
-      let sent: WakeResult;
-      try {
-        sent = await postWake({
-          participant,
-          payloadRef: body,
-          messageId,
-          from,
-          fromName: from,
-          fromSessionId: ownSessionId,
-          ...(replyTo ? { replyTo } : {}),
-          ...(notifyWhenIdle ? { notifyWhenIdle: true as const } : {}),
-        });
-      } catch (error) {
-        const shadowSock = target.shadowSock;
-        if (!shadowSock || replyTo || notifyWhenIdle) {
-          ask?.disarm();
-          const relayNote =
-            shadowSock && (replyTo || notifyWhenIdle)
-              ? " A live relay exists but it does not support reply_to/notify_when_idle for Pi sessions."
-              : "";
-          return fail(`SendMessage: could not reach the agent host: ${(error as Error)?.message ?? String(error)}.${relayNote}`);
-        }
-        // CORE-2470: the Pi route is down but the session's own Claude
-        // listener is live. Relay the same frame there: the peer IS a Pi
-        // session, so the Pi label stands. The ask stays armed for
-        // expectReply — replies key off messageId, not transport.
+      /**
+       * CORE-2479: relay one Pi-leg frame through the session's own Claude
+       * listener. Only for a definitively unroutable Pi leg — never after a
+       * wake parked held, which may still flush (at-least-once: a
+       * held-accepted wake never relays, so it can never deliver twice).
+       * Delivered resolves to a wake state for the normal settle path;
+       * any other outcome is already a finished result.
+       */
+      const relayViaShadow = async (sock: string): Promise<{ sent: WakeResult } | { done: ToolResult }> => {
         try {
           const ownClaudeSock = deps.getClaudeSocketPath?.();
           const relayFrom = ownClaudeSock ? `uds:${ownClaudeSock}` : (ownName ?? ownSessionId);
-          const relay = (await sendClaude({ sock: shadowSock, body, from: relayFrom, fromName: from, messageId })).outcome;
-          if (relay === "delivered") {
-            sent = { messageId, state: "delivered" };
-          } else {
-            ask?.disarm();
-            return ok(deliveryNotice(relay === "held" ? "held" : "refused", target.name, messageId, target.kind), {
+          const relay = (await sendClaude({ sock, body, from: relayFrom, fromName: from, messageId })).outcome;
+          if (relay === "delivered") return { sent: { messageId, state: "delivered" } };
+          ask?.disarm();
+          return {
+            done: ok(deliveryNotice(relay === "held" ? "held" : "refused", target.name, messageId, target.kind), {
               message: { id: messageId, state: relay, to: target.name },
-            });
-          }
+            }),
+          };
         } catch (relayError) {
           if (isClaudeReceiptTimeout(relayError)) {
             ask?.disarm();
-            return ok(
-              `Sent to ${sessionLabel(target)} (message ${messageId}); delivery could not be confirmed: ${(relayError as Error)?.message ?? String(relayError)}. The message may still arrive — do not resend it, or it may deliver twice.`,
-              { message: { id: messageId, state: "unconfirmed", to: target.name } },
-            );
+            return {
+              done: ok(
+                `Sent to ${sessionLabel(target)} (message ${messageId}); delivery could not be confirmed: ${(relayError as Error)?.message ?? String(relayError)}. The message may still arrive — do not resend it, or it may deliver twice.`,
+                { message: { id: messageId, state: "unconfirmed", to: target.name } },
+              ),
+            };
           }
+          throw relayError;
+        }
+      };
+      let sent: WakeResult;
+      // CORE-2479: the roster saw the extension disconnected while the
+      // session's own Claude listener is live — the Pi wake leg is
+      // definitively unroutable, so relay without ever POSTing. A POST
+      // would park held behind the dead extension and a later relay would
+      // deliver twice on flush. Unknown state (no extensionConnected)
+      // keeps the old path: POST first, relay only when the post throws.
+      if (target.extensionConnected === false && target.shadowSock) {
+        if (replyTo || notifyWhenIdle) {
           ask?.disarm();
           return fail(
-            `SendMessage: Pi route and Claude relay both failed for "${to}": ${(error as Error)?.message ?? String(error)}; relay: ${(relayError as Error)?.message ?? String(relayError)}.`
+            `SendMessage: session "${to}" is disconnected (extension down) and the live relay does not support reply_to/notify_when_idle for Pi sessions.`
           );
+        }
+        try {
+          const relayed = await relayViaShadow(target.shadowSock);
+          if ("done" in relayed) return relayed.done;
+          sent = relayed.sent;
+        } catch (relayError) {
+          ask?.disarm();
+          return fail(
+            `SendMessage: Pi route down (extension disconnected) and Claude relay failed for "${to}": ${(relayError as Error)?.message ?? String(relayError)}.`
+          );
+        }
+      } else {
+        try {
+          sent = await postWake({
+            participant,
+            payloadRef: body,
+            messageId,
+            from,
+            fromName: from,
+            fromSessionId: ownSessionId,
+            ...(replyTo ? { replyTo } : {}),
+            ...(notifyWhenIdle ? { notifyWhenIdle: true as const } : {}),
+          });
+        } catch (error) {
+          const shadowSock = target.shadowSock;
+          if (!shadowSock || replyTo || notifyWhenIdle) {
+            ask?.disarm();
+            const relayNote =
+              shadowSock && (replyTo || notifyWhenIdle)
+                ? " A live relay exists but it does not support reply_to/notify_when_idle for Pi sessions."
+                : "";
+            return fail(`SendMessage: could not reach the agent host: ${(error as Error)?.message ?? String(error)}.${relayNote}`);
+          }
+          // CORE-2470: the Pi route is down but the session's own Claude
+          // listener is live. Relay the same frame there: the peer IS a Pi
+          // session, so the Pi label stands. The ask stays armed for
+          // expectReply — replies key off messageId, not transport.
+          try {
+            const relayed = await relayViaShadow(shadowSock);
+            if ("done" in relayed) return relayed.done;
+            sent = relayed.sent;
+          } catch (relayError) {
+            ask?.disarm();
+            return fail(
+              `SendMessage: Pi route and Claude relay both failed for "${to}": ${(error as Error)?.message ?? String(error)}; relay: ${(relayError as Error)?.message ?? String(relayError)}.`
+            );
+          }
         }
       }
 

@@ -33,7 +33,20 @@ export interface ClaudePeer {
   startedAt?: number;
   sock: string;
   live?: boolean;
+  /**
+   * CORE-2488 phase 1: which source produced `sock`. Claude peers read it from
+   * Claude's own per-pid session JSON, never from the agent-host registry
+   * (which publishes no socket at all) and never from a socket-directory scan.
+   */
+  sockSource?: string;
 }
+
+/**
+ * CORE-2488 phase 1 provenance labels. Named, not enforced: the sources stay
+ * exactly as they are; the trace just has to say which one answered.
+ */
+export const CLAUDE_SESSION_SOCK_SOURCE = "claude-session-json:messagingSocketPath";
+export const FRAME_FROM_SOCK_SOURCE = "frame-from-envelope";
 
 /** Pi-roster row shape for a Claude session (I4's ListAgents rows build on this). */
 export interface ClaudeRosterRow {
@@ -177,6 +190,7 @@ function entryToPeer(entry: Record<string, unknown>): ClaudePeer | null {
     ...(clean(entry.tmux) ? { tmux: clean(entry.tmux) as string } : {}),
     ...(typeof entry.startedAt === "number" ? { startedAt: entry.startedAt } : {}),
     sock: sock as string,
+    sockSource: CLAUDE_SESSION_SOCK_SOURCE,
   };
 }
 
@@ -273,6 +287,63 @@ export function resolveClaudeTarget(peers: ClaudePeer[], nameOrId: string): Reso
     };
   }
   return { target: hit };
+}
+
+export interface ClaudeSenderIdentity {
+  from?: string;
+  sessionId?: string;
+}
+
+/**
+ * The socket behind one Claude session id, read synchronously from the
+ * registry (MMD-2538 follow-up: the receive path cannot await). Exact
+ * session-id match, pid-guarded like the listing above; no liveness
+ * probe — the reply goes through SendMessage, whose roster enforces live
+ * sockets, so a stale sock fails loudly there instead of misdelivering
+ * here. One winner only: several entries naming different sockets stay
+ * unresolved (no guessing); several entries agreeing on one socket
+ * resolve to it.
+ */
+export function findClaudeSocketForSessionId(sessionsDir: string, sessionId: string): string | undefined {
+  if (!sessionId) return undefined;
+  let files: string[];
+  try {
+    files = readdirSync(sessionsDir).filter((file) => /^\d+\.json$/.test(file));
+  } catch {
+    return undefined;
+  }
+  const socks = new Set<string>();
+  for (const file of files) {
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(readFileSync(path.join(sessionsDir, file), "utf8")) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    entry.__file = file;
+    if (!pidGuardPasses(entry)) continue;
+    const peer = entryToPeer(entry);
+    if (peer && peer.sessionId === sessionId && peer.sock) socks.add(peer.sock);
+  }
+  return socks.size === 1 ? [...socks][0] : undefined;
+}
+
+/**
+ * The sender's socket for one inbound Claude user frame, in reply-address
+ * form. Claude senders emit their session uuid as from=, which lives in
+ * no space SendMessage resolves; the join rewrites it to the uds: address
+ * the resolver accepts. Frame session_id wins over from= (the registry
+ * key), then from= itself; an already-uds: sender needs no join.
+ * Undefined keeps the verbatim value: never a guess.
+ */
+export function resolveClaudeSenderSock(message: ClaudeSenderIdentity, sessionsDir?: string): string | undefined {
+  const dir = sessionsDir ?? claudeSessionsDir();
+  for (const id of [message.sessionId, message.from]) {
+    if (typeof id !== "string" || !id || id.startsWith("uds:")) continue;
+    const sock = findClaudeSocketForSessionId(dir, id);
+    if (sock) return sock;
+  }
+  return undefined;
 }
 
 /** Pi-roster row for one Claude peer; names follow Claude's own vocabulary. */

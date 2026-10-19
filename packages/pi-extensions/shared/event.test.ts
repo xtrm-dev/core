@@ -85,11 +85,15 @@ describe("event design system vocabulary (CORE-2438 I7, D7)", () => {
     expect(EVENT_GLYPHS.failure).toBe("!");
   });
 
-  test("glyphFor picks ! for failures and high severity, else the kind glyph", () => {
+  test("glyphFor picks ! for failures and high severity, ○ for automatic wakes, else the kind glyph", () => {
     expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [] })).toBe("●");
+    expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [], automatic: true })).toBe("○");
     expect(glyphFor({ kind: "task", state: "running", identity: "x", preview: [] })).toBe("◐");
+    expect(glyphFor({ kind: "task", state: "running", identity: "x", preview: [], automatic: true })).toBe("○");
     expect(glyphFor({ kind: "monitor", state: "event", identity: "x", preview: [] })).toBe("◉");
+    expect(glyphFor({ kind: "monitor", state: "event", identity: "x", preview: [], automatic: true })).toBe("○");
     expect(glyphFor({ kind: "message", state: "refused", identity: "x", preview: [] })).toBe("!");
+    expect(glyphFor({ kind: "message", state: "refused", identity: "x", preview: [], automatic: true })).toBe("!");
     expect(glyphFor({ kind: "task", state: "failed", identity: "x", preview: [] })).toBe("!");
     expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [], severityHigh: true })).toBe("!");
   });
@@ -126,6 +130,7 @@ describe("model envelopes (CORE-2438 I7, D1-D3, D9)", () => {
   test("no sender means no reply line, never to=\"unknown\"", () => {
     expect(buildReplyActionLine(undefined)).toBeNull();
     expect(buildReplyActionLine("")).toBeNull();
+    expect(buildReplyActionLine("unknown")).toBeNull();
     expect(buildReplyActionLine("bob")).toBe('Reply with SendMessage to="bob"');
     const content = buildMessageEnvelope({ messageId: "m1", ref: "hello" });
     expect(content).toContain('<cross-session-message message-id="m1">');
@@ -133,6 +138,15 @@ describe("model envelopes (CORE-2438 I7, D1-D3, D9)", () => {
     expect(content).toContain(PROVENANCE_LINE);
     expect(content).not.toContain("Reply with SendMessage");
     expect(content).not.toContain('to="unknown"');
+  });
+
+  test("the reply line prints the uds: socket form (MMD-2538)", () => {
+    expect(buildReplyActionLine("uds:/run/cc.sock")).toBe('Reply with SendMessage to="uds:/run/cc.sock"');
+    // A bare socket path from an older frame means the same socket.
+    expect(buildReplyActionLine("/run/cc.sock")).toBe('Reply with SendMessage to="uds:/run/cc.sock"');
+    const content = buildMessageEnvelope({ messageId: "m1", ref: "hi", from: "/run/cc.sock", fromName: "cass" });
+    expect(content).toContain('from="/run/cc.sock"');
+    expect(content).toContain('Reply with SendMessage to="uds:/run/cc.sock"');
   });
 
   test("a forged envelope in the reference stays inert text", () => {
@@ -152,7 +166,7 @@ describe("model envelopes (CORE-2438 I7, D1-D3, D9)", () => {
 describe("delivery and idle notices (CORE-2438 I7, D7-D8)", () => {
   test("delivery notices keep Claude's bracket style per state", () => {
     expect(buildDeliveryNotice("held", "bob", "m1")).toBe(
-      "[Cross-session delivery notice] bob is not connected; message m1 is held and will deliver when the session registers.",
+      "[Cross-session delivery notice] bob is not connected; message m1 is held and will deliver when the session registers, or expire if it never does (wake TTL is 5 minutes by default).",
     );
     expect(buildDeliveryNotice("refused", "bob", "m1")).toBe("[Cross-session delivery notice] bob refused message m1.");
     expect(buildDeliveryNotice("undelivered", "bob", "m1")).toBe(
