@@ -1339,3 +1339,163 @@ describe("Pi shadow relay (CORE-2470)", () => {
     expect(String(r.content[0].text)).toMatch(/Reply from bob/);
   });
 });
+
+describe("disconnected-extension routing and held visibility (CORE-2479)", () => {
+  function hostClaudeSummary(sessionId: string, name: string) {
+    return {
+      sessionId,
+      provider: "claude",
+      state: "settled",
+      name,
+      cwd: "/tmp/x",
+      extensionConnected: false,
+      capabilities: [],
+      startedAt: Date.now() - 1000,
+      lastActivityAt: Date.now(),
+    } as any;
+  }
+
+  function downPiSetup(overrides: Record<string, any> = {}) {
+    const posted: any[] = [];
+    const relayCalls: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [{ ...piSummary("s-bob", "bob"), extensionConnected: false }],
+      fetchClaude: async () => [claudePeer("bob", "/run/shadow.sock", "s-bob")],
+      postWake: async (req: any) => {
+        posted.push(req);
+        return { messageId: "m-never", state: "held" };
+      },
+      sendClaude: async (opts: any) => {
+        relayCalls.push(opts);
+        return { outcome: "delivered" as const };
+      },
+      getClaudeSocketPath: () => "/run/user/1000/cc-socks/own.sock",
+      ...overrides,
+    });
+    return { deps, posted, relayCalls };
+  }
+
+  test("extension disconnected + live shadow relays without ever POSTing a wake", async () => {
+    const { deps, posted, relayCalls } = downPiSetup();
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Pi session bob");
+    // No registry involvement: a held-accepted wake can never double-send through the relay.
+    expect(posted).toHaveLength(0);
+    expect(relayCalls).toHaveLength(1);
+    expect(relayCalls[0]).toMatchObject({ sock: "/run/shadow.sock", from: "uds:/run/user/1000/cc-socks/own.sock" });
+  });
+
+  test("extension disconnected with no shadow still POSTs honestly (held, queryable)", async () => {
+    const { deps, posted } = downPiSetup({ fetchClaude: async () => [] });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(posted).toHaveLength(1);
+    expect(String(r.content[0].text)).toContain("[Cross-session delivery notice]");
+    expect(String(r.content[0].text)).toMatch(/held/);
+  });
+
+  test("a held wake on a connected extension never relays (relay is last-resort only)", async () => {
+    const relayCalls: any[] = [];
+    const { deps } = baseDeps({
+      postWake: async (req: any) => ({ messageId: "m-h", state: "held" }),
+      sendClaude: async (opts: any) => {
+        relayCalls.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(String(r.content[0].text)).toMatch(/held/);
+    expect(relayCalls).toHaveLength(0);
+  });
+
+  test("reply_to/notify_when_idle with a disconnected extension fails loudly, never relays", async () => {
+    const { deps, posted, relayCalls } = downPiSetup();
+    const { tool } = register(deps);
+    const r = await tool.execute(
+      "c1",
+      { to: "bob", message: "hi", notify_when_idle: true },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/does not support reply_to\/notify_when_idle/);
+    expect(relayCalls).toHaveLength(0);
+    expect(posted).toHaveLength(0);
+  });
+
+  test("expect_reply through the disconnected-extension relay still resolves the ask", async () => {
+    const { deps } = downPiSetup();
+    const { tool } = register(deps);
+    const pending = tool.execute(
+      "c1",
+      { to: "bob", message: "status?", expect_reply: true, timeout_s: 30 },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(intercomWaiting.getPendingAsks()).toBe(1);
+    sendmessage.__inboundWakeForTests({ messageId: "m-r", ref: "all green", replyTo: "m-test-1", from: "bob" });
+    const r = await pending;
+    expect(String(r.content[0].text)).toMatch(/Reply from bob/);
+  });
+
+  test("dual registration (host Claude + live socket) sends on the Claude leg, never a held Pi wake", async () => {
+    const posted: any[] = [];
+    const sent: any[] = [];
+    const { deps } = baseDeps({
+      fetchPi: async () => [hostClaudeSummary("s-xu", "xu82")],
+      fetchClaude: async () => [claudePeer("xu82", "/run/xu82.sock", "s-xu")],
+      claudeTransportEnabled: true,
+      postWake: async (req: any) => {
+        posted.push(req);
+        return { messageId: "m-ghost", state: "held" };
+      },
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "xu82", message: "just a test" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toContain("Delivered to Claude session xu82");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ sock: "/run/xu82.sock" });
+    // Held-to-ghost impossible: the dead-extension Pi leg is never attempted when the live leg exists.
+    expect(posted).toHaveLength(0);
+  });
+
+  test("status looks up the last known state of a held message", async () => {
+    const { deps } = baseDeps({
+      wakeStatus: async (messageId: string) => ({ messageId, state: "held" }),
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { status: "m-h" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toBe("Message m-h last known state: held.");
+  });
+
+  test("status for an unknown message id is an error, and status takes only status", async () => {
+    const { deps } = baseDeps({
+      wakeStatus: async (_messageId: string) => null,
+    });
+    const { tool } = register(deps);
+    const unknown = await tool.execute("c1", { status: "m-nope" }, undefined, undefined, fakeCtx("s-me"));
+    expect(unknown.isError).toBe(true);
+    expect(String(unknown.content[0].text)).toMatch(/no wake m-nope/);
+    const mixed = await tool.execute(
+      "c1",
+      { status: "m-h", to: "bob", message: "hi" },
+      undefined,
+      undefined,
+      fakeCtx("s-me"),
+    );
+    expect(mixed.isError).toBe(true);
+    expect(String(mixed.content[0].text)).toMatch(/takes only status/);
+  });
+});

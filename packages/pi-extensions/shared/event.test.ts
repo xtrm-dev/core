@@ -166,7 +166,7 @@ describe("model envelopes (CORE-2438 I7, D1-D3, D9)", () => {
 describe("delivery and idle notices (CORE-2438 I7, D7-D8)", () => {
   test("delivery notices keep Claude's bracket style per state", () => {
     expect(buildDeliveryNotice("held", "bob", "m1")).toBe(
-      "[Cross-session delivery notice] bob is not connected; message m1 is held and will deliver when the session registers.",
+      "[Cross-session delivery notice] bob is not connected; message m1 is held and will deliver when the session registers, or expire if it never does (wake TTL is 5 minutes by default).",
     );
     expect(buildDeliveryNotice("refused", "bob", "m1")).toBe("[Cross-session delivery notice] bob refused message m1.");
     expect(buildDeliveryNotice("undelivered", "bob", "m1")).toBe(
