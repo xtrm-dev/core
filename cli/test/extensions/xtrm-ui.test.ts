@@ -573,7 +573,7 @@ describe("xtrm-ui prototype patch upgrades", () => {
 });
 
 describe("xtrm-ui external tool rendering", () => {
-  it("renders one unindented Claude-style footer", () => {
+  it("renders one indented Claude-style footer under the payload", () => {
     const rendered = renderExternalToolBackgroundLines(
       ["[GitNexus]", ...Array.from({ length: 94 }, (_, index) => `line ${index + 1}`)],
       200,
@@ -584,7 +584,7 @@ describe("xtrm-ui external tool rendering", () => {
     );
     const footer = rendered.at(-1)?.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
 
-    expect(footer).toMatch(/^└─ showing 6\/94 lines \(ctrl\+o expand\) · 1\.6s · \d+B$/);
+    expect(footer).toMatch(/^  └─ showing 6\/94 lines \(ctrl\+o expand\) · 1\.6s · \d+B$/);
   });
 
   it("renders a Serena row in native style and pretty-prints single-line JSON", () => {
