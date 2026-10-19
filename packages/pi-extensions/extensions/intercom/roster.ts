@@ -55,6 +55,12 @@ export interface RosterEntry {
   sessionId?: string;
   name: string;
   /**
+   * Live Claude-protocol socket of a Claude peer (ListAgents prints it as
+   * the uds: address; the resolver matches `uds:<sock>` against it).
+   * Never set on Pi entries: Pi peers relay through shadowSock instead.
+   */
+  sock?: string;
+  /**
    * Substrate issue ref of the session's claimed work, when the session
    * reports one (CORE-2437 scoped routing: the project key). Claude peers
    * carry no Substrate identity and never match a scope.
@@ -81,6 +87,17 @@ export interface RosterEntry {
  */
 export function sessionRef(id: string): string {
   return createHash("sha256").update(id, "utf8").digest("hex").slice(0, 6);
+}
+
+/**
+ * The ref ListAgents prints for one entry: sessionRef(sessionId) for Pi
+ * entries, sessionRef(sessionId ?? sock) for Claude peers — the same
+ * function claudeRosterRow uses, so the resolver matches what the roster
+ * shows. Falls back to the name hash when neither exists (never "?").
+ */
+export function entryDisplayRef(entry: Pick<RosterEntry, "sessionId" | "sock" | "name">): string {
+  const id = entry.sessionId ?? entry.sock;
+  return sessionRef(id ?? entry.name);
 }
 
 function stripAnsi(value: string): string {
@@ -283,7 +300,10 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
     if (peer.sessionId) listedSessionIds.add(peer.sessionId);
     pairs.push({
       row: claudeRosterRow(peer, now),
-      entry: { kind: "claude", ...(peer.sessionId ? { sessionId: peer.sessionId } : {}), name: clean(peer.name) || "unknown" },
+      // The sock rides along so `uds:<sock>` resolves exactly (MMD-2538:
+      // ListAgents prints refs for Claude peers but SendMessage could not
+      // address them by the socket address the peer itself reports).
+      entry: { kind: "claude", ...(peer.sessionId ? { sessionId: peer.sessionId } : {}), name: clean(peer.name) || "unknown", sock: peer.sock },
     });
   }
   // Newest first; rows without a start time sort last, stable.
@@ -309,27 +329,66 @@ export function legWord(kind: RosterEntry["kind"]): string {
 }
 
 /**
- * R7: exact session id wins, else an exact name. Several live sessions
- * under one name throw naming every candidate; a prefix that is not an
- * exact hit is an error, never a guess. Candidates name their leg.
+ * R7: exact session id wins, then an exact `uds:<sock>` socket address,
+ * then an exact 6-hex ref, then an exact name. Several live sessions
+ * under one address throw naming every candidate; a unique prefix of 4+
+ * chars over sessionId/ref/name resolves, a shared prefix throws, and
+ * anything else is a miss listing every candidate with its ref — never a
+ * guess (MMD-2538: same-name peers across legs must refuse, not pick).
  */
 export function resolveRosterTarget(entries: RosterEntry[], nameOrId: string): { target: RosterEntry } | ResolveMiss {
   const byId = entries.find((entry) => entry.sessionId === nameOrId);
   if (byId) return { target: byId };
+  // ListAgents prints Claude sockets as uds: addresses and the Claude leg
+  // sends its own uds: address as from: match sock/shadowSock exactly.
+  if (nameOrId.startsWith("uds:")) {
+    const sock = nameOrId.slice(4);
+    if (sock) {
+      const bySock = entries.filter((entry) => entry.sock === sock || entry.shadowSock === sock);
+      if (bySock.length === 1) return { target: bySock[0] };
+      if (bySock.length > 1) throw new Error(`ambiguous session "${nameOrId}": ${nameCandidates(bySock)}`);
+    }
+  } else if (/^[0-9a-fA-F]{6}$/.test(nameOrId)) {
+    // The 6-hex ref ListAgents prints next to each name (opaque hash,
+    // not an id prefix): exact, case-insensitive, never a prefix guess.
+    const want = nameOrId.toLowerCase();
+    const byRef = entries.filter((entry) => entryDisplayRef(entry) === want);
+    if (byRef.length === 1) return { target: byRef[0] };
+    if (byRef.length > 1) throw new Error(`ambiguous session "${nameOrId}": ${nameCandidates(byRef)}`);
+  }
   const named = entries.filter((entry) => entry.name === nameOrId);
   if (named.length > 1) {
-    // Full session ids: the caller disambiguates by session id instead.
-    const candidates = named.map((entry) => `${entry.name} [${entry.sessionId ?? entry.kind}] (${legWord(entry.kind)} session)`).join(", ");
-    throw new Error(`ambiguous session "${nameOrId}": ${candidates}`);
+    throw new Error(`ambiguous session "${nameOrId}": ${nameCandidates(named)}`);
   }
   const hit = named[0];
-  if (!hit) {
-    return {
-      error: `no live session matches "${nameOrId}"`,
-      candidates: [...new Set(entries.map((entry) => `${entry.name} (${legWord(entry.kind)} session)`))],
-    };
+  if (hit) return { target: hit };
+  // Unique-prefix arm (4+ chars, like a git short hash): exactly one
+  // sessionId/ref/name prefix resolves; a shared prefix throws naming
+  // every candidate. Shorter inputs stay a miss, never a guess.
+  if (nameOrId.length >= 4 && !nameOrId.startsWith("uds:")) {
+    const lower = nameOrId.toLowerCase();
+    const prefixed = entries.filter(
+      (entry) =>
+        (entry.sessionId !== undefined && entry.sessionId.startsWith(nameOrId)) ||
+        entryDisplayRef(entry).startsWith(lower) ||
+        entry.name.startsWith(nameOrId),
+    );
+    if (prefixed.length === 1) return { target: prefixed[0] };
+    if (prefixed.length > 1) {
+      throw new Error(`ambiguous session "${nameOrId}": ${nameCandidates(prefixed)}`);
+    }
   }
-  return { target: hit };
+  // Every candidate with its ref and leg: same-name peers must stay
+  // distinguishable (MMD-2538 printed one row per name and hid the rest).
+  return {
+    error: `no live session matches "${nameOrId}"`,
+    candidates: entries.map((entry) => `${entry.name} [${entryDisplayRef(entry)}] (${legWord(entry.kind)} session)`),
+  };
+}
+
+/** Full session ids survive in ambiguity errors: the caller disambiguates by session id instead. */
+function nameCandidates(entries: RosterEntry[]): string {
+  return entries.map((entry) => `${entry.name} [${entry.sessionId ?? entryDisplayRef(entry)}] (${legWord(entry.kind)} session)`).join(", ");
 }
 
 function defaultAgentHostInfoPath(): string {
@@ -349,8 +408,17 @@ export interface FetchPiSessionsOptions {
 
 /**
  * Live Pi sessions from the agent host's loopback API (GET /v1/sessions).
- * Never throws: no host, no info file, or a bad reply reads as no Pi
- * sessions. Only loopback addresses are ever dialled.
+ * Only loopback addresses are ever dialled. No host info, a non-loopback
+ * address, or a well-formed-but-unexpected reply reads as no Pi sessions.
+ * A transport failure on both attempts throws: the roster must fail loud
+ * instead of resolving against a silent partial list (MMD-2538 flapped
+ * between Pi and Claude legs while the host lagged).
+ *
+ * Timeout basis: /v1/sessions is a loopback read of the in-memory live
+ * registry (p99 single-digit ms on an unloaded host); 2000 ms plus one
+ * bounded retry covers a loaded host without stalling the model path.
+ * The 15-minute recent-Pi memo stays a lag-cover only: it keeps a Pi id
+ * resolving as Pi across one missed fetch, never as a second authority.
  */
 export async function fetchPiSessions(options: FetchPiSessionsOptions = {}): Promise<AgentSessionSummary[]> {
   const timeoutMs = options.timeoutMs ?? 2000;
@@ -414,10 +482,12 @@ export async function fetchPiSessions(options: FetchPiSessionsOptions = {}): Pro
   if (!first.transportError) return first.sessions;
   // CORE-2470: a transient stall (slow host under load) reads as "no Pi
   // sessions" and silently routes Pi peers via their Claude shadow. One
-  // bounded retry; a persistent failure keeps today's empty read (a down
-  // host stays loud via the ensure path, never here).
+  // bounded retry; a persistent failure throws (fail-closed) so callers
+  // surface a loud registry error instead of a partial roster.
   await new Promise((r) => setTimeout(r, 500));
-  return (await attempt()).sessions;
+  const second = await attempt();
+  if (!second.transportError) return second.sessions;
+  throw new Error("could not reach the agent host registry (GET /v1/sessions failed twice)");
 }
 
 export interface ListAgentsDeps {
@@ -439,7 +509,7 @@ export function registerListAgentsTool(pi: ExtensionAPI, deps: ListAgentsDeps = 
     name: "ListAgents",
     label: "ListAgents",
     description:
-      "List live Pi and Claude Code sessions on this machine. This session prints first, then one row per peer: name [ref] · kind · state · started. Address a peer by its exact name or session id. Call this before SendMessage, and at session start with tmux list-windows and gh pr list.",
+      "List live Pi and Claude Code sessions on this machine. This session prints first, then one row per peer: name [ref] · kind · state · started. Address a peer by its exact name, exact session id, 6-hex ref, unique 4+ char prefix of name/id/ref, or uds: socket. Call this before SendMessage, and at session start with tmux list-windows and gh pr list.",
     parameters: Type.Object({}),
     exposure: "model-only",
     execute: async (
@@ -470,12 +540,23 @@ export function registerListAgentsTool(pi: ExtensionAPI, deps: ListAgentsDeps = 
       } catch {
         ownName = undefined;
       }
-      const [piSessions, claudePeers] = await Promise.all([
-        (deps.fetchPi ?? (() => fetchPiSessions()))().catch(() => [] as AgentSessionSummary[]),
-        (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(deps.excludeSock).catch(
-          () => [] as ClaudePeer[],
-        ),
-      ]);
+      let piSessions: AgentSessionSummary[];
+      try {
+        piSessions = await (deps.fetchPi ?? (() => fetchPiSessions()))();
+      } catch (error) {
+        // Fail-closed (MMD-2538): a down registry is a loud error, never
+        // a partial roster that silently drops every Pi peer.
+        return {
+          content: [{ type: "text" as const, text: `ListAgents cannot reach the agent host registry: ${(error as Error)?.message ?? String(error)}. The roster is unavailable rather than partial.` }],
+          details: { error: true },
+          isError: true,
+        };
+      }
+      // A missing Claude registry reads as no Claude peers (no registry
+      // means no peers); a down Pi registry above is the loud failure.
+      const claudePeers = await (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(deps.excludeSock).catch(
+        () => [] as ClaudePeer[],
+      );
       const built = buildRoster({
         ownSessionId,
         ...(ownName ? { ownName } : {}),

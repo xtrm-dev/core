@@ -152,9 +152,17 @@ function escapeEnvelope(value: string): string {
  * sender is resolvable — a wake posted straight to the host has no reply
  * address, and printing to="unknown" resolves to nothing (CORE-2438
  * review). The envelope and provenance still carry the message.
+ * A bare socket path prints in its uds: form (MMD-2538: the address Claude
+ * peers use is the uds: address, never the bare path). The message-id uuid
+ * stays identifier-only in its own attribute and is never a reply target.
  */
 export function buildReplyActionLine(from?: string): string | null {
-  const target = escapeEnvelope(sanitizeField(from ?? "", 256));
+  const raw = sanitizeField(from ?? "", 256);
+  if (!raw || raw === "unknown") return null;
+  // Normalize the socket form: "uds:/path.sock" is the reply address;
+  // a bare "/path.sock" from an older frame means the same socket.
+  const sock = raw.startsWith("uds:") ? raw : raw.startsWith("/") && raw.endsWith(".sock") ? `uds:${raw}` : raw;
+  const target = escapeEnvelope(sock);
   if (!target) return null;
   return `Reply with SendMessage to="${target}"`;
 }

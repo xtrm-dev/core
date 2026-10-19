@@ -30,7 +30,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WakeDeliveryState } from "@xtrm/contracts";
 import { injectIntercomWake, wakeDeliveryOptions, WakeDedupe } from "../delivery.ts";
-import { ccSocksDir, listClaudeSessions, type ClaudePeer } from "./registry.ts";
+import { ccSocksDir, listClaudeSessions, resolveClaudeSenderSock, type ClaudePeer } from "./registry.ts";
 import {
   ackClaudeMessage,
   bindClaudeTransportSocket,
@@ -64,15 +64,18 @@ export {
   ccSocksDir,
   claudeSessionsDir,
   ensureSocketsDir,
+  findClaudeSocketForSessionId,
   listClaudeSessions,
   pidGuardPasses,
   processStartTime,
   readPeerToken,
+  resolveClaudeSenderSock,
   resolveClaudeTarget,
   socketLive,
   toRosterRow,
   type ClaudePeer,
   type ClaudeRosterRow,
+  type ClaudeSenderIdentity,
 } from "./registry.ts";
 export {
   ackClaudeMessage,
@@ -259,13 +262,20 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
     try {
       bound = await bindClaudeTransportSocket(sockPath, {
         onUserMessage: (message) => {
-          const key = message.messageId || `${message.from ?? "unknown"}:${message.body.slice(0, 64)}`;
+          // Sender address (MMD-2538 follow-up): Claude senders emit
+          // their session uuid as from=, which lives in no space
+          // SendMessage resolves. Join it against the Claude registry by
+          // exact session id; one winner rewrites from to its uds:
+          // address (the resolver arm and reply template accept it),
+          // zero/ambiguous keeps the verbatim value (no guessing). The
+          // uuid stays the message identifier only, never the reply target.
+          const resolvedSock = resolveClaudeSenderSock(message, claim.sessionsDir);
+          const from = resolvedSock ? `uds:${resolvedSock}` : message.from;
+          const key = message.messageId || `${from ?? "unknown"}:${message.body.slice(0, 64)}`;
           // Duplicate deliveries inject once; a failed injection stays
           // unmarked so a resend can inject (I2 F1 rule, shared vocabulary).
           if (!dedupe.mark(key)) {
-            const senderSock = (message.from ?? "").startsWith("uds:")
-              ? (message.from as string).slice(4)
-              : "";
+            const senderSock = resolvedSock ?? ((message.from ?? "").startsWith("uds:") ? (message.from as string).slice(4) : "");
             if (senderSock && message.messageId) {
               void ackClaudeMessage(senderSock, "delivered", { from: ownFrom, origMessageId: message.messageId });
             }
@@ -283,7 +293,7 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
               wakeDeliveryOptions({ idle }),
               // CORE-2436 I5: the Claude sender rides the from-envelope.
               {
-                ...(message.from ? { from: message.from } : {}),
+                ...(from ? { from } : {}),
                 ...(message.fromName ? { fromName: message.fromName } : {}),
               },
             );
@@ -292,9 +302,7 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
             state = "refused";
           }
           const ack = ackForWakeState(state);
-          const senderSock = (message.from ?? "").startsWith("uds:")
-            ? (message.from as string).slice(4)
-            : "";
+          const senderSock = resolvedSock ?? ((message.from ?? "").startsWith("uds:") ? (message.from as string).slice(4) : "");
           if (ack && senderSock) {
             void ackClaudeMessage(senderSock, ack, {
               from: ownFrom,

@@ -256,6 +256,127 @@ describe("claude-transport registry (CORE-2434 I3, pid-reuse guard)", () => {
   });
 });
 
+describe("claude-transport sender resolution (MMD-2538 follow-up: uuid from= joins to uds:)", () => {
+  const SENDER_ID = "8c7262c0-a136-43ee-9964-2c905038cf93";
+  const SENDER_SOCK = "/run/user/1000/cc-socks/453853.sock";
+  function sessionsWith(entries: Array<Record<string, unknown>>): string {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-sender-"));
+    entries.forEach((entry, i) => {
+      writeFileSync(path.join(dir, `${90000 + i}.json`), JSON.stringify(entry));
+    });
+    return dir;
+  }
+  function senderEntry(overrides: Record<string, unknown> = {}) {
+    return {
+      sessionId: SENDER_ID,
+      name: "market-data-xt-claude-mmd-replan",
+      cwd: "/tmp/market-data",
+      status: "idle",
+      kind: "interactive",
+      messagingSocketPath: SENDER_SOCK,
+      ...overrides,
+    };
+  }
+
+  test("a uuid from= resolves to the sender's uds: socket", () => {
+    const dir = sessionsWith([senderEntry()]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, dir)).toBe(SENDER_SOCK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the frame session_id wins over a conflicting from=", () => {
+    const dir = sessionsWith([senderEntry(), senderEntry({ sessionId: "other-id", messagingSocketPath: "/run/other.sock" })]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: "other-id", sessionId: SENDER_ID }, dir)).toBe(SENDER_SOCK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an already-uds: sender needs no join", () => {
+    const dir = sessionsWith([senderEntry()]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: `uds:${SENDER_SOCK}` }, dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an unknown uuid keeps the verbatim value: never a guess", () => {
+    const dir = sessionsWith([senderEntry()]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: "00000000-0000-4000-8000-000000000000" }, dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("two entries naming different sockets stay unresolved (no guessing)", () => {
+    const dir = sessionsWith([
+      senderEntry(),
+      senderEntry({ name: "same-id-other-sock", messagingSocketPath: "/run/elsewhere.sock" }),
+    ]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("duplicate entries agreeing on one socket resolve to it", () => {
+    const dir = sessionsWith([senderEntry(), senderEntry({ name: "stale-dup-same-sock" })]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, dir)).toBe(SENDER_SOCK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a pid-reused stale entry cannot hijack the join", () => {
+    const dir = sessionsWith([
+      senderEntry(),
+      // Same session id, different socket, pid-reused stale entry: excluded by the guard.
+      senderEntry({ name: "stale-hijack", messagingSocketPath: "/run/hijack.sock", pid: 42424242, procStart: "1" }),
+    ]);
+    try {
+      expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, dir)).toBe(SENDER_SOCK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a missing registry reads as unresolved, never a throw", () => {
+    expect(registry.resolveClaudeSenderSock({ from: SENDER_ID }, "/nonexistent-dir-xyz")).toBeUndefined();
+    expect(registry.findClaudeSocketForSessionId("/nonexistent-dir-xyz", SENDER_ID)).toBeUndefined();
+  });
+
+  test("the bound socket surfaces the frame session_id for the join", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-sid-"));
+    const received: any[] = [];
+    const { server, sockPath } = await transport.bindClaudeTransportSocket(path.join(dir, "sid.sock"), {
+      onUserMessage: (msg) => received.push(msg),
+    });
+    try {
+      await transport.sendToClaudeSession({
+        sock: sockPath,
+        body: "hi",
+        from: SENDER_ID,
+        sessionId: "registry-session-9",
+      });
+      const start = Date.now();
+      while (!received.length && Date.now() - start < 5000) await new Promise((r) => setTimeout(r, 5));
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ from: SENDER_ID, sessionId: "registry-session-9" });
+    } finally {
+      await server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("claude-transport send and receive (CORE-2434 I3)", () => {
   test("a sent user frame arrives version-checked with its envelope and id", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "i3-claude-io-"));
