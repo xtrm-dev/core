@@ -50,6 +50,7 @@ import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { claudeSessionsDir, ensureSocketsDir, pidGuardPasses, processStartTime, readPeerToken } from "./registry.ts";
+import { intercomTrace } from "../trace.ts";
 import intercomPkg from "../package.json" with { type: "json" };
 import {
   buildReceiptFrame,
@@ -250,8 +251,18 @@ export async function bindClaudeTransportSocket(
               ...(typeof frameSessionId === "string" && frameSessionId ? { sessionId: frameSessionId } : {}),
             });
           } else if (parsed.kind === "receipt") {
+            // CORE-2488 phase 1: every received receipt names the message it
+            // answers and the peer that sent it (wire field origMessageId).
+            const status = mapReceiptStatus(parsed.status);
+            intercomTrace("receipt.in", {
+              origMessageId: parsed.origMessageId,
+              from: parsed.from,
+              statusRaw: parsed.status,
+              status,
+              reason: parsed.reason,
+            });
             handlers.onReceipt?.({
-              status: mapReceiptStatus(parsed.status),
+              status,
               ...(parsed.origMessageId ? { origMessageId: parsed.origMessageId } : {}),
               ...(parsed.from ? { from: parsed.from } : {}),
               ...(parsed.reason ? { reason: parsed.reason } : {}),

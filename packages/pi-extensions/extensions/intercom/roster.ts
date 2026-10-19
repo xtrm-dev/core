@@ -38,6 +38,7 @@ import os from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
 import { listClaudeSessions, toRosterRow, type ClaudePeer } from "./claude-transport/index.ts";
+import { intercomTrace } from "./trace.ts";
 
 /** One peer row in the combined roster. */
 export interface RosterRow {
@@ -84,6 +85,18 @@ export interface RosterEntry {
    * memoized Pi ids, where no Pi route was ever observed.
    */
   extensionConnected?: boolean;
+  /**
+   * CORE-2488 phase 1: which source produced `sock`, so a refused `uds:`
+   * address can say where the socket did (or did not) come from. Absent when
+   * the entry carries no socket.
+   */
+  sockSource?: string;
+  /**
+   * CORE-2488 phase 1: whether a live socket proved this Claude peer
+   * reachable at roster time. `live` with no `sock` is the diagnostic: the
+   * socket was proved live and then did not ride the entry.
+   */
+  live?: boolean;
 }
 
 /**
@@ -313,7 +326,15 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
       hostNonPi.delete(hostLeg.sessionId);
       pairs.push({
         row: claudeRosterRow(peer, now),
-        entry: { kind: "claude", ...(peer.sessionId ? { sessionId: peer.sessionId } : {}), name: clean(peer.name) || "unknown" },
+        // CORE-2488 phase 1: `live` rides the entry even on this branch, so a
+        // refused uds: address reports live=<true> sock=none — the socket was
+        // proved live and did not reach the entry.
+        entry: {
+          kind: "claude",
+          ...(peer.sessionId ? { sessionId: peer.sessionId } : {}),
+          name: clean(peer.name) || "unknown",
+          ...(peer.live !== undefined ? { live: peer.live } : {}),
+        },
       });
       continue;
     }
@@ -336,7 +357,7 @@ export function buildRoster(sources: RosterSources): BuiltRoster {
       // The sock rides along so `uds:<sock>` resolves exactly (MMD-2538:
       // ListAgents prints refs for Claude peers but SendMessage could not
       // address them by the socket address the peer itself reports).
-      entry: { kind: "claude", ...(peer.sessionId ? { sessionId: peer.sessionId } : {}), name: clean(peer.name) || "unknown", sock: peer.sock },
+      entry: { kind: "claude", ...(peer.sessionId ? { sessionId: peer.sessionId } : {}), name: clean(peer.name) || "unknown", sock: peer.sock, ...(peer.sockSource ? { sockSource: peer.sockSource } : {}), ...(peer.live !== undefined ? { live: peer.live } : {}) },
     });
   }
   // CORE-2479: host non-Pi records with no live socket still list, with
@@ -428,10 +449,66 @@ export function resolveRosterTarget(entries: RosterEntry[], nameOrId: string): {
   }
   // Every candidate with its ref and leg: same-name peers must stay
   // distinguishable (MMD-2538 printed one row per name and hid the rest).
+  // CORE-2488 phase 1: a miss also records the attempted key and, for the
+  // closest candidates, the socket/id/liveness facts that explain the miss
+  // (`live=true sock=none` is a proved-live socket that did not ride the entry).
+  intercomTrace("roster.miss", { key: nameOrId, entries: entries.length });
+  for (const candidate of closestEntries(entries, nameOrId)) {
+    intercomTrace("roster.miss.candidate", {
+      key: nameOrId,
+      name: candidate.name,
+      ref: entryDisplayRef(candidate),
+      kind: candidate.kind,
+      sessionId: candidate.sessionId,
+      sock: candidate.sock,
+      sockSource: candidate.sockSource,
+      live: candidate.live,
+    });
+  }
   return {
     error: `no live session matches "${nameOrId}"`,
     candidates: entries.map((entry) => `${entry.name} [${entryDisplayRef(entry)}] (${legWord(entry.kind)} session)`),
   };
+}
+
+/**
+ * Closest entries for a miss, best first (CORE-2488 phase 1 diagnostics only:
+ * resolution never uses this). Score is the longest shared case-insensitive
+ * prefix against the entry's name, session id, display ref, sock or shadow
+ * sock; entries sharing fewer than three characters are not candidates. A
+ * uds: key scores Claude entries at a floor of one instead, because a Claude
+ * entry with no socket is itself the explanation of the miss.
+ */
+function closestEntries(entries: RosterEntry[], key: string): RosterEntry[] {
+  const wanted = key.toLowerCase().replace(/^uds:/, "");
+  const uds = key.startsWith("uds:");
+  return entries
+    .map((entry) => ({
+      entry,
+      score: Math.max(
+        sharedPrefix(wanted, [entry.name, entry.sessionId, entryDisplayRef(entry), entry.sock, entry.shadowSock]),
+        // A uds: miss is about socket-bearing legs, so a Claude entry with no
+        // socket is itself the explanation: a proved-live socket that did not
+        // ride the entry. It stays a candidate at the floor score.
+        uds && entry.kind === "claude" ? 1 : 0,
+      ),
+    }))
+    .filter((row) => row.score >= (uds ? 1 : 3))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((row) => row.entry);
+}
+
+function sharedPrefix(wanted: string, values: Array<string | undefined>): number {
+  let best = 0;
+  for (const value of values) {
+    if (!value) continue;
+    const candidate = value.toLowerCase();
+    let shared = 0;
+    while (shared < wanted.length && shared < candidate.length && wanted[shared] === candidate[shared]) shared += 1;
+    if (shared > best) best = shared;
+  }
+  return best;
 }
 
 /** Full session ids survive in ambiguity errors: the caller disambiguates by session id instead. */

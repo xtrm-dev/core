@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import nodeFs from "node:fs";
 import nodeOs from "node:os";
 import nodePath from "node:path";
@@ -1497,5 +1497,79 @@ describe("disconnected-extension routing and held visibility (CORE-2479)", () =>
     );
     expect(mixed.isError).toBe(true);
     expect(String(mixed.content[0].text)).toMatch(/takes only status/);
+  });
+});
+
+describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
+  function captureStderr(): string[] {
+    const lines: string[] = [];
+    spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    return lines;
+  }
+
+  function claudePeerWithSource(name: string, sock: string, sessionId = `claude-${name}`) {
+    return {
+      name,
+      sessionId,
+      sock,
+      sockSource: "claude-session-json:messagingSocketPath",
+      cwd: "/tmp/x",
+      status: "idle",
+      kind: "interactive",
+      live: true,
+    } as any;
+  }
+
+  test("every Claude send traces messageId, from and sock, then its outcome", async () => {
+    const lines = captureStderr();
+    try {
+      const { deps } = baseDeps({
+        fetchPi: async () => [],
+        fetchClaude: async () => [claudePeerWithSource("cass", "/tmp/cass.sock")],
+        claudeTransportEnabled: true,
+        getClaudeSocketPath: () => "/tmp/own.sock",
+        sendClaude: async () => ({ outcome: "delivered" as const }),
+      });
+      const { tool } = register(deps);
+      const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+      expect(r.isError).toBeFalsy();
+    } finally {
+      (console.error as any).mockRestore?.();
+    }
+    expect(lines).toContain(
+      "[intercom-trace] send.claude messageId=m-test-1 from=uds:/tmp/own.sock fromName=coordinator sock=/tmp/cass.sock sockSource=claude-session-json:messagingSocketPath target=cass",
+    );
+    const result = lines.find((line) => line.startsWith("[intercom-trace] send.claude.result "));
+    expect(result).toBeTruthy();
+    expect(result).toContain("messageId=m-test-1");
+    expect(result).toContain("sock=/tmp/cass.sock");
+    expect(result).toContain("outcome=delivered");
+    expect(result).toMatch(/elapsedMs=\d+/);
+  });
+
+  test("a starved receipt traces unconfirmed, never failed", async () => {
+    const lines = captureStderr();
+    try {
+      const { deps } = baseDeps({
+        fetchPi: async () => [],
+        fetchClaude: async () => [claudePeerWithSource("cass", "/tmp/cass.sock")],
+        claudeTransportEnabled: true,
+        getClaudeSocketPath: () => "/tmp/own.sock",
+        sendClaude: async () => {
+          throw new ClaudeReceiptTimeoutError("m-test-1");
+        },
+      });
+      const { tool } = register(deps);
+      const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+      expect(String(r.content[0].text)).toContain("delivery could not be confirmed");
+    } finally {
+      (console.error as any).mockRestore?.();
+    }
+    const result = lines.find((line) => line.startsWith("[intercom-trace] send.claude.result "));
+    expect(result).toBeTruthy();
+    expect(result).toContain("outcome=unconfirmed");
+    expect(result).toMatch(/elapsedMs=\d+/);
   });
 });

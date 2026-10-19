@@ -33,7 +33,20 @@ export interface ClaudePeer {
   startedAt?: number;
   sock: string;
   live?: boolean;
+  /**
+   * CORE-2488 phase 1: which source produced `sock`. Claude peers read it from
+   * Claude's own per-pid session JSON, never from the agent-host registry
+   * (which publishes no socket at all) and never from a socket-directory scan.
+   */
+  sockSource?: string;
 }
+
+/**
+ * CORE-2488 phase 1 provenance labels. Named, not enforced: the sources stay
+ * exactly as they are; the trace just has to say which one answered.
+ */
+export const CLAUDE_SESSION_SOCK_SOURCE = "claude-session-json:messagingSocketPath";
+export const FRAME_FROM_SOCK_SOURCE = "frame-from-envelope";
 
 /** Pi-roster row shape for a Claude session (I4's ListAgents rows build on this). */
 export interface ClaudeRosterRow {
@@ -177,6 +190,7 @@ function entryToPeer(entry: Record<string, unknown>): ClaudePeer | null {
     ...(clean(entry.tmux) ? { tmux: clean(entry.tmux) as string } : {}),
     ...(typeof entry.startedAt === "number" ? { startedAt: entry.startedAt } : {}),
     sock: sock as string,
+    sockSource: CLAUDE_SESSION_SOCK_SOURCE,
   };
 }
 

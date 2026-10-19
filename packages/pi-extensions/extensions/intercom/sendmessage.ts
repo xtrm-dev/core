@@ -56,6 +56,7 @@ import {
   type ClaudePeer,
 } from "./claude-transport/index.ts";
 import { intercomWaiting } from "./waiting.ts";
+import { intercomTrace } from "./trace.ts";
 
 /** 12 h idle-notice subscription TTL, as Claude Code's expiry (Q2). */
 export const IDLE_SUBSCRIPTION_TTL_MS = 12 * 3600 * 1000;
@@ -1075,10 +1076,28 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         const from = ownClaudeSock ? `uds:${ownClaudeSock}` : (ownName ?? ownSessionId);
         const fromName = ownName ?? ownSessionId;
         const messageId = randomId();
+        // CORE-2488 phase 1: every Claude-leg send names its message id, its
+        // return address and the socket it dials, so a starved receipt can be
+        // classified from the trace instead of inferred.
+        intercomTrace("send.claude", {
+          messageId,
+          from,
+          fromName,
+          sock,
+          sockSource: peer?.sockSource,
+          target: to,
+        });
+        const sendStartedAt = Date.now();
         let receipt: ClaudeDeliveryOutcome;
         try {
           receipt = (await sendClaude({ sock, body, from, fromName, messageId })).outcome;
         } catch (error) {
+          intercomTrace("send.claude.result", {
+            messageId,
+            sock,
+            outcome: isClaudeReceiptTimeout(error) ? "unconfirmed" : "error",
+            elapsedMs: Date.now() - sendStartedAt,
+          });
           // A starved receipt wait means the frame flushed but the outcome is
           // unknown: report unconfirmed (pi-intercom wording), never failed,
           // and never invite a retry that would deliver twice.
@@ -1090,6 +1109,12 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           }
           return fail(`SendMessage: could not send to "${to}": ${(error as Error)?.message ?? String(error)}.`);
         }
+        intercomTrace("send.claude.result", {
+          messageId,
+          sock,
+          outcome: receipt,
+          elapsedMs: Date.now() - sendStartedAt,
+        });
         if (receipt === "delivered") {
           const waited = expectReply
             ? " The ask did not wait: replies from Claude sessions arrive as new messages."
