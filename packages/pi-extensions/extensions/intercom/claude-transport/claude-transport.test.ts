@@ -108,6 +108,28 @@ describe("claude-transport envelope (CORE-2434 I3, Claude naming parity)", () =>
     expect(stripped.fromName).toBe("peer");
   });
 
+  test("the envelope carries the frame message-id verbatim for the ack hook (CORE-2493)", () => {
+    const { content, messageId, frame } = protocol.buildUserFrame({
+      body: "hi",
+      from: "uds:/tmp/x.sock",
+      fromName: "probe",
+      fromMode: "pi",
+      messageId: "11111111-2222-4333-8444-555555555555",
+    });
+    expect(frame.msg_id).toBe("11111111-2222-4333-8444-555555555555");
+    expect(content).toContain(`message-id="${messageId}"`);
+    expect(content).toBe(
+      `<cross-session-message message-id="11111111-2222-4333-8444-555555555555" from="uds:/tmp/x.sock" from-name="probe" from-mode="pi">\nhi\n</cross-session-message>`,
+    );
+    expect(protocol.stripEnvelope(content).messageId).toBe(messageId);
+  });
+
+  test("an auto-generated id rides the tag verbatim (CORE-2493)", () => {
+    const { content, messageId } = protocol.buildUserFrame({ body: "hi" });
+    expect(content).toContain(`message-id="${messageId}"`);
+    expect(protocol.stripEnvelope(content).messageId).toBe(messageId);
+  });
+
   test("model payloads carry no ANSI", () => {
     const { content } = protocol.buildUserFrame({ body: "\u001b[31mred\u001b[0m" });
     expect(content).not.toMatch(/\u001b/);

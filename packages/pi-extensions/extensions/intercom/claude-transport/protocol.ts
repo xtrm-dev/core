@@ -79,11 +79,13 @@ export interface EnvelopeParts {
   from?: string;
   fromName?: string;
   fromMode?: string;
+  messageId?: string;
 }
 
 /** Build Claude's inbound envelope with Claude's own tag and attribute names. */
 export function buildEnvelope(parts: EnvelopeParts): string {
   const attrs: string[] = [];
+  if (parts.messageId) attrs.push(`message-id="${escapeAttr(bounded(parts.messageId, 128))}"`);
   if (parts.from) attrs.push(`from="${escapeAttr(bounded(parts.from, 512))}"`);
   if (parts.fromName) attrs.push(`from-name="${escapeAttr(bounded(parts.fromName, 128))}"`);
   if (parts.fromMode) attrs.push(`from-mode="${escapeAttr(bounded(parts.fromMode, 64))}"`);
@@ -102,6 +104,7 @@ export function stripEnvelope(content: unknown): EnvelopeParts {
   for (const attr of match[1].matchAll(/([a-z-]+)="([^"]*)"/g)) attrs[attr[1]] = attr[2];
   return {
     body: unescapeBody(match[2]),
+    ...(attrs["message-id"] ? { messageId: attrs["message-id"] } : {}),
     ...(attrs.from ? { from: attrs.from } : {}),
     ...(attrs["from-name"] ? { fromName: attrs["from-name"] } : {}),
     ...(attrs["from-mode"] ? { fromMode: attrs["from-mode"] } : {}),
@@ -134,6 +137,7 @@ export function buildUserFrame(input: UserFrameInput): BuiltUserFrame {
   const messageId = input.messageId || newMessageId();
   const content = buildEnvelope({
     body: input.body,
+    messageId,
     ...(input.from ? { from: input.from } : {}),
     ...(input.fromName ? { fromName: input.fromName } : {}),
     ...(input.fromMode ? { fromMode: input.fromMode } : {}),
