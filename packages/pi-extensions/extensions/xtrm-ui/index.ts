@@ -513,7 +513,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 37;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 38;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -741,8 +741,9 @@ export function renderExternalToolBackgroundLines(
     formatPayloadSize(contentLines.join("\n")),
   ]);
   const renderWidth = Math.max(8, width);
-  // Payload lines carry their own indentation (code previews indent at
-  // creation); the frame never adds any — output sits flush under the call.
+  // Payload lines indent two spaces under the flush header (design-system
+  // tool rows: header at column 0, everything below carries two spaces).
+  // Code previews indent at creation; plain result lines indent here.
   // Code tools (codemode, python) are the exception: native-tool parity.
   // The header above is untouched (dot + provider colors as-is); everything
   // below mirrors the bash tree — bold execution lines, muted └ output
@@ -761,12 +762,12 @@ export function renderExternalToolBackgroundLines(
       ? [...body, `\x1b[2m${truncateToWidth(`  ${footerMeta}`, renderWidth)}\x1b[22m`]
       : body;
   }
-  const body = [
-    truncateToWidth(renderedHeader, renderWidth),
-    ...visiblePayload.map((rawLine) => truncateToWidth(rawLine, renderWidth)),
-  ];
+  const payload = visiblePayload.map((rawLine) =>
+    truncateToWidth(rawLine.length > 0 ? `  ${rawLine}` : rawLine, renderWidth),
+  );
+  const body = [truncateToWidth(renderedHeader, renderWidth), ...payload];
   return footerMeta
-    ? [...body, `\x1b[2m${truncateToWidth(`└─ ${footerMeta}`, renderWidth)}\x1b[22m`]
+    ? [...body, `\x1b[2m${truncateToWidth(`  └─ ${footerMeta}`, renderWidth)}\x1b[22m`]
     : body;
 }
 

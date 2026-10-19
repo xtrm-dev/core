@@ -293,7 +293,10 @@ describe("/intercom roster overlay (CORE-2435 I4)", () => {
     });
     const rendered = overlay.render(80).join("\n");
     expect(rendered).toContain("intercom");
-    expect(rendered).toContain("worker-one [sess-a]");
+    expect(rendered).toContain("worker-one");
+    expect(rendered).toContain("sess-a");
+    // Invariants first: state and kind lead, the name follows.
+    expect(rendered.indexOf("idle")).toBeLessThan(rendered.indexOf("worker-one"));
     let closed = false;
     const closable = new commands.IntercomRosterOverlay({
       lines: [],
@@ -317,12 +320,12 @@ describe("/intercom roster overlay (CORE-2435 I4)", () => {
     });
     // Up at the top stays; down moves into the list, up returns to the top.
     overlay.handleInput("\u001b[A");
-    expect(overlay.render(80).join("\n")).toContain("peer-0 [abcdef]");
+    expect(overlay.render(80).join("\n")).toContain("peer-0");
     overlay.handleInput("\u001b[B");
-    expect(overlay.render(80).join("\n")).toContain("peer-1 [abcdef]");
+    expect(overlay.render(80).join("\n")).toContain("peer-1");
     overlay.handleInput("\u001b[A");
     overlay.handleInput("x-unhandled");
     expect(closed).toBe(false);
-    expect(overlay.render(80).join("\n")).toContain("peer-0 [abcdef]");
+    expect(overlay.render(80).join("\n")).toContain("peer-0");
   });
 });

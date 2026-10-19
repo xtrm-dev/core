@@ -100,11 +100,20 @@ export interface EventDetails {
   from?: string;
   fromName?: string;
   messageId?: string;
+  /**
+   * Automatic (wake) event vs a proactive one. Proactive dots stay filled
+   * (●); automatic wakes render hollow (○) so the operator can tell who
+   * acted at a glance. Failures still render ! regardless.
+   */
+  automatic?: boolean;
 }
 
-/** Glyph for one event: ! on failure or high severity, else the kind glyph. */
-export function glyphFor(details: Pick<EventDetails, "kind" | "state" | "severityHigh">): string {
+/** Glyph for one event: ! on failure or high severity, ○ on automatic
+ * wakes, else the kind glyph (● message, ◐ task, ◉ monitor). Proactive
+ * operator rows keep their own filled dot; every wake renders hollow. */
+export function glyphFor(details: Pick<EventDetails, "kind" | "state" | "severityHigh" | "automatic">): string {
   if (details.severityHigh || stateToken(details.state) === "error") return EVENT_GLYPHS.failure;
+  if (details.automatic) return "○";
   switch (details.kind) {
     case "task":
       return EVENT_GLYPHS.task;

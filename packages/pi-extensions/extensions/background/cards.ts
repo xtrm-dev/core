@@ -34,6 +34,8 @@ export function resolveTaskCard(message: unknown): EventDetails | null {
   const facts = [elapsed, outputFile].filter((part): part is string => !!part).join(" · ") || undefined;
   return {
     kind: "task",
+    // Wakes render hollow: the state word and identity carry the kind.
+    automatic: true,
     state: status,
     identity: `task ${id}`,
     preview,
@@ -66,6 +68,8 @@ export function resolveMonitorCard(message: unknown): EventDetails | null {
     const lines = Array.isArray(details.lines) ? details.lines.filter((line): line is string => typeof line === "string") : [];
     return {
       kind: "monitor",
+      // Wakes render hollow: the state word and identity carry the kind.
+      automatic: true,
       state: "event",
       identity: `monitor ${id}`,
       preview: lines,
@@ -80,6 +84,8 @@ export function resolveMonitorCard(message: unknown): EventDetails | null {
     const lineCount = typeof details.line_count === "number" ? details.line_count : 0;
     return {
       kind: "monitor",
+      // Wakes render hollow: the state word and identity carry the kind.
+      automatic: true,
       state: kind,
       identity: `monitor ${id}`,
       preview: [`${kind}: ${reason}`],
