@@ -100,6 +100,7 @@ function renderCard(
   type: string,
   message: unknown,
   width: number,
+  expanded = true,
 ): string[] {
   const renderer = renderers.get(type) as unknown as (
     message: unknown,
@@ -107,7 +108,7 @@ function renderCard(
     theme: unknown,
   ) => { render: (width: number) => string[] };
   if (!renderer) throw new Error(`no renderer for ${type}`);
-  return visible(renderer(message, {}, tagTheme("dark")).render(width));
+  return visible(renderer(message, { expanded }, tagTheme("dark")).render(width));
 }
 
 describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
@@ -165,6 +166,8 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
         const lines = renderCard(receiver.renderers, "intercom_message", injected[0].message, 80);
         expect(lines[0]).toBe("○ @coordinator delivered");
         expect(lines[1]).toBe("  › Message from @coordinator: hello e2e  m-e2e-1");
+        const collapsed = renderCard(receiver.renderers, "intercom_message", injected[0].message, 120, false);
+        expect(collapsed).toEqual(["› Message from @coordinator received: hello e2e m-e2e-1 (ctrl+o to expand)"]);
       } finally {
         await host.close();
         rmSync(dir, { recursive: true, force: true });

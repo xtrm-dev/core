@@ -53,7 +53,7 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
     expect(renderers.has(INTERCOM_MESSAGE_TYPE)).toBe(true);
   });
 
-  test("an inbound wake renders the › Message preview with dim facts", () => {
+  test("an inbound wake renders the › Message preview with dim facts when expanded", () => {
     const { pi, renderers } = fakePiWithRenderer();
     intercomExtension(pi, { env: {}, exec: async () => "" } as never);
     const renderer = renderers.get(INTERCOM_MESSAGE_TYPE) as unknown as (
@@ -67,7 +67,7 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
           content: "ignored: the card reads details",
           details: { messageId: "m7", payloadRef: "hello world\nsecond line", from: "bob", fromName: "Bob" },
         },
-        {},
+        { expanded: true },
         tagTheme("dark"),
       ).render(80).join("\n"),
     );
@@ -76,7 +76,26 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
     expect(lines[2]).toBe("  second line  m7");
   });
 
-  test("a long inbound wake wraps at the render width with the ctrl+o hint", () => {
+  test("a collapsed inbound wake is one received line with dim snippet, id and expand hint", () => {
+    const { pi, renderers } = fakePiWithRenderer();
+    intercomExtension(pi, { env: {}, exec: async () => "" } as never);
+    const renderer = renderers.get(INTERCOM_MESSAGE_TYPE) as unknown as (
+      message: unknown,
+      options: unknown,
+      theme: unknown,
+    ) => { render: (width: number) => string[] };
+    const raw = renderer(
+      {
+        details: { messageId: "m7", payloadRef: "hello world", from: "bob", fromName: "Bob" },
+      },
+      {},
+      tagTheme("dark"),
+    ).render(120);
+    expect(visible(raw)).toEqual(["› Message from @Bob received: hello world m7 (ctrl+o to expand)"]);
+    expect(raw.join("\n")).toContain("<dark:dim>hello world</dark:dim>");
+  });
+
+  test("a long inbound wake wraps at the render width with the ctrl+o hint when expanded", () => {
     const { pi, renderers } = fakePiWithRenderer();
     intercomExtension(pi, { env: {}, exec: async () => "" } as never);
     const renderer = renderers.get(INTERCOM_MESSAGE_TYPE) as unknown as (
@@ -86,10 +105,9 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
     ) => { render: (width: number) => string[] };
     const ref = ["one", "two", "three", "four", "five", "six"].join("\n");
     const at80 = visible(
-      renderer({ details: { messageId: "m8", payloadRef: ref, from: "bob" } }, {}, tagTheme("light")).render(80),
+      renderer({ details: { messageId: "m8", payloadRef: ref, from: "bob" } }, { expanded: true }, tagTheme("light")).render(80),
     );
-    expect(at80).toHaveLength(1 + 3 + 1);
-    expect(at80[at80.length - 1]).toBe("  +3 lines · ctrl+o expands");
+    expect(at80).toHaveLength(1 + 6);
     for (const line of at80) expect(line.length).toBeLessThanOrEqual(80);
   });
 
