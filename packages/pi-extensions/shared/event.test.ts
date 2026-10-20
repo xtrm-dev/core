@@ -225,6 +225,8 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     const lines = visible(formatEventCard(messageDetails(), light, 120, { expanded: false }));
     expect(lines).toEqual(["› Message from @Probe received: hello world m1 (ctrl+o to expand)"]);
     const raw = formatEventCard(messageDetails(), light, 120, { expanded: false });
+    expect(raw).toContain("<light:bold>@Probe</light:bold>");
+    expect(raw).toContain("<light:success>received</light:success>");
     expect(raw).toContain("<light:dim>hello world</light:dim>");
     expect(raw).toContain("<light:dim>m1</light:dim>");
     expect(raw).toContain("<light:dim>(ctrl+o to expand)</light:dim>");
