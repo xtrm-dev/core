@@ -1067,13 +1067,19 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         if (notifyWhenIdle || replyTo) {
           return fail(`SendMessage: notify_when_idle and reply_to are not supported for Claude targets yet.`);
         }
-        // CORE-2465: receipts route to the sender's socket, so from must be
+        // CORE-2465 + CORE-2498: receipts route to the sender's socket, so from must be
         // our uds: address (pi-claude-link behavior), never the roster name:
         // a bare name draws no ack and starves the receipt waiter. The human
-        // name stays in fromName. (The Pi leg below still uses the resolvable
-        // roster address, per the CORE-2436 I5 review.)
+        // name stays in fromName. When unbound there is no return address,
+        // so fail loudly instead of sending an un-ackable frame. (The Pi leg
+        // below still uses the resolvable roster address, per CORE-2436 I5.)
         const ownClaudeSock = deps.getClaudeSocketPath?.();
-        const from = ownClaudeSock ? `uds:${ownClaudeSock}` : (ownName ?? ownSessionId);
+        if (!ownClaudeSock) {
+          return fail(
+            `SendMessage: Claude transport has no bound socket for this session, so a receipt could not route back. Restart the session (session_start binds the Claude socket) and retry; not sending an un-ackable frame.`,
+          );
+        }
+        const from = `uds:${ownClaudeSock}`;
         const fromName = ownName ?? ownSessionId;
         const messageId = randomId();
         // CORE-2488 phase 1: every Claude-leg send names its message id, its
@@ -1147,8 +1153,16 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
        */
       const relayViaShadow = async (sock: string): Promise<{ sent: WakeResult } | { done: ToolResult }> => {
         try {
+          // CORE-2498: same rule as the direct Claude branch above — a bare
+          // name draws no ack and starves the waiter, so an unbound relay
+          // throws loudly instead of sending an un-ackable frame.
           const ownClaudeSock = deps.getClaudeSocketPath?.();
-          const relayFrom = ownClaudeSock ? `uds:${ownClaudeSock}` : (ownName ?? ownSessionId);
+          if (!ownClaudeSock) {
+            throw new Error(
+              `SendMessage: Claude transport has no bound socket for this session, so a relay receipt could not route back. Restart the session and retry.`,
+            );
+          }
+          const relayFrom = `uds:${ownClaudeSock}`;
           const relay = (await sendClaude({ sock, body, from: relayFrom, fromName: from, messageId })).outcome;
           if (relay === "delivered") return { sent: { messageId, state: "delivered" } };
           ask?.disarm();

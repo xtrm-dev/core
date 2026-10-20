@@ -337,7 +337,7 @@ describe("ListAgents tool registration", () => {
     expect(result.isError).toBeFalsy();
   });
 
-  test("a down Pi registry fails loudly instead of listing a partial roster", async () => {
+  test("a down Pi registry degrades to a partial Claude roster with a warning (CORE-2498)", async () => {
     const { pi, tools } = fakePi();
     roster.registerListAgentsTool(pi, {
       fetchPi: async () => {
@@ -348,9 +348,10 @@ describe("ListAgents tool registration", () => {
     const result = await tools.ListAgents.execute("call-1", {}, undefined, undefined, {
       sessionManager: { getSessionId: () => "own-session-id-123456" },
     });
-    expect(result.isError).toBe(true);
-    expect(String(result.content[0].text)).toMatch(/cannot reach the agent host registry/);
-    expect(String(result.content[0].text)).toMatch(/rather than partial/);
+    expect(result.isError).toBeFalsy();
+    expect(String(result.content[0].text)).toMatch(/Pi registry unreachable/);
+    expect(String(result.content[0].text)).toMatch(/Pi leg omitted/);
+    expect(result.details).toMatchObject({ error: true });
   });
 
   test("without the real session id the tool fails instead of listing self as a peer", async () => {

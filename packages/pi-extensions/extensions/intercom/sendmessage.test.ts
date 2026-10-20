@@ -68,6 +68,7 @@ function baseDeps(overrides: Record<string, any> = {}) {
       },
       wakeStatus: async (messageId: string) => ({ messageId, state: "delivered" }),
       sendClaude: async () => ({ outcome: "delivered" as const }),
+      getClaudeSocketPath: () => "/tmp/own.sock",
       settleWaitMs: 20,
       now: () => 1_000_000,
       randomId: () => "m-test-1",
@@ -471,20 +472,23 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     expect(sent[0]).toMatchObject({ sock: "/tmp/cass.sock", from: "uds:/tmp/own.sock", fromName: "coordinator", body: "hi" });
   });
 
-  test("without a bound socket the roster name stays the fallback", async () => {
+  test("without a bound socket the Claude leg fails loudly instead of starving (CORE-2498)", async () => {
     const sent: any[] = [];
     const { deps } = baseDeps({
       fetchPi: async () => [],
       fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
       claudeTransportEnabled: true,
+      getClaudeSocketPath: undefined,
       sendClaude: async (opts: any) => {
         sent.push(opts);
         return { outcome: "delivered" as const };
       },
     });
-    const { tool } = register(deps);
-    await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
-    expect(sent[0]).toMatchObject({ from: "coordinator", fromName: "coordinator" });
+    const { tool } = register({ ...deps, getClaudeSocketPath: undefined });
+    const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/no bound socket/);
+    expect(sent).toHaveLength(0);
   });
 
   test("a starved receipt reports unconfirmed, never failed, no retry (CORE-2465)", async () => {
