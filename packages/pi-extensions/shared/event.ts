@@ -432,13 +432,24 @@ export function formatMessageCollapsedPlain(details: EventDetails, width: number
   return visibleWidth(line) <= w ? line : truncateToWidth(line, w);
 }
 
-/** Themed collapsed one-liner: snippet dim, id dim, expand hint chrome-dim. */
+/**
+ * Themed collapsed one-liner: bold @name, tinted received (the wake state
+ * token — success for delivered), dim snippet, dim id, chrome-dim expand
+ * hint. Same vocabulary as the roster overlay (bold name) and the expanded
+ * header (tinted state).
+ */
 export function formatMessageCollapsed(details: EventDetails, theme: EventTheme, width: number): string {
   const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
   const { prefix, snippet, id, suffix } = collapsedSegments(details, w);
   const dim = (text: string) => theme.fg("dim", text);
   const italicize = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
-  const parts = [prefix, ...(snippet ? [dim(italicize(snippet))] : []), ...(id ? [dim(id)] : []), dim(suffix)];
+  const lead = "› Message from @";
+  const trail = " received:";
+  const head =
+    prefix.startsWith(lead) && prefix.endsWith(trail)
+      ? `› Message from ${theme.bold(`@${prefix.slice(lead.length, prefix.length - trail.length)}`)} ${theme.fg(stateToken(details.state), "received")}:`
+      : prefix;
+  const parts = [head, ...(snippet ? [dim(italicize(snippet))] : []), ...(id ? [dim(id)] : []), dim(suffix)];
   return parts.join(" ");
 }
 
