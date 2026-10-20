@@ -255,8 +255,11 @@ export function buildIdleNotice(name: string, messageId: string, expired: boolea
     : `[Cross-session idle notice] ${who} is now idle (message ${id}).`;
 }
 
-/** Maximum preview body lines on a card (D4). */
+/** Maximum preview body lines on a card (D4, expanded view). */
 export const MAX_PREVIEW_LINES = 3;
+
+/** Collapsed one-liner expand hint (xtrm-ui chrome wording). */
+export const COLLAPSED_EXPAND_HINT = "(ctrl+o to expand)";
 
 const INDENT = "  ";
 const EXPAND_SUFFIX = "· ctrl+o expands";
@@ -332,7 +335,7 @@ interface CardLayout {
 }
 
 /** Lay out one card from the details object (shared by plain and themed render). */
-function layoutCard(details: EventDetails, width: number): CardLayout {
+function layoutCard(details: EventDetails, width: number, expanded = true): CardLayout {
   const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
   const glyph = glyphFor(details);
   const state = details.state ?? "";
@@ -348,8 +351,12 @@ function layoutCard(details: EventDetails, width: number): CardLayout {
     const name = details.fromName || details.from;
     if (name) bodies[0] = `› Message from @${sanitizeCardLine(name)}: ${bodies[0]}`;
   }
-  const shown = bodies.slice(0, MAX_PREVIEW_LINES);
+  // Expanded message cards show the full corpus (ctrl+o); the collapsed
+  // one-liner below never reaches this layout, so the 3-line cap only
+  // binds non-message kinds and callers that never pass expanded.
   const total = details.totalLines ?? bodies.length;
+  const shown =
+    expanded || details.kind !== "message" ? bodies : bodies.slice(0, MAX_PREVIEW_LINES);
   const hidden = Math.max(0, total - shown.length);
   const bodyLines = shown.flatMap((body) => wrapDisplay(body, inner).map((line) => `${INDENT}${line}`));
   const rawFacts = details.facts?.trim();
@@ -375,9 +382,74 @@ function layoutBodyLines(layout: CardLayout, styleFacts: (text: string) => strin
   return lines;
 }
 
+/**
+ * Collapsed one-liner for inbound messages: the full corpus arrives via
+ * ctrl+o (Pi passes `expanded` to the renderer), so the resting state is a
+ * single width-fitted line — `received`, not `delivered`, because the
+ * operator received it; nothing here claims we delivered anything.
+ * Priority is who + what over reference: the snippet truncates last, the id
+ * first (short 8-char ref, then dropped); the line hard-truncates only as a
+ * last resort. pi-tui's truncateToWidth pads its ellipsis with reset codes
+ * (styled-input hygiene), so every fit below strips ANSI back off.
+ */
+function fitWidth(text: string, width: number): string {
+  if (width <= 1) return "";
+  return stripAnsi(truncateToWidth(text, Math.floor(width)));
+}
+
+function collapsedSegments(
+  details: EventDetails,
+  width: number,
+): { prefix: string; snippet: string; id: string; suffix: string } {
+  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
+  const rawName = details.fromName || details.from || details.identity.replace(/^@/, "") || "unknown";
+  const name = fitWidth(sanitizeCardLine(rawName), 32) || "unknown";
+  const prefix = `› Message from @${name} received:`;
+  const suffix = COLLAPSED_EXPAND_HINT;
+  const rawFacts = details.facts?.trim() || (typeof details.messageId === "string" ? details.messageId : "");
+  let id = rawFacts ? sanitizeCardLine(rawFacts) : "";
+  let snippet = sanitizeCardLine(details.preview.join(" ")).replace(/\s+/g, " ").trim();
+  const joinedWidth = (s: string, i: string) =>
+    visibleWidth(prefix) + (s ? 1 + visibleWidth(s) : 0) + (i ? 1 + visibleWidth(i) : 0) + 1 + visibleWidth(suffix);
+  // Shrink the id first (an 8-char short ref at minimum) so the snippet
+  // — the who + what — survives as long as possible.
+  if (joinedWidth(snippet, id) > w && id) {
+    const idBudget = w - visibleWidth(prefix) - (snippet ? 1 + visibleWidth(snippet) : 0) - 1 - visibleWidth(suffix) - 1;
+    id = idBudget >= visibleWidth(id) ? id : idBudget >= 8 ? fitWidth(id, idBudget) : "";
+  }
+  if (joinedWidth(snippet, id) > w && snippet) {
+    const snipBudget = w - visibleWidth(prefix) - (id ? 1 + visibleWidth(id) : 0) - 1 - visibleWidth(suffix) - 1;
+    snippet = fitWidth(snippet, snipBudget);
+  }
+  return { prefix, snippet, id, suffix };
+}
+
+/** Plain collapsed one-liner (no theme). */
+export function formatMessageCollapsedPlain(details: EventDetails, width: number): string {
+  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
+  const { prefix, snippet, id, suffix } = collapsedSegments(details, w);
+  const line = [prefix, snippet, id, suffix].filter((s) => s.length > 0).join(" ");
+  return visibleWidth(line) <= w ? line : truncateToWidth(line, w);
+}
+
+/** Themed collapsed one-liner: snippet dim, id dim, expand hint chrome-dim. */
+export function formatMessageCollapsed(details: EventDetails, theme: EventTheme, width: number): string {
+  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
+  const { prefix, snippet, id, suffix } = collapsedSegments(details, w);
+  const dim = (text: string) => theme.fg("dim", text);
+  const italicize = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
+  const parts = [prefix, ...(snippet ? [dim(italicize(snippet))] : []), ...(id ? [dim(id)] : []), dim(suffix)];
+  return parts.join(" ");
+}
+
 /** Plain card (no theme): the layout every themed card shares. */
-export function formatEventCardPlain(details: EventDetails, width: number): string {
-  const layout = layoutCard(details, width);
+export function formatEventCardPlain(
+  details: EventDetails,
+  width: number,
+  opts?: { expanded?: boolean },
+): string {
+  if (details.kind === "message" && opts?.expanded === false) return formatMessageCollapsedPlain(details, width);
+  const layout = layoutCard(details, width, opts?.expanded === true);
   const header = `${layout.glyph} ${layout.identity}${layout.state ? ` ${layout.state}` : ""}`;
   return [header, ...layoutBodyLines(layout, (s) => s)].join("\n");
 }
@@ -385,13 +457,23 @@ export function formatEventCardPlain(details: EventDetails, width: number): stri
 /**
  * Operator card (D4): glyph, bold identity, tinted state, italic message
  * bodies, dim facts, up to 3 preview lines, "+N lines · ctrl+o expands".
+ * Pass `{ expanded: false }` for a message to get the collapsed one-liner
+ * (`› Message from @<name> received: <snippet> <id> (ctrl+o to expand)`)
+ * Pi's ctrl+o path uses; `{ expanded: true }` shows the full corpus with no
+ * line cap. Without opts the classic 3-line card renders (pinned tests).
  * Theme tokens only — this file holds no SGR. Both renders share `layoutCard`,
  * so the themed card matches the plain layout line for line; only styling
  * differs. Bodies render italic (the message corpus) when the theme offers
  * it; fakes without `italic` fall back to plain bodies so pinned tests hold.
  */
-export function formatEventCard(details: EventDetails, theme: EventTheme, width: number): string {
-  const layout = layoutCard(details, width);
+export function formatEventCard(
+  details: EventDetails,
+  theme: EventTheme,
+  width: number,
+  opts?: { expanded?: boolean },
+): string {
+  if (details.kind === "message" && opts?.expanded === false) return formatMessageCollapsed(details, theme, width);
+  const layout = layoutCard(details, width, opts?.expanded === true);
   const head =
     `${layout.glyph} ${theme.bold(layout.identity)}` +
     (layout.state ? ` ${theme.fg(stateToken(details.state), layout.state)}` : "");
@@ -418,6 +500,8 @@ interface RendererPi {
  * message to its details (or null when it is not ours); a throwing theme
  * falls back to plain lines so the operator always sees the event.
  * Pi APIs without `registerMessageRenderer` are ignored, not crashed.
+ * Pi's ctrl+o toggles `options.expanded`: collapsed messages render the
+ * one-liner, expanded ones the full corpus (xtrm-ui chrome wording).
  */
 export function registerEventRenderer(
   pi: unknown,
@@ -426,7 +510,7 @@ export function registerEventRenderer(
 ): void {
   const register = (pi as RendererPi | null)?.registerMessageRenderer;
   if (typeof register !== "function") return;
-  register.call(pi, customType, (message: unknown, _options: unknown, theme: EventTheme) => {
+  register.call(pi, customType, (message: unknown, options: unknown, theme: EventTheme) => {
     let details: EventDetails | null | undefined;
     try {
       details = resolve(message);
@@ -434,14 +518,15 @@ export function registerEventRenderer(
       return undefined;
     }
     if (!details) return undefined;
+    const expanded = (options as { expanded?: boolean } | null | undefined)?.expanded === true;
     return {
       dispose: () => {},
       invalidate: () => {},
       render: (width: number) => {
         try {
-          return formatEventCard(details, theme, width).split("\n");
+          return formatEventCard(details, theme, width, { expanded }).split("\n");
         } catch {
-          return formatEventCardPlain(details, width).split("\n");
+          return formatEventCardPlain(details, width, { expanded }).split("\n");
         }
       },
     };

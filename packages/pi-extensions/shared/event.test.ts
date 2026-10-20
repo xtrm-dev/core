@@ -23,6 +23,7 @@ import {
   buildNoticeEnvelope,
   buildReplyActionLine,
   formatEventCard,
+  formatEventCardPlain,
   glyphFor,
   registerEventRenderer,
   stateToken,
@@ -220,6 +221,43 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     }
   });
 
+  test("a collapsed message is one received line: snippet, id, expand hint", () => {
+    const lines = visible(formatEventCard(messageDetails(), light, 120, { expanded: false }));
+    expect(lines).toEqual(["› Message from @Probe received: hello world m1 (ctrl+o to expand)"]);
+    const raw = formatEventCard(messageDetails(), light, 120, { expanded: false });
+    expect(raw).toContain("<light:dim>hello world</light:dim>");
+    expect(raw).toContain("<light:dim>m1</light:dim>");
+    expect(raw).toContain("<light:dim>(ctrl+o to expand)</light:dim>");
+    expect(raw).not.toContain("delivered");
+  });
+
+  test("a collapsed message cuts the snippet before the id and never overruns", () => {
+    const long = messageDetails({
+      fromName: "core-xt-pi-2ard",
+      preview: ["this is a very long message body that must be cut to fit one line"],
+      facts: "82a690db-9202-4798-aaaa-bb497e18396e",
+    });
+    for (const width of [80, 120]) {
+      const lines = visible(formatEventCard(long, light, width, { expanded: false }));
+      expect(lines).toHaveLength(1);
+      for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+      expect(lines[0]).toContain("received:");
+      expect(lines[0]).toContain("(ctrl+o to expand)");
+    }
+    const at200 = visible(formatEventCard(long, light, 200, { expanded: false }))[0];
+    expect(at200).toContain("82a690db-9202-4798-aaaa-bb497e18396e");
+    const plain80 = formatEventCardPlain(long, 80, { expanded: false });
+    expect(plain80).not.toMatch(/\u001b/);
+    expect(visibleWidth(plain80)).toBeLessThanOrEqual(80);
+  });
+
+  test("expanded messages show the full corpus with no line cap", () => {
+    const details = messageDetails({ preview: ["one", "two", "three", "four", "five"] });
+    const lines = visible(formatEventCard(details, light, 80, { expanded: true }));
+    expect(lines).toHaveLength(1 + 5);
+    expect(lines.join("\n")).not.toContain("ctrl+o");
+  });
+
   test("a failed task card opens with ! and tints the state error", () => {
     const raw = formatEventCard(
       { kind: "task", state: "failed", identity: "task ab12", preview: ["boom"], facts: "ab12 · 3.1s" },
@@ -365,7 +403,7 @@ describe("renderer registration (CORE-2438 I7)", () => {
       renderer as unknown as (message: unknown, options: unknown, theme: EventTheme) => {
         render: (width: number) => string[];
       }
-    )({ content: "hi" }, {}, light);
+    )({ content: "hi" }, { expanded: true }, light);
     captured = component.render(80).join("\n");
     expect(visible(captured)[0]).toMatch(/^● @probe delivered$/);
   });
