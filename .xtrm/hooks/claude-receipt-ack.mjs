@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-// claude-receipt-ack.mjs — delivered receipts for Pi→Claude cross-session frames (CORE-2492).
+// claude-receipt-ack.mjs — delivered receipts for Pi→Claude cross-session frames (CORE-2492, CORE-2496).
 //
 // Symptom: every Pi→Claude send starves to `unconfirmed`. The Pi side waits up
 // to 30 s for a `peer_message_status` receipt (ClaudeReceiptWaiter); no code on
 // any Claude-loaded path emitted one — hooks/dispatch.mjs `runEvent` handled
 // Stop only and UserPromptSubmit fell through. This module is the missing
-// emitter: it runs inside `dispatch.mjs event` for UserPromptSubmit, parses the
-// injected `<cross-session-message message-id from="uds:...">` envelope out of
-// the hook payload prompt, and sends one `peer_message_status`/`delivered`
-// NDJSON line back to the sender's socket.
+// emitter, on two paths:
+//   - UserPromptSubmit (CORE-2492): parses the injected
+//     `<cross-session-message message-id from="uds:...">` envelope out of
+//     the hook payload prompt and sends one `peer_message_status`/`delivered`
+//     NDJSON line back to the sender's socket.
+//   - Stop (CORE-2496): socket-injected frames bypass UserPromptSubmit
+//     (native-closed delivery — the prompt hook never fires), so the ack is
+//     delayed to turn end: the Stop branch tail-scans transcript_path since
+//     the last acked position and emits one delivered receipt per newly-
+//     appeared envelope with message-id + uds: from.
 //
 // Frame shape mirrors protocol.ts buildReceiptFrame (msgV 1, type control,
 // action peer_message_status, status delivered, orig_msg_id): the Pi waiter
@@ -25,7 +31,19 @@
 
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +62,12 @@ const MAX_MESSAGE_ID_CHARS = 512;
 
 /** Upper bound on a socket path (Linux UDS paths cap at ~108 bytes; be generous, not unbounded). */
 const MAX_SOCK_CHARS = 4096;
+
+/** Upper bound on transcript bytes scanned per Stop (positioned tail read, never the whole file). */
+export const MAX_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
+
+/** Upper bound on tracked transcripts in the Stop position state (position only, never content). */
+export const MAX_STATE_ENTRIES = 50;
 
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 
@@ -81,6 +105,20 @@ function receiptAckDebugFile() {
   const override = process.env['CLAUDE_RECEIPT_ACK_DEBUG_FILE'];
   if (override !== undefined && override !== '') return override;
   return join(homedir(), '.xtrm', 'logs', 'claude-receipt-ack.log');
+}
+
+/**
+ * Stop position state file (CORE-2496): byte offsets per transcript_path.
+ * Temp override for tests, else a sibling of the debug file so the two stay
+ * co-located ("beside the debug log"). Deriving from the debug file keeps
+ * unit runs hermetic when only CLAUDE_RECEIPT_ACK_DEBUG_FILE is pinned to a
+ * temp dir. Position only — never transcript content — so the file stays
+ * bounded (MAX_STATE_ENTRIES keys × one offset each). Read at call time.
+ */
+export function receiptAckStateFile() {
+  const override = process.env['CLAUDE_RECEIPT_ACK_STATE_FILE'];
+  if (override !== undefined && override !== '') return override;
+  return join(dirname(receiptAckDebugFile()), 'claude-receipt-ack.stop-state.json');
 }
 
 /**
@@ -149,37 +187,68 @@ function extractPromptText(input) {
 }
 
 /**
- * Every (messageId, sender-socket) pair in the prompt: one entry per
+ * Every (messageId, sender-socket) pair in one text blob: one entry per
  * `<cross-session-message … message-id="…" … from="uds:…" …>` opening tag
  * carrying BOTH attributes. Tags without a message-id (the protocol envelope
  * omits it) or without a uds: return address yield no receipt — the Pi waiter
  * keys on orig_msg_id, so a receipt without it resolves nothing. Never throws.
+ *
+ * Shared by the UserPromptSubmit prompt scan and the Stop transcript
+ * tail-scan (CORE-2496): the transcript is JSONL, so attributes arrive
+ * JSON-escaped (`message-id=\"m-1\"`), but the quote characters are still
+ * present and the same tag regex applies — no separate grammar needed.
+ */
+function parseTargetsFromText(text) {
+  const targets = [];
+  const seen = new Set();
+  const tagRe = /<cross-session-message\b[^>]*>/g;
+  let tag;
+  while ((tag = tagRe.exec(text)) !== null) {
+    // Optional backslash around quotes: transcript JSONL arrives JSON-escaped
+    // (`message-id=\"m-1\"`) while prompts carry bare quotes. The lazy
+    // capture plus trailing `\\?` keeps the escape's backslash out of the
+    // value on both shapes without changing bare-quote results.
+    const idMatch = /message-id\s*=\s*\\?(?:"([^"]+?)\\?"|'([^']+?)\\?')/.exec(tag[0]);
+    const fromMatch = /(?:^|\s)from\s*=\s*\\?(?:"([^"]+?)\\?"|'([^']+?)\\?')/.exec(tag[0]);
+    if (!idMatch || !fromMatch) continue;
+    const messageId = unescapeEntities(idMatch[1] ?? idMatch[2] ?? '');
+    const rawFrom = unescapeEntities(fromMatch[1] ?? fromMatch[2] ?? '');
+    if (!rawFrom.startsWith('uds:')) continue;
+    const sockPath = rawFrom.slice(4);
+    if (!isSafeMessageId(messageId) || !isSafeSockPath(sockPath)) continue;
+    const key = `${sockPath.length}:${sockPath}:${messageId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    targets.push({ messageId, sockPath });
+    if (targets.length >= MAX_TARGETS) break;
+  }
+  return targets;
+}
+
+/**
+ * Every (messageId, sender-socket) pair in the UserPromptSubmit prompt.
+ * Never throws.
  */
 export function parseReceiptTargets(input) {
   try {
     const prompt = extractPromptText(input);
     if (!prompt) return [];
     const text = prompt.length > MAX_PROMPT_CHARS ? prompt.slice(0, MAX_PROMPT_CHARS) : prompt;
-    const targets = [];
-    const seen = new Set();
-    const tagRe = /<cross-session-message\b[^>]*>/g;
-    let tag;
-    while ((tag = tagRe.exec(text)) !== null) {
-      const idMatch = /message-id\s*=\s*(?:"([^"]+)"|'([^']+)')/.exec(tag[0]);
-      const fromMatch = /(?:^|\s)from\s*=\s*(?:"([^"]+)"|'([^']+)')/.exec(tag[0]);
-      if (!idMatch || !fromMatch) continue;
-      const messageId = unescapeEntities(idMatch[1] ?? idMatch[2] ?? '');
-      const rawFrom = unescapeEntities(fromMatch[1] ?? fromMatch[2] ?? '');
-      if (!rawFrom.startsWith('uds:')) continue;
-      const sockPath = rawFrom.slice(4);
-      if (!isSafeMessageId(messageId) || !isSafeSockPath(sockPath)) continue;
-      const key = `${sockPath.length}:${sockPath}:${messageId}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      targets.push({ messageId, sockPath });
-      if (targets.length >= MAX_TARGETS) break;
-    }
-    return targets;
+    return parseTargetsFromText(text);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Every (messageId, sender-socket) pair in one transcript tail chunk
+ * (CORE-2496). Same tag grammar as the prompt scan; the chunk is already
+ * bounded by the positioned tail read. Never throws.
+ */
+export function parseTranscriptTargets(text) {
+  try {
+    if (typeof text !== 'string' || !text) return [];
+    return parseTargetsFromText(text);
   } catch {
     return [];
   }
@@ -257,6 +326,29 @@ export function sendDeliveredReceipt(sockPath, origMessageId, options = {}) {
 }
 
 /**
+ * Send one delivered receipt per target and log one `receipt` debug line per
+ * target (delivered/dial-failed). Shared by the UserPromptSubmit prompt path
+ * and the Stop transcript path (CORE-2496 refactor: identical wire bytes and
+ * identical debug shape on both paths). Never throws, never touches
+ * stdout/stderr; resolves with `{ attempted, delivered }`.
+ */
+export async function emitDeliveredReceipts(targets, options = {}) {
+  if (!Array.isArray(targets) || targets.length === 0) return { attempted: 0, delivered: 0 };
+  const results = await Promise.all(
+    targets.map((target) => sendDeliveredReceipt(target.sockPath, target.messageId, options)),
+  );
+  const delivered = results.filter(Boolean).length;
+  targets.forEach((target, index) => {
+    receiptAckDebug('receipt', {
+      sock: target.sockPath,
+      orig_msg_id: target.messageId,
+      outcome: results[index] ? 'delivered' : 'dial-failed',
+    });
+  });
+  return { attempted: targets.length, delivered };
+}
+
+/**
  * Ack every injected frame in this UserPromptSubmit payload. Resolves with
  * `{ attempted, delivered }` counts; the dispatcher ignores them. Never
  * throws, never touches stdout/stderr.
@@ -276,21 +368,164 @@ export async function claudeReceiptAck(input, options = {}) {
     const targets = parseReceiptTargets(input);
     receiptAckDebug('invoke', { event, attempted: targets.length });
     if (targets.length === 0) return { attempted: 0, delivered: 0 };
-    const results = await Promise.all(
-      targets.map((target) => sendDeliveredReceipt(target.sockPath, target.messageId, options)),
-    );
-    const delivered = results.filter(Boolean).length;
-    targets.forEach((target, index) => {
-      receiptAckDebug('receipt', {
-        sock: target.sockPath,
-        orig_msg_id: target.messageId,
-        outcome: results[index] ? 'delivered' : 'dial-failed',
-      });
-    });
-    return { attempted: targets.length, delivered };
+    return await emitDeliveredReceipts(targets, options);
   } catch {
     try {
       receiptAckDebug('invoke', { event, attempted: 0 });
+    } catch {
+      /* debug must never break the fail-open path */
+    }
+    return { attempted: 0, delivered: 0 };
+  }
+}
+
+// ── CORE-2496 Stop path: transcript tail-scan with position state ─────────
+// Socket-injected frames bypass UserPromptSubmit (native-closed delivery),
+// so the #804 prompt hook never fires for them. The Stop branch acks them at
+// turn end instead: read transcript_path since the last acked byte offset,
+// emit one delivered receipt per newly-appeared envelope with message-id +
+// uds: from, and advance the offset. Per-message precise (one receipt per
+// envelope, deduped within the chunk), delayed to turn end, fail-open with
+// exit code unchanged and nothing on stdout (sockets + debug file only).
+//
+// Duplicate-delivery note: a prompt-path frame acked by #804 also lands in
+// the transcript, so Stop re-acks it. That duplicate is benign: the Pi waiter
+// resolves on the first receipt and drops later ones (no waiter → dropped),
+// and precisely-once across the two paths would need shared acked-id state
+// the position-only file deliberately avoids (bounded: position, no content).
+
+function expandHome(pathValue) {
+  if (typeof pathValue === 'string' && pathValue.startsWith('~/')) {
+    return join(homedir(), pathValue.slice(2));
+  }
+  return pathValue;
+}
+
+/** Load the offset map `{ [transcriptPath]: offset }`. Never throws. */
+function loadStopOffsets(stateFile) {
+  try {
+    if (!stateFile || !existsSync(stateFile)) return {};
+    const raw = readFileSync(stateFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    const offsets = parsed && typeof parsed === 'object' ? (parsed.offsets ?? parsed) : null;
+    if (!offsets || typeof offsets !== 'object' || Array.isArray(offsets)) return {};
+    const clean = {};
+    for (const [key, value] of Object.entries(offsets)) {
+      if (typeof key === 'string' && key && Number.isFinite(value) && value >= 0) {
+        clean[key] = Math.floor(value);
+      }
+    }
+    return clean;
+  } catch {
+    return {};
+  }
+}
+
+/** Store one offset, evicting oldest keys past the bound. Never throws. */
+function saveStopOffset(stateFile, transcriptPath, offset) {
+  try {
+    if (!stateFile || !transcriptPath) return;
+    const offsets = loadStopOffsets(stateFile);
+    delete offsets[transcriptPath];
+    offsets[transcriptPath] = Math.max(0, Math.floor(offset));
+    const keys = Object.keys(offsets);
+    for (let index = 0; index < keys.length - MAX_STATE_ENTRIES; index += 1) {
+      delete offsets[keys[index]];
+    }
+    mkdirSync(dirname(stateFile), { recursive: true });
+    const tmp = `${stateFile}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ version: 1, offsets }), 'utf8');
+    renameSync(tmp, stateFile);
+  } catch {
+    /* state must never fail an ack */
+  }
+}
+
+/**
+ * Read transcript bytes since the last acked position (CORE-2496).
+ * Positioned bounded tail read: opens the file, seeks to the stored offset,
+ * and reads at most MAX_TRANSCRIPT_TAIL_BYTES — never the whole file.
+ * Resolves with `{ text, start, end }` where end is the current file size
+ * (the next offset to store). Never throws; on any failure resolves with an
+ * empty text and the previous offset so the caller stays fail-open.
+ */
+export function readTranscriptTail(transcriptPath, options = {}) {
+  const stateFile = options.stateFile ?? receiptAckStateFile();
+  try {
+    const resolved = expandHome(transcriptPath);
+    if (typeof resolved !== 'string' || !resolved) return { text: '', start: 0, end: 0 };
+    let size;
+    try {
+      size = statSync(resolved).size;
+    } catch {
+      return { text: '', start: 0, end: 0 };
+    }
+    if (!Number.isFinite(size) || size < 0) return { text: '', start: 0, end: 0 };
+    const offsets = loadStopOffsets(stateFile);
+    let stored = offsets[transcriptPath];
+    if (transcriptPath !== resolved && offsets[resolved] !== undefined) stored = offsets[resolved];
+    let start;
+    if (stored === undefined) {
+      // First run: no history to replay — tail only, so old turns never spam.
+      start = Math.max(0, size - MAX_TRANSCRIPT_TAIL_BYTES);
+    } else if (!Number.isFinite(stored) || stored < 0 || stored > size) {
+      // Rotation/truncation: re-anchor to the tail instead of the whole file.
+      start = Math.max(0, size - MAX_TRANSCRIPT_TAIL_BYTES);
+    } else {
+      start = stored;
+    }
+    if (size <= start) return { text: '', start: size, end: size };
+    const end = size;
+    const wanted = end - start;
+    const len = Math.min(wanted, MAX_TRANSCRIPT_TAIL_BYTES);
+    const readStart = end - len;
+    let fd = -1;
+    try {
+      fd = openSync(resolved, 'r');
+      const buffer = Buffer.alloc(len);
+      const bytesRead = readSync(fd, buffer, 0, len, readStart);
+      return { text: buffer.subarray(0, Math.max(0, bytesRead)).toString('utf8'), start: readStart, end };
+    } finally {
+      try {
+        if (fd !== -1) closeSync(fd);
+      } catch {
+        /* already closed */
+      }
+    }
+  } catch {
+    return { text: '', start: 0, end: 0 };
+  }
+}
+
+/**
+ * Ack every newly-appeared injected frame in the transcript tail (CORE-2496).
+ * Runs in the Stop branch after the inbox reminder. Resolves with
+ * `{ attempted, delivered }`; the dispatcher ignores them. Never throws,
+ * never touches stdout/stderr, never changes the hook's exit code.
+ */
+export async function claudeReceiptAckStop(input, options = {}) {
+  const stateFile = options.stateFile ?? receiptAckStateFile();
+  try {
+    const transcriptPath = input?.transcript_path ?? input?.transcriptPath;
+    if (typeof transcriptPath !== 'string' || !transcriptPath) {
+      receiptAckDebug('invoke', { event: 'Stop', attempted: 0 });
+      return { attempted: 0, delivered: 0 };
+    }
+    const tail = readTranscriptTail(transcriptPath, { stateFile });
+    const targets = parseTranscriptTargets(tail.text);
+    receiptAckDebug('invoke', { event: 'Stop', attempted: targets.length });
+    let result = { attempted: 0, delivered: 0 };
+    if (targets.length > 0) {
+      result = await emitDeliveredReceipts(targets, options);
+    }
+    // Advance past what was read even on dial failure: the sender's 30 s
+    // waiter outlives a dead socket retry, and re-acking the same turn on
+    // every later Stop would spam. A read failure (end 0) stores nothing.
+    if (tail.end > 0) saveStopOffset(stateFile, transcriptPath, tail.end);
+    return result;
+  } catch {
+    try {
+      receiptAckDebug('invoke', { event: 'Stop', attempted: 0 });
     } catch {
       /* debug must never break the fail-open path */
     }

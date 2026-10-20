@@ -344,6 +344,15 @@ async function runEvent(input) {
       if (stdout) writeSync(1, stdout);
       if (stderr) writeSync(2, stderr);
     } catch { /* best effort, never blocks Stop — as the standalone hook */ }
+    // CORE-2496: socket-injected frames bypass UserPromptSubmit
+    // (native-closed delivery), so the #804 prompt hook never fires for them.
+    // Ack at turn end from the transcript tail instead: positioned read since
+    // the last acked offset, one delivered receipt per new envelope. Best
+    // effort, never blocks Stop and never changes the exit code — as above.
+    try {
+      const { claudeReceiptAckStop } = await import('./claude-receipt-ack.mjs');
+      await claudeReceiptAckStop(input);
+    } catch { /* fail-open — Stop proceeds without receipts */ }
   } else if (input.hook_event_name === 'UserPromptSubmit') {
     // CORE-2492: ack Pi→Claude cross-session frames so the sender's receipt
     // waiter resolves instead of starving to unconfirmed. Best effort, never
