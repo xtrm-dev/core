@@ -508,7 +508,10 @@ async function defaultSendClaude(opts: {
     fromName: opts.fromName,
     messageId: opts.messageId,
   });
-  return { outcome: await claudeReceipts.wait(id, 30_000) };
+  // CORE-2499: held/refused receipts arrive promptly (synchronous hold
+  // decision at injection); direct delivery sends no receipt by design, so a
+  // starved wait means delivered, not unknown. 5 s bounds the hang.
+  return { outcome: await claudeReceipts.wait(id, 5_000) };
 }
 
 interface PendingAsk {
@@ -1098,21 +1101,27 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         try {
           receipt = (await sendClaude({ sock, body, from, fromName, messageId })).outcome;
         } catch (error) {
+          // CORE-2499: the frame flushed (sendClaude resolves post-flush) and
+          // no held/refused receipt arrived in budget. Native Claude sends no
+          // receipt for direct delivery by design, so a starved wait means
+          // delivered. SendMessage never auto-retries, so no double-deliver.
+          if (isClaudeReceiptTimeout(error)) {
+            intercomTrace("send.claude.result", {
+              messageId,
+              sock,
+              outcome: "delivered",
+              elapsedMs: Date.now() - sendStartedAt,
+            });
+            return ok(`Delivered to ${sessionLabel(target)} (message ${messageId}).`, {
+              message: { id: messageId, state: "delivered", to: target.name },
+            });
+          }
           intercomTrace("send.claude.result", {
             messageId,
             sock,
-            outcome: isClaudeReceiptTimeout(error) ? "unconfirmed" : "error",
+            outcome: "error",
             elapsedMs: Date.now() - sendStartedAt,
           });
-          // A starved receipt wait means the frame flushed but the outcome is
-          // unknown: report unconfirmed (pi-intercom wording), never failed,
-          // and never invite a retry that would deliver twice.
-          if (isClaudeReceiptTimeout(error)) {
-            return ok(
-              `Sent to ${sessionLabel(target)} (message ${messageId}); delivery could not be confirmed: ${(error as Error)?.message ?? String(error)}. The message may still arrive — do not resend it, or it may deliver twice.`,
-              { message: { id: messageId, state: "unconfirmed", to: target.name } },
-            );
-          }
           return fail(`SendMessage: could not send to "${to}": ${(error as Error)?.message ?? String(error)}.`);
         }
         intercomTrace("send.claude.result", {
@@ -1172,14 +1181,11 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
             }),
           };
         } catch (relayError) {
+          // CORE-2499: same rule as the direct branch — flushed with no
+          // held/refused in budget means delivered; rejoin the settle path.
           if (isClaudeReceiptTimeout(relayError)) {
             ask?.disarm();
-            return {
-              done: ok(
-                `Sent to ${sessionLabel(target)} (message ${messageId}); delivery could not be confirmed: ${(relayError as Error)?.message ?? String(relayError)}. The message may still arrive — do not resend it, or it may deliver twice.`,
-                { message: { id: messageId, state: "unconfirmed", to: target.name } },
-              ),
-            };
+            return { sent: { messageId, state: "delivered" } };
           }
           throw relayError;
         }
