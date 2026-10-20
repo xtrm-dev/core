@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
@@ -21,11 +21,39 @@ import {
     buildDeliveredReceipt,
     sendDeliveredReceipt,
     claudeReceiptAck,
+    receiptAckDebugLine,
     RECEIPT_TIMEOUT_MS,
     MAX_TARGETS,
 } from '../../../hooks/claude-receipt-ack.mjs';
 
 const NO_AGENT_HOST = { XTRM_AGENT_HOST: '0' };
+
+// CORE-2494: pin the hook debug sink to a temp file so unit runs never touch
+// the real ~/.xtrm/logs/claude-receipt-ack.log. Applies file-wide (outer
+// hooks run before describe-level ones); the new pins read the file back.
+const RECEIPT_ACK_DEBUG_ENV = 'CLAUDE_RECEIPT_ACK_DEBUG_FILE';
+let receiptAckDebugDir = '';
+let savedReceiptAckDebugFile: string | undefined;
+beforeEach(async () => {
+    savedReceiptAckDebugFile = process.env[RECEIPT_ACK_DEBUG_ENV];
+    receiptAckDebugDir = await mkdtemp(path.join(tmpdir(), 'xtrm-claude-ack-debug-'));
+    process.env[RECEIPT_ACK_DEBUG_ENV] = path.join(receiptAckDebugDir, 'claude-receipt-ack.log');
+});
+afterEach(async () => {
+    if (savedReceiptAckDebugFile === undefined) delete process.env[RECEIPT_ACK_DEBUG_ENV];
+    else process.env[RECEIPT_ACK_DEBUG_ENV] = savedReceiptAckDebugFile;
+    if (receiptAckDebugDir) await rm(receiptAckDebugDir, { recursive: true, force: true });
+});
+
+/** Read back the debug lines this test's hook invocations appended. */
+async function readAckDebugLines(): Promise<string[]> {
+    try {
+        const text = await readFile(process.env[RECEIPT_ACK_DEBUG_ENV]!, 'utf8');
+        return text.split('\n').filter((line) => line.length > 0);
+    } catch {
+        return [];
+    }
+}
 
 /** Poll until the server side observed the receipt (client flush resolves
  *  before the server's event loop reads the bytes — asserting at once races). */
@@ -296,5 +324,132 @@ describe('claude-receipt-ack delivery (CORE-2492)', () => {
         expect(result.stdout).toBe('');
         await untilReceived(received, 1);
         expect(JSON.parse(received[0]).orig_msg_id).toBe('m-standalone-1');
+    });
+});
+
+describe('claude-receipt-ack debug observability (CORE-2494)', () => {
+    let dir: string;
+    let sockPath: string;
+    let server: net.Server | null = null;
+    let received: string[];
+
+    beforeEach(async () => {
+        dir = await mkdtemp(path.join(tmpdir(), 'xtrm-claude-ack-dbg-'));
+        sockPath = path.join(dir, 'pi.sock');
+        received = [];
+    });
+
+    afterEach(async () => {
+        if (server) {
+            await new Promise<void>((resolve) => server!.close(() => resolve()));
+            server = null;
+        }
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    function listen(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            server = net.createServer((conn) => {
+                conn.setEncoding('utf8');
+                let buffer = '';
+                conn.on('data', (chunk: string) => {
+                    buffer += chunk;
+                    let newline: number;
+                    while ((newline = buffer.indexOf('\n')) !== -1) {
+                        received.push(buffer.slice(0, newline));
+                        buffer = buffer.slice(newline + 1);
+                    }
+                });
+                conn.on('end', () => {
+                    try {
+                        conn.end();
+                    } catch {
+                        /* already closed */
+                    }
+                });
+                conn.on('error', () => {});
+            });
+            server.once('error', reject);
+            server.listen(sockPath, () => {
+                server!.removeListener('error', reject);
+                resolve();
+            });
+        });
+    }
+
+    it('pins the exact debug line shape', () => {
+        expect(receiptAckDebugLine('invoke', { event: 'UserPromptSubmit', attempted: 0 })).toBe(
+            '[claude-receipt-ack] invoke event=UserPromptSubmit attempted=0',
+        );
+        expect(
+            receiptAckDebugLine('receipt', { sock: '/tmp/a.sock', orig_msg_id: 'm-1', outcome: 'delivered' }),
+        ).toBe('[claude-receipt-ack] receipt sock=/tmp/a.sock orig_msg_id=m-1 outcome=delivered');
+    });
+
+    it('plain prompt leaves a fired/not-parsed trail: one invoke line, attempted=0', async () => {
+        const result = await claudeReceiptAck({ hook_event_name: 'UserPromptSubmit', prompt: 'plain prompt' });
+        expect(result).toEqual({ attempted: 0, delivered: 0 });
+        const lines = await readAckDebugLines();
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain('[claude-receipt-ack] invoke event=UserPromptSubmit attempted=0');
+        expect(lines[0]).toContain('session=');
+    });
+
+    it('loopback send trails invoke + delivered with the message id', async () => {
+        await listen();
+        const result = await claudeReceiptAck({
+            hook_event_name: 'UserPromptSubmit',
+            prompt: envelope('m-dbg-1', `uds:${sockPath}`),
+        });
+        expect(result).toEqual({ attempted: 1, delivered: 1 });
+        await untilReceived(received, 1);
+        const lines = await readAckDebugLines();
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toContain('invoke event=UserPromptSubmit attempted=1');
+        expect(lines[1]).toContain(`receipt sock=${sockPath} orig_msg_id=m-dbg-1 outcome=delivered`);
+    });
+
+    it('dead socket trails invoke + dial-failed without changing the fail-open counts', async () => {
+        const result = await claudeReceiptAck({
+            hook_event_name: 'UserPromptSubmit',
+            prompt: envelope('m-dbg-dead', 'uds:/nonexistent-dir/xtrm-ack-dbg.sock'),
+        });
+        expect(result).toEqual({ attempted: 1, delivered: 0 });
+        const lines = await readAckDebugLines();
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toContain('invoke event=UserPromptSubmit attempted=1');
+        expect(lines[1]).toContain('orig_msg_id=m-dbg-dead outcome=dial-failed');
+    });
+
+    it('a broken debug sink stays fail-open: counts unchanged, nothing thrown', async () => {
+        process.env[RECEIPT_ACK_DEBUG_ENV] = dir; // a directory: append fails
+        await expect(
+            claudeReceiptAck({ hook_event_name: 'UserPromptSubmit', prompt: 'plain prompt' }),
+        ).resolves.toEqual({ attempted: 0, delivered: 0 });
+        await expect(
+            claudeReceiptAck({
+                hook_event_name: 'UserPromptSubmit',
+                prompt: envelope('m-dbg-broken', 'uds:/nonexistent-dir/x.sock'),
+            }),
+        ).resolves.toEqual({ attempted: 1, delivered: 0 });
+    });
+
+    it('dispatch.mjs event: debug lands in the file, stdout/stderr stay empty, exit 0', async () => {
+        await listen();
+        const payload = {
+            session_id: 'ack-debug-test',
+            cwd: dir,
+            hook_event_name: 'UserPromptSubmit',
+            prompt: `please continue\n${envelope('m-dbg-dispatch-1', `uds:${sockPath}`)}`,
+        };
+        const result = await spawnHook('dispatch.mjs', ['event'], payload, dir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toBe('');
+        await untilReceived(received, 1);
+        const lines = await readAckDebugLines();
+        expect(lines.length).toBeGreaterThanOrEqual(2);
+        expect(lines[0]).toContain('invoke event=UserPromptSubmit attempted=1');
+        expect(lines.some((line) => line.includes('orig_msg_id=m-dbg-dispatch-1 outcome=delivered'))).toBe(true);
     });
 });
