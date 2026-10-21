@@ -935,9 +935,10 @@ describe("working indicator + turn summary", async () => {
     expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s, used 4,120 tokens");
   });
 
-  test("frames are ten braille dots at 80ms", () => {
-    expect(WORKING_FRAMES).toHaveLength(10);
-    expect(new Set(WORKING_FRAMES).size).toBe(10);
+  test("frames trace an X then double-flash, all double-tabbed, at 80ms", () => {
+    expect(WORKING_FRAMES).toHaveLength(8);
+    expect(WORKING_FRAMES.filter((f) => f.includes("\u2573"))).toHaveLength(3);
+    for (const frame of WORKING_FRAMES) expect(frame.startsWith("\t\t")).toBe(true);
     const seen: unknown[] = [];
     applyWorkingIndicator({ setWorkingIndicator: (o) => { seen.push(o); } });
     expect(seen).toEqual([{ frames: WORKING_FRAMES, intervalMs: WORKING_FRAME_MS }]);
@@ -990,6 +991,6 @@ describe("working indicator + turn summary", async () => {
     const render = entryRenderers[XTRM_TURN_SUMMARY_ENTRY] as (e: unknown, o: unknown, t: unknown) => { text: string };
     const theme = { fg: (_n: string, t: string) => `fg[${t}]`, italic: (t: string) => `i[${t}]` };
     expect(render({ data: { seconds: 12, tokens: 4120 } }, { expanded: false }, theme).text)
-      .toBe("fg[i[worked for 12s, used 4,120 tokens]]");
+      .toBe("\t\tfg[i[worked for 12s, used 4,120 tokens]]");
   });
 });
