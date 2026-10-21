@@ -1103,19 +1103,29 @@ export interface XtrmTurnSummary {
 	tokens: number;
 }
 
-type UsageLike = { usage?: { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown } };
+type UsageSides = { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown; totalTokens?: unknown };
+type UsageLike = { usage?: UsageSides; message?: { usage?: UsageSides } };
 
-/** Defensive usage total: sums the input/output/cache sides over entries that
- *  carry a Usage payload, ignoring everything else. */
+function usageSidesTotal(usage: UsageSides): number {
+	const totalTokens = usage.totalTokens;
+	if (typeof totalTokens === "number" && Number.isFinite(totalTokens) && totalTokens > 0) return totalTokens;
+	let total = 0;
+	for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+		const value = usage[key];
+		if (typeof value === "number" && Number.isFinite(value) && value > 0) total += value;
+	}
+	return total;
+}
+
+/** Defensive usage total: usage lives on assistant message entries
+ *  (entry.message.usage), not on top-level entry.usage — standalone usage
+ *  entries are rare (cache warming). Sums both, ignoring everything else. */
 export function sumUsageTokens(entries: Array<UsageLike>): number {
 	let total = 0;
 	for (const entry of entries) {
-		const usage = entry?.usage;
-		if (!usage) continue;
-		for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
-			const value = usage[key];
-			if (typeof value === "number" && Number.isFinite(value) && value > 0) total += value;
-		}
+		if (entry?.usage) total += usageSidesTotal(entry.usage);
+		const messageUsage = entry?.message?.usage;
+		if (messageUsage) total += usageSidesTotal(messageUsage);
 	}
 	return Math.round(total);
 }
@@ -1135,11 +1145,12 @@ export function applyWorkingIndicator(ui: { setWorkingIndicator: (options: { fra
 
 type TurnClock = {
 	startedAt: number;
+	endedAt: number | undefined;
 	tokensAtStart: number;
 	timer: ReturnType<typeof setInterval> | undefined;
 	ui: { setWorkingMessage: (message?: string) => void } | undefined;
 };
-const turnClock: TurnClock = { startedAt: 0, tokensAtStart: 0, timer: undefined, ui: undefined };
+const turnClock: TurnClock = { startedAt: 0, endedAt: undefined, tokensAtStart: 0, timer: undefined, ui: undefined };
 
 function stopTurnClock(): void {
 	if (turnClock.timer !== undefined) clearInterval(turnClock.timer);
@@ -1157,6 +1168,7 @@ export function startTurnClock(
 ): void {
 	stopTurnClock();
 	turnClock.startedAt = now;
+	turnClock.endedAt = undefined;
 	turnClock.tokensAtStart = tokensAtStart;
 	turnClock.ui = ui;
 	ui.setWorkingMessage("elapsed 0s");
@@ -1166,14 +1178,20 @@ export function startTurnClock(
 	}, WORKING_TICK_MS);
 }
 
-/** Stops the ticker and returns the turn totals (null when no clock runs,
+/** Freezes the ticker at turn end but keeps the totals: the final assistant
+ *  message entry may land after agent_end, so measuring happens at settle. */
+export function freezeTurnClock(now: number = Date.now()): void {
+	if (turnClock.timer !== undefined) clearInterval(turnClock.timer);
+	turnClock.timer = undefined;
+	turnClock.endedAt = now;
+}
+
+/** Returns the turn totals from the frozen clock (null when no clock runs,
  *  so double-settle can never append twice). */
-export function stopTurnClockAndSummarize(
-	tokensAtEnd: number,
-	now: number = Date.now(),
-): XtrmTurnSummary | null {
+export function stopTurnClockAndSummarize(tokensAtEnd: number): XtrmTurnSummary | null {
 	if (turnClock.ui === undefined) return null;
-	const seconds = Math.max(0, Math.round((now - turnClock.startedAt) / 1000));
+	const end = turnClock.endedAt ?? Date.now();
+	const seconds = Math.max(0, Math.round((end - turnClock.startedAt) / 1000));
 	const summary = { seconds, tokens: Math.max(0, Math.round(tokensAtEnd - turnClock.tokensAtStart)) };
 	stopTurnClock();
 	return summary;
@@ -1194,12 +1212,13 @@ function registerTurnSummary(pi: ExtensionAPI): void {
 	pi.on("agent_start", (_event, ctx) => {
 		startTurnClock(ctx.ui, sessionUsageTokens(ctx));
 	});
-	const settle = (_event: unknown, ctx: ExtensionContext) => {
+	pi.on("agent_end", () => {
+		freezeTurnClock();
+	});
+	pi.on("agent_settled", (_event, ctx) => {
 		const summary = stopTurnClockAndSummarize(sessionUsageTokens(ctx));
 		if (summary) pi.appendEntry(XTRM_TURN_SUMMARY_ENTRY, summary);
-	};
-	pi.on("agent_end", settle);
-	pi.on("agent_settled", settle);
+	});
 	pi.on("session_shutdown", () => {
 		stopTurnClock();
 	});

@@ -920,13 +920,14 @@ describe("working indicator + turn summary", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("usage total sums the four sides, ignores the rest", () => {
+  test("usage total reads assistant message entries, prefers totalTokens", () => {
     expect(sumUsageTokens([
       { type: "usage", usage: { input: 100, output: 50, cacheRead: 1000, cacheWrite: 200 } },
-      { type: "usage", usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } },
-      { type: "text", text: "no usage here" },
+      { type: "message", message: { role: "assistant", usage: { input: 929, output: 236, cacheRead: 172913, cacheWrite: 0, totalTokens: 174078 } } },
+      { type: "message", message: { role: "assistant", usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } } },
+      { type: "message", message: { role: "user" } },
       { type: "usage" },
-    ])).toBe(1365);
+    ])).toBe(1350 + 174078 + 15);
   });
 
   test("summary line uses the operator's words", () => {
@@ -954,10 +955,12 @@ describe("working indicator + turn summary", async () => {
       Date.now = () => 5000 + 12_300;
       timers.forEach((fn) => fn());
       expect(messages.at(-1)).toBe("elapsed 12s");
+      const { freezeTurnClock } = mod;
+      freezeTurnClock(5000 + 12_300);
       // Turn used 340 tokens alone (1340 end - 1000 start), took 12s.
-      expect(stopTurnClockAndSummarize(1340, 5000 + 12_300)).toEqual({ seconds: 12, tokens: 340 });
+      expect(stopTurnClockAndSummarize(1340)).toEqual({ seconds: 12, tokens: 340 });
       // Double-settle never summarizes twice.
-      expect(stopTurnClockAndSummarize(9999, 99999)).toBeNull();
+      expect(stopTurnClockAndSummarize(9999)).toBeNull();
     } finally {
       Date.now = realNow;
       stopTurnClockAndSummarize(0);
@@ -970,8 +973,8 @@ describe("working indicator + turn summary", async () => {
     expect(handlers["agent_end"]).toBeDefined();
     expect(handlers["agent_settled"]).toBeDefined();
     const messages: string[] = [];
-    const startEntries = [{ type: "usage", usage: { input: 100, output: 0, cacheRead: 0, cacheWrite: 0 } }];
-    const endEntries = [...startEntries, { type: "usage", usage: { input: 0, output: 34, cacheRead: 200, cacheWrite: 0 } }];
+    const startEntries = [{ type: "message", message: { role: "assistant", usage: { input: 100, output: 0, cacheRead: 0, cacheWrite: 0 } } }];
+    const endEntries = [...startEntries, { type: "message", message: { role: "assistant", usage: { input: 0, output: 34, cacheRead: 200, cacheWrite: 0 } } }];
     const ctx = (entries: unknown[]) => ({
       ui: { setWorkingMessage: (m?: string) => { messages.push(m ?? ""); } },
       sessionManager: { getEntries: () => entries },
@@ -979,6 +982,8 @@ describe("working indicator + turn summary", async () => {
     await handlers["agent_start"]({ type: "agent_start" }, ctx(startEntries));
     expect(messages).toEqual(["elapsed 0s"]);
     await handlers["agent_end"]({ type: "agent_end", messages: [] }, ctx(endEntries));
+    expect(appended).toEqual([]);
+    await handlers["agent_settled"]({ type: "agent_settled" }, ctx(endEntries));
     expect(appended).toEqual([{ customType: XTRM_TURN_SUMMARY_ENTRY, data: { seconds: expect.any(Number), tokens: 234 } }]);
     await handlers["agent_settled"]({ type: "agent_settled" }, ctx(endEntries));
     expect(appended).toHaveLength(1);
