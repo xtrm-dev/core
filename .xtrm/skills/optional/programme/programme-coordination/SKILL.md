@@ -89,22 +89,26 @@ Details and exact commands: `references/substrate.md`.
 
 ```
 Substrate                              Jira (project ISSUE or XT)
-  Programme epic        ───── 1:1 ───  Epic
-  Theme epic (child)    ───── 1:1 ───  Story, in a weekly sprint
-    Worker task                        (leaf: Substrate only, never mirrored)
-    Worker task
-  Operator step / window               Task (label window), parent = its Story, in the sprint
+  Programme epic        ───── 1:1 ───  Epic (programme)
+                                         │ Relates (an Epic cannot have a parent)
+  Theme epic (child)    ───── 1:1 ───  theme Epic (label mmd-programme + substrate:<theme ref>,
+                                         in a sprint)
+                                           ├ theme Story (sprint deliverable)
+    Worker task                            │ (leaf: Substrate only, never mirrored)
+    Worker task                            └ window Tasks
+  Operator step / window               Task (label window), parent = its theme Epic, in the sprint
 ```
 
-- **Epic and Story map 1:1.** Each carries the other's key (Jira label `substrate:<ref>` plus the
-  description on one side, an `sb issue note` on the other).
+- **Substrate theme epic maps 1:1 to the Jira theme Epic.** Each carries the other's key (Jira label
+  `substrate:<ref>` plus the description on one side, an `sb issue note` on the other).
 - **Worker tasks stay in Substrate.** The Story lists their refs. Never create one Jira ticket per
   worker task: that was the failure this shape replaces.
 - **A theme is a result a person can recognise**, one deliverable that fits a sprint. Every Story
   goes into a sprint.
-- **Window Tasks** (production or operator windows) are parented to their Story, not the programme
-  Epic. If no suitable Story exists, create the Story first. The Epic itself should stay under
-  ~15–20 direct children (Stories + high-level Tasks) so the board remains scannable.
+- **Window Tasks** (production or operator windows) are parented to their theme Epic, not the programme
+  Epic. The programme Epic links to the theme Epics (Relates) instead of parenting them, because an
+  Epic cannot have a parent in a team-managed project. Keep each theme Epic under ~15–20 direct
+  children so the board remains scannable.
 - **The Epic is an ADR-style brief** an agent can reason from (context, decision, rejected
   alternatives, consequences), not a list of directives. It is written in Jira. The Substrate epic
   contract carries the same content in the seven fields (`references/substrate.md`).
@@ -277,11 +281,14 @@ update Jira and carry open Stories to the next sprint.
   `.git/info/exclude`. The substrate plugin then checkpoints on PreCompact and injects the resume
   capsule on SessionStart(compact). The edit gate then requires a live claim: claim the epic with a
   long TTL and renew it at every checkpoint.
-- Add a project-local SessionStart(compact) hook (`.claude/settings.local.json`) that prints: skill
-  pointers (`/using-xtrm`, `/programme-coordination`, `/using-specialists`, `/multiplexing`,
-  `/production-via-make`), the resume commands, the goal-file path, the timers to re-check, and the
-  worker roster with resume text. It also types "continue with the goal" into `$TMUX_PANE` after
-  about 12 s (setsid-detached), so an auto-compacted session does not sit idle.
+- One user-level SessionStart(compact) hook, `~/.claude/hooks/mercury-post-compact.sh`, is
+  registered in `~/.claude/settings.json` and is active only under `~/projects/mercury`. It prints
+  skill pointers and the resume steps for the bound issue (`.substrate-issue` or
+  `SUBSTRATE_ISSUE_REF`), runs an optional per-checkout `.claude/post-compact-extra.sh` (the
+  coordinator's roster and schedule, git-excluded), and types "continue with the goal" into
+  `$TMUX_PANE` after about 12 s, so an auto-compacted session does not sit idle. A running session
+  loads hooks only at start: open `/hooks` once or restart. Pi workers are not covered: the
+  coordinator resumes them by hand.
 - Keep the `/goal` text in a file. Set it again after compaction if it is gone.
 - Workers compact too, and then idle. Pi workers cannot run `/compact` themselves: the coordinator
   types `/compact` into the pane while it is idle. After compaction a worker needs a resume nudge
@@ -306,7 +313,7 @@ update Jira and carry open Stories to the next sprint.
 - **Full:** adds production windows, release-branch checks and the deploy owner. The release
   steps are Mercury operations, not this skill: use `mercury-release` and `production-ops`, and
   journal their outcomes on the epic. **Jira is the only calendar:** each window is a Jira Task
-  with label `window`, parent = its Story, and four date fields (`references/jira.md`, "Windows on the Jira
+  with label `window`, parent = its theme Epic, and four date fields (`references/jira.md`, "Windows on the Jira
   calendar"). No Google Calendar events.
 
 ## Pitfalls
@@ -319,7 +326,9 @@ update Jira and carry open Stories to the next sprint.
 - Run `sb` inside a git checkout of the repo, or pass `--project <id>`. Per-verb `sb help` is
   broken in 0.2.2; use `sb help <group>` or `references/substrate.md`.
 - A scripted Jira create must have no import-time side effects, and a re-run must not duplicate
-  tickets: search by label `substrate:<ref>` before creating.
+  tickets: search by label `substrate:<ref>` AND the exact summary before creating, and compare the summary as an
+  exact string after the read (one substrate ref can be shared by two themes, so a label-only
+  search reuses the wrong Epic).
 - Write operator-facing Jira text in plain language: what changes, who runs it, when (UTC).
 - Never relay a privileged-action approval between sessions; the operator gives it in the
   session that asks.

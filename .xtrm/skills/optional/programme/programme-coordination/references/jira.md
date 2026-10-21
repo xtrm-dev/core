@@ -75,6 +75,11 @@ Story as parent. Use this shape instead:
 - Add the title prefix `MMD window:` only when a window is touched for another reason (no bulk
   renames).
 
+- Structural changes (new Epics, reparenting) run as a pilot on one theme first: create, move,
+  re-read the calendar fields (byte-identical), read children via search `parent=<key>`. Then do
+  the rest theme by theme, stop at the first failure, and roll back only that row (parent back to
+  the programme Epic; new Epics closed Won't Do).
+
 Where a rule below says "parent = the Story", read "parent = the theme Epic" on project ISSUE.
 
 ## Story description (plain language)
@@ -89,8 +94,9 @@ Evidence: <PR numbers, results; updated as the theme progresses>
 ```
 
 Label namespaces: `area:`, `repo:`, `prog:`, `kind:`, and `substrate:<REF>` as the sync marker. Add
-`substrate:<theme-ref>` and `prog:<programme>` so a script can find it (search by label before creating:
-this prevents duplicate tickets). Put the Jira key back on Substrate once:
+`substrate:<theme-ref>` and `prog:<programme>` so a script can find it (search by label AND the exact summary before
+creating, comparing the summary as an exact string after the read: a substrate ref can be shared
+by two themes, so a label-only search reuses the wrong Epic). Put the Jira key back on Substrate once:
 `sb issue note <theme> "Jira: ISSUE-260" --kind note`.
 
 ## Sprints
