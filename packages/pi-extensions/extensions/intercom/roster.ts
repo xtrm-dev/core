@@ -670,15 +670,31 @@ export function registerListAgentsTool(pi: ExtensionAPI, deps: ListAgentsDeps = 
         ownName = undefined;
       }
       let piSessions: AgentSessionSummary[];
+      let piRegistryDown = false;
       try {
         piSessions = await (deps.fetchPi ?? (() => fetchPiSessions()))();
       } catch (error) {
-        // Fail-closed (MMD-2538): a down registry is a loud error, never
-        // a partial roster that silently drops every Pi peer.
+        // CORE-2498 split policy: SendMessage stays fail-closed (never send
+        // against a partial roster, MMD-2538), but ListAgents degrades to a
+        // partial roster with a loud warning so a down Pi registry never hides
+        // live Claude peers. The error flag stays set for callers that gate on it.
+        piRegistryDown = true;
+        piSessions = [];
+        const piError = (error as Error)?.message ?? String(error);
+        const claudePeers = await (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(deps.excludeSock).catch(
+          () => [] as ClaudePeer[],
+        );
+        const built = buildRoster({
+          ownSessionId,
+          ...(ownName ? { ownName } : {}),
+          piSessions,
+          claudePeers,
+          ...(deps.excludeSock ? { excludeSock: deps.excludeSock } : {}),
+          ...(deps.now ? { now: deps.now() } : {}),
+        });
         return {
-          content: [{ type: "text" as const, text: `ListAgents cannot reach the agent host registry: ${(error as Error)?.message ?? String(error)}. The roster is unavailable rather than partial.` }],
-          details: { error: true },
-          isError: true,
+          content: [{ type: "text" as const, text: `Pi registry unreachable (${piError}); showing ${built.peers.length} Claude peer(s); Pi leg omitted.\n${built.text}` }],
+          details: { roster: { peers: built.peers.length, total: built.peers.length + 1 }, error: true },
         };
       }
       // A missing Claude registry reads as no Claude peers (no registry

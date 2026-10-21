@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xtrm.dev/schemas/service-skills-claim-manifest.json",
+  "title": "ServiceSkillsClaimManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "verifier_id",
+    "verifier_version",
+    "service_id",
+    "candidate_hash",
+    "current_hash",
+    "claims",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "verifier_id": { "type": "string", "minLength": 1 },
+    "verifier_version": { "type": "string", "minLength": 1 },
+    "service_id": { "type": "string" },
+    "candidate_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "current_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "verified_at_ref": { "type": "string" },
+    "structural_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "code", "message"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["error", "warning"] },
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "line": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "claims": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
+    "summary": {
+      "type": "object",
+      "required": ["PASS", "CONFLICT", "UNKNOWN"],
+      "properties": {
+        "PASS": { "type": "integer", "minimum": 0 },
+        "CONFLICT": { "type": "integer", "minimum": 0 },
+        "UNKNOWN": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "claim_id",
+        "service_id",
+        "section_path",
+        "claim_text",
+        "claim_type",
+        "subject",
+        "predicate",
+        "objects",
+        "completeness",
+        "comparison",
+        "risk",
+        "authority_required",
+        "source_refs",
+        "verdict",
+        "verifier_id",
+        "verifier_version",
+        "verified_at_ref",
+        "evidence_digest",
+        "advisories"
+      ],
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "claim_id": { "type": "string", "pattern": "^clm_[0-9a-f]{16}$" },
+        "service_id": { "type": "string" },
+        "section_path": { "type": "string" },
+        "claim_text": { "type": "string" },
+        "claim_type": {
+          "type": "string",
+          "enum": [
+            "quoted_literal",
+            "environment_constant",
+            "symbol_name",
+            "compose_resource",
+            "metric_family",
+            "metric_label_set",
+            "config_value",
+            "set_claim",
+            "citation_claim",
+            "procedure_claim",
+            "causal_claim",
+            "runtime_claim",
+            "external_claim"
+          ]
+        },
+        "subject": { "type": "string" },
+        "predicate": { "type": "string" },
+        "objects": { "type": "array", "items": { "type": "string" } },
+        "completeness": { "type": "string", "enum": ["complete", "partial", "unknown"] },
+        "expected_count": { "type": ["integer", "null"] },
+        "observed_count": { "type": ["integer", "null"] },
+        "comparison": {
+          "type": "string",
+          "enum": ["equal", "unequal", "subset", "superset", "unresolved", "not_applicable"]
+        },
+        "risk": { "type": "string", "enum": ["high", "medium", "low"] },
+        "authority_required": { "type": "integer", "minimum": 0 },
+        "source_refs": { "type": "array", "items": { "type": "string" } },
+        "verdict": { "type": "string", "enum": ["PASS", "CONFLICT", "UNKNOWN"] },
+        "verifier_id": { "type": "string" },
+        "verifier_version": { "type": "string" },
+        "verified_at_ref": { "type": "string" },
+        "evidence_digest": { "type": "string" },
+        "advisories": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

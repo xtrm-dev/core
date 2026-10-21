@@ -1,0 +1,28 @@
+{
+  "messageId": "msg:eb97037d-fc1",
+  "activationId": "act:e3fa7c80-8ed",
+  "kind": "completion",
+  "createdAtMs": 1792203344611,
+  "message": {
+    "messageId": "msg:eb97037d-fc1",
+    "kind": "completion",
+    "from": "specialist::executor",
+    "to": "xtrm-xt-claude-8luw-2e577d",
+    "activationId": "act:e3fa7c80-8ed",
+    "attemptId": "att:e3fa7c80-8ed:1",
+    "piSessionId": "01a1479e-262a-7073-8440-d9ca0536f274",
+    "body": "{\"activationId\":\"act:e3fa7c80-8ed\",\"participantId\":\"specialist::executor\",\"attemptId\":\"att:e3fa7c80-8ed:1\",\"issueId\":\"iss_01a1473e-917f-7455-9e30-1d6c4e37dfda\",\"issueRef\":\"CORE-2412\",\"issueRevision\":2,\"contractHash\":\"ad9422cc8b6732f10f5db05bc80a18ec695a1f4c5d33ecbc8a50f090a0d15b67\",\"executionBindingId\":\"exb_01a1479e-263a-716d-ab47-7311056d8076\",\"status\":\"completed\",\"output\":\"Full CLI suite running in background (task `full CLI suite run`). Pre-checks green:\\n\\n- `typecheck` passes\\n- Targeted suites pass with mtimes unchanged (`~/.pi/agent/settings.json` 1792196058, `~/.claude/settings.json` 1792164897):\\n  - `pi-runtime.test.ts` 27/27 (writer isolated)\\n  - `eval-01-claude-side.test.ts` 16/16 (repo-source oracle)\\n  - `init-cli.test.ts` 17/17 (`--yes` deterministic, no wall-clock)\\n  - `update/installer-global-writes/pi-install-global-prompt/pi-runtime-safeguards` 83/83\\n- Diff within SCOPE (9 files)\\n\\nWaiting on background suite notification to confirm full-suite mtimes and 3x determinism before PR.\\n\\n```json\\n{\\n  \\\"status\\\": \\\"success\\\",\\n  \\\"summary\\\": \\\"Isolation fixes in place, targeted suites green, full suite running in background\\\",\\n  \\\"files_changed\\\": [\\\"cli/src/core/pi-runtime.ts\\\",\\\"cli/src/commands/pi.ts\\\",\\\"cli/src/commands/install-pi.ts\\\",\\\"cli/src/commands/pi-install.ts\\\",\\\"cli/test/setup.ts\\\",\\\"cli/src/tests/eval-01-claude-side.test.ts\\\",\\\"cli/test/init-cli.test.ts\\\",\\\"cli/test/pi-runtime.test.ts\\\",\\\"cli/src/tests/pi-install-global-prompt.test.ts\\\"],\\n  \\\"follow_ups\\\": [\\\"confirm full suite mtimes unchanged\\\", \\\"run eval-01/init-cli 3x\\\", \\\"open PR\\\"],\\n  \\\"risks\\\": [\\\"full suite still running\\\"],\\n  \\\"verification\\\": [\\\"typecheck passes\\\", \\\"targeted suites pass, mtimes unchanged\\\"]\\n}\\n```\",\"validation\":{\"valid\":true},\"piSessionId\":\"01a1479e-262a-7073-8440-d9ca0536f274\",\"configuredModel\":\"opencode-go/muse-spark-1.3-contributor\",\"requestedModel\":\"opencode-go/muse-spark-1.3-contributor\",\"resolvedModel\":\"opencode-go/muse-spark-1.3-contributor\",\"modelOverride\":false,\"thinkingLevel\":\"xhigh\",\"thinkingOverride\":false,\"fallbackUsed\":false,\"completedAt\":1792203344486}",
+    "createdAt": 1792203344606
+  },
+  "delivery": {
+    "state": "undeliverable",
+    "attempts": [
+      {
+        "atMs": 1792203344683,
+        "route": "session:",
+        "outcome": "undeliverable",
+        "detail": "no live registration matched this coordinator session"
+      }
+    ]
+  }
+}

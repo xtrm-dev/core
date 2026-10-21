@@ -308,9 +308,11 @@ export async function bindClaudeTransportSocket(
 }
 
 /**
- * A receipt wait that outlived its budget (CORE-2465). The frame was
- * flushed; only the async receipt is missing, so callers must report
- * unconfirmed — never failed — and must not invite a retry.
+ * A receipt wait that outlived its budget (CORE-2465, re-mapped CORE-2499).
+ * The frame was flushed; only the async receipt is missing. Senders map this
+ * per leg: the Claude legs treat a flushed frame with no held/refused in
+ * budget as delivered (native Claude sends no direct-delivery receipt by
+ * design) — never failed — and never invite a retry.
  */
 export class ClaudeReceiptTimeoutError extends Error {
   readonly messageId: string;

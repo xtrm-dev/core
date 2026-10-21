@@ -48,9 +48,22 @@ bulk). For one file: full commit messages with bodies (`git log --follow`),
 pending `diff --stat`, and `bd memories` keys for the basename — printed as a
 bounded digest, returning the commit records. Read-only. 0 commits means a
 wrong path. Run it before editing a file, fixing a bug, implementing, or when
-gitnexus flags a file/symbol as critical or medium impact.
+gitnexus flags a file/symbol as critical or medium impact. Successful digests
+are also stashed in `_preflight_cache[(repo, path)]` for later cells.
+
+Two more prelude bindings round out the workbench:
+
+```python
+kns()          # namespace mirror: user bindings -> shape hint; run when resuming,
+               # after long threads, or before re-deriving anything
+_              # last expression result (exec branches leave it untouched)
+```
 
 ## skillbridge — python-backed skills as importable modules
+
+> Status: first consumer `forensics` ships with this package
+> (`skills/forensics`, discovered via `bundledSkillsDir()`); user and env
+> roots keep precedence. Zero install-time deps is a hard requirement.
 
 Skill modules following the prime-agent Agent Skills convention
 (`SKILL.md` + `src/<import_name>/__init__.py`) are discovered at extension init
@@ -139,6 +152,9 @@ A missing/unimportable package is recorded in `sk_errors`, never fatal.
 
 ## Audit seam
 
+> Status: dormant until the first skill module (or cell) appends to `_AUDIT`.
+> The policy hook stays report-only and off by default.
+
 The driver reserves `_AUDIT` (a list) in the kernel namespace and copies it
 into every cell reply. Skill modules may append mutation events:
 
@@ -192,4 +208,22 @@ x + 1                    # -> 42 (state persists)
 reset: true
 # cell 4
 x + 1                    # NameError (namespace was cleared)
+```
+
+### Lifetime contract: session scratch, not storage
+
+Kernel state lives with the session and dies with it (timeout kill, reset
+swallowing the kernel, session end). Anything that must survive — findings,
+artifacts, ledgers — goes to files/bd/journal. The kernel holds working
+state: corpus variables, tallies, half-finished parses. `kns()` is how a
+resumed (or compacted) session re-orients instead of re-deriving.
+
+### Recipe: one cell per question (subprocess capture in-cell)
+
+```python
+import subprocess
+raw = subprocess.run(["rg", "--no-messages", "-c", "hook_success", path],
+                     capture_output=True, text=True).stdout
+recs = forensics.load_jsonl(path)          # corpus held once, filtered across cells
+forensics.top(forensics.tally(recs, "type"))
 ```

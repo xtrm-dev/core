@@ -68,6 +68,7 @@ function baseDeps(overrides: Record<string, any> = {}) {
       },
       wakeStatus: async (messageId: string) => ({ messageId, state: "delivered" }),
       sendClaude: async () => ({ outcome: "delivered" as const }),
+      getClaudeSocketPath: () => "/tmp/own.sock",
       settleWaitMs: 20,
       now: () => 1_000_000,
       randomId: () => "m-test-1",
@@ -471,23 +472,26 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     expect(sent[0]).toMatchObject({ sock: "/tmp/cass.sock", from: "uds:/tmp/own.sock", fromName: "coordinator", body: "hi" });
   });
 
-  test("without a bound socket the roster name stays the fallback", async () => {
+  test("without a bound socket the Claude leg fails loudly instead of starving (CORE-2498)", async () => {
     const sent: any[] = [];
     const { deps } = baseDeps({
       fetchPi: async () => [],
       fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
       claudeTransportEnabled: true,
+      getClaudeSocketPath: undefined,
       sendClaude: async (opts: any) => {
         sent.push(opts);
         return { outcome: "delivered" as const };
       },
     });
-    const { tool } = register(deps);
-    await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
-    expect(sent[0]).toMatchObject({ from: "coordinator", fromName: "coordinator" });
+    const { tool } = register({ ...deps, getClaudeSocketPath: undefined });
+    const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toMatch(/no bound socket/);
+    expect(sent).toHaveLength(0);
   });
 
-  test("a starved receipt reports unconfirmed, never failed, no retry (CORE-2465)", async () => {
+  test("a starved receipt means delivered after flush, never failed, no retry (CORE-2499)", async () => {
     const transport = await import("./claude-transport/index.ts");
     const { deps } = baseDeps({
       fetchPi: async () => [],
@@ -502,9 +506,8 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
     expect(r.isError).toBeFalsy();
     const text = String(r.content[0].text);
-    expect(text).toMatch(/could not be confirmed/);
-    expect(text).toMatch(/do not resend/);
-    expect(r.details.message).toMatchObject({ id: "m-test-1", state: "unconfirmed", to: "cass" });
+    expect(text).toContain("Delivered to Claude session cass");
+    expect(r.details.message).toMatchObject({ id: "m-test-1", state: "delivered", to: "cass" });
   });
 });
 
@@ -1264,7 +1267,7 @@ describe("Pi shadow relay (CORE-2470)", () => {
     expect(relayCalls[0]).toMatchObject({ sock: "/run/shadow.sock", from: "uds:/run/user/1000/cc-socks/own.sock" });
   });
 
-  test("shadow timeout reports unconfirmed with the Pi label, never failed, no retry", async () => {
+  test("shadow timeout rejoins the settle path as delivered (CORE-2499)", async () => {
     const deps = shadowSetup({
       sendClaude: async () => {
         throw new ClaudeReceiptTimeoutError("m-test-1");
@@ -1275,10 +1278,7 @@ describe("Pi shadow relay (CORE-2470)", () => {
     const again = register(deps);
     const r = await again.tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
     expect(r.isError).toBeFalsy();
-    const text = String(r.content[0].text);
-    expect(text).toContain("Pi session bob");
-    expect(text).toContain("could not be confirmed");
-    expect(text).toContain("do not resend");
+    expect(String(r.content[0].text)).toContain("Delivered to Pi session bob");
   });
 
   test("reply_to/notify_when_idle with only a shadow fails loudly, never downgrades", async () => {
@@ -1576,7 +1576,7 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
     expect(result).toMatch(/elapsedMs=\d+/);
   });
 
-  test("a starved receipt traces unconfirmed, never failed", async () => {
+  test("a starved receipt traces delivered, never failed (CORE-2499)", async () => {
     const cap = captureTraceFile();
     let lines: string[] = [];
     try {
@@ -1591,7 +1591,7 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
       });
       const { tool } = register(deps);
       const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
-      expect(String(r.content[0].text)).toContain("delivery could not be confirmed");
+      expect(String(r.content[0].text)).toContain("Delivered to Claude session cass");
       lines = cap.lines();
     } finally {
       cap.restore();
@@ -1599,7 +1599,7 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
     expect(cap.stderr()).toEqual([]);
     const result = lines.find((line) => line.startsWith("[intercom-trace] send.claude.result "));
     expect(result).toBeTruthy();
-    expect(result).toContain("outcome=unconfirmed");
+    expect(result).toContain("outcome=delivered");
     expect(result).toMatch(/elapsedMs=\d+/);
   });
 });

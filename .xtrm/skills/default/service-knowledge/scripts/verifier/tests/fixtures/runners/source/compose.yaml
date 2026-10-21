@@ -1,0 +1,8 @@
+services:
+  runner:
+    image: ghcr.io/example/runner:1.2.3
+    environment:
+      RUNNER_TOKEN: "FAKE_TOKEN"
+      RUNNER_NAME: "ci-runner-01"
+  runner-exporter:
+    image: ghcr.io/example/runner-exporter:0.9.0

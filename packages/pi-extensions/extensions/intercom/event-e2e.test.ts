@@ -219,6 +219,7 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
           fetchPi: async () => [],
           fetchClaude: () => claudeRegistry.listClaudeSessions({ sessionsDir: peerDir }),
           claudeTransportEnabled: true,
+          getClaudeSocketPath: () => piSock,
           randomId: (() => {
             let n = 0;
             return () => `m-e2e-c${++n}`;

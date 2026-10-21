@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# [jaggers] drift-sweep
+if command -v python3 &>/dev/null; then
+    root="$(git rev-parse --show-toplevel 2>/dev/null)"
+    if [ -n "$root" ] && [ -f "$root/.xtrm/skills/default/service-knowledge/install/git-hooks/post_rewrite_drift_sweep.py" ]; then
+        python3 "$root/.xtrm/skills/default/service-knowledge/install/git-hooks/post_rewrite_drift_sweep.py" "$@" || true
+    fi
+fi
