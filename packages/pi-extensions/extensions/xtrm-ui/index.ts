@@ -1125,7 +1125,7 @@ export function formatTokenCount(tokens: number): string {
 }
 
 export function formatTurnSummary(summary: XtrmTurnSummary): string {
-	return `worked for ${summary.seconds}s \u00b7 used ${formatTokenCount(summary.tokens)} tokens`;
+	return `worked for ${summary.seconds}s, used ${formatTokenCount(summary.tokens)} tokens`;
 }
 
 /** Applies the dot frames through pi's documented WorkingIndicatorOptions. */
@@ -1159,10 +1159,10 @@ export function startTurnClock(
 	turnClock.startedAt = now;
 	turnClock.tokensAtStart = tokensAtStart;
 	turnClock.ui = ui;
-	ui.setWorkingMessage("Working \u00b7 0s");
+	ui.setWorkingMessage("elapsed 0s");
 	turnClock.timer = schedule(() => {
 		const elapsed = Math.max(0, Math.round((Date.now() - turnClock.startedAt) / 1000));
-		turnClock.ui?.setWorkingMessage(`Working \u00b7 ${elapsed}s`);
+		turnClock.ui?.setWorkingMessage(`elapsed ${elapsed}s`);
 	}, WORKING_TICK_MS);
 }
 
