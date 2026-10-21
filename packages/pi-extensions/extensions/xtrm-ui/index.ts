@@ -1222,7 +1222,7 @@ function sessionUsageTokens(ctx: ExtensionContext): number {
 function registerTurnSummary(pi: ExtensionAPI): void {
 	pi.registerEntryRenderer(XTRM_TURN_SUMMARY_ENTRY, (entry, _options, theme) => {
 		const data = (entry as { data?: Partial<XtrmTurnSummary> }).data ?? {};
-		return new Text(">  " + theme.fg("dim", theme.italic(formatTurnSummary({
+		return new Text("> " + theme.fg("dim", theme.italic(formatTurnSummary({
 			seconds: Math.max(0, Math.round(Number(data.seconds) || 0)),
 			tokens: Math.max(0, Math.round(Number(data.tokens) || 0)),
 		}))), 0, 0);
