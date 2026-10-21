@@ -114,6 +114,14 @@ For commit and PR evidence use provenance: `sb provenance dispatch <ref> --parti
 before work, then `allocate` and `bind <receipt> <sha>`. `sb provenance trace <ref>` shows the
 spine; `sb provenance session <id>` shows what one session touched.
 
+## Journal pitfalls
+
+- `sb journal append <ref> --kind <k> "text"` stores NOTHING (the entry is mechanical-only), and
+  it does not fail. Always pass `--semantic '{"summary":"..."}'`, built with `json.dumps`. Verify
+  that the first append shows a `summary:` line.
+- Close outcomes are `completed|superseded|duplicate|wont_fix|invalid|cancelled|abandoned`
+  (not "done").
+
 ## Epic and Story contracts
 
 The seven fields stay. For an Epic or Story they carry the brief's content (the brief itself is

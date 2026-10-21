@@ -205,6 +205,21 @@ xt pi <name> --window --prompt "<skill names> /goal"
 ```
 
 - Every worker gets its own attested issue before launch. That contract is its brief.
+- **Roster shape.** The coordinator window holds the coordinator and its two standing helpers as
+  panes (helper = heavy reads, timers, host health; board = Jira and Substrate audit). Every other
+  xt worker goes into ONE window named `workers`, one pane each (tiled). Never one window per
+  worker. Launch `xt pi <name> --window` from the MAIN checkout (xt refuses nested worktrees from
+  inside a worktree), then `tmux join-pane -d -s <pane> -t <coordinator or workers pane>` and
+  `tmux select-layout tiled`.
+- **Choose the shape first.** A specialist fits bounded roles and long watcher jobs; `xt pi` fits
+  only gh, push, docker or long interactive ownership. Some specialists carry a lease waiver. If a
+  read-only specialist reports "workspace not leased", do not route around it: use a Sonnet
+  subagent for the read-only check.
+- **Lifetime.** Reap an `xt pi` worker (`kill-pane` by id) in the same cycle its issue closes with
+  a result. List the reap condition of every live pane in each handoff.
+- **Superseding an old coordinator:** collect a full report to a file and a handoff entry, take
+  over every live duty (watchers, crons, owed GOs, owed PR work), journal the takeover list, then
+  `kill-pane` its panes one by one.
 - **The worker knows who dispatched it.** `xt` exports the coordinator's messaging name and
   address (`XTRM_DISPATCHER_NAME`, `XTRM_DISPATCHER_ADDRESS`) and the worker's primer names them,
   so the prompt does not need to. Keep "report with `SendMessage` and journal on your issue" in
@@ -258,6 +273,23 @@ update Jira and carry open Stories to the next sprint.
 - Handoff at about 40% own context for Claude, 30% for Pi. You as an agent deliberately decide when it is appropriate to log a journal and checkpoint: `sb journal append <epic> --kind handoff`, then compact, then
   re-arm `/goal`. Resume: `sb issue resume <epic>` (root-epic resume summarises children).
 - Set `SUBSTRATE_ISSUE_REF` to the programme epic so the pre-compact hook checkpoints.
+- **Compaction.** Bind the coordinator worktree: `echo <epic> > .substrate-issue` and add it to
+  `.git/info/exclude`. The substrate plugin then checkpoints on PreCompact and injects the resume
+  capsule on SessionStart(compact). The edit gate then requires a live claim: claim the epic with a
+  long TTL and renew it at every checkpoint.
+- Add a project-local SessionStart(compact) hook (`.claude/settings.local.json`) that prints: skill
+  pointers (`/using-xtrm`, `/programme-coordination`, `/using-specialists`, `/multiplexing`,
+  `/production-via-make`), the resume commands, the goal-file path, the timers to re-check, and the
+  worker roster with resume text. It also types "continue with the goal" into `$TMUX_PANE` after
+  about 12 s (setsid-detached), so an auto-compacted session does not sit idle.
+- Keep the `/goal` text in a file. Set it again after compaction if it is gone.
+- Workers compact too, and then idle. Pi workers cannot run `/compact` themselves: the coordinator
+  types `/compact` into the pane while it is idle. After compaction a worker needs a resume nudge
+  (`sb issue resume <ref>`, claim again, report). The coordinator's post-compaction steps include
+  resuming every worker.
+- Session crons survive compaction but not process exit. Background sleeps die at the task cap
+  (30 min for Monitor, about 2 h for bash). For durable timers use `systemd-run --user` transient
+  units (they vanish if their timer is stopped).
 - Before a restart or handoff, settle or stop every specialist activation you started: a
   coordinator restart orphans them.
 - The handoff lists everything the programme depends on that dies or goes stale: open windows,

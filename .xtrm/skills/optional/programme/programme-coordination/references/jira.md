@@ -59,6 +59,24 @@ Ten engineering tasks are noise to them. One Story per theme, in a sprint, answe
 Existing examples: Epic ISSUE-184 (Feedor) with Stories ISSUE-252..257, Epic ISSUE-198 (MMD),
 Epic ISSUE-228 (Economic Data) with Stories ISSUE-230..234 in "MMD Sprint 2".
 
+### Team-managed project ISSUE: hierarchy
+
+In project ISSUE, Story, Task, Bug and Feature are all hierarchy level 0, so a Task cannot have a
+Story as parent. Use this shape instead:
+
+- One theme **Epic** per theme (an Epic accepts a sprint and cannot have a parent). Windows are
+  parented to their theme Epic.
+- The old theme Story becomes an Epic child (a sprint deliverable).
+- Theme Epics are linked `Relates` to the programme Epic.
+- A Story cannot change type to Epic in place (the allowed types exclude Epic). Create new Epics
+  and reparent.
+- `scripts/jira.py` truncates CLI output at 6000 chars: import it as a module for searches. Search
+  with `/rest/api/3/search/jql` (v2 search returns 410).
+- Add the title prefix `MMD window:` only when a window is touched for another reason (no bulk
+  renames).
+
+Where a rule below says "parent = the Story", read "parent = the theme Epic" on project ISSUE.
+
 ## Story description (plain language)
 
 ```

@@ -238,3 +238,9 @@ routing rule.
 - Address peers by the exact name `ListAgents` prints; answer the newest message when two cross.
 - Stalled window: `tmux capture-pane -p -t <pane-id> | tail`, then
   `sb journal since <ref> <cursor>`; decide whether to steer, restart from the capsule, or close.
+
+## Merge lists
+
+Judge each PR on a merge list by: draft status, review head against current head, alembic single
+head, and the FIRST window that actually carries the PR to production (stable moves only by
+promotion). "Mergeable and a window exists" is not the bar.
