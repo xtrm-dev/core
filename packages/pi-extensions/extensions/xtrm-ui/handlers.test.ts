@@ -626,3 +626,62 @@ describe("CORE-2358 global defaults", async () => {
     }
   });
 });
+
+describe("ultracompact rows", async () => {
+  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+  const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
+
+  test("Class A: indent instead of dot, no separators", () => {
+    const row = strip(renderUltraRow(theme, { statusColor: "success", verb: "Ran", subject: "npm test", primary: "3 lines" }));
+    expect(row.startsWith("  ")).toBe(true);
+    expect(row).not.toContain("●");
+    expect(row).not.toContain("·");
+    expect(row).toContain("Ran");
+    expect(row).toContain("npm test");
+  });
+
+  test("Class B keeps the dot, still no separators", () => {
+    const row = strip(renderUltraRow(theme, { statusColor: "success", verb: "SendMessage", subject: "→ bob", primary: "delivered", dot: true }));
+    expect(row.startsWith("●")).toBe(true);
+    expect(row).not.toContain("·");
+  });
+
+  test("prefs default off, explicit on survives", () => {
+    expect(DEFAULT_PREFS.ultracompact).toBe(false);
+    expect(normalizePrefs({}).ultracompact).toBe(false);
+    expect(normalizePrefs({ ultracompact: true }).ultracompact).toBe(true);
+  });
+
+  test("external Class A: bare header plus first code line", () => {
+    const row = strip(buildUltraExternalLine("codemode", { code: "x = 1\ny = 2" }, ["ok"], "success"));
+    expect(row.startsWith("  ")).toBe(true);
+    expect(row).toContain("codemode");
+    expect(row).toContain("x = 1");
+    expect(row).not.toContain("●");
+    expect(row).not.toContain("·");
+  });
+
+  test("external Class B: dot plus outcome on the dim level", () => {
+    const row = strip(buildUltraExternalLine("SendMessage", { to: "bob" }, ["delivered to bob"], "success"));
+    expect(row.startsWith("●")).toBe(true);
+    expect(row).toContain("to bob");
+    expect(row).toContain("delivered to bob");
+    expect(row).not.toContain("·");
+  });
+
+  test("subjects: background command, stop id, monitor ws url", () => {
+    expect(ultraExternalSubject("BashBackground", { command: "npm test" })).toContain("npm test");
+    expect(ultraExternalSubject("BackgroundStop", { task_id: "t1" })).toBe("t1");
+    expect(ultraExternalSubject("Monitor", { ws: { url: "wss://x" } })).toContain("wss://x");
+    expect(ultraExternalSubject("SendMessage", { reply_to: "m1" })).toBe("reply m1");
+  });
+
+  test("ListAgents primary is the peer count", () => {
+    expect(ultraExternalPrimary("ListAgents", ["This session is a\nPeer sessions (3):\n  x"])).toBe("3 peers");
+    expect(ultraExternalPrimary("BashBackground", ["Started task t1"])).toContain("t1");
+    expect(ultraExternalPrimary("BashBackground", [])).toBeUndefined();
+  });
+});
