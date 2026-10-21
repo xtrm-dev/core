@@ -920,14 +920,14 @@ describe("working indicator + turn summary", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("usage total reads assistant message entries, prefers totalTokens", () => {
+  test("usage total counts fresh tokens only, ignores cacheRead", () => {
     expect(sumUsageTokens([
       { type: "usage", usage: { input: 100, output: 50, cacheRead: 1000, cacheWrite: 200 } },
       { type: "message", message: { role: "assistant", usage: { input: 929, output: 236, cacheRead: 172913, cacheWrite: 0, totalTokens: 174078 } } },
       { type: "message", message: { role: "assistant", usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } } },
       { type: "message", message: { role: "user" } },
       { type: "usage" },
-    ])).toBe(1350 + 174078 + 15);
+    ])).toBe(350 + 1165 + 15);
   });
 
   test("summary line uses the operator's words", () => {
@@ -984,7 +984,7 @@ describe("working indicator + turn summary", async () => {
     await handlers["agent_end"]({ type: "agent_end", messages: [] }, ctx(endEntries));
     expect(appended).toEqual([]);
     await handlers["agent_settled"]({ type: "agent_settled" }, ctx(endEntries));
-    expect(appended).toEqual([{ customType: XTRM_TURN_SUMMARY_ENTRY, data: { seconds: expect.any(Number), tokens: 234 } }]);
+    expect(appended).toEqual([{ customType: XTRM_TURN_SUMMARY_ENTRY, data: { seconds: expect.any(Number), tokens: 34 } }]);
     await handlers["agent_settled"]({ type: "agent_settled" }, ctx(endEntries));
     expect(appended).toHaveLength(1);
     const render = entryRenderers[XTRM_TURN_SUMMARY_ENTRY] as (e: unknown, o: unknown, t: unknown) => { text: string };

@@ -1107,10 +1107,12 @@ type UsageSides = { input?: unknown; output?: unknown; cacheRead?: unknown; cach
 type UsageLike = { usage?: UsageSides; message?: { usage?: UsageSides } };
 
 function usageSidesTotal(usage: UsageSides): number {
-	const totalTokens = usage.totalTokens;
-	if (typeof totalTokens === "number" && Number.isFinite(totalTokens) && totalTokens > 0) return totalTokens;
+	// Fresh tokens only: input + output + cacheWrite. cacheRead re-transmits
+	// the whole context on every response (~98% of the raw sum), so counting
+	// it makes every turn look session-sized. totalTokens is unusable here
+	// because it already includes cacheRead.
 	let total = 0;
-	for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+	for (const key of ["input", "output", "cacheWrite"] as const) {
 		const value = usage[key];
 		if (typeof value === "number" && Number.isFinite(value) && value > 0) total += value;
 	}
