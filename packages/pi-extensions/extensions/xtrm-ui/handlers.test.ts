@@ -664,6 +664,16 @@ describe("ultracompact rows", async () => {
     expect(row).not.toContain("·");
   });
 
+  test("ultra frame carries no provider accent", () => {
+    for (const raw of [
+      buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], "success"),
+      buildUltraExternalLine("SendMessage", { to: "bob" }, ["held"], "pending"),
+      buildUltraExternalLine("gitnexus_query", { query: "q" }, ["out"], "success"),
+    ]) {
+      expect(raw).not.toContain("154;139;255");
+    }
+  });
+
   test("external Class B: dot plus outcome on the dim level", () => {
     const row = strip(buildUltraExternalLine("SendMessage", { to: "bob" }, ["delivered to bob"], "success"));
     expect(row.startsWith("●")).toBe(true);
