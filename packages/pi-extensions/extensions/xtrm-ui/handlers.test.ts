@@ -41,12 +41,13 @@ type RegisteredTool = {
 
 type RegisteredCommand = { name: string; handler: (args: string, ctx: unknown) => Promise<void> };
 
-function registerWithMock(): { tools: RegisteredTool[]; events: string[]; commands: RegisteredCommand[]; handlers: Record<string, (ev: unknown, ctx: any) => unknown>; entryRenderers: Record<string, (e: unknown, o: unknown, t: unknown) => unknown>; appended: Array<{ customType: string; data: unknown }> } {
+function registerWithMock(): { tools: RegisteredTool[]; events: string[]; commands: RegisteredCommand[]; handlers: Record<string, (ev: unknown, ctx: any) => unknown>; entryRenderers: Record<string, (e: unknown, o: unknown, t: unknown) => unknown>; appended: Array<{ customType: string; data: unknown }>; transformers: Array<(m: string, c: unknown) => string> } {
   const tools: RegisteredTool[] = [];
   const events: string[] = [];
   const commands: RegisteredCommand[] = [];
   const handlers: Record<string, (ev: unknown, ctx: any) => unknown> = {};
   const entryRenderers: Record<string, (e: unknown, o: unknown, t: unknown) => unknown> = {};
+  const transformers: Array<(m: string, c: unknown) => string> = [];
   const appended: Array<{ customType: string; data: unknown }> = [];
   const pi = {
     on: (event: string, handler: (ev: unknown, ctx: any) => unknown) => {
@@ -60,7 +61,9 @@ function registerWithMock(): { tools: RegisteredTool[]; events: string[]; comman
       commands.push({ name, ...def });
     },
     registerMessageRenderer: () => {},
-    registerMarkdownTransformer: () => {},
+    registerMarkdownTransformer: (fn: (m: string, c: unknown) => string) => {
+      transformers.push(fn);
+    },
     registerEntryRenderer: (customType: string, renderer: (e: unknown, o: unknown, t: unknown) => unknown) => {
       entryRenderers[customType] = renderer;
     },
@@ -70,7 +73,7 @@ function registerWithMock(): { tools: RegisteredTool[]; events: string[]; comman
     getThinkingLevel: () => "medium",
   };
   xtrmUiExtension(pi as never);
-  return { tools, events, commands, handlers, entryRenderers, appended };
+  return { tools, events, commands, handlers, entryRenderers, appended, transformers };
 }
 
 function fakeCommandCtx() {
@@ -680,9 +683,10 @@ describe("ultracompact rows", async () => {
     expect(row).toContain("npm test");
   });
 
-  test("Class B keeps the dot, still no separators", () => {
-    const row = strip(renderUltraRow(theme, { statusColor: "success", verb: "SendMessage", subject: "→ bob", primary: "delivered", dot: true }));
-    expect(row.startsWith("●")).toBe(true);
+  test("no dots on any tool row: operational tools take the indent too", () => {
+    const row = strip(renderUltraRow(theme, { statusColor: "success", verb: "SendMessage", subject: "to bob", primary: "delivered" }));
+    expect(row.startsWith("  ")).toBe(true);
+    expect(row).not.toContain("●");
     expect(row).not.toContain("·");
   });
 
@@ -732,9 +736,10 @@ describe("ultracompact rows", async () => {
     }
   });
 
-  test("external Class B: dot plus outcome on the dim level", () => {
+  test("external operational tools: indent plus outcome, no dot", () => {
     const row = strip(buildUltraExternalLine("SendMessage", { to: "bob" }, ["delivered to bob"], "success"));
-    expect(row.startsWith("●")).toBe(true);
+    expect(row.startsWith("  ")).toBe(true);
+    expect(row).not.toContain("●");
     expect(row).toContain("to bob");
     expect(row).toContain("delivered to bob");
     expect(row).not.toContain("·");
@@ -935,13 +940,13 @@ describe("working indicator + turn summary", async () => {
     expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s, used 4,120 tokens");
   });
 
-  test("frames travel the X through the center, then double-flash, all double-tabbed, at 80ms", () => {
+  test("frames travel the X through the center, then double-flash, no lead-in, at 80ms", () => {
     expect(WORKING_FRAMES).toHaveLength(10);
     const [tl, c1, br, bl, c2, tr, on1, off1, on2, off2] = WORKING_FRAMES;
-    expect([tl, c1, br, bl, c2, tr]).toEqual(["\t\t\u2801", "\t\t\u2812", "\t\t\u2820", "\t\t\u2804", "\t\t\u2812", "\t\t\u2808"]);
-    expect([on1, on2]).toEqual(["\t\t\u282d", "\t\t\u282d"]);
-    expect([off1, off2]).toEqual(["\t\t ", "\t\t "]);
-    for (const frame of WORKING_FRAMES) expect(frame.startsWith("\t\t")).toBe(true);
+    expect([tl, c1, br, bl, c2, tr]).toEqual(["\u2801", "\u2812", "\u2820", "\u2804", "\u2812", "\u2808"]);
+    expect([on1, on2]).toEqual(["\u282d", "\u282d"]);
+    expect([off1, off2]).toEqual(["", ""]);
+    for (const frame of WORKING_FRAMES) expect(frame.startsWith("\t")).toBe(false);
     const seen: unknown[] = [];
     applyWorkingIndicator({ setWorkingIndicator: (o) => { seen.push(o); } });
     expect(seen).toEqual([{ frames: WORKING_FRAMES, intervalMs: WORKING_FRAME_MS }]);
@@ -994,6 +999,39 @@ describe("working indicator + turn summary", async () => {
     const render = entryRenderers[XTRM_TURN_SUMMARY_ENTRY] as (e: unknown, o: unknown, t: unknown) => { text: string };
     const theme = { fg: (_n: string, t: string) => `fg[${t}]`, italic: (t: string) => `i[${t}]` };
     expect(render({ data: { seconds: 12, tokens: 4120 } }, { expanded: false }, theme).text)
-      .toBe("\t\tfg[i[worked for 12s, used 4,120 tokens]]");
+      .toBe("fg[i[worked for 12s, used 4,120 tokens]]");
+  });
+});
+
+describe("assistant response dot", async () => {
+  const { prefixAssistantDot } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("prefixes the first prose line", () => {
+    expect(prefixAssistantDot("hello there")).toBe("● hello there");
+    expect(prefixAssistantDot("\n\nhello there\nsecond line")).toBe("\n\n● hello there\nsecond line");
+  });
+
+  test("skips fences, headings, quotes, lists, thinking rows", () => {
+    expect(prefixAssistantDot("```ts\ncode\n```")).toBe("```ts\ncode\n```");
+    expect(prefixAssistantDot("# Title")).toBe("# Title");
+    expect(prefixAssistantDot("> quoted")).toBe("> quoted");
+    expect(prefixAssistantDot("- item")).toBe("- item");
+    expect(prefixAssistantDot("Thinking... · recap · 3 (Ctrl+T to expand)"))
+      .toBe("Thinking... · recap · 3 (Ctrl+T to expand)");
+    expect(prefixAssistantDot("")).toBe("");
+  });
+
+  test("idempotent across re-renders", () => {
+    expect(prefixAssistantDot(prefixAssistantDot("hello"))).toBe("● hello");
+  });
+
+  test("factory wires the dot for assistant text only", () => {
+    const { transformers } = registerWithMock();
+    const dotter = transformers[transformers.length - 1];
+    expect(dotter("hello", { messageType: "assistant" })).toBe("● hello");
+    expect(dotter("hello", { messageType: "user" })).toBe("hello");
+    expect(dotter("some *thinking* trace", { messageType: "assistant-thinking" })).toBe("some *thinking* trace");
   });
 });

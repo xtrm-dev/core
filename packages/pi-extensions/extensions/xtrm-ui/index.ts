@@ -852,16 +852,6 @@ const ultraDimBold = (text: string) => faint(chalk.hex(ultraHexes().dim)(chalk.b
 const ultraRed = (text: string) => chalk.hex(ultraHexes().error)(text);
 const ultraRedBold = (text: string) => chalk.hex(ultraHexes().error)(chalk.bold(text));
 
-/** Class B operational tools keep the `●` in ultra rows; every other
- *  external tool takes the two-space indent (Class A). */
-const ULTRA_KEEP_DOT = new Set([
-  "BashBackground",
-  "Monitor",
-  "BackgroundStop",
-  "SendMessage",
-  "ListAgents",
-]);
-
 export function ultraExternalSubject(toolName: string | undefined, args: Record<string, unknown>): string | undefined {
   const firstCode = externalToolCodePreview(toolName, args)?.[0]?.trim();
   if (firstCode) return firstCode;
@@ -937,9 +927,8 @@ export function buildUltraExternalLine(
   const subject = ultraExternalSubject(toolName, args);
   const primary = resultTexts.length > 0 ? ultraExternalPrimary(toolName, resultTexts) : undefined;
   const isError = status === "error";
-  const dot = ULTRA_KEEP_DOT.has(toolName ?? "")
-    ? `${isError ? ultraRed("●") : faint(status === "success" ? "\x1b[2m●\x1b[22m" : "●")} `
-    : "  ";
+  // No dots on tool rows, ever: the dot marks assistant messages only.
+  const dot = "  ";
   // Uniform with native rows: the whole `used <Tool> [<action>]` head is
   // one bold dim verb span, the subject plain dim after it. No provider
   // accent in ultra — that hue lives in the expanded frame only.
@@ -1091,10 +1080,9 @@ function applyThinkingChrome(ctx: ExtensionContext): void {
  *  and the cycle restarts. The X reads through motion, never as a complete
  *  X character. Pi renders custom frames verbatim through its own Loader,
  *  so the shapes live here and engine/timing stay on pi's documented path
- *  (ctx.ui.setWorkingIndicator). Every frame carries a double-tab lead: the
- *  Loader never trims, so the working row sits at the same double indent as
- *  the settled summary line, apart from flush tool rows. */
-export const WORKING_FRAMES = ["\t\t\u2801", "\t\t\u2812", "\t\t\u2820", "\t\t\u2804", "\t\t\u2812", "\t\t\u2808", "\t\t\u282d", "\t\t ", "\t\t\u282d", "\t\t "];
+ *  (ctx.ui.setWorkingIndicator). No lead-in whitespace: the working row
+ *  keeps pi standard positioning and the settled summary matches it. */
+export const WORKING_FRAMES = ["\u2801", "\u2812", "\u2820", "\u2804", "\u2812", "\u2808", "\u282d", "", "\u282d", ""];
 export const WORKING_FRAME_MS = 80;
 const WORKING_TICK_MS = 1000;
 
@@ -1142,6 +1130,23 @@ export function formatTokenCount(tokens: number): string {
 
 export function formatTurnSummary(summary: XtrmTurnSummary): string {
 	return `worked for ${summary.seconds}s, used ${formatTokenCount(summary.tokens)} tokens`;
+}
+
+/** Prefixes the first prose line of an assistant message with the response
+ *  dot. The dot marks agent responses only — never tool rows, thinking rows,
+ *  user messages, or the settled summary. Skips block-syntax openers (a dot
+ *  before a fence/heading/quote/list would break the block) and is
+ *  idempotent across re-renders. Plain marker, no ANSI: escapes inside
+ *  markdown risk pi's width math. */
+export function prefixAssistantDot(markdown: string): string {
+	const lines = markdown.split("\n");
+	const index = lines.findIndex((line) => line.trim() !== "");
+	if (index === -1) return markdown;
+	const first = lines[index].trimStart();
+	if (first.startsWith("\u25cf ") || first.startsWith(THINKING_ROW_LABEL)) return markdown;
+	if (/^(```|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(first)) return markdown;
+	lines[index] = lines[index].replace(/\S/, "\u25cf $&");
+	return lines.join("\n");
 }
 
 /** Applies the dot frames through pi's documented WorkingIndicatorOptions. */
@@ -1210,9 +1215,7 @@ function sessionUsageTokens(ctx: ExtensionContext): number {
 function registerTurnSummary(pi: ExtensionAPI): void {
 	pi.registerEntryRenderer(XTRM_TURN_SUMMARY_ENTRY, (entry, _options, theme) => {
 		const data = (entry as { data?: Partial<XtrmTurnSummary> }).data ?? {};
-		// Double-tab lead (Text expands tabs, unlike Markdown which trims):
-		// the settled line keeps the working row's double indent.
-		return new Text("\t\t" + theme.fg("dim", theme.italic(formatTurnSummary({
+		return new Text(theme.fg("dim", theme.italic(formatTurnSummary({
 			seconds: Math.max(0, Math.round(Number(data.seconds) || 0)),
 			tokens: Math.max(0, Math.round(Number(data.tokens) || 0)),
 		}))), 0, 0);
@@ -1834,8 +1837,6 @@ export interface UltraRowParts {
   primary?: string;
   /** Secondary meta: muted level. */
   secondary?: string;
-  /** Class B operational tools keep the `●`; Class A takes the indent. */
-  dot?: boolean;
 }
 
 export function renderUltraRow(theme: any, parts: UltraRowParts): string {
@@ -1850,10 +1851,8 @@ export function renderUltraRow(theme: any, parts: UltraRowParts): string {
   const subject = parts.subject
     ? isError ? theme.fg("error", parts.subject) : faint(theme.fg("dim", parts.subject))
     : "";
-  const dot = parts.dot
-    ? `${isError ? theme.fg("error", "●") : faint(theme.fg(parts.statusColor, "●"))} `
-    : "  ";
-  let row = subject ? `${dot}${verb} ${subject}` : `${dot}${verb}`;
+  // Tool rows never take a dot: it marks assistant messages only.
+  let row = subject ? `  ${verb} ${subject}` : `  ${verb}`;
   if (parts.primary) row += `  ${isError ? theme.fg("error", parts.primary) : faint(theme.fg("dim", parts.primary))}`;
   if (parts.secondary) row += `  ${isError ? theme.fg("error", parts.secondary) : faint(theme.fg("muted", parts.secondary))}`;
   // Explicit failure word: dimming removed the color cue, so failed rows
@@ -2465,6 +2464,11 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   pi.registerMarkdownTransformer((markdown, context) => {
     if (!markdown.includes("Thinking...")) return markdown;
     return fitThinkingRowToWidth(markdown, context.availableWidth);
+  });
+  // The response dot: assistant text blocks (and only those) open with one.
+  pi.registerMarkdownTransformer((markdown, context) => {
+    if (context.messageType !== "assistant") return markdown;
+    return prefixAssistantDot(markdown);
   });
 
   let prefs: XtrmUiPrefs = { ...DEFAULT_PREFS };
