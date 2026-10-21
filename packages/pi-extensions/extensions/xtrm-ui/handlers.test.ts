@@ -628,7 +628,7 @@ describe("CORE-2358 global defaults", async () => {
 });
 
 describe("ultracompact rows", async () => {
-  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, ultraBashSubject, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
   const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
@@ -679,9 +679,43 @@ describe("ultracompact rows", async () => {
     expect(ultraExternalSubject("SendMessage", { reply_to: "m1" })).toBe("reply m1");
   });
 
+  test("bash subject strips a dangling && or || tail", () => {
+    expect(ultraBashSubject("rm -f /tmp/x && echo done")).toBe("rm -f /tmp/x");
+    expect(ultraBashSubject("a || b")).toBe("a");
+    expect(ultraBashSubject("npm test")).toBe("npm test");
+  });
+
+  test("dim baseline: faint everywhere, never full-bright", () => {
+    const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*` };
+    const raw = renderUltraRow(mark, { statusColor: "success", verb: "Ran", subject: "npm test", primary: "3 lines" });
+    expect(raw).toContain("\x1b[2m");
+    expect(raw).toContain("[dim]*Ran*");
+    expect(raw).not.toContain("[text]");
+    expect(strip(raw).replace(/\[dim\]|\*/g, "")).toBe("  Ran npm test  3 lines");
+  });
+
+  test("errors keep full red instead of dimming", () => {
+    const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*` };
+    const raw = renderUltraRow(mark, { statusColor: "error", verb: "read", subject: "/a", primary: "nope" });
+    expect(raw).toContain("[error]");
+    expect(raw).not.toContain("\x1b[2m");
+  });
+
+  test("bracket-only result lines never duplicate the header", () => {
+    expect(ultraExternalPrimary("gitnexus_query", ["[GitNexus]", "real outcome"])).toBe("real outcome");
+    expect(ultraExternalPrimary("gitnexus_query", ["[GitNexus]"])).toBeUndefined();
+  });
+
   test("ListAgents primary is the peer count", () => {
     expect(ultraExternalPrimary("ListAgents", ["This session is a\nPeer sessions (3):\n  x"])).toBe("3 peers");
     expect(ultraExternalPrimary("BashBackground", ["Started task t1"])).toContain("t1");
     expect(ultraExternalPrimary("BashBackground", [])).toBeUndefined();
+  });
+
+  test("JSON results summarize shape, never a bare brace", () => {
+    expect(ultraExternalPrimary("specialist_status", ['{\n  "activations": [],\n  "pending_asks": []\n}'])).toBe("{activations, pending_asks}");
+    expect(ultraExternalPrimary("specialist_list", ['{"a":1,"b":2,"c":3,"d":4}'])).toBe("{a, b, c, +1}");
+    expect(ultraExternalPrimary("x", ['[1,2,3]'])).toBe("[3 items]");
+    expect(ultraExternalPrimary("x", ['{broken'])).toBe("{broken");
   });
 });
