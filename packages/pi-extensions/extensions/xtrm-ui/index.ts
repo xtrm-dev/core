@@ -24,6 +24,7 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import chalk from "chalk";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -194,6 +195,8 @@ export interface ThinkingRowStyle {
 	label: (text: string) => string;
 	/** Dimmed trace/recap, e.g. `theme.fg("thinkingText", text)`. */
 	recap: (text: string) => string;
+	/** Italic recap for the collapsed row (recap color + italic). */
+	italic: (text: string) => string;
 	/** Dimmed hint, e.g. `theme.fg("dim", text)`. */
 	hint: (text: string) => string;
 	/** Dimmed label separator, e.g. `theme.fg("dim", " · ")`. */
@@ -226,9 +229,10 @@ export function buildThinkingRecap(thinking: string, fallback = "Thinking..."): 
 	return source.length > THINKING_RECAP_MAX ? source.slice(0, THINKING_RECAP_MAX - 3) + "..." : source;
 }
 
-/** Collapsed row: bold label, dim separator, dimmed recap, raw char count, expand hint. */
+/** Collapsed row: two-space indent (tool-row alignment), bold label, dim
+ *  separator, italic recap, raw char count, expand hint. */
 export function buildCollapsedThinkingRow(recap: string, charCount: number, style: ThinkingRowStyle): string {
-	return ` ${style.label("Thinking...")}${style.sep}${style.recap(recap)}${style.sep}${style.recap(String(charCount))} ${style.hint("(Ctrl+T to expand)")}`;
+	return `  ${style.label("Thinking...")}${style.sep}${style.italic(recap)}${style.sep}${style.recap(String(charCount))} ${style.hint("(Ctrl+T to expand)")}`;
 }
 
 /** Expanded block: bold label row with collapse hint, then the full dimmed trace. */
@@ -412,6 +416,7 @@ async function installThinkingPreviewPatch(): Promise<void> {
 	const style: ThinkingRowStyle = {
 		label: (text) => `\x1b[1m${thinkingText(text)}\x1b[22m`,
 		recap: thinkingText,
+		italic: (text) => `[3m${thinkingText(text)}[23m`,
 		hint: dimText,
 		sep: dimText(" · "),
 	};
@@ -802,10 +807,15 @@ export function bareExternalToolHeader(
   };
 }
 
-/** Raw-SGR greys for the external frame (theme object unavailable there). */
-const XTRM_DIM_FG = "\x1b[38;2;138;138;138m";
-const XTRM_FG_RESET = "\x1b[39m";
-const XTRM_RED_FG = "\x1b[31m";
+/** Frame styling through chalk — never hardcoded color bytes — so the
+ *  frame downgrades per terminal exactly like the native theme-backed rows.
+ *  Hexes mirror the xtrm theme tokens: dimGray and errorRed. */
+const ULTRA_DIM = "#8a8a8a";
+const ULTRA_ERROR = "#ff9a9a";
+const ultraDim = (text: string) => faint(chalk.hex(ULTRA_DIM)(text));
+const ultraDimBold = (text: string) => faint(chalk.hex(ULTRA_DIM)(chalk.bold(text)));
+const ultraRed = (text: string) => chalk.hex(ULTRA_ERROR)(text);
+const ultraRedBold = (text: string) => chalk.hex(ULTRA_ERROR)(chalk.bold(text));
 
 /** Class B operational tools keep the `●` in ultra rows; every other
  *  external tool takes the two-space indent (Class A). */
@@ -893,24 +903,20 @@ export function buildUltraExternalLine(
   const primary = resultTexts.length > 0 ? ultraExternalPrimary(toolName, resultTexts) : undefined;
   const isError = status === "error";
   const dot = ULTRA_KEEP_DOT.has(toolName ?? "")
-    ? `${isError ? `${XTRM_RED_FG}●${XTRM_FG_RESET}` : faint(status === "success" ? "\x1b[2m●\x1b[22m" : "●")} `
+    ? `${isError ? ultraRed("●") : faint(status === "success" ? "\x1b[2m●\x1b[22m" : "●")} `
     : "  ";
   // Uniform with native rows: the whole `used <Tool> [<action>]` head is
   // one bold dim verb span, the subject plain dim after it. No provider
   // accent in ultra — that hue lives in the expanded frame only.
-  const span = (text: string) => isError
-    ? `${XTRM_RED_FG}${boldSgr(text)}${XTRM_FG_RESET}`
-    : faint(`${XTRM_DIM_FG}${boldSgr(text)}${XTRM_FG_RESET}`);
-  const sub = (text: string) => isError
-    ? `${XTRM_RED_FG}${text}${XTRM_FG_RESET}`
-    : faint(`${XTRM_DIM_FG}${text}${XTRM_FG_RESET}`);
+  const span = (text: string) => isError ? ultraRedBold(text) : ultraDimBold(text);
+  const sub = (text: string) => isError ? ultraRed(text) : ultraDim(text);
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
   const head = ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
   let row = `${dot}${span(head)}`;
   if (subject) row += ` ${sub(subject)}`;
-  if (primary) row += `  ${isError ? `${XTRM_RED_FG}${primary}${XTRM_FG_RESET}` : faint(`${XTRM_DIM_FG}${primary}${XTRM_FG_RESET}`)}`;
+  if (primary) row += `  ${isError ? ultraRed(primary) : ultraDim(primary)}`;
   if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
-    row += `  ${XTRM_RED_FG}failed${XTRM_FG_RESET}`;
+    row += `  ${ultraRed("failed")}`;
   }
   return row;
 }
