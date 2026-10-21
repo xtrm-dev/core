@@ -192,7 +192,7 @@ routing rule.
   worker.
 - After editing a specialist definition, restart the host or rename the definition: the loader
   caches definitions, and a list and a dispatch can disagree.
-- Long jobs: Claude Code runs them with `Bash` `run_in_background`; Pi runs them with `BashBackground` plus `Monitor`; `BackgroundStop` stops either one. Stay silent while healthy, escalate only on a problem. Read the output file with `read`, never by tailing it in the turn. Delegated-agent and fusion workflows are retired (CORE-2443 M1): they caused host-memory pressure and no longer exist — monitor with completion notices instead.
+- Long jobs: Claude Code runs them with `Bash` `run_in_background`; Pi runs them with `BashBackground` plus `Monitor`; `TaskStop` stops either one. Stay silent while healthy, escalate only on a problem. Read the output file with `read`, never by tailing it in the turn. Delegated-agent and fusion workflows are retired (CORE-2443 M1): they caused host-memory pressure and no longer exist — monitor with completion notices instead.
 - A specialist counts toward the worker cap. Before a restart or handoff, settle or stop each
   activation, and list the live ones in the handoff.
 
@@ -208,6 +208,27 @@ routing rule.
 
 ## Limits and health
 
+- **WARNING: host memory, not the worker count, is the hard limit.** On 2026-10-18 three
+  coordinators each fanned out background reviewer and builder subagents that ran full test
+  suites in parallel, on top of 8 pi workers, the databases and the feeds. The VPS swap-stormed for
+  4 hours (load 150, 9 GB swap, memory full-stall 52%), and the operator had to kill every Claude
+  process from the root console. The rules:
+  - At most 2 in-process subagents per coordinator at once, and at most 1 of them running tests.
+  - Nobody (subagent, reviewer or window worker) runs a full suite or `make ci-light` locally
+    while other workers are live. Run targeted test files only, one file at a time, under `ulimit -v 4000000` (2 GB is too small for some suites) and
+    `timeout 600`. Hosted CI is the full-suite evidence.
+  - Before each dispatch, check memory, not load (load is rarely low on this host): run
+    `free -g` and `cat /proc/pressure/memory`. Do not dispatch when available memory is under
+    8 GB, swap use is rising, or `full avg60` is above 5.
+  - The cap is host-wide: agree on a total of live build workers across all coordinators (pi
+    windows plus subagents), and stagger test runs.
+  - Hosted CI is not free on Mercury: the self-hosted GitHub runners run on the same VPS. Every
+    push to a PR starts a test suite on this host (a heavy one for some PRs), and three PRs
+    pushed within minutes run three suites at once. Stagger pushes across workers, never
+    re-trigger runs with empty commits or manual dispatches while other runs are queued, and count
+    running CI jobs in the memory check.
+  - Subagents die with their parent session. A coordinator kill loses every in-flight subagent, so
+    long builds belong in window workers with their own issue, not in subagents.
 - At most 3 own worker windows open at once. The cap counts every live agent process in the
   session (builders, reviewers, monitors, idle sessions), not active issues: once, 10 agent
   processes were live while the coordinator counted 3 workers. Reap before you launch. Shared model quotas stop everyone. On a quota 429: pause dispatch and tell the

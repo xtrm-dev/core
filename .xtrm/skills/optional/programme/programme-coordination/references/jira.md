@@ -23,6 +23,13 @@ archived. Do not write to it. Check live before relying on this table:
 relying on it. The panel is evidence only: Substrate still drives every status move, and smart
 commits and Jira Automation stay off.
 
+Binding rule: every PR body ends with a `Jira binding: ISSUE-NNN, ...` footer line naming its
+governing tickets (titles keep the Substrate id; worker branch names already carry the Jira key
+via `<story-key>-<slug>`). The integration matches on the key, so the footer backfills each
+ticket's dev panel without mirroring execution state into Jira. Merged PRs gain the footer
+retroactively by body edit (no code change, no re-review). Check it the same way: empty dev
+panel on a ticket with merged PRs means no branch, commit or PR body carries the key yet.
+
 Custom fields on both projects (global ids, added to every type except subtasks):
 
 | Field | Id | Use |
@@ -147,21 +154,44 @@ it in the board-profile finding. Move: `POST /rest/api/3/issue/<K>/transitions`
 Jira is the only calendar (operator decision, 2026-10-16). No Google Calendar events, no Google
 Tasks. A production or operator window is:
 
-- a **Task** with label `window`, parent = the programme Epic;
+- a **Task** with label `window`;
+- **parent = the Story** of the theme it belongs to (create the Story first if none exists). Do not parent windows directly to the programme Epic except for true programme-level events;
 - all four date fields set: `customfield_10237` and `customfield_10238` (exact UTC times),
   Start date `customfield_10015` and `duedate`. The calendar view reads only the two date
   fields, so a window without them is invisible there;
 - Entity `customfield_10239` = who acts (Keeper or Coordinator; Human for an operator step);
 - the window owner keeps it current: the keeper if the programme has one, otherwise the
   coordinator.
+- the summary carries NO date or time — dates live in the four fields above, never in the
+  title. Pattern: `MMD window: <what> (<scope>)`. Re-dating a window never rewrites the title
+  except to remove a date that slipped in.
+- every window change (re-date, scope change, close-out) gets a comment stating why it
+  changed, old → new times in UTC, and whose ruling authorized it. A window whose times moved
+  without such a comment is an unauthorised move.
 
-Health check, must return 0 (replace the project key):
-`project = ISSUE AND labels = window AND (duedate is EMPTY OR cf[10237] is EMPTY)`.
+### PR readiness rule (mandatory)
 
+Every pull request that changes runtime behaviour, config, schema, serving paths, or that can be
+included in a deploy/promotion **must** have one of the following before it is considered ready
+for merge:
+
+1. A window Task that covers its merge and subsequent deploy, or
+2. An explicit exception: label `no-window` on the PR (or a comment “no production window needed”)
+   for pure documentation, pure tests, or pure non-behavioural refactors.
+3. The ticket key for Github/Jira tracking, to the one it is linked to.
+
+A PR that has neither is untracked. It must not be included in a promotion window. Coordinators
+and AgentRun workflows must flag open PRs that lack both a covering window and a `no-window`
+exception.
+
+Health checks, must return 0 (replace the project key):
+`project = ISSUE AND labels = window AND (duedate is EMPTY OR cf[10237] is EMPTY)`;
+`project = ISSUE AND labels = window AND summary ~ "10-*"` (no dates in titles);
+`project = ISSUE AND labels = window AND parent is EMPTY` (windows must have a Story parent).
 ## What is manual today, what XTRM-639 automates
 
-Manual now: creating Epic and Stories, copying keys and PR numbers, status moves, sprint moves, the
-daily report comment. Planned in `sb jira` and the agent host: the binding between a Jira item and a
+Manual now: creating Epic and Stories, copying keys and PR numbers, appending the PR-body
+binding footer, status moves, sprint moves, the daily report comment. Planned in `sb jira` and the agent host: the binding between a Jira item and a
 Substrate issue, status moves from Substrate events, closures and receipts as comments and remote
 links, a polling inbox, a brief-edit drift proposal (a Jira edit never rewrites a contract),
 sprint-aware `sb issue ready`. Do these by hand per this page; when `sb jira` lands, replace the step,
@@ -192,3 +222,5 @@ Create body (descriptions are ADF; reuse `adf()` from `jira.py`, or build with P
 - Re-read the issue after each write.
 - A create script must have no import-time side effects. A re-import once created eight
   duplicate tickets.
+
+When appropriate and/or requested, the Jira API can be used for more mutations.
