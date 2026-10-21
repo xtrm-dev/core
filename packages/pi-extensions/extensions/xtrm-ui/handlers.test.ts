@@ -935,9 +935,12 @@ describe("working indicator + turn summary", async () => {
     expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s, used 4,120 tokens");
   });
 
-  test("frames trace an X then double-flash, all double-tabbed, at 80ms", () => {
-    expect(WORKING_FRAMES).toHaveLength(8);
-    expect(WORKING_FRAMES.filter((f) => f.includes("\u2573"))).toHaveLength(3);
+  test("frames travel the X through the center, then double-flash, all double-tabbed, at 80ms", () => {
+    expect(WORKING_FRAMES).toHaveLength(10);
+    const [tl, c1, br, bl, c2, tr, on1, off1, on2, off2] = WORKING_FRAMES;
+    expect([tl, c1, br, bl, c2, tr]).toEqual(["\t\t\u2801", "\t\t\u2812", "\t\t\u2820", "\t\t\u2804", "\t\t\u2812", "\t\t\u2808"]);
+    expect([on1, on2]).toEqual(["\t\t\u282d", "\t\t\u282d"]);
+    expect([off1, off2]).toEqual(["\t\t ", "\t\t "]);
     for (const frame of WORKING_FRAMES) expect(frame.startsWith("\t\t")).toBe(true);
     const seen: unknown[] = [];
     applyWorkingIndicator({ setWorkingIndicator: (o) => { seen.push(o); } });
