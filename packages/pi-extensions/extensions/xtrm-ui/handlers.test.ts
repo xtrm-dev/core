@@ -931,7 +931,7 @@ describe("working indicator + turn summary", async () => {
 
   test("summary line uses the operator's words", () => {
     expect(formatTokenCount(4120)).toBe("4,120");
-    expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s · used 4,120 tokens");
+    expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s, used 4,120 tokens");
   });
 
   test("frames are ten braille dots at 80ms", () => {
@@ -950,10 +950,10 @@ describe("working indicator + turn summary", async () => {
     const realNow = Date.now;
     try {
       startTurnClock(ui, 1000, 5000, (fn) => { timers.push(fn); return 1 as unknown as ReturnType<typeof setInterval>; });
-      expect(messages).toEqual(["Working · 0s"]);
+      expect(messages).toEqual(["elapsed 0s"]);
       Date.now = () => 5000 + 12_300;
       timers.forEach((fn) => fn());
-      expect(messages.at(-1)).toBe("Working · 12s");
+      expect(messages.at(-1)).toBe("elapsed 12s");
       // Turn used 340 tokens alone (1340 end - 1000 start), took 12s.
       expect(stopTurnClockAndSummarize(1340, 5000 + 12_300)).toEqual({ seconds: 12, tokens: 340 });
       // Double-settle never summarizes twice.
@@ -977,7 +977,7 @@ describe("working indicator + turn summary", async () => {
       sessionManager: { getEntries: () => entries },
     });
     await handlers["agent_start"]({ type: "agent_start" }, ctx(startEntries));
-    expect(messages).toEqual(["Working · 0s"]);
+    expect(messages).toEqual(["elapsed 0s"]);
     await handlers["agent_end"]({ type: "agent_end", messages: [] }, ctx(endEntries));
     expect(appended).toEqual([{ customType: XTRM_TURN_SUMMARY_ENTRY, data: { seconds: expect.any(Number), tokens: 234 } }]);
     await handlers["agent_settled"]({ type: "agent_settled" }, ctx(endEntries));
@@ -985,6 +985,6 @@ describe("working indicator + turn summary", async () => {
     const render = entryRenderers[XTRM_TURN_SUMMARY_ENTRY] as (e: unknown, o: unknown, t: unknown) => { text: string };
     const theme = { fg: (_n: string, t: string) => `fg[${t}]`, italic: (t: string) => `i[${t}]` };
     expect(render({ data: { seconds: 12, tokens: 4120 } }, { expanded: false }, theme).text)
-      .toBe("fg[i[worked for 12s · used 4,120 tokens]]");
+      .toBe("fg[i[worked for 12s, used 4,120 tokens]]");
   });
 });
