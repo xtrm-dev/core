@@ -999,7 +999,7 @@ describe("working indicator + turn summary", async () => {
     const render = entryRenderers[XTRM_TURN_SUMMARY_ENTRY] as (e: unknown, o: unknown, t: unknown) => { text: string };
     const theme = { fg: (_n: string, t: string) => `fg[${t}]`, italic: (t: string) => `i[${t}]` };
     expect(render({ data: { seconds: 12, tokens: 4120 } }, { expanded: false }, theme).text)
-      .toBe("> fg[i[worked for 12s, used 4,120 tokens]]");
+      .toBe("  fg[i[worked for 12s, used 4,120 tokens]]");
   });
 });
 
