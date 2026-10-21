@@ -26,13 +26,16 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { delimiter, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import {
+	clearPythonBackedSkillsCache as clearCanonicalSelectionCache,
+	selectPythonBackedSkills as selectCanonicalPythonBackedSkills,
+} from "./select-python-backed-skills.ts";
 
 const DRIVER = `
 import json, sys, time, traceback, contextlib, io, os, importlib
@@ -231,13 +234,38 @@ def kns():
 # Bind the mirror into _ns (cells eval in _ns, not module scope).
 _ns["kns"] = kns
 
-def _reload_skills():
+def _reload_skills(new_paths=None, new_imports=None):
     """Re-import every mounted skill module (dev-loop honesty: del sys.modules,
     re-import, refresh the binding; record per-module failures, never raise).
-    Only PI_SKILL_IMPORTS names are touched — user-imported modules in _ns are
-    left alone."""
-    for _name in (os.environ.get("PI_SKILL_IMPORTS", "") or "").split(","):
-        _name = _name.strip()
+    With new_paths/new_imports (per-cwd re-resolve), sys.path is updated
+    first — deselected roots leave sys.path — and deselected bindings leave
+    _ns. Without them, the boot-time PI_SKILL_* env is re-imported; user-
+    imported modules in _ns are left alone either way."""
+    _old_imports = [_n.strip() for _n in (os.environ.get("PI_SKILL_IMPORTS", "") or "").split(",") if _n.strip()]
+    if new_paths is not None:
+        _wanted = [_p.strip() for _p in (new_paths or []) if (_p or "").strip()]
+        for _p in [(_o or "").strip() for _o in (os.environ.get("PI_SKILL_PATHS", "") or "").split(os.pathsep) if (_o or "").strip()]:
+            if _p and _p not in _wanted and _p in sys.path:
+                try:
+                    sys.path.remove(_p)
+                except ValueError:
+                    pass
+        for _p in _wanted:
+            if _p and _p not in sys.path:
+                sys.path.insert(0, _p)
+        os.environ["PI_SKILL_PATHS"] = os.pathsep.join(_wanted)
+    _names = list(new_imports) if new_imports is not None else _old_imports
+    if new_imports is not None:
+        os.environ["PI_SKILL_IMPORTS"] = ",".join(_names)
+        for _gone in _old_imports:
+            if _gone not in _names:
+                _ns.pop(_gone, None)
+                try:
+                    del sys.modules[_gone]
+                except KeyError:
+                    pass
+    for _name in _names:
+        _name = (_name or "").strip()
         if not _name:
             continue
         try:
@@ -327,13 +355,15 @@ def run_cell(code, reset=False, cwd=None, seq=None, max_output=20000, tmp_dir=No
         "full_output_path": full_path,
     }
 
-def reload_skills():
-    """Re-import every mounted skill module and return per-module status."""
+def reload_skills(new_paths=None, new_imports=None):
+    """Re-import every mounted skill module and return per-module status.
+    With new_paths/new_imports, the mount set is replaced first (per-cwd
+    re-resolve: sys.path updated, deselected bindings dropped)."""
     _sk_errors.clear()
-    _reload_skills()
+    _reload_skills(new_paths, new_imports)
     status = {}
-    for _name in (os.environ.get("PI_SKILL_IMPORTS", "") or "").split(","):
-        _name = _name.strip()
+    for _name in (new_imports if new_imports is not None else (os.environ.get("PI_SKILL_IMPORTS", "") or "").split(",")):
+        _name = (_name or "").strip()
         if not _name:
             continue
         status[_name] = "ok" if _name in _ns else "error"
@@ -355,7 +385,7 @@ def main():
         res = run_cell(req.get("code") or "", bool(req.get("reset")), req.get("cwd"),
                        req.get("seq"), req.get("max_output") or 20000, os.environ.get("PI_KERNEL_TMP", ""))
         if req.get("reload_skills"):
-            res["reload_skills"] = reload_skills()
+            res["reload_skills"] = reload_skills(req.get("skill_paths"), req.get("skill_imports"))
         res["seq"] = req.get("seq")
         sys.stdout.write(json.dumps(res) + "\\n")
         sys.stdout.flush()
@@ -411,40 +441,47 @@ export function truncateOutput(text: string, maxChars: number): { text: string; 
 	return { text: text.slice(0, headN) + marker + text.slice(-tailN), truncated: true, originalLength: text.length };
 }
 
-// skillbridge (xtrm-h7uwi.1): an importable skill module found in a skills root.
-// Convention (prime-agent Agent Skills): SKILL.md + src/<import_name>/**/__init__.py.
-// The import name is the PACKAGE dir under src/ (e.g. src/sre_chain/), which may
-// differ from the skill directory name — the description must list the actual
-// import name, not the skill dir (xtrm-vs7f8 audit fix).
+// skillbridge (xtrm-h7uwi.1): an importable skill module selected from explicit
+// roots. Convention (prime-agent Agent Skills): a direct child directory with
+// SKILL.md. Canonical identity is the SKILL.md frontmatter `name:` (the
+// runtimeName), else the skill directory name — never derived from src/.
+// Whether the skill is python-backed (src/<package>/__init__.py) is
+// a post-selection classifier recorded as importName: it never filters
+// selection and never supplies identity.
 export interface SkillModule {
-	/** Import name, e.g. "sre_chain" (package dir under src/). */
+	/** Canonical identity: SKILL.md frontmatter `name:`, else the skill directory name. */
 	name: string;
+	/** Python import name (the package dir under src/) for sys.path/pre-import transport. */
+	importName: string;
 	/** The root to prepend to sys.path: <skillDir>/src (parent of the package). */
 	path: string;
 	/** SKILL.md frontmatter description, first line, trimmed. */
 	blurb: string;
 }
 
-/** Roots scanned for python-backed skills, best-effort (missing dirs are skipped). */
+/**
+ * Explicit env override roots (lowest precedence; never primary discovery).
+ * Canonical selection (PACK/state/active) is owned by the resolver (sibling):
+ * callers pass canonical roots first and append these last. Home pointers are
+ * never scanned.
+ */
 export function skillRoots(): string[] {
-	const home = process.env.HOME ?? "";
-	return [
-		...((process.env.PI_SKILL_PATHS ?? "") ? (process.env.PI_SKILL_PATHS ?? "").split(":") : []),
-		...((process.env.PI_SKILL_ROOTS ?? "") ? (process.env.PI_SKILL_ROOTS ?? "").split(":") : []),
-		join(home, ".pi", "agent", "skills"),
-		join(home, ".claude", "skills"),
+	const fromEnv = [
+		...((process.env.PI_SKILL_PATHS ?? "") ? (process.env.PI_SKILL_PATHS ?? "").split(delimiter) : []),
+		...((process.env.PI_SKILL_ROOTS ?? "") ? (process.env.PI_SKILL_ROOTS ?? "").split(delimiter) : []),
 	];
+	return fromEnv.map((r) => r.trim()).filter((r) => r.length > 0);
 }
 
-/** First-party kernel skill modules shipped with this package (./skills). */
-export function bundledSkillsDir(): string {
-	return join(fileURLToPath(new URL(".", import.meta.url)), "skills");
-}
-
-/** Scan the known skill roots for python-backed skills (SKILL.md + src/<import>). */
-export function discoverSkillModules(roots: readonly string[] = skillRoots()): SkillModule[] {
+/**
+ * Select skills from EXPLICIT roots (SKILL.md direct children). Roots are
+ * processed in the caller's canonical order; the same runtimeName selected
+ * from two different skill dirs is a loud collision (throws) — never silent
+ * first-wins. Callers must not pass overlapping roots.
+ */
+export function discoverSkillModules(roots: readonly string[]): SkillModule[] {
 	const found: SkillModule[] = [];
-	const seen = new Set<string>();
+	const seenDirs = new Map<string, string>();
 	for (const root of roots) {
 		let entries: string[] = [];
 		try {
@@ -452,34 +489,29 @@ export function discoverSkillModules(roots: readonly string[] = skillRoots()): S
 		} catch {
 			continue;
 		}
-		for (const name of entries.sort()) {
-			// Dedupe by resolved target: repo-shipped skills are symlinked into
-		// scanned roots, so the same skill mounted under two names resolves
-		// once. Broken links throw here and self-skip (never fatal).
-			let seenKey = name;
-			try {
-				seenKey = realpathSync(join(root, name));
-			} catch {
-				continue;
-			}
-			if (seen.has(seenKey)) continue;
-			const skillDir = join(root, name);
+		for (const dirName of entries.sort()) {
+			const skillDir = join(root, dirName);
 			const skillMd = join(skillDir, "SKILL.md");
-			const srcDir = join(skillDir, "src");
-			let packageDir: string | undefined;
-			try {
-				packageDir = findPackageDir(srcDir);
-			} catch {
-				packageDir = undefined;
+			// Broken links have no SKILL.md and self-skip (never fatal).
+			if (!existsSync(skillMd)) continue;
+			const runtimeName = skillRuntimeName(skillMd, dirName);
+			const first = seenDirs.get(runtimeName);
+			if (first !== undefined) {
+				if (first === skillDir) continue;
+				throw new Error(
+					`Skill name collision: '${runtimeName}' is selected from both ${first} and ${skillDir}; remove or rename one.`,
+				);
 			}
-			if (!existsSync(skillMd) || !packageDir) continue;
-			seen.add(seenKey);
-			// The import name is the package dir basename (src/<pkg>/), NOT the
-			// skill dir name — they can differ (xtrm-vs7f8 audit fix).
-			const importName = basename(packageDir);
+			seenDirs.set(runtimeName, skillDir);
+			// Post-selection classifier: python-backed (src/<package>/) or not.
+			// Non-python skills are selected (they reserve the name above) but
+			// never mounted — the kernel only pre-imports python modules.
+			const importName = findPackageName(join(skillDir, "src"));
+			if (!importName) continue;
 			found.push({
-				name: importName,
-				path: srcDir,
+				name: runtimeName,
+				importName,
+				path: join(skillDir, "src"),
 				blurb: skillBlurb(skillMd),
 			});
 		}
@@ -487,8 +519,22 @@ export function discoverSkillModules(roots: readonly string[] = skillRoots()): S
 	return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Find the importable package dir directly under src (exactly one __init__.py package). */
-function findPackageDir(srcDir: string): string | undefined {
+/** Canonical identity: SKILL.md frontmatter `name:`, else the directory name. */
+export function skillRuntimeName(skillMd: string, fallback: string): string {
+	try {
+		const text = readFileSync(skillMd, "utf8");
+		const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+		const block = frontmatter ? frontmatter[1] : "";
+		const line = block.split(/\r?\n/).find((l) => /^name\s*:/.test(l));
+		const value = line ? line.replace(/^name\s*:/, "").trim().replace(/^["']|["']$/g, "").trim() : "";
+		return value || fallback;
+	} catch {
+		return fallback;
+	}
+}
+
+/** Classify the importable package directly under src (exactly one __init__.py package). */
+function findPackageName(srcDir: string): string | undefined {
 	let childDirs: string[] = [];
 	try {
 		childDirs = readdirSync(srcDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
@@ -496,7 +542,7 @@ function findPackageDir(srcDir: string): string | undefined {
 		return undefined;
 	}
 	const candidates = childDirs.filter((d) => existsSync(join(srcDir, d, "__init__.py")));
-	return candidates.length === 1 ? join(srcDir, candidates[0]) : undefined;
+	return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 /** Extract the `description:` line from a SKILL.md frontmatter block, if present. */
@@ -509,6 +555,49 @@ export function skillBlurb(skillMd: string): string {
 	catch {
 		return "";
 	}
+}
+
+// per-cwd mount (CORE-2511 merge): canonical pi-selection resolver lives in
+// ./select-python-backed-skills.ts (CORE-2512, the ONE resolver). This module
+// owns transport (SkillModule, explicit env roots, per-cwd kernel mounts) and
+// adapts the canonical selection — it never re-scans raw roots, never
+// re-implements precedence/collision for the canonical tiers.
+
+/** Clear the canonical selection cache (tests + explicit invalidation). */
+export function clearSelectionCache(): void {
+	clearCanonicalSelectionCache();
+}
+
+/**
+ * Canonical pi-selection for a cwd, adapted to SkillModule transport.
+ * Canonical tiers (default + enabled packs, project + global) come from the
+ * ONE resolver; explicit PI_SKILL_* roots are lowest precedence and never
+ * override a canonical importName. Cross-scope collisions already throw
+ * inside the canonical selectors.
+ */
+export async function selectPythonBackedSkills(cwd: string): Promise<SkillModule[]> {
+	const canonical = await selectCanonicalPythonBackedSkills({ cwd, runtime: "pi" });
+	const seenImport = new Set<string>();
+	const modules: SkillModule[] = [];
+	for (const skill of canonical) {
+		if (seenImport.has(skill.importName)) continue;
+		seenImport.add(skill.importName);
+		modules.push({
+			name: skill.runtimeName,
+			importName: skill.importName,
+			path: skill.srcRoot,
+			blurb: skillBlurb(join(skill.skillDir, "SKILL.md")),
+		});
+	}
+	const extraRoots = skillRoots();
+	if (extraRoots.length > 0) {
+		for (const mod of discoverSkillModules(extraRoots)) {
+			if (seenImport.has(mod.importName)) continue;
+			seenImport.add(mod.importName);
+			modules.push(mod);
+		}
+	}
+	return modules.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // kernel binding (xtrm-6z6.4): service_knowledge in-kernel.
@@ -584,7 +673,7 @@ export class PythonKernel {
 	private readonly cellTimeoutMs: number;
 	private readonly startTimeoutMs: number;
 	private readonly maxOutputChars: number;
-	private readonly skills: SkillModule[];
+	private skills: SkillModule[];
 	private readonly skPackagePath: string | null;
 
 	constructor(
@@ -629,7 +718,7 @@ export class PythonKernel {
 					? {
 							// skillbridge: mount roots on sys.path and pre-import modules into _ns.
 							PI_SKILL_PATHS: [...new Set(this.skills.map((s) => s.path))].join(":"),
-							PI_SKILL_IMPORTS: this.skills.map((s) => s.name).join(","),
+							PI_SKILL_IMPORTS: this.skills.map((s) => s.importName).join(","),
 						}
 					: {}),
 				// kernel binding (xtrm-6z6.4): when a service registry is present,
@@ -776,11 +865,22 @@ export class PythonKernel {
 		});
 	}
 
-	/** Reload every mounted skill module in the live kernel (dev-loop honesty). */
-	async reloadSkills(): Promise<Record<string, string>> {
+	/** Reload mounted skill modules; with fresh modules the mount set is
+	 * replaced first (re-resolve then re-import: deselected roots leave
+	 * sys.path and deselected bindings leave the namespace). */
+	async reloadSkills(freshModules?: SkillModule[]): Promise<Record<string, string>> {
 		await this.ensureStarted();
 		if (!this.proc) throw new Error(this.lastSpawnError ?? `${this.pythonBin} kernel is not running`);
 		const seq = this.nextSeq++;
+		const payload: Record<string, unknown> =
+			freshModules !== undefined
+				? {
+						seq,
+						reload_skills: true,
+						skill_paths: [...new Set(freshModules.map((s) => s.path))],
+						skill_imports: freshModules.map((s) => s.importName),
+					}
+				: { seq, reload_skills: true };
 		return new Promise<Record<string, string>>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				const message = `skill reload timed out after ${this.cellTimeoutMs / 1000}s`;
@@ -790,9 +890,12 @@ export class PythonKernel {
 			this.waiters.push((r) => {
 				clearTimeout(timer);
 				if (r.error) reject(new Error(`${r.error.ename}: ${r.error.evalue}`));
-				else resolve(r.reload_skills ?? {});
+				else {
+					if (freshModules !== undefined) this.skills = [...freshModules];
+					resolve(r.reload_skills ?? {});
+				}
 			});
-			this.proc!.stdin.write(JSON.stringify({ seq, reload_skills: true }) + "\n");
+			this.proc!.stdin.write(JSON.stringify(payload) + "\n");
 		});
 	}
 
@@ -852,19 +955,15 @@ export interface PythonKernelExtensionOptions {
 }
 
 export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKernelExtensionOptions = {}) {
-	const kernels = new Map<string, PythonKernel>();
+	const kernels = new Map<string, { kernel: PythonKernel; cwd: string; factoryMade: boolean }>();
 	// audit seam: flag is opt-in via code, but also honor PI_KERNEL_AUDIT_POLICY
 	// so headless e2e smoke can exercise the policy hook without code changes.
 	const auditPolicy = opts.auditPolicy === true || process.env.PI_KERNEL_AUDIT_POLICY === "1";
 
-	// skillbridge: scan once at init; skill paths are static per environment.
-	// First-party kernel skill modules ship with this package (./skills);
-	// user and env roots keep precedence (first root wins per skill name).
-	const skillModules = discoverSkillModules([...skillRoots(), bundledSkillsDir()]);
-	const importableLine =
-		skillModules.length > 0
-			? `\nImportable skill modules: ${skillModules.map((s) => s.name).join(", ")} — pre-imported in namespace; help(x) for docs.`
-			: "";
+	// skillbridge: no static scan at init. Selection is per-cwd from the
+	// canonical resolver (CORE-2512); explicit PI_SKILL_* roots are lowest
+	// precedence. The bundled ./skills tree is build-time source only — never
+	// a runtime scan root — and home pointers are never scanned.
 
 	// kernel binding (xtrm-6z6.4): per-cwd service_knowledge package path cache.
 	// Registry presence is per-repo (sessions can be in different cwds), so it is
@@ -882,16 +981,27 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 		return p;
 	}
 
+	// per-cwd mount: the pi-selection for ctx.cwd is resolved per session —
+	// never once at extension init. Different cwds mount different selections;
+	// toggling enabledPacks changes next-session mounts via the canonical
+	// selector's state.json mtime invalidation. Forensics mounts via its
+	// vendored optional-tier pack when enabled, never via a bundled scan.
 	async function kernelFor(cwd: string, sessionId: string): Promise<PythonKernel> {
-		let k = kernels.get(sessionId);
-		if (!k) {
-			const skPath = await resolveSkPathFor(cwd);
-			k = opts.kernelFactory
-				? opts.kernelFactory(cwd, sessionId)
-				: new PythonKernel(cwd, () => {}, {}, skillModules, skPath);
-			kernels.set(sessionId, k);
+		const seen = kernels.get(sessionId);
+		if (seen && resolve(seen.cwd) === resolve(cwd)) return seen.kernel;
+		if (seen) {
+			seen.kernel.kill();
+			kernels.delete(sessionId);
 		}
-		return k;
+		if (opts.kernelFactory) {
+			const kernel = opts.kernelFactory(cwd, sessionId);
+			kernels.set(sessionId, { kernel, cwd, factoryMade: true });
+			return kernel;
+		}
+		const [selection, skPath] = await Promise.all([selectPythonBackedSkills(cwd), resolveSkPathFor(cwd)]);
+		const kernel = new PythonKernel(cwd, () => {}, {}, selection, skPath);
+		kernels.set(sessionId, { kernel, cwd, factoryMade: false });
+		return kernel;
 	}
 
 	pi.registerTool({
@@ -903,7 +1013,7 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 			"\nOne cell per question: capture via subprocess inside the cell and parse in the same cell — a shell+compute round-trip pair collapses to one call. Expression results also land in `_`." +
 			"\nPrelude pre-loaded: json, re, os, sys, subprocess, Path (from pathlib)." +
 			"\nPrelude functions: preflight(repo, path, n=4) — file-scoped memory retrieval for one file: git log --follow with bodies, pending diff --stat, bd memory keys; prints a bounded digest and stashes records in _preflight_cache[(repo, path)]. Run before editing flagged files; 0 commits means wrong path. kns() — namespace mirror (name -> shape hint); run when resuming or after long threads instead of re-deriving." +
-			importableLine,
+			"\nSkill modules mount per-cwd from the canonical pi-selection (python-backed members only, pre-imported in namespace); reload_skills re-resolves the selection then re-imports. help(x) for docs.",
 
 		promptSnippet: "python - run code in a persistent kernel; state survives across calls",
 		promptGuidelines: [
@@ -933,7 +1043,7 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 				Type.Boolean({ description: "Clear the kernel namespace and return to the working directory." }),
 			),
 			reload_skills: Type.Optional(
-				Type.Boolean({ description: "Re-import every mounted skill module (del sys.modules + re-import) and refresh the namespace." }),
+				Type.Boolean({ description: "Re-resolve the canonical pi-selection for the session cwd, then re-import every mounted skill module and refresh the namespace." }),
 			),
 		}),
 		async execute(toolCallId, params, signal, _onUpdate, ctx) {
@@ -943,8 +1053,14 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 			signal?.addEventListener("abort", onAbort, { once: true });
 			try {
 				if (params.reload_skills === true) {
-					// skillbridge: re-import every mounted skill module in the live kernel.
-					const status = await kernel.reloadSkills();
+					// per-cwd mount: re-resolve the canonical selection for the
+					// session cwd, then re-import. Factory-made kernels (tests)
+					// keep legacy same-set re-import semantics.
+					const entry = kernels.get(sessionId);
+					const status =
+						entry && !entry.factoryMade
+							? await kernel.reloadSkills(await selectPythonBackedSkills(ctx.cwd))
+							: await kernel.reloadSkills();
 					const failed = Object.entries(status).filter(([, s]) => s !== "ok");
 					const lines = Object.entries(status).map(([n, s]) => `${n}: ${s}`);
 					return {
@@ -1018,7 +1134,7 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 
 	// Clean up kernels when the session ends.
 	pi.on("session_shutdown", async () => {
-		for (const kernel of kernels.values()) {
+		for (const { kernel } of kernels.values()) {
 			kernel.kill();
 		}
 		kernels.clear();

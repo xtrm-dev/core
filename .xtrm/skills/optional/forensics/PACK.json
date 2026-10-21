@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1",
+  "name": "forensics",
+  "version": "1.0.0",
+  "description": "Transcript/log forensics as an importable python-kernel module",
+  "skills": ["forensics"]
+}

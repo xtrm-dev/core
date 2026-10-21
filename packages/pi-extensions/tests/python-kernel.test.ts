@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { execSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // The Pi host provides typebox at runtime; tests substitute a structural
@@ -52,8 +52,11 @@ function fakePi() {
   };
 }
 
-function runViaExecute(tool: any, params: any, signal?: AbortSignal) {
-  const ctx = { cwd: process.cwd(), sessionManager: { getSessionId: () => "test-session" } };
+function runViaExecute(tool: any, params: any, signal?: AbortSignal, opts: { cwd?: string; sessionId?: string } = {}) {
+  const ctx = {
+    cwd: opts.cwd ?? process.cwd(),
+    sessionManager: { getSessionId: () => opts.sessionId ?? "test-session" },
+  };
   return tool.execute("test-call", params, signal, () => {}, ctx);
 }
 
@@ -94,13 +97,16 @@ describe("python-kernel managed extension", () => {
       for (const m of modules) {
         expect(m.path).toBe(join(fx.dir, m.name, "src"));
         expect(m.blurb).toContain("test skill");
+        // No frontmatter name: identity falls back to the directory name,
+        // and the package dir supplies transport only.
+        expect(m.importName).toBe(m.name);
       }
     } finally {
       fx.cleanup();
     }
   });
 
-  test("skillbridge discovery: import name is the package dir, not the skill dir (xtrm-vs7f8)", () => {
+  test("canonical runtimeName identity: frontmatter name:, else dir name; src/ is transport only", () => {
     const fx = tmpBase();
     try {
       // Skill dir is 'fiskill' but the importable package is src/sre_chain.
@@ -108,14 +114,89 @@ describe("python-kernel managed extension", () => {
       mkdirSync(join(skillDir, "src", "sre_chain"), { recursive: true });
       writeFileSync(join(skillDir, "SKILL.md"), "---\ndescription: e2e fixture\n---\n");
       writeFileSync(join(skillDir, "src", "sre_chain", "__init__.py"), "VALUE = 1\n");
+      // Frontmatter name: wins over the directory name for identity.
+      const renamedDir = join(fx.dir, "other");
+      mkdirSync(join(renamedDir, "src", "other"), { recursive: true });
+      writeFileSync(join(renamedDir, "SKILL.md"), "---\nname: renamed\ndescription: renamed fixture\n---\n");
+      writeFileSync(join(renamedDir, "src", "other", "__init__.py"), "VALUE = 2\n");
 
       const modules = extension.discoverSkillModules([fx.dir]);
-      expect(modules).toHaveLength(1);
-      // The description must list the ACTUAL import name (what the kernel mounts).
-      expect(modules[0].name).toBe("sre_chain");
-      expect(modules[0].path).toBe(join(skillDir, "src"));
+      expect(modules.map((m) => m.name).sort()).toEqual(["fiskill", "renamed"]);
+      const fiskill = modules.find((m) => m.name === "fiskill")!;
+      // Identity is the directory fallback — never the package basename.
+      expect(fiskill.importName).toBe("sre_chain");
+      expect(fiskill.path).toBe(join(skillDir, "src"));
+      const renamed = modules.find((m) => m.name === "renamed")!;
+      expect(renamed.importName).toBe("other");
+      expect(renamed.path).toBe(join(renamedDir, "src"));
+      expect(extension.discoverSkillModules([])).toEqual([]);
     } finally {
       fx.cleanup();
+    }
+  });
+
+  test("duplicate runtimeNames across skill dirs throw (loud collisions, no silent precedence)", () => {
+    const fx = tmpBase();
+    try {
+      for (const dir of ["one", "two"]) {
+        const skillDir = join(fx.dir, dir);
+        mkdirSync(join(skillDir, "src", dir), { recursive: true });
+        writeFileSync(join(skillDir, "SKILL.md"), "---\nname: dup\ndescription: dup skill\n---\n");
+        writeFileSync(join(skillDir, "src", dir, "__init__.py"), "VALUE = 1\n");
+      }
+      expect(() => extension.discoverSkillModules([fx.dir])).toThrow(/collision/i);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("src is a post-selection classifier: non-python skills reserve their runtimeName", () => {
+    const fx = tmpBase();
+    try {
+      // Non-python skill (SKILL.md, no src/) selects first and reserves 'dup'.
+      const plain = join(fx.dir, "aplain");
+      mkdirSync(plain, { recursive: true });
+      writeFileSync(join(plain, "SKILL.md"), "---\nname: dup\ndescription: plain\n---\n");
+      // Python-backed skill claiming the same runtimeName collides loudly.
+      const py = join(fx.dir, "bpy");
+      mkdirSync(join(py, "src", "bpy"), { recursive: true });
+      writeFileSync(join(py, "SKILL.md"), "---\nname: dup\ndescription: py\n---\n");
+      writeFileSync(join(py, "src", "bpy", "__init__.py"), "VALUE = 1\n");
+      expect(() => extension.discoverSkillModules([fx.dir])).toThrow(/collision/i);
+    } finally {
+      fx.cleanup();
+    }
+    const solo = tmpBase();
+    try {
+      // Alone, a non-python skill selects but never mounts.
+      const only = join(solo.dir, "solo");
+      mkdirSync(only, { recursive: true });
+      writeFileSync(join(only, "SKILL.md"), "---\nname: solo\ndescription: plain\n---\n");
+      expect(extension.discoverSkillModules([solo.dir])).toEqual([]);
+    } finally {
+      solo.cleanup();
+    }
+  });
+
+  test("skillRoots is an explicit env override only: no home-pointer scan", () => {
+    const savedPaths = process.env.PI_SKILL_PATHS;
+    const savedRoots = process.env.PI_SKILL_ROOTS;
+    const savedHome = process.env.HOME;
+    try {
+      delete process.env.PI_SKILL_PATHS;
+      delete process.env.PI_SKILL_ROOTS;
+      process.env.HOME = "/nonexistent-home-for-test";
+      expect(extension.skillRoots()).toEqual([]);
+      process.env.PI_SKILL_PATHS = "/tmp/override-a:/tmp/override-b";
+      process.env.PI_SKILL_ROOTS = "/tmp/override-c";
+      expect(extension.skillRoots()).toEqual(["/tmp/override-a", "/tmp/override-b", "/tmp/override-c"]);
+    } finally {
+      if (savedPaths === undefined) delete process.env.PI_SKILL_PATHS;
+      else process.env.PI_SKILL_PATHS = savedPaths;
+      if (savedRoots === undefined) delete process.env.PI_SKILL_ROOTS;
+      else process.env.PI_SKILL_ROOTS = savedRoots;
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
     }
   });
 
@@ -124,7 +205,7 @@ describe("python-kernel managed extension", () => {
     try {
       writeFixtureSkill(fx.dir, "sre_chain", "def load(): return 'loaded'\ndef run(dry_run=False): return dry_run\n");
       const kernel = new PythonKernel(fx.dir, () => {}, {}, [
-        { name: "sre_chain", path: join(fx.dir, "sre_chain", "src"), blurb: "fixture" },
+        { name: "sre_chain", importName: "sre_chain", path: join(fx.dir, "sre_chain", "src"), blurb: "fixture" },
       ]);
       // Import happens at boot; the module is bound into _ns, so a bare name
       // reference works with zero host round trips.
@@ -146,7 +227,7 @@ describe("python-kernel managed extension", () => {
     try {
       const skill = writeFixtureSkill(fx.dir, "reloadme", "VALUE = 'old'\n");
       const kernel = new PythonKernel(fx.dir, () => {}, {}, [
-        { name: "reloadme", path: join(fx.dir, "reloadme", "src"), blurb: "fixture" },
+        { name: "reloadme", importName: "reloadme", path: join(fx.dir, "reloadme", "src"), blurb: "fixture" },
       ]);
       const first = await kernel.runCell("reloadme.VALUE", false);
       expect(first.stdout.trim()).toBe("'old'");
@@ -168,8 +249,8 @@ describe("python-kernel managed extension", () => {
       writeFixtureSkill(fx.dir, "good", "VALUE = 1\n");
       writeFixtureSkill(fx.dir, "bad", "raise RuntimeError('boom')\n");
       const kernel = new PythonKernel(fx.dir, () => {}, {}, [
-        { name: "good", path: join(fx.dir, "good", "src"), blurb: "fixture" },
-        { name: "bad", path: join(fx.dir, "bad", "src"), blurb: "fixture" },
+        { name: "good", importName: "good", path: join(fx.dir, "good", "src"), blurb: "fixture" },
+        { name: "bad", importName: "bad", path: join(fx.dir, "bad", "src"), blurb: "fixture" },
       ]);
       // Boot must not die; the good module still imports, the bad one is recorded.
       const call = await kernel.runCell("good.VALUE", false);
@@ -192,7 +273,7 @@ describe("python-kernel managed extension", () => {
       extension.default(pi as any, {
         kernelFactory: () =>
           new PythonKernel(fx.dir, () => {}, {}, [
-            { name: "sre_chain", path: join(fx.dir, "sre_chain", "src"), blurb: "fixture" },
+            { name: "sre_chain", importName: "sre_chain", path: join(fx.dir, "sre_chain", "src"), blurb: "fixture" },
           ]),
       });
       const tool = pi.tools[0];
@@ -210,7 +291,7 @@ describe("python-kernel managed extension", () => {
     try {
       writeFixtureSkill(fx.dir, "sre_chain", "def load(): return 'loaded'\n");
       const kernel = new PythonKernel(fx.dir, () => {}, {}, [
-        { name: "sre_chain", path: join(fx.dir, "sre_chain", "src"), blurb: "fixture" },
+        { name: "sre_chain", importName: "sre_chain", path: join(fx.dir, "sre_chain", "src"), blurb: "fixture" },
       ]);
       const call = await kernel.runCell("sre_chain.load()", false);
       expect(call.audit).toEqual([]); // no _AUDIT entries yet; field present
@@ -230,7 +311,7 @@ describe("python-kernel managed extension", () => {
         "def write_file(path, content='x'):\n    _AUDIT.append({'op': 'write', 'path': path})\n    return 'wrote'\n",
       );
       const kernel = new PythonKernel(fx.dir, () => {}, {}, [
-        { name: "mutator", path: join(fx.dir, "mutator", "src"), blurb: "fixture" },
+        { name: "mutator", importName: "mutator", path: join(fx.dir, "mutator", "src"), blurb: "fixture" },
       ]);
       const call = await kernel.runCell("mutator.write_file('/etc/hosts')", false);
       expect(call.error).toBeNull();
@@ -409,10 +490,12 @@ describe("python-kernel managed extension", () => {
     const fx = tmpBase();
     try {
       const pi = fakePi();
-      extension.default(pi as any);
+      // Skill-agnostic plumbing test: bypass canonical selection via factory
+      // so the real-repo/global HOME collision cannot fail the setup.
+      extension.default(pi as any, { kernelFactory: (cwd: string) => new PythonKernel(cwd, () => {}, {}, []) });
       const tool = pi.tools[0];
       const controller = new AbortController();
-      const pending = runViaExecute(tool, { code: "import time; time.sleep(30)" }, controller.signal);
+      const pending = runViaExecute(tool, { code: "import time; time.sleep(30)" }, controller.signal, { cwd: fx.dir });
       // Give the kernel a beat to start and begin the long cell.
       await new Promise((resolve) => setTimeout(resolve, 300));
       controller.abort();
@@ -476,14 +559,14 @@ describe("python-kernel managed extension", () => {
     const fx = tmpBase();
     try {
       const pi = fakePi();
-      extension.default(pi as any);
+      extension.default(pi as any, { kernelFactory: (cwd: string) => new PythonKernel(cwd, () => {}, {}, []) });
       const tool = pi.tools[0];
-      const first = await runViaExecute(tool, { code: "x = 1" });
+      const first = await runViaExecute(tool, { code: "x = 1" }, undefined, { cwd: fx.dir });
       expect(first.isError).toBe(false);
       const shutdown = pi.listeners.get("session_shutdown");
       expect(shutdown).toBeDefined();
       await shutdown![0]({}, {});
-      const after = await runViaExecute(tool, { code: "x" });
+      const after = await runViaExecute(tool, { code: "x" }, undefined, { cwd: fx.dir });
       expect(after.isError).toBe(true); // state was cleared by shutdown
       expect(after.content[0].text).toMatch(/NameError|python error/i);
     } finally {
@@ -495,9 +578,9 @@ describe("python-kernel managed extension", () => {
     const fx = tmpBase();
     try {
       const pi = fakePi();
-      extension.default(pi as any);
+      extension.default(pi as any, { kernelFactory: (cwd: string) => new PythonKernel(cwd, () => {}, {}, []) });
       const tool = pi.tools[0];
-      const result = await runViaExecute(tool, { code: "print('x' * 300_000)" });
+      const result = await runViaExecute(tool, { code: "print('x' * 300_000)" }, undefined, { cwd: fx.dir });
       expect(result.isError).toBe(false);
       // 300k chars → head 8k + marker + tail 4k ≈ 12.3k, well under the old 200k guard.
       expect(result.content[0].text.length).toBeLessThan(20_000);
@@ -513,9 +596,9 @@ describe("python-kernel managed extension", () => {
     const fx = tmpBase();
     try {
       const pi = fakePi();
-      extension.default(pi as any);
+      extension.default(pi as any, { kernelFactory: (cwd: string) => new PythonKernel(cwd, () => {}, {}, []) });
       const tool = pi.tools[0];
-      const result = await runViaExecute(tool, { code: "list(range(100_000))" });
+      const result = await runViaExecute(tool, { code: "list(range(100_000))" }, undefined, { cwd: fx.dir });
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toContain("list len=100000");
       // The truncated repr carries the marker.
@@ -677,7 +760,7 @@ describe("CORE-2358 python call rendering", () => {
   });
 });
 
-describe("python-kernel kns/_/cache + forensics skill", () => {
+describe("python-kernel kns/_/cache + explicit selection", () => {
   test("kns mirrors user bindings with shape hints and survives reset", async () => {
     const fx = tmpBase();
     try {
@@ -761,40 +844,408 @@ describe("python-kernel kns/_/cache + forensics skill", () => {
       symlinkSync(join(fx.dir, "nope-missing"), join(fx.dir, "broken"));
       const modules = extension.discoverSkillModules([fx.dir]);
       const names = modules.map((m) => m.name);
+      // Identity is the directory fallback (no frontmatter name:): the
+      // symlink is a distinct explicit root entry, the broken link self-skips.
       expect(names).toContain("real");
-      // linked resolves to the same package (no crash, no double import name)
-      expect(names.filter((n) => n === "real")).toHaveLength(1);
+      expect(names).toContain("linked");
+      expect(names).not.toContain("broken");
     } finally {
       fx.cleanup();
     }
   });
 
-  test("bundled forensics skill is discoverable and usable in-kernel", async () => {
+  test("explicit-root selection mounts python-backed skills in-kernel via importName", async () => {
     const fx = tmpBase();
     try {
-      const modules = extension.discoverSkillModules([extension.bundledSkillsDir()]);
-      expect(modules.map((m) => m.name)).toContain("forensics");
-      const fmod = modules.find((m) => m.name === "forensics")!;
-      const kernel = new PythonKernel(fx.dir, () => {}, {}, [fmod]);
-      const call = await kernel.runCell(
-        "forensics.top(forensics.tally([{'t':'a'},{'t':'b'},{'t':'a'}], 't'))",
-        false,
-      );
+      // Skill dir and frontmatter name differ from the importable package:
+      // the kernel binds the importName, identity stays the runtimeName.
+      const skillDir = join(fx.dir, "calcskill");
+      mkdirSync(join(skillDir, "src", "calcmod"), { recursive: true });
+      writeFileSync(join(skillDir, "SKILL.md"), "---\nname: calc-tool\ndescription: calc test skill\n---\n");
+      writeFileSync(join(skillDir, "src", "calcmod", "__init__.py"), "def add(a, b):\n    return a + b\n");
+      const modules = extension.discoverSkillModules([fx.dir]);
+      expect(modules).toHaveLength(1);
+      expect(modules[0].name).toBe("calc-tool");
+      expect(modules[0].importName).toBe("calcmod");
+      const kernel = new PythonKernel(fx.dir, () => {}, {}, modules);
+      const call = await kernel.runCell("calcmod.add(2, 3)", false);
       expect(call.error).toBeNull();
-      expect(call.stdout).toContain("'a', 2");
+      expect(call.stdout.trim()).toBe("5");
       kernel.kill();
     } finally {
       fx.cleanup();
     }
   });
 
-  test("tool doctrine documents kns, session scratch, and the mounted forensics skill", () => {
+  test("tool doctrine documents kns, session scratch, and per-cwd canonical mounts", () => {
     const pi = fakePi();
     extension.default(pi as any);
     const tool = pi.tools.find((t: any) => t.name === "python");
     expect(tool.description).toContain("kns()");
     expect(tool.description).toContain("Session scratch");
-    expect(tool.description).toContain("Importable skill modules: forensics");
+    expect(tool.description).toContain("per-cwd");
+    expect(tool.description).toContain("canonical pi-selection");
+    // Old parallel behavior is gone: no home-pointer scan, no bundled scan,
+    // no static importable list at init.
+    expect(tool.description).not.toContain("bundled");
+    expect(tool.description).not.toContain(".pi/agent/skills");
+    expect(tool.description).not.toContain(".claude/skills");
+    expect(tool.description).not.toContain("Importable skill modules");
     expect(tool.promptGuidelines.join("\n")).toContain("kns()");
+  });
+});
+
+describe("python-kernel per-cwd mount from canonical selection (CORE-2511 merge)", () => {
+  const origHomedir = os.homedir;
+
+  function writeSkillMd(skillDir: string, runtimeName: string): void {
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), `---\nname: ${runtimeName}\n---\n# ${runtimeName}\n`);
+  }
+
+  function writePythonPkg(skillDir: string, pkg: string): void {
+    mkdirSync(join(skillDir, "src", pkg), { recursive: true });
+    writeFileSync(join(skillDir, "src", pkg, "__init__.py"), "VALUE = 1\n");
+  }
+
+  function writePythonSkill(skillDir: string, runtimeName: string, pkg?: string): void {
+    writeSkillMd(skillDir, runtimeName);
+    writePythonPkg(skillDir, pkg ?? runtimeName);
+  }
+
+  function writeMarkdownSkill(skillDir: string, runtimeName: string): void {
+    writeSkillMd(skillDir, runtimeName);
+  }
+
+  function writeOptionalPack(packDir: string, packName: string, skillNames: string[]): void {
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, "PACK.json"),
+      JSON.stringify({ schemaVersion: "1", name: packName, version: "1.0.0", description: `${packName} test pack`, skills: skillNames }),
+    );
+  }
+
+  function writeState(skillsRoot: string, enabledPi: string[]): void {
+    mkdirSync(skillsRoot, { recursive: true });
+    writeFileSync(
+      join(skillsRoot, "state.json"),
+      JSON.stringify({ schemaVersion: "2", enabledPacks: { claude: [], pi: enabledPi, codex: [] }, managedLinks: { claude: {}, pi: {}, codex: {} } }),
+    );
+  }
+
+  /** Fake-HOME harness: canonical selection resolves globalRoot from os.homedir(). */
+  function fakeHomeEnv() {
+    const prevHome = process.env.HOME;
+    const prevPaths = process.env.PI_SKILL_PATHS;
+    const prevRoots = process.env.PI_SKILL_ROOTS;
+    const fakeHome = mkdtempSync(join(tmpdir(), "pyk-home-"));
+    process.env.HOME = fakeHome;
+    delete process.env.PI_SKILL_PATHS;
+    delete process.env.PI_SKILL_ROOTS;
+    (os as unknown as { homedir: () => string }).homedir = () => fakeHome;
+    extension.clearSelectionCache();
+    const globalRoot = join(fakeHome, ".xtrm", "skills");
+    return {
+      fakeHome,
+      globalRoot,
+      restore() {
+        process.env.HOME = prevHome;
+        if (prevPaths === undefined) delete process.env.PI_SKILL_PATHS;
+        else process.env.PI_SKILL_PATHS = prevPaths;
+        if (prevRoots === undefined) delete process.env.PI_SKILL_ROOTS;
+        else process.env.PI_SKILL_ROOTS = prevRoots;
+        (os as unknown as { homedir: () => string }).homedir = origHomedir;
+        extension.clearSelectionCache();
+        rmSync(fakeHome, { recursive: true, force: true });
+      },
+    };
+  }
+
+  function mkProject() {
+    const projectRoot = mkdtempSync(join(tmpdir(), "pyk-proj-"));
+    return { projectRoot, repoRoot: join(projectRoot, ".xtrm", "skills"), cleanup: () => rmSync(projectRoot, { recursive: true, force: true }) };
+  }
+
+  async function shutdown(pi: any) {
+    for (const cbs of pi.listeners.values()) {
+      for (const cb of cbs) await cb({}, {});
+    }
+  }
+
+  test("different cwds resolve different canonical selections", async () => {
+    const env = fakeHomeEnv();
+    const a = mkProject();
+    const b = mkProject();
+    try {
+      writePythonSkill(join(env.globalRoot, "default", "shared"), "shared");
+      writePythonSkill(join(a.repoRoot, "packa", "skilla"), "skill-a", "mod_a");
+      writePythonSkill(join(b.repoRoot, "packb", "skillb"), "skill-b", "mod_b");
+      writeState(env.globalRoot, []);
+      writeState(a.repoRoot, ["packa"]);
+      writeState(b.repoRoot, ["packb"]);
+
+      const selA = (await extension.selectPythonBackedSkills(a.projectRoot)).map((m: any) => m.name);
+      const selB = (await extension.selectPythonBackedSkills(b.projectRoot)).map((m: any) => m.name);
+      expect(selA).toContain("skill-a");
+      expect(selA).not.toContain("skill-b");
+      expect(selB).toContain("skill-b");
+      expect(selB).not.toContain("skill-a");
+      expect(selA).toContain("shared");
+      expect(selB).toContain("shared");
+    } finally {
+      a.cleanup();
+      b.cleanup();
+      env.restore();
+    }
+  });
+
+  test("toggling enabledPacks changes the canonical selection", async () => {
+    const env = fakeHomeEnv();
+    const p = mkProject();
+    try {
+      writePythonSkill(join(p.repoRoot, "packa", "skilla"), "skill-a", "mod_a");
+      writePythonSkill(join(p.repoRoot, "packb", "skillb"), "skill-b", "mod_b");
+      writeState(env.globalRoot, []);
+      writeState(p.repoRoot, ["packa"]);
+      expect((await extension.selectPythonBackedSkills(p.projectRoot)).map((m: any) => m.name)).toContain("skill-a");
+      // Same-size state rewrite needs an mtime tick to invalidate the
+      // canonical selector's statKey cache (mtimeMs:size).
+      await new Promise((r) => setTimeout(r, 25));
+      writeState(p.repoRoot, ["packb"]);
+      const names = (await extension.selectPythonBackedSkills(p.projectRoot)).map((m: any) => m.name);
+      expect(names).toContain("skill-b");
+      expect(names).not.toContain("skill-a");
+    } finally {
+      p.cleanup();
+      env.restore();
+    }
+  });
+
+  test("disabled packs and non-python skills never enter the selection", async () => {
+    const env = fakeHomeEnv();
+    const p = mkProject();
+    try {
+      writePythonSkill(join(env.globalRoot, "optional", "offpack", "offskill"), "off-skill", "mod_off");
+      writeOptionalPack(join(env.globalRoot, "optional", "offpack"), "offpack", ["offskill"]);
+      const plain = join(p.repoRoot, "onpack", "plainskill");
+      writeMarkdownSkill(plain, "plain-skill");
+      const multi = join(p.repoRoot, "onpack", "multiskill");
+      writeSkillMd(multi, "multi-skill");
+      writePythonPkg(multi, "one");
+      writePythonPkg(multi, "two");
+      writeState(env.globalRoot, []);
+      writeState(p.repoRoot, ["onpack"]);
+
+      const names = (await extension.selectPythonBackedSkills(p.projectRoot)).map((m: any) => m.name);
+      expect(names).not.toContain("off-skill");
+      expect(names).not.toContain("plain-skill");
+      expect(names).not.toContain("multi-skill");
+    } finally {
+      p.cleanup();
+      env.restore();
+    }
+  });
+
+  test("canonical collision-throw: same runtimeName to different realpaths (incl python-vs-markdown)", async () => {
+    const env = fakeHomeEnv();
+    const p = mkProject();
+    try {
+      const pyDir = join(env.globalRoot, "default", "dup-py");
+      writePythonSkill(pyDir, "dup");
+      const mdDir = join(p.repoRoot, "pp", "dup-md");
+      writeMarkdownSkill(mdDir, "dup");
+      writeState(env.globalRoot, []);
+      writeState(p.repoRoot, ["pp"]);
+
+      await expect(extension.selectPythonBackedSkills(p.projectRoot)).rejects.toThrow(/dup/);
+    } finally {
+      p.cleanup();
+      env.restore();
+    }
+  });
+
+  test("forensics mounts via its vendored optional-tier pack when enabled (never via bundled scan)", async () => {
+    const env = fakeHomeEnv();
+    const p = mkProject();
+    try {
+      expect((extension as Record<string, unknown>).bundledSkillsDir).toBeUndefined();
+      const packDir = join(env.globalRoot, "optional", "forensics");
+      const skillDir = join(packDir, "forensics");
+      mkdirSync(join(skillDir, "src", "forensics"), { recursive: true });
+      writeFileSync(join(skillDir, "SKILL.md"), "---\nname: forensics\ndescription: forensics test skill\n---\n");
+      writeFileSync(
+        join(skillDir, "src", "forensics", "__init__.py"),
+        "from collections import Counter\ndef tally(items, key):\n    c = Counter()\n    [c.__setitem__(k, c.get(k, 0) + 1) for k in [it.get(key) for it in items]]\n    return c\ndef top(counter, n=10):\n    return counter.most_common(n)\n",
+      );
+      writeOptionalPack(packDir, "forensics", ["forensics"]);
+      writeState(env.globalRoot, []);
+      writeState(p.repoRoot, []);
+
+      const disabled = (await extension.selectPythonBackedSkills(p.projectRoot)).map((m: any) => m.name);
+      expect(disabled).not.toContain("forensics");
+
+      writeState(env.globalRoot, ["forensics"]);
+      const enabled = await extension.selectPythonBackedSkills(p.projectRoot);
+      expect(enabled.map((m: any) => m.name)).toContain("forensics");
+      const fmod = enabled.find((m: any) => m.name === "forensics")!;
+      expect(fmod.importName).toBe("forensics");
+      const kernel = new PythonKernel(p.projectRoot, () => {}, {}, [fmod]);
+      const call = await kernel.runCell("forensics.top(forensics.tally([{'t':'a'},{'t':'b'},{'t':'a'}], 't'))", false);
+      expect(call.error).toBeNull();
+      expect(call.stdout).toContain("'a', 2");
+      kernel.kill();
+    } finally {
+      p.cleanup();
+      env.restore();
+    }
+  });
+
+  test("sessions in different cwds mount different modules (incl. cwd switch)", async () => {
+    const env = fakeHomeEnv();
+    const a = mkProject();
+    const b = mkProject();
+    const pi = fakePi();
+    try {
+      writePythonSkill(join(a.repoRoot, "packa", "skilla"), "skill-a", "mod_a");
+      writeFileSync(join(a.repoRoot, "packa", "skilla", "src", "mod_a", "__init__.py"), "VALUE = 'A'\n");
+      writePythonSkill(join(b.repoRoot, "packb", "skillb"), "skill-b", "mod_b");
+      writeFileSync(join(b.repoRoot, "packb", "skillb", "src", "mod_b", "__init__.py"), "VALUE = 'B'\n");
+      writeState(env.globalRoot, []);
+      writeState(a.repoRoot, ["packa"]);
+      writeState(b.repoRoot, ["packb"]);
+      extension.default(pi as any);
+      const tool = pi.tools[0];
+
+      const ra = await runViaExecute(tool, { code: "mod_a.VALUE" }, undefined, { cwd: a.projectRoot, sessionId: "s-a" });
+      expect(ra.content[0].text).toContain("A");
+      const rb = await runViaExecute(tool, { code: "mod_b.VALUE" }, undefined, { cwd: b.projectRoot, sessionId: "s-b" });
+      expect(rb.content[0].text).toContain("B");
+      const cross = await runViaExecute(tool, { code: "'mod_b' in dir()" }, undefined, { cwd: a.projectRoot, sessionId: "s-a" });
+      expect(cross.content[0].text).toContain("False");
+      const sw = await runViaExecute(tool, { code: "mod_b.VALUE" }, undefined, { cwd: b.projectRoot, sessionId: "s-a" });
+      expect(sw.content[0].text).toContain("B");
+    } finally {
+      await shutdown(pi);
+      a.cleanup();
+      b.cleanup();
+      env.restore();
+    }
+  });
+
+  test("reload_skills re-resolves then re-imports: newly enabled pack becomes importable", async () => {
+    const env = fakeHomeEnv();
+    const p = mkProject();
+    const pi = fakePi();
+    try {
+      writePythonSkill(join(p.repoRoot, "packa", "skilla"), "skill-a", "mod_a");
+      writeFileSync(join(p.repoRoot, "packa", "skilla", "src", "mod_a", "__init__.py"), "VALUE = 'A'\n");
+      writeState(env.globalRoot, []);
+      writeState(p.repoRoot, ["packa"]);
+      extension.default(pi as any);
+      const tool = pi.tools[0];
+      const sid = "reload-new";
+
+      const before = await runViaExecute(tool, { code: "mod_a.VALUE" }, undefined, { cwd: p.projectRoot, sessionId: sid });
+      expect(before.content[0].text).toContain("A");
+
+      writePythonSkill(join(p.repoRoot, "packb", "skillb"), "skill-b", "mod_b");
+      writeFileSync(join(p.repoRoot, "packb", "skillb", "src", "mod_b", "__init__.py"), "VALUE = 'B'\n");
+      writeState(p.repoRoot, ["packa", "packb"]);
+      const reloaded: any = await runViaExecute(tool, { reload_skills: true }, undefined, { cwd: p.projectRoot, sessionId: sid });
+      expect(reloaded.details.reload_skills["mod_b"]).toBe("ok");
+      const after = await runViaExecute(tool, { code: "mod_b.VALUE" }, undefined, { cwd: p.projectRoot, sessionId: sid });
+      expect(after.content[0].text).toContain("B");
+    } finally {
+      await shutdown(pi);
+      p.cleanup();
+      env.restore();
+    }
+  });
+
+  test("reload drops deselected bindings and roots from sys.path", async () => {
+    const env = fakeHomeEnv();
+    const p = mkProject();
+    const pi = fakePi();
+    try {
+      writePythonSkill(join(p.repoRoot, "packa", "skilla"), "skill-a", "mod_a");
+      writeFileSync(join(p.repoRoot, "packa", "skilla", "src", "mod_a", "__init__.py"), "VALUE = 'A'\n");
+      writeState(env.globalRoot, []);
+      writeState(p.repoRoot, ["packa"]);
+      extension.default(pi as any);
+      const tool = pi.tools[0];
+      const sid = "reload-drop";
+
+      const before = await runViaExecute(tool, { code: "mod_a.VALUE" }, undefined, { cwd: p.projectRoot, sessionId: sid });
+      expect(before.content[0].text).toContain("A");
+
+      writeState(p.repoRoot, []);
+      const reloaded: any = await runViaExecute(tool, { reload_skills: true }, undefined, { cwd: p.projectRoot, sessionId: sid });
+      expect(reloaded.details.reload_skills["mod_a"] ?? "absent").toBe("absent");
+      const gone = await runViaExecute(tool, { code: "'mod_a' in dir()" }, undefined, { cwd: p.projectRoot, sessionId: sid });
+      expect(gone.content[0].text).toContain("False");
+    } finally {
+      await shutdown(pi);
+      p.cleanup();
+      env.restore();
+    }
+  });
+
+  test("explicit PI_SKILL_* roots are lowest precedence; canonical wins per importName", async () => {
+    const env = fakeHomeEnv();
+    const p = mkProject();
+    const prevRoots = process.env.PI_SKILL_ROOTS;
+    try {
+      writePythonSkill(join(p.repoRoot, "packa", "skilla"), "canon-skill", "canon_mod");
+      writeState(env.globalRoot, []);
+      writeState(p.repoRoot, ["packa"]);
+      const extra = mkdtempSync(join(tmpdir(), "pi-py-kernel-extra-"));
+      try {
+        writeFixtureSkill(extra, "uniqueskill", "VALUE = 1\n");
+        const collide = join(extra, "collide");
+        mkdirSync(join(collide, "src", "canon_mod"), { recursive: true });
+        writeFileSync(join(collide, "SKILL.md"), "---\ndescription: collide\n---\n");
+        writeFileSync(join(collide, "src", "canon_mod", "__init__.py"), "VALUE = 'extra'\n");
+        process.env.PI_SKILL_ROOTS = extra;
+
+        const mods = await extension.selectPythonBackedSkills(p.projectRoot);
+        const names = mods.map((m: any) => m.importName);
+        expect(names).toContain("uniqueskill");
+        expect(mods.find((m: any) => m.importName === "canon_mod")?.path).toContain(join("skilla", "src"));
+      } finally {
+        rmSync(extra, { recursive: true, force: true });
+      }
+    } finally {
+      if (prevRoots === undefined) delete process.env.PI_SKILL_ROOTS;
+      else process.env.PI_SKILL_ROOTS = prevRoots;
+      extension.clearSelectionCache();
+      p.cleanup();
+      env.restore();
+    }
+  });
+
+  test("driver mount swap: reloadSkills(fresh) replaces sys.path entries and bindings", async () => {
+    const fx = tmpBase();
+    try {
+      writeFixtureSkill(fx.dir, "good", "VALUE = 1\n");
+      writeFixtureSkill(fx.dir, "other", "VALUE = 2\n");
+      const kernel = new PythonKernel(fx.dir, () => {}, {}, [
+        { name: "good", importName: "good", path: join(fx.dir, "good", "src"), blurb: "fixture" },
+      ]);
+      const first = await kernel.runCell("good.VALUE", false);
+      expect(first.error).toBeNull();
+      expect(first.stdout.trim()).toBe("1");
+
+      const status = await kernel.reloadSkills([{ name: "other", importName: "other", path: join(fx.dir, "other", "src"), blurb: "fixture" }]);
+      expect(status).toEqual({ other: "ok" });
+      const gone = await kernel.runCell("'good' in dir()", false);
+      expect(gone.stdout.trim()).toBe("False");
+      const here = await kernel.runCell("other.VALUE", false);
+      expect(here.stdout.trim()).toBe("2");
+      const paths = await kernel.runCell("[p for p in sys.path if 'good' in p]", false);
+      expect(paths.stdout.trim()).toBe("[]");
+      kernel.kill();
+    } finally {
+      fx.cleanup();
+    }
   });
 });
