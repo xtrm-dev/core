@@ -895,16 +895,19 @@ export function buildUltraExternalLine(
   const dot = ULTRA_KEEP_DOT.has(toolName ?? "")
     ? `${isError ? `${XTRM_RED_FG}●${XTRM_FG_RESET}` : faint(status === "success" ? "\x1b[2m●\x1b[22m" : "●")} `
     : "  ";
+  // Uniform with native rows: the whole `used <Tool> [<action>]` head is
+  // one bold dim verb span, the subject plain dim after it. No provider
+  // accent in ultra — that hue lives in the expanded frame only.
   const span = (text: string) => isError
     ? `${XTRM_RED_FG}${boldSgr(text)}${XTRM_FG_RESET}`
     : faint(`${XTRM_DIM_FG}${boldSgr(text)}${XTRM_FG_RESET}`);
-  let row = `${dot}${span("used")} ${faint(`${XTRM_EXT_ACCENT}${boldSgr(bare.provider)}\x1b[39m`)}`;
+  const sub = (text: string) => isError
+    ? `${XTRM_RED_FG}${text}${XTRM_FG_RESET}`
+    : faint(`${XTRM_DIM_FG}${text}${XTRM_FG_RESET}`);
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
-  const spans = [actionPart, subject]
-    .filter((part): part is string => !!part)
-    .map(span)
-    .join("  ");
-  if (spans) row += ` ${spans}`;
+  const head = ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
+  let row = `${dot}${span(head)}`;
+  if (subject) row += ` ${sub(subject)}`;
   if (primary) row += `  ${isError ? `${XTRM_RED_FG}${primary}${XTRM_FG_RESET}` : faint(`${XTRM_DIM_FG}${primary}${XTRM_FG_RESET}`)}`;
   if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
     row += `  ${XTRM_RED_FG}failed${XTRM_FG_RESET}`;
