@@ -1085,16 +1085,29 @@ function applyThinkingChrome(ctx: ExtensionContext): void {
 // Working indicator + turn summary
 // ============================================================================
 
-/** Single-cell X indicator, dots only. A dot travels the true X path
- *  through the center band (dots 2+5): top-left, center, bottom-right,
- *  bottom-left, center, top-right, then a double flash of the corner-dot X
- *  and the cycle restarts. The X reads through motion, never as a complete
- *  X character. Pi renders custom frames verbatim through its own Loader,
- *  so the shapes live here and engine/timing stay on pi's documented path
- *  (ctx.ui.setWorkingIndicator). Every frame carries a double-tab lead: the
- *  Loader never trims, so the working row sits at the same double indent as
- *  the settled summary line, apart from flush tool rows. */
-export const WORKING_FRAMES = ["\t\t\u2801", "\t\t\u2812", "\t\t\u2820", "\t\t\u2804", "\t\t\u2812", "\t\t\u2808", "\t\t\u282d", "\t\t ", "\t\t\u282d", "\t\t "];
+/** True 3x3 X indicator, dots only. A dot travels the real X path through
+ *  the true center cell: top-left, center, bottom-right, bottom-left,
+ *  center, top-right, then a double flash of the full 3x3 dot-X and the
+ *  cycle restarts. The Loader renders the multiline frame verbatim and the
+ *  elapsed message rides the bottom row. Engine/timing stay on pi's
+ *  documented path (ctx.ui.setWorkingIndicator). Every row carries a
+ *  double-tab lead: the Loader never trims, so the working block sits at
+ *  the same double indent as the settled summary line. */
+const X_DOT = "\u2022";
+const X_EMPTY = "\u00b7";
+const X_INDENT = "\t\t";
+const xRow = (cells: string) => `${X_INDENT}${cells}`;
+const xFrame = (top: string, mid: string, bot: string) => `${xRow(top)}\n${xRow(mid)}\n${xRow(bot)}`;
+const X_TRACE = [
+	xFrame(`${X_DOT}${X_EMPTY}${X_EMPTY}`, `${X_EMPTY}${X_EMPTY}${X_EMPTY}`, `${X_EMPTY}${X_EMPTY}${X_EMPTY}`),
+	xFrame(`${X_EMPTY}${X_EMPTY}${X_EMPTY}`, `${X_EMPTY}${X_DOT}${X_EMPTY}`, `${X_EMPTY}${X_EMPTY}${X_EMPTY}`),
+	xFrame(`${X_EMPTY}${X_EMPTY}${X_EMPTY}`, `${X_EMPTY}${X_EMPTY}${X_EMPTY}`, `${X_EMPTY}${X_EMPTY}${X_DOT}`),
+	xFrame(`${X_EMPTY}${X_EMPTY}${X_EMPTY}`, `${X_EMPTY}${X_EMPTY}${X_EMPTY}`, `${X_DOT}${X_EMPTY}${X_EMPTY}`),
+	xFrame(`${X_EMPTY}${X_EMPTY}${X_EMPTY}`, `${X_EMPTY}${X_DOT}${X_EMPTY}`, `${X_EMPTY}${X_EMPTY}${X_EMPTY}`),
+	xFrame(`${X_EMPTY}${X_EMPTY}${X_DOT}`, `${X_EMPTY}${X_EMPTY}${X_EMPTY}`, `${X_EMPTY}${X_EMPTY}${X_EMPTY}`),
+];
+const X_FULL = xFrame(`${X_DOT}${X_EMPTY}${X_DOT}`, `${X_EMPTY}${X_DOT}${X_EMPTY}`, `${X_DOT}${X_EMPTY}${X_DOT}`);
+export const WORKING_FRAMES = [...X_TRACE, X_FULL, "", X_FULL, ""];
 export const WORKING_FRAME_MS = 80;
 const WORKING_TICK_MS = 1000;
 
