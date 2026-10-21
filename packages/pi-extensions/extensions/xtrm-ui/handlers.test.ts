@@ -935,26 +935,13 @@ describe("working indicator + turn summary", async () => {
     expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s, used 4,120 tokens");
   });
 
-  test("frames travel a true 3x3 X, then double-flash, rows double-tabbed, at 80ms", () => {
+  test("frames travel the X through the center, then double-flash, all double-tabbed, at 80ms", () => {
     expect(WORKING_FRAMES).toHaveLength(10);
     const [tl, c1, br, bl, c2, tr, on1, off1, on2, off2] = WORKING_FRAMES;
-    const dot = "\u2022";
-    const empty = "\u00b7";
-    const row = (cells: string) => `\t\t${cells}`;
-    const frame = (top: string, mid: string, bot: string) => `${row(top)}\n${row(mid)}\n${row(bot)}`;
-    expect(tl).toBe(frame(`${dot}${empty}${empty}`, `${empty}${empty}${empty}`, `${empty}${empty}${empty}`));
-    expect(c1).toBe(frame(`${empty}${empty}${empty}`, `${empty}${dot}${empty}`, `${empty}${empty}${empty}`));
-    expect(br).toBe(frame(`${empty}${empty}${empty}`, `${empty}${empty}${empty}`, `${empty}${empty}${dot}`));
-    expect(bl).toBe(frame(`${empty}${empty}${empty}`, `${empty}${empty}${empty}`, `${dot}${empty}${empty}`));
-    expect(c2).toBe(c1);
-    expect(tr).toBe(frame(`${empty}${empty}${dot}`, `${empty}${empty}${empty}`, `${empty}${empty}${empty}`));
-    const full = frame(`${dot}${empty}${dot}`, `${empty}${dot}${empty}`, `${dot}${empty}${dot}`);
-    expect([on1, on2]).toEqual([full, full]);
-    expect([off1, off2]).toEqual(["", ""]);
-    for (const f of [tl, c1, br, bl, c2, tr, on1, on2]) {
-      expect(f.split("\n")).toHaveLength(3);
-      for (const line of f.split("\n")) expect(line.startsWith("\t\t")).toBe(true);
-    }
+    expect([tl, c1, br, bl, c2, tr]).toEqual(["\t\t\u2801", "\t\t\u2812", "\t\t\u2820", "\t\t\u2804", "\t\t\u2812", "\t\t\u2808"]);
+    expect([on1, on2]).toEqual(["\t\t\u282d", "\t\t\u282d"]);
+    expect([off1, off2]).toEqual(["\t\t ", "\t\t "]);
+    for (const frame of WORKING_FRAMES) expect(frame.startsWith("\t\t")).toBe(true);
     const seen: unknown[] = [];
     applyWorkingIndicator({ setWorkingIndicator: (o) => { seen.push(o); } });
     expect(seen).toEqual([{ frames: WORKING_FRAMES, intervalMs: WORKING_FRAME_MS }]);
