@@ -628,7 +628,7 @@ describe("CORE-2358 global defaults", async () => {
 });
 
 describe("ultracompact rows", async () => {
-  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, ultraBashSubject, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, ultraBashSubject, ULTRA_BASH_VERB, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
   const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
@@ -679,6 +679,10 @@ describe("ultracompact rows", async () => {
     expect(ultraExternalSubject("SendMessage", { reply_to: "m1" })).toBe("reply m1");
   });
 
+  test("bash ultra verb is the full phrase", () => {
+    expect(ULTRA_BASH_VERB).toBe("Ran shell command");
+  });
+
   test("bash subject strips a dangling && or || tail", () => {
     expect(ultraBashSubject("rm -f /tmp/x && echo done")).toBe("rm -f /tmp/x");
     expect(ultraBashSubject("a || b")).toBe("a");
@@ -699,6 +703,15 @@ describe("ultracompact rows", async () => {
     const raw = renderUltraRow(mark, { statusColor: "error", verb: "read", subject: "/a", primary: "nope" });
     expect(raw).toContain("[error]");
     expect(raw).not.toContain("\x1b[2m");
+  });
+
+  test("failed rows say so, once", () => {
+    const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*` };
+    expect(strip(renderUltraRow(mark, { statusColor: "error", verb: "bash", subject: "x" })).trimEnd().endsWith("failed")).toBe(true);
+    expect(strip(renderUltraRow(mark, { statusColor: "error", verb: "bash", subject: "x", primary: "already failed" })).match(/failed/g)?.length).toBe(1);
+    expect(strip(renderUltraRow(mark, { statusColor: "success", verb: "bash", subject: "x" }))).not.toContain("failed");
+    expect(strip(buildUltraExternalLine("SendMessage", { to: "b" }, ["no wake"], "error")).trimEnd().endsWith("failed")).toBe(true);
+    expect(strip(buildUltraExternalLine("x", {}, ["ok"], "success"))).not.toContain("failed");
   });
 
   test("bracket-only result lines never duplicate the header", () => {
