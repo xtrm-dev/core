@@ -64,6 +64,7 @@ export interface XtrmUiPrefs {
   diffPreviewLines: number;
   extPreviewLines: number;
   extNoCompact: boolean;
+  ultracompact: boolean;
 }
 
 // ============================================================================
@@ -83,6 +84,7 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   diffPreviewLines: 18,
   extPreviewLines: 6,
   extNoCompact: false,
+  ultracompact: false,
 };
 
 /** Collapsed command/code lines before the hidden-count line. Agent context is
@@ -120,6 +122,7 @@ export function normalizePrefs(input: unknown, base: XtrmUiPrefs = DEFAULT_PREFS
     diffPreviewLines: normalizeCappedLines((source as { diffPreviewLines?: unknown }).diffPreviewLines, base.diffPreviewLines, 50),
     extPreviewLines: normalizeCappedLines((source as { extPreviewLines?: unknown }).extPreviewLines, base.extPreviewLines, 50),
     extNoCompact: source.extNoCompact ?? DEFAULT_PREFS.extNoCompact,
+    ultracompact: (source as { ultracompact?: unknown }).ultracompact === true,
   };
 }
 
@@ -513,7 +516,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 38;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 39;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -799,6 +802,80 @@ export function bareExternalToolHeader(
   };
 }
 
+/** Class B operational tools keep the `●` in ultra rows; every other
+ *  external tool takes the two-space indent (Class A). */
+const ULTRA_KEEP_DOT = new Set([
+  "BashBackground",
+  "Monitor",
+  "BackgroundStop",
+  "SendMessage",
+  "ListAgents",
+]);
+
+export function ultraExternalSubject(toolName: string | undefined, args: Record<string, unknown>): string | undefined {
+  const firstCode = externalToolCodePreview(toolName, args)?.[0]?.trim();
+  if (firstCode) return firstCode;
+  switch (toolName) {
+    case "BashBackground":
+      return typeof args.command === "string" && args.command ? shortenCommand(args.command) : undefined;
+    case "Monitor": {
+      if (typeof args.command === "string" && args.command) return shortenCommand(args.command);
+      const ws = asRecord(args.ws);
+      return typeof ws?.url === "string" && ws.url ? shortenCommand(ws.url) : undefined;
+    }
+    case "BackgroundStop":
+      return typeof args.task_id === "string" && args.task_id ? args.task_id : undefined;
+    case "SendMessage": {
+      if (typeof args.to === "string" && args.to) return `to ${args.to}`;
+      if (typeof args.reply_to === "string" && args.reply_to) return `reply ${args.reply_to}`;
+      if (typeof args.cancel === "string" && args.cancel) return `cancel ${args.cancel}`;
+      if (typeof args.status === "string" && args.status) return `status ${args.status}`;
+      return undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+export function ultraExternalPrimary(toolName: string | undefined, resultTexts: string[]): string | undefined {
+  if (resultTexts.length === 0) return undefined;
+  const joined = resultTexts.join("\n");
+  if (toolName === "ListAgents") {
+    const roster = joined.match(/Peer sessions \((\d+)\)/);
+    if (roster) return `${roster[1]} ${roster[1] === "1" ? "peer" : "peers"}`;
+  }
+  const first = joined.split("\n").find((line) => line.trim().length > 0);
+  return first ? shortenCommand(first, 80) : undefined;
+}
+
+/** Single-line ultra frame row: bare provider/action header (never sniffed),
+ *  no `●` except Class B, no `·` — the outcome rides the dim level. */
+export function buildUltraExternalLine(
+  toolName: string | undefined,
+  args: Record<string, unknown>,
+  resultTexts: string[],
+  status: ToolRowStatus,
+): string {
+  const kind = externalToolFrameKind(toolName) ?? "external";
+  const bare = bareExternalToolHeader(kind, toolName);
+  const subject = ultraExternalSubject(toolName, args);
+  const primary = resultTexts.length > 0 ? ultraExternalPrimary(toolName, resultTexts) : undefined;
+  const dot = ULTRA_KEEP_DOT.has(toolName ?? "")
+    ? `${status === "success" ? "\x1b[2m●\x1b[22m" : "●"} `
+    : "  ";
+  const spanColor = status === "success" ? "" : "\x1b[2m";
+  const spanReset = status === "success" ? "" : "\x1b[22m";
+  let row = `${dot}${boldSgr("used")} ${XTRM_EXT_ACCENT}${boldSgr(bare.provider)}\x1b[39m`;
+  const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
+  const spans = [actionPart, subject]
+    .filter((part): part is string => !!part)
+    .map((part) => `${spanColor}${boldSgr(part)}${spanReset}`)
+    .join("  ");
+  if (spans) row += ` ${spans}`;
+  if (primary) row += `  \x1b[2m${primary}\x1b[22m`;
+  return row;
+}
+
 export function renderExternalToolLines(
   lines: string[],
   width: number,
@@ -882,6 +959,19 @@ async function installExternalToolFramePatch(): Promise<void> {
     const tailLength = preview && this.result ? (resultTextLinesOnly(this)?.length ?? 0) : 0;
     const codeCount = preview ? Math.max(0, content.length - tailLength) : 0;
     const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
+    if (activeUltracompact() && !isExpanded) {
+      try {
+        const line = buildUltraExternalLine(
+          this.toolName,
+          getToolArgs(this),
+          this.result ? collectResultTexts(this) : [],
+          status,
+        );
+        return [...leading, truncateToWidth(line, Math.max(8, width))];
+      } catch {
+        return rendered;
+      }
+    }
     let styled: string[];
     try {
       styled = renderExternalToolLines(
@@ -1105,6 +1195,7 @@ function registerCommands(
       `Diff lines: ${prefs.diffPreviewLines}`,
       `Extension lines: ${prefs.extPreviewLines}`,
       `Extension compaction: ${prefs.extNoCompact ? "off" : "on"}`,
+      `Ultracompact: ${prefs.ultracompact ? "on" : "off"}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ].join("\n"));
@@ -1279,6 +1370,26 @@ function registerCommands(
     },
   });
 
+  pi.registerCommand("xtrm-ui-ultra", {
+    description: "Ultracompact tool rows (header-only Class A, one-line Class B): on|off",
+    getArgumentCompletions: (prefix) => {
+      const values = ["on", "off"].filter((item) => item.startsWith(prefix));
+      return values.length > 0 ? values.map((value) => ({ value, label: value })) : null;
+    },
+    handler: async (args, ctx) => {
+      const on = parseToggleArg(args);
+      if (on === undefined) {
+        ctx.ui.notify("Usage: /xtrm-ui-ultra on|off", "warning");
+        return;
+      }
+      const prefs = { ...getPrefs(), ultracompact: on };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      applyXtrmChrome(ctx, prefs, getThinkingLevel);
+      ctx.ui.notify(`Ultracompact rows ${on ? "enabled" : "disabled"}.`, "info");
+    },
+  });
+
   pi.registerCommand("xtrm-ui-diff-lines", {
     description: "Diff preview lines for edit/write rows: 1-50",
     handler: async (args, ctx) => {
@@ -1420,6 +1531,11 @@ export function activeExtNoCompact(): boolean {
   return activePrefsSnapshot?.extNoCompact ?? DEFAULT_PREFS.extNoCompact;
 }
 
+/** Ultracompact rows (`/xtrm-ui-ultra on`): header-only Class A, one-line Class B. Collapsed only. */
+export function activeUltracompact(): boolean {
+  return activePrefsSnapshot?.ultracompact ?? DEFAULT_PREFS.ultracompact;
+}
+
 /** Display-only segmentation: a `&&`/`||` chain is one string, so split it
  * into visual segments before capping — otherwise chained writes never
  * compact. The model still receives the raw command; a `&&` inside quotes
@@ -1470,6 +1586,44 @@ function renderNamedToolTree(
   return appendToolTree(theme, [
     `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, theme.bold(label))}${subject ? ` ${theme.fg(subjectColor, subject)}` : ""}`,
   ], outputLines, meta);
+}
+
+// ============================================================================
+// Ultracompact rows (/xtrm-ui-ultra on). Collapsed only; expanded keeps the
+// current rendering verbatim. No `●` on Class A (two-space indent matches the
+// `● ` width), no `·` anywhere — fields split by dimming levels over
+// two-space gaps. Thinking rows are untouched.
+// ============================================================================
+
+export interface UltraRowParts {
+  statusColor: string;
+  verb: string;
+  subject?: string;
+  /** Primary meta: dim level. */
+  primary?: string;
+  /** Secondary meta: muted level. */
+  secondary?: string;
+  /** Class B operational tools keep the `●`; Class A takes the indent. */
+  dot?: boolean;
+}
+
+export function renderUltraRow(theme: any, parts: UltraRowParts): string {
+  const subjectColor = parts.statusColor === "success" ? "text" : "dim";
+  const head = parts.dot
+    ? `${theme.fg(parts.statusColor, "●")} ${theme.fg(parts.statusColor, theme.bold(parts.verb))}`
+    : `  ${theme.fg(parts.statusColor, theme.bold(parts.verb))}`;
+  let row = parts.subject ? `${head} ${theme.fg(subjectColor, parts.subject)}` : head;
+  if (parts.primary) row += `  ${theme.fg("dim", parts.primary)}`;
+  if (parts.secondary) row += `  ${theme.fg("muted", parts.secondary)}`;
+  return row;
+}
+
+function renderUltraPendingCall(theme: any, toolName: string, args: Record<string, unknown>): Text {
+  const verb = toolName === "bash" ? "Ran" : toolName;
+  const subject = toolName === "bash"
+    ? shortenCommand(splitCommandSegments(String(args.command ?? ""))[0] ?? "")
+    : summarizeToolSubject(toolName, args);
+  return new Text(renderUltraRow(theme, { statusColor: "accent", verb, subject }), 0, 0);
 }
 
 function renderPendingCall(toolName: string, args: Record<string, unknown>, theme: any, commandCap: number = DEFAULT_COMMAND_PREVIEW_LINES, expanded = false): Text {
@@ -1641,9 +1795,11 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     context: XtrmToolRenderContext,
   ) => {
     context.state.startedAt ??= Date.now();
-    return context.isPartial && !context.executionStarted
-      ? renderPendingCall(toolName, args, theme, getPrefs().commandPreviewLines)
-      : toolRowText(theme, "");
+    if (context.isPartial && !context.executionStarted) {
+      if (getPrefs().ultracompact) return renderUltraPendingCall(theme, toolName, args);
+      return renderPendingCall(toolName, args, theme, getPrefs().commandPreviewLines);
+    }
+    return toolRowText(theme, "");
   };
   const renderDuration = (context: XtrmToolRenderContext) =>
     formatDuration(context.state.startedAt == null ? undefined : Date.now() - context.state.startedAt);
@@ -1661,6 +1817,14 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const details = (result.details ?? {}) as BashToolDetails;
       const args = context.args as Record<string, unknown>;
       const command = String(args.command ?? "");
+      if (getPrefs().ultracompact && !expanded) {
+        const first = splitCommandSegments(command)[0] ?? "";
+        return toolRowText(theme, renderUltraRow(theme, {
+          statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
+          verb: "Ran",
+          subject: shortenCommand(first),
+        }));
+      }
       if (isPartial) {
         return toolRowText(theme, renderBashTree(theme, "accent", command, [], undefined, getPrefs().commandPreviewLines, expanded));
       }
@@ -1689,6 +1853,18 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("read", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
+      if (getPrefs().ultracompact && !expanded) {
+        const ultraArgs = context.args as Record<string, unknown>;
+        const base = shortenPath(String(ultraArgs.path ?? ""));
+        const ultraRange = lineRange(ultraArgs.offset as number | undefined, ultraArgs.limit as number | undefined);
+        const first = result.content[0];
+        return toolRowText(theme, renderUltraRow(theme, {
+          statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
+          verb: "read",
+          subject: ultraRange ? `${base}:${ultraRange}` : base,
+          primary: !isPartial && first?.type === "image" ? "image" : undefined,
+        }));
+      }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "read", "loading"));
       const details = (result.details ?? {}) as ReadToolDetails;
       const args = context.args as Record<string, unknown>;
@@ -1737,7 +1913,21 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderShell: "self",
     renderCall: (args, theme, context) =>
       renderCall("edit", args as Record<string, unknown>, theme, context),
-    renderResult(result, { isPartial }, theme, context) {
+    renderResult(result, { expanded, isPartial }, theme, context) {
+      if (getPrefs().ultracompact && !expanded) {
+        const ultraArgs = context.args as Record<string, unknown>;
+        const ultraDetails = (result.details ?? {}) as EditToolDetails;
+        const stats = ultraDetails.diff ? diffStats(ultraDetails.diff) : undefined;
+        const ultraText = getTextContent(result as any);
+        return toolRowText(theme, renderUltraRow(theme, {
+          statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
+          verb: "edit",
+          subject: shortenPath(String(ultraArgs.path ?? ""), 42),
+          primary: context.isError || isPartial
+            ? ultraText.split("\n")[0] || undefined
+            : stats ? `+${stats.additions} -${stats.removals}` : undefined,
+        }));
+      }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "edit", "applying"));
       const details = (result.details ?? {}) as EditToolDetails;
       const args = context.args as Record<string, unknown>;
@@ -1782,6 +1972,27 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       return renderCall("write", input, theme, context);
     },
     renderResult(result, { expanded, isPartial }, theme, context) {
+      if (getPrefs().ultracompact && !expanded) {
+        const ultraArgs = context.args as Record<string, unknown>;
+        const ultraContent = String(ultraArgs.content ?? "");
+        const ultraPreview = (context.state as XtrmToolRenderState).writePreview;
+        const ultraText = getTextContent(result as any);
+        const primary = context.isError || isPartial
+          ? ultraText.split("\n")[0] || undefined
+          : ultraPreview?.kind === "updated"
+            ? `+${ultraPreview.additions} -${ultraPreview.removals}`
+            : ultraPreview?.kind === "created"
+              ? `${ultraPreview.lineCount} lines`
+              : ultraPreview?.kind === "unchanged"
+                ? "no changes"
+                : ultraContent ? `${lineCount(ultraContent)} lines` : undefined;
+        return toolRowText(theme, renderUltraRow(theme, {
+          statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
+          verb: "write",
+          subject: shortenPath(String(ultraArgs.path ?? ""), 42),
+          primary,
+        }));
+      }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "write", "writing"));
       const args = context.args as Record<string, unknown>;
       const path = String(args.path ?? "");
@@ -1849,6 +2060,17 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("find", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
+      if (getPrefs().ultracompact && !expanded) {
+        const ultraArgs = context.args as Record<string, unknown>;
+        const ultraText = getTextContent(result as any);
+        const count = summarizeCount(ultraText);
+        return toolRowText(theme, renderUltraRow(theme, {
+          statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
+          verb: "find",
+          subject: String(ultraArgs.pattern ?? ""),
+          primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "match" : "matches"}` : undefined,
+        }));
+      }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "find", "searching"));
       const details = (result.details ?? {}) as FindToolDetails;
       const args = context.args as Record<string, unknown>;
@@ -1882,6 +2104,17 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("grep", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
+      if (getPrefs().ultracompact && !expanded) {
+        const ultraArgs = context.args as Record<string, unknown>;
+        const ultraText = getTextContent(result as any);
+        const count = countPrefixedItems(ultraText, ["-- "]) || summarizeCount(ultraText);
+        return toolRowText(theme, renderUltraRow(theme, {
+          statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
+          verb: "grep",
+          subject: String(ultraArgs.pattern ?? ""),
+          primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "match" : "matches"}` : undefined,
+        }));
+      }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "grep", "searching"));
       const details = (result.details ?? {}) as GrepToolDetails;
       const args = context.args as Record<string, unknown>;
@@ -1915,6 +2148,17 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("ls", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
+      if (getPrefs().ultracompact && !expanded) {
+        const ultraArgs = context.args as Record<string, unknown>;
+        const ultraText = getTextContent(result as any);
+        const count = summarizeCount(ultraText);
+        return toolRowText(theme, renderUltraRow(theme, {
+          statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
+          verb: "ls",
+          subject: shortenPath(String(ultraArgs.path ?? ".")),
+          primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "entry" : "entries"}` : undefined,
+        }));
+      }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "ls", "listing"));
       const details = (result.details ?? {}) as LsToolDetails;
       const args = context.args as Record<string, unknown>;

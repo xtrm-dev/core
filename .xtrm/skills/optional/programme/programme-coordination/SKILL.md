@@ -8,6 +8,54 @@ description: >
   the operator asks for a programme status in Jira. Not for implementing code (workers do
   that), single issues (use planning), or Mercury production windows (use mercury-release,
   production-ops).
+index:
+  paragraphs:
+    - id: two-systems
+      title: "The rule: two systems, no files"
+      when: "Deciding where anything is written"
+    - id: shape
+      title: "Shape of a programme"
+      when: "Creating epics, themes, stories, sprints"
+    - id: start
+      title: "1. Start"
+      when: "Starting a programme"
+    - id: run
+      title: "2. Run"
+      when: "Journaling, PRs, reviews, closes, Jira status moves"
+    - id: fleet
+      title: "3. Workers (fleet)"
+      when: "Dispatching or supervising workers"
+    - id: goal
+      title: "4. /goal keeps everyone alive"
+      when: "Writing coordinator or worker goals"
+    - id: continuity
+      title: "5. Continuity"
+      when: "Handoff, resume, restart"
+    - id: modes
+      title: "Modes"
+      when: "Choosing Light vs Full"
+    - id: pitfalls
+      title: "Pitfalls"
+      when: "Before fan-out, Jira creates, approvals"
+  paths:
+    - path: references/substrate.md
+      when: "Contract, issue, journal command syntax"
+      see: [start, run, continuity]
+    - path: references/jira.md
+      when: "Jira fields, windows, binding rule, recipes"
+      see: [shape, run]
+    - path: references/fleet.md
+      when: "Worker launch, liveness, reaping, limits"
+      see: [fleet]
+    - path: references/worked-example.md
+      when: "Full worked pass before acting"
+      see: [start]
+    - path: scripts/jira.py
+      when: "Jira REST calls"
+      see: [run]
+    - path: references/agentrun.md
+      when: "Board-scale audits — prefer AgentRun over per-item API"
+      see: [run, fleet]
 ---
 
 # Programme coordination
@@ -21,7 +69,7 @@ The coordinator never builds or reviews code itself.
 | System | Holds | Written by |
 |---|---|---|
 | **Substrate** (`sb`) | contracts, plan, decisions, open questions, evidence, handoffs | coordinator and workers |
-| **Jira** | the operator's view: programme, themes, sprints, human-only steps | coordinator |
+| **Jira** | the operator's view: programme, themes, sprints, human-only steps, and the production calendar | coordinator |
 
 Do not create `PLAN.md`, a journal file, a goal-prompt file or a `briefs/` folder. Each has a
 Substrate home:
@@ -41,25 +89,32 @@ Details and exact commands: `references/substrate.md`.
 
 ```
 Substrate                              Jira (project ISSUE or XT)
-Programme epic          ───── 1:1 ───  Epic
-  Theme epic (child)    ───── 1:1 ───  Story, in a weekly sprint
-    Worker task                        (leaf: Substrate only, never mirrored)
-    Worker task
-  Operator step (approval, window)     Task, related to its Story, in the sprint
+  Programme epic        ───── 1:1 ───  Epic (programme)
+                                         │ Relates (an Epic cannot have a parent)
+  Theme epic (child)    ───── 1:1 ───  theme Epic (label mmd-programme + substrate:<theme ref>,
+                                         in a sprint)
+                                           ├ theme Story (sprint deliverable)
+    Worker task                            │ (leaf: Substrate only, never mirrored)
+    Worker task                            └ window Tasks
+  Operator step / window               Task (label window), parent = its theme Epic, in the sprint
 ```
 
-- **Epic and Story map 1:1.** Each carries the other's key (Jira label `substrate:<ref>` plus the
-  description on one side, an `sb issue note` on the other).
+- **Substrate theme epic maps 1:1 to the Jira theme Epic.** Each carries the other's key (Jira label
+  `substrate:<ref>` plus the description on one side, an `sb issue note` on the other).
 - **Worker tasks stay in Substrate.** The Story lists their refs. Never create one Jira ticket per
   worker task: that was the failure this shape replaces.
 - **A theme is a result a person can recognise**, one deliverable that fits a sprint. Every Story
   goes into a sprint.
+- **Window Tasks** (production or operator windows) are parented to their theme Epic, not the programme
+  Epic. The programme Epic links to the theme Epics (Relates) instead of parenting them, because an
+  Epic cannot have a parent in a team-managed project. Keep each theme Epic under ~15–20 direct
+  children so the board remains scannable.
 - **The Epic is an ADR-style brief** an agent can reason from (context, decision, rejected
   alternatives, consequences), not a list of directives. It is written in Jira. The Substrate epic
   contract carries the same content in the seven fields (`references/substrate.md`).
-- **Owners.** Jira owns summary, brief, sprint, assignee, priority, epic link and portfolio status.
-  Substrate owns the contract, readiness, attestation, claim, journal, provenance and closure
-  evidence. Edit a field in the system that owns it.
+- **Owners.** Jira owns summary, brief, sprint, assignee, priority, epic link, portfolio status,
+  and the production calendar (windows). Substrate owns the contract, readiness, attestation,
+  claim, journal, provenance and closure evidence. Edit a field in the system that owns it.
 - Epics nest in Substrate (`--kind epic --parent <epic>`). The journal levels are: programme
   (overall story and decisions), theme (that theme's story), task (one worker's detail).
 
@@ -90,6 +145,10 @@ sprint rhythm and the board profile: `references/jira.md`.
 - **New finding during the work:** create a child issue, link it with
   `sb issue relate --kind discovered_from`, add its ref to the matching Story.
 - **A scope change** is a new contract revision, never a journal entry that overrides the contract.
+- **Every PR that can be deployed or that changes runtime behaviour, config, schema, or serving
+  must have a window Task (or an explicit `no-window` exception) before it is considered ready
+  for merge.** See `references/jira.md`, “Windows on the Jira calendar”. A PR without one of
+  these is untracked and must not be included in a promotion window.
 - **Every PR:** review, decision, fix, delta check, merge with `--match-head-commit`. After the
   merge, confirm the main branch equals the head that CI tested. If another PR merged in between,
   the combination is untested: the next PR's CI or a canary must prove it. (In repos where a push
@@ -108,9 +167,13 @@ sprint rhythm and the board profile: `references/jira.md`.
   moves status; the GitHub for Jira dev panel on ISSUE is evidence only. Until `sb jira` exists
   (XTRM-639), the coordinator moves each item by hand on the day of the event, to the board's
   status that means: ready, being worked, in review, merged and waiting for production, done, done
-  with follow-up, parked, blocked, will not do. Move by **transition id**, never by name: ids differ
-  per project (`41` is Done on XT and Deferred on ISSUE). The id tables are in `references/jira.md`;
+  with follow-up, parked, blocked, will not do. The operator might approve mutations to the board explicitly.
+- Move by **transition id**, never by name: ids differ per project (`41` is Done on XT and Deferred on ISSUE). The id tables are in `references/jira.md`;
   re-read them once per programme and record them in the board-profile finding.
+- **Board-scale checks run as AgentRun workflows, not API loops**: title/field hygiene,
+  coverage checks, per-ticket programme verdicts, and “open PRs without a window”
+  (`references/agentrun.md`). Snapshot once, judge in parallel, read the verdicts. The coordinator
+  never walks a whole board by hand.
 - **Post results to Jira as comments**: findings, decisions, results and closures that the
   operator needs, with the Substrate ref. The daily report is written once, as a `result` entry on
   the programme epic, then posted as a comment on the Jira Epic. Never copy claims, journals or
@@ -124,7 +187,7 @@ sprint rhythm and the board profile: `references/jira.md`.
 |---|---|
 | Bounded role with a contract: review, exploration, audit, test run | specialist (Claude plugin MCP `specialist_dispatch`, or Pi native specialists) |
 | Long-running owned job with a contract: watcher, monitor, audit loop, background check | specialist as above — not one-off only (below) |
-| The same judgment repeated over many items, in an operator-approved workflow | AgentRun |
+| The same judgment repeated over many items, in an operator-approved workflow | AgentRun (`references/agentrun.md` — mandatory at board scale, never per-item API loops) |
 | Interactive or long-owned work, or anything that needs network, `gh` or docker | tmux window worker (below) |
 
 Rules for specialists and AgentRun: `references/fleet.md`, "Specialists and AgentRun".
@@ -142,9 +205,25 @@ exact launch command: `references/fleet.md`. Short form:
 
 ```
 xt claude <name> --window --prompt '<skills> ... /goal ...'
+xt pi <name> --window --prompt "<skill names> /goal"
 ```
 
 - Every worker gets its own attested issue before launch. That contract is its brief.
+- **Roster shape.** The coordinator window holds the coordinator and its two standing helpers as
+  panes (helper = heavy reads, timers, host health; board = Jira and Substrate audit). Every other
+  xt worker goes into ONE window named `workers`, one pane each (tiled). Never one window per
+  worker. Launch `xt pi <name> --window` from the MAIN checkout (xt refuses nested worktrees from
+  inside a worktree), then `tmux join-pane -d -s <pane> -t <coordinator or workers pane>` and
+  `tmux select-layout tiled`.
+- **Choose the shape first.** A specialist fits bounded roles and long watcher jobs; `xt pi` fits
+  only gh, push, docker or long interactive ownership. Some specialists carry a lease waiver. If a
+  read-only specialist reports "workspace not leased", do not route around it: use a Sonnet
+  subagent for the read-only check.
+- **Lifetime.** Reap an `xt pi` worker (`kill-pane` by id) in the same cycle its issue closes with
+  a result. List the reap condition of every live pane in each handoff.
+- **Superseding an old coordinator:** collect a full report to a file and a handoff entry, take
+  over every live duty (watchers, crons, owed GOs, owed PR work), journal the takeover list, then
+  `kill-pane` its panes one by one.
 - **The worker knows who dispatched it.** `xt` exports the coordinator's messaging name and
   address (`XTRM_DISPATCHER_NAME`, `XTRM_DISPATCHER_ADDRESS`) and the worker's primer names them,
   so the prompt does not need to. Keep "report with `SendMessage` and journal on your issue" in
@@ -195,9 +274,29 @@ update Jira and carry open Stories to the next sprint.
 
 ## 5. Continuity
 
-- Handoff at about 55% own context: `sb journal append <epic> --kind handoff`, then compact, then
+- Handoff at about 40% own context for Claude, 30% for Pi. You as an agent deliberately decide when it is appropriate to log a journal and checkpoint: `sb journal append <epic> --kind handoff`, then compact, then
   re-arm `/goal`. Resume: `sb issue resume <epic>` (root-epic resume summarises children).
 - Set `SUBSTRATE_ISSUE_REF` to the programme epic so the pre-compact hook checkpoints.
+- **Compaction.** Bind the coordinator worktree: `echo <epic> > .substrate-issue` and add it to
+  `.git/info/exclude`. The substrate plugin then checkpoints on PreCompact and injects the resume
+  capsule on SessionStart(compact). The edit gate then requires a live claim: claim the epic with a
+  long TTL and renew it at every checkpoint.
+- One user-level SessionStart(compact) hook, `~/.claude/hooks/mercury-post-compact.sh`, is
+  registered in `~/.claude/settings.json` and is active only under `~/projects/mercury`. It prints
+  skill pointers and the resume steps for the bound issue (`.substrate-issue` or
+  `SUBSTRATE_ISSUE_REF`), runs an optional per-checkout `.claude/post-compact-extra.sh` (the
+  coordinator's roster and schedule, git-excluded), and types "continue with the goal" into
+  `$TMUX_PANE` after about 12 s, so an auto-compacted session does not sit idle. A running session
+  loads hooks only at start: open `/hooks` once or restart. Pi workers are not covered: the
+  coordinator resumes them by hand.
+- Keep the `/goal` text in a file. Set it again after compaction if it is gone.
+- Workers compact too, and then idle. Pi workers cannot run `/compact` themselves: the coordinator
+  types `/compact` into the pane while it is idle. After compaction a worker needs a resume nudge
+  (`sb issue resume <ref>`, claim again, report). The coordinator's post-compaction steps include
+  resuming every worker.
+- Session crons survive compaction but not process exit. Background sleeps die at the task cap
+  (30 min for Monitor, about 2 h for bash). For durable timers use `systemd-run --user` transient
+  units (they vanish if their timer is stopped).
 - Before a restart or handoff, settle or stop every specialist activation you started: a
   coordinator restart orphans them.
 - The handoff lists everything the programme depends on that dies or goes stale: open windows,
@@ -214,7 +313,7 @@ update Jira and carry open Stories to the next sprint.
 - **Full:** adds production windows, release-branch checks and the deploy owner. The release
   steps are Mercury operations, not this skill: use `mercury-release` and `production-ops`, and
   journal their outcomes on the epic. **Jira is the only calendar:** each window is a Jira Task
-  with label `window`, a parent and four date fields (`references/jira.md`, "Windows on the Jira
+  with label `window`, parent = its theme Epic, and four date fields (`references/jira.md`, "Windows on the Jira
   calendar"). No Google Calendar events.
 
 ## Pitfalls
@@ -227,14 +326,18 @@ update Jira and carry open Stories to the next sprint.
 - Run `sb` inside a git checkout of the repo, or pass `--project <id>`. Per-verb `sb help` is
   broken in 0.2.2; use `sb help <group>` or `references/substrate.md`.
 - A scripted Jira create must have no import-time side effects, and a re-run must not duplicate
-  tickets: search by label `substrate:<ref>` before creating.
+  tickets: search by label `substrate:<ref>` AND the exact summary before creating, and compare the summary as an
+  exact string after the read (one substrate ref can be shared by two themes, so a label-only
+  search reuses the wrong Epic).
 - Write operator-facing Jira text in plain language: what changes, who runs it, when (UTC).
 - Never relay a privileged-action approval between sessions; the operator gives it in the
   session that asks.
 - Peers can message twice or cross: answer the newest, do not re-act.
+- An Epic with more than ~20 direct children is a signal to create or use Stories as parents
+  for the window Tasks and to move detailed worker work back to Substrate.
 
 ## References
 
 `references/substrate.md` · `references/jira.md` · `references/fleet.md` ·
-`references/worked-example.md` · `scripts/jira.py` (Jira REST, token file from `JIRA_TOKEN_FILE`, never
-printed).
+`references/worked-example.md` · `references/agentrun.md` · `scripts/jira.py` (Jira REST, token file from `JIRA_TOKEN_FILE`, never
+printed). The frontmatter `index` maps every paragraph and path to its read trigger.
