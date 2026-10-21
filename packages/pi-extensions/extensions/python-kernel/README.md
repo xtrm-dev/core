@@ -61,18 +61,23 @@ _              # last expression result (exec branches leave it untouched)
 
 ## skillbridge — python-backed skills as importable modules
 
-> Status: first consumer `forensics` ships with this package
-> (`skills/forensics`, discovered via `bundledSkillsDir()`); user and env
-> roots keep precedence. Zero install-time deps is a hard requirement.
+> `forensics` is vendored under `.xtrm/skills/optional/forensics/` (authoring SSOT),
+> installed via bootstrap/update into the global skills root, and materialized into
+> `~/.xtrm/skills/active/pi` when enabled via `enabledPacks` for pi (canonical selection).
+> Zero install-time deps is a hard requirement.
 
 Skill modules following the prime-agent Agent Skills convention
 (`SKILL.md` + `src/<import_name>/__init__.py`) are discovered at extension init
-from these roots:
+from the canonical root:
 
-1. `$PI_SKILL_PATHS` (colon-separated), if set
-2. `$PI_SKILL_ROOTS` (colon-separated), if set
-3. `~/.pi/agent/skills/`
-4. `~/.claude/skills/`
+- `~/.xtrm/skills/active/pi/` — the materialized global pi view (default skills plus
+  the packs enabled via `enabledPacks` for pi). A disabled pack is absent from the
+  view, so it stays off `sys.path`.
+
+Lifecycle: author in `.xtrm/skills/optional/<pack>/`, ship via bootstrap/update
+(`ensureGlobalSkillsBootstrapped` copies the `default` and `optional` tiers),
+materialize via `materializeGlobalRuntimeViews` (`selectGlobalRuntimeSkills` for pi),
+enable with `xt skills enable <pack> --pi`.
 
 A root is scanned for directories containing `SKILL.md` and exactly one
 package under `src/` (`src/<pkg>/__init__.py`). The **import name is the
@@ -88,14 +93,14 @@ kill the kernel.
 The tool description appends, when any module is mounted:
 
 ```
-Importable skill modules: sre_chain — pre-imported in namespace; help(x) for docs.
+Importable skill modules: forensics — pre-imported in namespace; help(x) for docs.
 ```
 
 Example cell (no host round trips):
 
 ```python
-sre_chain.load("config")     # calls into the mounted skill module directly
-help(sre_chain)              # introspection works in-kernel
+recs = forensics.load_jsonl(path)   # calls into the mounted skill module directly
+help(forensics)                      # introspection works in-kernel
 ```
 
 ### Reload (dev-loop)
