@@ -191,13 +191,13 @@ const THINKING_RECAP_MAX = 120;
 
 /** Minimal theme surface used to style the thinking rows. */
 export interface ThinkingRowStyle {
-	/** Bold label (SGR bold + thinkingText color; theme.bold is a no-op in pi). */
+	/** Collapsed label (dim italic — every collapsed span shares one level, zero bold). */
 	label: (text: string) => string;
-	/** Dimmed trace/recap, e.g. `theme.fg("thinkingText", text)`. */
+	/** Collapsed count span (dim italic). The expanded trace uses the expanded style. */
 	recap: (text: string) => string;
-	/** Italic recap for the collapsed row (recap color + italic). */
+	/** Collapsed recap span (dim italic). */
 	italic: (text: string) => string;
-	/** Dimmed hint, e.g. `theme.fg("dim", text)`. */
+	/** Collapsed hint (dim italic). */
 	hint: (text: string) => string;
 	/** Dimmed label separator, e.g. `theme.fg("dim", " · ")`. */
 	sep: string;
@@ -229,16 +229,43 @@ export function buildThinkingRecap(thinking: string, fallback = "Thinking..."): 
 	return source.length > THINKING_RECAP_MAX ? source.slice(0, THINKING_RECAP_MAX - 3) + "..." : source;
 }
 
-/** Collapsed row: two-space indent (tool-row alignment), bold label, dim
- *  separator, italic recap, raw char count, expand hint. */
+/** Collapsed row: every span dim italic at one level, zero bold (assistant
+ *  text blocks are trimmed before Markdown render, so literal indentation
+ *  cannot survive — distinction from response text comes from the treatment,
+ *  not the indent). Dim separator between label, recap, count, expand hint. */
 export function buildCollapsedThinkingRow(recap: string, charCount: number, style: ThinkingRowStyle): string {
-	return `  ${style.label("Thinking...")}${style.sep}${style.italic(recap)}${style.sep}${style.recap(String(charCount))} ${style.hint("(Ctrl+T to expand)")}`;
+	return `${style.label("Thinking...")}${style.sep}${style.italic(recap)}${style.sep}${style.recap(String(charCount))} ${style.hint("(Ctrl+T to expand)")}`;
 }
 
 /** Expanded block: bold label row with collapse hint, then the full dimmed trace. */
 export function buildExpandedThinkingBlock(thinking: string, style: ThinkingRowStyle): string {
 	return `${style.label("Thinking...")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(thinking.trim())}`;
 }
+
+/** Collapsed thinking-row style: every span shares one level (dim italic),
+ *  zero bold — the row reads distinct from roman full-bright response text.
+ *  Raw SGR avoids importing the unbundled theme singleton when pi runs
+ *  bundle/cli.js; dim RGB follows the active xtrm theme (dark #8a8a8a,
+ *  light #7a7a7a). themeName resolves lazily per call so a session_start
+ *  prefs load after patch install still picks up the active theme. */
+export function collapsedThinkingStyle(themeName: () => string): ThinkingRowStyle {
+	const dim = (text: string) => {
+		const rgb = themeName() === "xtrm-light" ? "122;122;122" : "138;138;138";
+		return `\x1b[38;2;${rgb}m${text}\x1b[39m`;
+	};
+	const dimItalic = (text: string) => `\x1b[3m${dim(text)}\x1b[23m`;
+	return { label: dimItalic, recap: dimItalic, italic: dimItalic, hint: dimItalic, sep: dim(" · ") };
+}
+
+/** Expanded thinking-block style, frozen at the pre-ultra treatment (bold
+ *  label, gray trace): the collapsed-only restyle must not touch expanded. */
+export const expandedThinkingStyle: ThinkingRowStyle = {
+	label: (text) => `\x1b[1m\x1b[38;2;167;167;167m${text}\x1b[39m\x1b[22m`,
+	recap: (text) => `\x1b[38;2;167;167;167m${text}\x1b[39m`,
+	italic: (text) => `\x1b[3m\x1b[38;2;167;167;167m${text}\x1b[39m\x1b[23m`,
+	hint: (text) => `\x1b[38;2;138;138;138m${text}\x1b[39m`,
+	sep: `\x1b[38;2;138;138;138m · \x1b[39m`,
+};
 
 const THINKING_ROW_LABEL = "Thinking...";
 const THINKING_ROW_EXPAND_HINT = "(Ctrl+T to expand)";
@@ -344,12 +371,13 @@ const thinkingToggleLatch: ThinkingToggleLatch = { followsToggle: false };
 /**
  * Wraps AssistantMessageComponent.updateContent so thinking blocks render as
  * XTRM preview rows. Exported for unit tests: pass the original updateContent,
- * a style, and (optionally) an isolated latch.
+ * a collapsed style, and (optionally) an isolated latch and expanded style.
  */
 export function createPatchedUpdateContent(
 	updateContent: (message: AssistantMessageLike) => void,
-	style: ThinkingRowStyle,
+	collapsedStyle: ThinkingRowStyle,
 	latch: ThinkingToggleLatch = thinkingToggleLatch,
+	expandedStyle: ThinkingRowStyle = collapsedStyle,
 ): (this: PatchableAssistantMessage, message: AssistantMessageLike) => void {
 	return function patchedUpdateContent(this: PatchableAssistantMessage, message: AssistantMessageLike) {
 		const blocks = message.content;
@@ -361,8 +389,8 @@ export function createPatchedUpdateContent(
 				const content = blocks.flatMap((block, index) => {
 					if (block.type !== "thinking" || !block.thinking?.trim()) return [block];
 					const row = compact
-						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), block.thinking.length, style)
-						: buildExpandedThinkingBlock(block.thinking, style);
+						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), block.thinking.length, collapsedStyle)
+						: buildExpandedThinkingBlock(block.thinking, expandedStyle);
 					// Text blocks render even when pi's hideThinkingBlock branch is
 					// active (a "thinking" block would be swallowed and replaced by the
 					// empty hidden label). Append an invisible single-line block (a
@@ -409,17 +437,11 @@ async function installThinkingPreviewPatch(): Promise<void> {
 	const mod = await import(pathToFileURL(entryPath).href) as {
 		AssistantMessageComponent?: AssistantMessageComponentCtor;
 	};
-	// xtrm-dark and xtrm-light both map thinkingText/dim to these values. Raw
-	// SGR avoids importing the unbundled theme singleton when pi runs bundle/cli.js.
-	const thinkingText = (text: string) => `\x1b[38;2;167;167;167m${text}\x1b[39m`;
-	const dimText = (text: string) => `\x1b[38;2;138;138;138m${text}\x1b[39m`;
-	const style: ThinkingRowStyle = {
-		label: (text) => `\x1b[1m${thinkingText(text)}\x1b[22m`,
-		recap: thinkingText,
-		italic: (text) => `[3m${thinkingText(text)}[23m`,
-		hint: dimText,
-		sep: dimText(" · "),
-	};
+	// Collapsed rows share one dim-italic level (zero bold); the expanded
+	// block keeps its frozen pre-ultra treatment via expandedThinkingStyle.
+	// The theme resolves lazily per render so a session_start prefs load
+	// after install still picks up the active theme.
+	const collapsed = collapsedThinkingStyle(() => activePrefsSnapshot?.themeName ?? DEFAULT_PREFS.themeName);
 	const proto = mod.AssistantMessageComponent?.prototype as
 		| (AssistantMessageComponentCtor["prototype"] & {
 			[PATCHED_ASSISTANT_MESSAGE]?: number | boolean;
@@ -437,7 +459,7 @@ async function installThinkingPreviewPatch(): Promise<void> {
 	);
 	if (!updateContent) return;
 	proto[ORIGINAL_ASSISTANT_UPDATE] ??= updateContent;
-	proto.updateContent = createPatchedUpdateContent(updateContent, style);
+	proto.updateContent = createPatchedUpdateContent(updateContent, collapsed, thinkingToggleLatch, expandedThinkingStyle);
 	proto[PATCHED_ASSISTANT_MESSAGE] = THINKING_PREVIEW_PATCH_VERSION;
 }
 
@@ -521,7 +543,7 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 39;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 40;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -809,13 +831,26 @@ export function bareExternalToolHeader(
 
 /** Frame styling through chalk — never hardcoded color bytes — so the
  *  frame downgrades per terminal exactly like the native theme-backed rows.
- *  Hexes mirror the xtrm theme tokens: dimGray and errorRed. */
-const ULTRA_DIM = "#8a8a8a";
-const ULTRA_ERROR = "#ff9a9a";
-const ultraDim = (text: string) => faint(chalk.hex(ULTRA_DIM)(text));
-const ultraDimBold = (text: string) => faint(chalk.hex(ULTRA_DIM)(chalk.bold(text)));
-const ultraRed = (text: string) => chalk.hex(ULTRA_ERROR)(text);
-const ultraRedBold = (text: string) => chalk.hex(ULTRA_ERROR)(chalk.bold(text));
+ *  Hexes mirror the xtrm theme tokens (dimGray/errorRed) per active theme.
+ *  normalizePrefs collapses themeName to xtrm-dark/xtrm-light, so anything
+ *  else falls back to dark (xtrm-ui forces an xtrm theme by default). */
+export function ultraThemeHexes(themeName: string): { dim: string; error: string } {
+	return themeName === "xtrm-light"
+		? { dim: "#7a7a7a", error: "#a85f5f" }
+		: { dim: "#8a8a8a", error: "#ff9a9a" };
+}
+
+/** Test/embedding hook: override the active prefs snapshot (drives frame
+ *  styling and activeUltracompact() without running the extension factory). */
+export function setActivePrefsSnapshotForTests(prefs: XtrmUiPrefs | null): void {
+	activePrefsSnapshot = prefs;
+}
+
+const ultraHexes = () => ultraThemeHexes(activePrefsSnapshot?.themeName ?? DEFAULT_PREFS.themeName);
+const ultraDim = (text: string) => faint(chalk.hex(ultraHexes().dim)(text));
+const ultraDimBold = (text: string) => faint(chalk.hex(ultraHexes().dim)(chalk.bold(text)));
+const ultraRed = (text: string) => chalk.hex(ultraHexes().error)(text);
+const ultraRedBold = (text: string) => chalk.hex(ultraHexes().error)(chalk.bold(text));
 
 /** Class B operational tools keep the `●` in ultra rows; every other
  *  external tool takes the two-space indent (Class A). */
@@ -1240,7 +1275,7 @@ function registerCommands(
       `Diff lines: ${prefs.diffPreviewLines}`,
       `Extension lines: ${prefs.extPreviewLines}`,
       `Extension compaction: ${prefs.extNoCompact ? "off" : "on"}`,
-      `Ultracompact: ${prefs.ultracompact ? "on" : "off"}`,
+      `Ultracompact: ${!prefs.ultracompact ? "off" : prefs.extNoCompact ? "on (idle: extension compaction is off)" : "on"}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ].join("\n"));

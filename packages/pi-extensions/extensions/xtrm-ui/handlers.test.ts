@@ -39,9 +39,12 @@ type RegisteredTool = {
   renderResult: (result: unknown, options: unknown, theme: unknown, context: unknown) => unknown;
 };
 
-function registerWithMock(): { tools: RegisteredTool[]; events: string[] } {
+type RegisteredCommand = { name: string; handler: (args: string, ctx: unknown) => Promise<void> };
+
+function registerWithMock(): { tools: RegisteredTool[]; events: string[]; commands: RegisteredCommand[] } {
   const tools: RegisteredTool[] = [];
   const events: string[] = [];
+  const commands: RegisteredCommand[] = [];
   const pi = {
     on: (event: string) => {
       events.push(event);
@@ -49,13 +52,34 @@ function registerWithMock(): { tools: RegisteredTool[]; events: string[] } {
     registerTool: (tool: RegisteredTool) => {
       tools.push(tool);
     },
-    registerCommand: () => {},
+    registerCommand: (name: string, def: Omit<RegisteredCommand, "name">) => {
+      commands.push({ name, ...def });
+    },
     registerMessageRenderer: () => {},
     registerMarkdownTransformer: () => {},
+    appendEntry: () => {},
     getThinkingLevel: () => "medium",
   };
   xtrmUiExtension(pi as never);
-  return { tools, events };
+  return { tools, events, commands };
+}
+
+function fakeCommandCtx() {
+  const notified: string[] = [];
+  return {
+    ctx: {
+      ui: {
+        notify: (msg: string) => { notified.push(msg); },
+        setTheme: () => {},
+        setToolsExpanded: () => {},
+        setEditorComponent: () => {},
+        setHeader: () => {},
+      },
+      getContextUsage: () => ({ tokens: 0, contextWindow: 0 }),
+      model: { id: "test" },
+    },
+    notified,
+  };
 }
 
 describe("xtrm-ui presentation-only boundary", () => {
@@ -773,7 +797,7 @@ describe("thinking collapsed row shape", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("two-space indent, italic recap, plain count", () => {
+  test("no indent, slot order label/recap/count/hint", () => {
     const style = {
       label: (t: string) => `L${t}`,
       recap: (t: string) => `R${t}`,
@@ -781,6 +805,102 @@ describe("thinking collapsed row shape", async () => {
       hint: (t: string) => `H${t}`,
       sep: "|",
     };
-    expect(buildCollapsedThinkingRow("trace here", 193, style)).toBe("  LThinking...|Itrace here|R193 H(Ctrl+T to expand)");
+    expect(buildCollapsedThinkingRow("trace here", 193, style)).toBe("LThinking...|Itrace here|R193 H(Ctrl+T to expand)");
+  });
+});
+
+describe("CORE-2502 follow-ups", async () => {
+  const mod = await import("./index.ts");
+  const { buildCollapsedThinkingRow, collapsedThinkingStyle, expandedThinkingStyle, ultraThemeHexes, setActivePrefsSnapshotForTests, DEFAULT_PREFS, renderExternalToolLines, buildUltraExternalLine } = mod;
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+  const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
+
+  test("ultraThemeHexes mirrors xtrm theme tokens per theme", () => {
+    expect(ultraThemeHexes("xtrm-dark")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
+    expect(ultraThemeHexes("xtrm-light")).toEqual({ dim: "#7a7a7a", error: "#a85f5f" });
+    expect(ultraThemeHexes("something-else")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
+  });
+
+  test("collapsed thinking style: all dim italic, zero bold, per-theme dim", () => {
+    for (const [name, rgb] of [["xtrm-dark", "138;138;138"], ["xtrm-light", "122;122;122"]] as const) {
+      const style = collapsedThinkingStyle(() => name);
+      for (const span of [style.label("Thinking..."), style.recap("193"), style.italic("trace"), style.hint("(Ctrl+T to expand)")]) {
+        expect(span).toContain("[3m");
+        expect(span).toContain(`38;2;${rgb}m`);
+        expect(span).not.toContain("[1m");
+      }
+      expect(style.sep).toContain(`38;2;${rgb}m`);
+      expect(style.sep).not.toContain("[3m");
+    }
+    const row = buildCollapsedThinkingRow("trace here", 193, collapsedThinkingStyle(() => "xtrm-dark"));
+    expect(row).not.toContain("[1m");
+  });
+
+  test("expanded thinking style keeps the frozen pre-ultra treatment", () => {
+    expect(expandedThinkingStyle.label("Thinking...")).toContain("[1m");
+    expect(expandedThinkingStyle.recap("trace")).toContain("38;2;167;167;167m");
+  });
+
+  test("frame follows the active theme (dark vs light hexes)", async () => {
+    const chalk = (await import("chalk")).default;
+    const prevLevel = chalk.level;
+    const prevPrefs = { ...DEFAULT_PREFS };
+    chalk.level = 3;
+    try {
+      setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, themeName: "xtrm-dark" });
+      expect(buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], "success")).toContain("138;138;138");
+      setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, themeName: "xtrm-light" });
+      const light = buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], "success");
+      expect(light).toContain("122;122;122");
+      expect(light).not.toContain("138;138;138");
+    } finally {
+      chalk.level = prevLevel;
+      setActivePrefsSnapshotForTests(prevPrefs);
+    }
+  });
+
+  test("expanded native rows are byte-identical with ultra on and off", async () => {
+    const { tools, commands } = registerWithMock();
+    const ultra = commands.find((c) => c.name === "xtrm-ui-ultra");
+    expect(ultra).toBeDefined();
+    const { ctx } = fakeCommandCtx();
+    const byName = Object.fromEntries(tools.map((t) => [t.name, t])) as Record<string, RegisteredTool>;
+    const cases: Array<[string, unknown, unknown]> = [
+      ["bash", { command: "echo hi && ls" }, { content: [{ type: "text", text: "hi\nfile1" }], details: {} }],
+      ["read", { path: "/tmp/x.md" }, { content: [{ type: "text", text: "l1\nl2\nl3" }], details: {} }],
+      ["edit", { path: "/tmp/x.md" }, { content: [{ type: "text", text: "edited" }], details: {} }],
+      ["write", { path: "/nonexistent-xtrm-test-file", content: "a\nb" }, { content: [{ type: "text", text: "wrote" }], details: {} }],
+      ["find", { pattern: "*.md", path: "/tmp" }, { content: [{ type: "text", text: "a.md\nb.md" }], details: {} }],
+      ["grep", { pattern: "ultra", path: "/tmp" }, { content: [{ type: "text", text: "a:1\nb:2" }], details: {} }],
+      ["ls", { path: "/tmp" }, { content: [{ type: "text", text: "a\nb" }], details: {} }],
+    ];
+    const renderAll = () => cases.map(([name, args, result]) => {
+      const out = byName[name].renderResult(result, { expanded: true, isPartial: false }, theme, { args, isError: false, state: {} }) as { text: string };
+      return out.text;
+    });
+    await ultra!.handler("off", ctx);
+    const withoutUltra = renderAll();
+    for (const text of withoutUltra) expect(text).toContain("●");
+    await ultra!.handler("on", ctx);
+    // Prove the flip took effect: a collapsed render must now be an ultra row.
+    const collapsed = byName["bash"].renderResult(
+      { content: [{ type: "text", text: "hi" }], details: {} },
+      { expanded: false, isPartial: false }, theme, { args: { command: "echo hi" }, isError: false, state: {} },
+    ) as { text: string };
+    expect(collapsed.text).not.toContain("●");
+    const withUltra = renderAll();
+    expect(withUltra).toEqual(withoutUltra);
+    await ultra!.handler("off", ctx);
+  });
+
+  test("expanded frame output ignores the ultra pref (fall-through target is pref-free)", () => {
+    const render = () => renderExternalToolLines(["line one", "line two"], 100, "external", true, "codemode", 5, "success", true, 6, "x = 1", 1).join("\n");
+    setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, ultracompact: false });
+    const off = render();
+    expect(off).toContain("●");
+    setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, ultracompact: true });
+    expect(render()).toBe(off);
+    setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS });
   });
 });
