@@ -149,6 +149,7 @@ describe("xtrm-ui presentation-only boundary", () => {
         label: (text: string) => text,
         recap: (text: string) => text,
         hint: (text: string) => text,
+        italic: (text: string) => text,
         sep: " · ",
       },
       latch,
@@ -195,6 +196,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      italic: (text: string) => text,
       sep: " · ",
     };
     const run = (hideThinkingBlock: boolean, latch: { followsToggle: boolean }) => {
@@ -225,6 +227,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      italic: (text: string) => text,
       sep: " · ",
     };
     const seen: Array<{ content: ContentBlock[] }> = [];
@@ -280,6 +283,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      italic: (text: string) => text,
       sep: " · ",
     };
     let installs = 0;
@@ -674,6 +678,27 @@ describe("ultracompact rows", async () => {
     }
   });
 
+  test("external spans byte-match native spans", async () => {
+    // Same bytes by construction, in every terminal: force chalk color and
+    // compare raw output (no strip — the escapes are the point).
+    const chalk = (await import("chalk")).default;
+    const prev = chalk.level;
+    chalk.level = 3;
+    try {
+      const mock = {
+        fg: (c: string, t: string) => c === "dim" ? chalk.hex("#8a8a8a")(t) : c === "error" ? chalk.hex("#ff9a9a")(t) : t,
+        bold: (t: string) => chalk.bold(t),
+      };
+      for (const status of ["pending", "success", "error"] as const) {
+        const native = renderUltraRow(mock, { statusColor: status, verb: "used codemode", subject: "x = 1", primary: "ok" });
+        const framed = buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], status);
+        expect(framed).toBe(native);
+      }
+    } finally {
+      chalk.level = prev;
+    }
+  });
+
   test("external Class B: dot plus outcome on the dim level", () => {
     const row = strip(buildUltraExternalLine("SendMessage", { to: "bob" }, ["delivered to bob"], "success"));
     expect(row.startsWith("●")).toBe(true);
@@ -740,5 +765,22 @@ describe("ultracompact rows", async () => {
     expect(ultraExternalPrimary("specialist_list", ['{"a":1,"b":2,"c":3,"d":4}'])).toBe("{a, b, c, +1}");
     expect(ultraExternalPrimary("x", ['[1,2,3]'])).toBe("[3 items]");
     expect(ultraExternalPrimary("x", ['{broken'])).toBe("{broken");
+  });
+});
+
+describe("thinking collapsed row shape", async () => {
+  const { buildCollapsedThinkingRow } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("two-space indent, italic recap, plain count", () => {
+    const style = {
+      label: (t: string) => `L${t}`,
+      recap: (t: string) => `R${t}`,
+      italic: (t: string) => `I${t}`,
+      hint: (t: string) => `H${t}`,
+      sep: "|",
+    };
+    expect(buildCollapsedThinkingRow("trace here", 193, style)).toBe("  LThinking...|Itrace here|R193 H(Ctrl+T to expand)");
   });
 });
