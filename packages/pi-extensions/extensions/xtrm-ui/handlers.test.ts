@@ -945,7 +945,7 @@ describe("working indicator + turn summary", async () => {
     const [tl, c1, br, bl, c2, tr, on1, off1, on2, off2] = WORKING_FRAMES;
     expect([tl, c1, br, bl, c2, tr]).toEqual(["\u2801", "\u2812", "\u2820", "\u2804", "\u2812", "\u2808"]);
     expect([on1, on2]).toEqual(["\u282d", "\u282d"]);
-    expect([off1, off2]).toEqual(["", ""]);
+    expect([off1, off2]).toEqual([" ", " "]);
     for (const frame of WORKING_FRAMES) expect(frame.startsWith("\t")).toBe(false);
     const seen: unknown[] = [];
     applyWorkingIndicator({ setWorkingIndicator: (o) => { seen.push(o); } });
@@ -999,7 +999,7 @@ describe("working indicator + turn summary", async () => {
     const render = entryRenderers[XTRM_TURN_SUMMARY_ENTRY] as (e: unknown, o: unknown, t: unknown) => { text: string };
     const theme = { fg: (_n: string, t: string) => `fg[${t}]`, italic: (t: string) => `i[${t}]` };
     expect(render({ data: { seconds: 12, tokens: 4120 } }, { expanded: false }, theme).text)
-      .toBe("fg[i[worked for 12s, used 4,120 tokens]]");
+      .toBe(">  fg[i[worked for 12s, used 4,120 tokens]]");
   });
 });
 
@@ -1033,5 +1033,22 @@ describe("assistant response dot", async () => {
     expect(dotter("hello", { messageType: "assistant" })).toBe("● hello");
     expect(dotter("hello", { messageType: "user" })).toBe("hello");
     expect(dotter("some *thinking* trace", { messageType: "assistant-thinking" })).toBe("some *thinking* trace");
+  });
+});
+
+describe("assistant dot guards", async () => {
+  const { prefixAssistantDot, collapsedThinkingStyle, buildCollapsedThinkingRow } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("skips the styled thinking row (ANSI-prefixed label)", () => {
+    const row = buildCollapsedThinkingRow("some recap", 105, collapsedThinkingStyle(() => "xtrm-dark"));
+    expect(row.startsWith("Thinking")).toBe(false);
+    expect(prefixAssistantDot(row)).toBe(row);
+  });
+
+  test("leaves invisible-only messages untouched", () => {
+    expect(prefixAssistantDot("​")).toBe("​");
+    expect(prefixAssistantDot("​\n​")).toBe("​\n​");
   });
 });

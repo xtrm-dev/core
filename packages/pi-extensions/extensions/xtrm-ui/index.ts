@@ -1078,11 +1078,13 @@ function applyThinkingChrome(ctx: ExtensionContext): void {
  *  through the center band (dots 2+5): top-left, center, bottom-right,
  *  bottom-left, center, top-right, then a double flash of the corner-dot X
  *  and the cycle restarts. The X reads through motion, never as a complete
- *  X character. Pi renders custom frames verbatim through its own Loader,
+ *  X character. Off-flash frames are a single space, never empty: an empty
+ *  frame collapses the spinner cell and the elapsed text jumps left.
+ *  Pi renders custom frames verbatim through its own Loader,
  *  so the shapes live here and engine/timing stay on pi's documented path
  *  (ctx.ui.setWorkingIndicator). No lead-in whitespace: the working row
  *  keeps pi standard positioning and the settled summary matches it. */
-export const WORKING_FRAMES = ["\u2801", "\u2812", "\u2820", "\u2804", "\u2812", "\u2808", "\u282d", "", "\u282d", ""];
+export const WORKING_FRAMES = ["\u2801", "\u2812", "\u2820", "\u2804", "\u2812", "\u2808", "\u282d", " ", "\u282d", " "];
 export const WORKING_FRAME_MS = 80;
 const WORKING_TICK_MS = 1000;
 
@@ -1140,9 +1142,14 @@ export function formatTurnSummary(summary: XtrmTurnSummary): string {
  *  markdown risk pi's width math. */
 export function prefixAssistantDot(markdown: string): string {
 	const lines = markdown.split("\n");
-	const index = lines.findIndex((line) => line.trim() !== "");
+	// Invisible-only lines (pi's zero-width post-thinking spacer) are not
+	// content: skipping them keeps the spacer dot-free.
+	const visible = (line: string) => line.replace(/[\s\u200b-\u200d\ufeff]/g, "") !== "";
+	const index = lines.findIndex(visible);
 	if (index === -1) return markdown;
-	const first = lines[index].trimStart();
+	// Guards run on the visible text: styled rows (thinking recap) open
+	// with ANSI escapes, so strip those before comparing.
+	const first = lines[index].replace(ANSI_PATTERN, "").trimStart();
 	if (first.startsWith("\u25cf ") || first.startsWith(THINKING_ROW_LABEL)) return markdown;
 	if (/^(```|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(first)) return markdown;
 	lines[index] = lines[index].replace(/\S/, "\u25cf $&");
@@ -1215,7 +1222,7 @@ function sessionUsageTokens(ctx: ExtensionContext): number {
 function registerTurnSummary(pi: ExtensionAPI): void {
 	pi.registerEntryRenderer(XTRM_TURN_SUMMARY_ENTRY, (entry, _options, theme) => {
 		const data = (entry as { data?: Partial<XtrmTurnSummary> }).data ?? {};
-		return new Text(theme.fg("dim", theme.italic(formatTurnSummary({
+		return new Text(">  " + theme.fg("dim", theme.italic(formatTurnSummary({
 			seconds: Math.max(0, Math.round(Number(data.seconds) || 0)),
 			tokens: Math.max(0, Math.round(Number(data.tokens) || 0)),
 		}))), 0, 0);
