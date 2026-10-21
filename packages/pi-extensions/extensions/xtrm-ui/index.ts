@@ -1082,6 +1082,130 @@ function applyThinkingChrome(ctx: ExtensionContext): void {
 }
 
 // ============================================================================
+// Working indicator + turn summary
+// ============================================================================
+
+/** Braille-dot frames in the nanospinner look. Pi renders custom frames
+ *  verbatim through its own Loader (the nanospinner package writes to stdout
+ *  directly and would fight pi's TUI), so only the frame shapes come from
+ *  there — engine and timing stay on pi's documented path
+ *  (ctx.ui.setWorkingIndicator). */
+export const WORKING_FRAMES = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"];
+export const WORKING_FRAME_MS = 80;
+const WORKING_TICK_MS = 1000;
+
+/** Custom entry type for the persisted per-turn summary. Custom entries never
+ *  enter LLM context; the entry renderer below draws the transcript line. */
+export const XTRM_TURN_SUMMARY_ENTRY = "xtrm-turn-summary";
+
+export interface XtrmTurnSummary {
+	seconds: number;
+	tokens: number;
+}
+
+type UsageLike = { usage?: { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown } };
+
+/** Defensive usage total: sums the input/output/cache sides over entries that
+ *  carry a Usage payload, ignoring everything else. */
+export function sumUsageTokens(entries: Array<UsageLike>): number {
+	let total = 0;
+	for (const entry of entries) {
+		const usage = entry?.usage;
+		if (!usage) continue;
+		for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+			const value = usage[key];
+			if (typeof value === "number" && Number.isFinite(value) && value > 0) total += value;
+		}
+	}
+	return Math.round(total);
+}
+
+export function formatTokenCount(tokens: number): string {
+	return tokens.toLocaleString("en-US");
+}
+
+export function formatTurnSummary(summary: XtrmTurnSummary): string {
+	return `worked for ${summary.seconds}s \u00b7 used ${formatTokenCount(summary.tokens)} tokens`;
+}
+
+/** Applies the dot frames through pi's documented WorkingIndicatorOptions. */
+export function applyWorkingIndicator(ui: { setWorkingIndicator: (options: { frames: string[]; intervalMs: number }) => void }): void {
+	ui.setWorkingIndicator({ frames: [...WORKING_FRAMES], intervalMs: WORKING_FRAME_MS });
+}
+
+type TurnClock = {
+	startedAt: number;
+	tokensAtStart: number;
+	timer: ReturnType<typeof setInterval> | undefined;
+	ui: { setWorkingMessage: (message?: string) => void } | undefined;
+};
+const turnClock: TurnClock = { startedAt: 0, tokensAtStart: 0, timer: undefined, ui: undefined };
+
+function stopTurnClock(): void {
+	if (turnClock.timer !== undefined) clearInterval(turnClock.timer);
+	turnClock.timer = undefined;
+	turnClock.ui = undefined;
+}
+
+/** Starts the elapsed ticker on agent_start; the message updates live while
+ *  pi animates the (custom) frames. now/schedule are injectable for tests. */
+export function startTurnClock(
+	ui: { setWorkingMessage: (message?: string) => void },
+	tokensAtStart: number,
+	now: number = Date.now(),
+	schedule: (fn: () => void, ms: number) => ReturnType<typeof setInterval> = setInterval,
+): void {
+	stopTurnClock();
+	turnClock.startedAt = now;
+	turnClock.tokensAtStart = tokensAtStart;
+	turnClock.ui = ui;
+	ui.setWorkingMessage("Working \u00b7 0s");
+	turnClock.timer = schedule(() => {
+		const elapsed = Math.max(0, Math.round((Date.now() - turnClock.startedAt) / 1000));
+		turnClock.ui?.setWorkingMessage(`Working \u00b7 ${elapsed}s`);
+	}, WORKING_TICK_MS);
+}
+
+/** Stops the ticker and returns the turn totals (null when no clock runs,
+ *  so double-settle can never append twice). */
+export function stopTurnClockAndSummarize(
+	tokensAtEnd: number,
+	now: number = Date.now(),
+): XtrmTurnSummary | null {
+	if (turnClock.ui === undefined) return null;
+	const seconds = Math.max(0, Math.round((now - turnClock.startedAt) / 1000));
+	const summary = { seconds, tokens: Math.max(0, Math.round(tokensAtEnd - turnClock.tokensAtStart)) };
+	stopTurnClock();
+	return summary;
+}
+
+function sessionUsageTokens(ctx: ExtensionContext): number {
+	return sumUsageTokens(ctx.sessionManager.getEntries() as Array<UsageLike>);
+}
+
+function registerTurnSummary(pi: ExtensionAPI): void {
+	pi.registerEntryRenderer(XTRM_TURN_SUMMARY_ENTRY, (entry, _options, theme) => {
+		const data = (entry as { data?: Partial<XtrmTurnSummary> }).data ?? {};
+		return new Text(theme.fg("dim", theme.italic(formatTurnSummary({
+			seconds: Math.max(0, Math.round(Number(data.seconds) || 0)),
+			tokens: Math.max(0, Math.round(Number(data.tokens) || 0)),
+		}))), 0, 0);
+	});
+	pi.on("agent_start", (_event, ctx) => {
+		startTurnClock(ctx.ui, sessionUsageTokens(ctx));
+	});
+	const settle = (_event: unknown, ctx: ExtensionContext) => {
+		const summary = stopTurnClockAndSummarize(sessionUsageTokens(ctx));
+		if (summary) pi.appendEntry(XTRM_TURN_SUMMARY_ENTRY, summary);
+	};
+	pi.on("agent_end", settle);
+	pi.on("agent_settled", settle);
+	pi.on("session_shutdown", () => {
+		stopTurnClock();
+	});
+}
+
+// ============================================================================
 // Chrome Application
 // ============================================================================
 
@@ -2325,6 +2449,7 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   const getThinkingLevel = () => formatThinking(pi.getThinkingLevel());
 
   registerXtrmUiTools(pi, getPrefs);
+  registerTurnSummary(pi);
   registerCommands(pi, getPrefs, setPrefs, getThinkingLevel);
 
   const refresh = (ctx: ExtensionContext) => {
@@ -2340,6 +2465,7 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
     // trace (xtrm-6ggil).
     thinkingToggleLatch.followsToggle = false;
     setPrefs(loadPrefs(ctx.sessionManager.getEntries() as Array<MaybeCustomEntry>));
+    applyWorkingIndicator(ctx.ui);
     // Await the prototype patch BEFORE the first message can render: a
     // factory-time install failure (theme not initialized yet) must be
     // retried here, after Pi's theme controller has run initTheme(), or the

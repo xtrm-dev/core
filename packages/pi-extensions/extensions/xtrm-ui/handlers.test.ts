@@ -41,13 +41,17 @@ type RegisteredTool = {
 
 type RegisteredCommand = { name: string; handler: (args: string, ctx: unknown) => Promise<void> };
 
-function registerWithMock(): { tools: RegisteredTool[]; events: string[]; commands: RegisteredCommand[] } {
+function registerWithMock(): { tools: RegisteredTool[]; events: string[]; commands: RegisteredCommand[]; handlers: Record<string, (ev: unknown, ctx: any) => unknown>; entryRenderers: Record<string, (e: unknown, o: unknown, t: unknown) => unknown>; appended: Array<{ customType: string; data: unknown }> } {
   const tools: RegisteredTool[] = [];
   const events: string[] = [];
   const commands: RegisteredCommand[] = [];
+  const handlers: Record<string, (ev: unknown, ctx: any) => unknown> = {};
+  const entryRenderers: Record<string, (e: unknown, o: unknown, t: unknown) => unknown> = {};
+  const appended: Array<{ customType: string; data: unknown }> = [];
   const pi = {
-    on: (event: string) => {
+    on: (event: string, handler: (ev: unknown, ctx: any) => unknown) => {
       events.push(event);
+      handlers[event] = handler;
     },
     registerTool: (tool: RegisteredTool) => {
       tools.push(tool);
@@ -57,11 +61,16 @@ function registerWithMock(): { tools: RegisteredTool[]; events: string[]; comman
     },
     registerMessageRenderer: () => {},
     registerMarkdownTransformer: () => {},
-    appendEntry: () => {},
+    registerEntryRenderer: (customType: string, renderer: (e: unknown, o: unknown, t: unknown) => unknown) => {
+      entryRenderers[customType] = renderer;
+    },
+    appendEntry: (customType: string, data: unknown) => {
+      appended.push({ customType, data });
+    },
     getThinkingLevel: () => "medium",
   };
   xtrmUiExtension(pi as never);
-  return { tools, events, commands };
+  return { tools, events, commands, handlers, entryRenderers, appended };
 }
 
 function fakeCommandCtx() {
@@ -902,5 +911,80 @@ describe("CORE-2502 follow-ups", async () => {
     setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, ultracompact: true });
     expect(render()).toBe(off);
     setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS });
+  });
+});
+
+describe("working indicator + turn summary", async () => {
+  const mod = await import("./index.ts");
+  const { sumUsageTokens, formatTokenCount, formatTurnSummary, applyWorkingIndicator, startTurnClock, stopTurnClockAndSummarize, WORKING_FRAMES, WORKING_FRAME_MS, XTRM_TURN_SUMMARY_ENTRY } = mod;
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  test("usage total sums the four sides, ignores the rest", () => {
+    expect(sumUsageTokens([
+      { type: "usage", usage: { input: 100, output: 50, cacheRead: 1000, cacheWrite: 200 } },
+      { type: "usage", usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } },
+      { type: "text", text: "no usage here" },
+      { type: "usage" },
+    ])).toBe(1365);
+  });
+
+  test("summary line uses the operator's words", () => {
+    expect(formatTokenCount(4120)).toBe("4,120");
+    expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s · used 4,120 tokens");
+  });
+
+  test("frames are ten braille dots at 80ms", () => {
+    expect(WORKING_FRAMES).toHaveLength(10);
+    expect(new Set(WORKING_FRAMES).size).toBe(10);
+    const seen: unknown[] = [];
+    applyWorkingIndicator({ setWorkingIndicator: (o) => { seen.push(o); } });
+    expect(seen).toEqual([{ frames: WORKING_FRAMES, intervalMs: WORKING_FRAME_MS }]);
+    expect(WORKING_FRAME_MS).toBe(80);
+  });
+
+  test("ticker messages carry elapsed seconds; settle summarizes the turn alone", () => {
+    const messages: string[] = [];
+    const ui = { setWorkingMessage: (m?: string) => { messages.push(m ?? ""); } };
+    const timers: Array<() => void> = [];
+    const realNow = Date.now;
+    try {
+      startTurnClock(ui, 1000, 5000, (fn) => { timers.push(fn); return 1 as unknown as ReturnType<typeof setInterval>; });
+      expect(messages).toEqual(["Working · 0s"]);
+      Date.now = () => 5000 + 12_300;
+      timers.forEach((fn) => fn());
+      expect(messages.at(-1)).toBe("Working · 12s");
+      // Turn used 340 tokens alone (1340 end - 1000 start), took 12s.
+      expect(stopTurnClockAndSummarize(1340, 5000 + 12_300)).toEqual({ seconds: 12, tokens: 340 });
+      // Double-settle never summarizes twice.
+      expect(stopTurnClockAndSummarize(9999, 99999)).toBeNull();
+    } finally {
+      Date.now = realNow;
+      stopTurnClockAndSummarize(0);
+    }
+  });
+
+  test("agent start/end wires message, entry append, and renderer", async () => {
+    const { handlers, entryRenderers, appended } = registerWithMock();
+    expect(handlers["agent_start"]).toBeDefined();
+    expect(handlers["agent_end"]).toBeDefined();
+    expect(handlers["agent_settled"]).toBeDefined();
+    const messages: string[] = [];
+    const startEntries = [{ type: "usage", usage: { input: 100, output: 0, cacheRead: 0, cacheWrite: 0 } }];
+    const endEntries = [...startEntries, { type: "usage", usage: { input: 0, output: 34, cacheRead: 200, cacheWrite: 0 } }];
+    const ctx = (entries: unknown[]) => ({
+      ui: { setWorkingMessage: (m?: string) => { messages.push(m ?? ""); } },
+      sessionManager: { getEntries: () => entries },
+    });
+    await handlers["agent_start"]({ type: "agent_start" }, ctx(startEntries));
+    expect(messages).toEqual(["Working · 0s"]);
+    await handlers["agent_end"]({ type: "agent_end", messages: [] }, ctx(endEntries));
+    expect(appended).toEqual([{ customType: XTRM_TURN_SUMMARY_ENTRY, data: { seconds: expect.any(Number), tokens: 234 } }]);
+    await handlers["agent_settled"]({ type: "agent_settled" }, ctx(endEntries));
+    expect(appended).toHaveLength(1);
+    const render = entryRenderers[XTRM_TURN_SUMMARY_ENTRY] as (e: unknown, o: unknown, t: unknown) => { text: string };
+    const theme = { fg: (_n: string, t: string) => `fg[${t}]`, italic: (t: string) => `i[${t}]` };
+    expect(render({ data: { seconds: 12, tokens: 4120 } }, { expanded: false }, theme).text)
+      .toBe("fg[i[worked for 12s · used 4,120 tokens]]");
   });
 });
