@@ -1085,14 +1085,16 @@ function applyThinkingChrome(ctx: ExtensionContext): void {
 // Working indicator + turn summary
 // ============================================================================
 
-/** Single-cell X indicator. Trace builds the X (corner, both diagonals,
- *  locked cross), then a double flash (whole on, off, whole on, off) and the
- *  cycle restarts. Pi renders custom frames verbatim through its own Loader,
+/** Single-cell X indicator, dots only. A dot travels the true X path
+ *  through the center band (dots 2+5): top-left, center, bottom-right,
+ *  bottom-left, center, top-right, then a double flash of the corner-dot X
+ *  and the cycle restarts. The X reads through motion, never as a complete
+ *  X character. Pi renders custom frames verbatim through its own Loader,
  *  so the shapes live here and engine/timing stay on pi's documented path
  *  (ctx.ui.setWorkingIndicator). Every frame carries a double-tab lead: the
  *  Loader never trims, so the working row sits at the same double indent as
  *  the settled summary line, apart from flush tool rows. */
-export const WORKING_FRAMES = ["\t\t\u2598", "\t\t\u259a", "\t\t\u259e", "\t\t\u2573", "\t\t\u2573", "\t\t ", "\t\t\u2573", "\t\t "];
+export const WORKING_FRAMES = ["\t\t\u2801", "\t\t\u2812", "\t\t\u2820", "\t\t\u2804", "\t\t\u2812", "\t\t\u2808", "\t\t\u282d", "\t\t ", "\t\t\u282d", "\t\t "];
 export const WORKING_FRAME_MS = 80;
 const WORKING_TICK_MS = 1000;
 
