@@ -802,6 +802,11 @@ export function bareExternalToolHeader(
   };
 }
 
+/** Raw-SGR greys for the external frame (theme object unavailable there). */
+const XTRM_DIM_FG = "\x1b[38;2;138;138;138m";
+const XTRM_FG_RESET = "\x1b[39m";
+const XTRM_RED_FG = "\x1b[31m";
+
 /** Class B operational tools keep the `●` in ultra rows; every other
  *  external tool takes the two-space indent (Class A). */
 const ULTRA_KEEP_DOT = new Set([
@@ -844,8 +849,34 @@ export function ultraExternalPrimary(toolName: string | undefined, resultTexts: 
     const roster = joined.match(/Peer sessions \((\d+)\)/);
     if (roster) return `${roster[1]} ${roster[1] === "1" ? "peer" : "peers"}`;
   }
-  const first = joined.split("\n").find((line) => line.trim().length > 0);
+  // JSON results pretty-print with a bare `{` first line: summarize the
+  // shape instead (`{a, b, +1}`, `[N items]`).
+  const trimmed = joined.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const summary = summarizeJsonValue(JSON.parse(trimmed));
+      if (summary) return summary;
+    } catch {
+      // Not actually JSON: fall through to the first-line rule.
+    }
+  }
+  const first = joined.split("\n")
+    .map((line) => line.trim())
+    // Skip bracket-only echoes (`[GitNexus]` with nothing after it would
+    // duplicate the header provider).
+    .find((line) => /[A-Za-z0-9]/.test(line) && !/^\s*\[[^\]]*\]\s*$/.test(line));
   return first ? shortenCommand(first, 80) : undefined;
+}
+
+function summarizeJsonValue(value: unknown): string | undefined {
+  if (Array.isArray(value)) return `[${value.length} ${value.length === 1 ? "item" : "items"}]`;
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value);
+    if (keys.length === 0) return "{}";
+    const shown = keys.slice(0, 3).join(", ");
+    return keys.length > 3 ? `{${shown}, +${keys.length - 3}}` : `{${shown}}`;
+  }
+  return undefined;
 }
 
 /** Single-line ultra frame row: bare provider/action header (never sniffed),
@@ -860,19 +891,21 @@ export function buildUltraExternalLine(
   const bare = bareExternalToolHeader(kind, toolName);
   const subject = ultraExternalSubject(toolName, args);
   const primary = resultTexts.length > 0 ? ultraExternalPrimary(toolName, resultTexts) : undefined;
+  const isError = status === "error";
   const dot = ULTRA_KEEP_DOT.has(toolName ?? "")
-    ? `${status === "success" ? "\x1b[2m●\x1b[22m" : "●"} `
+    ? `${isError ? `${XTRM_RED_FG}●${XTRM_FG_RESET}` : faint(status === "success" ? "\x1b[2m●\x1b[22m" : "●")} `
     : "  ";
-  const spanColor = status === "success" ? "" : "\x1b[2m";
-  const spanReset = status === "success" ? "" : "\x1b[22m";
-  let row = `${dot}${boldSgr("used")} ${XTRM_EXT_ACCENT}${boldSgr(bare.provider)}\x1b[39m`;
+  const span = (text: string) => isError
+    ? `${XTRM_RED_FG}${boldSgr(text)}${XTRM_FG_RESET}`
+    : faint(`${XTRM_DIM_FG}${boldSgr(text)}${XTRM_FG_RESET}`);
+  let row = `${dot}${span("used")} ${faint(`${XTRM_EXT_ACCENT}${boldSgr(bare.provider)}\x1b[39m`)}`;
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
   const spans = [actionPart, subject]
     .filter((part): part is string => !!part)
-    .map((part) => `${spanColor}${boldSgr(part)}${spanReset}`)
+    .map(span)
     .join("  ");
   if (spans) row += ` ${spans}`;
-  if (primary) row += `  \x1b[2m${primary}\x1b[22m`;
+  if (primary) row += `  ${isError ? `${XTRM_RED_FG}${primary}${XTRM_FG_RESET}` : faint(`${XTRM_DIM_FG}${primary}${XTRM_FG_RESET}`)}`;
   return row;
 }
 
@@ -1608,20 +1641,41 @@ export interface UltraRowParts {
 }
 
 export function renderUltraRow(theme: any, parts: UltraRowParts): string {
-  const subjectColor = parts.statusColor === "success" ? "text" : "dim";
-  const head = parts.dot
-    ? `${theme.fg(parts.statusColor, "●")} ${theme.fg(parts.statusColor, theme.bold(parts.verb))}`
-    : `  ${theme.fg(parts.statusColor, theme.bold(parts.verb))}`;
-  let row = parts.subject ? `${head} ${theme.fg(subjectColor, parts.subject)}` : head;
-  if (parts.primary) row += `  ${theme.fg("dim", parts.primary)}`;
-  if (parts.secondary) row += `  ${theme.fg("muted", parts.secondary)}`;
+  const isError = parts.statusColor === "error";
+  // Ultra dim baseline: nothing renders full-bright. Verb and subject drop
+  // to standard dim, fainted; outcomes sit one level dimmer. Colored spans
+  // keep their hue under the faint. Errors keep full red so failures
+  // survive dimming — the one exception.
+  const verb = isError
+    ? theme.fg("error", theme.bold(parts.verb))
+    : faint(theme.fg("dim", theme.bold(parts.verb)));
+  const subject = parts.subject
+    ? isError ? theme.fg("error", parts.subject) : faint(theme.fg("dim", parts.subject))
+    : "";
+  const dot = parts.dot
+    ? `${isError ? theme.fg("error", "●") : faint(theme.fg(parts.statusColor, "●"))} `
+    : "  ";
+  let row = subject ? `${dot}${verb} ${subject}` : `${dot}${verb}`;
+  if (parts.primary) row += `  ${isError ? theme.fg("error", parts.primary) : faint(theme.fg("dim", parts.primary))}`;
+  if (parts.secondary) row += `  ${isError ? theme.fg("error", parts.secondary) : faint(theme.fg("muted", parts.secondary))}`;
   return row;
+}
+
+/** Faint wrapper: the ultra dim baseline (nothing full-bright). */
+function faint(text: string): string {
+  return `\x1b[2m${text}\x1b[22m`;
+}
+
+/** First command segment without a dangling `&&`/`||` tail. */
+export function ultraBashSubject(command: string): string {
+  const first = splitCommandSegments(command)[0] ?? "";
+  return shortenCommand(first.replace(/\s*(&&|\|\|)\s*$/, ""));
 }
 
 function renderUltraPendingCall(theme: any, toolName: string, args: Record<string, unknown>): Text {
   const verb = toolName === "bash" ? "Ran" : toolName;
   const subject = toolName === "bash"
-    ? shortenCommand(splitCommandSegments(String(args.command ?? ""))[0] ?? "")
+    ? ultraBashSubject(String(args.command ?? ""))
     : summarizeToolSubject(toolName, args);
   return new Text(renderUltraRow(theme, { statusColor: "accent", verb, subject }), 0, 0);
 }
@@ -1818,11 +1872,10 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const command = String(args.command ?? "");
       if (getPrefs().ultracompact && !expanded) {
-        const first = splitCommandSegments(command)[0] ?? "";
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
           verb: "Ran",
-          subject: shortenCommand(first),
+          subject: ultraBashSubject(command),
         }));
       }
       if (isPartial) {
