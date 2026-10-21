@@ -906,6 +906,9 @@ export function buildUltraExternalLine(
     .join("  ");
   if (spans) row += ` ${spans}`;
   if (primary) row += `  ${isError ? `${XTRM_RED_FG}${primary}${XTRM_FG_RESET}` : faint(`${XTRM_DIM_FG}${primary}${XTRM_FG_RESET}`)}`;
+  if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
+    row += `  ${XTRM_RED_FG}failed${XTRM_FG_RESET}`;
+  }
   return row;
 }
 
@@ -1658,6 +1661,11 @@ export function renderUltraRow(theme: any, parts: UltraRowParts): string {
   let row = subject ? `${dot}${verb} ${subject}` : `${dot}${verb}`;
   if (parts.primary) row += `  ${isError ? theme.fg("error", parts.primary) : faint(theme.fg("dim", parts.primary))}`;
   if (parts.secondary) row += `  ${isError ? theme.fg("error", parts.secondary) : faint(theme.fg("muted", parts.secondary))}`;
+  // Explicit failure word: dimming removed the color cue, so failed rows
+  // say so (skipped when the outcome already says fail-*).
+  if (isError && !/fail(ed|ure)?/i.test(`${parts.primary ?? ""} ${parts.secondary ?? ""}`)) {
+    row += `  ${theme.fg("error", "failed")}`;
+  }
   return row;
 }
 
@@ -1672,8 +1680,11 @@ export function ultraBashSubject(command: string): string {
   return shortenCommand(first.replace(/\s*(&&|\|\|)\s*$/, ""));
 }
 
+/** Ultra verb for shell calls: the full phrase, not bare `Ran`. */
+export const ULTRA_BASH_VERB = "Ran shell command";
+
 function renderUltraPendingCall(theme: any, toolName: string, args: Record<string, unknown>): Text {
-  const verb = toolName === "bash" ? "Ran" : toolName;
+  const verb = toolName === "bash" ? ULTRA_BASH_VERB : toolName;
   const subject = toolName === "bash"
     ? ultraBashSubject(String(args.command ?? ""))
     : summarizeToolSubject(toolName, args);
@@ -1874,7 +1885,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       if (getPrefs().ultracompact && !expanded) {
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
-          verb: "Ran",
+          verb: ULTRA_BASH_VERB,
           subject: ultraBashSubject(command),
         }));
       }
