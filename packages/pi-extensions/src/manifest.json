@@ -24,7 +24,7 @@
       "displayName": "python-kernel",
       "required": false,
       "ownership": "xtrm",
-      "description": "Persistent python3 kernel: skills-as-imports, prelude, output truncation, audit seam"
+      "description": "Persistent python3 kernel: cross-cell state, preflight memory digest, prelude, capped outputs (skills-as-imports and audit seam dormant until first consumer)"
     },
     {
       "id": "sp-terminal-overlay",

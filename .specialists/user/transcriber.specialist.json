@@ -23,6 +23,7 @@
       "response_format": "markdown",
       "output_type": "analysis",
       "permission_required": "MEDIUM",
+      "lease_waiver": false,
       "interactive": null,
       "max_retries": 0
     },

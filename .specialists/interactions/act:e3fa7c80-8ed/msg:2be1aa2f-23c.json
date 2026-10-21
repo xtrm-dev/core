@@ -1,0 +1,28 @@
+{
+  "messageId": "msg:2be1aa2f-23c",
+  "activationId": "act:e3fa7c80-8ed",
+  "kind": "completion",
+  "createdAtMs": 1792204489691,
+  "message": {
+    "messageId": "msg:2be1aa2f-23c",
+    "kind": "completion",
+    "from": "specialist::executor",
+    "to": "xtrm-xt-claude-8luw-2e577d",
+    "activationId": "act:e3fa7c80-8ed",
+    "attemptId": "att:e3fa7c80-8ed:2",
+    "piSessionId": "01a1479e-262a-7073-8440-d9ca0536f274",
+    "body": "{\"activationId\":\"act:e3fa7c80-8ed\",\"participantId\":\"specialist::executor\",\"attemptId\":\"att:e3fa7c80-8ed:2\",\"issueId\":\"iss_01a1473e-917f-7455-9e30-1d6c4e37dfda\",\"issueRef\":\"CORE-2412\",\"issueRevision\":2,\"contractHash\":\"ad9422cc8b6732f10f5db05bc80a18ec695a1f4c5d33ecbc8a50f090a0d15b67\",\"executionBindingId\":\"exb_01a1479e-263a-716d-ab47-7311056d8076\",\"status\":\"completed\",\"output\":\"Stale background notification — that full-suite run was superseded by the foreground runs already reported (PR #766 open, head `8e1ce2ae`). No action needed.\\n\\n```json\\n{\\n  \\\"status\\\": \\\"success\\\",\\n  \\\"summary\\\": \\\"Stale bg task notification ignored; CORE-2412 already delivered via PR #766.\\\",\\n  \\\"files_changed\\\": [],\\n  \\\"follow_ups\\\": [],\\n  \\\"risks\\\": [],\\n  \\\"verification\\\": []\\n}\\n```\",\"validation\":{\"valid\":true},\"piSessionId\":\"01a1479e-262a-7073-8440-d9ca0536f274\",\"configuredModel\":\"opencode-go/muse-spark-1.3-contributor\",\"requestedModel\":\"opencode-go/muse-spark-1.3-contributor\",\"resolvedModel\":\"opencode-go/muse-spark-1.3-contributor\",\"modelOverride\":false,\"thinkingLevel\":\"xhigh\",\"thinkingOverride\":false,\"fallbackUsed\":false,\"completedAt\":1792204489483}",
+    "createdAt": 1792204489691
+  },
+  "delivery": {
+    "state": "undeliverable",
+    "attempts": [
+      {
+        "atMs": 1792204489700,
+        "route": "session:",
+        "outcome": "undeliverable",
+        "detail": "no live registration matched this coordinator session"
+      }
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'p=\"$CLAUDE_PROJECT_DIR/.xtrm/skills/default/service-knowledge/scripts/cataloger.py\"; [ -f \"$p\" ] || exit 0; exec python3 \"$p\"'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Write|Edit|Glob|Grep|Bash|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'p=\"$CLAUDE_PROJECT_DIR/.xtrm/skills/default/service-knowledge/scripts/skill_activator.py\"; [ -f \"$p\" ] || exit 0; pf=\"$CLAUDE_PROJECT_DIR/.xtrm/skills/default/service-knowledge/scripts/hook_prefilter.sh\"; [ -f \"$pf\" ] || exec python3 \"$p\"; exec sh \"$pf\" pre skill_activator.py'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'p=\"$CLAUDE_PROJECT_DIR/.xtrm/skills/default/service-knowledge/scripts/drift_detector.py\"; [ -f \"$p\" ] || exit 0; pf=\"$CLAUDE_PROJECT_DIR/.xtrm/skills/default/service-knowledge/scripts/hook_prefilter.sh\"; [ -f \"$pf\" ] || exec python3 \"$p\" check-hook; exec sh \"$pf\" post drift_detector.py check-hook'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

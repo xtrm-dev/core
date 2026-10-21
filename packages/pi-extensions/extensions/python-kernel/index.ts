@@ -26,9 +26,10 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -119,6 +120,11 @@ def _apply_prelude():
         _ns["preflight"] = preflight
     except NameError:
         pass
+    # Namespace mirror (kns): durable like the rest of the prelude.
+    try:
+        _ns["kns"] = kns
+    except NameError:
+        pass
 
 
 _apply_prelude()
@@ -157,7 +163,7 @@ def preflight(repo, path, n=4):
     filename stem — or, when that stem is a generic module name (index, mod,
     main, ...), the nearest meaningful parent directory, since "index" keys
     nothing. Read-only (no _AUDIT entries); prints a bounded digest and
-    returns the commit records (hash, date, subject, body). 0 commits
+    stashes the records in _preflight_cache[(repo, path)] and returns them. 0 commits
     usually means a wrong path — treat it as a failed preflight."""
     import subprocess as _sp
 
@@ -196,11 +202,34 @@ def preflight(repo, path, n=4):
         print("== pending diff ==\\n" + _diff)
     if _keys:
         print("== bd memory keys (%s): %s ==" % (_topic, _keys))
+    _ns.setdefault("_preflight_cache", {})[(repo, path)] = _cs
     return _cs
 
 
 # Bind the preflight digest into _ns (memory-doctrine workbench helper).
 _ns["preflight"] = preflight
+
+def kns():
+    """Namespace mirror: user bindings -> shape hint. Run when resuming,
+    after long threads, or before re-deriving anything."""
+    _skip = ("json", "re", "os", "sys", "subprocess", "Path", "preflight",
+             "sk_rebuild", "kns", "service_knowledge")
+    _rows = []
+    for _k in sorted(_ns):
+        if _k.startswith("_") or _k in _skip:
+            continue
+        _v = _ns[_k]
+        try:
+            _h = type(_v).__name__ + " len=" + str(len(_v))
+        except TypeError:
+            _h = type(_v).__name__
+        _rows.append("  %s: %s" % (_k, _h))
+    print("\\n".join(_rows) if _rows else "  (no user bindings)")
+    return None
+
+
+# Bind the mirror into _ns (cells eval in _ns, not module scope).
+_ns["kns"] = kns
 
 def _reload_skills():
     """Re-import every mounted skill module (dev-loop honesty: del sys.modules,
@@ -270,6 +299,7 @@ def run_cell(code, reset=False, cwd=None, seq=None, max_output=20000, tmp_dir=No
             try:
                 compiled = compile(code, "<cell>", "eval")
                 result = eval(compiled, _ns)
+                _ns["_"] = result
                 if result is not None:
                     print(repr(result))
             except SyntaxError:
@@ -406,6 +436,11 @@ export function skillRoots(): string[] {
 	];
 }
 
+/** First-party kernel skill modules shipped with this package (./skills). */
+export function bundledSkillsDir(): string {
+	return join(fileURLToPath(new URL(".", import.meta.url)), "skills");
+}
+
 /** Scan the known skill roots for python-backed skills (SKILL.md + src/<import>). */
 export function discoverSkillModules(roots: readonly string[] = skillRoots()): SkillModule[] {
 	const found: SkillModule[] = [];
@@ -413,12 +448,21 @@ export function discoverSkillModules(roots: readonly string[] = skillRoots()): S
 	for (const root of roots) {
 		let entries: string[] = [];
 		try {
-			entries = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+			entries = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() || e.isSymbolicLink()).map((e) => e.name);
 		} catch {
 			continue;
 		}
 		for (const name of entries.sort()) {
-			if (seen.has(name)) continue;
+			// Dedupe by resolved target: repo-shipped skills are symlinked into
+		// scanned roots, so the same skill mounted under two names resolves
+		// once. Broken links throw here and self-skip (never fatal).
+			let seenKey = name;
+			try {
+				seenKey = realpathSync(join(root, name));
+			} catch {
+				continue;
+			}
+			if (seen.has(seenKey)) continue;
 			const skillDir = join(root, name);
 			const skillMd = join(skillDir, "SKILL.md");
 			const srcDir = join(skillDir, "src");
@@ -429,7 +473,7 @@ export function discoverSkillModules(roots: readonly string[] = skillRoots()): S
 				packageDir = undefined;
 			}
 			if (!existsSync(skillMd) || !packageDir) continue;
-			seen.add(name);
+			seen.add(seenKey);
 			// The import name is the package dir basename (src/<pkg>/), NOT the
 			// skill dir name — they can differ (xtrm-vs7f8 audit fix).
 			const importName = basename(packageDir);
@@ -814,7 +858,9 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 	const auditPolicy = opts.auditPolicy === true || process.env.PI_KERNEL_AUDIT_POLICY === "1";
 
 	// skillbridge: scan once at init; skill paths are static per environment.
-	const skillModules = discoverSkillModules();
+	// First-party kernel skill modules ship with this package (./skills);
+	// user and env roots keep precedence (first root wins per skill name).
+	const skillModules = discoverSkillModules([...skillRoots(), bundledSkillsDir()]);
 	const importableLine =
 		skillModules.length > 0
 			? `\nImportable skill modules: ${skillModules.map((s) => s.name).join(", ")} — pre-imported in namespace; help(x) for docs.`
@@ -852,20 +898,23 @@ export default function pythonKernelExtension(pi: ExtensionAPI, opts: PythonKern
 		name: "python",
 		label: "Python (persistent kernel)",
 		description:
-			"Execute Python code in a persistent interpreter. Variables, imports, and functions persist across calls until reset: true. Code runs with your user permissions and is not sandboxed — treat a cell like any shell command. Run shell commands with subprocess when needed; for a project's own tests, scripts, and CLIs use the project's documented environment instead." +
+			"Execute Python code in a persistent interpreter. Variables, imports, and functions persist across calls until reset: true. Code runs with your user permissions and is not sandboxed — treat a cell like any shell command. For a project's own tests, scripts, and CLIs use the project's documented environment instead." +
+			"\nSession scratch: kernel state lives with the session and dies with it (timeout kill, reset, session end). Findings that must survive go to files/bd/journal; the kernel holds working state only." +
+			"\nOne cell per question: capture via subprocess inside the cell and parse in the same cell — a shell+compute round-trip pair collapses to one call. Expression results also land in `_`." +
 			"\nPrelude pre-loaded: json, re, os, sys, subprocess, Path (from pathlib)." +
-			"\nPrelude function: preflight(repo, path, n=4) — file-scoped memory retrieval for one file: git log --follow with full bodies, pending diff --stat, bd memory keys; prints a bounded digest, never the raw corpus. Run it before editing a file, fixing a bug, or implementing, and whenever gitnexus flags a file/symbol as critical or medium impact. 0 commits means wrong path, not empty history." +
+			"\nPrelude functions: preflight(repo, path, n=4) — file-scoped memory retrieval for one file: git log --follow with bodies, pending diff --stat, bd memory keys; prints a bounded digest and stashes records in _preflight_cache[(repo, path)]. Run before editing flagged files; 0 commits means wrong path. kns() — namespace mirror (name -> shape hint); run when resuming or after long threads instead of re-deriving." +
 			importableLine,
 
 		promptSnippet: "python - run code in a persistent kernel; state survives across calls",
 		promptGuidelines: [
-			"Use python for multi-step processing, parsing, aggregation, and fan-out: one cell replaces many round trips, and named variables persist across cells.",
+			"Use python for multi-step processing, parsing, aggregation, and fan-out: one cell replaces many round trips, and named variables persist across cells. Capture via subprocess inside the cell and parse in the same cell — one cell per question; expression results land in `_`.",
 			"preflight(repo, path) is bound at boot: file-scoped memory retrieval (commits with bodies, pending diff, bd memory keys) before editing a flagged file; prints a digest, never the raw corpus; 0 commits means wrong path.",
 			"Memory retrieval, not just compute: retrieve on demand per flagged file via preflight, never bulk; non-file forensics loads the corpus once into a named variable, then filters across cells.",
 			"python state persists across calls (variables, imports, functions); pass reset: true to clear it.",
 			"os.chdir() inside a cell persists; reset returns to the working directory.",
 			"Code runs with your user permissions and is not sandboxed; treat a cell like a shell command.",
 			"For a project's own tests, scripts, and CLIs, use the project's documented environment (uv run, .venv/bin/python, npm run) rather than the kernel.",
+			"kns() mirrors the namespace (name -> shape hint); run it when resuming or after long threads instead of re-deriving. Kernel state is session scratch — promote findings to files/bd/journal.",
 		],
 		executionMode: "sequential",
 		// CORE-2358: without a renderCall Pi falls back to a 100-char

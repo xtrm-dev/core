@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -673,5 +674,127 @@ describe("CORE-2358 python call rendering", () => {
     const component = tool.renderCall({ code }, theme, {}) as { text: string };
     expect(component.text).toContain("import json");
     expect(component.text).toContain("third line proves no truncation");
+  });
+});
+
+describe("python-kernel kns/_/cache + forensics skill", () => {
+  test("kns mirrors user bindings with shape hints and survives reset", async () => {
+    const fx = tmpBase();
+    try {
+      const kernel = new PythonKernel(fx.dir, () => {});
+      await kernel.runCell("tally_var = [1, 2, 3]", false);
+      await kernel.runCell("plain = 42", false);
+      const out = await kernel.runCell("kns()", false);
+      expect(out.error).toBeNull();
+      expect(out.stdout).toContain("tally_var: list len=3");
+      expect(out.stdout).toContain("plain: int");
+      // prelude and kernel-internal names stay out of the mirror
+      expect(out.stdout).not.toContain("preflight");
+      expect(out.stdout).not.toContain("_AUDIT");
+      expect(out.stdout).not.toContain("kns:");
+      // durable prelude invariant: reset clears user state, kns survives
+      await kernel.runCell("x = 1", true, fx.dir);
+      const after = await kernel.runCell("callable(kns)", false);
+      expect(after.error).toBeNull();
+      expect(after.stdout.trim()).toBe("True");
+      kernel.kill();
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("_ holds the last expression result; exec leaves it untouched", async () => {
+    const fx = tmpBase();
+    try {
+      const kernel = new PythonKernel(fx.dir, () => {});
+      const e1 = await kernel.runCell("[1, 2] + [3]", false);
+      expect(e1.error).toBeNull();
+      expect(e1.stdout.trim()).toBe("[1, 2, 3]");
+      const e2 = await kernel.runCell("_", false);
+      expect(e2.stdout.trim()).toBe("[1, 2, 3]");
+      await kernel.runCell("z = 9", false); // exec: _ untouched
+      const e3 = await kernel.runCell("_", false);
+      expect(e3.stdout.trim()).toBe("[1, 2, 3]");
+      kernel.kill();
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("_preflight_cache stashes successful digests for later cells", async () => {
+    const fx = tmpBase();
+    try {
+      try {
+        execSync("git --version", { stdio: "pipe" });
+      } catch {
+        return; // no git in this environment: skip
+      }
+      const git = (...args: string[]) =>
+        execSync(`git ${args.join(" ")}`, { cwd: fx.dir, stdio: "pipe" }).toString();
+      git("init");
+      git("config user.email t@t");
+      git("config user.name t");
+      writeFileSync(join(fx.dir, "a.ts"), "x\n");
+      git("add a.ts");
+      git('commit -m "feat: first"');
+      const kernel = new PythonKernel(fx.dir, () => {});
+      const digest = await kernel.runCell(`preflight(${JSON.stringify(fx.dir)}, "a.ts")`, false);
+      expect(digest.error).toBeNull();
+      expect(digest.stdout).toContain("feat: first");
+      const cached = await kernel.runCell(
+        `len(_preflight_cache[(${JSON.stringify(fx.dir)}, "a.ts")])`,
+        false,
+      );
+      expect(cached.error).toBeNull();
+      expect(cached.stdout.trim()).toBe("1");
+      kernel.kill();
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("discovery follows symlinked skill dirs; broken links self-skip", () => {
+    const fx = tmpBase();
+    try {
+      const target = writeFixtureSkill(fx.dir, "real", "VALUE = 7\n");
+      symlinkSync(target, join(fx.dir, "linked"));
+      symlinkSync(join(fx.dir, "nope-missing"), join(fx.dir, "broken"));
+      const modules = extension.discoverSkillModules([fx.dir]);
+      const names = modules.map((m) => m.name);
+      expect(names).toContain("real");
+      // linked resolves to the same package (no crash, no double import name)
+      expect(names.filter((n) => n === "real")).toHaveLength(1);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("bundled forensics skill is discoverable and usable in-kernel", async () => {
+    const fx = tmpBase();
+    try {
+      const modules = extension.discoverSkillModules([extension.bundledSkillsDir()]);
+      expect(modules.map((m) => m.name)).toContain("forensics");
+      const fmod = modules.find((m) => m.name === "forensics")!;
+      const kernel = new PythonKernel(fx.dir, () => {}, {}, [fmod]);
+      const call = await kernel.runCell(
+        "forensics.top(forensics.tally([{'t':'a'},{'t':'b'},{'t':'a'}], 't'))",
+        false,
+      );
+      expect(call.error).toBeNull();
+      expect(call.stdout).toContain("'a', 2");
+      kernel.kill();
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test("tool doctrine documents kns, session scratch, and the mounted forensics skill", () => {
+    const pi = fakePi();
+    extension.default(pi as any);
+    const tool = pi.tools.find((t: any) => t.name === "python");
+    expect(tool.description).toContain("kns()");
+    expect(tool.description).toContain("Session scratch");
+    expect(tool.description).toContain("Importable skill modules: forensics");
+    expect(tool.promptGuidelines.join("\n")).toContain("kns()");
   });
 });
