@@ -109,6 +109,22 @@ describe("selectPythonBackedSkills (canonical resolver)", () => {
     expect(result.map((s) => s.runtimeName)).toEqual(["defskill"]);
   });
 
+  test("repo authoring default/ tree never shadows installed global defaults (CORE-2516)", async () => {
+    // Installed global default.
+    writePythonSkill(join(globalRoot(), "default", "codemode"), "codemode", "codemod_pkg");
+    // Same runtimeName in the repo checkout's authoring default/ tree
+    // (release/vendor source, retired as installed scope) — must be ignored,
+    // not collide. Markdown-only keeps the focus on identity, not classifier.
+    writeMarkdownSkill(join(repoRoot(), "default", "codemode"), "codemode");
+    writeState(globalRoot(), []);
+    writeState(repoRoot(), []);
+
+    const result = await selectPythonBackedSkills({ cwd: projectRoot, runtime: "pi" });
+    expect(result.map((s) => s.runtimeName)).toEqual(["codemode"]);
+    expect(result[0].skillDir).toBe(realpathSync(join(globalRoot(), "default", "codemode")));
+    expect(result[0].importName).toBe("codemod_pkg");
+  });
+
   test("disabled optional packs are absent; enabled packs are present", async () => {
     const packDir = join(globalRoot(), "optional", "mypack");
     const packSkill = join(packDir, "packskill");

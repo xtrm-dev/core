@@ -120,9 +120,18 @@ export async function selectPythonBackedSkills(
     readSkillsState(repoRoot),
     readSkillsState(globalRoot),
   ]);
+  // Defaults come from the global root ONLY. A repo checkout's .xtrm/skills
+  // may carry an authoring default/ tree (release/vendor source, retired as
+  // installed scope per skills-tier-architecture.md); feeding repoRoot as the
+  // defaults source makes authoring skills collide with installed global
+  // defaults and the kernel never boots. Canonical basis: reconcile sources
+  // defaults from globalDefaultRoot (skills-runtime-reconcile.ts:150-159)
+  // and composes packs from global+project scopes only
+  // (skills-scaffold.ts:40-44). Repo scope still contributes packs +
+  // enablement via repoState and the additionalRoots seam.
   const [globalSkills, repoSelection] = await Promise.all([
     selectGlobalRuntimeSkills("pi", globalRoot, globalState),
-    selectRepoRuntimeSkills("pi", repoRoot, repoState, [globalRoot]),
+    selectRepoRuntimeSkills("pi", globalRoot, repoState, [repoRoot]),
   ]);
 
   // Cross-scope union. Within-scope precedence/collisions already enforced by
