@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "0.2.0",
+  "kind": "render-manifest",
+  "graph": {
+    "headSha": "ea0283e77949b0b05ea570938c371a1ef84827a1",
+    "contentHash": "164c7737c71d83eadbe4d129912acc16"
+  },
+  "renderer": {
+    "name": "@coldtea/pr-lens-renderer",
+    "version": "0.3.5"
+  },
+  "assets": [
+    {
+      "id": "system-context-light",
+      "lens": "architecture",
+      "theme": "light",
+      "view": "system-context",
+      "mediaType": "image/svg+xml",
+      "contentHash": "7962aa16c4d8696db1148afa1c0fb4b9",
+      "bytes": 16662,
+      "width": 1284,
+      "height": 646,
+      "animated": true,
+      "path": "system-context-light-7962aa16c4d8696db1148afa1c0fb4b9.svg"
+    },
+    {
+      "id": "system-context-dark",
+      "lens": "architecture",
+      "theme": "dark",
+      "view": "system-context",
+      "mediaType": "image/svg+xml",
+      "contentHash": "07c28803ba8e8904dfe63e3190390701",
+      "bytes": 16817,
+      "width": 1284,
+      "height": 646,
+      "animated": true,
+      "path": "system-context-dark-07c28803ba8e8904dfe63e3190390701.svg"
+    },
+    {
+      "id": "lens-run-flow-light",
+      "lens": "data-flow",
+      "theme": "light",
+      "view": "lens-run-flow",
+      "mediaType": "image/svg+xml",
+      "contentHash": "29a87263e7670b09e07bb2bd10f3a288",
+      "bytes": 18512,
+      "width": 2680,
+      "height": 451,
+      "animated": true,
+      "path": "lens-run-flow-light-29a87263e7670b09e07bb2bd10f3a288.svg"
+    },
+    {
+      "id": "lens-run-flow-dark",
+      "lens": "data-flow",
+      "theme": "dark",
+      "view": "lens-run-flow",
+      "mediaType": "image/svg+xml",
+      "contentHash": "dd0822dbc7adfa842f18ddf9af87dad7",
+      "bytes": 18689,
+      "width": 2680,
+      "height": 451,
+      "animated": true,
+      "path": "lens-run-flow-dark-dd0822dbc7adfa842f18ddf9af87dad7.svg"
+    }
+  ]
+}
