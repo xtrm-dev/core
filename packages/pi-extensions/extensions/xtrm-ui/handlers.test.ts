@@ -133,9 +133,9 @@ describe("xtrm-ui presentation-only boundary", () => {
   test("read.renderResult preserves numbered blank lines (collapsed + expanded)", () => {
     // A numbered blank line ("138 | ") is exactly the artifact the previous
     // over-strip fix removed. Guard both view modes so a regression is caught
-    // at the presentation layer as well as the transform layer.
-    // Ultra is the default now, so pin the frame path explicitly: the
-    // one-line default is asserted separately below.
+    // at the presentation layer as well as the transform layer. Ultra is the
+    // default now, so pin the frame path; the one-line default is asserted at
+    // the end of this test.
     setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, ultracompact: false });
     const { tools } = registerWithMock();
     const readTool = tools.find((tool) => tool.name === "read");
@@ -167,8 +167,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       expect(rendered).not.toContain("137 | 137 |");
       expect(rendered).not.toContain("138 | 138 |");
     }
-    // Default presentation: one row, path and range only — the numbered body
-    // is the expanded detail.
+    // Default presentation: one row, path and range only.
     setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS });
     const oneLine = call(false);
     expect(oneLine).toContain("b.txt:137");
@@ -214,7 +213,7 @@ describe("xtrm-ui presentation-only boundary", () => {
     component.updateContent(message as never);
     expect(rendered.at(-1)!.content[0]).toMatchObject({ type: "text" });
     const first = rendered.at(-1)!.content[0].text!;
-    // The collapsed row advertises neither the count nor the shortcut.
+    // The collapsed row carries no count and no shortcut.
     expect(first).toContain("Thinking");
     expect(first).toContain("First line of the thinking trace");
     expect(first).not.toContain("(Ctrl+T");
@@ -768,9 +767,8 @@ describe("ultracompact rows", async () => {
     expect(ultraExternalSubject("SendMessage", { reply_to: "m1" })).toBe("reply m1");
   });
 
-  test("bash ultra verb matches the external row grammar", () => {
-    // One grammar across native and external rows: "used <tool>".
-    expect(ULTRA_BASH_VERB).toBe("used bash");
+  test("bash ultra verb is the full phrase", () => {
+    expect(ULTRA_BASH_VERB).toBe("Ran shell command");
   });
 
   test("bash subject strips a dangling && or || tail", () => {
@@ -791,7 +789,7 @@ describe("ultracompact rows", async () => {
     expect(raw).not.toContain("[text]");
     // theme.bold must not be consulted: the fake's bold tag never appears.
     expect(raw).not.toContain("*");
-    expect(strip(raw).replace(/\[(muted|dim)\]/g, "")).toBe("  Ran            npm test  3 lines");
+    expect(strip(raw).replace(/\[(muted|dim)\]/g, "")).toBe("  Ran npm test  3 lines");
   });
 
   test("errors keep full red instead of dimming", () => {
@@ -842,8 +840,7 @@ describe("thinking collapsed row shape", async () => {
       hint: (t: string) => `H${t}`,
       sep: "|",
     };
-    // The row carries the activity, not the bookkeeping: no character count
-    // and no per-row Ctrl+T advertisement.
+    // The row carries the activity, not the bookkeeping.
     expect(buildCollapsedThinkingRow("trace here", style)).toBe("LThinking|Itrace here");
     expect(buildCollapsedThinkingRow("trace here", style)).not.toContain("193");
     expect(buildCollapsedThinkingRow("trace here", style)).not.toContain("Ctrl+T");
@@ -863,21 +860,16 @@ describe("CORE-2502 follow-ups", async () => {
     expect(ultraThemeHexes("something-else")).toEqual({ muted: "#a7a7a7", dim: "#8a8a8a", error: "#ff9a9a" });
   });
 
-  test("collapsed thinking style: grayscale italic, label brighter than recap, zero bold", () => {
-    for (const [name, dimRgb, mutedRgb] of [
-      ["xtrm-dark", "138;138;138", "167;167;167"],
-      ["xtrm-light", "122;122;122", "95;95;95"],
-    ] as const) {
+  test("collapsed thinking style: accent hue, label brighter than recap, zero bold", () => {
+    for (const [name, accentRgb] of [["xtrm-dark", "184;211;255"], ["xtrm-light", "68;84;106"]] as const) {
       const style = collapsedThinkingStyle(() => name);
-      for (const span of [style.recap("trace"), style.italic("trace"), style.hint("x")]) {
-        expect(span).toContain("[3m");
-        expect(span).toContain(`38;2;${dimRgb}m`);
-        expect(span).not.toContain("[1m");
-      }
-      // The label is the one step up: muted, still italic, still no bold.
-      expect(style.label("Thinking")).toContain(`38;2;${mutedRgb}m`);
+      // Thinking owns a hue: it must never read as another grayscale tool row.
+      expect(style.label("Thinking")).toContain(`38;2;${accentRgb}m`);
       expect(style.label("Thinking")).toContain("[3m");
       expect(style.label("Thinking")).not.toContain("[1m");
+      // The recap is the same hue one faint step down.
+      expect(style.italic("trace")).toContain("[2m");
+      expect(style.italic("trace")).toContain(`38;2;${accentRgb}m`);
     }
     const row = buildCollapsedThinkingRow("trace here", collapsedThinkingStyle(() => "xtrm-dark"));
     expect(row).not.toContain("[1m");
@@ -1051,7 +1043,8 @@ describe("assistant response dot", async () => {
     expect(prefixAssistantDot("# Title")).toBe("# Title");
     expect(prefixAssistantDot("> quoted")).toBe("> quoted");
     expect(prefixAssistantDot("- item")).toBe("- item");
-    expect(prefixAssistantDot("Thinking  recap clause")).toBe("Thinking  recap clause");
+    expect(prefixAssistantDot("Thinking... · recap · 3 (Ctrl+T to expand)"))
+      .toBe("Thinking... · recap · 3 (Ctrl+T to expand)");
     expect(prefixAssistantDot("")).toBe("");
   });
 
@@ -1195,28 +1188,24 @@ describe("compact timeline presentation contract", async () => {
     expect(row).toContain("failed");
   });
 
-  test("thinking recap is one clause, capped, with no bookkeeping", () => {
-    const long = "First clause. " + "x".repeat(200);
-    const recap = buildThinkingRecap(long);
+  test("thinking stays its own hue and keeps the recap to one clause", () => {
+    const recap = buildThinkingRecap("First clause. " + "x".repeat(200));
     expect(recap.length).toBeLessThanOrEqual(64);
     const row = stripSgr(buildCollapsedThinkingRow(recap, collapsedThinkingStyle(() => "xtrm-dark")));
     expect(row.startsWith("Thinking")).toBe(true);
     expect(row).not.toMatch(/\d{2,}/);
     expect(row).not.toContain("Ctrl+T");
+    // Hue, not just weight: thinking must not collapse into the gray tool rows.
+    const styled = buildCollapsedThinkingRow(recap, collapsedThinkingStyle(() => "xtrm-dark"));
+    expect(styled).toContain("38;2;184;211;255m");
   });
 
-  test("both themes keep a darker soft tier than the intermediate one", () => {
-    const luminance = (hex: string) => {
-      const h = hex.replace("#", "");
-      return [0, 2, 4].map((i) => Number.parseInt(h.slice(i, i + 2), 16));
-    };
+  test("the gray ladder keeps muted above dim in both themes", () => {
     for (const name of ["xtrm-dark", "xtrm-light"]) {
       const { muted, dim } = ultraThemeHexes(name);
+      const lum = (hex: string) => Number.parseInt(hex.replace("#", "").slice(0, 2), 16);
       expect(muted).not.toBe(dim);
-      for (const channel of [0, 1, 2]) {
-        if (name === "xtrm-dark") expect(luminance(muted)[channel]).toBeGreaterThan(luminance(dim)[channel]);
-        else expect(luminance(muted)[channel]).toBeLessThan(luminance(dim)[channel]);
-      }
+      expect(name === "xtrm-dark" ? lum(muted) > lum(dim) : lum(muted) < lum(dim)).toBe(true);
     }
   });
 });

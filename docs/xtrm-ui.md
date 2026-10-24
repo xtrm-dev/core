@@ -65,14 +65,16 @@ produced.
 
 ```text
 Thinking  Inspecting the renderer and identifying the relevant files
-  used read      packages/pi-extensions/extensions/xtrm-ui/index.ts:1-40
-  used bash      pnpm test · 12 failed, 84 passed  2.4s
-  used codemode  x = 1 · ok  ↗
+  Ran shell command  pnpm test  12 failed, 84 passed  2.4s
+  read  packages/pi-extensions/extensions/xtrm-ui/index.ts:1-40
+  used codemode  x = 1  ok  42ms  ↗
 ● Updated the renderer and added regression tests.
 ```
 
-Weight comes from one three-step ladder (`packages/pi-extensions/shared/weight.ts`),
-never from a raw bold call:
+Each surface keeps its own wording — native shell rows say `Ran shell command`,
+other native rows start with the tool name, external rows say `used <provider>`
+— and shares the same three-step weight ladder
+(`packages/pi-extensions/shared/weight.ts`), never a raw bold call:
 
 | Tier | Encoding | Used for |
 |---|---|---|
@@ -80,13 +82,14 @@ never from a raw bold call:
 | `semi` | `muted`, no bold | tool verbs and tool names |
 | `soft` | `dim` | subjects, outcomes, durations, chrome |
 
-The ladder is grayscale. Colour appears only where it carries meaning: red for
-failures, amber for activity. Errors keep the theme's error colour at full
-strength, never dim, and always state `failed` in words.
+Colour carries meaning, not decoration. The ladder is grayscale; red marks
+failure at full strength (never dimmed, always also the word `failed`), amber
+marks activity, and the theme accent marks thinking. Provider badges stay in
+expanded external frames.
 
 Expansion uses two distinct bindings: `Ctrl+O` for tool output and `Ctrl+T` for
 thinking. Neither is advertised on a resting row. A row that hides a substantial
-payload ends with `↗`; nothing else carries a hint.
+payload (three or more lines) ends with `↗`; nothing else carries a hint.
 
 Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, `ls`) and external
 tools (Serena, GitNexus, structured-return, process, generic) share this grammar.
@@ -101,9 +104,10 @@ frame. Preview caps stay independent per section (`commandPreviewLines`,
 ## Thinking Rows
 
 Collapsed: `Thinking` plus one clause (64 characters maximum), italic, in the
-`soft` tier with the label one step brighter. No character count and no inline
-shortcut. Expanded: the full trace behind `Ctrl+T`, with the collapse hint shown
-only in that state.
+theme accent hue with the label at full strength and the recap one faint step
+down. The hue is what separates thinking from the grayscale tool rows. No
+character count and no inline shortcut. Expanded: the full trace behind `Ctrl+T`,
+with the collapse hint shown only in that state.
 
 ## Preferences
 

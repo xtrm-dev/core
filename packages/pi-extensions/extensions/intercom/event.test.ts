@@ -95,7 +95,7 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
     ).render(120);
     expect(visible(raw)).toEqual(["› Message from @Bob received: hello world m7 (ctrl+o to expand)"]);
     expect(raw.join("\n")).toContain("\u001b[1m@Bob\u001b[22m");
-    expect(raw.join("\n")).toContain("<dark:text>received</dark:text>");
+    expect(raw.join("\n")).toContain("<dark:success>received</dark:success>");
     expect(raw.join("\n")).toContain("<dark:dim>hello world</dark:dim>");
   });
 
