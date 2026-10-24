@@ -23,6 +23,7 @@ interface CleanHooksResult {
 interface CleanSkillsResult {
     removed: string[];
     preserved: string[];
+    refusedReason?: string;
 }
 
 interface CleanResult {
@@ -59,6 +60,7 @@ async function cleanHooks(
 async function cleanSkills(
     dryRun: boolean,
     projectRoot: string,
+    yes: boolean,
 ): Promise<CleanSkillsResult> {
     const packageRoot = resolvePackageRoot();
     const registryPath = path.join(packageRoot, '.xtrm', 'registry.json');
@@ -69,6 +71,8 @@ async function cleanSkills(
         registry,
         dryRun,
         overrideRoots: getGlobalSkillsOverrideRoots(projectRoot),
+        registrySource: registryPath,
+        yes,
     });
 
     return {
@@ -76,6 +80,7 @@ async function cleanSkills(
             .map(name => `~/.xtrm/skills/default/${name}`)
             .sort((left, right) => left.localeCompare(right)),
         preserved: ['~/.xtrm/skills/active/* (unknown entries preserved; only proven managed links are pruned)'],
+        ...(pruneResult.refused ? { refusedReason: pruneResult.refusalReason } : {}),
     };
 }
 
@@ -138,14 +143,18 @@ export function createCleanCommand(): Command {
 
             if (!hooksOnly) {
                 console.log(kleur.bold('\n  Scanning xtrm-managed retired skills...'));
-                const skills = await cleanSkills(dryRun, projectRoot);
+                const skills = await cleanSkills(dryRun, projectRoot, yes);
                 result.skillsRemoved = skills.removed;
                 result.preserved.push(...skills.preserved);
 
+                if (skills.refusedReason) {
+                    console.log(kleur.yellow(`    ! refused: ${skills.refusedReason}`));
+                    console.log(kleur.dim('      nothing deleted — re-run with --yes to allow this contraction'));
+                }
                 for (const skill of skills.removed) {
                     console.log(kleur.red(`    ${dryRun ? '[DRY RUN] would remove' : 'removed'} managed ${skill}`));
                 }
-                if (skills.removed.length === 0) {
+                if (skills.removed.length === 0 && !skills.refusedReason) {
                     console.log(kleur.dim('    ✓ No retired managed skills found'));
                 }
             }

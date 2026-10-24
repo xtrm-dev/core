@@ -82,6 +82,32 @@ Do not hand-edit a managed installed copy as a durable repair. Change the owning
 regenerate/vendor the package payload, regenerate `.xtrm/registry.json`, and verify
 materialized parity.
 
+### Retired managed-skill prune
+
+`xt update --apply` and `xt clean --skills-only` remove default-tier skills that a previous
+install owned and the current registry no longer ships. The proof of ownership comes from the
+installer manifest (global skills root) or the previous `registry.json` snapshot (project
+scope). Prune is not a general cleanup command:
+
+1. **Guard.** A prune that retires at least half of the previously managed set, or shrinks that
+   set by half or more, refuses by default. Nothing is deleted. The operator re-runs with
+   `--yes` to accept the contraction.
+2. **Snapshot.** Before the first removal, the skills root is archived to
+   `~/.xtrm/migration-backups/global-skills-<timestamp>.tgz` with a `.sha256.json` sidecar
+   (same verified helper as `ensureGlobalSkillsBootstrapped`). A prune never deletes without a
+   restorable snapshot.
+3. **Audit log.** Every prune appends one `prune.retired-managed` event to
+   `~/.xtrm/logs/skills-migration.jsonl` before touching disk, recording the registry source
+   path, the managed-set digest, counts, removed names, swept link count and the backup path.
+   Outcomes are `ok`, `planned` (dry run), `refused` and `override` (explicit `--yes`).
+4. **Active views.** The sweep removes only symlinks whose target is the retired
+   `default/<name>` entry, in both layouts: the v1 flat `active/<name>` and the v2 per-runtime
+   `active/<runtime>/<name>` (`pi`, `claude`, `codex`). Real directories and symlinks into user
+   packs stay.
+
+A dry run (`--dry-run`) reports the same removals and appends a `planned` log line without
+snapshotting or deleting anything.
+
 ## Release invariants
 
 A Core release is not skill-clean unless:

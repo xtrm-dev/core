@@ -2,8 +2,9 @@ import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
 import { rmSync } from 'node:fs';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  assessSuspiciousPrune,
   collectManagedDefaultSkillNames,
   hashFile,
   installFromRegistry,
@@ -316,6 +317,21 @@ describe('pruneRetiredOptionalSkills', () => {
 });
 
 describe('pruneRetiredManagedSkills', () => {
+  // CORE-2513: prune now appends to ~/.xtrm/logs/skills-migration.jsonl and may
+  // snapshot the skills root, so every test here sandboxes HOME.
+  let previousHome: string | undefined;
+  let sandboxHome = '';
+
+  const pruneLogPath = () => path.join(sandboxHome, '.xtrm', 'logs', 'skills-migration.jsonl');
+  const readPruneLog = async (): Promise<Record<string, any>[]> => {
+    if (!await fs.pathExists(pruneLogPath())) return [];
+    return (await fs.readFile(pruneLogPath(), 'utf8'))
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(line => JSON.parse(line) as Record<string, any>);
+  };
+
   const buildRegistry = (skillNames: readonly string[]) => ({
     version: '1.0.0',
     assets: {
@@ -328,6 +344,17 @@ describe('pruneRetiredManagedSkills', () => {
         ])),
       },
     },
+  });
+
+  beforeEach(async () => {
+    sandboxHome = await createTempDir();
+    previousHome = process.env.HOME;
+    process.env.HOME = sandboxHome;
+  });
+
+  afterEach(() => {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
   });
 
   it('removes managed default dirs no longer in the registry and reports them', async () => {
@@ -505,6 +532,240 @@ describe('pruneRetiredManagedSkills', () => {
       },
     };
     expect([...collectManagedDefaultSkillNames(registry)].sort()).toEqual(['bar', 'foo']);
+  });
+
+  it('sweeps per-runtime active views (active/<runtime>/<name>) and keeps surviving links resolvable', async () => {
+    const tempDir = await createTempDir();
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+    const defaultRoot = path.join(userXtrmDir, 'skills', 'default');
+    const activeRoot = path.join(userXtrmDir, 'skills', 'active');
+    await fs.ensureDir(defaultRoot);
+    for (const name of ['using-specialists', 'using-specialists-v3']) {
+      await writeSkill(defaultRoot, name);
+    }
+    await fs.writeJson(path.join(userXtrmDir, 'registry.json'), buildRegistry(['using-specialists', 'using-specialists-v3']));
+
+    for (const runtime of ['pi', 'claude', 'codex']) {
+      const viewRoot = path.join(activeRoot, runtime);
+      await fs.ensureDir(viewRoot);
+      for (const name of ['using-specialists', 'using-specialists-v3']) {
+        await fs.symlink(path.join('..', '..', 'default', name), path.join(viewRoot, name));
+      }
+    }
+
+    const result = await pruneRetiredManagedSkills({
+      userXtrmDir,
+      registry: buildRegistry(['using-specialists']),
+      dryRun: false,
+    });
+
+    expect(result.refused).toBe(false);
+    expect(result.removed).toEqual(['using-specialists-v3']);
+    expect(result.sweptActiveLinks.sort()).toEqual([
+      'claude/using-specialists-v3',
+      'codex/using-specialists-v3',
+      'pi/using-specialists-v3',
+    ]);
+    for (const runtime of ['pi', 'claude', 'codex']) {
+      expect(await fs.pathExists(path.join(activeRoot, runtime, 'using-specialists-v3'))).toBe(false);
+      // The surviving per-runtime link still resolves.
+      expect(await fs.pathExists(path.join(activeRoot, runtime, 'using-specialists', 'SKILL.md'))).toBe(true);
+    }
+  });
+
+  it('appends one prune event with the registry source, managed-set digest and removed names', async () => {
+    const tempDir = await createTempDir();
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+    const defaultRoot = path.join(userXtrmDir, 'skills', 'default');
+    const registrySource = path.join(tempDir, 'pkg', '.xtrm', 'registry.json');
+    await fs.ensureDir(defaultRoot);
+    await writeSkill(defaultRoot, 'using-specialists');
+    await writeSkill(defaultRoot, 'using-specialists-v3');
+    await fs.writeJson(path.join(userXtrmDir, 'registry.json'), buildRegistry(['using-specialists', 'using-specialists-v3']));
+
+    const result = await pruneRetiredManagedSkills({
+      userXtrmDir,
+      registry: buildRegistry(['using-specialists']),
+      dryRun: false,
+      registrySource,
+    });
+
+    const events = await readPruneLog();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      component: 'skills-prune',
+      event: 'prune.retired-managed',
+      outcome: 'ok',
+      scope: 'project',
+      registrySource,
+      managedCount: 1,
+      previouslyManagedCount: 2,
+      retiredCount: 1,
+      removed: ['using-specialists-v3'],
+      removedCount: 1,
+      dryRun: false,
+    });
+    expect(events[0].managedDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(typeof events[0].timestamp).toBe('string');
+
+    // Snapshot taken before removal, with a verifiable digest sidecar.
+    expect(result.backupArchive).toBeDefined();
+    expect(await fs.pathExists(result.backupArchive!)).toBe(true);
+    const sidecar = await fs.readJson(`${result.backupArchive!}.sha256.json`) as { sha256: string };
+    expect(sidecar.sha256).toBe(await hashFile(result.backupArchive!));
+    expect(events[0].backupArchive).toContain('global-skills-');
+  });
+
+  it('a dry run logs a planned event with no snapshot and no deletion', async () => {
+    const tempDir = await createTempDir();
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+    const defaultRoot = path.join(userXtrmDir, 'skills', 'default');
+    await fs.ensureDir(defaultRoot);
+    await writeSkill(defaultRoot, 'using-specialists');
+    await writeSkill(defaultRoot, 'using-specialists-v3');
+    await fs.writeJson(path.join(userXtrmDir, 'registry.json'), buildRegistry(['using-specialists', 'using-specialists-v3']));
+
+    const result = await pruneRetiredManagedSkills({
+      userXtrmDir,
+      registry: buildRegistry(['using-specialists']),
+      dryRun: true,
+    });
+
+    expect(result.removed).toEqual(['using-specialists-v3']);
+    expect(result.backupArchive).toBeUndefined();
+    expect(await fs.pathExists(path.join(userXtrmDir, 'skills', 'migration-backups'))).toBe(false);
+    expect(await fs.pathExists(path.join(defaultRoot, 'using-specialists-v3'))).toBe(true);
+    const events = await readPruneLog();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ outcome: 'planned', dryRun: true, removed: ['using-specialists-v3'] });
+    expect(events[0].backupArchive).toBeUndefined();
+  });
+
+  // CORE-2513 regression fixture: the 2026-10-21 wipe was a prune whose registry
+  // managed 1 of 10 previously managed skills. That must refuse, log and delete nothing.
+  const REDUCED_REGISTRY_VICTIMS = [
+    'codemode',
+    'engineering-quality',
+    'find-skills',
+    'gitnexus',
+    'goal-prompt',
+    'multiplexing',
+    'open-code-review',
+    'planning',
+    'skill-creator',
+    'using-xtrm',
+  ];
+
+  async function seedReducedRegistryFixture(): Promise<{ userXtrmDir: string; defaultRoot: string; activeRoot: string }> {
+    const tempDir = await createTempDir();
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+    const defaultRoot = path.join(userXtrmDir, 'skills', 'default');
+    const activeRoot = path.join(userXtrmDir, 'skills', 'active');
+    await fs.ensureDir(defaultRoot);
+    await fs.writeJson(path.join(userXtrmDir, 'registry.json'), buildRegistry(REDUCED_REGISTRY_VICTIMS));
+    for (const name of REDUCED_REGISTRY_VICTIMS) {
+      await writeSkill(defaultRoot, name);
+    }
+    for (const runtime of ['pi', 'claude', 'codex']) {
+      const viewRoot = path.join(activeRoot, runtime);
+      await fs.ensureDir(viewRoot);
+      for (const name of REDUCED_REGISTRY_VICTIMS) {
+        await fs.symlink(path.join('..', '..', 'default', name), path.join(viewRoot, name));
+      }
+    }
+    return { userXtrmDir, defaultRoot, activeRoot };
+  }
+
+  it('refuses a reduced registry that would retire most of the managed set, and deletes nothing', async () => {
+    const { userXtrmDir, defaultRoot, activeRoot } = await seedReducedRegistryFixture();
+
+    const result = await pruneRetiredManagedSkills({
+      userXtrmDir,
+      registry: buildRegistry(['codemode']),
+      dryRun: false,
+    });
+
+    expect(result.refused).toBe(true);
+    expect(result.removed).toEqual([]);
+    expect(result.sweptActiveLinks).toEqual([]);
+    expect(result.retired).toHaveLength(9);
+    expect(result.refusalReason).toContain('retires 9 of 10');
+
+    for (const name of REDUCED_REGISTRY_VICTIMS) {
+      expect(await fs.pathExists(path.join(defaultRoot, name, 'SKILL.md'))).toBe(true);
+    }
+    for (const runtime of ['pi', 'claude', 'codex']) {
+      for (const name of REDUCED_REGISTRY_VICTIMS) {
+        expect(await fs.pathExists(path.join(activeRoot, runtime, name, 'SKILL.md'))).toBe(true);
+      }
+    }
+
+    const events = await readPruneLog();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      event: 'prune.retired-managed',
+      outcome: 'refused',
+      removed: [],
+      removedCount: 0,
+      retiredCount: 9,
+      previouslyManagedCount: 10,
+    });
+    expect(events[0].refusalReason).toContain('managed set shrank to 1 of 10');
+  });
+
+  it('performs the same destructive contraction only with explicit confirmation, logging the override', async () => {
+    const { userXtrmDir, defaultRoot, activeRoot } = await seedReducedRegistryFixture();
+
+    const result = await pruneRetiredManagedSkills({
+      userXtrmDir,
+      registry: buildRegistry(['codemode']),
+      dryRun: false,
+      yes: true,
+    });
+
+    expect(result.refused).toBe(false);
+    expect(result.removed).toHaveLength(9);
+    expect(result.sweptActiveLinks).toHaveLength(27);
+    expect(await fs.pathExists(path.join(defaultRoot, 'codemode'))).toBe(true);
+    expect(await fs.pathExists(path.join(defaultRoot, 'using-xtrm'))).toBe(false);
+    expect(await fs.pathExists(path.join(activeRoot, 'pi', 'using-xtrm'))).toBe(false);
+
+    const events = await readPruneLog();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ outcome: 'override', removedCount: 9, sweptActiveLinks: 27 });
+    expect(await fs.pathExists(result.backupArchive!)).toBe(true);
+  });
+
+  it('assessSuspiciousPrune leaves ordinary single-skill retirement alone', () => {
+    expect(assessSuspiciousPrune({
+      previouslyManaged: new Set(['using-specialists', 'using-specialists-v3']),
+      managed: new Set(['using-specialists']),
+      retired: new Set(['using-specialists-v3']),
+    })).toEqual({ suspicious: false });
+
+    expect(assessSuspiciousPrune({
+      previouslyManaged: new Set(['a', 'b', 'c', 'd']),
+      managed: new Set(['a', 'b', 'c']),
+      retired: new Set(['d']),
+    })).toEqual({ suspicious: false });
+  });
+
+  it('assessSuspiciousPrune flags a halved managed set and a majority retirement', () => {
+    const halved = assessSuspiciousPrune({
+      previouslyManaged: new Set(['a', 'b', 'c', 'd']),
+      managed: new Set(['a', 'b']),
+      retired: new Set(['c', 'd']),
+    });
+    expect(halved.suspicious).toBe(true);
+    expect(halved.reason).toContain('shrank to 2 of 4');
+
+    const majority = assessSuspiciousPrune({
+      previouslyManaged: new Set(['a', 'b', 'c', 'd', 'e']),
+      managed: new Set(['a', 'b']),
+      retired: new Set(['c', 'd', 'e']),
+    });
+    expect(majority.suspicious).toBe(true);
+    expect(majority.reason).toContain('retires 3 of 5');
   });
 });
 

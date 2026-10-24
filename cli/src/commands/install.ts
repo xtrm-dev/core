@@ -196,10 +196,18 @@ export async function runInstall(opts: InstallOpts = {}): Promise<InstallResult>
         registry,
         dryRun,
         overrideRoots: getGlobalSkillsOverrideRoots(projectRoot),
+        registrySource: registryPath,
+        yes: effectiveYes,
     });
-    if (pruneResult.removed.length > 0) {
+    if (pruneResult.refused) {
+        console.log(kleur.yellow(`  • Refused to prune ${pruneResult.retired.length} retired managed skill(s): ${pruneResult.refusalReason}`));
+        console.log(kleur.dim('    Nothing was deleted. Re-run with --yes to allow this contraction (a restorable backup is taken first).'));
+    } else if (pruneResult.removed.length > 0) {
         const verb = dryRun ? 'Would remove' : 'Removed';
         console.log(kleur.dim(`  • ${verb} ${pruneResult.removed.length} retired managed skill(s): ${pruneResult.removed.join(', ')}`));
+        if (pruneResult.sweptActiveLinks.length > 0) {
+            console.log(kleur.dim(`  • ${dryRun ? 'Would sweep' : 'Swept'} ${pruneResult.sweptActiveLinks.length} active-view link(s)`));
+        }
     }
 
     const optionalPrune = await pruneRetiredOptionalSkills({ userXtrmDir, dryRun });
