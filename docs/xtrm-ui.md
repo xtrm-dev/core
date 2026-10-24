@@ -20,6 +20,8 @@ domain: [pi, extensions, ui, themes]
 | [Credits](#credits) | The original theme palette and header layout were derived from |
 | [Themes](#themes) | The extension discovers four themes: |
 | [Tool Rendering](#tool-rendering) | Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`) retain |
+| [Assistant Text and Hierarchy](#assistant-text-and-hierarchy) | Four semantic levels carry the interface; contrast and weight do the work, with |
+| [Thinking Rows](#thinking-rows) | Collapsed: `  Thinking  <one clause>` — two-space indent (aligned with tool |
 | [Preferences](#preferences) | Only active, user-controlled behavior is persisted: |
 | [Commands](#commands) | Obsolete result-compaction and external-chrome commands are intentionally not |
 | [Install and Migration](#install-and-migration) | Canonical source lives under `packages/pi-extensions/` and is exposed by the |
@@ -86,6 +88,41 @@ footer. Execution and result cap independently (`commandPreviewLines` and
 `extPreviewLines`), so a long program never starves its output.
 
 Pending tools have no metadata footer. Expansion hints appear only when content is hidden.
+
+## Assistant Text and Hierarchy
+
+Four semantic levels carry the interface; contrast and weight do the work, with
+no hue in chrome:
+
+| Token | Dark | Light | Used for |
+|---|---|---|---|
+| `text-heading` | `#EBEBEB` | `#1A1A1A` | headings, custom-message labels, error text |
+| `text-primary` | `#BBBBBB` | `#3A3A3A` | reserved for the agent's own voice |
+| `text-secondary` | `#858585` | `#6F6F6F` | tool subjects, thinking rows, output |
+| `text-muted` | `#5F5F5F` | `#8A8A8A` | durations, counts, hints, chrome |
+
+Assistant prose keeps the terminal's default foreground, so it stays the
+brightest body text without a hard-coded colour. It opens with `●`, and every
+continuation line hangs two columns under that text: the markdown transformer
+pre-wraps prose to the available width minus the dot, so pi's own wrapping can
+never reset a line to column zero. Fenced code, lists, quotes and tables keep
+their own indent and are never re-wrapped.
+
+Headings carry **weight** rather than brightness: pi renders a heading through
+`theme.fg("mdHeading", text)` with no bold, so with hue gone the transformer
+bolds the heading text itself (outside fenced blocks). That keeps the heading
+level visible above body text at almost the same luminance.
+
+Failures are marked, not coloured: a failing row trades its dot for `!` and
+keeps the brightest level. No red remains anywhere in chrome.
+
+## Thinking Rows
+
+Collapsed: `  Thinking  <one clause>` — two-space indent (aligned with tool
+rows), a 64-character recap that ends in `...` when cut, and no character count
+and no inline shortcut. The label is upright at the secondary level, the recap
+italic at the same level. Expanded: the indent continues over the trace behind
+`Ctrl+T`, with the collapse hint shown only in that state.
 
 ## Preferences
 
