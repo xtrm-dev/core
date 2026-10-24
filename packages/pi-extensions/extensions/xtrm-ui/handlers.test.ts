@@ -722,8 +722,10 @@ describe("ultracompact rows", async () => {
     const prev = chalk.level;
     chalk.level = 3;
     try {
+      // The mock must reproduce the real theme's dim token, which wraps the
+      // colour in SGR 2; the ladder's soft tier relies on that.
       const mock = {
-        fg: (c: string, t: string) => c === "dim" ? chalk.hex("#8a8a8a")(t) : c === "error" ? chalk.hex("#ff9a9a")(t) : t,
+        fg: (c: string, t: string) => c === "dim" ? `\u001b[2m${chalk.hex("#8a8a8a")(t)}\u001b[22m` : c === "muted" ? chalk.hex("#a7a7a7")(t) : c === "error" ? chalk.hex("#ff9a9a")(t) : t,
         bold: (t: string) => chalk.bold(t),
       };
       for (const status of ["pending", "success", "error"] as const) {
@@ -762,13 +764,19 @@ describe("ultracompact rows", async () => {
     expect(ultraBashSubject("npm test")).toBe("npm test");
   });
 
-  test("dim baseline: faint everywhere, never full-bright", () => {
+  test("weight ladder baseline: semi verb, soft body, never full-bright", () => {
     const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*` };
     const raw = renderUltraRow(mark, { statusColor: "success", verb: "Ran", subject: "npm test", primary: "3 lines" });
-    expect(raw).toContain("\x1b[2m");
-    expect(raw).toContain("[dim]*Ran*");
+    // SPEC v1 rule 15: the head is the intermediate weight (muted, no bold),
+    // the body is soft (dim). Nothing renders full-bright.
+    expect(raw).toContain("[muted]Ran");
+    expect(raw).toContain("[dim]npm test");
+    expect(raw).toContain("[dim]3 lines");
+    expect(raw).not.toContain("\x1b[1m");
     expect(raw).not.toContain("[text]");
-    expect(strip(raw).replace(/\[dim\]|\*/g, "")).toBe("  Ran npm test  3 lines");
+    // theme.bold must not be consulted: the fake's bold tag never appears.
+    expect(raw).not.toContain("*");
+    expect(strip(raw).replace(/\[(muted|dim)\]/g, "")).toBe("  Ran npm test  3 lines");
   });
 
   test("errors keep full red instead of dimming", () => {
@@ -831,9 +839,9 @@ describe("CORE-2502 follow-ups", async () => {
   const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
 
   test("ultraThemeHexes mirrors xtrm theme tokens per theme", () => {
-    expect(ultraThemeHexes("xtrm-dark")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
-    expect(ultraThemeHexes("xtrm-light")).toEqual({ dim: "#7a7a7a", error: "#a85f5f" });
-    expect(ultraThemeHexes("something-else")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
+    expect(ultraThemeHexes("xtrm-dark")).toEqual({ muted: "#a7a7a7", dim: "#8a8a8a", error: "#ff9a9a" });
+    expect(ultraThemeHexes("xtrm-light")).toEqual({ muted: "#5f5f5f", dim: "#7a7a7a", error: "#a85f5f" });
+    expect(ultraThemeHexes("something-else")).toEqual({ muted: "#a7a7a7", dim: "#8a8a8a", error: "#ff9a9a" });
   });
 
   test("collapsed thinking style: all dim italic, zero bold, per-theme dim", () => {

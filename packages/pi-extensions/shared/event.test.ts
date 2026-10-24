@@ -226,7 +226,9 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     const lines = visible(formatEventCard(messageDetails(), light, 120, { expanded: false }));
     expect(lines).toEqual(["› Message from @Probe received: hello world m1 (ctrl+o to expand)"]);
     const raw = formatEventCard(messageDetails(), light, 120, { expanded: false });
-    expect(raw).toContain("<light:bold>@Probe</light:bold>");
+    // Weight is real SGR, not theme.bold (SPEC v1 rule 15): the fake theme's
+    // bold tag is no longer used by the collapsed line.
+    expect(raw).toContain("\u001b[1m@Probe\u001b[22m");
     expect(raw).toContain("<light:success>received</light:success>");
     expect(raw).toContain("<light:dim>hello world</light:dim>");
     expect(raw).toContain("<light:dim>m1</light:dim>");

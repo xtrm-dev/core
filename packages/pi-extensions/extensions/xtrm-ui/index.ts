@@ -24,6 +24,7 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { boldSgr, rgbSgr, weightHex, weightText, type WeightPalette } from "../../shared/weight.ts";
 import * as piTuiRuntime from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -554,9 +555,8 @@ const XTRM_EXT_ACCENT = "\x1b[38;2;154;139;255m";
 
 type ToolRowStatus = "pending" | "success" | "error";
 
-function boldSgr(text: string): string {
-  return `\x1b[1m${text}\x1b[22m`;
-}
+// boldSgr comes from shared/weight.ts: the ladder is the single owner of
+// weight escapes (SPEC v1 rule 15).
 
 /**
  * External tool row header in native tool style:
@@ -835,10 +835,12 @@ export function bareExternalToolHeader(
  *  Hexes mirror the xtrm theme tokens (dimGray/errorRed) per active theme.
  *  normalizePrefs collapses themeName to xtrm-dark/xtrm-light, so anything
  *  else falls back to dark (xtrm-ui forces an xtrm theme by default). */
-export function ultraThemeHexes(themeName: string): { dim: string; error: string } {
+export function ultraThemeHexes(themeName: string): WeightPalette & { error: string } {
+	// Mirrors themes/xtrm-ui/*.json: muted is the intermediate weight, dim is
+	// the soft tier (the theme's dim token wraps this colour in SGR 2).
 	return themeName === "xtrm-light"
-		? { dim: "#7a7a7a", error: "#a85f5f" }
-		: { dim: "#8a8a8a", error: "#ff9a9a" };
+		? { muted: "#5f5f5f", dim: "#7a7a7a", error: "#a85f5f" }
+		: { muted: "#a7a7a7", dim: "#8a8a8a", error: "#ff9a9a" };
 }
 
 /** Test/embedding hook: override the active prefs snapshot (drives frame
@@ -848,10 +850,14 @@ export function setActivePrefsSnapshotForTests(prefs: XtrmUiPrefs | null): void 
 }
 
 const ultraHexes = () => ultraThemeHexes(activePrefsSnapshot?.themeName ?? DEFAULT_PREFS.themeName);
-const ultraDim = (text: string) => faint(chalk.hex(ultraHexes().dim)(text));
-const ultraDimBold = (text: string) => faint(chalk.hex(ultraHexes().dim)(chalk.bold(text)));
-const ultraRed = (text: string) => chalk.hex(ultraHexes().error)(text);
-const ultraRedBold = (text: string) => chalk.hex(ultraHexes().error)(chalk.bold(text));
+// Direct SGR, never chalk: chalk decides from the TTY/TERM at import time, so
+// the same row styles itself in one environment and goes bare in another.
+const ultraSoft = (text: string) => weightHex(ultraHexes(), "soft", text);
+const ultraSemi = (text: string) => weightHex(ultraHexes(), "semi", text);
+const ultraRed = (text: string) => rgbSgr(ultraHexes().error, text);
+// Same nesting as the native error span (colour outside bold) so both rows
+// emit identical bytes for the same tier.
+const ultraRedBold = (text: string) => ultraRed(boldSgr(text));
 
 export function ultraExternalSubject(toolName: string | undefined, args: Record<string, unknown>): string | undefined {
   const firstCode = externalToolCodePreview(toolName, args)?.[0]?.trim();
@@ -933,13 +939,15 @@ export function buildUltraExternalLine(
   // Uniform with native rows: the whole `used <Tool> [<action>]` head is
   // one bold dim verb span, the subject plain dim after it. No provider
   // accent in ultra — that hue lives in the expanded frame only.
-  const span = (text: string) => isError ? ultraRedBold(text) : ultraDimBold(text);
-  const sub = (text: string) => isError ? ultraRed(text) : ultraDim(text);
+  // Native and external rows share one ladder: semi head, soft body. Errors
+  // keep full red (bold head), never the ladder.
+  const span = (text: string) => isError ? ultraRedBold(text) : ultraSemi(text);
+  const sub = (text: string) => isError ? ultraRed(text) : ultraSoft(text);
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
   const head = ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
   let row = `${dot}${span(head)}`;
   if (subject) row += ` ${sub(subject)}`;
-  if (primary) row += `  ${isError ? ultraRed(primary) : ultraDim(primary)}`;
+  if (primary) row += `  ${isError ? ultraRed(primary) : ultraSoft(primary)}`;
   if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
     row += `  ${ultraRed("failed")}`;
   }
@@ -1392,7 +1400,7 @@ function applyXtrmChrome(
       const line1 =
         border("│") +
         fitVisible(
-          ` ${theme.fg("dim", ">_")} ${theme.bold("XTRM")} ${theme.fg("dim", "(v1.0.0)")}`,
+          ` ${theme.fg("dim", ">_")} ${theme.fg("dim", boldSgr("XTRM"))} ${theme.fg("dim", "(v1.0.0)")}`,
           boxWidth - 2,
         ) +
         border("│");
@@ -1510,7 +1518,7 @@ function registerCommands(
   pi.registerMessageRenderer("xtrm-ui-info", (message, _options, theme) => {
     const title = (message.details as { title?: string } | undefined)?.title ?? "XTRM UI";
     const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
-    box.addChild(new Text(theme.fg("customMessageLabel", theme.bold(title)), 0, 0));
+    box.addChild(new Text(theme.fg("customMessageLabel", boldSgr(title)), 0, 0));
     box.addChild(new Text(theme.fg("customMessageText", String(message.content ?? "")), 0, 0));
     return box;
   });
@@ -1905,12 +1913,12 @@ export function renderBashTree(
   const cap = expanded ? allCommands.length : Math.min(Math.max(1, commandCap), allCommands.length);
   const [firstCommand = "", ...continuedCommands] = allCommands.slice(0, cap);
   const hiddenCommands = allCommands.length - cap;
-  // theme.bold is a chalk no-op in pi's runtime; emit the SGR escape directly.
-  const boldCommand = (text: string) => `\x1b[1m${text}\x1b[22m`;
+  // One weight per row: the verb carries it, the command stays at colour
+  // weight (SPEC v1 rule 15). SGR bold, never theme.bold.
   const countLine = hiddenCommands > 0 ? ` \x1b[2m\x1b[3m … +${hiddenCommands} lines\x1b[23m\x1b[22m` : undefined;
   return appendToolTree(theme, [
-    `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, theme.bold("Ran"))} ${boldCommand(theme.fg(commandColor, firstCommand))}`,
-    ...continuedCommands.map((line) => boldCommand(theme.fg(commandColor, line))),
+    `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, boldSgr("Ran"))} ${theme.fg(commandColor, firstCommand)}`,
+    ...continuedCommands.map((line) => theme.fg(commandColor, line)),
     ...(countLine ? [countLine] : []),
   ], outputLines, meta);
 }
@@ -1925,7 +1933,7 @@ function renderNamedToolTree(
 ): string {
   const subjectColor = statusColor === "success" ? "text" : "dim";
   return appendToolTree(theme, [
-    `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, theme.bold(label))}${subject ? ` ${theme.fg(subjectColor, subject)}` : ""}`,
+    `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, boldSgr(label))}${subject ? ` ${theme.fg(subjectColor, subject)}` : ""}`,
   ], outputLines, meta);
 }
 
@@ -1952,16 +1960,12 @@ export function renderUltraRow(theme: any, parts: UltraRowParts): string {
   // to standard dim, fainted; outcomes sit one level dimmer. Colored spans
   // keep their hue under the faint. Errors keep full red so failures
   // survive dimming — the one exception.
-  const verb = isError
-    ? theme.fg("error", theme.bold(parts.verb))
-    : faint(theme.fg("dim", theme.bold(parts.verb)));
-  const subject = parts.subject
-    ? isError ? theme.fg("error", parts.subject) : faint(theme.fg("dim", parts.subject))
-    : "";
+  const verb = isError ? theme.fg("error", boldSgr(parts.verb)) : weightText(theme, "semi", parts.verb);
+  const subject = parts.subject ? (isError ? theme.fg("error", parts.subject) : weightText(theme, "soft", parts.subject)) : "";
   // Tool rows never take a dot: it marks assistant messages only.
   let row = subject ? `  ${verb} ${subject}` : `  ${verb}`;
-  if (parts.primary) row += `  ${isError ? theme.fg("error", parts.primary) : faint(theme.fg("dim", parts.primary))}`;
-  if (parts.secondary) row += `  ${isError ? theme.fg("error", parts.secondary) : faint(theme.fg("muted", parts.secondary))}`;
+  if (parts.primary) row += `  ${isError ? theme.fg("error", parts.primary) : weightText(theme, "soft", parts.primary)}`;
+  if (parts.secondary) row += `  ${isError ? theme.fg("error", parts.secondary) : weightText(theme, "soft", parts.secondary)}`;
   // Explicit failure word: dimming removed the color cue, so failed rows
   // say so (skipped when the outcome already says fail-*).
   if (isError && !/fail(ed|ure)?/i.test(`${parts.primary ?? ""} ${parts.secondary ?? ""}`)) {
@@ -1971,9 +1975,7 @@ export function renderUltraRow(theme: any, parts: UltraRowParts): string {
 }
 
 /** Faint wrapper: the ultra dim baseline (nothing full-bright). */
-function faint(text: string): string {
-  return `\x1b[2m${text}\x1b[22m`;
-}
+
 
 /** First command segment without a dangling `&&`/`||` tail. */
 export function ultraBashSubject(command: string): string {

@@ -11,7 +11,13 @@ import { formatEventCard, glyphFor } from "../../shared/event.ts";
 
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
 
+/** Visible row text: the identity now carries real SGR bold (SPEC v1 rule 15). */
 function card(details: unknown, width = 80, expanded = false): string {
+  return formatEventCard(details as never, theme, width, { expanded }).replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+/** Raw render, for the weight assertion below. */
+function rawCard(details: unknown, width = 80, expanded = false): string {
   return formatEventCard(details as never, theme, width, { expanded });
 }
 
@@ -36,6 +42,8 @@ describe("task cards through the I7 module", () => {
     // One line: nothing wraps, and the state is stated once.
     expect(row.split("\n")).toHaveLength(1);
     expect(row).toBe("! task bg_1a2b  failed  12.5s  exit 2  /tmp/background-bg_1a2b.log");
+    // Identity is the row's one heavy span, emitted as real SGR.
+    expect(rawCard(details)).toContain("\u001b[1mtask bg_1a2b\u001b[22m");
     // The model-facing summary prose does not leak into the operator row.
     expect(row).not.toContain("Background command");
   });

@@ -43,7 +43,9 @@ function tagTheme(mode: string) {
 
 function visible(text: string | string[]): string[] {
   const lines = Array.isArray(text) ? text : text.split("\n");
-  return lines.map((l) => l.replace(/<[^>]+>/g, ""));
+  // Strip the theme tags and the ladder's real SGR (weight is SGR now, not
+  // theme.bold): the layout assertion is about visible text only.
+  return lines.map((l) => l.replace(/<[^>]+>/g, "").replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, ""));
 }
 
 describe("intercom card rendering through the shared module (CORE-2438 I7)", () => {
@@ -92,7 +94,7 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
       tagTheme("dark"),
     ).render(120);
     expect(visible(raw)).toEqual(["› Message from @Bob received: hello world m7 (ctrl+o to expand)"]);
-    expect(raw.join("\n")).toContain("<dark:bold>@Bob</dark:bold>");
+    expect(raw.join("\n")).toContain("\u001b[1m@Bob\u001b[22m");
     expect(raw.join("\n")).toContain("<dark:success>received</dark:success>");
     expect(raw.join("\n")).toContain("<dark:dim>hello world</dark:dim>");
   });

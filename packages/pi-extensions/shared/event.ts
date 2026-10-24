@@ -20,6 +20,7 @@
  */
 
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { boldSgr } from "./weight.ts";
 
 export const MESSAGE_STATES = ["queued", "held", "delivered", "refused", "undelivered", "expired"] as const;
 
@@ -475,7 +476,7 @@ export function formatMessageCollapsed(details: EventDetails, theme: EventTheme,
   const trail = " received:";
   const head =
     prefix.startsWith(lead) && prefix.endsWith(trail)
-      ? `› Message from ${theme.bold(`@${prefix.slice(lead.length, prefix.length - trail.length)}`)} ${theme.fg(stateToken(details.state), "received")}:`
+      ? `› Message from ${boldSgr(`@${prefix.slice(lead.length, prefix.length - trail.length)}`)} ${theme.fg(stateToken(details.state), "received")}:`
       : prefix;
   const parts = [head, ...(snippet ? [dim(italicize(snippet))] : []), ...(id ? [dim(id)] : []), dim(suffix)];
   return parts.join(" ");
@@ -554,7 +555,7 @@ export function formatWakeRow(details: EventDetails, theme: EventTheme, width: n
   const stateColor = stateToken(details.state);
   return joinWakeRow(row, {
     glyph: (text) => theme.fg(stateColor, text),
-    identity: (text) => theme.bold(text),
+    identity: (text) => boldSgr(text),
     state: (text) => theme.fg(stateColor, text),
     facts: (text) => theme.fg("dim", text),
   });
@@ -621,7 +622,7 @@ export function formatEventCard(
 function formatMessageExpanded(details: EventDetails, theme: EventTheme, width: number): string {
   const layout = layoutCard(details, width, true);
   const head =
-    `${layout.glyph} ${theme.bold(layout.identity)}` +
+    `${layout.glyph} ${boldSgr(layout.identity)}` +
     (layout.state ? ` ${theme.fg(stateToken(details.state), layout.state)}` : "");
   const dim = (text: string) => theme.fg("dim", text);
   const italicize = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
