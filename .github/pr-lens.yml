@@ -1,0 +1,7 @@
+schemaVersion: 0.1.0
+map:
+  exclude:
+    - "**/*.test.ts"
+    - "**/*.test.mjs"
+    - "pnpm-lock.yaml"
+    - "package-lock.json"
