@@ -178,6 +178,82 @@ describe('runInstall — retired managed-skill prune (xtrm-1o63w.1)', () => {
     expect((await fs.lstat(path.join(targetActive, 'my-skill'))).isSymbolicLink()).toBe(true);
   });
 
+  it('sweeps every per-runtime active view (active/<runtime>/<name>) for retired managed defaults', async () => {
+    const packageRoot = path.join(tmpDir, 'pkg');
+    const packageDefault = path.join(packageRoot, '.xtrm', 'skills', 'default');
+    const userXtrmDir = path.join(tmpDir, '.xtrm');
+    const targetDefault = path.join(userXtrmDir, 'skills', 'default');
+    const targetActive = path.join(userXtrmDir, 'skills', 'active');
+
+    fs.ensureDirSync(path.join(packageRoot, '.xtrm'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.0.0' });
+    await writeSkill(packageDefault, 'using-specialists');
+    fs.writeJsonSync(path.join(packageRoot, '.xtrm', 'registry.json'), {
+      version: '1.0.0',
+      assets: {
+        skills: {
+          source_dir: '.xtrm/skills/default',
+          install_mode: 'copy',
+          files: {
+            'using-specialists/SKILL.md': { hash: 'x', version: '1.0.0' },
+          },
+        },
+      },
+    });
+
+    await fs.ensureDir(userXtrmDir);
+    await fs.writeJson(path.join(userXtrmDir, 'registry.json'), {
+      version: '0.9.0',
+      assets: {
+        skills: {
+          source_dir: '.xtrm/skills/default',
+          install_mode: 'copy',
+          files: {
+            'using-specialists/SKILL.md': { hash: 'old', version: '0.9.0' },
+            'using-specialists-v3/SKILL.md': { hash: 'old', version: '0.9.0' },
+          },
+        },
+      },
+    });
+
+    await writeSkill(targetDefault, 'using-specialists-v3');
+    await writeSkill(targetDefault, 'using-specialists');
+
+    // v2 layout: one symlinked view per runtime, both skills in each.
+    for (const runtime of ['pi', 'claude', 'codex']) {
+      const viewRoot = path.join(targetActive, runtime);
+      await fs.ensureDir(viewRoot);
+      for (const name of ['using-specialists', 'using-specialists-v3']) {
+        await fs.symlink(path.join('..', '..', 'default', name), path.join(viewRoot, name));
+      }
+    }
+
+    await runInstall({
+      yes: true,
+      dryRun: false,
+      projectRoot: tmpDir,
+      packageRoot,
+      skipMachineBootstrap: true,
+      skipClaudeRuntimeSync: true,
+    });
+
+    expect(await fs.pathExists(path.join(targetDefault, 'using-specialists-v3'))).toBe(false);
+    for (const runtime of ['pi', 'claude', 'codex']) {
+      expect(await fs.pathExists(path.join(targetActive, runtime, 'using-specialists-v3'))).toBe(false);
+      expect(
+        await fs.pathExists(path.join(targetActive, runtime, 'using-specialists', 'SKILL.md')),
+      ).toBe(true);
+    }
+
+    const logPath = path.join(sandboxHome, '.xtrm', 'logs', 'skills-migration.jsonl');
+    const logLines = (await fs.readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    const pruneEvent = logLines.find(line => line.event === 'prune.retired-managed');
+    expect(pruneEvent).toBeDefined();
+    expect(pruneEvent.removed).toEqual(['using-specialists-v3']);
+    expect(pruneEvent.sweptActiveLinks).toBe(3);
+    expect(pruneEvent.registrySource).toContain('.xtrm/registry.json');
+  });
+
   it('hydrates managed skills without pruning a false three-entry pre-state that lacks ownership proof', async () => {
     const packageRoot = path.join(tmpDir, 'pkg');
     const packageDefault = path.join(packageRoot, '.xtrm', 'skills', 'default');

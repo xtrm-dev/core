@@ -1,5 +1,6 @@
 import kleur from 'kleur';
 import fs from 'fs-extra';
+import os from 'node:os';
 import path from 'path';
 import crypto from 'node:crypto';
 import { t } from '../utils/theme.js';
@@ -7,6 +8,7 @@ import { checkDrift } from './drift.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
 import { shouldUseGlobalSkills } from './global-skills-flag.js';
 import { INSTALLER_MANIFEST_FILENAME, readManifestJson } from './installer-manifest.js';
+import { createVerifiedSkillsBackup } from './skills-backup.js';
 import { resolveGlobalSkillsRoot } from './skills-layout.js';
 
 declare const __dirname: string;
@@ -211,86 +213,322 @@ async function isDirLike(entryPath: string, entryStat: import('fs').Stats): Prom
     return Boolean(resolved?.isDirectory());
 }
 
+export const SKILLS_MIGRATION_LOG_NAME = 'skills-migration.jsonl';
+
+/** Retired-name count at which a prune must be confirmed before it deletes anything. */
+export const PRUNE_SUSPICIOUS_MIN_RETIRED = 2;
+
+export interface PruneRetiredManagedSkillsResult {
+    /** Retired managed skill directories this run removed (or would remove, in a dry run). */
+    removed: string[];
+    /** Retired managed names proven by prior ownership, whether or not they were on disk. */
+    retired: string[];
+    /** Active-view symlinks swept, labelled relative to the active root (`pi/<name>` or `<name>`). */
+    sweptActiveLinks: string[];
+    /** True when the guard refused this prune — nothing was deleted. */
+    refused: boolean;
+    refusalReason?: string;
+    /** Restorable snapshot taken before removal, when one was taken. */
+    backupArchive?: string;
+}
+
+interface SuspiciousPruneAssessment {
+    suspicious: boolean;
+    reason?: string;
+}
+
+function hashSkillNameSet(names: Iterable<string>): string {
+    return crypto.createHash('sha256').update([...names].sort().join('\n')).digest('hex');
+}
+
+/** Log paths collapse to `~/…` when under the home directory; anything else stays hashed. */
+function formatPruneLogPath(filePath: string): string {
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const normalized = path.resolve(filePath);
+    const homeRoot = path.resolve(os.homedir());
+    if (normalized === homeRoot) return '~';
+    if (normalized.startsWith(homeRoot + path.sep)) return `~/${toPosix(path.relative(homeRoot, normalized))}`;
+    return normalized;
+}
+
+function resolveSkillsMigrationLogPath(): string {
+    return path.join(path.dirname(resolveGlobalSkillsRoot()), 'logs', SKILLS_MIGRATION_LOG_NAME);
+}
+
+interface PruneLogEvent {
+    timestamp: string;
+    component: 'skills-prune';
+    event: 'prune.retired-managed';
+    outcome: 'ok' | 'planned' | 'refused' | 'override';
+    scope: 'global' | 'project';
+    skillsRoot: string;
+    defaultRoot: string;
+    registrySource: string;
+    managedDigest: string;
+    managedCount: number;
+    previouslyManagedCount: number;
+    retiredCount: number;
+    removed: string[];
+    removedCount: number;
+    sweptActiveLinks: number;
+    dryRun: boolean;
+    backupArchive?: string;
+    refusalReason?: string;
+}
+
+// The whole point of the event is post-mortem attribution, so a log write
+// failure aborts BEFORE any removal: a prune that cannot be recorded must not
+// run. The append is a single-line O_APPEND write, matching every other
+// skills-migration.jsonl writer, so concurrent prunes cannot interleave lines.
+async function appendSkillsPruneLog(event: PruneLogEvent): Promise<void> {
+    const logPath = resolveSkillsMigrationLogPath();
+    await fs.ensureDir(path.dirname(logPath));
+    await fs.appendFile(logPath, `${JSON.stringify(event)}\n`);
+}
+
+function isGlobalDefaultRoot(defaultRoot: string): boolean {
+    // Canonical path comparison only; this does not access a resolved user path.
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    return path.resolve(defaultRoot) === path.resolve(path.join(resolveGlobalSkillsRoot(), 'default'));
+}
+
+/**
+ * CORE-2513. A prune is only ordinary retirement when it takes a MINORITY of the
+ * previously managed set. Two independent signatures mark a destructive prune:
+ *   - the managed set halved or worse (`retired >= 2` and `managed * 2 <= previous`)
+ *   - retirement of at least half (and at least 3) of the previously managed set
+ * A one-of-two retirement (the ordinary `using-specialists-v3` update) stays
+ * below both thresholds and prunes without confirmation.
+ */
+export function assessSuspiciousPrune(params: {
+    previouslyManaged: ReadonlySet<string>;
+    managed: ReadonlySet<string>;
+    retired: ReadonlySet<string>;
+}): SuspiciousPruneAssessment {
+    const { previouslyManaged, managed, retired } = params;
+    const reasons: string[] = [];
+
+    if (retired.size >= PRUNE_SUSPICIOUS_MIN_RETIRED && managed.size * 2 <= previouslyManaged.size) {
+        reasons.push(
+            `managed set shrank to ${managed.size} of ${previouslyManaged.size} previously managed skill(s)`,
+        );
+    }
+    if (retired.size >= 3 && retired.size * 2 >= previouslyManaged.size) {
+        reasons.push(
+            `retires ${retired.size} of ${previouslyManaged.size} previously managed skill(s) — at least half`,
+        );
+    }
+
+    if (reasons.length === 0) return { suspicious: false };
+    return { suspicious: true, reason: reasons.join('; ') };
+}
+
+/**
+ * Active-view symlinks whose name is retired and whose target is the retired
+ * `default/<name>` entry. Handles both layouts:
+ *   - v1 flat view:      active/<name>          ->  ../default/<name>
+ *   - v2 per-runtime:    active/<runtime>/<name> ->  ../../default/<name>
+ * Real directories and symlinks pointing anywhere else are user-owned and stay.
+ */
+async function planRetiredActiveLinkSweep(params: {
+    activeRoot: string;
+    defaultRoot: string;
+    retiredNames: ReadonlySet<string>;
+}): Promise<string[]> {
+    const { activeRoot, defaultRoot, retiredNames } = params;
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const activeStat = await fs.lstat(activeRoot).catch(() => null);
+    if (!activeStat || activeStat.isSymbolicLink() || !activeStat.isDirectory()) return [];
+
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const resolvedDefaultRoot = path.resolve(defaultRoot);
+    const candidates: string[] = [];
+
+    for (const entry of await fs.readdir(activeRoot)) {
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+        const entryPath = path.join(activeRoot, entry);
+        const entryStat = await fs.lstat(entryPath).catch(() => null);
+        if (!entryStat) continue;
+        if (entryStat.isSymbolicLink()) {
+            candidates.push(entryPath);
+            continue;
+        }
+        if (!entryStat.isDirectory()) continue;
+        // Per-runtime view root: scan one level of symlinked skill entries.
+        for (const child of await fs.readdir(entryPath)) {
+            // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+            candidates.push(path.join(entryPath, child));
+        }
+    }
+
+    const sweep: string[] = [];
+    for (const candidate of candidates) {
+        const linkStat = await fs.lstat(candidate).catch(() => null);
+        if (!linkStat?.isSymbolicLink()) continue;
+        const name = path.basename(candidate);
+        if (!retiredNames.has(name)) continue;
+        const linkTarget = await fs.readlink(candidate).catch(() => null);
+        if (!linkTarget) continue;
+        const resolvedTarget = path.resolve(path.dirname(candidate), linkTarget);
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+        if (resolvedTarget !== path.join(resolvedDefaultRoot, name)) continue;
+        sweep.push(candidate);
+    }
+
+    return sweep;
+}
+
+/**
+ * CORE-2513 hardening. Removing retired managed skills deletes a live shared
+ * surface, so a prune now: (1) proves ownership from the installer manifest or
+ * the previous registry snapshot, (2) refuses a destructive contraction of the
+ * managed set unless the caller passes an explicit `yes`, (3) snapshots the
+ * skills root through the bootstrap backup helper, and (4) appends one
+ * `prune.retired-managed` event with the registry source and managed-set digest
+ * BEFORE touching disk. The active-view sweep covers both layouts.
+ */
 export async function pruneRetiredManagedSkills(params: {
     userXtrmDir: string;
     registry: RegistryManifest;
     dryRun: boolean;
     overrideRoots?: Record<string, string>;
-}): Promise<{ removed: string[] }> {
-    const { userXtrmDir, registry, dryRun, overrideRoots } = params;
+    /** Path of the registry the managed set came from, for the log event. */
+    registrySource?: string;
+    /** Explicit confirmation for a suspicious (destructive) contraction. */
+    yes?: boolean;
+}): Promise<PruneRetiredManagedSkillsResult> {
+    const { userXtrmDir, registry, dryRun, overrideRoots, registrySource, yes = false } = params;
+
+    const noop = (): PruneRetiredManagedSkillsResult => ({
+        removed: [],
+        retired: [],
+        sweptActiveLinks: [],
+        refused: false,
+    });
 
     // Prune where installFromRegistry would write: honor the same skills override root.
     // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     const defaultRoot = overrideRoots?.skills ?? path.join(userXtrmDir, 'skills', 'default');
 
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     const rootStat = await fs.lstat(defaultRoot).catch(() => null);
     if (!rootStat || rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
-        return { removed: [] };
+        return noop();
     }
 
     const managedNames = collectManagedDefaultSkillNames(registry);
     if (managedNames.size === 0) {
         // No default skills asset in this registry (e.g. project snapshot under global mode).
         // Refuse to prune — we can't distinguish retired vs simply not-in-scope.
-        return { removed: [] };
+        return noop();
     }
 
     const previouslyManagedNames = await readPreviouslyManagedDefaultSkillNames(userXtrmDir, defaultRoot);
     if (previouslyManagedNames.size === 0) {
-        return { removed: [] };
+        return noop();
     }
     const retiredManagedNames = new Set(
         [...previouslyManagedNames].filter(name => !managedNames.has(name)),
     );
     if (retiredManagedNames.size === 0) {
-        return { removed: [] };
+        return noop();
     }
 
-    const onDisk = await fs.readdir(defaultRoot);
-    const removed: string[] = [];
-
-    for (const name of onDisk) {
-        if (!retiredManagedNames.has(name)) continue;
-
+    const onDisk = new Set(await fs.readdir(defaultRoot));
+    const prunable: string[] = [];
+    for (const name of [...retiredManagedNames].sort()) {
+        if (!onDisk.has(name)) continue;
         // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
         const entryPath = path.join(defaultRoot, name);
         const entryStat = await fs.lstat(entryPath).catch(() => null);
         if (!entryStat) continue;
         if (!(await isDirLike(entryPath, entryStat))) continue;
-
-        removed.push(name);
-        if (!dryRun) {
-            await fs.remove(entryPath);
-        }
+        prunable.push(name);
+    }
+    if (prunable.length === 0) {
+        return noop();
     }
 
-    // Sweep matching active-view symlinks that point at the pruned default entries.
-    // User-owned active content (real dirs, or symlinks pointing outside the default root) is untouched.
+    const assessment = assessSuspiciousPrune({
+        previouslyManaged: previouslyManagedNames,
+        managed: managedNames,
+        retired: new Set(prunable),
+    });
+
+    const skillsRoot = path.dirname(defaultRoot);
+    // The active view always lives beside the default tier it serves, including
+    // under the global skills override root (where it is ~/.xtrm/skills/active).
     // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-    const activeRoot = path.join(userXtrmDir, 'skills', 'active');
-    const activeStat = await fs.lstat(activeRoot).catch(() => null);
-    if (activeStat?.isDirectory() && !activeStat.isSymbolicLink()) {
-        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-        const resolvedDefaultRoot = path.resolve(defaultRoot);
-        for (const name of removed) {
+    const activeRoot = path.join(skillsRoot, 'active');
+    const activeLinkSweep = await planRetiredActiveLinkSweep({
+        activeRoot,
+        defaultRoot,
+        retiredNames: new Set(prunable),
+    });
+
+    const logBase = {
+        timestamp: new Date().toISOString(),
+        component: 'skills-prune' as const,
+        event: 'prune.retired-managed' as const,
+        scope: isGlobalDefaultRoot(defaultRoot) ? 'global' as const : 'project' as const,
+        skillsRoot: formatPruneLogPath(skillsRoot),
+        defaultRoot: formatPruneLogPath(defaultRoot),
+        registrySource: registrySource ? formatPruneLogPath(registrySource) : 'unknown',
+        managedDigest: hashSkillNameSet(managedNames),
+        managedCount: managedNames.size,
+        previouslyManagedCount: previouslyManagedNames.size,
+        retiredCount: prunable.length,
+        dryRun,
+    };
+
+    if (assessment.suspicious && !yes) {
+        const refusalReason = assessment.reason ?? 'destructive managed-set contraction';
+        await appendSkillsPruneLog({
+            ...logBase,
+            outcome: 'refused',
+            removed: [],
+            removedCount: 0,
+            sweptActiveLinks: 0,
+            refusalReason,
+        });
+        return {
+            removed: [],
+            retired: prunable,
+            sweptActiveLinks: [],
+            refused: true,
+            refusalReason,
+        };
+    }
+
+    // Snapshot before any removal so every deleted tree is restorable.
+    const backup = dryRun ? null : await createVerifiedSkillsBackup(skillsRoot);
+
+    await appendSkillsPruneLog({
+        ...logBase,
+        outcome: dryRun ? 'planned' : assessment.suspicious ? 'override' : 'ok',
+        removed: prunable,
+        removedCount: prunable.length,
+        sweptActiveLinks: activeLinkSweep.length,
+        ...(backup ? { backupArchive: formatPruneLogPath(backup.archivePath) } : {}),
+    });
+
+    if (!dryRun) {
+        for (const name of prunable) {
             // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-            const activeEntry = path.join(activeRoot, name);
-            const linkStat = await fs.lstat(activeEntry).catch(() => null);
-            if (!linkStat || !linkStat.isSymbolicLink()) continue;
-            const linkTarget = await fs.readlink(activeEntry).catch(() => null);
-            if (!linkTarget) continue;
-            // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-            const resolvedTarget = path.resolve(path.dirname(activeEntry), linkTarget);
-            // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-            if (resolvedTarget === path.join(resolvedDefaultRoot, name)) {
-                if (!dryRun) {
-                    await fs.remove(activeEntry);
-                }
-            }
+            await fs.remove(path.join(defaultRoot, name));
+        }
+        for (const linkPath of activeLinkSweep) {
+            await fs.remove(linkPath);
         }
     }
 
-    return { removed };
+    return {
+        removed: prunable,
+        retired: prunable,
+        sweptActiveLinks: activeLinkSweep.map(linkPath => toPosix(path.relative(activeRoot, linkPath))),
+        refused: false,
+        ...(backup ? { backupArchive: backup.archivePath } : {}),
+    };
 }
 
 // Optional-tier skills xtrm once shipped and no longer does (pack/skill, relative to skills/optional).
