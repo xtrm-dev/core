@@ -192,3 +192,6 @@ cli/.gemini/
 
 # Legacy specialists hook links (CORE-2414): never installed in-repo, unwired; do not track
 .claude/hooks/specialists-*.mjs
+
+# PR Lens writes its previews here. They are rebuilt on demand.
+.pr-lens/
