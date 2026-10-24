@@ -24,6 +24,7 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import * as piTuiRuntime from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -969,6 +970,105 @@ export function renderExternalToolLines(
   return contentLines.length > 0
     ? renderExternalToolBackgroundLines(contentLines, width, kind, expanded, toolName, durationMs, status, bareHeader, resultCap, callSummary, keptCode.length)
     : [];
+}
+
+// ============================================================================
+// Custom-message click expansion (CORE-2517).
+//
+// Pi wraps a native tool call's result region in a MouseRegion, so clicking
+// the row toggles that row's expansion (ToolExecutionComponent
+// createResultRegion); compaction, branch and skill rows get the same
+// treatment. A custom message - anything registered through
+// registerMessageRenderer: intercom, background, suggest - gets no
+// MouseRegion, so its `_expanded` only follows the global app.tools.expand
+// toggle and a click does nothing. This patch gives every registered custom
+// renderer the native behaviour: one click on the resting row expands it,
+// one more click collapses it.
+// ============================================================================
+
+const CUSTOM_MESSAGE_CLICK_PATCH_VERSION = 1;
+const PATCHED_CUSTOM_MESSAGE_CLICK = "__xtrmUiCustomMessageClick";
+const ORIGINAL_CUSTOM_MESSAGE_REBUILD = "__xtrmUiCustomMessageRebuild";
+const CLICK_WRAPPED = "__xtrmUiClickWrapped";
+
+type CustomMessageComponentCtor = {
+  prototype: {
+    rebuild?: () => void;
+  };
+};
+
+type ClickableCustomMessage = {
+  customComponent?: unknown;
+  _expanded?: boolean;
+  children: unknown[];
+  setExpanded?: (expanded: boolean) => void;
+};
+
+type MouseRegionCtor = new (child: unknown, handler: (event: { type?: string; button?: string }) => unknown) => unknown;
+
+/** pi-tui's MouseRegion, resolved dynamically so an older typings set cannot break the import. */
+function mouseRegionCtor(): MouseRegionCtor | undefined {
+  const candidate = (piTuiRuntime as unknown as { MouseRegion?: unknown }).MouseRegion;
+  return typeof candidate === "function" ? (candidate as MouseRegionCtor) : undefined;
+}
+
+/**
+ * Wrap one custom component in a click region that toggles the host's
+ * expansion, mirroring Pi's native tool rows. Exported for the unit tests;
+ * the prototype patch only wires it into CustomMessageComponent.
+ */
+export function wrapCustomMessageForClick(
+  component: unknown,
+  host: ClickableCustomMessage,
+  MouseRegion: MouseRegionCtor | undefined = mouseRegionCtor(),
+): unknown {
+  if (!component || typeof (component as { render?: unknown }).render !== "function") return component;
+  if (!MouseRegion) return component;
+  if ((component as Record<string, unknown>)[CLICK_WRAPPED]) return component;
+  const region = new MouseRegion(component, (event) => {
+    if (event?.type !== "click" || event?.button !== "left") return undefined;
+    host.setExpanded?.(!(host._expanded ?? false));
+    return { handled: true };
+  });
+  (region as Record<string, unknown>)[CLICK_WRAPPED] = true;
+  return region;
+}
+
+async function installCustomMessageClickPatch(): Promise<void> {
+  const entryPath = resolvePiCodingAgentEntryPath();
+  const mod = await import(pathToFileURL(entryPath).href) as {
+    CustomMessageComponent?: CustomMessageComponentCtor;
+  };
+  const proto = mod.CustomMessageComponent?.prototype as
+    | (CustomMessageComponentCtor["prototype"] & {
+      [PATCHED_CUSTOM_MESSAGE_CLICK]?: number | boolean;
+      [ORIGINAL_CUSTOM_MESSAGE_REBUILD]?: () => void;
+    })
+    | undefined;
+  if (!proto) return;
+
+  const rebuild = selectPatchBase(
+    proto.rebuild,
+    proto[PATCHED_CUSTOM_MESSAGE_CLICK],
+    CUSTOM_MESSAGE_CLICK_PATCH_VERSION,
+    proto[ORIGINAL_CUSTOM_MESSAGE_REBUILD],
+    "xtrm-ui custom message click patch",
+  );
+  if (!rebuild) return;
+  proto[ORIGINAL_CUSTOM_MESSAGE_REBUILD] ??= rebuild;
+  proto.rebuild = function patchedRebuild(this: ClickableCustomMessage) {
+    rebuild.call(this);
+    const child = this.customComponent;
+    if (!child) return;
+    const wrapped = wrapCustomMessageForClick(child, this);
+    if (wrapped === child) return;
+    // rebuild() removed the old component and re-added the fresh one; swap
+    // the fresh one for the click region in place, keeping its position.
+    const index = this.children.indexOf(child);
+    if (index !== -1) this.children[index] = wrapped;
+    this.customComponent = wrapped;
+  };
+  proto[PATCHED_CUSTOM_MESSAGE_CLICK] = CUSTOM_MESSAGE_CLICK_PATCH_VERSION;
 }
 
 async function installExternalToolFramePatch(): Promise<void> {
@@ -2463,6 +2563,10 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   // external tool rows rendering through pi's unpatched default path.
   const externalToolInstall = createThinkingPreviewInstallState(installExternalToolFramePatch);
   void externalToolInstall.ensureInstalled().catch(() => undefined);
+  // Custom-message rows (intercom, background wakes) expand on click exactly
+  // like native tool rows; same retry treatment as the other two patches.
+  const customMessageClickInstall = createThinkingPreviewInstallState(installCustomMessageClickPatch);
+  void customMessageClickInstall.ensureInstalled().catch(() => undefined);
 
   // Keep collapsed thinking rows to one line: the recap is truncated to the
   // render width so the expand hint never wraps or disappears. Runs for both
@@ -2525,6 +2629,12 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
     // External tool rows: retry the frame patch before session_start returns.
     await externalToolInstall.ensureInstalled().catch((error: unknown) => {
       if (!externalToolInstall.isInstalled()) {
+        warnRetryFailedOnce(error);
+      }
+    });
+    // Click expansion for custom-message rows (intercom, background wakes).
+    await customMessageClickInstall.ensureInstalled().catch((error: unknown) => {
+      if (!customMessageClickInstall.isInstalled()) {
         warnRetryFailedOnce(error);
       }
     });

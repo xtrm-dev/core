@@ -24,14 +24,14 @@ describe("background indicator text", () => {
     expect(formatIndicator(summary())).toBeNull();
   });
 
-  test("matches the D-5 shapes: tasks, monitors, failures, /bg", () => {
-    expect(formatIndicator(summary({ runningTasks: 3, activeMonitors: 1 }))).toBe("◐ 3 tasks running · 1 monitor · /bg");
-    expect(formatIndicator(summary({ runningTasks: 2, unseenFailures: 1 }))).toBe("◐ 2 tasks running · ! 1 failed · /bg");
-    expect(formatIndicator(summary({ runningTasks: 1, activeMonitors: 1 }))).toBe("◐ 1 task running · 1 monitor · /bg");
-    expect(formatIndicator(summary({ activeMonitors: 2 }))).toBe("2 monitors · /bg");
-    expect(formatIndicator(summary({ unseenFailures: 1 }))).toBe("! 1 failed · /bg");
+  test("states every status in words: no glyph, no separator, /bg last", () => {
+    expect(formatIndicator(summary({ runningTasks: 3, activeMonitors: 1 }))).toBe("3 running  1 monitor  /bg");
+    expect(formatIndicator(summary({ runningTasks: 2, unseenFailures: 1 }))).toBe("2 running  1 failed  /bg");
+    expect(formatIndicator(summary({ runningTasks: 1, activeMonitors: 1 }))).toBe("1 running  1 monitor  /bg");
+    expect(formatIndicator(summary({ activeMonitors: 2 }))).toBe("2 monitors  /bg");
+    expect(formatIndicator(summary({ unseenFailures: 1 }))).toBe("1 failed  /bg");
     expect(formatIndicator(summary({ runningTasks: 2, activeMonitors: 3, unseenFailures: 2 }))).toBe(
-      "◐ 2 tasks running · 3 monitors · ! 2 failed · /bg",
+      "2 running  3 monitors  2 failed  /bg",
     );
   });
 
@@ -165,7 +165,7 @@ describe("background widget controller", () => {
     expect(typeof factory).toBe("function");
     const lines = factory({}, {}).render(80);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("1 task running");
+    expect(lines[0]).toContain("1 running");
     // Finishing and seeing the task idles the widget back to cleared.
     task.status = "completed";
     task.endedAt = NOW + 1000;

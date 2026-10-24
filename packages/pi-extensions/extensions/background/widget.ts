@@ -1,9 +1,10 @@
 /**
  * Background indicator above the prompt (B3 CORE-2441, ADR rev 2 B2 + D-5).
  *
- * While anything runs, one line reads "◐ 3 tasks running · 1 monitor ·
- * /bg"; a failure stays as "! 1 failed" until the operator sees it
- * (opening /bg or the record's output marks it seen). Idle means no
+ * While anything runs, one line reads "3 running  1 monitor  /bg": text
+ * states every status (no glyph duplicates the word, CORE-2517), fields sit
+ * on two-space gaps. A failure stays as "1 failed" until the operator sees
+ * it (opening /bg or the record's output marks it seen). Idle means no
  * widget at all. The line is exactly one row (stable height) and truncates
  * to the render width, so it never pushes the editor off-screen at 80, 120,
  * 160 or 220 columns. Theme never touches this line: it is plain text.
@@ -64,18 +65,19 @@ function plural(count: number, one: string, many: string): string {
 }
 
 /**
- * The D-5 line, or null when idle. Shapes (amendment 1): "◐ 3 tasks running
- * · 1 monitor · /bg", with "! 1 failed" until seen.
+ * The D-5 line, or null when idle. Text states every status (CORE-2517):
+ * no glyph duplicates the word, and fields sit on two-space gaps instead of
+ * `·`. Shapes: "3 running  1 monitor  /bg", "2 running  1 failed  /bg".
  */
 export function formatIndicator(summary: BackgroundSummary): string | null {
   const { runningTasks, activeMonitors, unseenFailures } = summary;
   if (runningTasks === 0 && activeMonitors === 0 && unseenFailures === 0) return null;
   const parts: string[] = [];
-  if (runningTasks > 0) parts.push(`◐ ${plural(runningTasks, "task", "tasks")} running`);
+  if (runningTasks > 0) parts.push(`${runningTasks} running`);
   if (activeMonitors > 0) parts.push(plural(activeMonitors, "monitor", "monitors"));
-  if (unseenFailures > 0) parts.push(`! ${unseenFailures} failed`);
+  if (unseenFailures > 0) parts.push(`${unseenFailures} failed`);
   parts.push("/bg");
-  return parts.join(" · ");
+  return parts.join("  ");
 }
 
 /**

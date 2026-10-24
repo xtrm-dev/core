@@ -723,4 +723,32 @@ describe("Monitor terminal drain", () => {
     expect(pi.sent.length).toBe(sentAfterNotice);
     expect(service.store.getMonitor(monitorId)?.status).toBe("stopped");
   });
+
+  test("wake counts are exact: per-wake lines sum to the drain, indexes are gap-free, notice matches the store", async () => {
+    const { pi, tools } = fakePi();
+    const service = startService(pi);
+    const started = await tools
+      .get("Monitor")!
+      .execute("call-1", { command: "seq 1 250; sleep 30", timeout_ms: 30000, description: "count probe" }, undefined, undefined, toolCtx());
+    const monitorId = String((started.details as Record<string, unknown>).monitor_id);
+    await until(() => (service.store.getMonitor(monitorId)?.lineCount ?? 0) >= 250);
+    await tools.get("BackgroundStop")!.execute("call-2", { task_id: monitorId }, undefined, undefined, toolCtx());
+    await until(() => monitorNotices(pi.sent).length >= 1);
+    const events = monitorEvents(pi.sent);
+    // What each wake declared equals what it actually delivered.
+    const declared = events.map((event) => Number((event.message.details as Record<string, unknown>).line_count));
+    const delivered = events.map((event) => (String(event.message.content).match(/<line>/g) ?? []).length);
+    expect(declared).toEqual(delivered);
+    expect(delivered.reduce((sum, count) => sum + count, 0)).toBe(250);
+    // Event indexes are the envelope's own 0-based sequence, gap-free.
+    const indexes = events.map((event) => Number((event.message.details as Record<string, unknown>).event_index));
+    expect(indexes).toEqual(indexes.map((_, index) => index));
+    // The terminal notice reports the record totals, not a batch.
+    const notice = monitorNotices(pi.sent)[0].message.details as Record<string, unknown>;
+    expect(notice.event_count).toBe(events.length);
+    expect(notice.line_count).toBe(250);
+    expect(notice.elapsed).toMatch(/^\d/);
+    expect(service.store.getMonitor(monitorId)?.eventCount).toBe(events.length);
+    expect(service.store.getMonitor(monitorId)?.lineCount).toBe(250);
+  });
 });

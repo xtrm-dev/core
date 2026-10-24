@@ -194,29 +194,30 @@ describe("delivery and idle notices (CORE-2438 I7, D7-D8)", () => {
 });
 
 describe("operator cards (CORE-2438 I7, D4)", () => {
-  test("an incoming message shows › Message from @<name>: <first line>", () => {
-    const lines = visible(formatEventCard(messageDetails({ preview: ["hello world", "second"] }), light, 80));
+  test("an expanded message shows › Message from @<name>: <first line>", () => {
+    const lines = visible(formatEventCard(messageDetails({ preview: ["hello world", "second"] }), light, 80, { expanded: true }));
     expect(lines[0]).toMatch(/^● @probe delivered$/);
     expect(lines[1]).toBe("  › Message from @Probe: hello world");
     expect(lines[2]).toBe("  second");
   });
 
-  test("dim facts ride the last line; overflow shows +N lines · ctrl+o expands", () => {
+  test("an expanded message shows the whole corpus with facts on the last line", () => {
     const lines = visible(
       formatEventCard(
         messageDetails({ preview: ["one", "two", "three", "four", "five"], facts: "m1 · 1.2s · 3 KiB" }),
         light,
         80,
+        { expanded: true },
       ),
     );
-    expect(lines).toHaveLength(1 + 3 + 1);
-    expect(lines[lines.length - 1]).toBe("  +2 lines · ctrl+o expands");
-    expect(lines[lines.length - 2].endsWith("m1 · 1.2s · 3 KiB")).toBe(true);
+    // Header plus every body line; the resting row is the one-liner below.
+    expect(lines).toHaveLength(1 + 5);
+    expect(lines[lines.length - 1].endsWith("m1 · 1.2s · 3 KiB")).toBe(true);
   });
 
   test("a card never looks like operator input: it opens with the glyph, never > or $", () => {
     for (const theme of [light, dark]) {
-      const lines = visible(formatEventCard(messageDetails(), theme, 80));
+      const lines = visible(formatEventCard(messageDetails(), theme, 80, { expanded: true }));
       expect(lines[0][0]).toBe("●");
     }
   });
@@ -248,6 +249,9 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     }
     const at200 = visible(formatEventCard(long, light, 200, { expanded: false }))[0];
     expect(at200).toContain("82a690db-9202-4798-aaaa-bb497e18396e");
+    // The fixed cap is what cuts the snippet, not the width: at a wide
+    // terminal the row still ends the snippet with "..." instead of growing.
+    expect(at200).toContain("...");
     const plain80 = formatEventCardPlain(long, 80, { expanded: false });
     expect(plain80).not.toMatch(/\u001b/);
     expect(visibleWidth(plain80)).toBeLessThanOrEqual(80);
@@ -305,7 +309,7 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
         preview: [long, "short line"],
         facts: "m1 · 1.2s · 3 KiB",
       };
-      const raw = formatEventCard(details, theme, width);
+      const raw = formatEventCard(details, theme, width, { expanded: true });
       const lines = visible(raw);
       expect(lines.length).toBeGreaterThan(3);
       for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
@@ -315,23 +319,27 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
 
     for (const { name: caseName, details } of adversarial) {
       test(`snapshot at ${width} cols ${name}: ${caseName} never overruns`, () => {
-        const raw = formatEventCard(details, theme, width);
-        const lines = visible(raw);
-        expect(lines.length).toBeGreaterThan(0);
-        for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+        // Both resting and expanded states are width-safe.
+        for (const expanded of [false, true]) {
+          const raw = formatEventCard(details, theme, width, { expanded });
+          const lines = visible(raw);
+          expect(lines.length).toBeGreaterThan(0);
+          for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+          if (!expanded) expect(lines).toHaveLength(1);
+        }
       });
     }
   }
 
   test("adversarial cases keep their meaning: URL survives split, identity keeps state", () => {
-    const url = visible(formatEventCard(adversarial[0].details, light, 80)).join("").replace(/ /g, "");
+    const url = visible(formatEventCard(adversarial[0].details, light, 80, { expanded: true })).join("").replace(/ /g, "");
     expect(url).toContain("https://example.com/");
     expect(url).toContain("/tail");
     const head = visible(formatEventCard(adversarial[2].details, light, 80))[0];
     expect(head.startsWith("◐ ")).toBe(true);
     expect(head.endsWith("running")).toBe(true);
     // Oversized facts truncate with an ellipsis instead of overrunning.
-    const asciiFacts = visible(formatEventCard(adversarial[3].details, light, 80));
+    const asciiFacts = visible(formatEventCard(adversarial[3].details, light, 80, { expanded: true }));
     expect(asciiFacts.some((l) => l.trimEnd().endsWith("..."))).toBe(true);
     const cjkFactsLines = visible(formatEventCard(adversarial[4].details, light, 80));
     for (const line of cjkFactsLines) expect(visibleWidth(line)).toBeLessThanOrEqual(80);
@@ -355,8 +363,10 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
         facts: "m1 · 1.2s · 3 KiB",
       };
       for (const width of [80, 120]) {
-        const lines = visible(formatEventCard(details, theme, width));
-        for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+        for (const expanded of [false, true]) {
+          const lines = visible(formatEventCard(details, theme, width, { expanded }));
+          for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+        }
       }
       // The real theme styles: bold identity, tinted state, dim facts.
       const raw = formatEventCard(
@@ -379,8 +389,8 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
       fromName: "Probe",
       preview: [mid],
     };
-    const at80 = visible(formatEventCard(details, light, 80));
-    const at120 = visible(formatEventCard(details, light, 120));
+    const at80 = visible(formatEventCard(details, light, 80, { expanded: true }));
+    const at120 = visible(formatEventCard(details, light, 120, { expanded: true }));
     expect(at120.length).toBeLessThan(at80.length);
   });
 });
