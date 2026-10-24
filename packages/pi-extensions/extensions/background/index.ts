@@ -515,6 +515,10 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       elapsed: formatElapsed((record.endedAt ?? now()) - record.startedAt),
       message_id: record.messageId,
       exit_code: record.exitCode,
+      // Operator-only fields: the compact card expands to what actually ran
+      // (exact command, cwd). The model envelope in ./store.ts is unchanged.
+      command: record.command,
+      cwd: record.cwd,
       delivery: "delivered" as WakeDeliveryState,
     };
     try {
@@ -682,10 +686,8 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     });
 
     const message =
-      `Started background task ${record.id}.\n` +
-      `Command: ${command}\n` +
-      `Output file: ${outputFile}\n` +
-      `Do not poll; end the turn. The notification wakes you when the task exits.`;
+      `Started ${record.id} · ${command} · out ${outputFile}\n` +
+      `Do not poll; the exit notification wakes you.`;
     return textResult(message, {
       task_id: record.id,
       output_file: outputFile,
@@ -793,6 +795,13 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
           reason,
           event_count: record.eventCount,
           line_count: record.lineCount,
+          elapsed: formatElapsed((record.endedAt ?? now()) - record.startedAt),
+          // Operator-only fields for the expanded card; the bracket notice
+          // the model receives is built above and stays byte-equal.
+          command: record.command ?? undefined,
+          ws_url: record.wsUrl ?? undefined,
+          cwd: record.cwd,
+          output_file: record.outputFile,
           message_id: record.messageId,
           delivery: "delivered" as WakeDeliveryState,
         });
@@ -848,6 +857,10 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
           line_count: kept.length,
           // The card preview reads these, never re-parsed from the envelope.
           lines: kept,
+          command: record.command ?? undefined,
+          ws_url: record.wsUrl ?? undefined,
+          cwd: record.cwd,
+          output_file: record.outputFile,
           message_id: record.messageId,
           delivery: "delivered" as WakeDeliveryState,
         });
@@ -1150,11 +1163,9 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       socket.onerror = closedNotice;
     }
 
-    const sourceLine = source.command !== null ? `Command: ${source.command}` : `WebSocket: ${source.wsUrl}`;
     const message =
-      `Started monitor ${record.id}.\n` +
-      `${sourceLine}\n` +
-      `Do not poll; end the turn. Each matching line wakes you with one event; the filter must match failure states too, silence is not success.`;
+      `Started ${record.id} · ${source.label} · out ${outputFile}\n` +
+      `Do not poll; each matching line wakes you. Silence is not success.`;
     return textResult(message, {
       monitor_id: record.id,
       output_file: outputFile,
@@ -1167,26 +1178,28 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     const monitor = store.getMonitor(taskId);
     if (monitor) {
       if (isMonitorTerminal(monitor)) {
-        return textResult(`Monitor ${monitor.id} already ${monitor.status}.`, {
+        return textResult(`${monitor.id} already ${monitor.status} · out ${monitor.outputFile}`, {
           task_id: monitor.id,
           monitor_id: monitor.id,
           status: monitor.status,
+          output_file: monitor.outputFile,
           message_id: monitor.messageId,
         }) as Record<string, unknown>;
       }
       monitor.killReason = "stop";
       finalizeMonitor(monitor, "stopped", "stopped by BackgroundStop");
-      return textResult(`Stopped monitor ${monitor.id}.`, {
+      return textResult(`Stopped ${monitor.id} · out ${monitor.outputFile}`, {
         task_id: monitor.id,
         monitor_id: monitor.id,
         status: "stopped",
+        output_file: monitor.outputFile,
         message_id: monitor.messageId,
       }) as Record<string, unknown>;
     }
     const record = store.get(taskId);
     if (!record) throw new Error(`${LOG_PREFIX} unknown task ${JSON.stringify(taskId)}.`);
     if (record.status !== "running") {
-      return textResult(`Background task ${record.id} already ${record.status}. Output: ${record.outputFile}`, {
+      return textResult(`${record.id} already ${record.status} · out ${record.outputFile}`, {
         task_id: record.id,
         output_file: record.outputFile,
         status: record.status,
@@ -1196,7 +1209,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     const handle = live.get(record.id);
     if (handle?.child.exitCode !== null && handle?.child.exitCode !== undefined) {
       settleFromExit(record, handle.child.exitCode);
-      return textResult(`Background task ${record.id} already ${record.status}. Output: ${record.outputFile}`, {
+      return textResult(`${record.id} already ${record.status} · out ${record.outputFile}`, {
         task_id: record.id,
         output_file: record.outputFile,
         status: record.status,
@@ -1210,7 +1223,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
     } else {
       finalize(record, "stopped", null);
     }
-    return textResult(`Stopped background task ${record.id}. Output: ${record.outputFile}`, {
+    return textResult(`Stopped ${record.id} · out ${record.outputFile}`, {
       task_id: record.id,
       output_file: record.outputFile,
       status: "stopped",
@@ -1250,7 +1263,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
         rerunCtx(monitor.sessionId, monitor.cwd),
       )) as { details?: { monitor_id?: string; output_file?: string } };
       const newId = started.details?.monitor_id ?? "";
-      return textResult(`Reran monitor ${monitor.id} as ${newId}.`, {
+      return textResult(`Reran ${monitor.id} as ${newId}`, {
         monitor_id: newId,
         reran_from: monitor.id,
         status: "armed",
@@ -1270,7 +1283,7 @@ export function registerBackgroundExtension(pi: ExtensionAPI, options: Backgroun
       rerunCtx(record.sessionId, record.cwd),
     )) as { details?: { task_id?: string; output_file?: string } };
     const newId = started.details?.task_id ?? "";
-    return textResult(`Reran background task ${record.id} as ${newId}.`, {
+    return textResult(`Reran ${record.id} as ${newId}`, {
       task_id: newId,
       reran_from: record.id,
       status: "running",

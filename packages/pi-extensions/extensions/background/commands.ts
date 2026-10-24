@@ -31,12 +31,8 @@ import {
 export const TASKS_COMMAND = "bg";
 
 export const TASKS_USAGE = [
-  "/bg — one list of background runs and monitors",
-  "/bg stop <id> — stop a running task or monitor",
-  "/bg output <id> — show the tail of its output file",
-  "/bg rerun <id> — run the same command again (finished rows only)",
-  "/bg clear — evict finished rows",
-  "Keys: enter shows or follows the output · s stops · r reruns · c clears finished · esc closes",
+  "/bg  list  ·  /bg stop <id>  ·  /bg output <id>  ·  /bg rerun <id>  ·  /bg clear",
+  "keys: enter details  s stop  r rerun  c clear  esc close",
 ].join("\n");
 
 export type TasksAction =
@@ -78,9 +74,46 @@ export interface TasksRow {
   id: string;
   glyph: string;
   state: string;
+  /** Command that ran (the list's subject); the record description is the fallback. */
   label: string;
   elapsed: string;
   extra: string;
+}
+
+/** Two-space field gap (ultra idiom): no `·` on any operator row. */
+const GAP = "  ";
+
+/** Word wrap by display width; over-wide tokens hard-split. Never truncates. */
+export function wrapText(text: string, width: number): string[] {
+  const safe = Math.max(8, Math.floor(width) || 80);
+  const out: string[] = [];
+  for (const raw of text.split("\n")) {
+    let line = "";
+    for (const word of raw.split(" ")) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (visibleWidth(candidate) <= safe) {
+        line = candidate;
+        continue;
+      }
+      if (line) out.push(line);
+      if (visibleWidth(word) <= safe) {
+        line = word;
+        continue;
+      }
+      let chunk = "";
+      for (const ch of word) {
+        if (chunk && visibleWidth(chunk + ch) > safe) {
+          out.push(chunk);
+          chunk = ch;
+        } else {
+          chunk += ch;
+        }
+      }
+      line = chunk;
+    }
+    out.push(line);
+  }
+  return out.length > 0 ? out : [""];
 }
 
 function formatBytes(bytes: number): string {
@@ -124,7 +157,9 @@ function taskRow(record: BackgroundTaskRecord, now: number): TasksRow {
     id: record.id,
     glyph: stateGlyph("task", record.status),
     state: record.status,
-    label: sanitizeLabel(record.description || record.command || record.id),
+    // The command is the subject: a model-written description must never
+    // hide what actually ran (CORE-2517). Description is the fallback only.
+    label: sanitizeLabel(record.command || record.description || record.id),
     elapsed: formatElapsed((record.endedAt ?? now) - record.startedAt),
     extra: size,
   };
@@ -136,9 +171,9 @@ function monitorRow(record: BackgroundMonitorRecord, now: number): TasksRow {
     id: record.id,
     glyph: stateGlyph("monitor", record.status, record.killReason),
     state: record.status,
-    label: sanitizeLabel(record.description || record.command || record.wsUrl || record.id),
+    label: sanitizeLabel(record.command || record.wsUrl || record.description || record.id),
     elapsed: formatElapsed((record.endedAt ?? now) - record.startedAt),
-    extra: `${record.eventCount} events · ${record.lineCount} lines`,
+    extra: `${record.eventCount} ${record.eventCount === 1 ? "event" : "events"}${GAP}${record.lineCount} lines`,
   };
 }
 
@@ -166,11 +201,27 @@ export function buildTasksRows(
   ];
 }
 
-/** One row: glyph, command or description, id, state, elapsed, size/events. */
+/** One row: glyph, id, command, elapsed, size or event counts. */
 export function formatTasksRow(row: TasksRow, width: number): string {
   const safe = Math.max(20, Math.floor(width) || 80);
-  const line = `${row.glyph} ${row.label} ${row.id} ${row.state} · ${row.elapsed}${row.extra ? ` · ${row.extra}` : ""}`;
-  return fitToWidth(line, safe);
+  const fields = [`${row.glyph} ${row.id}`, row.label, row.elapsed, row.extra].filter((part) => part.length > 0);
+  return fitToWidth(fields.join(GAP), safe);
+}
+
+/** Counts for the band/header line: running, failed and finished rows. */
+export function tasksSummary(rows: TasksRow[]): string {
+  const active = rows.filter((row) => row.state === "running" || row.state === "armed" || row.state === "event");
+  const failed = rows.filter((row) => row.glyph === "!");
+  const running = active.filter((row) => row.kind === "task" || row.state === "running").length;
+  const monitors = active.filter((row) => row.kind === "monitor" && row.state !== "running").length;
+  // A failure is counted on its own axis; it is not also "finished".
+  const finished = rows.length - active.length - failed.length;
+  const parts = [`bg ${rows.length === 0 ? "empty" : rows.length}`];
+  if (running > 0) parts.push(`${running} running`);
+  if (monitors > 0) parts.push(monitors === 1 ? "1 monitor" : `${monitors} monitors`);
+  if (failed.length > 0) parts.push(`${failed.length} failed`);
+  if (finished > 0) parts.push(`${finished} finished`);
+  return parts.join(GAP);
 }
 
 /**
@@ -180,7 +231,7 @@ export function formatTasksRow(row: TasksRow, width: number): string {
  */
 export function formatTasksList(rows: TasksRow[], width: number, droppedUnseen = 0): string[] {
   const safe = Math.max(20, Math.floor(width) || 80);
-  const out = [fitToWidth("tasks", safe)];
+  const out = [fitToWidth(tasksSummary(rows), safe)];
   if (droppedUnseen > 0) {
     out.push(
       fitToWidth(
@@ -201,11 +252,18 @@ export interface OutputView {
   id: string;
   kind: "task" | "monitor";
   label: string;
+  /** Record state word; the detail header shows it once. */
+  state?: string;
+  elapsed?: string;
+  /** Output size ("1.1kb") when the file is readable; empty otherwise. */
+  size?: string;
   running: boolean;
-  /** The exact program inspected: shell command, or ws URL for ws monitors. */
+  /** The exact program inspected: shell command, or ws URL for ws monitors. Wrapped, never truncated. */
   runLine?: string;
-  /** Labelled record facts: status, cwd, elapsed, exit/pid, file, timeout or event counts. */
-  factsLine?: string;
+  /** Labelled fact rows for the detail pane ("cwd /path   pid 12345   timeout 30m"). */
+  facts?: string[];
+  /** "out <output file>" when the record has one. */
+  outputLine?: string;
   lines: string[];
   /** Exact line count for small files; null when the tail window cut the head off. */
   totalLines: number | null;
@@ -364,24 +422,27 @@ export async function readOutput(
   const runLine = task
     ? `$ ${task.command}`
     : `$ ${monitor?.command ?? monitor?.wsUrl ?? id}`;
-  const factsLine = task
+  // One labelled line per fact group: the pane is the record's full account,
+  // so nothing is abbreviated away. Facts follow the approved layout —
+  // cwd/pid/exit/timeout on one line, then counts, then the output path.
+  const facts = task
     ? [
-        `status: ${task.status}`,
-        `cwd: ${task.cwd}`,
-        `elapsed: ${elapsed}`,
-        task.status === "running" ? `pid: ${task.pid ?? "?"}` : `exit: ${task.exitCode ?? "?"}`,
-        ...(task.killReason ? [`killed: ${task.killReason}`] : []),
-        `output: ${task.outputFile}`,
-        `timeout: ${formatElapsed(task.timeoutMs)}`,
-      ].join(" · ")
+        [
+          `cwd ${task.cwd || "?"}`,
+          task.status === "running" ? `pid ${task.pid ?? "?"}` : `exit ${task.exitCode ?? "?"}`,
+          ...(task.killReason ? [`killed ${task.killReason}`] : []),
+          `timeout ${formatElapsed(task.timeoutMs)}`,
+        ].join("  "),
+      ]
     : [
-        `status: ${monitor?.status}`,
-        ...(monitor?.killReason ? [`killed: ${monitor.killReason}`] : []),
-        `elapsed: ${elapsed}`,
-        ...(monitor?.pid !== undefined ? [`pid: ${monitor?.pid}`] : []),
-        `events: ${monitor?.eventCount ?? 0} · lines: ${monitor?.lineCount ?? 0}`,
-        `output: ${monitor?.outputFile}`,
-      ].join(" · ");
+        [
+          `cwd ${monitor?.cwd || "?"}`,
+          ...(monitor?.pid !== undefined ? [`pid ${monitor.pid}`] : []),
+          `events ${monitor?.eventCount ?? 0}`,
+          `lines ${monitor?.lineCount ?? 0}`,
+          ...(monitor?.killReason ? [`killed ${monitor.killReason}`] : []),
+        ].join("  "),
+      ];
   let tail: TailResult;
   try {
     tail = readTailLines(outputFile, maxLines);
@@ -392,9 +453,13 @@ export async function readOutput(
     id,
     kind: task ? "task" : "monitor",
     label: sanitizeLabel((task?.description ?? monitor?.description ?? "") || id),
+    state: task ? task.status : (monitor?.status ?? "unknown"),
+    elapsed,
+    size: outputSizeExtra(outputFile),
     running,
-    runLine: sanitizeLabel(runLine, 512),
-    factsLine: sanitizeModelText(factsLine, 1024),
+    runLine: sanitizeLabel(runLine, 4000),
+    facts: facts.map((line) => sanitizeModelText(line, 1024)),
+    ...(outputFile ? { outputLine: `out ${sanitizeModelText(outputFile, 1024)}` } : {}),
     lines: tail.lines,
     totalLines: tail.totalLines,
     truncated: tail.truncated,
@@ -748,39 +813,43 @@ export class TasksOverlay {
     const { theme } = this.options;
     const safe = Math.max(20, Math.floor(width) || 80);
     const cut = (line: string): string => fitToWidth(line, safe);
+    const dim = (line: string): string => theme.fg("dim", line);
     if (this.mode === "output") {
-      const out = [cut(theme.bold(`output ${this.output?.view.id ?? ""}`)), ""];
       const view = this.output?.view;
-      if (!view) {
-        out.push(cut(theme.fg("dim", this.status || "Loading…")));
-      } else {
-        // Inspecting a record shows what ran plus every fact: the pane is
-        // the record's full account, not just its output tail. Fields are
-        // optional so injected readers keep working with tail-only views.
-        if (view.runLine) out.push(cut(theme.bold(view.runLine)));
-        if (view.factsLine) out.push(cut(theme.fg("dim", view.factsLine)));
-        if (view.runLine || view.factsLine) out.push("");
-        const total = view.lines.length;
-        const maxScroll = Math.max(0, total - OVERLAY_VISIBLE_ROWS);
-        const scroll = Math.min(this.output?.scroll ?? 0, maxScroll);
-        const visible = view.lines.slice(Math.max(0, total - OVERLAY_VISIBLE_ROWS - scroll), total - scroll || total);
-        for (const line of visible) out.push(cut(line));
-        if (view.truncated) {
-          out.push(
-            cut(
-              theme.fg(
-                "dim",
-                view.totalLines === null
-                  ? `… showing the last ${view.lines.length} lines (older lines not counted)`
-                  : `… showing the last ${view.lines.length} of ${view.totalLines} lines`,
-              ),
-            ),
-          );
-        }
-        if (this.output?.following) out.push(cut(theme.fg("dim", "following — new lines appear live · esc back")));
+      // Detail pane: identity and state first, then what ran (wrapped, never
+      // truncated), then every record fact, then the tail under a rule. The
+      // operator asked for the full command and nothing hidden (CORE-2517).
+      if (!view) return [cut(theme.bold("bg")), "", cut(dim(this.status || "Loading…"))];
+      const header = [
+        theme.bold(view.id),
+        dim([view.state, view.elapsed, view.size].filter((part): part is string => !!part).join(GAP)),
+      ].join(GAP);
+      const out = [cut(header)];
+      if (view.runLine) {
+        for (const line of wrapText(view.runLine, safe)) out.push(cut(theme.fg("text", line)));
       }
-      if (this.status && view) out.push(cut(theme.fg("dim", this.status)));
-      out.push(cut(theme.fg("dim", "esc back · ↑↓ scroll")));
+      for (const fact of view.facts ?? []) out.push(cut(dim(fact)));
+      if (view.outputLine) out.push(cut(dim(view.outputLine)));
+      out.push(cut(dim("─".repeat(safe))));
+      const total = view.lines.length;
+      const maxScroll = Math.max(0, total - OVERLAY_VISIBLE_ROWS);
+      const scroll = Math.min(this.output?.scroll ?? 0, maxScroll);
+      const visible = view.lines.slice(Math.max(0, total - OVERLAY_VISIBLE_ROWS - scroll), total - scroll || total);
+      for (const line of visible) out.push(cut(line));
+      if (view.truncated) {
+        out.push(
+          cut(
+            dim(
+              view.totalLines === null
+                ? `… showing the last ${view.lines.length} lines (older lines not counted)`
+                : `… showing the last ${view.lines.length} of ${view.totalLines} lines`,
+            ),
+          ),
+        );
+      }
+      if (this.output?.following) out.push(cut(dim("following — new lines appear live")));
+      if (this.status) out.push(cut(dim(this.status)));
+      out.push(cut(dim("↑↓ scroll  f follow  s stop  esc back")));
       return out.map((line) => (visibleWidth(line) > safe ? cut(line) : line));
     }
     const rows = this.rows();
@@ -788,25 +857,34 @@ export class TasksOverlay {
     if (this.selected < this.listScroll) this.listScroll = this.selected;
     if (this.selected >= this.listScroll + OVERLAY_VISIBLE_ROWS) this.listScroll = this.selected - OVERLAY_VISIBLE_ROWS + 1;
     this.listScroll = Math.min(this.listScroll, maxOffset);
-    const out = [bandRow(rows.length === 1 ? "tasks · 1" : `tasks · ${rows.length}`, BG_TASKS_ACCENT, safe), ""];
+    // The gold band is an xtrm mark: keep it, but it now carries the counts.
+    const out = [bandRow(tasksSummary(rows), BG_TASKS_ACCENT, safe)];
     const dropped = this.options.store.droppedUnseenFailures();
     if (dropped > 0) {
-      out.push(cut(theme.fg("dim", dropped === 1 ? "+1 earlier failure dropped" : `+${dropped} earlier failures dropped`)));
+      out.push(cut(dim(dropped === 1 ? "+1 earlier failure dropped" : `+${dropped} earlier failures dropped`)));
     }
     if (rows.length === 0) {
-      out.push(cut(theme.fg("dim", "Nothing running.")));
+      out.push(cut(dim("Nothing running.")));
     } else {
       const visible = rows.slice(this.listScroll, this.listScroll + OVERLAY_VISIBLE_ROWS);
+      const idWidth = Math.min(12, visible.reduce((max, row) => Math.max(max, row.id.length), 0));
+      const elapsedWidth = visible.reduce((max, row) => Math.max(max, row.elapsed.length), 0);
+      const extraWidth = visible.reduce((max, row) => Math.max(max, row.extra.length), 0);
+      const fixed = 2 + 2 + idWidth + GAP.length + GAP.length + elapsedWidth + (extraWidth > 0 ? GAP.length + extraWidth : 0);
+      const labelWidth = Math.max(8, safe - fixed);
       visible.forEach((row, i) => {
         const marker = this.listScroll + i === this.selected ? "→ " : "  ";
-        out.push(cut(`${marker}${formatTasksRow(row, safe - 2)}`));
+        const id = row.id.length > idWidth ? row.id.slice(0, idWidth) : row.id.padEnd(idWidth);
+        const label = fitToWidth(row.label, labelWidth).padEnd(labelWidth);
+        const tail = [row.elapsed, ...(row.extra ? [row.extra] : [])].join(GAP);
+        out.push(cut(`${marker}${row.glyph} ${id}${GAP}${label}${GAP}${tail}`));
       });
       if (rows.length > OVERLAY_VISIBLE_ROWS) {
-        out.push(cut(theme.fg("dim", `… ${rows.length - OVERLAY_VISIBLE_ROWS} more · ↑↓ move`)));
+        out.push(cut(dim(`… ${rows.length - OVERLAY_VISIBLE_ROWS} more · ↑↓ move`)));
       }
     }
-    if (this.status) out.push(cut(theme.fg("dim", this.status)));
-    out.push(cut(theme.fg("dim", "enter output · s stop · r rerun · c clear · esc closes")));
+    if (this.status) out.push(cut(dim(this.status)));
+    out.push(cut(dim("enter details  s stop  r rerun  c clear  esc close")));
     return out;
   }
 }
@@ -847,7 +925,7 @@ export async function openTasksList(
     clear: async () => {
       const cleared = deps.store.clearFinished();
       const total = cleared.tasks + cleared.monitors;
-      return `Cleared ${total} finished (${cleared.tasks} tasks, ${cleared.monitors} monitors).`;
+      return `Cleared ${total} finished · ${cleared.tasks} tasks ${cleared.monitors} monitors`;
     },
     readOutput: (id) => (deps.readOutputView ? deps.readOutputView(id) : readOutput(deps.store, id)),
   };
@@ -890,7 +968,7 @@ export async function runTasksCommand(args: string, ctx: TasksCommandCtx, deps: 
     case "clear": {
       const cleared = deps.store.clearFinished();
       const total = cleared.tasks + cleared.monitors;
-      ctx.ui.notify(`Cleared ${total} finished (${cleared.tasks} tasks, ${cleared.monitors} monitors).`, "info");
+      ctx.ui.notify(`Cleared ${total} finished · ${cleared.tasks} tasks ${cleared.monitors} monitors`, "info");
       return;
     }
     case "stop":

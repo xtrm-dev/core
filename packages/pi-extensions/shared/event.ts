@@ -92,8 +92,19 @@ export interface EventDetails {
   preview: string[];
   /** Full body line count when the caller truncated preview; hidden = total - shown. */
   totalLines?: number;
-  /** Dim facts trailer: "id · elapsed · size". */
+  /** Dim facts trailer: two-space separated fields ("4.2s  exit 0", "#18  3 lines"). */
   facts?: string;
+  /**
+   * Facts as ordered segments, dropped from the end when the row is too
+   * narrow (a path goes before the exit code does). Wins over `facts`.
+   */
+  factSegments?: string[];
+  /**
+   * Compact reason that belongs to the state word ("exited 0", "5m
+   * timeout"); rendered as `<state>: <detail>`, so the state is never stated
+   * twice. Compact wake rows only.
+   */
+  detail?: string;
   /** Force the ! glyph (high severity) even for a non-error state. */
   severityHigh?: boolean;
   /** Sender address for the D3 reply line. */
@@ -258,6 +269,14 @@ export function buildIdleNotice(name: string, messageId: string, expired: boolea
 /** Maximum preview body lines on a card (D4, expanded view). */
 export const MAX_PREVIEW_LINES = 3;
 
+/**
+ * Compact-mode snippet cap (operator decision 2026-10-24): the collapsed
+ * intercom line truncates the message at this many characters and appends
+ * "...", so the resting row keeps a stable shape instead of shrinking the
+ * snippet field by field.
+ */
+export const COMPACT_SNIPPET_CHARS = 48;
+
 /** Collapsed one-liner expand hint (xtrm-ui chrome wording). */
 export const COLLAPSED_EXPAND_HINT = "(ctrl+o to expand)";
 
@@ -397,6 +416,13 @@ function fitWidth(text: string, width: number): string {
   return stripAnsi(truncateToWidth(text, Math.floor(width)));
 }
 
+/** Compact snippet: one line, whitespace collapsed, capped with "...". */
+export function compactSnippet(preview: string[], maxChars = COMPACT_SNIPPET_CHARS): string {
+  const one = sanitizeCardLine(preview.join(" ")).replace(/\s+/g, " ").trim();
+  if (maxChars <= 0 || one.length <= maxChars) return one;
+  return `${one.slice(0, maxChars).trimEnd()}...`;
+}
+
 function collapsedSegments(
   details: EventDetails,
   width: number,
@@ -408,7 +434,9 @@ function collapsedSegments(
   const suffix = COLLAPSED_EXPAND_HINT;
   const rawFacts = details.facts?.trim() || (typeof details.messageId === "string" ? details.messageId : "");
   let id = rawFacts ? sanitizeCardLine(rawFacts) : "";
-  let snippet = sanitizeCardLine(details.preview.join(" ")).replace(/\s+/g, " ").trim();
+  // Fixed-length cap first (compact mode), width shrinking only as the last
+  // resort: the row shape must not change with the message length.
+  let snippet = compactSnippet(details.preview);
   const joinedWidth = (s: string, i: string) =>
     visibleWidth(prefix) + (s ? 1 + visibleWidth(s) : 0) + (i ? 1 + visibleWidth(i) : 0) + 1 + visibleWidth(suffix);
   // Shrink the id first (an 8-char short ref at minimum) so the snippet
@@ -453,29 +481,122 @@ export function formatMessageCollapsed(details: EventDetails, theme: EventTheme,
   return parts.join(" ");
 }
 
-/** Plain card (no theme): the layout every themed card shares. */
+/** Two-space field gap: the ultra row idiom, so no `·` appears on a wake row. */
+export const FIELD_GAP = "  ";
+
+interface WakeRow {
+  glyph: string;
+  identity: string;
+  state: string;
+  facts: string;
+}
+
+/**
+ * Lay out one compact wake row. Fields drop in a fixed priority so the row
+ * never wraps: facts first (path, counts, first line), then the identity
+ * truncates. Glyph and state always survive, so a 20-column terminal still
+ * says what happened.
+ */
+function layoutWakeRow(details: EventDetails, width: number): WakeRow {
+  const w = Math.max(8, Number.isFinite(width) && width > 0 ? Math.floor(width) : 80);
+  const glyph = glyphFor(details);
+  const stateText = details.state
+    ? sanitizeCardLine(`${details.state}${details.detail ? `: ${details.detail}` : ""}`)
+    : "";
+  // Facts are ordered segments: drop them from the end (the path first) so a
+  // narrow row keeps the status facts instead of losing all of them. Facts
+  // come pre-composed with two-space gaps, so only line breaks and tabs are
+  // collapsed here.
+  const segments = (details.factSegments ?? (details.facts ? [details.facts] : []))
+    .map((segment) => sanitizeCardLine(segment).replace(/[\r\n\t]+/g, " ").trim())
+    .filter((segment) => segment.length > 0);
+  let identity = sanitizeCardLine(details.identity);
+  const head = visibleWidth(glyph) + 1;
+  const stateWidth = stateText ? FIELD_GAP.length + visibleWidth(stateText) : 0;
+  const factsWidth = (): number =>
+    segments.length > 0 ? FIELD_GAP.length + visibleWidth(segments.join(FIELD_GAP)) : 0;
+  while (segments.length > 0 && head + visibleWidth(identity) + stateWidth + factsWidth() > w) {
+    segments.pop();
+  }
+  const identBudget = Math.max(1, w - head - stateWidth - factsWidth());
+  if (visibleWidth(identity) > identBudget) identity = fitWidth(identity, identBudget);
+  return { glyph, identity, state: stateText, facts: segments.join(FIELD_GAP) };
+}
+
+function joinWakeRow(
+  row: WakeRow,
+  style: {
+    glyph: (text: string) => string;
+    identity: (text: string) => string;
+    state: (text: string) => string;
+    facts: (text: string) => string;
+  },
+): string {
+  let line = `${style.glyph(row.glyph)} ${style.identity(row.identity)}`;
+  if (row.state) line += `${FIELD_GAP}${style.state(row.state)}`;
+  if (row.facts) line += `${FIELD_GAP}${style.facts(row.facts)}`;
+  return line;
+}
+
+/** Plain compact wake row (no theme): glyph, identity, state[: detail], facts. */
+export function formatWakeRowPlain(details: EventDetails, width: number): string {
+  return joinWakeRow(layoutWakeRow(details, width), {
+    glyph: (t) => t,
+    identity: (t) => t,
+    state: (t) => t,
+    facts: (t) => t,
+  });
+}
+
+/** Themed compact wake row: state token on glyph and state, dim facts, bold identity. */
+export function formatWakeRow(details: EventDetails, theme: EventTheme, width: number): string {
+  const row = layoutWakeRow(details, width);
+  const stateColor = stateToken(details.state);
+  return joinWakeRow(row, {
+    glyph: (text) => theme.fg(stateColor, text),
+    identity: (text) => theme.bold(text),
+    state: (text) => theme.fg(stateColor, text),
+    facts: (text) => theme.fg("dim", text),
+  });
+}
+
+/** Expanded wake body: labelled detail lines, wrapped, never truncated. */
+function wakeBodyLines(details: EventDetails, width: number): string[] {
+  const inner = Math.max(8, width - INDENT.length);
+  return details.preview
+    .map(sanitizeCardLine)
+    .flatMap((line) => wrapDisplay(line, inner).map((part) => `${INDENT}${part}`));
+}
+
+/**
+ * Plain card (no theme). A wake (task/monitor) rests as one compact row and
+ * expands to its labelled detail lines; a message rests as the collapsed
+ * one-liner and expands to the full corpus.
+ */
 export function formatEventCardPlain(
   details: EventDetails,
   width: number,
   opts?: { expanded?: boolean },
 ): string {
-  if (details.kind === "message" && opts?.expanded === false) return formatMessageCollapsedPlain(details, width);
-  const layout = layoutCard(details, width, opts?.expanded === true);
-  const header = `${layout.glyph} ${layout.identity}${layout.state ? ` ${layout.state}` : ""}`;
-  return [header, ...layoutBodyLines(layout, (s) => s)].join("\n");
+  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
+  if (details.kind === "message") {
+    if (opts?.expanded !== true) return formatMessageCollapsedPlain(details, w);
+    const layout = layoutCard(details, w, true);
+    const header = `${layout.glyph} ${layout.identity}${layout.state ? ` ${layout.state}` : ""}`;
+    return [header, ...layoutBodyLines(layout, (s) => s)].join("\n");
+  }
+  if (opts?.expanded !== true) return formatWakeRowPlain(details, w);
+  return [formatWakeRowPlain(details, w), ...wakeBodyLines(details, w)].join("\n");
 }
 
 /**
- * Operator card (D4): glyph, bold identity, tinted state, italic message
- * bodies, dim facts, up to 3 preview lines, "+N lines · ctrl+o expands".
- * Pass `{ expanded: false }` for a message to get the collapsed one-liner
- * (`› Message from @<name> received: <snippet> <id> (ctrl+o to expand)`)
- * Pi's ctrl+o path uses; `{ expanded: true }` shows the full corpus with no
- * line cap. Without opts the classic 3-line card renders (pinned tests).
- * Theme tokens only — this file holds no SGR. Both renders share `layoutCard`,
- * so the themed card matches the plain layout line for line; only styling
- * differs. Bodies render italic (the message corpus) when the theme offers
- * it; fakes without `italic` fall back to plain bodies so pinned tests hold.
+ * Operator card (D4), compact by default (operator decision 2026-10-24):
+ * a wake rests on one row (glyph, bold identity, tinted state, dim facts) and
+ * expands to its labelled detail lines; a message rests on the collapsed
+ * one-liner (`› Message from @<name> received: <snippet> <id> (ctrl+o to
+ * expand)`) and expands to the full corpus. `{ expanded: true }` is Pi's
+ * row-expansion path (click on the row, or app.tools.expand); anything else
+ * renders collapsed. Theme tokens only — this file holds no SGR.
  */
 export function formatEventCard(
   details: EventDetails,
@@ -483,20 +604,29 @@ export function formatEventCard(
   width: number,
   opts?: { expanded?: boolean },
 ): string {
-  if (details.kind === "message" && opts?.expanded === false) return formatMessageCollapsed(details, theme, width);
-  const layout = layoutCard(details, width, opts?.expanded === true);
+  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
+  if (details.kind === "message") {
+    if (opts?.expanded !== true) return formatMessageCollapsed(details, theme, w);
+    return formatMessageExpanded(details, theme, w);
+  }
+  if (opts?.expanded !== true) return formatWakeRow(details, theme, w);
+  const dim = (text: string) => theme.fg("dim", text);
+  return [formatWakeRow(details, theme, w), ...wakeBodyLines(details, w).map((line) => dim(line))].join("\n");
+}
+
+/**
+ * Expanded message card: glyph, bold identity, tinted state, italic corpus,
+ * dim facts and the expander hint. Shared layout with the plain render.
+ */
+function formatMessageExpanded(details: EventDetails, theme: EventTheme, width: number): string {
+  const layout = layoutCard(details, width, true);
   const head =
     `${layout.glyph} ${theme.bold(layout.identity)}` +
     (layout.state ? ` ${theme.fg(stateToken(details.state), layout.state)}` : "");
   const dim = (text: string) => theme.fg("dim", text);
   const italicize = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
   const lines = layoutBodyLines(layout, dim);
-  // Only the corpus lines (not the facts trailer or the expander hint) read
-  // italic: header stays bold, facts stay dim.
-  const styled =
-    details.kind === "message"
-      ? lines.map((line, i) => (i < layout.bodyLines.length ? italicize(line) : line))
-      : lines;
+  const styled = lines.map((line, i) => (i < layout.bodyLines.length ? italicize(line) : line));
   return [head, ...styled].join("\n");
 }
 

@@ -604,7 +604,7 @@ describe("tasks text forms", () => {
     task.endedAt = NOW + 1000;
     expect(task.seen).toBe(false);
     await runTasksCommand("", ctx, deps);
-    expect(notified[notified.length - 1]?.message).toContain("tasks");
+    expect(notified[notified.length - 1]?.message).toContain("bg ");
     expect(notified[notified.length - 1]?.message).toContain("sleep 30");
     expect(store.get(task.id)?.seen).toBe(true);
   });

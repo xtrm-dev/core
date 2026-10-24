@@ -36,10 +36,10 @@ function indicatorScenarios(): Array<{ name: string; summary: BackgroundSummary 
 describe("indicator snapshots", () => {
   test("canonical lines match the D-5 shapes", () => {
     expect(renderIndicator({ runningTasks: 3, activeMonitors: 1, unseenFailures: 0 }, 80)).toEqual([
-      "◐ 3 tasks running · 1 monitor · /bg",
+      "3 running  1 monitor  /bg",
     ]);
     expect(renderIndicator({ runningTasks: 2, activeMonitors: 0, unseenFailures: 1 }, 80)).toEqual([
-      "◐ 2 tasks running · ! 1 failed · /bg",
+      "2 running  1 failed  /bg",
     ]);
   });
 
@@ -88,10 +88,11 @@ describe("tasks list snapshots", () => {
   test("every width holds every line; light and dark lay out identically", () => {
     const { light, dark } = themedPair();
     const { store } = fixtureStore();
-    // F6: CJK, emoji and ANSI labels ride the same rows.
-    const cjk = store.create("make translations", "ビルド 翻訳 更新", "/tmp/d.log", "session");
-    const emoji = store.create("notify", "🚀 deploy gate", "/tmp/e.log", "session");
-    const ansi = store.create("evil", "evil\n\x1b[2J\x1b]0;pwned\x07done", "/tmp/f.log", "session");
+    // F6: CJK, emoji and ANSI labels ride the same rows. The command is the
+    // row subject (CORE-2517), so the adversarial text goes there.
+    const cjk = store.create("ビルド 翻訳 更新", "make translations", "/tmp/d.log", "session");
+    const emoji = store.create("🚀 deploy gate", "notify", "/tmp/e.log", "session");
+    const ansi = store.create("evil\n\x1b[2J\x1b]0;pwned\x07done", "evil", "/tmp/f.log", "session");
     void cjk;
     void emoji;
     void ansi;
@@ -103,7 +104,7 @@ describe("tasks list snapshots", () => {
       }
     }
     const at80 = formatTasksList(rows, 80);
-    expect(at80.join("\n")).toContain("tasks");
+    expect(at80.join("\n")).toContain("bg ");
     expect(at80.join("\n")).toContain("make build");
     expect(at80.join("\n")).toContain("ビルド");
     expect(at80.join("\n")).toContain("🚀");
@@ -173,10 +174,10 @@ describe("tasks overlay snapshot", () => {
       expect(visibleWidth(stripStyling(line))).toBeLessThanOrEqual(80);
     }
     const text = lines.join("\n");
-    expect(text).toContain("tasks");
+    expect(text).toContain("bg ");
     expect(text).toContain("sleep 30");
     expect(text).toContain("make build");
-    expect(text).toContain("enter output · s stop · r rerun · c clear · esc closes");
+    expect(text).toContain("enter details  s stop  r rerun  c clear  esc close");
     overlay.dispose();
   });
 });

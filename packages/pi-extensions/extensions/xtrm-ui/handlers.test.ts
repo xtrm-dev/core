@@ -1052,3 +1052,68 @@ describe("assistant dot guards", async () => {
     expect(prefixAssistantDot("​\n​")).toBe("​\n​");
   });
 });
+
+describe("custom message click expansion (CORE-2517)", async () => {
+  const { wrapCustomMessageForClick } = await import("./index.ts");
+  const test = (await import("bun:test")).test;
+  const expect = (await import("bun:test")).expect;
+
+  class FakeMouseRegion {
+    constructor(
+      public child: { render(width: number): string[] },
+      public handler: (event: { type?: string; button?: string }) => unknown,
+    ) {}
+    render(width: number) {
+      return this.child.render(width);
+    }
+    invalidate() {}
+    handleMouse(event: { type?: string; button?: string }) {
+      return this.handler(event);
+    }
+  }
+
+  function fakeHost() {
+    const expansions: boolean[] = [];
+    return {
+      expansions,
+      children: [] as unknown[],
+      customComponent: undefined as unknown,
+      _expanded: false,
+      setExpanded(value: boolean) {
+        this._expanded = value;
+        expansions.push(value);
+      },
+    };
+  }
+
+  test("a left click toggles expansion; other events and double wrapping do nothing", () => {
+    const host = fakeHost();
+    const component = { render: () => ["row"], invalidate: () => {} };
+    const wrapped = wrapCustomMessageForClick(component, host, FakeMouseRegion as never);
+    expect(wrapped).not.toBe(component);
+    const region = wrapped as unknown as FakeMouseRegion;
+    expect(region.render(80)).toEqual(["row"]);
+
+    expect(region.handleMouse({ type: "click", button: "left" })).toEqual({ handled: true });
+    expect(host.expansions).toEqual([true]);
+    region.handleMouse({ type: "click", button: "left" });
+    expect(host.expansions).toEqual([true, false]);
+
+    // Only a left click is ours; movement and right clicks fall through.
+    region.handleMouse({ type: "move" });
+    region.handleMouse({ type: "click", button: "right" });
+    expect(host.expansions).toEqual([true, false]);
+
+    // Re-wrapping an already wrapped region would double-toggle.
+    expect(wrapCustomMessageForClick(wrapped, host, FakeMouseRegion as never)).toBe(wrapped);
+  });
+
+  test("degrades to the raw component when pi-tui has no MouseRegion or the component cannot render", () => {
+    const host = fakeHost();
+    const component = { render: () => ["row"], invalidate: () => {} };
+    expect(wrapCustomMessageForClick(component, host, null as never)).toBe(component);
+    const notAComponent = {};
+    expect(wrapCustomMessageForClick(notAComponent, host, FakeMouseRegion as never)).toBe(notAComponent);
+    expect(host.expansions).toEqual([]);
+  });
+});
