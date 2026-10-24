@@ -24,7 +24,7 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { boldSgr, rgbSgr, weightHex, weightText, type WeightPalette } from "../../shared/weight.ts";
+import { boldSgr, ERROR_MARK, gray, type GrayRole } from "../../shared/palette.ts";
 import * as piTuiRuntime from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -258,17 +258,18 @@ export function buildExpandedThinkingBlock(thinking: string, style: ThinkingRowS
  *  light #7a7a7a). themeName resolves lazily per call so a session_start
  *  prefs load after patch install still picks up the active theme. */
 export function collapsedThinkingStyle(themeName: () => string): ThinkingRowStyle {
-	// Thinking keeps its own hue so it never reads as another tool row: the
-	// theme accent (dark #b8d3ff, light #44546a), the label at full strength
-	// and the recap one faint step down. Raw SGR avoids importing the unbundled
-	// theme singleton when pi runs bundle/cli.js; the theme resolves lazily per
-	// call so a session_start prefs load still picks up the active theme.
-	const accent = () => (themeName() === "xtrm-light" ? "68;84;106" : "184;211;255");
-	const dim = () => (themeName() === "xtrm-light" ? "122;122;122" : "138;138;138");
-	const tint = (rgb: string, text: string) => `\x1b[38;2;${rgb}m${text}\x1b[39m`;
-	const label = (text: string) => `\x1b[3m${tint(accent(), text)}\x1b[23m`;
-	const recapItalic = (text: string) => `\x1b[3m\x1b[2m${tint(accent(), text)}\x1b[22m\x1b[23m`;
-	return { label, recap: recapItalic, italic: recapItalic, hint: recapItalic, sep: tint(dim(), "  ") };
+	// Thinking separates by weight, not hue and not italic labels: the label is
+	// upright semibold at #a0a0a0, the recap italic at #858585. Raw SGR avoids
+	// importing the unbundled theme singleton when pi runs bundle/cli.js; the
+	// theme resolves lazily per call so a late prefs load is honoured.
+	const at = (role: GrayRole, text: string) => gray(themeName(), role, text);
+	return {
+		label: (text) => at("thinkingLabel", text),
+		recap: (text) => at("thinkingRecap", text),
+		italic: (text) => at("thinkingRecap", text),
+		hint: (text) => at("meta", text),
+		sep: at("inactive", "  "),
+	};
 }
 
 /** Expanded thinking-block style, frozen at the pre-ultra treatment (bold
@@ -526,23 +527,24 @@ const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGet
 const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 40;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
-// XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
-// throws on raw hex, so emit the truecolor SGR directly (repo already uses raw
-// SGR escapes for bold).
-const XTRM_EXT_ACCENT = "\x1b[38;2;154;139;255m";
+// Grayscale only: provider identity is weight, never a hue. Raw SGR because
+// theme.fg() takes named tokens and throws on hex.
+const activeThemeName = (): string => activePrefsSnapshot?.themeName ?? DEFAULT_PREFS.themeName;
+
+/** Lazy-theme palette accessor for the surfaces that style raw spans. */
+const paint = (role: GrayRole, text: string): string => gray(activeThemeName(), role, text);
 
 type ToolRowStatus = "pending" | "success" | "error";
 
-// boldSgr comes from shared/weight.ts: the ladder is the single owner of
-// weight escapes (SPEC v1 rule 15).
+// boldSgr comes from shared/palette.ts: the ramp owns weight and modality.
 
 /**
  * External tool row header in native tool style:
  *   ● used <Extension> <tool>
  *   - dot: plain prompt color; dim once the command succeeds (like native rows)
  *   - "used": bold action word
- *   - extension: #9a8bff, bold
- *   - tool: bold, dim until success, default (light) when success
+ *   - extension: tool level (#c8c8c8), bold
+ *   - tool: bold, dim until success
  */
 function externalToolHeaderLine(
   status: ToolRowStatus,
@@ -550,7 +552,7 @@ function externalToolHeaderLine(
   tool?: string,
 ): string {
   const dot = status === "success" ? "\x1b[2m●\x1b[22m" : "●";
-  const ext = `${XTRM_EXT_ACCENT}${boldSgr(provider)}\x1b[39m`;
+  const ext = paint("tool", provider);
   const toolColor = status === "success" ? "" : "\x1b[2m";
   const toolReset = status === "success" ? "" : "\x1b[22m";
   const toolName = tool ? ` ${toolColor}${boldSgr(tool)}${toolReset}` : "";
@@ -809,34 +811,12 @@ export function bareExternalToolHeader(
   };
 }
 
-/** Frame styling through chalk — never hardcoded color bytes — so the
- *  frame downgrades per terminal exactly like the native theme-backed rows.
- *  Hexes mirror the xtrm theme tokens (dimGray/errorRed) per active theme.
- *  normalizePrefs collapses themeName to xtrm-dark/xtrm-light, so anything
- *  else falls back to dark (xtrm-ui forces an xtrm theme by default). */
-export function ultraThemeHexes(themeName: string): WeightPalette & { error: string } {
-	// Mirrors themes/xtrm-ui/*.json: muted is the intermediate weight, dim is
-	// the soft tier (the theme's dim token wraps this colour in SGR 2).
-	return themeName === "xtrm-light"
-		? { muted: "#5f5f5f", dim: "#7a7a7a", error: "#a85f5f" }
-		: { muted: "#a7a7a7", dim: "#8a8a8a", error: "#ff9a9a" };
-}
-
-/** Test/embedding hook: override the active prefs snapshot (drives frame
- *  styling and activeUltracompact() without running the extension factory). */
-export function setActivePrefsSnapshotForTests(prefs: XtrmUiPrefs | null): void {
-	activePrefsSnapshot = prefs;
-}
-
-const ultraHexes = () => ultraThemeHexes(activePrefsSnapshot?.themeName ?? DEFAULT_PREFS.themeName);
-// Direct SGR, never chalk: chalk decides from the TTY/TERM at import time, so
-// the same row styles itself in one environment and goes bare in another.
-const ultraSoft = (text: string) => weightHex(ultraHexes(), "soft", text);
-const ultraSemi = (text: string) => weightHex(ultraHexes(), "semi", text);
-const ultraRed = (text: string) => rgbSgr(ultraHexes().error, text);
-// Same nesting as the native error span (colour outside bold) so both rows
-// emit identical bytes for the same tier.
-const ultraRedBold = (text: string) => ultraRed(boldSgr(text));
+const ultraTool = (text: string) => paint("tool", text);
+const ultraPath = (text: string) => paint("path", text);
+const ultraKey = (text: string) => paint("key", text);
+const ultraMeta = (text: string) => paint("meta", text);
+const ultraIndicator = (text: string) => paint("indicator", text);
+const ultraError = (text: string) => paint("error", text);
 
 export function ultraExternalSubject(toolName: string | undefined, args: Record<string, unknown>): string | undefined {
   const firstCode = externalToolCodePreview(toolName, args)?.[0]?.trim();
@@ -929,23 +909,20 @@ export function buildUltraExternalLine(
   const isError = status === "error";
   // No dots on tool rows, ever: the dot marks assistant messages only.
   const dot = "  ";
-  // Uniform with native rows: the whole `used <Tool> [<action>]` head is
-  // one bold dim verb span, the subject plain dim after it. No provider
-  // accent in ultra — that hue lives in the expanded frame only.
-  // Native and external rows share one ladder: semi head, soft body. Errors
-  // keep full red (bold head), never the ladder.
-  const span = (text: string) => isError ? ultraRedBold(text) : ultraSemi(text);
-  const sub = (text: string) => isError ? ultraRed(text) : ultraSoft(text);
+  // Grayscale roles: tool name (bold), path, key value, meta, indicator.
+  // Failure earns prominence from weight plus a marker glyph, never a hue.
+  const span = (text: string) => isError ? ultraError(text) : ultraTool(text);
+  const sub = (text: string) => isError ? ultraError(text) : ultraPath(text);
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
   const head = ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
-  let row = `${dot}${span(head)}`;
+  let row = isError ? `${dot}${ultraError(ERROR_MARK)} ${span(head)}` : `${dot}${span(head)}`;
   if (subject) row += ` ${sub(subject)}`;
-  if (primary) row += `  ${isError ? ultraRed(primary) : ultraSoft(primary)}`;
+  if (primary) row += `  ${isError ? ultraError(primary) : ultraKey(primary)}`;
   const elapsed = options.durationMs != null ? formatDuration(options.durationMs) : undefined;
-  if (elapsed) row += `  ${ultraSoft(elapsed)}`;
-  if ((options.hiddenLines ?? 0) >= ULTRA_HIDDEN_MIN_LINES) row += `  ${ultraSoft(ULTRA_HIDDEN_MARK)}`;
+  if (elapsed) row += `  ${ultraMeta(elapsed)}`;
+  if ((options.hiddenLines ?? 0) >= ULTRA_HIDDEN_MIN_LINES) row += `  ${ultraIndicator(ULTRA_HIDDEN_MARK)}`;
   if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
-    row += `  ${ultraRed("failed")}`;
+    row += `  ${ultraError("failed")}`;
   }
   return row;
 }
@@ -1859,6 +1836,12 @@ function appendToolTree(
 /** Live prefs snapshot for module-level render paths (the prototype patch has
  * no factory closure). Display only — the model always sees full args. */
 let activePrefsSnapshot: XtrmUiPrefs | null = null;
+
+/** Test seam: pin the pref snapshot render-time gates read. */
+export function setActivePrefsSnapshotForTests(prefs: XtrmUiPrefs | null): void {
+	activePrefsSnapshot = prefs;
+}
+
 export function activeResultPreviewLines(): number {
   return activePrefsSnapshot?.resultPreviewLines ?? DEFAULT_PREFS.resultPreviewLines;
 }
@@ -1953,22 +1936,22 @@ export interface UltraRowParts {
   secondary?: string;
 }
 
-export function renderUltraRow(theme: any, parts: UltraRowParts): string {
+export function renderUltraRow(_theme: any, parts: UltraRowParts): string {
   const isError = parts.statusColor === "error";
-  // Ultra dim baseline: nothing renders full-bright. Verb and subject drop
-  // to standard dim, fainted; outcomes sit one level dimmer. Colored spans
-  // keep their hue under the faint. Errors keep full red so failures
-  // survive dimming — the one exception.
-  const verb = isError ? theme.fg("error", boldSgr(parts.verb)) : weightText(theme, "semi", parts.verb);
-  const subject = parts.subject ? (isError ? theme.fg("error", parts.subject) : weightText(theme, "soft", parts.subject)) : "";
+  // Strict grayscale: tool name carries the weight, the subject sits at path
+  // level, the outcome at key level, meta one step down. Failure is a marker
+  // plus the brightest level, never a hue.
+  const verbRole: GrayRole = /^Ran\b/.test(parts.verb) ? "action" : "tool";
+  const verb = isError ? ultraError(parts.verb) : paint(verbRole, parts.verb);
+  const subject = parts.subject ? (isError ? ultraError(parts.subject) : ultraPath(parts.subject)) : "";
   // Tool rows never take a dot: it marks assistant messages only.
-  let row = subject ? `  ${verb} ${subject}` : `  ${verb}`;
-  if (parts.primary) row += `  ${isError ? theme.fg("error", parts.primary) : weightText(theme, "soft", parts.primary)}`;
-  if (parts.secondary) row += `  ${isError ? theme.fg("error", parts.secondary) : weightText(theme, "soft", parts.secondary)}`;
-  // Explicit failure word: dimming removed the color cue, so failed rows
-  // say so (skipped when the outcome already says fail-*).
-  if (isError && !/fail(ed|ure)?/i.test(`${parts.primary ?? ""} ${parts.secondary ?? ""}`)) {
-    row += `  ${theme.fg("error", "failed")}`;
+  const lead = isError ? `${ultraError(ERROR_MARK)} ` : "";
+  let row = subject ? `  ${lead}${verb} ${subject}` : `  ${lead}${verb}`;
+  if (parts.primary) row += `  ${isError ? ultraError(parts.primary) : ultraKey(parts.primary)}`;
+  if (parts.secondary) row += `  ${isError ? ultraError(parts.secondary) : ultraMeta(parts.secondary)}`;
+  // Explicit failure word: weight alone can be missed at a glance.
+  if (isError && !/fail(ed|ure)?/i.test(`${parts.subject ?? ""} ${parts.primary ?? ""} ${parts.secondary ?? ""}`)) {
+    row += `  ${ultraError("failed")}`;
   }
   return row;
 }

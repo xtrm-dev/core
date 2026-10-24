@@ -20,7 +20,7 @@ domain: [pi, extensions, ui, themes]
 | [Credits](#credits) | The original theme palette and header layout were derived from |
 | [Themes](#themes) | The extension discovers four themes: |
 | [Tool Rendering](#tool-rendering) | The resting view is a compact execution timeline: one line per tool call, with |
-| [Thinking Rows](#thinking-rows) | Collapsed: `Thinking` plus one clause (64 characters maximum), italic, in the |
+| [Thinking Rows](#thinking-rows) | Collapsed: `Thinking` plus one clause (64 characters maximum) |
 | [Preferences](#preferences) | Only active, user-controlled behavior is persisted: |
 | [Commands](#commands) | Obsolete result-compaction and external-chrome commands are intentionally not |
 | [Install and Migration](#install-and-migration) | Canonical source lives under `packages/pi-extensions/` and is exposed by the |
@@ -64,38 +64,50 @@ the full result behind expansion. A row states what happened, not how much was
 produced.
 
 ```text
-Thinking  Inspecting the renderer and identifying the relevant files
+Thinking  Comparing renderer implementations
   Ran shell command  pnpm test  12 failed, 84 passed  2.4s
   read  packages/pi-extensions/extensions/xtrm-ui/index.ts:1-40
   used codemode  x = 1  ok  42ms  ↗
-● Updated the renderer and added regression tests.
 ```
 
-Each surface keeps its own wording — native shell rows say `Ran shell command`,
-other native rows start with the tool name, external rows say `used <provider>`
-— and shares the same three-step weight ladder
-(`packages/pi-extensions/shared/weight.ts`), never a raw bold call:
+### Grayscale hierarchy
 
-| Tier | Encoding | Used for |
+The interface is monochrome: contrast, weight and spacing do all the work.
+There are no coloured status markers, no provider accents and no tinted paths.
+Five text levels cover nearly every screen; the border level is structural only.
+
+| Role | Hex | Weight / style |
 |---|---|---|
-| `heavy` | bold + `muted` | one identity per row (wake cards), error verbs |
-| `semi` | `muted`, no bold | tool verbs and tool names |
-| `soft` | `dim` | subjects, outcomes, durations, chrome |
+| Primary assistant output | `#E5E5E5` | Normal |
+| Key result / important value | `#E5E5E5` | Semibold |
+| Tool name | `#C8C8C8` | Semibold |
+| Action / operation | `#B0B0B0` | Normal |
+| Path / command / identifier | `#B8B8B8` | Normal |
+| Thinking label | `#A0A0A0` | Semibold |
+| Thinking recap | `#858585` | Normal, italic |
+| Duration / secondary metadata | `#707070` | Normal |
+| Collapsed-content indicator | `#858585` | Normal |
+| Borders / separators | `#383838` | Normal |
+| Inactive / least-important detail | `#606060` | Normal |
+| Error text | `#E5E5E5` | Semibold, with `!` marker |
 
-Colour carries meaning, not decoration. The ladder is grayscale; red marks
-failure at full strength (never dimmed, always also the word `failed`), amber
-marks activity, and the theme accent marks thinking. Provider badges stay in
-expanded external frames.
+The ramp lives in `packages/pi-extensions/shared/palette.ts` and the same levels
+are wired into the theme tokens (`xtrm-dark`, `xtrm-light`, and the `-flattools`
+variants), so code that styles through `theme.fg()` is grayscale too. In the
+light theme the ramp inverts: the same roles step darker instead of lighter.
+
+Errors become prominent through weight, brightness and a marker glyph — never a
+hue. Successful rows stay neutral. Diff bodies keep a muted red/green for `+` and
+`-` because that is content semantics, not chrome.
+
+### Expansion
 
 Expansion uses two distinct bindings: `Ctrl+O` for tool output and `Ctrl+T` for
 thinking. Neither is advertised on a resting row. A row that hides a substantial
-payload (three or more lines) ends with `↗`; nothing else carries a hint.
-
-Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, `ls`) and external
-tools (Serena, GitNexus, structured-return, process, generic) share this grammar.
-Expanded rows keep the complete payload: bash keeps its output tree, edit and
-write keep the 18-line diff, external frames keep the provider badge. Rendering
-never mutates tool-result payloads.
+payload (three or more lines) ends with `↗`; nothing else carries a hint. Expanded
+rows keep the complete payload: bash keeps its output tree, edit and write keep
+the 18-line diff, external frames keep the provider name. Rendering never mutates
+tool-result payloads.
 
 `ultracompact` is on by default; `/xtrm-ui-ultra off` restores the multi-line
 frame. Preview caps stay independent per section (`commandPreviewLines`,
@@ -103,11 +115,10 @@ frame. Preview caps stay independent per section (`commandPreviewLines`,
 
 ## Thinking Rows
 
-Collapsed: `Thinking` plus one clause (64 characters maximum), italic, in the
-theme accent hue with the label at full strength and the recap one faint step
-down. The hue is what separates thinking from the grayscale tool rows. No
-character count and no inline shortcut. Expanded: the full trace behind `Ctrl+T`,
-with the collapse hint shown only in that state.
+Collapsed: `Thinking` plus one clause (64 characters maximum). The label is
+upright semibold at `#A0A0A0`; the recap is italic at `#858585`. No character
+count and no inline shortcut, so the row cannot drift into decoration. Expanded:
+the full trace behind `Ctrl+T`, with the collapse hint shown only in that state.
 
 ## Preferences
 

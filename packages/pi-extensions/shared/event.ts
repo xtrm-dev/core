@@ -20,7 +20,7 @@
  */
 
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { boldSgr } from "./weight.ts";
+import { boldSgr } from "./palette.ts";
 
 export const MESSAGE_STATES = ["queued", "held", "delivered", "refused", "undelivered", "expired"] as const;
 

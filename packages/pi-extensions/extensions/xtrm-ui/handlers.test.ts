@@ -34,6 +34,7 @@ const { createPatchedUpdateContent } = await import("./index.ts");
 const { buildThinkingRecap } = await import("./index.ts");
 const { createThinkingPreviewInstallState } = await import("./index.ts");
 const { setActivePrefsSnapshotForTests, DEFAULT_PREFS } = await import("./index.ts");
+import { grayStyle } from "../../shared/palette.ts";
 
 type RegisteredTool = {
   name: string;
@@ -777,26 +778,24 @@ describe("ultracompact rows", async () => {
     expect(ultraBashSubject("npm test")).toBe("npm test");
   });
 
-  test("weight ladder baseline: semi verb, soft body, never full-bright", () => {
-    const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*` };
-    const raw = renderUltraRow(mark, { statusColor: "success", verb: "Ran", subject: "npm test", primary: "3 lines" });
-    // SPEC v1 rule 15: the head is the intermediate weight (muted, no bold),
-    // the body is soft (dim). Nothing renders full-bright.
-    expect(raw).toContain("[muted]Ran");
-    expect(raw).toContain("[dim]npm test");
-    expect(raw).toContain("[dim]3 lines");
-    expect(raw).not.toContain("\x1b[1m");
-    expect(raw).not.toContain("[text]");
-    // theme.bold must not be consulted: the fake's bold tag never appears.
-    expect(raw).not.toContain("*");
-    expect(strip(raw).replace(/\[(muted|dim)\]/g, "")).toBe("  Ran npm test  3 lines");
+  test("grayscale roles: action verb, path subject, key value, meta", () => {
+    const raw = renderUltraRow({}, { statusColor: "success", verb: "Ran shell command", subject: "npm test", primary: "3 lines", secondary: "2.4s" });
+    // Ran... is an action (#b0b0b0); the subject sits at path level (#b8b8b8);
+    // the outcome is the key value (#e5e5e5, bold); meta is #707070.
+    expect(raw).toContain("38;2;176;176;176m");
+    expect(raw).toContain("38;2;184;184;184m");
+    expect(raw).toContain("38;2;229;229;229m");
+    expect(raw).toContain("38;2;112;112;112m");
+    expect(strip(raw)).toBe("  Ran shell command npm test  3 lines  2.4s");
   });
 
-  test("errors keep full red instead of dimming", () => {
-    const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*` };
-    const raw = renderUltraRow(mark, { statusColor: "error", verb: "read", subject: "/a", primary: "nope" });
-    expect(raw).toContain("[error]");
-    expect(raw).not.toContain("\x1b[2m");
+  test("errors are bright, bold and marked, never a hue", () => {
+    const raw = renderUltraRow({}, { statusColor: "error", verb: "read", subject: "/a", primary: "nope" });
+    // #e5e5e5 bold plus the ! marker: prominence without colour.
+    expect(raw).toContain("38;2;229;229;229m");
+    expect(raw).toContain("\x1b[1m");
+    expect(strip(raw).startsWith("  ! ")).toBe(true);
+    for (const hue of ["255;154;154", "154;139;255", "159;213;159"]) expect(raw).not.toContain(hue);
   });
 
   test("failed rows say so, once", () => {
@@ -849,30 +848,52 @@ describe("thinking collapsed row shape", async () => {
 
 describe("CORE-2502 follow-ups", async () => {
   const mod = await import("./index.ts");
-  const { buildCollapsedThinkingRow, collapsedThinkingStyle, expandedThinkingStyle, ultraThemeHexes, setActivePrefsSnapshotForTests, DEFAULT_PREFS, renderExternalToolLines, buildUltraExternalLine } = mod;
+  const { buildCollapsedThinkingRow, collapsedThinkingStyle, expandedThinkingStyle, setActivePrefsSnapshotForTests, DEFAULT_PREFS, renderExternalToolLines, buildUltraExternalLine } = mod;
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
   const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
 
-  test("ultraThemeHexes mirrors xtrm theme tokens per theme", () => {
-    expect(ultraThemeHexes("xtrm-dark")).toEqual({ muted: "#a7a7a7", dim: "#8a8a8a", error: "#ff9a9a" });
-    expect(ultraThemeHexes("xtrm-light")).toEqual({ muted: "#5f5f5f", dim: "#7a7a7a", error: "#a85f5f" });
-    expect(ultraThemeHexes("something-else")).toEqual({ muted: "#a7a7a7", dim: "#8a8a8a", error: "#ff9a9a" });
+  test("grayscale ramp: the operator levels, no hue anywhere", () => {
+    const dark = (role: string) => grayStyle("xtrm-dark", role as never).hex;
+    expect(dark("primary")).toBe("#e5e5e5");
+    expect(dark("key")).toBe("#e5e5e5");
+    expect(dark("tool")).toBe("#c8c8c8");
+    expect(dark("action")).toBe("#b0b0b0");
+    expect(dark("path")).toBe("#b8b8b8");
+    expect(dark("thinkingLabel")).toBe("#a0a0a0");
+    expect(dark("thinkingRecap")).toBe("#858585");
+    expect(dark("meta")).toBe("#707070");
+    expect(dark("indicator")).toBe("#858585");
+    expect(dark("border")).toBe("#383838");
+    expect(dark("inactive")).toBe("#606060");
+    // Weight does the work: tool names, key values and error text are bold.
+    expect(grayStyle("xtrm-dark", "tool").bold).toBe(true);
+    expect(grayStyle("xtrm-dark", "key").bold).toBe(true);
+    expect(grayStyle("xtrm-dark", "error").bold).toBe(true);
+    expect(grayStyle("xtrm-dark", "thinkingLabel").bold).toBe(true);
+    // Only the recap is italic; the label is upright.
+    expect(grayStyle("xtrm-dark", "thinkingRecap").italic).toBe(true);
+    expect(grayStyle("xtrm-dark", "thinkingLabel").italic).toBeUndefined();
+    // Light theme inverts luminance, never hue.
+    for (const role of ["primary", "tool", "path", "thinkingLabel", "thinkingRecap", "meta"] as const) {
+      const hex = grayStyle("xtrm-light", role).hex;
+      const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+      expect(Math.abs(r - g)).toBeLessThan(3);
+      expect(Math.abs(g - b)).toBeLessThan(3);
+    }
   });
 
-  test("collapsed thinking style: accent hue, label brighter than recap, zero bold", () => {
-    for (const [name, accentRgb] of [["xtrm-dark", "184;211;255"], ["xtrm-light", "68;84;106"]] as const) {
-      const style = collapsedThinkingStyle(() => name);
-      // Thinking owns a hue: it must never read as another grayscale tool row.
-      expect(style.label("Thinking")).toContain(`38;2;${accentRgb}m`);
-      expect(style.label("Thinking")).toContain("[3m");
-      expect(style.label("Thinking")).not.toContain("[1m");
-      // The recap is the same hue one faint step down.
-      expect(style.italic("trace")).toContain("[2m");
-      expect(style.italic("trace")).toContain(`38;2;${accentRgb}m`);
-    }
-    const row = buildCollapsedThinkingRow("trace here", collapsedThinkingStyle(() => "xtrm-dark"));
-    expect(row).not.toContain("[1m");
+  test("collapsed thinking style: upright semibold label, italic recap, grayscale", () => {
+    const style = collapsedThinkingStyle(() => "xtrm-dark");
+    // #a0a0a0 upright semibold.
+    expect(style.label("Thinking")).toContain("38;2;160;160;160m");
+    expect(style.label("Thinking")).toContain("[1m");
+    expect(style.label("Thinking")).not.toContain("[3m");
+    // #858585 italic normal.
+    expect(style.italic("trace")).toContain("38;2;133;133;133m");
+    expect(style.italic("trace")).toContain("[3m");
+    expect(style.italic("trace")).not.toContain("[1m");
+    const row = buildCollapsedThinkingRow("trace here", style);
     expect(row).not.toContain("Ctrl+T");
   });
 
@@ -881,20 +902,16 @@ describe("CORE-2502 follow-ups", async () => {
     expect(expandedThinkingStyle.recap("trace")).toContain("38;2;167;167;167m");
   });
 
-  test("frame follows the active theme (dark vs light hexes)", async () => {
-    const chalk = (await import("chalk")).default;
-    const prevLevel = chalk.level;
+  test("frame follows the active theme (dark vs light ramp)", () => {
     const prevPrefs = { ...DEFAULT_PREFS };
-    chalk.level = 3;
     try {
       setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, themeName: "xtrm-dark" });
-      expect(buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], "success")).toContain("138;138;138");
+      expect(buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], "success")).toContain("38;2;200;200;200m");
       setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, themeName: "xtrm-light" });
       const light = buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], "success");
-      expect(light).toContain("122;122;122");
-      expect(light).not.toContain("138;138;138");
+      expect(light).toContain("38;2;51;51;51m");
+      expect(light).not.toContain("38;2;200;200;200m");
     } finally {
-      chalk.level = prevLevel;
       setActivePrefsSnapshotForTests(prevPrefs);
     }
   });
@@ -1178,34 +1195,41 @@ describe("compact timeline presentation contract", async () => {
     expect(expanded).toContain("result line 19");
   });
 
-  test("errors stay red and say failed in words", () => {
-    const row = renderUltraRow({ fg: (token: string, text: string) => `[${token}]${text}` }, {
-      statusColor: "error",
-      verb: "bash",
-      subject: "pnpm test",
-    });
-    expect(row).toContain("[error]");
-    expect(row).toContain("failed");
+  test("errors stay prominent without colour: bright, bold, marked, worded", () => {
+    const row = renderUltraRow({}, { statusColor: "error", verb: "bash", subject: "pnpm test" });
+    expect(row).toContain("38;2;229;229;229m");
+    expect(row).toContain("\x1b[1m");
+    expect(stripSgr(row).startsWith("  ! ")).toBe(true);
+    expect(stripSgr(row)).toContain("failed");
   });
 
-  test("thinking stays its own hue and keeps the recap to one clause", () => {
+  test("thinking separates by weight and modality, not hue, and keeps one clause", () => {
     const recap = buildThinkingRecap("First clause. " + "x".repeat(200));
     expect(recap.length).toBeLessThanOrEqual(64);
-    const row = stripSgr(buildCollapsedThinkingRow(recap, collapsedThinkingStyle(() => "xtrm-dark")));
+    const styled = buildCollapsedThinkingRow(recap, collapsedThinkingStyle(() => "xtrm-dark"));
+    const row = stripSgr(styled);
     expect(row.startsWith("Thinking")).toBe(true);
     expect(row).not.toMatch(/\d{2,}/);
     expect(row).not.toContain("Ctrl+T");
-    // Hue, not just weight: thinking must not collapse into the gray tool rows.
-    const styled = buildCollapsedThinkingRow(recap, collapsedThinkingStyle(() => "xtrm-dark"));
-    expect(styled).toContain("38;2;184;211;255m");
+    // Label: upright semibold #a0a0a0. Recap: italic #858585.
+    expect(styled).toContain("38;2;160;160;160m");
+    expect(styled).toContain("\x1b[1m");
+    expect(styled).toContain("38;2;133;133;133m");
+    expect(styled).toContain("\x1b[3m");
+    // No hue anywhere in the row.
+    for (const hue of ["184;211;255", "255;154;154", "159;213;159"]) expect(styled).not.toContain(hue);
   });
 
-  test("the gray ladder keeps muted above dim in both themes", () => {
-    for (const name of ["xtrm-dark", "xtrm-light"]) {
-      const { muted, dim } = ultraThemeHexes(name);
-      const lum = (hex: string) => Number.parseInt(hex.replace("#", "").slice(0, 2), 16);
-      expect(muted).not.toBe(dim);
-      expect(name === "xtrm-dark" ? lum(muted) > lum(dim) : lum(muted) < lum(dim)).toBe(true);
+  test("the five effective levels stay ordered in both themes", () => {
+    const lum = (hex: string) => Number.parseInt(hex.replace("#", "").slice(0, 2), 16);
+    for (const name of ["xtrm-dark", "xtrm-light"] as const) {
+      const level = (role: string) => lum(grayStyle(name, role as never).hex);
+      const order = ["primary", "tool", "action", "thinkingRecap", "meta"] as const;
+      if (name === "xtrm-dark") {
+        for (let i = 1; i < order.length; i++) expect(level(order[i - 1])).toBeGreaterThan(level(order[i]));
+      } else {
+        for (let i = 1; i < order.length; i++) expect(level(order[i - 1])).toBeLessThan(level(order[i]));
+      }
     }
   });
 });
