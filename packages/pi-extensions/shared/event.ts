@@ -62,10 +62,12 @@ export type StateToken = "success" | "warning" | "error" | "text";
  */
 export function stateToken(state: string | undefined): StateToken {
   switch (state) {
+    // Completion is the normal state: it earns the word, not a colour.
+    // Only failure (error) and activity (warning) keep a hue.
     case "delivered":
     case "completed":
     case "event":
-      return "success";
+      return "text";
     case "refused":
     case "undelivered":
     case "failed":

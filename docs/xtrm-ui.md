@@ -19,7 +19,8 @@ domain: [pi, extensions, ui, themes]
 | [Overview](#overview) | `xtrm-ui` owns XTRM's Pi header, editor density, themes, and tool presentation |
 | [Credits](#credits) | The original theme palette and header layout were derived from |
 | [Themes](#themes) | The extension discovers four themes: |
-| [Tool Rendering](#tool-rendering) | Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`) retain |
+| [Tool Rendering](#tool-rendering) | The resting view is a compact execution timeline: one line per tool call, with |
+| [Thinking Rows](#thinking-rows) | Collapsed: `Thinking` plus one clause (64 characters maximum), italic, in the |
 | [Preferences](#preferences) | Only active, user-controlled behavior is persisted: |
 | [Commands](#commands) | Obsolete result-compaction and external-chrome commands are intentionally not |
 | [Install and Migration](#install-and-migration) | Canonical source lives under `packages/pi-extensions/` and is exposed by the |
@@ -58,34 +59,51 @@ in Pi settings or persisted session preferences are migrated to the equivalent
 
 ## Tool Rendering
 
-Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`) retain
-Pi's execute functions and use `ToolRenderContext` for arguments, state, errors,
-and timing. Their rows use one tree shape:
+The resting view is a compact execution timeline: one line per tool call, with
+the full result behind expansion. A row states what happened, not how much was
+produced.
 
 ```text
-• grep renderResult
-  └ first matching line
-    next matching line
-    showing 6/94 matchs (ctrl+o expand) · 1.6s · 247B
+Thinking  Inspecting the renderer and identifying the relevant files
+  used read      packages/pi-extensions/extensions/xtrm-ui/index.ts:1-40
+  used bash      pnpm test · 12 failed, 84 passed  2.4s
+  used codemode  x = 1 · ok  ↗
+● Updated the renderer and added regression tests.
 ```
 
-Collapsed native rows show up to six output lines. Bash keeps the latest six;
-read, new-file write, grep, find, and ls keep the first six. Edit and updated-file
-write retain their 18-line diff preview. Small results render in full without an
-expansion hint.
+Weight comes from one three-step ladder (`packages/pi-extensions/shared/weight.ts`),
+never from a raw bold call:
 
-External tools use one background-row renderer with provider badges for Serena,
-GitNexus, structured-return, process, and generic tools. Their collapsed output is
-bounded and retains the `└─` metadata footer. Ctrl+O reveals hidden content.
-Rendering does not mutate tool-result payloads.
+| Tier | Encoding | Used for |
+|---|---|---|
+| `heavy` | bold + `muted` | one identity per row (wake cards), error verbs |
+| `semi` | `muted`, no bold | tool verbs and tool names |
+| `soft` | `dim` | subjects, outcomes, durations, chrome |
 
-Code-carrying tools (`codemode`, `python`) keep the `● used <tool>` header
-unchanged but render the body like native bash rows: bold execution lines with
-their own hidden-count, output hung off a muted `└` tree, and a plain dim meta
-footer. Execution and result cap independently (`commandPreviewLines` and
-`extPreviewLines`), so a long program never starves its output.
+The ladder is grayscale. Colour appears only where it carries meaning: red for
+failures, amber for activity. Errors keep the theme's error colour at full
+strength, never dim, and always state `failed` in words.
 
-Pending tools have no metadata footer. Expansion hints appear only when content is hidden.
+Expansion uses two distinct bindings: `Ctrl+O` for tool output and `Ctrl+T` for
+thinking. Neither is advertised on a resting row. A row that hides a substantial
+payload ends with `↗`; nothing else carries a hint.
+
+Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, `ls`) and external
+tools (Serena, GitNexus, structured-return, process, generic) share this grammar.
+Expanded rows keep the complete payload: bash keeps its output tree, edit and
+write keep the 18-line diff, external frames keep the provider badge. Rendering
+never mutates tool-result payloads.
+
+`ultracompact` is on by default; `/xtrm-ui-ultra off` restores the multi-line
+frame. Preview caps stay independent per section (`commandPreviewLines`,
+`extPreviewLines`) so a long program never starves its output.
+
+## Thinking Rows
+
+Collapsed: `Thinking` plus one clause (64 characters maximum), italic, in the
+`soft` tier with the label one step brighter. No character count and no inline
+shortcut. Expanded: the full trace behind `Ctrl+T`, with the collapse hint shown
+only in that state.
 
 ## Preferences
 
@@ -98,8 +116,14 @@ Only active, user-controlled behavior is persisted:
 | `showHeader` | `true` | `/xtrm-ui-header on\|off` |
 | `forceTheme` | `true` | `/xtrm-ui-forcetheme on\|off` |
 | `toolRowBg` | `false` | `/xtrm-ui-rowbg on\|off` |
+| `commandPreviewLines` | `4` | `/xtrm-ui-command-lines <1-50>` |
+| `resultPreviewLines` | `6` | `/xtrm-ui-result-lines <1-50>` |
+| `diffPreviewLines` | `18` | `/xtrm-ui-diff-lines <1-50>` |
+| `extPreviewLines` | `6` | `/xtrm-ui-ext-lines <1-50>` |
+| `extNoCompact` | `false` | `/xtrm-ui-ext-compact on\|off` |
+| `ultracompact` | `true` | `/xtrm-ui-ultra on\|off` |
 
-Tools start collapsed. Hidden thinking blocks use an empty placeholder. These are
+Tool rows start collapsed. Hidden thinking blocks use an empty placeholder. These are
 fixed presentation choices rather than persisted preferences.
 
 ## Commands
@@ -112,6 +136,7 @@ fixed presentation choices rather than persisted preferences.
 | `/xtrm-ui-header on\|off` | Toggle the XTRM header |
 | `/xtrm-ui-forcetheme on\|off` | Enable or disable XTRM theme ownership |
 | `/xtrm-ui-rowbg on\|off` | Toggle native tool-row backgrounds |
+| `/xtrm-ui-ultra on\|off` | Toggle the one-line timeline (multi-line frame when off) |
 | `/xtrm-ui-reset` | Restore the five defaults above |
 
 Obsolete result-compaction and external-chrome commands are intentionally not

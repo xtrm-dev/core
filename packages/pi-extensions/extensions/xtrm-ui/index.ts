@@ -87,7 +87,10 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   diffPreviewLines: 18,
   extPreviewLines: 6,
   extNoCompact: false,
-  ultracompact: false,
+  // One-line summaries are the normal resting presentation (a compact
+  // execution timeline); expansion is the secondary detail view. The pref
+  // stays as the escape hatch back to the multi-line frame.
+  ultracompact: true,
 };
 
 /** Collapsed command/code lines before the hidden-count line. Agent context is
@@ -125,7 +128,7 @@ export function normalizePrefs(input: unknown, base: XtrmUiPrefs = DEFAULT_PREFS
     diffPreviewLines: normalizeCappedLines((source as { diffPreviewLines?: unknown }).diffPreviewLines, base.diffPreviewLines, 50),
     extPreviewLines: normalizeCappedLines((source as { extPreviewLines?: unknown }).extPreviewLines, base.extPreviewLines, 50),
     extNoCompact: source.extNoCompact ?? DEFAULT_PREFS.extNoCompact,
-    ultracompact: (source as { ultracompact?: unknown }).ultracompact === true,
+    ultracompact: (source as { ultracompact?: unknown }).ultracompact !== false,
   };
 }
 
@@ -187,21 +190,23 @@ type PatchableAssistantMessage = {
 
 const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiThinkingPreview5";
 const ORIGINAL_ASSISTANT_UPDATE = "__xtrmUiThinkingPreviewOriginalUpdate";
-const THINKING_PREVIEW_PATCH_VERSION = 6;
+const THINKING_PREVIEW_PATCH_VERSION = 7;
 
-const THINKING_RECAP_MAX = 120;
+// The recap preserves awareness of the model's activity, it does not compete
+// with the answer: one clause, then stop.
+const THINKING_RECAP_MAX = 64;
 
 /** Minimal theme surface used to style the thinking rows. */
 export interface ThinkingRowStyle {
-	/** Collapsed label (dim italic — every collapsed span shares one level, zero bold). */
+	/** Label span: one step brighter than the recap, no bold (SPEC v1 rule 15). */
 	label: (text: string) => string;
-	/** Collapsed count span (dim italic). The expanded trace uses the expanded style. */
+	/** Trace span (expanded block). */
 	recap: (text: string) => string;
-	/** Collapsed recap span (dim italic). */
+	/** Recap span in the collapsed row. */
 	italic: (text: string) => string;
-	/** Collapsed hint (dim italic). */
+	/** Expanded-only hint span; the collapsed row advertises nothing. */
 	hint: (text: string) => string;
-	/** Dimmed label separator, e.g. `theme.fg("dim", " · ")`. */
+	/** Collapsed field gap. */
 	sep: string;
 }
 
@@ -211,7 +216,7 @@ export interface ThinkingRowStyle {
  * Fragments (a stray `**The**` or a one-word line) are skipped in favor of the
  * first line with real content.
  */
-export function buildThinkingRecap(thinking: string, fallback = "Thinking..."): string {
+export function buildThinkingRecap(thinking: string, fallback = ""): string {
 	const cleaned = thinking
 		.split("\n")
 		.map((line) =>
@@ -231,32 +236,35 @@ export function buildThinkingRecap(thinking: string, fallback = "Thinking..."): 
 	return source.length > THINKING_RECAP_MAX ? source.slice(0, THINKING_RECAP_MAX - 3) + "..." : source;
 }
 
-/** Collapsed row: every span dim italic at one level, zero bold (assistant
- *  text blocks are trimmed before Markdown render, so literal indentation
- *  cannot survive — distinction from response text comes from the treatment,
- *  not the indent). Dim separator between label, recap, count, expand hint. */
-export function buildCollapsedThinkingRow(recap: string, charCount: number, style: ThinkingRowStyle): string {
-	return `${style.label("Thinking...")}${style.sep}${style.italic(recap)}${style.sep}${style.recap(String(charCount))} ${style.hint("(Ctrl+T to expand)")}`;
+/** Collapsed row: label plus one clause, italic, zero bold. No count and no
+ *  inline shortcut: the char count is noise, and a hint on every row is
+ *  chrome (the binding lives in help/status). */
+export function buildCollapsedThinkingRow(recap: string, style: ThinkingRowStyle): string {
+	const label = style.label("Thinking");
+	return recap ? `${label}${style.sep}${style.italic(recap)}` : label;
 }
 
-/** Expanded block: bold label row with collapse hint, then the full dimmed trace. */
+/** Expanded block: label row with the collapse shortcut (shown only in this
+ *  state, never on the resting row), blank line, full trace. */
 export function buildExpandedThinkingBlock(thinking: string, style: ThinkingRowStyle): string {
-	return `${style.label("Thinking...")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(thinking.trim())}`;
+	return `${style.label("Thinking")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(thinking.trim())}`;
 }
 
-/** Collapsed thinking-row style: every span shares one level (dim italic),
- *  zero bold — the row reads distinct from roman full-bright response text.
- *  Raw SGR avoids importing the unbundled theme singleton when pi runs
- *  bundle/cli.js; dim RGB follows the active xtrm theme (dark #8a8a8a,
- *  light #7a7a7a). themeName resolves lazily per call so a session_start
- *  prefs load after patch install still picks up the active theme. */
+/** Collapsed thinking-row style: grayscale, italic, zero bold. The label sits
+ *  one step brighter than the recap (muted vs dim) so the row has a head
+ *  without decoration. Raw SGR avoids importing the unbundled theme singleton
+ *  when pi runs bundle/cli.js; RGB follows the active xtrm theme. themeName
+ *  resolves lazily per call so a session_start prefs load after patch install
+ *  still picks up the active theme. */
 export function collapsedThinkingStyle(themeName: () => string): ThinkingRowStyle {
-	const dim = (text: string) => {
-		const rgb = themeName() === "xtrm-light" ? "122;122;122" : "138;138;138";
-		return `\x1b[38;2;${rgb}m${text}\x1b[39m`;
-	};
+	const light = () => themeName() === "xtrm-light";
+	const dimRgb = () => (light() ? "122;122;122" : "138;138;138");
+	const mutedRgb = () => (light() ? "95;95;95" : "167;167;167");
+	const color = (rgb: string, text: string) => `\x1b[38;2;${rgb}m${text}\x1b[39m`;
+	const dim = (text: string) => color(dimRgb(), text);
 	const dimItalic = (text: string) => `\x1b[3m${dim(text)}\x1b[23m`;
-	return { label: dimItalic, recap: dimItalic, italic: dimItalic, hint: dimItalic, sep: dim(" · ") };
+	const label = (text: string) => `\x1b[3m${color(mutedRgb(), text)}\x1b[23m`;
+	return { label, recap: dimItalic, italic: dimItalic, hint: dimItalic, sep: "  " };
 }
 
 /** Expanded thinking-block style, frozen at the pre-ultra treatment (bold
@@ -269,57 +277,24 @@ export const expandedThinkingStyle: ThinkingRowStyle = {
 	sep: `\x1b[38;2;138;138;138m · \x1b[39m`,
 };
 
-const THINKING_ROW_LABEL = "Thinking...";
-const THINKING_ROW_EXPAND_HINT = "(Ctrl+T to expand)";
+const THINKING_ROW_LABEL = "Thinking";
 // Pi's renderer reserves ~9-12 visible columns for the terminal-integration
 // (OSC133) zone markers on the final content line; subtract so the row fits.
 const THINKING_ROW_WIDTH_MARGIN = 12;
 
-/** Raw row offset for a given visible-character index (skips ANSI escapes). */
-function rawOffsetForVisibleIndex(row: string, visibleIndex: number): number {
-	let visible = 0;
-	for (let i = 0; i < row.length; i++) {
-		if (row[i] === "\x1b") {
-			const m = row.slice(i).match(/^\x1b\[[0-9;?]*[ -/]*[@-~]/);
-			if (m) {
-				i += m[0].length - 1;
-				continue;
-			}
-		}
-		if (visible === visibleIndex) return i;
-		visible += visibleWidth(row[i]) || 1;
-	}
-	return row.length;
-}
-
 /**
- * Keeps a collapsed thinking row on ONE line at the given render width,
- * truncating the recap so the expand hint always survives — the same behavior
- * as prime-agent's CollapsedThinkingRow. Non-row markdown passes through.
+ * Keeps a collapsed thinking row on ONE line at the given render width. With
+ * no hint to protect, the row truncates as a whole — label and recap share
+ * one budget, so a narrow terminal shortens the clause instead of dropping
+ * the head. Non-row markdown passes through untouched.
  */
 export function fitThinkingRowToWidth(row: string, availableWidth: number | undefined): string {
 	if (!availableWidth || availableWidth <= 0) return row;
 	if (!row.includes(THINKING_ROW_LABEL) || row.includes("\n")) return row;
 	const plain = stripAnsi(row);
-	if (!plain.trimStart().startsWith(THINKING_ROW_LABEL) || !plain.includes(THINKING_ROW_EXPAND_HINT)) return row;
-
-	const labelEnd = plain.indexOf(THINKING_ROW_LABEL) + THINKING_ROW_LABEL.length;
-	const sepMatch = plain.slice(labelEnd).match(/^\s*·\s*/);
-	const recapStartPlain = labelEnd + (sepMatch?.[0].length ?? 0);
-	const recapStart = rawOffsetForVisibleIndex(row, recapStartPlain);
-	const hintStart = rawOffsetForVisibleIndex(row, plain.indexOf(THINKING_ROW_EXPAND_HINT) - 1);
-	const labelSepRaw = row.slice(0, recapStart);
-	const recapRaw = row.slice(recapStart, hintStart);
-	const hintRaw = row.slice(hintStart);
-
-	const fixedWidth = visibleWidth(stripAnsi(labelSepRaw)) + visibleWidth(stripAnsi(hintRaw));
-	const recapWidth = Math.max(8, availableWidth - fixedWidth - THINKING_ROW_WIDTH_MARGIN);
-	const recapPlain = stripAnsi(recapRaw).trim();
-	if (visibleWidth(recapPlain) <= recapWidth) return row;
-
-	const colorPrefix = recapRaw.match(/^(\x1b\[[0-9;?]*m)+/)?.[0] ?? "";
-	const colorSuffix = recapRaw.match(/(\x1b\[[0-9;?]*m)+$/)?.[0] ?? "";
-	return labelSepRaw + colorPrefix + truncateToWidth(recapPlain, recapWidth) + colorSuffix + hintRaw;
+	if (!plain.trimStart().startsWith(THINKING_ROW_LABEL)) return row;
+	const width = Math.max(8, availableWidth - THINKING_ROW_WIDTH_MARGIN);
+	return visibleWidth(plain) <= width ? row : truncateToWidth(row, width);
 }
 
 function maybeFileUrlToPath(value: string): string {
@@ -391,7 +366,7 @@ export function createPatchedUpdateContent(
 				const content = blocks.flatMap((block, index) => {
 					if (block.type !== "thinking" || !block.thinking?.trim()) return [block];
 					const row = compact
-						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), block.thinking.length, collapsedStyle)
+						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), collapsedStyle)
 						: buildExpandedThinkingBlock(block.thinking, expandedStyle);
 					// Text blocks render even when pi's hideThinkingBlock branch is
 					// active (a "thinking" block would be swallowed and replaced by the
@@ -686,7 +661,7 @@ export function collapsedExternalToolLines(contentLines: string[], expanded: boo
   if (expanded || contentLines.length <= resultCap) return contentLines;
   return [
     ...contentLines.slice(0, resultCap),
-    `... (${contentLines.length - resultCap} more lines, ctrl+o to expand)`,
+    `… +${contentLines.length - resultCap} lines`,
   ];
 }
 
@@ -775,11 +750,12 @@ export function renderExternalToolBackgroundLines(
   const total = payloadLines.length;
   const shownResult = visibleResult.length;
   const totalResult = resultLines.length;
+  // Hidden detail is one glyph, never a hint sentence repeated on every row.
   const resultSummary = !expanded && shownResult < totalResult
-    ? `showing ${shownResult}/${totalResult} lines (ctrl+o expand)`
+    ? `showing ${shownResult}/${totalResult} lines ${ULTRA_HIDDEN_MARK}`
     : totalResult > 0 ? formatLineLabel(totalResult, "line") : undefined;
   const lineSummary = codeCount > 0 ? resultSummary : (!expanded && shown < total
-    ? `showing ${shown}/${total} lines (ctrl+o expand)`
+    ? `showing ${shown}/${total} lines ${ULTRA_HIDDEN_MARK}`
     : total > 0 ? formatLineLabel(total, "line") : undefined);
   const footerMeta = joinMeta([
     lineSummary,
@@ -921,6 +897,20 @@ function summarizeJsonValue(value: unknown): string | undefined {
   return undefined;
 }
 
+/** Marker for a row whose detail is longer than the row itself. One glyph,
+ *  only when the hidden payload is substantial — never a sentence. */
+export const ULTRA_HIDDEN_MARK = "↗";
+
+/** Below this many hidden result lines a row stays clean: three lines of
+ *  detail is not worth a marker. */
+const ULTRA_HIDDEN_MIN_LINES = 3;
+
+export interface UltraExternalRowOptions {
+  durationMs?: number;
+  /** Result lines the row does not show (collapsed state only). */
+  hiddenLines?: number;
+}
+
 /** Single-line ultra frame row: bare provider/action header (never sniffed),
  *  no `●` except Class B, no `·` — the outcome rides the dim level. */
 export function buildUltraExternalLine(
@@ -928,6 +918,7 @@ export function buildUltraExternalLine(
   args: Record<string, unknown>,
   resultTexts: string[],
   status: ToolRowStatus,
+  options: UltraExternalRowOptions = {},
 ): string {
   const kind = externalToolFrameKind(toolName) ?? "external";
   const bare = bareExternalToolHeader(kind, toolName);
@@ -946,8 +937,13 @@ export function buildUltraExternalLine(
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
   const head = ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
   let row = `${dot}${span(head)}`;
-  if (subject) row += ` ${sub(subject)}`;
+  if (subject) row += `${ultraVerbGap(head, true)}${sub(subject)}`;
   if (primary) row += `  ${isError ? ultraRed(primary) : ultraSoft(primary)}`;
+  // Secondary meta: elapsed time when the component measured one.
+  const elapsed = options.durationMs != null ? formatDuration(options.durationMs) : undefined;
+  if (elapsed) row += `  ${ultraSoft(elapsed)}`;
+  // One glyph for hidden detail, never a per-row hint sentence.
+  if ((options.hiddenLines ?? 0) >= ULTRA_HIDDEN_MIN_LINES) row += `  ${ultraSoft(ULTRA_HIDDEN_MARK)}`;
   if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
     row += `  ${ultraRed("failed")}`;
   }
@@ -1138,11 +1134,16 @@ async function installExternalToolFramePatch(): Promise<void> {
     const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
     if (activeUltracompact() && !isExpanded) {
       try {
+        const resultTexts = this.result ? collectResultTexts(this) : [];
+        const hiddenLines = this.result
+          ? Math.max(0, resultTexts.length - activeExtPreviewLines())
+          : 0;
         const line = buildUltraExternalLine(
           this.toolName,
           getToolArgs(this),
-          this.result ? collectResultTexts(this) : [],
+          resultTexts,
           status,
+          { durationMs: this.__xtrmExternalDurationMs, hiddenLines },
         );
         return [...leading, truncateToWidth(line, Math.max(8, width))];
       } catch {
@@ -1453,7 +1454,7 @@ function summarizeCount(text: string): number {
 
 function previewSummary(shown: number, total: number, noun: string, expanded: boolean): string {
   return !expanded && shown < total
-    ? `showing ${shown}/${total} ${noun}s (ctrl+o expand)`
+    ? `showing ${shown}/${total} ${noun}s ${ULTRA_HIDDEN_MARK}`
     : formatLineLabel(total, noun);
 }
 
@@ -1944,6 +1945,15 @@ function renderNamedToolTree(
 // two-space gaps. Thinking rows are untouched.
 // ============================================================================
 
+/** Verb column width: rows read as a timeline, so the subject starts at the
+ *  same offset on every line. Purely presentational padding. */
+export const ULTRA_VERB_COLUMN = 14;
+
+/** Gap after the verb so the subject starts at the shared column. */
+export function ultraVerbGap(verb: string, hasFollowing: boolean): string {
+  return hasFollowing ? " ".repeat(Math.max(1, ULTRA_VERB_COLUMN - visibleWidth(verb) + 1)) : "";
+}
+
 export interface UltraRowParts {
   statusColor: string;
   verb: string;
@@ -1962,8 +1972,9 @@ export function renderUltraRow(theme: any, parts: UltraRowParts): string {
   // survive dimming — the one exception.
   const verb = isError ? theme.fg("error", boldSgr(parts.verb)) : weightText(theme, "semi", parts.verb);
   const subject = parts.subject ? (isError ? theme.fg("error", parts.subject) : weightText(theme, "soft", parts.subject)) : "";
-  // Tool rows never take a dot: it marks assistant messages only.
-  let row = subject ? `  ${verb} ${subject}` : `  ${verb}`;
+  // Tool rows never take a dot: it marks assistant messages only. The verb
+  // column pads to one width so subjects line up down the timeline.
+  let row = subject ? `  ${verb}${ultraVerbGap(parts.verb, true)}${subject}` : `  ${verb}`;
   if (parts.primary) row += `  ${isError ? theme.fg("error", parts.primary) : weightText(theme, "soft", parts.primary)}`;
   if (parts.secondary) row += `  ${isError ? theme.fg("error", parts.secondary) : weightText(theme, "soft", parts.secondary)}`;
   // Explicit failure word: dimming removed the color cue, so failed rows
@@ -1984,10 +1995,10 @@ export function ultraBashSubject(command: string): string {
 }
 
 /** Ultra verb for shell calls: the full phrase, not bare `Ran`. */
-export const ULTRA_BASH_VERB = "Ran shell command";
+export const ULTRA_BASH_VERB = "used bash";
 
 function renderUltraPendingCall(theme: any, toolName: string, args: Record<string, unknown>): Text {
-  const verb = toolName === "bash" ? ULTRA_BASH_VERB : toolName;
+  const verb = toolName === "bash" ? ULTRA_BASH_VERB : `used ${toolName}`;
   const subject = toolName === "bash"
     ? ultraBashSubject(String(args.command ?? ""))
     : summarizeToolSubject(toolName, args);
@@ -2164,7 +2175,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
   ) => {
     context.state.startedAt ??= Date.now();
     if (context.isPartial && !context.executionStarted) {
-      if (getPrefs().ultracompact) return renderUltraPendingCall(theme, toolName, args);
+      if (activeUltracompact()) return renderUltraPendingCall(theme, toolName, args);
       return renderPendingCall(toolName, args, theme, getPrefs().commandPreviewLines);
     }
     return toolRowText(theme, "");
@@ -2185,7 +2196,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const details = (result.details ?? {}) as BashToolDetails;
       const args = context.args as Record<string, unknown>;
       const command = String(args.command ?? "");
-      if (getPrefs().ultracompact && !expanded) {
+      if (activeUltracompact() && !expanded) {
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
           verb: ULTRA_BASH_VERB,
@@ -2220,14 +2231,14 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("read", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
-      if (getPrefs().ultracompact && !expanded) {
+      if (activeUltracompact() && !expanded) {
         const ultraArgs = context.args as Record<string, unknown>;
         const base = shortenPath(String(ultraArgs.path ?? ""));
         const ultraRange = lineRange(ultraArgs.offset as number | undefined, ultraArgs.limit as number | undefined);
         const first = result.content[0];
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
-          verb: "read",
+          verb: `used read`,
           subject: ultraRange ? `${base}:${ultraRange}` : base,
           primary: !isPartial && first?.type === "image" ? "image" : undefined,
         }));
@@ -2281,14 +2292,14 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("edit", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
-      if (getPrefs().ultracompact && !expanded) {
+      if (activeUltracompact() && !expanded) {
         const ultraArgs = context.args as Record<string, unknown>;
         const ultraDetails = (result.details ?? {}) as EditToolDetails;
         const stats = ultraDetails.diff ? diffStats(ultraDetails.diff) : undefined;
         const ultraText = getTextContent(result as any);
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
-          verb: "edit",
+          verb: `used edit`,
           subject: shortenPath(String(ultraArgs.path ?? ""), 42),
           primary: context.isError || isPartial
             ? ultraText.split("\n")[0] || undefined
@@ -2339,7 +2350,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       return renderCall("write", input, theme, context);
     },
     renderResult(result, { expanded, isPartial }, theme, context) {
-      if (getPrefs().ultracompact && !expanded) {
+      if (activeUltracompact() && !expanded) {
         const ultraArgs = context.args as Record<string, unknown>;
         const ultraContent = String(ultraArgs.content ?? "");
         const ultraPreview = (context.state as XtrmToolRenderState).writePreview;
@@ -2355,7 +2366,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
                 : ultraContent ? `${lineCount(ultraContent)} lines` : undefined;
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
-          verb: "write",
+          verb: `used write`,
           subject: shortenPath(String(ultraArgs.path ?? ""), 42),
           primary,
         }));
@@ -2427,13 +2438,13 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("find", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
-      if (getPrefs().ultracompact && !expanded) {
+      if (activeUltracompact() && !expanded) {
         const ultraArgs = context.args as Record<string, unknown>;
         const ultraText = getTextContent(result as any);
         const count = summarizeCount(ultraText);
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
-          verb: "find",
+          verb: `used find`,
           subject: String(ultraArgs.pattern ?? ""),
           primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "match" : "matches"}` : undefined,
         }));
@@ -2471,13 +2482,13 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("grep", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
-      if (getPrefs().ultracompact && !expanded) {
+      if (activeUltracompact() && !expanded) {
         const ultraArgs = context.args as Record<string, unknown>;
         const ultraText = getTextContent(result as any);
         const count = countPrefixedItems(ultraText, ["-- "]) || summarizeCount(ultraText);
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
-          verb: "grep",
+          verb: `used grep`,
           subject: String(ultraArgs.pattern ?? ""),
           primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "match" : "matches"}` : undefined,
         }));
@@ -2515,13 +2526,13 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     renderCall: (args, theme, context) =>
       renderCall("ls", args as Record<string, unknown>, theme, context),
     renderResult(result, { expanded, isPartial }, theme, context) {
-      if (getPrefs().ultracompact && !expanded) {
+      if (activeUltracompact() && !expanded) {
         const ultraArgs = context.args as Record<string, unknown>;
         const ultraText = getTextContent(result as any);
         const count = summarizeCount(ultraText);
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
-          verb: "ls",
+          verb: `used ls`,
           subject: shortenPath(String(ultraArgs.path ?? ".")),
           primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "entry" : "entries"}` : undefined,
         }));
@@ -2575,7 +2586,7 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   // plain assistant text and 'assistant-thinking' blocks (the collapsed row is
   // a thinking block again so pi can add its post-thinking spacer).
   pi.registerMarkdownTransformer((markdown, context) => {
-    if (!markdown.includes("Thinking...")) return markdown;
+    if (!markdown.includes(THINKING_ROW_LABEL)) return markdown;
     return fitThinkingRowToWidth(markdown, context.availableWidth);
   });
   // The response dot: assistant text blocks (and only those) open with one.

@@ -100,8 +100,9 @@ describe("event design system vocabulary (CORE-2438 I7, D7)", () => {
   });
 
   test("stateToken uses theme text/dim/ok-warning-error tokens only, never new accents", () => {
-    expect(stateToken("delivered")).toBe("success");
-    expect(stateToken("completed")).toBe("success");
+    expect(stateToken("delivered")).toBe("text");
+    expect(stateToken("completed")).toBe("text");
+    expect(stateToken("event")).toBe("text");
     expect(stateToken("refused")).toBe("error");
     expect(stateToken("undelivered")).toBe("error");
     expect(stateToken("failed")).toBe("error");
@@ -229,7 +230,7 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     // Weight is real SGR, not theme.bold (SPEC v1 rule 15): the fake theme's
     // bold tag is no longer used by the collapsed line.
     expect(raw).toContain("\u001b[1m@Probe\u001b[22m");
-    expect(raw).toContain("<light:success>received</light:success>");
+    expect(raw).toContain("<light:text>received</light:text>");
     expect(raw).toContain("<light:dim>hello world</light:dim>");
     expect(raw).toContain("<light:dim>m1</light:dim>");
     expect(raw).toContain("<light:dim>(ctrl+o to expand)</light:dim>");

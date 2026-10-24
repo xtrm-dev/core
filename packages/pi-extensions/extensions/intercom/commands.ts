@@ -135,7 +135,9 @@ function styleOverlayRow(line: string, theme: RosterOverlayOptions["theme"]): st
   const tintedState = (() => {
     if (!state) return "";
     const lowered = state.toLowerCase();
-    if (lowered.includes("idle")) return theme.fg("success", state);
+    // Idle is the normal state: word carries it, not colour. Busy keeps
+    // amber because it is an activity signal.
+    if (lowered.includes("idle")) return theme.fg("text", state);
     if (lowered.includes("busy")) return theme.fg("warning", state);
     if (lowered.includes("offline")) return theme.fg("dim", state);
     return state;
