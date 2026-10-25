@@ -1207,3 +1207,32 @@ describe("errors are the only thing that grabs attention", () => {
     expect(ok).not.toContain(RED_DARK);
   });
 });
+
+describe("markdown transformer wiring", () => {
+  test("one registration does fitting, dotting and heading weight", async () => {
+    const { transformers } = registerWithMock();
+    // pi keeps one transformer per extension; a second registration would
+    // replace this one, so the extension must register exactly one.
+    expect(transformers).toHaveLength(1);
+    const transform = transformers[0];
+    // A long thinking row is fitted, not dotted.
+    const longRecap = "word ".repeat(40).trim();
+    const row = `\u200b  Thinking...  ${longRecap}  200`;
+    const fitted = transform(row, { messageType: "assistant", availableWidth: 40 });
+    expect(fitted).not.toContain("\u25cf");
+    expect(fitted.split("\n")).toHaveLength(1);
+    // Prose becomes a dot item; headings gain weight.
+    const prose = transform("intro line\n\n# Title", { messageType: "assistant", availableWidth: 80 });
+    expect(prose.startsWith("- intro line")).toBe(true);
+    expect(prose).toContain("\u001b[1mTitle\u001b[22m");
+    // Non-assistant messages are untouched.
+    expect(transform("intro", { messageType: "user", availableWidth: 80 })).toBe("intro");
+  });
+
+  test("a thinking row never takes the dot, whatever its label variant", async () => {
+    const { prefixAssistantDot } = await import("./index.ts");
+    for (const label of ["Thinking...", "Thinking", "Thinking..."]) {
+      expect(prefixAssistantDot(`${label}  a recap  42`)).toBeUndefined();
+    }
+  });
+});

@@ -1275,7 +1275,10 @@ export function prefixAssistantDot(markdown: string): string | undefined {
 	const index = lines.findIndex(visible);
 	if (index === -1) return undefined;
 	const first = lines[index].replace(ANSI_PATTERN, "").replace(/^\u200b/, "").trimStart();
-	if (first.startsWith("\u25cf ") || first.startsWith(THINKING_ROW_LABEL)) return undefined;
+	// Any "Thinking" head is one of our rows, not prose: tolerating the bare
+	// word (not just the exact label) means a label tweak can never turn a
+	// thinking row into an agent message with a dot in front of it.
+	if (first.startsWith("\u25cf ") || /^Thinking\b/.test(first)) return undefined;
 	if (/^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(first)) return undefined;
 
 	const paragraphs: string[] = [];
@@ -2624,21 +2627,21 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   const externalToolInstall = createThinkingPreviewInstallState(installExternalToolFramePatch);
   void externalToolInstall.ensureInstalled().catch(() => undefined);
 
-  // Keep collapsed thinking rows to one line: the recap is truncated to the
-  // render width so the expand hint never wraps or disappears. Runs for both
-  // plain assistant text and 'assistant-thinking' blocks (the collapsed row is
-  // a thinking block again so pi can add its post-thinking spacer).
-  pi.registerMarkdownTransformer((markdown, context) => {
-    if (!markdown.includes(THINKING_ROW_LABEL)) return markdown;
-    return fitThinkingRowToWidth(markdown, context.availableWidth);
-  });
-  // Assistant prose opens with the dot and hangs under it (a list item whose
-  // bullet the message component renders as that dot), and headings gain the
-  // weight pi's colour-only heading style cannot give them.
+  // ONE transformer: pi stores a single markdownTransformer per extension
+  // (the runner collects one per extension and replace-assigns on re-register),
+  // so splitting these into two calls silently disabled the first.
+  //   1. a collapsed thinking row is fitted to the width (one line, always);
+  //   2. assistant prose opens with the dot and hangs under it — the dot is a
+  //      list bullet the message component renders as ● so pi's re-wrapping
+  //      cannot drop the indent;
+  //   3. headings gain the weight pi's colour-only heading style cannot give.
   pi.registerMarkdownTransformer((markdown, context) => {
     if (context.messageType !== "assistant") return markdown;
-    const dotted = prefixAssistantDot(markdown);
-    return boldMarkdownHeadings(dotted ?? markdown);
+    const fitted = markdown.includes(THINKING_ROW_LABEL)
+      ? fitThinkingRowToWidth(markdown, context.availableWidth)
+      : markdown;
+    const dotted = prefixAssistantDot(fitted);
+    return boldMarkdownHeadings(dotted ?? fitted);
   });
 
   let prefs: XtrmUiPrefs = { ...DEFAULT_PREFS };
