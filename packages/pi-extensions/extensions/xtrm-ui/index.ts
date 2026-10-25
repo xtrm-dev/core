@@ -180,8 +180,24 @@ type PatchableAssistantMessage = {
 	hideThinkingBlock?: boolean;
 	hiddenThinkingLabel?: string;
 	lastMessage?: AssistantMessageLike;
+	markdownTheme?: { listBullet?: (text: string) => string } & Record<string, unknown>;
 	updateContent?: (message: AssistantMessageLike) => void;
 };
+
+/**
+ * Renders this component's list bullet as the response dot. The dot has to be
+ * a bullet rather than a text prefix: pi re-wraps prose paragraphs, and only
+ * the list renderer carries an indent across its own wrapping. Scoped to the
+ * instance and restored right after the render, so no other surface changes.
+ */
+function installProseBullet(component: PatchableAssistantMessage): (() => void) | undefined {
+	const theme = component.markdownTheme;
+	if (!theme || typeof theme.listBullet !== "function") return undefined;
+	component.markdownTheme = { ...theme, listBullet: () => PROSE_BULLET };
+	return () => {
+		component.markdownTheme = theme;
+	};
+}
 
 const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiThinkingPreview5";
 const ORIGINAL_ASSISTANT_UPDATE = "__xtrmUiThinkingPreviewOriginalUpdate";
@@ -203,6 +219,20 @@ export interface ThinkingRowStyle {
 	hint: (text: string) => string;
 	/** Field gap between label and recap. */
 	sep: string;
+}
+
+/**
+ * Cuts a clause at a word boundary and marks the cut with "...". A fragment
+ * shorter than 40% of the budget is rejected in favour of the raw cut, so the
+ * recap never ends in one stray syllable.
+ */
+export function truncateClause(text: string, max: number): string {
+	if (text.length <= max) return text;
+	const budget = Math.max(0, max - 3);
+	const cut = text.slice(0, budget);
+	const boundary = cut.lastIndexOf(" ");
+	const body = boundary > budget * 0.4 ? cut.slice(0, boundary) : cut;
+	return `${body.trimEnd()}...`;
 }
 
 /**
@@ -228,15 +258,25 @@ export function buildThinkingRecap(thinking: string, fallback = "Thinking..."): 
 		.filter((line) => line.length > 0);
 	const source = cleaned.find((line) => line.length >= 20) ?? cleaned[0] ?? fallback;
 	if (!source) return fallback;
-	return source.length > THINKING_RECAP_MAX ? source.slice(0, THINKING_RECAP_MAX - 3) + "..." : source;
+	return truncateClause(source, THINKING_RECAP_MAX);
 }
+
+/**
+ * A thinking row is injected as a text block, and pi trims every text block
+ * before rendering it (`new Markdown(content.text.trim(), …)`). A plain
+ * two-space indent is therefore stripped from the first line. A zero-width
+ * space is not whitespace for `trim()`, survives it, and adds no visible
+ * width — so the indent keeps its two columns.
+ */
+export const INDENT_ANCHOR = "\u200b";
+const INDENT = `${INDENT_ANCHOR}  `;
 
 /** Collapsed row: two-space indent (aligned with tool rows), label, one
  *  clause. No character count and no inline shortcut: the row carries
  *  activity, not bookkeeping. The row is truncated to the render width, so
  *  the indent can never lose its alignment. */
 export function buildCollapsedThinkingRow(recap: string, style: ThinkingRowStyle): string {
-	const label = `  ${style.label("Thinking")}`;
+	const label = `${INDENT}${style.label("Thinking")}`;
 	return recap ? `${label}${style.sep}${style.italic(recap)}` : label;
 }
 
@@ -246,9 +286,9 @@ export function buildExpandedThinkingBlock(thinking: string, style: ThinkingRowS
 	const body = thinking
 		.trim()
 		.split("\n")
-		.map((line) => (line.length > 0 ? `  ${line}` : line))
+		.map((line) => (line.length > 0 ? `${INDENT}${line}` : line))
 		.join("\n");
-	return `  ${style.label("Thinking")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(body)}`;
+	return `${INDENT}${style.label("Thinking")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(body)}`;
 }
 
 /** Collapsed thinking-row style: every span shares one level (dim italic),
@@ -287,6 +327,26 @@ const THINKING_ROW_LABEL = "Thinking";
 // (OSC133) zone markers on the final content line; subtract so the row fits.
 const THINKING_ROW_WIDTH_MARGIN = 12;
 
+/** Raw row offset for a given visible-character index (skips ANSI escapes). */
+function rawOffsetForVisibleIndex(row: string, visibleIndex: number): number {
+	let visible = 0;
+	for (let i = 0; i < row.length; i++) {
+		if (row[i] === "\x1b") {
+			const match = row.slice(i).match(/^\x1b\[[0-9;?]*[ -/]*[@-~]/);
+			if (match) {
+				i += match[0].length - 1;
+				continue;
+			}
+		}
+		if (visible === visibleIndex) return i;
+		// The indent anchor is zero-width: counting it would shift every index
+		// by one and slice into an SGR run.
+		if (row[i] === "\u200b") continue;
+		visible += visibleWidth(row[i]) || 1;
+	}
+	return row.length;
+}
+
 /**
  * Keeps a collapsed thinking row on ONE line at the given render width. With
  * no hint to protect, the row truncates as a whole: a narrow terminal shortens
@@ -295,10 +355,26 @@ const THINKING_ROW_WIDTH_MARGIN = 12;
 export function fitThinkingRowToWidth(row: string, availableWidth: number | undefined): string {
 	if (!availableWidth || availableWidth <= 0) return row;
 	if (!row.includes(THINKING_ROW_LABEL) || row.includes("\n")) return row;
-	const plain = stripAnsi(row);
+	// The row opens with the zero-width indent anchor; ignore it when
+	// deciding whether this is a thinking row at all.
+	const plain = stripAnsi(row).replace(/^\u200b/, "");
 	if (!plain.trimStart().startsWith(THINKING_ROW_LABEL)) return row;
 	const width = Math.max(8, availableWidth - THINKING_ROW_WIDTH_MARGIN);
-	return visibleWidth(plain) <= width ? row : truncateToWidth(row, width);
+	if (visibleWidth(plain) <= width) return row;
+
+	// Keep the label and its gap, cut the recap as a clause so the row ends in
+	// "..." at a word boundary instead of losing the last syllable.
+	const labelEnd = plain.indexOf(THINKING_ROW_LABEL) + THINKING_ROW_LABEL.length;
+	const gap = plain.slice(labelEnd).match(/^\s+/)?.[0] ?? "";
+	const recapStartVisible = labelEnd + gap.length;
+	const recapStartRaw = rawOffsetForVisibleIndex(row, recapStartVisible);
+	const head = row.slice(0, recapStartRaw);
+	const recapRaw = row.slice(recapStartRaw);
+	const budget = width - visibleWidth(stripAnsi(head));
+	if (budget < 8) return truncateToWidth(row, width);
+	const colorPrefix = recapRaw.match(/^(\x1b\[[0-9;?]*m)+/)?.[0] ?? "";
+	const colorSuffix = recapRaw.match(/(\x1b\[[0-9;?]*m)+$/)?.[0] ?? "";
+	return head + colorPrefix + truncateClause(stripAnsi(recapRaw).replace(/(\x1b\[[0-9;?]*m)+$/g, "").trimEnd(), budget) + colorSuffix;
 }
 
 function maybeFileUrlToPath(value: string): string {
@@ -385,7 +461,12 @@ export function createPatchedUpdateContent(
 						? [{ type: "text", text: row }, { type: "text", text: "\u200b" }]
 						: [{ type: "text", text: row }];
 				});
-				updateContent.call(this, { ...message, content });
+				const restoreBullet = installProseBullet(this);
+				try {
+					updateContent.call(this, { ...message, content });
+				} finally {
+					restoreBullet?.();
+				}
 				// Pi stores lastMessage and re-renders from it in
 				// setHideThinkingBlock()/invalidate()/setHiddenThinkingLabel().
 				// Restore the RAW message so those re-renders re-enter this patch
@@ -395,7 +476,12 @@ export function createPatchedUpdateContent(
 				return;
 			}
 		}
-		updateContent.call(this, message);
+		const restoreBullet = installProseBullet(this);
+		try {
+			updateContent.call(this, message);
+		} finally {
+			restoreBullet?.();
+		}
 	};
 }
 
@@ -1124,71 +1210,7 @@ export function formatTurnSummary(summary: XtrmTurnSummary): string {
  *  idempotent across re-renders. Plain marker, no ANSI: escapes inside
  *  markdown risk pi's width math. */
 /** Block constructs whose lines are indented by their own syntax. */
-const PROSE_GUARD = /^(```|~~~|#{1,6}\s|>|\||\s{4}|[-*+]\s|\d+[.)]\s)/;
-/** Lines where a hard wrap could split inline code or a link target. */
-const INLINE_RISK = /`|\]\(/;
-
-/** Greedy word wrap on plain prose; long words stay whole (pi wraps them). */
-function wrapProse(line: string, budget: number): string[] {
-	if (visibleWidth(line) <= budget || INLINE_RISK.test(line)) return [line];
-	const out: string[] = [];
-	let current = "";
-	for (const word of line.split(" ")) {
-		const candidate = current ? `${current} ${word}` : word;
-		if (visibleWidth(candidate) <= budget) {
-			current = candidate;
-			continue;
-		}
-		if (current) out.push(current);
-		current = word;
-	}
-	if (current) out.push(current);
-	return out;
-}
-
-/**
- * Opens assistant prose with the dot and hangs the rest of the block under it:
- * every prose line gets a two-column indent (the dot's width), and long lines
- * are wrapped here so pi's own wrapping cannot reset them to column zero.
- * Non-prose constructs (fences, headings, lists, quotes, tables, indented code)
- * keep their own indent; blocks that do not open with prose get no dot.
- */
-export function prefixAssistantDot(markdown: string, availableWidth?: number): string {
-	const lines = markdown.split("\n");
-	// Invisible-only lines (pi's zero-width post-thinking spacer) are not
-	// content: skipping them keeps the spacer dot-free.
-	const visible = (line: string) => line.replace(/[\s\u200b-\u200d\ufeff]/g, "") !== "";
-	const index = lines.findIndex(visible);
-	if (index === -1) return markdown;
-	// Guards run on the visible text: styled rows (thinking recap) open
-	// with ANSI escapes, so strip those before comparing.
-	const first = lines[index].replace(ANSI_PATTERN, "").trimStart();
-	if (first.startsWith("\u25cf ") || first.startsWith(THINKING_ROW_LABEL)) return markdown;
-	if (/^(```|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(first)) return markdown;
-
-	const budget = availableWidth && availableWidth > 2 ? Math.max(20, availableWidth - 2) : undefined;
-	let inFence = false;
-	const out: string[] = [];
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		const plain = stripAnsi(line);
-		if (/^\s*(```|~~~)/.test(plain)) {
-			inFence = !inFence;
-			out.push(line);
-			continue;
-		}
-		const prose = i >= index && !inFence && line.trim() !== "" && !PROSE_GUARD.test(plain.trimStart());
-		if (!prose) {
-			out.push(line);
-			continue;
-		}
-		const segments = budget ? wrapProse(line, budget) : [line];
-		const indented = segments.map((segment) => `  ${segment}`);
-		if (i === index) indented[0] = `\u25cf ${segments[0].replace(/^\s+/, "")}`;
-		out.push(...indented);
-	}
-	return out.join("\n");
-}
+const PROSE_GUARD = /^(#{1,6}\s|>|\||\s{4}|[-*+]\s|\d+[.)]\s)/;
 
 /**
  * Headings are colour-only in pi (`heading: (text) => theme.fg("mdHeading", text)`),
@@ -1212,6 +1234,64 @@ export function boldMarkdownHeadings(markdown: string): string {
 			return `${match[1]}\x1b[1m${match[2]}\x1b[22m`;
 		})
 		.join("\n");
+}
+
+/** Bullet that pi renders for an assistant prose item (see the theme override). */
+export const PROSE_BULLET = "\u25cf ";
+
+/**
+ * Gives assistant prose a hanging indent, which pi's renderer cannot otherwise
+ * express: pi re-wraps every paragraph, so per-line indents are lost.
+ *
+ * The leading prose run becomes ONE list item. pi's list renderer indents
+ * continuation and wrapped lines by the bullet width, so the text after the dot
+ * stays aligned; the per-instance markdown theme renders that bullet as the
+ * dot. Later paragraphs of the same run ride inside the item, indented; the
+ * first block construct (code fence, heading, list, quote, table) ends the run
+ * and passes through untouched.
+ *
+ * Returns undefined when the message does not start with prose (a heading or a
+ * list of the model's own gets no dot).
+ */
+export function prefixAssistantDot(markdown: string): string | undefined {
+	const lines = markdown.split("\n");
+	const visible = (line: string) => line.replace(/[\s\u200b-\u200d\ufeff]/g, "") !== "";
+	const index = lines.findIndex(visible);
+	if (index === -1) return undefined;
+	const first = lines[index].replace(ANSI_PATTERN, "").replace(/^\u200b/, "").trimStart();
+	if (first.startsWith("\u25cf ") || first.startsWith(THINKING_ROW_LABEL)) return undefined;
+	if (/^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(first)) return undefined;
+
+	const paragraphs: string[] = [];
+	let cursor = index;
+	let current: string[] = [];
+	let inFence = false;
+	const flush = () => {
+		if (current.length > 0) paragraphs.push(current.join(" ").trim());
+		current = [];
+	};
+	while (cursor < lines.length) {
+		const line = lines[cursor];
+		const plain = stripAnsi(line).trim();
+		if (/^(```|~~~)/.test(plain)) break;
+		if (plain === "") {
+			flush();
+			cursor += 1;
+			continue;
+		}
+		if (PROSE_GUARD.test(plain)) break;
+		current.push(plain);
+		cursor += 1;
+		if (inFence) inFence = false;
+	}
+	flush();
+	if (paragraphs.length === 0) return undefined;
+
+	const body = paragraphs
+		.map((paragraph, i) => (i === 0 ? `- ${paragraph}` : `  ${paragraph}`))
+		.join("\n\n");
+	const rest = lines.slice(cursor).join("\n");
+	return rest ? `${body}\n\n${rest}` : body;
 }
 
 /** Applies the dot frames through pi's documented WorkingIndicatorOptions. */
@@ -2536,12 +2616,13 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
     if (!markdown.includes(THINKING_ROW_LABEL)) return markdown;
     return fitThinkingRowToWidth(markdown, context.availableWidth);
   });
-  // The response dot and the hanging indent: assistant prose (and only that)
-  // opens with a dot, and every prose line hangs two columns under it.
+  // Assistant prose opens with the dot and hangs under it (a list item whose
+  // bullet the message component renders as that dot), and headings gain the
+  // weight pi's colour-only heading style cannot give them.
   pi.registerMarkdownTransformer((markdown, context) => {
     if (context.messageType !== "assistant") return markdown;
-    const headed = boldMarkdownHeadings(markdown);
-    return prefixAssistantDot(headed, context.availableWidth);
+    const dotted = prefixAssistantDot(markdown);
+    return boldMarkdownHeadings(dotted ?? markdown);
   });
 
   let prefs: XtrmUiPrefs = { ...DEFAULT_PREFS };

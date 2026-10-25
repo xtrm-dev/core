@@ -103,10 +103,21 @@ no hue in chrome:
 
 Assistant prose keeps the terminal's default foreground, so it stays the
 brightest body text without a hard-coded colour. It opens with `●`, and every
-continuation line hangs two columns under that text: the markdown transformer
-pre-wraps prose to the available width minus the dot, so pi's own wrapping can
-never reset a line to column zero. Fenced code, lists, quotes and tables keep
-their own indent and are never re-wrapped.
+continuation line hangs two columns under that text. Two renderer facts shape
+how that is done:
+
+- pi trims every text block before rendering it
+  (`new Markdown(content.text.trim(), …)`), so a leading-space indent must be
+  anchored with a zero-width space to survive.
+- pi re-wraps each paragraph itself, so a text prefix cannot carry an indent.
+
+The dot is therefore the bullet of a single-item list: the markdown transformer
+turns the leading prose run into one item, and the message component swaps its
+`listBullet` for `● ` while it renders (restored immediately after, so nothing
+else is affected). pi's list renderer keeps the indent across its own wrapping.
+Later paragraphs of the run ride inside the same item; the first block construct
+— code fence, heading, list, quote, table — ends the run and passes through
+untouched. A message that opens with such a construct gets no dot.
 
 Headings carry **weight** rather than brightness: pi renders a heading through
 `theme.fg("mdHeading", text)` with no bold, so with hue gone the transformer
@@ -119,8 +130,9 @@ keeps the brightest level. No red remains anywhere in chrome.
 ## Thinking Rows
 
 Collapsed: `  Thinking  <one clause>` — two-space indent (aligned with tool
-rows), a 64-character recap that ends in `...` when cut, and no character count
-and no inline shortcut. The label is upright at the secondary level, the recap
+rows, anchored with a zero-width space so pi's `trim()` cannot strip it), a
+64-character recap cut at a word boundary and ending in `...`, and no character
+count and no inline shortcut. The label is upright at the secondary level, the recap
 italic at the same level. Expanded: the indent continues over the trace behind
 `Ctrl+T`, with the collapse hint shown only in that state.
 
