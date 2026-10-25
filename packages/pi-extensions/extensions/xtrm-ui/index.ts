@@ -576,7 +576,16 @@ type ToolExecutionComponentCtor = {
     getRenderShell?: () => "default" | "self";
     hasRendererDefinition?: () => boolean;
     render?: (width: number) => string[];
+    handleMouse?: (event: ToolMouseEvent) => unknown;
   };
+};
+
+type ToolMouseEvent = { type?: string; button?: string };
+type ClickableToolRow = {
+  toolName?: string;
+  expanded?: boolean;
+  setExpanded?: (expanded: boolean) => void;
+  updateDisplay?: () => void;
 };
 
 type PatchableToolExecutionComponent = {
@@ -598,7 +607,8 @@ type ExternalToolFrameKind = "serena" | "gitnexus" | "structured" | "process" | 
 const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 40;
+const ORIGINAL_EXTERNAL_HANDLE_MOUSE = "__xtrmUiExternalToolFrameOriginalHandleMouse";
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 41;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
@@ -746,6 +756,26 @@ export function collapsedExternalToolLines(contentLines: string[], expanded: boo
     ...contentLines.slice(0, resultCap),
     `... (${contentLines.length - resultCap} more lines, ctrl+o to expand)`,
   ];
+}
+
+/**
+ * Frames own their rows, so pi's result region never sees them: a click on a
+ * framed tool row expands or collapses it, exactly as pi's own tool rows do
+ * (`setExpanded`, the same field ctrl+o drives — ctrl+o keeps its global
+ * meaning and still expands every row). Rows we do not frame fall through to
+ * pi's handler untouched.
+ */
+export function externalToolRowClick(component: ClickableToolRow, event: ToolMouseEvent): boolean | undefined {
+  if (event?.type !== "click" || event?.button !== "left") return undefined;
+  if (!externalToolFrameKind(component.toolName)) return undefined;
+  const next = !component.expanded;
+  if (typeof component.setExpanded === "function") {
+    component.setExpanded(next);
+  } else {
+    component.expanded = next;
+    component.updateDisplay?.();
+  }
+  return true;
 }
 
 function externalToolProvider(kind: ExternalToolFrameKind, toolName?: string): string {
@@ -1055,6 +1085,21 @@ async function installExternalToolFramePatch(): Promise<void> {
   proto[ORIGINAL_EXTERNAL_RENDER] ??= render;
   proto[ORIGINAL_EXTERNAL_GET_RENDER_SHELL] ??= proto.getRenderShell;
   const getRenderShell = proto[ORIGINAL_EXTERNAL_GET_RENDER_SHELL];
+
+  // Click-to-expand for framed rows. The frame replaces pi's rendered lines,
+  // so pi's own MouseRegion around the result no longer covers them; this is
+  // the same toggle pi uses (setExpanded), driven from the prototype instead.
+  const protoCtor = proto as ToolExecutionComponentCtor["prototype"] & {
+    [ORIGINAL_EXTERNAL_HANDLE_MOUSE]?: (event: ToolMouseEvent) => unknown;
+  };
+  if (!protoCtor[ORIGINAL_EXTERNAL_HANDLE_MOUSE]) {
+    const inheritedHandleMouse = protoCtor.handleMouse;
+    protoCtor[ORIGINAL_EXTERNAL_HANDLE_MOUSE] = inheritedHandleMouse;
+    protoCtor.handleMouse = function patchedHandleMouse(this: PatchableToolExecutionComponent, event: ToolMouseEvent) {
+      if (externalToolRowClick(this, event) === true) return { handled: true };
+      return inheritedHandleMouse?.call(this, event);
+    };
+  }
 
   proto.getRenderShell = function patchedGetRenderShell(this: PatchableToolExecutionComponent) {
     const kind = externalToolFrameKind(this.toolName);

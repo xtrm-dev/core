@@ -1224,6 +1224,43 @@ describe("errors are the only thing that grabs attention", () => {
   });
 });
 
+describe("click-to-expand on framed tool rows", async () => {
+  const { externalToolRowClick } = await import("./index.ts");
+  test("a left click toggles the frame's own expanded state, like pi's rows", () => {
+    const seen: boolean[] = [];
+    const row = { toolName: "serena_find_symbol", expanded: false, setExpanded: (next: boolean) => seen.push(next) };
+    expect(externalToolRowClick(row, { type: "click", button: "left" })).toBe(true);
+    expect(seen).toEqual([true]);
+    // A second click collapses again: the same toggle ctrl+o drives.
+    const expandedRow = { toolName: "codemode", expanded: true, setExpanded: (next: boolean) => seen.push(next) };
+    expect(externalToolRowClick(expandedRow, { type: "click", button: "left" })).toBe(true);
+    expect(seen).toEqual([true, false]);
+  });
+
+  test("rows the frame does not own fall through to pi's handler", () => {
+    // pi's built-in tools (bash, read, … — lowercase, as pi registers them)
+    // keep their own result region and its MouseRegion.
+    expect(externalToolRowClick({ toolName: "bash", expanded: false }, { type: "click", button: "left" })).toBeUndefined();
+    expect(externalToolRowClick({ toolName: "read", expanded: false }, { type: "click", button: "left" })).toBeUndefined();
+    expect(externalToolRowClick({ toolName: undefined }, { type: "click", button: "left" })).toBeUndefined();
+  });
+
+  test("only a left click counts", () => {
+    const row = { toolName: "structured_return", expanded: false, setExpanded: () => {} };
+    expect(externalToolRowClick(row, { type: "click", button: "right" })).toBeUndefined();
+    expect(externalToolRowClick(row, { type: "move", button: "left" })).toBeUndefined();
+    expect(externalToolRowClick(row, {})).toBeUndefined();
+  });
+
+  test("falls back to the component's own updateDisplay when it has no setter", () => {
+    let redrawn = 0;
+    const row = { toolName: "process_logs", expanded: false, updateDisplay: () => { redrawn += 1; } };
+    expect(externalToolRowClick(row, { type: "click", button: "left" })).toBe(true);
+    expect(row.expanded).toBe(true);
+    expect(redrawn).toBe(1);
+  });
+});
+
 describe("markdown transformer wiring", () => {
   test("one registration does fitting, dotting and heading weight", async () => {
     const { transformers } = registerWithMock();

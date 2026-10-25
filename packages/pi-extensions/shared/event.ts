@@ -19,7 +19,7 @@
  * adopts this module's card renderer; nothing here changes their bytes.
  */
 
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { MouseRegion, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export const MESSAGE_STATES = ["queued", "held", "delivered", "refused", "undelivered", "expired"] as const;
 
@@ -258,9 +258,6 @@ export function buildIdleNotice(name: string, messageId: string, expired: boolea
 /** Maximum preview body lines on a card (D4, expanded view). */
 export const MAX_PREVIEW_LINES = 3;
 
-/** Collapsed one-liner expand hint (xtrm-ui chrome wording). */
-export const COLLAPSED_EXPAND_HINT = "(ctrl+o to expand)";
-
 const INDENT = "  ";
 const EXPAND_SUFFIX = "· ctrl+o expands";
 
@@ -397,50 +394,47 @@ function fitWidth(text: string, width: number): string {
   return stripAnsi(truncateToWidth(text, Math.floor(width)));
 }
 
-function collapsedSegments(
-  details: EventDetails,
-  width: number,
-): { prefix: string; snippet: string; id: string; suffix: string } {
+function collapsedSegments(details: EventDetails, width: number): { prefix: string; snippet: string; id: string } {
   const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
   const rawName = details.fromName || details.from || details.identity.replace(/^@/, "") || "unknown";
   const name = fitWidth(sanitizeCardLine(rawName), 32) || "unknown";
   const prefix = `› Message from @${name} received:`;
-  const suffix = COLLAPSED_EXPAND_HINT;
   const rawFacts = details.facts?.trim() || (typeof details.messageId === "string" ? details.messageId : "");
   let id = rawFacts ? sanitizeCardLine(rawFacts) : "";
   let snippet = sanitizeCardLine(details.preview.join(" ")).replace(/\s+/g, " ").trim();
   const joinedWidth = (s: string, i: string) =>
-    visibleWidth(prefix) + (s ? 1 + visibleWidth(s) : 0) + (i ? 1 + visibleWidth(i) : 0) + 1 + visibleWidth(suffix);
+    visibleWidth(prefix) + (s ? 1 + visibleWidth(s) : 0) + (i ? 1 + visibleWidth(i) : 0);
   // Shrink the id first (an 8-char short ref at minimum) so the snippet
   // — the who + what — survives as long as possible.
   if (joinedWidth(snippet, id) > w && id) {
-    const idBudget = w - visibleWidth(prefix) - (snippet ? 1 + visibleWidth(snippet) : 0) - 1 - visibleWidth(suffix) - 1;
+    const idBudget = w - visibleWidth(prefix) - (snippet ? 1 + visibleWidth(snippet) : 0) - 1;
     id = idBudget >= visibleWidth(id) ? id : idBudget >= 8 ? fitWidth(id, idBudget) : "";
   }
   if (joinedWidth(snippet, id) > w && snippet) {
-    const snipBudget = w - visibleWidth(prefix) - (id ? 1 + visibleWidth(id) : 0) - 1 - visibleWidth(suffix) - 1;
+    const snipBudget = w - visibleWidth(prefix) - (id ? 1 + visibleWidth(id) : 0) - 1;
     snippet = fitWidth(snippet, snipBudget);
   }
-  return { prefix, snippet, id, suffix };
+  return { prefix, snippet, id };
 }
 
 /** Plain collapsed one-liner (no theme). */
 export function formatMessageCollapsedPlain(details: EventDetails, width: number): string {
   const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
-  const { prefix, snippet, id, suffix } = collapsedSegments(details, w);
-  const line = [prefix, snippet, id, suffix].filter((s) => s.length > 0).join(" ");
+  const { prefix, snippet, id } = collapsedSegments(details, w);
+  const line = [prefix, snippet, id].filter((s) => s.length > 0).join(" ");
   return visibleWidth(line) <= w ? line : truncateToWidth(line, w);
 }
 
 /**
  * Themed collapsed one-liner: bold @name, tinted received (the wake state
- * token — success for delivered), dim snippet, dim id, chrome-dim expand
- * hint. Same vocabulary as the roster overlay (bold name) and the expanded
+ * token — success for delivered), dim snippet, dim id. No expand hint: the
+ * card itself is the affordance (click to expand, ctrl+o expands globally).
+ * Same vocabulary as the roster overlay (bold name) and the expanded
  * header (tinted state).
  */
 export function formatMessageCollapsed(details: EventDetails, theme: EventTheme, width: number): string {
   const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
-  const { prefix, snippet, id, suffix } = collapsedSegments(details, w);
+  const { prefix, snippet, id } = collapsedSegments(details, w);
   const dim = (text: string) => theme.fg("dim", text);
   const italicize = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
   const lead = "› Message from @";
@@ -449,7 +443,7 @@ export function formatMessageCollapsed(details: EventDetails, theme: EventTheme,
     prefix.startsWith(lead) && prefix.endsWith(trail)
       ? `› Message from ${theme.bold(`@${prefix.slice(lead.length, prefix.length - trail.length)}`)} ${theme.fg(stateToken(details.state), "received")}:`
       : prefix;
-  const parts = [head, ...(snippet ? [dim(italicize(snippet))] : []), ...(id ? [dim(id)] : []), dim(suffix)];
+  const parts = [head, ...(snippet ? [dim(italicize(snippet))] : []), ...(id ? [dim(id)] : [])];
   return parts.join(" ");
 }
 
@@ -469,7 +463,8 @@ export function formatEventCardPlain(
  * Operator card (D4): glyph, bold identity, tinted state, italic message
  * bodies, dim facts, up to 3 preview lines, "+N lines · ctrl+o expands".
  * Pass `{ expanded: false }` for a message to get the collapsed one-liner
- * (`› Message from @<name> received: <snippet> <id> (ctrl+o to expand)`)
+ * (`› Message from @<name> received: <snippet> <id>`; a click expands it,
+ * ctrl+o still expands every message globally)
  * Pi's ctrl+o path uses; `{ expanded: true }` shows the full corpus with no
  * line cap. Without opts the classic 3-line card renders (pinned tests).
  * Theme tokens only — this file holds no SGR. Both renders share `layoutCard`,
@@ -502,6 +497,9 @@ export function formatEventCard(
 
 type MessageRenderer = (message: unknown, options: unknown, theme: EventTheme) => unknown;
 
+/** Cards the operator opened by clicking; expand-only, survives pi's rebuilds. */
+const clickedExpanded = new WeakMap<object, true>();
+
 interface RendererPi {
   registerMessageRenderer?: (customType: string, renderer: MessageRenderer) => void;
 }
@@ -529,17 +527,32 @@ export function registerEventRenderer(
       return undefined;
     }
     if (!details) return undefined;
-    const expanded = (options as { expanded?: boolean } | null | undefined)?.expanded === true;
-    return {
+    const resolved = details;
+    const baseExpanded = (options as { expanded?: boolean } | null | undefined)?.expanded === true;
+    // Click expansion is expand-only and per message: ctrl+o keeps its global
+    // meaning (it expands everything, and a collapse hides everything again),
+    // while a click opens the one card under the pointer. The state lives in a
+    // WeakMap because pi rebuilds the custom component on every invalidate and
+    // every ctrl+o toggle — instance state would be dropped mid-click.
+    const key = typeof message === "object" && message !== null ? (message as object) : undefined;
+    const expanded = () => baseExpanded || (key !== undefined && clickedExpanded.has(key));
+    const component = {
       dispose: () => {},
       invalidate: () => {},
       render: (width: number) => {
+        const isExpanded = expanded();
         try {
-          return formatEventCard(details, theme, width, { expanded }).split("\n");
+          return formatEventCard(resolved, theme, width, { expanded: isExpanded }).split("\n");
         } catch {
-          return formatEventCardPlain(details, width, { expanded }).split("\n");
+          return formatEventCardPlain(resolved, width, { expanded: isExpanded }).split("\n");
         }
       },
     };
+    // The card carries no "ctrl+o to expand" hint: the click is the affordance.
+    return new MouseRegion(component, (event) => {
+      if (event.type !== "click" || event.button !== "left" || key === undefined) return undefined;
+      clickedExpanded.set(key, true);
+      return { handled: true };
+    });
   });
 }

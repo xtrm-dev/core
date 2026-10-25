@@ -76,7 +76,7 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
     expect(lines[2]).toBe("  second line  m7");
   });
 
-  test("a collapsed inbound wake is one received line with dim snippet, id and expand hint", () => {
+  test("a collapsed inbound wake is one received line, dim snippet and id, no expand hint", () => {
     const { pi, renderers } = fakePiWithRenderer();
     intercomExtension(pi, { env: {}, exec: async () => "" } as never);
     const renderer = renderers.get(INTERCOM_MESSAGE_TYPE) as unknown as (
@@ -91,7 +91,7 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
       {},
       tagTheme("dark"),
     ).render(120);
-    expect(visible(raw)).toEqual(["› Message from @Bob received: hello world m7 (ctrl+o to expand)"]);
+    expect(visible(raw)).toEqual(["› Message from @Bob received: hello world m7"]);
     expect(raw.join("\n")).toContain("<dark:bold>@Bob</dark:bold>");
     expect(raw.join("\n")).toContain("<dark:success>received</dark:success>");
     expect(raw.join("\n")).toContain("<dark:dim>hello world</dark:dim>");
