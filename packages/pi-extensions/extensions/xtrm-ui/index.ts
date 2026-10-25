@@ -307,9 +307,12 @@ export function collapsedThinkingStyle(themeName: () => string): ThinkingRowStyl
 		const rgb = `${Number.parseInt(h.slice(0, 2), 16)};${Number.parseInt(h.slice(2, 4), 16)};${Number.parseInt(h.slice(4, 6), 16)}`;
 		return `\x1b[38;2;${rgb}m${text}\x1b[39m`;
 	};
-	const secondary = at(themeName() === "xtrm-light" ? "#6f6f6f" : "#858585");
-	const italic = (text: string) => `\x1b[3m${secondary(text)}\x1b[23m`;
-	return { label: secondary, recap: italic, italic, hint: secondary, sep: "  " };
+	// Thinking is the least important stream on screen: it sits at the muted
+	// level, below tool output (secondary), so it never competes with the
+	// agent's answer or with what it is doing. Upright label, italic recap.
+	const muted = at(themeName() === "xtrm-light" ? "#8a8a8a" : "#5f5f5f");
+	const italic = (text: string) => `\x1b[3m${muted(text)}\x1b[23m`;
+	return { label: muted, recap: italic, italic, hint: muted, sep: "  " };
 }
 
 /** Expanded thinking-block style, frozen at the pre-ultra treatment (bold

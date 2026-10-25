@@ -132,9 +132,14 @@ keeps the brightest level. No red remains anywhere in chrome.
 Collapsed: `  Thinking  <one clause>` — two-space indent (aligned with tool
 rows, anchored with a zero-width space so pi's `trim()` cannot strip it), a
 64-character recap cut at a word boundary and ending in `...`, and no character
-count and no inline shortcut. The label is upright at the secondary level, the recap
-italic at the same level. Expanded: the indent continues over the trace behind
-`Ctrl+T`, with the collapse hint shown only in that state.
+count and no inline shortcut.
+
+Thinking is the least important stream on screen and is styled to lose
+attention: label and recap sit at the **muted** level (`#5F5F5F`), below tool
+output (`#858585`) and far below the agent's answer. The label is upright, the
+recap italic — modality carries what a hue or extra weight would otherwise
+carry. Expanded: the indent continues over the trace behind `Ctrl+T`, with the
+collapse hint shown only in that state.
 
 ## Preferences
 

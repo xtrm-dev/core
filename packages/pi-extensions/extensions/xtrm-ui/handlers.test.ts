@@ -842,8 +842,9 @@ describe("CORE-2502 follow-ups", async () => {
     expect(ultraThemeHexes("something-else")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
   });
 
-  test("collapsed thinking style: secondary grey, upright label, italic recap", () => {
-    for (const [name, rgb] of [["xtrm-dark", "133;133;133"], ["xtrm-light", "111;111;111"]] as const) {
+  test("collapsed thinking style: muted grey, upright label, italic recap", () => {
+    // Muted (#5f5f5f / #8a8a8a) keeps thinking below tool output and the answer.
+    for (const [name, rgb] of [["xtrm-dark", "95;95;95"], ["xtrm-light", "138;138;138"]] as const) {
       const style = collapsedThinkingStyle(() => name);
       // Label: upright, secondary level.
       expect(style.label("Thinking")).toContain(`38;2;${rgb}m`);
