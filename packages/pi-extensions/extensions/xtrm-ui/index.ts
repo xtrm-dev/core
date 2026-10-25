@@ -640,9 +640,11 @@ function externalToolHeaderLine(
   provider: string,
   tool?: string,
 ): string {
-  // Failure is a marker, not a colour: the row keeps the palette's brightest
-  // level and trades the dot for "!".
-  const dot = status === "error" ? "!" : status === "success" ? "\x1b[2m●\x1b[22m" : "●";
+  // Errors are the one thing allowed to grab attention: red marker plus the
+  // failure word, never a quiet neutral row.
+  const dot = status === "error"
+    ? "\x1b[38;2;255;154;154m!\x1b[39m"
+    : status === "success" ? "\x1b[2m●\x1b[22m" : "●";
   const ext = `${XTRM_EXT_ACCENT}${boldSgr(provider)}\x1b[39m`;
   const toolColor = status === "success" ? "" : "\x1b[2m";
   const toolReset = status === "success" ? "" : "\x1b[22m";
@@ -908,7 +910,7 @@ export function bareExternalToolHeader(
  *  else falls back to dark (xtrm-ui forces an xtrm theme by default). */
 export function ultraThemeHexes(themeName: string): { dim: string; error: string } {
 	return themeName === "xtrm-light"
-		? { dim: "#7a7a7a", error: "#a85f5f" }
+		? { dim: "#7a7a7a", error: "#b02a2a" }
 		: { dim: "#8a8a8a", error: "#ff9a9a" };
 }
 

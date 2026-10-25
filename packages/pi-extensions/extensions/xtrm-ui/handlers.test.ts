@@ -838,7 +838,7 @@ describe("CORE-2502 follow-ups", async () => {
 
   test("ultraThemeHexes mirrors xtrm theme tokens per theme", () => {
     expect(ultraThemeHexes("xtrm-dark")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
-    expect(ultraThemeHexes("xtrm-light")).toEqual({ dim: "#7a7a7a", error: "#a85f5f" });
+    expect(ultraThemeHexes("xtrm-light")).toEqual({ dim: "#7a7a7a", error: "#b02a2a" });
     expect(ultraThemeHexes("something-else")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
   });
 
@@ -1153,5 +1153,51 @@ describe("thinking clause truncation", async () => {
     expect(fitThinkingRowToWidth(row, undefined)).toBe(row);
     // Strip safety: the label and the anchor survive whatever the mock reports.
     expect(stripSgr(fitThinkingRowToWidth(row, 80))).toContain("Thinking");
+  });
+});
+
+describe("errors are the only thing that grabs attention", () => {
+  const RED_DARK = "255;154;154";
+
+  const tag = { fg: (token: string, text: string) => `[${token}]${text}`, bold: (text: string) => `*${text}*` };
+
+  test("a failed tool row uses the error token and says failed", async () => {
+    const { renderUltraRow } = await import("./index.ts");
+    const raw = renderUltraRow(tag, { statusColor: "error", verb: "read", subject: "/a", primary: "nope" });
+    expect(raw).toContain("[error]");
+    expect(raw).toContain("failed");
+    expect(raw).not.toContain("[dim]");
+  });
+
+  test("a successful row never touches the error token", async () => {
+    const { renderUltraRow } = await import("./index.ts");
+    const raw = renderUltraRow(tag, { statusColor: "success", verb: "Ran shell command", subject: "pnpm test", primary: "84 passed" });
+    expect(raw).not.toContain("[error]");
+  });
+
+  test("the error token resolves to red in every shipped theme", async () => {
+    const themes = ["xtrm-dark", "xtrm-dark-flattools", "xtrm-light", "xtrm-light-flattools"];
+    for (const name of themes) {
+      const json = (await import(`../../themes/xtrm-ui/${name}.json`)) as unknown as {
+        default: { colors: Record<string, string>; vars: Record<string, string> };
+      };
+      const { colors, vars } = json.default;
+      const hex = (colors.error ?? "").startsWith("#") ? colors.error : vars[colors.error];
+      expect(hex).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+      // Red dominates both other channels: attention, not decoration.
+      expect(r).toBeGreaterThan(g + 40);
+      expect(r).toBeGreaterThan(b + 40);
+      // Diffs stay coloured too.
+      expect(colors.toolDiffAdded).not.toBe(colors.toolDiffRemoved);
+    }
+  });
+
+  test("the external frame header marks failure in red", async () => {
+    const { renderExternalToolLines } = await import("./index.ts");
+    const failed = renderExternalToolLines(["boom"], 80, "external", true, "probe", 5, "error").join("\n");
+    expect(failed).toContain(`38;2;${RED_DARK}m!`);
+    const ok = renderExternalToolLines(["fine"], 80, "external", true, "probe", 5, "success").join("\n");
+    expect(ok).not.toContain(RED_DARK);
   });
 });

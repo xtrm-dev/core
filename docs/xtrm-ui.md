@@ -124,8 +124,11 @@ Headings carry **weight** rather than brightness: pi renders a heading through
 bolds the heading text itself (outside fenced blocks). That keeps the heading
 level visible above body text at almost the same luminance.
 
-Failures are marked, not coloured: a failing row trades its dot for `!` and
-keeps the brightest level. No red remains anywhere in chrome.
+Errors are the one thing allowed to grab attention: a failing row keeps a red
+status (`#FF9A9A` dark, `#B02A2A` light), semibold weight and the `!` marker, and
+always states `failed`. Confirmations stay quiet — a successful row is neutral
+grey and never uses the error token. Diff bodies keep their red/green (`+`/`−`)
+because that is content semantics. Nothing else in chrome carries a hue.
 
 ## Thinking Rows
 
