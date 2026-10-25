@@ -497,8 +497,13 @@ export function formatEventCard(
 
 type MessageRenderer = (message: unknown, options: unknown, theme: EventTheme) => unknown;
 
-/** Cards the operator opened by clicking; expand-only, survives pi's rebuilds. */
-const clickedExpanded = new WeakMap<object, true>();
+/**
+ * Click state per message entry: `override` is what the last click asked for,
+ * `base` is the ctrl+o state at that moment. Survives pi's rebuilds (it
+ * re-creates the custom component on every invalidate and ctrl+o toggle); when
+ * `base` no longer matches, ctrl+o has moved and the click state is dropped.
+ */
+const clickState = new WeakMap<object, { override: boolean; base: boolean }>();
 
 interface RendererPi {
   registerMessageRenderer?: (customType: string, renderer: MessageRenderer) => void;
@@ -535,7 +540,17 @@ export function registerEventRenderer(
     // WeakMap because pi rebuilds the custom component on every invalidate and
     // every ctrl+o toggle — instance state would be dropped mid-click.
     const key = typeof message === "object" && message !== null ? (message as object) : undefined;
-    const expanded = () => baseExpanded || (key !== undefined && clickedExpanded.has(key));
+    const current = () => {
+      const state = key === undefined ? undefined : clickState.get(key);
+      if (!state) return baseExpanded;
+      // ctrl+o reasserts itself: a global toggle invalidates the click state.
+      if (state.base !== baseExpanded) {
+        clickState.delete(key as object);
+        return baseExpanded;
+      }
+      return state.override;
+    };
+    const expanded = () => current();
     const component = {
       dispose: () => {},
       invalidate: () => {},
@@ -549,9 +564,11 @@ export function registerEventRenderer(
       },
     };
     // The card carries no "ctrl+o to expand" hint: the click is the affordance.
+    // A click toggles, exactly like pi's own tool rows; ctrl+o keeps its global
+    // meaning because a change in its state drops the click state above.
     return new MouseRegion(component, (event) => {
       if (event.type !== "click" || event.button !== "left" || key === undefined) return undefined;
-      clickedExpanded.set(key, true);
+      clickState.set(key, { override: !current(), base: baseExpanded });
       return { handled: true };
     });
   });
