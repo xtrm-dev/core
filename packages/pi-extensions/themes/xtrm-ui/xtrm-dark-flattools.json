@@ -21,7 +21,9 @@
     "textHeading": "#EBEBEB",
     "textPrimary": "#BBBBBB",
     "textSecondary": "#858585",
-    "textMuted": "#5F5F5F"
+    "textMuted": "#5F5F5F",
+    "codeViolet": "#9A8BFF",
+    "linkBlue": "#7AA2F7"
   },
   "colors": {
     "accent": "textSecondary",
@@ -47,9 +49,9 @@
     "toolTitle": "",
     "toolOutput": "textSecondary",
     "mdHeading": "textHeading",
-    "mdLink": "textSecondary",
+    "mdLink": "linkBlue",
     "mdLinkUrl": "textMuted",
-    "mdCode": "textSecondary",
+    "mdCode": "codeViolet",
     "mdCodeBlock": "textSecondary",
     "mdCodeBlockBorder": "borderGray",
     "mdQuote": "textSecondary",

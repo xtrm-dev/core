@@ -103,24 +103,26 @@ no hue in chrome:
 | `text-primary` | `#BBBBBB` | `#3A3A3A` | reserved for the agent's own voice |
 | `text-secondary` | `#858585` | `#6F6F6F` | tool subjects, thinking rows, output |
 | `text-muted` | `#5F5F5F` | `#8A8A8A` | durations, counts, hints, chrome |
+| `mdCode` | `#9A8BFF` | `#5B43A8` | inline code (content hue) |
+| `mdLink` | `#7AA2F7` | `#3569C8` | link text (content hue) |
 
 Assistant prose keeps the terminal's default foreground, so it stays the
-brightest body text without a hard-coded colour. It opens with `●`, and every
-continuation line hangs two columns under that text. Two renderer facts shape
-how that is done:
+brightest body text without a hard-coded colour. It opens with `●` and nothing
+else: continuation lines run flush left, because pi re-wraps every paragraph
+itself. Two alternatives were measured and rejected.
 
-- pi trims every text block before rendering it
-  (`new Markdown(content.text.trim(), …)`), so a leading-space indent must be
-  anchored with a zero-width space to survive.
-- pi re-wraps each paragraph itself, so a text prefix cannot carry an indent.
+- *The theme's list bullet* (make the leading paragraph one list item and render
+  its bullet as `●`) survives pi's re-wrapping and hangs the indent, but the
+  markdown theme is per component, not per list, so every list the model wrote
+  came out with a dot instead of its own dash.
+- *Pre-wrapping the paragraph* inside the render-time transform gives the hang
+  back, but a break landing inside a `` `code span` `` or a `[link](url)` splits
+  the construct — at 30 columns the render showed a broken span, stray blank
+  lines and the URL as plain text.
 
-The dot is therefore the bullet of a single-item list: the markdown transformer
-turns the leading prose run into one item, and the message component swaps its
-`listBullet` for `● ` while it renders (restored immediately after, so nothing
-else is affected). pi's list renderer keeps the indent across its own wrapping.
-Later paragraphs of the run ride inside the same item; the first block construct
-— code fence, heading, list, quote, table — ends the run and passes through
-untouched. A message that opens with such a construct gets no dot.
+So the dot is a plain first-line prefix and pi owns line breaking. A message that
+opens with a construct of its own — heading, list, quote, table, fenced code —
+gets no dot, and a thinking row never takes one.
 
 Headings carry **weight** rather than brightness: pi renders a heading through
 `theme.fg("mdHeading", text)` with no bold, so with hue gone the transformer
@@ -131,7 +133,9 @@ Errors are the one thing allowed to grab attention: a failing row keeps a red
 status (`#FF9A9A` dark, `#B02A2A` light), semibold weight and the `!` marker, and
 always states `failed`. Confirmations stay quiet — a successful row is neutral
 grey and never uses the error token. Diff bodies keep their red/green (`+`/`−`)
-because that is content semantics. Nothing else in chrome carries a hue.
+because that is content semantics. Inline code and links are content too, so they
+keep a hue where pi has one (`mdCode` violet, `mdLink` blue); every remaining
+chrome token stays on the grey ramp. Nothing else carries a hue.
 
 ## Thinking Rows
 

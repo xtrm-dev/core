@@ -1215,6 +1215,34 @@ describe("errors are the only thing that grabs attention", () => {
     }
   });
 
+  test("inline code and links keep a hue; chrome stays grey", async () => {
+    const themes = ["xtrm-dark", "xtrm-dark-flattools", "xtrm-light", "xtrm-light-flattools"];
+    for (const name of themes) {
+      const json = (await import(`../../themes/xtrm-ui/${name}.json`)) as unknown as {
+        default: { colors: Record<string, string>; vars: Record<string, string> };
+      };
+      const { colors, vars } = json.default;
+      const hex = (token: string | undefined) => {
+        const value = token ?? "";
+        return value.startsWith("#") ? value : vars[value];
+      };
+      const channels = (value: string) => [1, 3, 5].map((i) => Number.parseInt(value.slice(i, i + 2), 16));
+      const code = hex(colors.mdCode) as string;
+      const link = hex(colors.mdLink) as string;
+      const secondary = hex(colors.muted) as string;
+      // Content keeps hue — inline code is an identifier, not chrome — while
+      // the surrounding chrome tokens stay on the grey ramp (r === g === b).
+      for (const hue of [code, link]) {
+        expect(hue).toMatch(/^#[0-9A-Fa-f]{6}$/);
+        const [r, g, b] = channels(hue);
+        expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeGreaterThan(24);
+      }
+      expect(code).not.toBe(link);
+      const [sr, sg, sb] = channels(secondary);
+      expect(Math.max(sr, sg, sb) - Math.min(sr, sg, sb)).toBeLessThanOrEqual(2);
+    }
+  });
+
   test("the external frame header marks failure in red", async () => {
     const { renderExternalToolLines } = await import("./index.ts");
     const failed = renderExternalToolLines(["boom"], 80, "external", true, "probe", 5, "error").join("\n");
