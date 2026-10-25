@@ -217,6 +217,8 @@ export interface ThinkingRowStyle {
 	italic: (text: string) => string;
 	/** Hint span; only the expanded block shows one. */
 	hint: (text: string) => string;
+	/** Character count of the full trace, shown at the end of the collapsed row. */
+	count: (text: string) => string;
 	/** Field gap between label and recap. */
 	sep: string;
 }
@@ -230,8 +232,9 @@ export function truncateClause(text: string, max: number): string {
 	if (text.length <= max) return text;
 	const budget = Math.max(0, max - 3);
 	const cut = text.slice(0, budget);
+	// Prefer any complete word; only an unbroken long token gets cut mid-way.
 	const boundary = cut.lastIndexOf(" ");
-	const body = boundary > budget * 0.4 ? cut.slice(0, boundary) : cut;
+	const body = boundary > 0 ? cut.slice(0, boundary) : cut;
 	return `${body.trimEnd()}...`;
 }
 
@@ -275,9 +278,10 @@ const INDENT = `${INDENT_ANCHOR}  `;
  *  clause. No character count and no inline shortcut: the row carries
  *  activity, not bookkeeping. The row is truncated to the render width, so
  *  the indent can never lose its alignment. */
-export function buildCollapsedThinkingRow(recap: string, style: ThinkingRowStyle): string {
-	const label = `${INDENT}${style.label("Thinking")}`;
-	return recap ? `${label}${style.sep}${style.italic(recap)}` : label;
+export function buildCollapsedThinkingRow(recap: string, charCount: number, style: ThinkingRowStyle): string {
+	const label = `${INDENT}${style.label("Thinking...")}`;
+	const tail = `${style.sep}${style.count(String(charCount))}`;
+	return recap ? `${label}${style.sep}${style.italic(recap)}${tail}` : `${label}${tail}`;
 }
 
 /** Expanded block: indented label row with the collapse shortcut (shown only
@@ -288,7 +292,7 @@ export function buildExpandedThinkingBlock(thinking: string, style: ThinkingRowS
 		.split("\n")
 		.map((line) => (line.length > 0 ? `${INDENT}${line}` : line))
 		.join("\n");
-	return `${INDENT}${style.label("Thinking")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(body)}`;
+	return `${INDENT}${style.label("Thinking...")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(body)}`;
 }
 
 /** Collapsed thinking-row style: every span shares one level (dim italic),
@@ -312,7 +316,8 @@ export function collapsedThinkingStyle(themeName: () => string): ThinkingRowStyl
 	// agent's answer or with what it is doing. Upright label, italic recap.
 	const muted = at(themeName() === "xtrm-light" ? "#8a8a8a" : "#5f5f5f");
 	const italic = (text: string) => `\x1b[3m${muted(text)}\x1b[23m`;
-	return { label: muted, recap: italic, italic, hint: muted, sep: "  " };
+	// The whole row is italic: it is a thinking aside, not a status line.
+	return { label: italic, recap: italic, italic, hint: muted, count: italic, sep: "  " };
 }
 
 /** Expanded thinking-block style, frozen at the pre-ultra treatment (bold
@@ -322,10 +327,11 @@ export const expandedThinkingStyle: ThinkingRowStyle = {
 	recap: (text) => `\x1b[38;2;167;167;167m${text}\x1b[39m`,
 	italic: (text) => `\x1b[3m\x1b[38;2;167;167;167m${text}\x1b[39m\x1b[23m`,
 	hint: (text) => `\x1b[38;2;95;95;95m${text}\x1b[39m`,
+	count: (text) => `\x1b[38;2;95;95;95m${text}\x1b[39m`,
 	sep: "  ",
 };
 
-const THINKING_ROW_LABEL = "Thinking";
+const THINKING_ROW_LABEL = "Thinking...";
 // Pi's renderer reserves ~9-12 visible columns for the terminal-integration
 // (OSC133) zone markers on the final content line; subtract so the row fits.
 const THINKING_ROW_WIDTH_MARGIN = 12;
@@ -370,14 +376,19 @@ export function fitThinkingRowToWidth(row: string, availableWidth: number | unde
 	const labelEnd = plain.indexOf(THINKING_ROW_LABEL) + THINKING_ROW_LABEL.length;
 	const gap = plain.slice(labelEnd).match(/^\s+/)?.[0] ?? "";
 	const recapStartVisible = labelEnd + gap.length;
+	// The trailing count is metadata: it survives while the clause is cut.
+	const tailStartVisible = plain.lastIndexOf("  ") > recapStartVisible ? plain.lastIndexOf("  ") : plain.length;
+	const fixedWidth = recapStartVisible + (plain.length - tailStartVisible);
 	const recapStartRaw = rawOffsetForVisibleIndex(row, recapStartVisible);
+	const tailStartRaw = rawOffsetForVisibleIndex(row, tailStartVisible);
 	const head = row.slice(0, recapStartRaw);
-	const recapRaw = row.slice(recapStartRaw);
-	const budget = width - visibleWidth(stripAnsi(head));
+	const recapRaw = row.slice(recapStartRaw, tailStartRaw);
+	const tail = row.slice(tailStartRaw);
+	const budget = width - fixedWidth;
 	if (budget < 8) return truncateToWidth(row, width);
 	const colorPrefix = recapRaw.match(/^(\x1b\[[0-9;?]*m)+/)?.[0] ?? "";
 	const colorSuffix = recapRaw.match(/(\x1b\[[0-9;?]*m)+$/)?.[0] ?? "";
-	return head + colorPrefix + truncateClause(stripAnsi(recapRaw).replace(/(\x1b\[[0-9;?]*m)+$/g, "").trimEnd(), budget) + colorSuffix;
+	return head + colorPrefix + truncateClause(stripAnsi(recapRaw).replace(/(\x1b\[[0-9;?]*m)+$/g, "").trimEnd(), budget) + colorSuffix + tail;
 }
 
 function maybeFileUrlToPath(value: string): string {
@@ -449,7 +460,7 @@ export function createPatchedUpdateContent(
 				const content = blocks.flatMap((block, index) => {
 					if (block.type !== "thinking" || !block.thinking?.trim()) return [block];
 					const row = compact
-						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), collapsedStyle)
+						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), block.thinking.length, collapsedStyle)
 						: buildExpandedThinkingBlock(block.thinking, expandedStyle);
 					// Text blocks render even when pi's hideThinkingBlock branch is
 					// active (a "thinking" block would be swallowed and replaced by the

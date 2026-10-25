@@ -185,6 +185,8 @@ describe("xtrm-ui presentation-only boundary", () => {
         label: (text: string) => text,
         recap: (text: string) => text,
         hint: (text: string) => text,
+        count: (text: string) => text,
+      count: (text: string) => text,
         italic: (text: string) => text,
         sep: " · ",
       },
@@ -234,6 +236,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      count: (text: string) => text,
       italic: (text: string) => text,
       sep: " · ",
     };
@@ -254,9 +257,9 @@ describe("xtrm-ui presentation-only boundary", () => {
 
     // Fresh session latch (followsToggle=false): first thinking block renders
     // compact even when pi's hide state is false.
-    expect(run(false, { followsToggle: false })).toBe("\u200b  Thinking · A long trace line that must not leak on the first render");
+    expect(run(false, { followsToggle: false })).toBe("\u200b  Thinking... · A long trace line that must not leak on the first render · 56");
     // ...and stays compact when pi's hide state is true.
-    expect(run(true, { followsToggle: false })).toBe("\u200b  Thinking · A long trace line that must not leak on the first render");
+    expect(run(true, { followsToggle: false })).toBe("\u200b  Thinking... · A long trace line that must not leak on the first render · 56");
   });
 
   test("thinking patch passes non-thinking messages through untouched", () => {
@@ -265,6 +268,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      count: (text: string) => text,
       italic: (text: string) => text,
       sep: " · ",
     };
@@ -321,6 +325,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      count: (text: string) => text,
       italic: (text: string) => text,
       sep: " · ",
     };
@@ -813,19 +818,19 @@ describe("thinking collapsed row shape", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("two-space indent, label then one clause: no count, no hint", () => {
+  test("indent, Thinking... label, one clause, character count; no hint", () => {
     const style = {
       label: (t: string) => `L${t}`,
       recap: (t: string) => `R${t}`,
       italic: (t: string) => `I${t}`,
       hint: (t: string) => `H${t}`,
+      count: (t: string) => `C${t}`,
       sep: "|",
     };
-    // The row carries the activity, not the bookkeeping.
     // The zero-width anchor survives pi's text.trim(); the two spaces follow it.
-    expect(buildCollapsedThinkingRow("trace here", style)).toBe("\u200b  LThinking|Itrace here");
-    expect(buildCollapsedThinkingRow("trace here", style)).not.toContain("193");
-    expect(buildCollapsedThinkingRow("trace here", style)).not.toContain("Ctrl+T");
+    // Label keeps its ellipsis, the trace length rides at the end.
+    expect(buildCollapsedThinkingRow("trace here", 193, style)).toBe("\u200b  LThinking...|Itrace here|C193");
+    expect(buildCollapsedThinkingRow("trace here", 193, style)).not.toContain("Ctrl+T");
   });
 });
 
@@ -842,14 +847,14 @@ describe("CORE-2502 follow-ups", async () => {
     expect(ultraThemeHexes("something-else")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
   });
 
-  test("collapsed thinking style: muted grey, upright label, italic recap", () => {
+  test("collapsed thinking style: muted grey, entirely italic", () => {
     // Muted (#5f5f5f / #8a8a8a) keeps thinking below tool output and the answer.
     for (const [name, rgb] of [["xtrm-dark", "95;95;95"], ["xtrm-light", "138;138;138"]] as const) {
       const style = collapsedThinkingStyle(() => name);
-      // Label: upright, secondary level.
-      expect(style.label("Thinking")).toContain(`38;2;${rgb}m`);
-      expect(style.label("Thinking")).not.toContain("[3m");
-      expect(style.label("Thinking")).not.toContain("[1m");
+      // Label is italic too: the row reads as one thinking aside.
+      expect(style.label("Thinking...")).toContain(`38;2;${rgb}m`);
+      expect(style.label("Thinking...")).toContain("[3m");
+      expect(style.label("Thinking...")).not.toContain("[1m");
       // Recap and trace: italic at the same level.
       for (const span of [style.recap("trace"), style.italic("trace")]) {
         expect(span).toContain("[3m");
@@ -857,9 +862,10 @@ describe("CORE-2502 follow-ups", async () => {
       }
       expect(style.sep).toBe("  ");
     }
-    const row = buildCollapsedThinkingRow("trace here", collapsedThinkingStyle(() => "xtrm-dark"));
+    const row = buildCollapsedThinkingRow("trace here", 193, collapsedThinkingStyle(() => "xtrm-dark"));
     expect(row).not.toContain("[1m");
     expect(row.startsWith("\u200b  ")).toBe(true);
+    expect(row).toContain("193");
   });
 
   test("expanded thinking style keeps the frozen pre-ultra treatment", () => {
@@ -1032,7 +1038,7 @@ describe("assistant response dot", async () => {
     expect(prefixAssistantDot("# Title")).toBeUndefined();
     expect(prefixAssistantDot("> quoted")).toBeUndefined();
     expect(prefixAssistantDot("- item")).toBeUndefined();
-    expect(prefixAssistantDot("Thinking  recap clause")).toBeUndefined();
+    expect(prefixAssistantDot("Thinking...  recap clause  193")).toBeUndefined();
     expect(prefixAssistantDot("")).toBeUndefined();
   });
 
@@ -1061,7 +1067,7 @@ describe("assistant dot guards", async () => {
   const expect = (await import("bun:test")).expect;
 
   test("skips the styled thinking row (ANSI-prefixed label)", () => {
-    const row = buildCollapsedThinkingRow("some recap", collapsedThinkingStyle(() => "xtrm-dark"));
+    const row = buildCollapsedThinkingRow("some recap", 42, collapsedThinkingStyle(() => "xtrm-dark"));
     expect(row.startsWith("Thinking")).toBe(false);
     expect(prefixAssistantDot(row)).toBeUndefined();
   });
@@ -1147,7 +1153,7 @@ describe("thinking clause truncation", async () => {
 
   test("the fitter leaves short rows and non-rows alone", () => {
     expect(fitThinkingRowToWidth("plain text", 80)).toBe("plain text");
-    const row = buildCollapsedThinkingRow("short clause", collapsedThinkingStyle(() => "xtrm-dark"));
+    const row = buildCollapsedThinkingRow("short clause", 1200, collapsedThinkingStyle(() => "xtrm-dark"));
     expect(fitThinkingRowToWidth(row, 200)).toBe(row);
     expect(fitThinkingRowToWidth(row, 0)).toBe(row);
     expect(fitThinkingRowToWidth(row, undefined)).toBe(row);

@@ -29,7 +29,7 @@ describe("thinking row survives pi's text.trim()", () => {
   });
 
   test("the anchored indent keeps both columns", () => {
-    const row = buildCollapsedThinkingRow("comparing renderers", collapsedThinkingStyle(() => "xtrm-dark"));
+    const row = buildCollapsedThinkingRow("comparing renderers", 1200, collapsedThinkingStyle(() => "xtrm-dark"));
     expect(visibleIndent(row.trim())).toBe(2);
     expect(stripSgr(row.trim())).toContain("Thinking");
   });
