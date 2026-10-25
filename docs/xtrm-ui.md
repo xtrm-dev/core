@@ -78,8 +78,11 @@ expansion hint.
 
 External tools use one background-row renderer with provider badges for Serena,
 GitNexus, structured-return, process, and generic tools. Their collapsed output is
-bounded and retains the `└─` metadata footer. Ctrl+O reveals hidden content.
-Rendering does not mutate tool-result payloads.
+bounded and retains the `└─` metadata footer. A left click on the row expands or
+collapses it — the frame replaces the lines Pi's own result region drew, so the
+extension drives the same `setExpanded` toggle from the component prototype.
+Ctrl+O keeps its global meaning and still expands every row. Rendering does not
+mutate tool-result payloads.
 
 Code-carrying tools (`codemode`, `python`) keep the `● used <tool>` header
 unchanged but render the body like native bash rows: bold execution lines with

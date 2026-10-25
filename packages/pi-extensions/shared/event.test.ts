@@ -221,15 +221,16 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     }
   });
 
-  test("a collapsed message is one received line: snippet, id, expand hint", () => {
+  test("a collapsed message is one received line: snippet and id, no expand hint", () => {
     const lines = visible(formatEventCard(messageDetails(), light, 120, { expanded: false }));
-    expect(lines).toEqual(["› Message from @Probe received: hello world m1 (ctrl+o to expand)"]);
+    expect(lines).toEqual(["› Message from @Probe received: hello world m1"]);
     const raw = formatEventCard(messageDetails(), light, 120, { expanded: false });
     expect(raw).toContain("<light:bold>@Probe</light:bold>");
     expect(raw).toContain("<light:success>received</light:success>");
     expect(raw).toContain("<light:dim>hello world</light:dim>");
     expect(raw).toContain("<light:dim>m1</light:dim>");
-    expect(raw).toContain("<light:dim>(ctrl+o to expand)</light:dim>");
+    // The card is the affordance (click expands); no ctrl+o hint rides the row.
+    expect(raw).not.toContain("ctrl+o");
     expect(raw).not.toContain("delivered");
   });
 
@@ -244,7 +245,7 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
       expect(lines).toHaveLength(1);
       for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
       expect(lines[0]).toContain("received:");
-      expect(lines[0]).toContain("(ctrl+o to expand)");
+      expect(lines[0]).not.toContain("ctrl+o");
     }
     const at200 = visible(formatEventCard(long, light, 200, { expanded: false }))[0];
     expect(at200).toContain("82a690db-9202-4798-aaaa-bb497e18396e");
@@ -438,6 +439,61 @@ describe("renderer registration (CORE-2438 I7)", () => {
     const lines = component.render(80);
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.join("\n")).not.toMatch(/\u001b/);
+  });
+
+  test("a click expands the card under the pointer, expand-only", () => {
+    let renderer: ((message: unknown, options: unknown, theme: EventTheme) => unknown) | null = null;
+    const pi = { registerMessageRenderer: (_type: string, fn: typeof renderer) => (renderer = fn) };
+    registerEventRenderer(pi as never, "intercom_message", () => messageDetails());
+    type Card = {
+      render: (width: number) => string[];
+      handleMouse?: (event: unknown) => unknown;
+    };
+    const message = {}; // one entry object, as pi passes per custom message
+    const card = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)(message, {}, light);
+    expect(visible(card.render(120).join("\n"))).toHaveLength(1);
+    expect(card.handleMouse?.({ type: "click", button: "left", x: 1, y: 0, width: 120, height: 1 })).toEqual({ handled: true });
+    const expandedLines = visible(card.render(120).join("\n"));
+    expect(expandedLines.length).toBeGreaterThan(1);
+    expect(expandedLines[0]).toMatch(/^● @probe delivered$/);
+    // A second click is a no-op, not a toggle back to collapsed.
+    card.handleMouse?.({ type: "click", button: "left", x: 1, y: 0, width: 120, height: 1 });
+    expect(visible(card.render(120).join("\n")).length).toBeGreaterThan(1);
+    // The click state is per message: another entry still renders collapsed.
+    const other = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)({}, {}, light);
+    expect(visible(other.render(120).join("\n"))).toHaveLength(1);
+  });
+
+  test("a non-click or a right click leaves the card collapsed", () => {
+    let renderer: ((message: unknown, options: unknown, theme: EventTheme) => unknown) | null = null;
+    const pi = { registerMessageRenderer: (_type: string, fn: typeof renderer) => (renderer = fn) };
+    registerEventRenderer(pi as never, "intercom_message", () => messageDetails());
+    type Card = { render: (width: number) => string[]; handleMouse?: (event: unknown) => unknown };
+    const card = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)({ tag: "noop" }, {}, light);
+    for (const event of [
+      { type: "move", button: "none", x: 1, y: 0, width: 120, height: 1 },
+      { type: "click", button: "right", x: 1, y: 0, width: 120, height: 1 },
+    ]) {
+      expect(card.handleMouse?.(event)).toBeUndefined();
+    }
+    expect(visible(card.render(120).join("\n"))).toHaveLength(1);
+  });
+
+  test("ctrl+o keeps its global meaning and wins over a click state", () => {
+    let renderer: ((message: unknown, options: unknown, theme: EventTheme) => unknown) | null = null;
+    const pi = { registerMessageRenderer: (_type: string, fn: typeof renderer) => (renderer = fn) };
+    registerEventRenderer(pi as never, "intercom_message", () => messageDetails());
+    type Card = { render: (width: number) => string[] };
+    const message = { tag: "ctrl-o" };
+    const collapsed = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)(message, { expanded: false }, light);
+    expect(visible(collapsed.render(120).join("\n"))).toHaveLength(1);
+    // ctrl+o expands every message, clicked or not.
+    const globallyExpanded = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)(
+      message,
+      { expanded: true },
+      light,
+    );
+    expect(visible(globallyExpanded.render(120).join("\n")).length).toBeGreaterThan(1);
   });
 
   test("extensions without registerMessageRenderer are ignored, not crashed", () => {

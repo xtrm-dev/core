@@ -167,7 +167,7 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
         expect(lines[0]).toBe("○ @coordinator delivered");
         expect(lines[1]).toBe("  › Message from @coordinator: hello e2e  m-e2e-1");
         const collapsed = renderCard(receiver.renderers, "intercom_message", injected[0].message, 120, false);
-        expect(collapsed).toEqual(["› Message from @coordinator received: hello e2e m-e2e-1 (ctrl+o to expand)"]);
+        expect(collapsed).toEqual(["› Message from @coordinator received: hello e2e m-e2e-1"]);
       } finally {
         await host.close();
         rmSync(dir, { recursive: true, force: true });
