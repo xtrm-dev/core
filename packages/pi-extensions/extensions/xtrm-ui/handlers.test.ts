@@ -185,6 +185,8 @@ describe("xtrm-ui presentation-only boundary", () => {
         label: (text: string) => text,
         recap: (text: string) => text,
         hint: (text: string) => text,
+        count: (text: string) => text,
+      count: (text: string) => text,
         italic: (text: string) => text,
         sep: " · ",
       },
@@ -203,12 +205,14 @@ describe("xtrm-ui presentation-only boundary", () => {
     component.updateContent(message as never);
     expect(rendered.at(-1)!.content[0]).toMatchObject({ type: "text" });
     const first = rendered.at(-1)!.content[0].text!;
-    expect(first).toContain("(Ctrl+T to expand)");
+    expect(first).toContain("Thinking");
+    expect(first).toContain("First line of the thinking trace");
+    expect(first).not.toContain("(Ctrl+T");
     expect(first).not.toContain("DEEP_SECRET_DETAIL_XYZ");
 
     // Toggle ON: rows stay collapsed (still following pi's hide state).
     setHideThinkingBlock(true);
-    expect(rendered.at(-1)!.content[0].text!).toContain("(Ctrl+T to expand)");
+    expect(rendered.at(-1)!.content[0].text!).not.toContain("(Ctrl+T to expand)");
 
     // Toggle OFF: the EXISTING thinking row must flip to the expanded trace.
     setHideThinkingBlock(false);
@@ -218,7 +222,7 @@ describe("xtrm-ui presentation-only boundary", () => {
 
     // Toggle ON again: collapses back.
     setHideThinkingBlock(true);
-    expect(rendered.at(-1)!.content[0].text!).toContain("(Ctrl+T to expand)");
+    expect(rendered.at(-1)!.content[0].text!).not.toContain("(Ctrl+T to expand)");
 
     // lastMessage must keep the RAW thinking block so every toggle re-enters
     // the patch with original content (the bug: it held the converted rows).
@@ -232,6 +236,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      count: (text: string) => text,
       italic: (text: string) => text,
       sep: " · ",
     };
@@ -252,9 +257,9 @@ describe("xtrm-ui presentation-only boundary", () => {
 
     // Fresh session latch (followsToggle=false): first thinking block renders
     // compact even when pi's hide state is false.
-    expect(run(false, { followsToggle: false })).toContain("(Ctrl+T to expand)");
+    expect(run(false, { followsToggle: false })).toBe("\u200b  Thinking... · A long trace line that must not leak on the first render · 56");
     // ...and stays compact when pi's hide state is true.
-    expect(run(true, { followsToggle: false })).toContain("(Ctrl+T to expand)");
+    expect(run(true, { followsToggle: false })).toBe("\u200b  Thinking... · A long trace line that must not leak on the first render · 56");
   });
 
   test("thinking patch passes non-thinking messages through untouched", () => {
@@ -263,6 +268,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      count: (text: string) => text,
       italic: (text: string) => text,
       sep: " · ",
     };
@@ -319,6 +325,7 @@ describe("xtrm-ui presentation-only boundary", () => {
       label: (text: string) => text,
       recap: (text: string) => text,
       hint: (text: string) => text,
+      count: (text: string) => text,
       italic: (text: string) => text,
       sep: " · ",
     };
@@ -355,8 +362,8 @@ describe("xtrm-ui presentation-only boundary", () => {
     } as never);
 
     const row = rendered[0]![0].text ?? "";
-    expect(row).toContain("Thinking...");
-    expect(row).toContain("(Ctrl+T to expand)");
+    expect(row).toContain("Thinking");
+    expect(row).not.toContain("(Ctrl+T");
     expect(row).not.toContain("DEEP_SECRET_DETAIL_XYZ");
     // lastMessage keeps the RAW thinking block so toggle re-renders re-enter
     // the patch with original content (xtrm-5vi8u).
@@ -811,15 +818,19 @@ describe("thinking collapsed row shape", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("no indent, slot order label/recap/count/hint", () => {
+  test("indent, Thinking... label, one clause, character count; no hint", () => {
     const style = {
       label: (t: string) => `L${t}`,
       recap: (t: string) => `R${t}`,
       italic: (t: string) => `I${t}`,
       hint: (t: string) => `H${t}`,
+      count: (t: string) => `C${t}`,
       sep: "|",
     };
-    expect(buildCollapsedThinkingRow("trace here", 193, style)).toBe("LThinking...|Itrace here|R193 H(Ctrl+T to expand)");
+    // The zero-width anchor survives pi's text.trim(); the two spaces follow it.
+    // Label keeps its ellipsis, the trace length rides at the end.
+    expect(buildCollapsedThinkingRow("trace here", 193, style)).toBe("\u200b  LThinking...|Itrace here|C193");
+    expect(buildCollapsedThinkingRow("trace here", 193, style)).not.toContain("Ctrl+T");
   });
 });
 
@@ -832,23 +843,29 @@ describe("CORE-2502 follow-ups", async () => {
 
   test("ultraThemeHexes mirrors xtrm theme tokens per theme", () => {
     expect(ultraThemeHexes("xtrm-dark")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
-    expect(ultraThemeHexes("xtrm-light")).toEqual({ dim: "#7a7a7a", error: "#a85f5f" });
+    expect(ultraThemeHexes("xtrm-light")).toEqual({ dim: "#7a7a7a", error: "#b02a2a" });
     expect(ultraThemeHexes("something-else")).toEqual({ dim: "#8a8a8a", error: "#ff9a9a" });
   });
 
-  test("collapsed thinking style: all dim italic, zero bold, per-theme dim", () => {
-    for (const [name, rgb] of [["xtrm-dark", "138;138;138"], ["xtrm-light", "122;122;122"]] as const) {
+  test("collapsed thinking style: muted grey, entirely italic", () => {
+    // Muted (#5f5f5f / #8a8a8a) keeps thinking below tool output and the answer.
+    for (const [name, rgb] of [["xtrm-dark", "95;95;95"], ["xtrm-light", "138;138;138"]] as const) {
       const style = collapsedThinkingStyle(() => name);
-      for (const span of [style.label("Thinking..."), style.recap("193"), style.italic("trace"), style.hint("(Ctrl+T to expand)")]) {
+      // Label is italic too: the row reads as one thinking aside.
+      expect(style.label("Thinking...")).toContain(`38;2;${rgb}m`);
+      expect(style.label("Thinking...")).toContain("[3m");
+      expect(style.label("Thinking...")).not.toContain("[1m");
+      // Recap and trace: italic at the same level.
+      for (const span of [style.recap("trace"), style.italic("trace")]) {
         expect(span).toContain("[3m");
         expect(span).toContain(`38;2;${rgb}m`);
-        expect(span).not.toContain("[1m");
       }
-      expect(style.sep).toContain(`38;2;${rgb}m`);
-      expect(style.sep).not.toContain("[3m");
+      expect(style.sep).toBe("  ");
     }
     const row = buildCollapsedThinkingRow("trace here", 193, collapsedThinkingStyle(() => "xtrm-dark"));
     expect(row).not.toContain("[1m");
+    expect(row.startsWith("\u200b  ")).toBe(true);
+    expect(row).toContain("193");
   });
 
   test("expanded thinking style keeps the frozen pre-ultra treatment", () => {
@@ -1008,29 +1025,37 @@ describe("assistant response dot", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("prefixes the first prose line", () => {
-    expect(prefixAssistantDot("hello there")).toBe("● hello there");
-    expect(prefixAssistantDot("\n\nhello there\nsecond line")).toBe("\n\n● hello there\nsecond line");
+  test("turns the leading prose run into one dot item", () => {
+    // The dot is the item's bullet (rendered by the component's theme), because
+    // pi re-wraps paragraphs and would drop a text prefix's indent.
+    expect(prefixAssistantDot("hello there")).toBe("- hello there");
+    // Two paragraphs of the same run ride inside the single item.
+    expect(prefixAssistantDot("hello there\n\nsecond paragraph")).toBe("- hello there\n\n  second paragraph");
   });
 
-  test("skips fences, headings, quotes, lists, thinking rows", () => {
-    expect(prefixAssistantDot("```ts\ncode\n```")).toBe("```ts\ncode\n```");
-    expect(prefixAssistantDot("# Title")).toBe("# Title");
-    expect(prefixAssistantDot("> quoted")).toBe("> quoted");
-    expect(prefixAssistantDot("- item")).toBe("- item");
-    expect(prefixAssistantDot("Thinking... · recap · 3 (Ctrl+T to expand)"))
-      .toBe("Thinking... · recap · 3 (Ctrl+T to expand)");
-    expect(prefixAssistantDot("")).toBe("");
+  test("code fences, headings, quotes, lists and thinking rows get no dot", () => {
+    expect(prefixAssistantDot("```ts\ncode\n```")).toBeUndefined();
+    expect(prefixAssistantDot("# Title")).toBeUndefined();
+    expect(prefixAssistantDot("> quoted")).toBeUndefined();
+    expect(prefixAssistantDot("- item")).toBeUndefined();
+    expect(prefixAssistantDot("Thinking...  recap clause  193")).toBeUndefined();
+    expect(prefixAssistantDot("")).toBeUndefined();
+  });
+
+  test("a block construct after the prose ends the item and passes through", () => {
+    const out = prefixAssistantDot("intro line\n\n```ts\nconst a = 1;\n```");
+    expect(out).toBe("- intro line\n\n```ts\nconst a = 1;\n```");
   });
 
   test("idempotent across re-renders", () => {
-    expect(prefixAssistantDot(prefixAssistantDot("hello"))).toBe("● hello");
+    // Second pass sees a list item and leaves it alone.
+    expect(prefixAssistantDot("- hello")).toBeUndefined();
   });
 
   test("factory wires the dot for assistant text only", () => {
     const { transformers } = registerWithMock();
     const dotter = transformers[transformers.length - 1];
-    expect(dotter("hello", { messageType: "assistant" })).toBe("● hello");
+    expect(dotter("hello", { messageType: "assistant" })).toBe("- hello");
     expect(dotter("hello", { messageType: "user" })).toBe("hello");
     expect(dotter("some *thinking* trace", { messageType: "assistant-thinking" })).toBe("some *thinking* trace");
   });
@@ -1042,13 +1067,172 @@ describe("assistant dot guards", async () => {
   const expect = (await import("bun:test")).expect;
 
   test("skips the styled thinking row (ANSI-prefixed label)", () => {
-    const row = buildCollapsedThinkingRow("some recap", 105, collapsedThinkingStyle(() => "xtrm-dark"));
+    const row = buildCollapsedThinkingRow("some recap", 42, collapsedThinkingStyle(() => "xtrm-dark"));
     expect(row.startsWith("Thinking")).toBe(false);
-    expect(prefixAssistantDot(row)).toBe(row);
+    expect(prefixAssistantDot(row)).toBeUndefined();
   });
 
   test("leaves invisible-only messages untouched", () => {
-    expect(prefixAssistantDot("​")).toBe("​");
-    expect(prefixAssistantDot("​\n​")).toBe("​\n​");
+    // Nothing visible to hang the dot on: the transformer declines.
+    expect(prefixAssistantDot("​")).toBeUndefined();
+    expect(prefixAssistantDot("​\n​")).toBeUndefined();
+  });
+});
+
+describe("assistant text hierarchy (CORE-2517 rework)", async () => {
+  const { boldMarkdownHeadings, prefixAssistantDot, buildThinkingRecap, fitThinkingRowToWidth } = await import("./index.ts");
+  const stripSgr = (text: string) => text.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+  const width = (text: string) => stripSgr(text).length;
+
+  test("headings gain weight: pi's heading style is colour-only", () => {
+    const headed = boldMarkdownHeadings("# Title\nbody\n## Sub");
+    expect(headed).toContain("\u001b[1mTitle\u001b[22m");
+    expect(headed).toContain("\u001b[1mSub\u001b[22m");
+    expect(headed).toContain("\nbody");
+    // Idempotent: a second pass does not stack bold.
+    expect(boldMarkdownHeadings(headed)).toBe(headed);
+  });
+
+  test("headings inside fenced code are untouched", () => {
+    const md = "```sh\n# not a heading\n```\n# real";
+    const out = boldMarkdownHeadings(md);
+    expect(out).toContain("\n# not a heading\n");
+    expect(out).toContain("\u001b[1mreal\u001b[22m");
+  });
+
+  test("prose becomes one item; the renderer owns the wrapping", () => {
+    const paragraph = "word ".repeat(40).trim();
+    const out = prefixAssistantDot(`first line\n${paragraph}`) as string;
+    expect(out.startsWith("- first line")).toBe(true);
+    // One paragraph is joined into a single item line: pi re-wraps it anyway.
+    expect(out.split("\n")).toHaveLength(1);
+  });
+
+  test("code fences after the run keep their own shape", () => {
+    const out = prefixAssistantDot("intro\n\n```ts\nconst a = 1;\n```") as string;
+    expect(out).toContain("\n```ts\nconst a = 1;\n```");
+  });
+
+  test("thinking recap keeps the ellipsis and the 64-char cap; row fits", () => {
+    const recap = buildThinkingRecap("x".repeat(200));
+    expect(recap.endsWith("...")).toBe(true);
+    expect(recap.length).toBeLessThanOrEqual(64);
+    const row = `  Thinking  ${recap}`;
+    // The fitter is ANSI/width driven (this file mocks pi-tui's truncation),
+    // so assert the guards here: unknown width and non-rows pass through.
+    expect(fitThinkingRowToWidth(row, 0)).toBe(row);
+    expect(fitThinkingRowToWidth("plain text", 40)).toBe("plain text");
+    expect(fitThinkingRowToWidth(row, undefined)).toBe(row);
+  });
+});
+
+describe("thinking clause truncation", async () => {
+  const { truncateClause, buildThinkingRecap, fitThinkingRowToWidth, buildCollapsedThinkingRow, collapsedThinkingStyle } = await import("./index.ts");
+  const stripSgr = (text: string) => text.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+
+  test("cuts at a word boundary and marks the cut", () => {
+    const out = truncateClause("I need to inspect the renderer and identify the relevant files", 40);
+    const source = "I need to inspect the renderer and identify the relevant files";
+    expect(out.endsWith("...")).toBe(true);
+    expect(out.length).toBeLessThanOrEqual(40);
+    // The kept text is a prefix of the source and stops where a word ends.
+    const body = out.slice(0, -3);
+    expect(source.startsWith(body)).toBe(true);
+    expect(source[body.length]).toBe(" ");
+  });
+
+  test("short text passes through untouched", () => {
+    expect(truncateClause("short", 40)).toBe("short");
+  });
+
+  test("the recap keeps the ellipsis inside the 64-character cap", () => {
+    const recap = buildThinkingRecap("word ".repeat(40).trim());
+    expect(recap.length).toBeLessThanOrEqual(64);
+    expect(recap.endsWith("...")).toBe(true);
+  });
+
+  test("the fitter leaves short rows and non-rows alone", () => {
+    expect(fitThinkingRowToWidth("plain text", 80)).toBe("plain text");
+    const row = buildCollapsedThinkingRow("short clause", 1200, collapsedThinkingStyle(() => "xtrm-dark"));
+    expect(fitThinkingRowToWidth(row, 200)).toBe(row);
+    expect(fitThinkingRowToWidth(row, 0)).toBe(row);
+    expect(fitThinkingRowToWidth(row, undefined)).toBe(row);
+    // Strip safety: the label and the anchor survive whatever the mock reports.
+    expect(stripSgr(fitThinkingRowToWidth(row, 80))).toContain("Thinking");
+  });
+});
+
+describe("errors are the only thing that grabs attention", () => {
+  const RED_DARK = "255;154;154";
+
+  const tag = { fg: (token: string, text: string) => `[${token}]${text}`, bold: (text: string) => `*${text}*` };
+
+  test("a failed tool row uses the error token and says failed", async () => {
+    const { renderUltraRow } = await import("./index.ts");
+    const raw = renderUltraRow(tag, { statusColor: "error", verb: "read", subject: "/a", primary: "nope" });
+    expect(raw).toContain("[error]");
+    expect(raw).toContain("failed");
+    expect(raw).not.toContain("[dim]");
+  });
+
+  test("a successful row never touches the error token", async () => {
+    const { renderUltraRow } = await import("./index.ts");
+    const raw = renderUltraRow(tag, { statusColor: "success", verb: "Ran shell command", subject: "pnpm test", primary: "84 passed" });
+    expect(raw).not.toContain("[error]");
+  });
+
+  test("the error token resolves to red in every shipped theme", async () => {
+    const themes = ["xtrm-dark", "xtrm-dark-flattools", "xtrm-light", "xtrm-light-flattools"];
+    for (const name of themes) {
+      const json = (await import(`../../themes/xtrm-ui/${name}.json`)) as unknown as {
+        default: { colors: Record<string, string>; vars: Record<string, string> };
+      };
+      const { colors, vars } = json.default;
+      const hex = (colors.error ?? "").startsWith("#") ? colors.error : vars[colors.error];
+      expect(hex).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+      // Red dominates both other channels: attention, not decoration.
+      expect(r).toBeGreaterThan(g + 40);
+      expect(r).toBeGreaterThan(b + 40);
+      // Diffs stay coloured too.
+      expect(colors.toolDiffAdded).not.toBe(colors.toolDiffRemoved);
+    }
+  });
+
+  test("the external frame header marks failure in red", async () => {
+    const { renderExternalToolLines } = await import("./index.ts");
+    const failed = renderExternalToolLines(["boom"], 80, "external", true, "probe", 5, "error").join("\n");
+    expect(failed).toContain(`38;2;${RED_DARK}m!`);
+    const ok = renderExternalToolLines(["fine"], 80, "external", true, "probe", 5, "success").join("\n");
+    expect(ok).not.toContain(RED_DARK);
+  });
+});
+
+describe("markdown transformer wiring", () => {
+  test("one registration does fitting, dotting and heading weight", async () => {
+    const { transformers } = registerWithMock();
+    // pi keeps one transformer per extension; a second registration would
+    // replace this one, so the extension must register exactly one.
+    expect(transformers).toHaveLength(1);
+    const transform = transformers[0];
+    // A long thinking row is fitted, not dotted.
+    const longRecap = "word ".repeat(40).trim();
+    const row = `\u200b  Thinking...  ${longRecap}  200`;
+    const fitted = transform(row, { messageType: "assistant", availableWidth: 40 });
+    expect(fitted).not.toContain("\u25cf");
+    expect(fitted.split("\n")).toHaveLength(1);
+    // Prose becomes a dot item; headings gain weight.
+    const prose = transform("intro line\n\n# Title", { messageType: "assistant", availableWidth: 80 });
+    expect(prose.startsWith("- intro line")).toBe(true);
+    expect(prose).toContain("\u001b[1mTitle\u001b[22m");
+    // Non-assistant messages are untouched.
+    expect(transform("intro", { messageType: "user", availableWidth: 80 })).toBe("intro");
+  });
+
+  test("a thinking row never takes the dot, whatever its label variant", async () => {
+    const { prefixAssistantDot } = await import("./index.ts");
+    for (const label of ["Thinking...", "Thinking", "Thinking..."]) {
+      expect(prefixAssistantDot(`${label}  a recap  42`)).toBeUndefined();
+    }
   });
 });

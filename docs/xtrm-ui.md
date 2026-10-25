@@ -20,6 +20,8 @@ domain: [pi, extensions, ui, themes]
 | [Credits](#credits) | The original theme palette and header layout were derived from |
 | [Themes](#themes) | The extension discovers four themes: |
 | [Tool Rendering](#tool-rendering) | Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`) retain |
+| [Assistant Text and Hierarchy](#assistant-text-and-hierarchy) | Four semantic levels carry the interface; contrast and weight do the work, with |
+| [Thinking Rows](#thinking-rows) | Collapsed: `  Thinking |
 | [Preferences](#preferences) | Only active, user-controlled behavior is persisted: |
 | [Commands](#commands) | Obsolete result-compaction and external-chrome commands are intentionally not |
 | [Install and Migration](#install-and-migration) | Canonical source lives under `packages/pi-extensions/` and is exposed by the |
@@ -86,6 +88,62 @@ footer. Execution and result cap independently (`commandPreviewLines` and
 `extPreviewLines`), so a long program never starves its output.
 
 Pending tools have no metadata footer. Expansion hints appear only when content is hidden.
+
+## Assistant Text and Hierarchy
+
+Four semantic levels carry the interface; contrast and weight do the work, with
+no hue in chrome:
+
+| Token | Dark | Light | Used for |
+|---|---|---|---|
+| `text-heading` | `#EBEBEB` | `#1A1A1A` | headings, custom-message labels, error text |
+| `text-primary` | `#BBBBBB` | `#3A3A3A` | reserved for the agent's own voice |
+| `text-secondary` | `#858585` | `#6F6F6F` | tool subjects, thinking rows, output |
+| `text-muted` | `#5F5F5F` | `#8A8A8A` | durations, counts, hints, chrome |
+
+Assistant prose keeps the terminal's default foreground, so it stays the
+brightest body text without a hard-coded colour. It opens with `●`, and every
+continuation line hangs two columns under that text. Two renderer facts shape
+how that is done:
+
+- pi trims every text block before rendering it
+  (`new Markdown(content.text.trim(), …)`), so a leading-space indent must be
+  anchored with a zero-width space to survive.
+- pi re-wraps each paragraph itself, so a text prefix cannot carry an indent.
+
+The dot is therefore the bullet of a single-item list: the markdown transformer
+turns the leading prose run into one item, and the message component swaps its
+`listBullet` for `● ` while it renders (restored immediately after, so nothing
+else is affected). pi's list renderer keeps the indent across its own wrapping.
+Later paragraphs of the run ride inside the same item; the first block construct
+— code fence, heading, list, quote, table — ends the run and passes through
+untouched. A message that opens with such a construct gets no dot.
+
+Headings carry **weight** rather than brightness: pi renders a heading through
+`theme.fg("mdHeading", text)` with no bold, so with hue gone the transformer
+bolds the heading text itself (outside fenced blocks). That keeps the heading
+level visible above body text at almost the same luminance.
+
+Errors are the one thing allowed to grab attention: a failing row keeps a red
+status (`#FF9A9A` dark, `#B02A2A` light), semibold weight and the `!` marker, and
+always states `failed`. Confirmations stay quiet — a successful row is neutral
+grey and never uses the error token. Diff bodies keep their red/green (`+`/`−`)
+because that is content semantics. Nothing else in chrome carries a hue.
+
+## Thinking Rows
+
+Collapsed: `  Thinking...  <one clause>  <count>` — two-space indent (aligned
+with tool rows, anchored with a zero-width space so pi's `trim()` cannot strip
+it), a 64-character recap cut at a word boundary and ending in `...`, then the
+character count of the full trace. The whole row is italic: it is a thinking
+aside, not a status line.
+
+Thinking is the least important stream on screen and is styled to lose
+attention: the row sits at the **muted** level (`#5F5F5F`), below tool output
+(`#858585`) and far below the agent's answer. When the row has to shrink, the
+recap yields and the count survives. There is no inline shortcut. Expanded: the
+indent continues over the trace behind `Ctrl+T`, with the collapse hint shown
+only in that state.
 
 ## Preferences
 

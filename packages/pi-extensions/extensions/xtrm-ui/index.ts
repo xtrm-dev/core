@@ -180,27 +180,62 @@ type PatchableAssistantMessage = {
 	hideThinkingBlock?: boolean;
 	hiddenThinkingLabel?: string;
 	lastMessage?: AssistantMessageLike;
+	markdownTheme?: { listBullet?: (text: string) => string } & Record<string, unknown>;
 	updateContent?: (message: AssistantMessageLike) => void;
 };
 
+/**
+ * Renders this component's list bullet as the response dot. The dot has to be
+ * a bullet rather than a text prefix: pi re-wraps prose paragraphs, and only
+ * the list renderer carries an indent across its own wrapping. Scoped to the
+ * instance and restored right after the render, so no other surface changes.
+ */
+function installProseBullet(component: PatchableAssistantMessage): (() => void) | undefined {
+	const theme = component.markdownTheme;
+	if (!theme || typeof theme.listBullet !== "function") return undefined;
+	component.markdownTheme = { ...theme, listBullet: () => PROSE_BULLET };
+	return () => {
+		component.markdownTheme = theme;
+	};
+}
+
 const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiThinkingPreview5";
 const ORIGINAL_ASSISTANT_UPDATE = "__xtrmUiThinkingPreviewOriginalUpdate";
-const THINKING_PREVIEW_PATCH_VERSION = 6;
+const THINKING_PREVIEW_PATCH_VERSION = 7;
 
-const THINKING_RECAP_MAX = 120;
+// The recap preserves awareness of the model's activity; it does not compete
+// with the answer. One clause, then stop (the ellipsis keeps the cut honest).
+const THINKING_RECAP_MAX = 64;
 
 /** Minimal theme surface used to style the thinking rows. */
 export interface ThinkingRowStyle {
-	/** Collapsed label (dim italic — every collapsed span shares one level, zero bold). */
+	/** Label span: upright, one step up from the recap. */
 	label: (text: string) => string;
-	/** Collapsed count span (dim italic). The expanded trace uses the expanded style. */
+	/** Trace span (expanded block). */
 	recap: (text: string) => string;
-	/** Collapsed recap span (dim italic). */
+	/** Recap span in the collapsed row (italic). */
 	italic: (text: string) => string;
-	/** Collapsed hint (dim italic). */
+	/** Hint span; only the expanded block shows one. */
 	hint: (text: string) => string;
-	/** Dimmed label separator, e.g. `theme.fg("dim", " · ")`. */
+	/** Character count of the full trace, shown at the end of the collapsed row. */
+	count: (text: string) => string;
+	/** Field gap between label and recap. */
 	sep: string;
+}
+
+/**
+ * Cuts a clause at a word boundary and marks the cut with "...". A fragment
+ * shorter than 40% of the budget is rejected in favour of the raw cut, so the
+ * recap never ends in one stray syllable.
+ */
+export function truncateClause(text: string, max: number): string {
+	if (text.length <= max) return text;
+	const budget = Math.max(0, max - 3);
+	const cut = text.slice(0, budget);
+	// Prefer any complete word; only an unbroken long token gets cut mid-way.
+	const boundary = cut.lastIndexOf(" ");
+	const body = boundary > 0 ? cut.slice(0, boundary) : cut;
+	return `${body.trimEnd()}...`;
 }
 
 /**
@@ -226,20 +261,38 @@ export function buildThinkingRecap(thinking: string, fallback = "Thinking..."): 
 		.filter((line) => line.length > 0);
 	const source = cleaned.find((line) => line.length >= 20) ?? cleaned[0] ?? fallback;
 	if (!source) return fallback;
-	return source.length > THINKING_RECAP_MAX ? source.slice(0, THINKING_RECAP_MAX - 3) + "..." : source;
+	return truncateClause(source, THINKING_RECAP_MAX);
 }
 
-/** Collapsed row: every span dim italic at one level, zero bold (assistant
- *  text blocks are trimmed before Markdown render, so literal indentation
- *  cannot survive — distinction from response text comes from the treatment,
- *  not the indent). Dim separator between label, recap, count, expand hint. */
+/**
+ * A thinking row is injected as a text block, and pi trims every text block
+ * before rendering it (`new Markdown(content.text.trim(), …)`). A plain
+ * two-space indent is therefore stripped from the first line. A zero-width
+ * space is not whitespace for `trim()`, survives it, and adds no visible
+ * width — so the indent keeps its two columns.
+ */
+export const INDENT_ANCHOR = "\u200b";
+const INDENT = `${INDENT_ANCHOR}  `;
+
+/** Collapsed row: two-space indent (aligned with tool rows), label, one
+ *  clause. No character count and no inline shortcut: the row carries
+ *  activity, not bookkeeping. The row is truncated to the render width, so
+ *  the indent can never lose its alignment. */
 export function buildCollapsedThinkingRow(recap: string, charCount: number, style: ThinkingRowStyle): string {
-	return `${style.label("Thinking...")}${style.sep}${style.italic(recap)}${style.sep}${style.recap(String(charCount))} ${style.hint("(Ctrl+T to expand)")}`;
+	const label = `${INDENT}${style.label("Thinking...")}`;
+	const tail = `${style.sep}${style.count(String(charCount))}`;
+	return recap ? `${label}${style.sep}${style.italic(recap)}${tail}` : `${label}${tail}`;
 }
 
-/** Expanded block: bold label row with collapse hint, then the full dimmed trace. */
+/** Expanded block: indented label row with the collapse shortcut (shown only
+ *  in this state), then the traced body, indented to the same column. */
 export function buildExpandedThinkingBlock(thinking: string, style: ThinkingRowStyle): string {
-	return `${style.label("Thinking...")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(thinking.trim())}`;
+	const body = thinking
+		.trim()
+		.split("\n")
+		.map((line) => (line.length > 0 ? `${INDENT}${line}` : line))
+		.join("\n");
+	return `${INDENT}${style.label("Thinking...")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(body)}`;
 }
 
 /** Collapsed thinking-row style: every span shares one level (dim italic),
@@ -249,12 +302,22 @@ export function buildExpandedThinkingBlock(thinking: string, style: ThinkingRowS
  *  light #7a7a7a). themeName resolves lazily per call so a session_start
  *  prefs load after patch install still picks up the active theme. */
 export function collapsedThinkingStyle(themeName: () => string): ThinkingRowStyle {
-	const dim = (text: string) => {
-		const rgb = themeName() === "xtrm-light" ? "122;122;122" : "138;138;138";
+	// Semantic ramp: secondary (#858585) for the label and recap, muted
+	// (#5F5F5F) for chrome. The label is upright, the recap italic. Raw SGR
+	// avoids importing the unbundled theme singleton when pi runs bundle/cli.js;
+	// the theme resolves lazily so a late prefs load is honoured.
+	const at = (hex: string) => (text: string) => {
+		const h = hex.replace("#", "");
+		const rgb = `${Number.parseInt(h.slice(0, 2), 16)};${Number.parseInt(h.slice(2, 4), 16)};${Number.parseInt(h.slice(4, 6), 16)}`;
 		return `\x1b[38;2;${rgb}m${text}\x1b[39m`;
 	};
-	const dimItalic = (text: string) => `\x1b[3m${dim(text)}\x1b[23m`;
-	return { label: dimItalic, recap: dimItalic, italic: dimItalic, hint: dimItalic, sep: dim(" · ") };
+	// Thinking is the least important stream on screen: it sits at the muted
+	// level, below tool output (secondary), so it never competes with the
+	// agent's answer or with what it is doing. Upright label, italic recap.
+	const muted = at(themeName() === "xtrm-light" ? "#8a8a8a" : "#5f5f5f");
+	const italic = (text: string) => `\x1b[3m${muted(text)}\x1b[23m`;
+	// The whole row is italic: it is a thinking aside, not a status line.
+	return { label: italic, recap: italic, italic, hint: muted, count: italic, sep: "  " };
 }
 
 /** Expanded thinking-block style, frozen at the pre-ultra treatment (bold
@@ -263,12 +326,12 @@ export const expandedThinkingStyle: ThinkingRowStyle = {
 	label: (text) => `\x1b[1m\x1b[38;2;167;167;167m${text}\x1b[39m\x1b[22m`,
 	recap: (text) => `\x1b[38;2;167;167;167m${text}\x1b[39m`,
 	italic: (text) => `\x1b[3m\x1b[38;2;167;167;167m${text}\x1b[39m\x1b[23m`,
-	hint: (text) => `\x1b[38;2;138;138;138m${text}\x1b[39m`,
-	sep: `\x1b[38;2;138;138;138m · \x1b[39m`,
+	hint: (text) => `\x1b[38;2;95;95;95m${text}\x1b[39m`,
+	count: (text) => `\x1b[38;2;95;95;95m${text}\x1b[39m`,
+	sep: "  ",
 };
 
 const THINKING_ROW_LABEL = "Thinking...";
-const THINKING_ROW_EXPAND_HINT = "(Ctrl+T to expand)";
 // Pi's renderer reserves ~9-12 visible columns for the terminal-integration
 // (OSC133) zone markers on the final content line; subtract so the row fits.
 const THINKING_ROW_WIDTH_MARGIN = 12;
@@ -278,46 +341,54 @@ function rawOffsetForVisibleIndex(row: string, visibleIndex: number): number {
 	let visible = 0;
 	for (let i = 0; i < row.length; i++) {
 		if (row[i] === "\x1b") {
-			const m = row.slice(i).match(/^\x1b\[[0-9;?]*[ -/]*[@-~]/);
-			if (m) {
-				i += m[0].length - 1;
+			const match = row.slice(i).match(/^\x1b\[[0-9;?]*[ -/]*[@-~]/);
+			if (match) {
+				i += match[0].length - 1;
 				continue;
 			}
 		}
 		if (visible === visibleIndex) return i;
+		// The indent anchor is zero-width: counting it would shift every index
+		// by one and slice into an SGR run.
+		if (row[i] === "\u200b") continue;
 		visible += visibleWidth(row[i]) || 1;
 	}
 	return row.length;
 }
 
 /**
- * Keeps a collapsed thinking row on ONE line at the given render width,
- * truncating the recap so the expand hint always survives — the same behavior
- * as prime-agent's CollapsedThinkingRow. Non-row markdown passes through.
+ * Keeps a collapsed thinking row on ONE line at the given render width. With
+ * no hint to protect, the row truncates as a whole: a narrow terminal shortens
+ * the clause instead of dropping the label. Non-row markdown passes through.
  */
 export function fitThinkingRowToWidth(row: string, availableWidth: number | undefined): string {
 	if (!availableWidth || availableWidth <= 0) return row;
 	if (!row.includes(THINKING_ROW_LABEL) || row.includes("\n")) return row;
-	const plain = stripAnsi(row);
-	if (!plain.trimStart().startsWith(THINKING_ROW_LABEL) || !plain.includes(THINKING_ROW_EXPAND_HINT)) return row;
+	// The row opens with the zero-width indent anchor; ignore it when
+	// deciding whether this is a thinking row at all.
+	const plain = stripAnsi(row).replace(/^\u200b/, "");
+	if (!plain.trimStart().startsWith(THINKING_ROW_LABEL)) return row;
+	const width = Math.max(8, availableWidth - THINKING_ROW_WIDTH_MARGIN);
+	if (visibleWidth(plain) <= width) return row;
 
+	// Keep the label and its gap, cut the recap as a clause so the row ends in
+	// "..." at a word boundary instead of losing the last syllable.
 	const labelEnd = plain.indexOf(THINKING_ROW_LABEL) + THINKING_ROW_LABEL.length;
-	const sepMatch = plain.slice(labelEnd).match(/^\s*·\s*/);
-	const recapStartPlain = labelEnd + (sepMatch?.[0].length ?? 0);
-	const recapStart = rawOffsetForVisibleIndex(row, recapStartPlain);
-	const hintStart = rawOffsetForVisibleIndex(row, plain.indexOf(THINKING_ROW_EXPAND_HINT) - 1);
-	const labelSepRaw = row.slice(0, recapStart);
-	const recapRaw = row.slice(recapStart, hintStart);
-	const hintRaw = row.slice(hintStart);
-
-	const fixedWidth = visibleWidth(stripAnsi(labelSepRaw)) + visibleWidth(stripAnsi(hintRaw));
-	const recapWidth = Math.max(8, availableWidth - fixedWidth - THINKING_ROW_WIDTH_MARGIN);
-	const recapPlain = stripAnsi(recapRaw).trim();
-	if (visibleWidth(recapPlain) <= recapWidth) return row;
-
+	const gap = plain.slice(labelEnd).match(/^\s+/)?.[0] ?? "";
+	const recapStartVisible = labelEnd + gap.length;
+	// The trailing count is metadata: it survives while the clause is cut.
+	const tailStartVisible = plain.lastIndexOf("  ") > recapStartVisible ? plain.lastIndexOf("  ") : plain.length;
+	const fixedWidth = recapStartVisible + (plain.length - tailStartVisible);
+	const recapStartRaw = rawOffsetForVisibleIndex(row, recapStartVisible);
+	const tailStartRaw = rawOffsetForVisibleIndex(row, tailStartVisible);
+	const head = row.slice(0, recapStartRaw);
+	const recapRaw = row.slice(recapStartRaw, tailStartRaw);
+	const tail = row.slice(tailStartRaw);
+	const budget = width - fixedWidth;
+	if (budget < 8) return truncateToWidth(row, width);
 	const colorPrefix = recapRaw.match(/^(\x1b\[[0-9;?]*m)+/)?.[0] ?? "";
 	const colorSuffix = recapRaw.match(/(\x1b\[[0-9;?]*m)+$/)?.[0] ?? "";
-	return labelSepRaw + colorPrefix + truncateToWidth(recapPlain, recapWidth) + colorSuffix + hintRaw;
+	return head + colorPrefix + truncateClause(stripAnsi(recapRaw).replace(/(\x1b\[[0-9;?]*m)+$/g, "").trimEnd(), budget) + colorSuffix + tail;
 }
 
 function maybeFileUrlToPath(value: string): string {
@@ -404,7 +475,12 @@ export function createPatchedUpdateContent(
 						? [{ type: "text", text: row }, { type: "text", text: "\u200b" }]
 						: [{ type: "text", text: row }];
 				});
-				updateContent.call(this, { ...message, content });
+				const restoreBullet = installProseBullet(this);
+				try {
+					updateContent.call(this, { ...message, content });
+				} finally {
+					restoreBullet?.();
+				}
 				// Pi stores lastMessage and re-renders from it in
 				// setHideThinkingBlock()/invalidate()/setHiddenThinkingLabel().
 				// Restore the RAW message so those re-renders re-enter this patch
@@ -414,7 +490,12 @@ export function createPatchedUpdateContent(
 				return;
 			}
 		}
-		updateContent.call(this, message);
+		const restoreBullet = installProseBullet(this);
+		try {
+			updateContent.call(this, message);
+		} finally {
+			restoreBullet?.();
+		}
 	};
 }
 
@@ -570,7 +651,11 @@ function externalToolHeaderLine(
   provider: string,
   tool?: string,
 ): string {
-  const dot = status === "success" ? "\x1b[2m●\x1b[22m" : "●";
+  // Errors are the one thing allowed to grab attention: red marker plus the
+  // failure word, never a quiet neutral row.
+  const dot = status === "error"
+    ? "\x1b[38;2;255;154;154m!\x1b[39m"
+    : status === "success" ? "\x1b[2m●\x1b[22m" : "●";
   const ext = `${XTRM_EXT_ACCENT}${boldSgr(provider)}\x1b[39m`;
   const toolColor = status === "success" ? "" : "\x1b[2m";
   const toolReset = status === "success" ? "" : "\x1b[22m";
@@ -836,7 +921,7 @@ export function bareExternalToolHeader(
  *  else falls back to dark (xtrm-ui forces an xtrm theme by default). */
 export function ultraThemeHexes(themeName: string): { dim: string; error: string } {
 	return themeName === "xtrm-light"
-		? { dim: "#7a7a7a", error: "#a85f5f" }
+		? { dim: "#7a7a7a", error: "#b02a2a" }
 		: { dim: "#8a8a8a", error: "#ff9a9a" };
 }
 
@@ -1140,20 +1225,92 @@ export function formatTurnSummary(summary: XtrmTurnSummary): string {
  *  before a fence/heading/quote/list would break the block) and is
  *  idempotent across re-renders. Plain marker, no ANSI: escapes inside
  *  markdown risk pi's width math. */
-export function prefixAssistantDot(markdown: string): string {
+/** Block constructs whose lines are indented by their own syntax. */
+const PROSE_GUARD = /^(#{1,6}\s|>|\||\s{4}|[-*+]\s|\d+[.)]\s)/;
+
+/**
+ * Headings are colour-only in pi (`heading: (text) => theme.fg("mdHeading", text)`),
+ * so in a hue-free palette they would vanish into body text. Weight restores
+ * the hierarchy: bold the ATX heading text, outside fenced blocks.
+ */
+export function boldMarkdownHeadings(markdown: string): string {
+	if (!/^#{1,6}\s/m.test(markdown)) return markdown;
+	let inFence = false;
+	return markdown
+		.split("\n")
+		.map((line) => {
+			const plain = stripAnsi(line);
+			if (/^\s*(```|~~~)/.test(plain)) {
+				inFence = !inFence;
+				return line;
+			}
+			if (inFence) return line;
+			const match = line.match(/^(#{1,6}\s+)(.*)$/);
+			if (!match || match[2].trim() === "" || match[2].includes("\x1b[1m")) return line;
+			return `${match[1]}\x1b[1m${match[2]}\x1b[22m`;
+		})
+		.join("\n");
+}
+
+/** Bullet that pi renders for an assistant prose item (see the theme override). */
+export const PROSE_BULLET = "\u25cf ";
+
+/**
+ * Gives assistant prose a hanging indent, which pi's renderer cannot otherwise
+ * express: pi re-wraps every paragraph, so per-line indents are lost.
+ *
+ * The leading prose run becomes ONE list item. pi's list renderer indents
+ * continuation and wrapped lines by the bullet width, so the text after the dot
+ * stays aligned; the per-instance markdown theme renders that bullet as the
+ * dot. Later paragraphs of the same run ride inside the item, indented; the
+ * first block construct (code fence, heading, list, quote, table) ends the run
+ * and passes through untouched.
+ *
+ * Returns undefined when the message does not start with prose (a heading or a
+ * list of the model's own gets no dot).
+ */
+export function prefixAssistantDot(markdown: string): string | undefined {
 	const lines = markdown.split("\n");
-	// Invisible-only lines (pi's zero-width post-thinking spacer) are not
-	// content: skipping them keeps the spacer dot-free.
 	const visible = (line: string) => line.replace(/[\s\u200b-\u200d\ufeff]/g, "") !== "";
 	const index = lines.findIndex(visible);
-	if (index === -1) return markdown;
-	// Guards run on the visible text: styled rows (thinking recap) open
-	// with ANSI escapes, so strip those before comparing.
-	const first = lines[index].replace(ANSI_PATTERN, "").trimStart();
-	if (first.startsWith("\u25cf ") || first.startsWith(THINKING_ROW_LABEL)) return markdown;
-	if (/^(```|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(first)) return markdown;
-	lines[index] = lines[index].replace(/\S/, "\u25cf $&");
-	return lines.join("\n");
+	if (index === -1) return undefined;
+	const first = lines[index].replace(ANSI_PATTERN, "").replace(/^\u200b/, "").trimStart();
+	// Any "Thinking" head is one of our rows, not prose: tolerating the bare
+	// word (not just the exact label) means a label tweak can never turn a
+	// thinking row into an agent message with a dot in front of it.
+	if (first.startsWith("\u25cf ") || /^Thinking\b/.test(first)) return undefined;
+	if (/^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(first)) return undefined;
+
+	const paragraphs: string[] = [];
+	let cursor = index;
+	let current: string[] = [];
+	let inFence = false;
+	const flush = () => {
+		if (current.length > 0) paragraphs.push(current.join(" ").trim());
+		current = [];
+	};
+	while (cursor < lines.length) {
+		const line = lines[cursor];
+		const plain = stripAnsi(line).trim();
+		if (/^(```|~~~)/.test(plain)) break;
+		if (plain === "") {
+			flush();
+			cursor += 1;
+			continue;
+		}
+		if (PROSE_GUARD.test(plain)) break;
+		current.push(plain);
+		cursor += 1;
+		if (inFence) inFence = false;
+	}
+	flush();
+	if (paragraphs.length === 0) return undefined;
+
+	const body = paragraphs
+		.map((paragraph, i) => (i === 0 ? `- ${paragraph}` : `  ${paragraph}`))
+		.join("\n\n");
+	const rest = lines.slice(cursor).join("\n");
+	return rest ? `${body}\n\n${rest}` : body;
 }
 
 /** Applies the dot frames through pi's documented WorkingIndicatorOptions. */
@@ -1733,6 +1890,12 @@ function createWritePreview(path: string, nextContent: string): XtrmWritePreview
   };
 }
 
+/** Tool-row glyph: a failure trades the dot for a marker, so the state reads
+ *  without colour. */
+function toolGlyph(statusColor: string): string {
+  return statusColor === "error" ? "!" : "●";
+}
+
 function appendToolTree(
   theme: any,
   lines: string[],
@@ -1809,7 +1972,7 @@ export function renderBashTree(
   const boldCommand = (text: string) => `\x1b[1m${text}\x1b[22m`;
   const countLine = hiddenCommands > 0 ? ` \x1b[2m\x1b[3m … +${hiddenCommands} lines\x1b[23m\x1b[22m` : undefined;
   return appendToolTree(theme, [
-    `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, theme.bold("Ran"))} ${boldCommand(theme.fg(commandColor, firstCommand))}`,
+    `${theme.fg(statusColor, toolGlyph(statusColor))} ${theme.fg(statusColor, theme.bold("Ran"))} ${boldCommand(theme.fg(commandColor, firstCommand))}`,
     ...continuedCommands.map((line) => boldCommand(theme.fg(commandColor, line))),
     ...(countLine ? [countLine] : []),
   ], outputLines, meta);
@@ -1825,7 +1988,7 @@ function renderNamedToolTree(
 ): string {
   const subjectColor = statusColor === "success" ? "text" : "dim";
   return appendToolTree(theme, [
-    `${theme.fg(statusColor, "●")} ${theme.fg(statusColor, theme.bold(label))}${subject ? ` ${theme.fg(subjectColor, subject)}` : ""}`,
+    `${theme.fg(statusColor, toolGlyph(statusColor))} ${theme.fg(statusColor, theme.bold(label))}${subject ? ` ${theme.fg(subjectColor, subject)}` : ""}`,
   ], outputLines, meta);
 }
 
@@ -2464,18 +2627,21 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   const externalToolInstall = createThinkingPreviewInstallState(installExternalToolFramePatch);
   void externalToolInstall.ensureInstalled().catch(() => undefined);
 
-  // Keep collapsed thinking rows to one line: the recap is truncated to the
-  // render width so the expand hint never wraps or disappears. Runs for both
-  // plain assistant text and 'assistant-thinking' blocks (the collapsed row is
-  // a thinking block again so pi can add its post-thinking spacer).
-  pi.registerMarkdownTransformer((markdown, context) => {
-    if (!markdown.includes("Thinking...")) return markdown;
-    return fitThinkingRowToWidth(markdown, context.availableWidth);
-  });
-  // The response dot: assistant text blocks (and only those) open with one.
+  // ONE transformer: pi stores a single markdownTransformer per extension
+  // (the runner collects one per extension and replace-assigns on re-register),
+  // so splitting these into two calls silently disabled the first.
+  //   1. a collapsed thinking row is fitted to the width (one line, always);
+  //   2. assistant prose opens with the dot and hangs under it — the dot is a
+  //      list bullet the message component renders as ● so pi's re-wrapping
+  //      cannot drop the indent;
+  //   3. headings gain the weight pi's colour-only heading style cannot give.
   pi.registerMarkdownTransformer((markdown, context) => {
     if (context.messageType !== "assistant") return markdown;
-    return prefixAssistantDot(markdown);
+    const fitted = markdown.includes(THINKING_ROW_LABEL)
+      ? fitThinkingRowToWidth(markdown, context.availableWidth)
+      : markdown;
+    const dotted = prefixAssistantDot(fitted);
+    return boldMarkdownHeadings(dotted ?? fitted);
   });
 
   let prefs: XtrmUiPrefs = { ...DEFAULT_PREFS };
