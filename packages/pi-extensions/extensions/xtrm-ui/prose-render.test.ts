@@ -6,8 +6,9 @@
  * and re-wraps each paragraph itself. So:
  *   1. a leading-space indent is stripped by trim() → the thinking row needs a
  *      zero-width anchor to keep its two columns;
- *   2. a text-prefix dot cannot hang an indent → the dot is a list bullet,
- *      rendered for this component only via a scoped theme override.
+ *   2. pi re-wraps each paragraph, so the dot is a plain first-line prefix and
+ *      continuation lines stay flush left — wrapping it ourselves to force a
+ *      hanging indent would split inline code spans and links.
  *
  * These tests exercise the mechanisms without importing pi-tui, because the
  * sibling handler suite mocks that module for the whole test process.
@@ -15,7 +16,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { createPatchedUpdateContent, buildCollapsedThinkingRow, collapsedThinkingStyle } from "./index.ts";
+import { buildCollapsedThinkingRow, collapsedThinkingStyle } from "./index.ts";
 
 const stripSgr = (text: string) => text.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
 const visibleIndent = (text: string) => {
@@ -42,23 +43,23 @@ describe("thinking row survives pi's text.trim()", () => {
   });
 });
 
-describe("the dot is a scoped bullet, not a text prefix", () => {
-  test("the component renders its lists with the dot while updating", () => {
-    const seen: string[] = [];
-    const component = {
-      markdownTheme: { listBullet: (text: string) => `[${text}]`, heading: (text: string) => text },
-      updateContent: () => {},
-    };
-    const originalTheme = component.markdownTheme;
-    let bulletDuringRender: string | undefined;
-    const patched = createPatchedUpdateContent(() => {
-      bulletDuringRender = component.markdownTheme.listBullet("-");
-    }, collapsedThinkingStyle(() => "xtrm-dark"));
-    patched.call(component as never, { content: [{ type: "text", text: "hello" }] } as never);
-    expect(bulletDuringRender).toBe("\u25cf ");
-    // Restored afterwards: no other surface sees the dot bullet.
-    expect(component.markdownTheme).toBe(originalTheme);
-    expect(component.markdownTheme.listBullet("-")).toBe("[-]");
-    expect(seen).toEqual([]);
+describe("the dot does not disturb pi's own rendering", () => {
+  test("only the first line is touched", () => {
+    const { prefixAssistantDot } = require("./index.ts") as typeof import("./index.ts");
+    const prose = "alpha beta gamma delta epsilon zeta eta theta";
+    expect(prefixAssistantDot(prose)).toBe(`\u25cf ${prose}`);
+  });
+
+  test("inline constructs are never split by a break of ours", () => {
+    const { prefixAssistantDot } = require("./index.ts") as typeof import("./index.ts");
+    // A pre-wrap would cut these in half; a prefix cannot.
+    const prose = "use `the/whole/span` then [the label](https://example.com/x) here";
+    expect(prefixAssistantDot(prose)).toBe(`\u25cf ${prose}`);
+  });
+
+  test("a model-written list keeps the theme's own dash", () => {
+    const { prefixAssistantDot } = require("./index.ts") as typeof import("./index.ts");
+    expect(prefixAssistantDot("intro\n\n- first\n- second")).toBe("\u25cf intro\n\n- first\n- second");
+    expect(prefixAssistantDot("- first")).toBeUndefined();
   });
 });

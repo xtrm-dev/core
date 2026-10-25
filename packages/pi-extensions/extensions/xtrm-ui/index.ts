@@ -180,24 +180,8 @@ type PatchableAssistantMessage = {
 	hideThinkingBlock?: boolean;
 	hiddenThinkingLabel?: string;
 	lastMessage?: AssistantMessageLike;
-	markdownTheme?: { listBullet?: (text: string) => string } & Record<string, unknown>;
 	updateContent?: (message: AssistantMessageLike) => void;
 };
-
-/**
- * Renders this component's list bullet as the response dot. The dot has to be
- * a bullet rather than a text prefix: pi re-wraps prose paragraphs, and only
- * the list renderer carries an indent across its own wrapping. Scoped to the
- * instance and restored right after the render, so no other surface changes.
- */
-function installProseBullet(component: PatchableAssistantMessage): (() => void) | undefined {
-	const theme = component.markdownTheme;
-	if (!theme || typeof theme.listBullet !== "function") return undefined;
-	component.markdownTheme = { ...theme, listBullet: () => PROSE_BULLET };
-	return () => {
-		component.markdownTheme = theme;
-	};
-}
 
 const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiThinkingPreview5";
 const ORIGINAL_ASSISTANT_UPDATE = "__xtrmUiThinkingPreviewOriginalUpdate";
@@ -475,12 +459,7 @@ export function createPatchedUpdateContent(
 						? [{ type: "text", text: row }, { type: "text", text: "\u200b" }]
 						: [{ type: "text", text: row }];
 				});
-				const restoreBullet = installProseBullet(this);
-				try {
-					updateContent.call(this, { ...message, content });
-				} finally {
-					restoreBullet?.();
-				}
+				updateContent.call(this, { ...message, content });
 				// Pi stores lastMessage and re-renders from it in
 				// setHideThinkingBlock()/invalidate()/setHiddenThinkingLabel().
 				// Restore the RAW message so those re-renders re-enter this patch
@@ -490,12 +469,7 @@ export function createPatchedUpdateContent(
 				return;
 			}
 		}
-		const restoreBullet = installProseBullet(this);
-		try {
-			updateContent.call(this, message);
-		} finally {
-			restoreBullet?.();
-		}
+		updateContent.call(this, message);
 	};
 }
 
@@ -1226,7 +1200,7 @@ export function formatTurnSummary(summary: XtrmTurnSummary): string {
  *  idempotent across re-renders. Plain marker, no ANSI: escapes inside
  *  markdown risk pi's width math. */
 /** Block constructs whose lines are indented by their own syntax. */
-const PROSE_GUARD = /^(#{1,6}\s|>|\||\s{4}|[-*+]\s|\d+[.)]\s)/;
+const PROSE_GUARD = /^(```|~~~|#{1,6}\s|>|\||\s{4}|[-*+]\s|\d+[.)]\s)/;
 
 /**
  * Headings are colour-only in pi (`heading: (text) => theme.fg("mdHeading", text)`),
@@ -1252,22 +1226,23 @@ export function boldMarkdownHeadings(markdown: string): string {
 		.join("\n");
 }
 
-/** Bullet that pi renders for an assistant prose item (see the theme override). */
+/** The dot that opens assistant prose. */
 export const PROSE_BULLET = "\u25cf ";
 
 /**
- * Gives assistant prose a hanging indent, which pi's renderer cannot otherwise
- * express: pi re-wraps every paragraph, so per-line indents are lost.
+ * Opens assistant prose with the dot.
  *
- * The leading prose run becomes ONE list item. pi's list renderer indents
- * continuation and wrapped lines by the bullet width, so the text after the dot
- * stays aligned; the per-instance markdown theme renders that bullet as the
- * dot. Later paragraphs of the same run ride inside the item, indented; the
- * first block construct (code fence, heading, list, quote, table) ends the run
- * and passes through untouched.
+ * Nothing else: pi re-wraps paragraphs itself and strips a paragraph's leading
+ * whitespace, so any indent we add here is reflowed away. Wrapping the paragraph
+ * ourselves to keep a hanging indent is not an option either — a break landing
+ * inside a `code span` or a [link](url) splits the construct and leaks its
+ * markup into the text. So the dot sits on the first line and continuation lines
+ * run flush left, exactly as pi renders them.
  *
- * Returns undefined when the message does not start with prose (a heading or a
- * list of the model's own gets no dot).
+ * A message that opens with a construct of its own — heading, list, quote,
+ * table, fenced code — gets no dot, and neither does anything already dotted
+ * (idempotent across re-renders) or one of our thinking rows. A model-written
+ * list keeps the theme's own bullet, so prose and list stay distinguishable.
  */
 export function prefixAssistantDot(markdown: string): string | undefined {
 	const lines = markdown.split("\n");
@@ -1278,39 +1253,10 @@ export function prefixAssistantDot(markdown: string): string | undefined {
 	// Any "Thinking" head is one of our rows, not prose: tolerating the bare
 	// word (not just the exact label) means a label tweak can never turn a
 	// thinking row into an agent message with a dot in front of it.
-	if (first.startsWith("\u25cf ") || /^Thinking\b/.test(first)) return undefined;
-	if (/^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(first)) return undefined;
-
-	const paragraphs: string[] = [];
-	let cursor = index;
-	let current: string[] = [];
-	let inFence = false;
-	const flush = () => {
-		if (current.length > 0) paragraphs.push(current.join(" ").trim());
-		current = [];
-	};
-	while (cursor < lines.length) {
-		const line = lines[cursor];
-		const plain = stripAnsi(line).trim();
-		if (/^(```|~~~)/.test(plain)) break;
-		if (plain === "") {
-			flush();
-			cursor += 1;
-			continue;
-		}
-		if (PROSE_GUARD.test(plain)) break;
-		current.push(plain);
-		cursor += 1;
-		if (inFence) inFence = false;
-	}
-	flush();
-	if (paragraphs.length === 0) return undefined;
-
-	const body = paragraphs
-		.map((paragraph, i) => (i === 0 ? `- ${paragraph}` : `  ${paragraph}`))
-		.join("\n\n");
-	const rest = lines.slice(cursor).join("\n");
-	return rest ? `${body}\n\n${rest}` : body;
+	if (first.startsWith(PROSE_BULLET) || /^Thinking\b/.test(first)) return undefined;
+	if (PROSE_GUARD.test(first)) return undefined;
+	lines[index] = `${PROSE_BULLET}${lines[index]}`;
+	return lines.join("\n");
 }
 
 /** Applies the dot frames through pi's documented WorkingIndicatorOptions. */
@@ -2631,9 +2577,8 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   // (the runner collects one per extension and replace-assigns on re-register),
   // so splitting these into two calls silently disabled the first.
   //   1. a collapsed thinking row is fitted to the width (one line, always);
-  //   2. assistant prose opens with the dot and hangs under it — the dot is a
-  //      list bullet the message component renders as ● so pi's re-wrapping
-  //      cannot drop the indent;
+  //   2. assistant prose opens with the dot (continuation lines stay flush left:
+  //      pi re-wraps paragraphs, so any indent would be reflowed away);
   //   3. headings gain the weight pi's colour-only heading style cannot give.
   pi.registerMarkdownTransformer((markdown, context) => {
     if (context.messageType !== "assistant") return markdown;

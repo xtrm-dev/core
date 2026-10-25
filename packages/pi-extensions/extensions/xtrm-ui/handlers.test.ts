@@ -1025,12 +1025,26 @@ describe("assistant response dot", async () => {
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
-  test("turns the leading prose run into one dot item", () => {
-    // The dot is the item's bullet (rendered by the component's theme), because
-    // pi re-wraps paragraphs and would drop a text prefix's indent.
-    expect(prefixAssistantDot("hello there")).toBe("- hello there");
-    // Two paragraphs of the same run ride inside the single item.
-    expect(prefixAssistantDot("hello there\n\nsecond paragraph")).toBe("- hello there\n\n  second paragraph");
+  test("opens the leading paragraph with the dot", () => {
+    expect(prefixAssistantDot("hello there")).toBe("\u25cf hello there");
+    // Only the leading paragraph: later ones keep their own shape.
+    expect(prefixAssistantDot("hello there\n\nsecond paragraph")).toBe("\u25cf hello there\n\nsecond paragraph");
+  });
+
+  test("only the first line is prefixed; pi wraps the rest itself", () => {
+    const out = prefixAssistantDot("one two three four five six seven eight nine ten") as string;
+    expect(out).toBe("\u25cf one two three four five six seven eight nine ten");
+    expect(out.split("\n")).toHaveLength(1);
+    // No indent is invented: a wrapped continuation stays flush left.
+    expect(out).not.toContain("\u200b");
+  });
+
+  test("leaves a model-written list alone", () => {
+    // The list bullet is the theme's, not ours: dashes stay dashes.
+    expect(prefixAssistantDot("- item")).toBeUndefined();
+    expect(prefixAssistantDot("intro\n\n- item one\n- item two"))
+      .toBe("\u25cf intro\n\n- item one\n- item two");
+    expect(prefixAssistantDot("\u25cf already dotted")).toBeUndefined();
   });
 
   test("code fences, headings, quotes, lists and thinking rows get no dot", () => {
@@ -1042,20 +1056,21 @@ describe("assistant response dot", async () => {
     expect(prefixAssistantDot("")).toBeUndefined();
   });
 
-  test("a block construct after the prose ends the item and passes through", () => {
+  test("a block construct after the prose passes through", () => {
     const out = prefixAssistantDot("intro line\n\n```ts\nconst a = 1;\n```");
-    expect(out).toBe("- intro line\n\n```ts\nconst a = 1;\n```");
+    expect(out).toBe("\u25cf intro line\n\n```ts\nconst a = 1;\n```");
   });
 
   test("idempotent across re-renders", () => {
-    // Second pass sees a list item and leaves it alone.
-    expect(prefixAssistantDot("- hello")).toBeUndefined();
+    // Second pass sees its own dot and leaves the block alone.
+    expect(prefixAssistantDot("\u25cf hello")).toBeUndefined();
+    expect(prefixAssistantDot(prefixAssistantDot("hello") as string)).toBeUndefined();
   });
 
   test("factory wires the dot for assistant text only", () => {
     const { transformers } = registerWithMock();
     const dotter = transformers[transformers.length - 1];
-    expect(dotter("hello", { messageType: "assistant" })).toBe("- hello");
+    expect(dotter("hello", { messageType: "assistant" })).toBe("\u25cf hello");
     expect(dotter("hello", { messageType: "user" })).toBe("hello");
     expect(dotter("some *thinking* trace", { messageType: "assistant-thinking" })).toBe("some *thinking* trace");
   });
@@ -1100,12 +1115,13 @@ describe("assistant text hierarchy (CORE-2517 rework)", async () => {
     expect(out).toContain("\u001b[1mreal\u001b[22m");
   });
 
-  test("prose becomes one item; the renderer owns the wrapping", () => {
+  test("the dot is a prefix, not a re-wrap: pi owns the line breaking", () => {
     const paragraph = "word ".repeat(40).trim();
-    const out = prefixAssistantDot(`first line\n${paragraph}`) as string;
-    expect(out.startsWith("- first line")).toBe(true);
-    // One paragraph is joined into a single item line: pi re-wraps it anyway.
-    expect(out.split("\n")).toHaveLength(1);
+    const source = `first line\n${paragraph}`;
+    const out = prefixAssistantDot(source) as string;
+    // The text is untouched apart from the marker, so inline markup (code
+    // spans, links) is never split by a break of ours.
+    expect(out).toBe(`\u25cf ${source}`);
   });
 
   test("code fences after the run keep their own shape", () => {
@@ -1221,9 +1237,9 @@ describe("markdown transformer wiring", () => {
     const fitted = transform(row, { messageType: "assistant", availableWidth: 40 });
     expect(fitted).not.toContain("\u25cf");
     expect(fitted.split("\n")).toHaveLength(1);
-    // Prose becomes a dot item; headings gain weight.
+    // Prose takes the dot; headings gain weight.
     const prose = transform("intro line\n\n# Title", { messageType: "assistant", availableWidth: 80 });
-    expect(prose.startsWith("- intro line")).toBe(true);
+    expect(prose.startsWith("\u25cf intro line")).toBe(true);
     expect(prose).toContain("\u001b[1mTitle\u001b[22m");
     // Non-assistant messages are untouched.
     expect(transform("intro", { messageType: "user", availableWidth: 80 })).toBe("intro");
