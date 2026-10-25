@@ -103,8 +103,8 @@ no hue in chrome:
 | `text-primary` | `#BBBBBB` | `#3A3A3A` | reserved for the agent's own voice |
 | `text-secondary` | `#858585` | `#6F6F6F` | tool subjects, thinking rows, output |
 | `text-muted` | `#5F5F5F` | `#8A8A8A` | durations, counts, hints, chrome |
-| `mdCode` | `#9A8BFF` | `#5B43A8` | inline code (content hue) |
-| `mdLink` | `#7AA2F7` | `#3569C8` | link text (content hue) |
+| `mdCode` | `#A290D5` | `#8368C4` | inline code (content hue, pi's own violet) |
+| `mdLink` | `#5EA7CB` | `#3685A9` | link text (content hue, pi's own blue) |
 
 Assistant prose keeps the terminal's default foreground, so it stays the
 brightest body text without a hard-coded colour. It opens with `●` and nothing

@@ -22,8 +22,8 @@
     "textPrimary": "#BBBBBB",
     "textSecondary": "#858585",
     "textMuted": "#5F5F5F",
-    "codeViolet": "#9A8BFF",
-    "linkBlue": "#7AA2F7"
+    "codeViolet": "#A290D5",
+    "linkBlue": "#5EA7CB"
   },
   "colors": {
     "accent": "textSecondary",
