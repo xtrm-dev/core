@@ -20,7 +20,7 @@ Pi transport for intercom wakes (CORE-2433, XT-91 ADR rev 2 + amendment 1). Shar
 
 Inbound wakes inject with `pi.sendMessage` as `customType: "intercom_message"` — `{ triggerTurn: true, deliverAs: "followUp" }` when idle, queued `followUp` when busy (`steer` is reserved for priority-next wakes; the wake frame carries no priority marker). The model payload is a `<cross-session-message>` envelope with the payload reference plus the D2 provenance line; no ANSI, no timestamps in model text. The ack answers `accepted` only after the injection succeeded; an injection failure answers `failed` so the registry reports the wake `undelivered`. A redelivered message id injects once.
 
-Inbound wakes render as the shared event card. Collapsed, the message is one received line (`› Message from @<name> received: <snippet> <id>`) with no expand hint: a left click expands that card. Ctrl+O keeps its global meaning and expands every message; a click only ever opens the card under the pointer, and the state survives Pi's rebuilds (keyed by the message entry).
+Inbound wakes render as the shared event card. Collapsed, the message is one received line (`› Message from @<name> received: <snippet> <id>`) with no expand hint: a left click toggles that card. Ctrl+O keeps its global meaning — it expands every message, and a global toggle drops the per-card click state — and the state survives Pi's rebuilds (keyed by the message entry).
 
 ## sp-terminal-overlay
 

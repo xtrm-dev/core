@@ -441,7 +441,7 @@ describe("renderer registration (CORE-2438 I7)", () => {
     expect(lines.join("\n")).not.toMatch(/\u001b/);
   });
 
-  test("a click expands the card under the pointer, expand-only", () => {
+  test("a click toggles the card under the pointer", () => {
     let renderer: ((message: unknown, options: unknown, theme: EventTheme) => unknown) | null = null;
     const pi = { registerMessageRenderer: (_type: string, fn: typeof renderer) => (renderer = fn) };
     registerEventRenderer(pi as never, "intercom_message", () => messageDetails());
@@ -451,15 +451,16 @@ describe("renderer registration (CORE-2438 I7)", () => {
     };
     const message = {}; // one entry object, as pi passes per custom message
     const card = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)(message, {}, light);
+    const click = { type: "click", button: "left", x: 1, y: 0, width: 120, height: 1 };
     expect(visible(card.render(120).join("\n"))).toHaveLength(1);
-    expect(card.handleMouse?.({ type: "click", button: "left", x: 1, y: 0, width: 120, height: 1 })).toEqual({ handled: true });
+    expect(card.handleMouse?.(click)).toEqual({ handled: true });
     const expandedLines = visible(card.render(120).join("\n"));
     expect(expandedLines.length).toBeGreaterThan(1);
     expect(expandedLines[0]).toMatch(/^● @probe delivered$/);
-    // A second click is a no-op, not a toggle back to collapsed.
-    card.handleMouse?.({ type: "click", button: "left", x: 1, y: 0, width: 120, height: 1 });
-    expect(visible(card.render(120).join("\n")).length).toBeGreaterThan(1);
-    // The click state is per message: another entry still renders collapsed.
+    // Clicking again collapses it: the same toggle pi's own tool rows use.
+    expect(card.handleMouse?.(click)).toEqual({ handled: true });
+    expect(visible(card.render(120).join("\n"))).toHaveLength(1);
+    // The click state is per message: another entry is untouched.
     const other = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)({}, {}, light);
     expect(visible(other.render(120).join("\n"))).toHaveLength(1);
   });
@@ -479,22 +480,29 @@ describe("renderer registration (CORE-2438 I7)", () => {
     expect(visible(card.render(120).join("\n"))).toHaveLength(1);
   });
 
-  test("ctrl+o keeps its global meaning and wins over a click state", () => {
+  test("ctrl+o keeps its global meaning and drops the click state", () => {
     let renderer: ((message: unknown, options: unknown, theme: EventTheme) => unknown) | null = null;
     const pi = { registerMessageRenderer: (_type: string, fn: typeof renderer) => (renderer = fn) };
     registerEventRenderer(pi as never, "intercom_message", () => messageDetails());
-    type Card = { render: (width: number) => string[] };
+    type Card = {
+      render: (width: number) => string[];
+      handleMouse?: (event: unknown) => unknown;
+    };
     const message = { tag: "ctrl-o" };
-    const collapsed = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)(message, { expanded: false }, light);
-    expect(visible(collapsed.render(120).join("\n"))).toHaveLength(1);
-    // ctrl+o expands every message, clicked or not.
-    const globallyExpanded = (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)(
-      message,
-      { expanded: true },
-      light,
-    );
-    expect(visible(globallyExpanded.render(120).join("\n")).length).toBeGreaterThan(1);
+    const build = (expanded: boolean) =>
+      (renderer as unknown as (m: unknown, o: unknown, t: EventTheme) => Card)(message, { expanded }, light);
+    const click = { type: "click", button: "left", x: 1, y: 0, width: 120, height: 1 };
+    // Collapsed, the operator clicks it open.
+    const card = build(false);
+    card.handleMouse?.(click);
+    expect(visible(card.render(120).join("\n")).length).toBeGreaterThan(1);
+    // ctrl+o expands every message; it also owns the state from then on.
+    expect(visible(build(true).render(120).join("\n")).length).toBeGreaterThan(1);
+    // Returning to the global collapsed view collapses again: the click state
+    // did not survive the global toggle.
+    expect(visible(build(false).render(120).join("\n"))).toHaveLength(1);
   });
+
 
   test("extensions without registerMessageRenderer are ignored, not crashed", () => {
     expect(() => registerEventRenderer({} as never, "intercom_message", () => messageDetails())).not.toThrow();
