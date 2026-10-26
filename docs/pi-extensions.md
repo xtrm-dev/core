@@ -104,7 +104,7 @@ packages/pi-extensions/
 
 XTRM's Pi presentation layer. It owns the XTRM header, themes, editor density, and native/external tool presentation while preserving Pi's execution functions and model-facing tool results.
 
-The design intentionally keeps tool and command activity visible so an operator can understand what an agent is doing and intervene on critical work. `custom-footer` is the sole footer/statusline owner.
+The design intentionally keeps tool and command activity visible so an operator can understand what an agent is doing and intervene on critical work. `custom-footer` is the sole footer/statusline owner; it renders the one-line HUD described in [xtrm-ui.md](xtrm-ui.md#status-hud).
 
 See [xtrm-ui.md](xtrm-ui.md).
 

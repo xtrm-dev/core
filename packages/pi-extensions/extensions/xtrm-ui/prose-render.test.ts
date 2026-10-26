@@ -5,7 +5,9 @@
  *   new Markdown(content.text.trim(), outputPad, 0, theme)
  * and re-wraps each paragraph itself. So:
  *   1. a leading-space indent is stripped by trim() → the thinking row needs a
- *      zero-width anchor to keep its two columns;
+ *      zero-width anchor to keep its column; the row carries ONE indent space
+ *      and markdown's outputPad supplies the second, so thinking and tool rows
+ *      share one column (no double indent);
  *   2. pi re-wraps each paragraph, so the dot is a plain first-line prefix and
  *      continuation lines stay flush left — wrapping it ourselves to force a
  *      hanging indent would split inline code spans and links.
@@ -29,17 +31,18 @@ describe("thinking row survives pi's text.trim()", () => {
     expect(visibleIndent("  Thinking".trim())).toBe(0);
   });
 
-  test("the anchored indent keeps both columns", () => {
-    const row = buildCollapsedThinkingRow("comparing renderers", 1200, collapsedThinkingStyle(() => "xtrm-dark"));
-    expect(visibleIndent(row.trim())).toBe(2);
+  test("the anchored indent keeps its column (markdown adds the other)", () => {
+    const row = buildCollapsedThinkingRow("comparing renderers", collapsedThinkingStyle(() => undefined));
+    // One space at the row level; pi's Markdown padding is the second column.
+    expect(visibleIndent(row.trim())).toBe(1);
     expect(stripSgr(row.trim())).toContain("Thinking");
   });
 
   test("the expanded block keeps the indent on label and body", () => {
     const { buildExpandedThinkingBlock } = require("./index.ts") as typeof import("./index.ts");
-    const block = buildExpandedThinkingBlock("first detail\nsecond detail", collapsedThinkingStyle(() => "xtrm-dark"));
+    const block = buildExpandedThinkingBlock("first detail\nsecond detail", collapsedThinkingStyle(() => undefined));
     const lines = block.trim().split("\n").filter((line) => stripSgr(line).trim() !== "");
-    for (const line of lines) expect(visibleIndent(line)).toBe(2);
+    for (const line of lines) expect(visibleIndent(line)).toBe(1);
   });
 });
 

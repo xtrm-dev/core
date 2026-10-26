@@ -6,6 +6,7 @@ import {
   createBackgroundWidget,
   fitToWidth,
   formatIndicator,
+  formatIndicatorStyled,
   hardCut,
   renderIndicator,
   summarizeBackground,
@@ -24,15 +25,64 @@ describe("background indicator text", () => {
     expect(formatIndicator(summary())).toBeNull();
   });
 
-  test("matches the D-5 shapes: tasks, monitors, failures, /bg", () => {
-    expect(formatIndicator(summary({ runningTasks: 3, activeMonitors: 1 }))).toBe("◐ 3 tasks running · 1 monitor · /bg");
-    expect(formatIndicator(summary({ runningTasks: 2, unseenFailures: 1 }))).toBe("◐ 2 tasks running · ! 1 failed · /bg");
-    expect(formatIndicator(summary({ runningTasks: 1, activeMonitors: 1 }))).toBe("◐ 1 task running · 1 monitor · /bg");
+  test("matches the D-5 shapes: tasks, monitors, failures, /bg — no activity glyph", () => {
+    expect(formatIndicator(summary({ runningTasks: 3, activeMonitors: 1 }))).toBe("3 tasks running · 1 monitor · /bg");
+    expect(formatIndicator(summary({ runningTasks: 2, unseenFailures: 1 }))).toBe("2 tasks running · ! 1 failed · /bg");
+    expect(formatIndicator(summary({ runningTasks: 1, activeMonitors: 1 }))).toBe("1 task running · 1 monitor · /bg");
     expect(formatIndicator(summary({ activeMonitors: 2 }))).toBe("2 monitors · /bg");
     expect(formatIndicator(summary({ unseenFailures: 1 }))).toBe("! 1 failed · /bg");
     expect(formatIndicator(summary({ runningTasks: 2, activeMonitors: 3, unseenFailures: 2 }))).toBe(
-      "◐ 2 tasks running · 3 monitors · ! 2 failed · /bg",
+      "2 tasks running · 3 monitors · ! 2 failed · /bg",
     );
+  });
+
+  test("no running-task or monitor glyph survives, and the failure marker is the only symbol", () => {
+    for (const shape of [
+      summary({ runningTasks: 1, activeMonitors: 1 }),
+      summary({ runningTasks: 4 }),
+      summary({ activeMonitors: 2 }),
+      summary({ unseenFailures: 3 }),
+    ]) {
+      const line = formatIndicator(shape) ?? "";
+      for (const glyph of ["◐", "◉", "○", "◓", "⟳"]) expect(line).not.toContain(glyph);
+      expect(line.startsWith("!")).toBe(shape.unseenFailures > 0 && shape.runningTasks === 0 && shape.activeMonitors === 0);
+    }
+  });
+
+  test("styled indicator keeps failures brighter and semibold, separators dim", () => {
+    const tokens: string[] = [];
+    const theme = {
+      fg(token: string, text: string) {
+        tokens.push(token);
+        return `<${token}>${text}</${token}>`;
+      },
+      bold(text: string) {
+        return `*${text}*`;
+      },
+    };
+    const line = formatIndicatorStyled(summary({ runningTasks: 1, activeMonitors: 1, unseenFailures: 1 }), theme)!;
+    expect(line).toContain("<error>*!*</error>");
+    expect(line).toContain("<error>*1 failed*</error>");
+    expect(line).toContain("<muted>1 task running</muted>");
+    expect(line).toContain("<dim>·</dim>");
+    expect(line).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+    expect(tokens).not.toContain("success");
+  });
+
+  test("failure weight goes through theme.style, not chalk", () => {
+    const styled: Array<{ text: string; options: unknown }> = [];
+    const theme = {
+      fg: (token: string, text: string) => `<${token}>${text}</${token}>`,
+      bold: (text: string) => `CHALK-NOOP(${text})`,
+      style: (text: string, options: unknown) => {
+        styled.push({ text, options });
+        return `[style]${text}[/style]`;
+      },
+    };
+    const line = formatIndicatorStyled(summary({ unseenFailures: 2 }), theme)!;
+    expect(line).not.toContain("CHALK-NOOP");
+    expect(styled).toContainEqual({ text: "!", options: { fg: "error", bold: true } });
+    expect(styled).toContainEqual({ text: "2 failed", options: { fg: "error", bold: true } });
   });
 
   test("the widget key carries no xtrm- slug", () => {
