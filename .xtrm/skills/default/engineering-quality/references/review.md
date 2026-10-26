@@ -38,13 +38,19 @@ Final review should distinguish blocking findings, non-blocking follow-ups, and 
 blocks. Never reinterpret a valid failing test/security/contract gate as advisory because
 the implementation looks plausible.
 
-## ocr delegation lane (explicit scope only)
+## ocr delegation lane (every review of a git range)
 
-OFF unless the pinned contract or scope explicitly names ocr delegation evidence, AgentRun
-evidence, or both. When unnamed, review exactly as above.
+ON for every review that has a git range to review (a diff, a commit or a PR); the contract
+does not need to name it. The AgentRun evidence lane below stays explicit-scope-only.
 
 Delegation is LLM-free on the OCR side: `ocr` supplies deterministic file selection and rule
-resolution; all review judgment stays in this document. Do not call `ocr review` here.
+resolution; all review judgment stays in this document. Do not call `ocr review` here: it
+calls a model, needs a configured provider, and is not part of this lane.
+
+A repo may carry `.opencodereview/rule.json`. Its `include` list restores files that OCR
+excludes by default, most importantly test files (`**/test_*.py`, `*_test.go`, `*.test.ts`);
+without it a reviewer sees the tests as excluded `default_path` files and reports that as a
+coverage gap. Without the file only OCR's generic per-language rules apply; say so.
 
 1. `ocr delegate preview --format json [--from <ref> --to <ref> | --commit <hash>]` — mode,
    refs, reviewable files, and excluded files with their reason.
@@ -88,8 +94,8 @@ gets its deterministic value without `ocr review` token cost:
 Steps 1 and 3 run in one codemode cell (`codemode` skill, "writer pre-flight"). A repo with no
 linter or typecheck has a gap in its floor: see `quality-baseline.md`.
 
-Reviewers and seconders keep `ocr review` or full delegation as independent scrutiny; the
-writer pre-flight does not replace them.
+Reviewers and seconders run the delegation lane above as independent scrutiny; the writer
+pre-flight does not replace it. `ocr review` is optional and needs a configured provider.
 
 ## AgentRun evidence (explicit scope only)
 
