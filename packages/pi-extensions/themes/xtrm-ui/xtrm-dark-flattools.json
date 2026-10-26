@@ -22,8 +22,8 @@
     "textPrimary": "#BBBBBB",
     "textSecondary": "#858585",
     "textMuted": "#5F5F5F",
-    "codeViolet": "#A290D5",
-    "linkBlue": "#5EA7CB"
+    "linkBlue": "#5EA7CB",
+    "contentCode": "#97B8DA"
   },
   "colors": {
     "accent": "textSecondary",
@@ -51,7 +51,7 @@
     "mdHeading": "textHeading",
     "mdLink": "linkBlue",
     "mdLinkUrl": "textMuted",
-    "mdCode": "codeViolet",
+    "mdCode": "contentCode",
     "mdCodeBlock": "textSecondary",
     "mdCodeBlockBorder": "borderGray",
     "mdQuote": "textSecondary",

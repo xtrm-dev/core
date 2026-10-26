@@ -103,7 +103,7 @@ no hue in chrome:
 | `text-primary` | `#BBBBBB` | `#3A3A3A` | reserved for the agent's own voice |
 | `text-secondary` | `#858585` | `#6F6F6F` | tool subjects, thinking rows, output |
 | `text-muted` | `#5F5F5F` | `#8A8A8A` | durations, counts, hints, chrome |
-| `mdCode` | `#A290D5` | `#8368C4` | inline code (content hue, pi's own violet) |
+| `mdCode` | `#97B8DA` | `#2E6A8E` | inline code (content hue, light blue) |
 | `mdLink` | `#5EA7CB` | `#3685A9` | link text (content hue, pi's own blue) |
 
 Assistant prose keeps the terminal's default foreground, so it stays the
@@ -134,7 +134,7 @@ status (`#FF9A9A` dark, `#B02A2A` light), semibold weight and the `!` marker, an
 always states `failed`. Confirmations stay quiet — a successful row is neutral
 grey and never uses the error token. Diff bodies keep their red/green (`+`/`−`)
 because that is content semantics. Inline code and links are content too, so they
-keep a hue where pi has one (`mdCode` violet, `mdLink` blue); every remaining
+keep a hue (`mdCode` light blue, `mdLink` blue); every remaining
 chrome token stays on the grey ramp. Nothing else carries a hue.
 
 ## Thinking Rows
