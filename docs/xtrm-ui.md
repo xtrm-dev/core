@@ -93,10 +93,21 @@ in `…`, and a bash row shows the command's first physical line clipped to 72
 characters, so the informative part is what stays visible. A leading `cd` into
 the directory the session already works in is dropped from that line: it is a
 no-op, and left in place it consumed the whole budget on every consecutive row.
-A command with more physical lines reports the rest as `+N lines` in a metadata
-slot. Expansion is never clipped: a long line wraps there, because the full
-content has to stay reachable. Commands, paths, and clauses all cut with the same
-`…` glyph.
+Expansion is never clipped: a long line wraps there, because the full content has
+to stay reachable. Commands, paths, and clauses all cut with the same `…` glyph.
+
+`+N lines` means one thing in every row: non-blank physical lines of the payload
+behind the subject, minus the line the subject already shows. A bash row counts
+its command; a framed row counts the `code` (or `command`) it previews:
+
+```text
+  Ran shell command python3 - <<'PY'  +3 lines
+  used codemode const out = [];  +2 lines  Script completed
+```
+
+Blank lines are air, not content, so `N` never inflates. A row that already
+carries a count of its own (`read` and its `from 337`, `grep` and its matches, a
+diff and its `+a -r`) never gains a second one.
 
 Expanded rows and the tree presentation use one shape:
 
@@ -202,6 +213,26 @@ Thinking is the least important stream on screen and is styled to lose
 attention: the row sits at the **muted** level (`#5F5F5F`), below tool output
 (`#858585`) and far below the agent's answer. When the row has to shrink, the
 recap yields and the count survives. Expanded: the indent continues over the trace behind `ctrl+t`.
+
+## Working Spinner
+
+While the agent works, the row above the editor carries a ten-frame dingbat walk
+(`✳ ✴ ✵ ✷ ✸ ✹ ✺ ✻ ✼ ✽`) at 115 ms — pi-tasks' glyph vocabulary, about 30%
+quicker than its 150 ms cadence, so a full turn reads as motion rather than a
+slideshow. `✶` is left out: at small sizes it reads as a solid blob rather than
+a step in the turn.
+
+Frames are one visible cell, carry no variation selector, and are tinted per
+frame from the theme's grayscale ladder: `dim` at the ends of the walk, `muted`
+between, `toolTitle` through the middle — the same tier pi paints its own
+spinner with. The star brightens as it turns; it never carries a hue, and it is
+never brighter than the message it sits beside.
+
+Two rules keep it safe: no frame is blank (a blank frame collapses the spinner
+cell and shifts the elapsed text), and `NO_COLOR` or `TERM=dumb` gets the plain
+glyphs, because the theme's `fg` always emits escapes. Pi renders a custom
+indicator verbatim, skipping its own colour function, so the tint is ours to add
+and ours to drop. A `/theme` switch re-applies the frames with the new palette.
 
 ## Status HUD
 

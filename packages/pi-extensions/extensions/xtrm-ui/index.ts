@@ -230,12 +230,19 @@ export function resetThemeBinding(): void {
 }
 
 /** Record the live theme from an extension context. Safe to call often. */
-export function rememberTheme(ctx: { ui?: { theme?: ThinkingThemeLike } } | undefined): void {
+export function rememberTheme(
+	ctx: { ui?: { theme?: ThinkingThemeLike } & Partial<WorkingIndicatorUi> } | undefined,
+): void {
 	try {
 		const theme = ctx?.ui?.theme;
 		if (!theme) return;
 		activeThemeSnapshot = theme;
 		setActiveThemeProvider(() => ctx?.ui?.theme);
+		// A theme switch reaches rows through the lazy binding; the spinner is a
+		// static frame list, so it needs an explicit refresh.
+		if (theme !== lastWorkingTheme && typeof ctx?.ui?.setWorkingIndicator === "function") {
+			applyWorkingIndicator(ctx.ui as WorkingIndicatorUi, theme);
+		}
 	} catch {
 		// A theme that is not initialized yet is not an error: the next context
 		// records it.
@@ -674,7 +681,7 @@ const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
 const ORIGINAL_EXTERNAL_HANDLE_MOUSE = "__xtrmUiExternalToolFrameOriginalHandleMouse";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 43;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 44;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension rows render through the active theme (tokens only). The
@@ -1087,6 +1094,7 @@ export function buildUltraExternalLine(
   const kind = externalToolFrameKind(toolName) ?? "external";
   const bare = bareExternalToolHeader(kind, toolName);
   const subject = ultraExternalSubject(toolName, args);
+  const hidden = externalHiddenLines(toolName, args);
   const primary = resultTexts.length > 0 ? ultraExternalPrimary(toolName, resultTexts) : undefined;
   const isError = status === "error";
   // No dots on tool rows, ever: the dot marks assistant messages only.
@@ -1099,6 +1107,11 @@ export function buildUltraExternalLine(
   const head = ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
   let row = `${dot}${span(head)}`;
   if (subject) row += ` ${sub(subject)}`;
+  // The code the row does not show, counted in the same words as a bash row so
+  // `+N lines` means one thing everywhere. Metadata tier, one slot only.
+  if (hidden > 0) {
+    row += `  ${ultraFg(isError ? "error" : "muted", `+${hidden} ${hidden === 1 ? "line" : "lines"}`)}`;
+  }
   if (primary) row += `  ${ultraFg("muted", primary)}`;
   if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
     row += `  ${ultraFg("error", "failed")}`;
@@ -1250,18 +1263,40 @@ function applyThinkingChrome(ctx: ExtensionContext): void {
 // Working indicator + turn summary
 // ============================================================================
 
-/** Single-cell X indicator, dots only. A dot travels the true X path
- *  through the center band (dots 2+5): top-left, center, bottom-right,
- *  bottom-left, center, top-right, then a double flash of the corner-dot X
- *  and the cycle restarts. The X reads through motion, never as a complete
- *  X character. Off-flash frames are a single space, never empty: an empty
- *  frame collapses the spinner cell and the elapsed text jumps left.
- *  Pi renders custom frames verbatim through its own Loader,
- *  so the shapes live here and engine/timing stay on pi's documented path
- *  (ctx.ui.setWorkingIndicator). No lead-in whitespace: the working row
- *  keeps pi standard positioning and the settled summary matches it. */
-export const WORKING_FRAMES = ["\u2801", "\u2812", "\u2820", "\u2804", "\u2812", "\u2808", "\u282d", " ", "\u282d", " "];
-export const WORKING_FRAME_MS = 80;
+/** The working spinner: a ten-frame walk through the dingbat block (`✶` left
+ *  out — it reads as a solid blob at small sizes), at 115 ms — pi-tasks' glyph
+ *  vocabulary, roughly 30% quicker than its 150 ms cadence so a full turn reads
+ *  as motion rather than a slideshow.
+ *
+ *  Every frame is one visible cell, has no variation selector, and carries no
+ *  escape of its own: colour is added per frame from the theme's own grayscale
+ *  ladder (see `workingFrames`), never baked in. `renderIndicatorVerbatim` in
+ *  pi's Loader means a custom frame skips pi's `spinnerColorFn`, so the tint is
+ *  ours to supply — and ours to drop when the terminal asked for no colour.
+ *
+ *  The tone pulses: dim at the ends of the walk, `toolTitle` through the middle
+ *  (the same tier pi paints its own spinner with), `muted` in between. The star
+ *  brightens as it turns instead of carrying a hue. No frame is blank, so the
+ *  spinner cell can never collapse and shift the elapsed text. */
+export const WORKING_FRAMES = ["\u2733", "\u2734", "\u2735", "\u2737", "\u2738", "\u2739", "\u273a", "\u273b", "\u273c", "\u273d"];
+export const WORKING_FRAME_MS = 115;
+/** One grayscale tier per frame: a symmetric pulse across the walk. */
+export const WORKING_FRAME_TOKENS = [
+  "dim", "muted", "muted", "toolTitle", "toolTitle", "toolTitle", "toolTitle", "muted", "muted", "dim",
+];
+
+/** A terminal that asked for no colour gets the plain glyphs: the theme's `fg`
+ *  always emits escapes, so the guard has to live here. */
+function workingColourEnabled(): boolean {
+  return !process.env.NO_COLOR && process.env.TERM !== "dumb";
+}
+
+/** Frames to hand to `setWorkingIndicator`: plain, or tinted through the theme's
+ *  grayscale ladder when a theme is available and colour is wanted. */
+export function workingFrames(theme?: ThinkingThemeLike): string[] {
+  if (!theme || typeof theme.fg !== "function" || !workingColourEnabled()) return [...WORKING_FRAMES];
+  return WORKING_FRAMES.map((frame, index) => theme.fg(WORKING_FRAME_TOKENS[index] ?? "toolTitle", frame));
+}
 const WORKING_TICK_MS = 1000;
 
 /** Custom entry type for the persisted per-turn summary. Custom entries never
@@ -1379,9 +1414,17 @@ export function prefixAssistantDot(markdown: string): string | undefined {
 	return lines.join("\n");
 }
 
-/** Applies the dot frames through pi's documented WorkingIndicatorOptions. */
-export function applyWorkingIndicator(ui: { setWorkingIndicator: (options: { frames: string[]; intervalMs: number }) => void }): void {
-	ui.setWorkingIndicator({ frames: [...WORKING_FRAMES], intervalMs: WORKING_FRAME_MS });
+type WorkingIndicatorUi = { setWorkingIndicator: (options: { frames: string[]; intervalMs: number }) => void };
+
+let lastWorkingTheme: unknown;
+
+/** Applies the star frames through pi's documented WorkingIndicatorOptions.
+ *  Idempotent: re-applied only when the theme object changed, so `/theme`
+ *  reaches a spinner that is already on screen without restarting it on every
+ *  prompt. */
+export function applyWorkingIndicator(ui: WorkingIndicatorUi, theme?: ThinkingThemeLike): void {
+	lastWorkingTheme = theme;
+	ui.setWorkingIndicator({ frames: workingFrames(theme), intervalMs: WORKING_FRAME_MS });
 }
 
 type TurnClock = {
@@ -2137,6 +2180,26 @@ export function stripCwdCd(command: string, cwd: string = process.cwd()): string
  * one-line budget. Showing the whole line (rather than only its first `&&`
  * segment) keeps the informative part visible; `+N lines` reports the rest.
  */
+/**
+ * Lines a one-line row does not show, in the one vocabulary every row uses:
+ * non-blank physical lines of the payload behind the subject, minus the line
+ * the subject already displays. Blank lines are not content, so a script with
+ * airy spacing does not claim more hidden lines than it has.
+ */
+export function hiddenLineCount(text: string): number {
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  return Math.max(0, lines.length - 1);
+}
+
+/** The hidden-line count for a framed tool: the same rule as bash, applied to
+ *  whichever argument produced the row's subject (`code` for codemode/python,
+ *  `command` for background tasks). */
+export function externalHiddenLines(toolName: string | undefined, args: Record<string, unknown>): number {
+  if (typeof args.code === "string" && args.code.trim().length > 0) return hiddenLineCount(args.code);
+  if (typeof args.command === "string" && args.command.trim().length > 0) return hiddenLineCount(stripCwdCd(args.command));
+  return 0;
+}
+
 export function ultraBashSubject(command: string, cwd: string = process.cwd()): string {
   const first = stripCwdCd(command, cwd).split("\n")[0] ?? "";
   return shortenCommand(first.replace(/\s*(&&|\|\|)\s*$/, ""));
@@ -2367,10 +2430,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const command = String(args.command ?? "");
       if (getPrefs().ultracompact && !expanded) {
-        const commandLines = stripCwdCd(command)
-          .split("\n")
-          .filter((line) => line.trim().length > 0);
-        const hiddenCommands = commandLines.length - 1;
+        const hiddenCommands = hiddenLineCount(stripCwdCd(command));
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
           verb: ULTRA_BASH_VERB,
@@ -2799,7 +2859,7 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
     // trace (xtrm-6ggil).
     thinkingToggleLatch.followsToggle = false;
     setPrefs(loadPrefs(ctx.sessionManager.getEntries() as Array<MaybeCustomEntry>));
-    applyWorkingIndicator(ctx.ui);
+    applyWorkingIndicator(ctx.ui, (ctx.ui as unknown as { theme?: ThinkingThemeLike }).theme);
     // Await the prototype patch BEFORE the first message can render: a
     // factory-time install failure (theme not initialized yet) must be
     // retried here, after Pi's theme controller has run initTheme(), or the
