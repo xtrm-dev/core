@@ -24,9 +24,8 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import chalk from "chalk";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   cleanOutputLines,
@@ -34,8 +33,6 @@ import {
   createUnifiedLineDiff,
   diffStats,
   formatDuration,
-  formatLineLabel,
-  formatPayloadSize,
   joinCompactMeta,
   joinMeta,
   lineCount,
@@ -85,7 +82,7 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   diffPreviewLines: 18,
   extPreviewLines: 6,
   extNoCompact: false,
-  ultracompact: false,
+  ultracompact: true,
 };
 
 /** Collapsed command/code lines before the hidden-count line. Agent context is
@@ -123,7 +120,9 @@ export function normalizePrefs(input: unknown, base: XtrmUiPrefs = DEFAULT_PREFS
     diffPreviewLines: normalizeCappedLines((source as { diffPreviewLines?: unknown }).diffPreviewLines, base.diffPreviewLines, 50),
     extPreviewLines: normalizeCappedLines((source as { extPreviewLines?: unknown }).extPreviewLines, base.extPreviewLines, 50),
     extNoCompact: source.extNoCompact ?? DEFAULT_PREFS.extNoCompact,
-    ultracompact: (source as { ultracompact?: unknown }).ultracompact === true,
+    ultracompact: typeof (source as { ultracompact?: unknown }).ultracompact === "boolean"
+      ? (source as { ultracompact: boolean }).ultracompact
+      : base.ultracompact,
   };
 }
 
@@ -185,7 +184,7 @@ type PatchableAssistantMessage = {
 
 const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiThinkingPreview5";
 const ORIGINAL_ASSISTANT_UPDATE = "__xtrmUiThinkingPreviewOriginalUpdate";
-const THINKING_PREVIEW_PATCH_VERSION = 7;
+const THINKING_PREVIEW_PATCH_VERSION = 10;
 
 // The recap preserves awareness of the model's activity; it does not compete
 // with the answer. One clause, then stop (the ellipsis keeps the cut honest).
@@ -193,33 +192,103 @@ const THINKING_RECAP_MAX = 64;
 
 /** Minimal theme surface used to style the thinking rows. */
 export interface ThinkingRowStyle {
-	/** Label span: upright, one step up from the recap. */
+	/** Label span: one step brighter than the recap. */
 	label: (text: string) => string;
-	/** Trace span (expanded block). */
+	/** Recap span (italic in the collapsed row). */
 	recap: (text: string) => string;
-	/** Recap span in the collapsed row (italic). */
-	italic: (text: string) => string;
-	/** Hint span; only the expanded block shows one. */
-	hint: (text: string) => string;
-	/** Character count of the full trace, shown at the end of the collapsed row. */
-	count: (text: string) => string;
 	/** Field gap between label and recap. */
 	sep: string;
 }
 
+/** The theme surface the row styles need. Pi's `Theme` satisfies it. */
+export interface ThinkingThemeLike {
+	fg(color: string, text: string): string;
+	italic(text: string): string;
+	bold(text: string): string;
+}
+
+/** Lazy theme source: read at render time so a theme change reaches rows whose
+ *  style object was installed once per process. */
+let activeThemeProvider: (() => ThinkingThemeLike | undefined) | null = null;
 /**
- * Cuts a clause at a word boundary and marks the cut with "...". A fragment
+ * Last theme object seen from an extension context. The prototype patches are
+ * installed once per process and survive `/reload`; a patch installed by an
+ * earlier module instance keeps its own closure, so it may never see the new
+ * provider. The snapshot keeps those rows styled instead of silently falling
+ * back to plain text.
+ */
+let activeThemeSnapshot: ThinkingThemeLike | undefined;
+
+export function setActiveThemeProvider(provider: (() => ThinkingThemeLike | undefined) | null): void {
+	activeThemeProvider = provider;
+}
+
+/** Drop both bindings. Test seam: production keeps the snapshot across reloads. */
+export function resetThemeBinding(): void {
+	activeThemeProvider = null;
+	activeThemeSnapshot = undefined;
+}
+
+/** Record the live theme from an extension context. Safe to call often. */
+export function rememberTheme(ctx: { ui?: { theme?: ThinkingThemeLike } } | undefined): void {
+	try {
+		const theme = ctx?.ui?.theme;
+		if (!theme) return;
+		activeThemeSnapshot = theme;
+		setActiveThemeProvider(() => ctx?.ui?.theme);
+	} catch {
+		// A theme that is not initialized yet is not an error: the next context
+		// records it.
+	}
+}
+
+/** The theme for rows rendered outside a component callback. */
+export function activeTheme(): ThinkingThemeLike | undefined {
+	try {
+		return activeThemeProvider?.() ?? activeThemeSnapshot;
+	} catch {
+		return activeThemeSnapshot;
+	}
+}
+
+/**
+ * Bold/italic through the theme's ANSI path.
+ *
+ * `theme.bold()` and `theme.italic()` delegate to chalk, which returns plain
+ * text when chalk has no colour level — while `theme.fg()` still emits escapes,
+ * so weight and italics silently disappear. `Theme.style()` builds the SGR
+ * itself (the same path pi's own renderer uses), so it is the dependable route.
+ * Stub themes in tests expose only fg/bold/italic, hence the fallback.
+ */
+export function styledText(
+	theme: any,
+	token: string | undefined,
+	text: string,
+	attrs: { bold?: boolean; italic?: boolean } = { bold: true },
+): string {
+	if (typeof theme?.style === "function") {
+		return theme.style(text, token ? { ...attrs, fg: token } : attrs);
+	}
+	// Stub path: attributes first, colour outside (matches pi's own nesting).
+	let styled = text;
+	if (attrs.bold && typeof theme?.bold === "function") styled = theme.bold(styled);
+	if (attrs.italic && typeof theme?.italic === "function") styled = theme.italic(styled);
+	return token ? theme.fg(token, styled) : styled;
+}
+
+/**
+ * Cuts a clause at a word boundary and marks the cut with "…". A fragment
  * shorter than 40% of the budget is rejected in favour of the raw cut, so the
  * recap never ends in one stray syllable.
  */
 export function truncateClause(text: string, max: number): string {
 	if (text.length <= max) return text;
-	const budget = Math.max(0, max - 3);
+	const budget = Math.max(0, max - 1);
 	const cut = text.slice(0, budget);
 	// Prefer any complete word; only an unbroken long token gets cut mid-way.
 	const boundary = cut.lastIndexOf(" ");
 	const body = boundary > 0 ? cut.slice(0, boundary) : cut;
-	return `${body.trimEnd()}...`;
+	return `${body.trimEnd()}…`;
 }
 
 /**
@@ -250,70 +319,69 @@ export function buildThinkingRecap(thinking: string, fallback = "Thinking..."): 
 
 /**
  * A thinking row is injected as a text block, and pi trims every text block
- * before rendering it (`new Markdown(content.text.trim(), …)`). A plain
- * two-space indent is therefore stripped from the first line. A zero-width
- * space is not whitespace for `trim()`, survives it, and adds no visible
- * width — so the indent keeps its two columns.
+ * before rendering it (`new Markdown(content.text.trim(), …)`). A plain leading
+ * space is therefore stripped from the first line, so the indent is anchored on
+ * a zero-width space: `trim()` does not treat it as whitespace, and it adds no
+ * visible width. The row then carries ONE indent column; pi's markdown padding
+ * (`outputPad = 1`) supplies the second, which puts the row on the same column
+ * as a self-rendered tool row (two spaces, no markdown padding). No double
+ * indent.
  */
 export const INDENT_ANCHOR = "\u200b";
-const INDENT = `${INDENT_ANCHOR}  `;
+const INDENT = `${INDENT_ANCHOR} `;
 
-/** Collapsed row: two-space indent (aligned with tool rows), label, one
- *  clause. No character count and no inline shortcut: the row carries
- *  activity, not bookkeeping. The row is truncated to the render width, so
- *  the indent can never lose its alignment. */
-export function buildCollapsedThinkingRow(recap: string, charCount: number, style: ThinkingRowStyle): string {
-	const label = `${INDENT}${style.label("Thinking...")}`;
-	const tail = `${style.sep}${style.count(String(charCount))}`;
-	return recap ? `${label}${style.sep}${style.italic(recap)}${tail}` : `${label}${tail}`;
+/** Collapsed row: label, then one clause. No character count and no inline
+ *  shortcut: the row carries activity, not bookkeeping. Ctrl+T keeps its
+ *  global meaning (pi's thinking toggle) and is documented in /xtrm-ui. */
+export function buildCollapsedThinkingRow(recap: string, style: ThinkingRowStyle): string {
+	const label = `${INDENT}${style.label(THINKING_ROW_LABEL)}`;
+	return recap ? `${label}${style.sep}${style.recap(recap)}` : label;
 }
 
-/** Expanded block: indented label row with the collapse shortcut (shown only
- *  in this state), then the traced body, indented to the same column. */
+/** Expanded block: indented label row, then the traced body, indented to the
+ *  same column. The collapse shortcut is discoverable, not repeated inline. */
 export function buildExpandedThinkingBlock(thinking: string, style: ThinkingRowStyle): string {
 	const body = thinking
 		.trim()
 		.split("\n")
 		.map((line) => (line.length > 0 ? `${INDENT}${line}` : line))
 		.join("\n");
-	return `${INDENT}${style.label("Thinking...")} ${style.hint("(Ctrl+T to collapse)")}\n\n${style.recap(body)}`;
+	return `${INDENT}${style.label(THINKING_ROW_LABEL)}\n\n${style.recap(body)}`;
 }
 
-/** Collapsed thinking-row style: every span shares one level (dim italic),
- *  zero bold — the row reads distinct from roman full-bright response text.
- *  Raw SGR avoids importing the unbundled theme singleton when pi runs
- *  bundle/cli.js; dim RGB follows the active xtrm theme (dark #8a8a8a,
- *  light #7a7a7a). themeName resolves lazily per call so a session_start
- *  prefs load after patch install still picks up the active theme. */
-export function collapsedThinkingStyle(themeName: () => string): ThinkingRowStyle {
-	// Semantic ramp: secondary (#858585) for the label and recap, muted
-	// (#5F5F5F) for chrome. The label is upright, the recap italic. Raw SGR
-	// avoids importing the unbundled theme singleton when pi runs bundle/cli.js;
-	// the theme resolves lazily so a late prefs load is honoured.
-	const at = (hex: string) => (text: string) => {
-		const h = hex.replace("#", "");
-		const rgb = `${Number.parseInt(h.slice(0, 2), 16)};${Number.parseInt(h.slice(2, 4), 16)};${Number.parseInt(h.slice(4, 6), 16)}`;
-		return `\x1b[38;2;${rgb}m${text}\x1b[39m`;
+/** Collapsed thinking-row style: label at the secondary level, recap one step
+ *  back and italic. Theme tokens, resolved per render — a theme change reaches
+ *  rows installed before the switch. */
+export function collapsedThinkingStyle(getTheme: () => ThinkingThemeLike | undefined): ThinkingRowStyle {
+	const plain = (text: string) => text;
+	return {
+		label: (text) => {
+			const theme = getTheme();
+			return theme ? theme.fg("muted", text) : plain(text);
+		},
+		recap: (text) => {
+			const theme = getTheme();
+			return theme ? styledText(theme, "thinkingText", text, { italic: true }) : plain(text);
+		},
+		sep: "  ",
 	};
-	// Thinking is the least important stream on screen: it sits at the muted
-	// level, below tool output (secondary), so it never competes with the
-	// agent's answer or with what it is doing. Upright label, italic recap.
-	const muted = at(themeName() === "xtrm-light" ? "#8a8a8a" : "#5f5f5f");
-	const italic = (text: string) => `\x1b[3m${muted(text)}\x1b[23m`;
-	// The whole row is italic: it is a thinking aside, not a status line.
-	return { label: italic, recap: italic, italic, hint: muted, count: italic, sep: "  " };
 }
 
-/** Expanded thinking-block style, frozen at the pre-ultra treatment (bold
- *  label, gray trace): the collapsed-only restyle must not touch expanded. */
-export const expandedThinkingStyle: ThinkingRowStyle = {
-	label: (text) => `\x1b[1m\x1b[38;2;167;167;167m${text}\x1b[39m\x1b[22m`,
-	recap: (text) => `\x1b[38;2;167;167;167m${text}\x1b[39m`,
-	italic: (text) => `\x1b[3m\x1b[38;2;167;167;167m${text}\x1b[39m\x1b[23m`,
-	hint: (text) => `\x1b[38;2;95;95;95m${text}\x1b[39m`,
-	count: (text) => `\x1b[38;2;95;95;95m${text}\x1b[39m`,
-	sep: "  ",
-};
+/** Expanded thinking-block style: bold label, trace at the thinking level. */
+export function expandedThinkingStyle(getTheme: () => ThinkingThemeLike | undefined): ThinkingRowStyle {
+	const plain = (text: string) => text;
+	return {
+		label: (text) => {
+			const theme = getTheme();
+			return theme ? styledText(theme, "muted", text) : plain(text);
+		},
+		recap: (text) => {
+			const theme = getTheme();
+			return theme ? theme.fg("thinkingText", text) : plain(text);
+		},
+		sep: "  ",
+	};
+}
 
 const THINKING_ROW_LABEL = "Thinking...";
 // Pi's renderer reserves ~9-12 visible columns for the terminal-integration
@@ -356,23 +424,21 @@ export function fitThinkingRowToWidth(row: string, availableWidth: number | unde
 	if (visibleWidth(plain) <= width) return row;
 
 	// Keep the label and its gap, cut the recap as a clause so the row ends in
-	// "..." at a word boundary instead of losing the last syllable.
+	// "..." at a word boundary instead of losing the last syllable. There is no
+	// trailing metadata to protect: the row is label + clause only.
 	const labelEnd = plain.indexOf(THINKING_ROW_LABEL) + THINKING_ROW_LABEL.length;
-	const gap = plain.slice(labelEnd).match(/^\s+/)?.[0] ?? "";
+	// The gap is everything between the label and the first recap word: spaces
+	// and the separator dot, so the clause is cut instead of the separator.
+	const gap = plain.slice(labelEnd).match(/^[^A-Za-z0-9]*/)?.[0] ?? "";
 	const recapStartVisible = labelEnd + gap.length;
-	// The trailing count is metadata: it survives while the clause is cut.
-	const tailStartVisible = plain.lastIndexOf("  ") > recapStartVisible ? plain.lastIndexOf("  ") : plain.length;
-	const fixedWidth = recapStartVisible + (plain.length - tailStartVisible);
 	const recapStartRaw = rawOffsetForVisibleIndex(row, recapStartVisible);
-	const tailStartRaw = rawOffsetForVisibleIndex(row, tailStartVisible);
 	const head = row.slice(0, recapStartRaw);
-	const recapRaw = row.slice(recapStartRaw, tailStartRaw);
-	const tail = row.slice(tailStartRaw);
-	const budget = width - fixedWidth;
+	const recapRaw = row.slice(recapStartRaw);
+	const budget = width - recapStartVisible;
 	if (budget < 8) return truncateToWidth(row, width);
 	const colorPrefix = recapRaw.match(/^(\x1b\[[0-9;?]*m)+/)?.[0] ?? "";
 	const colorSuffix = recapRaw.match(/(\x1b\[[0-9;?]*m)+$/)?.[0] ?? "";
-	return head + colorPrefix + truncateClause(stripAnsi(recapRaw).replace(/(\x1b\[[0-9;?]*m)+$/g, "").trimEnd(), budget) + colorSuffix + tail;
+	return head + colorPrefix + truncateClause(stripAnsi(recapRaw).replace(/(\x1b\[[0-9;?]*m)+$/g, "").trimEnd(), budget) + colorSuffix;
 }
 
 function maybeFileUrlToPath(value: string): string {
@@ -444,7 +510,7 @@ export function createPatchedUpdateContent(
 				const content = blocks.flatMap((block, index) => {
 					if (block.type !== "thinking" || !block.thinking?.trim()) return [block];
 					const row = compact
-						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), block.thinking.length, collapsedStyle)
+						? buildCollapsedThinkingRow(buildThinkingRecap(block.thinking), collapsedStyle)
 						: buildExpandedThinkingBlock(block.thinking, expandedStyle);
 					// Text blocks render even when pi's hideThinkingBlock branch is
 					// active (a "thinking" block would be swallowed and replaced by the
@@ -492,11 +558,11 @@ async function installThinkingPreviewPatch(): Promise<void> {
 	const mod = await import(pathToFileURL(entryPath).href) as {
 		AssistantMessageComponent?: AssistantMessageComponentCtor;
 	};
-	// Collapsed rows share one dim-italic level (zero bold); the expanded
-	// block keeps its frozen pre-ultra treatment via expandedThinkingStyle.
-	// The theme resolves lazily per render so a session_start prefs load
-	// after install still picks up the active theme.
-	const collapsed = collapsedThinkingStyle(() => activePrefsSnapshot?.themeName ?? DEFAULT_PREFS.themeName);
+	// Collapsed rows: label at the secondary level, italic recap one step back.
+	// The theme resolves lazily per call, so a theme change (or a late
+	// session_start) reaches the installed patch without reinstalling it.
+	const collapsed = collapsedThinkingStyle(activeTheme);
+	const expanded = expandedThinkingStyle(activeTheme);
 	const proto = mod.AssistantMessageComponent?.prototype as
 		| (AssistantMessageComponentCtor["prototype"] & {
 			[PATCHED_ASSISTANT_MESSAGE]?: number | boolean;
@@ -514,7 +580,7 @@ async function installThinkingPreviewPatch(): Promise<void> {
 	);
 	if (!updateContent) return;
 	proto[ORIGINAL_ASSISTANT_UPDATE] ??= updateContent;
-	proto.updateContent = createPatchedUpdateContent(updateContent, collapsed, thinkingToggleLatch, expandedThinkingStyle);
+	proto.updateContent = createPatchedUpdateContent(updateContent, collapsed, thinkingToggleLatch, expanded);
 	proto[PATCHED_ASSISTANT_MESSAGE] = THINKING_PREVIEW_PATCH_VERSION;
 }
 
@@ -608,43 +674,49 @@ const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
 const ORIGINAL_EXTERNAL_HANDLE_MOUSE = "__xtrmUiExternalToolFrameOriginalHandleMouse";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 41;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 43;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
-// XTRM extension accent (#9a8bff) — pi's theme.fg() only accepts named tokens and
-// throws on raw hex, so emit the truecolor SGR directly (repo already uses raw
-// SGR escapes for bold).
-const XTRM_EXT_ACCENT = "\x1b[38;2;154;139;255m";
+// XTRM extension rows render through the active theme (tokens only). The
+// provider used to carry a violet accent; section 2 of the design contract
+// removed hue from every structural surface, so the identifier sits at the
+// tool-name level like a native row.
+
+function trFg(theme: ThinkingThemeLike | undefined, token: string, text: string): string {
+  return theme ? theme.fg(token, text) : text;
+}
+
+function trBold(theme: ThinkingThemeLike | undefined, text: string): string {
+  return theme ? styledText(theme, undefined, text) : text;
+}
+
+function trBoldFg(theme: ThinkingThemeLike | undefined, token: string, text: string): string {
+  return theme ? styledText(theme, token, text) : text;
+}
 
 type ToolRowStatus = "pending" | "success" | "error";
-
-function boldSgr(text: string): string {
-  return `\x1b[1m${text}\x1b[22m`;
-}
 
 /**
  * External tool row header in native tool style:
  *   ● used <Extension> <tool>
- *   - dot: plain prompt color; dim once the command succeeds (like native rows)
+ *   - dot: structural marker, dim once the command succeeds
  *   - "used": bold action word
- *   - extension: #9a8bff, bold
- *   - tool: bold, dim until success, default (light) when success
+ *   - extension: tool-name level, bold
+ *   - tool: secondary level, bold; dim until success
+ * Failures swap the dot for `!` and take the brightest grayscale token.
  */
 function externalToolHeaderLine(
   status: ToolRowStatus,
   provider: string,
   tool?: string,
 ): string {
-  // Errors are the one thing allowed to grab attention: red marker plus the
-  // failure word, never a quiet neutral row.
-  const dot = status === "error"
-    ? "\x1b[38;2;255;154;154m!\x1b[39m"
-    : status === "success" ? "\x1b[2m●\x1b[22m" : "●";
-  const ext = `${XTRM_EXT_ACCENT}${boldSgr(provider)}\x1b[39m`;
-  const toolColor = status === "success" ? "" : "\x1b[2m";
-  const toolReset = status === "success" ? "" : "\x1b[22m";
-  const toolName = tool ? ` ${toolColor}${boldSgr(tool)}${toolReset}` : "";
-  return `${dot} ${boldSgr("used")} ${ext}${toolName}`;
+  const theme = activeTheme();
+  const isError = status === "error";
+  const dot = isError ? trFg(theme, "error", "!") : trFg(theme, status === "success" ? "dim" : "text", "●");
+  const ext = trBoldFg(theme, isError ? "error" : "toolTitle", provider);
+  const toolToken = isError ? "error" : status === "success" ? "toolTitle" : "dim";
+  const toolName = tool ? ` ${trBoldFg(theme, toolToken, tool)}` : "";
+  return `${dot} ${trBold(theme, "used")} ${ext}${toolName}`;
 }
 
 function stripAnsi(text: string): string {
@@ -744,7 +816,7 @@ export function externalToolContentLines(
   // Hidden counts the header line as shown (bash: hidden = total - cap).
   const hidden = preview.length - shown.length - 1;
   const count = !expanded && hidden > 0
-    ? [` \x1b[2m\x1b[3m … +${hidden} lines\x1b[23m\x1b[22m`]
+    ? [`  ${trFg(activeTheme(), "dim", `+${hidden} ${hidden === 1 ? "line" : "lines"}`)}`]
     : [];
   const indentedCode = shown.map((l) => (l.length > 0 ? `  ${l}` : l));
   return [...indentedCode, ...count, ...tail];
@@ -752,9 +824,10 @@ export function externalToolContentLines(
 
 export function collapsedExternalToolLines(contentLines: string[], expanded: boolean, resultCap: number = DEFAULT_PREFS.resultPreviewLines): string[] {
   if (expanded || contentLines.length <= resultCap) return contentLines;
+  const hidden = contentLines.length - resultCap;
   return [
     ...contentLines.slice(0, resultCap),
-    `... (${contentLines.length - resultCap} more lines, ctrl+o to expand)`,
+    `  ${trFg(activeTheme(), "dim", `+${hidden} ${hidden === 1 ? "line" : "lines"}`)}`,
   ];
 }
 
@@ -863,17 +936,12 @@ export function renderExternalToolBackgroundLines(
   const total = payloadLines.length;
   const shownResult = visibleResult.length;
   const totalResult = resultLines.length;
-  const resultSummary = !expanded && shownResult < totalResult
-    ? `showing ${shownResult}/${totalResult} lines (ctrl+o expand)`
-    : totalResult > 0 ? formatLineLabel(totalResult, "line") : undefined;
-  const lineSummary = codeCount > 0 ? resultSummary : (!expanded && shown < total
-    ? `showing ${shown}/${total} lines (ctrl+o expand)`
-    : total > 0 ? formatLineLabel(total, "line") : undefined);
-  const footerMeta = joinMeta([
-    lineSummary,
-    formatDuration(durationMs),
-    formatPayloadSize(contentLines.join("\n")),
-  ]);
+  // Compact meta: a hidden-content indicator and the duration. Routine totals,
+  // payload sizes and per-row Ctrl+O reminders are noise; the shortcut is
+  // documented once, in /xtrm-ui.
+  const hidden = Math.max(0, codeCount > 0 ? totalResult - shownResult : total - shown);
+  const hiddenLabel = !expanded && hidden > 0 ? `+${hidden} ${hidden === 1 ? "line" : "lines"}` : undefined;
+  const footerMeta = joinMeta([hiddenLabel, durationMs != null && durationMs >= 1000 ? formatDuration(durationMs) : undefined]);
   const renderWidth = Math.max(8, width);
   // Payload lines indent two spaces under the flush header (design-system
   // tool rows: header at column 0, everything below carries two spaces).
@@ -883,17 +951,21 @@ export function renderExternalToolBackgroundLines(
   // below mirrors the bash tree — bold execution lines, muted └ output
   // anchor, plain dim meta footer with no └─ prefix.
   if (codeCount > 0) {
-    const boldCode = (line: string) =>
-      status === "success" ? boldSgr(line) : `\x1b[2m${boldSgr(line)}\x1b[22m`;
+    const theme = activeTheme();
+    const codeToken = status === "error" ? "error" : status === "success" ? "text" : "dim";
+    const outputToken = status === "error" ? "error" : "toolOutput";
+    const boldCode = (line: string) => trBoldFg(theme, codeToken, line);
     const treeOutput = visibleResult.map((line, index) =>
-      index === 0 ? `  \x1b[2m└\x1b[22m ${line}` : `    ${line}`,
+      index === 0
+        ? `  ${trFg(theme, "muted", "└")} ${trFg(theme, outputToken, line)}`
+        : `    ${trFg(theme, outputToken, line)}`,
     );
     const body = [
       truncateToWidth(renderedHeader, renderWidth),
       ...[...codeLines.map(boldCode), ...treeOutput].map((line) => truncateToWidth(line, renderWidth)),
     ];
     return footerMeta
-      ? [...body, `\x1b[2m${truncateToWidth(`  ${footerMeta}`, renderWidth)}\x1b[22m`]
+      ? [...body, trFg(theme, "dim", truncateToWidth(`  ${footerMeta}`, renderWidth))]
       : body;
   }
   const payload = visiblePayload.map((rawLine) =>
@@ -901,7 +973,7 @@ export function renderExternalToolBackgroundLines(
   );
   const body = [truncateToWidth(renderedHeader, renderWidth), ...payload];
   return footerMeta
-    ? [...body, `\x1b[2m${truncateToWidth(`  └─ ${footerMeta}`, renderWidth)}\x1b[22m`]
+    ? [...body, trFg(activeTheme(), "dim", truncateToWidth(`  └─ ${footerMeta}`, renderWidth))]
     : body;
 }
 
@@ -918,16 +990,10 @@ export function bareExternalToolHeader(
   };
 }
 
-/** Frame styling through chalk — never hardcoded color bytes — so the
- *  frame downgrades per terminal exactly like the native theme-backed rows.
- *  Hexes mirror the xtrm theme tokens (dimGray/errorRed) per active theme.
- *  normalizePrefs collapses themeName to xtrm-dark/xtrm-light, so anything
- *  else falls back to dark (xtrm-ui forces an xtrm theme by default). */
-export function ultraThemeHexes(themeName: string): { dim: string; error: string } {
-	return themeName === "xtrm-light"
-		? { dim: "#7a7a7a", error: "#b02a2a" }
-		: { dim: "#8a8a8a", error: "#ff9a9a" };
-}
+/** Frame styling resolves through the active theme's tokens — never hardcoded
+ *  color bytes — so the frame downgrades per terminal exactly like the native
+ *  theme-backed rows and follows a theme switch. The theme is read lazily per
+ *  render (`activeTheme`); a runtime without one renders plain text. */
 
 /** Test/embedding hook: override the active prefs snapshot (drives frame
  *  styling and activeUltracompact() without running the extension factory). */
@@ -935,11 +1001,18 @@ export function setActivePrefsSnapshotForTests(prefs: XtrmUiPrefs | null): void 
 	activePrefsSnapshot = prefs;
 }
 
-const ultraHexes = () => ultraThemeHexes(activePrefsSnapshot?.themeName ?? DEFAULT_PREFS.themeName);
-const ultraDim = (text: string) => faint(chalk.hex(ultraHexes().dim)(text));
-const ultraDimBold = (text: string) => faint(chalk.hex(ultraHexes().dim)(chalk.bold(text)));
-const ultraRed = (text: string) => chalk.hex(ultraHexes().error)(text);
-const ultraRedBold = (text: string) => chalk.hex(ultraHexes().error)(chalk.bold(text));
+// Ultra rows read the active theme through the same lazy provider as the
+// thinking rows: tokens, never baked hex, so a theme change reaches them and
+// 256-colour terminals get pi's downsampled escapes.
+function ultraFg(token: string, text: string): string {
+	const theme = activeTheme();
+	return theme ? theme.fg(token, text) : text;
+}
+
+function ultraBold(token: string, text: string): string {
+	const theme = activeTheme();
+	return theme ? styledText(theme, token, text) : text;
+}
 
 export function ultraExternalSubject(toolName: string | undefined, args: Record<string, unknown>): string | undefined {
   const firstCode = externalToolCodePreview(toolName, args)?.[0]?.trim();
@@ -1017,19 +1090,18 @@ export function buildUltraExternalLine(
   const primary = resultTexts.length > 0 ? ultraExternalPrimary(toolName, resultTexts) : undefined;
   const isError = status === "error";
   // No dots on tool rows, ever: the dot marks assistant messages only.
-  const dot = "  ";
-  // Uniform with native rows: the whole `used <Tool> [<action>]` head is
-  // one bold dim verb span, the subject plain dim after it. No provider
-  // accent in ultra — that hue lives in the expanded frame only.
-  const span = (text: string) => isError ? ultraRedBold(text) : ultraDimBold(text);
-  const sub = (text: string) => isError ? ultraRed(text) : ultraDim(text);
+  const dot = isError ? `${ultraFg("error", "!")} ` : "  ";
+  // Uniform with native rows: the whole `used <Tool> [<action>]` head is one
+  // bold tool-name span, the subject one step back. No provider hue.
+  const span = (text: string) => ultraBold(isError ? "error" : "toolTitle", text);
+  const sub = (text: string) => ultraFg(isError ? "error" : "toolTitle", text);
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
   const head = ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
   let row = `${dot}${span(head)}`;
   if (subject) row += ` ${sub(subject)}`;
-  if (primary) row += `  ${isError ? ultraRed(primary) : ultraDim(primary)}`;
+  if (primary) row += `  ${ultraFg("muted", primary)}`;
   if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
-    row += `  ${ultraRed("failed")}`;
+    row += `  ${ultraFg("error", "failed")}`;
   }
   return row;
 }
@@ -1266,7 +1338,10 @@ export function boldMarkdownHeadings(markdown: string): string {
 			if (inFence) return line;
 			const match = line.match(/^(#{1,6}\s+)(.*)$/);
 			if (!match || match[2].trim() === "" || match[2].includes("\x1b[1m")) return line;
-			return `${match[1]}\x1b[1m${match[2]}\x1b[22m`;
+			// Headings carry weight rather than brightness; the theme owns the
+			// escape so a no-color terminal degrades to plain text.
+			const theme = activeTheme();
+			return theme ? `${match[1]}${styledText(theme, undefined, match[2])}` : line;
 		})
 		.join("\n");
 }
@@ -1370,10 +1445,10 @@ function sessionUsageTokens(ctx: ExtensionContext): number {
 function registerTurnSummary(pi: ExtensionAPI): void {
 	pi.registerEntryRenderer(XTRM_TURN_SUMMARY_ENTRY, (entry, _options, theme) => {
 		const data = (entry as { data?: Partial<XtrmTurnSummary> }).data ?? {};
-		return new Text("  " + theme.fg("dim", theme.italic(formatTurnSummary({
+		return new Text("  " + styledText(theme, "dim", formatTurnSummary({
 			seconds: Math.max(0, Math.round(Number(data.seconds) || 0)),
 			tokens: Math.max(0, Math.round(Number(data.tokens) || 0)),
-		}))), 0, 0);
+		}), { italic: true }), 0, 0);
 	});
 	pi.on("agent_start", (_event, ctx) => {
 		startTurnClock(ctx.ui, sessionUsageTokens(ctx));
@@ -1440,7 +1515,7 @@ function applyXtrmChrome(
       const line1 =
         border("│") +
         fitVisible(
-          ` ${theme.fg("dim", ">_")} ${theme.bold("XTRM")} ${theme.fg("dim", "(v1.0.0)")}`,
+          ` ${theme.fg("dim", ">_")} ${styledText(theme, undefined, "XTRM")} ${theme.fg("dim", "(v1.0.0)")}`,
           boxWidth - 2,
         ) +
         border("│");
@@ -1491,10 +1566,13 @@ function summarizeCount(text: string): number {
   return text.split("\n").filter((line) => line.trim().length > 0).length;
 }
 
-function previewSummary(shown: number, total: number, noun: string, expanded: boolean): string {
-  return !expanded && shown < total
-    ? `showing ${shown}/${total} ${noun}s (ctrl+o expand)`
-    : formatLineLabel(total, noun);
+function previewSummary(shown: number, total: number, noun: string, expanded: boolean): string | undefined {
+  // Compact meta only: a hidden-content indicator, never the per-row
+  // `showing x/y (ctrl+o expand)` bookkeeping. Ctrl+O keeps its global meaning.
+  if (expanded) return undefined;
+  const hidden = total - shown;
+  if (hidden <= 0) return undefined;
+  return `+${hidden} ${noun}${hidden === 1 ? "" : "s"}`;
 }
 
 // ============================================================================
@@ -1558,7 +1636,7 @@ function registerCommands(
   pi.registerMessageRenderer("xtrm-ui-info", (message, _options, theme) => {
     const title = (message.details as { title?: string } | undefined)?.title ?? "XTRM UI";
     const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
-    box.addChild(new Text(theme.fg("customMessageLabel", theme.bold(title)), 0, 0));
+    box.addChild(new Text(styledText(theme, "customMessageLabel", title), 0, 0));
     box.addChild(new Text(theme.fg("customMessageText", String(message.content ?? "")), 0, 0));
     return box;
   });
@@ -1954,17 +2032,23 @@ export function renderBashTree(
   commandCap: number = DEFAULT_COMMAND_PREVIEW_LINES,
   expanded = false,
 ): string {
-  const commandColor = statusColor === "success" ? "text" : "dim";
+  const isError = statusColor === "error";
+  // Ordinary activity stays neutral: the header reads at the tool-name level
+  // (toolTitle), semibold for the identifier and upright for the subject, so a
+  // tool row stays above the thinking tone. Failures take the brightest
+  // grayscale token plus the `!` marker.
+  const nameToken = isError ? "error" : "toolTitle";
+  const subjectToken = isError ? "error" : "toolTitle";
   const allCommands = splitCommandSegments(command).flatMap((seg) => seg.split("\n"));
   const cap = expanded ? allCommands.length : Math.min(Math.max(1, commandCap), allCommands.length);
   const [firstCommand = "", ...continuedCommands] = allCommands.slice(0, cap);
   const hiddenCommands = allCommands.length - cap;
-  // theme.bold is a chalk no-op in pi's runtime; emit the SGR escape directly.
-  const boldCommand = (text: string) => `\x1b[1m${text}\x1b[22m`;
-  const countLine = hiddenCommands > 0 ? ` \x1b[2m\x1b[3m … +${hiddenCommands} lines\x1b[23m\x1b[22m` : undefined;
+  const countLine = hiddenCommands > 0
+    ? `  ${theme.fg("dim", `+${hiddenCommands} ${hiddenCommands === 1 ? "line" : "lines"}`)}`
+    : undefined;
   return appendToolTree(theme, [
-    `${theme.fg(statusColor, toolGlyph(statusColor))} ${theme.fg(statusColor, theme.bold("Ran"))} ${boldCommand(theme.fg(commandColor, firstCommand))}`,
-    ...continuedCommands.map((line) => boldCommand(theme.fg(commandColor, line))),
+    `${theme.fg(isError ? "error" : "dim", toolGlyph(statusColor))} ${styledText(theme, nameToken, "Ran")} ${theme.fg(subjectToken, firstCommand)}`,
+    ...continuedCommands.map((line) => theme.fg(subjectToken, line)),
     ...(countLine ? [countLine] : []),
   ], outputLines, meta);
 }
@@ -1977,9 +2061,9 @@ function renderNamedToolTree(
   outputLines: string[] = [],
   meta?: string,
 ): string {
-  const subjectColor = statusColor === "success" ? "text" : "dim";
+  const isError = statusColor === "error";
   return appendToolTree(theme, [
-    `${theme.fg(statusColor, toolGlyph(statusColor))} ${theme.fg(statusColor, theme.bold(label))}${subject ? ` ${theme.fg(subjectColor, subject)}` : ""}`,
+    `${theme.fg(isError ? "error" : "dim", toolGlyph(statusColor))} ${styledText(theme, isError ? "error" : "toolTitle", label)}${subject ? ` ${theme.fg(isError ? "error" : "toolTitle", subject)}` : ""}`,
   ], outputLines, meta);
 }
 
@@ -2002,36 +2086,59 @@ export interface UltraRowParts {
 
 export function renderUltraRow(theme: any, parts: UltraRowParts): string {
   const isError = parts.statusColor === "error";
-  // Ultra dim baseline: nothing renders full-bright. Verb and subject drop
-  // to standard dim, fainted; outcomes sit one level dimmer. Colored spans
-  // keep their hue under the faint. Errors keep full red so failures
-  // survive dimming — the one exception.
-  const verb = isError
-    ? theme.fg("error", theme.bold(parts.verb))
-    : faint(theme.fg("dim", theme.bold(parts.verb)));
-  const subject = parts.subject
-    ? isError ? theme.fg("error", parts.subject) : faint(theme.fg("dim", parts.subject))
-    : "";
-  // Tool rows never take a dot: it marks assistant messages only.
-  let row = subject ? `  ${verb} ${subject}` : `  ${verb}`;
-  if (parts.primary) row += `  ${isError ? theme.fg("error", parts.primary) : faint(theme.fg("dim", parts.primary))}`;
-  if (parts.secondary) row += `  ${isError ? theme.fg("error", parts.secondary) : faint(theme.fg("muted", parts.secondary))}`;
-  // Explicit failure word: dimming removed the color cue, so failed rows
-  // say so (skipped when the outcome already says fail-*).
+  // One grayscale ladder for native and extension rows: the header (verb and
+  // subject) is one emphasis-tone block where weight separates the identifier
+  // from its subject, metadata sits one step back, duration two steps back.
+  // Thinking rows stay a further step down, so a tool row never reads as a
+  // thinking row. Errors move the header to the brightest token and take the
+  // `!` marker; nothing in a tool row is ever coloured.
+  const verb = styledText(theme, isError ? "error" : "toolTitle", parts.verb);
+  const subject = parts.subject ? ` ${theme.fg(isError ? "error" : "toolTitle", parts.subject)}` : "";
+  // Neutral rows keep two columns so text aligns with pi's `● ` marker width;
+  // a failure replaces that prefix with `! ` at the same columns.
+  let row = isError ? `${theme.fg("error", "!")} ${verb}` : `  ${verb}`;
+  row += subject;
+  if (parts.primary) row += `  ${theme.fg("muted", parts.primary)}`;
+  if (parts.secondary) row += `  ${theme.fg("dim", parts.secondary)}`;
+  // Explicit failure word: the marker alone is easy to miss in a long log.
   if (isError && !/fail(ed|ure)?/i.test(`${parts.primary ?? ""} ${parts.secondary ?? ""}`)) {
     row += `  ${theme.fg("error", "failed")}`;
   }
   return row;
 }
 
-/** Faint wrapper: the ultra dim baseline (nothing full-bright). */
-function faint(text: string): string {
-  return `\x1b[2m${text}\x1b[22m`;
+/** First command segment without a dangling `&&`/`||` tail. */
+/**
+ * Drops a leading `cd <cwd>` chain. A shell call routinely starts by entering the
+ * directory the session is already in, and that prefix then eats the whole
+ * one-line budget on every consecutive row (`cd` … `&&` …). The HUD already
+ * shows where the session is, so the prefix carries no information.
+ */
+export function stripCwdCd(command: string, cwd: string = process.cwd()): string {
+  let rest = command;
+  const prefix = /^\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)\s*(?:&&|\|\||;|\n)\s*/;
+  for (;;) {
+    const match = rest.match(prefix);
+    if (!match) return rest;
+    const target = match[1]!.replace(/^['"]|['"]$/g, "");
+    let same = false;
+    try {
+      same = resolve(target) === resolve(cwd);
+    } catch {
+      same = target === cwd;
+    }
+    if (!same) return rest;
+    rest = rest.slice(match[0].length);
+  }
 }
 
-/** First command segment without a dangling `&&`/`||` tail. */
-export function ultraBashSubject(command: string): string {
-  const first = splitCommandSegments(command)[0] ?? "";
+/**
+ * The one-line subject is the command's first physical line, clipped to the
+ * one-line budget. Showing the whole line (rather than only its first `&&`
+ * segment) keeps the informative part visible; `+N lines` reports the rest.
+ */
+export function ultraBashSubject(command: string, cwd: string = process.cwd()): string {
+  const first = stripCwdCd(command, cwd).split("\n")[0] ?? "";
   return shortenCommand(first.replace(/\s*(&&|\|\|)\s*$/, ""));
 }
 
@@ -2201,13 +2308,27 @@ const XTRM_BUILTIN_TOOLS = new Set(["bash", "read", "edit", "write", "find", "gr
 
 function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): void {
   const tools = getTools(process.cwd());
-  const toolRowText = (theme: any, text: string) =>
-    new Text(
-      text,
-      0,
-      0,
-      getPrefs().toolRowBg ? (line: string) => theme.bg("selectedBg", line) : undefined,
-    );
+  // One-line rows must stay one line at every width. `ToolRenderResultOptions`
+  // carries no width, so the clip happens in the component's own render pass:
+  // each line is cut to the terminal width (ending in "…") before Text wraps.
+  const toolRowText = (theme: any, text: string) => {
+    const bgFn = () => (getPrefs().toolRowBg ? (line: string) => theme.bg("selectedBg", line) : undefined);
+    const component = new Text(text, 0, 0, bgFn()) as Text & { render?: (width: number) => string[] };
+    const baseRender = typeof component.render === "function" ? component.render.bind(component) : undefined;
+    component.render = (width: number) => {
+      // Trees and expanded rows stay whole: their content must remain reachable,
+      // so the terminal wraps them. Only a collapsed one-line row is clipped.
+      if (!Number.isFinite(width) || width <= 0 || text.includes("\n")) {
+        return baseRender ? baseRender(width) : text.split("\n");
+      }
+      const clipped = truncateToWidth(text, width, "…");
+      if (clipped === text && baseRender) return baseRender(width);
+      const rebuilt = new Text(clipped, 0, 0, bgFn()) as Text & { render?: (width: number) => string[] };
+      const rebuiltRender = typeof rebuilt.render === "function" ? rebuilt.render.bind(rebuilt) : undefined;
+      return rebuiltRender ? rebuiltRender(width) : [clipped];
+    };
+    return component;
+  };
   const renderCall = (
     toolName: string,
     args: Record<string, unknown>,
@@ -2221,8 +2342,16 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     }
     return toolRowText(theme, "");
   };
+  // Meta fields must earn their slot (design contract §4). A fast call and a
+  // small payload say nothing, so most rows end where their content ends and
+  // the transcript stops looking like a filled-in form.
+  const SLOW_CALL_MS = 1000;
+  const slowMs = (ms: number | undefined) =>
+    typeof ms === "number" && ms >= SLOW_CALL_MS ? formatDuration(ms) : undefined;
   const renderDuration = (context: XtrmToolRenderContext) =>
-    formatDuration(context.state.startedAt == null ? undefined : Date.now() - context.state.startedAt);
+    slowMs(context.state.startedAt == null ? undefined : Date.now() - context.state.startedAt);
+  // One slot for a diff's two numbers, so diff rows stay within two meta fields.
+  const diffMeta = (additions: number, removals: number) => `+${additions} -${removals}`;
 
   pi.registerTool({
     name: "bash",
@@ -2238,10 +2367,16 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const command = String(args.command ?? "");
       if (getPrefs().ultracompact && !expanded) {
+        const commandLines = stripCwdCd(command)
+          .split("\n")
+          .filter((line) => line.trim().length > 0);
+        const hiddenCommands = commandLines.length - 1;
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
           verb: ULTRA_BASH_VERB,
           subject: ultraBashSubject(command),
+          primary: hiddenCommands > 0 ? `+${hiddenCommands} ${hiddenCommands === 1 ? "line" : "lines"}` : undefined,
+          secondary: renderDuration(context),
         }));
       }
       if (isPartial) {
@@ -2254,9 +2389,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const lineSummary = previewSummary(visibleLines.length, outputLines.length, "line", expanded);
       const text = renderBashTree(theme, statusColor, command, visibleLines, joinMeta([
         lineSummary,
-        renderDuration(context),
-        formatPayloadSize(output),
-        details.truncation?.truncated ? "truncated" : undefined,
+        details.truncation?.truncated ? "truncated" : renderDuration(context),
       ]), getPrefs().commandPreviewLines, expanded);
       return toolRowText(theme, text);
     },
@@ -2277,11 +2410,18 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         const base = shortenPath(String(ultraArgs.path ?? ""));
         const ultraRange = lineRange(ultraArgs.offset as number | undefined, ultraArgs.limit as number | undefined);
         const first = result.content[0];
+        const ultraDetails = (result.details ?? {}) as ReadToolDetails;
+        // The one-line row still says when the tool clipped a large file; the
+        // same slot carries the image marker for a visual result.
+        const ultraFlag = ultraDetails.truncation?.truncated
+          ? `from ${ultraDetails.truncation.totalLines}`
+          : !isPartial && first?.type === "image" ? "image" : undefined;
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
           verb: "read",
           subject: ultraRange ? `${base}:${ultraRange}` : base,
-          primary: !isPartial && first?.type === "image" ? "image" : undefined,
+          primary: ultraFlag,
+          secondary: renderDuration(context),
         }));
       }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "read", "loading"));
@@ -2314,9 +2454,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         totalLines > 0 ? visibleLines : [],
         joinMeta([
           lineSummary,
-          renderDuration(context),
-          formatPayloadSize(textContent),
-          details.truncation?.truncated ? `from ${details.truncation.totalLines}` : undefined,
+          details.truncation?.truncated ? `from ${details.truncation.totalLines}` : renderDuration(context),
         ]),
       );
       return toolRowText(theme, text);
@@ -2344,7 +2482,8 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
           subject: shortenPath(String(ultraArgs.path ?? ""), 42),
           primary: context.isError || isPartial
             ? ultraText.split("\n")[0] || undefined
-            : stats ? `+${stats.additions} -${stats.removals}` : undefined,
+            : stats ? diffMeta(stats.additions, stats.removals) : undefined,
+          secondary: renderDuration(context),
         }));
       }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "edit", "applying"));
@@ -2369,7 +2508,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         "edit",
         path,
         details.diff ? renderRichDiffPreview(theme, details.diff, getPrefs().diffPreviewLines).split("\n") : [],
-        joinMeta([`+${stats.additions}`, `-${stats.removals}`, renderDuration(context)]),
+        joinMeta([diffMeta(stats.additions, stats.removals), renderDuration(context)]),
       );
       return toolRowText(theme, text);
     },
@@ -2410,6 +2549,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
           verb: "write",
           subject: shortenPath(String(ultraArgs.path ?? ""), 42),
           primary,
+          secondary: renderDuration(context),
         }));
       }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "write", "writing"));
@@ -2446,7 +2586,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
           "write",
           path,
           preview.diff ? renderRichDiffPreview(theme, preview.diff, getPrefs().diffPreviewLines).split("\n") : [],
-          joinMeta([`+${preview.additions}`, `-${preview.removals}`, renderDuration(context)]),
+          joinMeta([diffMeta(preview.additions, preview.removals), renderDuration(context)]),
         ));
       }
 
@@ -2462,7 +2602,6 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         joinMeta([
           previewSummary(visibleLines.length, lines, "line", expanded),
           renderDuration(context),
-          formatPayloadSize(content),
         ]),
       );
       return toolRowText(theme, text);
@@ -2488,6 +2627,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
           verb: "find",
           subject: String(ultraArgs.pattern ?? ""),
           primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "match" : "matches"}` : undefined,
+          secondary: renderDuration(context),
         }));
       }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "find", "searching"));
@@ -2504,9 +2644,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         outputLines,
         joinMeta([
           previewSummary(Math.min(outputLines.length, count), count, "match", expanded),
-          renderDuration(context),
-          formatPayloadSize(textContent),
-          details.resultLimitReached ? "limit reached" : undefined,
+          details.resultLimitReached ? "limit reached" : renderDuration(context),
         ]),
       );
       return toolRowText(theme, text);
@@ -2532,6 +2670,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
           verb: "grep",
           subject: String(ultraArgs.pattern ?? ""),
           primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "match" : "matches"}` : undefined,
+          secondary: renderDuration(context),
         }));
       }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "grep", "searching"));
@@ -2548,9 +2687,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         outputLines,
         joinMeta([
           previewSummary(Math.min(outputLines.length, count), count, "match", expanded),
-          renderDuration(context),
-          formatPayloadSize(textContent),
-          details.matchLimitReached ? "limit reached" : undefined,
+          details.matchLimitReached ? "limit reached" : renderDuration(context),
         ]),
       );
       return toolRowText(theme, text);
@@ -2576,6 +2713,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
           verb: "ls",
           subject: shortenPath(String(ultraArgs.path ?? ".")),
           primary: !isPartial && !context.isError && count > 0 ? `${count} ${count === 1 ? "entry" : "entries"}` : undefined,
+          secondary: renderDuration(context),
         }));
       }
       if (isPartial) return toolRowText(theme, renderNamedToolTree(theme, "accent", "ls", "listing"));
@@ -2592,9 +2730,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         outputLines,
         joinMeta([
           previewSummary(Math.min(outputLines.length, count), count, "entry", expanded),
-          renderDuration(context),
-          formatPayloadSize(textContent),
-          details.entryLimitReached ? "limit reached" : undefined,
+          details.entryLimitReached ? "limit reached" : renderDuration(context),
         ]),
       );
       return toolRowText(theme, text);
@@ -2647,6 +2783,10 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   registerCommands(pi, getPrefs, setPrefs, getThinkingLevel);
 
   const refresh = (ctx: ExtensionContext) => {
+    // Theme tokens are read lazily per render by the patched thinking rows and
+    // external frames; record the live getter per ctx so a theme switch
+    // mid-session reaches them without reinstalling a patch.
+    rememberTheme(ctx as unknown as { ui?: { theme?: ThinkingThemeLike } });
     applyXtrmChrome(ctx, prefs, getThinkingLevel);
     applyThinkingChrome(ctx);
   };
@@ -2696,10 +2836,12 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", async () => {
-    // No-op: no theme restoration on shutdown
+    // No-op: the prototype patches outlive the session, so the recorded theme
+    // must survive too. The next session_start replaces it.
   });
 
-  pi.on("input", async (event) => {
+  pi.on("input", async (event, ctx) => {
+    rememberTheme(ctx as unknown as { ui?: { theme?: ThinkingThemeLike } });
     if (event.source === "extension") return { action: "continue" as const };
     if (!event.text.trim()) return { action: "continue" as const };
     if (event.text.startsWith("/") || event.text.startsWith("!")) return { action: "continue" as const };
@@ -2709,7 +2851,8 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
       : { action: "transform" as const, text: `› ${event.text}` };
   });
 
-  pi.on("context", async (event) => {
+  pi.on("context", async (event, ctx) => {
+    rememberTheme(ctx as unknown as { ui?: { theme?: ThinkingThemeLike } });
     const messages = event.messages.map((message) => {
       if (message.role === "user" && typeof message.content === "string" && message.content.startsWith("› ")) {
         return { ...message, content: message.content.slice(2) };

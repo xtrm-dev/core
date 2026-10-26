@@ -36,10 +36,10 @@ function indicatorScenarios(): Array<{ name: string; summary: BackgroundSummary 
 describe("indicator snapshots", () => {
   test("canonical lines match the D-5 shapes", () => {
     expect(renderIndicator({ runningTasks: 3, activeMonitors: 1, unseenFailures: 0 }, 80)).toEqual([
-      "◐ 3 tasks running · 1 monitor · /bg",
+      "3 tasks running · 1 monitor · /bg",
     ]);
     expect(renderIndicator({ runningTasks: 2, activeMonitors: 0, unseenFailures: 1 }, 80)).toEqual([
-      "◐ 2 tasks running · ! 1 failed · /bg",
+      "2 tasks running · ! 1 failed · /bg",
     ]);
   });
 
