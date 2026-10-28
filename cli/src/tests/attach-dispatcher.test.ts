@@ -12,7 +12,7 @@ import {
     resolveDispatcherByParticipant,
     type ProcessInfo,
 } from '../core/dispatcher-identity.js';
-import { buildAttachEnv } from '../commands/attach.js';
+import { buildAttachEnv, holderFromWorktreePath } from '../commands/attach.js';
 import { AgentHostRegistry, type ProducerConnection } from '../core/agent-host-registry.js';
 import type { AgentEventV1 } from '@xtrm/contracts';
 
@@ -124,8 +124,30 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
         const env = buildAttachEnv({ PATH: '/bin' }, 'pi', deps);
         expect(env.XTRM_DISPATCHER_NAME).toBe('coord');
         expect(env.XTRM_DISPATCHER_ADDRESS).toBe('uds:/run/cc/100.sock');
-        // The worker keeps its own holder name from the launch, not from attach.
+        // Attach does not invent a holder when the caller has none to give.
+        expect(env.SUBSTRATE_HOLDER).toBeUndefined();
         expect(buildDispatcherEnv('worker-name', deps).SUBSTRATE_HOLDER).toBe('worker-name');
+    });
+
+    it('CORE-2536: a resumed session gets its launch slug as SUBSTRATE_HOLDER, over an inherited one', () => {
+        const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
+        const fresh = buildAttachEnv({ PATH: '/bin' }, 'claude', deps, 'identities');
+        expect(fresh.SUBSTRATE_HOLDER).toBe('identities');
+        // xt attach was typed inside another worker: the resumed worker is not that worker.
+        const inherited = buildAttachEnv({ PATH: '/bin', SUBSTRATE_HOLDER: 'dispatcher-session' }, 'pi', deps, 'wed2-coord');
+        expect(inherited.SUBSTRATE_HOLDER).toBe('wed2-coord');
+        expect(buildAttachEnv({ SUBSTRATE_HOLDER: 'keep' }, 'codex', deps, null).SUBSTRATE_HOLDER).toBe('keep');
+    });
+
+    it('CORE-2536: holderFromWorktreePath reads the slug from the directory, not the branch', () => {
+        expect(holderFromWorktreePath('/w/core/.xtrm/worktrees/core-xt-claude-identities')).toBe('identities');
+        // slugs with dashes and digits, repo names with dashes
+        expect(holderFromWorktreePath('/w/market-data/.xtrm/worktrees/market-data-xt-pi-ISSUE-214-r2-watcher')).toBe('ISSUE-214-r2-watcher');
+        expect(holderFromWorktreePath('/w/infra/.xtrm/worktrees/infra-xt-pi-1397-runners')).toBe('1397-runners');
+        // the first -xt-<runtime>- wins, so a slug that repeats the pattern stays intact
+        expect(holderFromWorktreePath('/w/r/r-xt-claude-a-xt-pi-b')).toBe('a-xt-pi-b');
+        expect(holderFromWorktreePath('/w/r/not-a-worktree')).toBeNull();
+        expect(holderFromWorktreePath('/w/r/core-xt-claude-')).toBeNull();
     });
 
     it('pid reuse at attach: a numeric procStart disagreeing with the live process is skipped', () => {
