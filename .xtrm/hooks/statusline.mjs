@@ -7,7 +7,7 @@
 //
 // Layout and figures match the pi footer (packages/pi-extensions/extensions/
 // custom-footer/hud.ts); change them together:
-//   <worktree>  ⎇ <branch><flags> · <used>%/<window> · (<provider>) <model> <effort> · <N>% cache [(last M%)]
+//   <worktree>  (<branch> <flags>) · <used>%/<window> · (<provider>) <model> <effort> · <N>% cache [(last M%)]
 // The cache figure is the median hit rate of the last CACHE_WINDOW responses, with
 // "(last M%)" when the latest response is CACHE_MISS_GAP points below it. Claude's
 // statusline input only carries the latest response (context_window.current_usage),
@@ -68,7 +68,7 @@ const REFRESH_LOCK = join(CACHE_DIR, 'xtrm-sl-refresh.lock');
 
 const CACHE_WINDOW = 10;
 const CACHE_MISS_GAP = 20;
-const MAX_NAME = 24, MAX_BRANCH = 32, MAX_MODEL = 28;
+const MAX_BRANCH = 32, MAX_MODEL = 28;
 const SEPARATOR = ' · ';
 
 // Grayscale ladder like the pi footer: weight and brightness carry emphasis, no accent colour.
@@ -272,9 +272,10 @@ function render(ctx, git) {
   const { displayDir, branch, gitFlags } = git;
   const segments = [];
 
-  // Git group: worktree name upright, branch muted, same as the pi footer.
-  const name = truncateLabel(displayDir, MAX_NAME);
-  segments.push(branch ? `${name}  ${M}⎇ ${truncateLabel(branch, MAX_BRANCH)}${gitFlags}${R}` : name);
+  // Git group, same as the pi footer: the worktree name is bold and is never truncated
+  // (it says which agent this is); the branch is plain text in parentheses, flags inside.
+  const name = `${B}${displayDir}${R}`;
+  segments.push(branch ? `${name}  (${truncateLabel(branch, MAX_BRANCH)}${gitFlags ? ` ${gitFlags}` : ''})` : name);
 
   // Context group: omitted when neither the percentage nor the window is known.
   const knownPct = typeof pct === 'number' && Number.isFinite(pct);
