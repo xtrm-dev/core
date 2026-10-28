@@ -128,7 +128,8 @@ export function createHelpCommand(): Command {
                 '  xt attach [slug]',
                 '    Re-attach to an existing worktree and resume the Claude or Pi session.',
                 '    Picks the most recent worktree if no slug is given; shows a picker when',
-                '    multiple exist. Resumes with --continue (claude) or -c (pi).',
+                '    multiple exist. Resumes with --continue (claude) or -c (pi). Sets SUBSTRATE_HOLDER',
+                '    again from the worktree directory name, so the resumed session keeps its Journal identity.',
                 '',
                 '  xt worktree list',
                 '    List active xt/* worktrees with runtime, last activity, last commit, and',
@@ -145,6 +146,15 @@ export function createHelpCommand(): Command {
                 '    Remove merged worktrees; with --orphans also prune stale metadata and orphan dirs.',
                 '  xt worktree remove <name> [--yes/-y]',
                 '    Remove a specific xt worktree by name or path.',
+            ]));
+
+            blocks.push(section('JIRA AGENT IDENTITY', [
+                '  xt jira setup [--email <email>] [--site <site>] [--token-file <path>]',
+                '    Create the xtrm-bot acli profile from the token file, then install the acli shim.',
+                '    Agent processes (SUBSTRATE_HOLDER set, or a claude/pi/codex ancestor) then act in',
+                '    Jira as the bot; XTRM_JIRA_AS=operator forces your own account.',
+                '  xt jira doctor [--json]',
+                '    Check identity.json, token file mode, bot profile, bot login and the shim (exit 1 on failure).',
             ]));
 
             blocks.push(section('SESSION CLOSE', [
