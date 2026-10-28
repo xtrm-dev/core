@@ -1,12 +1,14 @@
 /**
  * Background indicator above the prompt (B3 CORE-2441, ADR rev 2 B2 + D-5).
  *
- * While anything runs, one line reads "◐ 3 tasks running · 1 monitor ·
- * /bg"; a failure stays as "! 1 failed" until the operator sees it
- * (opening /bg or the record's output marks it seen). Idle means no
- * widget at all. The line is exactly one row (stable height) and truncates
- * to the render width, so it never pushes the editor off-screen at 80, 120,
- * 160 or 220 columns. Theme never touches this line: it is plain text.
+ * While anything runs, one line reads "3 tasks running · 1 monitor · /bg";
+ * a failure stays as "! 1 failed" until the operator sees it (opening /bg or
+ * the record's output marks it seen). Idle means no widget at all. The line is
+ * exactly one row (stable height) and truncates to the render width, so it
+ * never pushes the editor off-screen at 80, 120, 160 or 220 columns. Chrome
+ * stays grayscale: counters at the secondary level, the failure marker one step
+ * brighter and semibold, separators and the command hint dim. No hue and no
+ * activity glyph.
  *
  * Refreshes come from the store subscription (no polling): every create,
  * mutation, seen flip and eviction re-renders. The ui handle is captured
@@ -14,7 +16,7 @@
  * runs, tests); refresh without one is a silent no-op.
  */
 
-import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
@@ -64,18 +66,47 @@ function plural(count: number, one: string, many: string): string {
 }
 
 /**
- * The D-5 line, or null when idle. Shapes (amendment 1): "◐ 3 tasks running
- * · 1 monitor · /bg", with "! 1 failed" until seen.
+ * The D-5 line, or null when idle. Shapes (amendment 2): "3 tasks running
+ * · 1 monitor · /bg", with "! 1 failed" until seen. No activity glyph: a
+ * running task is plain text, and the failure marker is the only symbol.
  */
 export function formatIndicator(summary: BackgroundSummary): string | null {
   const { runningTasks, activeMonitors, unseenFailures } = summary;
   if (runningTasks === 0 && activeMonitors === 0 && unseenFailures === 0) return null;
   const parts: string[] = [];
-  if (runningTasks > 0) parts.push(`◐ ${plural(runningTasks, "task", "tasks")} running`);
+  if (runningTasks > 0) parts.push(`${plural(runningTasks, "task", "tasks")} running`);
   if (activeMonitors > 0) parts.push(plural(activeMonitors, "monitor", "monitors"));
   if (unseenFailures > 0) parts.push(`! ${unseenFailures} failed`);
   parts.push("/bg");
   return parts.join(" · ");
+}
+
+/** The theme surface the indicator needs (duck-typed; tests inject a fake). */
+export interface IndicatorColors {
+  fg(color: string, text: string): string;
+  bold(text: string): string;
+  /** Raw-SGR styling where the theme offers it; `bold` is chalk-backed and
+   *  renders nothing when chalk has no colour level. */
+  style?: Theme["style"];
+}
+
+/**
+ * Styled indicator: base counters at the secondary level, the failure marker
+ * one step brighter and semibold, separators and the command hint dim. No hue.
+ */
+export function formatIndicatorStyled(summary: BackgroundSummary, colors?: IndicatorColors): string | null {
+  const plain = formatIndicator(summary);
+  if (!plain || !colors || typeof colors.fg !== "function") return plain;
+  const { runningTasks, activeMonitors, unseenFailures } = summary;
+  const dim = (text: string) => colors.fg("dim", text);
+  const strong = (text: string) =>
+    typeof colors.style === "function" ? colors.style(text, { fg: "error", bold: true }) : colors.fg("error", colors.bold(text));
+  const parts: string[] = [];
+  if (runningTasks > 0) parts.push(colors.fg("muted", `${plural(runningTasks, "task", "tasks")} running`));
+  if (activeMonitors > 0) parts.push(colors.fg("muted", plural(activeMonitors, "monitor", "monitors")));
+  if (unseenFailures > 0) parts.push(`${strong("!")} ${strong(`${unseenFailures} failed`)}`);
+  parts.push(dim("/bg"));
+  return parts.join(` ${dim("·")} `);
 }
 
 /**
@@ -113,8 +144,10 @@ export function fitToWidth(line: string, maxWidth: number): string {
  * Width-safe render: zero lines when idle, exactly one otherwise (stable
  * height). Every line fits the width by display width.
  */
-export function renderIndicator(summary: BackgroundSummary, width: number): string[] {
-  const line = formatIndicator(summary);
+export function renderIndicator(summary: BackgroundSummary, width: number, colors?: IndicatorColors): string[] {
+  const line = colors && typeof colors.fg === "function"
+    ? formatIndicatorStyled(summary, colors)
+    : formatIndicator(summary);
   if (!line) return [];
   const safe = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
   return [fitToWidth(line, Math.max(8, safe))];
@@ -146,8 +179,8 @@ export function createBackgroundWidget(
         ui.setWidget(BACKGROUND_WIDGET_KEY, undefined);
         return;
       }
-      ui.setWidget(BACKGROUND_WIDGET_KEY, () => ({
-        render: (width: number) => renderIndicator(summarizeBackground(store.list(), store.listMonitors()), width),
+      ui.setWidget(BACKGROUND_WIDGET_KEY, (_tui: unknown, theme: IndicatorColors) => ({
+        render: (width: number) => renderIndicator(summarizeBackground(store.list(), store.listMonitors()), width, theme),
         invalidate: () => {},
         dispose: () => {},
       }));

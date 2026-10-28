@@ -2,8 +2,8 @@
 title: XTRM UI Extension
 scope: xtrm-ui
 category: reference
-version: 2.1.0
-updated: 2026-07-30
+version: 2.2.0
+updated: 2026-10-26
 description: "XTRM-owned Pi chrome, themes, and native/external tool rendering"
 source_of_truth_for:
   - "packages/pi-extensions/extensions/xtrm-ui/index.ts"
@@ -58,11 +58,47 @@ The extension discovers four themes:
 in Pi settings or persisted session preferences are migrated to the equivalent
 `xtrm-*` value.
 
+The palette is a monochrome ladder: chrome is strictly grayscale (equal RGB
+channels) and ordered by luminance, while content keeps a hue. Every theme also
+declares pi's optional tokens (`scrollbarTrack`, `scrollbarThumb`,
+`searchMatchBg`, `searchMatchText`, `thinkingMax`) instead of relying on
+fallbacks, and its `$schema` points at `https://pi.dev/schemas/theme.schema.json`.
+`themes.test.ts` enforces the ladder, the contrast floors, and the
+flat-variant diff.
+
 ## Tool Rendering
 
-Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`) retain
-Pi's execute functions and use `ToolRenderContext` for arguments, state, errors,
-and timing. Their rows use one tree shape:
+Concise one-line rows are the default (`ultracompact: true`). A collapsed call
+renders one line: the tool name/action and its most useful subject. The full
+output stays reachable by expansion (`ctrl+o` keeps its global meaning; the
+hint is not repeated in every row).
+
+Row meta is optional, and every field must earn its slot:
+
+| Field | Appears when |
+|---|---|
+| `+N lines` | content is hidden (expanded rows never count) |
+| duration | the call took at least 1 s |
+| count (`N matches`, `N entries`) | a search/listing produced results |
+| `+a -r` | the call wrote a diff |
+| `truncated`, `limit reached` | the tool clipped its own result |
+
+At most two fields appear, and no field is a restatement: no `1 line`, no
+`0 matches`, no sub-second durations, no per-row payload size. Rows are never
+padded to the terminal width, so the transcript keeps natural line lengths
+instead of reading like a filled-in form.
+
+A one-line row never wraps. Each line is clipped to the terminal width and ends
+in `…`, and a bash row shows the command's first physical line clipped to 72
+characters, so the informative part is what stays visible. A leading `cd` into
+the directory the session already works in is dropped from that line: it is a
+no-op, and left in place it consumed the whole budget on every consecutive row.
+A command with more physical lines reports the rest as `+N lines` in a metadata
+slot. Expansion is never clipped: a long line wraps there, because the full
+content has to stay reachable. Commands, paths, and clauses all cut with the same
+`…` glyph.
+
+Expanded rows and the tree presentation use one shape:
 
 ```text
 • grep renderResult
@@ -71,10 +107,11 @@ and timing. Their rows use one tree shape:
     showing 6/94 matchs (ctrl+o expand) · 1.6s · 247B
 ```
 
-Collapsed native rows show up to six output lines. Bash keeps the latest six;
+Collapsed tree rows show up to six output lines. Bash keeps the latest six;
 read, new-file write, grep, find, and ls keep the first six. Edit and updated-file
-write retain their 18-line diff preview. Small results render in full without an
-expansion hint.
+write retain their 18-line diff preview. Small results render without an
+expansion hint, and hidden content is reported as `+N lines` rather than
+`showing x/y lines (ctrl+o expand)`.
 
 External tools use one background-row renderer with provider badges for Serena,
 GitNexus, structured-return, process, and generic tools. Their collapsed output is
@@ -94,17 +131,31 @@ Pending tools have no metadata footer. Expansion hints appear only when content 
 
 ## Assistant Text and Hierarchy
 
-Four semantic levels carry the interface; contrast and weight do the work, with
-no hue in chrome:
+Chrome is a grayscale ladder; contrast and weight do the work, with no hue:
 
 | Token | Dark | Light | Used for |
 |---|---|---|---|
-| `text-heading` | `#EBEBEB` | `#1A1A1A` | headings, custom-message labels, error text |
-| `text-primary` | `#BBBBBB` | `#3A3A3A` | reserved for the agent's own voice |
-| `text-secondary` | `#858585` | `#6F6F6F` | tool subjects, thinking rows, output |
-| `text-muted` | `#5F5F5F` | `#8A8A8A` | durations, counts, hints, chrome |
+| `text` | `#E0E0E0` | `#1A1A1A` | primary output, headings, key values |
+| `toolTitle` | `#C0C0C0` | `#3A3A3A` | tool names and row headers (verb + subject) |
+| `toolOutput` | `#A0A0A0` | `#5F5F5F` | tool output bodies and result previews |
+| `muted` | `#A0A0A0` | `#5F5F5F` | secondary labels, branch/model metadata, thinking label |
+| `thinkingText` | `#858585` | `#6A6A6A` | collapsed thinking recap (italic) |
+| `dim` | `#707070` | `#7A7A7A` | durations, lower-priority metadata |
+| `borderAccent`/`mdListBullet`/`scrollbarTrack` | `#5F5F5F` | `#8A8A8A` | separators, decorative glyphs |
+| `border` | `#333333` | `#C8C8C8` | structural borders |
+| `error` | `#E0E0E0` | `#1A1A1A` | failures: brightest grayscale, `!` marker, semibold |
 | `mdCode` | `#97B8DA` | `#2E6A8E` | inline code (content hue, light blue) |
 | `mdLink` | `#5EA7CB` | `#3685A9` | link text (content hue, pi's own blue) |
+
+A one-line tool row is one header block plus metadata. The header — the verb and
+the subject the tool acted on — sits at the `toolTitle` tone, with weight alone
+separating the identifier from its subject; metadata sits at `muted` and
+durations at `dim`. The collapsed thinking recap stays one level below the
+header (`thinkingText`, italic), so a tool row never reads as a thinking row.
+Measured on the dark surface: header 10.0:1, metadata 7.0:1, thinking recap
+4.9:1, duration 3.7:1. Moving the subject from `toolOutput` to `toolTitle` took
+the header/thinking separation from 1.4× to 2.0× while keeping both above the
+AA floor.
 
 Assistant prose keeps the terminal's default foreground, so it stays the
 brightest body text without a hard-coded colour. It opens with `●` and nothing
@@ -129,28 +180,56 @@ Headings carry **weight** rather than brightness: pi renders a heading through
 bolds the heading text itself (outside fenced blocks). That keeps the heading
 level visible above body text at almost the same luminance.
 
-Errors are the one thing allowed to grab attention: a failing row keeps a red
-status (`#FF9A9A` dark, `#B02A2A` light), semibold weight and the `!` marker, and
-always states `failed`. Confirmations stay quiet — a successful row is neutral
-grey and never uses the error token. Diff bodies keep their red/green (`+`/`−`)
-because that is content semantics. Inline code and links are content too, so they
-keep a hue (`mdCode` light blue, `mdLink` blue); every remaining
-chrome token stays on the grey ramp. Nothing else carries a hue.
+Errors are the one thing allowed to grab attention: a failing row moves to the
+brightest grayscale token, keeps semibold weight and the `!` marker, and states
+`failed`. No chrome surface is red. Confirmations stay quiet — a successful row
+is neutral and never uses the error token. Diff bodies keep their red/green
+(`+`/`−`) because that is content semantics; inline code and links are content
+too, so they keep a hue (`mdCode` light blue, `mdLink` blue). Every remaining
+chrome token stays on the grey ramp.
 
 ## Thinking Rows
 
-Collapsed: `  Thinking...  <one clause>  <count>` — two-space indent (aligned
-with tool rows, anchored with a zero-width space so pi's `trim()` cannot strip
-it), a 64-character recap cut at a word boundary and ending in `...`, then the
-character count of the full trace. The whole row is italic: it is a thinking
-aside, not a status line.
+Collapsed: ` Thinking...  <one clause>` — one indent column, anchored with a
+zero-width space so pi's `trim()` cannot strip it; pi's markdown padding supplies
+the second column, so the row aligns with tool rows (no double indent). The recap
+is capped at 64 characters, cut at a word boundary and ending in `...`. The label
+sits at the secondary level (`muted`) and the recap one step back
+(`thinkingText`), italic. No character count and no inline shortcut: `ctrl+t`
+keeps its global meaning and is documented in `/xtrm-ui`.
 
 Thinking is the least important stream on screen and is styled to lose
 attention: the row sits at the **muted** level (`#5F5F5F`), below tool output
 (`#858585`) and far below the agent's answer. When the row has to shrink, the
-recap yields and the count survives. There is no inline shortcut. Expanded: the
-indent continues over the trace behind `Ctrl+T`, with the collapse hint shown
-only in that state.
+recap yields and the count survives. Expanded: the indent continues over the trace behind `ctrl+t`.
+
+## Status HUD
+
+`custom-footer` renders the one-line status HUD. It identifies the active
+worktree by name and branch (`core-xt-pi-colors  ⎇ xt/colors`; the main checkout
+reads `core  ⎇ main`), with dirty/ahead-behind flags appended to the branch. A
+detached HEAD shows the short commit instead of a branch
+(`core  ⎇ detached@d7a92f32`) — the SHA never appears for a normal HEAD, because
+an 8-hex blob reads like code and adds no information the branch lacks. Before
+the first asynchronous git refresh lands, the name is omitted and only the
+provider's branch shows. The HUD also shows context
+utilization with the context-window size once (`31.4%/1.0M`), the model and
+thinking level, session input/output tokens (`↑… ↓…`), and the latest cache hit
+rate (`86% cache`). Separators are dim `·` glyphs.
+
+Field scopes are explicit: `↑`/`↓` are session totals over assistant-message
+usage (the same scope as Pi's own footer), and the cache rate is
+`cacheRead / (input + cacheRead + cacheWrite)` of the latest assistant message.
+A provider that reports no cache fields yields no rate; no metric is invented.
+Git data comes from the session cwd, so a linked worktree reports its own branch
+and detached HEAD never shows the parent's branch. The absolute path is not
+shown.
+
+The HUD never wraps: at narrow widths it drops fields in reverse priority order
+(cache, tokens, model, context), truncates long branch/model labels, and applies
+pi-tui's ANSI-aware truncation as the final guard. All colors come from the
+active theme (tokens only, no baked hex), so 256-color terminals and theme
+switches are respected.
 
 ## Preferences
 
@@ -163,6 +242,7 @@ Only active, user-controlled behavior is persisted:
 | `showHeader` | `true` | `/xtrm-ui-header on\|off` |
 | `forceTheme` | `true` | `/xtrm-ui-forcetheme on\|off` |
 | `toolRowBg` | `false` | `/xtrm-ui-rowbg on\|off` |
+| `ultracompact` | `true` | `/xtrm-ui-ultra on\|off` |
 
 Tools start collapsed. Hidden thinking blocks use an empty placeholder. These are
 fixed presentation choices rather than persisted preferences.
@@ -177,7 +257,8 @@ fixed presentation choices rather than persisted preferences.
 | `/xtrm-ui-header on\|off` | Toggle the XTRM header |
 | `/xtrm-ui-forcetheme on\|off` | Enable or disable XTRM theme ownership |
 | `/xtrm-ui-rowbg on\|off` | Toggle native tool-row backgrounds |
-| `/xtrm-ui-reset` | Restore the five defaults above |
+| `/xtrm-ui-ultra on\|off` | One-line tool rows (default on) |
+| `/xtrm-ui-reset` | Restore the six defaults above |
 
 Obsolete result-compaction and external-chrome commands are intentionally not
 registered. External tools always use the unified background renderer.
