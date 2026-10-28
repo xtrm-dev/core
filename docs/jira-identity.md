@@ -1,6 +1,6 @@
 # Jira agent identity
 
-Agents act in Jira as the `xtrm-bot` account, not as the operator (XT-190). Jira shows the real actor; the `[agent:<holder> | run:<id>]` comment header, where agents write one, names the session.
+Agents act in Jira as the `xtrm-bot` account, not as the operator (XT-190). Jira shows the real actor. Because every agent shares that account, each agent write also names the session: a comment header and a label (see Write attribution).
 
 ## Which process counts as an agent
 
@@ -23,6 +23,34 @@ A process is an agent when `SUBSTRATE_HOLDER` is set, or when a `claude`, `pi` o
 2. Log in as that account, create an API token, and save it with `install -m 600 /dev/null ~/.secrets/atlassian-agent-token.txt`, then edit the file.
 3. Run `xt jira setup --email <agent account email>`. The shim is installed last, after the bot login is verified.
 4. Run `xt jira doctor`. Every line must show a check mark.
+
+## Write attribution
+
+The bot account does not say which session acted. Writes by an agent process (same rule as above) therefore carry a marker. `jira.py` and the `acli` shim apply the same rules. `XTRM_JIRA_AS=operator` turns all of it off.
+
+Comments start with a header, then a blank line, then the text:
+
+```
+[agent:<holder> | run:<id>]
+[agent:<runtime>-<worktree dir> | run:<id> | fallback]
+```
+
+- Covered: `jira.py comment`, and `acli jira workitem comment create` with `--body`, `-b`, `--body-file`, `-F` (plain text or ADF; the `=` spellings too). `--edit-last`, `--key` and all other flags pass through unchanged.
+- Not covered: `--editor`, `acli jira workitem comment update`.
+- The header is added once. A text that already starts with `[agent:` is posted as it is.
+- Holder: `SUBSTRATE_HOLDER`. When it is unset, the holder is `<runtime>-<worktree directory name>` (for example `claude-core-xt-foo`; the runtime is the nearest `claude`, `pi` or `codex` ancestor) and the header ends with ` | fallback`. A missing holder never stops a write.
+- Run id: `SUBSTRATE_RUN_ID` when it is set. Otherwise six hex characters, the start of `sha1(boot id : pid : start time)` of the nearest `claude`, `pi` or `codex` ancestor (the session leader when there is none). Every write of one agent process gets the same id; another session, or the same pid after a reboot, gets another.
+- A check can match `^\[agent:([^ |\]]+) \| run:([^ |\]]+)( \| fallback)?\]`.
+
+`jira.py comment` returns the exact text it posted, for a read-back compare. The CLI keeps the `HTTP <status>` line and the JSON response and then prints `POSTED_TEXT <json string>`. In Python, `jira.post_comment(key, text)` returns `(status, response, posted_text)`. The posted text is the text of the ADF body: the header, then the paragraphs (split on blank lines, each stripped) joined by one blank line, with single line breaks kept.
+
+Labels: an agent create and an agent transition add the label `actor=agent`. Labels the caller supplies are kept.
+
+- Create: `jira.py POST /rest/api/3/issue` (labels merged), `acli jira workitem create` (`--label actor=agent` added, or `labels` in the private `--from-json` copy).
+- Transition: the label goes on first, then the status moves. `jira.py transition` sends `update.labels add`; the shim runs `acli jira workitem edit` with the same `--key`, `--jql` or `--filter` and `--labels actor=agent --yes`. When the label step fails, a warning goes to stderr and the transition still runs.
+- Not labelled: field edits (`PUT /rest/api/3/issue/<key>`, `acli jira workitem edit`), `acli jira workitem create-bulk`.
+
+After a change to the shim, run `xt jira setup` again to install it. `jira.py` is part of the programme-coordination skill.
 
 ## Default assignee
 

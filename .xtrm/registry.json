@@ -541,7 +541,7 @@
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/jira.md": {
-          "hash": "272a08cf1c21277429ab45e756eb75303185d0c2b985c8f1845bf80f9dac266e",
+          "hash": "5e9fb12672945f1a5d36d9f21023e17b072665d718b6a1423da526ef78afe57a",
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/substrate.md": {
@@ -553,7 +553,7 @@
           "version": "0.15.3"
         },
         "programme/programme-coordination/scripts/jira.py": {
-          "hash": "408cce8d2e10eed3462abd514867d9b31b69930f9a29941f8d0709aa11337e04",
+          "hash": "1e481b8dbb06f5e17e970ee3a5df30cfb87a0f6cf5d1024acac981ca4f4e0725",
           "version": "0.15.3"
         },
         "programme/programme-coordination/SKILL.md": {

@@ -158,6 +158,10 @@ export function createHelpCommand(): Command {
                 '  xt jira sweep [--apply] [--days <n>]',
                 '    List tickets the bot reported without an assignee; --apply assigns them to the bot.',
                 '    Agent-created tickets are assigned to the bot by default (shim and jira.py).',
+                '  Agent writes through the shim and jira.py are attributable: a comment starts with',
+                '    [agent:<holder> | run:<id>] (holder = SUBSTRATE_HOLDER, else <runtime>-<worktree> + "| fallback";',
+                '    run = SUBSTRATE_RUN_ID, else 6 hex chars per agent process). Creates and transitions add the',
+                '    label actor=agent. A missing holder never blocks a write. See docs/jira-identity.md.',
             ]));
 
             blocks.push(section('SESSION CLOSE', [

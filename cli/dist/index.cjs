@@ -68871,7 +68871,11 @@ function createHelpCommand() {
       "    Check identity.json, token file mode, bot profile, bot login and the shim (exit 1 on failure).",
       "  xt jira sweep [--apply] [--days <n>]",
       "    List tickets the bot reported without an assignee; --apply assigns them to the bot.",
-      "    Agent-created tickets are assigned to the bot by default (shim and jira.py)."
+      "    Agent-created tickets are assigned to the bot by default (shim and jira.py).",
+      "  Agent writes through the shim and jira.py are attributable: a comment starts with",
+      '    [agent:<holder> | run:<id>] (holder = SUBSTRATE_HOLDER, else <runtime>-<worktree> + "| fallback";',
+      "    run = SUBSTRATE_RUN_ID, else 6 hex chars per agent process). Creates and transitions add the",
+      "    label actor=agent. A missing holder never blocks a write. See docs/jira-identity.md."
     ]));
     blocks.push(section("SESSION CLOSE", [
       "  xt end [options]",
@@ -71101,6 +71105,190 @@ function jiraIdentityPaths(home = import_node_os19.default.homedir()) {
     defaultTokenFile: import_node_path40.default.join(home, ".secrets", "atlassian-agent-token.txt")
   };
 }
+var SHIM_REWRITE_PY = String.raw`import hashlib, json, os, pathlib, re, sys
+
+work = pathlib.Path(sys.argv[1])
+args = sys.argv[2:]
+LABEL = 'actor=agent'
+PREFIX = '[agent:'
+
+
+def agent_ancestor(start=None):
+    pid = os.getppid() if start is None else int(start)
+    for _ in range(16):
+        if pid <= 1:
+            return None
+        try:
+            comm = pathlib.Path(f'/proc/{pid}/comm').read_text().strip()
+            if comm in ('claude', 'pi', 'codex'):
+                return pid, comm
+            pid = next(int(l.split()[1]) for l in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if l.startswith('PPid:'))
+        except (OSError, StopIteration, ValueError):
+            return None
+    return None
+
+
+def token(value):
+    return re.sub(r'[^\w.:@-]', '-', value.strip())
+
+
+def starttime(pid):
+    try:
+        return pathlib.Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+    except (OSError, IndexError):
+        return ''
+
+
+def run_id(found):
+    rid = os.environ.get('SUBSTRATE_RUN_ID', '').strip()
+    if rid:
+        return token(rid)
+    root = found[0] if found else os.getsid(0)
+    try:
+        boot = pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    except OSError:
+        boot = ''
+    return hashlib.sha1(f'{boot}:{root}:{starttime(root)}'.encode()).hexdigest()[:6]
+
+
+def worktree_slug():
+    try:
+        here = pathlib.Path.cwd()
+    except OSError:
+        return 'unknown'
+    for d in (here, *here.parents):
+        if (d / '.git').exists():
+            return d.name or 'unknown'
+    return here.name or 'unknown'
+
+
+def agent_header():
+    found = agent_ancestor(os.environ.get('XTRM_JIRA_WALK_FROM'))
+    holder = os.environ.get('SUBSTRATE_HOLDER', '').strip()
+    if holder:
+        return f'{PREFIX}{token(holder)} | run:{run_id(found)}]'
+    runtime = found[1] if found else 'agent'
+    return f'{PREFIX}{runtime}-{token(worktree_slug())} | run:{run_id(found)} | fallback]'
+
+
+def with_label(labels):
+    labels = [] if labels is None else labels
+    return labels if not isinstance(labels, list) or LABEL in labels else labels + [LABEL]
+
+
+def hits(flag_args, long, short=None):
+    found = []
+    for i, a in enumerate(flag_args):
+        if a == long or a == short:
+            if i + 1 < len(flag_args):
+                found.append((i, 'sep'))
+        elif a.startswith(long + '=') or (short and a.startswith(short + '=')):
+            found.append((i, 'inline'))
+    return found
+
+
+def value(flag_args, hit):
+    i, kind = hit
+    return flag_args[i + 1] if kind == 'sep' else flag_args[i].split('=', 1)[1]
+
+
+def set_value(flag_args, hit, new):
+    i, kind = hit
+    if kind == 'sep':
+        flag_args[i + 1] = new
+    else:
+        flag_args[i] = flag_args[i].split('=', 1)[0] + '=' + new
+
+
+def first_text(node):
+    if node.get('type') == 'text':
+        return node.get('text', '')
+    for child in node.get('content') or []:
+        found = first_text(child)
+        if found is not None:
+            return found
+    return None
+
+
+def with_header(text):
+    header = agent_header()
+    stripped = text.strip()
+    if stripped.startswith('{'):
+        try:
+            doc = json.loads(stripped)
+        except ValueError:
+            doc = None
+        if isinstance(doc, dict) and doc.get('type') == 'doc':
+            lead = first_text(doc)
+            if not doc.get('content') or (lead or '').lstrip().startswith(PREFIX):
+                return text
+            doc['content'].insert(0, {'type': 'paragraph', 'content': [{'type': 'text', 'text': header}]})
+            return json.dumps(doc)
+    if not stripped or text.lstrip().startswith(PREFIX):
+        return text
+    return f'{header}\n\n{text}'
+
+
+def rewrite_create(a):
+    if any(x in ('-h', '--help', '--generate-json') for x in a):
+        return a
+    assignee_named = bool(hits(a, '--assignee', '-a'))
+    from_json = hits(a, '--from-json')
+    if from_json:
+        data = json.loads(pathlib.Path(value(a, from_json[-1])).read_text(encoding='utf-8'))
+        if isinstance(data, dict):
+            if not data.get('assignee') and not assignee_named:
+                data['assignee'] = '@me'
+            data['labels'] = with_label(data.get('labels'))
+            copy = work / 'create.json'
+            copy.write_text(json.dumps(data), encoding='utf-8')
+            set_value(a, from_json[-1], str(copy))
+        return a
+    if not assignee_named:
+        a += ['--assignee', '@me']
+    if LABEL not in [l for h in hits(a, '--label', '-l') for l in value(a, h).split(',')]:
+        a += ['--label', LABEL]
+    return a
+
+
+def rewrite_comment(a):
+    if a[3] != 'create' or any(x in ('-h', '--help') for x in a):
+        return a
+    for h in hits(a, '--body', '-b'):
+        set_value(a, h, with_header(value(a, h)))
+    for h in hits(a, '--body-file', '-F'):
+        copy = work / f'body-{h[0]}.txt'
+        copy.write_text(with_header(pathlib.Path(value(a, h)).read_text(encoding='utf-8')), encoding='utf-8')
+        set_value(a, h, str(copy))
+    return a
+
+
+def label_step(a):
+    if any(x in ('-h', '--help') for x in a):
+        return []
+    selectors = []
+    for long, short in (('--key', '-k'), ('--jql', None), ('--filter', None)):
+        for i, kind in hits(a, long, short):
+            selectors += a[i:i + 2] if kind == 'sep' else [a[i]]
+    return ['jira', 'workitem', 'edit', *selectors, '--labels', LABEL, '--yes'] if selectors else []
+
+
+def write_args(name, items):
+    if items:
+        (work / name).write_bytes(b''.join(os.fsencode(x) + b'\0' for x in items))
+
+
+verb = args[2] if len(args) > 2 else ''
+final, pre = list(args), []
+if verb == 'create':
+    final = rewrite_create(final)
+elif verb == 'comment':
+    final = rewrite_comment(final)
+elif verb == 'transition':
+    pre = label_step(final)
+write_args('argv', final)
+write_args('pre', pre)
+`;
 function shimSource(realAcli) {
   return `#!/usr/bin/env bash
 ${SHIM_MARKER}
@@ -71117,46 +71305,35 @@ in_agent_tree() {
   done
   return 1
 }
-# A ticket an agent creates belongs to the bot unless the caller names an assignee.
-needs_default_assignee() {
-  [[ "\${1:-}" == jira && "\${2:-}" == workitem && "\${3:-}" == create ]] || return 1
-  local a
-  for a in "$@"; do
-    case $a in -h|--help|--generate-json|-a|--assignee|--assignee=*) return 1 ;; esac
-  done
-  return 0
-}
 if [[ "\${XTRM_JIRA_AS:-}" != operator ]] && { [[ -n "\${SUBSTRATE_HOLDER:-}" ]] || in_agent_tree; }; then
   h="\${XTRM_JIRA_AGENT_HOME:-$HOME/.xtrm/identities/atlassian-agent/home}"
   if [[ ! -f "$h/.config/acli/jira_config.yaml" ]]; then
     echo "acli shim: agent profile missing at $h (run: xt jira setup, or set XTRM_JIRA_AS=operator)" >&2
     exit 78
   fi
-  args=("$@"); tmp=""
-  if needs_default_assignee "$@"; then
-    idx=-1
-    for i in "\${!args[@]}"; do
-      case \${args[$i]} in --from-json|--from-json=*) idx=$i ;; esac
-    done
-    if [[ $idx -lt 0 ]]; then
-      args+=(--assignee @me)
-    else
-      if [[ \${args[$idx]} == --from-json=* ]]; then src=\${args[$idx]#--from-json=}; else src=\${args[$((idx + 1))]:-}; fi
-      tmp=$(mktemp "$h/.assignee.XXXXXX") && chmod 600 "$tmp" && python3 -I - "$src" "$tmp" <<'PY' || { rm -f "$tmp"; tmp=""; }
-import json, sys
-data = json.load(open(sys.argv[1]))
-if isinstance(data, dict) and not data.get("assignee"):
-    data["assignee"] = "@me"
-json.dump(data, open(sys.argv[2], "w"))
+  args=("$@"); pre=(); work=""
+  if [[ "\${1:-}" == jira && "\${2:-}" == workitem ]]; then
+    case "\${3:-}:\${4:-}" in
+      create:*|transition:*|comment:create)
+        work=$(mktemp -d "$h/.rewrite.XXXXXX") || work=""
+        if [[ -n $work ]] && python3 -I - "$work" "$@" <<'PY'
+${SHIM_REWRITE_PY}
 PY
-      if [[ -n $tmp ]]; then
-        if [[ \${args[$idx]} == --from-json=* ]]; then args[$idx]="--from-json=$tmp"; else args[$((idx + 1))]=$tmp; fi
-      fi
-    fi
+        then
+          [[ -f $work/argv ]] && mapfile -d '' -t args < "$work/argv"
+          [[ -f $work/pre ]] && mapfile -d '' -t pre < "$work/pre"
+        else
+          echo "acli shim: could not add the agent header, label or assignee; running the command unchanged" >&2
+        fi
+        ;;
+    esac
   fi
-  if [[ -n $tmp ]]; then
+  if [[ \${#pre[@]} -gt 0 ]]; then
+    HOME="$h" "$real" "\${pre[@]}" >/dev/null </dev/null || echo "acli shim: label step failed; continuing with the command" >&2
+  fi
+  if [[ -n $work ]]; then
     HOME="$h" "$real" "\${args[@]}"; code=$?
-    rm -f "$tmp"; exit $code
+    rm -rf "$work"; exit $code
   fi
   HOME="$h" exec "$real" "\${args[@]}"
 fi
