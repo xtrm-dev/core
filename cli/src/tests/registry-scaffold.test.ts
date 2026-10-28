@@ -555,6 +555,40 @@ describe('installFromRegistry', () => {
     expect(await fs.pathExists(path.join(userXtrmDir, 'skills', 'user', 'packs', 'local', 'PACK.json'))).toBe(false);
   });
 
+  it('CORE-2538: a forced overwrite of a drifted file saves the original first; a dry run saves nothing', async () => {
+    const tempDir = await createTempDir();
+    const packageRoot = path.join(tempDir, 'pkg');
+    const userXtrmDir = path.join(tempDir, 'user-xtrm');
+    await fs.ensureDir(path.join(packageRoot, '.xtrm', 'hooks'));
+    await fs.writeFile(path.join(packageRoot, '.xtrm', 'hooks', 'post-tool-use.mjs'), 'export default "repo"\n', 'utf8');
+    await fs.ensureDir(path.join(userXtrmDir, 'hooks'));
+    const target = path.join(userXtrmDir, 'hooks', 'post-tool-use.mjs');
+    await fs.writeFile(target, 'export default "local edit by another session"\n', 'utf8');
+
+    const registry = {
+      version: '1.0.0',
+      assets: {
+        core: {
+          source_dir: '.xtrm',
+          install_mode: 'copy' as const,
+          files: { 'hooks/post-tool-use.mjs': { hash: 'registry-hash', version: '1.0.0' } },
+        },
+      },
+    };
+    await fs.writeJson(path.join(packageRoot, '.xtrm', 'registry.json'), registry);
+
+    await installFromRegistry({ packageRoot, registry, userXtrmDir, dryRun: true, force: true, yes: true });
+    expect(await fs.pathExists(path.join(userXtrmDir, 'skills-backups'))).toBe(false);
+    expect(await fs.readFile(target, 'utf8')).toContain('local edit');
+
+    const result = await installFromRegistry({ packageRoot, registry, userXtrmDir, dryRun: false, force: true, yes: true });
+    expect(result.forced).toBe(1);
+    expect(await fs.readFile(target, 'utf8')).toContain('"repo"');
+    const [stamp] = await fs.readdir(path.join(userXtrmDir, 'skills-backups'));
+    expect(stamp).toMatch(/^drift-\d{8}T\d{6}Z$/);
+    expect(await fs.readFile(path.join(userXtrmDir, 'skills-backups', stamp, 'hooks', 'post-tool-use.mjs'), 'utf8')).toContain('local edit by another session');
+  });
+
   it('seeds registry.json into the target .xtrm/ (xtrm-ya2i)', async () => {
     const tempDir = await createTempDir();
     const packageRoot = path.join(tempDir, 'pkg');

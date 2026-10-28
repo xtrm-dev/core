@@ -42,6 +42,40 @@ Same transport as peer-to-peer commanding (`/multiplexing`), different target
 5. **Verify before injecting.** Resolve the pane, confirm it is the intended session
    and that it is idle, then send. Injection is equivalent to a user submitting input.
 
+## Verified recipe: Claude Code coordinator (mon-coord, 2026-10-26)
+
+Operator method, verified live on pane %273 (3705-byte goal, landed and set):
+
+1. Write the goal body (without the `/goal ` prefix) to a file under the coordinator cache,
+   e.g. `~/.cache/<coord>/goal-<coord>.txt`; keep the verbatim source next to it
+   (`goal-source-<date>.md`). If this skill's `refs/` is outside the active worktree, the
+   worktree edit guard refuses the write: use `~/.cache/<coord>/` instead.
+2. Count it: `printf '/goal %s' "$(cat <file>)" | wc -c` must be <= 4000.
+3. Store it durably first: `sb journal append <epic> --kind handoff --semantic <json file>`
+   with the full goal text inside the summary.
+4. Inject in two passes, from a BACKGROUND command so it lands after the current turn ends
+   (the pane is then idle): type `/goal ` literally, paste the body from a named buffer,
+   then Enter twice (Claude Code needs the second Enter; see memory
+   claude-code-pane-needs-extra-enter):
+
+   ```bash
+   sleep 25; P=<own pane id>; tmux send-keys -t $P -l '/goal '; sleep 1
+   tmux load-buffer -b goal <file>; tmux paste-buffer -b goal -d -t $P; sleep 2
+   tmux send-keys -t $P Enter; sleep 2; tmux send-keys -t $P Enter
+   ```
+
+   Or: `scripts/self-inject.sh --goal <file> [--delay 25]` (run it with run_in_background).
+5. Verify: the next turn shows `Goal set: ...` and the Stop hook condition. Before injecting,
+   confirm the target: `tmux display -p -t "$TMUX_PANE" '#{pane_id}'` must be your own pane, and
+   pass it explicitly (`TARGET_PANE=$TMUX_PANE`). A run without a resolvable own pane must fail,
+   never fall back to the client's active pane (2026-10-26: the goal landed in a peer's pane and
+   the peer started executing it; it was stopped within a minute, no action taken).
+
+Refresh triggers: after every compaction (the Mercury post-compact hook reminds you, step 2)
+and after each meaningful milestone: when tasks named in the goal are finished or the next
+work is clearer, update the delta in the source file, rebuild the goal, store, re-inject.
+Never re-inject on completion of the stop predicate.
+
 ## Precedence with the skill
 
 The self-injection section belongs to this skill's payload contract; the tmux
