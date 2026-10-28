@@ -89,16 +89,25 @@ Story as parent. Use this shape instead:
 
 Where a rule below says "parent = the Story", read "parent = the theme Epic" on project ISSUE.
 
-## Story description (plain language)
+## Ticket description (every Jira ticket, plain language)
+
+Every ticket (Epic, Story, Task, Bug, window Task) carries the whole idea, then the pointers.
+Pointer-only text ("Work: MMD-4429") is a thin ticket: enrich it from the Substrate contract and journal.
 
 ```
-<one sentence: what changes for users / the operator, and when>
-
-Substrate theme: CORE-2400 (sb issue show CORE-2400)
-Work: CORE-2401, CORE-2402, CORE-2403
+Context: <what is wrong or missing, how it was found, why it matters for data correctness>
+Decision / plan: <what changes, who runs it, when (UTC); for a window: make target, DRY first, rollback>
+Rejected alternatives: <each option not taken and why, one line each>
+Consequences: <what changes for the operator, the data and other work; risks>
+Open questions: <each one, with its owner; or "none">
 Needs from the operator: <approval / decision, or "none">
-Evidence: <PR numbers, results; updated as the theme progresses>
+Evidence: <live checks, PR numbers, results; updated as the work progresses>
+Substrate: <theme or issue ref> (sb issue show <ref>); work: <refs>
+Related: <duplicates, merged-into, depends-on, relates-to, found by the duplicate check>
 ```
+
+Before filing, search for duplicates and overlapping tickets (same symptom, same code site, same
+fix) and link or merge instead of filing twice (skill `board-audit`, "New-ticket check").
 
 Label namespaces: `area:`, `repo:`, `prog:`, `kind:`, and `substrate:<REF>` as the sync marker. Add
 `substrate:<theme-ref>` and `prog:<programme>` so a script can find it (search by label AND the exact summary before
@@ -190,7 +199,7 @@ Tasks. A production or operator window is:
 - all four date fields set: `customfield_10237` and `customfield_10238` (exact UTC times),
   Start date `customfield_10015` and `duedate`. The calendar view reads only the two date
   fields, so a window without them is invisible there;
-- Entity `customfield_10239` = who acts (Keeper or Coordinator; Human for an operator step);
+- Entity `customfield_10239` = who acts (Keeper or Coordinator, with Coordinator = option `10020` only; Human for an operator step);
 - the window owner keeps it current: the keeper if the programme has one, otherwise the
   coordinator.
 - the summary carries NO date or time — dates live in the four fields above, never in the
@@ -199,6 +208,16 @@ Tasks. A production or operator window is:
 - every window change (re-date, scope change, close-out) gets a comment stating why it
   changed, old → new times in UTC, and whose ruling authorized it. A window whose times moved
   without such a comment is an unauthorised move.
+
+### Window discipline (added 2026-10-22)
+
+- State one plan per day in exactly one place and mark off-plan windows on the row, because two live plans read as misses.
+- Print the same-day overlap check in the comment before any re-date, because silent double-bookings survive otherwise.
+- Clear the slot fields in the same edit that blocks a window and record the old slot in the comment, keeping past slots only as attempt records, because a blocked window must not advertise a slot.
+- Close a window on a coordinator Verified OK comment, never on a deploy having started, because a tool verdict is only a claim.
+- Call a passed slot with no record unrecorded, not failed, and re-check late, because early flags misfire.
+- Compute the UTC offset per date with zoneinfo (e.g. 2026-10-25 flips +0200 to +0100), because a wrong offset silently moves the window an hour.
+- Clear a slot field with PUT null and re-read afterwards, because the API returns 204 either way.
 
 ### PR readiness rule (mandatory)
 
@@ -250,8 +269,23 @@ Create body (descriptions are ADF; reuse `adf()` from `jira.py`, or build with P
 - `jira.py` prints only the first 6,000 characters of a response. For large reads, import it:
   `import importlib.util as u; s=u.spec_from_file_location('j','jira.py'); m=u.module_from_spec(s);
   s.loader.exec_module(m); st,data=m.call('GET', path)` and filter in Python.
-- Re-read the issue after each write.
+- Read the row fresh before writing and re-read after, posting corrections as new comments, because fields move under you.
+- Unpack Jira helper returns as `status, body` and inspect live state before retrying after a crash, because the artefact may already exist.
+- Write batch scripts as files with absolute UTC targets and a single sleeper (Pi BashBackground-only ceiling 7,200,000 ms), and read newest-first lists by id, because quoting, stale anchors and `[-1]` each broke a write.
 - A create script must have no import-time side effects. A re-import once created eight
   duplicate tickets.
 
 When appropriate and/or requested, the Jira API can be used for more mutations.
+
+## Batch change log (method ruling MMD-2930, 2026-10-26)
+
+Every board reorganisation or mutation batch is recorded durably, not only in `~/.cache` files.
+
+- **Record:** one Substrate batch issue per reorganisation. Its `result` entry lists every change:
+  key, field, before, after, reason.
+- **Jira:** every touched ticket gets the label `jira-batch:<sb-ref>` (same pattern as
+  `substrate:<ref>`). One JQL query (`labels = "jira-batch:<sb-ref>"`) lists the batch; Jira's own
+  history holds the field diffs.
+- **Tabellone page "Modifiche Jira":** a derived view only. The keeper writes one doc per batch in
+  collection `jirabatches`: `{ref, at, by, count, jql, plain_it}`. It is never the record.
+- The board helper applies the label in the same write as the change, on the coordinator's word.

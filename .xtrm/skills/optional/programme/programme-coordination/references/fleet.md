@@ -6,6 +6,22 @@ The coordinator keeps all its workers in **its own tmux session**, each in a **n
 separate sessions per worker. The operator sees the whole programme in one place, and
 `tmux list-windows` is the roster.
 
+## Dispatch surface (verified 2026-10-24 from `--help` and the MCP schemas)
+
+Run the budget preflight first (SKILL.md, rule 2) and record its line in the launch entry.
+
+| Shape | Exact syntax | Notes |
+|---|---|---|
+| `xt claude` worker | `xt claude <name> --window --model sonnet\|opus --prompt '/<skill> ... /goal ...' -- --effort low\|medium\|high\|xhigh\|max` | `--model` is forwarded to claude. Effort goes after `--` (claude's own `--effort`). `xt claude --thinking` is warn-and-drop. |
+| `xt pi` worker | `xt pi <name> --window --model <provider/id> --thinking off\|minimal\|low\|medium\|high\|xhigh --prompt '/skill:<name> ... /goal ...'` | Muse Spark: `commandcode/meta/muse-spark-1.3-contributor`. Default model: `deepseek/deepseek-v4.1-flash` (provider `commandcode`), thinking high. `--skill <name>` loads extra skills (repeatable). |
+| Role session | `xt claude\|pi --role <role> [--bead <id>] [--model ...]` | `--model` overrides the role's model. With `--role`, `--bead` and `--prompt` exclude each other. |
+| Resume a worker | `xt attach <slug\|dir\|branch>` | Only argument is the name; no flags. |
+| Hotfix base | add `--base origin/stable` | Default base is fresh `origin/<default>`. |
+| Specialist | `specialist_list` (choose role) -> `specialist_dispatch {specialist, issue_ref: "MMD-<n>"}` (optional `model_override`, `thinking_override`, `epic_context_depth` 1-2) -> `specialist_status {wait_for_change: true, timeout_s: 60}` -> answer asks with `specialist_reply {message_id, body}` -> `specialist_result {activation_id}` -> `specialist_stop_activation {activation_id, reason}` | Exactly one of `issue_ref` or `contract`. The issue must be READY: 7 sections plus SCRUTINY. `issue_ref` keeps the parent; an inline `contract` needs `parent_ref`. |
+
+Not verified by a live launch: the combination `--model ... -- --effort ...` on `xt claude` (each part is in
+`--help`); the `sonnet`/`opus` aliases (claude `--help` says it accepts aliases; the xt example uses a full id).
+
 ## Launch
 
 Run from the coordinator's own repo checkout:
@@ -23,6 +39,7 @@ Keep that pane id: it is the worker's stable target.
   `--role` the name is `role-<runtime>-<role>[-<bead>]`.
 - **Names can repeat.** `--window` adds no suffix, and tmux allows two windows with one name. Give
   every worker a distinct `<name>`, and target the pane id, not the window name.
+- Address a forked coordinator by its full marked name (including `⑂`) and keep the Substrate journal as backup channel, because a bare name can reach the offline original.
 - **Repo.** The worktree is made in the repo that holds the current directory, and the window starts
   in that worktree. There is no repo flag. For a worker in another repo, change directory in a
   subshell: `(cd ~/dev/<repo> && xt claude <name> --window --prompt '...')`. `xt codex` refuses to
@@ -138,6 +155,8 @@ The Pi prompt above was seen live ("Dangerous Command Detected ... Allow executi
 allow"). Learn the matcher for any other runtime from its first prompt: capture the pane, copy the
 distinctive line, add it to `PROMPT`. Silence is measured with `#{window_activity}` (epoch seconds
 of the last output) from `tmux list-windows -F`.
+- After send-keys into a Claude Code pane, send `C-m` and verify the input line is empty, because pasted text can sit unsubmitted.
+- Send pi panes a one-line brief path, never multiline paste, because pi submits on the embedded newline and truncates.
 
 Who answers: the operator answers destructive, privileged or unfamiliar prompts. The coordinator
 answers a routine prompt only when the operator said that class is allowed. Never approve sudo for a
@@ -188,13 +207,13 @@ routing rule.
   dispatch with `issue_ref`. An inline `contract` creates an issue with no parent, outside the
   programme tree, and `sb` cannot set a parent later. `issue_ref` also allows `epic_context_depth`.
 - Review and audit roles run READ_ONLY. A writer needs the workspace lease.
-- The specialist sandbox has no network, `gh` or docker. Work that needs them goes to a window
-  worker.
+- Sandbox by role: default specialists have no network, `gh`, tmux, ListAgents or host writes — work that needs them goes to a window worker. Exception: `board-audit-runner` (LOW + `execution.lease_waiver`, v1.7.0) runs in an isolated per-Issue worktree where bash is admitted: `gh pr view/list` read-only, `git merge-base --is-ancestor` read-only, `python3 scripts/jira.py` for Jira reads (writes only on coordinator word per proposal-only rule), `sb` reads plus journal writes only on coordinator word. Still no tmux, ListAgents, host writes outside the worktree, repo edits, or production actions. Its `denied_bash_patterns` enforce this; `gh` mutations stay denied.
 - After editing a specialist definition, restart the host or rename the definition: the loader
   caches definitions, and a list and a dispatch can disagree.
 - Long jobs: Claude Code runs them with `Bash` `run_in_background`; Pi runs them with `BashBackground` plus `Monitor`; `TaskStop` stops either one. Stay silent while healthy, escalate only on a problem. Read the output file with `read`, never by tailing it in the turn. Delegated-agent and fusion workflows are retired (CORE-2443 M1): they caused host-memory pressure and no longer exist — monitor with completion notices instead.
 - A specialist counts toward the worker cap. Before a restart or handoff, settle or stop each
   activation, and list the live ones in the handoff.
+- Release a claim held by a stopped specialist with `sb issue release <ref> --holder specialist::<name> --activation <id>`, because a restart orphans its activation.
 
 **AgentRun**
 
@@ -217,8 +236,8 @@ routing rule.
   - Nobody (subagent, reviewer or window worker) runs a full suite or `make ci-light` locally
     while other workers are live. Run targeted test files only, one file at a time, under `ulimit -v 4000000` (2 GB is too small for some suites) and
     `timeout 600`. Hosted CI is the full-suite evidence.
-  - Before each dispatch, check memory, not load (load is rarely low on this host): run
-    `free -g` and `cat /proc/pressure/memory`. Do not dispatch when available memory is under
+  - Before each dispatch, run the budget preflight: `/proc/loadavg` (load1 above 12 refuses), `free -g` and
+    `/proc/pressure/memory` (`full avg10` above 10 refuses). Do not dispatch when available memory is under
     8 GB, swap use is rising, or `full avg60` is above 5.
   - The cap is host-wide: agree on a total of live build workers across all coordinators (pi
     windows plus subagents), and stagger test runs.
@@ -229,7 +248,7 @@ routing rule.
     running CI jobs in the memory check.
   - Subagents die with their parent session. A coordinator kill loses every in-flight subagent, so
     long builds belong in window workers with their own issue, not in subagents.
-- At most 3 own worker windows open at once. The cap counts every live agent process in the
+- Caps: at most 3 own worker windows plus 1 board helper per coordinator, and at most 8 live agent processes host-wide (SKILL.md, "Mandatory fleet rules"). The cap counts every live agent process in the
   session (builders, reviewers, monitors, idle sessions), not active issues: once, 10 agent
   processes were live while the coordinator counted 3 workers. Reap before you launch. Shared model quotas stop everyone. On a quota 429: pause dispatch and tell the
   operator in one line.

@@ -61805,6 +61805,8 @@ async function installFromRegistry(params) {
   const installRepoRoot = import_path5.default.dirname(userXtrmDir);
   const drift = await checkDrift(registryPath, userXtrmDir, overrideRoots);
   const expectedHashes = buildExpectedHashes(registry2);
+  const backupRoot = import_path5.default.join(userXtrmDir, "skills-backups", `drift-${(/* @__PURE__ */ new Date()).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}`);
+  let backedUp = 0;
   const missingSet = new Set(drift.missing);
   const upToDateSet = new Set(drift.upToDate);
   const driftedSet = new Set(drift.drifted);
@@ -61903,10 +61905,17 @@ async function installFromRegistry(params) {
         installed += 1;
         continue;
       }
+      if (isDrifted && await import_fs_extra16.default.pathExists(targetPath)) {
+        await import_fs_extra16.default.copy(targetPath, import_path5.default.join(backupRoot, relativePath), { overwrite: false });
+        backedUp += 1;
+      }
       await import_fs_extra16.default.ensureDir(import_path5.default.dirname(targetPath));
       await import_fs_extra16.default.copy(sourcePath, targetPath, { overwrite: true });
       installed += 1;
     }
+  }
+  if (backedUp > 0) {
+    console.log(kleur_default.yellow(`  \u26A0 ${backedUp} locally modified file(s) overwritten; originals saved under ${backupRoot}`));
   }
   if (strictRegistry && missingSources.length > 0) {
     throw new Error([

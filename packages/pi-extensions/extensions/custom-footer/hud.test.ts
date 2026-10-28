@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  CACHE_WINDOW,
   detectGitContext,
   gitContextFrom,
   renderHud,
@@ -32,7 +33,7 @@ function markTheme(): HudColors & { tokens: string[] } {
 const usage = (sides: Record<string, number>): HudEntry => ({ message: { role: "assistant", usage: sides } });
 
 describe("session usage scope", () => {
-  test("sums session input/output and takes the cache rate from the latest response", () => {
+  test("sums session input/output and takes the cache rate as the median of recent responses", () => {
     const entries: HudEntry[] = [
       usage({ input: 10_000, output: 1_000, cacheRead: 30_000, cacheWrite: 2_000 }),
       usage({ input: 4_000, output: 500, cacheRead: 16_000, cacheWrite: 0 }),
@@ -41,8 +42,32 @@ describe("session usage scope", () => {
     expect(result.input).toBe(14_000);
     expect(result.output).toBe(1_500);
     expect(result.cacheRead).toBe(46_000);
-    // Latest response only: 16k / (4k + 16k + 0) = 80%.
-    expect(result.cacheRate).toBeCloseTo(80, 5);
+    // Per response: 30k/42k = 71.4% and 16k/20k = 80%. Median of two = their mean.
+    expect(result.cacheRate).toBeCloseTo(75.71, 1);
+    expect(result.lastCacheRate).toBeCloseTo(80, 5);
+  });
+
+  test("one outlier does not move the median; only the last-response flag shows it", () => {
+    const hit = usage({ input: 1_000, output: 100, cacheRead: 99_000 });
+    const miss = usage({ input: 100_000, output: 100, cacheRead: 0, cacheWrite: 0 });
+    const result = summarizeHudUsage([hit, hit, hit, hit, miss]);
+    expect(result.cacheRate).toBeCloseTo(99, 5);
+    expect(result.lastCacheRate).toBe(0);
+    expect(renderHud({ git: { repo: false }, usage: result }, 200).endsWith("· 99% cache (last 0%)")).toBe(true);
+  });
+
+  test("only the last CACHE_WINDOW responses count", () => {
+    const old = usage({ input: 100_000, output: 1, cacheRead: 0, cacheWrite: 1 });
+    const hit = usage({ input: 1_000, output: 1, cacheRead: 99_000 });
+    const result = summarizeHudUsage([old, old, old, old, old, ...Array.from({ length: CACHE_WINDOW }, () => hit)]);
+    expect(result.cacheRate).toBeCloseTo(99, 5);
+  });
+
+  test("the last-response flag needs a gap of CACHE_MISS_GAP points", () => {
+    const base = { git: { repo: false }, usage: { input: 0, output: 0, cacheRead: 1, cacheWrite: 0 } };
+    expect(renderHud({ ...base, usage: { ...base.usage, cacheRate: 95, lastCacheRate: 76 } }, 200)).toBe("95% cache");
+    expect(renderHud({ ...base, usage: { ...base.usage, cacheRate: 95, lastCacheRate: 75 } }, 200)).toBe("95% cache (last 75%)");
+    expect(renderHud({ ...base, usage: { ...base.usage, cacheRate: 40, lastCacheRate: 95 } }, 200)).toBe("40% cache");
   });
 
   test("counts standalone usage entries and ignores non-usage entries", () => {
@@ -91,7 +116,7 @@ describe("git context detection", () => {
       git: gitContextFrom({ toplevel: "/repo", branch: "xt/colors", head: "abc1234", flags: "*+↑" }),
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     }, 200);
-    expect(line).toBe("repo  ⎇ xt/colors*+↑");
+    expect(line).toBe("repo ⎇ xt/colors*+↑");
   });
 
   test("detached HEAD keeps the short commit and no branch", () => {
@@ -141,7 +166,7 @@ describe("git context detection", () => {
       expect(detached.head).toMatch(/^[0-9a-f]{7,}$/);
       // Rendered, the detached worktree says so instead of borrowing a branch.
       expect(renderHud({ git: detached, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200))
-        .toMatch(/^wt  ⎇ detached@[0-9a-f]{7,}$/);
+        .toMatch(/^wt ⎇ detached@[0-9a-f]{7,}$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -190,7 +215,7 @@ describe("HUD layout", () => {
     }, 200, markTheme());
 
     const plain = line.replace(/\*([^*]*)\*/g, "$1").replace(/<\/?[A-Za-z]+>/g, "");
-    expect(plain).toBe("core-xt-pi-colors  ⎇ xt/ui-trim · 31.4%/1.0M · deepseek-v4.1-flash high · ↑42k ↓8k · 86% cache");
+    expect(plain).toBe("core-xt-pi-colors ⎇ xt/ui-trim · 31.4%/1.0M · deepseek-v4.1-flash high · ↑42k ↓8k · 86% cache");
   });
 
   test("shows the context window at most once", () => {
@@ -220,7 +245,7 @@ describe("HUD layout", () => {
 
   test("labels a detached HEAD with its short commit", () => {
     const line = renderHud({ git: gitContextFrom({ toplevel: "/repo", branch: "", head: "deadbee" }), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200);
-    expect(line).toBe("repo  ⎇ detached@deadbee");
+    expect(line).toBe("repo ⎇ detached@deadbee");
   });
 
   test("narrow widths drop low-priority fields and never wrap", () => {
@@ -261,6 +286,13 @@ describe("HUD layout", () => {
     });
     expect(seen).toEqual([20]);
     expect(line.endsWith("…")).toBe(true);
+  });
+
+  test("the worktree name is never shortened, however long", () => {
+    const name = "core-xt-claude-a-very-long-worktree-name-for-an-agent";
+    const line = renderHud({ git: { repo: true, name, branch: "xt/b", head: "abc1234" }, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200);
+    expect(line.startsWith(`${name} ⎇ xt/b`)).toBe(true);
+    expect(line).not.toContain("…");
   });
 
   test("long branch and model labels are shortened, not wrapped", () => {

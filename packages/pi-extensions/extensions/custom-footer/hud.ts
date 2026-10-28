@@ -2,15 +2,21 @@
  * One-line XTRM status HUD (CORE-2501 follow-up).
  *
  * Git context, context utilization, model/thinking level, token usage and the
- * latest cache hit rate, in that priority order, on one line that never wraps.
+ * recent cache hit rate, in that priority order, on one line that never wraps.
+ * The Claude statusline (`.xtrm/hooks/statusline.mjs`) prints the same layout and
+ * the same cache figure; change them together.
  *
  * Every number comes from a defined scope:
  *  - `↑` input / `↓` output are session totals over assistant-message usage,
  *    exactly like Pi's own footer (`dist/modes/interactive/components/footer.js`).
- *  - the cache hit rate is per response: cacheRead / (input + cacheRead +
- *    cacheWrite) of the latest assistant message. A provider that reports no
- *    cache fields yields `undefined`, and the HUD omits the field rather than
- *    inventing a value.
+ *    Claude's statusline input has no session totals, so it omits this segment.
+ *  - a response's hit rate is cacheRead / (input + cacheRead + cacheWrite) of one
+ *    assistant message. Pi's own footer prints only the latest response (`CH`), which
+ *    sits near 98% all session and says nothing. The HUD prints the median of the last
+ *    {@link CACHE_WINDOW} responses, plus `(last N%)` when the latest response is at
+ *    least {@link CACHE_MISS_GAP} points below that median (a cache miss). A provider
+ *    that reports no cache fields yields `undefined`, and the HUD omits the field
+ *    rather than inventing a value.
  *  - the context window appears once, inside the context segment.
  *
  * Pure and theme-injected so the render is testable without a terminal.
@@ -51,8 +57,20 @@ export interface HudUsage {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  /** Latest response's cache hit rate in percent; undefined when unreported. */
+  /** Median hit rate (percent) of the last CACHE_WINDOW responses; undefined when unreported. */
   cacheRate?: number;
+  /** The latest response's own hit rate; printed only when it is a clear miss. */
+  lastCacheRate?: number;
+}
+
+export const CACHE_WINDOW = 10;
+export const CACHE_MISS_GAP = 20;
+
+/** Median of a non-empty list (mean of the two middle values for an even count). */
+export function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 export const EMPTY_GIT: GitContext = { repo: false };
@@ -72,7 +90,6 @@ export interface HudEntry {
   message?: { role?: string; usage?: UsageSides };
 }
 
-const MAX_NAME = 24;
 const MAX_BRANCH = 32;
 const MAX_MODEL = 28;
 const SEPARATOR = " · ";
@@ -82,15 +99,16 @@ function side(value: unknown): number {
 }
 
 /**
- * Session usage totals plus the latest response's cache hit rate.
+ * Session usage totals plus the recent cache hit rate.
  *
  * Mirrors Pi's footer accumulation: top-level `usage` entries and
- * assistant-message `usage` are summed; the cache rate is taken from the last
- * assistant message that reports prompt tokens (input + cacheRead + cacheWrite).
+ * assistant-message `usage` are summed; the cache rate is the median over the
+ * last CACHE_WINDOW assistant messages that report prompt tokens
+ * (input + cacheRead + cacheWrite), and the latest one is kept apart.
  */
 export function summarizeHudUsage(entries: readonly HudEntry[] | undefined): HudUsage {
   const usage: HudUsage = { ...EMPTY_USAGE };
-  let cacheRate: number | undefined;
+  const rates: number[] = [];
   for (const entry of entries ?? []) {
     const sides = entry?.usage;
     if (sides) accumulate(usage, sides);
@@ -99,11 +117,15 @@ export function summarizeHudUsage(entries: readonly HudEntry[] | undefined): Hud
     accumulate(usage, messageUsage);
     if (entry.message?.role === "assistant") {
       const promptTokens = side(messageUsage.input) + side(messageUsage.cacheRead) + side(messageUsage.cacheWrite);
-      if (promptTokens > 0) cacheRate = (side(messageUsage.cacheRead) / promptTokens) * 100;
+      if (promptTokens > 0) rates.push((side(messageUsage.cacheRead) / promptTokens) * 100);
     }
   }
   // A provider that reports no cache fields at all must not surface a rate.
-  usage.cacheRate = usage.cacheRead > 0 || usage.cacheWrite > 0 ? cacheRate : undefined;
+  const recent = rates.slice(-CACHE_WINDOW);
+  if ((usage.cacheRead > 0 || usage.cacheWrite > 0) && recent.length > 0) {
+    usage.cacheRate = median(recent);
+    usage.lastCacheRate = recent[recent.length - 1];
+  }
   return usage;
 }
 
@@ -180,7 +202,8 @@ function truncateLabel(text: string, max: number): string {
  * detached HEAD, where it is the only thing that identifies the checkout.
  */
 function repoLabel(git: GitContext): string | undefined {
-  return git.name ? truncateLabel(git.name, MAX_NAME) : undefined;
+  // Never shortened: the worktree name is how the operator tells agents apart.
+  return git.name || undefined;
 }
 
 function branchLabel(git: GitContext): string | undefined {
@@ -223,7 +246,11 @@ function cacheLabel(usage: HudUsage): string | undefined {
   // Clamp: a provider that reports cacheRead above the prompt total must not
   // print a rate outside 0-100.
   const rate = Math.max(0, Math.min(100, usage.cacheRate));
-  return `${Math.round(rate)}% cache`;
+  const text = `${Math.round(rate)}% cache`;
+  const last = usage.lastCacheRate;
+  if (typeof last !== "number" || !Number.isFinite(last)) return text;
+  const lastRate = Math.max(0, Math.min(100, last));
+  return rate - lastRate >= CACHE_MISS_GAP ? `${text} (last ${Math.round(lastRate)}%)` : text;
 }
 
 /** A display group: priority 0 survives longest (git, then context, …). */
@@ -248,14 +275,14 @@ function buildSegments(state: HudState): HudSegment[] {
   const name = repoLabel(state.git);
   const branch = branchLabel(state.git);
   if (repo) {
-    const plain = [name, branch].filter(Boolean).join("  ");
+    const plain = [name, branch].filter(Boolean).join(" ");
     segments.push({
       priority: 0,
       plain: plain || "detached",
       // Identifier is upright: the tier alone carries the emphasis, matching
       // the restrained weight of the rest of the HUD.
       paint: (colors) => (name && branch
-        ? `${paint(colors, "toolTitle", name)}  ${paint(colors, "muted", branch)}`
+        ? `${paint(colors, "toolTitle", name)} ${paint(colors, "muted", branch)}`
         : paint(colors, name ? "toolTitle" : "muted", name ?? branch ?? "detached")),
     });
   }

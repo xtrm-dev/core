@@ -43,6 +43,8 @@ JSON
 `problem`, `success` (strings); `scope`, `nonGoals`, `constraints` (string arrays);
 `validation` `[{"check": ...}]`; `output` `[{"artifact": ...}]`. Scrutiny is uppercase
 (`LOW MEDIUM HIGH CRITICAL`). To add one issue later: `sb issue create --kind task --parent <theme> ...`.
+- Write `validation` and `output` as objects; other shapes stay DRAFT, so read `data.reasons` and attest with `--policy default`, to keep issues claimable.
+- Verify all 7 headers and scope correctness by reading the body; `contract=ready` is not evidence, to avoid burning a worker cycle.
 
 ## Lifecycle of one contract
 
@@ -54,9 +56,13 @@ JSON
    the revision and needs a new attestation. Title and priority do not.
 3. The owner claims: `sb issue claim <ref> --holder <name>`. Claim is ownership, not progress.
    A claim is a lease of about 15 minutes by default. Pass `--ttl-ms <n>` to cover the checkpoint
-   interval, and claim again at every checkpoint: a claim by the same holder renews the lease
-   (tested on sb 0.2.2). A worker once closed its issue after its claim had lapsed, and `sb`
-   accepted the close with no warning, so the lease is not a safety net.
+   interval, and renew at every checkpoint by releasing and claiming again:
+   `sb issue release <ref> --holder <who>`, then `sb issue claim <ref> --holder <who> --ttl-ms <n>`
+   (`sb issue release` has no `--reason` flag). A same-holder re-claim returns ok but keeps the old
+   expiresAt and generation (sb 0.2.x, verified 2026-10-25 and 2026-10-28), so it renews nothing.
+   A worker once closed its issue after its claim had lapsed, and `sb`
+   accepted the close with no warning, so the lease is not a safety net. Release a live claim
+   from its holder before claiming it yourself, because anti-steal refuses direct takes.
 4. Work, journal, checkpoint (below). Resume after a restart: `sb issue resume <ref>`.
 5. Close: `sb issue close <ref> --outcome completed|superseded|duplicate|wont_fix|invalid|cancelled|abandoned
    --reason "..." --result <journal-entry-ref> --validation ... --artifact ...`.
@@ -103,6 +109,7 @@ Journal writes take identity from the environment: `SUBSTRATE_HOLDER` becomes `p
 (`cli/src/core/session-identity.ts`), and since CORE-2390 it also exports `SUBSTRATE_HOLDER=<worker>`
 on every `xt claude|pi|codex` launch, so no one types an identity. Specialists get theirs
 automatically (`specialist::<role>`, activation and attempt too).
+- If `SUBSTRATE_HOLDER` is empty, export it in every Bash call that writes with `sb` until the Substrate auto-holder fix lands (no promise on timing), because empty holders record `(none recorded)`.
 
 Workers share the coordinator's tmux session, so the session name is the same for all of them.
 **The worker name is `SUBSTRATE_HOLDER`**; claim with the same name: `sb issue claim --holder <name>`.

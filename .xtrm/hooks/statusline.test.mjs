@@ -102,3 +102,65 @@ test('corrupt git cache falls back safely without crashing', async (t) => {
   const { result } = run({ ...fx, cache: fx.cache });
   assert.equal(result.status, 0);
 });
+
+// Layout and cache figure match the pi footer (custom-footer/hud.ts).
+function runWith(fx, input) {
+  return spawnSync(process.execPath, [hook], {
+    input: JSON.stringify({ workspace: { current_dir: fx.cwd }, ...input }),
+    encoding: 'utf8',
+    env: { ...process.env, XTRM_STATUSLINE_CACHE_DIR: fx.cache, PATH: `${fx.bin}:${process.env.PATH}` },
+  }).stdout.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+const usageOf = (input, read, written = 0) => ({ context_window: { used_percentage: 12.5, context_window_size: 1_000_000, current_usage: { input_tokens: input, output_tokens: input, cache_creation_input_tokens: written, cache_read_input_tokens: read } } });
+
+test('pi-footer layout: worktree, branch glyph, context, model, separators', async (t) => {
+  const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
+  run(fx);
+  await waitForGitCache(fx.cache);
+  const out = runWith(fx, { session_id: 'layout', model: { id: 'claude-x', display_name: 'Opus' }, effort: { level: 'high' }, ...usageOf(1, 0) });
+  assert.match(out, /^repo ⎇ main · 12\.5%\/1\.0M · Opus high/);
+});
+
+test('cache figure is the median of recent responses; a miss shows as (last N%)', (t) => {
+  const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
+  const send = (usage) => runWith(fx, { session_id: 'median', ...usage });
+  // Four hits at 99% (input 1k, read 99k), then one total miss (input 100k, read 0, written 1).
+  for (let i = 0; i < 4; i += 1) assert.match(send(usageOf(1_000 + i, 99_000)), /99% cache\n$/);
+  assert.match(send(usageOf(100_000, 0, 1)), /99% cache \(last 0%\)\n$/);
+  // Repeating the same signature is the same response: no extra sample.
+  assert.match(send(usageOf(100_000, 0, 1)), /99% cache \(last 0%\)\n$/);
+});
+
+test('the last-response flag needs a gap of 20 points under the median', (t) => {
+  const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
+  for (const [session, last, expected] of [['gap19', 24, /95% cache\n$/], ['gap20', 25, /95% cache \(last 75%\)\n$/]]) {
+    // Four responses at about 95% (distinct signatures), then one at exactly (100 - last)%.
+    for (let i = 0; i < 4; i += 1) runWith(fx, { session_id: session, ...usageOf(5, 95 + i) });
+    assert.match(runWith(fx, { session_id: session, ...usageOf(last, 100 - last) }), expected);
+  }
+});
+
+test('no cache figure when the provider reports no cache fields', (t) => {
+  const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
+  const out = runWith(fx, { session_id: 'nocache', ...usageOf(5_000, 0, 0) });
+  assert.doesNotMatch(out, /cache/);
+});
+
+test('without a session id the latest response alone is shown and nothing is written', (t) => {
+  const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
+  assert.match(runWith(fx, usageOf(2_000, 8_000)), /80% cache\n$/);
+  assert.equal(readdirSync(fx.cache).some(f => f.startsWith('xtrm-sl-cache-')), false);
+});
+
+test('the worktree name is never truncated, however long', async (t) => {
+  const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
+  const long = join(fx.root, 'core-xt-claude-a-very-long-worktree-name-for-an-agent');
+  mkdirSync(long);
+  writeFileSync(join(fx.bin, 'git'), `#!/bin/sh\ncase "$*" in\n  *"rev-parse --show-toplevel"*) printf '${long}\\n' ;;\n  *"branch --show-current"*) printf 'main\\n' ;;\n  *) printf '' ;;\nesac\n`);
+  run({ ...fx, cwd: long });
+  await waitForGitCache(fx.cache);
+  const out = runWith({ ...fx, cwd: long }, {});
+  assert.ok(out.startsWith('core-xt-claude-a-very-long-worktree-name-for-an-agent ⎇ main'), out);
+  assert.doesNotMatch(out, /…/);
+});

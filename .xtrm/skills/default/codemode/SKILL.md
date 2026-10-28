@@ -41,6 +41,16 @@ context** — fan out with `Promise.allSettled`, filter in-script, return the di
   check `stopReason`/`errorMessage`. Paid tiers can 402 — fall back to free
   classifiers; thin state rightly returns no-match.
 
+## Discover tools before assuming absence
+
+A missing tool is usually undiscovered, not absent. When the task needs a
+capability your list doesn't show, run one cell in this order: `ALL_TOOLS`
+for the census, `searchTools("<task words>")` to narrow (it also loads
+what it finds into the session), `describeTool("<exact name>")` for the
+description plus the full argument schema. Names alone don't teach usage —
+only `describeTool` gives you the contract. Note: `tool_search` loads do
+not survive a session restart; re-discover or fall back to codemode methods.
+
 ## Pattern: writer pre-flight (explicit scope only — no OCR LLM)
 
 OFF unless the pinned contract or scope explicitly names ocr delegation evidence, AgentRun

@@ -374,6 +374,11 @@ export async function installFromRegistry(params: {
 
     const drift = await checkDrift(registryPath, userXtrmDir, overrideRoots);
     const expectedHashes = buildExpectedHashes(registry);
+    // CORE-2538: a forced overwrite of a locally modified file saves the original first.
+    // userXtrmDir is resolved by getContext; the stamp is generated here. No user input.
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const backupRoot = path.join(userXtrmDir, 'skills-backups', `drift-${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`);
+    let backedUp = 0;
 
     const missingSet = new Set(drift.missing);
     const upToDateSet = new Set(drift.upToDate);
@@ -498,10 +503,20 @@ export async function installFromRegistry(params: {
                 continue;
             }
 
+            if (isDrifted && await fs.pathExists(targetPath)) {
+                // relativePath comes from the canonical registry payload, backupRoot is built above.
+                // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+                await fs.copy(targetPath, path.join(backupRoot, relativePath), { overwrite: false });
+                backedUp += 1;
+            }
             await fs.ensureDir(path.dirname(targetPath));
             await fs.copy(sourcePath, targetPath, { overwrite: true });
             installed += 1;
         }
+    }
+
+    if (backedUp > 0) {
+        console.log(kleur.yellow(`  ⚠ ${backedUp} locally modified file(s) overwritten; originals saved under ${backupRoot}`));
     }
 
     if (strictRegistry && missingSources.length > 0) {

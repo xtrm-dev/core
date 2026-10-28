@@ -51,11 +51,11 @@
           "version": "0.15.3"
         },
         "statusline.mjs": {
-          "hash": "09647458d826dd5a98e260d0a6eab268197218e5a2c9785b035d91501172908e",
+          "hash": "ac70dbee0201bebe8e020cabf6854e42ef0df1947e4cb73acd8043c40e7fa0f6",
           "version": "0.15.3"
         },
         "statusline.test.mjs": {
-          "hash": "d43042f73800d3762b53cb4c4636a2d822bce6e26f991a893cc21f3d85d15627",
+          "hash": "eb1a1ffe8cb2d3fba4bb23b714a9354ecece57b261f51dc0f188f78d5c2b07b7",
           "version": "0.15.3"
         },
         "worktree-boundary.mjs": {
@@ -90,11 +90,11 @@
           "version": "0.15.3"
         },
         "codemode/references/runtime-shapes.md": {
-          "hash": "e17026a153db6382f128a9fe757cdf6a07aaf82dad9a67e32e1ea1f4f5c19b0e",
+          "hash": "10332551b2b0843c94eac554900b8ba02b3b0098c47219e024a2f1d7a9cc7af7",
           "version": "0.15.3"
         },
         "codemode/SKILL.md": {
-          "hash": "35603789006846cd59655a718f9d4c0455317e0b4274e6779201f0ba39e244c2",
+          "hash": "5b25abe288f19ca2a45a98edc2b92bf3dfbcb20abdcfc88769aaae9f44247b1b",
           "version": "0.15.3"
         },
         "engineering-quality/references/causal-debugging.md": {
@@ -166,7 +166,7 @@
           "version": "0.15.3"
         },
         "goal-prompt/references/self-injection.md": {
-          "hash": "0b5efa6316601a88e570e6ce52e5d4d5a9f9fdf9583ef10fea41a4e3987f52df",
+          "hash": "7ce7f3247ccb1001586725524bdd133a3eaa3e085fdb590e5d9b41661e30b1ee",
           "version": "0.15.3"
         },
         "goal-prompt/references/stop-predicate.md": {
@@ -174,7 +174,7 @@
           "version": "0.15.3"
         },
         "goal-prompt/scripts/self-inject.sh": {
-          "hash": "57fa228c8f6a7e90c1f09ad168cb962706099c8540b7a11cf36c99f8c8dc4968",
+          "hash": "ef4ad3fe1d7efc83dea3f1bf091abce4b51470ebd934e22591363a57be6e77ca",
           "version": "0.15.3"
         },
         "goal-prompt/SKILL.md": {
@@ -529,19 +529,19 @@
           "version": "0.15.3"
         },
         "programme/PACK.json": {
-          "hash": "9cc07a74368b1cd6c785344bbe974f62857a9371cd95da9b7d56ece41fe3439b",
+          "hash": "ffddab5320a2cb37783d1de33af1fad3dcf00811e9aad7356ab11b3bf330baa8",
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/fleet.md": {
-          "hash": "54e38ccbdce51db8a9fdacaff91f698bc04aa08c58db402cc65e78d2bdd1f1eb",
+          "hash": "3c5d12e30e39de2c6a72fcaef797368bc965771e4cd7aca230a2abf8ce59eba9",
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/jira.md": {
-          "hash": "cbf7270e6ccdc5149704aa8e05f37660442dcc561406df3c06a728d788ddce9f",
+          "hash": "272a08cf1c21277429ab45e756eb75303185d0c2b985c8f1845bf80f9dac266e",
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/substrate.md": {
-          "hash": "e47e27949e4eeaa57898866ac2cd923269679c4f9f2d720383f44e0e06988d96",
+          "hash": "a131eb49c1eb089c4bdf56c87d2548691c8c9c517425394ab8d8dca6248a9630",
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/worked-example.md": {
@@ -553,7 +553,7 @@
           "version": "0.15.3"
         },
         "programme/programme-coordination/SKILL.md": {
-          "hash": "185459113ae303be52c2ec232e59ee6ba1b1f3080bb8f71c707f3cbe7f014b25",
+          "hash": "59a744edb86cad45c259afa899788deda335f3d4b95f55f5e21f6100cfd463f2",
           "version": "0.15.3"
         },
         "README.txt": {
