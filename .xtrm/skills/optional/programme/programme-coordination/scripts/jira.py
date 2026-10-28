@@ -30,6 +30,9 @@ def in_agent_tree(start=None):
     return False
 
 
+_AGENT = False  # set by identity() when the agent account was selected
+
+
 def identity():
     """(email, token_file). identity.json present = opted in: an agent then never falls back to the operator."""
     env = os.environ
@@ -38,6 +41,8 @@ def identity():
     cfg = pathlib.Path.home() / '.xtrm/identities/atlassian-agent/identity.json'
     if env.get('XTRM_JIRA_AS') != 'operator' and cfg.exists() and (env.get('SUBSTRATE_HOLDER') or in_agent_tree(env.get('XTRM_JIRA_WALK_FROM'))):
         d = json.loads(cfg.read_text())
+        global _AGENT
+        _AGENT = True
         return d['email'], d['tokenFile']
     return OPERATOR_EMAIL, OPERATOR_TOKEN_FILE
 
@@ -57,7 +62,23 @@ def creds():
 BASE = os.environ.get('JIRA_SITE', 'https://mercuryintel.atlassian.net')
 
 
+_ME = None
+
+
+def my_account_id():
+    global _ME
+    if _ME is None:
+        _ME = call('GET', '/rest/api/3/myself')[1]['accountId']
+    return _ME
+
+
 def call(method, path, body=None):
+    # A ticket the agent account creates is assigned to it unless the caller names an assignee.
+    if method == 'POST' and path.split('?')[0].rstrip('/') == '/rest/api/3/issue' and isinstance(body, dict):
+        creds()
+        fields = body.setdefault('fields', {})
+        if _AGENT and not fields.get('assignee'):
+            fields['assignee'] = {'accountId': my_account_id()}
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(BASE + path, data=data, method=method)
     email, tok = creds()

@@ -24,6 +24,16 @@ A process is an agent when `SUBSTRATE_HOLDER` is set, or when a `claude`, `pi` o
 3. Run `xt jira setup --email <agent account email>`. The shim is installed last, after the bot login is verified.
 4. Run `xt jira doctor`. Every line must show a check mark.
 
+## Default assignee
+
+A ticket an agent creates is assigned to `xtrm-bot` unless the caller names an assignee:
+
+- `acli jira workitem create` through the shim gets `--assignee @me` (or `"assignee": "@me"` in a private temp copy of the `--from-json` file). Help, `--generate-json` and other commands are untouched.
+- `jira.py POST /rest/api/3/issue` by the agent identity gets `fields.assignee.accountId`.
+- `xt jira sweep` lists the tickets the bot reported that are still unassigned; `xt jira sweep --apply` assigns them. It is the net for creation paths the two above do not cover (for example `acli workitem create-bulk`). `--days N` sets the look-back (default 14).
+
+The Jira project lead and default assignee are not changed: that would also assign tickets the operator creates to the bot and send lead notifications to an account nobody reads.
+
 ## Operate
 
 - Sessions started by `xt claude|pi|codex` carry `SUBSTRATE_HOLDER`. A session resumed with `xt attach` gets it again from the worktree name.

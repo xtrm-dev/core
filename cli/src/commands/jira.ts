@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import kleur from 'kleur';
-import { doctorJiraIdentity, jiraIdentityPaths, setupJiraIdentity } from '../core/jira-identity.js';
+import { doctorJiraIdentity, jiraIdentityPaths, setupJiraIdentity, sweepUnassigned } from '../core/jira-identity.js';
 
 export function createJiraCommand(): Command {
     const jira = new Command('jira').description('Jira agent identity: agents run acli and jira.py as the xtrm-bot account, not as the operator');
@@ -34,6 +34,23 @@ export function createJiraCommand(): Command {
                 for (const c of checks) console.log(`${c.ok ? kleur.green('✓') : kleur.red('✗')} ${c.name.padEnd(20)} ${kleur.dim(c.detail)}`);
             }
             if (!checks.every(c => c.ok)) process.exit(1);
+        });
+
+    jira
+        .command('sweep')
+        .description('List tickets the bot reported without an assignee; --apply assigns them to the bot')
+        .option('--apply', 'Assign the listed tickets to the bot', false)
+        .option('--days <n>', 'Look back this many days', '14')
+        .action(async (opts: { apply: boolean; days: string }) => {
+            try {
+                const rows = await sweepUnassigned({ apply: opts.apply, days: Number(opts.days) || 14 });
+                if (rows.length === 0) console.log(kleur.green('✓ no unassigned tickets reported by the bot'));
+                for (const r of rows) console.log(`${opts.apply ? (r.assigned ? kleur.green('✓ assigned') : kleur.red('✗ failed  ')) : kleur.yellow('unassigned')} ${r.key}  ${kleur.dim(r.summary.slice(0, 80))}`);
+                if (rows.some(r => opts.apply && !r.assigned)) process.exit(1);
+            } catch (error) {
+                console.error(kleur.red(`✗ ${(error as Error).message}`));
+                process.exit(1);
+            }
         });
 
     return jira;
