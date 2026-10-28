@@ -29,7 +29,7 @@ It does not shell out to the `sp` CLI for that.
 | Runtime | Surface | Operator guidance |
 |---|---|---|
 | Pi | the `native-specialists` extension | the tool descriptions |
-| Claude Code | the `specialists` plugin MCP server; channel push wakes you | `/specialists:supervising-activations` |
+| Claude Code | the `specialists` plugin MCP server; channel push wakes you | `/specialists:using-specialists` |
 
 Two execution paths remain during XTRM-93. Native activation (below) is the primary flow for Substrate-backed work; legacy `sp run`/Supervisor behavior is a compatibility path for operators. Agent work authority comes from the typed Substrate service.
 
@@ -74,6 +74,12 @@ Issue ready (attested)
 - **Readiness is the dispatch gate.** The read-only check refuses draft, unready,
   blocked, terminal, and scope-expanding Issues; `bind` pins the immutable
   ExecutionBinding (issue/revision/hash/claim/participant/activation/session/workspace).
+- **Stage context travels through `contextRefs`, never through the Journal.** Turn 1 renders
+  the Issue's resolved `contextRefs` (own, plus inherited from parent Issues) as evidence
+  under the contract, each entry naming its source Issue and revision. A finding the next
+  stage needs is curated into that Issue's refs (`sb issue edit <ref> --context-refs <json>`
+  opens a new revision — re-attest) or onto a parent Issue; a Journal result reaches no
+  prompt, and pasting one into a dispatch is not a substitute.
 - **Writers share the coordinator's worktree under a lease.** MEDIUM/HIGH tiers take
   the workspace writer lease at admission (re-checked per mutating call); contention
   refuses. The lease releases at settle/completion/disposal; `specialist_resume` and
@@ -134,10 +140,12 @@ list|reconcile`, `sp config show <name> --resolved`, and the advanced surfaces b
 Load only the one you need: `references/chain-recipes.md` (role/gate recipes),
 `references/monitoring.md` (wakes, results, failures), `references/merge-and-integration.md`
 (integration/publication), `references/registry-and-locations.md` (registry),
-`references/dispatch-preconditions.md` (git/workspace prerequisites). Operator surfaces:
+`references/dispatch-preconditions.md` (git/workspace prerequisites),
+`references/claude-code.md` (Claude Code notes: store resolution, wakes, headless limits). Operator surfaces:
 `references/kpi.md` (cost/stall analysis), `references/nodes.md` (NodeSupervisor),
 `references/script-class.md` (`sp script`/`sp serve`), `references/specialist-definitions.md`
-(definition authoring; helpers under `scripts/specialist-definitions/`). They stay
+(definition authoring; helpers under `scripts/specialist-definitions/`, including when a
+read-tier role needs `execution.lease_waiver` to run its own commands). They stay
 discoverable through this root without extra triggers, keeping the catalog small.
 
 ## What this skill deliberately does not own
