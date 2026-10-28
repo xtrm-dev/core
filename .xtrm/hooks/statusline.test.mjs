@@ -114,12 +114,12 @@ function runWith(fx, input) {
 
 const usageOf = (input, read, written = 0) => ({ context_window: { used_percentage: 12.5, context_window_size: 1_000_000, current_usage: { input_tokens: input, output_tokens: input, cache_creation_input_tokens: written, cache_read_input_tokens: read } } });
 
-test('pi-footer layout: worktree, (branch), context, model, separators', async (t) => {
+test('pi-footer layout: worktree, branch glyph, context, model, separators', async (t) => {
   const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
   run(fx);
   await waitForGitCache(fx.cache);
   const out = runWith(fx, { session_id: 'layout', model: { id: 'claude-x', display_name: 'Opus' }, effort: { level: 'high' }, ...usageOf(1, 0) });
-  assert.match(out, /^repo {2}\(main\) · 12\.5%\/1\.0M · Opus high/);
+  assert.match(out, /^repo {2}⎇ main · 12\.5%\/1\.0M · Opus high/);
 });
 
 test('cache figure is the median of recent responses; a miss shows as (last N%)', (t) => {
@@ -153,19 +153,14 @@ test('without a session id the latest response alone is shown and nothing is wri
   assert.equal(readdirSync(fx.cache).some(f => f.startsWith('xtrm-sl-cache-')), false);
 });
 
-test('the worktree name is bold and never truncated, however long', async (t) => {
+test('the worktree name is never truncated, however long', async (t) => {
   const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
-  // A repo directory whose name is far longer than any label limit.
   const long = join(fx.root, 'core-xt-claude-a-very-long-worktree-name-for-an-agent');
   mkdirSync(long);
-  const longFx = { ...fx, cwd: long };
   writeFileSync(join(fx.bin, 'git'), `#!/bin/sh\ncase "$*" in\n  *"rev-parse --show-toplevel"*) printf '${long}\\n' ;;\n  *"branch --show-current"*) printf 'main\\n' ;;\n  *) printf '' ;;\nesac\n`);
-  run(longFx);
+  run({ ...fx, cwd: long });
   await waitForGitCache(fx.cache);
-  const raw = spawnSync(process.execPath, [hook], {
-    input: JSON.stringify({ workspace: { current_dir: long } }), encoding: 'utf8',
-    env: { ...process.env, XTRM_STATUSLINE_CACHE_DIR: fx.cache, PATH: `${fx.bin}:${process.env.PATH}` },
-  }).stdout;
-  assert.ok(raw.startsWith('\x1b[1mcore-xt-claude-a-very-long-worktree-name-for-an-agent\x1b[0m'), 'name must be bold and complete');
-  assert.doesNotMatch(raw, /…/);
+  const out = runWith({ ...fx, cwd: long }, {});
+  assert.ok(out.startsWith('core-xt-claude-a-very-long-worktree-name-for-an-agent  ⎇ main'), out);
+  assert.doesNotMatch(out, /…/);
 });

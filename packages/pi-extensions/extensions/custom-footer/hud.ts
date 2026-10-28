@@ -202,7 +202,7 @@ function truncateLabel(text: string, max: number): string {
  * detached HEAD, where it is the only thing that identifies the checkout.
  */
 function repoLabel(git: GitContext): string | undefined {
-  // Never truncated: the worktree name is how the operator tells agents apart.
+  // Never shortened: the worktree name is how the operator tells agents apart.
   return git.name || undefined;
 }
 
@@ -211,7 +211,7 @@ function branchLabel(git: GitContext): string | undefined {
   const name = git.branch
     ? truncateLabel(git.branch, MAX_BRANCH)
     : git.head ? `detached@${git.head}` : "detached";
-  return `(${name}${git.flags ? ` ${git.flags}` : ""})`;
+  return `⎇ ${name}${git.flags ?? ""}`;
 }
 
 function contextLabel(state: HudState): string | undefined {
@@ -258,8 +258,6 @@ interface HudSegment {
   priority: number;
   plain: string;
   paint: (colors: HudColors | undefined) => string;
-  /** Shorter form used when this is the only segment left and still too wide. */
-  compact?: { plain: string; paint: (colors: HudColors | undefined) => string };
 }
 
 function paint(colors: HudColors | undefined, token: string, text: string, bold = false): string {
@@ -281,13 +279,11 @@ function buildSegments(state: HudState): HudSegment[] {
     segments.push({
       priority: 0,
       plain: plain || "detached",
-      // The worktree name is bold and the branch is full-brightness text: together they
-      // say which agent this is, so they carry more weight than the rest of the HUD.
+      // Identifier is upright: the tier alone carries the emphasis, matching
+      // the restrained weight of the rest of the HUD.
       paint: (colors) => (name && branch
-        ? `${paint(colors, "toolTitle", name, true)}  ${paint(colors, "text", branch)}`
-        : paint(colors, name ? "toolTitle" : "muted", name ?? branch ?? "detached", !!name)),
-      // The worktree name outranks the branch: when only this group is left, shed the branch first.
-      compact: name ? { plain: name, paint: (colors) => paint(colors, "toolTitle", name, true) } : undefined,
+        ? `${paint(colors, "toolTitle", name)}  ${paint(colors, "muted", branch)}`
+        : paint(colors, name ? "toolTitle" : "muted", name ?? branch ?? "detached")),
     });
   }
 
@@ -332,7 +328,7 @@ function joinPlain(segments: readonly HudSegment[]): string {
 function visibleLength(text: string): number {
   // The HUD never receives ANSI in `plain`, but branch/model labels can carry
   // wide characters; count them as one column each, which is what a terminal
-  // does for the glyphs this HUD prints (↑, ↓, ·).
+  // does for the glyphs this HUD prints (⎇, ↑, ↓, ·).
   return [...text].length;
 }
 
@@ -362,10 +358,6 @@ export function renderHud(state: HudState, width: number, colors?: HudColors, tr
       }
     }
     segments = segments.filter((_, index) => index !== dropIndex);
-  }
-  const only = segments[0]!;
-  if (segments.length === 1 && only.compact && visibleLength(only.plain) > maxWidth) {
-    segments = [{ ...only, plain: only.compact.plain, paint: only.compact.paint }];
   }
 
   const line = joinPainted(segments, colors);

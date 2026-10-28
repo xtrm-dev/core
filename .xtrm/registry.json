@@ -51,11 +51,11 @@
           "version": "0.15.3"
         },
         "statusline.mjs": {
-          "hash": "fe18ccf631c2710b6892221100e44530e033fa6958048f7d1408657b50dc03c7",
+          "hash": "a90b224f0e3cb7784298c12c504099ee93bbee7b5e10dcecf5c8769fa0523535",
           "version": "0.15.3"
         },
         "statusline.test.mjs": {
-          "hash": "1d2426a01b3ea5412c81d958211ccc39728f63cc42927570b8c04b3b822b74ff",
+          "hash": "7589b3b2757070a422bf7fc771a8ed54108478d4b1eeedb5e9ca7bbf91ca6cc4",
           "version": "0.15.3"
         },
         "worktree-boundary.mjs": {

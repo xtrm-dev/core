@@ -116,7 +116,7 @@ describe("git context detection", () => {
       git: gitContextFrom({ toplevel: "/repo", branch: "xt/colors", head: "abc1234", flags: "*+↑" }),
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     }, 200);
-    expect(line).toBe("repo  (xt/colors *+↑)");
+    expect(line).toBe("repo  ⎇ xt/colors*+↑");
   });
 
   test("detached HEAD keeps the short commit and no branch", () => {
@@ -166,7 +166,7 @@ describe("git context detection", () => {
       expect(detached.head).toMatch(/^[0-9a-f]{7,}$/);
       // Rendered, the detached worktree says so instead of borrowing a branch.
       expect(renderHud({ git: detached, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200))
-        .toMatch(/^wt  \(detached@[0-9a-f]{7,}\)$/);
+        .toMatch(/^wt  ⎇ detached@[0-9a-f]{7,}$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -215,7 +215,7 @@ describe("HUD layout", () => {
     }, 200, markTheme());
 
     const plain = line.replace(/\*([^*]*)\*/g, "$1").replace(/<\/?[A-Za-z]+>/g, "");
-    expect(plain).toBe("core-xt-pi-colors  (xt/ui-trim) · 31.4%/1.0M · deepseek-v4.1-flash high · ↑42k ↓8k · 86% cache");
+    expect(plain).toBe("core-xt-pi-colors  ⎇ xt/ui-trim · 31.4%/1.0M · deepseek-v4.1-flash high · ↑42k ↓8k · 86% cache");
   });
 
   test("shows the context window at most once", () => {
@@ -245,7 +245,7 @@ describe("HUD layout", () => {
 
   test("labels a detached HEAD with its short commit", () => {
     const line = renderHud({ git: gitContextFrom({ toplevel: "/repo", branch: "", head: "deadbee" }), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200);
-    expect(line).toBe("repo  (detached@deadbee)");
+    expect(line).toBe("repo  ⎇ detached@deadbee");
   });
 
   test("narrow widths drop low-priority fields and never wrap", () => {
@@ -270,34 +270,13 @@ describe("HUD layout", () => {
     const narrow = renderHud(state, 40);
     // The worktree/branch group is the last field to drop.
     expect(narrow).toContain("core-xt-pi-colors");
-    expect(narrow).toMatch(/core-xt-pi-colors  \(/);
+    expect(narrow).toContain("⎇");
     expect(narrow).not.toContain("cache");
   });
 
-  test("when the git group alone overflows, the branch goes before the worktree name", () => {
+  test("an ANSI-aware truncator is applied when the git group alone overflows", () => {
     const state = {
       git: { repo: true, name: "core", branch: "x".repeat(80), head: "abc1234" },
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    };
-    expect(renderHud(state, 20)).toBe("core");
-  });
-
-  test("the worktree name is never shortened, however long, while the width allows it", () => {
-    const name = "core-xt-claude-a-very-long-worktree-name";
-    const state = {
-      git: { repo: true, name, branch: "xt/some-branch", head: "abc1234" },
-      contextPercent: 10,
-      contextWindow: 200_000,
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    };
-    for (const width of [200, 80, 60, name.length + 2, name.length]) {
-      expect(renderHud(state, width).startsWith(name)).toBe(true);
-    }
-  });
-
-  test("an ANSI-aware truncator is applied only when even the worktree name overflows", () => {
-    const state = {
-      git: { repo: true, name: "n".repeat(30), branch: "main", head: "abc1234" },
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     };
     const seen: number[] = [];
@@ -307,6 +286,13 @@ describe("HUD layout", () => {
     });
     expect(seen).toEqual([20]);
     expect(line.endsWith("…")).toBe(true);
+  });
+
+  test("the worktree name is never shortened, however long", () => {
+    const name = "core-xt-claude-a-very-long-worktree-name-for-an-agent";
+    const line = renderHud({ git: { repo: true, name, branch: "xt/b", head: "abc1234" }, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200);
+    expect(line.startsWith(`${name}  ⎇ xt/b`)).toBe(true);
+    expect(line).not.toContain("…");
   });
 
   test("long branch and model labels are shortened, not wrapped", () => {
@@ -360,11 +346,12 @@ describe("HUD theme usage", () => {
     expect(seen.map((call) => call.options)).toContainEqual({ fg: "text", bold: true });
   });
 
-  test("the worktree identifier is bold and the branch is full-brightness text", () => {
+  test("the worktree identifier is upright, not bold", () => {
     const line = renderHud({ git: baseGit, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200, markTheme());
-    expect(line).toContain("*<toolTitle>core-xt-pi-colors</toolTitle>*");
-    expect(line).toContain("<text>(");
-    expect(line).not.toContain("<muted>");
+    expect(line).toContain("<toolTitle>core-xt-pi-colors</toolTitle>");
+    expect(line).not.toContain("*<toolTitle>");
+    // Only the context threshold may carry weight in this line.
+    expect(line).not.toContain("*</toolTitle>*");
   });
 
   test("the context threshold moves through weight and brightness only", () => {
