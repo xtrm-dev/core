@@ -11,9 +11,10 @@ when `SUBSTRATE_HOLDER` is set or a claude/pi/codex process is an ancestor. `jir
 checks them. `XTRM_JIRA_AS=operator` forces the operator account; an explicit `JIRA_EMAIL` or
 `JIRA_TOKEN_FILE` always wins. An agent never falls back to the operator once the identity exists.
 
-Attribution: a comment an agent posts (`jira.py comment`, `acli jira workitem comment create`) starts with
+Attribution: a comment an agent posts (`jira.py comment`, `acli jira workitem comment create` or `comment update`) starts with
 `[agent:<holder> | run:<id>]`, or `[agent:<runtime>-<worktree dir> | run:<id> | fallback]` when
-`SUBSTRATE_HOLDER` is unset; an agent create or transition adds the label `actor=agent`. `jira.py comment`
+`SUBSTRATE_HOLDER` is unset. An agent create, `acli jira workitem create-bulk`, field edit (`PUT /rest/api/3/issue/<KEY>`,
+`acli jira workitem edit`) or transition adds the label `actor=agent`, merged with the labels already there. `jira.py comment`
 prints `POSTED_TEXT <json string>` (the exact text posted) after the JSON; as a module,
 `post_comment(key, text)` returns `(status, response, posted_text)`. Details: `docs/jira-identity.md` in xtrm-tools.
 

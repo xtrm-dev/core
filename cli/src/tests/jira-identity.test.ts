@@ -123,6 +123,40 @@ describe('doctorJiraIdentity', () => {
         expect(after.filter(c => !c.ok)).toEqual([]);
     });
 
+    describe('shim current', () => {
+        const shimPath = (): string => jiraIdentityPaths(home).shimPath;
+        const check = () => doctorJiraIdentity({ home, pathEnv: pathEnv(), run: fakeRun() }).find(c => c.name === 'shim current')!;
+        const install = (): void => { setupJiraIdentity({ email: EMAIL, tokenFile }, { home, pathEnv: pathEnv(), run: fakeRun() }); };
+
+        it('passes for the shim setup wrote, and for a current shim that embeds another real acli path', () => {
+            install();
+            expect(check()).toMatchObject({ ok: true });
+            fs.writeFileSync(shimPath(), shimSource('/opt/other/acli'), { mode: 0o755 });
+            expect(check().ok).toBe(true);
+        });
+
+        it('fails with a hint when the shim differs from what this version installs', () => {
+            install();
+            const current = fs.readFileSync(shimPath(), 'utf8');
+            const older = current.replace('create:*|create-bulk:*|edit:*|transition:*|comment:create|comment:update', 'create:*|transition:*|comment:create');
+            expect(older).not.toBe(current);
+            for (const stale of [older, current + '# local edit\n', current.replace(/^real=.*$/m, 'real=/usr/bin/acli')]) {
+                fs.writeFileSync(shimPath(), stale, { mode: 0o755 });
+                expect(check()).toEqual({ name: 'shim current', ok: false, detail: 'stale shim: run xt jira setup' });
+            }
+        });
+
+        it('fails when the installed acli is foreign or missing, and keeps the other checks', () => {
+            fs.ensureDirSync(path.dirname(shimPath()));
+            fs.writeFileSync(shimPath(), '#!/bin/sh\necho mine\n', { mode: 0o755 });
+            expect(check()).toMatchObject({ ok: false, detail: expect.stringContaining('no xtrm shim to compare') });
+            fs.removeSync(shimPath());
+            expect(check().ok).toBe(false);
+            const names = doctorJiraIdentity({ home, pathEnv: pathEnv(), run: fakeRun() }).map(c => c.name);
+            expect(names).toEqual(expect.arrayContaining(['identity.json', 'bot acli profile', 'real acli', 'shim installed', 'shim first on PATH', 'shim current']));
+        });
+    });
+
     it('flags a shim that is not first on PATH', () => {
         setupJiraIdentity({ email: EMAIL, tokenFile }, { home, pathEnv: pathEnv(), run: fakeRun() });
         const reversed = `${realDir}:${path.dirname(jiraIdentityPaths(home).shimPath)}`;
@@ -370,24 +404,26 @@ print(json.dumps([s for s in sent if s[0] == 'POST'][0][2]['fields'].get('assign
 
 const RUN_ID = /^[0-9a-f]{6}$/;
 const PY_ACLI = `#!/usr/bin/env python3
-import json, os, sys
+import json, os, stat, sys
 a = sys.argv[1:]
 files = {}
+modes = {}
 for i, x in enumerate(a):
     flag, eq, inline = x.partition('=')
-    if flag in ('--body-file', '-F', '--from-json'):
+    if flag in ('--body-file', '-F', '--body-adf', '--from-json', '--from-csv'):
         f = inline if eq else (a[i + 1] if i + 1 < len(a) else '')
         if f and os.path.isfile(f):
             files[f] = open(f).read()
+            modes[f] = stat.S_IMODE(os.stat(f).st_mode)
 with open(os.environ['FAKE_LOG'], 'a') as log:
-    log.write(json.dumps({'args': a, 'files': files, 'home': os.environ.get('HOME')}) + '\\n')
+    log.write(json.dumps({'args': a, 'files': files, 'modes': modes, 'home': os.environ.get('HOME')}) + '\\n')
 if len(a) > 2 and a[2] == 'edit':
     print('EDIT-OUTPUT')
     sys.exit(int(os.environ.get('FAKE_EXIT_EDIT', '0')))
 sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
 `;
 
-interface AcliCall { args: string[]; files: Record<string, string>; home: string }
+interface AcliCall { args: string[]; files: Record<string, string>; modes: Record<string, number>; home: string }
 
 describe('shim attribution (real bash)', () => {
     let shim = '';
@@ -622,6 +658,254 @@ describe('shim attribution (real bash)', () => {
             expect(leftovers()).toEqual([]);
         });
     });
+    // CORE-2541: edit, create-bulk and comment update.
+    describe('edit labels', () => {
+        const edit = (...rest: string[]) => ['jira', 'workitem', 'edit', '--key', 'XT-1', ...rest];
+
+        it('adds --labels actor=agent when the edit names no labels', () => {
+            expect(run(edit('--summary', 'S', '--yes')).status).toBe(0);
+            expect(calls()[0]!.args).toEqual(edit('--summary', 'S', '--yes', '--labels', 'actor=agent'));
+        });
+
+        it('extends the labels the caller names (acli adds them; the last --labels wins) and never repeats the label', () => {
+            const cases: Array<[string[], string[]]> = [
+                [['--labels', 'a,b'], ['--labels', 'a,b,actor=agent']],
+                [['-l', 'a'], ['-l', 'a,actor=agent']],
+                [['--labels=a'], ['--labels=a,actor=agent']],
+                [['--labels', 'x', '--labels', 'y'], ['--labels', 'x', '--labels', 'y,actor=agent']],
+                [['--labels', ''], ['--labels', 'actor=agent']],
+                [['--labels', 'a,actor=agent'], ['--labels', 'a,actor=agent']],
+            ];
+            for (const [given, expected] of cases) {
+                fs.removeSync(log);
+                run(edit(...given));
+                expect(calls()[0]!.args).toEqual(edit(...expected));
+            }
+        });
+
+        it('leaves help, generate-json, an edit that removes the label, and the operator alone', () => {
+            for (const args of [edit('--help'), ['jira', 'workitem', 'edit', '--generate-json'], edit('--remove-labels', 'x,actor=agent')]) {
+                fs.removeSync(log);
+                run(args);
+                expect(calls()[0]!.args).toEqual(args);
+            }
+            fs.removeSync(log);
+            run(edit('--summary', 'S'), { XTRM_JIRA_AS: 'operator' });
+            expect(calls()[0]!.args).toEqual(edit('--summary', 'S'));
+        });
+
+        it('merges labelsToAdd into a private --from-json copy and removes it after', () => {
+            const src = path.join(home, 'e.json');
+            fs.writeJsonSync(src, { issues: ['XT-1'], labelsToAdd: ['keep'], summary: 'S' });
+            for (const args of [['--from-json', src], [`--from-json=${src}`]]) {
+                fs.removeSync(log);
+                expect(run(['jira', 'workitem', 'edit', ...args, '--yes']).status).toBe(0);
+                const [only] = calls();
+                const copy = Object.keys(only!.files)[0]!;
+                expect(copy).not.toBe(src);
+                expect(JSON.parse(only!.files[copy]!)).toEqual({ issues: ['XT-1'], labelsToAdd: ['keep', 'actor=agent'], summary: 'S' });
+                expect(only!.modes[copy]).toBe(0o600);
+                expect(fs.existsSync(copy)).toBe(false);
+            }
+            expect(fs.readJsonSync(src).labelsToAdd).toEqual(['keep']);
+            expect(leftovers()).toEqual([]);
+        });
+
+        it('adds labelsToAdd when the JSON has none, and leaves a JSON that removes the label as it is', () => {
+            const src = path.join(home, 'e2.json');
+            fs.writeJsonSync(src, { issues: ['XT-1'], summary: 'S' });
+            run(['jira', 'workitem', 'edit', '--from-json', src]);
+            expect(JSON.parse(Object.values(calls()[0]!.files)[0]!).labelsToAdd).toEqual(['actor=agent']);
+            fs.removeSync(log);
+            fs.writeJsonSync(src, { issues: ['XT-1'], labelsToRemove: ['actor=agent'] });
+            run(['jira', 'workitem', 'edit', '--from-json', src]);
+            expect(calls()[0]!.args).toEqual(['jira', 'workitem', 'edit', '--from-json', src]);
+        });
+
+        it('runs an edit unchanged, with a warning, when the JSON cannot be read', () => {
+            const missing = path.join(home, 'nope.json');
+            const r = run(['jira', 'workitem', 'edit', '--from-json', missing]);
+            expect(r.status).toBe(0);
+            expect(r.stderr).toContain('running the command unchanged');
+            expect(calls()[0]!.args).toEqual(['jira', 'workitem', 'edit', '--from-json', missing]);
+            expect(leftovers()).toEqual([]);
+        });
+    });
+
+    describe('create-bulk', () => {
+        const ACCOUNT = '712020:abc-123';
+        const bulk = (...rest: string[]) => ['jira', 'workitem', 'create-bulk', ...rest, '--yes'];
+        const sentFile = (): { copy: string; text: string; mode: number } => {
+            const [only] = calls();
+            const copy = Object.keys(only!.files)[0]!;
+            return { copy, text: only!.files[copy]!, mode: only!.modes[copy]! };
+        };
+
+        beforeEach(() => {
+            fs.writeFileSync(
+                path.join(agentHome, '.config', 'acli', 'jira_config.yaml'),
+                `version: 1\nprofiles:\n    - site: s\n      account_id: ${ACCOUNT}\n      email: bot@example.test\n`,
+            );
+        });
+
+        it('gives each JSON item the bot assignee and the label, keeping what the caller set', () => {
+            const src = path.join(home, 'b.json');
+            fs.writeJsonSync(src, { issues: [
+                { summary: 'A', projectKey: 'XT', issueType: 'Task' },
+                { summary: 'B', projectKey: 'XT', issueType: 'Task', label: ['x'], assignee: 'someone@x.test' },
+                { summary: 'C', projectKey: 'XT', issueType: 'Task', labels: ['ignored-by-acli'], label: ['actor=agent'] },
+            ] });
+            expect(run(bulk('--from-json', src)).status).toBe(0);
+            const sent = sentFile();
+            expect(JSON.parse(sent.text).issues).toEqual([
+                { summary: 'A', projectKey: 'XT', issueType: 'Task', assignee: ACCOUNT, label: ['actor=agent'] },
+                { summary: 'B', projectKey: 'XT', issueType: 'Task', assignee: 'someone@x.test', label: ['x', 'actor=agent'] },
+                { summary: 'C', projectKey: 'XT', issueType: 'Task', assignee: ACCOUNT, labels: ['ignored-by-acli'], label: ['actor=agent'] },
+            ]);
+            expect(sent.copy).not.toBe(src);
+            expect(sent.mode).toBe(0o600);
+            expect(fs.existsSync(sent.copy)).toBe(false);
+            expect(fs.readJsonSync(src).issues[0]).not.toHaveProperty('assignee');
+            expect(leftovers()).toEqual([]);
+        });
+
+        it('accepts a top-level array and the --from-json= spelling', () => {
+            const src = path.join(home, 'b2.json');
+            fs.writeJsonSync(src, [{ summary: 'A', projectKey: 'XT', issueType: 'Task' }]);
+            run(bulk(`--from-json=${src}`));
+            expect(JSON.parse(sentFile().text)).toEqual([{ summary: 'A', projectKey: 'XT', issueType: 'Task', assignee: ACCOUNT, label: ['actor=agent'] }]);
+        });
+
+        it('sets only the label when the bot profile has no account id', () => {
+            fs.writeFileSync(path.join(agentHome, '.config', 'acli', 'jira_config.yaml'), 'version: 1\n');
+            const src = path.join(home, 'b3.json');
+            fs.writeJsonSync(src, { issues: [{ summary: 'A', projectKey: 'XT', issueType: 'Task' }] });
+            run(bulk('--from-json', src));
+            expect(JSON.parse(sentFile().text).issues[0]).toEqual({ summary: 'A', projectKey: 'XT', issueType: 'Task', label: ['actor=agent'] });
+        });
+
+        it('adds the label and assignee columns to a private CSV copy and keeps the caller cells', () => {
+            const src = path.join(home, 'b.csv');
+            const original = 'summary,projectKey,issueType,description,label\nA,XT,Task,"line1\nline2",\nB,XT,Task,d,"x,y"\nC,XT,Task,d,actor=agent\n';
+            fs.writeFileSync(src, original);
+            expect(run(bulk('--from-csv', src)).status).toBe(0);
+            const sent = sentFile();
+            expect(sent.text).toBe([
+                'summary,projectKey,issueType,description,label,assignee',
+                'A,XT,Task,"line1\nline2",actor=agent,' + ACCOUNT,
+                'B,XT,Task,d,"x,y,actor=agent",' + ACCOUNT,
+                'C,XT,Task,d,actor=agent,' + ACCOUNT,
+                '',
+            ].join('\n'));
+            expect(sent.mode).toBe(0o600);
+            expect(fs.existsSync(sent.copy)).toBe(false);
+            expect(fs.readFileSync(src, 'utf8')).toBe(original);
+            expect(leftovers()).toEqual([]);
+        });
+
+        it('keeps an assignee cell the caller filled and adds the label column when it is absent', () => {
+            const src = path.join(home, 'b2.csv');
+            fs.writeFileSync(src, 'summary,assignee,projectKey,issueType\nA,someone@x.test,XT,Task\nB,,XT,Task\n');
+            run(bulk(`--from-csv=${src}`));
+            expect(sentFile().text).toBe(`summary,assignee,projectKey,issueType,label\nA,someone@x.test,XT,Task,actor=agent\nB,${ACCOUNT},XT,Task,actor=agent\n`);
+        });
+
+        it('passes a CSV with an unknown layout through unchanged', () => {
+            const src = path.join(home, 'b3.csv');
+            fs.writeFileSync(src, 'title,project\nA,XT\n');
+            run(bulk('--from-csv', src));
+            expect(calls()[0]!.args).toEqual(bulk('--from-csv', src));
+            expect(leftovers()).toEqual([]);
+        });
+
+        it('leaves help, generate-json and the operator alone', () => {
+            for (const args of [bulk('--help'), ['jira', 'workitem', 'create-bulk', '--generate-json']]) {
+                fs.removeSync(log);
+                run(args);
+                expect(calls()[0]!.args).toEqual(args);
+            }
+            const src = path.join(home, 'b4.json');
+            fs.writeJsonSync(src, { issues: [{ summary: 'A' }] });
+            fs.removeSync(log);
+            run(bulk('--from-json', src), { XTRM_JIRA_AS: 'operator' });
+            expect(calls()[0]!.args).toEqual(bulk('--from-json', src));
+        });
+
+        it('runs the command unchanged, with a warning, when the file cannot be read', () => {
+            const missing = path.join(home, 'nope.json');
+            const r = run(bulk('--from-json', missing));
+            expect(r.status).toBe(0);
+            expect(r.stderr).toContain('running the command unchanged');
+            expect(calls()[0]!.args).toEqual(bulk('--from-json', missing));
+        });
+    });
+
+    describe('comment update', () => {
+        const update = (...rest: string[]) => ['jira', 'workitem', 'comment', 'update', '--key', 'XT-1', '--id', '10001', ...rest];
+
+        it('prefixes --body in each spelling and keeps every other flag', () => {
+            for (const args of [update('--body', 'hello'), update('-b', 'hello'), update('--body=hello')]) {
+                fs.removeSync(log);
+                expect(run([...args, '--notify', '--visibility-group', 'dev']).status).toBe(0);
+                const sent = calls()[0]!.args;
+                expect(sent.join('\u0000')).toContain(`${HEADER}\n\nhello`);
+                expect(sent.slice(0, 8)).toEqual(['jira', 'workitem', 'comment', 'update', '--key', 'XT-1', '--id', '10001']);
+                expect(sent.slice(-3)).toEqual(['--notify', '--visibility-group', 'dev']);
+            }
+        });
+
+        it('adds the header only when the new body has none', () => {
+            run(update('--body', '[agent:other | run:1]\n\nhi'));
+            expect(calls()[0]!.args).toContain('[agent:other | run:1]\n\nhi');
+            fs.removeSync(log);
+            run(update('--body', 'plain'));
+            expect(calls()[0]!.args).toContain(`${HEADER}\n\nplain`);
+        });
+
+        it('prefixes a private --body-file copy and an ADF --body-adf copy, once', () => {
+            const txt = path.join(home, 'u.txt');
+            fs.writeFileSync(txt, 'from file\n');
+            run(update('--body-file', txt));
+            const text = calls()[0]!;
+            const textCopy = Object.keys(text.files)[0]!;
+            expect(text.files[textCopy]).toBe(`${HEADER}\n\nfrom file\n`);
+            expect(text.modes[textCopy]).toBe(0o600);
+            expect(fs.readFileSync(txt, 'utf8')).toBe('from file\n');
+
+            const adf = path.join(home, 'u.json');
+            fs.writeJsonSync(adf, { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hi' }] }] });
+            fs.removeSync(log);
+            run(update('--body-adf', adf));
+            const first = JSON.parse(Object.values(calls()[0]!.files)[0]!);
+            expect(first.content).toHaveLength(2);
+            expect(first.content[0].content[0].text).toBe(HEADER);
+            fs.writeJsonSync(adf, first);
+            fs.removeSync(log);
+            run(update(`--body-adf=${adf}`));
+            expect(JSON.parse(Object.values(calls()[0]!.files)[0]!).content).toHaveLength(2);
+            expect(leftovers()).toEqual([]);
+        });
+
+        it('leaves an update without a body, help, and the operator alone', () => {
+            for (const args of [update('--notify'), update('--help')]) {
+                fs.removeSync(log);
+                run(args);
+                expect(calls()[0]!.args).toEqual(args);
+            }
+            fs.removeSync(log);
+            run(update('--body', 'x'), { XTRM_JIRA_AS: 'operator' });
+            expect(calls()[0]!.args).toEqual(update('--body', 'x'));
+        });
+
+        it('create --edit-last gets the header too, and keeps one the body already has', () => {
+            run(comment('--edit-last', '--body', 'again'));
+            expect(calls()[0]!.args).toContain(`${HEADER}\n\nagain`);
+            fs.removeSync(log);
+            run(comment('--edit-last', '--body', `${HEADER}\n\nagain`));
+            expect(calls()[0]!.args).toContain(`${HEADER}\n\nagain`);
+        });
+
+    });
 });
 
 describe('jira.py attribution', () => {
@@ -658,6 +942,10 @@ elif mode == 'create':
 elif mode == 'transition':
     st, out = jira.transition('XT-1', 'Done')
     print(json.dumps([s for s in sent if s[0] != 'GET']))
+elif mode == 'put':
+    spec = json.loads(arg)
+    jira.call('PUT', spec['path'], spec['body'])
+    print(json.dumps([s for s in sent if s[0] == 'PUT']))
 elif mode == 'cli':
     sys.argv = ['jira.py', 'comment', 'XT-1', arg]
     runpy.run_path(${JSON.stringify(path.join(script, 'jira.py'))}, run_name='__main__')
@@ -749,5 +1037,40 @@ elif mode == 'cli':
     it('does not label a transition by the operator', () => {
         const out = JSON.parse(py('transition', '', { XTRM_JIRA_AS: 'operator', JIRA_TOKEN_FILE: tokenFile }).stdout) as Array<[string]>;
         expect(out.map(s => s[0])).toEqual(['POST']);
+    });
+
+    describe('field edits', () => {
+        type Sent = Array<[string, string, any]>;
+        const put = (route: string, body: unknown, extra: Record<string, string> = {}): Sent =>
+            JSON.parse(py('put', JSON.stringify({ path: route, body }), extra).stdout) as Sent;
+        const EDIT = '/rest/api/3/issue/XT-1';
+        const ADD = { add: 'actor=agent' };
+
+        it('adds update.labels add and keeps the fields and the update the caller sent', () => {
+            const [sent] = put(EDIT, { fields: { summary: 'S' }, update: { comment: [{ add: { body: 'c' } }] } });
+            expect(sent![1]).toBe('/issue/XT-1');
+            expect(sent![2]).toEqual({ fields: { summary: 'S' }, update: { comment: [{ add: { body: 'c' } }], labels: [ADD] } });
+        });
+
+        it('matches an edit with a query string', () => {
+            expect(put(`${EDIT}?notifyUsers=false`, { fields: { summary: 'S' } })[0]![2].update.labels).toEqual([ADD]);
+        });
+
+        it('keeps the caller label operations and adds the label once', () => {
+            expect(put(EDIT, { update: { labels: [{ add: 'keep' }, { remove: 'old' }] } })[0]![2].update.labels).toEqual([{ add: 'keep' }, { remove: 'old' }, ADD]);
+            expect(put(EDIT, { update: { labels: [ADD] } })[0]![2].update.labels).toEqual([ADD]);
+        });
+
+        it('puts the label inside a fields.labels replace, because Jira rejects labels in both fields and update', () => {
+            expect(put(EDIT, { fields: { labels: ['a'] } })[0]![2]).toEqual({ fields: { labels: ['a', 'actor=agent'] } });
+            expect(put(EDIT, { fields: { labels: ['actor=agent'] }, update: { comment: [] } })[0]![2]).toEqual({ fields: { labels: ['actor=agent'] }, update: { comment: [] } });
+        });
+
+        it('leaves other PUT routes and the operator alone', () => {
+            for (const route of ['/rest/api/3/issue/XT-1/assignee', '/rest/api/3/issue/XT-1/comment/1', '/rest/api/3/issue']) {
+                expect(put(route, { accountId: 'x' })[0]![2]).toEqual({ accountId: 'x' });
+            }
+            expect(put(EDIT, { fields: { summary: 'S' } }, { XTRM_JIRA_AS: 'operator', JIRA_TOKEN_FILE: tokenFile })[0]![2]).toEqual({ fields: { summary: 'S' } });
+        });
     });
 });

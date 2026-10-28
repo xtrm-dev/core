@@ -5,8 +5,9 @@ xtrm-bot account from ~/.xtrm/identities/atlassian-agent/identity.json (made by 
 XTRM_JIRA_AS=operator forces the operator account; explicit JIRA_EMAIL/JIRA_TOKEN_FILE always win.
 Same rule as the acli shim (cli/src/core/jira-identity.ts); keep the two in step.
 Attribution: text an agent process posts starts with `[agent:<holder> | run:<id>]` (` | fallback` when
-SUBSTRATE_HOLDER is unset and the holder is derived from the runtime and worktree); creates and
-transitions by an agent add the label `actor=agent`. Neither ever refuses a write.
+SUBSTRATE_HOLDER is unset and the holder is derived from the runtime and worktree); creates, field edits
+(PUT /rest/api/3/issue/<KEY>) and transitions by an agent add the label `actor=agent`, merged with the labels
+already there. Neither ever refuses a write.
 usage: jira.py GET <path> | jira.py POST|PUT <path> <json-file>
        jira.py transition <KEY> "<status name>"   (looks up the transition id by target status)
        jira.py comment <KEY> <text-file>          (plain text; blank lines split paragraphs; ADF built here)
@@ -151,6 +152,20 @@ def with_actor_label(labels):
     return labels if not isinstance(labels, list) or ACTOR_LABEL in labels else labels + [ACTOR_LABEL]
 
 
+def add_edit_label(body):
+    """Adds `actor=agent` to an issue edit body and keeps the labels already on the ticket. `update.labels add` merges;
+    Jira answers HTTP 400 when one field is in both `fields` and `update`, so a caller's `fields.labels` (a replace)
+    gets the label inside its own list instead. A malformed `update` is left for Jira to reject."""
+    fields = body.get('fields')
+    if isinstance(fields, dict) and 'labels' in fields:
+        fields['labels'] = with_actor_label(fields['labels'])
+        return
+    update = body.setdefault('update', {})
+    ops = update.setdefault('labels', []) if isinstance(update, dict) else None
+    if isinstance(ops, list) and {'add': ACTOR_LABEL} not in ops:
+        ops.append({'add': ACTOR_LABEL})
+
+
 def paragraphs(text):
     return [p.strip() for p in text.split('\n\n') if p.strip()]
 
@@ -164,14 +179,17 @@ def with_header(text):
 
 
 def call(method, path, body=None):
+    route = path.split('?')[0].rstrip('/')
     # A ticket the agent account creates is assigned to it unless the caller names an assignee.
-    if method == 'POST' and path.split('?')[0].rstrip('/') == '/rest/api/3/issue' and isinstance(body, dict):
+    if method == 'POST' and route == '/rest/api/3/issue' and isinstance(body, dict):
         creds()
         fields = body.setdefault('fields', {})
         if _AGENT and not fields.get('assignee'):
             fields['assignee'] = {'accountId': my_account_id()}
         if is_agent_process():
             fields['labels'] = with_actor_label(fields.get('labels'))
+    elif method == 'PUT' and re.fullmatch(r'/rest/api/3/issue/[^/]+', route) and isinstance(body, dict) and is_agent_process():
+        add_edit_label(body)  # a field edit; not /assignee, /transitions or other sub-resources
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(BASE + path, data=data, method=method)
     email, tok = creds()
