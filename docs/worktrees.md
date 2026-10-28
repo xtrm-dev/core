@@ -119,6 +119,8 @@ xt attach
 
 `xt attach` reads `.session-meta.json` to know which runtime was used and launches it with `--continue` (Claude) or `-c` (Pi) to resume the last session. If no metadata is found (older worktree), it prompts you to pick the runtime.
 
+A resume also sets `SUBSTRATE_HOLDER` again. The value is the launch slug, read from the worktree directory name (`<repo>-xt-<runtime>-<slug>`) and not from the branch, because branches get renamed. It overrides any value inherited from the shell where you typed `xt attach`. Without it, Substrate Journal entries from the resumed session carry no participant and Jira calls cannot name the agent.
+
 A Claude resume gets the same launch additions as `xt claude`: `--channels plugin:specialists@xtrm` when the specialists plugin is installed, and the Substrate MCP environment (`MCP_SDK_GENERATION`, `MCP_PROTOCOL_NEGOTIATION`). See [`xt claude` channel wake](xt-claude-channels.md).
 
 ## Managing Worktrees

@@ -4,6 +4,13 @@ Site `https://mercuryintel.atlassian.net`. Tool: `scripts/jira.py` (REST, token 
 `~/.secrets/atlassian-api-token.txt` by default; override with `JIRA_TOKEN_FILE`, `JIRA_EMAIL`,
 `JIRA_SITE`; never printed). acli cannot set an issue's parent or put it in a sprint, so use `jira.py`.
 
+Identity: agent processes act as the `xtrm-bot` account, not as the operator. A process is an agent
+when `SUBSTRATE_HOLDER` is set or a claude/pi/codex process is an ancestor. `jira.py` then reads
+`~/.xtrm/identities/atlassian-agent/identity.json`, and `acli` runs through a shim in
+`~/.local/bin` that uses a separate bot profile. `xt jira setup` creates both and `xt jira doctor`
+checks them. `XTRM_JIRA_AS=operator` forces the operator account; an explicit `JIRA_EMAIL` or
+`JIRA_TOKEN_FILE` always wins. An agent never falls back to the operator once the identity exists.
+
 ## Which project
 
 Two software projects, configured alike (2026-10-16). Use the label `prog:<programme>` to separate

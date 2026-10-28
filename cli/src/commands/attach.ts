@@ -9,7 +9,7 @@ import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
 import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled } from '../utils/worktree-session.js';
-import { refreshDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { SUBSTRATE_HOLDER_VAR, refreshDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import type { WorktreeInfo } from './worktree.js';
 
 /** Last-activity timestamp, for recency ordering. */
@@ -43,9 +43,25 @@ export function buildAttachEnv(
     base: NodeJS.ProcessEnv,
     runtime: string,
     dispatcherDeps: DispatcherIdentityDeps = {},
+    holder: string | null = null,
 ): NodeJS.ProcessEnv {
     const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
-    return runtime === 'claude' ? { ...base, ...dispatcherEnv, ...claudeMcpEnv(runtime) } : { ...base, ...dispatcherEnv };
+    // `base` is the operator's shell, which never carries the worker's holder: set it again,
+    // overriding anything inherited. CORE-2536 (XT-184).
+    const holderEnv = holder ? { [SUBSTRATE_HOLDER_VAR]: holder } : {};
+    return runtime === 'claude'
+        ? { ...base, ...dispatcherEnv, ...holderEnv, ...claudeMcpEnv(runtime) }
+        : { ...base, ...dispatcherEnv, ...holderEnv };
+}
+
+/**
+ * The launch slug of an xt worktree, which is the worker's Substrate holder. Taken from the
+ * directory name `<repo>-xt-<runtime>-<slug>` (first match), not from the branch: branches get
+ * renamed while the holder stays the launch slug. Null when the name does not follow the pattern.
+ */
+export function holderFromWorktreePath(worktreePath: string): string | null {
+    const match = /^.+?-xt-(?:claude|pi|codex)-(.+)$/.exec(basename(worktreePath));
+    return match?.[1] ?? null;
 }
 
 export function createAttachCommand(): Command {
@@ -148,7 +164,7 @@ export function createAttachCommand(): Command {
             // Substrate MCP needs these before the process starts; claude only. CORE-2290.
             // CORE-2432 R8: a resumed session gets freshly resolved dispatcher
             // identity instead of stale inherited XTRM_DISPATCHER_* values.
-            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime) });
+            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, {}, holderFromWorktreePath(target.path)) });
 
             process.exit(result.status ?? 0);
         });
