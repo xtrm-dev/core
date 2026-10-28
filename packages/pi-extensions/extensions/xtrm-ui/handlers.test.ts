@@ -732,7 +732,7 @@ describe("one-line rows keep their line", () => {
 });
 
 describe("ultracompact rows", async () => {
-  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, ultraBashSubject, stripCwdCd, ULTRA_BASH_VERB, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, ultraBashSubject, stripCwdCd, hiddenLineCount, ULTRA_BASH_VERB, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
   const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
@@ -767,6 +767,24 @@ describe("ultracompact rows", async () => {
     expect(row).toContain("x = 1");
     expect(row).not.toContain("●");
     expect(row).not.toContain("·");
+  });
+
+  test("a multi-line code payload reports the lines the row hides", () => {
+    const row = strip(buildUltraExternalLine("codemode", { code: "const out = [];\nconst x = 1;\nprint(out);" }, ["Script completed"], "success"));
+    expect(row).toContain("+2 lines");
+    expect(row).toContain("Script completed");
+    const oneLine = strip(buildUltraExternalLine("codemode", { code: "print(1)" }, ["Script completed"], "success"));
+    expect(oneLine).not.toContain("lines");
+    // Blank lines are air, not hidden content: the count never inflates.
+    const airy = strip(buildUltraExternalLine("codemode", { code: "print(1)\n\n" }, ["ok"], "success"));
+    expect(airy).not.toContain("lines");
+  });
+
+  test("the hidden-line count is the bash row's rule, shared", () => {
+    expect(hiddenLineCount("a")).toBe(0);
+    expect(hiddenLineCount("a\nb\nc")).toBe(2);
+    expect(hiddenLineCount("a\n\n\nb")).toBe(1);
+    expect(hiddenLineCount("\n\n")).toBe(0);
   });
 
   test("ultra frame carries no provider accent", () => {
@@ -1072,7 +1090,7 @@ describe("grayscale row ladder (CORE-2502 follow-ups)", async () => {
 
 describe("working indicator + turn summary", async () => {
   const mod = await import("./index.ts");
-  const { sumUsageTokens, formatTokenCount, formatTurnSummary, applyWorkingIndicator, startTurnClock, stopTurnClockAndSummarize, WORKING_FRAMES, WORKING_FRAME_MS, XTRM_TURN_SUMMARY_ENTRY } = mod;
+  const { sumUsageTokens, formatTokenCount, formatTurnSummary, applyWorkingIndicator, workingFrames, startTurnClock, stopTurnClockAndSummarize, WORKING_FRAMES, WORKING_FRAME_MS, WORKING_FRAME_TOKENS, XTRM_TURN_SUMMARY_ENTRY } = mod;
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
@@ -1091,17 +1109,47 @@ describe("working indicator + turn summary", async () => {
     expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s, used 4,120 tokens");
   });
 
-  test("frames travel the X through the center, then double-flash, no lead-in, at 80ms", () => {
-    expect(WORKING_FRAMES).toHaveLength(10);
-    const [tl, c1, br, bl, c2, tr, on1, off1, on2, off2] = WORKING_FRAMES;
-    expect([tl, c1, br, bl, c2, tr]).toEqual(["\u2801", "\u2812", "\u2820", "\u2804", "\u2812", "\u2808"]);
-    expect([on1, on2]).toEqual(["\u282d", "\u282d"]);
-    expect([off1, off2]).toEqual([" ", " "]);
-    for (const frame of WORKING_FRAMES) expect(frame.startsWith("\t")).toBe(false);
+  test("frames walk the dingbat block at 115ms, one cell each, no blanks", () => {
+    expect(WORKING_FRAMES).toEqual(["\u2733", "\u2734", "\u2735", "\u2737", "\u2738", "\u2739", "\u273a", "\u273b", "\u273c", "\u273d"]);
+    expect(WORKING_FRAMES).not.toContain("\u2736");
+    expect(WORKING_FRAME_MS).toBe(115);
+    for (const frame of WORKING_FRAMES) {
+      expect(frame.trim().length > 0).toBe(true);
+      expect([...frame]).toHaveLength(1);
+      expect(frame.startsWith("\t")).toBe(false);
+    }
     const seen: unknown[] = [];
     applyWorkingIndicator({ setWorkingIndicator: (o) => { seen.push(o); } });
     expect(seen).toEqual([{ frames: WORKING_FRAMES, intervalMs: WORKING_FRAME_MS }]);
-    expect(WORKING_FRAME_MS).toBe(80);
+  });
+
+  test("the pulse uses our grayscale tiers, never a hue or a baked colour", () => {
+    expect(WORKING_FRAME_TOKENS).toHaveLength(WORKING_FRAMES.length);
+    expect(new Set(WORKING_FRAME_TOKENS)).toEqual(new Set(["dim", "muted", "toolTitle"]));
+    const tokens: string[] = [];
+    const theme = { fg: (token: string, text: string) => { tokens.push(token); return `<${token}>${text}</${token}>`; } };
+    const frames = workingFrames(theme as never);
+    expect(frames).toHaveLength(WORKING_FRAMES.length);
+    expect(tokens).toEqual(WORKING_FRAME_TOKENS);
+    frames.forEach((frame, index) => {
+      expect(frame).toContain(WORKING_FRAMES[index]!);
+      expect(frame).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+    });
+    // Never brighter than the tool-name tier the message sits under.
+    expect(WORKING_FRAME_TOKENS).not.toContain("text");
+    expect(WORKING_FRAME_TOKENS).not.toContain("accent");
+    expect(WORKING_FRAME_TOKENS).not.toContain("warning");
+  });
+
+  test("a no-colour terminal gets the plain glyphs", () => {
+    const previous = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+    try {
+      const theme = { fg: (token: string, text: string) => `<${token}>${text}</${token}>` };
+      expect(workingFrames(theme as never)).toEqual(WORKING_FRAMES);
+    } finally {
+      if (previous === undefined) delete process.env.NO_COLOR; else process.env.NO_COLOR = previous;
+    }
   });
 
   test("ticker messages carry elapsed seconds; settle summarizes the turn alone", () => {
