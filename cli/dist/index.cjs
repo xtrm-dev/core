@@ -68868,14 +68868,17 @@ function createHelpCommand() {
       "    Agent processes (SUBSTRATE_HOLDER set, or a claude/pi/codex ancestor) then act in",
       "    Jira as the bot; XTRM_JIRA_AS=operator forces your own account.",
       "  xt jira doctor [--json]",
-      "    Check identity.json, token file mode, bot profile, bot login and the shim (exit 1 on failure).",
+      "    Check identity.json, token file mode, bot profile, bot login, the shim and that it is current",
+      '    (a stale shim reports "run xt jira setup"). Exit 1 on failure.',
       "  xt jira sweep [--apply] [--days <n>]",
       "    List tickets the bot reported without an assignee; --apply assigns them to the bot.",
-      "    Agent-created tickets are assigned to the bot by default (shim and jira.py).",
+      "    Agent-created tickets (create, create-bulk) are assigned to the bot by default (shim and jira.py).",
       "  Agent writes through the shim and jira.py are attributable: a comment starts with",
       '    [agent:<holder> | run:<id>] (holder = SUBSTRATE_HOLDER, else <runtime>-<worktree> + "| fallback";',
-      "    run = SUBSTRATE_RUN_ID, else 6 hex chars per agent process). Creates and transitions add the",
-      "    label actor=agent. A missing holder never blocks a write. See docs/jira-identity.md."
+      "    run = SUBSTRATE_RUN_ID, else 6 hex chars per agent process). Comment create/update get the header;",
+      "    create, create-bulk, edit and transition add the label actor=agent (existing labels are kept).",
+      "    Not wrapped: --editor, acli run by hand, other write verbs. A missing holder never blocks a write.",
+      "    After a shim change run xt jira setup. See docs/jira-identity.md."
     ]));
     blocks.push(section("SESSION CLOSE", [
       "  xt end [options]",
@@ -71105,7 +71108,7 @@ function jiraIdentityPaths(home = import_node_os19.default.homedir()) {
     defaultTokenFile: import_node_path40.default.join(home, ".secrets", "atlassian-agent-token.txt")
   };
 }
-var SHIM_REWRITE_PY = String.raw`import hashlib, json, os, pathlib, re, sys
+var SHIM_REWRITE_PY = String.raw`import csv, hashlib, io, json, os, pathlib, re, sys
 
 work = pathlib.Path(sys.argv[1])
 args = sys.argv[2:]
@@ -71229,37 +71232,142 @@ def with_header(text):
     return f'{header}\n\n{text}'
 
 
+def write_private(path, text):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8', newline='') as f:
+        f.write(text)
+
+
+def read_json(file):
+    return json.loads(pathlib.Path(file).read_text(encoding='utf-8'))
+
+
+def label_values(flag_args, long, short=None):
+    return [l.strip() for h in hits(flag_args, long, short) for l in value(flag_args, h).split(',')]
+
+
+def bot_account_id():
+    """create-bulk accepts no @me: the assignee is the bot's account id. The work dir sits in the bot's HOME.
+    SIMPLIFIED: first account_id in that dedicated profile. upgrade when the bot HOME holds several profiles."""
+    try:
+        text = (work.parent / '.config' / 'acli' / 'jira_config.yaml').read_text(encoding='utf-8')
+    except OSError:
+        return None
+    found = re.search(r'^\s*account_id:\s*(\S+)', text, re.M)
+    return found.group(1).strip('\'"') if found else None
+
+
 def rewrite_create(a):
     if any(x in ('-h', '--help', '--generate-json') for x in a):
         return a
     assignee_named = bool(hits(a, '--assignee', '-a'))
     from_json = hits(a, '--from-json')
     if from_json:
-        data = json.loads(pathlib.Path(value(a, from_json[-1])).read_text(encoding='utf-8'))
+        data = read_json(value(a, from_json[-1]))
         if isinstance(data, dict):
             if not data.get('assignee') and not assignee_named:
                 data['assignee'] = '@me'
             data['labels'] = with_label(data.get('labels'))
             copy = work / 'create.json'
-            copy.write_text(json.dumps(data), encoding='utf-8')
+            write_private(copy, json.dumps(data))
             set_value(a, from_json[-1], str(copy))
         return a
     if not assignee_named:
         a += ['--assignee', '@me']
-    if LABEL not in [l for h in hits(a, '--label', '-l') for l in value(a, h).split(',')]:
+    if LABEL not in label_values(a, '--label', '-l'):
         a += ['--label', LABEL]
     return a
 
 
+def rewrite_edit(a):
+    """Adds actor=agent without replacing labels (acli adds). A caller who removes the label keeps that choice."""
+    if any(x in ('-h', '--help', '--generate-json') for x in a):
+        return a
+    from_json = hits(a, '--from-json')
+    if from_json:
+        data = read_json(value(a, from_json[-1]))
+        if isinstance(data, dict) and LABEL not in (data.get('labelsToRemove') or []):
+            data['labelsToAdd'] = with_label(data.get('labelsToAdd'))
+            copy = work / 'edit.json'
+            write_private(copy, json.dumps(data))
+            set_value(a, from_json[-1], str(copy))
+        return a
+    if LABEL in label_values(a, '--labels', '-l') + label_values(a, '--remove-labels'):
+        return a
+    given = hits(a, '--labels', '-l')
+    if given and value(a, given[-1]).strip():
+        set_value(a, given[-1], value(a, given[-1]) + ',' + LABEL)  # a string flag: the last one wins
+    elif given:
+        set_value(a, given[-1], LABEL)
+    else:
+        a += ['--labels', LABEL]
+    return a
+
+
+def rewrite_csv(rows, account):
+    """create-bulk CSV: the label column holds comma separated labels, the assignee column an account id.
+    Columns are added when absent; a cell the caller filled is kept. None = layout not understood, pass through."""
+    header = [h.strip() for h in rows[0]] if rows else []
+    if 'summary' not in header:
+        return None
+    for name in ['label'] + (['assignee'] if account else []):
+        if name not in header:
+            header.append(name)
+    out = [header]
+    for row in rows[1:]:
+        if not any(cell.strip() for cell in row):
+            out.append(row)
+            continue
+        row = row + [''] * (len(header) - len(row))
+        i = header.index('label')
+        labels = [l.strip() for l in row[i].split(',') if l.strip()]
+        row[i] = ','.join(labels if LABEL in labels else labels + [LABEL])
+        if account and not row[header.index('assignee')].strip():
+            row[header.index('assignee')] = account
+        out.append(row)
+    return out
+
+
+def rewrite_bulk(a):
+    if any(x in ('-h', '--help', '--generate-json') for x in a):
+        return a
+    account = bot_account_id()
+    for h in hits(a, '--from-json'):
+        data = read_json(value(a, h))
+        items = data.get('issues') if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            continue
+        for item in (i for i in items if isinstance(i, dict)):
+            if account and not item.get('assignee'):
+                item['assignee'] = account
+            item['label'] = with_label(item.get('label'))
+        copy = work / f'bulk-{h[0]}.json'
+        write_private(copy, json.dumps(data))
+        set_value(a, h, str(copy))
+    for h in hits(a, '--from-csv'):
+        with pathlib.Path(value(a, h)).open(encoding='utf-8-sig', newline='') as f:
+            rows = rewrite_csv(list(csv.reader(f)), account)
+        if rows is None:
+            continue
+        buf = io.StringIO()
+        csv.writer(buf, lineterminator='\n').writerows(rows)
+        copy = work / f'bulk-{h[0]}.csv'
+        write_private(copy, buf.getvalue())
+        set_value(a, h, str(copy))
+    return a
+
+
 def rewrite_comment(a):
-    if a[3] != 'create' or any(x in ('-h', '--help') for x in a):
+    """comment create and comment update: the header goes on --body, --body-file and (update) --body-adf."""
+    if a[3] not in ('create', 'update') or any(x in ('-h', '--help') for x in a):
         return a
     for h in hits(a, '--body', '-b'):
         set_value(a, h, with_header(value(a, h)))
-    for h in hits(a, '--body-file', '-F'):
-        copy = work / f'body-{h[0]}.txt'
-        copy.write_text(with_header(pathlib.Path(value(a, h)).read_text(encoding='utf-8')), encoding='utf-8')
-        set_value(a, h, str(copy))
+    for long, short, ext in (('--body-file', '-F', 'txt'), ('--body-adf', None, 'json')):
+        for h in hits(a, long, short):
+            copy = work / f'body-{h[0]}.{ext}'
+            write_private(copy, with_header(pathlib.Path(value(a, h)).read_text(encoding='utf-8')))
+            set_value(a, h, str(copy))
     return a
 
 
@@ -71282,6 +71390,10 @@ verb = args[2] if len(args) > 2 else ''
 final, pre = list(args), []
 if verb == 'create':
     final = rewrite_create(final)
+elif verb == 'create-bulk':
+    final = rewrite_bulk(final)
+elif verb == 'edit':
+    final = rewrite_edit(final)
 elif verb == 'comment':
     final = rewrite_comment(final)
 elif verb == 'transition':
@@ -71314,7 +71426,7 @@ if [[ "\${XTRM_JIRA_AS:-}" != operator ]] && { [[ -n "\${SUBSTRATE_HOLDER:-}" ]]
   args=("$@"); pre=(); work=""
   if [[ "\${1:-}" == jira && "\${2:-}" == workitem ]]; then
     case "\${3:-}:\${4:-}" in
-      create:*|transition:*|comment:create)
+      create:*|create-bulk:*|edit:*|transition:*|comment:create|comment:update)
         work=$(mktemp -d "$h/.rewrite.XXXXXX") || work=""
         if [[ -n $work ]] && python3 -I - "$work" "$@" <<'PY'
 ${SHIM_REWRITE_PY}
@@ -71350,6 +71462,12 @@ function isOurShim(file2) {
   } catch {
     return false;
   }
+}
+function shimCurrentProblem(shimPath) {
+  if (!isOurShim(shimPath)) return `no xtrm shim to compare: ${shimPath}`;
+  const installed = import_fs_extra40.default.readFileSync(shimPath, "utf8");
+  const embedded = /^real="\$\{XTRM_ACLI_REAL:-(.*)\}"$/m.exec(installed)?.[1];
+  return embedded !== void 0 && installed === shimSource(embedded) ? null : "stale shim: run xt jira setup";
 }
 function resolveRealAcli(pathEnv = process.env.PATH ?? "") {
   for (const dir of pathEnv.split(":").filter(Boolean)) {
@@ -71447,6 +71565,8 @@ function doctorJiraIdentity(deps = {}) {
     add("bot login", ok2, ok2 ? `acli authenticated as ${identity.email}` : "acli does not show the bot account");
   }
   add("shim installed", isOurShim(paths.shimPath), isOurShim(paths.shimPath) ? paths.shimPath : `missing or foreign: ${paths.shimPath}`);
+  const shimProblem = shimCurrentProblem(paths.shimPath);
+  add("shim current", !shimProblem, shimProblem ?? "matches the shim this xt version installs");
   const firstAcli = pathEnv.split(":").filter(Boolean).map((d) => import_node_path40.default.join(d, "acli")).find((c) => import_fs_extra40.default.existsSync(c));
   add("shim first on PATH", firstAcli === paths.shimPath, firstAcli ? `first acli on PATH: ${firstAcli}` : "no acli on PATH");
   return checks;

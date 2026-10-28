@@ -154,14 +154,17 @@ export function createHelpCommand(): Command {
                 '    Agent processes (SUBSTRATE_HOLDER set, or a claude/pi/codex ancestor) then act in',
                 '    Jira as the bot; XTRM_JIRA_AS=operator forces your own account.',
                 '  xt jira doctor [--json]',
-                '    Check identity.json, token file mode, bot profile, bot login and the shim (exit 1 on failure).',
+                '    Check identity.json, token file mode, bot profile, bot login, the shim and that it is current',
+                '    (a stale shim reports "run xt jira setup"). Exit 1 on failure.',
                 '  xt jira sweep [--apply] [--days <n>]',
                 '    List tickets the bot reported without an assignee; --apply assigns them to the bot.',
-                '    Agent-created tickets are assigned to the bot by default (shim and jira.py).',
+                '    Agent-created tickets (create, create-bulk) are assigned to the bot by default (shim and jira.py).',
                 '  Agent writes through the shim and jira.py are attributable: a comment starts with',
                 '    [agent:<holder> | run:<id>] (holder = SUBSTRATE_HOLDER, else <runtime>-<worktree> + "| fallback";',
-                '    run = SUBSTRATE_RUN_ID, else 6 hex chars per agent process). Creates and transitions add the',
-                '    label actor=agent. A missing holder never blocks a write. See docs/jira-identity.md.',
+                '    run = SUBSTRATE_RUN_ID, else 6 hex chars per agent process). Comment create/update get the header;',
+                '    create, create-bulk, edit and transition add the label actor=agent (existing labels are kept).',
+                '    Not wrapped: --editor, acli run by hand, other write verbs. A missing holder never blocks a write.',
+                '    After a shim change run xt jira setup. See docs/jira-identity.md.',
             ]));
 
             blocks.push(section('SESSION CLOSE', [
