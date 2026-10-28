@@ -56729,9 +56729,9 @@ function resolveDefaultBranchRef(repoRoot) {
   return null;
 }
 function fetchWorktreeBase(repoRoot, baseOverride) {
-  const fetch = git(repoRoot, ["fetch", "origin", "--quiet"]);
-  if (fetch.status !== 0) {
-    return { ok: false, error: `git fetch origin failed (offline?): ${fetch.stderr || "no stderr"}` };
+  const fetch2 = git(repoRoot, ["fetch", "origin", "--quiet"]);
+  if (fetch2.status !== 0) {
+    return { ok: false, error: `git fetch origin failed (offline?): ${fetch2.stderr || "no stderr"}` };
   }
   const ref = baseOverride ?? resolveDefaultBranchRef(repoRoot);
   if (!ref) {
@@ -68868,7 +68868,10 @@ function createHelpCommand() {
       "    Agent processes (SUBSTRATE_HOLDER set, or a claude/pi/codex ancestor) then act in",
       "    Jira as the bot; XTRM_JIRA_AS=operator forces your own account.",
       "  xt jira doctor [--json]",
-      "    Check identity.json, token file mode, bot profile, bot login and the shim (exit 1 on failure)."
+      "    Check identity.json, token file mode, bot profile, bot login and the shim (exit 1 on failure).",
+      "  xt jira sweep [--apply] [--days <n>]",
+      "    List tickets the bot reported without an assignee; --apply assigns them to the bot.",
+      "    Agent-created tickets are assigned to the bot by default (shim and jira.py)."
     ]));
     blocks.push(section("SESSION CLOSE", [
       "  xt end [options]",
@@ -71114,13 +71117,48 @@ in_agent_tree() {
   done
   return 1
 }
+# A ticket an agent creates belongs to the bot unless the caller names an assignee.
+needs_default_assignee() {
+  [[ "\${1:-}" == jira && "\${2:-}" == workitem && "\${3:-}" == create ]] || return 1
+  local a
+  for a in "$@"; do
+    case $a in -h|--help|--generate-json|-a|--assignee|--assignee=*) return 1 ;; esac
+  done
+  return 0
+}
 if [[ "\${XTRM_JIRA_AS:-}" != operator ]] && { [[ -n "\${SUBSTRATE_HOLDER:-}" ]] || in_agent_tree; }; then
   h="\${XTRM_JIRA_AGENT_HOME:-$HOME/.xtrm/identities/atlassian-agent/home}"
   if [[ ! -f "$h/.config/acli/jira_config.yaml" ]]; then
     echo "acli shim: agent profile missing at $h (run: xt jira setup, or set XTRM_JIRA_AS=operator)" >&2
     exit 78
   fi
-  HOME="$h" exec "$real" "$@"
+  args=("$@"); tmp=""
+  if needs_default_assignee "$@"; then
+    idx=-1
+    for i in "\${!args[@]}"; do
+      case \${args[$i]} in --from-json|--from-json=*) idx=$i ;; esac
+    done
+    if [[ $idx -lt 0 ]]; then
+      args+=(--assignee @me)
+    else
+      if [[ \${args[$idx]} == --from-json=* ]]; then src=\${args[$idx]#--from-json=}; else src=\${args[$((idx + 1))]:-}; fi
+      tmp=$(mktemp "$h/.assignee.XXXXXX") && chmod 600 "$tmp" && python3 -I - "$src" "$tmp" <<'PY' || { rm -f "$tmp"; tmp=""; }
+import json, sys
+data = json.load(open(sys.argv[1]))
+if isinstance(data, dict) and not data.get("assignee"):
+    data["assignee"] = "@me"
+json.dump(data, open(sys.argv[2], "w"))
+PY
+      if [[ -n $tmp ]]; then
+        if [[ \${args[$idx]} == --from-json=* ]]; then args[$idx]="--from-json=$tmp"; else args[$((idx + 1))]=$tmp; fi
+      fi
+    fi
+  fi
+  if [[ -n $tmp ]]; then
+    HOME="$h" "$real" "\${args[@]}"; code=$?
+    rm -f "$tmp"; exit $code
+  fi
+  HOME="$h" exec "$real" "\${args[@]}"
 fi
 exec "$real" "$@"
 `;
@@ -71236,6 +71274,40 @@ function doctorJiraIdentity(deps = {}) {
   add("shim first on PATH", firstAcli === paths.shimPath, firstAcli ? `first acli on PATH: ${firstAcli}` : "no acli on PATH");
   return checks;
 }
+async function sweepUnassigned(opts, deps = {}) {
+  const paths = jiraIdentityPaths(deps.home);
+  const identity = readIdentity(paths);
+  if (!identity) throw new Error(`no identity: run xt jira setup (${paths.identityFile})`);
+  const problem = tokenFileProblem(identity.tokenFile);
+  if (problem) throw new Error(problem);
+  const doFetch = deps.fetch ?? ((url2, init2) => fetch(url2, init2));
+  const token = import_fs_extra40.default.readFileSync(identity.tokenFile, "utf8").trim();
+  const headers = {
+    Authorization: `Basic ${Buffer.from(`${identity.email}:${token}`).toString("base64")}`,
+    Accept: "application/json",
+    "Content-Type": "application/json"
+  };
+  const base = `https://${identity.site}`;
+  const days = Math.max(1, Math.floor(opts.days));
+  const jql = `reporter = currentUser() AND assignee is EMPTY AND created >= -${days}d ORDER BY created DESC`;
+  const search = await doFetch(`${base}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&fields=summary&maxResults=100`, { headers });
+  if (!search.ok) throw new Error(`Jira search failed (HTTP ${search.status})`);
+  const issues = (await search.json()).issues ?? [];
+  const rows = issues.map((i) => ({ key: i.key, summary: i.fields?.summary ?? "", assigned: false }));
+  if (!opts.apply || rows.length === 0) return rows;
+  const me = await doFetch(`${base}/rest/api/3/myself`, { headers });
+  if (!me.ok) throw new Error(`Jira /myself failed (HTTP ${me.status})`);
+  const accountId = (await me.json()).accountId;
+  for (const row of rows) {
+    const put = await doFetch(`${base}/rest/api/3/issue/${encodeURIComponent(row.key)}/assignee`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ accountId })
+    });
+    row.assigned = put.ok;
+  }
+  return rows;
+}
 
 // src/commands/jira.ts
 function createJiraCommand() {
@@ -71258,6 +71330,17 @@ function createJiraCommand() {
       for (const c of checks) console.log(`${c.ok ? kleur_default.green("\u2713") : kleur_default.red("\u2717")} ${c.name.padEnd(20)} ${kleur_default.dim(c.detail)}`);
     }
     if (!checks.every((c) => c.ok)) process.exit(1);
+  });
+  jira.command("sweep").description("List tickets the bot reported without an assignee; --apply assigns them to the bot").option("--apply", "Assign the listed tickets to the bot", false).option("--days <n>", "Look back this many days", "14").action(async (opts) => {
+    try {
+      const rows = await sweepUnassigned({ apply: opts.apply, days: Number(opts.days) || 14 });
+      if (rows.length === 0) console.log(kleur_default.green("\u2713 no unassigned tickets reported by the bot"));
+      for (const r of rows) console.log(`${opts.apply ? r.assigned ? kleur_default.green("\u2713 assigned") : kleur_default.red("\u2717 failed  ") : kleur_default.yellow("unassigned")} ${r.key}  ${kleur_default.dim(r.summary.slice(0, 80))}`);
+      if (rows.some((r) => opts.apply && !r.assigned)) process.exit(1);
+    } catch (error51) {
+      console.error(kleur_default.red(`\u2717 ${error51.message}`));
+      process.exit(1);
+    }
   });
   return jira;
 }

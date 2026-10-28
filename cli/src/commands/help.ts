@@ -155,6 +155,9 @@ export function createHelpCommand(): Command {
                 '    Jira as the bot; XTRM_JIRA_AS=operator forces your own account.',
                 '  xt jira doctor [--json]',
                 '    Check identity.json, token file mode, bot profile, bot login and the shim (exit 1 on failure).',
+                '  xt jira sweep [--apply] [--days <n>]',
+                '    List tickets the bot reported without an assignee; --apply assigns them to the bot.',
+                '    Agent-created tickets are assigned to the bot by default (shim and jira.py).',
             ]));
 
             blocks.push(section('SESSION CLOSE', [
