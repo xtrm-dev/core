@@ -116,7 +116,7 @@ describe("git context detection", () => {
       git: gitContextFrom({ toplevel: "/repo", branch: "xt/colors", head: "abc1234", flags: "*+↑" }),
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     }, 200);
-    expect(line).toBe("repo  ⎇ xt/colors*+↑");
+    expect(line).toBe("repo ⎇ xt/colors*+↑");
   });
 
   test("detached HEAD keeps the short commit and no branch", () => {
@@ -166,7 +166,7 @@ describe("git context detection", () => {
       expect(detached.head).toMatch(/^[0-9a-f]{7,}$/);
       // Rendered, the detached worktree says so instead of borrowing a branch.
       expect(renderHud({ git: detached, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200))
-        .toMatch(/^wt  ⎇ detached@[0-9a-f]{7,}$/);
+        .toMatch(/^wt ⎇ detached@[0-9a-f]{7,}$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -215,7 +215,7 @@ describe("HUD layout", () => {
     }, 200, markTheme());
 
     const plain = line.replace(/\*([^*]*)\*/g, "$1").replace(/<\/?[A-Za-z]+>/g, "");
-    expect(plain).toBe("core-xt-pi-colors  ⎇ xt/ui-trim · 31.4%/1.0M · deepseek-v4.1-flash high · ↑42k ↓8k · 86% cache");
+    expect(plain).toBe("core-xt-pi-colors ⎇ xt/ui-trim · 31.4%/1.0M · deepseek-v4.1-flash high · ↑42k ↓8k · 86% cache");
   });
 
   test("shows the context window at most once", () => {
@@ -245,7 +245,7 @@ describe("HUD layout", () => {
 
   test("labels a detached HEAD with its short commit", () => {
     const line = renderHud({ git: gitContextFrom({ toplevel: "/repo", branch: "", head: "deadbee" }), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200);
-    expect(line).toBe("repo  ⎇ detached@deadbee");
+    expect(line).toBe("repo ⎇ detached@deadbee");
   });
 
   test("narrow widths drop low-priority fields and never wrap", () => {
@@ -291,7 +291,7 @@ describe("HUD layout", () => {
   test("the worktree name is never shortened, however long", () => {
     const name = "core-xt-claude-a-very-long-worktree-name-for-an-agent";
     const line = renderHud({ git: { repo: true, name, branch: "xt/b", head: "abc1234" }, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 200);
-    expect(line.startsWith(`${name}  ⎇ xt/b`)).toBe(true);
+    expect(line.startsWith(`${name} ⎇ xt/b`)).toBe(true);
     expect(line).not.toContain("…");
   });
 

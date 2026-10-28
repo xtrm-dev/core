@@ -275,14 +275,14 @@ function buildSegments(state: HudState): HudSegment[] {
   const name = repoLabel(state.git);
   const branch = branchLabel(state.git);
   if (repo) {
-    const plain = [name, branch].filter(Boolean).join("  ");
+    const plain = [name, branch].filter(Boolean).join(" ");
     segments.push({
       priority: 0,
       plain: plain || "detached",
       // Identifier is upright: the tier alone carries the emphasis, matching
       // the restrained weight of the rest of the HUD.
       paint: (colors) => (name && branch
-        ? `${paint(colors, "toolTitle", name)}  ${paint(colors, "muted", branch)}`
+        ? `${paint(colors, "toolTitle", name)} ${paint(colors, "muted", branch)}`
         : paint(colors, name ? "toolTitle" : "muted", name ?? branch ?? "detached")),
     });
   }

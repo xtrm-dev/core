@@ -119,7 +119,7 @@ test('pi-footer layout: worktree, branch glyph, context, model, separators', asy
   run(fx);
   await waitForGitCache(fx.cache);
   const out = runWith(fx, { session_id: 'layout', model: { id: 'claude-x', display_name: 'Opus' }, effort: { level: 'high' }, ...usageOf(1, 0) });
-  assert.match(out, /^repo {2}⎇ main · 12\.5%\/1\.0M · Opus high/);
+  assert.match(out, /^repo ⎇ main · 12\.5%\/1\.0M · Opus high/);
 });
 
 test('cache figure is the median of recent responses; a miss shows as (last N%)', (t) => {
@@ -161,6 +161,6 @@ test('the worktree name is never truncated, however long', async (t) => {
   run({ ...fx, cwd: long });
   await waitForGitCache(fx.cache);
   const out = runWith({ ...fx, cwd: long }, {});
-  assert.ok(out.startsWith('core-xt-claude-a-very-long-worktree-name-for-an-agent  ⎇ main'), out);
+  assert.ok(out.startsWith('core-xt-claude-a-very-long-worktree-name-for-an-agent ⎇ main'), out);
   assert.doesNotMatch(out, /…/);
 });

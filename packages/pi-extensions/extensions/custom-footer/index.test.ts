@@ -69,7 +69,7 @@ describe("registerFooterSection seam", () => {
 	  // pi's footer provider already knows the session's branch.
 	  const line = render(80).join("\n");
 	  expect(line).toContain("⎇ main");
-	  expect(line).not.toMatch(/[0-9a-f]{7,}  ⎇/);
+	  expect(line).not.toMatch(/[0-9a-f]{7,} ⎇/);
 	});
 
 	test("register + unregister leaves output byte-identical", async () => {
