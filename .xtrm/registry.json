@@ -370,15 +370,19 @@
           "version": "0.15.3"
         },
         "using-specialists/references/chain-recipes.md": {
-          "hash": "ea4b8672c4334f9c1b0da5f1053728c865597a31025e2637b0eb5cd5498b7d57",
+          "hash": "65e90426d39400fe407b67af3a03bfc45c52cdb4f12d35ca2260ef0c107eb972",
+          "version": "0.15.3"
+        },
+        "using-specialists/references/claude-code.md": {
+          "hash": "eaa67abe05a9054855a0eaa02b31baf762ef4141fdfad8e32dcce24beec43b45",
           "version": "0.15.3"
         },
         "using-specialists/references/dispatch-preconditions.md": {
-          "hash": "97b135ec31c2b0e6e3500d642002886b1729330655a118edd00b87a126b3c28e",
+          "hash": "25c832dbf087699d8752a0de2094c5aecd8c173a9899b6c7552fa98736c8d51a",
           "version": "0.15.3"
         },
         "using-specialists/references/issue-contracts.md": {
-          "hash": "9cb53c8436c63b6959ad12c9d115b6de9d1f47e18d0003f965c03303148b6f79",
+          "hash": "7932f57a405b6689ca905e6810fb0711a968d02838fb7d9fbc0c6caa827a679e",
           "version": "0.15.3"
         },
         "using-specialists/references/kpi.md": {
@@ -398,7 +402,7 @@
           "version": "0.15.3"
         },
         "using-specialists/references/registry-and-locations.md": {
-          "hash": "37ff4d9e3181b32611686a1fed680b8984153948f46715958f06882015bd77aa",
+          "hash": "0f78245be165107514ad8c5c274ad7048da41826454ca23593eceff384b9571e",
           "version": "0.15.3"
         },
         "using-specialists/references/script-class.md": {
@@ -406,7 +410,7 @@
           "version": "0.15.3"
         },
         "using-specialists/references/specialist-definitions.md": {
-          "hash": "c3de14518d9ab47c3c6a796341daedcca0b3ad5ceea47c0be7eb3d60d87c266c",
+          "hash": "e8656980a7a35f6173d25dc2a109e4a03a1fe2cafc57ed6ff94d23e41c076755",
           "version": "0.15.3"
         },
         "using-specialists/scripts/specialist-definitions/audit-spec-uniformity.mjs": {
@@ -426,7 +430,7 @@
           "version": "0.15.3"
         },
         "using-specialists/SKILL.md": {
-          "hash": "0e85ff72144ef3d528950c6263b46d23c23d3f300f87ab6255fadc1a14b861d2",
+          "hash": "e8d893d6303eed306e4a2ded8e8afeaaa7a2e00462387a784ebe9ed0fb57fb55",
           "version": "0.15.3"
         },
         "using-xtrm/references/continuity.md": {
@@ -1071,8 +1075,8 @@
     "digest": "git-blob-sha1",
     "source": {
       "kind": "repo",
-      "ref": "37746f682844c3aa24ab4aa372e5179a7478074c",
-      "resolved_sha": "37746f682844c3aa24ab4aa372e5179a7478074c",
+      "ref": "ee3035d3580ba5b813ff2b501cc54b7cf543af61",
+      "resolved_sha": "ee3035d3580ba5b813ff2b501cc54b7cf543af61",
       "repo_path": "../specialists",
       "source_path": "config/skills"
     },
@@ -1086,21 +1090,22 @@
     },
     "files": {
       "using-specialists": {
-        "references/chain-recipes.md": "650b939df6b925b9a02f9c8dbad3b4429d59959a",
-        "references/dispatch-preconditions.md": "b96d4bf8f2ad7b0efa6c2fe8be82fb3c807c9dd1",
-        "references/issue-contracts.md": "d5fc0c8aa7bdeee09d1e3e1f7f59e6e334d7bccd",
+        "references/chain-recipes.md": "fd5bd419f2516f859f6709ddfc5abe7c3fc2a508",
+        "references/claude-code.md": "fcb630d3a06e01ef5a75b172fff7bdb4b93c8242",
+        "references/dispatch-preconditions.md": "28e5d3a7ffe363a022e81d9236fa5f3cd90f8c3d",
+        "references/issue-contracts.md": "635cd6930d0aee03656108d24f278782123844b5",
         "references/kpi.md": "93caf443c4f3d19f824b4ebbec133a902addb520",
         "references/merge-and-integration.md": "7a512b2151777a62af265c54bf02d4b66ea3e7a4",
         "references/monitoring.md": "d89916dcc6c4c796b571a8913e8f1e43bc173969",
         "references/nodes.md": "8f1ada01a2940601fe758757d0ab1bfe0a7b6e60",
-        "references/registry-and-locations.md": "08f664eafbd391c72bebf24b47d89748d3ada806",
+        "references/registry-and-locations.md": "2eda7aae1c140d63d94d02d403604d2fbfef4d4f",
         "references/script-class.md": "243b58d36f26d2f775a63905763fb10d06b3b99a",
-        "references/specialist-definitions.md": "e74d7104167cc73dc665a970705054f753d7a1f1",
+        "references/specialist-definitions.md": "9da12390a2e779618854ed75f6326e0a84593b8b",
         "scripts/specialist-definitions/audit-spec-uniformity.mjs": "72bc5772d8fc4f8afdd323668bac6db5ed75582c",
         "scripts/specialist-definitions/resolve-specialists-root.mjs": "6bd6a3593e4ce89f39a3024d35f7033e78858397",
         "scripts/specialist-definitions/scaffold-specialist.ts": "e993d46432492429b72ccac5ac498813026013af",
         "scripts/specialist-definitions/validate-specialist.ts": "19f298eae0e0dbc809d0fa6ac282bf204cec1d4c",
-        "SKILL.md": "412c8392e983b2a968545d572b520ab19b0fa678"
+        "SKILL.md": "e914e4bc785de0417ea369f6171af970465ba2be"
       }
     }
   }

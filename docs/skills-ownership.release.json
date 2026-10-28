@@ -2,7 +2,7 @@
   "mirrors": {
     "specialists": {
       "package": "specialists",
-      "sha": "37746f682844c3aa24ab4aa372e5179a7478074c",
+      "sha": "ee3035d3580ba5b813ff2b501cc54b7cf543af61",
       "assets": [
         "using-specialists"
       ],

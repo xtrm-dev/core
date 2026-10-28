@@ -3,8 +3,8 @@
   "digest": "git-blob-sha1",
   "source": {
     "kind": "repo",
-    "ref": "37746f682844c3aa24ab4aa372e5179a7478074c",
-    "resolved_sha": "37746f682844c3aa24ab4aa372e5179a7478074c",
+    "ref": "ee3035d3580ba5b813ff2b501cc54b7cf543af61",
+    "resolved_sha": "ee3035d3580ba5b813ff2b501cc54b7cf543af61",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
@@ -18,21 +18,22 @@
   },
   "files": {
     "using-specialists": {
-      "references/chain-recipes.md": "650b939df6b925b9a02f9c8dbad3b4429d59959a",
-      "references/dispatch-preconditions.md": "b96d4bf8f2ad7b0efa6c2fe8be82fb3c807c9dd1",
-      "references/issue-contracts.md": "d5fc0c8aa7bdeee09d1e3e1f7f59e6e334d7bccd",
+      "references/chain-recipes.md": "fd5bd419f2516f859f6709ddfc5abe7c3fc2a508",
+      "references/claude-code.md": "fcb630d3a06e01ef5a75b172fff7bdb4b93c8242",
+      "references/dispatch-preconditions.md": "28e5d3a7ffe363a022e81d9236fa5f3cd90f8c3d",
+      "references/issue-contracts.md": "635cd6930d0aee03656108d24f278782123844b5",
       "references/kpi.md": "93caf443c4f3d19f824b4ebbec133a902addb520",
       "references/merge-and-integration.md": "7a512b2151777a62af265c54bf02d4b66ea3e7a4",
       "references/monitoring.md": "d89916dcc6c4c796b571a8913e8f1e43bc173969",
       "references/nodes.md": "8f1ada01a2940601fe758757d0ab1bfe0a7b6e60",
-      "references/registry-and-locations.md": "08f664eafbd391c72bebf24b47d89748d3ada806",
+      "references/registry-and-locations.md": "2eda7aae1c140d63d94d02d403604d2fbfef4d4f",
       "references/script-class.md": "243b58d36f26d2f775a63905763fb10d06b3b99a",
-      "references/specialist-definitions.md": "e74d7104167cc73dc665a970705054f753d7a1f1",
+      "references/specialist-definitions.md": "9da12390a2e779618854ed75f6326e0a84593b8b",
       "scripts/specialist-definitions/audit-spec-uniformity.mjs": "72bc5772d8fc4f8afdd323668bac6db5ed75582c",
       "scripts/specialist-definitions/resolve-specialists-root.mjs": "6bd6a3593e4ce89f39a3024d35f7033e78858397",
       "scripts/specialist-definitions/scaffold-specialist.ts": "e993d46432492429b72ccac5ac498813026013af",
       "scripts/specialist-definitions/validate-specialist.ts": "19f298eae0e0dbc809d0fa6ac282bf204cec1d4c",
-      "SKILL.md": "412c8392e983b2a968545d572b520ab19b0fa678"
+      "SKILL.md": "e914e4bc785de0417ea369f6171af970465ba2be"
     }
   }
 }
