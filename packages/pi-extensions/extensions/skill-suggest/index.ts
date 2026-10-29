@@ -34,7 +34,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { contextBlock, formatSuggestionCard, parseContextBlock, renderCardBox, stripEndPeriod, SKILL_ACCENT } from "../../shared/suggest.ts";
+import { contextBlock, parseContextBlock, resolveSuggestionMessage, stripEndPeriod, suggestionFacts, tintSuggestionGlyph } from "../../shared/suggest.ts";
+import { registerEventRenderer } from "../../shared/event.ts";
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
 import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
 
@@ -413,7 +414,7 @@ export function doctrineBlock(
       entry.level === "reference" ? `Nested reference of the ${entry.skill} skill.` : "",
       // What this skill is, in its own words — the description the roster
       // ranked on, restored for the reader. No trailing period (CORE-2348).
-      `\x1b[3m${stripEndPeriod(entry.description)}\x1b[23m`,
+      `Description: ${stripEndPeriod(entry.description)}`,
     ].filter(Boolean).join("\n"),
   });
 }
@@ -438,43 +439,35 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   const cooldownOk = (id: string, now: number) => (cooldowns[id] === undefined || now >= cooldowns[id]);
   const cooldownSet = (id: string) => { cooldowns[id] = Date.now() + COOLDOWN_MIN * 60_000; };
 
-  if (typeof pi.registerMessageRenderer === "function") {
-    pi.registerMessageRenderer(CUSTOM_TYPE, (message: { content?: unknown }) => {
-      const content = typeof message?.content === "string" ? message.content : "";
-      return {
-        dispose: () => {},
-        invalidate: () => {},
-        render: () => {
-          // The message body is the model-visible labelled block; the operator
-          // gets a compact card parsed from it. Drawing the raw XML in a box
-          // clipped the frame and buried the operator's prompt.
-          const meta = parseContextBlock(String(content));
-          if (!meta) return renderCardBox(String(content), SKILL_ACCENT).split("\n");
-          return formatSuggestionCard({
-            verb: {
-              id: "skill_suggest",
-              // CORE-2348: header carries the full load subpath.
-              action:
-                meta.kind === "agent-settlement"
-                  ? "result settled"
-                  : meta.level === "reference"
-                    ? `load /skill:${meta.source ?? "—"}`
-                    : `load /skill:${meta.skill ?? meta.source ?? "—"}/SKILL.md`,
-              oneLine: meta.body ?? "",
-              instruction: () => "",
-              severity: "normal",
-              cooldownMin: COOLDOWN_MIN,
-              source: "jev",
-            },
-            ref: "—",
-            confidence: meta.confidence,
-            compact: true,
-          }, SKILL_ACCENT)
-            .split("\n");
+  // The message body is the model-visible labelled block; the operator gets
+  // the shared suggestion card parsed from it (CORE-2546): one row on the tool
+  // grid, the skill accent on the marker only. A block that does not parse
+  // falls back to the content as header plus body lines.
+  registerEventRenderer(pi, CUSTOM_TYPE, (message) => {
+    const content = typeof (message as { content?: unknown } | null)?.content === "string"
+      ? (message as { content: string }).content
+      : "";
+    const meta = parseContextBlock(content);
+    if (!meta) return resolveSuggestionMessage(message, "skill");
+    return resolveSuggestionMessage({
+      details: {
+        card: {
+          // CORE-2348: header carries the full load subpath.
+          identity:
+            meta.kind === "agent-settlement"
+              ? "result settled"
+              : meta.level === "reference"
+                ? `load /skill:${meta.source ?? "—"}`
+                : `load /skill:${meta.skill ?? meta.source ?? "—"}/SKILL.md`,
+          ...(meta.body ? { summary: stripEndPeriod(meta.body) } : {}),
+          ...(suggestionFacts(meta.confidence) ? { facts: suggestionFacts(meta.confidence) } : {}),
+          tint: "skill",
         },
-      };
+      },
     });
-  }
+  }, {
+    tintGlyph: (glyph, details, theme) => tintSuggestionGlyph(glyph, details.tint, theme),
+  });
 
   const handler = async (event: { text?: string }, ctx?: { modelRegistry?: unknown; sessionManager?: unknown }) => {
     latestCtx = ctx;

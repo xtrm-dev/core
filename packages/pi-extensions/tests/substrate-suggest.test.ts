@@ -18,7 +18,7 @@ import {
   SUBSTRATE_ACCENT,
 } from "../extensions/substrate-suggest/catalog.ts";
 import { parseAnswerPayload, questionShape, pickClassifiers, classifyViaRegistry } from "../extensions/substrate-suggest/jev.ts";
-import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb, partitionTracked, trackedEditedFiles, buildProvenanceEvidence, repoRoot, createRepoRootResolver, createProvenanceSteerGate, runProvenanceSteer } from "../extensions/substrate-suggest/duties.ts";
+import { waitCommitment, isMonitorSetter, isEditor, isProvenanceReader, provenanceDutyVerb, waitGuardVerb, partitionTracked, trackedEditedFiles, buildProvenanceEvidence, buildProvenanceSteer, repoRoot, createRepoRootResolver, createProvenanceSteerGate, runProvenanceSteer } from "../extensions/substrate-suggest/duties.ts";
 import substrateSuggestExtension from "../extensions/substrate-suggest/index.ts";
 
 function snap(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
@@ -369,6 +369,14 @@ describe("provenance steer gates", () => {
     expect(body).toMatch(/seed the why/);
     expect(body).toMatch(/git log -p --follow/);
     expect(body.length).toBeLessThanOrEqual(2000);
+    // CORE-2546: the same git calls give the operator's card; the agent's text is unchanged.
+    const steer = buildProvenanceSteer([`${dir}/f.ts`], dir);
+    expect(steer.text).toBe(body);
+    expect(steer.text).not.toContain("\x1b");
+    expect(steer.card).toMatchObject({ identity: "provenance unread", summary: "1 file changed without reading its history", tint: "substrate" });
+    expect(steer.card.reason).toMatch(/Behavior changed/);
+    expect(steer.card.body?.[0]).toMatch(/^f\.ts {2}last [0-9a-f]+ \d{4}-\d{2}-\d{2} seed the why$/);
+    expect(steer.card.body?.at(-1)).toBe("+1 -1  ·  next: git log -p --follow -- …/f.ts");
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

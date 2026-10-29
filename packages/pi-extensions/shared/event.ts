@@ -8,6 +8,9 @@
  *
  * Theme rule (amendment 1, D-3): cards use the theme's text, dim and
  * ok/warning/error colours only — no new accents, no raw SGR in this file.
+ * Suggestion cards (CORE-2546) sit on the tool rows' grid and take the
+ * tool-row tokens (toolTitle, toolOutput, thinkingText, dim); a sender may tint the
+ * marker through `tintGlyph`, which lives with the sender, not here.
  * The Pi `Theme` type satisfies `EventTheme` structurally; unknown tokens
  * throw in Pi, so renderers fall back to plain lines instead of crashing.
  * Model payloads carry no ANSI and no timestamps (D1, D9).
@@ -39,7 +42,7 @@ export const EVENT_GLYPHS = {
   failure: "!",
 } as const;
 
-export type EventKind = "message" | "task" | "monitor" | "notice";
+export type EventKind = "message" | "task" | "monitor" | "notice" | "suggestion";
 
 /** D2 provenance line for anything a peer or a process wrote. */
 export const PROVENANCE_LINE =
@@ -106,6 +109,12 @@ export interface EventDetails {
    * acted at a glance. Failures still render ! regardless.
    */
   automatic?: boolean;
+  /** Suggestion cards: the one-line summary after the identity on the folded row. */
+  summary?: string;
+  /** Suggestion cards: why it fired, the first line of the opened body. */
+  reason?: string;
+  /** Opaque key the renderer's `tintGlyph` maps to a marker colour. */
+  tint?: string;
 }
 
 /** Glyph for one event: ! on failure or high severity, ○ on automatic
@@ -495,6 +504,84 @@ export function formatEventCard(
   return [head, ...styled].join("\n");
 }
 
+/**
+ * Suggestion card (CORE-2546), on the tool rows' grid: marker in columns
+ * 0-1, text from column 2. Folded, one row: bold action, summary, dim facts
+ * and the hidden-line count. Opened: the reason in the thinking tone, then
+ * the body under a dim └ anchor. `tintGlyph` colours the marker only.
+ */
+function suggestionLines(
+  details: EventDetails,
+  width: number,
+  expanded: boolean,
+  style: {
+    glyph: (glyph: string) => string;
+    head: (text: string) => string;
+    summary: (text: string) => string;
+    dim: (text: string) => string;
+    reason: (text: string) => string;
+    body: (text: string) => string;
+    anchor: (text: string) => string;
+  },
+): string[] {
+  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
+  const inner = Math.max(8, w - 4);
+  const reason = details.reason ? wrapDisplay(sanitizeCardLine(details.reason), w - 2) : [];
+  const body = details.preview.flatMap((line) => wrapDisplay(sanitizeCardLine(line), inner));
+  const hidden = reason.length + body.length;
+  const glyph = glyphFor(details);
+  const plainHead = sanitizeCardLine(details.identity);
+  const summary = details.summary ? sanitizeCardLine(details.summary) : "";
+  const facts = details.facts ? sanitizeCardLine(details.facts) : "";
+  const count = !expanded && hidden > 0 ? `+${hidden} ${hidden === 1 ? "line" : "lines"}` : "";
+  // Fit by plain width first, so the styled row is cut only where text is.
+  const tail = [facts, count].filter(Boolean).join("  ");
+  const tailWidth = tail ? 2 + visibleWidth(tail) : 0;
+  const room = Math.max(1, w - 2 - tailWidth);
+  const headFit = visibleWidth(plainHead) <= room ? plainHead : stripAnsi(truncateToWidth(plainHead, room));
+  const summaryRoom = room - visibleWidth(headFit) - 1;
+  const summaryFit = summary && summaryRoom >= 6
+    ? visibleWidth(summary) <= summaryRoom ? summary : stripAnsi(truncateToWidth(summary, summaryRoom))
+    : "";
+  let row = `${style.glyph(glyph)} ${style.head(headFit)}`;
+  if (summaryFit) row += ` ${style.summary(summaryFit)}`;
+  if (tail) row += `  ${style.dim(tail)}`;
+  if (!expanded) return [row];
+  return [
+    row,
+    ...reason.map((line) => `${INDENT}${style.reason(line)}`),
+    ...body.map((line, i) => (i === 0 ? `${INDENT}${style.anchor("└")} ${style.body(line)}` : `${INDENT}  ${style.body(line)}`)),
+  ];
+}
+
+/** Plain suggestion card (no theme). */
+export function formatSuggestionCardPlain(details: EventDetails, width: number, opts?: { expanded?: boolean }): string {
+  const same = (text: string) => text;
+  return suggestionLines(details, width, opts?.expanded === true, {
+    glyph: same, head: same, summary: same, dim: same, reason: same, body: same, anchor: same,
+  }).join("\n");
+}
+
+/** Themed suggestion card: tool-name level header, thinking-tone reason, output-tone body. */
+export function formatSuggestionEventCard(
+  details: EventDetails,
+  theme: EventTheme,
+  width: number,
+  opts?: { expanded?: boolean; tintGlyph?: (glyph: string, details: EventDetails) => string },
+): string {
+  const italic = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
+  const failed = glyphFor(details) === EVENT_GLYPHS.failure;
+  return suggestionLines(details, width, opts?.expanded === true, {
+    glyph: (glyph) => (failed ? theme.fg("error", glyph) : opts?.tintGlyph ? opts.tintGlyph(glyph, details) : theme.fg("dim", glyph)),
+    head: (text) => theme.bold(theme.fg("toolTitle", text)),
+    summary: (text) => theme.fg("toolTitle", text),
+    dim: (text) => theme.fg("dim", text),
+    reason: (text) => italic(theme.fg("thinkingText", text)),
+    body: (text) => theme.fg("toolOutput", text),
+    anchor: (text) => theme.fg("dim", text),
+  }).join("\n");
+}
+
 type MessageRenderer = (message: unknown, options: unknown, theme: EventTheme) => unknown;
 
 /**
@@ -521,6 +608,7 @@ export function registerEventRenderer(
   pi: unknown,
   customType: string,
   resolve: (message: unknown) => EventDetails | null | undefined,
+  opts: { tintGlyph?: (glyph: string, details: EventDetails, theme: EventTheme) => string } = {},
 ): void {
   const register = (pi as RendererPi | null)?.registerMessageRenderer;
   if (typeof register !== "function") return;
@@ -556,6 +644,17 @@ export function registerEventRenderer(
       invalidate: () => {},
       render: (width: number) => {
         const isExpanded = expanded();
+        if (resolved.kind === "suggestion") {
+          const tintGlyph = opts.tintGlyph;
+          try {
+            return formatSuggestionEventCard(resolved, theme, width, {
+              expanded: isExpanded,
+              ...(tintGlyph ? { tintGlyph: (glyph: string, d: EventDetails) => tintGlyph(glyph, d, theme) } : {}),
+            }).split("\n");
+          } catch {
+            return formatSuggestionCardPlain(resolved, width, { expanded: isExpanded }).split("\n");
+          }
+        }
         try {
           return formatEventCard(resolved, theme, width, { expanded: isExpanded }).split("\n");
         } catch {

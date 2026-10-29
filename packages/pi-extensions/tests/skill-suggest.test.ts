@@ -79,9 +79,11 @@ describe("input seam decides, never mutates", () => {
     expect(src).toContain('jevPath = "registry"');
     expect(src).toContain('jevPath = "fallback"');
   });
-  it("restores the skill description, italic and period-stripped, at the end of the block", async () => {
+  it("restores the skill description, plain and period-stripped, at the end of the block", async () => {
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
-    expect(src).toContain("\\x1b[3m${stripEndPeriod(entry.description)}\\x1b[23m");
+    // CORE-2546: the block reaches the model, so the description carries no escapes.
+    expect(src).toContain("`Description: ${stripEndPeriod(entry.description)}`");
+    expect(src).not.toContain("\\x1b[3m");
   });
 });
 
