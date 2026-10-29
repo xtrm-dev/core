@@ -24,7 +24,7 @@ type Theme = {
 
 const THEMES: Theme[] = [dark, light, darkFlat, lightFlat] as Theme[];
 
-const REQUIRED = [
+export const REQUIRED = [
   "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning",
   "muted", "dim", "text", "thinkingText", "selectedBg", "userMessageBg",
   "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel",
