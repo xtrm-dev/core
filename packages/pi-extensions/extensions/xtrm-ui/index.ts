@@ -42,6 +42,8 @@ import {
   shortenCommand,
   shortenPath,
 } from "./format";
+import { classifyAssistant, currentGroupHasMembers, noteBoundary, noteCarrier, noteSetExpanded, setAgentRunning } from "./tool-groups";
+import { NOT_GROUPED, renderGroupedTool, routeGroupedMouse, type GroupedTool } from "./tool-group-view";
 
 // ============================================================================
 // Types
@@ -63,6 +65,7 @@ export interface XtrmUiPrefs {
   extPreviewLines: number;
   extNoCompact: boolean;
   ultracompact: boolean;
+  foldTools: boolean;
 }
 
 // ============================================================================
@@ -83,6 +86,7 @@ export const DEFAULT_PREFS: XtrmUiPrefs = {
   extPreviewLines: 6,
   extNoCompact: false,
   ultracompact: true,
+  foldTools: true,
 };
 
 /** Collapsed command/code lines before the hidden-count line. Agent context is
@@ -123,6 +127,9 @@ export function normalizePrefs(input: unknown, base: XtrmUiPrefs = DEFAULT_PREFS
     ultracompact: typeof (source as { ultracompact?: unknown }).ultracompact === "boolean"
       ? (source as { ultracompact: boolean }).ultracompact
       : base.ultracompact,
+    foldTools: typeof (source as { foldTools?: unknown }).foldTools === "boolean"
+      ? (source as { foldTools: boolean }).foldTools
+      : base.foldTools,
   };
 }
 
@@ -184,7 +191,7 @@ type PatchableAssistantMessage = {
 
 const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiThinkingPreview5";
 const ORIGINAL_ASSISTANT_UPDATE = "__xtrmUiThinkingPreviewOriginalUpdate";
-const THINKING_PREVIEW_PATCH_VERSION = 10;
+const THINKING_PREVIEW_PATCH_VERSION = 11;
 
 // The recap preserves awareness of the model's activity; it does not compete
 // with the answer. One clause, then stop (the ellipsis keeps the cut honest).
@@ -332,7 +339,7 @@ export function buildThinkingRecap(thinking: string, fallback = "Thinking..."): 
  * visible width. The row then carries ONE indent column; pi's markdown padding
  * (`outputPad = 1`) supplies the second, which puts the row on the same column
  * as a self-rendered tool row (two spaces, no markdown padding). No double
- * indent.
+ * indent: alignAssistantLines leaves anchored lines where they are.
  */
 export const INDENT_ANCHOR = "\u200b";
 const INDENT = `${INDENT_ANCHOR} `;
@@ -509,6 +516,16 @@ export function createPatchedUpdateContent(
 ): (this: PatchableAssistantMessage, message: AssistantMessageLike) => void {
 	return function patchedUpdateContent(this: PatchableAssistantMessage, message: AssistantMessageLike) {
 		const blocks = message.content;
+		// Folded tool groups: once the reply has text, its thinking is not drawn.
+		// Thinking shows only as a sign of life (a turn's first step before any
+		// call or text, or `thinking` on a group's summary line).
+		if (Array.isArray(blocks) && activeFoldTools()
+			&& blocks.some((block) => block.type === "text" && block.text?.trim())
+			&& blocks.some((block) => block.type === "thinking")) {
+			updateContent.call(this, { ...message, content: blocks.filter((block) => block.type !== "thinking") });
+			this.lastMessage = message;
+			return;
+		}
 		if (Array.isArray(blocks)) {
 			const hasThinking = blocks.some((block) => block.type === "thinking" && block.thinking?.trim());
 			if (hasThinking) {
@@ -650,6 +667,7 @@ type ToolExecutionComponentCtor = {
     hasRendererDefinition?: () => boolean;
     render?: (width: number) => string[];
     handleMouse?: (event: ToolMouseEvent) => unknown;
+    setExpanded?: (expanded: boolean) => void;
   };
 };
 
@@ -664,7 +682,7 @@ type ClickableToolRow = {
 type PatchableToolExecutionComponent = {
   toolName?: string;
   args?: unknown;
-  result?: { content?: Array<{ type: string; text?: string }>; details?: unknown; isError?: boolean };
+  result?: { content?: Array<{ type: string; text?: string }>; details?: unknown; isError?: boolean; durationMs?: number };
   expanded?: boolean;
   isPartial?: boolean;
   hasRendererDefinition?: () => boolean;
@@ -681,7 +699,11 @@ const PATCHED_EXTERNAL_TOOL_FRAME = "__xtrmUiExternalToolFrame";
 const ORIGINAL_EXTERNAL_RENDER = "__xtrmUiExternalToolFrameOriginalRender";
 const ORIGINAL_EXTERNAL_GET_RENDER_SHELL = "__xtrmUiExternalToolFrameOriginalGetRenderShell";
 const ORIGINAL_EXTERNAL_HANDLE_MOUSE = "__xtrmUiExternalToolFrameOriginalHandleMouse";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 44;
+const ORIGINAL_EXTERNAL_SET_EXPANDED = "__xtrmUiExternalToolFrameOriginalSetExpanded";
+// Message-component render wrappers for tool folding; versioned with the frame.
+const GROUP_BOUNDARY_PATCH = "__xtrmUiGroupBoundary";
+const ORIGINAL_BOUNDARY_RENDER = "__xtrmUiGroupBoundaryOriginalRender";
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 54;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension rows render through the active theme (tokens only). The
@@ -710,7 +732,8 @@ type ToolRowStatus = "pending" | "success" | "error";
  *   - "used": bold action word
  *   - extension: tool-name level, bold
  *   - tool: secondary level, bold; dim until success
- * Failures swap the dot for `!` and take the brightest grayscale token.
+ * Failures swap the dot for `!`; the marker and the word `failed` carry the
+ * brightest grayscale token, the header stays at the tool-name level.
  */
 function externalToolHeaderLine(
   status: ToolRowStatus,
@@ -719,11 +742,12 @@ function externalToolHeaderLine(
 ): string {
   const theme = activeTheme();
   const isError = status === "error";
-  const dot = isError ? trFg(theme, "error", "!") : trFg(theme, status === "success" ? "dim" : "text", "●");
-  const ext = trBoldFg(theme, isError ? "error" : "toolTitle", provider);
-  const toolToken = isError ? "error" : status === "success" ? "toolTitle" : "dim";
+  // The dot is structural, dim like a native row's at every status.
+  const dot = isError ? trFg(theme, "error", "!") : trFg(theme, "dim", "●");
+  const ext = trBoldFg(theme, "toolTitle", provider);
+  const toolToken = status === "pending" ? "dim" : "toolTitle";
   const toolName = tool ? ` ${trBoldFg(theme, toolToken, tool)}` : "";
-  return `${dot} ${trBold(theme, "used")} ${ext}${toolName}`;
+  return `${dot} ${trBoldFg(theme, "toolTitle", "used")} ${ext}${toolName}`;
 }
 
 function stripAnsi(text: string): string {
@@ -959,12 +983,15 @@ export function renderExternalToolBackgroundLines(
   // anchor, plain dim meta footer with no └─ prefix.
   if (codeCount > 0) {
     const theme = activeTheme();
-    const codeToken = status === "error" ? "error" : status === "success" ? "text" : "dim";
-    const outputToken = status === "error" ? "error" : "toolOutput";
-    const boldCode = (line: string) => trBoldFg(theme, codeToken, line);
+    // Program lines sit where a bash row's command lines sit: tool-name level,
+    // regular weight. Output keeps the output tone even on failure; the `!`
+    // header and the `failed` word already say it failed.
+    const codeToken = status === "pending" ? "dim" : "toolTitle";
+    const outputToken = "toolOutput";
+    const boldCode = (line: string) => trFg(theme, codeToken, line);
     const treeOutput = visibleResult.map((line, index) =>
       index === 0
-        ? `  ${trFg(theme, "muted", "└")} ${trFg(theme, outputToken, line)}`
+        ? `  ${trFg(theme, "dim", "└")} ${trFg(theme, outputToken, line)}`
         : `    ${trFg(theme, outputToken, line)}`,
     );
     const body = [
@@ -1022,8 +1049,9 @@ function ultraBold(token: string, text: string): string {
 }
 
 export function ultraExternalSubject(toolName: string | undefined, args: Record<string, unknown>): string | undefined {
-  const firstCode = externalToolCodePreview(toolName, args)?.[0]?.trim();
-  if (firstCode) return firstCode;
+  const code = typeof args.code === "string" ? codeBody(args.code) : "";
+  const firstCode = code.split("\n")[0]?.trim();
+  if (firstCode) return shortenCommand(firstCode);
   switch (toolName) {
     case "BashBackground":
       return typeof args.command === "string" && args.command ? shortenCommand(args.command) : undefined;
@@ -1055,13 +1083,21 @@ export function ultraExternalPrimary(toolName: string | undefined, resultTexts: 
   }
   // JSON results pretty-print with a bare `{` first line: summarize the
   // shape instead (`{a, b, +1}`, `[N items]`).
-  const trimmed = joined.trim();
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+  // A tool may frame its JSON: GitNexus puts a `[GitNexus]` line before it and
+  // a `---` hint after it (the hint itself can hold braces, `process/{name}`).
+  const body = joined.trim()
+    .replace(/^\[[^\]\n]*\]\s*\n/, "")
+    .split(/\n+---\s*\n/)[0]!
+    .trim();
+  if (body.startsWith("{") || body.startsWith("[")) {
     try {
-      const summary = summarizeJsonValue(JSON.parse(trimmed));
+      const summary = summarizeJsonValue(JSON.parse(body));
       if (summary) return summary;
     } catch {
-      // Not actually JSON: fall through to the first-line rule.
+      // Cut pretty-printed JSON: its first line would read as `"key": {`,
+      // which says nothing; the row is clearer without a primary. A one-line
+      // text that only opens with a brace keeps the first-line rule.
+      if (body.includes("\n")) return undefined;
     }
   }
   const first = joined.split("\n")
@@ -1101,18 +1137,21 @@ export function buildUltraExternalLine(
   const dot = isError ? `${ultraFg("error", "!")} ` : "  ";
   // Uniform with native rows: the whole `used <Tool> [<action>]` head is one
   // bold tool-name span, the subject one step back. No provider hue.
-  const span = (text: string) => ultraBold(isError ? "error" : "toolTitle", text);
-  const sub = (text: string) => ultraFg(isError ? "error" : "toolTitle", text);
+  const span = (text: string) => ultraBold("toolTitle", text);
+  const sub = (text: string) => ultraFg("toolTitle", text);
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
-  const head = ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
+  // A program reads as what it is, in the shell row's words ("Ran shell
+  // command" / "Ran code"), and matches the folded group's summary.
+  const runsCode = typeof args.code === "string" && args.code.trim().length > 0;
+  const head = runsCode ? ULTRA_CODE_VERB : ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
   let row = `${dot}${span(head)}`;
   if (subject) row += ` ${sub(subject)}`;
   // The code the row does not show, counted in the same words as a bash row so
   // `+N lines` means one thing everywhere. Metadata tier, one slot only.
   if (hidden > 0) {
-    row += `  ${ultraFg(isError ? "error" : "muted", `+${hidden} ${hidden === 1 ? "line" : "lines"}`)}`;
+    row += `  ${ultraFg("dim", `+${hidden} ${hidden === 1 ? "line" : "lines"}`)}`;
   }
-  if (primary) row += `  ${ultraFg("muted", primary)}`;
+  if (primary) row += `  ${ultraFg(isError ? "muted" : "dim", primary)}`;
   if (isError && !/fail(ed|ure)?/i.test(primary ?? "")) {
     row += `  ${ultraFg("error", "failed")}`;
   }
@@ -1149,6 +1188,11 @@ async function installExternalToolFramePatch(): Promise<void> {
   const entryPath = resolvePiCodingAgentEntryPath();
   const mod = await import(pathToFileURL(entryPath).href) as {
     ToolExecutionComponent?: ToolExecutionComponentCtor;
+    AssistantMessageComponent?: { prototype?: BoundaryProto };
+    UserMessageComponent?: { prototype?: BoundaryProto };
+    CompactionSummaryMessageComponent?: { prototype?: BoundaryProto };
+    BranchSummaryMessageComponent?: { prototype?: BoundaryProto };
+    CustomMessageComponent?: { prototype?: BoundaryProto };
   };
   const proto = mod.ToolExecutionComponent?.prototype as
     | (ToolExecutionComponentCtor["prototype"] & {
@@ -1174,17 +1218,48 @@ async function installExternalToolFramePatch(): Promise<void> {
   // Click-to-expand for framed rows. The frame replaces pi's rendered lines,
   // so pi's own MouseRegion around the result no longer covers them; this is
   // the same toggle pi uses (setExpanded), driven from the prototype instead.
+  // Reinstalled with every version bump, like render: reaching this line means
+  // the installed closures are stale.
   const protoCtor = proto as ToolExecutionComponentCtor["prototype"] & {
     [ORIGINAL_EXTERNAL_HANDLE_MOUSE]?: (event: ToolMouseEvent) => unknown;
+    [ORIGINAL_EXTERNAL_SET_EXPANDED]?: (expanded: boolean) => void;
   };
-  if (!protoCtor[ORIGINAL_EXTERNAL_HANDLE_MOUSE]) {
-    const inheritedHandleMouse = protoCtor.handleMouse;
-    protoCtor[ORIGINAL_EXTERNAL_HANDLE_MOUSE] = inheritedHandleMouse;
-    protoCtor.handleMouse = function patchedHandleMouse(this: PatchableToolExecutionComponent, event: ToolMouseEvent) {
-      if (externalToolRowClick(this, event) === true) return { handled: true };
-      return inheritedHandleMouse?.call(this, event);
-    };
-  }
+  protoCtor[ORIGINAL_EXTERNAL_HANDLE_MOUSE] ??= protoCtor.handleMouse;
+  protoCtor[ORIGINAL_EXTERNAL_SET_EXPANDED] ??= protoCtor.setExpanded;
+  const inheritedHandleMouse = protoCtor[ORIGINAL_EXTERNAL_HANDLE_MOUSE];
+  const inheritedSetExpanded = protoCtor[ORIGINAL_EXTERNAL_SET_EXPANDED];
+  // >0 while a click is being handled: setExpanded then comes from the pointer,
+  // anywhere else from ctrl+o's expand/collapse-all (see noteSetExpanded).
+  let pointerDepth = 0;
+  const asPointer = (fn: () => void) => {
+    pointerDepth++;
+    try {
+      fn();
+    } finally {
+      pointerDepth--;
+    }
+  };
+  protoCtor.handleMouse = function patchedHandleMouse(this: PatchableToolExecutionComponent, event: ToolMouseEvent) {
+    if (activeFoldTools()) {
+      const routed = routeGroupedMouse(this as unknown as GroupedTool, event, asPointer);
+      if (routed !== NOT_GROUPED) return routed;
+    }
+    let out: unknown;
+    asPointer(() => {
+      out = externalToolRowClick(this, event) === true ? { handled: true } : inheritedHandleMouse?.call(this, event);
+    });
+    return out;
+  };
+  protoCtor.setExpanded = function patchedSetExpanded(this: PatchableToolExecutionComponent, expanded: boolean) {
+    if (activeFoldTools()) noteSetExpanded(this, expanded, pointerDepth > 0);
+    return inheritedSetExpanded?.call(this, expanded);
+  };
+
+  installGroupBoundaries(mod.AssistantMessageComponent?.prototype, mod.UserMessageComponent?.prototype, [
+    mod.CompactionSummaryMessageComponent?.prototype,
+    mod.BranchSummaryMessageComponent?.prototype,
+    mod.CustomMessageComponent?.prototype,
+  ]);
 
   proto.getRenderShell = function patchedGetRenderShell(this: PatchableToolExecutionComponent) {
     const kind = externalToolFrameKind(this.toolName);
@@ -1192,14 +1267,32 @@ async function installExternalToolFramePatch(): Promise<void> {
     return getRenderShell?.call(this) ?? "default";
   };
 
+  // Folding sits on top of the frame: it only decides what of the frame's own
+  // render is visible, so a failure there falls back to the plain frame.
   proto.render = function patchedRender(this: PatchableToolExecutionComponent, width: number) {
+    const theme = activeFoldTools() ? activeTheme() : undefined;
+    if (theme) {
+      try {
+        const grouped = renderGroupedTool(this as unknown as GroupedTool, width, theme, (w) => frameRender.call(this, w));
+        if (grouped) return grouped;
+      } catch {
+        // Never take the interactive mode down; draw the ungrouped row.
+      }
+    }
+    return frameRender.call(this, width);
+  };
+
+  function frameRender(this: PatchableToolExecutionComponent, width: number): string[] {
     const kind = externalToolFrameKind(this.toolName);
     if (kind) this.__xtrmExternalStartedAt ??= Date.now();
-    const rendered = render.call(this, width);
+    const rendered = render!.call(this, width);
     if (!kind || rendered.length === 0) return rendered;
 
-    if (this.result && this.__xtrmExternalDurationMs == null) {
-      this.__xtrmExternalDurationMs = Date.now() - (this.__xtrmExternalStartedAt ?? Date.now());
+    // pi hands streaming chunks over as a result with isPartial set: the call
+    // is still running until a final result arrives.
+    const settled = Boolean(this.result) && !this.isPartial;
+    if (settled && this.__xtrmExternalDurationMs == null) {
+      this.__xtrmExternalDurationMs = this.result?.durationMs ?? Date.now() - (this.__xtrmExternalStartedAt ?? Date.now());
     }
     const firstContentIndex = rendered.findIndex((line) => !isBlankRenderedLine(line));
     const leading = firstContentIndex > 0 ? rendered.slice(0, firstContentIndex) : [];
@@ -1216,7 +1309,7 @@ async function installExternalToolFramePatch(): Promise<void> {
     // per-section and re-derives the boundary, so this stays valid.
     const tailLength = preview && this.result ? (resultTextLinesOnly(this)?.length ?? 0) : 0;
     const codeCount = preview ? Math.max(0, content.length - tailLength) : 0;
-    const status: ToolRowStatus = this.result ? (this.result.isError ? "error" : "success") : "pending";
+    const status: ToolRowStatus = settled ? (this.result!.isError ? "error" : "success") : "pending";
     if (activeUltracompact() && !isExpanded) {
       try {
         const line = buildUltraExternalLine(
@@ -1250,9 +1343,117 @@ async function installExternalToolFramePatch(): Promise<void> {
       return rendered;
     }
     return styled.length > 0 ? [...leading, ...styled] : rendered;
-  };
+  }
 
   proto[PATCHED_EXTERNAL_TOOL_FRAME] = EXTERNAL_TOOL_FRAME_PATCH_VERSION;
+}
+
+type BoundaryProto = {
+  render?: (width: number) => string[];
+  [GROUP_BOUNDARY_PATCH]?: number;
+  [ORIGINAL_BOUNDARY_RENDER]?: (width: number) => string[];
+};
+type AssistantLike = { lastMessage?: Parameters<typeof classifyAssistant>[0]; isStreaming?: boolean };
+
+/**
+ * Group boundaries are seen through the message components' render: a user
+ * message, or an assistant message with visible text, starts a new group. A
+ * carrier step (thinking plus tool calls only) draws nothing while folding is
+ * on, and neither does a step still streaming its thinking mid-group; the
+ * summary line says `thinking` instead. At a turn's start the group is empty
+ * and pi's thinking row stays as the sign of life.
+ */
+function installGroupBoundaries(
+  assistant: BoundaryProto | undefined,
+  user: BoundaryProto | undefined,
+  summaries: Array<BoundaryProto | undefined> = [],
+): void {
+  // Compaction and branch summaries open a rebuilt transcript: the calls kept
+  // after them start a group of their own. An extension message (a steer, a
+  // wake, a card) delivered mid-batch sits between two calls: the calls after
+  // it start a new group, so an opened group never runs on below the card.
+  for (const summary of summaries) {
+    wrapBoundaryRender(summary, (component: object) => {
+      noteBoundary(component);
+      return "show";
+    });
+  }
+  wrapBoundaryRender(assistant, (component: AssistantLike) => {
+    const role = classifyAssistant(component.lastMessage);
+    if (role === "boundary") {
+      noteBoundary(component);
+      return "show";
+    }
+    if (role === "carrier" || (component.isStreaming === true && currentGroupHasMembers())) {
+      noteCarrier(component);
+      return "hide";
+    }
+    return "show";
+  }, true);
+  wrapBoundaryRender(user, (component: object) => {
+    noteBoundary(component);
+    return "show";
+  });
+}
+
+/** Set on our wrapper function: the render it wraps. */
+const BOUNDARY_INNER = "__xtrmUiBoundaryInner";
+type BoundaryRender = ((width: number) => string[]) & { [BOUNDARY_INNER]?: (width: number) => string[] };
+
+/** Every row's text starts here; columns 0-1 hold its marker (`●`, `!`, `▸`). */
+const TEXT_COLUMN = 2;
+
+/**
+ * Puts agent prose on the rows' grid. pi pads prose by `outputPad` and our
+ * transformer puts `● ` inside that padding, so the dot landed one column in
+ * and the text two columns right of every tool row. The prose is rendered
+ * `shift` columns narrower, every line moves to the text column (wrapped
+ * lines hang under the text, after pi's wrap, so nothing reflows), and the
+ * dot moves into the marker columns.
+ */
+export function alignAssistantLines(lines: string[], shift: number): string[] {
+  if (shift <= 0) return lines;
+  const pad = " ".repeat(shift);
+  return lines.map((line) => {
+    const dotted = line.match(/^( *)((?:\x1b\[[0-9;]*m)*)● /);
+    if (dotted) return `${dotted[2]}● ${" ".repeat(Math.max(0, dotted[1]!.length + shift - TEXT_COLUMN))}${line.slice(dotted[0].length)}`;
+    // Thinking rows carry their own indent column behind the zero-width anchor.
+    if (/^ *(?:\x1b\[[0-9;]*m)*​/.test(line)) return line;
+    return stripAnsi(line).length > 0 ? pad + line : line;
+  });
+}
+
+function wrapBoundaryRender<C extends object>(
+  proto: BoundaryProto | undefined,
+  view: (component: C) => "show" | "hide",
+  alignProse = false,
+): void {
+  if (!proto || typeof proto.render !== "function") return;
+  if (proto[GROUP_BOUNDARY_PATCH] === EXTERNAL_TOOL_FRAME_PATCH_VERSION) return;
+  // Wrap the render installed now, minus our own older wrapper, so another
+  // extension's patch installed after ours survives our upgrade. Wrappers
+  // from before the marker existed are found through the saved original.
+  const installed = proto.render as BoundaryRender;
+  const render = installed[BOUNDARY_INNER] ?? proto[ORIGINAL_BOUNDARY_RENDER] ?? installed;
+  proto[ORIGINAL_BOUNDARY_RENDER] = undefined;
+  const wrapper: BoundaryRender = function patchedBoundaryRender(this: C, width: number) {
+    if (activeFoldTools()) {
+      try {
+        if (view(this) === "hide") return [];
+      } catch {
+        // Grouping is cosmetic: on any surprise, draw the message as pi does.
+      }
+    }
+    if (alignProse) {
+      const outputPad = (this as { outputPad?: number }).outputPad;
+      const shift = TEXT_COLUMN - (typeof outputPad === "number" ? outputPad : 1);
+      if (shift > 0 && width > shift + 8) return alignAssistantLines(render.call(this, width - shift), shift);
+    }
+    return render.call(this, width);
+  };
+  wrapper[BOUNDARY_INNER] = render;
+  proto.render = wrapper;
+  proto[GROUP_BOUNDARY_PATCH] = EXTERNAL_TOOL_FRAME_PATCH_VERSION;
 }
 
 function applyThinkingChrome(ctx: ExtensionContext): void {
@@ -1494,9 +1695,11 @@ function registerTurnSummary(pi: ExtensionAPI): void {
 		}), { italic: true }), 0, 0);
 	});
 	pi.on("agent_start", (_event, ctx) => {
+		setAgentRunning(true);
 		startTurnClock(ctx.ui, sessionUsageTokens(ctx));
 	});
 	pi.on("agent_end", () => {
+		setAgentRunning(false);
 		freezeTurnClock();
 	});
 	pi.on("agent_settled", (_event, ctx) => {
@@ -1592,7 +1795,7 @@ function applyXtrmChrome(
 function renderVerticalPreview(theme: any, lines: string[], maxLines: number): string {
   const subset = lines.slice(0, maxLines);
   let text = subset.map((line) => theme.fg("toolOutput", line)).join("\n");
-  if (lines.length > maxLines) text += `\n${theme.fg("muted", `… +${lines.length - maxLines} more lines`)}`;
+  if (lines.length > maxLines) text += `\n${theme.fg("dim", `… +${lines.length - maxLines} more lines`)}`;
   return text;
 }
 
@@ -1706,6 +1909,7 @@ function registerCommands(
       `Extension lines: ${prefs.extPreviewLines}`,
       `Extension compaction: ${prefs.extNoCompact ? "off" : "on"}`,
       `Ultracompact: ${!prefs.ultracompact ? "off" : prefs.extNoCompact ? "on (idle: extension compaction is off)" : "on"}`,
+      `Tool folding: ${!prefs.foldTools ? "off" : prefs.ultracompact ? "on" : "on (idle: ultracompact is off)"}`,
         `Model: ${ctx.model?.id ?? "none"}`,
         `Context: ${contextUsage?.tokens ?? "unknown"}/${contextUsage?.contextWindow ?? "unknown"}`,
       ].join("\n"));
@@ -1900,6 +2104,26 @@ function registerCommands(
     },
   });
 
+  pi.registerCommand("xtrm-ui-fold", {
+    description: "Fold each reply's tool calls into one summary line (ultracompact only): on|off",
+    getArgumentCompletions: (prefix) => {
+      const values = ["on", "off"].filter((item) => item.startsWith(prefix));
+      return values.length > 0 ? values.map((value) => ({ value, label: value })) : null;
+    },
+    handler: async (args, ctx) => {
+      const on = parseToggleArg(args);
+      if (on === undefined) {
+        ctx.ui.notify("Usage: /xtrm-ui-fold on|off", "warning");
+        return;
+      }
+      const prefs = { ...getPrefs(), foldTools: on };
+      setPrefs(prefs);
+      persistPrefs(pi, prefs);
+      applyXtrmChrome(ctx, prefs, getThinkingLevel);
+      ctx.ui.notify(`Tool folding ${on ? "enabled" : "disabled"}.`, "info");
+    },
+  });
+
   pi.registerCommand("xtrm-ui-diff-lines", {
     description: "Diff preview lines for edit/write rows: 1-50",
     handler: async (args, ctx) => {
@@ -1942,11 +2166,15 @@ type XtrmWritePreview =
 type XtrmToolRenderState = {
   startedAt?: number;
   writePreview?: XtrmWritePreview;
+  /** A result (partial or final) has rendered: the pending call row steps aside. */
+  resultShown?: boolean;
 };
 
 type XtrmToolRenderContext = {
   executionStarted: boolean;
   isPartial: boolean;
+  /** pi's own measurement; undefined while partial. */
+  durationMs?: number;
   state: XtrmToolRenderState;
 };
 
@@ -2017,7 +2245,7 @@ function appendToolTree(
   const indented = lines.map((line, index) => (index === 0 || line.length === 0 ? line : `  ${line}`));
   outputLines.forEach((line, index) => {
     indented.push(index === 0
-      ? `  ${theme.fg("muted", "└")} ${theme.fg("toolOutput", line)}`
+      ? `  ${theme.fg("dim", "└")} ${theme.fg("toolOutput", line)}`
       : `    ${theme.fg("toolOutput", line)}`);
   });
   if (meta) indented.push(`  ${theme.fg("dim", meta)}`);
@@ -2052,6 +2280,11 @@ export function activeUltracompact(): boolean {
   return activePrefsSnapshot?.ultracompact ?? DEFAULT_PREFS.ultracompact;
 }
 
+/** Folded tool groups (`/xtrm-ui-fold on`): only while ultracompact rows are on. */
+export function activeFoldTools(): boolean {
+  return activeUltracompact() && (activePrefsSnapshot?.foldTools ?? DEFAULT_PREFS.foldTools);
+}
+
 /** Display-only segmentation: a `&&`/`||` chain is one string, so split it
  * into visual segments before capping — otherwise chained writes never
  * compact. The model still receives the raw command; a `&&` inside quotes
@@ -2078,10 +2311,10 @@ export function renderBashTree(
   const isError = statusColor === "error";
   // Ordinary activity stays neutral: the header reads at the tool-name level
   // (toolTitle), semibold for the identifier and upright for the subject, so a
-  // tool row stays above the thinking tone. Failures take the brightest
-  // grayscale token plus the `!` marker.
-  const nameToken = isError ? "error" : "toolTitle";
-  const subjectToken = isError ? "error" : "toolTitle";
+  // tool row stays above the thinking tone. A failure is told by the `!`
+  // marker in the brightest token; the header stays on the ladder.
+  const nameToken = "toolTitle";
+  const subjectToken = "toolTitle";
   const allCommands = splitCommandSegments(command).flatMap((seg) => seg.split("\n"));
   const cap = expanded ? allCommands.length : Math.min(Math.max(1, commandCap), allCommands.length);
   const [firstCommand = "", ...continuedCommands] = allCommands.slice(0, cap);
@@ -2106,7 +2339,7 @@ function renderNamedToolTree(
 ): string {
   const isError = statusColor === "error";
   return appendToolTree(theme, [
-    `${theme.fg(isError ? "error" : "dim", toolGlyph(statusColor))} ${styledText(theme, isError ? "error" : "toolTitle", label)}${subject ? ` ${theme.fg(isError ? "error" : "toolTitle", subject)}` : ""}`,
+    `${theme.fg(isError ? "error" : "dim", toolGlyph(statusColor))} ${styledText(theme, "toolTitle", label)}${subject ? ` ${theme.fg("toolTitle", subject)}` : ""}`,
   ], outputLines, meta);
 }
 
@@ -2130,18 +2363,20 @@ export interface UltraRowParts {
 export function renderUltraRow(theme: any, parts: UltraRowParts): string {
   const isError = parts.statusColor === "error";
   // One grayscale ladder for native and extension rows: the header (verb and
-  // subject) is one emphasis-tone block where weight separates the identifier
-  // from its subject, metadata sits one step back, duration two steps back.
+  // subject) is one block two steps below prose, where weight separates the
+  // identifier from its subject; the result and duration sit at the marker tone.
   // Thinking rows stay a further step down, so a tool row never reads as a
-  // thinking row. Errors move the header to the brightest token and take the
-  // `!` marker; nothing in a tool row is ever coloured.
-  const verb = styledText(theme, isError ? "error" : "toolTitle", parts.verb);
-  const subject = parts.subject ? ` ${theme.fg(isError ? "error" : "toolTitle", parts.subject)}` : "";
+  // thinking row. A failure keeps the header on that ladder: only the `!`
+  // marker and the `failed` word take the brightest token, so a failed row
+  // never outshines the prose. Nothing in a tool row is ever coloured.
+  const verb = styledText(theme, "toolTitle", parts.verb);
+  const subject = parts.subject ? ` ${theme.fg("toolTitle", parts.subject)}` : "";
   // Neutral rows keep two columns so text aligns with pi's `● ` marker width;
   // a failure replaces that prefix with `! ` at the same columns.
   let row = isError ? `${theme.fg("error", "!")} ${verb}` : `  ${verb}`;
   row += subject;
-  if (parts.primary) row += `  ${theme.fg("muted", parts.primary)}`;
+  // A failure's reason stays readable: only a success's result steps back.
+  if (parts.primary) row += `  ${theme.fg(isError ? "muted" : "dim", parts.primary)}`;
   if (parts.secondary) row += `  ${theme.fg("dim", parts.secondary)}`;
   // Explicit failure word: the marker alone is easy to miss in a long log.
   if (isError && !/fail(ed|ure)?/i.test(`${parts.primary ?? ""} ${parts.secondary ?? ""}`)) {
@@ -2194,8 +2429,17 @@ export function hiddenLineCount(text: string): number {
 /** The hidden-line count for a framed tool: the same rule as bash, applied to
  *  whichever argument produced the row's subject (`code` for codemode/python,
  *  `command` for background tasks). */
+/** A code arg without its leading run directive (`// @options {...}`) and
+ * blank lines: the first remaining line is what the program actually does. */
+export function codeBody(code: string): string {
+  const lines = code.split("\n");
+  let start = 0;
+  while (start < lines.length && (lines[start]!.trim() === "" || /^\s*(\/\/|#)\s*@options\b/.test(lines[start]!))) start++;
+  return lines.slice(start).join("\n");
+}
+
 export function externalHiddenLines(toolName: string | undefined, args: Record<string, unknown>): number {
-  if (typeof args.code === "string" && args.code.trim().length > 0) return hiddenLineCount(args.code);
+  if (typeof args.code === "string" && args.code.trim().length > 0) return hiddenLineCount(codeBody(args.code));
   if (typeof args.command === "string" && args.command.trim().length > 0) return hiddenLineCount(stripCwdCd(args.command));
   return 0;
 }
@@ -2207,6 +2451,8 @@ export function ultraBashSubject(command: string, cwd: string = process.cwd()): 
 
 /** Ultra verb for shell calls: the full phrase, not bare `Ran`. */
 export const ULTRA_BASH_VERB = "Ran shell command";
+/** Ultra verb for code tools (codemode, python): any call carrying a `code` arg. */
+export const ULTRA_CODE_VERB = "Ran code";
 
 function renderUltraPendingCall(theme: any, toolName: string, args: Record<string, unknown>): Text {
   const verb = toolName === "bash" ? ULTRA_BASH_VERB : toolName;
@@ -2398,12 +2644,34 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     theme: any,
     context: XtrmToolRenderContext,
   ) => {
-    context.state.startedAt ??= Date.now();
-    if (context.isPartial && !context.executionStarted) {
-      if (getPrefs().ultracompact) return renderUltraPendingCall(theme, toolName, args);
-      return renderPendingCall(toolName, args, theme, getPrefs().commandPreviewLines);
+    if (context.executionStarted) context.state.startedAt ??= Date.now();
+    // The pending row stays until a result renders. pi drops a box with no
+    // lines, so an empty call row between execution start and the first result
+    // made the whole row vanish while the tool ran. pi renders the call before
+    // the result, so the first result hides this row through the shared state.
+    if (context.isPartial && !context.state.resultShown) {
+      const pending = getPrefs().ultracompact
+        ? renderUltraPendingCall(theme, toolName, args)
+        : renderPendingCall(toolName, args, theme, getPrefs().commandPreviewLines);
+      const state = context.state;
+      return {
+        render: (width: number) => (state.resultShown ? [] : pending.render(width)),
+        invalidate: () => pending.invalidate?.(),
+      };
     }
     return toolRowText(theme, "");
+  };
+  const registerTool: typeof pi.registerTool = (definition) => {
+    const renderResult = definition.renderResult;
+    pi.registerTool(renderResult
+      ? {
+        ...definition,
+        renderResult(result, options, theme, context) {
+          (context.state as XtrmToolRenderState).resultShown = true;
+          return renderResult.call(definition, result, options, theme, context);
+        },
+      }
+      : definition);
   };
   // Meta fields must earn their slot (design contract §4). A fast call and a
   // small payload say nothing, so most rows end where their content ends and
@@ -2411,12 +2679,16 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
   const SLOW_CALL_MS = 1000;
   const slowMs = (ms: number | undefined) =>
     typeof ms === "number" && ms >= SLOW_CALL_MS ? formatDuration(ms) : undefined;
+  // Settled: pi's measured duration. Running: live time since execution started
+  // (never since the arguments began streaming, and never re-measured later).
   const renderDuration = (context: XtrmToolRenderContext) =>
-    slowMs(context.state.startedAt == null ? undefined : Date.now() - context.state.startedAt);
+    slowMs(context.durationMs ?? (context.isPartial && context.state.startedAt != null
+      ? Date.now() - context.state.startedAt
+      : undefined));
   // One slot for a diff's two numbers, so diff rows stay within two meta fields.
   const diffMeta = (additions: number, removals: number) => `+${additions} -${removals}`;
 
-  pi.registerTool({
+  registerTool({
     name: "bash",
     label: "bash",
     description: tools.bash.description,
@@ -2455,7 +2727,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     },
   });
 
-  pi.registerTool({
+  registerTool({
     name: "read",
     label: "read",
     description: tools.read.description,
@@ -2521,7 +2793,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     },
   });
 
-  pi.registerTool({
+  registerTool({
     name: "edit",
     label: "edit",
     description: tools.edit.description,
@@ -2574,7 +2846,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     },
   });
 
-  pi.registerTool({
+  registerTool({
     name: "write",
     label: "write",
     description: tools.write.description,
@@ -2668,7 +2940,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     },
   });
 
-  pi.registerTool({
+  registerTool({
     name: "find",
     label: "find",
     description: tools.find.description,
@@ -2711,7 +2983,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     },
   });
 
-  pi.registerTool({
+  registerTool({
     name: "grep",
     label: "grep",
     description: tools.grep.description,
@@ -2754,7 +3026,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
     },
   });
 
-  pi.registerTool({
+  registerTool({
     name: "ls",
     label: "ls",
     description: tools.ls.description,

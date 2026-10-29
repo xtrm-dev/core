@@ -17,7 +17,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
-import type { Cooldowns, VerbSpec } from "../../shared/suggest.ts";
+import type { Cooldowns, SuggestionCardFields, VerbSpec } from "../../shared/suggest.ts";
 import { applyCooldown, cooldownAllows } from "../../shared/suggest.ts";
 
 // ── provenance duty ──────────────────────────────────────────────────────────
@@ -78,6 +78,23 @@ export function partitionTracked(
  * steer degrades to the file list rather than erroring the turn.
  */
 export function buildProvenanceEvidence(files: string[], cwd: string): string {
+  return buildProvenanceSteer(files, cwd).text;
+}
+
+/**
+ * The steer twice from one set of git calls: `text` is the evidence the agent
+ * reads (unchanged bytes), `card` is the operator's folded card (CORE-2546):
+ * one row, then the reason, one line per file with its last commit and one
+ * dim totals-and-next line. File names are shortened in the card only.
+ */
+export function buildProvenanceSteer(files: string[], cwd: string): { text: string; card: SuggestionCardFields } {
+  const verb = provenanceDutyVerb(files);
+  const card: SuggestionCardFields = {
+    identity: verb.action,
+    summary: `${files.length} ${files.length === 1 ? "file" : "files"} changed without reading ${files.length === 1 ? "its" : "their"} history`,
+    reason: verb.oneLine,
+    tint: "substrate",
+  };
   const run = (args: string[]): string => {
     try {
       return execFileSync("git", args, {
@@ -94,17 +111,32 @@ export function buildProvenanceEvidence(files: string[], cwd: string): string {
   const lines: string[] = [];
   const stat = run(["diff", "--stat", "--", ...files.slice(0, 8)]).trim();
   if (stat) lines.push(stat.split("\n").slice(0, 12).join("\n"));
+  const touched: Array<{ name: string; last: string }> = [];
   for (const f of files.slice(0, 4)) {
     const last = run(["log", "-1", "--format=%h %ad %s", "--date=short", "--", f]).trim();
-    if (last) lines.push(`${f}: last ${last}`);
+    if (last) {
+      lines.push(`${f}: last ${last}`);
+      touched.push({ name: f.split("/").pop() ?? f, last });
+    }
   }
-  if (lines.length === 0) return files.slice(0, 5).join(", ");
   const first = files[0];
+  const base = first?.split("/").pop() ?? "file";
+  // The card's last line: the diffstat totals in row words, then the next step.
+  const totals = /(\d+) insertions?\(\+\)/.exec(stat)?.[1];
+  const removed = /(\d+) deletions?\(-\)/.exec(stat)?.[1];
+  const change = totals || removed ? `+${totals ?? 0} -${removed ?? 0}  ·  ` : "";
+  const width = Math.max(0, ...touched.map((t) => t.name.length));
+  card.body = [
+    ...touched.map((t) => `${t.name.padEnd(width)}  last ${t.last}`),
+    ...(files.length > touched.length ? [`+${files.length - touched.length} more`] : []),
+    `${change}next: git log -p --follow -- …/${base}`,
+  ];
+  if (lines.length === 0) return { text: files.slice(0, 5).join(", "), card };
   lines.push(
     `History that may matter: git log -p --follow -- ${first}; ` +
       `blast radius: gitnexus impact on the touched exports before editing further.`,
   );
-  return lines.join("\n").slice(0, 2000);
+  return { text: lines.join("\n").slice(0, 2000), card };
 }
 
 /**

@@ -24,7 +24,7 @@ type Theme = {
 
 const THEMES: Theme[] = [dark, light, darkFlat, lightFlat] as Theme[];
 
-const REQUIRED = [
+export const REQUIRED = [
   "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning",
   "muted", "dim", "text", "thinkingText", "selectedBg", "userMessageBg",
   "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel",
@@ -112,8 +112,10 @@ describe("shipped XTRM themes", () => {
       // because "brighter" means more contrast against a light background.
       const lightTheme = theme.appearance === "light";
       for (let index = 1; index < ramp.length; index += 1) {
-        if (lightTheme) expect(ramp[index]!, `${theme.name} ramp ${index}`).toBeGreaterThan(ramp[index - 1]!);
-        else expect(ramp[index]!, `${theme.name} ramp ${index}`).toBeLessThan(ramp[index - 1]!);
+        // Tool names share the secondary rung (bold sets them apart): equal, never inverted.
+        const shared = index === 2;
+        if (lightTheme) expect(ramp[index]!, `${theme.name} ramp ${index}`)[shared ? "toBeGreaterThanOrEqual" : "toBeGreaterThan"](ramp[index - 1]!);
+        else expect(ramp[index]!, `${theme.name} ramp ${index}`)[shared ? "toBeLessThanOrEqual" : "toBeLessThan"](ramp[index - 1]!);
       }
     }
   });

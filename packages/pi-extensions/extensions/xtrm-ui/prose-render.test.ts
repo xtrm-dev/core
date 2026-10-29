@@ -8,9 +8,11 @@
  *      zero-width anchor to keep its column; the row carries ONE indent space
  *      and markdown's outputPad supplies the second, so thinking and tool rows
  *      share one column (no double indent);
- *   2. pi re-wraps each paragraph, so the dot is a plain first-line prefix and
- *      continuation lines stay flush left — wrapping it ourselves to force a
- *      hanging indent would split inline code spans and links.
+ *   2. pi re-wraps each paragraph, so the dot is a plain first-line prefix —
+ *      wrapping it ourselves would split inline code spans and links. The
+ *      hanging indent is applied to pi's finished lines instead
+ *      (alignAssistantLines): the dot moves into the marker columns and every
+ *      line starts on the text column, like the tool rows.
  *
  * These tests exercise the mechanisms without importing pi-tui, because the
  * sibling handler suite mocks that module for the whole test process.
@@ -58,6 +60,23 @@ describe("the dot does not disturb pi's own rendering", () => {
     // A pre-wrap would cut these in half; a prefix cannot.
     const prose = "use `the/whole/span` then [the label](https://example.com/x) here";
     expect(prefixAssistantDot(prose)).toBe(`\u25cf ${prose}`);
+  });
+
+  test("rendered prose lands on the tool rows' grid: dot in the marker columns, text and wrap on column 2", () => {
+    const { alignAssistantLines } = require("./index.ts") as typeof import("./index.ts");
+    // pi's output at outputPad 1: a spacer, the dotted first line, a wrapped
+    // line, a thinking row (anchored, already on column 2), a styled dot line.
+    const rendered = ["", " ● First line of the reply", " wrapped part", " ​ Thinking...", " \x1b[1m● Bold start"];
+    expect(alignAssistantLines(rendered, 1)).toEqual([
+      "",
+      "● First line of the reply",
+      "  wrapped part",
+      " ​ Thinking...",
+      "\x1b[1m● Bold start",
+    ]);
+    // outputPad 0 needs two columns; the dot line comes out the same.
+    expect(alignAssistantLines(["● Hi", "more"], 2)).toEqual(["● Hi", "  more"]);
+    expect(alignAssistantLines(rendered, 0)).toBe(rendered);
   });
 
   test("a model-written list keeps the theme's own dash", () => {

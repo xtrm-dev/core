@@ -100,6 +100,30 @@ describe("xtrm-ui presentation-only boundary", () => {
     expect(events).not.toContain("tool_result");
   });
 
+  test("the pending call row stays through execution until a result renders", () => {
+    const { tools } = registerWithMock();
+    const read = tools.find((tool) => tool.name === "read") as RegisteredTool & {
+      renderCall: (args: unknown, theme: unknown, context: unknown) => { render(width: number): string[]; text?: string };
+    };
+    const theme = {
+      fg: (_color: string, text: string) => text,
+      bold: (text: string) => text,
+      bg: (_color: string) => (text: string) => text,
+    };
+    const state: Record<string, unknown> = {};
+    const context = { args: { path: "/a/b.txt" }, executionStarted: true, isPartial: true, state };
+    // Executing, no result yet: the row must not be the empty placeholder pi drops.
+    const call = read.renderCall({ path: "/a/b.txt" }, theme, context);
+    expect(call.text).not.toBe("");
+    expect(typeof call.render).toBe("function");
+    // The first result takes over; the call row steps aside.
+    read.renderResult({ content: [{ type: "text", text: "x" }], details: {} }, { expanded: false, isPartial: true }, theme, context);
+    expect(state.resultShown).toBe(true);
+    expect(call.render(80)).toEqual([]);
+    // Settled: pi re-renders the call with isPartial false and gets the empty row.
+    expect((read.renderCall({ path: "/a/b.txt" }, theme, { ...context, isPartial: false }) as { text?: string }).text).toBe("");
+  });
+
   test("read.renderResult displays already-numbered content without re-prefixing", () => {
     const { tools } = registerWithMock();
     const readTool = tools.find((tool) => tool.name === "read");
@@ -168,6 +192,31 @@ describe("xtrm-ui presentation-only boundary", () => {
     // No double-prefix drift.
     expect(rendered).not.toContain("137 | 137 |");
     expect(rendered).not.toContain("138 | 138 |");
+  });
+
+  test("with folding on, a reply that has text draws no thinking; a step without text keeps it", () => {
+    type ContentBlock = { type: string; text?: string; thinking?: string };
+    const rendered: ContentBlock[][] = [];
+    const component = {
+      hideThinkingBlock: true,
+      lastMessage: undefined as unknown,
+      updateContent(message: { content: ContentBlock[] }) {
+        rendered.push(message.content);
+      },
+    };
+    component.updateContent = createPatchedUpdateContent(
+      component.updateContent as never,
+      { label: (text: string) => text, recap: (text: string) => text, sep: " · " },
+      { followsToggle: false },
+    );
+    const reply = { content: [{ type: "thinking", thinking: "Summarizing evidence" }, { type: "text", text: "Done." }] };
+    component.updateContent(reply as never);
+    expect(rendered.at(-1)).toEqual([{ type: "text", text: "Done." }]);
+    // pi re-renders from lastMessage: it must stay the raw message.
+    expect(component.lastMessage).toBe(reply);
+
+    component.updateContent({ content: [{ type: "thinking", thinking: "Looking around" }] } as never);
+    expect(rendered.at(-1)![0]!.text).toContain("Looking around");
   });
 
   test("thinking toggle re-renders existing thinking rows (xtrm-5vi8u)", () => {
@@ -453,15 +502,17 @@ describe("xtrm-ui code tools cap execution and result independently", async () =
     expect(plain.join("\n")).not.toContain("ctrl+o");
   });
 
-  test("code body mirrors the bash tree: bold execution, └ output, bare meta", async () => {
+  test("code body mirrors the bash tree: regular-weight program lines, └ output, bare meta", async () => {
     const { setActiveThemeProvider } = await import("./index.ts");
     const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*`, italic: (t: string) => `_${t}_` };
     setActiveThemeProvider(() => mark);
     try {
       const raw = render(false);
       const plain = raw.map(strip);
-      // Execution lines carry weight from the theme (no raw SGR).
-      expect(raw[1]).toContain("*");
+      // Program lines sit at the tool-name level like bash command lines:
+      // never the brightest token, never bold, no raw SGR.
+      expect(raw[1]).toContain("[toolTitle]");
+      expect(raw[1]).not.toContain("*");
       expect(raw[1]).not.toContain("\x1b[");
       expect(raw.some((l) => l.includes("└") && l.includes("result1"))).toBe(true);
       expect(raw.some((l) => l.includes("└─"))).toBe(false);
@@ -762,9 +813,7 @@ describe("ultracompact rows", async () => {
 
   test("external Class A: bare header plus first code line", () => {
     const row = strip(buildUltraExternalLine("codemode", { code: "x = 1\ny = 2" }, ["ok"], "success"));
-    expect(row.startsWith("  ")).toBe(true);
-    expect(row).toContain("codemode");
-    expect(row).toContain("x = 1");
+    expect(row.startsWith("  Ran code x = 1")).toBe(true);
     expect(row).not.toContain("●");
     expect(row).not.toContain("·");
   });
@@ -778,6 +827,14 @@ describe("ultracompact rows", async () => {
     // Blank lines are air, not hidden content: the count never inflates.
     const airy = strip(buildUltraExternalLine("codemode", { code: "print(1)\n\n" }, ["ok"], "success"));
     expect(airy).not.toContain("lines");
+  });
+
+  test("a leading @options directive is neither the subject nor a hidden line", () => {
+    const code = '// @options: {"max_output_tokens": 8000, "timeout_ms": 60000}\nconst r = await read("a");\nprint(r);';
+    const row = strip(buildUltraExternalLine("codemode", { code }, ["Script completed"], "success"));
+    expect(row).toBe('  Ran code const r = await read("a");  +1 line  Script completed');
+    const py = strip(buildUltraExternalLine("python", { code: "# @options {}\n\nimport json" }, [], "pending"));
+    expect(py).toBe("  Ran code import json");
   });
 
   test("the hidden-line count is the bash row's rule, shared", () => {
@@ -808,7 +865,7 @@ describe("ultracompact rows", async () => {
     setActiveThemeProvider(() => tokened);
     try {
       for (const status of ["pending", "success", "error"] as const) {
-        const native = renderUltraRow(tokened, { statusColor: status, verb: "used codemode", subject: "x = 1", primary: "ok" });
+        const native = renderUltraRow(tokened, { statusColor: status, verb: "Ran code", subject: "x = 1", primary: "ok" });
         const framed = buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], status);
         expect(framed).toBe(native);
       }
@@ -859,19 +916,22 @@ describe("ultracompact rows", async () => {
     const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*` };
     const raw = renderUltraRow(mark, { statusColor: "success", verb: "Ran", subject: "npm test", primary: "3 lines" });
     // Every tool row reads at the same tier: name (toolTitle, semibold),
-    // subject (toolTitle, upright), metadata (muted/dim). No raw SGR, no hue.
+    // subject (toolTitle, upright), metadata (dim). No raw SGR, no hue.
     expect(raw).toContain("[toolTitle]*Ran*");
     expect(raw).toContain("[toolTitle]npm test");
-    expect(raw).toContain("[muted]3 lines");
+    expect(raw).toContain("[dim]3 lines");
     expect(raw).not.toContain("\x1b[");
     expect(strip(raw).replace(/\[[a-zA-Z]+\]|\*/g, "")).toBe("  Ran npm test  3 lines");
   });
 
-  test("errors take the brightest grayscale token plus the marker, never a hue", () => {
+  test("errors put the brightest grayscale token on the marker and the word only, never a hue", () => {
     const mark = { fg: (c: string, t: string) => `[${c}]${t}`, bold: (t: string) => `*${t}*` };
     const raw = renderUltraRow(mark, { statusColor: "error", verb: "read", subject: "/a", primary: "nope" });
     expect(raw).toContain("[error]!");
-    expect(raw).toContain("[error]*read*");
+    expect(raw).toContain("[error]failed");
+    // The header stays on the ladder, so a failed row never outshines prose.
+    expect(raw).toContain("[toolTitle]*read*");
+    expect(raw).not.toContain("[error]*read*");
     expect(raw).not.toContain("\x1b[");
     expect(raw).not.toContain("[success]");
   });
@@ -888,6 +948,13 @@ describe("ultracompact rows", async () => {
   test("bracket-only result lines never duplicate the header", () => {
     expect(ultraExternalPrimary("gitnexus_query", ["[GitNexus]", "real outcome"])).toBe("real outcome");
     expect(ultraExternalPrimary("gitnexus_query", ["[GitNexus]"])).toBeUndefined();
+    // JSON followed by a prose hint still summarizes its shape, never `"summary": {`.
+    // The real hint holds a brace of its own.
+    const detect = '{\n  "summary": {\n    "changed": 3\n  },\n  "risk": "LOW"\n}\n\n---\n**Next:** READ gitnexus://repo/core/process/{name}';
+    expect(ultraExternalPrimary("gitnexus_detect_changes", [detect])).toBe("{summary, risk}");
+    expect(ultraExternalPrimary("gitnexus_query", [`[GitNexus]\n${detect}`])).toBe("{summary, risk}");
+    // Cut JSON gives no primary rather than its first key line.
+    expect(ultraExternalPrimary("gitnexus_query", ['{\n  "summary": {\n    "changed'])).toBeUndefined();
   });
 
   test("ListAgents primary is the peer count", () => {
@@ -1033,7 +1100,7 @@ describe("grayscale row ladder (CORE-2502 follow-ups)", async () => {
       expect(line).toContain("[toolTitle]");
       expect(line).not.toMatch(/#[0-9a-fA-F]{3,6}/);
       expect(line).not.toMatch(/\x1b\[/);
-      expect(line).toContain("used");
+      expect(line).toContain("Ran code");
       // Thinking rows and tool rows share the ladder, not the same level.
       const row = buildCollapsedThinkingRow("recap", collapsedThinkingStyle(() => tokened()));
       expect(row).toContain("[muted]Thinking...");

@@ -51,7 +51,10 @@ import {
   applyCooldown,
   resetCooldowns,
   jevRoster,
-  formatSuggestionCard,
+  formatSuggestionPlain,
+  resolveSuggestionMessage,
+  suggestionCardFields,
+  tintSuggestionGlyph,
   TERMINAL_LIFECYCLE,
   systemOne,
   classifyViaRegistry,
@@ -71,7 +74,7 @@ import {
   waitGuardVerb,
   isEditor,
   isProvenanceReader,
-  buildProvenanceEvidence,
+  buildProvenanceSteer,
   provenanceDutyVerb,
   createProvenanceSteerGate,
   createRepoRootResolver,
@@ -80,6 +83,7 @@ import {
   type SkillEntry,
 } from "./duties.ts";
 import { evaluateToolNudge, newCounters, observeTool, type ToolCounters } from "./toolnudge.ts";
+import { registerEventRenderer } from "../../shared/event.ts";
 
 const CUSTOM_TYPE = "substrate_suggestion";
 const LOG_DIR = join(homedir(), ".xtrm", "substrate-suggest");
@@ -315,21 +319,16 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   const provenanceGate = createProvenanceSteerGate();
   const counters: ToolCounters = newCounters();
 
-  // Card renderer: no [customType] label, no default card box — the two
-  // plain lines ARE the card (dot glyph, no rail).
-  if (typeof pi.registerMessageRenderer === "function") {
-    pi.registerMessageRenderer(CUSTOM_TYPE, (message: { content?: unknown }) => {
-      const content = typeof message?.content === "string" ? message.content : "";
-      return {
-        dispose: () => {},
-        invalidate: () => {},
-        render: () => String(content).split("\n"),
-      };
-    });
-  }
+  // Card renderer (CORE-2546): the shared event card on the tool rows' grid,
+  // folded to one row, opened by a click or ctrl+o; the accent tints the
+  // marker only. The content stays plain text for the model.
+  registerEventRenderer(pi, CUSTOM_TYPE, (message) => resolveSuggestionMessage(message, "substrate"), {
+    tintGlyph: (glyph, details, theme) => tintSuggestionGlyph(glyph, details.tint, theme),
+  });
 
   const emit = (verb: VerbSpec, ref: string, opts: { confidence?: number | null; revision?: number | null; source: string; model?: string | null }) => {
-    const card = formatSuggestionCard({ verb, ref, confidence: opts.confidence, revision: opts.revision });
+    const suggestion = { verb, ref, confidence: opts.confidence, revision: opts.revision };
+    const card = formatSuggestionPlain(suggestion);
     applyCooldown(cooldowns, ref, verb);
     logDecision({
       ts: new Date().toISOString(),
@@ -340,7 +339,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       model: opts.model ?? null,
     });
     pi.sendMessage(
-      { customType: CUSTOM_TYPE, content: card, display: true, details: { verb: verb.id, ref, severity: verb.severity } },
+      { customType: CUSTOM_TYPE, content: card, display: true, details: { verb: verb.id, ref, severity: verb.severity, card: suggestionCardFields(suggestion) } },
       // Wake the agent like specialists events do: every suggestion is
       // information for the model. Cooldowns plus self-extinguishing rules
       // bound the turn cost.
@@ -463,9 +462,11 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         applyCooldown(cooldowns, "nudge", nudge.verb);
         logDecision({ ts: new Date().toISOString(), issue: null, verb: `tool_nudge:${nudge.kind}`, source: "deterministic" });
         const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
-        content.push({ type: "text", text: `\x1b[2m[substrate-suggest] ${nudge.verb.instruction("")}\x1b[22m` });
+        // Plain text: the tool result reaches the model, and escapes read as noise there.
+        content.push({ type: "text", text: `[substrate-suggest] ${nudge.verb.instruction("")}` });
+        const suggestion = { verb: nudge.verb, ref: "—" };
         pi.sendMessage(
-          { customType: CUSTOM_TYPE, content: formatSuggestionCard({ verb: nudge.verb, ref: "—" }), display: true, details: { verb: nudge.verb.id, nudge: nudge.kind } },
+          { customType: CUSTOM_TYPE, content: formatSuggestionPlain(suggestion), display: true, details: { verb: nudge.verb.id, nudge: nudge.kind, card: suggestionCardFields(suggestion) } },
           { deliverAs: "followUp", triggerTurn: false },
         );
         return { content, structuredContent: e.structuredContent } as never;
@@ -481,10 +482,11 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           const content = [...(e.content ?? [])] as unknown as Array<{ type: string; text: string }>;
           content.push({
             type: "text",
-            text: `\x1b[2m[substrate-suggest] expert skill: ${hit.skillPath} — ${hit.name}${hit.container ? ` (container ${hit.container})` : ""}. Consider it before going deeper.\x1b[22m`,
+            text: `[substrate-suggest] expert skill: ${hit.skillPath} — ${hit.name}${hit.container ? ` (container ${hit.container})` : ""}. Consider it before going deeper.`,
           });
+          const suggestion = { verb, ref: "—" };
           pi.sendMessage(
-            { customType: CUSTOM_TYPE, content: formatSuggestionCard({ verb, ref: "—" }), display: true, details: { verb: "skill_suggest", skill: hit.id, midTurn: true } },
+            { customType: CUSTOM_TYPE, content: formatSuggestionPlain(suggestion), display: true, details: { verb: "skill_suggest", skill: hit.id, midTurn: true, card: suggestionCardFields(suggestion, "skill") } },
             { deliverAs: "followUp", triggerTurn: false },
           );
           return { content, structuredContent: e.structuredContent } as never;
@@ -534,10 +536,10 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
                   },
                   deliver: (fs, model) => {
                     const verb = provenanceDutyVerb(fs);
-                    const evidence = buildProvenanceEvidence(fs, resolveRepoRoot());
+                    const steer = buildProvenanceSteer(fs, resolveRepoRoot());
                     logDecision({ ts: new Date().toISOString(), issue: null, verb: verb.id, source: "jev", model });
                     pi.sendMessage(
-                      { customType: CUSTOM_TYPE, content: evidence, display: true, details: { verb: verb.id, midTurn: true } },
+                      { customType: CUSTOM_TYPE, content: steer.text, display: true, details: { verb: verb.id, midTurn: true, card: steer.card } },
                       { deliverAs: "followUp", triggerTurn: false },
                     );
                   },

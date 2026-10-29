@@ -669,10 +669,14 @@ export function parseContextBlock(content: string): ContextBlockMeta | null {
   }
   const body = content.replace(/^<xtrm_context[^>]*>\n?/, "").replace(/<\/xtrm_context>\s*$/, "");
   const lines = body.split("\n").map((l) => l.trim());
-  // The description rides last, in italics. That is the reader-facing summary;
+  // The description rides last, on a `Description:` line (sessions from before
+  // CORE-2546 carry it in italic escapes). That is the reader-facing summary;
   // the lines above it are model-facing instructions.
-  const described = lines.map((l) => /^\x1b\[3m(.+)\x1b\[23m$/.exec(l)?.[1]).find(Boolean);
-  const first = lines.find((l) => l.length > 0 && l !== "Injected context, not the operator's words:" && !/^\x1b\[3m/.test(l));
+  const described = lines
+    .map((l) => /^Description: (.+)$/.exec(l)?.[1] ?? /^\x1b\[3m(.+)\x1b\[23m$/.exec(l)?.[1])
+    .find(Boolean);
+  const first = lines.find((l) =>
+    l.length > 0 && l !== "Injected context, not the operator's words:" && !/^\x1b\[3m/.test(l) && !/^Description: /.test(l));
   meta.body = described ?? first ?? null;
   return meta;
 }
@@ -747,15 +751,116 @@ export function formatSuggestionCard(c: SuggestionCard, accent: CardAccent = SUB
   return goldCard(glyph, header, wrapPlain(body, Math.max(CARD_MIN, CARD_MAX - factsLen)), facts, accent);
 }
 
-/** Render arbitrary message content in the house style (renderer fallback). */
-export function renderCardBox(content: string, accent: CardAccent = SUBSTRATE_ACCENT): string {
-  const [first, ...rest] = content.split("\n");
-  const header = first.startsWith("<") ? "context" : first;
-  const body = rest.length ? rest.join(" ") : content;
-  return goldCard(DOT, header, wrapPlain(body, CARD_MAX), null, accent);
-}
-
 /** Model-visible plain text (what lands in the transcript strip/exports). */
 export function formatSuggestionPlain(c: SuggestionCard): string {
   return stripAnsi(formatSuggestionCard(c));
+}
+
+// ── Operator card on the event grid (CORE-2546) ─────────────────────────────
+// The card draws through shared/event.ts as a `suggestion` event: marker in
+// columns 0-1, text from column 2, theme tokens throughout. The CORE-2348
+// accents survive on the marker only.
+
+/** Marker tint keys carried in a card's details. */
+export type SuggestionTint = "substrate" | "skill";
+
+/** Display fields a suggester stores in message details; the renderer reads only these. */
+export interface SuggestionCardFields {
+  identity: string;
+  summary?: string;
+  reason?: string;
+  body?: string[];
+  facts?: string;
+  tint?: SuggestionTint;
+  severityHigh?: boolean;
+}
+
+const TINTS: Record<SuggestionTint, CardAccent> = { substrate: SUBSTRATE_ACCENT, skill: SKILL_ACCENT };
+
+/** Nearest xterm-256 colour cube index for one accent. */
+function cube256(rgb: CardAccent): number {
+  const step = (v: number) => (v < 48 ? 0 : v < 115 ? 1 : Math.min(5, Math.floor((v - 35) / 40)));
+  return 16 + 36 * step(rgb[0]) + 6 * step(rgb[1]) + step(rgb[2]);
+}
+
+/**
+ * The accent on the marker, at the terminal's colour level: 24-bit when pi
+ * runs truecolor, the nearest 256-colour cube entry otherwise, and the
+ * theme's own accent token when the theme says neither.
+ */
+export function tintSuggestionGlyph(
+  glyph: string,
+  tint: string | undefined,
+  theme: { fg(token: string, text: string): string; getColorMode?(): string },
+): string {
+  const rgb = tint && tint in TINTS ? TINTS[tint as SuggestionTint] : undefined;
+  if (!rgb) return theme.fg("dim", glyph);
+  const mode = typeof theme.getColorMode === "function" ? theme.getColorMode() : undefined;
+  if (mode === "truecolor") return `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[2]}m${glyph}\x1b[39m`;
+  if (mode === "256color") return `\x1b[38;5;${cube256(rgb)}m${glyph}\x1b[39m`;
+  return theme.fg("accent", glyph);
+}
+
+/** Facts trailer in tool-row words: `jev 0.39 · rev 3`. */
+export function suggestionFacts(confidence?: number | null, revision?: number | null): string | undefined {
+  const parts = [
+    confidence != null ? `jev ${confidence.toFixed(2)}` : null,
+    revision != null ? `rev ${revision}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+/** Card fields for a verb suggestion: the action folds to one row, the instruction opens below it. */
+export function suggestionCardFields(c: SuggestionCard, tint: SuggestionTint = "substrate"): SuggestionCardFields {
+  const identity = c.ref && c.ref !== "—" ? `${c.verb.action} · ${c.ref}` : c.verb.action;
+  const instruction = c.compact ? "" : stripEndPeriod(c.verb.instruction(c.ref));
+  const facts = suggestionFacts(c.confidence, c.revision);
+  return {
+    identity,
+    summary: lowerFirst(stripEndPeriod(c.verb.oneLine || "")),
+    ...(instruction ? { body: [instruction] } : {}),
+    ...(facts ? { facts } : {}),
+    tint,
+    ...(c.verb.severity === "high" ? { severityHigh: true } : {}),
+  };
+}
+
+function lowerFirst(text: string): string {
+  return /^[A-Z][a-z]/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+}
+
+function toEventDetails(card: SuggestionCardFields): import("./event.ts").EventDetails {
+  return {
+    kind: "suggestion",
+    automatic: true,
+    identity: card.identity,
+    preview: card.body ?? [],
+    ...(card.summary ? { summary: card.summary } : {}),
+    ...(card.reason ? { reason: card.reason } : {}),
+    ...(card.facts ? { facts: card.facts } : {}),
+    ...(card.tint ? { tint: card.tint } : {}),
+    ...(card.severityHigh ? { severityHigh: true } : {}),
+  };
+}
+
+/**
+ * Event details for one suggestion message. Messages stored since CORE-2546
+ * carry `details.card`; older sessions only have the content (an ANSI card or
+ * raw evidence), which reads as a header line plus body lines.
+ */
+export function resolveSuggestionMessage(message: unknown, fallbackTint: SuggestionTint = "substrate"): import("./event.ts").EventDetails | null {
+  const m = message as { content?: unknown; details?: { card?: SuggestionCardFields; verb?: unknown } } | null | undefined;
+  if (!m) return null;
+  const card = m.details?.card;
+  if (card && typeof card.identity === "string") return toEventDetails(card);
+  const text = typeof m.content === "string" ? stripAnsi(m.content) : "";
+  const lines = text.split("\n").map((l) => l.replace(/\s+$/, "")).filter((l) => l.trim());
+  if (lines.length === 0) return null;
+  // An old card opens with its own `● header`; raw evidence (the provenance
+  // steer) does not, so the stored verb names it.
+  const carded = /^[●!]\s+/.test(lines[0]!);
+  const verb = typeof m.details?.verb === "string" ? m.details.verb.replace(/_/g, " ") : "suggestion";
+  const head = carded ? lines[0]!.replace(/^[●!]\s+/, "").trim() : verb;
+  const body = (carded ? lines.slice(1) : lines).map((l) => l.trim());
+  return toEventDetails({ identity: head, body, tint: fallbackTint });
 }
