@@ -193,6 +193,19 @@ describe("CORE-2551: injected text never reaches the input classifier", () => {
   });
 });
 
+describe("CORE-2532: a session's first prompt is judged while the index still builds", () => {
+  it("waits for the index off the handler path instead of skipping as index_warming", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const { handlers } = await boot();
+    (await import("../../extensions/skill-suggest/index.ts")).resetIndex(); // as at session_start: no index yet
+    const before = await readLogSize();
+    await handlers["input"]!({ text: "follow the demo procedure for this deploy", source: "interactive" }, { modelRegistry: counting });
+    expect(asked).toBe(1);
+    expect((await readLogSince(before)).some((r) => r["reason"] === "index_warming")).toBe(false);
+  });
+});
+
 describe("CORE-2367: the header carries no dangling placeholder", () => {
   it("omits the separator when there is no real ref", async () => {
     const { formatSuggestionCard } = await import("../../extensions/substrate-suggest/catalog.ts");

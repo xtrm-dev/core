@@ -72,6 +72,18 @@ export function rebuildIndex(cwd: string): Promise<void> {
   return indexBuild;
 }
 
+/**
+ * The index for `cwd`, waiting for an in-flight or first build. Only detached
+ * classification calls this (CORE-2549): a session's first prompt must not be
+ * dropped because the build started at session_start has not finished.
+ */
+export async function readyIndex(cwd: string): Promise<RetrievalIndex<RosterEntry> | null> {
+  const now = currentIndex(cwd);
+  if (now) return now;
+  await rebuildIndex(cwd);
+  return indexState && indexState.cwd === cwd ? indexState.index : null;
+}
+
 export function resetIndex(): void {
   indexState = null;
   indexBuild = null;
@@ -553,14 +565,19 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
     if (!registry && !readApiKey()) return logSkip("input", "no_key"), { action: "continue" } as const;
 
-    const index = currentIndex(process.cwd());
-    if (!index) return logSkip("input", "index_warming"), { action: "continue" } as const;
+    const cwd = process.cwd();
     const context = recentContext(prompt);
-    const sl = shortlist(index, { text: `${prompt}\n${context}`, files: sessionFiles });
-    const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
-    if (sl.candidates.length === 0) return logSkip("input", "no_candidates", shortlistFacts), { action: "continue" } as const;
+    const files = [...sessionFiles];
 
     try {
+      // CORE-2549: pi never waits for the index or Jev. Retrieval and the
+      // answer run detached; the answer is arbitrated whenever it lands.
+      detach(async () => {
+      const index = await readyIndex(cwd);
+      if (!index) return logSkip("input", "index_unavailable");
+      const sl = shortlist(index, { text: `${prompt}\n${context}`, files });
+      const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
+      if (sl.candidates.length === 0) return logSkip("input", "no_candidates", shortlistFacts);
       const questions: Record<string, Question> = {
         skill: {
           type: "choice",
@@ -584,11 +601,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const state = {
         request: prompt.slice(0, 2000),
         recent_conversation: context,
-        cwd: process.cwd(),
+        cwd,
       };
-      // CORE-2549: pi never waits for Jev. The answer is arbitrated and
-      // delivered whenever it lands; the handler returns now.
-      detach(async () => {
       const outcome = await classify(registry, state, questions, { timeoutMs: INJECT_TIMEOUT_MS });
       const jevFacts = { jev_ms: outcome.ms, jev_path: outcome.path, prompt_chars: prompt.length, ...shortlistFacts };
       const result = outcome.result;
@@ -696,8 +710,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!lastAssistant || !wasActive) return logSkip("agent_end", "inactive_turn");
       const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
       if (!registry && !readApiKey()) return logSkip("agent_end", "no_key");
-      const index = currentIndex(process.cwd());
-      if (!index) return logSkip("agent_end", "index_warming");
+      const index = await readyIndex(process.cwd());
+      if (!index) return logSkip("agent_end", "index_unavailable");
       const sl = shortlist(index, {
         text: `${lastAssistant}\n${turn.excerpt}`,
         files: [...sessionFiles, ...turn.editedFiles],
