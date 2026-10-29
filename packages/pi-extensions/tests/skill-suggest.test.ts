@@ -18,9 +18,9 @@ describe("roster parsing", () => {
     expect(description).toContain("Use for bugs, regressions");
   });
 
-  it("discovers the curated pack two-tier from the repo worktree", () => {
+  it("discovers the curated pack two-tier from the repo worktree", async () => {
     resetRosterCache();
-    const roster = discoverRoster(process.cwd());
+    const roster = await discoverRoster(process.cwd());
     expect(roster.length).toBeGreaterThan(20);
     const skills = roster.filter((r) => r.level === "skill");
     const refs = roster.filter((r) => r.level === "reference");

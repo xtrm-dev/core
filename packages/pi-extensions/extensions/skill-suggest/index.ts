@@ -31,13 +31,56 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { buildRetrievalIndex, loadServices, shortlist, type RetrievalIndex } from "../../shared/shortlist.ts";
 import { contextBlock, parseContextBlock, resolveSuggestionMessage, stripEndPeriod, suggestionFacts, tintSuggestionGlyph } from "../../shared/suggest.ts";
 import { registerEventRenderer } from "../../shared/event.ts";
 import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
-import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
+import { discoverRoster, headingsOf, repoRootOf, resetRosterCache, type RosterEntry } from "./roster.ts";
+
+/**
+ * The retrieval index, built off the hot path (CORE-2533): a handler reads the
+ * current index or none and never waits for a build. A stale index keeps
+ * serving while its replacement builds in the background.
+ */
+const INDEX_TTL_MS = 5 * 60_000;
+let indexState: { cwd: string; at: number; index: RetrievalIndex<RosterEntry> } | null = null;
+let indexBuild: Promise<void> | null = null;
+
+export function currentIndex(cwd: string, now = Date.now()): RetrievalIndex<RosterEntry> | null {
+  const fresh = indexState && indexState.cwd === cwd && now - indexState.at < INDEX_TTL_MS;
+  if (!fresh && !indexBuild) void rebuildIndex(cwd);
+  return indexState && indexState.cwd === cwd ? indexState.index : null;
+}
+
+export function rebuildIndex(cwd: string): Promise<void> {
+  if (indexBuild) return indexBuild;
+  indexBuild = (async () => {
+    try {
+      const repoRoot = repoRootOf(cwd);
+      const [entries, services] = await Promise.all([discoverRoster(cwd), loadServices(repoRoot)]);
+      indexState = { cwd, at: Date.now(), index: buildRetrievalIndex(entries, services, repoRoot, cwd) };
+    } catch {
+      /* fail-open: the seams skip while no index exists */
+    } finally {
+      indexBuild = null;
+    }
+  })();
+  return indexBuild;
+}
+
+export function resetIndex(): void {
+  indexState = null;
+  indexBuild = null;
+  resetRosterCache();
+}
+
+/** The classifier's choice criteria: the shortlist plus an explicit `none`. */
+function criteriaOf(candidates: RosterEntry[], none: string): Record<string, string> {
+  return Object.fromEntries([...candidates.map((r) => [r.id, r.description]), ["none", none]]);
+}
 
 /**
  * Which seam delivers a decision, for every situation a session can be in.
@@ -371,23 +414,7 @@ export function isServiceEntry(entry: { id: string; skill: string }): boolean {
  * and it cannot go stale in the way quoted paragraphs do.
  */
 export function routerSections(md: string, max = 12): string[] {
-  const out: string[] = [];
-  for (const line of md.split("\n")) {
-    // H2/H3 only: the H1 is the document title, not a place to look.
-    const m = /^#{2,3}\s+(.{1,80}?)\s*$/.exec(line);
-    if (m && !out.includes(m[1])) out.push(m[1]);
-    if (out.length >= max) break;
-  }
-  return out;
-}
-
-/** Sections for the entry's own file, or [] when it cannot be read. */
-function sectionsFor(entry: RosterEntry): string[] {
-  try {
-    return routerSections(readFileSync(entry.path, "utf-8"));
-  } catch {
-    return [];
-  }
+  return headingsOf(md, max);
 }
 
 export function doctrineBlock(
@@ -403,7 +430,8 @@ export function doctrineBlock(
   // The router: where to look, not what it says. A service-backed entry also
   // names the CLI, because the registry is queryable and a file read is only
   // one of the two routes to the evidence.
-  const sections = sectionsFor(entry);
+  // Headings were read once, when the index was built: no file IO at delivery.
+  const sections = entry.headings ?? [];
   const router = [
     sections.length ? `Sections: ${sections.join(" \u00b7 ")}` : null,
     isServiceEntry(entry)
@@ -441,6 +469,14 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   let pending: PendingDoctrine | null = null;
   /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
   let readWatch: ReadWatch | null = null;
+  /** Files read or edited this session, newest last, bounded: territory evidence for the shortlist. */
+  const sessionFiles: string[] = [];
+  const noteFile = (path: string) => {
+    const i = sessionFiles.indexOf(path);
+    if (i >= 0) sessionFiles.splice(i, 1);
+    sessionFiles.push(path);
+    if (sessionFiles.length > 20) sessionFiles.shift();
+  };
   /** Turns AFTER the arming turn in which a read still counts. */
   const READ_WINDOW_TURNS = 2;
   // The input seam arms mid-turn, and that same turn's agent_end ages the watch once,
@@ -490,8 +526,18 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
     if (!registry && !readApiKey()) return { action: "continue" } as const;
 
-    const roster = discoverRoster(process.cwd());
-    if (roster.length === 0) return { action: "continue" } as const;
+    const index = currentIndex(process.cwd());
+    if (!index) {
+      logDecision({ ts: new Date().toISOString(), seam: "input", outcome: "skip", reason: "index_warming" });
+      return { action: "continue" } as const;
+    }
+    const context = recentContext(prompt);
+    const sl = shortlist(index, { text: `${prompt}\n${context}`, files: sessionFiles });
+    const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
+    if (sl.candidates.length === 0) {
+      logDecision({ ts: new Date().toISOString(), seam: "input", outcome: "skip", reason: "no_candidates", ...shortlistFacts });
+      return { action: "continue" } as const;
+    }
 
     try {
       const questions: Record<string, Question> = {
@@ -499,10 +545,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           type: "choice",
           instructions:
             "Pick the single skill or reference document a careful expert would follow for this request, or none. Base it only on the request and the provided descriptions.",
-          criteria: Object.fromEntries([
-            ...roster.map((r) => [r.id, r.description]),
-            ["none", "No documented procedure adds value; general expertise suffices."],
-          ]),
+          criteria: criteriaOf(sl.candidates, "No documented procedure adds value; general expertise suffices."),
         },
         would_follow_documented_procedure: {
           type: "noul",
@@ -519,7 +562,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       };
       const state = {
         request: prompt.slice(0, 2000),
-        recent_conversation: recentContext(prompt),
+        recent_conversation: context,
         cwd: process.cwd(),
       };
       const controller = new AbortController();
@@ -547,7 +590,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!result) return { action: "continue" } as const;
 
       const pick = result.choice.choice;
-      const entry = roster.find((r) => r.id === pick);
+      const entry = sl.candidates.find((r) => r.id === pick);
       const verdict = evaluateGate({
         nouls: result.nouls,
         confidence: result.choice.confidence,
@@ -573,6 +616,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         prompt_chars: prompt.length,
         jev_ms: jevMs,
         jev_path: jevPath,
+        ...shortlistFacts,
       });
       if (!verdict.fire || !entry) return { action: "continue" } as const;
 
@@ -605,7 +649,14 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   pi.on("tool_call", (event) => {
     // Pi's ToolCallEvent carries `input`; `args` is the legacy shape.
     const e = event as { toolName?: string; input?: unknown; args?: unknown };
-    const path = readPathOf(String(e.toolName ?? ""), e.input ?? e.args);
+    const tool = String(e.toolName ?? "");
+    const input = (e.input ?? e.args ?? {}) as Record<string, unknown>;
+    const touched = /^(edit|write|apply_patch|multi_edit)$/.test(tool)
+      ? ["path", "file_path", "filePath", "file"].map((k) => input[k]).find((v) => typeof v === "string")
+      : null;
+    if (typeof touched === "string") noteFile(touched);
+    const path = readPathOf(tool, input);
+    if (path) noteFile(path);
     if (!path || !readWatch) return;
     const id = readWatch.id;
     const next = watchRead(readWatch, path, false);
@@ -675,8 +726,20 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!lastAssistant || !wasActive) return;
       const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
       if (!registry && !readApiKey()) return;
-      const roster = discoverRoster(process.cwd());
-      if (roster.length === 0) return;
+      const index = currentIndex(process.cwd());
+      if (!index) {
+        logDecision({ ts: new Date().toISOString(), seam: "agent_end", outcome: "skip", reason: "index_warming" });
+        return;
+      }
+      const sl = shortlist(index, {
+        text: `${lastAssistant}\n${turn.excerpt}`,
+        files: [...sessionFiles, ...turn.editedFiles],
+      });
+      const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
+      if (sl.candidates.length === 0) {
+        logDecision({ ts: new Date().toISOString(), seam: "agent_end", outcome: "skip", reason: "no_candidates", ...shortlistFacts });
+        return;
+      }
 
       const { result, jevMs, jevPath } = await askJev(registry, {
         agent_final_message: lastAssistant.slice(0, 1500),
@@ -687,17 +750,14 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         skill: {
           type: "choice",
           instructions: "The agent just ended a working turn stating its intention. Pick the single skill or reference document its stated next step most needs, or none.",
-          criteria: Object.fromEntries([
-            ...roster.map((r) => [r.id, r.description]),
-            ["none", "No documented procedure adds value to the stated next step."],
-          ]),
+          criteria: criteriaOf(sl.candidates, "No documented procedure adds value to the stated next step."),
         },
         would_follow_documented_procedure: { type: "noul", instructions: "For the stated next step, would a careful expert follow a specific documented procedure rather than improvise?" },
         prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
       } as Record<string, Question>);
       if (!result) return;
       const pick = result.choice.choice;
-      const entry = roster.find((r) => r.id === pick);
+      const entry = sl.candidates.find((r) => r.id === pick);
       const verdict = evaluateGate({
         nouls: result.nouls,
         confidence: result.choice.confidence,
@@ -714,6 +774,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           gate: Number(verdict.gateMean.toFixed(3)),
           confidence: result.choice.confidence,
           noneConfidence: result.choice.probabilities?.["none"] ?? null,
+          ...shortlistFacts,
         });
         return;
       }
@@ -772,6 +833,10 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
 
   // Reload the roster when packs change on disk (cheap: cache TTL governs).
   if (typeof pi.on === "function") {
-    pi.on("session_start", () => resetRosterCache());
+    // Build the index as the session starts, off any handler's critical path.
+    pi.on("session_start", () => {
+      resetIndex();
+      void rebuildIndex(process.cwd());
+    });
   }
 }

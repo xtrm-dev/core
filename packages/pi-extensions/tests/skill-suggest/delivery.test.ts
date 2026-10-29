@@ -87,8 +87,12 @@ async function boot() {
     sendMessage: (m: Sent) => { sent.push(m); },
     registerMessageRenderer: (_t: string, fn: typeof renderer) => { renderer = fn; },
   };
-  const { default: ext } = await import("../../extensions/skill-suggest/index.ts");
-  ext(pi as never);
+  const mod = await import("../../extensions/skill-suggest/index.ts");
+  mod.default(pi as never);
+  // The index builds off the hot path; a test waits for it the way a session
+  // gets it at session_start (CORE-2533).
+  mod.resetIndex();
+  await mod.rebuildIndex(process.cwd());
   const ctx = { modelRegistry: stubRegistry };
   return { handlers, sent, ctx, render: (m: Sent) => (renderer ? renderer(m).render().join("\n") : "") };
 }
@@ -150,6 +154,31 @@ describe("CORE-2367: read-after-suggest accounting", () => {
     await handlers["agent_end"]!({ messages: [] }, ctx);
     await handlers["agent_end"]!({ messages: [] }, ctx);
     expect(readLogSince(before).filter((r) => r["outcome"] === "expired")).toHaveLength(0);
+  });
+});
+
+describe("CORE-2533: the classifier never sees more than the shortlist", () => {
+  it("a 300-skill roster sends at most 24 criteria plus none, on both seams", async () => {
+    for (let i = 0; i < 300; i++) {
+      mkdirSync(join(repo, ".xtrm", "skills", `bulk-${i}`), { recursive: true });
+      writeFileSync(join(repo, ".xtrm", "skills", `bulk-${i}`, "SKILL.md"), `---\nname: bulk-${i}\ndescription: Demo procedure variant ${i} for deploy work.\n---\n`);
+    }
+    const sizes: number[] = [];
+    const capturing = {
+      getAvailableOfType: async () => [{ id: "jev-test", provider: "typesafe" }],
+      classify: async (_m: unknown, req: { questions: Record<string, { criteria?: Record<string, string> }> }) => {
+        sizes.push(Object.keys(req.questions["skill"]?.criteria ?? {}).length);
+        return { stopReason: "stop", answers: CLASSIFIER_ANSWERS, model: "typesafe/jev-test" };
+      },
+    };
+    const { handlers } = await boot();
+    await handlers["input"]!({ text: "follow the demo procedure for this deploy" }, { modelRegistry: capturing });
+    await handlers["agent_end"]!(WORKING_TURN, { modelRegistry: capturing });
+    expect(sizes.length).toBe(2);
+    for (const n of sizes) {
+      expect(n).toBeGreaterThan(1);
+      expect(n).toBeLessThanOrEqual(25);
+    }
   });
 });
 

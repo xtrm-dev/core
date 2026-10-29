@@ -25,7 +25,7 @@ beforeEach(() => resetRosterCache());
 afterEach(() => resetRosterCache());
 
 describe("roster coverage (CORE-2361)", () => {
-  test("pack-less roots: a top-level SKILL.md is discovered as a skill", () => {
+  test("pack-less roots: a top-level SKILL.md is discovered as a skill", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "roster-home-"));
     try {
       // ~/.agents-style layout: skill directly under the root.
@@ -38,7 +38,7 @@ describe("roster coverage (CORE-2361)", () => {
         join(tmp, ".agents", "skills", "one-skill", "references", "deep.md"),
         "# Deep Reference\n\nA reference with a real paragraph of sufficient length to extract cleanly here.\n",
       );
-      const found = discoverRoster(tmp);
+      const found = await discoverRoster(tmp);
       const skill = found.find((e) => e.id === "one-skill");
       expect(skill?.level).toBe("skill");
       expect(skill?.name).toBe("One Skill");
@@ -49,7 +49,7 @@ describe("roster coverage (CORE-2361)", () => {
     }
   });
 
-  test("non-reference docs under a skill dir join the roster with path ids", () => {
+  test("non-reference docs under a skill dir join the roster with path ids", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "roster-agents-"));
     try {
       mkdirSync(join(tmp, ".agents", "skills", "some-skill", "agents"), { recursive: true });
@@ -61,14 +61,14 @@ describe("roster coverage (CORE-2361)", () => {
         join(tmp, ".agents", "skills", "some-skill", "agents", "analyzer.md"),
         "# Analyzer\n\nThe analyzer role prompt with a description long enough to be extracted as intended.\n",
       );
-      const found = discoverRoster(tmp);
+      const found = await discoverRoster(tmp);
       expect(found.find((e) => e.id === "some-skill/agents/analyzer")?.level).toBe("reference");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  test("the same skill in two roots is deduped, repo-first", () => {
+  test("the same skill in two roots is deduped, repo-first", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "roster-dedupe-"));
     try {
       for (const root of ["repo/.agents/skills/dup-skill", "home/.agents/skills/dup-skill"]) {
@@ -79,15 +79,15 @@ describe("roster coverage (CORE-2361)", () => {
       // a repo-shaped tmp with .git, and rely on ordering: whatever order the
       // roots are scanned in, the id may appear once only.
       mkdirSync(join(tmp, "repo", ".git"), { recursive: true });
-      const found = discoverRoster(join(tmp, "repo"));
+      const found = await discoverRoster(join(tmp, "repo"));
       expect(found.filter((e) => e.id === "dup-skill").length).toBe(1);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  test("the real worktree roster exceeds the old bound of 60 — no truncation", () => {
-    const found = discoverRoster(join(import.meta.dir, "../../.."));
+  test("the real worktree roster exceeds the old bound of 60 — no truncation", async () => {
+    const found = await discoverRoster(join(import.meta.dir, "../../.."));
     expect(found.length).toBeGreaterThan(60);
     const ids = new Set(found.map((e) => e.id));
     expect(found.length).toBe(ids.size); // bounded list is also unique
@@ -228,7 +228,7 @@ describe("home roots (global packs + personal pi skills)", () => {
       // os.homedir() binds at process start: the fake HOME must be set for
       // a child process, not assigned mid-test.
       const rosterModule = join(import.meta.dir, "..", "extensions", "skill-suggest", "roster.ts");
-      const probe = `import { discoverRoster, resetRosterCache } from ${JSON.stringify(rosterModule)}; resetRosterCache(); const f = discoverRoster(${JSON.stringify(join(tmp, "repo"))}); console.log(JSON.stringify(f.map((e) => e.id)));`;
+      const probe = `import { discoverRoster, resetRosterCache } from ${JSON.stringify(rosterModule)}; resetRosterCache(); const f = await discoverRoster(${JSON.stringify(join(tmp, "repo"))}); console.log(JSON.stringify(f.map((e) => e.id)));`;
       const out = Bun.spawnSync(["bun", "-e", probe], {
         env: { ...process.env, HOME: tmp },
         stdout: "pipe",
