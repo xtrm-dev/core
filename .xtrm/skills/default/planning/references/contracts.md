@@ -21,7 +21,10 @@ CONSTRAINTS
 Compatibility, safety, ownership, architecture, rollout, or implementation invariants.
 
 VALIDATION
-Exact checks/evidence expected. Include integrated behavior where it matters.
+Exact checks/evidence expected. Include integrated behavior where it matters. Per check:
+the command or observable artifact, expected result, safe setup/cleanup, and what a failure
+would mean (rules: `/engineering-quality` → `references/testing.md`; procedure:
+`references/planning-tests.md`).
 
 OUTPUT
 Durable result the worker must leave: code/commit, report, Journal result, artifact, etc.

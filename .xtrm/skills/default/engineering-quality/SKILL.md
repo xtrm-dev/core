@@ -24,7 +24,7 @@ not only in a dedicated audit.
 |---|---|
 | Bug, regression, crash, wrong output, performance problem | `references/causal-debugging.md` |
 | Review a diff/PR or independent worker result | `references/review.md` |
-| Decide what/how to test, including TDD | `references/testing.md` |
+| Plan tests for a change, decide what/how to test, keep/fix/delete a test, including TDD — read both files before writing or judging a test | `references/testing.md` (rules) and `references/planning-tests.md` (procedure) |
 | About to claim success | `references/verification.md` |
 | Reduce complexity/performance waste | `references/reduction.md` |
 | Set up or audit a repo's lint/typecheck/test floor | `references/quality-baseline.md` |

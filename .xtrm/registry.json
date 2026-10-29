@@ -114,7 +114,7 @@
           "version": "0.15.3"
         },
         "engineering-quality/references/testing.md": {
-          "hash": "89422877ce30a2145625035222f2eeb258e1f2dd38739d2b5bd838f86cae4cb7",
+          "hash": "73ada3642e6da0068aa11c15b6560f059f6fbd1be947d4f2f41265494d84da4d",
           "version": "0.15.3"
         },
         "engineering-quality/references/verification.md": {
@@ -130,7 +130,7 @@
           "version": "0.15.3"
         },
         "engineering-quality/SKILL.md": {
-          "hash": "599f8b2fd089facb7f5513a522beb97a5e3ca2ad1d80488cf90d1a71f11fac04",
+          "hash": "fab6ff89903a94e2c7afbd47fd2600fab38c48a0c0c4793b1c792cbac9c35ce4",
           "version": "0.15.3"
         },
         "find-skills/SKILL.md": {
@@ -274,7 +274,7 @@
           "version": "0.15.3"
         },
         "planning/references/contracts.md": {
-          "hash": "e7f895a24786dc14b1853400533714264fd0e3118095a03e2da87742240cf4d2",
+          "hash": "a2e06b10fd9e5effd4721691eb666f19c6fdba3716e82072c0a337aa1e04b727",
           "version": "0.15.3"
         },
         "planning/references/premortem.md": {
@@ -286,7 +286,7 @@
           "version": "0.15.3"
         },
         "planning/references/test-strategy.md": {
-          "hash": "a492e407a6629f67e9d3eb55a09d25f5f9a225bcd605cc6236d26ec72fec9c58",
+          "hash": "1e59127ceb832e35b3a68122f701b022376b1238c9b3d982c09464cb34faa6f7",
           "version": "0.15.3"
         },
         "planning/SKILL.md": {
@@ -443,6 +443,10 @@
         },
         "using-xtrm/SKILL.md": {
           "hash": "1624c9231c444c12d74f9c51a1661c035cfa2b05bd435e868fc4016592330cd1",
+          "version": "0.15.3"
+        },
+        "engineering-quality/references/planning-tests.md": {
+          "hash": "413c7d9aebdf3af3bfa59570a2f606b9e9a81b062ef05d13b4640db00881ce08",
           "version": "0.15.3"
         }
       }
