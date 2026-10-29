@@ -2,6 +2,7 @@
  * CORE-2534: every classifier failure names its reason; repeated failures warn
  * once. The 2026-10-21 outage was an HTTP 422 returned as a bare null.
  */
+import "../isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { afterEach, describe, expect, it } from "bun:test";
 import { classify, systemOne, type ClassifierFailure, type Question } from "../../shared/suggest.ts";
 import { createFailureWatch } from "../../extensions/skill-suggest/index.ts";

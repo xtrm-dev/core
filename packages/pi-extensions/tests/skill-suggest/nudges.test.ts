@@ -1,3 +1,4 @@
+import "../isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { describe, expect, it } from "bun:test";
 import { isControlNudge } from "../../extensions/skill-suggest/index.ts";
 

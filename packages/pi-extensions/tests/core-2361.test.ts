@@ -1,3 +1,4 @@
+import "./isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

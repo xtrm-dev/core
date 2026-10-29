@@ -1,3 +1,4 @@
+import "./isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
 import { conversationContext, isControlNudge, turnEvidence } from "../extensions/skill-suggest/index.ts";
