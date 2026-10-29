@@ -9,7 +9,7 @@
  * Extracted from substrate-suggest as part of CORE-2345.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -39,17 +39,55 @@ export interface JevResult {
   latencyMs: number;
 }
 
+/**
+ * Why a classification produced no answer (CORE-2534). Every path that used to
+ * return a bare null now names its reason, so an outage is a log row, not
+ * silence.
+ */
+export type ClassifierFailure =
+  | "no_key"
+  | "no_classifier"
+  | "timeout"
+  | "transport"
+  | `http_${number}`
+  | "provider_error"
+  | "bad_answer";
+
+/** The key file, read once with async IO; `undefined` until primed. */
+let fileKey: string | null | undefined;
+let fileKeyLoad: Promise<void> | null = null;
+
+/** Read ~/.secrets/typesafe_api_key.txt off the hot path. Idempotent. */
+export function primeApiKey(): Promise<void> {
+  fileKeyLoad ??= (async () => {
+    try {
+      const raw = (await readFile(join(homedir(), ".secrets", "typesafe_api_key.txt"), "utf8")).trim();
+      // File holds TYPESAFE_API_KEY=<key> or a bare key.
+      const value = raw.includes("=") ? raw.slice(raw.indexOf("=") + 1) : raw;
+      fileKey = value.trim() || null;
+    } catch {
+      fileKey = null;
+    }
+  })();
+  return fileKeyLoad;
+}
+
+/** Test hook: forget the primed key file. */
+export function resetApiKeyCache(): void {
+  fileKey = undefined;
+  fileKeyLoad = null;
+}
+
+/**
+ * The REST key: the environment first, then the primed key file. Never reads
+ * the filesystem itself; before priming completes it starts the read and
+ * answers from the environment alone.
+ */
 export function readApiKey(): string | null {
   const env = process.env["TYPESAFE_API_KEY"];
   if (env && env.trim()) return env.trim();
-  try {
-    const raw = readFileSync(join(homedir(), ".secrets", "typesafe_api_key.txt"), "utf8").trim();
-    // File holds TYPESAFE_API_KEY=<key> or a bare key.
-    const value = raw.includes("=") ? raw.slice(raw.indexOf("=") + 1) : raw;
-    return value.trim() || null;
-  } catch {
-    return null;
-  }
+  if (fileKey === undefined) void primeApiKey();
+  return fileKey ?? null;
 }
 
 export interface ClassifierModelLike {
@@ -94,11 +132,16 @@ export async function classifyViaRegistry(
   registry: RegistryLike,
   state: Record<string, unknown>,
   questions: Record<string, Question>,
+  opts: { onFailure?: (reason: ClassifierFailure) => void } = {},
 ): Promise<JevResult | null> {
+  const fail = (reason: ClassifierFailure) => {
+    opts.onFailure?.(reason);
+    return null;
+  };
   try {
     const models = await registry.getAvailableOfType("classifier");
     const candidates = pickClassifiers(models);
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) return fail("no_classifier");
     const mapped: Record<string, unknown> = {};
     for (const [id, q] of Object.entries(questions)) {
       if (q.type === "choice") mapped[id] = { type: "choice", instructions: q.instructions, criteria: q.criteria };
@@ -121,11 +164,11 @@ export async function classifyViaRegistry(
         break;
       }
     }
-    if (!res || !used) return null;
+    if (!res || !used) return fail("provider_error");
     const answers = res.answers;
-    if (!answers) return null;
+    if (!answers) return fail("bad_answer");
     const choiceRaw = Object.values(answers).find((a) => a?.["type"] === "choice");
-    if (!choiceRaw) return null;
+    if (!choiceRaw) return fail("bad_answer");
     const choice: JevChoiceAnswer = {
       choice: String(choiceRaw["choice"] ?? ""),
       probabilities: Object.fromEntries(
@@ -133,7 +176,7 @@ export async function classifyViaRegistry(
       ),
       confidence: typeof choiceRaw["confidence"] === "number" ? choiceRaw["confidence"] : null,
     };
-    if (!choice.choice) return null;
+    if (!choice.choice) return fail("bad_answer");
     const nouls: Record<string, number> = {};
     for (const [id, a] of Object.entries(answers)) {
       if (a?.["type"] === "bool") nouls[id] = toNumber(a["probability"]);
@@ -146,7 +189,7 @@ export async function classifyViaRegistry(
       latencyMs: 0,
     };
   } catch {
-    return null;
+    return fail("transport");
   }
 }
 
@@ -188,10 +231,14 @@ export function parseAnswerPayload(raw: unknown): { choice?: JevChoiceAnswer; no
 export async function systemOne(
   state: Record<string, unknown>,
   questions: Record<string, Question>,
-  opts: { apiKey?: string | null; model?: string; timeoutMs?: number } = {},
+  opts: { apiKey?: string | null; model?: string; timeoutMs?: number; onFailure?: (reason: ClassifierFailure) => void } = {},
 ): Promise<JevResult | null> {
+  const fail = (reason: ClassifierFailure) => {
+    opts.onFailure?.(reason);
+    return null;
+  };
   const key = opts.apiKey !== undefined ? opts.apiKey : readApiKey();
-  if (!key) return null;
+  if (!key) return fail("no_key");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const started = Date.now();
@@ -202,13 +249,14 @@ export async function systemOne(
       body: JSON.stringify({ model: opts.model ?? DEFAULT_MODEL, state, questions }),
       signal: controller.signal,
     });
-    if (!res.ok) return null;
+    // The 2026-10-21 outage was an HTTP 422 swallowed right here.
+    if (!res.ok) return fail(`http_${res.status}`);
     const body = (await res.json()) as Record<string, unknown>;
     const answers = body["answers"];
-    if (answers === null || typeof answers !== "object") return null;
+    if (answers === null || typeof answers !== "object") return fail("bad_answer");
     const parsed = Object.values(answers as Record<string, unknown>).map(parseAnswer);
     const choice = parsed.find((p) => p.choice)?.choice;
-    if (!choice || !choice.choice) return null;
+    if (!choice || !choice.choice) return fail("bad_answer");
     const nouls: Record<string, number> = {};
     for (const [id, raw] of Object.entries(answers as Record<string, unknown>)) {
       const p = parseAnswer(raw);
@@ -223,20 +271,57 @@ export async function systemOne(
       latencyMs: Date.now() - started,
     };
   } catch {
-    return null; // network, timeout, bad JSON — fail open
+    // network, timeout, bad JSON — fail open, but say which
+    return fail(controller.signal.aborted ? "timeout" : "transport");
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** Bounded dir read so a missing/odd secrets dir never throws at import time. */
-export function secretsDirOk(): boolean {
-  try {
-    readdirSync(join(homedir(), ".secrets"));
-    return true;
-  } catch {
-    return false;
-  }
+export interface ClassifyOutcome {
+  result: JevResult | null;
+  /** Which client answered: the Pi-native registry or the REST fallback. */
+  path: "registry" | "fallback" | null;
+  /** Wall time from request start to answer or failure. */
+  ms: number;
+  /** Set exactly when result is null. */
+  failure: ClassifierFailure | null;
+}
+
+/**
+ * The one Jev entry point for both extensions: Pi-native classifier first,
+ * REST second, with the failure reason and measured wall time. Never rejects.
+ * A `timeoutMs` bound applies to the whole attempt and is reported as timeout.
+ */
+export async function classify(
+  registry: RegistryLike | null,
+  state: Record<string, unknown>,
+  questions: Record<string, Question>,
+  opts: { timeoutMs?: number } = {},
+): Promise<ClassifyOutcome> {
+  const started = Date.now();
+  let registryFailure: ClassifierFailure | null = null;
+  let fallbackFailure: ClassifierFailure | null = null;
+  const attempt = (async (): Promise<Pick<ClassifyOutcome, "result" | "path">> => {
+    if (registry) {
+      const r = await classifyViaRegistry(registry, state, questions, { onFailure: (f) => { registryFailure = f; } });
+      if (r) return { result: r, path: "registry" };
+    }
+    const r = await systemOne(state, questions, { onFailure: (f) => { fallbackFailure = f; } });
+    return { result: r, path: r ? "fallback" : null };
+  })();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const bounded = opts.timeoutMs === undefined
+    ? await attempt
+    : await Promise.race([attempt, new Promise<null>((done) => { timer = setTimeout(() => done(null), opts.timeoutMs); })]);
+  if (timer) clearTimeout(timer);
+  const ms = Date.now() - started;
+  if (bounded === null) return { result: null, path: null, ms, failure: "timeout" };
+  if (bounded.result) return { ...bounded, ms, failure: null };
+  // The REST fallback's reason is the last word; a registry-only failure stands
+  // when no key exists for the fallback.
+  const failure: ClassifierFailure = fallbackFailure === "no_key" && registryFailure ? registryFailure : (fallbackFailure ?? registryFailure ?? "transport");
+  return { result: null, path: null, ms, failure };
 }
 
 /** Neutral question-dict builder, exported for tests (shape contract only). */

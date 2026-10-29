@@ -14,8 +14,8 @@
  *    the agent at the expert skill for the service it is actually touching.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { access, readdir, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { Cooldowns, SuggestionCardFields, VerbSpec } from "../../shared/suggest.ts";
 import { applyCooldown, cooldownAllows } from "../../shared/suggest.ts";
@@ -77,8 +77,27 @@ export function partitionTracked(
  * next. All subprocesses are capped and fail-open: on any git failure the
  * steer degrades to the file list rather than erroring the turn.
  */
-export function buildProvenanceEvidence(files: string[], cwd: string): string {
-  return buildProvenanceSteer(files, cwd).text;
+export async function buildProvenanceEvidence(files: string[], cwd: string): Promise<string> {
+  return (await buildProvenanceSteer(files, cwd)).text;
+}
+
+/**
+ * One capped git subprocess with async IO (CORE-2534): pi's event loop keeps
+ * running while git works. Resolves stdout, or "" on any failure.
+ */
+export function git(args: string[], cwd: string, maxBuffer = 64 * 1024): Promise<string> {
+  return new Promise((done) => {
+    execFile("git", args, { cwd, encoding: "utf8", timeout: 10_000, maxBuffer }, (err, stdout) => done(err ? "" : String(stdout)));
+  });
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -87,7 +106,7 @@ export function buildProvenanceEvidence(files: string[], cwd: string): string {
  * one row, then the reason, one line per file with its last commit and one
  * dim totals-and-next line. File names are shortened in the card only.
  */
-export function buildProvenanceSteer(files: string[], cwd: string): { text: string; card: SuggestionCardFields } {
+export async function buildProvenanceSteer(files: string[], cwd: string): Promise<{ text: string; card: SuggestionCardFields }> {
   const verb = provenanceDutyVerb(files);
   const card: SuggestionCardFields = {
     identity: verb.action,
@@ -95,25 +114,12 @@ export function buildProvenanceSteer(files: string[], cwd: string): { text: stri
     reason: verb.oneLine,
     tint: "substrate",
   };
-  const run = (args: string[]): string => {
-    try {
-      return execFileSync("git", args, {
-        cwd,
-        encoding: "utf8",
-        timeout: 10_000,
-        maxBuffer: 64 * 1024,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-    } catch {
-      return "";
-    }
-  };
   const lines: string[] = [];
-  const stat = run(["diff", "--stat", "--", ...files.slice(0, 8)]).trim();
+  const stat = (await git(["diff", "--stat", "--", ...files.slice(0, 8)], cwd)).trim();
   if (stat) lines.push(stat.split("\n").slice(0, 12).join("\n"));
   const touched: Array<{ name: string; last: string }> = [];
   for (const f of files.slice(0, 4)) {
-    const last = run(["log", "-1", "--format=%h %ad %s", "--date=short", "--", f]).trim();
+    const last = (await git(["log", "-1", "--format=%h %ad %s", "--date=short", "--", f], cwd)).trim();
     if (last) {
       lines.push(`${f}: last ${last}`);
       touched.push({ name: f.split("/").pop() ?? f, last });
@@ -145,18 +151,8 @@ export function buildProvenanceSteer(files: string[], cwd: string): { text: stri
  * launched in a subdirectory (or outside the repo); process.cwd() is the
  * launch directory, not the repo root.
  */
-export function repoRoot(startDir: string = process.cwd()): string {
-  try {
-    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd: startDir,
-      encoding: "utf8",
-      timeout: 10_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return out.trim() || startDir;
-  } catch {
-    return startDir;
-  }
+export async function repoRoot(startDir: string = process.cwd()): Promise<string> {
+  return (await git(["rev-parse", "--show-toplevel"], startDir)).trim() || startDir;
 }
 
 /**
@@ -164,9 +160,23 @@ export function repoRoot(startDir: string = process.cwd()): string {
  * once per steer. CORE-2406: the launch directory does not move mid-session,
  * and a subprocess per steer is paid on every edited turn.
  */
-export function createRepoRootResolver(resolve: () => string = () => repoRoot()): () => string {
+export function createRepoRootResolver(
+  resolve: () => string | Promise<string> = () => repoRoot(),
+  fallback: () => string = () => process.cwd(),
+): { (): string; ready(): Promise<string> } {
+  // CORE-2534: resolved once, asynchronously; until it lands a handler gets
+  // the launch directory instead of waiting on a git subprocess.
   let cached: string | null = null;
-  return () => (cached ??= resolve());
+  let pending: Promise<string> | null = null;
+  const ready = () =>
+    (pending ??= Promise.resolve()
+      .then(resolve)
+      .then((root) => (cached = root), () => (cached = fallback())));
+  const get = () => {
+    if (cached === null) void ready();
+    return cached ?? fallback();
+  };
+  return Object.assign(get, { ready });
 }
 
 /** In-flight guard shared by one extension instance: concurrent steers must not each pay a Jev call. */
@@ -199,7 +209,7 @@ export async function runProvenanceSteer(opts: {
   cooldowns: Cooldowns;
   threshold: number;
   classify: () => Promise<ProvenanceClassifyResult | null>;
-  deliver: (files: string[], model: string | null) => void;
+  deliver: (files: string[], model: string | null) => void | Promise<void>;
   gate?: ProvenanceSteerGate;
 }): Promise<"delivered" | "gated" | "cooled" | "inFlight"> {
   const { gate } = opts;
@@ -215,7 +225,7 @@ export async function runProvenanceSteer(opts: {
     if (!result || result.mean < opts.threshold) return "gated";
     opts.steered.push(...opts.files);
     applyCooldown(opts.cooldowns, "prov", verb);
-    opts.deliver(opts.files, result.model);
+    await opts.deliver(opts.files, result.model);
     return "delivered";
   } finally {
     if (gate) gate.inFlight = false;
@@ -227,15 +237,10 @@ export async function runProvenanceSteer(opts: {
  * steer at most. Non-repo cwd or any git failure means no trackable
  * history exists, so the duty must stay silent.
  */
-export function trackedEditedFiles(edited: string[], cwd: string): string[] {
+export async function trackedEditedFiles(edited: string[], cwd: string): Promise<string[]> {
   if (edited.length === 0) return [];
   try {
-    const out = execFileSync("git", ["ls-files", "--", ...edited], {
-      cwd,
-      encoding: "utf8",
-      timeout: 10_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const out = await git(["ls-files", "--", ...edited], cwd);
     const tracked = new Set(
       out
         .split("\n")
@@ -318,7 +323,7 @@ export interface SkillPack {
 const ROSTER_CACHE_TTL_MS = 5 * 60_000;
 const ROSTER_MAX = 24;
 /**
- * Cached pack scan. Keyed by repoRoot, NOT a single slot: an unkeyed cache makes the FIRST
+ * Cached pack scan. Keyed by the scanned directory, NOT a single slot: an unkeyed cache makes the FIRST
  * repo's packs answer for every later repo in the same process, so a session that evaluates
  * duties in a second repo silently suggests another repository's services.
  */
@@ -337,7 +342,6 @@ export function parseRegistry(registryJson: string, packDir: string, repoRoot: s
       // The card tells the agent to OPEN this path. A service whose skill file is missing
       // would otherwise produce a confident instruction that cannot be followed: the agent
       // reads the path, takes ENOENT, and burns a turn. Quiet beats wrong.
-      if (!existsSync(skillPath)) continue;
       entries.push({
         id,
         name: svc.name ?? id,
@@ -353,39 +357,68 @@ export function parseRegistry(registryJson: string, packDir: string, repoRoot: s
   }
 }
 
-/** Discover service-knowledge packs between cwd and the git root. Bounded walk, 5-min cache. */
-export function discoverSkillPacks(cwd: string, now = Date.now()): SkillPack[] {
-  const repoRoot = repoRootOf(cwd);
-  if (repoRoot === rosterCache.key && now - rosterCache.at < ROSTER_CACHE_TTL_MS) return rosterCache.packs;
+/**
+ * Discover service-knowledge packs between cwd and the git root with async IO.
+ * Bounded walk, 5-min cache keyed by repo. A service whose skill file is
+ * missing is dropped: its card would name a path the agent cannot read.
+ */
+export async function discoverSkillPacks(cwd: string, now = Date.now()): Promise<SkillPack[]> {
+  if (cwd === rosterCache.key && now - rosterCache.at < ROSTER_CACHE_TTL_MS) return rosterCache.packs;
+  const repoRoot = await repoRootOf(cwd);
   const packs: SkillPack[] = [];
   try {
     const skillsRoot = join(repoRoot, ".xtrm", "skills");
-    if (existsSync(skillsRoot)) {
-      for (const pack of readdirSync(skillsRoot)) {
-        const packDir = join(skillsRoot, pack, "service-knowledge");
-        const registryPath = join(packDir, "service-registry.json");
-        if (!existsSync(registryPath)) continue;
-        const entries = parseRegistry(readFileSync(registryPath, "utf8"), packDir, repoRoot);
-        if (entries.length > 0) packs.push({ packDir: relative(cwd, packDir) || packDir, entries });
+    let names: string[] = [];
+    try {
+      names = (await readdir(skillsRoot)).sort();
+    } catch {
+      names = [];
+    }
+    for (const pack of names) {
+      const packDir = join(skillsRoot, pack, "service-knowledge");
+      let json: string;
+      try {
+        json = await readFile(join(packDir, "service-registry.json"), "utf8");
+      } catch {
+        continue;
       }
+      const entries: SkillEntry[] = [];
+      for (const entry of parseRegistry(json, packDir, repoRoot)) if (await exists(entry.skillPath)) entries.push(entry);
+      if (entries.length > 0) packs.push({ packDir: relative(cwd, packDir) || packDir, entries });
     }
   } catch {
     return [];
   }
-  rosterCache = { at: now, key: repoRoot, packs };
+  rosterCache = { at: now, key: cwd, packs };
   return packs;
+}
+
+/**
+ * The packs a handler may use right now, without waiting (CORE-2534): the
+ * cached scan for this repo, or none, with a background refresh when stale.
+ */
+let packRefresh: Promise<unknown> | null = null;
+export function cachedSkillPacks(cwd: string, now = Date.now()): SkillPack[] {
+  const fresh = rosterCache.key === cwd && now - rosterCache.at < ROSTER_CACHE_TTL_MS;
+  if (!fresh && !packRefresh) {
+    packRefresh = discoverSkillPacks(cwd).finally(() => {
+      packRefresh = null;
+    });
+  }
+  return rosterCache.key === cwd ? rosterCache.packs : [];
 }
 
 /** Reset for tests. */
 export function resetRosterCache(): void {
   rosterCache = { at: 0, key: "", packs: [] };
+  packRefresh = null;
 }
 
 /** Nearest ancestor holding `.git`, else the cwd itself. Bounded to 8 levels. */
-function repoRootOf(cwd: string): string {
+async function repoRootOf(cwd: string): Promise<string> {
   let dir = cwd;
   for (let guard = 0; guard < 8; guard++) {
-    if (existsSync(join(dir, ".git"))) return dir;
+    if (await exists(join(dir, ".git"))) return dir;
     const parent = join(dir, "..");
     if (parent === dir) break;
     dir = parent;

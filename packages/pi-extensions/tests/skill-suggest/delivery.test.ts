@@ -40,9 +40,11 @@ const LOG_DIR = mkdtempSync(join(tmpdir(), "skill-suggest-log-"));
 process.env["SKILL_SUGGEST_LOG_DIR"] = LOG_DIR;
 afterAll(() => rmSync(LOG_DIR, { recursive: true, force: true }));
 const LOG_PATH = join(LOG_DIR, "log.jsonl");
-const readLogSize = () => (existsSync(LOG_PATH) ? statSync(LOG_PATH).size : 0);
-const readLogSince = (size: number): Array<Record<string, unknown>> =>
-  readFileSync(LOG_PATH, "utf8").slice(size).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+// Rows are appended asynchronously (CORE-2534): drain the queue before reading.
+const flushLog = async () => (await import("../../extensions/skill-suggest/index.ts")).flushDecisionLog();
+const readLogSize = async () => (await flushLog(), existsSync(LOG_PATH) ? statSync(LOG_PATH).size : 0);
+const readLogSince = async (size: number): Promise<Array<Record<string, unknown>>> =>
+  (await flushLog(), readFileSync(LOG_PATH, "utf8").slice(size).split("\n").filter(Boolean).map((l) => JSON.parse(l)));
 
 const CLASSIFIER_ANSWERS = {
   skill: { type: "choice", choice: "demo-skill", probabilities: { "demo-skill": 0.9, none: 0.1 }, confidence: 0.9 },
@@ -120,28 +122,28 @@ describe("CORE-2367: agent_end delivers the doctrine to the model", () => {
 describe("CORE-2367: read-after-suggest accounting", () => {
   it("counts a real Pi read event ({toolName, input}) of the suggested path", async () => {
     const { handlers, ctx } = await boot();
-    const before = readLogSize();
+    const before = await readLogSize();
     await handlers["agent_end"]!(WORKING_TURN, ctx);
     const skillPath = join(repo, ".xtrm", "skills", "demo-skill", "SKILL.md");
     handlers["tool_call"]!({ toolName: "read", input: { path: skillPath } });
-    const rows = readLogSince(before).filter((r) => r["seam"] === "read_after_suggest");
+    const rows = (await readLogSince(before)).filter((r) => r["seam"] === "read_after_suggest");
     expect(rows.map((r) => r["outcome"])).toEqual(["read"]);
     expect(rows[0]!["pick"]).toBe("demo-skill");
   });
 
   it("logs 'expired' once the window of turns passes with no read", async () => {
     const { handlers, ctx } = await boot();
-    const before = readLogSize();
+    const before = await readLogSize();
     await handlers["agent_end"]!(WORKING_TURN, ctx); // arms the watch
     await handlers["agent_end"]!({ messages: [] }, ctx); // turn 1 after
-    expect(readLogSince(before).some((r) => r["outcome"] === "expired")).toBe(false);
+    expect((await readLogSince(before)).some((r) => r["outcome"] === "expired")).toBe(false);
     await handlers["agent_end"]!({ messages: [] }, ctx); // turn 2 after: window over
-    const expired = readLogSince(before).filter((r) => r["outcome"] === "expired");
+    const expired = (await readLogSince(before)).filter((r) => r["outcome"] === "expired");
     expect(expired).toHaveLength(1);
     expect(expired[0]!["pick"]).toBe("demo-skill");
     // A read after expiry is no longer credited.
     handlers["tool_call"]!({ toolName: "read", input: { path: join(repo, ".xtrm", "skills", "demo-skill", "SKILL.md") } });
-    expect(readLogSince(before).some((r) => r["outcome"] === "read")).toBe(false);
+    expect((await readLogSince(before)).some((r) => r["outcome"] === "read")).toBe(false);
   });
 
   it("a cooldown-suppressed suggestion arms no watch", async () => {
@@ -149,11 +151,11 @@ describe("CORE-2367: read-after-suggest accounting", () => {
     await handlers["agent_end"]!(WORKING_TURN, ctx); // fires, arms, sets cooldown
     await handlers["agent_end"]!({ messages: [] }, ctx);
     await handlers["agent_end"]!({ messages: [] }, ctx); // watch expires
-    const before = readLogSize();
+    const before = await readLogSize();
     await handlers["agent_end"]!(WORKING_TURN, ctx); // same id within cooldown: suppressed
     await handlers["agent_end"]!({ messages: [] }, ctx);
     await handlers["agent_end"]!({ messages: [] }, ctx);
-    expect(readLogSince(before).filter((r) => r["outcome"] === "expired")).toHaveLength(0);
+    expect((await readLogSince(before)).filter((r) => r["outcome"] === "expired")).toHaveLength(0);
   });
 });
 

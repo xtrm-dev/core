@@ -12,8 +12,7 @@
  * filesystem work.
  */
 
-import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 /** The slice of a roster entry retrieval needs. */
@@ -115,7 +114,7 @@ export function territoryMatches(pattern: string, path: string): boolean {
   return path === p || path.endsWith(`/${p}`) || path.startsWith(`${p}/`);
 }
 
-/** Parse one service-registry.json; services whose skill file is missing are dropped. */
+/** Parse one service-registry.json. Pure: the skill-file existence check is loadServices'. */
 export function parseServiceRegistry(json: string, packDir: string, repoRoot: string): ServiceRecord[] {
   try {
     const parsed = JSON.parse(json) as {
@@ -126,7 +125,6 @@ export function parseServiceRegistry(json: string, packDir: string, repoRoot: st
       const description = typeof svc?.description === "string" ? svc.description.trim() : "";
       if (!description) continue;
       const skillPath = svc.skill_path ? join(repoRoot, svc.skill_path) : join(packDir, "services", id, "SKILL.md");
-      if (!existsSync(skillPath)) continue;
       out.push({
         id,
         name: svc.name ?? id,
@@ -155,7 +153,17 @@ export async function loadServices(repoRoot: string): Promise<ServiceRecord[]> {
   for (const pack of packs) {
     const packDir = join(skillsRoot, pack, "service-knowledge");
     try {
-      out.push(...parseServiceRegistry(await readFile(join(packDir, "service-registry.json"), "utf8"), packDir, repoRoot));
+      const parsed = parseServiceRegistry(await readFile(join(packDir, "service-registry.json"), "utf8"), packDir, repoRoot);
+      // A service whose skill file is missing would yield a card pointing at
+      // nothing: the agent reads the path, takes ENOENT, burns a turn.
+      for (const svc of parsed) {
+        try {
+          await access(svc.skillPath);
+          out.push(svc);
+        } catch {
+          /* dropped */
+        }
+      }
     } catch {
       /* no registry in this pack */
     }

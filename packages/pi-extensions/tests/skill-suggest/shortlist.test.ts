@@ -3,7 +3,7 @@
  * shortlist (<= 24 + none), never the whole roster.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverRoster, resetRosterCache } from "../../extensions/skill-suggest/roster.ts";
@@ -102,9 +102,13 @@ describe("service-registry matching", () => {
     expect(sl.candidates[0]?.id).toBe("service-knowledge/services/backing-up-database");
   });
 
-  it("a registry service whose skill file is missing is dropped", () => {
-    const parsed = parseServiceRegistry(JSON.stringify({ services: { ghost: { description: "x", skill_path: "nope/SKILL.md" } } }), "/nowhere", "/nowhere");
-    expect(parsed).toEqual([]);
+  it("a registry service whose skill file is missing is dropped", async () => {
+    const sk = join(repo, ".xtrm", "skills", "pack", "service-knowledge");
+    const reg = JSON.parse(readFileSync(join(sk, "service-registry.json"), "utf8"));
+    reg.services.ghost = { description: "A service with no skill file.", skill_path: "nope/SKILL.md" };
+    writeFileSync(join(sk, "service-registry.json"), JSON.stringify(reg));
+    expect(parseServiceRegistry(JSON.stringify(reg), sk, repo).some((s) => s.id === "ghost")).toBe(true);
+    expect((await loadServices(repo)).some((s) => s.id === "ghost")).toBe(false);
   });
 });
 

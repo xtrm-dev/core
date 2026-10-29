@@ -31,13 +31,13 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildRetrievalIndex, loadServices, shortlist, type RetrievalIndex } from "../../shared/shortlist.ts";
 import { contextBlock, parseContextBlock, resolveSuggestionMessage, stripEndPeriod, suggestionFacts, tintSuggestionGlyph } from "../../shared/suggest.ts";
 import { registerEventRenderer } from "../../shared/event.ts";
-import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
+import { classify, primeApiKey, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
+import { createJsonlLog } from "../../shared/jsonl-log.ts";
 import { discoverRoster, headingsOf, repoRootOf, resetRosterCache, type RosterEntry } from "./roster.ts";
 
 /**
@@ -59,7 +59,7 @@ export function rebuildIndex(cwd: string): Promise<void> {
   if (indexBuild) return indexBuild;
   indexBuild = (async () => {
     try {
-      const repoRoot = repoRootOf(cwd);
+      const repoRoot = await repoRootOf(cwd);
       const [entries, services] = await Promise.all([discoverRoster(cwd), loadServices(repoRoot)]);
       indexState = { cwd, at: Date.now(), index: buildRetrievalIndex(entries, services, repoRoot, cwd) };
     } catch {
@@ -231,14 +231,43 @@ export function isControlNudge(prompt: string): boolean {
   return /^(continue|cont|go on|go ahead|proceed|carry on|keep going|next|yes|yep|yeah|ok|okay|k|do it|go|thanks|thank you|ty|nice|cool|perfect|great)( please| pls| now| then| on)?$/.test(t);
 }
 
+// CORE-2534: rows queue in memory and are appended asynchronously.
+const decisionLog = createJsonlLog(logDir);
 function logDecision(row: Record<string, unknown>): void {
-  try {
-    const dir = logDir();
-    mkdirSync(dir, { recursive: true });
-    appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(row)}\n`);
-  } catch {
-    /* logging is best-effort */
-  }
+  decisionLog.append(row);
+}
+/** Wait for queued decision rows to reach disk (tests, shutdown). */
+export function flushDecisionLog(): Promise<void> {
+  return decisionLog.flush();
+}
+
+/** One row for a seam that decided not to classify or not to fire, with its reason. */
+function logSkip(seam: string, reason: string, extra: Record<string, unknown> = {}): void {
+  logDecision({ ts: new Date().toISOString(), seam, outcome: "skip", reason, ...extra });
+}
+
+/**
+ * Repeated classifier failures of one class warn the operator once per session
+ * (CORE-2534): the 2026-10-21 outage ran eight days with no visible symptom.
+ */
+const WARN_AFTER_FAILURES = 3;
+export function createFailureWatch(warn: (message: string) => void) {
+  const streak = new Map<string, number>();
+  const warned = new Set<string>();
+  return {
+    failed(reason: string): void {
+      const cls = reason.startsWith("http_") ? "http" : reason;
+      const n = (streak.get(cls) ?? 0) + 1;
+      streak.set(cls, n);
+      if (n >= WARN_AFTER_FAILURES && !warned.has(cls)) {
+        warned.add(cls);
+        warn(`skill-suggest: the classifier failed ${n} times in a row (${reason}); suggestions are paused until it recovers.`);
+      }
+    },
+    succeeded(): void {
+      streak.clear();
+    },
+  };
 }
 
 /**
@@ -334,19 +363,6 @@ export function conversationContext(
   return recent.join("\n").slice(-maxChars);
 }
 
-/** Shared Jev runner for both seams: Pi-native classifier first, REST second.
- *  Returns spend telemetry with the answer: elapsed ms and which path served. */
-async function askJev(
-  registry: RegistryLike | null,
-  state: Record<string, unknown>,
-  questions: Record<string, Question>,
-) {
-  const start = Date.now();
-  let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
-  const path = result ? "registry" : "fallback";
-  if (!result) result = await systemOne(state, questions);
-  return { result, jevMs: Date.now() - start, jevPath: path };
-}
 
 /**
  * Read-after-suggest accounting (CORE-2367).
@@ -515,29 +531,31 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     tintGlyph: (glyph, details, theme) => tintSuggestionGlyph(glyph, details.tint, theme),
   });
 
+  const failures = createFailureWatch((message) => {
+    try {
+      (latestCtx as { ui?: { notify?: (m: string, t?: string) => void } } | null)?.ui?.notify?.(message, "warning");
+    } catch {
+      /* a warning must never break a turn */
+    }
+  });
+
   const handler = async (event: { text?: string }, ctx?: { modelRegistry?: unknown; sessionManager?: unknown }) => {
     latestCtx = ctx;
     if (off()) return { action: "continue" } as const;
     const prompt = typeof event?.text === "string" ? event.text : "";
-    if (prompt.startsWith("/")) return { action: "continue" } as const; // commands decide for themselves
-    if (isControlNudge(prompt)) return { action: "continue" } as const; // "continue" carries no task signal
-    if (prompt.trim().length < 12) return { action: "continue" } as const;
+    if (prompt.startsWith("/")) return logSkip("input", "command"), { action: "continue" } as const; // commands decide for themselves
+    if (isControlNudge(prompt)) return logSkip("input", "control_nudge"), { action: "continue" } as const; // "continue" carries no task signal
+    if (prompt.trim().length < 12) return logSkip("input", "too_short"), { action: "continue" } as const;
 
     const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
-    if (!registry && !readApiKey()) return { action: "continue" } as const;
+    if (!registry && !readApiKey()) return logSkip("input", "no_key"), { action: "continue" } as const;
 
     const index = currentIndex(process.cwd());
-    if (!index) {
-      logDecision({ ts: new Date().toISOString(), seam: "input", outcome: "skip", reason: "index_warming" });
-      return { action: "continue" } as const;
-    }
+    if (!index) return logSkip("input", "index_warming"), { action: "continue" } as const;
     const context = recentContext(prompt);
     const sl = shortlist(index, { text: `${prompt}\n${context}`, files: sessionFiles });
     const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
-    if (sl.candidates.length === 0) {
-      logDecision({ ts: new Date().toISOString(), seam: "input", outcome: "skip", reason: "no_candidates", ...shortlistFacts });
-      return { action: "continue" } as const;
-    }
+    if (sl.candidates.length === 0) return logSkip("input", "no_candidates", shortlistFacts), { action: "continue" } as const;
 
     try {
       const questions: Record<string, Question> = {
@@ -565,29 +583,14 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         recent_conversation: context,
         cwd: process.cwd(),
       };
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), INJECT_TIMEOUT_MS);
-      let result: Awaited<ReturnType<typeof classifyViaRegistry>> = null;
-      let jevPath: string | null = null;
-      const jevStart = Date.now();
-      try {
-        result = (await Promise.race([
-          (async () => {
-            let r = registry ? await classifyViaRegistry(registry, state, questions) : null;
-            if (r) jevPath = "registry";
-            if (!r) {
-              r = await systemOne(state, questions);
-              if (r) jevPath = "fallback";
-            }
-            return r;
-          })(),
-          new Promise<null>((resolve) => { controller.signal.addEventListener("abort", () => resolve(null)); }),
-        ]));
-      } finally {
-        clearTimeout(timer);
+      const outcome = await classify(registry, state, questions, { timeoutMs: INJECT_TIMEOUT_MS });
+      const jevFacts = { jev_ms: outcome.ms, jev_path: outcome.path, prompt_chars: prompt.length, ...shortlistFacts };
+      const result = outcome.result;
+      if (!result) {
+        failures.failed(outcome.failure ?? "transport");
+        return logSkip("input", `classifier:${outcome.failure}`, jevFacts), { action: "continue" } as const;
       }
-      const jevMs = Date.now() - jevStart;
-      if (!result) return { action: "continue" } as const;
+      failures.succeeded();
 
       const pick = result.choice.choice;
       const entry = sl.candidates.find((r) => r.id === pick);
@@ -597,31 +600,26 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         noneConfidence: result.choice.probabilities?.["none"] ?? null,
         hasEntry: Boolean(entry),
       });
-      const gateMean = verdict.gateMean;
+      // One card per prompt, per catalog id: a fire suppressed by cooldown is
+      // logged as such, not as a fire.
+      const cooled = verdict.fire && entry !== undefined && !cooldownOk(entry.id, Date.now());
       // Log every evaluation — negatives are the tuning signal. An ABSTAIN is
       // recorded distinctly from a genuine `none` answer: collapsing the two
       // reintroduces this defect in a new shape, because both would otherwise
       // read as "the classifier considered and declined".
-      const noneConfidence = result.choice.probabilities?.["none"] ?? null;
       logDecision({
         ts: new Date().toISOString(),
         seam: "input",
         pick: pick ?? "none",
-        outcome: verdict.fire ? "fire" : "abstain",
-        reason: verdict.reason,
-        gate: Number(gateMean.toFixed(3)),
+        outcome: cooled ? "skip" : verdict.fire ? "fire" : "abstain",
+        reason: cooled ? "cooldown" : verdict.reason,
+        gate: Number(verdict.gateMean.toFixed(3)),
         confidence: result.choice.confidence,
-        noneConfidence,
-        injected: verdict.fire,
-        prompt_chars: prompt.length,
-        jev_ms: jevMs,
-        jev_path: jevPath,
-        ...shortlistFacts,
+        noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        injected: verdict.fire && !cooled,
+        ...jevFacts,
       });
-      if (!verdict.fire || !entry) return { action: "continue" } as const;
-
-      // One card per prompt, per catalog id.
-      if (!cooldownOk(entry.id, Date.now())) return { action: "continue" } as const;
+      if (!verdict.fire || !entry || cooled) return { action: "continue" } as const;
       cooldownSet(entry.id);
 
       const block = doctrineBlock(entry, `the current request`, result.choice.confidence, result.model);
@@ -723,25 +721,21 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       const turn = turnEvidence(messages, messageCursor);
       messageCursor = turn.nextIdx;
       const { lastAssistant, wasActive } = turn;
-      if (!lastAssistant || !wasActive) return;
+      // An empty boundary (no new messages) is not a decision: no row.
+      if (messages.length === 0 || (!lastAssistant && !wasActive)) return;
+      if (!lastAssistant || !wasActive) return logSkip("agent_end", "inactive_turn");
       const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
-      if (!registry && !readApiKey()) return;
+      if (!registry && !readApiKey()) return logSkip("agent_end", "no_key");
       const index = currentIndex(process.cwd());
-      if (!index) {
-        logDecision({ ts: new Date().toISOString(), seam: "agent_end", outcome: "skip", reason: "index_warming" });
-        return;
-      }
+      if (!index) return logSkip("agent_end", "index_warming");
       const sl = shortlist(index, {
         text: `${lastAssistant}\n${turn.excerpt}`,
         files: [...sessionFiles, ...turn.editedFiles],
       });
       const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
-      if (sl.candidates.length === 0) {
-        logDecision({ ts: new Date().toISOString(), seam: "agent_end", outcome: "skip", reason: "no_candidates", ...shortlistFacts });
-        return;
-      }
+      if (sl.candidates.length === 0) return logSkip("agent_end", "no_candidates", shortlistFacts);
 
-      const { result, jevMs, jevPath } = await askJev(registry, {
+      const outcome = await classify(registry, {
         agent_final_message: lastAssistant.slice(0, 1500),
         working_turn_excerpt: turn.excerpt.slice(0, 6000),
         edited_files: turn.editedFiles.slice(0, 8),
@@ -755,7 +749,13 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         would_follow_documented_procedure: { type: "noul", instructions: "For the stated next step, would a careful expert follow a specific documented procedure rather than improvise?" },
         prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
       } as Record<string, Question>);
-      if (!result) return;
+      const jevFacts = { jev_ms: outcome.ms, jev_path: outcome.path, ...shortlistFacts };
+      const result = outcome.result;
+      if (!result) {
+        failures.failed(outcome.failure ?? "transport");
+        return logSkip("agent_end", `classifier:${outcome.failure}`, jevFacts);
+      }
+      failures.succeeded();
       const pick = result.choice.choice;
       const entry = sl.candidates.find((r) => r.id === pick);
       const verdict = evaluateGate({
@@ -764,21 +764,21 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         noneConfidence: result.choice.probabilities?.["none"] ?? null,
         hasEntry: Boolean(entry),
       });
-      if (!verdict.fire || !entry) {
+      const cooled = verdict.fire && entry !== undefined && !cooldownOk(entry.id, Date.now());
+      if (!verdict.fire || !entry || cooled) {
         logDecision({
           ts: new Date().toISOString(),
           seam: "agent_end",
           pick: pick ?? "none",
-          outcome: "abstain",
-          reason: verdict.reason,
+          outcome: cooled ? "skip" : "abstain",
+          reason: cooled ? "cooldown" : verdict.reason,
           gate: Number(verdict.gateMean.toFixed(3)),
           confidence: result.choice.confidence,
           noneConfidence: result.choice.probabilities?.["none"] ?? null,
-          ...shortlistFacts,
+          ...jevFacts,
         });
         return;
       }
-      if (!cooldownOk(entry.id, Date.now())) return;
       cooldownSet(entry.id);
       readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
 
@@ -787,7 +787,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       // which is why "the agent never reads it" looked like disobedience rather
       // than the delivery that actually happened. Both audiences get it now.
       const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(verdict.gateMean.toFixed(3)), jev_ms: jevMs, jev_path: jevPath });
+      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, outcome: "fire", reason: "fire", injected: true, confidence: result.choice.confidence, gate: Number(verdict.gateMean.toFixed(3)), ...jevFacts });
       // The renderer draws the card from the labelled block's fields, so the model
       // receives the doctrine and the operator still sees the house card.
       pi.sendMessage(
@@ -837,6 +837,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     pi.on("session_start", () => {
       resetIndex();
       void rebuildIndex(process.cwd());
+      void primeApiKey();
     });
   }
 }

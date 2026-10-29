@@ -10,8 +10,7 @@
  * Agent Skills locations pi discovers (~/.agents/skills, .agents/skills).
  */
 
-import { existsSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { access, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -108,9 +107,9 @@ export function extractReferenceSummary(md: string): { name: string; description
   return { name, description: description.length > 0 ? description : heading };
 }
 
-function skillDirs(repoRoot: string): string[] {
+async function skillDirs(repoRoot: string): Promise<string[]> {
   const home = homedir();
-  return [
+  const roots = [
     join(repoRoot, ".xtrm", "skills"),
     join(repoRoot, ".agents", "skills"),
     join(home, ".agents", "skills"),
@@ -120,7 +119,18 @@ function skillDirs(repoRoot: string): string[] {
     // are written.
     join(home, ".xtrm", "skills"),
     join(home, ".pi", "agent", "skills"),
-  ].filter((d) => existsSync(d));
+  ];
+  const present = await Promise.all(roots.map(exists));
+  return roots.filter((_, i) => present[i]);
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function isDir(path: string): Promise<boolean> {
@@ -203,10 +213,10 @@ async function scanSkillDir(entries: RosterEntry[], cwd: string, skillDir: strin
 }
 
 /** The enclosing git root (nearest `.git` within 8 levels), else cwd. */
-export function repoRootOf(cwd: string): string {
+export async function repoRootOf(cwd: string): Promise<string> {
   let dir = cwd;
   for (let guard = 0; guard < 8; guard++) {
-    if (existsSync(join(dir, ".git"))) return dir;
+    if (await exists(join(dir, ".git"))) return dir;
     const parent = join(dir, "..");
     if (parent === dir) break;
     dir = parent;
@@ -220,15 +230,15 @@ export function repoRootOf(cwd: string): string {
  */
 export async function discoverRoster(cwd: string, now = Date.now()): Promise<RosterEntry[]> {
   if (cache.key === cwd && now - cache.at < CACHE_TTL_MS) return cache.entries;
-  const repoRoot = repoRootOf(cwd);
+  const repoRoot = await repoRootOf(cwd);
   const entries: RosterEntry[] = [];
   try {
-    for (const root of skillDirs(repoRoot)) {
+    for (const root of await skillDirs(repoRoot)) {
       for (const childName of await listDir(root)) {
         const childDir = join(root, childName);
         // CORE-2361: pack-less root — ~/.agents/skills/<skill>/SKILL.md sits at
         // the top level; the old pack-only scan found zero entries there.
-        if (existsSync(join(childDir, "SKILL.md"))) {
+        if (await exists(join(childDir, "SKILL.md"))) {
           await scanSkillDir(entries, cwd, childDir, childName);
           continue;
         }
@@ -238,7 +248,8 @@ export async function discoverRoster(cwd: string, now = Date.now()): Promise<Ros
         // when no skill sits directly under the pack.
         const packSkills = async (dir: string, depth: number): Promise<string[]> => {
           const names = await listDir(dir);
-          const direct = names.filter((s) => existsSync(join(dir, s, "SKILL.md")));
+          const has = await Promise.all(names.map((s) => exists(join(dir, s, "SKILL.md"))));
+          const direct = names.filter((_, i) => has[i]);
           if (direct.length === 0 && depth > 0) {
             for (const s of names) {
               for (const nested of await packSkills(join(dir, s), depth - 1)) direct.push(`${s}/${nested}`);

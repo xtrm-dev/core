@@ -41,7 +41,6 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -56,8 +55,8 @@ import {
   suggestionCardFields,
   tintSuggestionGlyph,
   TERMINAL_LIFECYCLE,
-  systemOne,
-  classifyViaRegistry,
+  classify,
+  primeApiKey,
   readApiKey,
   type Cooldowns,
   type StateSnapshot,
@@ -66,7 +65,9 @@ import {
   type Question,
   type RegistryLike,
 } from "../../shared/suggest.ts";
+import { createJsonlLog } from "../../shared/jsonl-log.ts";
 import {
+  cachedSkillPacks,
   discoverSkillPacks,
   isMonitorSetter,
   skillVerb,
@@ -86,8 +87,8 @@ import { evaluateToolNudge, newCounters, observeTool, type ToolCounters } from "
 import { registerEventRenderer } from "../../shared/event.ts";
 
 const CUSTOM_TYPE = "substrate_suggestion";
-const LOG_DIR = join(homedir(), ".xtrm", "substrate-suggest");
-const LOG_FILE = join(LOG_DIR, "log.jsonl");
+// Resolved per write so tests can redirect the log (SUBSTRATE_SUGGEST_LOG_DIR) after import.
+const logDir = (): string => process.env["SUBSTRATE_SUGGEST_LOG_DIR"] ?? join(homedir(), ".xtrm", "substrate-suggest");
 
 const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
 const FITS_THRESHOLD = 0.3; // best verify noul under this -> drop the pick
@@ -235,13 +236,14 @@ async function openServices(): Promise<SubstrateServices | null> {
   }
 }
 
+// CORE-2534: rows queue in memory and are appended asynchronously.
+const decisionLog = createJsonlLog(logDir);
 function logDecision(row: Record<string, unknown>): void {
-  try {
-    mkdirSync(LOG_DIR, { recursive: true });
-    appendFileSync(LOG_FILE, `${JSON.stringify(row)}\n`);
-  } catch {
-    /* logging is best-effort, never load-bearing */
-  }
+  decisionLog.append(row);
+}
+/** Wait for queued decision rows to reach disk (tests, shutdown). */
+export function flushDecisionLog(): Promise<void> {
+  return decisionLog.flush();
 }
 
 /** Shared Jev runner: Pi-native classifier first, direct REST second. */
@@ -249,10 +251,15 @@ async function askJev(
   registry: RegistryLike | null,
   state: Record<string, unknown>,
   questions: Record<string, Question>,
+  duty: string,
 ) {
-  let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
-  if (!result) result = await systemOne(state, questions);
-  return result;
+  const outcome = await classify(registry, state, questions);
+  // CORE-2534: a failed classification is a row with its reason and wall time,
+  // never a silent null.
+  if (!outcome.result) {
+    logDecision({ ts: new Date().toISOString(), issue: null, verb: null, source: "jev", duty, gate: `classifier:${outcome.failure}`, jev_ms: outcome.ms });
+  }
+  return outcome.result;
 }
 
 /** The Jev semantic stage: pick one journal kind for the turn, or none. */
@@ -285,7 +292,7 @@ async function jevPickKind(
     entries_since_checkpoint: snapshot.journalSeq - snapshot.lastCheckpointSeq,
     working_turn_excerpt: excerpt.slice(0, 8000),
   };
-  const result = await askJev(registry, state, questions);
+  const result = await askJev(registry, state, questions, "journal_kind");
   if (!result) return null;
 
   const gate = [result.nouls["material_event"] ?? 0, 1 - (result.nouls["prose_would_suffice"] ?? 0)];
@@ -480,7 +487,9 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         );
         return { content, structuredContent: e.structuredContent } as never;
       }
-      const packs = discoverSkillPacks(resolveRepoRoot());
+      // The deterministic append stays synchronous, so it reads the cached
+      // scan and never waits for one (CORE-2534).
+      const packs = cachedSkillPacks(resolveRepoRoot());
       const hit = packs.length > 0 ? territoryHit(packs, e.input, resolveRepoRoot()) : null;
       if (hit) {
         const verb = skillVerb(hit);
@@ -510,11 +519,11 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       try {
         const fresh = turnEditedFiles.filter((f) => !turnSteeredFiles.includes(f));
         if (fresh.length > 0 && !turnProvenanceSeen) {
-          const tracked = trackedEditedFiles(fresh, resolveRepoRoot());
-          if (tracked.length > 0) {
-            const files = tracked;
-            void (async () => {
-              try {
+          void (async () => {
+            try {
+              // git runs with async IO inside the detached block (CORE-2534).
+              const files = await trackedEditedFiles(fresh, resolveRepoRoot());
+              if (files.length === 0) return;
                 await runProvenanceSteer({
                   files,
                   steered: turnSteeredFiles,
@@ -535,7 +544,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
                       },
                       provenance_materially_helpful: { type: "noul", instructions: "Given these files were changed this turn without consulting commit or PR history, would the history plausibly change what the change should be or reveal it repeats a past mistake?" },
                       sonata_harm: { type: "noul", instructions: "Is the change clearly the provenance-free kind (mechanical refactor, asked-for rename) where history consultation would be noise? (Untracked files never reach this question.)" },
-                    } as Record<string, Question>);
+                    } as Record<string, Question>, "provenance");
                     if (!result) return null;
                     const mean =
                       ((result.nouls["provenance_materially_helpful"] ?? 0) +
@@ -543,9 +552,9 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
                       2;
                     return { mean, model: result.model ?? null };
                   },
-                  deliver: (fs, model) => {
+                  deliver: async (fs, model) => {
                     const verb = provenanceDutyVerb(fs);
-                    const steer = buildProvenanceSteer(fs, resolveRepoRoot());
+                    const steer = await buildProvenanceSteer(fs, resolveRepoRoot());
                     logDecision({ ts: new Date().toISOString(), issue: null, verb: verb.id, source: "jev", model });
                     pi.sendMessage(
                       { customType: CUSTOM_TYPE, content: steer.text, display: true, details: { verb: verb.id, midTurn: true, card: steer.card } },
@@ -553,14 +562,19 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
                     );
                   },
                 });
-              } catch { /* fail-open: the turn continues without the steer */ }
-            })();
-          }
+            } catch { /* fail-open: the turn continues without the steer */ }
+          })();
         }
       } catch { /* observation is best-effort */ }
     } catch {
       /* observation is best-effort */
     }
+  });
+
+  // Warm everything a handler reads synchronously, off the hot path (CORE-2534).
+  pi.on("session_start", () => {
+    void primeApiKey();
+    void resolveRepoRoot.ready().then((root) => discoverSkillPacks(root));
   });
 
   pi.on("session_before_compact", () => {
@@ -614,7 +628,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           },
           wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for a specific external event (CI, deploy, review, another agent's reply, a long job) with no other continuation path? Waiting on the operator's next message inside an active conversation is NOT waiting — the conversation is the continuation path. Narrating observation ('watch for it', 'let's see what happens') is NOT a wait commitment." },
           monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here — i.e. is there something pending that the conversation itself will not surface? If the only continuation is the operator replying, answer no." },
-        } as Record<string, Question>);
+        } as Record<string, Question>, "wait_guard");
         const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
         if (result && g >= GATE_THRESHOLD) {
           emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
@@ -630,7 +644,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     // Duty 1 — service skill (turn end). Also pre-binding: skills are repo
     // knowledge, not issue knowledge.
     if (jevAvailable && wasActive) {
-      const all = discoverSkillPacks(resolveRepoRoot()).flatMap((p) => p.entries);
+      const all = (await discoverSkillPacks(resolveRepoRoot())).flatMap((p) => p.entries);
       if (all.length > 0 && cooldownAllows(cooldowns, "skills", SKILL_SOURCE_VERB.id, Date.now(), SKILL_SOURCE_VERB)) {
         const result = await askJev(registry, {
           working_turn_excerpt: excerpt.slice(0, 4000),
@@ -644,7 +658,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
             ]),
           },
           service_specific: { type: "noul", instructions: "Would the picked service's expert skill materially change how the agent proceeds right now?" },
-        } as Record<string, Question>);
+        } as Record<string, Question>, "service_skill");
         const fit = result?.nouls["service_specific"] ?? 0;
         const pick = result?.choice.choice;
         if (result && pick && pick !== "none" && fit >= FITS_THRESHOLD) {
