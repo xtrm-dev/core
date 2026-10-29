@@ -12,6 +12,7 @@ import { waitFacts, waitGate, waitPrecondition } from "../extensions/substrate-s
 
 process.env["SUBSTRATE_SUGGEST_LOG_DIR"] = mkdtempSync(join(tmpdir(), "substrate-suggest-log-"));
 const substrateSuggest = await import("../extensions/substrate-suggest/index.ts");
+const { resetPipeline, settle } = await import("../shared/suggest-pipeline.ts");
 
 const SUBAGENTS = "The subagents are running in the background. I will be notified when they complete. Let me wait for the notifications.";
 const OPERATOR = "`REPORT.md` now carries the corrected line references; every number the coordinator spot-checked is unchanged. Idle, waiting for a write-scope issue in `prj_core` if the operator approves P0-1..P0-3.";
@@ -19,6 +20,7 @@ const REPORT = "Rejected #950-triple and MMD-2462-reparent as blockers (pre-exec
 const CI_WAIT = "Pushed the fix to the branch. I'll wait for the CI pipeline to finish before merging.";
 
 async function fire(finalMessage: string, toolName = "bash", nouls = { wait_warranted: 0.9, monitor_would_help: 0.9 }, kind = "background_monitor") {
+  resetPipeline();
   const handlers = new Map<string, Array<(e: unknown, c?: unknown) => unknown>>();
   const sent: Array<{ content?: unknown; details?: { verb?: string } }> = [];
   const pi = {
@@ -46,6 +48,7 @@ async function fire(finalMessage: string, toolName = "bash", nouls = { wait_warr
   for (const h of handlers.get("tool_call") ?? []) h({ toolName, input: {} });
   const messages = [{ role: "assistant", content: [{ type: "toolCall", id: "c1", name: toolName, arguments: {} }, { type: "text", text: finalMessage }] }];
   for (const h of handlers.get("agent_end") ?? []) await h({ messages }, { modelRegistry: registry, cwd: "/tmp" });
+  await settle(); // classification runs detached (CORE-2549)
   return sent.filter((m) => m.details?.verb === "wait_guard" || String(m.content ?? "").includes("monitor"));
 }
 

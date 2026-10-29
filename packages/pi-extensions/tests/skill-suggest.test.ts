@@ -59,16 +59,16 @@ describe("labelled injected context", () => {
 });
 
 describe("input seam decides, never mutates", () => {
-  it("returns continue and defers delivery to the first tool_result", async () => {
+  it("returns continue at once and delivers through the shared pipeline (CORE-2549)", async () => {
     // Anchor the probe to this file: the suite runs from two directories.
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
-    expect(src).toContain("deferred-to-tool-result");
-    expect(src).toContain("pending = { entry, block, confidence: result.choice.confidence }");
     // No prompt mutation anywhere in the file, and no wake at submit.
     expect(src).not.toContain('action: "transform"');
-    const deliver = src.slice(src.indexOf('pi.on("tool_result"'), src.indexOf('pi.on("tool_result"') + 1200);
-    expect(deliver).toContain("triggerTurn: false");
-    expect(deliver).not.toContain("triggerTurn: true");
+    expect(src).not.toContain("triggerTurn: true");
+    // Every delivery goes through the arbiter with the measured steer rule.
+    expect(src).not.toContain('deliverAs: "followUp"');
+    expect(src).toContain("DELIVERY,");
+    expect(src).toContain("detach(");
   });
 
   it("logs Jev spend next to confidence on both deciding seams", async () => {

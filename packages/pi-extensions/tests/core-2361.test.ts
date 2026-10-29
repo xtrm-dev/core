@@ -158,9 +158,11 @@ describe("the two silent advisors fire through a fake registry (CORE-2361)", () 
       sendMessage: (m: any) => void sent.push(m),
       getFlag: () => false,
     };
+    (await import("../shared/suggest-pipeline.ts")).resetPipeline();
     substrateSuggest.default(pi as never);
     const ctx = { modelRegistry: registry, cwd: "/tmp" };
     for (const h of handlers.get("agent_end") ?? []) await h({ messages }, ctx);
+    await (await import("../shared/suggest-pipeline.ts")).settle(); // detached (CORE-2549)
     return sent;
   };
 

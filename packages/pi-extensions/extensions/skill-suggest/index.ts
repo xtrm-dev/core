@@ -38,6 +38,7 @@ import { contextBlock, parseContextBlock, resolveSuggestionMessage, stripEndPeri
 import { registerEventRenderer } from "../../shared/event.ts";
 import { classify, primeApiKey, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
 import { createJsonlLog } from "../../shared/jsonl-log.ts";
+import { currentEpoch, detach, DELIVERY, notePrompt, noteRunStart, propose, resetSession } from "../../shared/suggest-pipeline.ts";
 import { discoverRoster, headingsOf, repoRootOf, resetRosterCache, type RosterEntry } from "./roster.ts";
 
 /**
@@ -80,39 +81,6 @@ export function resetIndex(): void {
 /** The classifier's choice criteria: the shortlist plus an explicit `none`. */
 function criteriaOf(candidates: RosterEntry[], none: string): Record<string, string> {
   return Object.fromEntries([...candidates.map((r) => [r.id, r.description]), ["none", none]]);
-}
-
-/**
- * Which seam delivers a decision, for every situation a session can be in.
- *
- * The bug this encodes: submitting decided a doctrine, then the turn made no
- * tool call, and the block was dropped. Keep this table honest — a new
- * situation needs a row, not a hope.
- */
-export type DeliverySeam = "tool_result" | "agent_end_flush" | "agent_end_decision" | "none";
-export interface Situation {
-  /** The operator submitted a prompt this turn. */
-  prompted: boolean;
-  /** Submit produced a decision that is still pending. */
-  pending: boolean;
-  /** The turn has at least one tool call. */
-  usedTool: boolean;
-  /** The turn ended with agent activity worth judging. */
-  activeTurn: boolean;
-}
-
-export function deliverySeam(s: Situation): DeliverySeam {
-  if (s.pending) return s.usedTool ? "tool_result" : "agent_end_flush";
-  if (!s.prompted && s.activeTurn) return "agent_end_decision"; // unprompted: judge the turn itself
-  if (s.prompted && s.activeTurn) return "agent_end_decision";
-  return "none";
-}
-
-/** Decided at submit, delivered at the first ordered boundary in the turn. */
-interface PendingDoctrine {
-  entry: RosterEntry;
-  block: string;
-  confidence: number | null;
 }
 
 /** The last extension context seen, so the input handler can reach the session. */
@@ -481,8 +449,6 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   const cooldowns: Record<string, number> = {};
   /** Advances per turn so consecutive turns do not double-count evidence. */
   let messageCursor = 0;
-  /** Set by the input seam, consumed by the first tool_result of the turn. */
-  let pending: PendingDoctrine | null = null;
   /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
   let readWatch: ReadWatch | null = null;
   /** Files read or edited this session, newest last, bounded: territory evidence for the shortlist. */
@@ -539,9 +505,38 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     }
   });
 
+  /**
+   * Arbitrate and deliver one doctrine block (CORE-2549): at most one
+   * suggestion per agent run across both suggest extensions, none stale, none
+   * repeated in the session. Exactly one log row either way.
+   */
+  const offer = (seam: string, entry: RosterEntry, block: string, epoch: number, watchTurns: number, facts: Record<string, unknown>) => {
+    const verdict = cooldownOk(entry.id, Date.now())
+      ? propose({
+          epoch,
+          key: `skill:${entry.id}`,
+          deliver: () => {
+            cooldownSet(entry.id);
+            readWatch = { id: entry.id, path: entry.path, turnsLeft: watchTurns };
+            // The renderer draws the card from the labelled block's fields, so
+            // the model receives the doctrine and the operator sees the card.
+            pi.sendMessage(
+              { customType: CUSTOM_TYPE, content: block, display: true, details: { skill: entry.id, level: entry.level, seam } },
+              DELIVERY,
+            );
+          },
+        })
+      : "cooldown";
+    const fired = verdict === "delivered";
+    logDecision({ ts: new Date().toISOString(), seam, pick: entry.id, outcome: fired ? "fire" : "skip", reason: fired ? "fire" : verdict, injected: fired, ...facts });
+  };
+
   const handler = async (event: { text?: string }, ctx?: { modelRegistry?: unknown; sessionManager?: unknown }) => {
     latestCtx = ctx;
     if (off()) return { action: "continue" } as const;
+    // A new prompt moves the evidence on: answers still in flight for the
+    // previous one become stale (CORE-2549).
+    const epoch = notePrompt(event);
     const prompt = typeof event?.text === "string" ? event.text : "";
     if (prompt.startsWith("/")) return logSkip("input", "command"), { action: "continue" } as const; // commands decide for themselves
     if (isControlNudge(prompt)) return logSkip("input", "control_nudge"), { action: "continue" } as const; // "continue" carries no task signal
@@ -583,12 +578,15 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         recent_conversation: context,
         cwd: process.cwd(),
       };
+      // CORE-2549: pi never waits for Jev. The answer is arbitrated and
+      // delivered whenever it lands; the handler returns now.
+      detach(async () => {
       const outcome = await classify(registry, state, questions, { timeoutMs: INJECT_TIMEOUT_MS });
       const jevFacts = { jev_ms: outcome.ms, jev_path: outcome.path, prompt_chars: prompt.length, ...shortlistFacts };
       const result = outcome.result;
       if (!result) {
         failures.failed(outcome.failure ?? "transport");
-        return logSkip("input", `classifier:${outcome.failure}`, jevFacts), { action: "continue" } as const;
+        return logSkip("input", `classifier:${outcome.failure}`, jevFacts);
       }
       failures.succeeded();
 
@@ -607,32 +605,28 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       // recorded distinctly from a genuine `none` answer: collapsing the two
       // reintroduces this defect in a new shape, because both would otherwise
       // read as "the classifier considered and declined".
-      logDecision({
-        ts: new Date().toISOString(),
-        seam: "input",
-        pick: pick ?? "none",
-        outcome: cooled ? "skip" : verdict.fire ? "fire" : "abstain",
-        reason: cooled ? "cooldown" : verdict.reason,
+      const gateFacts = {
         gate: Number(verdict.gateMean.toFixed(3)),
         confidence: result.choice.confidence,
         noneConfidence: result.choice.probabilities?.["none"] ?? null,
-        injected: verdict.fire && !cooled,
         ...jevFacts,
+      };
+      if (!verdict.fire || !entry || cooled) {
+        logDecision({
+          ts: new Date().toISOString(),
+          seam: "input",
+          pick: pick ?? "none",
+          outcome: cooled ? "skip" : "abstain",
+          reason: cooled ? "cooldown" : verdict.reason,
+          injected: false,
+          ...gateFacts,
+        });
+        return;
+      }
+      // The prompt is never mutated: a transform echoes into the operator's
+      // input line. The block rides a steer message instead (CORE-2548).
+      offer("input", entry, doctrineBlock(entry, `the current request`, result.choice.confidence, result.model), epoch, INPUT_SEAM_TURNS, gateFacts);
       });
-      if (!verdict.fire || !entry || cooled) return { action: "continue" } as const;
-      cooldownSet(entry.id);
-
-      const block = doctrineBlock(entry, `the current request`, result.choice.confidence, result.model);
-
-      // Decide here (the prompt is the signal), deliver at the first ordered
-      // boundary inside the turn. The prompt is never mutated: a transform
-      // echoes into the operator's input line, and sendMessage here races the
-      // in-flight turn ("Agent is already processing") and displaced the
-      // operator's prompt outright.
-      pending = { entry, block, confidence: result.choice.confidence };
-      readWatch = { id: entry.id, path: entry.path, turnsLeft: INPUT_SEAM_TURNS };
-      logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "deferred-to-tool-result" });
-
       return { action: "continue" } as const;
     } catch {
       return { action: "continue" } as const; // fail-open: prompt untouched
@@ -664,33 +658,6 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     }
   });
 
-  // Delivery: the first tool_result of the turn is the first ordered point
-  // inside the turn, and the card is a context-bearing custom message, so the
-  // agent reads it. No inline copy: a block appended to tool output renders as
-  // raw XML in the transcript — exactly what the operator should not wade
-  // through.
-  pi.on("tool_result", () => {
-    if (!pending || off()) return undefined;
-    // The table decides, so it is not a test-only spec: this seam asserts its
-    // own row, and a change there stops delivery instead of drifting.
-    if (deliverySeam({ prompted: true, pending: true, usedTool: true, activeTurn: true }) !== "tool_result") return undefined;
-    const item = pending;
-    pending = null;
-    logDecision({ ts: new Date().toISOString(), seam: "tool_result", pick: item.entry.id, injected: true, confidence: item.confidence });
-    pi.sendMessage(
-      {
-        customType: CUSTOM_TYPE,
-        content: item.block,
-        display: true,
-        details: { skill: item.entry.id, level: item.entry.level, seam: "tool_result" },
-      },
-      { deliverAs: "followUp", triggerTurn: false },
-    );
-    return undefined;
-  });
-
-
-
   // Conversation context for the classifier, read from the session projection
   // (compaction-aware). InputEvent itself carries only the new text, so this
   // is the only way the seam sees what the conversation is actually about.
@@ -713,13 +680,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // The intention seam: the agent declares what it is doing in its own final
   // message. Same two-stage Jev over the turn evidence; the doctrine rides
   // into the next turn as a followUp the model reads.
-  const runAgentEnd = async (event: unknown, ctx: unknown): Promise<void> => {
+  const runAgentEnd = async (messages: unknown[], turn: TurnEvidence, ctx: unknown, epoch: number): Promise<void> => {
     try {
-      if (off()) return;
-      pending = null; // already flushed, or superseded by a fresh decision
-      const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
-      const turn = turnEvidence(messages, messageCursor);
-      messageCursor = turn.nextIdx;
       const { lastAssistant, wasActive } = turn;
       // An empty boundary (no new messages) is not a decision: no row.
       if (messages.length === 0 || (!lastAssistant && !wasActive)) return;
@@ -779,34 +741,22 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         });
         return;
       }
-      cooldownSet(entry.id);
-      readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
-
-      // CORE-2367: this block used to be built and DISCARDED, so the intention
-      // seam showed the operator a card while sending the model nothing at all -
-      // which is why "the agent never reads it" looked like disobedience rather
-      // than the delivery that actually happened. Both audiences get it now.
-      const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, outcome: "fire", reason: "fire", injected: true, confidence: result.choice.confidence, gate: Number(verdict.gateMean.toFixed(3)), ...jevFacts });
-      // The renderer draws the card from the labelled block's fields, so the model
-      // receives the doctrine and the operator still sees the house card.
-      pi.sendMessage(
-        {
-          customType: CUSTOM_TYPE,
-          content: block,
-          display: true,
-          details: { skill: entry.id, level: entry.level, seam: "agent_end" },
-        },
-        { deliverAs: "followUp", triggerTurn: false },
-      );
+      // CORE-2367: the intention block reaches the model, not only the card.
+      offer("agent_end", entry, doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model), epoch, READ_WINDOW_TURNS, {
+        confidence: result.choice.confidence,
+        gate: Number(verdict.gateMean.toFixed(3)),
+        ...jevFacts,
+      });
     } catch {
       /* fail-open: a suggestion extension must never break a session */
     }
   };
 
-  // Coverage: a turn with no tool call would otherwise drop what submit
-  // decided, so agent_end flushes it before its own decision runs.
-  pi.on("agent_end", async (event: unknown, ctx: unknown) => {
+  pi.on("agent_start", () => noteRunStart());
+
+  // The intention seam: evidence is read synchronously (cheap, in memory), the
+  // classification runs detached (CORE-2549).
+  pi.on("agent_end", (event: unknown, ctx: unknown) => {
     // Turn boundary: age the read watch BEFORE this turn's own decision can arm a new one.
     if (readWatch) {
       const id = readWatch.id;
@@ -814,27 +764,19 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       readWatch = next.watch;
       if (next.expired) logDecision({ ts: new Date().toISOString(), seam: "read_after_suggest", pick: id, outcome: "expired" });
     }
-    if (pending && deliverySeam({ prompted: true, pending: true, usedTool: false, activeTurn: true }) === "agent_end_flush") {
-      const item = pending;
-      pending = null;
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end_flush", pick: item.entry.id, injected: true, confidence: item.confidence });
-      pi.sendMessage(
-        {
-          customType: CUSTOM_TYPE,
-          content: item.block,
-          display: true,
-          details: { skill: item.entry.id, level: item.entry.level, seam: "agent_end_flush" },
-        },
-        { deliverAs: "followUp", triggerTurn: false },
-      );
-    }
-    return runAgentEnd(event, ctx);
+    if (off()) return;
+    const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
+    const turn = turnEvidence(messages, messageCursor);
+    messageCursor = turn.nextIdx;
+    const epoch = currentEpoch();
+    detach(() => runAgentEnd(messages, turn, ctx, epoch));
   });
 
   // Reload the roster when packs change on disk (cheap: cache TTL governs).
   if (typeof pi.on === "function") {
     // Build the index as the session starts, off any handler's critical path.
     pi.on("session_start", () => {
+      resetSession();
       resetIndex();
       void rebuildIndex(process.cwd());
       void primeApiKey();

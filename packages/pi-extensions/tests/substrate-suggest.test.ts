@@ -508,7 +508,7 @@ describe("extension wiring (CORE-2406)", () => {
     substrateSuggestExtension(pi as never);
     // A typo or rename here leaves the handler attached to nothing and the
     // steer silently dead, so the real event names are pinned.
-    expect([...registered.keys()].sort()).toEqual(["agent_end", "session_before_compact", "session_start", "tool_call", "tool_result"]);
+    expect([...registered.keys()].sort()).toEqual(["agent_end", "agent_start", "session_before_compact", "session_start", "tool_call", "tool_result"]);
     const handler = registered.get("tool_result")?.[0];
     expect(typeof handler).toBe("function");
     // A real-shaped edit result rides this event; the handler accepts it.

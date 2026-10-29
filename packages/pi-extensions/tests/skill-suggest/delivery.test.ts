@@ -2,33 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deliverySeam, type Situation } from "../../extensions/skill-suggest/index.ts";
-
-const at = (o: Partial<Situation>): Situation => ({ prompted: false, pending: false, usedTool: false, activeTurn: false, ...o });
-
-describe("delivery covers every situation", () => {
-  it("prompted turn with tools delivers inline at the first tool_result", () => {
-    expect(deliverySeam(at({ prompted: true, pending: true, usedTool: true }))).toBe("tool_result");
-  });
-
-  it("prompted turn WITHOUT tools still delivers — the regression that dropped a block", () => {
-    expect(deliverySeam(at({ prompted: true, pending: true, usedTool: false }))).toBe("agent_end_flush");
-  });
-
-  it("unprompted turn (autonomous continue, resume) is judged at the boundary", () => {
-    expect(deliverySeam(at({ prompted: false, pending: false, usedTool: true, activeTurn: true }))).toBe("agent_end_decision");
-    expect(deliverySeam(at({ prompted: false, usedTool: false, activeTurn: true }))).toBe("agent_end_decision");
-  });
-
-  it("prompted turn that already delivered falls through to the boundary decision", () => {
-    expect(deliverySeam(at({ prompted: true, pending: false, usedTool: true, activeTurn: true }))).toBe("agent_end_decision");
-  });
-
-  it("idle turns deliver nothing", () => {
-    expect(deliverySeam(at({}))).toBe("none");
-    expect(deliverySeam(at({ prompted: true, activeTurn: false }))).toBe("none");
-  });
-});
+import { resetPipeline, settle } from "../../shared/suggest-pipeline.ts";
 
 // ---- behavioural harness: drive the registered handlers of a real extension instance ----
 
@@ -81,14 +55,18 @@ afterEach(() => {
 
 async function boot() {
   const handlers: Record<string, Handler> = {};
+  const raw: Record<string, Handler> = {};
   const sent: Sent[] = [];
   let renderer: ((m: { content?: unknown }) => { render: () => string[] }) | null = null;
   const pi = {
     getFlag: () => false,
-    on: (name: string, fn: Handler) => { handlers[name] = fn; },
+    // Handlers return before detached classification finishes (CORE-2549):
+    // the harness waits for the pipeline to settle after each call.
+    on: (name: string, fn: Handler) => { handlers[name] = async (e: unknown, c?: unknown) => { const r = await fn(e, c); await settle(); return r; }; raw[name] = fn; },
     sendMessage: (m: Sent) => { sent.push(m); },
     registerMessageRenderer: (_t: string, fn: typeof renderer) => { renderer = fn; },
   };
+  resetPipeline();
   const mod = await import("../../extensions/skill-suggest/index.ts");
   mod.default(pi as never);
   // The index builds off the hot path; a test waits for it the way a session
@@ -96,7 +74,7 @@ async function boot() {
   mod.resetIndex();
   await mod.rebuildIndex(process.cwd());
   const ctx = { modelRegistry: stubRegistry };
-  return { handlers, sent, ctx, render: (m: Sent) => (renderer ? renderer(m).render().join("\n") : "") };
+  return { handlers, raw, sent, ctx, render: (m: Sent) => (renderer ? renderer(m).render().join("\n") : "") };
 }
 
 describe("CORE-2367: agent_end delivers the doctrine to the model", () => {
