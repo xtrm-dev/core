@@ -71,7 +71,6 @@ describe("retired Pi extensions", () => {
       "packages/pi-extensions/extensions/xtprompt/index.test.ts",
       ".xtrm/packages/pi-extensions/src/registry.ts",
       ".xtrm/packages/pi-extensions/src/shared/legacy-path-map.ts",
-      ".xtrm/ext-src/core/adapter.ts",
       ".xtrm/packages/pi-extensions/src/core/adapter.ts",
     ]) {
       const content = readFileSync(join(repoRoot, relativePath), "utf8");
@@ -102,7 +101,6 @@ describe("retired Pi extensions", () => {
     // footer went git-only. Gate-functional tokens only — a historical
     // comment may name the retired board, live code may not gate on it.
     for (const relativePath of [
-      ".xtrm/ext-src/custom-footer/index.ts",
       ".xtrm/packages/pi-extensions/extensions/custom-footer/index.ts",
     ]) {
       const content = readFileSync(join(repoRoot, relativePath), "utf8");
@@ -127,11 +125,11 @@ describe("retired Pi extensions", () => {
 
   test("no shipped extension source authorizes edits or commits on Beads claim state", () => {
     // CORE-2403: the canonical tree is not the only shipped tree — walk the
-    // committed mirrors too. `.xtrm/ext-src` is deprecated but still copied
-    // into worktrees, so a gate there would still execute.
+    // committed npm mirror too. `.xtrm/ext-src` was the other mirror root;
+    // fully removed (CORE-2545), so only `.xtrm/packages` remains.
     const extensionRoots = [
       "packages/pi-extensions/extensions",
-      ".xtrm/ext-src",
+      ".xtrm/packages/pi-extensions/extensions",
       ".xtrm/packages/pi-extensions/extensions",
       ".xtrm/packages/pi-extensions/src",
     ];
