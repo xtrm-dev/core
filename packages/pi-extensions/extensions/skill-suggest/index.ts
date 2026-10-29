@@ -449,6 +449,8 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   const cooldowns: Record<string, number> = {};
   /** Advances per turn so consecutive turns do not double-count evidence. */
   let messageCursor = 0;
+  /** Inputs seen this session: an extension-sourced input that opens the session is a dispatched task (CORE-2551). */
+  let inputsThisSession = 0;
   /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
   let readWatch: ReadWatch | null = null;
   /** Files read or edited this session, newest last, bounded: territory evidence for the shortlist. */
@@ -531,13 +533,19 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     logDecision({ ts: new Date().toISOString(), seam, pick: entry.id, outcome: fired ? "fire" : "skip", reason: fired ? "fire" : verdict, injected: fired, ...facts });
   };
 
-  const handler = async (event: { text?: string }, ctx?: { modelRegistry?: unknown; sessionManager?: unknown }) => {
+  const handler = async (event: { text?: string; source?: string }, ctx?: { modelRegistry?: unknown; sessionManager?: unknown }) => {
     latestCtx = ctx;
     if (off()) return { action: "continue" } as const;
     // A new prompt moves the evidence on: answers still in flight for the
     // previous one become stale (CORE-2549).
     const epoch = notePrompt(event);
     const prompt = typeof event?.text === "string" ? event.text : "";
+    // CORE-2551: peer, coordinator and intercom text arrives with source
+    // "extension" mid-session; it is not a request to this agent, and the
+    // working turn it starts is judged at agent_end. The input that opens a
+    // session is the dispatched task itself, so it is judged here.
+    const opensSession = inputsThisSession++ === 0;
+    if (event?.source === "extension" && !opensSession) return logSkip("input", "injected"), { action: "continue" } as const;
     if (prompt.startsWith("/")) return logSkip("input", "command"), { action: "continue" } as const; // commands decide for themselves
     if (isControlNudge(prompt)) return logSkip("input", "control_nudge"), { action: "continue" } as const; // "continue" carries no task signal
     if (prompt.trim().length < 12) return logSkip("input", "too_short"), { action: "continue" } as const;
@@ -776,6 +784,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   if (typeof pi.on === "function") {
     // Build the index as the session starts, off any handler's critical path.
     pi.on("session_start", () => {
+      inputsThisSession = 0;
       resetSession();
       resetIndex();
       void rebuildIndex(process.cwd());

@@ -162,6 +162,37 @@ describe("CORE-2533: the classifier never sees more than the shortlist", () => {
   });
 });
 
+describe("CORE-2551: injected text never reaches the input classifier", () => {
+  it("skips mid-session input with source 'extension', logs 'injected', and still judges the working turn", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async (...a: [unknown, unknown]) => (asked++, stubRegistry.classify(...(a as []))) };
+    const { handlers, sent } = await boot();
+    await handlers["input"]!({ text: "/earlier", source: "interactive" }, { modelRegistry: counting });
+    const before = await readLogSize();
+    await handlers["input"]!({ text: "[cross-agent message] follow the demo procedure for this deploy", source: "extension" }, { modelRegistry: counting });
+    expect(asked).toBe(0);
+    expect((await readLogSince(before)).filter((r) => r["seam"] === "input").map((r) => r["reason"])).toEqual(["injected"]);
+    await handlers["agent_end"]!(WORKING_TURN, { modelRegistry: counting });
+    expect(asked).toBe(1);
+    expect(sent).toHaveLength(1);
+  });
+  it("an injected task that opens the session is judged (a dispatched worker's request)", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const { handlers } = await boot();
+    // A fresh instance has seen no input: this one opens the session.
+    await handlers["input"]!({ text: "# Task: follow the demo procedure for this deploy", source: "extension" }, { modelRegistry: counting });
+    expect(asked).toBe(1);
+  });
+  it("typed input is still judged", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const { handlers } = await boot();
+    await handlers["input"]!({ text: "follow the demo procedure for this deploy", source: "interactive" }, { modelRegistry: counting });
+    expect(asked).toBe(1);
+  });
+});
+
 describe("CORE-2367: the header carries no dangling placeholder", () => {
   it("omits the separator when there is no real ref", async () => {
     const { formatSuggestionCard } = await import("../../extensions/substrate-suggest/catalog.ts");
