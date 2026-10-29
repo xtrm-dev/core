@@ -153,11 +153,14 @@ describe("conversation context for the classifier", () => {
 });
 
 describe("turn evidence beats final-message-only", () => {
+  // Pi's real shapes (docs/message-types.md): toolCall content blocks with
+  // name/arguments, and separate toolResult messages carrying isError.
   const turn = [
     { role: "user", content: [{ type: "text", text: "the auth test fails intermittently" }] },
-    { role: "assistant", content: [{ type: "text", text: "I suspect the fixture races." }, { type: "tool_call", toolName: "bash", input: { command: "npm test" } }] },
-    { role: "assistant", content: [{ type: "tool_result", toolName: "bash" }] },
-    { role: "assistant", content: [{ type: "tool_call", toolName: "edit", input: { file_path: "src/auth.ts" } }] },
+    { role: "assistant", content: [{ type: "text", text: "I suspect the fixture races." }, { type: "toolCall", id: "c1", name: "bash", arguments: { command: "npm test" } }] },
+    { role: "toolResult", toolCallId: "c1", toolName: "bash", content: [{ type: "text", text: "1 failed" }], isError: true },
+    { role: "assistant", content: [{ type: "toolCall", id: "c2", name: "edit", arguments: { path: "src/auth.ts" } }] },
+    { role: "toolResult", toolCallId: "c2", toolName: "edit", content: [{ type: "text", text: "ok" }], isError: false },
     { role: "assistant", content: [{ type: "text", text: "Done — verifying now." }] },
   ];
 
@@ -169,6 +172,23 @@ describe("turn evidence beats final-message-only", () => {
     expect(ev.editedFiles).toEqual(["src/auth.ts"]);
     expect(ev.excerpt).toContain("user: the auth test fails intermittently");
     expect(ev.excerpt).toContain("tool: bash");
+    expect(ev.excerpt).toContain("tool_error: bash");
+    expect(ev.excerpt).not.toContain("1 failed"); // tool output is not turn text
+  });
+
+  it("a successful tool turn is active but not errored (CORE-2547)", () => {
+    const ok = [
+      { role: "assistant", content: [{ type: "text", text: "Next I will run the suite." }, { type: "toolCall", id: "c1", name: "bash", arguments: { command: "npm test" } }] },
+      { role: "toolResult", toolCallId: "c1", toolName: "bash", content: [{ type: "text", text: "all green" }], isError: false },
+    ];
+    const ev = turnEvidence(ok, 0);
+    expect(ev.wasActive).toBe(true);
+    expect(ev.errored).toBe(false);
+    expect(ev.editedFiles).toEqual([]);
+  });
+
+  it("a text-only turn is not active", () => {
+    expect(turnEvidence([{ role: "assistant", content: [{ type: "text", text: "Here is the answer." }] }], 0).wasActive).toBe(false);
   });
 
   it("advances its cursor so consecutive turns do not double-count", () => {

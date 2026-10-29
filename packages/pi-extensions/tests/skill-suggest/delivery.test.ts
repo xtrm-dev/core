@@ -57,8 +57,8 @@ const stubRegistry = {
 const WORKING_TURN = {
   messages: [{
     role: "assistant",
-    content: [{ type: "text", text: "Next I will follow the demo procedure." }, { type: "tool_call", toolName: "edit", input: { path: "a.ts" } }],
-  }],
+    content: [{ type: "text", text: "Next I will follow the demo procedure." }, { type: "toolCall", id: "c1", name: "edit", arguments: { path: "a.ts" } }],
+  }, { role: "toolResult", toolCallId: "c1", toolName: "edit", content: [{ type: "text", text: "ok" }], isError: false }],
 };
 
 let repo: string;

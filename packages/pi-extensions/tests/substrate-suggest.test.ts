@@ -514,3 +514,34 @@ describe("extension wiring (CORE-2406)", () => {
     await handler!({ type: "tool_result", toolName: "edit", input: { path: "x.ts" }, args: {}, content: [] } as never);
   });
 });
+
+describe("turnEvidence reads pi's real message shapes (CORE-2547)", () => {
+  it("a toolCall block marks an active turn; tool output stays out of the excerpt", async () => {
+    const { turnEvidence } = await import("../extensions/substrate-suggest/index.ts");
+    const ev = turnEvidence([
+      { role: "assistant", content: [{ type: "text", text: "Running the suite." }, { type: "toolCall", id: "c1", name: "bash", arguments: { command: "npm test" } }] },
+      { role: "toolResult", content: [{ type: "text", text: "noisy output" }], isError: false },
+    ], 0);
+    expect(ev.wasActive).toBe(true);
+    expect(ev.lastAssistant).toBe("Running the suite.");
+    expect(ev.excerpt).not.toContain("noisy output");
+  });
+
+  it("an erroring toolResult marks an active turn even without a write-class call", async () => {
+    const { turnEvidence } = await import("../extensions/substrate-suggest/index.ts");
+    const ev = turnEvidence([
+      { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "read", arguments: { path: "a.ts" } }] },
+      { role: "toolResult", content: [{ type: "text", text: "ENOENT" }], isError: true },
+    ], 0);
+    expect(ev.wasActive).toBe(true);
+  });
+
+  it("a read-only, text-free turn is not active", async () => {
+    const { turnEvidence } = await import("../extensions/substrate-suggest/index.ts");
+    const ev = turnEvidence([
+      { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "read", arguments: { path: "a.ts" } }] },
+      { role: "toolResult", content: [{ type: "text", text: "ok" }], isError: false },
+    ], 0);
+    expect(ev.wasActive).toBe(false);
+  });
+});

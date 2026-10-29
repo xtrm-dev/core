@@ -184,7 +184,7 @@ describe("the two silent advisors fire through a fake registry (CORE-2361)", () 
       {
         role: "assistant",
         content: [
-          { type: "tool_call", toolName: "bash" },
+          { type: "toolCall", id: "c1", name: "bash", arguments: {} },
           { type: "text", text: "Everything is queued on my side; I will simply remain available until the pipeline reports back." },
         ],
       },
@@ -200,7 +200,7 @@ describe("the two silent advisors fire through a fake registry (CORE-2361)", () 
       {
         role: "assistant",
         content: [
-          { type: "tool_call", toolName: "bash" },
+          { type: "toolCall", id: "c1", name: "bash", arguments: {} },
           { type: "text", text: "I will wait for the pipeline to report back." },
         ],
       },

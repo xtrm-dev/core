@@ -222,9 +222,15 @@ export interface TurnEvidence {
  * assistant message, a tool error, or an edited file, and the finale is "done,
  * let me verify". Cursor-based so consecutive turns do not double-count.
  * Mirrors substrate-suggest's turnEvidence.
+ *
+ * Pi's shapes (docs/message-types.md): an assistant tool call is a
+ * `{type: "toolCall", name, arguments}` content block; its result is a separate
+ * `{role: "toolResult", toolName, isError}` message. Reading invented
+ * `tool_call`/`tool_result` blocks left wasActive false on every real turn, so
+ * this seam never classified anything (CORE-2547).
  */
 export function turnEvidence(
-  messages: ReadonlyArray<{ role?: string; content?: unknown }>,
+  messages: ReadonlyArray<{ role?: string; content?: unknown; toolName?: unknown; isError?: unknown }>,
   fromIdx: number,
 ): TurnEvidence {
   const parts: string[] = [];
@@ -234,6 +240,14 @@ export function turnEvidence(
   let errored = false;
   for (let i = Math.max(0, fromIdx); i < messages.length; i++) {
     const m = messages[i];
+    if (m?.role === "toolResult") {
+      wasActive = true;
+      if (m.isError === true) {
+        errored = true;
+        parts.push(`tool_error: ${String(m.toolName ?? "").slice(0, 40)}`);
+      }
+      continue; // tool output is not turn text; it would crowd out the intention
+    }
     const content = Array.isArray(m?.content) ? (m!.content as Array<Record<string, unknown>>) : [];
     for (const p of content) {
       const type = p?.["type"];
@@ -241,19 +255,15 @@ export function turnEvidence(
         const text = p["text"];
         if (m?.role === "assistant") lastAssistant = text;
         if (text.trim()) parts.push(`${m?.role ?? "?"}: ${text.slice(0, 1200)}`);
-      } else if (type === "tool_call") {
-        const name = String(p["toolName"] ?? p["name"] ?? "");
+      } else if (type === "toolCall") {
+        const name = String(p["name"] ?? "");
         wasActive = true;
         if (/^(edit|write|apply_patch|multi_edit)$/.test(name)) {
-          const path = (p["input"] ?? p["args"] ?? {}) as Record<string, unknown>;
-          const file = ["file_path", "filePath", "path", "file"].map((k) => path[k]).find((v) => typeof v === "string");
+          const args = (p["arguments"] ?? {}) as Record<string, unknown>;
+          const file = ["path", "file_path", "filePath", "file"].map((k) => args[k]).find((v) => typeof v === "string");
           if (typeof file === "string" && !editedFiles.includes(file)) editedFiles.push(file);
         }
         parts.push(`tool: ${name}`);
-      } else if (type === "tool_result" || type === "tool_error") {
-        wasActive = true;
-        errored = true;
-        parts.push(`tool_error: ${String(p["toolName"] ?? "").slice(0, 40)}`);
       }
     }
   }

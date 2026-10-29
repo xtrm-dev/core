@@ -106,14 +106,24 @@ const SKILL_SOURCE_VERB: VerbSpec = {
 
 const REF_RE = /\b([A-Z][A-Z0-9]{1,15}-\d+)\b/;
 
-/** Extract bounded turn evidence from finished agent messages. */
-function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fromIdx: number): { excerpt: string; lastAssistant: string; wasActive: boolean; nextIdx: number } {
+/**
+ * Extract bounded turn evidence from finished agent messages.
+ *
+ * Pi's shapes (docs/message-types.md): tool calls are `{type: "toolCall", name}`
+ * content blocks on assistant messages; results are separate
+ * `{role: "toolResult", isError}` messages (CORE-2547).
+ */
+export function turnEvidence(messages: Array<{ role?: string; content?: unknown; isError?: unknown }>, fromIdx: number): { excerpt: string; lastAssistant: string; wasActive: boolean; nextIdx: number } {
   const parts: string[] = [];
   let lastAssistant = "";
   let wasActive = false;
   let userText = 0;
   for (let i = fromIdx; i < messages.length; i++) {
     const m = messages[i];
+    if (m?.role === "toolResult") {
+      if (m.isError === true) wasActive = true;
+      continue; // tool output is not turn text
+    }
     const content = Array.isArray(m?.content) ? (m!.content as Array<Record<string, unknown>>) : [];
     for (const p of content) {
       if (p?.["type"] === "text" && typeof p["text"] === "string") {
@@ -122,11 +132,10 @@ function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fro
         if (role === "assistant") lastAssistant = p["text"];
         if (role === "user") userText++;
       }
-      if (p?.["type"] === "tool_call") {
-        const name = String(p["toolName"] ?? p["name"] ?? "");
+      if (p?.["type"] === "toolCall") {
+        const name = String(p["name"] ?? "");
         if (["edit", "write", "bash", "python", "structured_return"].includes(name)) wasActive = true;
       }
-      if (p?.["type"] === "tool_result" && p["isError"] === true) wasActive = true;
     }
   }
   const excerpt = parts.join("\n").slice(0, 8000);
