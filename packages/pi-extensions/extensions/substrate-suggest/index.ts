@@ -70,6 +70,10 @@ import {
   cachedSkillPacks,
   discoverSkillPacks,
   isMonitorSetter,
+  isNotifyingWork,
+  waitFacts,
+  waitGate,
+  waitPrecondition,
   skillVerb,
   territoryHit,
   waitGuardVerb,
@@ -325,6 +329,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   let lastTouchedRef: string | null = null;
   let lastClaimScan = { at: 0, ref: null as string | null };
   let turnMonitorSet = false;
+  /** Turns since notifying work (subagent, specialist, background task, monitor) started; Infinity if none. */
+  let turnsSinceNotifying = Number.POSITIVE_INFINITY;
   let turnEditedFiles: string[] = [];
   let turnSteeredFiles: string[] = [];
   let turnProvenanceSeen = false;
@@ -424,6 +430,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         /* counters are best-effort */
       }
       if (isMonitorSetter(tool, e.args, e.input)) turnMonitorSet = true;
+      if (isNotifyingWork(tool, e.args, e.input)) turnsSinceNotifying = 0;
       if (isEditor(tool)) turnEditedFiles = turnEditedFileInto(turnEditedFiles, e, tool); else if (isProvenanceReader(tool, e.args, e.input)) turnProvenanceSeen = true;
       const { ref, isClaim } = observeToolCall(tool, e.args ?? e.input);
       if (ref) {
@@ -594,6 +601,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     messageCursor = nextIdx;
     const monitorSet = turnMonitorSet;
     turnMonitorSet = false;
+    const notifyingRecently = turnsSinceNotifying <= 2;
+    turnsSinceNotifying += 1;
     turnEditedFiles = [];
     turnSteeredFiles = [];
     turnProvenanceSeen = false;
@@ -606,16 +615,21 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     // CORE-2361: no regex pre-gate — the old waitCommitment() match essentially
     // never fired, so this advisor was silent. Jev reads the full final
     // message and the gate nouls decide; wasActive bounds the call cost.
-    if (jevAvailable && wasActive && lastAssistant && !monitorSet) {
+    // CORE-2550: code decides whether anything external is pending that
+    // nothing will surface; Jev is asked only then, and must say yes twice.
+    if (jevAvailable && wasActive && lastAssistant) {
+      const facts = waitFacts(lastAssistant, { notifyingRecently, monitorSet });
+      const blocked = waitPrecondition(facts);
       const verb = waitGuardVerb();
-      if (cooldownAllows(cooldowns, "wait", verb.id, Date.now(), verb)) {
+      if (blocked) {
+        if (facts.externalTarget) logDecision({ ts: new Date().toISOString(), issue: null, verb: null, source: "deterministic", duty: "wait_guard", gate: `wait_precondition:${blocked}`, facts });
+      } else if (cooldownAllows(cooldowns, "wait", verb.id, Date.now(), verb)) {
         const result = await askJev(registry, {
           final_message: lastAssistant,
           monitor_set_this_turn: monitorSet,
         }, {
           // CORE-2361: a choice question is mandatory — both Jev client paths
-          // null out a result with no choice answer, which is why this duty
-          // never fired even when the regex matched.
+          // null out a result with no choice answer.
           monitor_kind: {
             type: "choice",
             instructions: "If the agent should set up a monitor before waiting, pick the kind that fits; none otherwise.",
@@ -629,10 +643,17 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for a specific external event (CI, deploy, review, another agent's reply, a long job) with no other continuation path? Waiting on the operator's next message inside an active conversation is NOT waiting — the conversation is the continuation path. Narrating observation ('watch for it', 'let's see what happens') is NOT a wait commitment." },
           monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here — i.e. is there something pending that the conversation itself will not surface? If the only continuation is the operator replying, answer no." },
         } as Record<string, Question>, "wait_guard");
-        const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
-        if (result && g >= GATE_THRESHOLD) {
-          emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
-          return;
+        if (result) {
+          const refused = waitGate({
+            waitWarranted: result.nouls["wait_warranted"],
+            monitorWouldHelp: result.nouls["monitor_would_help"],
+            monitorKind: result.choice.choice,
+          });
+          if (!refused) {
+            emit(verb, "—", { confidence: result.choice.confidence, source: "jev", model: result.model });
+            return;
+          }
+          logDecision({ ts: new Date().toISOString(), issue: null, verb: null, source: "jev", duty: "wait_guard", gate: `wait_gate:${refused}`, nouls: result.nouls, monitor_kind: result.choice.choice });
         }
       }
     }

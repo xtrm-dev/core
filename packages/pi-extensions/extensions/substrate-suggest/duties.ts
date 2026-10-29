@@ -264,6 +264,63 @@ const WAIT_TARGET_RE =
   /\b(?:once|when|after|until)\s+(?:(?:both|they|it|that|this)\s+(?:merge[sd]?|lands?|finish(?:es)?|complet(?:e|es|ed)|pass(?:es)?|is done)\b|(?:the\s+)?(?:ci|cd|build|pipeline|tests?|checks?|deploy\w*|review|job|run|workflow|results?|reply|response|summary|output|queue|release|cut|merge|publish)\b)/i;
 
 /** Tool evidence that a monitor or wake seam actually exists for the thing being awaited. */
+/**
+ * Work that will wake this session by itself: a subagent, a specialist
+ * activation, a background task or a monitor. Waiting on it needs no extra
+ * monitor (CORE-2550).
+ */
+export function isNotifyingWork(toolName: string, args: Record<string, unknown> | undefined, input: Record<string, unknown> | undefined): boolean {
+  if (isMonitorSetter(toolName, args, input)) return true;
+  return /^(Agent|Task|subagent|subagents|spawn_agent|specialist_dispatch|specialist_resume|Workflow|background|bash_background)$/i.test(toolName);
+}
+
+export interface WaitFacts {
+  /** The final message names an external event it waits for (CI, deploy, review, a job, a peer reply). */
+  externalTarget: boolean;
+  /** The continuation is the operator: approval, a decision, an answer. */
+  waitsOnOperator: boolean;
+  /** Notifying work was started this turn or in the last two, or the message says a notification will come. */
+  notified: boolean;
+  /** A monitor or wake seam was set this turn. */
+  monitorSet: boolean;
+}
+
+const OPERATOR_WAIT_RE =
+  /\b(?:if|once|when|until|after)\s+(?:the\s+)?(?:operator|you|user)\b|\b(?:your|operator'?s?|user'?s?)\s+(?:approval|go-?ahead|decision|answer|reply|call|ruling|confirmation)\b|\b(?:awaiting|waiting (?:for|on))\s+(?:the\s+)?(?:operator|you|user)\b/i;
+const NOTIFIED_RE =
+  /\b(?:will be notified|i'?ll be notified|notif(?:y|ies) me|i(?:'ll| will) get (?:a|the) (?:notification|reply|ping)|wakes? (?:me|this session)|completion notice|task-notification)\b/i;
+
+/** Derive the wait facts from the final message plus observed tool events. */
+export function waitFacts(finalMessage: string, observed: { notifyingRecently: boolean; monitorSet: boolean }): WaitFacts {
+  return {
+    externalTarget: waitCommitment(finalMessage),
+    waitsOnOperator: OPERATOR_WAIT_RE.test(finalMessage),
+    notified: observed.notifyingRecently || NOTIFIED_RE.test(finalMessage),
+    monitorSet: observed.monitorSet,
+  };
+}
+
+/**
+ * The deterministic precondition: Jev is asked only when something external
+ * is pending that nothing will surface. Returns the reason it fails, or null.
+ */
+export function waitPrecondition(facts: WaitFacts): string | null {
+  if (facts.monitorSet) return "monitor_set";
+  if (!facts.externalTarget) return "no_external_target";
+  if (facts.waitsOnOperator) return "waits_on_operator";
+  if (facts.notified) return "notification_pending";
+  return null;
+}
+
+/** Wait-guard gate: both nouls must say yes and the monitor pick must not be none. */
+export const WAIT_NOUL_THRESHOLD = 0.5;
+export function waitGate(answer: { waitWarranted: number | undefined; monitorWouldHelp: number | undefined; monitorKind: string | undefined }): string | null {
+  if (!answer.monitorKind || answer.monitorKind === "none") return "monitor_kind_none";
+  if ((answer.waitWarranted ?? 0) < WAIT_NOUL_THRESHOLD) return "wait_not_warranted";
+  if ((answer.monitorWouldHelp ?? 0) < WAIT_NOUL_THRESHOLD) return "monitor_would_not_help";
+  return null;
+}
+
 export function isMonitorSetter(toolName: string, args: Record<string, unknown> | undefined, input: Record<string, unknown> | undefined): boolean {
   // Claude Code backgrounds Bash itself; Pi backgrounds through the first-party tools.
   if (args?.["run_in_background"] === true || input?.["run_in_background"] === true) return true;
