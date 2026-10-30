@@ -503,9 +503,25 @@ describe('claude-receipt-ack Stop transcript tail-scan (CORE-2496)', () => {
         expect(parseTranscriptTargets(null as never)).toEqual([]);
     });
 
+    it('acks only inbound records: never assistant text, tool results or request logs (CORE-2554 C3)', () => {
+        const env = (id: string) => `<cross-session-message message-id="${id}" from="uds:/tmp/a.sock">\nhi\n</cross-session-message>`;
+        const lines = [
+            JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: env('m-quoted') }] } }),
+            JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: env('m-tool') }] } }),
+            JSON.stringify({ type: 'api-request-blob', message: { role: 'user', content: env('m-blob') } }),
+            JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: env('m-text-part') }] } }),
+            JSON.stringify({ type: 'attachment', attachment: { type: 'queued_command', prompt: env('m-queued') } }),
+            '{"type":"user","message":{"role":"user","content":"<cross-session-message message-id=\\"m-partial',
+        ].join('\n');
+        expect(parseTranscriptTargets(lines)).toEqual([
+            { messageId: 'm-text-part', sockPath: '/tmp/a.sock' },
+            { messageId: 'm-queued', sockPath: '/tmp/a.sock' },
+        ]);
+    });
+
     it('dedupes repeats within one chunk and caps at MAX_TARGETS', () => {
         const one = (id: string) =>
-            `<cross-session-message message-id="${id}" from="uds:/tmp/a.sock">\nhi\n</cross-session-message>`;
+            JSON.stringify({ type: 'user', message: { role: 'user', content: `<cross-session-message message-id="${id}" from="uds:/tmp/a.sock">\nhi\n</cross-session-message>` } });
         const many = [one('m-1'), 'between', one('m-2'), one('m-1')].join('\n');
         expect(parseTranscriptTargets(many)).toEqual([
             { messageId: 'm-1', sockPath: '/tmp/a.sock' },
@@ -515,9 +531,10 @@ describe('claude-receipt-ack Stop transcript tail-scan (CORE-2496)', () => {
         expect(parseTranscriptTargets(over)).toHaveLength(MAX_TARGETS);
     });
 
-    it('matches the prompt scan on bare quotes (no UserPromptSubmit behavior change)', () => {
+    it('matches the prompt scan on the same envelope (no UserPromptSubmit behavior change)', () => {
         const text = envelope('m-parity-1', 'uds:/tmp/p.sock');
-        expect(parseTranscriptTargets(text)).toEqual(parseReceiptTargets({ prompt: text }));
+        const record = JSON.stringify({ type: 'user', message: { role: 'user', content: text } });
+        expect(parseTranscriptTargets(record)).toEqual(parseReceiptTargets({ prompt: text }));
     });
 });
 

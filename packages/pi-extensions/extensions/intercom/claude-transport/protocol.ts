@@ -61,17 +61,59 @@ function bounded(value: unknown, max = 8192): string {
     .slice(0, max);
 }
 
+/**
+ * Largest envelope body (CORE-2554 C1): the SendMessage payload cap (512 KiB)
+ * plus the envelope lines, the same bound as the Pi wake envelope.
+ */
+export const MAX_ENVELOPE_BODY_BYTES = 528 * 1024;
+
+/** A body or frame too large for the Claude transport: refused loudly, never sliced. */
+export class ClaudeFrameTooLargeError extends Error {
+  readonly bytes: number;
+  readonly limit: number;
+  constructor(what: string, bytes: number, limit: number) {
+    super(`Claude transport: ${what} is ${bytes} bytes; the limit is ${limit} bytes. Split the message and send again.`);
+    this.name = "ClaudeFrameTooLargeError";
+    this.bytes = bytes;
+    this.limit = limit;
+  }
+}
+
+/**
+ * Body text (CORE-2554 C1): newlines and tabs survive (multi-line messages
+ * arrived glued into one line), CRLF normalises, other control characters
+ * and ANSI go. No silent slice: an oversized body throws.
+ */
+function sanitizeBody(value: unknown): string {
+  const text = typeof value === "string" ? value : "";
+  const body = stripAnsi(text)
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+  const bytes = Buffer.byteLength(body, "utf8");
+  if (bytes > MAX_ENVELOPE_BODY_BYTES) throw new ClaudeFrameTooLargeError("the message body", bytes, MAX_ENVELOPE_BODY_BYTES);
+  return body;
+}
+
 function escapeAttr(value: string): string {
   return value.replace(/["<>]/g, "");
 }
 
-/** Escape a body so a forged envelope stays inert text inside the real one. */
+/**
+ * Escape a body so a forged envelope stays inert text inside the real one.
+ * Both tags (CORE-2554 C2): a forged opening tag with its own from= and
+ * message-id= would otherwise read as a second, attributed message.
+ * `</tag` becomes `<\/tag`, `<tag` becomes `<\tag`.
+ */
 function escapeBody(body: string): string {
-  return body.replace(new RegExp(`</(?=${ENVELOPE_TAG}(?:[>\\s/]|$))`, "gi"), "<\\/");
+  return body
+    .replace(new RegExp(`</(?=${ENVELOPE_TAG}(?:[>\\s/]|$))`, "gi"), "<\\/")
+    .replace(new RegExp(`<(?=${ENVELOPE_TAG}(?:[>\\s/]|$))`, "gi"), "<\\");
 }
 
 function unescapeBody(body: string): string {
-  return body.replace(new RegExp(`<\\\\/(?=${ENVELOPE_TAG}(?:[>\\s/]|$))`, "gi"), "</");
+  return body
+    .replace(new RegExp(`<\\\\/(?=${ENVELOPE_TAG}(?:[>\\s/]|$))`, "gi"), "</")
+    .replace(new RegExp(`<\\\\(?=${ENVELOPE_TAG}(?:[>\\s/]|$))`, "gi"), "<");
 }
 
 export interface EnvelopeParts {
@@ -90,7 +132,7 @@ export function buildEnvelope(parts: EnvelopeParts): string {
   if (parts.fromName) attrs.push(`from-name="${escapeAttr(bounded(parts.fromName, 128))}"`);
   if (parts.fromMode) attrs.push(`from-mode="${escapeAttr(bounded(parts.fromMode, 64))}"`);
   const head = attrs.length ? ` ${attrs.join(" ")}` : "";
-  return `<${ENVELOPE_TAG}${head}>\n${escapeBody(bounded(parts.body))}\n</${ENVELOPE_TAG}>`;
+  return `<${ENVELOPE_TAG}${head}>\n${escapeBody(sanitizeBody(parts.body))}\n</${ENVELOPE_TAG}>`;
 }
 
 /** Split an inbound content string into its body and sender attributes. */
@@ -142,19 +184,19 @@ export function buildUserFrame(input: UserFrameInput): BuiltUserFrame {
     ...(input.fromName ? { fromName: input.fromName } : {}),
     ...(input.fromMode ? { fromMode: input.fromMode } : {}),
   });
-  return {
-    messageId,
-    content,
-    frame: {
-      msgV: SUPPORTED_FRAME_VERSION,
-      msg_id: messageId,
-      type: "user",
-      priority: input.priority || "next",
-      ...(input.from ? { from: input.from } : {}),
-      ...(input.sessionId ? { session_id: input.sessionId } : {}),
-      message: { role: "user", content },
-    },
+  const frame = {
+    msgV: SUPPORTED_FRAME_VERSION,
+    msg_id: messageId,
+    type: "user",
+    priority: input.priority || "next",
+    ...(input.from ? { from: input.from } : {}),
+    ...(input.sessionId ? { session_id: input.sessionId } : {}),
+    message: { role: "user", content },
   };
+  // Claude drops a connection past MAX_FRAME_LINE: refuse here, loudly.
+  const lineBytes = Buffer.byteLength(JSON.stringify(frame), "utf8") + 1;
+  if (lineBytes > MAX_FRAME_LINE) throw new ClaudeFrameTooLargeError("the frame", lineBytes, MAX_FRAME_LINE);
+  return { messageId, content, frame };
 }
 
 export interface ReceiptFrameInput {
@@ -190,6 +232,7 @@ export type InboundFrame =
   | { kind: "user"; messageId: string; content: string; from?: string; frame: Record<string, unknown> }
   | { kind: "receipt"; status: ClaudeDeliveryOutcome; origMessageId?: string; from?: string; reason?: string }
   | { kind: "rename"; name: string }
+  | { kind: "unknown_receipt"; seen: unknown; origMessageId?: string; from?: string }
   | { kind: "other"; frame: Record<string, unknown> };
 
 function checkVersion(frame: Record<string, unknown>): void {
@@ -207,6 +250,17 @@ export function parseInboundFrame(raw: unknown): InboundFrame {
   const frame = raw as Record<string, unknown>;
   checkVersion(frame);
   if (frame.type === "control" && frame.action === "peer_message_status") {
+    // CORE-2554 C4: an unrecognised status answers its message as unknown
+    // instead of being dropped (a dropped receipt starved into "delivered").
+    const lowered = typeof frame.status === "string" ? frame.status.toLowerCase() : "";
+    if (!(OUTCOMES as readonly string[]).includes(lowered)) {
+      return {
+        kind: "unknown_receipt",
+        seen: frame.status,
+        ...(typeof frame.orig_msg_id === "string" ? { origMessageId: frame.orig_msg_id } : {}),
+        ...(typeof frame.from === "string" ? { from: frame.from } : {}),
+      };
+    }
     return {
       kind: "receipt",
       status: mapReceiptStatus(frame.status),

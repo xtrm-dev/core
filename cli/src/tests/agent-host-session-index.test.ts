@@ -309,6 +309,20 @@ describe('xt host serves history-only sessions (XTRM-565)', () => {
         expect((await get('/v1/sessions/nope')).status).toBe(404);
     });
 
+    it('?scope=live omits history rows; the default still serves them; a bad scope is a 400 (CORE-2554)', async () => {
+        // Keep this assertion: the desktop app (xtrm-app adapters/agent/live.ts, host-connection.ts)
+        // reads history from the bare path. A "live by default" change would empty its list.
+        expect((await sessions()).some((s) => s.state === 'history_only')).toBe(true);
+        const all = await get('/v1/sessions?scope=all');
+        if (all.body.kind !== 'session_list') throw new Error(`unexpected ${all.body.kind}`);
+        expect(all.body.sessions.some((s) => s.state === 'history_only')).toBe(true);
+        const live = await get('/v1/sessions?scope=live');
+        expect(live.status).toBe(200);
+        if (live.body.kind !== 'session_list') throw new Error(`unexpected ${live.body.kind}`);
+        expect(live.body.sessions.some((s) => s.state === 'history_only')).toBe(false);
+        expect((await get('/v1/sessions?scope=bogus')).status).toBe(400);
+    });
+
     it('rebuilds the same list after the cache is deleted and the host restarts', async () => {
         const original = await sessions();
         expect(original.map((s) => s.sessionId).sort()).toEqual([liveId, 'older'].sort());
@@ -397,6 +411,120 @@ describe('session index repository identity (XTRM-608)', () => {
             return s?.repository === undefined && s?.repositoryPath === undefined ? s : undefined;
         });
         expect(gone).toEqual(expect.not.objectContaining({ repository: expect.anything(), repositoryPath: expect.anything() }));
+    });
+});
+
+describe('session index repository lookups stay off the request path (CORE-2554)', () => {
+    let dir: string;
+    let index: SessionIndex;
+
+    function writePiJournal(id: string, cwd: string): void {
+        const project = path.join(dir, 'pi', cwd.replace(/[/\\]/g, '-'));
+        mkdirSync(project, { recursive: true });
+        writeFileSync(path.join(project, `${id}.jsonl`), piJournal(id, cwd));
+    }
+
+    beforeEach(() => {
+        dir = mkdtempSync(path.join(os.tmpdir(), 'xt-session-index-cap-'));
+    });
+
+    afterEach(async () => {
+        if (index) await index.close();
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('list() and get() start no lookup; the timer starts at most the per-tick cap', async () => {
+        for (let i = 0; i < 40; i += 1) writePiJournal(`cap-${i}`, path.join(dir, `cwd-${i}`));
+        const started: string[] = [];
+        index = new SessionIndex({
+            roots: [{ provider: 'pi', dir: path.join(dir, 'pi') }],
+            repoTickMs: 60_000,
+            repoLookupsPerTick: 3,
+            repoLookup: async (cwd) => {
+                started.push(cwd);
+                return { repositoryPath: cwd };
+            },
+        });
+        await index.ready;
+        for (let i = 0; i < 20; i += 1) {
+            index.list();
+            index.get(`cap-${i}`);
+        }
+        expect(started).toHaveLength(0);
+        (index as unknown as { refreshRepositories(): void }).refreshRepositories();
+        expect(started).toHaveLength(3);
+    });
+
+    it('never-settling lookups hold at most 4 slots, release them by deadline, and log saturation once', async () => {
+        for (let i = 0; i < 40; i += 1) writePiJournal(`hang-${i}`, path.join(dir, `hang-${i}`));
+        const started: string[] = [];
+        const logs: string[] = [];
+        index = new SessionIndex({
+            roots: [{ provider: 'pi', dir: path.join(dir, 'pi') }],
+            repoTickMs: 60_000,
+            repoLookupsPerTick: 10,
+            repoLookupDeadlineMs: 60,
+            repoSaturationLogMs: 0,
+            log: (m) => logs.push(m),
+            repoLookup: (cwd) => {
+                started.push(cwd);
+                return new Promise(() => {}); // a git in uninterruptible sleep
+            },
+        });
+        await index.ready;
+        const tick = () => (index as unknown as { refreshRepositories(): void }).refreshRepositories();
+        for (let i = 0; i < 10; i += 1) tick();
+        expect(started).toHaveLength(4);
+        expect(logs.filter((m) => m.includes('slots busy'))).toHaveLength(1);
+        await new Promise((r) => setTimeout(r, 120));
+        tick();
+        // The deadline freed the slots: the sweep moves on to other cwds.
+        expect(started).toHaveLength(8);
+        expect(new Set(started).size).toBe(8);
+        expect(logs.filter((m) => m.includes('abandoned'))).toHaveLength(4);
+    });
+
+    it('a late settle from an abandoned lookup never writes identity', async () => {
+        writePiJournal('late-1', path.join(dir, 'late'));
+        let settle: (v: { repositoryPath: string }) => void = () => {};
+        index = new SessionIndex({
+            roots: [{ provider: 'pi', dir: path.join(dir, 'pi') }],
+            repoTickMs: 60_000,
+            repoLookupDeadlineMs: 30,
+            repoLookup: () => new Promise((resolve) => (settle = resolve)),
+        });
+        await index.ready;
+        (index as unknown as { refreshRepositories(): void }).refreshRepositories();
+        await new Promise((r) => setTimeout(r, 80));
+        settle({ repositoryPath: '/late/answer' });
+        await new Promise((r) => setTimeout(r, 5));
+        expect(index.get('late-1')).toEqual(expect.not.objectContaining({ repositoryPath: expect.anything() }));
+    });
+
+    it('a failing cwd backs off and logs one line, once', async () => {
+        writePiJournal('bad-1', '/definitely/not/here');
+        const logs: string[] = [];
+        let calls = 0;
+        index = new SessionIndex({
+            roots: [{ provider: 'pi', dir: path.join(dir, 'pi') }],
+            repoTickMs: 60_000,
+            repoTtlMs: 0,
+            log: (m) => logs.push(m),
+            repoLookup: async () => {
+                calls += 1;
+                throw new Error('fatal: cannot change to dir\nsecond line\nthird line');
+            },
+        });
+        await index.ready;
+        const tick = () => (index as unknown as { refreshRepositories(): void }).refreshRepositories();
+        for (let i = 0; i < 5; i += 1) {
+            tick();
+            await new Promise((r) => setTimeout(r, 5));
+        }
+        expect(calls).toBe(1);
+        const lines = logs.filter((m) => m.includes('/definitely/not/here'));
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).not.toContain('\n');
     });
 });
 

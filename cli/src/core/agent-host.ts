@@ -71,6 +71,8 @@ export const AGENT_HOST_PROTOCOL_MAJOR = 1;
 
 const MAX_SOCKET_LINE_BYTES = 32 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
+/** Largest wake payload (SendMessage MAX_PAYLOAD_BYTES, 512 KiB). */
+const MAX_WAKE_PAYLOAD_BYTES = 512 * 1024;
 /** A client further behind than this is disconnected rather than buffered without bound. */
 const MAX_SSE_BACKLOG_BYTES = 8 * 1024 * 1024;
 const SSE_HEARTBEAT_MS = 15_000;
@@ -168,6 +170,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
         promptStartTimeoutMs: options.promptStartTimeoutMs,
         log,
     });
+    const hostStartedAt = Date.now();
     const sessionIndex = options.sessionIndex ? new SessionIndex({ log, ...options.sessionIndex }) : null;
     const launcher = new AgentHostLauncher(options.launch);
     const directHostnames = (options.direct?.hostnames ?? []).map(normalizeDirectHostname);
@@ -288,12 +291,28 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
                 }
             }
         }
+        // CORE-2554 E1: a liveness answer that does no registry or index work, so a probe
+        // measures the event loop itself (a 404 used to be the only cheap control).
+        if (route === 'GET /v1/health') {
+            const body = JSON.stringify({ status: 'ok', pid: process.pid, uptimeMs: Date.now() - hostStartedAt });
+            res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-length': Buffer.byteLength(body) });
+            res.end(body);
+            return;
+        }
         if (await handleAuthRoute(route, parts, req, res, local)) return;
 
         if (route === 'GET /v1/sessions') {
             const live = registry.list();
             let sessions = live;
-            if (sessionIndex) {
+            // ?scope=live skips the history index (CORE-2554): intercom rosters need live rows
+            // only, and the full list is ~1 MB once journals accumulate. ?scope=all is the explicit
+            // history read; the bare path stays the full list because the desktop app reads it.
+            const scope = url.searchParams.get('scope');
+            if (scope !== null && scope !== 'live' && scope !== 'all') {
+                sendJson(res, 400, apiError('invalid_request', 'scope must be live or all'));
+                return;
+            }
+            if (sessionIndex && scope !== 'live') {
                 const liveIds = new Set(live.map((s) => s.sessionId));
                 sessions = live.concat(sessionIndex.list().filter((s) => !liveIds.has(s.sessionId)));
             }
@@ -375,7 +394,10 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
             };
             try {
                 const participant = stringField('participant', 512, true) as string;
-                const payloadRef = stringField('payloadRef', 32 * 1024, true) as string;
+                // CORE-2554 B3: SendMessage payloads with attachments reach 512 KiB; a 32 KiB
+                // cap here refused them and the client fell back to a Claude relay.
+                const payloadRef = stringField('payloadRef', MAX_WAKE_PAYLOAD_BYTES, true) as string;
+                if (Buffer.byteLength(payloadRef, 'utf8') > MAX_WAKE_PAYLOAD_BYTES) throw new Error('wake needs a valid payloadRef');
                 const messageId = stringField('messageId', 128, false);
                 const from = stringField('from', 256, false);
                 const fromName = stringField('fromName', 256, false);

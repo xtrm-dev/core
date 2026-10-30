@@ -19,6 +19,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -45,7 +46,23 @@ export interface HostEnsureEnv {
   log?: (line: string) => void;
 }
 
+/**
+ * The socket the running host announced in its info file (CORE-2554 E4), else the
+ * path a host would bind: recomputing alone misses a host started with another
+ * XDG_RUNTIME_DIR or socket override.
+ */
+export function announcedAgentHostSocket(home = os.homedir()): string | undefined {
+  try {
+    const info = JSON.parse(readFileSync(path.join(home, ".xtrm", "run", "agent-host.json"), "utf8")) as { socket?: unknown };
+    return typeof info.socket === "string" && info.socket.startsWith("/") ? info.socket : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function defaultAgentHostSocketPath(): string {
+  const announced = announcedAgentHostSocket();
+  if (announced) return announced;
   const runtime = process.env.XDG_RUNTIME_DIR;
   if (runtime) return path.join(runtime, "xtrm", "agent-host.sock");
   return path.join(os.homedir(), ".xtrm", "run", "agent-host.sock");
@@ -91,12 +108,23 @@ export function probeAgentHostSocket(sockPath: string, timeoutMs = 1500): Promis
 
 function defaultRunEnsure(command: string[], timeoutMs: number): Promise<{ ok: boolean; detail: string }> {
   return new Promise((resolve) => {
-    execFile(command[0], command.slice(1), { timeout: timeoutMs, encoding: "utf8" }, (error, stdout) => {
+    // CORE-2554 E3: the host this may start serves every session; it must not inherit
+    // this session's identity (SUBSTRATE_HOLDER, XTRM_*, tmux pane).
+    execFile(command[0], command.slice(1), { timeout: timeoutMs, encoding: "utf8", env: ensureSpawnEnv(process.env) }, (error, stdout) => {
       if (!error) return resolve({ ok: true, detail: String(stdout ?? "").slice(0, 256) });
       const message = (error as Error)?.message ?? String(error);
       resolve({ ok: false, detail: message.slice(0, 256) });
     });
   });
+}
+
+const ENSURE_ENV_KEEP = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|TZ|TMPDIR|LC_[A-Z_]+|XDG_[A-Z_]+|NODE_[A-Z_]+|XTRM_AGENT_HOST_[A-Z_]+|DBUS_SESSION_BUS_ADDRESS|NVM_[A-Z_]+|BUN_INSTALL)$/;
+
+/** Process basics only; same allowlist as the CLI's hostSpawnEnv. */
+export function ensureSpawnEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) if (value !== undefined && ENSURE_ENV_KEEP.test(key)) out[key] = value;
+  return out;
 }
 
 const HOST_RUNBOOK = "run `xt host ensure` to restore Pi messaging";
@@ -109,17 +137,28 @@ function hostDownLine(detail: string): string {
   );
 }
 
-// Process-wide ensure state: one flight at a time, silence after health,
-// one loud warning per process while down.
+// Process-wide ensure state: one flight at a time, silence while recently
+// healthy, one loud warning per down episode.
+//
+// CORE-2554 E3: health no longer latches for the life of the process. It holds
+// for HEALTHY_RECHECK_MS, and a lost bridge connection re-arms it at once
+// (rearmAgentHostEnsure), so a host that dies after the first session start
+// is restarted instead of staying down until the next Pi process.
+export const HEALTHY_RECHECK_MS = 60_000;
 let flight: Promise<boolean> | null = null;
-let healthy = false;
+let healthyUntil = 0;
 let warned = false;
 
 /** Test seam: drop all process-wide ensure state. */
 export function __resetHostEnsureState(): void {
   flight = null;
-  healthy = false;
+  healthyUntil = 0;
   warned = false;
+}
+
+/** The host connection was lost: the next monitor call probes again. */
+export function rearmAgentHostEnsure(): void {
+  healthyUntil = 0;
 }
 
 async function runEnsureFlow(env: HostEnsureEnv, options: HostEnsureOptions): Promise<boolean> {
@@ -128,7 +167,8 @@ async function runEnsureFlow(env: HostEnsureEnv, options: HostEnsureOptions): Pr
   const probeTimeoutMs = options.probeTimeoutMs ?? 1500;
   const ensureTimeoutMs = options.ensureTimeoutMs ?? 20000;
   if (await probeAgentHostSocket(sockPath, probeTimeoutMs)) {
-    healthy = true;
+    healthyUntil = Date.now() + HEALTHY_RECHECK_MS;
+    warned = false;
     return true;
   }
   log(`agent host socket ${sockPath} is not answering; running ensure`);
@@ -141,7 +181,8 @@ async function runEnsureFlow(env: HostEnsureEnv, options: HostEnsureOptions): Pr
     result = { ok: false, detail: (error as Error)?.message ?? String(error) };
   }
   if (result.ok && (await probeAgentHostSocket(sockPath, probeTimeoutMs))) {
-    healthy = true;
+    healthyUntil = Date.now() + HEALTHY_RECHECK_MS;
+    warned = false;
     log("agent host ensure succeeded");
     return true;
   }
@@ -163,7 +204,7 @@ async function runEnsureFlow(env: HostEnsureEnv, options: HostEnsureOptions): Pr
  * while a flight is already running.
  */
 export function monitorAgentHostSession(env: HostEnsureEnv, options: HostEnsureOptions = {}): void {
-  if (!options.enabled || healthy || flight) return;
+  if (!options.enabled || Date.now() < healthyUntil || flight) return;
   flight = runEnsureFlow(env, options).finally(() => {
     flight = null;
   });

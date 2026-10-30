@@ -76,7 +76,7 @@ async function rosterEntries(
   // /intercom opens promptly; the ListAgents model tool keeps its own
   // (longer) defaults. Injected fetchers (tests, callers) run untouched.
   const [piSessions, claudePeers] = await Promise.all([
-    (deps.fetchPi ?? (() => fetchPiSessions({ timeoutMs: deps.piTimeoutMs ?? 700 })))().catch(() => []),
+    (deps.fetchPi ?? (() => fetchPiSessions({ timeoutMs: deps.piTimeoutMs ?? 700, retryTimeoutMs: deps.piTimeoutMs ?? 700 })))().catch(() => []),
     (deps.fetchClaude ??
       ((excludeSock?: string) =>
         listClaudeSessions({

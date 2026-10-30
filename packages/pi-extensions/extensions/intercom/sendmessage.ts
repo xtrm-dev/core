@@ -49,6 +49,7 @@ import { buildRoster, entryDisplayRef, fetchPiSessions, legWord, resolveRosterTa
 import {
   claudeReceipts,
   isClaudeReceiptTimeout,
+  UnknownReceiptStatusError,
   isClaudeTransportEnabled,
   listClaudeSessions,
   sendToClaudeSession,
@@ -413,8 +414,13 @@ function httpJson(
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => {
           text += chunk;
-          if (text.length > 1024 * 1024) res.destroy();
+          if (text.length > 1024 * 1024) {
+            // CORE-2554 B5: destroy() fires neither end nor error; settle here.
+            res.destroy();
+            reject(new Error("the agent host reply exceeded 1 MiB"));
+          }
         });
+        res.on("error", reject);
         res.on("end", () => resolve({ status: res.statusCode ?? 0, text }));
       },
     );
@@ -427,10 +433,25 @@ function httpJson(
   });
 }
 
+/**
+ * The agent host answered and rejected the wake (HTTP 4xx: validation,
+ * unknown participant). Not a transport failure: relaying the same frame
+ * through a Claude shadow would only bypass the host's checks (CORE-2554 B4).
+ */
+export class WakeRefusedError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "WakeRefusedError";
+    this.status = status;
+  }
+}
+
 async function defaultPostWake(req: WakeSendRequest, infoPath?: string): Promise<WakeResult> {
   const host = readAgentHostAddress(infoPath);
   if (!host) throw new Error("no agent host is running on this machine");
   const { status, text } = await httpJson("POST", host, "/v1/wake", JSON.stringify(req));
+  if (status >= 400 && status < 500) throw new WakeRefusedError(status, `the agent host refused the wake (http ${status}): ${text.slice(0, 256)}`);
   if (status !== 200) throw new Error(`the agent host refused the wake (http ${status}): ${text.slice(0, 256)}`);
   const reply = JSON.parse(text) as WakeResult;
   if (!reply || typeof reply.messageId !== "string" || typeof reply.state !== "string") {
@@ -530,6 +551,12 @@ interface IdleSubscription {
   expiresAt: number;
   /** Real 12 h backstop (unref'd): fires the expiry notice without a settle. */
   timer: ReturnType<typeof setTimeout>;
+  /**
+   * The watched session's environment (CORE-2554 B7): in-process child
+   * sessions register their own tool, so only the session the wake was
+   * injected into settles this subscription and names itself in the notice.
+   */
+  env: IdleEnv;
 }
 
 /** Cap on live idle subscriptions: the oldest drops with a log when full. */
@@ -550,6 +577,9 @@ interface IdleEnv {
 }
 
 let idleEnv: IdleEnv = { pi: null, postWake: defaultPostWake, log: () => {}, ttlMs: IDLE_SUBSCRIPTION_TTL_MS, maxSubs: MAX_IDLE_SUBSCRIPTIONS, maxUndelivered: MAX_UNDELIVERED, nowMs: Date.now };
+
+/** Environment per registered session; idleEnv stays the last registered one. */
+const idleEnvByPi = new WeakMap<object, IdleEnv>();
 
 const pendingAsks = new Map<string, PendingAsk>();
 const idleSubscriptions = new Map<string, IdleSubscription>();
@@ -673,47 +703,49 @@ export function inboundWakeListener(notice: InjectedWakeNotice, nowMs: number = 
     const participant = clean(notice.fromSessionId ?? "", 256) || clean(notice.from ?? "", 256);
     const name = clean(notice.fromName ?? notice.from ?? "", 256) || participant || "unknown";
     if (participant && notice.messageId) {
-      armIdleSubscription(notice.messageId, participant, name, nowMs);
+      const receiver = notice.receiver;
+      const env = receiver && typeof receiver === "object" ? idleEnvByPi.get(receiver) : undefined;
+      armIdleSubscription(notice.messageId, participant, name, nowMs, env ?? idleEnv);
     }
   }
 }
 
 /** Our own address for an outbound idle notice (never to="unknown"). */
-function ownNoticeSender(): { from?: string; fromName?: string; fromSessionId?: string } {
+function ownNoticeSender(env: IdleEnv): { from?: string; fromName?: string; fromSessionId?: string } {
   let name = "";
   try {
-    name = clean(idleEnv.pi?.getSessionName?.(), 256);
+    name = clean(env.pi?.getSessionName?.(), 256);
   } catch {
     name = "";
   }
   return name ? { from: name, fromName: name } : {};
 }
 
-function armIdleSubscription(messageId: string, participant: string, name: string, nowMs: number): void {
+function armIdleSubscription(messageId: string, participant: string, name: string, nowMs: number, env: IdleEnv = idleEnv): void {
   if (idleSubscriptions.has(messageId)) return;
-  while (idleSubscriptions.size >= idleEnv.maxSubs) {
+  while (idleSubscriptions.size >= env.maxSubs) {
     const oldest = idleSubscriptions.keys().next().value;
     if (oldest === undefined) break;
     const dropped = idleSubscriptions.get(oldest);
     if (dropped) clearTimeout(dropped.timer);
     idleSubscriptions.delete(oldest);
-    idleEnv.log(`SendMessage: dropped oldest idle subscription ${oldest} (cap ${idleEnv.maxSubs})`);
+    env.log(`SendMessage: dropped oldest idle subscription ${oldest} (cap ${env.maxSubs})`);
   }
   const timer = setTimeout(() => {
     fireIdleExpiry(messageId);
-  }, Math.max(0, nowMs + idleEnv.ttlMs - Date.now()));
+  }, Math.max(0, nowMs + env.ttlMs - Date.now()));
   timer.unref?.();
-  idleSubscriptions.set(messageId, { messageId, participant, name, expiresAt: nowMs + idleEnv.ttlMs, timer });
+  idleSubscriptions.set(messageId, { messageId, participant, name, expiresAt: nowMs + env.ttlMs, timer, env });
 }
 
 /** Post one notice for a subscription and forget it (exactly-once per id). */
 async function postIdleNotice(sub: IdleSubscription, expired: boolean): Promise<void> {
   try {
-    await idleEnv.postWake({
+    await sub.env.postWake({
       participant: sub.participant,
       payloadRef: expired ? idleExpiryText(sub.name, sub.messageId) : idleNoticeText(sub.name, sub.messageId),
       messageId: randomUUID(),
-      ...ownNoticeSender(),
+      ...ownNoticeSender(sub.env),
     });
   } catch {
     /* exactly one attempt: a failing post still clears the subscription */
@@ -743,10 +775,11 @@ function idleExpiryText(name: string, messageId: string): string {
 }
 
 /** Settle every live subscription: idle notices now, expiry notices for lapsed ones. */
-async function settleIdleSubscriptions(nowMs?: number, forceExpired = false): Promise<void> {
+async function settleIdleSubscriptions(nowMs?: number, forceExpired = false, owner?: ExtensionAPI): Promise<void> {
   if (idleSubscriptions.size === 0) return;
-  const due = [...idleSubscriptions.values()];
-  idleSubscriptions.clear();
+  // CORE-2554 B7: a session settles only the subscriptions armed on it.
+  const due = [...idleSubscriptions.values()].filter((sub) => owner === undefined || sub.env.pi === owner);
+  for (const sub of due) idleSubscriptions.delete(sub.messageId);
   for (const sub of due) {
     clearTimeout(sub.timer);
     const expired = forceExpired || (nowMs ?? Date.now()) >= sub.expiresAt;
@@ -799,6 +832,17 @@ export interface SendMessageDetails {
 
 type ToolResult = { content: [{ type: "text"; text: string }]; details: SendMessageDetails; isError?: boolean };
 
+/** CORE-2554 step 7: flushed to the Claude socket, no receipt: arrival unknown. */
+function unconfirmedText(target: RosterEntry, messageId: string): string {
+  return `Sent to ${sessionLabel(target)} (message ${messageId}); unconfirmed: the Claude transport returned no receipt, so arrival is not confirmed. Do not resend unless the session says it never arrived.`;
+}
+
+/** CORE-2554 C4: Claude answered, but with a status this adapter does not know. */
+function unknownReceiptText(target: RosterEntry, messageId: string, error: UnknownReceiptStatusError): string {
+  const seen = typeof error.seen === "string" ? error.seen : JSON.stringify(error.seen) ?? String(error.seen);
+  return `Sent to ${sessionLabel(target)} (message ${messageId}); Claude answered with receipt status ${JSON.stringify(seen)}, which this adapter does not recognise. Delivery is unknown.`;
+}
+
 function ok(text: string, details: SendMessageDetails = {}): ToolResult {
   return { content: [{ type: "text" as const, text }], details };
 }
@@ -826,21 +870,22 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
     maxUndelivered: deps.maxUndelivered ?? MAX_UNDELIVERED,
     nowMs: deps.now ?? Date.now,
   };
+  idleEnvByPi.set(pi, idleEnv);
 
   if (!wiredUnsubscribe) wiredUnsubscribe = onWakeInjected((notice) => inboundWakeListener(notice));
 
   const settleIdle = () => {
-    void settleIdleSubscriptions(now()).catch(() => {});
+    void settleIdleSubscriptions(now(), false, pi).catch(() => {});
   };
   pi.on("agent_settled", () => settleIdle());
   pi.on("session_start", () => {
     // Expiry only: live subscriptions wait for the next settle.
-    if ([...idleSubscriptions.values()].some((sub) => now() >= sub.expiresAt)) void settleIdleSubscriptions(now()).catch(() => {});
+    if ([...idleSubscriptions.values()].some((sub) => sub.env.pi === pi && now() >= sub.expiresAt)) void settleIdleSubscriptions(now(), false, pi).catch(() => {});
   });
   pi.on("session_shutdown", () => {
     // CORE-2436 I5 review: the watched session exits before going idle.
     // Its watchers still get exactly one notice: the expiry notice.
-    void settleIdleSubscriptions(undefined, true).catch(() => {});
+    void settleIdleSubscriptions(undefined, true, pi).catch(() => {});
   });
 
   pi.registerTool({
@@ -919,12 +964,15 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       }
 
       const to = clean(params.to, 256);
+      // CORE-2554 B2: newlines and tabs survive (multi-line messages arrived
+      // as one glued paragraph); every other control character goes.
       const message = stripAnsi(typeof params.message === "string" ? params.message : "")
-        .replace(/[\u0000-\u001F\u007F]/g, "")
+        .replace(/\r\n?/g, "\n")
+        .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "")
         .trim();
       if (!to) return fail("SendMessage needs to: the exact session name or session id (see ListAgents).");
       if (!message) return fail("SendMessage needs message: the text for the recipient session.");
-      if (message.length > MAX_MESSAGE_BYTES) {
+      if (Buffer.byteLength(message, "utf8") > MAX_MESSAGE_BYTES) {
         return fail(`SendMessage message must be ${MAX_MESSAGE_BYTES} bytes or shorter; split it and send again.`);
       }
       const summary = params.summary === undefined ? "" : clean(params.summary, MAX_SUMMARY_BYTES + 1);
@@ -956,11 +1004,16 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       // Fail-closed (MMD-2538): a down Pi registry is a loud error, never
       // a partial roster that silently drops every Pi peer. A missing
       // Claude registry still reads as no Claude peers.
+      // CORE-2554 B6: the failure blocks Pi-leg sends and unresolved names
+      // only; a target that resolves to a Claude peer does not need the Pi
+      // registry (memoized Pi ids still resolve as Pi and stay blocked).
       let piSessions: AgentSessionSummary[];
+      let piRegistryError: string | undefined;
       try {
         piSessions = await (deps.fetchPi ?? (() => fetchPiSessions()))();
       } catch (error) {
-        return fail(`SendMessage: cannot reach the agent host registry: ${(error as Error)?.message ?? String(error)}. Not sending against a partial roster.`);
+        piSessions = [];
+        piRegistryError = `SendMessage: cannot reach the agent host registry: ${(error as Error)?.message ?? String(error)}. Not sending against a partial roster.`;
       }
       const claudePeers = await (deps.fetchClaude ?? ((excludeSock?: string) => listClaudeSessions(excludeSock ? { excludeSock } : {})))(
         deps.excludeSock,
@@ -1020,6 +1073,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
             return fail(`SendMessage: ${(error as Error)?.message ?? String(error)}.`);
           }
           if (candidates.length === 0) {
+            if (piRegistryError) return fail(piRegistryError);
             // Fail-loud (MMD-2538): name the unattributed exclusions —
             // Claude peers carry no Substrate identity and never match.
             const dropped = built.entries.filter((e) => !candidates.includes(e));
@@ -1033,6 +1087,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           }
         }
         const resolved = resolveRosterTarget(candidates, to);
+        if (piRegistryError && resolved.target?.kind !== "claude") return fail(piRegistryError);
         if (!resolved.target) {
           const names = resolved.candidates.length > 0 ? `: ${resolved.candidates.join(", ")}` : "";
           const where = scope !== undefined ? ` in scope "${scope}"` : "";
@@ -1051,6 +1106,7 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         }
         target = resolved.target;
       } catch (error) {
+        if (piRegistryError) return fail(piRegistryError);
         return fail(`SendMessage: ${(error as Error)?.message ?? String(error)}.`);
       }
 
@@ -1101,20 +1157,25 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         try {
           receipt = (await sendClaude({ sock, body, from, fromName, messageId })).outcome;
         } catch (error) {
-          // CORE-2499: the frame flushed (sendClaude resolves post-flush) and
-          // no held/refused receipt arrived in budget. Native Claude sends no
-          // receipt for direct delivery by design, so a starved wait means
+          // CORE-2554 step 7: the frame flushed (sendClaude resolves
+          // post-flush) and no receipt arrived in budget. Native Claude sends
+          // no receipt for direct delivery and live sends recorded none, so
+          // a starved wait is reported as sent, unconfirmed — never as
           // delivered. SendMessage never auto-retries, so no double-deliver.
           if (isClaudeReceiptTimeout(error)) {
             intercomTrace("send.claude.result", {
               messageId,
               sock,
-              outcome: "delivered",
+              outcome: "unconfirmed",
               elapsedMs: Date.now() - sendStartedAt,
             });
-            return ok(`Delivered to ${sessionLabel(target)} (message ${messageId}).`, {
-              message: { id: messageId, state: "delivered", to: target.name },
+            return ok(unconfirmedText(target, messageId), {
+              message: { id: messageId, state: "unconfirmed", to: target.name },
             });
+          }
+          if (error instanceof UnknownReceiptStatusError) {
+            intercomTrace("send.claude.result", { messageId, sock, outcome: "unknown", elapsedMs: Date.now() - sendStartedAt });
+            return ok(unknownReceiptText(target, messageId, error), { message: { id: messageId, state: "unknown", to: target.name } });
           }
           intercomTrace("send.claude.result", {
             messageId,
@@ -1183,9 +1244,21 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         } catch (relayError) {
           // CORE-2499: same rule as the direct branch — flushed with no
           // held/refused in budget means delivered; rejoin the settle path.
+          // CORE-2554 B1 + step 7: no receipt in budget is unconfirmed, not
+          // delivered. With expect_reply the ask stays armed (disarming it
+          // left the caller awaiting a promise that never settled) and the
+          // reply, or its timeout, finishes the call.
           if (isClaudeReceiptTimeout(relayError)) {
+            const text = unconfirmedText(target, messageId);
+            const details = { message: { id: messageId, state: "unconfirmed", to: target.name } };
+            if (!ask) return { done: ok(text, details) };
+            const reply = await ask.promise;
+            if (reply.details.ask === "replied") return { done: reply };
+            return { done: ok(`${text} ${reply.content[0].text}`, { ...details, ...(reply.details.ask ? { ask: reply.details.ask } : {}) }) };
+          }
+          if (relayError instanceof UnknownReceiptStatusError) {
             ask?.disarm();
-            return { sent: { messageId, state: "delivered" } };
+            return { done: ok(unknownReceiptText(target, messageId, relayError), { message: { id: messageId, state: "unknown", to: target.name } }) };
           }
           throw relayError;
         }
@@ -1228,6 +1301,10 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           });
         } catch (error) {
           const shadowSock = target.shadowSock;
+          if (error instanceof WakeRefusedError) {
+            ask?.disarm();
+            return fail(`SendMessage: ${error.message}.`);
+          }
           if (!shadowSock || replyTo || notifyWhenIdle) {
             ask?.disarm();
             const relayNote =
@@ -1256,8 +1333,12 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       let state: WakeDeliveryState = sent.state;
       if (state === "queued" && settleWaitMs > 0) {
         const deadline = Date.now() + settleWaitMs;
+        // CORE-2554 B8: back off 10 ms -> 250 ms instead of polling every 10 ms
+        // (up to 500 status requests per send against a busy host).
+        let pollMs = 10;
         while (state === "queued" && Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 10));
+          await new Promise((r) => setTimeout(r, pollMs));
+          pollMs = Math.min(pollMs * 2, 250);
           try {
             const latest = await getWakeStatus(sent.messageId);
             if (latest) state = latest.state;

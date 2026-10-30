@@ -532,25 +532,62 @@ export interface FetchPiSessionsOptions {
   infoPath?: string;
   address?: string;
   port?: number;
+  /** First-attempt budget. */
   timeoutMs?: number;
+  /** Retry budget after a busy (connected, then timed out) first attempt. */
+  retryTimeoutMs?: number;
+}
+
+/**
+ * Why the registry read failed (CORE-2554 §1). `busy`: the host accepted
+ * the connection but did not answer in time (its event loop is stalled);
+ * `down`: nothing answered (no host info file, connection refused, or no
+ * connection at all). Addressing misses are not registry errors and never
+ * reach this type.
+ */
+export type PiRegistryErrorKind = "busy" | "down";
+
+export class PiRegistryError extends Error {
+  readonly kind: PiRegistryErrorKind;
+  constructor(kind: PiRegistryErrorKind, message: string) {
+    super(message);
+    this.name = "PiRegistryError";
+    this.kind = kind;
+  }
+}
+
+/** Last successful registry read in this process; feeds the error text. */
+let lastRegistryReadAt: number | undefined;
+
+/** Test seam: forget the last successful read. */
+export function __resetRegistryReadClock(): void {
+  lastRegistryReadAt = undefined;
+}
+
+function lastReadPhrase(now = Date.now()): string {
+  if (lastRegistryReadAt === undefined) return "no successful registry read in this session";
+  const minutes = Math.floor((now - lastRegistryReadAt) / 60_000);
+  return minutes < 1 ? "last successful registry read under 1 min ago" : `no successful registry read for ${minutes} min`;
 }
 
 /**
  * Live Pi sessions from the agent host's loopback API (GET /v1/sessions).
- * Only loopback addresses are ever dialled. No host info, a non-loopback
- * address, or a well-formed-but-unexpected reply reads as no Pi sessions.
- * A transport failure on both attempts throws: the roster must fail loud
- * instead of resolving against a silent partial list (MMD-2538 flapped
- * between Pi and Claude legs while the host lagged).
+ * Only loopback addresses are ever dialled; a non-loopback address or a
+ * well-formed-but-unexpected reply reads as no Pi sessions. A registry
+ * that cannot be read throws a PiRegistryError naming busy or down, so the
+ * roster fails loud instead of resolving against a silent partial list
+ * (MMD-2538 flapped between Pi and Claude legs while the host lagged).
  *
- * Timeout basis: /v1/sessions is a loopback read of the in-memory live
- * registry (p99 single-digit ms on an unloaded host); 2000 ms plus one
- * bounded retry covers a loaded host without stalling the model path.
+ * Retry policy (CORE-2554 §1): one retry, never more. A host stall lasts
+ * 8-10 s (CORE-2554 root cause), so a busy first attempt retries with a
+ * budget longer than one stall (12 s); a down first attempt retries once
+ * after 500 ms with the first budget (the host may be restarting).
  * The 15-minute recent-Pi memo stays a lag-cover only: it keeps a Pi id
  * resolving as Pi across one missed fetch, never as a second authority.
  */
 export async function fetchPiSessions(options: FetchPiSessionsOptions = {}): Promise<AgentSessionSummary[]> {
   const timeoutMs = options.timeoutMs ?? 2000;
+  const retryTimeoutMs = options.retryTimeoutMs ?? 12_000;
   let address = options.address;
   let port = options.port;
   if (address === undefined || port === undefined) {
@@ -558,7 +595,7 @@ export async function fetchPiSessions(options: FetchPiSessionsOptions = {}): Pro
     try {
       info = JSON.parse(readFileSync(options.infoPath ?? defaultAgentHostInfoPath(), "utf8")) as { address?: unknown; port?: unknown };
     } catch {
-      return [];
+      throw new PiRegistryError("down", `agent host registry is down (no readable host info file; is \`xt host start\` running?); ${lastReadPhrase()}`);
     }
     address ??= typeof info?.address === "string" ? info.address : undefined;
     port ??= typeof info?.port === "number" ? info.port : undefined;
@@ -566,57 +603,76 @@ export async function fetchPiSessions(options: FetchPiSessionsOptions = {}): Pro
   if (typeof address !== "string" || !isLoopbackAddress(address) || typeof port !== "number" || !(port > 0 && port < 65536)) {
     return [];
   }
-  // One attempt. Transport failures (error/timeout) report transportError;
-  // a well-formed but unexpected reply reads as an empty list, never an error.
-  const attempt = (): Promise<{ sessions: AgentSessionSummary[]; transportError: boolean }> =>
+  type Attempt = { sessions: AgentSessionSummary[]; failure?: PiRegistryErrorKind; detail?: string };
+  // One attempt. A failure after the connection opened is busy; a failure
+  // before it is down. A well-formed but unexpected reply reads as an
+  // empty list, never an error.
+  const attempt = (budgetMs: number): Promise<Attempt> =>
     new Promise((resolve) => {
-      const done = (sessions: AgentSessionSummary[], transportError: boolean) => resolve({ sessions, transportError });
       let settled = false;
-      const finish = (sessions: AgentSessionSummary[], transportError = false) => {
+      let connected = false;
+      const finish = (result: Attempt) => {
         if (!settled) {
           settled = true;
-          done(sessions, transportError);
+          resolve(result);
         }
       };
+      const fail = (detail: string) => finish({ sessions: [], failure: connected ? "busy" : "down", detail });
       // CORE-2470: no pooled keep-alive on loopback control calls. The host
       // closes idle keep-alive sockets after its keepAliveTimeout while the
       // client pool still hands them out; reusing one races ECONNRESET and
       // reads as an empty session list, which silently routes Pi peers via
       // their Claude shadow. A fresh loopback connection costs ~0.1 ms.
-      const req = httpRequest({ host: address, port, path: "/v1/sessions", method: "GET", timeout: timeoutMs, agent: false }, (res) => {
+      const req = httpRequest({ host: address, port, path: "/v1/sessions?scope=live", method: "GET", timeout: budgetMs, agent: false }, (res) => {
         let text = "";
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => {
           text += chunk;
-          if (text.length > 4 * 1024 * 1024) res.destroy();
+          if (text.length > 4 * 1024 * 1024) {
+            // CORE-2554 B5: destroy() fires neither end nor error, so settle here.
+            res.destroy();
+            finish({ sessions: [] });
+          }
         });
         res.on("end", () => {
           try {
             const reply = JSON.parse(text) as { kind?: unknown; sessions?: unknown };
-            if (reply.kind === "session_list" && Array.isArray(reply.sessions)) finish(reply.sessions as AgentSessionSummary[]);
-            else finish([]);
+            if (reply.kind === "session_list" && Array.isArray(reply.sessions)) finish({ sessions: reply.sessions as AgentSessionSummary[] });
+            else finish({ sessions: [] });
           } catch {
-            finish([]);
+            finish({ sessions: [] });
           }
         });
+        res.on("error", (error: Error) => fail(error.message));
       });
-      req.on("error", () => finish([], true));
+      req.on("socket", (socket) => {
+        if (!(socket as { connecting?: boolean }).connecting) connected = true;
+        else socket.once("connect", () => (connected = true));
+      });
+      req.on("error", (error: Error) => fail(error.message));
       req.on("timeout", () => {
+        fail(`no reply within ${budgetMs} ms`);
         req.destroy();
-        finish([], true);
       });
       req.end();
     });
-  const first = await attempt();
-  if (!first.transportError) return first.sessions;
-  // CORE-2470: a transient stall (slow host under load) reads as "no Pi
-  // sessions" and silently routes Pi peers via their Claude shadow. One
-  // bounded retry; a persistent failure throws (fail-closed) so callers
-  // surface a loud registry error instead of a partial roster.
-  await new Promise((r) => setTimeout(r, 500));
-  const second = await attempt();
-  if (!second.transportError) return second.sessions;
-  throw new Error("could not reach the agent host registry (GET /v1/sessions failed twice)");
+  const first = await attempt(timeoutMs);
+  if (!first.failure) {
+    lastRegistryReadAt = Date.now();
+    return first.sessions;
+  }
+  if (first.failure === "down") await new Promise((r) => setTimeout(r, 500));
+  const second = await attempt(first.failure === "busy" ? retryTimeoutMs : timeoutMs);
+  if (!second.failure) {
+    lastRegistryReadAt = Date.now();
+    return second.sessions;
+  }
+  const kind = second.failure;
+  const what =
+    kind === "busy"
+      ? "agent host registry is busy (it accepted the connection but did not answer GET /v1/sessions, twice; the host is up but stalled)"
+      : "agent host registry is down (GET /v1/sessions could not connect, twice)";
+  throw new PiRegistryError(kind, `${what}: ${second.detail ?? "unknown error"}; ${lastReadPhrase()}`);
 }
 
 export interface ListAgentsDeps {

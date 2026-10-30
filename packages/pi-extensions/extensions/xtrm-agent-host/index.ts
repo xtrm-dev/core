@@ -48,7 +48,7 @@ import os from "node:os";
 import path from "node:path";
 import { injectIntercomWake, wakeDeliveryOptions, WakeDedupe } from "../intercom/delivery.ts";
 import type { WakeSender } from "../intercom/delivery.ts";
-import { monitorAgentHostSession, type HostEnsureOptions } from "./host-ensure.ts";
+import { announcedAgentHostSocket, monitorAgentHostSession, rearmAgentHostEnsure, type HostEnsureOptions } from "./host-ensure.ts";
 
 /**
  * One successfully injected inbound wake (CORE-2436 I5). The intercom
@@ -62,6 +62,8 @@ export interface InjectedWakeNotice extends WakeSender {
   fromSessionId?: string;
   replyTo?: string;
   notifyWhenIdle?: boolean;
+  /** The ExtensionAPI of the session the wake was injected into (CORE-2554 B7). */
+  receiver?: unknown;
 }
 
 const wakeInjectedListeners = new Set<(notice: InjectedWakeNotice) => void>();
@@ -195,6 +197,9 @@ export function argvHasInitialPrompt(argv: readonly string[] | undefined): boole
 
 export function defaultAgentHostSocketPath(env: NodeJS.ProcessEnv = process.env): string {
   if (env[SOCKET_ENV]) return env[SOCKET_ENV] as string;
+  // CORE-2554 E4: the socket the running host announced wins over a recomputed path.
+  const announced = announcedAgentHostSocket();
+  if (announced) return announced;
   if (env.XDG_RUNTIME_DIR) return path.join(env.XDG_RUNTIME_DIR, "xtrm", "agent-host.sock");
   return path.join(os.homedir(), ".xtrm", "run", "agent-host.sock");
 }
@@ -205,6 +210,38 @@ const defaultExec: ExecFn = (file, args) =>
   });
 
 /** Schema boundedString: 1..1024 chars, no control characters. */
+/** Longest session name the identity carries (CORE-2554 D3). */
+const SESSION_NAME_MAX = 128;
+
+/**
+ * Session name order (CORE-2554 D2): the Pi session name, then the xt
+ * worker name (SUBSTRATE_HOLDER), then the tmux window, and only then the
+ * tmux session name. XTRM_SESSION_NAME and the tmux session name are shared
+ * by every pane of one tmux session, so five workers in `market-data` all
+ * registered as "market-data" and Pi-to-Pi addressing by name was ambiguous.
+ */
+export function sessionNameFor(
+  piName: unknown,
+  env: Record<string, string | undefined>,
+  tmuxWindow: string | undefined,
+  tmuxSession: string | undefined,
+): string | undefined {
+  const name = (value: unknown) => {
+    const text = bounded(value, SESSION_NAME_MAX);
+    return text && !isMessageShaped(text) ? text : undefined;
+  };
+  return name(piName) ?? name(env.SUBSTRATE_HOLDER) ?? name(tmuxWindow) ?? name(env.XTRM_SESSION_NAME) ?? name(tmuxSession);
+}
+
+/**
+ * A name that reads like a message, not an address (CORE-2554 D3): more than
+ * six words. Such names (a first prompt promoted to a title) cannot be typed
+ * back as a SendMessage target; the next fallback is used instead.
+ */
+export function isMessageShaped(name: string): boolean {
+  return name.trim().split(/\s+/).length > 6;
+}
+
 function bounded(value: unknown, max = 1024): string | undefined {
   if (typeof value !== "string") return undefined;
   const clean = value.replace(/[\u0000-\u001F\u007F]/g, "").slice(0, max);
@@ -580,6 +617,29 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
   // --- connection --------------------------------------------------------------------------
 
+  /**
+   * CORE-2467 A+B self-heal (opt-in via options.hostEnsure): a fast probe and a
+   * background `xt host ensure`. A missing UI only loses the loud warning.
+   */
+  function startSelfHeal(current: unknown): void {
+    const hostEnsure = options.hostEnsure;
+    if (!hostEnsure) return;
+    const ensureOptions: HostEnsureOptions = typeof hostEnsure === "object" ? { ...hostEnsure, enabled: true } : { enabled: true };
+    const ui = (current as { ui?: { notify?: (line: string, level: string) => void } })?.ui;
+    monitorAgentHostSession(
+      {
+        notify: (line: string) => {
+          try {
+            ui?.notify?.(line, "warning");
+          } catch {
+            /* notify must never break the start path */
+          }
+        },
+      },
+      ensureOptions,
+    );
+  }
+
   function connect(b: SessionBinding): void {
     if (disposedAll || b.state === "closed" || b.state === "open" || !b.ctx || b.socket) return;
     b.state = "connecting";
@@ -623,6 +683,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       b.pendingUi.clear();
       if (disposedAll || b.state === "closed") return;
       b.state = "down";
+      // CORE-2554 E3: a lost host re-arms the self-heal right away.
+      rearmAgentHostEnsure();
+      if (b.ctx) startSelfHeal(b.ctx);
       scheduleReconnect(b);
     });
   }
@@ -692,6 +755,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const pane = env.TMUX && /^%[0-9]+$/.test(env.TMUX_PANE ?? "") ? (env.TMUX_PANE as string) : null;
     const cwd = current.cwd;
     let tmuxSession: string | undefined;
+    let tmuxWindow: string | undefined;
     let role = bounded(env.XTMUX_AGENT_ROLE);
     let bead = bounded(env.XTMUX_AGENT_BEAD);
     let parentTmux: string | undefined;
@@ -701,7 +765,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const tmuxInfo = pane
       ? exec("tmux", [
           "display-message", "-p", "-t", pane,
-          "#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}",
+          "#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}\t#{window_name}",
         ])
       : Promise.resolve("");
     const gitInfo = exec("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"]);
@@ -712,8 +776,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
     const [tmuxOut, gitOut, branchOut, remoteOut] = await Promise.all([tmuxInfo, gitInfo, branchInfo, remoteInfo]);
     if (tmuxOut) {
-      const [name, paneRole, paneBead, parent, paneWorktree, paneBranch] = tmuxOut.replace(/\n$/, "").split("\t");
+      const [name, paneRole, paneBead, parent, paneWorktree, paneBranch, windowName] = tmuxOut.replace(/\n$/, "").split("\t");
       tmuxSession = bounded(name);
+      tmuxWindow = bounded(windowName, SESSION_NAME_MAX);
       role = bounded(paneRole) ?? role;
       bead = bounded(paneBead) ?? bead;
       parentTmux = bounded(parent);
@@ -753,7 +818,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       pid: typeof process.pid === "number" && process.pid > 0 ? process.pid : undefined,
       generation,
       sessionFile,
-      sessionName: bounded(pi.getSessionName()) ?? bounded(env.XTRM_SESSION_NAME) ?? tmuxSession,
+      sessionName: sessionNameFor(pi.getSessionName(), env, tmuxWindow, tmuxSession),
       cwd: bounded(cwd, 4096) ?? "/",
       worktree,
       repository,
@@ -1048,7 +1113,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         // only when a flush actually delivers it. The injected hook still
         // fires: a threaded reply (replyTo) resolves its waiting ask from the
         // frame alone, and an idle subscription arms now (re-armed on flush).
-        emitWakeInjected({ messageId, ref, ...sender });
+        emitWakeInjected({ messageId, ref, ...sender, receiver: pi });
         if (!starting) armGrace(b);
         // The initial-prompt hold is bounded: a mispredicted prompt must
         // not park the wake past the cap (review HIGH-1a).
@@ -1079,7 +1144,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         return fail("injection_failed", error instanceof Error ? error.message : String(error));
       }
       b.deliveredWakes.mark(messageId);
-      emitWakeInjected({ messageId, ref, ...sender });
+      emitWakeInjected({ messageId, ref, ...sender, receiver: pi });
       if (idle) b.startingAt = Date.now();
       return result("accepted");
     }
@@ -1177,7 +1242,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       try {
         injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: true }), wake.sender);
         b.deliveredWakes.mark(wake.messageId);
-        emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender });
+        emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender, receiver: pi });
         idleInjected = true;
         wake.accept();
       } catch (error) {
@@ -1236,27 +1301,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       }
       touch(id);
       // CORE-2467 A+B: probe the host fast and self-heal in the
-      // background. Fire-and-forget: never blocks the start path, and a
-      // missing UI only loses the loud warning, never the session.
+      // background. Fire-and-forget: never blocks the start path.
       try {
-        const hostEnsure = options.hostEnsure;
-        if (hostEnsure) {
-          const ensureOptions: HostEnsureOptions =
-            typeof hostEnsure === "object" ? { ...hostEnsure, enabled: true } : { enabled: true };
-          const ui = (current as { ui?: { notify?: (line: string, level: string) => void } })?.ui;
-          monitorAgentHostSession(
-            {
-              notify: (line: string) => {
-                try {
-                  ui?.notify?.(line, "warning");
-                } catch {
-                  /* notify must never break the start path */
-                }
-              },
-            },
-            ensureOptions,
-          );
-        }
+        startSelfHeal(current);
       } catch {
         /* self-healing must never break session start */
       }
@@ -1328,7 +1375,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         try {
           injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: false }), wake.sender);
           b.deliveredWakes.mark(wake.messageId);
-          emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender });
+          emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender, receiver: pi });
           wake.accept();
         } catch (error) {
           wake.fail("injection_failed", error instanceof Error ? error.message : String(error));
