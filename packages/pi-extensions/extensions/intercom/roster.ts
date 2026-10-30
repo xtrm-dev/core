@@ -623,7 +623,7 @@ export async function fetchPiSessions(options: FetchPiSessionsOptions = {}): Pro
       // client pool still hands them out; reusing one races ECONNRESET and
       // reads as an empty session list, which silently routes Pi peers via
       // their Claude shadow. A fresh loopback connection costs ~0.1 ms.
-      const req = httpRequest({ host: address, port, path: "/v1/sessions", method: "GET", timeout: budgetMs, agent: false }, (res) => {
+      const req = httpRequest({ host: address, port, path: "/v1/sessions?scope=live", method: "GET", timeout: budgetMs, agent: false }, (res) => {
         let text = "";
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => {
