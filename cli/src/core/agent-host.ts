@@ -170,6 +170,7 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
         promptStartTimeoutMs: options.promptStartTimeoutMs,
         log,
     });
+    const hostStartedAt = Date.now();
     const sessionIndex = options.sessionIndex ? new SessionIndex({ log, ...options.sessionIndex }) : null;
     const launcher = new AgentHostLauncher(options.launch);
     const directHostnames = (options.direct?.hostnames ?? []).map(normalizeDirectHostname);
@@ -289,6 +290,14 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
                     return;
                 }
             }
+        }
+        // CORE-2554 E1: a liveness answer that does no registry or index work, so a probe
+        // measures the event loop itself (a 404 used to be the only cheap control).
+        if (route === 'GET /v1/health') {
+            const body = JSON.stringify({ status: 'ok', pid: process.pid, uptimeMs: Date.now() - hostStartedAt });
+            res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-length': Buffer.byteLength(body) });
+            res.end(body);
+            return;
         }
         if (await handleAuthRoute(route, parts, req, res, local)) return;
 

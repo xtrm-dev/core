@@ -48,7 +48,7 @@ import os from "node:os";
 import path from "node:path";
 import { injectIntercomWake, wakeDeliveryOptions, WakeDedupe } from "../intercom/delivery.ts";
 import type { WakeSender } from "../intercom/delivery.ts";
-import { monitorAgentHostSession, type HostEnsureOptions } from "./host-ensure.ts";
+import { announcedAgentHostSocket, monitorAgentHostSession, rearmAgentHostEnsure, type HostEnsureOptions } from "./host-ensure.ts";
 
 /**
  * One successfully injected inbound wake (CORE-2436 I5). The intercom
@@ -197,6 +197,9 @@ export function argvHasInitialPrompt(argv: readonly string[] | undefined): boole
 
 export function defaultAgentHostSocketPath(env: NodeJS.ProcessEnv = process.env): string {
   if (env[SOCKET_ENV]) return env[SOCKET_ENV] as string;
+  // CORE-2554 E4: the socket the running host announced wins over a recomputed path.
+  const announced = announcedAgentHostSocket();
+  if (announced) return announced;
   if (env.XDG_RUNTIME_DIR) return path.join(env.XDG_RUNTIME_DIR, "xtrm", "agent-host.sock");
   return path.join(os.homedir(), ".xtrm", "run", "agent-host.sock");
 }
@@ -607,6 +610,29 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
   // --- connection --------------------------------------------------------------------------
 
+  /**
+   * CORE-2467 A+B self-heal (opt-in via options.hostEnsure): a fast probe and a
+   * background `xt host ensure`. A missing UI only loses the loud warning.
+   */
+  function startSelfHeal(current: unknown): void {
+    const hostEnsure = options.hostEnsure;
+    if (!hostEnsure) return;
+    const ensureOptions: HostEnsureOptions = typeof hostEnsure === "object" ? { ...hostEnsure, enabled: true } : { enabled: true };
+    const ui = (current as { ui?: { notify?: (line: string, level: string) => void } })?.ui;
+    monitorAgentHostSession(
+      {
+        notify: (line: string) => {
+          try {
+            ui?.notify?.(line, "warning");
+          } catch {
+            /* notify must never break the start path */
+          }
+        },
+      },
+      ensureOptions,
+    );
+  }
+
   function connect(b: SessionBinding): void {
     if (disposedAll || b.state === "closed" || b.state === "open" || !b.ctx || b.socket) return;
     b.state = "connecting";
@@ -650,6 +676,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       b.pendingUi.clear();
       if (disposedAll || b.state === "closed") return;
       b.state = "down";
+      // CORE-2554 E3: a lost host re-arms the self-heal right away.
+      rearmAgentHostEnsure();
+      if (b.ctx) startSelfHeal(b.ctx);
       scheduleReconnect(b);
     });
   }
@@ -1265,27 +1294,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       }
       touch(id);
       // CORE-2467 A+B: probe the host fast and self-heal in the
-      // background. Fire-and-forget: never blocks the start path, and a
-      // missing UI only loses the loud warning, never the session.
+      // background. Fire-and-forget: never blocks the start path.
       try {
-        const hostEnsure = options.hostEnsure;
-        if (hostEnsure) {
-          const ensureOptions: HostEnsureOptions =
-            typeof hostEnsure === "object" ? { ...hostEnsure, enabled: true } : { enabled: true };
-          const ui = (current as { ui?: { notify?: (line: string, level: string) => void } })?.ui;
-          monitorAgentHostSession(
-            {
-              notify: (line: string) => {
-                try {
-                  ui?.notify?.(line, "warning");
-                } catch {
-                  /* notify must never break the start path */
-                }
-              },
-            },
-            ensureOptions,
-          );
-        }
+        startSelfHeal(current);
       } catch {
         /* self-healing must never break session start */
       }

@@ -16,7 +16,7 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import { DeviceAuthority, tailscaleServeCommand, type AgentHostAuthMessage, type DeviceSummary } from '../core/agent-host-auth.js';
 import { AGENT_HOST_BIND_ADDRESS, defaultInfoPath, readAgentHostInfo, startAgentHost, type AgentHostInfo } from '../core/agent-host.js';
-import { ensureAgentHost, pidAlive, toEnsureError, toEnsureResult } from '../core/agent-host-ensure.js';
+import { ensureAgentHost, pidAlive, probeHealth, toEnsureError, toEnsureResult } from '../core/agent-host-ensure.js';
 import { defaultSessionIndexOptions } from '../core/agent-host-session-index.js';
 
 export function createHostCommand(version = '0.0.0'): Command {
@@ -97,19 +97,29 @@ export function createHostCommand(version = '0.0.0'): Command {
         });
 
     cmd.command('status')
-        .description('Report whether an agent host is running for this user')
+        .description('Report whether an agent host is running and answering for this user (exit 1 when not healthy)')
         .option('--json', 'Print machine-readable status', false)
-        .action((options: { json?: boolean }) => {
+        .option('--timeout <ms>', 'Health probe budget', '500')
+        .action(async (options: { json?: boolean; timeout: string }) => {
+            const timeoutMs = Number(options.timeout);
             const info = readAgentHostInfo();
-            const running = info !== null && pidAlive(info.pid);
+            const alive = info !== null && pidAlive(info.pid);
+            // CORE-2554 E1: a live pid is not a working host; a stalled event loop kept the pid
+            // alive for an hour while every request timed out. Probe GET /v1/health.
+            const health = alive ? await probeHealth(info.port, Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 500) : 'down';
+            const healthy = alive && health !== 'down';
+            const state = !alive ? 'not_running' : healthy ? 'running' : 'unresponsive';
             if (options.json) {
-                console.log(JSON.stringify({ running, ...(running ? { info } : {}), infoPath: defaultInfoPath() }));
-            } else if (running) {
-                console.log(`running · http://${info.address}:${info.port} · socket ${info.socket} · pid ${info.pid}`);
+                console.log(JSON.stringify({ running: alive, healthy, state, ...(alive ? { info } : {}), infoPath: defaultInfoPath() }));
+            } else if (state === 'running') {
+                const note = health === 'missing' ? ' · health route absent (older host)' : '';
+                console.log(`running · http://${info!.address}:${info!.port} · socket ${info!.socket} · pid ${info!.pid}${note}`);
+            } else if (state === 'unresponsive') {
+                console.log(`unresponsive · pid ${info!.pid} is alive but GET /v1/health did not answer within ${timeoutMs} ms`);
             } else {
                 console.log('not running');
             }
-            if (!running) process.exitCode = 1;
+            if (!healthy) process.exitCode = 1;
         });
 
     cmd.command('pair')

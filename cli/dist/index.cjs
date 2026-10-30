@@ -83080,6 +83080,7 @@ async function startAgentHost(options = {}) {
     promptStartTimeoutMs: options.promptStartTimeoutMs,
     log
   });
+  const hostStartedAt = Date.now();
   const sessionIndex = options.sessionIndex ? new SessionIndex({ log, ...options.sessionIndex }) : null;
   const launcher = new AgentHostLauncher(options.launch);
   const directHostnames = (options.direct?.hostnames ?? []).map(normalizeDirectHostname);
@@ -83184,6 +83185,12 @@ async function startAgentHost(options = {}) {
           return;
         }
       }
+    }
+    if (route === "GET /v1/health") {
+      const body = JSON.stringify({ status: "ok", pid: process.pid, uptimeMs: Date.now() - hostStartedAt });
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-length": Buffer.byteLength(body) });
+      res.end(body);
+      return;
     }
     if (await handleAuthRoute(route, parts, req, res, local)) return;
     if (route === "GET /v1/sessions") {
@@ -83636,14 +83643,45 @@ function toEnsureResult(info) {
     pid: info.pid
   };
 }
+var HOST_ENV_KEEP = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|TZ|TMPDIR|LC_[A-Z_]+|XDG_[A-Z_]+|NODE_[A-Z_]+|XTRM_AGENT_HOST_[A-Z_]+|DBUS_SESSION_BUS_ADDRESS|NVM_[A-Z_]+|BUN_INSTALL)$/;
+function hostSpawnEnv(env3) {
+  const out = {};
+  for (const [key, value] of Object.entries(env3)) if (value !== void 0 && HOST_ENV_KEEP.test(key)) out[key] = value;
+  return out;
+}
 function toEnsureError(error51) {
   const code = error51 instanceof AgentHostEnsureError ? error51.code : "ensure_failed";
   const message = error51 instanceof Error ? error51.message : String(error51);
   return { schema: AGENT_HOST_ENSURE_SCHEMA, error: { code, message: message.slice(0, 4096) } };
 }
-function probeAgentHost(port, timeoutMs = PROBE_TIMEOUT_MS) {
+async function probeAgentHost(port, timeoutMs = PROBE_TIMEOUT_MS) {
+  const health = await probeHealth(port, timeoutMs);
+  if (health !== "missing") return health === "ok";
+  return probeSessionList(port, timeoutMs);
+}
+function probeHealth(port, timeoutMs = PROBE_TIMEOUT_MS) {
   return new Promise((resolve6) => {
-    const req = import_node_http2.default.get({ host: AGENT_HOST_BIND_ADDRESS, port, path: "/v1/sessions", timeout: timeoutMs, agent: false }, (res) => {
+    const req = import_node_http2.default.get({ host: AGENT_HOST_BIND_ADDRESS, port, path: "/v1/health", timeout: timeoutMs, agent: false }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        if (res.statusCode === 404) return resolve6("missing");
+        if (res.statusCode !== 200) return resolve6("down");
+        try {
+          resolve6(JSON.parse(Buffer.concat(chunks).toString("utf8")).status === "ok" ? "ok" : "down");
+        } catch {
+          resolve6("down");
+        }
+      });
+      res.on("error", () => resolve6("down"));
+    });
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve6("down"));
+  });
+}
+function probeSessionList(port, timeoutMs) {
+  return new Promise((resolve6) => {
+    const req = import_node_http2.default.get({ host: AGENT_HOST_BIND_ADDRESS, port, path: "/v1/sessions?scope=live", timeout: timeoutMs, agent: false }, (res) => {
       const chunks = [];
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => {
@@ -83684,22 +83722,31 @@ async function ensureAgentHost(options = {}) {
     release();
   }
 }
+function openHostLog(logPath, maxBytes = MAX_LOG_BYTES) {
+  let size = 0;
+  try {
+    size = (0, import_node_fs30.statSync)(logPath).size;
+  } catch {
+  }
+  if (size > maxBytes) {
+    try {
+      (0, import_node_fs30.renameSync)(logPath, `${logPath}.1`);
+      size = 0;
+    } catch {
+    }
+  }
+  return { fd: (0, import_node_fs30.openSync)(logPath, "a", 384), start: size };
+}
 async function startDetachedHost(infoPath, options, deadline, log) {
   const [command, ...entry] = options.xtCommand ?? [process.execPath, process.argv[1] ?? ""];
   const logPath = options.logPath ?? import_node_path73.default.join(import_node_path73.default.dirname(infoPath), "agent-host.log");
-  let logSize = 0;
-  try {
-    logSize = (0, import_node_fs30.statSync)(logPath).size;
-  } catch {
-  }
-  const logStart = logSize > MAX_LOG_BYTES ? 0 : logSize;
-  const logFd = (0, import_node_fs30.openSync)(logPath, logSize > MAX_LOG_BYTES ? "w" : "a", 384);
+  const { fd: logFd, start: logStart } = openHostLog(logPath);
   let child;
   try {
     child = (0, import_node_child_process42.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
       detached: true,
       stdio: ["ignore", logFd, logFd],
-      env: options.env ?? process.env
+      env: options.env ?? hostSpawnEnv(process.env)
     });
   } finally {
     (0, import_node_fs30.closeSync)(logFd);
@@ -83861,17 +83908,24 @@ function createHostCommand(version3 = "0.0.0") {
       process.exitCode = 1;
     }
   });
-  cmd.command("status").description("Report whether an agent host is running for this user").option("--json", "Print machine-readable status", false).action((options) => {
+  cmd.command("status").description("Report whether an agent host is running and answering for this user (exit 1 when not healthy)").option("--json", "Print machine-readable status", false).option("--timeout <ms>", "Health probe budget", "500").action(async (options) => {
+    const timeoutMs = Number(options.timeout);
     const info = readAgentHostInfo();
-    const running = info !== null && pidAlive(info.pid);
+    const alive = info !== null && pidAlive(info.pid);
+    const health = alive ? await probeHealth(info.port, Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 500) : "down";
+    const healthy = alive && health !== "down";
+    const state = !alive ? "not_running" : healthy ? "running" : "unresponsive";
     if (options.json) {
-      console.log(JSON.stringify({ running, ...running ? { info } : {}, infoPath: defaultInfoPath() }));
-    } else if (running) {
-      console.log(`running \xB7 http://${info.address}:${info.port} \xB7 socket ${info.socket} \xB7 pid ${info.pid}`);
+      console.log(JSON.stringify({ running: alive, healthy, state, ...alive ? { info } : {}, infoPath: defaultInfoPath() }));
+    } else if (state === "running") {
+      const note = health === "missing" ? " \xB7 health route absent (older host)" : "";
+      console.log(`running \xB7 http://${info.address}:${info.port} \xB7 socket ${info.socket} \xB7 pid ${info.pid}${note}`);
+    } else if (state === "unresponsive") {
+      console.log(`unresponsive \xB7 pid ${info.pid} is alive but GET /v1/health did not answer within ${timeoutMs} ms`);
     } else {
       console.log("not running");
     }
-    if (!running) process.exitCode = 1;
+    if (!healthy) process.exitCode = 1;
   });
   cmd.command("pair").description("Issue a one-time pairing token (single use, 10 minutes) for a direct-mode client").option("--json", "Print the xtrm.agent-host-auth.v1 pairing_token object", false).action(async (options) => {
     try {

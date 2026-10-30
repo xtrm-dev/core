@@ -90,16 +90,62 @@ export function toEnsureResult(info: AgentHostInfo): AgentHostEnsureV1 {
     };
 }
 
+/**
+ * Environment for a detached host (CORE-2554 E3): the machine-wide daemon must not carry
+ * the identity of the session that happened to start it (SUBSTRATE_HOLDER, XTRM_*, tmux
+ * pane, Claude/Pi session variables). Only process basics pass.
+ */
+const HOST_ENV_KEEP = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|TZ|TMPDIR|LC_[A-Z_]+|XDG_[A-Z_]+|NODE_[A-Z_]+|XTRM_AGENT_HOST_[A-Z_]+|DBUS_SESSION_BUS_ADDRESS|NVM_[A-Z_]+|BUN_INSTALL)$/;
+
+export function hostSpawnEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const out: NodeJS.ProcessEnv = {};
+    for (const [key, value] of Object.entries(env)) if (value !== undefined && HOST_ENV_KEEP.test(key)) out[key] = value;
+    return out;
+}
+
 export function toEnsureError(error: unknown): AgentHostEnsureV1 {
     const code = error instanceof AgentHostEnsureError ? error.code : 'ensure_failed';
     const message = error instanceof Error ? error.message : String(error);
     return { schema: AGENT_HOST_ENSURE_SCHEMA, error: { code, message: message.slice(0, 4096) } };
 }
 
-/** GET /v1/sessions answers with an xtrm.agent-host-api.v1 body: the port belongs to a live agent host. */
-export function probeAgentHost(port: number, timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
+/**
+ * The port belongs to a live agent host: GET /v1/health answers ok (CORE-2554 E1). A host
+ * from before the health route answers 404 there; it is then recognised by its
+ * xtrm.agent-host-api.v1 session list, asked for live rows only (an older host ignores
+ * the query and still answers). Never the bare list: it is ~1 MB and walks the index.
+ */
+export async function probeAgentHost(port: number, timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
+    const health = await probeHealth(port, timeoutMs);
+    if (health !== 'missing') return health === 'ok';
+    return probeSessionList(port, timeoutMs);
+}
+
+/** One GET /v1/health: ok, missing (404: an older host), or down. Never throws. */
+export function probeHealth(port: number, timeoutMs = PROBE_TIMEOUT_MS): Promise<'ok' | 'missing' | 'down'> {
     return new Promise((resolve) => {
-        const req = http.get({ host: AGENT_HOST_BIND_ADDRESS, port, path: '/v1/sessions', timeout: timeoutMs, agent: false }, (res) => {
+        const req = http.get({ host: AGENT_HOST_BIND_ADDRESS, port, path: '/v1/health', timeout: timeoutMs, agent: false }, (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => {
+                if (res.statusCode === 404) return resolve('missing');
+                if (res.statusCode !== 200) return resolve('down');
+                try {
+                    resolve((JSON.parse(Buffer.concat(chunks).toString('utf8')) as { status?: unknown }).status === 'ok' ? 'ok' : 'down');
+                } catch {
+                    resolve('down');
+                }
+            });
+            res.on('error', () => resolve('down'));
+        });
+        req.on('timeout', () => req.destroy());
+        req.on('error', () => resolve('down'));
+    });
+}
+
+function probeSessionList(port: number, timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+        const req = http.get({ host: AGENT_HOST_BIND_ADDRESS, port, path: '/v1/sessions?scope=live', timeout: timeoutMs, agent: false }, (res) => {
             const chunks: Buffer[] = [];
             res.on('data', (chunk: Buffer) => chunks.push(chunk));
             res.on('end', () => {
@@ -147,6 +193,30 @@ export async function ensureAgentHost(options: EnsureAgentHostOptions = {}): Pro
     }
 }
 
+/**
+ * Open the host log for appending (CORE-2554 E5). Past MAX_LOG_BYTES the current file
+ * rotates to `<log>.1` (one previous generation) instead of being truncated, so the log
+ * of a wedged host survives the restart that follows it. `start` is where this run's
+ * output begins, for the failure tail.
+ */
+export function openHostLog(logPath: string, maxBytes = MAX_LOG_BYTES): { fd: number; start: number } {
+    let size = 0;
+    try {
+        size = statSync(logPath).size;
+    } catch {
+        /* no log yet */
+    }
+    if (size > maxBytes) {
+        try {
+            renameSync(logPath, `${logPath}.1`);
+            size = 0;
+        } catch {
+            /* best effort: a failed rotate appends to the current file */
+        }
+    }
+    return { fd: openSync(logPath, 'a', 0o600), start: size };
+}
+
 async function startDetachedHost(
     infoPath: string,
     options: EnsureAgentHostOptions,
@@ -155,20 +225,13 @@ async function startDetachedHost(
 ): Promise<AgentHostInfo> {
     const [command, ...entry] = options.xtCommand ?? [process.execPath, process.argv[1] ?? ''];
     const logPath = options.logPath ?? path.join(path.dirname(infoPath), 'agent-host.log');
-    let logSize = 0;
-    try {
-        logSize = statSync(logPath).size;
-    } catch {
-        /* no log yet */
-    }
-    const logStart = logSize > MAX_LOG_BYTES ? 0 : logSize;
-    const logFd = openSync(logPath, logSize > MAX_LOG_BYTES ? 'w' : 'a', 0o600);
+    const { fd: logFd, start: logStart } = openHostLog(logPath);
     let child;
     try {
         child = spawn(command, [...entry, 'host', 'start', ...(options.hostArgs ?? [])], {
             detached: true,
             stdio: ['ignore', logFd, logFd],
-            env: options.env ?? process.env,
+            env: options.env ?? hostSpawnEnv(process.env),
         });
     } finally {
         closeSync(logFd);
