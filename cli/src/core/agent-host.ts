@@ -296,8 +296,8 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
             const live = registry.list();
             let sessions = live;
             // ?scope=live skips the history index (CORE-2554): intercom rosters need live rows
-            // only, and the full list is ~1 MB once journals accumulate. The default stays the
-            // full list because the desktop app reads history from it.
+            // only, and the full list is ~1 MB once journals accumulate. ?scope=all is the explicit
+            // history read; the bare path stays the full list because the desktop app reads it.
             const scope = url.searchParams.get('scope');
             if (scope !== null && scope !== 'live' && scope !== 'all') {
                 sendJson(res, 400, apiError('invalid_request', 'scope must be live or all'));

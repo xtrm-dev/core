@@ -82080,6 +82080,8 @@ var REPO_TICK_MS = 500;
 var REPO_LOOKUPS_PER_TICK = 2;
 var REPO_MAX_PENDING = 4;
 var REPO_FAILURE_BACKOFF_MS = 10 * 6e4;
+var REPO_LOOKUP_DEADLINE_MS = REPO_LOOKUP_TIMEOUT_MS + 500;
+var REPO_SATURATION_LOG_MS = 6e4;
 function defaultSessionIndexOptions(home = import_node_os28.default.homedir()) {
   return {
     roots: [
@@ -82107,7 +82109,14 @@ var SessionIndex = class {
   repoTickMs;
   repoLookupsPerTick;
   repoLookup;
+  repoLookupDeadlineMs;
+  repoSaturationLogMs;
   repoTimer = null;
+  /** Lookup generation per cwd: a settle from an abandoned lookup is ignored. */
+  repoGeneration = /* @__PURE__ */ new Map();
+  /** Since when every slot has been taken (undefined while one is free). */
+  repoSaturatedSince;
+  repoSaturationLogged = false;
   log;
   journals = /* @__PURE__ */ new Map();
   watchers = /* @__PURE__ */ new Map();
@@ -82128,6 +82137,8 @@ var SessionIndex = class {
     this.repoTickMs = options.repoTickMs ?? REPO_TICK_MS;
     this.repoLookupsPerTick = options.repoLookupsPerTick ?? REPO_LOOKUPS_PER_TICK;
     this.repoLookup = options.repoLookup ?? lookupRepository;
+    this.repoLookupDeadlineMs = options.repoLookupDeadlineMs ?? REPO_LOOKUP_DEADLINE_MS;
+    this.repoSaturationLogMs = options.repoSaturationLogMs ?? REPO_SATURATION_LOG_MS;
     this.log = options.log ?? (() => {
     });
     this.ready = this.build();
@@ -82342,13 +82353,26 @@ var SessionIndex = class {
    */
   refreshRepositories() {
     if (this.closed) return;
-    let budget = Math.min(this.repoLookupsPerTick, REPO_MAX_PENDING - this.repoPending.size);
-    if (budget <= 0) return;
     const now = Date.now();
+    let budget = Math.min(this.repoLookupsPerTick, REPO_MAX_PENDING - this.repoPending.size);
+    if (REPO_MAX_PENDING - this.repoPending.size <= 0) {
+      this.repoSaturatedSince ??= now;
+      if (!this.repoSaturationLogged && now - this.repoSaturatedSince >= this.repoSaturationLogMs) {
+        this.repoSaturationLogged = true;
+        this.log(`session index: all ${REPO_MAX_PENDING} repository lookup slots busy for ${Math.round((now - this.repoSaturatedSince) / 1e3)} s: ${[...this.repoPending].join(", ")}`);
+      }
+      return;
+    }
+    this.repoSaturatedSince = void 0;
+    this.repoSaturationLogged = false;
+    if (budget <= 0) return;
     const latest = /* @__PURE__ */ new Map();
+    const known = /* @__PURE__ */ new Set();
     for (const record2 of this.journals.values()) {
       const cwd = record2.state.cwd;
-      if (!cwd || this.repoPending.has(cwd)) continue;
+      if (!cwd) continue;
+      known.add(cwd);
+      if (this.repoPending.has(cwd)) continue;
       const at = this.repoLookedUpAt.get(cwd);
       if (at !== void 0 && now - at < this.repoTtlMs) continue;
       const failedAt = this.repoFailedAt.get(cwd);
@@ -82356,6 +82380,7 @@ var SessionIndex = class {
       const activity = record2.state.lastActivityAt ?? record2.state.startedAt ?? 0;
       if (activity >= (latest.get(cwd) ?? -1)) latest.set(cwd, activity);
     }
+    if (this.repoLookedUpAt.size > known.size) this.pruneRepositoryState(known);
     if (latest.size === 0) return;
     const due = [...latest].sort((a, b) => b[1] - a[1]);
     for (const [cwd] of due) {
@@ -82371,8 +82396,32 @@ var SessionIndex = class {
   refreshRepository(cwd, now) {
     this.repoLookedUpAt.set(cwd, now);
     this.repoPending.add(cwd);
+    const generation = (this.repoGeneration.get(cwd) ?? 0) + 1;
+    this.repoGeneration.set(cwd, generation);
+    const current = () => this.repoGeneration.get(cwd) === generation;
+    const deadline = setTimeout(() => {
+      if (!current()) return;
+      this.repoGeneration.set(cwd, generation + 1);
+      fail2(new Error(`lookup unsettled after ${this.repoLookupDeadlineMs} ms; abandoned`));
+    }, this.repoLookupDeadlineMs);
+    deadline.unref();
+    const fail2 = (error51) => {
+      this.repoPending.delete(cwd);
+      if (this.closed) return;
+      this.repoFailedAt.set(cwd, Date.now());
+      const previous = this.repoIdentity.get(cwd);
+      this.repoIdentity.delete(cwd);
+      if (previous?.repository !== void 0 || previous?.repositoryPath !== void 0) this.reproject();
+      if (!this.repoFailureLogged.has(cwd)) {
+        this.repoFailureLogged.add(cwd);
+        const first = String(error51?.message ?? error51).split("\n")[0].slice(0, 200);
+        this.log(`session index: no repository identity for ${cwd} (retry in ${REPO_FAILURE_BACKOFF_MS / 6e4} min): ${first}`);
+      }
+    };
     void this.repoLookup(cwd).then(
       (identity) => {
+        clearTimeout(deadline);
+        if (!current()) return;
         this.repoPending.delete(cwd);
         this.repoFailedAt.delete(cwd);
         if (this.closed) return;
@@ -82383,19 +82432,18 @@ var SessionIndex = class {
         }
       },
       (error51) => {
-        this.repoPending.delete(cwd);
-        if (this.closed) return;
-        this.repoFailedAt.set(cwd, Date.now());
-        const previous = this.repoIdentity.get(cwd);
-        this.repoIdentity.delete(cwd);
-        if (previous?.repository !== void 0 || previous?.repositoryPath !== void 0) this.reproject();
-        if (!this.repoFailureLogged.has(cwd)) {
-          this.repoFailureLogged.add(cwd);
-          const first = String(error51?.message ?? error51).split("\n")[0].slice(0, 200);
-          this.log(`session index: no repository identity for ${cwd} (retry in ${REPO_FAILURE_BACKOFF_MS / 6e4} min): ${first}`);
-        }
+        clearTimeout(deadline);
+        if (!current()) return;
+        fail2(error51);
       }
     );
+  }
+  /** Forget per-cwd lookup state for cwds no journal references any more. */
+  pruneRepositoryState(live) {
+    for (const map2 of [this.repoLookedUpAt, this.repoFailedAt, this.repoIdentity, this.repoGeneration]) {
+      for (const cwd of map2.keys()) if (!live.has(cwd) && !this.repoPending.has(cwd)) map2.delete(cwd);
+    }
+    for (const cwd of this.repoFailureLogged) if (!live.has(cwd)) this.repoFailureLogged.delete(cwd);
   }
   /** Drop the projection only: identity changes never dirty the on-disk cache. */
   reproject() {
@@ -82496,7 +82544,8 @@ function git6(cwd, args) {
     (0, import_node_child_process40.execFile)(
       "git",
       ["-C", cwd, ...args],
-      { timeout: REPO_LOOKUP_TIMEOUT_MS, maxBuffer: 1 << 20, encoding: "utf8" },
+      // SIGKILL: execFile's timeout only signals; a child ignoring SIGTERM kept the callback pending.
+      { timeout: REPO_LOOKUP_TIMEOUT_MS, killSignal: "SIGKILL", maxBuffer: 1 << 20, encoding: "utf8" },
       (error51, stdout) => {
         const code = error51 && typeof error51.code === "number" ? error51.code : null;
         if (error51 && code !== 1) reject(error51);

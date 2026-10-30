@@ -310,7 +310,12 @@ describe('xt host serves history-only sessions (XTRM-565)', () => {
     });
 
     it('?scope=live omits history rows; the default still serves them; a bad scope is a 400 (CORE-2554)', async () => {
+        // Keep this assertion: the desktop app (xtrm-app adapters/agent/live.ts, host-connection.ts)
+        // reads history from the bare path. A "live by default" change would empty its list.
         expect((await sessions()).some((s) => s.state === 'history_only')).toBe(true);
+        const all = await get('/v1/sessions?scope=all');
+        if (all.body.kind !== 'session_list') throw new Error(`unexpected ${all.body.kind}`);
+        expect(all.body.sessions.some((s) => s.state === 'history_only')).toBe(true);
         const live = await get('/v1/sessions?scope=live');
         expect(live.status).toBe(200);
         if (live.body.kind !== 'session_list') throw new Error(`unexpected ${live.body.kind}`);
@@ -448,6 +453,52 @@ describe('session index repository lookups stay off the request path (CORE-2554)
         expect(started).toHaveLength(0);
         (index as unknown as { refreshRepositories(): void }).refreshRepositories();
         expect(started).toHaveLength(3);
+    });
+
+    it('never-settling lookups hold at most 4 slots, release them by deadline, and log saturation once', async () => {
+        for (let i = 0; i < 40; i += 1) writePiJournal(`hang-${i}`, path.join(dir, `hang-${i}`));
+        const started: string[] = [];
+        const logs: string[] = [];
+        index = new SessionIndex({
+            roots: [{ provider: 'pi', dir: path.join(dir, 'pi') }],
+            repoTickMs: 60_000,
+            repoLookupsPerTick: 10,
+            repoLookupDeadlineMs: 60,
+            repoSaturationLogMs: 0,
+            log: (m) => logs.push(m),
+            repoLookup: (cwd) => {
+                started.push(cwd);
+                return new Promise(() => {}); // a git in uninterruptible sleep
+            },
+        });
+        await index.ready;
+        const tick = () => (index as unknown as { refreshRepositories(): void }).refreshRepositories();
+        for (let i = 0; i < 10; i += 1) tick();
+        expect(started).toHaveLength(4);
+        expect(logs.filter((m) => m.includes('slots busy'))).toHaveLength(1);
+        await new Promise((r) => setTimeout(r, 120));
+        tick();
+        // The deadline freed the slots: the sweep moves on to other cwds.
+        expect(started).toHaveLength(8);
+        expect(new Set(started).size).toBe(8);
+        expect(logs.filter((m) => m.includes('abandoned'))).toHaveLength(4);
+    });
+
+    it('a late settle from an abandoned lookup never writes identity', async () => {
+        writePiJournal('late-1', path.join(dir, 'late'));
+        let settle: (v: { repositoryPath: string }) => void = () => {};
+        index = new SessionIndex({
+            roots: [{ provider: 'pi', dir: path.join(dir, 'pi') }],
+            repoTickMs: 60_000,
+            repoLookupDeadlineMs: 30,
+            repoLookup: () => new Promise((resolve) => (settle = resolve)),
+        });
+        await index.ready;
+        (index as unknown as { refreshRepositories(): void }).refreshRepositories();
+        await new Promise((r) => setTimeout(r, 80));
+        settle({ repositoryPath: '/late/answer' });
+        await new Promise((r) => setTimeout(r, 5));
+        expect(index.get('late-1')).toEqual(expect.not.objectContaining({ repositoryPath: expect.anything() }));
     });
 
     it('a failing cwd backs off and logs one line, once', async () => {
