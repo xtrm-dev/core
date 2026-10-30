@@ -24,6 +24,7 @@ const CLASSIFIER_ANSWERS = {
   skill: { type: "choice", choice: "demo-skill", probabilities: { "demo-skill": 0.9, none: 0.1 }, confidence: 0.9 },
   would_follow_documented_procedure: { type: "bool", probability: 0.9 },
   prose_suffices: { type: "bool", probability: 0.1 },
+  starts_governed_task: { type: "bool", probability: 0.9 },
 };
 const stubRegistry = {
   getAvailableOfType: async () => [{ id: "jev-test", provider: "typesafe" }],

@@ -8,7 +8,8 @@
  * whether the working turn reaches the classifier. Live, the real classifier
  * answers (no stub) and the decision log is the record.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { materialize, type RosterFixture } from "./materialize.ts";
 
@@ -136,13 +137,21 @@ function logRows(dir: string): Array<Record<string, unknown>> {
  * Replay every row. `live` drops the stub so the extension calls Jev itself
  * (TYPESAFE_API_KEY); picks then come from the decision log.
  */
-export async function replay(rows: CorpusRow[], opts: { live?: boolean } = {}): Promise<RowOutcome[]> {
+export async function replay(
+  rows: CorpusRow[],
+  opts: { live?: boolean; registry?: (rowId: string, seam: "input" | "agent_end") => unknown } = {},
+): Promise<RowOutcome[]> {
+  const live = Boolean(opts.live || opts.registry);
   const fixture = loadFixture();
   const world = materialize(fixture);
   const prevHome = process.env["HOME"];
   const prevCwd = process.cwd();
   process.env["HOME"] = world.home;
-  const logDir = process.env["SKILL_SUGGEST_LOG_DIR"]!;
+  // A private log dir per replay: another test file may point the shared one
+  // at a directory it deletes afterwards, and live picks are read from the log.
+  const prevLogDir = process.env["SKILL_SUGGEST_LOG_DIR"];
+  const logDir = mkdtempSync(join(tmpdir(), "skill-replay-log-"));
+  process.env["SKILL_SUGGEST_LOG_DIR"] = logDir;
   // Imported late so HOME already points at the recorded roster.
   const skill = await import("../../../extensions/skill-suggest/index.ts");
   const pipeline = await import("../../../shared/suggest-pipeline.ts").catch(() => null);
@@ -171,7 +180,8 @@ export async function replay(rows: CorpusRow[], opts: { live?: boolean } = {}): 
         const turn = workingTurn(row);
         if (seam === "agent_end" && turn.length === 0) continue;
         const calls: Array<{ criteria: string[] }> = [];
-        const ctx = opts.live ? {} : { modelRegistry: stubRegistry(calls) };
+        // A caller-supplied registry (recording, or answering from a recording) is a live run.
+        const ctx = opts.registry ? { modelRegistry: opts.registry(row.id, seam) } : opts.live ? {} : { modelRegistry: stubRegistry(calls) };
         const { fire } = boot(ext);
         const before = logRows(logDir).length;
         if (seam === "input") {
@@ -187,13 +197,13 @@ export async function replay(rows: CorpusRow[], opts: { live?: boolean } = {}): 
         const fresh = logRows(logDir).slice(before).filter((r) => r["seam"] === seam);
         const decided = fresh.find((r) => typeof r["pick"] === "string");
         const criteria = calls[0]?.criteria ?? [];
-        const reached = opts.live ? fresh.some((r) => r["jev_ms"] !== undefined) : calls.length > 0;
+        const reached = live ? fresh.some((r) => r["jev_ms"] !== undefined) : calls.length > 0;
         const livePick = decided && (decided["outcome"] === "fire" || decided["reason"] === "cooldown" || decided["reason"] === "duplicate" || decided["reason"] === "turn_taken") ? String(decided["pick"]) : null;
         seams[seam] = {
           reached,
           criteria: criteria.length,
           candidates: criteria.filter((k) => k !== "none"),
-          pick: opts.live ? livePick : (criteria.find((k) => k !== "none") ?? null),
+          pick: live ? livePick : (criteria.find((k) => k !== "none") ?? null),
         };
       }
       out.push({ row, input: seams["input"]!, agentEnd: seams["agent_end"] ?? null });
@@ -202,6 +212,9 @@ export async function replay(rows: CorpusRow[], opts: { live?: boolean } = {}): 
     process.chdir(prevCwd);
     if (prevHome === undefined) delete process.env["HOME"];
     else process.env["HOME"] = prevHome;
+    if (prevLogDir === undefined) delete process.env["SKILL_SUGGEST_LOG_DIR"];
+    else process.env["SKILL_SUGGEST_LOG_DIR"] = prevLogDir;
+    rmSync(logDir, { recursive: true, force: true });
     (skill as { resetIndex?: () => void }).resetIndex?.();
     (roster as { resetRosterCache?: () => void }).resetRosterCache?.();
     world.cleanup();

@@ -90,10 +90,28 @@ export function resetIndex(): void {
   resetRosterCache();
 }
 
-/** The classifier's choice criteria: the shortlist plus an explicit `none`. */
-function criteriaOf(candidates: RosterEntry[], none: string): Record<string, string> {
-  return Object.fromEntries([...candidates.map((r) => [r.id, r.description]), ["none", none]]);
+/**
+ * The classifier's choice criteria: the shortlist plus an explicit `none`.
+ *
+ * CORE-2553: Jev never sees ids, so each criterion names its document, and a
+ * reference names the skill it belongs to with that skill's first sentence.
+ * A reference's own summary is often a launch instruction ("Read this file at
+ * launch…") that says nothing about when it applies. `none` lists what does
+ * not call for a procedure instead of one generic sentence.
+ */
+export function criteriaOf(candidates: RosterEntry[], entries: readonly RosterEntry[]): Record<string, string> {
+  const skills = new Map(entries.filter((e) => e.level === "skill").map((e) => [e.skill, e]));
+  const firstSentence = (s: string) => (s.split(/(?<=[.;])\s/)[0] ?? "").slice(0, 140);
+  const criterion = (e: RosterEntry) => {
+    if (e.level === "skill") return `${e.name}: ${e.description}`;
+    const parent = skills.get(e.skill);
+    return `${e.name} (part of ${e.skill}${parent ? `: ${firstSentence(parent.description)}` : ""}) — ${e.description}`;
+  };
+  return Object.fromEntries([...candidates.map((e) => [e.id, criterion(e)]), ["none", NONE_CRITERION]]);
 }
+
+export const NONE_CRITERION =
+  "No listed procedure governs this: narration or a status report, a reply or relay to another agent, a decision the operator states, a question answered from the conversation, or work only sharing a topic or keyword with a listed procedure.";
 
 /** The last extension context seen, so the input handler can reach the session. */
 let latestCtx: unknown = null;
@@ -130,7 +148,7 @@ export function gateTerms(nouls: Record<string, number | null | undefined>): {
   const terms: number[] = [];
   let abstain: string | null = null;
 
-  // Positive noul: absent evidence cannot support firing.
+  // Positive nouls: absent evidence cannot support firing.
   const positive = nouls["would_follow_documented_procedure"];
   if (typeof positive !== "number") {
     abstain = "missing-positive-noul";
@@ -138,6 +156,8 @@ export function gateTerms(nouls: Record<string, number | null | undefined>): {
   } else {
     terms.push(positive);
   }
+  // CORE-2553: the task noul is a separate bar (evaluateGate), not a mean term.
+  if (typeof nouls["starts_governed_task"] !== "number") abstain ??= "missing-task-noul";
 
   // Negating nouls: absent evidence is neutral, not maximal.
   for (const key of ["prose_suffices", "asks_about_the_tooling"] as const) {
@@ -172,6 +192,9 @@ export function evaluateGate(input: {
   }
 
   if (gateMean < GATE_THRESHOLD) return { fire: false, gateMean, reason: "below-gate" };
+  // CORE-2553: on the labelled replay this noul separated turns that start
+  // governed work from chat, status and relays better than the mean did.
+  if ((input.nouls["starts_governed_task"] ?? 0) < TASK_THRESHOLD) return { fire: false, gateMean, reason: "below-task" };
   if (!input.hasEntry) return { fire: false, gateMean, reason: "unknown-entry" };
 
   // The agent_end seam had NO confidence sub-gate at all, so a near-zero pick with
@@ -187,13 +210,29 @@ export function evaluateGate(input: {
   if (typeof none === "number" && confidence - none < NONE_MARGIN) {
     return { fire: false, gateMean, reason: "below-none-margin" };
   }
+  // CORE-2553: any real weight on `none` means the choice is unsure whether a
+  // procedure applies at all; wrong fires sat there, right ones near zero.
+  if (typeof none === "number" && none > NONE_MAX) return { fire: false, gateMean, reason: "above-none-max" };
 
   return { fire: true, gateMean, reason: "fire" };
 }
 
+/**
+ * Gate constants. CORE-2553 fitted TASK_THRESHOLD and NONE_MAX on one seeded
+ * half of the labelled replay (tests/skill-suggest/replay) and scored the
+ * other half, live, through this decision path: precision 0.27 -> 0.55,
+ * NO-SUGGESTION false-fire 0.37 -> 0.05. The recorded answers are a test
+ * fixture (tests/skill-suggest/replay/answers.jsonl).
+ * Confidences are gate inputs, not calibrated probabilities.
+ */
 const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
 const FITS_THRESHOLD = 0.3; // winner's own confidence under this -> nothing (both seams, CORE-2366)
 const NONE_MARGIN = 0.05; // the winner must BEAT `none`, not merely clear a bar
+const TASK_THRESHOLD = 0.8; // starts_governed_task under this -> nothing
+const NONE_MAX = 0.2; // `none` holding more than this -> nothing
+/** CORE-2553: the task gate, asked in the same call as the choice at both seams. */
+const TASK_NOUL =
+  "Does the request (or the agent's stated next step) start a concrete piece of work, such as debugging, reviewing, releasing, deploying, planning, coordinating workers or operating a named service, rather than chat, a status check, a decision the operator states, or a reply to another agent?";
 const INJECT_TIMEOUT_MS = 2500;
 
 const COOLDOWN_MIN = 30;
@@ -582,9 +621,10 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         skill: {
           type: "choice",
           instructions:
-            "Pick the single skill or reference document a careful expert would follow for this request, or none. Base it only on the request and the provided descriptions.",
-          criteria: criteriaOf(sl.candidates, "No documented procedure adds value; general expertise suffices."),
+            "Pick the single skill or reference document whose stated use applies to the task this request starts, so that following it would change what the agent does next; otherwise pick none. A procedure that only shares a topic or keyword does not apply. Base it only on the request and the provided descriptions.",
+          criteria: criteriaOf(sl.candidates, index.entries),
         },
+        starts_governed_task: { type: "noul", instructions: TASK_NOUL },
         would_follow_documented_procedure: {
           type: "noul",
           instructions: "Would a careful expert consult a specific documented procedure or set of commands here, rather than answer from general understanding?",
@@ -631,6 +671,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         gate: Number(verdict.gateMean.toFixed(3)),
         confidence: result.choice.confidence,
         noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        task: result.nouls["starts_governed_task"] ?? null,
         ...jevFacts,
       };
       if (!verdict.fire || !entry || cooled) {
@@ -727,9 +768,10 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       }, {
         skill: {
           type: "choice",
-          instructions: "The agent just ended a working turn stating its intention. Pick the single skill or reference document its stated next step most needs, or none.",
-          criteria: criteriaOf(sl.candidates, "No documented procedure adds value to the stated next step."),
+          instructions: "The agent just ended a working turn stating its next step. Pick the single skill or reference document whose stated use applies to that next step, so that following it would change what the agent does; otherwise pick none. A procedure that only shares a topic or keyword does not apply.",
+          criteria: criteriaOf(sl.candidates, index.entries),
         },
+        starts_governed_task: { type: "noul", instructions: TASK_NOUL },
         would_follow_documented_procedure: { type: "noul", instructions: "For the stated next step, would a careful expert follow a specific documented procedure rather than improvise?" },
         prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
       } as Record<string, Question>);
@@ -759,6 +801,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           gate: Number(verdict.gateMean.toFixed(3)),
           confidence: result.choice.confidence,
           noneConfidence: result.choice.probabilities?.["none"] ?? null,
+          task: result.nouls["starts_governed_task"] ?? null,
           ...jevFacts,
         });
         return;
