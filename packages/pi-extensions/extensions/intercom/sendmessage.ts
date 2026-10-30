@@ -49,6 +49,7 @@ import { buildRoster, entryDisplayRef, fetchPiSessions, legWord, resolveRosterTa
 import {
   claudeReceipts,
   isClaudeReceiptTimeout,
+  UnknownReceiptStatusError,
   isClaudeTransportEnabled,
   listClaudeSessions,
   sendToClaudeSession,
@@ -831,6 +832,12 @@ export interface SendMessageDetails {
 
 type ToolResult = { content: [{ type: "text"; text: string }]; details: SendMessageDetails; isError?: boolean };
 
+/** CORE-2554 C4: Claude answered, but with a status this adapter does not know. */
+function unknownReceiptText(target: RosterEntry, messageId: string, error: UnknownReceiptStatusError): string {
+  const seen = typeof error.seen === "string" ? error.seen : JSON.stringify(error.seen) ?? String(error.seen);
+  return `Sent to ${sessionLabel(target)} (message ${messageId}); Claude answered with receipt status ${JSON.stringify(seen)}, which this adapter does not recognise. Delivery is unknown.`;
+}
+
 function ok(text: string, details: SendMessageDetails = {}): ToolResult {
   return { content: [{ type: "text" as const, text }], details };
 }
@@ -1160,6 +1167,10 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
               message: { id: messageId, state: "delivered", to: target.name },
             });
           }
+          if (error instanceof UnknownReceiptStatusError) {
+            intercomTrace("send.claude.result", { messageId, sock, outcome: "unknown", elapsedMs: Date.now() - sendStartedAt });
+            return ok(unknownReceiptText(target, messageId, error), { message: { id: messageId, state: "unknown", to: target.name } });
+          }
           intercomTrace("send.claude.result", {
             messageId,
             sock,
@@ -1230,6 +1241,10 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
           // CORE-2554 B1: keep the ask armed; disarming it here left the
           // expect_reply caller awaiting a promise that never settles.
           if (isClaudeReceiptTimeout(relayError)) return { sent: { messageId, state: "delivered" } };
+          if (relayError instanceof UnknownReceiptStatusError) {
+            ask?.disarm();
+            return { done: ok(unknownReceiptText(target, messageId, relayError), { message: { id: messageId, state: "unknown", to: target.name } }) };
+          }
           throw relayError;
         }
       };

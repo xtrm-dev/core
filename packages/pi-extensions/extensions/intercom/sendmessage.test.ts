@@ -509,6 +509,23 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     expect(text).toContain("Delivered to Claude session cass");
     expect(r.details.message).toMatchObject({ id: "m-test-1", state: "delivered", to: "cass" });
   });
+
+  test("an unrecognised receipt status reports delivery unknown (CORE-2554 C4)", async () => {
+    const transport = await import("./claude-transport/index.ts");
+    const { deps } = baseDeps({
+      fetchPi: async () => [],
+      fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
+      claudeTransportEnabled: true,
+      sendClaude: async () => {
+        throw new transport.UnknownReceiptStatusError("maybe");
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(String(r.content[0].text)).toMatch(/receipt status "maybe".*Delivery is unknown/);
+    expect(r.details.message).toMatchObject({ state: "unknown" });
+  });
 });
 
 describe("SendMessage peer addressing (MMD-2538: uuid/ref/uds/prefix, fail-closed, loud scope)", () => {
