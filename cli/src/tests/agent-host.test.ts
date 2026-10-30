@@ -156,6 +156,21 @@ describe('xt host agent host (XTRM-563)', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 
+    it('a session that reconnects keeps its first startedAt (CORE-2554 D5)', async () => {
+        const first = await FakeExtension.connect(socketPath);
+        first.push({ ...identity, at: Date.now() });
+        await until(() => host.registry.list().length === 1);
+        const startedAt = host.registry.list()[0].startedAt;
+        first.close();
+        await until(() => host.registry.list().length === 0);
+        await new Promise((r) => setTimeout(r, 15));
+        const second = await FakeExtension.connect(socketPath);
+        second.push({ ...identity, at: Date.now() });
+        await until(() => host.registry.list().length === 1);
+        expect(host.registry.list()[0].startedAt).toBe(startedAt);
+        second.close();
+    });
+
     it('accepts a wake payload past the old 32 KiB cap and refuses one past 512 KiB (CORE-2554 B3)', async () => {
         const accepted = await request(host, 'POST', '/v1/wake', { participant: 'nobody-yet', payloadRef: 'x'.repeat(100 * 1024) });
         expect(accepted.status).toBe(200);

@@ -207,6 +207,31 @@ const defaultExec: ExecFn = (file, args) =>
   });
 
 /** Schema boundedString: 1..1024 chars, no control characters. */
+/** Longest session name the identity carries (CORE-2554 D3). */
+const SESSION_NAME_MAX = 128;
+
+/**
+ * Session name order (CORE-2554 D2): the Pi session name, then the xt
+ * worker name (SUBSTRATE_HOLDER), then the tmux window, and only then the
+ * tmux session name. XTRM_SESSION_NAME and the tmux session name are shared
+ * by every pane of one tmux session, so five workers in `market-data` all
+ * registered as "market-data" and Pi-to-Pi addressing by name was ambiguous.
+ */
+export function sessionNameFor(
+  piName: unknown,
+  env: Record<string, string | undefined>,
+  tmuxWindow: string | undefined,
+  tmuxSession: string | undefined,
+): string | undefined {
+  return (
+    bounded(piName, SESSION_NAME_MAX) ??
+    bounded(env.SUBSTRATE_HOLDER, SESSION_NAME_MAX) ??
+    tmuxWindow ??
+    bounded(env.XTRM_SESSION_NAME, SESSION_NAME_MAX) ??
+    bounded(tmuxSession, SESSION_NAME_MAX)
+  );
+}
+
 function bounded(value: unknown, max = 1024): string | undefined {
   if (typeof value !== "string") return undefined;
   const clean = value.replace(/[\u0000-\u001F\u007F]/g, "").slice(0, max);
@@ -694,6 +719,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const pane = env.TMUX && /^%[0-9]+$/.test(env.TMUX_PANE ?? "") ? (env.TMUX_PANE as string) : null;
     const cwd = current.cwd;
     let tmuxSession: string | undefined;
+    let tmuxWindow: string | undefined;
     let role = bounded(env.XTMUX_AGENT_ROLE);
     let bead = bounded(env.XTMUX_AGENT_BEAD);
     let parentTmux: string | undefined;
@@ -703,7 +729,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const tmuxInfo = pane
       ? exec("tmux", [
           "display-message", "-p", "-t", pane,
-          "#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}",
+          "#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}\t#{window_name}",
         ])
       : Promise.resolve("");
     const gitInfo = exec("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"]);
@@ -714,8 +740,9 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
     const [tmuxOut, gitOut, branchOut, remoteOut] = await Promise.all([tmuxInfo, gitInfo, branchInfo, remoteInfo]);
     if (tmuxOut) {
-      const [name, paneRole, paneBead, parent, paneWorktree, paneBranch] = tmuxOut.replace(/\n$/, "").split("\t");
+      const [name, paneRole, paneBead, parent, paneWorktree, paneBranch, windowName] = tmuxOut.replace(/\n$/, "").split("\t");
       tmuxSession = bounded(name);
+      tmuxWindow = bounded(windowName, SESSION_NAME_MAX);
       role = bounded(paneRole) ?? role;
       bead = bounded(paneBead) ?? bead;
       parentTmux = bounded(parent);
@@ -755,7 +782,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       pid: typeof process.pid === "number" && process.pid > 0 ? process.pid : undefined,
       generation,
       sessionFile,
-      sessionName: bounded(pi.getSessionName()) ?? bounded(env.XTRM_SESSION_NAME) ?? tmuxSession,
+      sessionName: sessionNameFor(pi.getSessionName(), env, tmuxWindow, tmuxSession),
       cwd: bounded(cwd, 4096) ?? "/",
       worktree,
       repository,

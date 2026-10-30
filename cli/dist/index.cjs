@@ -81173,6 +81173,7 @@ var CAPABILITY_FOR = {
 };
 var INPUT_NOTIFICATIONS = /* @__PURE__ */ new Set(["permission_prompt", "elicitation_dialog"]);
 var MAX_DISCONNECTED_SESSIONS = 256;
+var MAX_REMEMBERED_STARTS = 1024;
 var MAX_LAUNCHED_PANES = 256;
 var PROMPT_START_TIMEOUT_MS = 6e4;
 var MAX_FRAME_RECORDS = 16;
@@ -81286,11 +81287,14 @@ var AgentHostRegistry = class {
           toolOrigins: /* @__PURE__ */ new Map(),
           frameCount: 0,
           frames: [],
-          startedAt: frame.at,
+          // CORE-2554 D5: a session that reconnects (extension restart, host
+          // hiccup) keeps the start it first registered with.
+          startedAt: this.startedAtBySession.get(sessionId) ?? frame.at,
           lastActivityAt: frame.at,
           lastSeq: frame.seq
         };
         this.sessions.set(sessionId, session);
+        this.rememberStartedAt(sessionId, session.startedAt);
       }
       if (previousConnection && (verdict === "replace" || verdict === "handover")) {
         this.notifyReplaced(sessionId, previousConnection, identity, verdict);
@@ -81990,6 +81994,17 @@ var AgentHostRegistry = class {
     const session = this.sessions.get(sessionId);
     if (session) this.stopPromptStartTimer(session);
     this.sessions.delete(sessionId);
+  }
+  /** First registration time per session id, bounded (oldest evicted first). */
+  startedAtBySession = /* @__PURE__ */ new Map();
+  rememberStartedAt(sessionId, startedAt) {
+    if (this.startedAtBySession.has(sessionId)) return;
+    this.startedAtBySession.set(sessionId, startedAt);
+    while (this.startedAtBySession.size > MAX_REMEMBERED_STARTS) {
+      const oldest = this.startedAtBySession.keys().next().value;
+      if (oldest === void 0) break;
+      this.startedAtBySession.delete(oldest);
+    }
   }
   pruneDisconnected() {
     const disconnected = [...this.sessions.entries()].filter(([, s]) => !s.connection);

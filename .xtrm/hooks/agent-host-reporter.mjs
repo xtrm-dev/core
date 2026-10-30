@@ -121,6 +121,7 @@ async function identity(hook, sessionId, env) {
   const cwd = bounded(hook.cwd, 4096) ?? bounded(env.CLAUDE_PROJECT_DIR, 4096) ?? '/';
   const pane = env.TMUX && /^%[0-9]+$/.test(env.TMUX_PANE ?? '') ? env.TMUX_PANE : null;
   let tmuxSession;
+  let tmuxWindow;
   let role = bounded(env.XTMUX_AGENT_ROLE);
   let bead = bounded(env.XTMUX_AGENT_BEAD);
   let parentTmux;
@@ -129,11 +130,12 @@ async function identity(hook, sessionId, env) {
   if (pane) {
     const out = await run('tmux', [
       'display-message', '-p', '-t', pane,
-      '#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}',
+      '#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}\t#{window_name}',
     ]);
     if (out) {
-      const [name, paneRole, paneBead, parent, paneWorktree, paneBranch] = out.replace(/\n$/, '').split('\t');
+      const [name, paneRole, paneBead, parent, paneWorktree, paneBranch, windowName] = out.replace(/\n$/, '').split('\t');
       tmuxSession = bounded(name);
+      tmuxWindow = bounded(windowName, SESSION_NAME_MAX);
       role = bounded(paneRole) ?? role;
       bead = bounded(paneBead) ?? bead;
       parentTmux = bounded(parent);
@@ -157,7 +159,13 @@ async function identity(hook, sessionId, env) {
     runtime: { name: 'claude', version: null },
     producer: PRODUCER,
     sessionFile: bounded(hook.transcript_path, 4096),
-    sessionName: bounded(env.XTRM_SESSION_NAME) ?? tmuxSession,
+    // CORE-2554 D2: the xt worker name, then the tmux window; the tmux session name
+    // (and XTRM_SESSION_NAME, which equals it) is shared by every pane of the session.
+    sessionName:
+      bounded(env.SUBSTRATE_HOLDER, SESSION_NAME_MAX) ??
+      tmuxWindow ??
+      bounded(env.XTRM_SESSION_NAME, SESSION_NAME_MAX) ??
+      bounded(tmuxSession, SESSION_NAME_MAX),
     cwd,
     worktree,
     branch,
@@ -215,6 +223,9 @@ function detached(file, args) {
 }
 
 /** Schema boundedString: 1..max chars, no control characters. */
+/** Longest session name the identity carries (CORE-2554 D3). */
+const SESSION_NAME_MAX = 128;
+
 function bounded(value, max = 1024) {
   if (typeof value !== 'string') return undefined;
   const clean = value.replace(/[\u0000-\u001F\u007F]/g, '').slice(0, max);
