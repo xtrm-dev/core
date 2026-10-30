@@ -832,6 +832,11 @@ export interface SendMessageDetails {
 
 type ToolResult = { content: [{ type: "text"; text: string }]; details: SendMessageDetails; isError?: boolean };
 
+/** CORE-2554 step 7: flushed to the Claude socket, no receipt: arrival unknown. */
+function unconfirmedText(target: RosterEntry, messageId: string): string {
+  return `Sent to ${sessionLabel(target)} (message ${messageId}); unconfirmed: the Claude transport returned no receipt, so arrival is not confirmed. Do not resend unless the session says it never arrived.`;
+}
+
 /** CORE-2554 C4: Claude answered, but with a status this adapter does not know. */
 function unknownReceiptText(target: RosterEntry, messageId: string, error: UnknownReceiptStatusError): string {
   const seen = typeof error.seen === "string" ? error.seen : JSON.stringify(error.seen) ?? String(error.seen);
@@ -1152,19 +1157,20 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         try {
           receipt = (await sendClaude({ sock, body, from, fromName, messageId })).outcome;
         } catch (error) {
-          // CORE-2499: the frame flushed (sendClaude resolves post-flush) and
-          // no held/refused receipt arrived in budget. Native Claude sends no
-          // receipt for direct delivery by design, so a starved wait means
+          // CORE-2554 step 7: the frame flushed (sendClaude resolves
+          // post-flush) and no receipt arrived in budget. Native Claude sends
+          // no receipt for direct delivery and live sends recorded none, so
+          // a starved wait is reported as sent, unconfirmed — never as
           // delivered. SendMessage never auto-retries, so no double-deliver.
           if (isClaudeReceiptTimeout(error)) {
             intercomTrace("send.claude.result", {
               messageId,
               sock,
-              outcome: "delivered",
+              outcome: "unconfirmed",
               elapsedMs: Date.now() - sendStartedAt,
             });
-            return ok(`Delivered to ${sessionLabel(target)} (message ${messageId}).`, {
-              message: { id: messageId, state: "delivered", to: target.name },
+            return ok(unconfirmedText(target, messageId), {
+              message: { id: messageId, state: "unconfirmed", to: target.name },
             });
           }
           if (error instanceof UnknownReceiptStatusError) {
@@ -1238,9 +1244,18 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
         } catch (relayError) {
           // CORE-2499: same rule as the direct branch — flushed with no
           // held/refused in budget means delivered; rejoin the settle path.
-          // CORE-2554 B1: keep the ask armed; disarming it here left the
-          // expect_reply caller awaiting a promise that never settles.
-          if (isClaudeReceiptTimeout(relayError)) return { sent: { messageId, state: "delivered" } };
+          // CORE-2554 B1 + step 7: no receipt in budget is unconfirmed, not
+          // delivered. With expect_reply the ask stays armed (disarming it
+          // left the caller awaiting a promise that never settled) and the
+          // reply, or its timeout, finishes the call.
+          if (isClaudeReceiptTimeout(relayError)) {
+            const text = unconfirmedText(target, messageId);
+            const details = { message: { id: messageId, state: "unconfirmed", to: target.name } };
+            if (!ask) return { done: ok(text, details) };
+            const reply = await ask.promise;
+            if (reply.details.ask === "replied") return { done: reply };
+            return { done: ok(`${text} ${reply.content[0].text}`, { ...details, ...(reply.details.ask ? { ask: reply.details.ask } : {}) }) };
+          }
           if (relayError instanceof UnknownReceiptStatusError) {
             ask?.disarm();
             return { done: ok(unknownReceiptText(target, messageId, relayError), { message: { id: messageId, state: "unknown", to: target.name } }) };

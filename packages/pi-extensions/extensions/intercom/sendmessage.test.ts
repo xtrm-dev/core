@@ -491,7 +491,7 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     expect(sent).toHaveLength(0);
   });
 
-  test("a starved receipt means delivered after flush, never failed, no retry (CORE-2499)", async () => {
+  test("a starved receipt reads sent, unconfirmed after flush, never failed or delivered, no retry (CORE-2554 step 7)", async () => {
     const transport = await import("./claude-transport/index.ts");
     const { deps } = baseDeps({
       fetchPi: async () => [],
@@ -506,8 +506,9 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
     const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
     expect(r.isError).toBeFalsy();
     const text = String(r.content[0].text);
-    expect(text).toContain("Delivered to Claude session cass");
-    expect(r.details.message).toMatchObject({ id: "m-test-1", state: "delivered", to: "cass" });
+    expect(text).toContain("Sent to Claude session cass");
+    expect(text).toContain("unconfirmed");
+    expect(r.details.message).toMatchObject({ id: "m-test-1", state: "unconfirmed", to: "cass" });
   });
 
   test("an unrecognised receipt status reports delivery unknown (CORE-2554 C4)", async () => {
@@ -1347,7 +1348,7 @@ describe("Pi shadow relay (CORE-2470)", () => {
     expect(relayCalls[0]).toMatchObject({ sock: "/run/shadow.sock", from: "uds:/run/user/1000/cc-socks/own.sock" });
   });
 
-  test("shadow timeout rejoins the settle path as delivered (CORE-2499)", async () => {
+  test("shadow timeout reads sent, unconfirmed (CORE-2554 step 7)", async () => {
     const deps = shadowSetup({
       sendClaude: async () => {
         throw new ClaudeReceiptTimeoutError("m-test-1");
@@ -1358,7 +1359,8 @@ describe("Pi shadow relay (CORE-2470)", () => {
     const again = register(deps);
     const r = await again.tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
     expect(r.isError).toBeFalsy();
-    expect(String(r.content[0].text)).toContain("Delivered to Pi session bob");
+    expect(String(r.content[0].text)).toContain("Sent to Pi session bob");
+    expect(r.details.message).toMatchObject({ state: "unconfirmed" });
   });
 
   test("shadow timeout with expect_reply still settles: the ask stays armed (CORE-2554 B1)", async () => {
@@ -1690,7 +1692,7 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
     expect(result).toMatch(/elapsedMs=\d+/);
   });
 
-  test("a starved receipt traces delivered, never failed (CORE-2499)", async () => {
+  test("a starved receipt traces unconfirmed, never failed (CORE-2554 step 7)", async () => {
     const cap = captureTraceFile();
     let lines: string[] = [];
     try {
@@ -1705,7 +1707,7 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
       });
       const { tool } = register(deps);
       const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
-      expect(String(r.content[0].text)).toContain("Delivered to Claude session cass");
+      expect(String(r.content[0].text)).toContain("Sent to Claude session cass");
       lines = cap.lines();
     } finally {
       cap.restore();
@@ -1713,7 +1715,7 @@ describe("SendMessage Claude-leg trace (CORE-2488 phase 1)", () => {
     expect(cap.stderr()).toEqual([]);
     const result = lines.find((line) => line.startsWith("[intercom-trace] send.claude.result "));
     expect(result).toBeTruthy();
-    expect(result).toContain("outcome=delivered");
+    expect(result).toContain("outcome=unconfirmed");
     expect(result).toMatch(/elapsedMs=\d+/);
   });
 });
