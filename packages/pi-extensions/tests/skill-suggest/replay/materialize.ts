@@ -2,6 +2,9 @@
  * CORE-2535: rebuild a recorded roster as files under a temp HOME and temp
  * repo, so the replay runs the real discovery and retrieval code. The fixture
  * stores frontmatter and headings only — no document bodies, no real paths.
+ * CORE-2555: a doc without a frontmatter description also keeps the bounded,
+ * scrubbed summary roster.ts extracts from its first paragraph, so the replay
+ * shows the classifier the same text production does.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +15,7 @@ interface Doc {
   id: string;
   frontmatter: string;
   headings: string[];
+  summary?: string;
 }
 interface RepoFixture {
   entries: Doc[];
@@ -27,7 +31,10 @@ function write(root: string, doc: Doc): void {
   const abs = join(root, doc.rel);
   mkdirSync(dirname(abs), { recursive: true });
   const fm = doc.frontmatter ? `---\n${doc.frontmatter}\n---\n` : "";
-  writeFileSync(abs, `${fm}${doc.headings.join("\n\n")}\n`);
+  const [first, ...rest] = doc.headings;
+  const h1 = first?.startsWith("# ") ? [first] : [];
+  const body = [...h1, ...(doc.summary ? [doc.summary] : []), ...(h1.length ? rest : doc.headings)];
+  writeFileSync(abs, `${fm}${body.join("\n\n")}\n`);
 }
 
 export interface World {

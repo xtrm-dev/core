@@ -33,7 +33,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { buildRetrievalIndex, loadServices, shortlist, type RetrievalIndex } from "../../shared/shortlist.ts";
+import { buildRetrievalIndex, loadServices, shortlist, type RetrievalIndex, type ServiceRecord } from "../../shared/shortlist.ts";
 import { contextBlock, parseContextBlock, resolveSuggestionMessage, stripEndPeriod, suggestionFacts, tintSuggestionGlyph } from "../../shared/suggest.ts";
 import { registerEventRenderer } from "../../shared/event.ts";
 import { classify, primeApiKey, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
@@ -99,10 +99,18 @@ export function resetIndex(): void {
  * launch…") that says nothing about when it applies. `none` lists what does
  * not call for a procedure instead of one generic sentence.
  */
-export function criteriaOf(candidates: RosterEntry[], entries: readonly RosterEntry[]): Record<string, string> {
-  const skills = new Map(entries.filter((e) => e.level === "skill").map((e) => [e.skill, e]));
+export function criteriaOf(
+  candidates: RosterEntry[],
+  index: { entries: readonly RosterEntry[]; serviceOf?: ReadonlyMap<string, ServiceRecord>; serviceSkill?: ReadonlyMap<string, string> },
+): Record<string, string> {
+  const skills = new Map(index.entries.filter((e) => e.level === "skill").map((e) => [e.skill, e]));
   const firstSentence = (s: string) => (s.split(/(?<=[.;])\s/)[0] ?? "").slice(0, 140);
   const criterion = (e: RosterEntry) => {
+    // CORE-2555: a service's SKILL.md often has no frontmatter; the registry
+    // description is written to say when the service applies.
+    const svc = index.serviceOf?.get(e.id);
+    if (svc && index.serviceSkill?.get(svc.id) === e.id && svc.description) return `${svc.name} service: ${svc.description}`;
+    if (svc && index.serviceSkill?.get(svc.id) !== e.id) return `${e.name} (part of the ${svc.name} service) — ${e.description}`;
     if (e.level === "skill") return `${e.name}: ${e.description}`;
     const parent = skills.get(e.skill);
     return `${e.name} (part of ${e.skill}${parent ? `: ${firstSentence(parent.description)}` : ""}) — ${e.description}`;
@@ -622,7 +630,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
           type: "choice",
           instructions:
             "Pick the single skill or reference document whose stated use applies to the task this request starts, so that following it would change what the agent does next; otherwise pick none. A procedure that only shares a topic or keyword does not apply. Base it only on the request and the provided descriptions.",
-          criteria: criteriaOf(sl.candidates, index.entries),
+          criteria: criteriaOf(sl.candidates, index),
         },
         starts_governed_task: { type: "noul", instructions: TASK_NOUL },
         would_follow_documented_procedure: {
@@ -769,7 +777,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
         skill: {
           type: "choice",
           instructions: "The agent just ended a working turn stating its next step. Pick the single skill or reference document whose stated use applies to that next step, so that following it would change what the agent does; otherwise pick none. A procedure that only shares a topic or keyword does not apply.",
-          criteria: criteriaOf(sl.candidates, index.entries),
+          criteria: criteriaOf(sl.candidates, index),
         },
         starts_governed_task: { type: "noul", instructions: TASK_NOUL },
         would_follow_documented_procedure: { type: "noul", instructions: "For the stated next step, would a careful expert follow a specific documented procedure rather than improvise?" },

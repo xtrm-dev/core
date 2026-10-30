@@ -119,9 +119,17 @@ describe("CORE-2553: criteria name the document and, for a reference, its skill"
   const skill = { id: "pc", skill: "pc", level: "skill", name: "programme-coordination", description: "Coordinate a programme of workers. Long tail.", path: "", headings: [] } as const;
   const ref = { id: "pc/workers", skill: "pc", level: "reference", name: "Workers", description: "Read this file at launch.", path: "", headings: [] } as const;
   it("prefixes a reference with its skill's first sentence and lists what none covers", () => {
-    const c = criteriaOf([ref, skill], [skill, ref]);
+    const c = criteriaOf([ref, skill], { entries: [skill, ref] });
     expect(c["pc/workers"]).toBe("Workers (part of pc: Coordinate a programme of workers.) — Read this file at launch.");
     expect(c["pc"]).toBe("programme-coordination: Coordinate a programme of workers. Long tail.");
     expect(c["none"]).toBe(NONE_CRITERION);
+  });
+  it("describes a service by its registry entry, and its docs as part of that service (CORE-2555)", () => {
+    const head = { id: "sk/services/api", skill: "sk", level: "reference", name: "api", description: "Documentation authority: origin/master", path: "", headings: [] } as const;
+    const doc = { id: "sk/services/api/references/runbook", skill: "sk", level: "reference", name: "Runbook", description: "Restart steps.", path: "", headings: [] } as const;
+    const svc = { id: "api", name: "API Gateway", description: "Use when the gateway returns 5xx.", container: null, territory: [], skillPath: "" };
+    const c = criteriaOf([head, doc], { entries: [head, doc], serviceOf: new Map([[head.id, svc], [doc.id, svc]]), serviceSkill: new Map([["api", head.id]]) });
+    expect(c["sk/services/api"]).toBe("API Gateway service: Use when the gateway returns 5xx.");
+    expect(c["sk/services/api/references/runbook"]).toBe("Runbook (part of the API Gateway service) — Restart steps.");
   });
 });

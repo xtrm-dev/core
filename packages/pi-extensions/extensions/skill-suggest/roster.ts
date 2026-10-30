@@ -258,7 +258,11 @@ export async function discoverRoster(cwd: string, now = Date.now()): Promise<Ros
           return direct;
         };
         for (const rel of await packSkills(childDir, 1)) {
-          const bare = rel.split(/[\\/]/).pop() ?? rel;
+          // CORE-2555: an installed tool package keeps its skill in a `skills/`
+          // folder (default/service-knowledge/skills/SKILL.md); the skill is
+          // the package, not "skills".
+          const parts = rel.split(/[\\/]/);
+          const bare = (parts.length > 1 && parts[parts.length - 1] === "skills" ? parts[parts.length - 2] : parts[parts.length - 1]) ?? rel;
           await scanSkillDir(entries, cwd, join(childDir, ...rel.split("/")), bare);
         }
       }
