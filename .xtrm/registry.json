@@ -7,7 +7,7 @@
       "install_scope": "global",
       "files": {
         "agent-host-reporter.mjs": {
-          "hash": "d826a22fe900fe82342f4d7b78bfac2e0cf206e31d5991736375afc9f452003b",
+          "hash": "a6b6698633cc429bb66740b31051676bae506d36838d28c05256a10cce643471",
           "version": "0.15.3"
         },
         "claude-receipt-ack.mjs": {

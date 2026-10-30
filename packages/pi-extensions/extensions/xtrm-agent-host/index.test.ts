@@ -1035,5 +1035,7 @@ describe("session name order (CORE-2554 D2)", () => {
     expect(sessionNameFor(undefined, { XTRM_SESSION_NAME: "market-data" }, "win", "market-data")).toBe("win");
     expect(sessionNameFor(undefined, { XTRM_SESSION_NAME: "market-data" }, undefined, "market-data")).toBe("market-data");
     expect(sessionNameFor("x".repeat(500), {}, undefined, undefined)).toHaveLength(128);
+    // A message-shaped name falls through to the next candidate (CORE-2554 D3).
+    expect(sessionNameFor("please fix the flaky test in the roster module", env, "win", "market-data")).toBe("worker-7");
   });
 });

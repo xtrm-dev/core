@@ -226,13 +226,20 @@ export function sessionNameFor(
   tmuxWindow: string | undefined,
   tmuxSession: string | undefined,
 ): string | undefined {
-  return (
-    bounded(piName, SESSION_NAME_MAX) ??
-    bounded(env.SUBSTRATE_HOLDER, SESSION_NAME_MAX) ??
-    tmuxWindow ??
-    bounded(env.XTRM_SESSION_NAME, SESSION_NAME_MAX) ??
-    bounded(tmuxSession, SESSION_NAME_MAX)
-  );
+  const name = (value: unknown) => {
+    const text = bounded(value, SESSION_NAME_MAX);
+    return text && !isMessageShaped(text) ? text : undefined;
+  };
+  return name(piName) ?? name(env.SUBSTRATE_HOLDER) ?? name(tmuxWindow) ?? name(env.XTRM_SESSION_NAME) ?? name(tmuxSession);
+}
+
+/**
+ * A name that reads like a message, not an address (CORE-2554 D3): more than
+ * six words. Such names (a first prompt promoted to a title) cannot be typed
+ * back as a SendMessage target; the next fallback is used instead.
+ */
+export function isMessageShaped(name: string): boolean {
+  return name.trim().split(/\s+/).length > 6;
 }
 
 function bounded(value: unknown, max = 1024): string | undefined {

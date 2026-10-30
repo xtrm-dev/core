@@ -529,6 +529,25 @@ describe("SendMessage to Claude sessions (CORE-2436 I5)", () => {
   });
 });
 
+describe("SendMessage settle poll backs off (CORE-2554 B8)", () => {
+  test("a queued wake is polled with backoff, not every 10 ms", async () => {
+    let polls = 0;
+    const { deps } = baseDeps({
+      postWake: async (req: any) => ({ messageId: req.messageId, state: "queued" }),
+      wakeStatus: async (messageId: string) => {
+        polls += 1;
+        return { messageId, state: "queued" };
+      },
+      settleWaitMs: 1000,
+    });
+    const { tool } = register(deps);
+    await tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    // 10+20+40+80+160+250+250+250 ~ 1 s: about 8 polls, never ~100.
+    expect(polls).toBeGreaterThan(3);
+    expect(polls).toBeLessThan(15);
+  });
+});
+
 describe("SendMessage peer addressing (MMD-2538: uuid/ref/uds/prefix, fail-closed, loud scope)", () => {
   test("a Claude peer is reachable by the uds: address it reports", async () => {
     const sent: any[] = [];

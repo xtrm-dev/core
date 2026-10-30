@@ -1333,8 +1333,12 @@ export function registerSendMessageTool(pi: ExtensionAPI, deps: SendMessageDeps 
       let state: WakeDeliveryState = sent.state;
       if (state === "queued" && settleWaitMs > 0) {
         const deadline = Date.now() + settleWaitMs;
+        // CORE-2554 B8: back off 10 ms -> 250 ms instead of polling every 10 ms
+        // (up to 500 status requests per send against a busy host).
+        let pollMs = 10;
         while (state === "queued" && Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 10));
+          await new Promise((r) => setTimeout(r, pollMs));
+          pollMs = Math.min(pollMs * 2, 250);
           try {
             const latest = await getWakeStatus(sent.messageId);
             if (latest) state = latest.state;

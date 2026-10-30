@@ -161,11 +161,9 @@ async function identity(hook, sessionId, env) {
     sessionFile: bounded(hook.transcript_path, 4096),
     // CORE-2554 D2: the xt worker name, then the tmux window; the tmux session name
     // (and XTRM_SESSION_NAME, which equals it) is shared by every pane of the session.
-    sessionName:
-      bounded(env.SUBSTRATE_HOLDER, SESSION_NAME_MAX) ??
-      tmuxWindow ??
-      bounded(env.XTRM_SESSION_NAME, SESSION_NAME_MAX) ??
-      bounded(tmuxSession, SESSION_NAME_MAX),
+    sessionName: [env.SUBSTRATE_HOLDER, tmuxWindow, env.XTRM_SESSION_NAME, tmuxSession]
+      .map((value) => bounded(value, SESSION_NAME_MAX))
+      .find((value) => value && value.trim().split(/\s+/).length <= 6),
     cwd,
     worktree,
     branch,

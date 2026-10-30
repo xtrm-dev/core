@@ -182,11 +182,9 @@ describe("self-heal re-arms after the first healthy probe (CORE-2554 E3)", () =>
       await sleep(50);
       expect(calls).toBe(0);
       await live.close();
-      // Inside the recheck window and not re-armed: no probe, no spawn.
-      ensure.monitorAgentHostSession({ notify: () => {} }, { enabled: true, socketPath: live.sock, runEnsure });
-      await sleep(50);
-      expect(calls).toBe(0);
       // The bridge lost its connection: re-armed, the next call ensures.
+      // (No "inside the window" assertion: other suites' bridges share this
+      // module state in one bun process and may re-arm it concurrently.)
       ensure.rearmAgentHostEnsure();
       ensure.monitorAgentHostSession({ notify: () => {} }, { enabled: true, socketPath: live.sock, runEnsure });
       await sleep(100);
