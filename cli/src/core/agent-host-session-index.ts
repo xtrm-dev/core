@@ -158,6 +158,7 @@ export class SessionIndex {
     /** Since when every slot has been taken (undefined while one is free). */
     private repoSaturatedSince: number | undefined;
     private repoSaturationLogged = false;
+    private repoTicks = 0;
     private readonly log: (message: string) => void;
     private readonly journals = new Map<string, JournalRecord>();
     private readonly watchers = new Map<string, FSWatcher>();
@@ -451,7 +452,8 @@ export class SessionIndex {
             const activity = record.state.lastActivityAt ?? record.state.startedAt ?? 0;
             if (activity >= (latest.get(cwd) ?? -1)) latest.set(cwd, activity);
         }
-        if (this.repoLookedUpAt.size > known.size) this.pruneRepositoryState(known);
+        // Prune about once a minute: a size comparison misses stale and new entries that balance.
+        if (++this.repoTicks % Math.max(1, Math.round(60_000 / this.repoTickMs)) === 0) this.pruneRepositoryState(known);
         if (latest.size === 0) return;
         const due = [...latest].sort((a, b) => b[1] - a[1]);
         for (const [cwd] of due) {
@@ -499,6 +501,8 @@ export class SessionIndex {
                 if (!current()) return;
                 this.repoPending.delete(cwd);
                 this.repoFailedAt.delete(cwd);
+                // A recovered cwd logs again if it fails again later.
+                this.repoFailureLogged.delete(cwd);
                 if (this.closed) return;
                 const previous = this.repoIdentity.get(cwd);
                 this.repoIdentity.set(cwd, identity);

@@ -82117,6 +82117,7 @@ var SessionIndex = class {
   /** Since when every slot has been taken (undefined while one is free). */
   repoSaturatedSince;
   repoSaturationLogged = false;
+  repoTicks = 0;
   log;
   journals = /* @__PURE__ */ new Map();
   watchers = /* @__PURE__ */ new Map();
@@ -82380,7 +82381,7 @@ var SessionIndex = class {
       const activity = record2.state.lastActivityAt ?? record2.state.startedAt ?? 0;
       if (activity >= (latest.get(cwd) ?? -1)) latest.set(cwd, activity);
     }
-    if (this.repoLookedUpAt.size > known.size) this.pruneRepositoryState(known);
+    if (++this.repoTicks % Math.max(1, Math.round(6e4 / this.repoTickMs)) === 0) this.pruneRepositoryState(known);
     if (latest.size === 0) return;
     const due = [...latest].sort((a, b) => b[1] - a[1]);
     for (const [cwd] of due) {
@@ -82424,6 +82425,7 @@ var SessionIndex = class {
         if (!current()) return;
         this.repoPending.delete(cwd);
         this.repoFailedAt.delete(cwd);
+        this.repoFailureLogged.delete(cwd);
         if (this.closed) return;
         const previous = this.repoIdentity.get(cwd);
         this.repoIdentity.set(cwd, identity);
