@@ -82971,6 +82971,7 @@ var AGENT_HOST_BIND_ADDRESS = "127.0.0.1";
 var AGENT_HOST_PROTOCOL_MAJOR = 1;
 var MAX_SOCKET_LINE_BYTES = 32 * 1024 * 1024;
 var MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
+var MAX_WAKE_PAYLOAD_BYTES = 512 * 1024;
 var MAX_SSE_BACKLOG_BYTES = 8 * 1024 * 1024;
 var SSE_HEARTBEAT_MS = 15e3;
 var DEFAULT_REPLAY_LIMIT = 1024;
@@ -83205,7 +83206,8 @@ async function startAgentHost(options = {}) {
       };
       try {
         const participant = stringField("participant", 512, true);
-        const payloadRef = stringField("payloadRef", 32 * 1024, true);
+        const payloadRef = stringField("payloadRef", MAX_WAKE_PAYLOAD_BYTES, true);
+        if (Buffer.byteLength(payloadRef, "utf8") > MAX_WAKE_PAYLOAD_BYTES) throw new Error("wake needs a valid payloadRef");
         const messageId = stringField("messageId", 128, false);
         const from = stringField("from", 256, false);
         const fromName = stringField("fromName", 256, false);

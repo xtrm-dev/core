@@ -584,6 +584,43 @@ describe("SendMessage peer addressing (MMD-2538: uuid/ref/uds/prefix, fail-close
     expect(posted).toHaveLength(0);
   });
 
+  test("a down Pi registry does not block a Claude target (CORE-2554 B6)", async () => {
+    const sent: any[] = [];
+    const { deps, posted } = baseDeps({
+      fetchPi: async () => {
+        throw new Error("agent host registry is busy");
+      },
+      fetchClaude: async () => [claudePeer("cass", "/tmp/cass.sock")],
+      claudeTransportEnabled: true,
+      sendClaude: async (opts: any) => {
+        sent.push(opts);
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "cass", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(sent).toHaveLength(1);
+    expect(posted).toHaveLength(0);
+    // A name that does not resolve to a Claude peer stays fail-closed.
+    const miss = await tool.execute("c2", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(miss.isError).toBe(true);
+    expect(String(miss.content[0].text)).toMatch(/cannot reach the agent host registry/);
+  });
+
+  test("newlines and tabs survive; the size limit counts bytes (CORE-2554 B2)", async () => {
+    const { deps, posted } = baseDeps();
+    const { tool } = register(deps);
+    const r = await tool.execute("c1", { to: "bob", message: "line one\n\tline two\r\nline three\u0007" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBeFalsy();
+    expect(posted[0].payloadRef).toContain("line one\n\tline two\nline three");
+    expect(posted[0].payloadRef).not.toContain("\u0007");
+    // 3000 x 3-byte characters: 3000 UTF-16 units, 9000 bytes.
+    const big = await tool.execute("c2", { to: "bob", message: "€".repeat(3000) }, undefined, undefined, fakeCtx("s-me"));
+    expect(big.isError).toBe(true);
+    expect(String(big.content[0].text)).toMatch(/bytes or shorter/);
+  });
+
   test("a down Pi registry fails loudly and never sends against a partial roster", async () => {
     const { deps, posted } = baseDeps({
       fetchPi: async () => {
@@ -680,6 +717,32 @@ describe("SendMessage idle subscriptions (CORE-2436 I5)", () => {
     await fire("agent_settled", {}, ctx);
     await new Promise((r) => setTimeout(r, 10));
     expect(posted).toHaveLength(1);
+  });
+
+  test("an in-process child settling never fires the parent's idle notice (CORE-2554 B7)", async () => {
+    const { deps, posted } = baseDeps();
+    sendmessage.__resetSendMessageState();
+    const parent = fakePi();
+    sendmessage.registerSendMessageTool(parent.pi, deps);
+    const child = fakePi();
+    child.pi.getSessionName = () => "child-specialist";
+    sendmessage.registerSendMessageTool(child.pi, deps);
+    sendmessage.__inboundWakeForTests({
+      messageId: "m-parent-sub",
+      ref: "watch the parent",
+      from: "bob",
+      fromSessionId: "s-bob",
+      notifyWhenIdle: true,
+      receiver: parent.pi,
+    });
+    const ctx = fakeCtx("s-me");
+    await child.fire("agent_settled", {}, ctx);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(posted).toHaveLength(0);
+    await parent.fire("agent_settled", {}, ctx);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({ participant: "s-bob", from: "coordinator" });
   });
 
   test("a subscription past 12 h sends the expiry notice instead", async () => {
@@ -1279,6 +1342,40 @@ describe("Pi shadow relay (CORE-2470)", () => {
     const r = await again.tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
     expect(r.isError).toBeFalsy();
     expect(String(r.content[0].text)).toContain("Delivered to Pi session bob");
+  });
+
+  test("shadow timeout with expect_reply still settles: the ask stays armed (CORE-2554 B1)", async () => {
+    const deps = shadowSetup({
+      sendClaude: async () => {
+        throw new ClaudeReceiptTimeoutError("m-test-1");
+      },
+    });
+    const { tool } = register(deps);
+    await seedRecentPi(tool);
+    const again = register(deps);
+    const run = again.tool.execute("c1", { to: "bob", message: "status?", expect_reply: true, timeout_s: 1 }, undefined, undefined, fakeCtx("s-me"));
+    const settled = await Promise.race([run.then(() => "settled"), new Promise((r) => setTimeout(() => r("hung"), 4000))]);
+    expect(settled).toBe("settled");
+  });
+
+  test("a host refusal (4xx) never relays through the shadow (CORE-2554 B4)", async () => {
+    let relayed = 0;
+    const deps = shadowSetup({
+      postWake: async () => {
+        throw new sendmessage.WakeRefusedError(400, "the agent host refused the wake (http 400): wake needs a valid payloadRef");
+      },
+      sendClaude: async () => {
+        relayed += 1;
+        return { outcome: "delivered" as const };
+      },
+    });
+    const { tool } = register(deps);
+    await seedRecentPi(tool);
+    const again = register(deps);
+    const r = await again.tool.execute("c1", { to: "bob", message: "hi" }, undefined, undefined, fakeCtx("s-me"));
+    expect(r.isError).toBe(true);
+    expect(String(r.content[0].text)).toContain("http 400");
+    expect(relayed).toBe(0);
   });
 
   test("reply_to/notify_when_idle with only a shadow fails loudly, never downgrades", async () => {

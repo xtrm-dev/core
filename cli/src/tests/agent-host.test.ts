@@ -156,6 +156,14 @@ describe('xt host agent host (XTRM-563)', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 
+    it('accepts a wake payload past the old 32 KiB cap and refuses one past 512 KiB (CORE-2554 B3)', async () => {
+        const accepted = await request(host, 'POST', '/v1/wake', { participant: 'nobody-yet', payloadRef: 'x'.repeat(100 * 1024) });
+        expect(accepted.status).toBe(200);
+        // 200 KiB of 3-byte characters: 200 Ki UTF-16 units, 600 KiB of bytes.
+        const refused = await request(host, 'POST', '/v1/wake', { participant: 'nobody-yet', payloadRef: '€'.repeat(200 * 1024) });
+        expect(refused.status).toBe(400);
+    });
+
     it('binds the client API to 127.0.0.1 only and writes a 0600 socket plus the info file', () => {
         expect(host.info.address).toBe('127.0.0.1');
         expect(statSync(socketPath).mode & 0o777).toBe(0o600);

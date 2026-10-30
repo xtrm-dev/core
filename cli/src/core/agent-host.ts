@@ -71,6 +71,8 @@ export const AGENT_HOST_PROTOCOL_MAJOR = 1;
 
 const MAX_SOCKET_LINE_BYTES = 32 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
+/** Largest wake payload (SendMessage MAX_PAYLOAD_BYTES, 512 KiB). */
+const MAX_WAKE_PAYLOAD_BYTES = 512 * 1024;
 /** A client further behind than this is disconnected rather than buffered without bound. */
 const MAX_SSE_BACKLOG_BYTES = 8 * 1024 * 1024;
 const SSE_HEARTBEAT_MS = 15_000;
@@ -383,7 +385,10 @@ export async function startAgentHost(options: AgentHostOptions = {}): Promise<Ag
             };
             try {
                 const participant = stringField('participant', 512, true) as string;
-                const payloadRef = stringField('payloadRef', 32 * 1024, true) as string;
+                // CORE-2554 B3: SendMessage payloads with attachments reach 512 KiB; a 32 KiB
+                // cap here refused them and the client fell back to a Claude relay.
+                const payloadRef = stringField('payloadRef', MAX_WAKE_PAYLOAD_BYTES, true) as string;
+                if (Buffer.byteLength(payloadRef, 'utf8') > MAX_WAKE_PAYLOAD_BYTES) throw new Error('wake needs a valid payloadRef');
                 const messageId = stringField('messageId', 128, false);
                 const from = stringField('from', 256, false);
                 const fromName = stringField('fromName', 256, false);

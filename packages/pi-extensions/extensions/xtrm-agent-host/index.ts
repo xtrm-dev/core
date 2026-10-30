@@ -62,6 +62,8 @@ export interface InjectedWakeNotice extends WakeSender {
   fromSessionId?: string;
   replyTo?: string;
   notifyWhenIdle?: boolean;
+  /** The ExtensionAPI of the session the wake was injected into (CORE-2554 B7). */
+  receiver?: unknown;
 }
 
 const wakeInjectedListeners = new Set<(notice: InjectedWakeNotice) => void>();
@@ -1048,7 +1050,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         // only when a flush actually delivers it. The injected hook still
         // fires: a threaded reply (replyTo) resolves its waiting ask from the
         // frame alone, and an idle subscription arms now (re-armed on flush).
-        emitWakeInjected({ messageId, ref, ...sender });
+        emitWakeInjected({ messageId, ref, ...sender, receiver: pi });
         if (!starting) armGrace(b);
         // The initial-prompt hold is bounded: a mispredicted prompt must
         // not park the wake past the cap (review HIGH-1a).
@@ -1079,7 +1081,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         return fail("injection_failed", error instanceof Error ? error.message : String(error));
       }
       b.deliveredWakes.mark(messageId);
-      emitWakeInjected({ messageId, ref, ...sender });
+      emitWakeInjected({ messageId, ref, ...sender, receiver: pi });
       if (idle) b.startingAt = Date.now();
       return result("accepted");
     }
@@ -1177,7 +1179,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       try {
         injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: true }), wake.sender);
         b.deliveredWakes.mark(wake.messageId);
-        emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender });
+        emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender, receiver: pi });
         idleInjected = true;
         wake.accept();
       } catch (error) {
@@ -1328,7 +1330,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         try {
           injectIntercomWake(pi, wake.messageId, wake.ref, wakeDeliveryOptions({ idle: false }), wake.sender);
           b.deliveredWakes.mark(wake.messageId);
-          emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender });
+          emitWakeInjected({ messageId: wake.messageId, ref: wake.ref, ...wake.sender, receiver: pi });
           wake.accept();
         } catch (error) {
           wake.fail("injection_failed", error instanceof Error ? error.message : String(error));
