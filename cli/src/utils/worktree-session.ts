@@ -290,7 +290,7 @@ export interface ResolvedRole {
 // A bare foreign name with no provider prefix (`gpt-5.4`) still passes — sp
 // never emits one. xtrm-wiy5n.4.19.
 const FOREIGN_MODEL_PROVIDERS: ReadonlySet<string> = new Set([
-    'ant-ling', 'azure-openai-responses', 'cerebras', 'codex', 'copilot', 'deepseek',
+    'ant-ling', 'azure-openai-responses', 'cerebras', 'codex', 'commandcode', 'copilot', 'deepseek',
     'fireworks', 'gemini', 'gemini-cli', 'github-copilot', 'glm', 'google', 'grok',
     'groq', 'huggingface', 'kimi', 'kimi-coding', 'llama', 'minimax', 'minimax-cn',
     'mistral', 'moonshot', 'moonshotai', 'moonshotai-cn', 'nano-gpt', 'nvidia',
@@ -305,6 +305,39 @@ export function isForeignProviderModel(model: string): boolean {
     const slash = name.indexOf('/');
     if (slash <= 0) return false;
     return FOREIGN_MODEL_PROVIDERS.has(name.slice(0, slash));
+}
+
+// What Claude Code itself can resolve as `--model`: bare aliases (`opus`,
+// `sonnet[1m]`, `opusplan`), `claude-*` ids in every form Claude accepts
+// (`@date`/`[1m]` suffixes, `*.anthropic.*` Vertex ones) and Bedrock
+// application-inference-profile ARNs. Anything else only runs when the session
+// is routed to an Anthropic-compatible endpoint that translates ids, which is
+// exactly what ANTHROPIC_BASE_URL configures.
+//
+// This is a POSITIVE test, unlike FOREIGN_MODEL_PROVIDERS, because role
+// defaults are authored for the pi surface: the specialists an operator
+// configures carry pi ids (`commandcode/deepseek/…`, `opencode-go/…`) that no
+// denylist can keep up with, and each miss spawned a session that died at turn
+// 1. Explicit operator `--model` keeps the denylist — an unrecognised id there
+// is the operator's own call (custom gateways), documented on
+// docs/xt-pi-role.md.
+const CLAUDE_MODEL_ALIASES: ReadonlySet<string> = new Set([
+    'best', 'default', 'haiku', 'opus', 'opusplan', 'sonnet',
+]);
+
+export function isClaudeRunnableModel(
+    model: string,
+    env: Record<string, string | undefined> = process.env,
+): boolean {
+    const name = model.trim().toLowerCase();
+    if (!name) return false;
+    // A routed session lets the endpoint translate the id.
+    if (env.ANTHROPIC_BASE_URL) return true;
+    const base = name.replace(/\[[^\]]*\]$/, '');
+    if (CLAUDE_MODEL_ALIASES.has(base)) return true;
+    if (base.startsWith('claude-')) return true;
+    if (base.startsWith('arn:aws:bedrock:')) return true;
+    return base.startsWith('anthropic.') || base.includes('.anthropic.');
 }
 
 // `xt claude … -- --model <name>` reaches claude through the passthrough tail
@@ -1355,7 +1388,52 @@ export function ensureClaudePackSkillLinks(worktreePath: string, mainRepoRoot: s
     }
 }
 
-export function assertClaudeSkillsDiscoverable(mainRepoRoot: string, requestedPaths: string[]): void {
+/**
+ * Repo-managed skill tiers are authoring/vendor sources, not installed runtime
+ * scopes: after the global migration only ~/.xtrm/skills carries the installed
+ * default/optional/user skills and the active/ view the runtimes discover
+ * (docs/skills-tier-architecture.md; CORE-2516).
+ */
+const REPO_MANAGED_DECLARATION_TIERS = new Set(['default', 'optional']);
+
+/** True when the requested SKILL.md sits at `<repo>/.xtrm/skills/<tier>/<name>`
+ * for a repo-managed tier — i.e. the declaration names a skill of that tier
+ * rather than pointing at an installed runtime scope. */
+function isRepoManagedTierDeclaration(mainRepoRoot: string, requestedFile: string, name: string): boolean {
+    const tierRoot = path.join(mainRepoRoot, '.xtrm', 'skills');
+    const relative = path.relative(tierRoot, path.dirname(requestedFile));
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return false;
+    const [tier, ...rest] = relative.split(path.sep);
+    return REPO_MANAGED_DECLARATION_TIERS.has(tier) && rest.join(path.sep) === name;
+}
+
+/** A skill served by Claude's discovery root is "enabled" only when it
+ * canonicalises into the managed skills store, never into an unrelated tree. */
+function isManagedSkillsStorePath(skillFile: string): boolean {
+    return isPathInside(realpathSync(skillFile), path.join(os.homedir(), '.xtrm', 'skills'));
+}
+
+export interface ClaudeSkillViewSubstitution {
+    declared: string;
+    loaded: string;
+}
+
+/**
+ * Claude loads '/<name>' from its own discovery roots (repo .claude/skills or
+ * ~/.claude/skills), never from the path xt hands it. A role declaration into a
+ * repo-managed tier therefore only names a skill: every role in this repo would
+ * otherwise be unlaunchable merely because the repo carries an authoring copy
+ * that shadows the installed one for sp. With `acceptManagedViewSubstitution`
+ * such a declaration is satisfied by the enabled view's same-named skill and
+ * reported as a substitution; every other mismatch keeps the strict
+ * exact-realpath gate, so an operator --skill path stays a hard pin.
+ */
+export function assertClaudeSkillsDiscoverable(
+    mainRepoRoot: string,
+    requestedPaths: string[],
+    options: { acceptManagedViewSubstitution?: boolean } = {},
+): ClaudeSkillViewSubstitution[] {
+    const substitutions: ClaudeSkillViewSubstitution[] = [];
     for (const requestedPath of requestedPaths) {
         const requestedFile = path.basename(requestedPath) === 'SKILL.md'
             ? requestedPath
@@ -1364,17 +1442,23 @@ export function assertClaudeSkillsDiscoverable(mainRepoRoot: string, requestedPa
         if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
             throw new Error(`invalid Claude skill name '${name}' from '${requestedPath}'`);
         }
-        const candidates = [
-            path.join(mainRepoRoot, '.claude', 'skills', name, 'SKILL.md'),
-            path.join(os.homedir(), '.claude', 'skills', name, 'SKILL.md'),
-        ];
+        const repoCandidate = path.join(mainRepoRoot, '.claude', 'skills', name, 'SKILL.md');
+        const homeCandidate = path.join(os.homedir(), '.claude', 'skills', name, 'SKILL.md');
         const requestedRealPath = realpathSync(requestedFile);
-        if (candidates.some((candidate) => existsSync(candidate) && realpathSync(candidate) === requestedRealPath)) continue;
+        if ([repoCandidate, homeCandidate].some((candidate) => existsSync(candidate) && realpathSync(candidate) === requestedRealPath)) continue;
+        if (options.acceptManagedViewSubstitution
+            && isRepoManagedTierDeclaration(mainRepoRoot, requestedFile, name)
+            && existsSync(homeCandidate)
+            && isManagedSkillsStorePath(homeCandidate)) {
+            substitutions.push({ declared: requestedPath, loaded: homeCandidate });
+            continue;
+        }
         throw new Error(
             `skill '${requestedPath}' is not discoverable by Claude as '/${name}'. `
             + `Install or enable the same skill under .claude/skills/${name} before launching.`,
         );
     }
+    return substitutions;
 }
 
 // Exposed for unit testing. sp view <name> --raw is the source of truth for
@@ -2100,14 +2184,15 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
         runtimeArgs.push('--dangerously-skip-permissions');
     }
 
-    // CLI override wins over the specialist default. On claude a cross-provider
-    // role default is unusable, so drop it and let claude inherit the parent
-    // runtime model instead of spawning a session that dies at turn 1.
+    // CLI override wins over the specialist default. A role default is authored
+    // for the pi surface, so when claude cannot resolve it in its own catalogue
+    // drop it and let claude inherit its configured model instead of spawning a
+    // session that dies at turn 1.
     let model = modelOverride ?? role.model;
-    if (runtime === 'claude' && !modelOverride && role.model && isForeignProviderModel(role.model)) {
+    if (runtime === 'claude' && !modelOverride && role.model && !isClaudeRunnableModel(role.model)) {
         process.stderr.write(kleur.yellow(
-            `  ⚠ role '${role.name}': ignoring non-Claude model '${role.model}'; claude inherits the parent model.`
-            + ` Declare execution.surface_models.claude on the specialist (or pass --model) to pin one.\n`,
+            `  ⚠ role '${role.name}': ignoring model '${role.model}'; claude inherits its own default.`
+            + ` Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.\n`,
         ));
         model = undefined;
     }
@@ -2715,8 +2800,11 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // An explicit --model is the operator's word — only a pi-surface
     // `provider/model` pair is refused, because claude cannot run one and would
     // start into a session that never takes turn 1. Fail loudly here, before a
-    // worktree exists. Role defaults are handled in buildRoleTmuxPlan (warn +
-    // inherit the parent model). xtrm-wiy5n.4.19.
+    // worktree exists. Deliberately the vendor denylist and not
+    // isClaudeRunnableModel: an unrecognised explicit id (custom gateway,
+    // `acme/production`) stays the operator's call. Role defaults are handled in
+    // buildRoleTmuxPlan (positive gate, warn + inherit claude's own default).
+    // xtrm-wiy5n.4.19.
     const selectedModel = effectiveModel(model, opts.passthrough ?? []);
     const foreignModel = runtime === 'claude' && selectedModel && isForeignProviderModel(selectedModel)
         ? selectedModel
@@ -2842,8 +2930,24 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
                     merged.push(entry);
                 }
                 claudePackEntries = merged;
-                const claudeCombined = [...resolvedRole.skillPaths, ...explicitSkillPaths];
-                assertClaudeSkillsDiscoverable(mainRepoRoot, claudeCombined.filter((p) => !isProjectPackSkillPath(mainRepoRoot, p)));
+                // A role declaration that points into a repo-managed tier
+                // (default/, optional/) names a skill of that tier; Claude loads
+                // '/<name>' from its own discovery root, where the enabled view
+                // serves the installed copy. Accept that substitution and say so
+                // — failing here would make every role unlaunchable in a repo
+                // that carries an authoring copy. An explicit --skill path keeps
+                // the strict gate, and is the way to load the declared copy.
+                const roleDiscoveryPaths = resolvedRole.skillPaths.filter((p) => !isProjectPackSkillPath(mainRepoRoot, p));
+                const explicitDiscoveryPaths = explicitSkillPaths.filter((p) => !isProjectPackSkillPath(mainRepoRoot, p));
+                const substitutions = assertClaudeSkillsDiscoverable(mainRepoRoot, roleDiscoveryPaths, { acceptManagedViewSubstitution: true });
+                assertClaudeSkillsDiscoverable(mainRepoRoot, explicitDiscoveryPaths);
+                for (const substitution of substitutions) {
+                    const declaredDir = path.dirname(substitution.declared);
+                    process.stderr.write(kleur.yellow(
+                        `  ⚠ role skill '${path.basename(declaredDir)}' is declared at ${declaredDir} (repo-managed tier); `
+                        + `Claude loads it from the enabled view ${path.dirname(substitution.loaded)}\n`,
+                    ));
+                }
                 assertClaudePackSkillsLoadable(mainRepoRoot, claudePackEntries);
             }
 

@@ -20,6 +20,7 @@ import {
     ensureClaudePackSkillLinks,
     claudeExplicitSkillLines,
     guardRolePassthrough,
+    isClaudeRunnableModel,
     isForeignProviderModel,
     parseSpecialistJson,
     passthroughModels,
@@ -851,6 +852,9 @@ describe('buildRoleTmuxPlan (pi runtime)', () => {
 describe('isForeignProviderModel', () => {
     it.each([
         'qwencloud/qwen3.8-max-preview', 'openai-codex/gpt-5.4', 'gemini/gemini-3-pro',
+        // A pi provider that no role author would call foreign by name; the
+        // denylist now names it so an explicit --model is refused too.
+        'commandcode/deepseek/deepseek-v4.1-flash',
         'Qwen-CLI/qwen3-coder', 'zai-coding-cn/glm-5', 'nano-gpt/moonshotai/kimi-k2.6',
         // Outer provider decides — a nested anthropic model is still an
         // OpenRouter id claude cannot run (Codex P1 on PR #511).
@@ -873,6 +877,40 @@ describe('isForeignProviderModel', () => {
         'openai-compatible/production', 'google-proxy/claude',
     ])('leaves %s alone', (model) => {
         expect(isForeignProviderModel(model)).toBe(false);
+    });
+});
+
+describe('isClaudeRunnableModel', () => {
+    const noGateway: Record<string, string | undefined> = {};
+
+    it.each([
+        'opus', 'sonnet[1m]', 'opusplan', 'default',
+        'claude-opus-4-8', 'claude-opus-4-1@20250805', 'claude-opus-4-7[1m]',
+        'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+        'arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123',
+    ])('accepts the id claude resolves itself: %s', (model) => {
+        expect(isClaudeRunnableModel(model, noGateway)).toBe(true);
+    });
+
+    // Role defaults arrive from pi-oriented specialist definitions, so the
+    // test is positive: anything not in claude's catalogue is dropped.
+    it.each([
+        'commandcode/deepseek/deepseek-v4.1-flash',
+        'opencode-go/glm-5.3-flash',
+        'qwencloud/qwen3.8-max-preview',
+        'anthropic/claude-sonnet-5',
+        'my-custom-model',
+        '',
+        '   ',
+    ])('refuses the id claude cannot resolve: %s', (model) => {
+        expect(isClaudeRunnableModel(model, noGateway)).toBe(false);
+    });
+
+    it('accepts any id when a gateway translates them', () => {
+        expect(isClaudeRunnableModel(
+            'commandcode/deepseek/deepseek-v4.1-flash',
+            { ANTHROPIC_BASE_URL: 'https://gateway.example' },
+        )).toBe(true);
     });
 });
 
@@ -993,6 +1031,38 @@ describe('buildRoleTmuxPlan (claude runtime)', () => {
         });
         expect(plan.runtimeArgs).not.toContain('--model');
         expect(plan.runtimeArgs).not.toContain('qwencloud/qwen3.8-max-preview');
+    });
+
+    // The reported failure: user config pins a pi provider the vendor denylist
+    // never named, so the launcher forwarded it and claude died at turn 1 with
+    // "There's an issue with the selected model".
+    it('drops a pi-provider role default no denylist names', () => {
+        const plan = buildRoleTmuxPlan({ ...WT,
+            runtime: 'claude',
+            role: { ...role, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
+            parentSessionId: '',
+            turn1Body: '',
+        });
+        expect(plan.runtimeArgs).not.toContain('--model');
+        expect(plan.runtimeArgs).not.toContain('commandcode/deepseek/deepseek-v4.1-flash');
+    });
+
+    it('keeps a pi-provider role default when a gateway translates ids', () => {
+        const before = process.env.ANTHROPIC_BASE_URL;
+        process.env.ANTHROPIC_BASE_URL = 'https://gateway.example';
+        try {
+            const plan = buildRoleTmuxPlan({ ...WT,
+                runtime: 'claude',
+                role: { ...role, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
+                parentSessionId: '',
+                turn1Body: '',
+            });
+            const modelIdx = plan.runtimeArgs.indexOf('--model');
+            expect(plan.runtimeArgs[modelIdx + 1]).toBe('commandcode/deepseek/deepseek-v4.1-flash');
+        } finally {
+            if (before === undefined) delete process.env.ANTHROPIC_BASE_URL;
+            else process.env.ANTHROPIC_BASE_URL = before;
+        }
     });
 
     it('keeps a Bedrock inference-profile ARN role default', () => {
@@ -2586,6 +2656,69 @@ describe('assertClaudeSkillsDiscoverable', () => {
         process.env.HOME = fakeHome;
         try {
             expect(() => assertClaudeSkillsDiscoverable(fakeRepo, [path.join(skill, 'SKILL.md')]))
+                .toThrow(/not discoverable by Claude as '\/foo'/);
+        } finally {
+            process.env.HOME = previousHome;
+            rmSync(sandbox, { recursive: true, force: true });
+        }
+    });
+
+    it('substitutes the enabled view for a repo-managed tier declaration when allowed', () => {
+        const declared = path.join(fakeRepo, '.xtrm', 'skills', 'default', 'foo');
+        const installed = path.join(fakeHome, '.xtrm', 'skills', 'default', 'foo');
+        const pointer = path.join(fakeHome, '.claude', 'skills', 'foo');
+        mkdirSync(declared, { recursive: true });
+        mkdirSync(installed, { recursive: true });
+        mkdirSync(path.dirname(pointer), { recursive: true });
+        writeFileSync(path.join(declared, 'SKILL.md'), '# declared');
+        writeFileSync(path.join(installed, 'SKILL.md'), '# installed');
+        symlinkSync(installed, pointer, 'dir');
+        const previousHome = process.env.HOME;
+        process.env.HOME = fakeHome;
+        try {
+            // A declared copy is not what Claude can load: strict mode refuses.
+            expect(() => assertClaudeSkillsDiscoverable(fakeRepo, [path.join(declared, 'SKILL.md')]))
+                .toThrow(/not discoverable by Claude as '\/foo'/);
+            expect(assertClaudeSkillsDiscoverable(fakeRepo, [path.join(declared, 'SKILL.md')], { acceptManagedViewSubstitution: true }))
+                .toEqual([{ declared: path.join(declared, 'SKILL.md'), loaded: path.join(pointer, 'SKILL.md') }]);
+        } finally {
+            process.env.HOME = previousHome;
+            rmSync(sandbox, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a repo-managed declaration served by an unmanaged same-name skill', () => {
+        const declared = path.join(fakeRepo, '.xtrm', 'skills', 'default', 'foo');
+        const unmanaged = path.join(fakeHome, '.claude', 'skills', 'foo');
+        mkdirSync(declared, { recursive: true });
+        mkdirSync(unmanaged, { recursive: true });
+        writeFileSync(path.join(declared, 'SKILL.md'), '# declared');
+        writeFileSync(path.join(unmanaged, 'SKILL.md'), '# unmanaged');
+        const previousHome = process.env.HOME;
+        process.env.HOME = fakeHome;
+        try {
+            expect(() => assertClaudeSkillsDiscoverable(fakeRepo, [path.join(declared, 'SKILL.md')], { acceptManagedViewSubstitution: true }))
+                .toThrow(/not discoverable by Claude as '\/foo'/);
+        } finally {
+            process.env.HOME = previousHome;
+            rmSync(sandbox, { recursive: true, force: true });
+        }
+    });
+
+    it('never substitutes a project pack declaration', () => {
+        const declared = path.join(fakeRepo, '.xtrm', 'skills', 'infra', 'foo');
+        const installed = path.join(fakeHome, '.xtrm', 'skills', 'default', 'foo');
+        const pointer = path.join(fakeHome, '.claude', 'skills', 'foo');
+        mkdirSync(declared, { recursive: true });
+        mkdirSync(installed, { recursive: true });
+        mkdirSync(path.dirname(pointer), { recursive: true });
+        writeFileSync(path.join(declared, 'SKILL.md'), '# declared');
+        writeFileSync(path.join(installed, 'SKILL.md'), '# installed');
+        symlinkSync(installed, pointer, 'dir');
+        const previousHome = process.env.HOME;
+        process.env.HOME = fakeHome;
+        try {
+            expect(() => assertClaudeSkillsDiscoverable(fakeRepo, [path.join(declared, 'SKILL.md')], { acceptManagedViewSubstitution: true }))
                 .toThrow(/not discoverable by Claude as '\/foo'/);
         } finally {
             process.env.HOME = previousHome;
