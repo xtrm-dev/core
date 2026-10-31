@@ -1,0 +1,151 @@
+{
+ "v": 2,
+ "name": "programme-seq-bundles-v1",
+ "input": {
+  "schemaId": "Input"
+ },
+ "output": {
+  "path": "verdicts",
+  "schemaId": "Verdicts"
+ },
+ "schemas": {
+  "Input": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "batch_id",
+    "rubric",
+    "rows"
+   ],
+   "properties": {
+    "batch_id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "rubric": {
+     "type": "string",
+     "minLength": 1
+    },
+    "rows": {
+     "type": "array",
+     "maxItems": 45,
+     "items": {
+      "$ref": "#/definitions/Row"
+     }
+    }
+   }
+  },
+  "Row": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "key",
+    "summary",
+    "oracle",
+    "evidence"
+   ],
+   "properties": {
+    "key": {
+     "type": "string",
+     "minLength": 1
+    },
+    "summary": {
+     "type": "string",
+     "minLength": 1
+    },
+    "oracle": {
+     "type": "string",
+     "minLength": 1
+    },
+    "evidence": {
+     "type": "string",
+     "minLength": 1
+    }
+   }
+  },
+  "Verdict": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "key",
+    "verdict",
+    "rule",
+    "note",
+    "in_keys"
+   ],
+   "properties": {
+    "key": {
+     "type": "string",
+     "minLength": 1
+    },
+    "verdict": {
+     "type": "string",
+     "enum": [
+      "bundle",
+      "partial",
+      "split"
+     ]
+    },
+    "rule": {
+     "type": "string",
+     "minLength": 2
+    },
+    "note": {
+     "type": "string",
+     "minLength": 12
+    },
+    "in_keys": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "Verdicts": {
+   "type": "array",
+   "items": {
+    "$ref": "#/definitions/Verdict"
+   }
+  }
+ },
+ "root": {
+  "node": "chain",
+  "steps": [
+   {
+    "node": "escalate",
+    "label": "require-rows",
+    "kind": "needs_input",
+    "stage": "input",
+    "summary": "No rows supplied. Supply rows: [{key, summary, oracle, evidence}] built by facts_plan.py.",
+    "when": {
+     "predicate": "empty",
+     "path": "rows"
+    }
+   },
+   {
+    "node": "map",
+    "label": "judge-bundles",
+    "itemsPath": "rows",
+    "as": "verdicts",
+    "maxConcurrency": 8,
+    "body": {
+     "node": "decide",
+     "label": "decide-bundles",
+     "as": "verdict",
+     "out": "Verdict",
+     "thinking": "low",
+     "tools": [],
+     "instructions": "You receive rubric (the pinned decision procedure) and row (one candidate bundle with its precomputed facts in evidence). Follow the rubric steps in order and stop at the first that returns a verdict. Return key unchanged, the verdict, the rule id, a note that quotes an evidence value, and in_keys.",
+     "state": {
+      "row": "{item}",
+      "rubric": "{rubric}"
+     },
+     "requires": [
+      "rubric"
+     ]
+    }
+   }
+  ]
+ }
+}

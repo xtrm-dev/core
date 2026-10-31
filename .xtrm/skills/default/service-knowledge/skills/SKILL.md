@@ -213,5 +213,25 @@ PostToolUse drift), activates git hooks, migrates already-installed skills to th
 contract, and builds the FTS5 evidence index. Safe to re-run after upgrades (or run
 `service-knowledge update`).
 
+**Upgrading the machinery in a consumer repo** (`please upgrade the current repo sk`):
+
+1. Baseline first: `service-knowledge status` — record package vs installed
+   version and the drift-marker state before changing anything.
+2. Pull the package, then in the consumer root run `service-knowledge update`
+   (`--all-worktrees` when the repo uses linked worktrees). Expect a clean
+   `updated to vX.Y.Z` with no `FAILED` and exit 0 — then confirm the
+   `activated in <dir>` line by re-running the vendored installer
+   `--hooks-only` in step 3. A loud `FAILED` + exit 1 means STOP and report —
+   never claim success, never hand-edit hooks to make it pass.
+3. Verify: re-run the vendored installer `--hooks-only` and quote its
+   self-check verbatim; `bash -n` all five `.githooks` files; `git status`
+   must show only intended files (never commit foreign telemetry, caches,
+   markers, or scratch dirs — leave those uncommitted for the owner).
+4. Prove freshness: `service-knowledge index query "<term>"` and confirm the
+   returned `source_ref` equals HEAD (Layer 1 self-heal).
+5. Never bundle reconciliation into an upgrade: drift reconcile (stamping
+   `last_sync_ref`, regenerating the umbrella) is a separate
+   `/updating-service-knowledge` pass with domain judgment.
+
 **Auto-merge canary** (v0.7): disabled by default. `service-knowledge canary status` shows the
 current state and enable-gate thresholds; `service-knowledge help canary` explains the policy.

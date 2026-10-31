@@ -127,9 +127,10 @@ service-knowledge. Memory priority per task:
 2. **Commit corpus — always available** — fall back to `git log -p --follow --
    <file>` for per-file history, `git log --grep`/`--oneline` for corpus, and
    diffs vs `last_sync_ref` when a registry states one. Commits do not go stale.
-3. **bd memories** — before workflow-sensitive questions, run
-   `bd memories <topic>` / `bd recall <key>`; write durable findings back with
-   `bd remember`.
+3. **Substrate work tracking** — before workflow-sensitive questions, search
+   `sb issue query --search <topic>` for prior issues, resume continuity with
+   `sb issue resume <ref>` / `sb journal since <ref>`, and record durable
+   findings with `sb issue note <ref>`.
 
 **Drift doctrine**: a drift marker (`.service-skills-drift-pending` or
 `service-knowledge status`) is **advisory**. Suggest the update, proceed with

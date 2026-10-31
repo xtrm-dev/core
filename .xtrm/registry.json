@@ -101,6 +101,14 @@
           "hash": "097477d5061af6baab68bfe63a8b47c513c70df2762b0d04a443d42045665530",
           "version": "0.15.3"
         },
+        "engineering-quality/references/kernel-workbench.md": {
+          "hash": "2b47afc64123b6df92ab3e76ecb3b4c1c877a4a01b705810f7be76a707dba2ac",
+          "version": "0.15.3"
+        },
+        "engineering-quality/references/planning-tests.md": {
+          "hash": "413c7d9aebdf3af3bfa59570a2f606b9e9a81b062ef05d13b4640db00881ce08",
+          "version": "0.15.3"
+        },
         "engineering-quality/references/quality-baseline.md": {
           "hash": "89b1e4d3ec5aa00108366ab8851c8c8376265680b1a34044958b4ec2c232249f",
           "version": "0.15.3"
@@ -297,6 +305,218 @@
           "hash": "1fc9be0c7af66125f1dc97b490b28d1bd485c475ab28194a78b388f5083a68dc",
           "version": "0.15.3"
         },
+        "service-knowledge/contracts/service_skill_contract.json": {
+          "hash": "8df02e365d539651f4cff1f8999407c1be2c5a2f895a9f14c9efc65af87855d5",
+          "version": "0.15.3"
+        },
+        "service-knowledge/install/git-hooks/doc_reminder.py": {
+          "hash": "90d33305dcc8fcc73bae2f9ad7390be118617743dbb38808d61710dc1662879b",
+          "version": "0.15.3"
+        },
+        "service-knowledge/install/git-hooks/post_checkout_drift_sweep.py": {
+          "hash": "580f0d64d770ec35b63fd5df03d761e48c8e32cec59dd2dfd38843824f4a4e7f",
+          "version": "0.15.3"
+        },
+        "service-knowledge/install/git-hooks/post_merge_drift_sweep.py": {
+          "hash": "759d59020c8aad3b5e1dfa158bfcc102d464390d1a2271bc9bfb467b39158c69",
+          "version": "0.15.3"
+        },
+        "service-knowledge/install/git-hooks/post_rewrite_drift_sweep.py": {
+          "hash": "831e1af0c3237dc95c86df387749bf7e45ff19e69e9422fc966da2acb1864159",
+          "version": "0.15.3"
+        },
+        "service-knowledge/install/git-hooks/skill_staleness.py": {
+          "hash": "39d1ac16dee329bab34a646216e2d851856a07d53f6c0f909709fe217f2ba22f",
+          "version": "0.15.3"
+        },
+        "service-knowledge/install/install-service-knowledge.py": {
+          "hash": "8ba9e99a860638f1663af6e982d7de168c02b9baf94c42bdbda6663b3c4cd7c1",
+          "version": "0.15.3"
+        },
+        "service-knowledge/install/service-knowledge-readme.md": {
+          "hash": "5c2c655c3aff97cbc65010147a57538a7876951eb680b38ee5df4f4d41903ec6",
+          "version": "0.15.3"
+        },
+        "service-knowledge/install/settings.json": {
+          "hash": "2947833d63aa1af67c5bf8fe9ce5adcd9362383c08758040dd06506aa80d9ac8",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/.xtrm/state/service-knowledge/events.jsonl": {
+          "hash": "d62d1e5f2ca56af8c41298e7473aad0882b472a1b43f73c0a2beea821122b9e0",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/bootstrap.py": {
+          "hash": "38a2ea74ed209f56a9114c7c58c3ce9178e9395e5cafa8475b2e91f5ef90f69b",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/build_territory_index.py": {
+          "hash": "2de5746d0674aeb70b4760c9e90ae23cbc107213f40501cb93f31f88cce15343",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/cataloger.py": {
+          "hash": "14a8b23e67147026f773d607600b776acd1550a1e13e7e1cd54e60c3083fb197",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/ci_drift_check.py": {
+          "hash": "e96ff3823f5e17b09e64754d2212c9b5d2fc93921e15b25201b59e60c6c4275a",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/coverage_audit/README.md": {
+          "hash": "f9413942d7b7ff25c24b6dcf7b8083a237cd49860b0dff9a0a693acc6cda5fe3",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/coverage_audit/run-coverage.mjs": {
+          "hash": "ad5ca28d294e7bda1ee29769e9f3df0f0f6d7bbc26823a1f96fbe63aaaaf20b9",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/coverage_audit/run-prs.mjs": {
+          "hash": "de95bd93251ff7472b99c6eb975392b3eb9d15d745c159095919a8249780d164",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/coverage_audit/snapshot-coverage.mjs": {
+          "hash": "5e7a2e2d4b15af3f36391b71e3bc46eb212959e9a048d53c65f56e1f90941f51",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/coverage_audit/snapshot-prs.mjs": {
+          "hash": "6c564a4969c29df1be199b9860e9f2f1bac0d55990db38f666216fef84c00040",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/coverage_audit/workflows/coverage-gaps.mjs": {
+          "hash": "5591abc3b8fd0d9c43e4a5b5487531be36ef74867d0bdbcca5f972e5c46348d2",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/coverage_audit/workflows/pr-coverage-gaps.mjs": {
+          "hash": "969c52e52fc52d93d6d169cf023fdb9e1155922ec432a1447d61fb1c206697de",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/deep_dive.py": {
+          "hash": "5774af24f405701ce66536f7b9eeda2268ab908ef412649d85fcc8da4cfbe565",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/drift_detector.py": {
+          "hash": "b1e17eadc145238b447b881cad3f384e9aa450741fbd66171f5a2bec8dd5bcb5",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/hook_prefilter.sh": {
+          "hash": "1dce70fb11424f7d0cf17d9e21788f0f562816b126bc43ead2b83c970defee1e",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/layout_migrator.py": {
+          "hash": "c14712c262ba5c5b6bc33fbce759a33a8b0e61632d2382d31107d5a18cf287c8",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/reconcile.py": {
+          "hash": "1dae04ab67c65cb268d63e4d84f9fe712d7a9706355403d4ca9865b6b67617cd",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/scaffolder.py": {
+          "hash": "c4d7f3c000122c6cdf0315ed9b7fa0a9e6196406fc9e23d9d44caa3243f480b4",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/scope.py": {
+          "hash": "2f0f5a4d6f4af4a93e3a4fa5db18e32f5aba87743bafc0105905cccbb2f41cf6",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/skill_activator.py": {
+          "hash": "6d05268d903e5ab1283c5c161e74cd9927081a76e3b0f649cd7610ed2ada37e0",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/skill_migrator.py": {
+          "hash": "dd506d14ae725b1b439670bce5a9cb1f7956e0446a2dc04aa8988a63d758637a",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/umbrella_generator.py": {
+          "hash": "17dea0d8bbb3aaa687df5de69f6ada2656936c841e29708523c6c60e5bb369e3",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/__init__.py": {
+          "hash": "94eb073bc4859185e6907e775840c7e58e5f164c013754d4542590a4d47d42b5",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/__main__.py": {
+          "hash": "02cdaae488ed21e89eacb0ea3546d2292c83854240df406b899384253ef304d8",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/authority.py": {
+          "hash": "e4f5da979e6e5cd87c801030e09f0415efc24a1e018e41dd52c94c342589f14f",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/claim_extractor.py": {
+          "hash": "7db5327c04e8881001e1ff8af4849e59e3dc1757a11916f5b6922371cac16cdd",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/closure_markers.py": {
+          "hash": "a508cd1a6a2b58a40aec824d5358582fde3338925ed7b2790165029d1a199e68",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/diff_parser.py": {
+          "hash": "25c2d37dbf878cd9780fc3f86cc833c934d2e5c69c93c0ca5278a75292e25340",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/evidence_report.py": {
+          "hash": "0dc0e6700f2ed760c104463245c5516e1c8cafa40595a9517d108e270239c453",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/gate.py": {
+          "hash": "ab5604b0b63abcc01225ba8186519a24b06b508dec95b2f75ce9f0a40742ed7b",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/manifest.py": {
+          "hash": "12e3f8212ba6e35fe45fdcfb32673efeaf3c73b2e4da9a80887eaf0fc42e3616",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/schema/manifest_schema.json": {
+          "hash": "e83c924cfae1c87dc74ee9997d667751a5893d2f1babf4ea63f00d71ff3e4458",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/source_corpus.py": {
+          "hash": "2a6f24c5ebddce1271937951886f4e853e831030aa9cc5cd68877d59aebab95d",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/structural_validator.py": {
+          "hash": "0911bf6ebdc8aefa180d85bba8636164b896952b394d6b62c2355ffedd11c531",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/taxonomy.py": {
+          "hash": "ad23c0618274d9e4a00742d6e42ad7b6db5f0dc99a67711c081438499ff6a5cb",
+          "version": "0.15.3"
+        },
+        "service-knowledge/scripts/verifier/telemetry.py": {
+          "hash": "0208171530b3e0043b385861c1a573cea423750bc618f67fa2965f2e8a6e40dd",
+          "version": "0.15.3"
+        },
+        "service-knowledge/skills/creating.md": {
+          "hash": "071d96b0296d90ff578fe8a4142410b5e8a8410ff65eabebdcab4f8c81c0f0eb",
+          "version": "0.15.3"
+        },
+        "service-knowledge/skills/routing.md": {
+          "hash": "a19b5656c2a531d3bab55391eef573ce50f990badf6ba8e4d7828b31c971273e",
+          "version": "0.15.3"
+        },
+        "service-knowledge/skills/script_quality_standards.md": {
+          "hash": "964476a17aea08505edddae1616899ebcc9f6f1f990e060cf37c1676a7f54b7c",
+          "version": "0.15.3"
+        },
+        "service-knowledge/skills/SKILL.md": {
+          "hash": "cadc404d57265c342a2413fa1020fd5d3b27d626662f788157e99c601f850b5c",
+          "version": "0.15.3"
+        },
+        "service-knowledge/skills/system-guide.md": {
+          "hash": "0efcf611300fe00a50882b8c05c00268568035408c3f0a1ade76d82ca86cf4d4",
+          "version": "0.15.3"
+        },
+        "service-knowledge/skills/updating.md": {
+          "hash": "b401c256c0a6311a74bb3df23d47bd3686928d075715a5f88516e43f7ca8cb16",
+          "version": "0.15.3"
+        },
+        "service-knowledge/skills/using.md": {
+          "hash": "8cd29e0cf78be93058e39eb27da630335a246b2faade67b0fe1f422686bab790",
+          "version": "0.15.3"
+        },
+        "service-knowledge/VERSION": {
+          "hash": "a66780da23103beaf12432b418508966b31a2a3a787f9468a5b6cdaa8667c1ef",
+          "version": "0.15.3"
+        },
         "skill-creator/agents/analyzer.md": {
           "hash": "bf68f4cac5a56c673a928c2e6d619586c5b93ea364026ab37547772cb45a663a",
           "version": "0.15.3"
@@ -444,10 +664,6 @@
         "using-xtrm/SKILL.md": {
           "hash": "1624c9231c444c12d74f9c51a1661c035cfa2b05bd435e868fc4016592330cd1",
           "version": "0.15.3"
-        },
-        "engineering-quality/references/planning-tests.md": {
-          "hash": "413c7d9aebdf3af3bfa59570a2f606b9e9a81b062ef05d13b4640db00881ce08",
-          "version": "0.15.3"
         }
       }
     },
@@ -528,6 +744,18 @@
           "hash": "ace1268e5c066b494112cb2ffbb976df7857526a294b4b56d5ca86182a44d938",
           "version": "0.15.3"
         },
+        "forensics/forensics/SKILL.md": {
+          "hash": "cda7aef1d4b77e661a725048195ed6678fbaba0c7c0d9dc3e706e97ed3e277c2",
+          "version": "0.15.3"
+        },
+        "forensics/forensics/src/forensics/__init__.py": {
+          "hash": "32e30a3b77f9b43df2319de16f40cee840b50c91859e398e6f2fec616156eb7d",
+          "version": "0.15.3"
+        },
+        "forensics/PACK.json": {
+          "hash": "634cdfc5f31d94ac2a88062a078591fd3bf7d06ad59bb55f700320760f086bc8",
+          "version": "0.15.3"
+        },
         "personal-tools/PACK.json": {
           "hash": "33e4b6ad0ed9b980f8b716453bddc6bce2187853f0b7e1284eda083f79b9342e",
           "version": "0.15.3"
@@ -536,16 +764,180 @@
           "hash": "fe4e5287982be10acc2439727b4b8add7052b037a7c67fb48e7bcf214cc54214",
           "version": "0.15.3"
         },
+        "programme/board-audit/references/agentrun.md": {
+          "hash": "5528a81c5bf274f2e1da42758d11657b92462f44a54c228053bf26a432d5f6c1",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/references/audit-harness.md": {
+          "hash": "023a520647f392ec73e5810bd6cf267658c2978cece2977fe54bd8e2ab29c169",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/references/batch-protocol.md": {
+          "hash": "6d2383eff03e7cff3406d51a9881f0418339ea4dffd27a54fccdbdbebae20df6",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/references/hygiene-predicates.md": {
+          "hash": "c9a93ff77349b6de9e8e504f3f3c3c1b5090671f8ebe292a19345bbc6bfb22e9",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/references/lane-automation.md": {
+          "hash": "d447f5c356a913b611b931e494b6aa8c28bafdda7f02ca331c0a44ea25bb5aaf",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/references/programme-sequencing.md": {
+          "hash": "94033d7d6d990322c9ea77044feec7f56930426578ed524d073cf751066bb802",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/references/verification.md": {
+          "hash": "97ff5303c6790cbe4d57672810772329428473f38dfa61b3d26918449d02c078",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/references/waiting-production-audit.md": {
+          "hash": "fcca5bc7e36fd31151e1f850db64b6ec97d793ccee401b9a9e58c5be7edd6005",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/agentrun-config-stock.mjs": {
+          "hash": "5e6c1c46ce3d265cfe1c711ca39b46b73c641a7149a7b19b121812aaeaa64c42",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/aggregate.py": {
+          "hash": "7380021d43a9c9868b3797d80b88f91614993c46a93f01416126d61333f74381",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/check.py": {
+          "hash": "d17ae23a47173f2a7e8c78eb2c16e54ce3a919c313d3462e83eaa42e1db4b095",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/cycle/hygiene_cycle.py": {
+          "hash": "934d5f6d46b6f7fd1d3b8d51d2e7ac0dfb7bee107494c3218778272bf541f884",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/facts.py": {
+          "hash": "15c65cf47c42bf5d149f77fffc01bf761d1a10273fb9988b9344f7e1d976d0d4",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/readiness/aggregate_readiness.py": {
+          "hash": "057c4b35154fd919888f08a57ea245cb6089e63172f90ce6aea8754fc95cd6ff",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/readiness/readiness_facts.py": {
+          "hash": "b9b35060eee60724f64d414535af2739cb94754af097ec62973948b06bd5bb65",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/readiness/RUBRIC.md": {
+          "hash": "647724e040cd7f2060b58b92e40161ab67eba27181ae08a4c8d4963c7cb7439d",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/readiness/run-readiness.sh": {
+          "hash": "3ec07a75ee9544f3e8a8f7620d480b8412813611b1c2220f6738edbe237b40fe",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/run-audit.sh": {
+          "hash": "271f497f47ef2d516f3b511ecbfbc8c7447f833aeccddae11b423d2d95902252",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/agentrun-config.mjs": {
+          "hash": "525840e8174f10b83172e8028f3812759c738fb01d95a68a783576ed19f30be4",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/aggregate_plan.py": {
+          "hash": "d9d5bc34b986c5f66bc980e35ea16a68cd5fbbddf060a9fcf901e779970d8019",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/build_plan.py": {
+          "hash": "98220d77d001f5537ed3b8470242b3005653a8c876390aa3eee94141331b3279",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/build_workflows.py": {
+          "hash": "8d077eb86ca7d030162e92197ad22aaf7a567f856ce5e30659494621e57fb4ba",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/corrigenda.json": {
+          "hash": "7dd6961814409ee741c6dccecd53d35eb597072ee29ac4adc786cd41c366458d",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/facts_plan.py": {
+          "hash": "a8b7b1a460f794e71e534f3b2425036811a17e67856f625d2bf9fe58649ae60b",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/finalize_plan.py": {
+          "hash": "20c3c770b050af8b75000eb1b301282a9b38b6e2a9c4f8fead98fba9fce99e6e",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/limits.json": {
+          "hash": "b23383106aca785c15e6104f2167bd28d596d1e3049a6bb883d38e45706c115f",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/reuse_plan.py": {
+          "hash": "92064e5165bbd08fe671ecf4596771203a5870223793e346c075d0eb479c5d58",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/rubrics.json": {
+          "hash": "f73d85af08ab4236150e3eaad31feffe83579b8653e960c25794939f7a344ceb",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/run_plan.py": {
+          "hash": "026ba9d1e43919910c7678eb8d6d20bc50f57091a323b8965a75af12e10327b8",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/run-sequencing.sh": {
+          "hash": "c37d83e79d81872b339987fd6c975618322e3e182902628b26c2a0ea280bb507",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/snapshot_plan.py": {
+          "hash": "e8c5cbac89168070b692420f1d11695a459e8d8593165475614e4eb344d1ef91",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/workflows/programme-seq-bundles-v1.json": {
+          "hash": "0c91bc6f9c7c17579a6e362590feb46c822e509239b3aaab4e337f28bada79b3",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/workflows/programme-seq-days-v1.json": {
+          "hash": "96f40744a84c3603dd063f53e5d60006dbba0d861e0484bccfddc4cadd297f79",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/workflows/programme-seq-items-v1.json": {
+          "hash": "cdc73a4c5c148c655620b45417e1637f4bcd3728cc8ce0624cb5f61bdd6ade5f",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/scripts/sequencing/workflows/programme-seq-pairs-v1.json": {
+          "hash": "f1f24da95cb31a00452ed5d33cd9a5234e45b8f6511bd4f8597f476d39e37ccb",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/SKILL.md": {
+          "hash": "ee4d5f2238c33eacd169974e2a76fb76e2eb4fc859a29551ca322d99fc4e5053",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/workflows/board-batch-verdicts-v3.json": {
+          "hash": "47ea1ec9b727ae2985da2fc86e6f64aa15fec92430dbc8922d3ebbc64385f9f0",
+          "version": "0.15.3"
+        },
+        "programme/board-audit/workflows/code-readiness-v1.json": {
+          "hash": "7f770dc3de2b26e7a23f7e73ec8033ce44e30770bfc228d73460303a1d8c9529",
+          "version": "0.15.3"
+        },
         "programme/PACK.json": {
           "hash": "ffddab5320a2cb37783d1de33af1fad3dcf00811e9aad7356ab11b3bf330baa8",
           "version": "0.15.3"
         },
+        "programme/programme-coordination/references/agentrun.md": {
+          "hash": "2249f46fbfde4a245f2be5732f234f7ac58d17ead141f96f6c7396d92351f07b",
+          "version": "0.15.3"
+        },
+        "programme/programme-coordination/references/coordinator-operations.md": {
+          "hash": "5e49529c122df754e90a48648d44542154313e4d9548734b39adba079f191dc7",
+          "version": "0.15.3"
+        },
+        "programme/programme-coordination/references/coordinator-transition.md": {
+          "hash": "d39a21fa6c3a27d05d327edf9a7c6e6c93bce3ea768d58f1aed8fcb5c59db29a",
+          "version": "0.15.3"
+        },
         "programme/programme-coordination/references/fleet.md": {
-          "hash": "3c5d12e30e39de2c6a72fcaef797368bc965771e4cd7aca230a2abf8ce59eba9",
+          "hash": "689750fb2a42b3b223ec738c68e6d2c85943a00c819957ddbc6be20fa42bbec3",
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/jira.md": {
-          "hash": "7239533f8b87679d81826dd925bdc368f664b28fefa3f5fae03b9d69efb73918",
+          "hash": "417ceb7de2423bac4b104c6b5d15a72eef6afa1c229897988836d389345e166a",
           "version": "0.15.3"
         },
         "programme/programme-coordination/references/substrate.md": {
@@ -556,12 +948,20 @@
           "hash": "605f182b004352dd336ecf930ce9b55d9191608903d95289dcdaf68dc23f44fa",
           "version": "0.15.3"
         },
+        "programme/programme-coordination/references/workers.md": {
+          "hash": "b74cd1ac406e98dc417eb6a9ea2e73b6f78e849447f19d4cfcba1a80a2b309a5",
+          "version": "0.15.3"
+        },
         "programme/programme-coordination/scripts/jira.py": {
-          "hash": "f306b693482daf7c425660259cec6722b2e8e6e48e33967faa904720d4187476",
+          "hash": "f96e3777563c8d491929cf29d61e899097c953d52a92b07142d4a3e8c880c782",
           "version": "0.15.3"
         },
         "programme/programme-coordination/SKILL.md": {
-          "hash": "3865f2a61dc7790e655a2b69364781da1e1c8b04f65a5f76c290d2dcafebd4d5",
+          "hash": "05e21bf90cc0fed6b979a2bbe6bcfd18cad883b1f0e80fde7b8e863c5560bab9",
+          "version": "0.15.3"
+        },
+        "programme/tabellone-keeper/SKILL.md": {
+          "hash": "7c0a49d395e47a62d9c9c1e4e71313bf4a21c12b3e644a5974168f9db0e16489",
           "version": "0.15.3"
         },
         "README.txt": {
@@ -650,6 +1050,30 @@
         },
         "security-ops/security-ops/SKILL.md": {
           "hash": "11443b40b556c236beae1100e309c324e091c62457b2b8c3746834b8701bfdd3",
+          "version": "0.15.3"
+        },
+        "session-recovery/eval-prompts.md": {
+          "hash": "a4fa6e60450ad9e5c72a675d6be88abb6528e2a76268b3935f0a0f1cca906215",
+          "version": "0.15.3"
+        },
+        "session-recovery/PACK.json": {
+          "hash": "abc0e88e28abf6d04734daa05ed5bc1aced8fe0a1377f61655fed36b893cc26b",
+          "version": "0.15.3"
+        },
+        "session-recovery/session-recovery/references/manual-playbook.md": {
+          "hash": "52d20bf327bde4de4b2596dbfd1fe2aa8cb8d1fc8a567a8c0b4c1c452545297a",
+          "version": "0.15.3"
+        },
+        "session-recovery/session-recovery/scripts/restore-plan.sh": {
+          "hash": "2030a7971fa941968a4f7564c66cf6143632f1d62dea746d2ccfe37fe7e799a9",
+          "version": "0.15.3"
+        },
+        "session-recovery/session-recovery/scripts/transcript-tips.py": {
+          "hash": "cb6924857dd0976667872010de462522866d8ff33f4a5f87a3bc87d01f7f43ad",
+          "version": "0.15.3"
+        },
+        "session-recovery/session-recovery/SKILL.md": {
+          "hash": "378f4bdb8fa78239694f101bbfeb9e0f30fac9185646c4327b72c721fedd0dcb",
           "version": "0.15.3"
         },
         "sre-ops/PACK.json": {
