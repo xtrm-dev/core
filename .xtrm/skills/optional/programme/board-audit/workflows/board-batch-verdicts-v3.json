@@ -1,0 +1,234 @@
+{
+ "v": 2,
+ "name": "board-batch-verdicts-v3",
+ "input": {
+  "schemaId": "Input"
+ },
+ "output": {
+  "path": "report",
+  "schemaId": "BatchReport"
+ },
+ "schemas": {
+  "Input": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "batch_id": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "rubric": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "rows": {
+     "type": "array",
+     "maxItems": 40,
+     "items": {
+      "$ref": "#/definitions/Row"
+     }
+    }
+   },
+   "required": [
+    "batch_id",
+    "rubric",
+    "rows"
+   ]
+  },
+  "Row": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "key": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "summary": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "status": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "parent": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "start": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "due": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "cf37": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "cf38": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "proposed_action": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "evidence": {
+     "minLength": 1,
+     "type": "string"
+    }
+   },
+   "required": [
+    "key",
+    "summary",
+    "status",
+    "proposed_action",
+    "evidence"
+   ]
+  },
+  "RowVerdict": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "key": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "verdict": {
+     "enum": [
+      "approve",
+      "approve_with_change",
+      "reject_needs_evidence",
+      "not_applicable"
+     ],
+     "type": "string"
+    },
+    "rule": {
+     "minLength": 2,
+     "type": "string"
+    },
+    "note": {
+     "minLength": 12,
+     "type": "string"
+    }
+   },
+   "required": [
+    "key",
+    "verdict",
+    "rule",
+    "note"
+   ]
+  },
+  "BatchReport": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "batch_id": {
+     "type": "string"
+    },
+    "rows": {
+     "type": "array",
+     "items": {
+      "$ref": "#/definitions/RowVerdict"
+     }
+    },
+    "counts": {
+     "type": "object",
+     "additionalProperties": false,
+     "properties": {
+      "approve": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "approve_with_change": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "reject_needs_evidence": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "not_applicable": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "approve",
+      "approve_with_change",
+      "reject_needs_evidence",
+      "not_applicable"
+     ]
+    }
+   },
+   "required": [
+    "batch_id",
+    "rows",
+    "counts"
+   ]
+  }
+ },
+ "root": {
+  "node": "chain",
+  "steps": [
+   {
+    "node": "escalate",
+    "label": "require-rows",
+    "kind": "needs_input",
+    "stage": "input",
+    "summary": "No rows supplied. Supply rows: [{key, summary, status, parent, start, due, cf37, cf38, proposed_action, evidence}] with the derived facts folded into evidence.",
+    "when": {
+     "path": "rows",
+     "predicate": "empty"
+    }
+   },
+   {
+    "node": "map",
+    "label": "judge-rows",
+    "itemsPath": "rows",
+    "as": "verdicts",
+    "maxConcurrency": 6,
+    "body": {
+     "node": "decide",
+     "label": "judge-row",
+     "as": "verdict",
+     "out": "RowVerdict",
+     "thinking": "low",
+     "instructions": "You receive rubric (the pinned decision procedure), row (this row with its precomputed facts folded into evidence), and batch (the other rows of the same snapshot, keys and summaries only). Follow the rubric's numbered steps in order and stop at the first step that returns a verdict. Facts such as same_slot_cluster, order and expected_band are already computed: read them, never recompute them. Use batch only to confirm a partner a fact already names. Use not_applicable ONLY for a rule the rubric says was skipped, never for a row that passed every step (that is approve with rule S6). Set rule to the step id that decided and make note quote the fact you relied on, naming each step you evaluated. Verdict vocabulary: approve=clean, approve_with_change=advisory, reject_needs_evidence=fix_now, not_applicable=abstain. Never invent a field value.",
+     "state": {
+      "row": "{item}",
+      "rubric": "{rubric}",
+      "batch": "{rows}"
+     },
+     "requires": [
+      "rubric",
+      "rows"
+     ]
+    }
+   },
+   {
+    "node": "extract",
+    "label": "assemble-report",
+    "as": "report",
+    "out": "BatchReport",
+    "thinking": "low",
+    "requires": [
+     "verdicts"
+    ],
+    "instructions": "Transcribe the per-row verdicts into a batch report. Copy every verdict unchanged (key, verdict, rule, note) and in the same order. Count verdicts by value into counts, including not_applicable. Copy batch_id unchanged. Do not add rows, drop rows, re-judge a row, or change a verdict."
+   }
+  ]
+ }
+}

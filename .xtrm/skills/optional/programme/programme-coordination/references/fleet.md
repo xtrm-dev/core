@@ -13,11 +13,17 @@ Run the budget preflight first (SKILL.md, rule 2) and record its line in the lau
 | Shape | Exact syntax | Notes |
 |---|---|---|
 | `xt claude` worker | `xt claude <name> --window --model sonnet\|opus --prompt '/<skill> ... /goal ...' -- --effort low\|medium\|high\|xhigh\|max` | `--model` is forwarded to claude. Effort goes after `--` (claude's own `--effort`). `xt claude --thinking` is warn-and-drop. |
+| worker role (default) | `xt claude\|pi <name> --window --role worker --bead <ref> [--model sonnet\|opus] [-- --effort high]` | Definition `~/.specialists/user/worker.specialist.json` (MMD-3200). Loads programme-coordination + using-specialists at turn 1; Claude model default `sonnet`, pi default commandcode DeepSeek V4.1 Flash. With `--bead` the issue is the initial prompt (no `--prompt`). Other roles (`--role executor` etc.): add the rule-37 line to the launch prompt. |
 | `xt pi` worker | `xt pi <name> --window --model <provider/id> --thinking off\|minimal\|low\|medium\|high\|xhigh --prompt '/skill:<name> ... /goal ...'` | Muse Spark: `commandcode/meta/muse-spark-1.3-contributor`. Default model: `deepseek/deepseek-v4.1-flash` (provider `commandcode`), thinking high. `--skill <name>` loads extra skills (repeatable). |
 | Role session | `xt claude\|pi --role <role> [--bead <id>] [--model ...]` | `--model` overrides the role's model. With `--role`, `--bead` and `--prompt` exclude each other. |
 | Resume a worker | `xt attach <slug\|dir\|branch>` | Only argument is the name; no flags. |
 | Hotfix base | add `--base origin/stable` | Default base is fresh `origin/<default>`. |
 | Specialist | `specialist_list` (choose role) -> `specialist_dispatch {specialist, issue_ref: "MMD-<n>"}` (optional `model_override`, `thinking_override`, `epic_context_depth` 1-2) -> `specialist_status {wait_for_change: true, timeout_s: 60}` -> answer asks with `specialist_reply {message_id, body}` -> `specialist_result {activation_id}` -> `specialist_stop_activation {activation_id, reason}` | Exactly one of `issue_ref` or `contract`. The issue must be READY: 7 sections plus SCRUTINY. `issue_ref` keeps the parent; an inline `contract` needs `parent_ref`. |
+
+**Roles on Claude: pin the model (fri30-coord, 2026-10-31, MMD-3200).** `xt claude --role <role>` takes the system prompt and model from `sp view <role> --raw --surface claude`. The first user message comes from `sp render-task`. Neither `xt` nor `sp` has an inline system-prompt flag; `xt` rejects `--system-prompt` and `--append-system-prompt` after `--`. A system prompt is written into the definition with `sp edit <role> --set specialist.prompt.system _ --file <f>`.
+- `~/.config/specialists/user.json` sets most roles (executor and others) to `commandcode/deepseek/...` for pi, per rule 38. That layer cannot set `surface_models` (`sp edit --global` refuses the field), so `sp view --surface claude` returns the DeepSeek model. The `xt` guard for non-Claude models does not list `commandcode`, so it lets the model through, and Claude refuses it at turn 1 ("There's an issue with the selected model").
+- Rule: launch any role other than `worker` on Claude with `--model sonnet|opus`, for example `xt claude <name> --role executor --model sonnet`. `worker` already pins `surface_models.claude: sonnet`.
+- Open fixes, held for a focused design session; do not change the specialists or core repos from a programme lane: (1) Specialists: allow `surface_models` in the override layer (schema.ts `OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS`, beside `extensions`), and decide which wins between an overridden `model` and a shipped `surface_models`. (2) Core `xt`: add `commandcode` to `FOREIGN_MODEL_PROVIDERS` (cli/src/utils/worktree-session.ts), so the launch falls back to the parent model with a warning.
 
 Not verified by a live launch: the combination `--model ... -- --effort ...` on `xt claude` (each part is in
 `--help`); the `sonnet`/`opus` aliases (claude `--help` says it accepts aliases; the xt example uses a full id).
@@ -73,6 +79,25 @@ not its ancestor and the dispatcher stays unknown.
   worker's first journal entry shows
   `participantId = <name>` (`sb journal latest <ref> --json`).
 
+### Dispatch a builder (worker role)
+
+A builder is one fresh worker for one Substrate issue (SKILL.md, rules 37 and 39; MMD-3200, operator 2026-10-31). The default launch is the `worker` role. Definition: `~/.specialists/user/worker.specialist.json`. The role loads the whole `programme-coordination` skill and the specialists skill at turn 1, makes the worker read `references/workers.md` first, and tells it that it may coordinate specialists and consult the advisor.
+
+1. **Write the contract.** `sb issue create --project <id> --title <t> --kind task --parent <ref> --scrutiny LOW|MEDIUM|HIGH|CRITICAL --contract <file>`. The contract has PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION and OUTPUT. `validation` is a list of `{check}` objects and `output` a list of `{artifact}` objects, else the issue stays draft. The contract is the prompt, so it names files, the branch base (`origin/master`), the tests to run and the stop conditions. Put the no-files rule in OUTPUT: rulings, reviews and diagnoses go into the journal (`--semantic`) and a Jira comment text for the Jira writer, never only a path.
+2. **Attest it ready.** `sb issue attest <ref> --outcome ready --policy default --attested-by <your name>`, then check `sb issue show <ref> --json`: `readinessState` is `ready` and `dispatchable` is `true`. The worker refuses a draft or an unattested issue.
+3. **Run the preflight** (SKILL.md, rule 2.2) and keep the line. Refuse or queue when a cap or gate fails. A new builder launch also waits for the operator's word when the operator has ruled so.
+4. **Launch from the main checkout** (`xt` refuses nested worktrees): `xt claude <name> --window --role worker --bead <ref> --model sonnet|opus -- --effort high` or `xt pi <name> --window --role worker --bead <ref>`. Notes:
+   - With `--bead` the issue is the prompt. `--bead` and `--prompt` exclude each other: write nothing else.
+   - Claude effort defaults to medium: pass `-- --effort high` for builders. Sonnet at high for routine and critical building, Opus for maths and data meaning. `xt pi` builders use the default commandcode DeepSeek V4.1 Flash for light work only.
+   - `<name>` starts with the issue key (`<KEY>-<slug>`). It becomes the claim holder, `SUBSTRATE_HOLDER` and the branch `xt/<name>`.
+   - A line "could not read <ref>" during start-up is harmless.
+5. **Place the pane.** `--window` prints `<session>:<pane_id>`. Move it into the shared window: `tmux join-pane -d -s <pane> -t <session>:workers`, then `tmux select-layout tiled`. At most 4 panes per `workers` window.
+6. **Verify.** The worker's first journal entry carries `participantId = <name>` (`sb journal latest <ref> --json`). It claims with a TTL that covers its checkpoint interval.
+7. **Supervise by exception.** Arm the pane monitor (Liveness, below). The worker reports to the coordinator named in its primer. Verify its claims against the live tree. A different scope means a fresh issue and a fresh worker, never a reused session.
+8. **Reap** with `kill-pane` by pane id when the issue closes (Reaping, below).
+
+Another role (`--role executor`, a specialist role, and so on) is not a worker. On Claude it MUST also pass `--model sonnet|opus` (see "Roles on Claude: pin the model" above), else the session dies at turn 1. Add the rule-37 line to its launch prompt: "Load programme-coordination and read references/workers.md first; you may coordinate specialists (/specialists:using-specialists) and consult the advisor." A bounded read, review or test run does not need a window: dispatch a specialist.
+
 ### When --window refuses
 
 `xt` reads `$TMUX` to find the caller's session. After a restart the coordinator's shell can lose
@@ -108,7 +133,7 @@ To resume that worker:
 
 1. Create the worker task under its theme (`sb plan apply` or `sb issue create --parent`).
 2. The coordinator attests it.
-3. Launch the window. The prompt names only the issue ref, the skills and the `/goal`.
+3. Launch the window with the worker role (`--role worker --bead <ref>`, section "Dispatch a builder"): the issue is the prompt. For another role the prompt names only the issue ref, the skills and the `/goal`.
 4. The worker claims it with `--holder <name>`, checkpoints after each milestone and at its
    context limit, and closes with a `result`. A restarted worker resumes from
    `sb issue resume <ref>`, never from chat.
@@ -236,9 +261,11 @@ routing rule.
   - Nobody (subagent, reviewer or window worker) runs a full suite or `make ci-light` locally
     while other workers are live. Run targeted test files only, one file at a time, under `ulimit -v 4000000` (2 GB is too small for some suites) and
     `timeout 600`. Hosted CI is the full-suite evidence.
-  - Before each dispatch, run the budget preflight: `/proc/loadavg` (load1 above 12 refuses), `free -g` and
-    `/proc/pressure/memory` (`full avg10` above 10 refuses). Do not dispatch when available memory is under
-    8 GB, swap use is rising, or `full avg60` is above 5.
+  - Before each dispatch, run the budget preflight and apply the gate of the action's class (SKILL.md,
+    "3. Workers (fleet)", rule 2.2): a launch needs load1 <= 15 plus the memory gate, a fan-out or per-item
+    loop load1 <= 10 with concurrency <= 2, a merge the memory gate only. The memory gate refuses when
+    `/proc/pressure/memory` `full avg10` is above 10 or `MemAvailable` is under 4 GB. Do not dispatch when swap use
+    is rising or `full avg60` is above 5.
   - The cap is host-wide: agree on a total of live build workers across all coordinators (pi
     windows plus subagents), and stagger test runs.
   - Hosted CI is not free on Mercury: the self-hosted GitHub runners run on the same VPS. Every
@@ -248,7 +275,7 @@ routing rule.
     running CI jobs in the memory check.
   - Subagents die with their parent session. A coordinator kill loses every in-flight subagent, so
     long builds belong in window workers with their own issue, not in subagents.
-- Caps: at most 3 own worker windows plus 1 board helper per coordinator, and at most 8 live agent processes host-wide (SKILL.md, "Mandatory fleet rules"). The cap counts every live agent process in the
+- Caps: at most 3 own worker windows plus 1 board helper per coordinator. Host cap 10 (operator, 2026-10-28); while operator row q-night-builders is open a coordinator may run up to 12 between 22:00 and 12:00Z as a journaled exception; specialists count toward the cap (SKILL.md, "3. Workers (fleet)", rule 2.3). The cap counts every live agent process in the
   session (builders, reviewers, monitors, idle sessions), not active issues: once, 10 agent
   processes were live while the coordinator counted 3 workers. Reap before you launch. Shared model quotas stop everyone. On a quota 429: pause dispatch and tell the
   operator in one line.

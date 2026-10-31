@@ -116,6 +116,8 @@ Related: <duplicates, merged-into, depends-on, relates-to, found by the duplicat
 Before filing, search for duplicates and overlapping tickets (same symptom, same code site, same
 fix) and link or merge instead of filing twice (skill `board-audit`, "New-ticket check").
 
+Every PR reference in Jira text (descriptions, comments, PR-link comments) is a full clickable URL, for example https://github.com/mercuryintelligence/market-data/pull/1120, never market-data#1120 or a bracketed number (operator, 2026-10-29). A PR-link comment starts 'PR-link https://github.com/<org>/<repo>/pull/<n>'; matchers accept both the URL form and the old market-data#<n> form until the old comments are rewritten.
+
 Label namespaces: `area:`, `repo:`, `prog:`, `kind:`, and `substrate:<REF>` as the sync marker. Add
 `substrate:<theme-ref>` and `prog:<programme>` so a script can find it (search by label AND the exact summary before
 creating, comparing the summary as an exact string after the read: a substrate ref can be shared

@@ -108,10 +108,42 @@ reconciled):
    by walking up from the worktree to the main checkout. Deleting the marker in the worktree
    does **not** clear it — the `drift: PENDING` note persists until the PR that deletes it
    **merges**. It is advisory; never block on it.
-3. **`index build` reflects MAIN, not your branch.** The index is built from the consumer
-   root's SKILL.md files — in a worktree, that means the main checkout. After editing SKILLs
-   on a branch, a rebuild will not show your branch's content until the PR merges. That is
-   correct behavior, not a failure; verify branch edits by reading the branch file directly.
+3. **The index follows the checkout you query from — including uncommitted
+   edits.** Reads compare both `source_ref` vs HEAD *and* a fingerprint of
+   the indexed inputs (registry + SKILL.md files, recorded at build time),
+   so a rebuild fires on any skill change, committed or not, in any
+   worktree. An edit in *this* checkout is visible to the next query in
+   *this* checkout — no merge, no manual rebuild needed. (Older behavior
+   keyed freshness to HEAD alone; that gap is closed.)
+
+### Step 1b — Coverage audit at PR scale (AgentRun DSL, recommended for ranges over ~50 files)
+
+The scan tells you *which files* drifted, not whether the registry *covers* them.
+New subsystems land as unrouted files and silently stay that way unless something
+classifies them. For ranges too wide to eyeball, run the coverage audit as an
+AgentRun workflow — never as per-item API calls from the session (one model round
+trip per item costs context on every call; the workflow snapshots once, then judges
+every item with one typed call each).
+
+```bash
+CA="$CLAUDE_PROJECT_DIR/.xtrm/skills/default/service-knowledge/scripts/coverage_audit"
+SK_REPO=<consumer-root> node "$CA/snapshot-prs.mjs"
+node "$CA/run-prs.mjs" --inspect-only   # must print validate=ok
+node "$CA/run-prs.mjs"                  # exits 4 if the holdout gate fails
+```
+
+Shape: deterministic snapshot (PR merges in `last_sync_ref..HEAD` with per-PR files +
+registry owner counts) → class judge (`new_skill` / `extend_territory` /
+`leave_unowned` / `unclear`) → boolean confirm judge on the deterministic candidate →
+code transcription. Judge-only: needs `runJudge`, no `runNode`. Snapshot freshness gate
+<1h; read-only proof (HEAD + registry hash unchanged); holdout gate discards the batch
+on mismatch. Full rules: `scripts/coverage_audit/README.md`.
+
+Read the verdicts, not just the counts: `extend_territory` names its target service
+(apply through Step 4 + territory update); `new_skill` names the candidate (scaffold
+through the create flow, then narrow its territory so it does not overlap); `unclear`
+is a verdict, not a failure — split the group and re-run rather than forcing it.
+
 
 ### Step 2 — Read the current skill
 
@@ -202,10 +234,10 @@ once and pass the consumer root explicitly (state persists across cells):
 
 ```python
 import sys
-sys.path.insert(0, "/home/dawid/dev/xtrm/packages/service-knowledge/src")
+sys.path.insert(0, "/path/to/xtrm/packages/service-knowledge/src")  # xtrm checkout
 import service_knowledge
 from service_knowledge import index
-stats = index.build("/home/dawid/projects/mercury/infra")   # consumer ROOT, not the worktree cwd
+stats = index.build("/path/to/consumer-repo")   # consumer ROOT, not the worktree cwd
 print(stats)
 ```
 

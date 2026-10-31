@@ -1,0 +1,201 @@
+{
+ "v": 2,
+ "name": "code-readiness-v1",
+ "input": {
+  "schemaId": "Input"
+ },
+ "output": {
+  "schemaId": "Verdicts",
+  "path": "verdicts"
+ },
+ "schemas": {
+  "Input": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "batch_id",
+    "rubric",
+    "rows"
+   ],
+   "properties": {
+    "batch_id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "rubric": {
+     "type": "string",
+     "minLength": 200
+    },
+    "rows": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 40,
+     "items": {
+      "$ref": "#/definitions/Row"
+     }
+    }
+   }
+  },
+  "Row": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "key",
+    "summary",
+    "oracle",
+    "evidence"
+   ],
+   "properties": {
+    "key": {
+     "type": "string",
+     "minLength": 1
+    },
+    "summary": {
+     "type": "string",
+     "minLength": 1
+    },
+    "oracle": {
+     "type": "string",
+     "enum": [
+      "judge",
+      "OPEN_PR",
+      "SUPERSEDED",
+      "BUILT",
+      "PARTIAL"
+     ]
+    },
+    "evidence": {
+     "type": "string",
+     "minLength": 40
+    }
+   }
+  },
+  "Verdict": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "key",
+    "class",
+    "rule",
+    "evidence_quote",
+    "missing",
+    "first_code_site",
+    "size",
+    "blocker",
+    "note"
+   ],
+   "properties": {
+    "key": {
+     "type": "string",
+     "minLength": 1
+    },
+    "class": {
+     "type": "string",
+     "enum": [
+      "BUILT",
+      "PARTIAL",
+      "OPEN_PR",
+      "SUPERSEDED",
+      "OPERATIONAL",
+      "OTHER_REPO",
+      "UMBRELLA",
+      "NOT_BUILT",
+      "NEEDS_HUMAN"
+     ]
+    },
+    "rule": {
+     "type": "string",
+     "enum": [
+      "R1",
+      "R1x",
+      "R2",
+      "R3",
+      "R4",
+      "R5",
+      "R6",
+      "R7"
+     ]
+    },
+    "evidence_quote": {
+     "type": "string",
+     "minLength": 20,
+     "maxLength": 400
+    },
+    "missing": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 400
+    },
+    "first_code_site": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 200
+    },
+    "size": {
+     "type": "string",
+     "enum": [
+      "S",
+      "M",
+      "L",
+      "na"
+     ]
+    },
+    "blocker": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 80
+    },
+    "note": {
+     "type": "string",
+     "minLength": 12,
+     "maxLength": 400
+    }
+   }
+  },
+  "Verdicts": {
+   "type": "array",
+   "items": {
+    "$ref": "#/definitions/Verdict"
+   }
+  }
+ },
+ "root": {
+  "node": "chain",
+  "steps": [
+   {
+    "node": "escalate",
+    "label": "require-rows",
+    "kind": "needs_input",
+    "stage": "input",
+    "summary": "No rows supplied. Build them with readiness_facts.py snapshot + chunk.",
+    "when": {
+     "predicate": "empty",
+     "path": "rows"
+    }
+   },
+   {
+    "node": "map",
+    "label": "judge-rows",
+    "itemsPath": "rows",
+    "as": "verdicts",
+    "maxConcurrency": 4,
+    "body": {
+     "node": "decide",
+     "label": "judge-row",
+     "as": "verdict",
+     "out": "Verdict",
+     "thinking": "medium",
+     "tools": [],
+     "instructions": "You receive rubric (the pinned code-readiness procedure) and row (one ticket with every fact precomputed in row.evidence). Follow the rubric's steps R1..R7 in order and stop at the first step that decides. Facts such as on_master, on_stable, exists_on_master, last_commits_on_master, closure and the no-PR branch lines are computed in code: read them, never recompute or contradict them. A 'mentioned (context...)' line is not this ticket's subject and never decides by itself. A branch line with NO PR means code exists but is not merged: that is PARTIAL (missing: open and merge the PR) when the branch is the ticket's own ref, never BUILT. Copy row.key into key. rule is the step id that decided. evidence_quote is one line copied verbatim from row.evidence. missing is 'none' for BUILT, OPERATIONAL, UMBRELLA and SUPERSEDED, otherwise what remains to build or do. first_code_site is a path from a path line or 'unknown'. size is na unless the class is NOT_BUILT or PARTIAL. blocker is a Substrate ref the evidence names as blocking, else 'none'. note names each step evaluated and why earlier steps did not apply. Never invent a PR number, SHA, path or ref.",
+     "state": {
+      "row": "{item}",
+      "rubric": "{rubric}"
+     },
+     "requires": [
+      "rubric"
+     ]
+    }
+   }
+  ]
+ }
+}

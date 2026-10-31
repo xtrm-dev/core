@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1",
+  "name": "session-recovery",
+  "version": "1.0.0",
+  "description": "Restore agent sessions after tmux/server loss (OOM, reboot) using the xtmux durable session snapshot",
+  "skills": ["session-recovery"]
+}

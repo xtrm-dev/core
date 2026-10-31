@@ -10,13 +10,16 @@ SUBSTRATE_HOLDER is unset and the holder is derived from the runtime and worktre
 already there. Neither ever refuses a write.
 usage: jira.py GET <path> | jira.py POST|PUT <path> <json-file>
        jira.py transition <KEY> "<status name>"   (looks up the transition id by target status)
-       jira.py comment <KEY> <text-file>          (plain text; blank lines split paragraphs; ADF built here)
+       jira.py comment <KEY> <text-file>          (plain text; blank lines split paragraphs; ADF built here;
+                                                   the token @operator becomes a mention of jagger.xtrm@gmail.com)
 Prints the HTTP status and the JSON response; `comment` then prints `POSTED_TEXT <json string>`, the exact text posted.
 Module use: post_comment(key, text) returns (status, response, posted_text)."""
 import base64, hashlib, json, os, pathlib, re, sys, urllib.request, urllib.error
 
 OPERATOR_EMAIL = 'jagger.xtrm@gmail.com'
 OPERATOR_TOKEN_FILE = '/home/dawid/.secrets/atlassian-api-token.txt'
+OPERATOR_ACCOUNT_ID = '640b87a2314f50881385ea01'  # jagger.xtrm@gmail.com (Dawid Jagger)
+OPERATOR_MENTION = '@operator'  # in comment text, becomes a real Jira mention that notifies the operator
 
 
 AGENT_COMMS = ('claude', 'pi', 'codex')
@@ -226,7 +229,11 @@ def adf(text):
         for i, line in enumerate(p.split('\n')):
             if i:
                 nodes.append({'type': 'hardBreak'})
-            nodes.append({'type': 'text', 'text': line})
+            for j, part in enumerate(line.split(OPERATOR_MENTION)):
+                if j:
+                    nodes.append({'type': 'mention', 'attrs': {'id': OPERATOR_ACCOUNT_ID, 'text': '@Dawid Jagger'}})
+                if part:
+                    nodes.append({'type': 'text', 'text': part})
         content.append({'type': 'paragraph', 'content': nodes})
     return {'type': 'doc', 'version': 1, 'content': content}
 

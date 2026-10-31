@@ -1,5 +1,16 @@
 # AgentRun audits at board scale
 
+Naming: the operator's "jeff" or "jev" means the AgentRun stack (agentrun-dsl, agentrun-pi, the judge adapter). In this text "Jev" means only the judge adapter (`@parcha/agentrun-jev`).
+
+> **STATUS 2026-10-22 01:30Z (verified by wed-board, proof: ~/.cache/wed-board/agentrun-correct-setup-2026-10-22.md).**
+> AgentRun WORKS through the CLI with a caller-owned config: `node $AGENTRUN_PI_ROOT/dist/cli.js run <workflow.json> <input.json> --config <board-audit skill>/scripts/agentrun-config-stock.mjs` (no `--trusted`; the working driver is board-audit/scripts/run-audit.sh) (the config exports `runNode`; stock `createPiRunner`, no change to `~/.pi/agent/models.json`). Complete 5-row runs passed.
+> The host tool and specialist activations use a different session factory that omits the `x-opencode-session` header, so `opencode-go` answers 400 and the node fails as `model_response_failed`. Fix is one line in `~/.pi/agent/models.json` (provider header) with a tradeoff: all sessions then share one opencode session id. Not applied; the CLI path is the standard until the operator decides.
+> A `decide` node is a child Pi session on the captured active model; no separate API key.
+> Judge stability is a WORKFLOW property, measured 2026-10-22 (~/.cache/wed-board/agentrun-workflow-quality-test-2026-10-22.md): a loose rubric flipped 5 of 10 verdicts between identical runs; a determined rubric (ordered decision procedure, absence decided explicitly, rule id cited, relational facts such as slot conflicts and prerequisites PRECOMPUTED in code and passed in each row) gave 0 flips in 3 runs.
+> Consensus is not correctness: if a precomputed fact is wrong, every run agrees on the wrong answer. Unit-test the fact script. A procedure checks only what it lists (the determined v2 missed the ISSUE-457 window that sat outside the CME halt; it also cannot know that two Tasks in one slot are one deploy: add a `same_deploy_with` fact). Always sample-check verdicts against live state before acting on them.
+> If a run fails: stop, escalate with the exact error text, disclose any manual substitute.
+
+
 Rule: when the same judgment must be applied to dozens or hundreds of items
 (title checks, field checks, per-ticket programme verdicts), run it as an
 AgentRun workflow — never as per-item API calls from the coordinator session.
@@ -95,7 +106,7 @@ index, 10 lanes, open gates). Substrate: MMD-2601 seqs 1-13. XT gap: XT-179.
 ### Host-tool AgentRun (the `agentrun` tool, not the repo harness)
 
 - `describe` first: this host offers only fictional demo tools — it cannot
-  reach Jira/gh/Jev. Supply gathered evidence as workflow `input`; the tool
+  reach Jira or gh and has no Jev judge adapter (`jev: false`). Supply gathered evidence as workflow `input`; the tool
   judges supplied facts, never fetches.
 - `inspect` the whole workflow, repair, re-inspect; `run` with input only
   (never re-send the workflow). No code/call nodes without the literal
