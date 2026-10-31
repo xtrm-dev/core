@@ -3,6 +3,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { rmSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const backupFault = vi.hoisted(() => ({ error: null as Error | null }));
+vi.mock('../core/global-skills-bootstrap.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../core/global-skills-bootstrap.js')>();
+  return {
+    ...actual,
+    createVerifiedSkillsBackup: async (...args: Parameters<typeof actual.createVerifiedSkillsBackup>) => {
+      if (backupFault.error) throw backupFault.error;
+      return actual.createVerifiedSkillsBackup(...args);
+    },
+  };
+});
 import {
   collectManagedDefaultSkillNames,
   hashFile,
@@ -21,6 +33,8 @@ import { ensureAgentsSkillsSymlink, ensureUserAgentsSkillsSymlink } from '../cor
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  backupFault.error = null;
+  delete process.env.XTRM_ALLOW_LARGE_PRUNE;
   vi.restoreAllMocks();
   for (const tempDir of tempDirs.splice(0)) {
     rmSync(tempDir, { recursive: true, force: true });
@@ -482,6 +496,180 @@ describe('pruneRetiredManagedSkills', () => {
     const registry = buildRegistry(['using-specialists']);
     const result = await pruneRetiredManagedSkills({ userXtrmDir, registry, dryRun: false });
     expect(result.removed).toEqual([]);
+  });
+
+  describe('CORE-2513 guard, log, backup, per-runtime sweep', () => {
+    const readLog = async (userXtrmDir: string): Promise<Array<Record<string, unknown>>> => {
+      const raw = await fs.readFile(path.join(userXtrmDir, 'logs', 'skills-migration.jsonl'), 'utf8').catch(() => '');
+      return raw.split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>);
+    };
+
+    async function setupTree(previous: readonly string[]) {
+      const userXtrmDir = path.join(await createTempDir(), 'user-xtrm');
+      const defaultRoot = path.join(userXtrmDir, 'skills', 'default');
+      await fs.ensureDir(defaultRoot);
+      for (const name of previous) await writeSkill(defaultRoot, name);
+      await fs.writeJson(path.join(userXtrmDir, 'registry.json'), buildRegistry(previous));
+      return { userXtrmDir, defaultRoot };
+    }
+
+    it('refuses a reduced registry: zero deletions, no backup, refusal logged with source and digest', async () => {
+      const previous = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'keep'];
+      const { userXtrmDir, defaultRoot } = await setupTree(previous);
+
+      const result = await pruneRetiredManagedSkills({
+        userXtrmDir,
+        registry: buildRegistry(['keep']),
+        dryRun: false,
+        registrySource: '/some/reduced/registry.json',
+      });
+
+      expect(result.removed).toEqual([]);
+      expect(result.refused?.retired).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']);
+      expect((await fs.readdir(defaultRoot)).sort()).toEqual([...previous].sort());
+      expect(await fs.pathExists(path.join(userXtrmDir, 'migration-backups'))).toBe(false);
+      const log = await readLog(userXtrmDir);
+      expect(log).toHaveLength(1);
+      expect(log[0]).toMatchObject({
+        event: 'prune.refused',
+        registrySource: '/some/reduced/registry.json',
+        managedCount: 1,
+        previouslyManagedCount: 9,
+      });
+      expect(typeof log[0]?.managedDigest).toBe('string');
+    });
+
+    it('refuses a strict contraction even when the retired share is small', async () => {
+      const previous = Array.from({ length: 30 }, (_, i) => `s${i}`);
+      const { userXtrmDir, defaultRoot } = await setupTree(previous);
+
+      const result = await pruneRetiredManagedSkills({
+        userXtrmDir,
+        registry: buildRegistry(previous.slice(0, 25)),
+        dryRun: false,
+      });
+
+      expect(result.refused?.reason).toContain('strict contraction');
+      expect(await fs.readdir(defaultRoot)).toHaveLength(30);
+    });
+
+    it('proceeds past the guard with allowLargePrune, logging every removal and snapshotting first', async () => {
+      const previous = ['a', 'b', 'c', 'd', 'e', 'keep'];
+      const { userXtrmDir, defaultRoot } = await setupTree(previous);
+
+      const result = await pruneRetiredManagedSkills({
+        userXtrmDir,
+        registry: buildRegistry(['keep']),
+        dryRun: false,
+        allowLargePrune: true,
+      });
+
+      expect(result.removed).toEqual(['a', 'b', 'c', 'd', 'e']);
+      expect(await fs.readdir(defaultRoot)).toEqual(['keep']);
+      const log = await readLog(userXtrmDir);
+      expect(log.map(entry => entry.event)).toEqual(['prune.start', 'prune.removed']);
+      expect(log[1]?.removed).toEqual(['a', 'b', 'c', 'd', 'e']);
+      const backups = (await fs.readdir(path.join(userXtrmDir, 'migration-backups'))).filter(f => f.endsWith('.tgz'));
+      expect(backups).toHaveLength(1);
+      expect(log[1]?.backupArchive).toBe(path.join(userXtrmDir, 'migration-backups', backups[0] ?? ''));
+    });
+
+    it('honors XTRM_ALLOW_LARGE_PRUNE=1 from the environment', async () => {
+      const { userXtrmDir, defaultRoot } = await setupTree(['a', 'b', 'c', 'd', 'e', 'keep']);
+      process.env.XTRM_ALLOW_LARGE_PRUNE = '1';
+
+      const result = await pruneRetiredManagedSkills({ userXtrmDir, registry: buildRegistry(['keep']), dryRun: false });
+
+      expect(result.refused).toBeUndefined();
+      expect(await fs.readdir(defaultRoot)).toEqual(['keep']);
+    });
+
+    it('aborts with zero deletions and logs prune.failed when the backup fails', async () => {
+      const { userXtrmDir, defaultRoot } = await setupTree(['a', 'b', 'keep']);
+      const activeRoot = path.join(userXtrmDir, 'skills', 'active');
+      await fs.ensureDir(path.join(activeRoot, 'claude'));
+      await fs.symlink(path.join('..', '..', 'default', 'a'), path.join(activeRoot, 'claude', 'a'));
+      backupFault.error = new Error('disk full');
+
+      await expect(
+        pruneRetiredManagedSkills({ userXtrmDir, registry: buildRegistry(['keep']), dryRun: false }),
+      ).rejects.toThrow('disk full');
+
+      expect((await fs.readdir(defaultRoot)).sort()).toEqual(['a', 'b', 'keep']);
+      expect((await fs.lstat(path.join(activeRoot, 'claude', 'a'))).isSymbolicLink()).toBe(true);
+      const log = await readLog(userXtrmDir);
+      expect(log.map(entry => entry.event)).toEqual(['prune.start', 'prune.failed']);
+      expect(log[1]).toMatchObject({ error: 'disk full' });
+    });
+
+    it('keeps backups and log under userXtrmDir even with an override skills root', async () => {
+      const userXtrmDir = path.join(await createTempDir(), 'user-xtrm');
+      const overrideSkills = path.join(await createTempDir(), 'skills');
+      const overrideDefault = path.join(overrideSkills, 'default');
+      await fs.ensureDir(overrideDefault);
+      await writeSkill(overrideDefault, 'a');
+      await writeSkill(overrideDefault, 'keep');
+      await fs.outputJson(path.join(userXtrmDir, 'registry.json'), buildRegistry(['a', 'keep']));
+
+      await pruneRetiredManagedSkills({
+        userXtrmDir,
+        registry: buildRegistry(['keep']),
+        dryRun: false,
+        overrideRoots: { skills: overrideDefault },
+      });
+
+      expect(await fs.pathExists(path.join(userXtrmDir, 'migration-backups'))).toBe(true);
+      expect(await fs.pathExists(path.join(userXtrmDir, 'logs', 'skills-migration.jsonl'))).toBe(true);
+      expect(await fs.pathExists(path.join(overrideSkills, '..', 'migration-backups'))).toBe(false);
+    });
+
+    it('logs a small prune and snapshots the tree before removal', async () => {
+      const { userXtrmDir } = await setupTree(['a', 'keep']);
+
+      const result = await pruneRetiredManagedSkills({ userXtrmDir, registry: buildRegistry(['keep']), dryRun: false });
+
+      expect(result.removed).toEqual(['a']);
+      const log = await readLog(userXtrmDir);
+      expect(log.at(-1)).toMatchObject({ event: 'prune.removed', removed: ['a'] });
+      expect(await fs.readdir(path.join(userXtrmDir, 'migration-backups'))).toHaveLength(2); // .tgz + sidecar
+    });
+
+    it('dry run logs would-remove, writes no backup and deletes nothing', async () => {
+      const { userXtrmDir, defaultRoot } = await setupTree(['a', 'keep']);
+
+      const result = await pruneRetiredManagedSkills({ userXtrmDir, registry: buildRegistry(['keep']), dryRun: true });
+
+      expect(result.removed).toEqual(['a']);
+      expect(await fs.pathExists(path.join(defaultRoot, 'a'))).toBe(true);
+      expect(await fs.pathExists(path.join(userXtrmDir, 'migration-backups'))).toBe(false);
+      expect((await readLog(userXtrmDir)).map(entry => entry.event)).toEqual(['prune.would-remove']);
+    });
+
+    it('sweeps per-runtime active links (active/<runtime>/<name>) and keeps user-owned ones', async () => {
+      const { userXtrmDir, defaultRoot } = await setupTree(['a', 'keep']);
+      const activeRoot = path.join(userXtrmDir, 'skills', 'active');
+      for (const runtime of ['claude', 'pi', 'codex']) {
+        await fs.ensureDir(path.join(activeRoot, runtime));
+        await fs.symlink(path.join('..', '..', 'default', 'a'), path.join(activeRoot, runtime, 'a'));
+        await fs.symlink(path.join('..', '..', 'default', 'keep'), path.join(activeRoot, runtime, 'keep'));
+      }
+      const elsewhere = path.join(userXtrmDir, 'skills', 'my-pack', 'a');
+      await fs.ensureDir(elsewhere);
+      await fs.ensureDir(path.join(activeRoot, 'user'));
+      await fs.symlink(path.join('..', '..', 'my-pack', 'a'), path.join(activeRoot, 'user', 'a'));
+
+      const result = await pruneRetiredManagedSkills({ userXtrmDir, registry: buildRegistry(['keep']), dryRun: false });
+
+      expect(result.removed).toEqual(['a']);
+      expect(await fs.pathExists(path.join(defaultRoot, 'a'))).toBe(false);
+      for (const runtime of ['claude', 'pi', 'codex']) {
+        expect(await fs.lstat(path.join(activeRoot, runtime, 'a')).catch(() => null)).toBeNull();
+        expect(await fs.pathExists(path.join(activeRoot, runtime, 'keep'))).toBe(true);
+      }
+      expect(await fs.pathExists(path.join(activeRoot, 'user', 'a'))).toBe(true);
+      const removedLog = (await readLog(userXtrmDir)).find(entry => entry.event === 'prune.removed');
+      expect(removedLog?.activeLinks).toHaveLength(3);
+    });
   });
 
   it('collectManagedDefaultSkillNames pulls first-segment names from the skills asset', () => {

@@ -9,6 +9,7 @@ import { confirmDestructiveAction } from '../utils/confirmation.js';
 import { runPluginEraCleanup } from '../core/plugin-era-cleanup.js';
 import { getGlobalSkillsOverrideRoots } from '../core/global-skills-flag.js';
 import {
+    ALLOW_LARGE_PRUNE_ENV,
     pruneRetiredManagedSkills,
     resolvePackageRoot,
     type RegistryManifest,
@@ -22,6 +23,7 @@ interface CleanHooksResult {
 
 interface CleanSkillsResult {
     removed: string[];
+    refused: boolean;
     preserved: string[];
 }
 
@@ -69,9 +71,14 @@ async function cleanSkills(
         registry,
         dryRun,
         overrideRoots: getGlobalSkillsOverrideRoots(projectRoot),
+        registrySource: registryPath,
     });
+    if (pruneResult.refused) {
+        console.log(kleur.yellow(`  Refused to prune ${pruneResult.refused.retired.length} retired skill(s): ${pruneResult.refused.reason}. Re-run with ${ALLOW_LARGE_PRUNE_ENV}=1 to confirm.`));
+    }
 
     return {
+        refused: pruneResult.refused !== undefined,
         removed: pruneResult.removed
             .map(name => `~/.xtrm/skills/default/${name}`)
             .sort((left, right) => left.localeCompare(right)),
@@ -145,7 +152,7 @@ export function createCleanCommand(): Command {
                 for (const skill of skills.removed) {
                     console.log(kleur.red(`    ${dryRun ? '[DRY RUN] would remove' : 'removed'} managed ${skill}`));
                 }
-                if (skills.removed.length === 0) {
+                if (skills.removed.length === 0 && !skills.refused) {
                     console.log(kleur.dim('    ✓ No retired managed skills found'));
                 }
             }

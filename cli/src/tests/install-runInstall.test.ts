@@ -16,7 +16,7 @@ const mocked = vi.hoisted(() => ({
   })),
   resolvePackageRoot: vi.fn(),
   scaffoldSkillsDefaultFromPackage: vi.fn(),
-  pruneRetiredManagedSkills: vi.fn(async () => ({ removed: [] })),
+  pruneRetiredManagedSkills: vi.fn(async (): Promise<{ removed: string[]; refused?: { reason: string; retired: string[] } }> => ({ removed: [] })),
   pruneRetiredOptionalSkills: vi.fn(async () => ({ removed: [] })),
   runPiInstall: vi.fn(async () => undefined),
   syncProjectMcpConfig: vi.fn(async () => ({ wroteFile: false, createdFile: false, mcpPath: '.mcp.json', addedServers: [], missingEnvWarnings: [] })),
@@ -36,6 +36,7 @@ const mocked = vi.hoisted(() => ({
 vi.mock('../core/context.js', () => ({ getContext: mocked.getContext }));
 vi.mock('../core/machine-bootstrap.js', () => ({ runMachineBootstrapPhase: mocked.runMachineBootstrapPhase }));
 vi.mock('../core/registry-scaffold.js', () => ({
+  ALLOW_LARGE_PRUNE_ENV: 'XTRM_ALLOW_LARGE_PRUNE',
   installFromRegistry: mocked.installFromRegistry,
   resolvePackageRoot: mocked.resolvePackageRoot,
   scaffoldSkillsDefaultFromPackage: mocked.scaffoldSkillsDefaultFromPackage,
@@ -244,4 +245,26 @@ describe('runInstall broken default symlink repair', () => {
     })).rejects.toThrowError(/Registry\/source mismatch: 1 expected file were missing from package payload\./);
   });
 
+  it('reports a refused prune to the operator with the override hint', async () => {
+    const packageRoot = path.join(tmpDir, 'pkg');
+    fs.ensureDirSync(path.join(packageRoot, '.xtrm'));
+    fs.writeJsonSync(path.join(packageRoot, 'package.json'), { version: '1.0.0' });
+    fs.writeJsonSync(path.join(packageRoot, '.xtrm', 'registry.json'), { version: '1.0.0', assets: {} });
+    mocked.scaffoldSkillsDefaultFromPackage.mockResolvedValue('noop');
+    mocked.installFromRegistry.mockResolvedValue({
+      installed: 0, upToDate: 0, driftedSkipped: 0, forced: 0, expectedInstalls: 0, missingSourceSkipped: 0,
+    });
+    mocked.pruneRetiredManagedSkills.mockResolvedValue({
+      removed: [],
+      refused: { reason: 'retired set is 9 of 10 previously managed skills (90%)', retired: ['a', 'b'] },
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await runInstall({ yes: true, dryRun: false, projectRoot: tmpDir, skipMachineBootstrap: true, skipClaudeRuntimeSync: true });
+
+    const output = logSpy.mock.calls.map(call => String(call[0])).join('\n');
+    expect(output).toContain('Refused to prune 2 retired skill(s): retired set is 9 of 10');
+    expect(output).toContain('XTRM_ALLOW_LARGE_PRUNE=1');
+    logSpy.mockRestore();
+  });
 });

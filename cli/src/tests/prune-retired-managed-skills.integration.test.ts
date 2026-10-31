@@ -39,7 +39,9 @@ vi.mock('../core/skills-scaffold.js', () => ({
   ensureUserAgentsSkillsSymlink: mocked.ensureUserAgentsSkillsSymlink,
   ensureAgentsSkillsSymlink: mocked.ensureAgentsSkillsSymlink,
 }));
-vi.mock('../core/global-skills-bootstrap.js', () => ({
+vi.mock('../core/global-skills-bootstrap.js', async (importOriginal) => ({
+  // Keep the real backup helper: prune must snapshot the (sandboxed) tree before removal.
+  createVerifiedSkillsBackup: (await importOriginal<typeof import('../core/global-skills-bootstrap.js')>()).createVerifiedSkillsBackup,
   ensureGlobalSkillsBootstrapped: mocked.ensureGlobalSkillsBootstrapped,
   logBootstrapTrigger: mocked.logBootstrapTrigger,
 }));
