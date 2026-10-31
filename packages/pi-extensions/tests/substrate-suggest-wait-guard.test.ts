@@ -103,3 +103,47 @@ describe("wait-guard end to end with a classifier that always says fire", () => 
     expect(await fire(CI_WAIT, "bash", { wait_warranted: 0.9, monitor_would_help: 0.9 }, "none")).toHaveLength(0);
   });
 });
+
+describe("CORE-2569: agent_end reads each run's own messages", () => {
+  it("judges a later, shorter run of the session, not only the first", async () => {
+    // pi-agent-core emits agent_end with the messages the run generated, a new
+    // array per run; a cursor carried across runs skipped the later ones.
+    resetPipeline();
+    const handlers = new Map<string, Array<(e: unknown, c?: unknown) => unknown>>();
+    const pi = {
+      getFlag: () => false,
+      on: (name: string, h: (e: unknown, c?: unknown) => unknown) => {
+        handlers.set(name, [...(handlers.get(name) ?? []), h]);
+        return () => {};
+      },
+      registerMessageRenderer: () => {},
+      sendMessage: () => {},
+    };
+    substrateSuggest.default(pi as never);
+    const states: string[] = [];
+    const registry = {
+      getAvailableOfType: async () => [{ provider: "typesafe", id: "jev-fake" }],
+      classify: async (_m: unknown, req: { state: unknown; questions: Record<string, { type: string }> }) => {
+        states.push(JSON.stringify(req.state));
+        const answers: Record<string, unknown> = {};
+        for (const [id, q] of Object.entries(req.questions)) {
+          answers[id] = q.type === "choice" ? { type: "choice", choice: "background_monitor", probabilities: { background_monitor: 1 }, confidence: 0.9 } : { type: "bool", probability: 0.1 };
+        }
+        return { answers, stopReason: "stop", model: "fake-jev" };
+      },
+    };
+    const step = (id: string, text: string) => [
+      { role: "assistant", content: [{ type: "toolCall", id, name: "bash", arguments: { command: "git push" } }, { type: "text", text }] },
+      { role: "toolResult", toolCallId: id, toolName: "bash", content: [{ type: "text", text: "ok" }], isError: false },
+    ];
+    const runEnd = async (messages: unknown[]) => {
+      for (const h of handlers.get("agent_end") ?? []) await h({ messages }, { modelRegistry: registry, cwd: "/tmp" });
+      await settle();
+    };
+    await runEnd([...step("a1", CI_WAIT), ...step("a2", CI_WAIT), ...step("a3", CI_WAIT)]);
+    const afterFirst = states.length;
+    expect(afterFirst).toBeGreaterThan(0);
+    await runEnd(step("b1", "Second run: pushed again. I'll wait for the CI pipeline to finish before merging."));
+    expect(states.slice(afterFirst).some((s) => s.includes("Second run"))).toBe(true);
+  });
+});

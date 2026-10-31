@@ -330,7 +330,7 @@ export interface TurnEvidence {
  *
  * Final-message-only under-recalls: the intention often lives in an earlier
  * assistant message, a tool error, or an edited file, and the finale is "done,
- * let me verify". Cursor-based so consecutive turns do not double-count.
+ * let me verify".
  * Mirrors substrate-suggest's turnEvidence.
  *
  * Pi's shapes (docs/message-types.md): an assistant tool call is a
@@ -517,8 +517,6 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     (process.env["SKILL_SUGGEST"] ?? "").toLowerCase() === "off";
 
   const cooldowns: Record<string, number> = {};
-  /** Advances per turn so consecutive turns do not double-count evidence. */
-  let messageCursor = 0;
   /** Inputs seen this session: an extension-sourced input that opens the session is a dispatched task (CORE-2551). */
   let inputsThisSession = 0;
   /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
@@ -851,8 +849,9 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     }
     if (off()) return;
     const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
-    const turn = turnEvidence(messages, messageCursor);
-    messageCursor = turn.nextIdx;
+    // CORE-2564: pi emits the messages this run generated, a new array per
+    // run (pi-agent-core agent-loop), so every run is read from its start.
+    const turn = turnEvidence(messages, 0);
     const epoch = currentEpoch();
     detach(() => runAgentEnd(messages, turn, ctx, epoch));
   });
