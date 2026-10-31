@@ -76,8 +76,10 @@ describe("input seam decides, never mutates", () => {
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
     // Both confidence-bearing rows carry elapsed ms + registry/fallback split,
     // now measured by the shared classify() (CORE-2534).
-    expect(src).toContain("jev_ms: outcome.ms, jev_path: outcome.path");
-    expect(src.match(/const outcome = await classify\(/g)?.length).toBe(2);
+    // CORE-2564: both seams decide through judge(): two calls, spend summed.
+    expect(src).toContain('facts["jev_path"] = one.path;');
+    expect(src).toContain('facts["jev_ms"] = one.ms + two.ms;');
+    expect(src.match(/await judge\(/g)?.length).toBe(2);
   });
   it("restores the skill description, plain and period-stripped, at the end of the block", async () => {
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();

@@ -6,26 +6,27 @@
  */
 import "../isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { describe, expect, it } from "bun:test";
-import { CONTROL_ORIGINS, isServiceId, loadCorpus, loadFixture, replay, score, type Metrics } from "./replay/evaluate.ts";
+import { CONTROL_ORIGINS, isServiceId, loadCorpus, loadFixture, loadPrior, loadTurns, replay, score, type Metrics } from "./replay/evaluate.ts";
 
 const corpus = loadCorpus();
 const fixture = loadFixture();
 
 /**
- * Reset 2026-10-31 (CORE-2564) when the corpus grew from 150 to 600 rows: 450
- * rows are a seeded, unbiased sample of real prompts, so these are lower than
- * the 150-row values (recall 0.746, service 0.923), not a regression. Measured:
- * recall 143/197 = 0.726, service recall 56/65 = 0.862, top-1 76/197 = 0.386,
- * agent_end reach 1.0, criteria max 25. Floors sit two or three rows below.
- * Hard caps are contract values.
+ * Reset 2026-11-01 (CORE-2564, two-stage decision over the faithful replay).
+ * Recall is now measured on the wide list Jev ranks (120 candidates), not the
+ * 24-candidate one; agent_end replays each row's recorded run, whose turns
+ * with no agent text or tool call are inactive (as the live recording found).
+ * Measured: recall 178/197 = 0.904, service recall 62/65 = 0.954, top-1
+ * 72/197 = 0.365, agent_end reach 489/558 = 0.876, criteria max 120. Floors sit
+ * two or three rows below. Hard caps are contract values.
  */
 export const FLOORS = {
   criteria_max: 240, // AgentRun core cap; the API rejects more than 255
-  recall_shortlist: 0.71, // 140/197
-  service_recall_shortlist: 0.83, // 54/65
-  top1: 0.37, // 73/197
+  recall_shortlist: 0.89, // 175/197
+  service_recall_shortlist: 0.92, // 60/65
+  top1: 0.35, // 69/197
   control_reach_max: 0.1,
-  agent_end_reach: 0.95,
+  agent_end_reach: 0.85,
 } as const;
 
 describe("replay corpus", () => {
@@ -48,7 +49,8 @@ describe("replay corpus", () => {
   });
 
   it("stores bounded, scrubbed excerpts only", () => {
-    const text = JSON.stringify(corpus) + JSON.stringify(fixture);
+    // CORE-2564: the recorded turns and preceding conversation are scrubbed too.
+    const text = JSON.stringify(corpus) + JSON.stringify(fixture) + JSON.stringify(loadTurns()) + JSON.stringify(loadPrior());
     expect(text).not.toMatch(/\/home\/dawid|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}/);
     for (const row of corpus) {
       expect(row.prompt.length).toBeLessThanOrEqual(600);

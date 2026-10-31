@@ -7,10 +7,17 @@
  * code owns — candidate cap, shortlist recall, ranking, deterministic skips and
  * whether the working turn reaches the classifier. Live, the real classifier
  * answers (no stub) and the decision log is the record.
+ *
+ * CORE-2564: a located row replays what pi delivered: the working turn as
+ * recorded (turns.jsonl.gz: the run's messages, tool output dropped, trimmed
+ * to what turnEvidence reads) and
+ * the conversation before the prompt (prior.json), served through a session
+ * manager stub so the input seam sees it the way production does.
  */
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { materialize, type RosterFixture } from "./materialize.ts";
 
 export type Label = "FIT" | "PARTIAL" | "MISS" | "NO-SUGGESTION";
@@ -50,12 +57,29 @@ export function loadCorpus(): CorpusRow[] {
 export function loadFixture(): RosterFixture {
   return JSON.parse(readFileSync(join(DIR, "roster.json"), "utf8"));
 }
+let turns: Record<string, unknown[]> | null = null;
+/** The recorded working turn of each located row (pi message shape, scrubbed). */
+export function loadTurns(): Record<string, unknown[]> {
+  turns ??= Object.fromEntries(
+    gunzipSync(readFileSync(join(DIR, "turns.jsonl.gz"))).toString("utf8").split("\n").filter(Boolean).map((l) => {
+      const r = JSON.parse(l) as { id: string; messages: unknown[] };
+      return [r.id, r.messages];
+    }),
+  );
+  return turns;
+}
+let prior: Record<string, Array<[string, string]>> | null = null;
+/** The last six text turns before each located prompt, as [role, text]. */
+export function loadPrior(): Record<string, Array<[string, string]>> {
+  prior ??= JSON.parse(readFileSync(join(DIR, "prior.json"), "utf8"));
+  return prior!;
+}
 
 /** Origins whose text was injected by a peer or coordinator (pi source "extension"). */
 export const CONTROL_ORIGINS = new Set(["control_injected", "injected_fire"]);
 export const isServiceId = (id: string) => /(^|\/)services\//.test(id);
 
-function stubRegistry(calls: Array<{ criteria: string[] }>) {
+function stubRegistry(calls: Array<{ id: string; criteria: string[] }>) {
   return {
     getAvailableOfType: async () => [{ id: "jev-replay-stub", provider: "typesafe" }],
     classify: async (_m: unknown, req: { questions: Record<string, { type: string; criteria?: Record<string, string> }> }) => {
@@ -63,12 +87,11 @@ function stubRegistry(calls: Array<{ criteria: string[] }>) {
       for (const [id, q] of Object.entries(req.questions)) {
         if (q.type === "choice") {
           const keys = Object.keys(q.criteria ?? {});
-          calls.push({ criteria: keys });
+          calls.push({ id, criteria: keys });
           const pick = keys.find((k) => k !== "none") ?? "none";
           answers[id] = { type: "choice", choice: pick, probabilities: { [pick]: 0.8, none: 0.1 }, confidence: 0.8 };
         } else {
-          const against = id === "prose_suffices" || id === "asks_about_the_tooling";
-          answers[id] = { type: "bool", probability: against ? 0.05 : 0.9 };
+          answers[id] = { type: "bool", probability: id === "prose_suffices" ? 0.05 : 0.9 };
         }
       }
       return { stopReason: "stop", answers, model: "typesafe/jev-replay-stub" };
@@ -91,8 +114,14 @@ export function inputEvent(prompt: string): { text: string; source: "interactive
   return { text: prompt, source: "extension" };
 }
 
-/** The working turn as pi sends it: assistant toolCall blocks, then toolResult messages. */
+/**
+ * The working turn as pi sends it: the run's messages, starting with the
+ * prompt. A located row replays its recorded turn; a row whose turn was not
+ * found replays its stored calls and last text.
+ */
 export function workingTurn(row: CorpusRow): unknown[] {
+  const recorded = loadTurns()[row.id];
+  if (recorded) return recorded.length ? [{ role: "user", content: [{ type: "text", text: inputEvent(row.prompt).text }] }, ...recorded] : [];
   if (!row.turn_text || row.turn_calls.length === 0) return [];
   const content = [
     ...row.turn_calls.map((c, i) => ({
@@ -179,9 +208,11 @@ export async function replay(
       for (const seam of ["input", "agent_end"] as const) {
         const turn = workingTurn(row);
         if (seam === "agent_end" && turn.length === 0) continue;
-        const calls: Array<{ criteria: string[] }> = [];
+        const calls: Array<{ id: string; criteria: string[] }> = [];
         // A caller-supplied registry (recording, or answering from a recording) is a live run.
-        const ctx = opts.registry ? { modelRegistry: opts.registry(row.id, seam) } : opts.live ? {} : { modelRegistry: stubRegistry(calls) };
+        const registry = opts.registry ? { modelRegistry: opts.registry(row.id, seam) } : opts.live ? {} : { modelRegistry: stubRegistry(calls) };
+        const messages = (loadPrior()[row.id] ?? []).map(([role, text]) => ({ role, content: [{ type: "text", text }] }));
+        const ctx = { ...registry, sessionManager: { getEntries: () => [], buildSessionProjection: () => ({ messages }) } };
         const { fire } = boot(ext);
         const before = logRows(logDir).length;
         if (seam === "input") {
@@ -196,12 +227,14 @@ export async function replay(
         await settle();
         const fresh = logRows(logDir).slice(before).filter((r) => r["seam"] === seam);
         const decided = fresh.find((r) => typeof r["pick"] === "string");
-        const criteria = calls[0]?.criteria ?? [];
+        // The candidates Jev ranks are the wide list; the cap applies to every choice.
+        const criteria = calls.find((c) => c.id === "wide")?.criteria ?? [];
+        const criteriaMax = Math.max(0, ...calls.map((c) => c.criteria.length));
         const reached = live ? fresh.some((r) => r["jev_ms"] !== undefined) : calls.length > 0;
         const livePick = decided && (decided["outcome"] === "fire" || decided["reason"] === "cooldown" || decided["reason"] === "duplicate" || decided["reason"] === "turn_taken") ? String(decided["pick"]) : null;
         seams[seam] = {
           reached,
-          criteria: criteria.length,
+          criteria: criteriaMax,
           candidates: criteria.filter((k) => k !== "none"),
           pick: live ? livePick : (criteria.find((k) => k !== "none") ?? null),
         };

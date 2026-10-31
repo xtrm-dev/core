@@ -1,8 +1,8 @@
 /**
- * CORE-2553/CORE-2555: the decision gate over recorded Jev answers.
- * answers.jsonl holds what live Jev answered (2026-10-31, jev-1.14.0) for every
- * replayed decision of the current question set; replaying it is
- * deterministic and offline.
+ * CORE-2553/CORE-2555/CORE-2564: the decision over recorded Jev answers.
+ * answers.jsonl holds what live Jev answered (2026-10-31, jev-1.14.0) to both
+ * stages of every replayed decision, reduced to the answers the decision reads;
+ * replaying it is deterministic and offline.
  *
  * Two measures. The corpus labels name one or two expected entries, so a
  * useful pick of a neighbouring document counts as wrong there. judgements.jsonl
@@ -26,18 +26,18 @@ const verdicts = new Map<string, string>(
 );
 
 /**
- * CORE-2564, 2026-10-31: 600 rows (150 earlier + 450 seeded unbiased real
- * prompts), recorded live with the CORE-2564 peer-relay skip. Measured:
- * label precision 40/88 = 0.455, false fires 18/403 = 0.045, judged useful
- * 55/88 = 0.625, judged not useful 7/88 = 0.080. Three live runs averaged
- * 0.62 useful / 0.10 not useful with a spread under 0.015. On the earlier 150
- * rows alone useful was 0.72; the unbiased sample is the harder, truer
- * measure. Floors sit two or three suggestions from the measured values; a
- * fire the judge never saw counts as not useful.
+ * CORE-2564, 2026-11-01: the two-stage decision with the fitted score, over
+ * the faithful replay (recorded turns and preceding conversation), recording
+ * run 1 of 3. Measured: label precision 51/94 = 0.543, false fires 19/403 =
+ * 0.047, judged useful 60/94 = 0.638, judged not useful 12/94 = 0.128. The
+ * previous gate over the same answers: precision 0.39, false fires 0.05,
+ * useful 0.51, not useful 0.14. Three runs agree within 0.02. Floors sit two or
+ * three suggestions from the measured values; a fire the judge never saw
+ * counts as not useful.
  */
-const FLOORS = { precision: 0.43, false_fire_max: 0.055, right_fires: 38, useful: 0.6, not_useful_max: 0.11 } as const;
+const FLOORS = { precision: 0.52, false_fire_max: 0.055, right_fires: 48, useful: 0.6, not_useful_max: 0.15 } as const;
 
-describe("CORE-2553: the gate over recorded answers", () => {
+describe("CORE-2553/CORE-2564: the decision over recorded answers", () => {
   it("fires rarely on turns that need nothing and mostly suggests something useful", async () => {
     const answers = loadAnswers();
     const outcomes = await replay(loadCorpus(), { registry: (row, seam) => cannedRegistry(answers, row, seam) });

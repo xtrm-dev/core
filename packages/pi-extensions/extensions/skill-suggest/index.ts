@@ -8,9 +8,10 @@
  *      depth agents never open — engineering-quality/references/
  *      causal-debugging.md et al.), descriptions extracted from frontmatter
  *      and first headings.
- *   2. Jev, two-stage: gate nouls on the request (would a careful expert
- *      follow a documented procedure? could prose alone suffice?) then one
- *      Choice over the roster. Best fit under threshold -> nothing.
+ *   2. Jev, two calls (CORE-2564, see judge()): rank a wide BM25 list and ask
+ *      the gate nouls, then reread the top three documents with their text and
+ *      ask whether each fits. A fitted score over the answers decides; under
+ *      its threshold -> nothing.
  *   3. On a hit: the prompt is transformed with a bounded `<skill_relevance>`
  *      block pointing at the doc path (the model reads it), ignore-if-not-fits
  *      (the mod's cookbook wording). A display-only house card shows the
@@ -18,7 +19,7 @@
  *
  * And at each agent_end (the intention seam): the AGENT decides things no
  * user prompt ever names — "let me debug this", "I'll review the diff".
- * The same two-stage Jev runs over the agent's final message and turn
+ * The same decision runs over the agent's final message and turn
  * evidence; a hit injects the doctrine as a followUp message the model
  * reads at its next turn, with the same house card for the operator.
  *
@@ -31,12 +32,13 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { buildRetrievalIndex, loadServices, shortlist, type RetrievalIndex, type ServiceRecord } from "../../shared/shortlist.ts";
+import { buildRetrievalIndex, loadServices, shortlist, type RetrievalIndex, type ServiceRecord, type ShortlistQuery } from "../../shared/shortlist.ts";
 import { contextBlock, parseContextBlock, resolveSuggestionMessage, stripEndPeriod, suggestionFacts, tintSuggestionGlyph } from "../../shared/suggest.ts";
 import { registerEventRenderer } from "../../shared/event.ts";
-import { classify, primeApiKey, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
+import { classify, primeApiKey, readApiKey, type ClassifierFailure, type Question, type RegistryLike } from "../../shared/suggest.ts";
 import { createJsonlLog } from "../../shared/jsonl-log.ts";
 import { currentEpoch, detach, DELIVERY, notePrompt, noteRunStart, propose, resetSession } from "../../shared/suggest-pipeline.ts";
 import { discoverRoster, headingsOf, repoRootOf, resetRosterCache, type RosterEntry } from "./roster.ts";
@@ -135,112 +137,186 @@ const CUSTOM_TYPE = "skill_suggestion";
 const logDir = (): string => process.env["SKILL_SUGGEST_LOG_DIR"] ?? join(homedir(), ".xtrm", "skill-suggest");
 
 /**
- * The gate, as one pure function (CORE-2366).
+ * The decision (CORE-2564): two Jev calls and one fitted score.
  *
- * The defect: every noul defaulted to 0, so a NEGATING noul contributed
- * 1.0 - the strongest possible vote to fire. A classifier that answered
- * nothing scored 0.5 and cleared a 0.3 bar. Missing evidence was the
- * strongest evidence there was.
+ * Stage 1 ranks a wide BM25 list (120 candidates, 100 characters each, no
+ * `none`) and asks the gate nouls; at the input seam it also keeps the
+ * 24-candidate choice with `none`, whose weight on `none` was the best single
+ * signal there. Stage 2 rereads the three best-ranked documents with their full
+ * description and the opening of their body, picks one, and asks one `fits`
+ * noul per document. The vendor recipe (TypeSafe skill_suggestion cookbook)
+ * has the same two stages.
  *
- * The fix is asymmetric, and deliberately NOT blanket fail-closed: Jev
- * degrades partially under timeout and fallback, so abstaining on every
- * partial answer would starve legitimate weak signal and trade a visible
- * error for an invisible one.
- *   - a missing POSITIVE noul has no evidence, so the gate fails;
- *   - a missing NEGATING noul is imputed NEUTRAL (0.5), never maximal.
+ * A per-seam logistic score over those answers decides. It replaced a chain of
+ * hand-set thresholds (CORE-2366/2553) whose confidence gate separated right
+ * picks from quiet turns no better than chance. Fitted on the seeded train half
+ * of the 600-row replay (3 live runs, jev-1.14.0), scored on the held-out half:
+ * label precision 0.32 -> 0.48, false fires 0.063 -> 0.042, wanted rows with a
+ * right pick 0.13 -> 0.20.
+ *
+ * Missing evidence never fires (CORE-2366): an answer the score needs that is
+ * absent abstains, with the missing feature as the reason.
  */
-export function gateTerms(nouls: Record<string, number | null | undefined>): {
-  terms: number[];
-  abstain: string | null;
-} {
-  const terms: number[] = [];
-  let abstain: string | null = null;
+export type Seam = "input" | "agent_end";
+export const WIDE_MAX = 120;
+const WIDE_TEXT = 100;
+const RERANK_TOP = 3;
+const BODY_CHARS = 700;
+const oneLine = (s: string, n: number): string => s.replace(/\s+/g, " ").trim().slice(0, n);
 
-  // Positive nouls: absent evidence cannot support firing.
-  const positive = nouls["would_follow_documented_procedure"];
-  if (typeof positive !== "number") {
-    abstain = "missing-positive-noul";
-    terms.push(0);
-  } else {
-    terms.push(positive);
-  }
-  // CORE-2553: the task noul is a separate bar (evaluateGate), not a mean term.
-  if (typeof nouls["starts_governed_task"] !== "number") abstain ??= "missing-task-noul";
+export const SCORE_MODEL: Record<Seam, { intercept: number; weights: Record<string, number>; threshold: number }> = {
+  input: {
+    intercept: -4.220655,
+    weights: { fits_win: 1.809604, wide_p1: 1.646026, skill_none_inv: 2.636992, task: 0.426932, n_named: 0.685306, prose_inv: -1.365487 },
+    threshold: 0.35,
+  },
+  agent_end: {
+    intercept: -6.120762,
+    weights: { fits_win: 3.286472, wide_p1: 2.247342, task: 0.950195, prose_inv: 0.826815, fits_max: 2.640259 },
+    threshold: 0.55,
+  },
+};
 
-  // Negating nouls: absent evidence is neutral, not maximal.
-  for (const key of ["prose_suffices", "asks_about_the_tooling"] as const) {
-    const raw = nouls[key];
-    terms.push(typeof raw === "number" ? 1 - raw : 0.5);
-  }
-
-  return { terms, abstain };
-}
-
-/** Would this entry be suggested? The reason is returned so it can be logged. */
-export function evaluateGate(input: {
-  nouls: Record<string, number | null | undefined>;
-  confidence: number | null;
-  noneConfidence?: number | null;
-  hasEntry: boolean;
-}): { fire: boolean; gateMean: number; reason: string } {
-  const { terms, abstain } = gateTerms(input.nouls);
-  const gateMean = terms.reduce((a, b) => a + b, 0) / terms.length;
-
-  if (abstain) return { fire: false, gateMean, reason: abstain };
-
-  // A mean hides a unanimous veto. With a strong positive (1.0) and BOTH negators
-  // maxed (0.0 each) the mean lands exactly on GATE_THRESHOLD, so a strict `<`
-  // comparison let "prose fully suffices AND this is pure tooling chatter" fire.
-  // Two independent negators at their extreme outrank one positive; a mean cannot
-  // express that, so it is stated explicitly.
-  const proseMax = input.nouls["prose_suffices"] ?? 0;
-  const toolingMax = input.nouls["asks_about_the_tooling"] ?? 0;
-  if (proseMax >= 0.9 && toolingMax >= 0.9) {
-    return { fire: false, gateMean, reason: "vetoed-by-negators" };
-  }
-
-  if (gateMean < GATE_THRESHOLD) return { fire: false, gateMean, reason: "below-gate" };
-  // CORE-2553: on the labelled replay this noul separated turns that start
-  // governed work from chat, status and relays better than the mean did.
-  if ((input.nouls["starts_governed_task"] ?? 0) < TASK_THRESHOLD) return { fire: false, gateMean, reason: "below-task" };
-  if (!input.hasEntry) return { fire: false, gateMean, reason: "unknown-entry" };
-
-  // The agent_end seam had NO confidence sub-gate at all, so a near-zero pick with
-  // a healthy gate injected there by design. Both seams require it now.
-  const confidence = input.confidence;
-  if (typeof confidence !== "number") return { fire: false, gateMean, reason: "missing-confidence" };
-  if (confidence < FITS_THRESHOLD) return { fire: false, gateMean, reason: "below-fits" };
-
-  // Confidence alone is insufficient: the winner must BEAT the explicit `none`
-  // option, not merely clear an absolute bar. `none` is otherwise just another
-  // entry in the choice, so a weak winner fires against nothing.
-  const none = input.noneConfidence;
-  if (typeof none === "number" && confidence - none < NONE_MARGIN) {
-    return { fire: false, gateMean, reason: "below-none-margin" };
-  }
-  // CORE-2553: any real weight on `none` means the choice is unsure whether a
-  // procedure applies at all; wrong fires sat there, right ones near zero.
-  if (typeof none === "number" && none > NONE_MAX) return { fire: false, gateMean, reason: "above-none-max" };
-
-  return { fire: true, gateMean, reason: "fire" };
-}
-
-/**
- * Gate constants. CORE-2553 fitted TASK_THRESHOLD and NONE_MAX on one seeded
- * half of the labelled replay (tests/skill-suggest/replay) and scored the
- * other half, live, through this decision path: precision 0.27 -> 0.55,
- * NO-SUGGESTION false-fire 0.37 -> 0.05. The recorded answers are a test
- * fixture (tests/skill-suggest/replay/answers.jsonl).
- * Confidences are gate inputs, not calibrated probabilities.
- */
-const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
-const FITS_THRESHOLD = 0.3; // winner's own confidence under this -> nothing (both seams, CORE-2366)
-const NONE_MARGIN = 0.05; // the winner must BEAT `none`, not merely clear a bar
-const TASK_THRESHOLD = 0.8; // starts_governed_task under this -> nothing
-const NONE_MAX = 0.2; // `none` holding more than this -> nothing
-/** CORE-2553: the task gate, asked in the same call as the choice at both seams. */
+/** CORE-2553: the task noul, asked at both seams. */
 const TASK_NOUL =
   "Does the request (or the agent's stated next step) start a concrete piece of work, such as debugging, reviewing, releasing, deploying, planning, coordinating workers or operating a named service, rather than chat, a status check, a decision the operator states, or a reply to another agent?";
+const PROSE_NOUL: Record<Seam, string> = {
+  input: "Could a knowledgeable generalist fully satisfy this request in prose, with no tools and no access to the user's files? (Counts against suggesting.)",
+  agent_end: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)",
+};
+const NAMED_NOUL = "Does the request name a specific tool, service, command, workflow or documented procedure to use?";
+const SKILL_INSTRUCTIONS =
+  "Pick the single skill or reference document whose stated use applies to the task this request starts, so that following it would change what the agent does next; otherwise pick none. A procedure that only shares a topic or keyword does not apply. Base it only on the request and the provided descriptions.";
+const PICK_INSTRUCTIONS: Record<Seam, string> = {
+  input: "Which of these documents is the right one for the agent to read before it starts on this request? Judge what each document is for, not shared words.",
+  agent_end: "Which of these documents is the right one for the agent to read before its next step? Judge what each document is for, not shared words.",
+};
+const RERANK_INSTRUCTIONS: Record<Seam, string> = {
+  input: "Exactly one of these documents is the right one for the agent to read before it starts on this request. Which one? Read what each actually covers, not just its name.",
+  agent_end: "Exactly one of these documents is the right one for the agent to read before its next step. Which one? Read what each actually covers, not just its name.",
+};
+export function fitsQuestion(seam: Seam, name: string, description: string): string {
+  return seam === "input"
+    ? `Does the document '${name}' describe how to do the specific work this request asks for? It is described as: ${description}`
+    : `Does the document '${name}' describe how to do the agent's next step? It is described as: ${description}`;
+}
+
+/** Choice ids, most probable first; ties keep the answer's order. */
+export function rankedIds(probabilities: Record<string, number>): string[] {
+  return Object.entries(probabilities).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+}
+
+/** The score's inputs from both stages' answers; null where an answer is absent. */
+export function decisionFeatures(a: {
+  skillNone: number | null | undefined;
+  wide: Record<string, number>;
+  nouls: Record<string, number | null | undefined>;
+  winner: string | null;
+  fits: Record<string, number | null | undefined>;
+}): Record<string, number | null> {
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const fitsValues = Object.values(a.fits).map(num).filter((v): v is number => v !== null);
+  const wideTop = Math.max(...Object.values(a.wide), Number.NEGATIVE_INFINITY);
+  const task = num(a.nouls["starts_governed_task"]);
+  const prose = num(a.nouls["prose_suffices"]);
+  return {
+    fits_win: a.winner ? num(a.fits[a.winner]) : null,
+    fits_max: fitsValues.length ? Math.max(...fitsValues) : null,
+    wide_p1: Number.isFinite(wideTop) ? wideTop : null,
+    skill_none_inv: num(a.skillNone) === null ? null : 1 - (a.skillNone as number),
+    task,
+    prose_inv: prose === null ? null : 1 - prose,
+    n_named: num(a.nouls["n_named"]),
+  };
+}
+
+/** Logistic score for a seam; abstains (score null) when a weighted feature is missing. */
+export function decisionScore(seam: Seam, features: Record<string, number | null | undefined>): { score: number | null; missing: string | null } {
+  const model = SCORE_MODEL[seam];
+  let z = model.intercept;
+  for (const [k, w] of Object.entries(model.weights)) {
+    const v = features[k];
+    if (typeof v !== "number" || !Number.isFinite(v)) return { score: null, missing: k };
+    z += w * v;
+  }
+  return { score: 1 / (1 + Math.exp(-z)), missing: null };
+}
+
+/** The opening of a document's body for the rerank criteria; empty when unreadable. */
+export async function docOpening(path: string): Promise<string> {
+  try {
+    const text = await readFile(path, "utf8");
+    return oneLine(text.replace(/^---\n[\s\S]*?\n---\n/, "").replace(/^#\s.*\n/, ""), BODY_CHARS);
+  } catch {
+    return "";
+  }
+}
+
+/** One seam's decision: both Jev stages and the score. Never rejects. */
+export type Judgement =
+  | { skip: string; failure?: ClassifierFailure; facts: Record<string, unknown> }
+  | { skip: null; entry: RosterEntry | null; pick: string | null; score: number | null; reason: string; model: string | null; facts: Record<string, unknown> };
+
+export async function judge(
+  seam: Seam,
+  registry: RegistryLike | null,
+  index: RetrievalIndex<RosterEntry>,
+  state: Record<string, unknown>,
+  query: ShortlistQuery,
+  timeoutMs?: number,
+): Promise<Judgement> {
+  const sl = shortlist(index, query);
+  const wide = shortlist(index, query, WIDE_MAX);
+  const facts: Record<string, unknown> = { roster: wide.total, shortlist: sl.candidates.length, wide: wide.candidates.length, dropped: wide.dropped, territory: wide.territoryHits };
+  if (wide.candidates.length === 0) return { skip: "no_candidates", facts };
+  const full = criteriaOf(wide.candidates, index);
+  const q1: Record<string, Question> = {};
+  if (seam === "input") q1["skill"] = { type: "choice", instructions: SKILL_INSTRUCTIONS, criteria: criteriaOf(sl.candidates, index) };
+  q1["starts_governed_task"] = { type: "noul", instructions: TASK_NOUL };
+  q1["prose_suffices"] = { type: "noul", instructions: PROSE_NOUL[seam] };
+  q1["wide"] = {
+    type: "choice",
+    instructions: PICK_INSTRUCTIONS[seam],
+    criteria: Object.fromEntries(wide.candidates.map((e) => [e.id, oneLine(full[e.id] ?? e.id, WIDE_TEXT)])),
+  };
+  if (seam === "input") q1["n_named"] = { type: "noul", instructions: NAMED_NOUL };
+  const one = await classify(registry, state, q1, { timeoutMs });
+  facts["jev_ms"] = one.ms;
+  facts["jev_path"] = one.path;
+  if (!one.result) return { skip: `classifier:${one.failure}`, failure: one.failure ?? "transport", facts };
+  const wideAnswer = one.result.choices["wide"];
+  const byId = new Map(wide.candidates.map((e) => [e.id, e]));
+  const top = wideAnswer ? rankedIds(wideAnswer.probabilities).filter((id) => byId.has(id)).slice(0, RERANK_TOP) : [];
+  if (!wideAnswer || top.length === 0) return { skip: "classifier:bad_answer", failure: "bad_answer", facts };
+  const openings = await Promise.all(top.map((id) => docOpening(byId.get(id)!.path)));
+  const q2: Record<string, Question> = {
+    rr_wide: { type: "choice", instructions: RERANK_INSTRUCTIONS[seam], criteria: Object.fromEntries(top.map((id, i) => [id, `${full[id]} — ${openings[i]}`])) },
+  };
+  top.forEach((id, i) => {
+    q2[`fits::${i}`] = { type: "noul", instructions: fitsQuestion(seam, byId.get(id)!.name, full[id] ?? "") };
+  });
+  const two = await classify(registry, state, q2, { timeoutMs });
+  facts["jev_ms"] = one.ms + two.ms;
+  if (!two.result) return { skip: `classifier:${two.failure}`, failure: two.failure ?? "transport", facts };
+  const winner = two.result.choices["rr_wide"]?.choice ?? null;
+  const fits = Object.fromEntries(top.map((id, i) => [id, two.result!.nouls[`fits::${i}`]]));
+  const skill = one.result.choices["skill"];
+  const features = decisionFeatures({
+    skillNone: seam === "input" && skill ? (skill.probabilities["none"] ?? 0) : null,
+    wide: wideAnswer.probabilities,
+    nouls: one.result.nouls,
+    winner,
+    fits,
+  });
+  const { score, missing } = decisionScore(seam, features);
+  const entry = winner ? (byId.get(winner) ?? null) : null;
+  const reason = missing ? `missing-${missing}` : !entry ? "unknown-entry" : (score as number) < SCORE_MODEL[seam].threshold ? "below-score" : "fire";
+  facts["score"] = score === null ? null : Number(score.toFixed(3));
+  facts["wide_top"] = top;
+  facts["features"] = Object.fromEntries(Object.entries(features).map(([k, v]) => [k, v === null ? null : Number(v.toFixed(3))]));
+  return { skip: null, entry: reason === "fire" ? entry : null, pick: winner, score, reason, model: two.result.model, facts };
+}
+
 const INJECT_TIMEOUT_MS = 2500;
 
 const COOLDOWN_MIN = 30;
@@ -632,81 +708,29 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       detach(async () => {
       const index = await readyIndex(cwd);
       if (!index) return logSkip("input", "index_unavailable");
-      const sl = shortlist(index, { text: `${prompt}\n${context}`, files });
-      const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
-      if (sl.candidates.length === 0) return logSkip("input", "no_candidates", shortlistFacts);
-      const questions: Record<string, Question> = {
-        skill: {
-          type: "choice",
-          instructions:
-            "Pick the single skill or reference document whose stated use applies to the task this request starts, so that following it would change what the agent does next; otherwise pick none. A procedure that only shares a topic or keyword does not apply. Base it only on the request and the provided descriptions.",
-          criteria: criteriaOf(sl.candidates, index),
-        },
-        starts_governed_task: { type: "noul", instructions: TASK_NOUL },
-        would_follow_documented_procedure: {
-          type: "noul",
-          instructions: "Would a careful expert consult a specific documented procedure or set of commands here, rather than answer from general understanding?",
-        },
-        prose_suffices: {
-          type: "noul",
-          instructions: "Could a knowledgeable generalist fully satisfy this request in prose, with no tools and no access to the user's files? (Counts against suggesting.)",
-        },
-        asks_about_the_tooling: {
-          type: "noul",
-          instructions: "Is the request a question ABOUT this assistant, its extensions, its skills, prompts, cards or output — i.e. meta/tooling talk rather than a task that doctrine should govern? (Counts against suggesting.)",
-        },
-      };
       const state = {
         request: prompt.slice(0, 2000),
         recent_conversation: context,
         cwd,
       };
-      const outcome = await classify(registry, state, questions, { timeoutMs: INJECT_TIMEOUT_MS });
-      const jevFacts = { jev_ms: outcome.ms, jev_path: outcome.path, prompt_chars: prompt.length, ...shortlistFacts };
-      const result = outcome.result;
-      if (!result) {
-        failures.failed(outcome.failure ?? "transport");
-        return logSkip("input", `classifier:${outcome.failure}`, jevFacts);
+      const j = await judge("input", registry, index, state, { text: `${prompt}\n${context}`, files }, INJECT_TIMEOUT_MS);
+      const facts = { prompt_chars: prompt.length, ...j.facts };
+      if (j.skip !== null) {
+        if (j.failure) failures.failed(j.failure);
+        return logSkip("input", j.skip, facts);
       }
       failures.succeeded();
-
-      const pick = result.choice.choice;
-      const entry = sl.candidates.find((r) => r.id === pick);
-      const verdict = evaluateGate({
-        nouls: result.nouls,
-        confidence: result.choice.confidence,
-        noneConfidence: result.choice.probabilities?.["none"] ?? null,
-        hasEntry: Boolean(entry),
-      });
       // One card per prompt, per catalog id: a fire suppressed by cooldown is
-      // logged as such, not as a fire.
-      const cooled = verdict.fire && entry !== undefined && !cooldownOk(entry.id, Date.now());
-      // Log every evaluation — negatives are the tuning signal. An ABSTAIN is
-      // recorded distinctly from a genuine `none` answer: collapsing the two
-      // reintroduces this defect in a new shape, because both would otherwise
-      // read as "the classifier considered and declined".
-      const gateFacts = {
-        gate: Number(verdict.gateMean.toFixed(3)),
-        confidence: result.choice.confidence,
-        noneConfidence: result.choice.probabilities?.["none"] ?? null,
-        task: result.nouls["starts_governed_task"] ?? null,
-        ...jevFacts,
-      };
-      if (!verdict.fire || !entry || cooled) {
-        logDecision({
-          ts: new Date().toISOString(),
-          seam: "input",
-          pick: pick ?? "none",
-          outcome: cooled ? "skip" : "abstain",
-          reason: cooled ? "cooldown" : verdict.reason,
-          injected: false,
-          ...gateFacts,
-        });
+      // logged as such, not as a fire. Every evaluation is logged: negatives
+      // are the tuning signal.
+      const entry = j.entry;
+      if (!entry || !cooldownOk(entry.id, Date.now())) {
+        logDecision({ ts: new Date().toISOString(), seam: "input", pick: j.pick ?? "none", outcome: entry ? "skip" : "abstain", reason: entry ? "cooldown" : j.reason, injected: false, ...facts });
         return;
       }
       // The prompt is never mutated: a transform echoes into the operator's
       // input line. The block rides a steer message instead (CORE-2548).
-      offer("input", entry, doctrineBlock(entry, `the current request`, result.choice.confidence, result.model), epoch, INPUT_SEAM_TURNS, gateFacts);
+      offer("input", entry, doctrineBlock(entry, `the current request`, j.score, j.model), epoch, INPUT_SEAM_TURNS, facts);
       });
       return { action: "continue" } as const;
     } catch {
@@ -771,65 +795,24 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       if (!registry && !readApiKey()) return logSkip("agent_end", "no_key");
       const index = await readyIndex(process.cwd());
       if (!index) return logSkip("agent_end", "index_unavailable");
-      const sl = shortlist(index, {
-        text: `${lastAssistant}\n${turn.excerpt}`,
-        files: [...sessionFiles, ...turn.editedFiles],
-      });
-      const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
-      if (sl.candidates.length === 0) return logSkip("agent_end", "no_candidates", shortlistFacts);
-
-      const outcome = await classify(registry, {
+      const j = await judge("agent_end", registry, index, {
         agent_final_message: lastAssistant.slice(0, 1500),
         working_turn_excerpt: turn.excerpt.slice(0, 6000),
         edited_files: turn.editedFiles.slice(0, 8),
         turn_had_error: turn.errored,
-      }, {
-        skill: {
-          type: "choice",
-          instructions: "The agent just ended a working turn stating its next step. Pick the single skill or reference document whose stated use applies to that next step, so that following it would change what the agent does; otherwise pick none. A procedure that only shares a topic or keyword does not apply.",
-          criteria: criteriaOf(sl.candidates, index),
-        },
-        starts_governed_task: { type: "noul", instructions: TASK_NOUL },
-        would_follow_documented_procedure: { type: "noul", instructions: "For the stated next step, would a careful expert follow a specific documented procedure rather than improvise?" },
-        prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
-      } as Record<string, Question>);
-      const jevFacts = { jev_ms: outcome.ms, jev_path: outcome.path, ...shortlistFacts };
-      const result = outcome.result;
-      if (!result) {
-        failures.failed(outcome.failure ?? "transport");
-        return logSkip("agent_end", `classifier:${outcome.failure}`, jevFacts);
+      }, { text: `${lastAssistant}\n${turn.excerpt}`, files: [...sessionFiles, ...turn.editedFiles] });
+      if (j.skip !== null) {
+        if (j.failure) failures.failed(j.failure);
+        return logSkip("agent_end", j.skip, j.facts);
       }
       failures.succeeded();
-      const pick = result.choice.choice;
-      const entry = sl.candidates.find((r) => r.id === pick);
-      const verdict = evaluateGate({
-        nouls: result.nouls,
-        confidence: result.choice.confidence,
-        noneConfidence: result.choice.probabilities?.["none"] ?? null,
-        hasEntry: Boolean(entry),
-      });
-      const cooled = verdict.fire && entry !== undefined && !cooldownOk(entry.id, Date.now());
-      if (!verdict.fire || !entry || cooled) {
-        logDecision({
-          ts: new Date().toISOString(),
-          seam: "agent_end",
-          pick: pick ?? "none",
-          outcome: cooled ? "skip" : "abstain",
-          reason: cooled ? "cooldown" : verdict.reason,
-          gate: Number(verdict.gateMean.toFixed(3)),
-          confidence: result.choice.confidence,
-          noneConfidence: result.choice.probabilities?.["none"] ?? null,
-          task: result.nouls["starts_governed_task"] ?? null,
-          ...jevFacts,
-        });
+      const entry = j.entry;
+      if (!entry || !cooldownOk(entry.id, Date.now())) {
+        logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: j.pick ?? "none", outcome: entry ? "skip" : "abstain", reason: entry ? "cooldown" : j.reason, ...j.facts });
         return;
       }
       // CORE-2367: the intention block reaches the model, not only the card.
-      offer("agent_end", entry, doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model), epoch, READ_WINDOW_TURNS, {
-        confidence: result.choice.confidence,
-        gate: Number(verdict.gateMean.toFixed(3)),
-        ...jevFacts,
-      });
+      offer("agent_end", entry, doctrineBlock(entry, `your stated next step`, j.score, j.model), epoch, READ_WINDOW_TURNS, j.facts);
     } catch {
       /* fail-open: a suggestion extension must never break a session */
     }

@@ -1,117 +1,54 @@
 import "../isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { describe, expect, it } from "bun:test";
-import { criteriaOf, evaluateGate, gateTerms, NONE_CRITERION } from "../../extensions/skill-suggest/index.ts";
+import { criteriaOf, decisionFeatures, decisionScore, NONE_CRITERION, rankedIds, SCORE_MODEL } from "../../extensions/skill-suggest/index.ts";
 
-const strong = { would_follow_documented_procedure: 0.9, prose_suffices: 0.1, asks_about_the_tooling: 0.05, starts_governed_task: 0.9 };
+/** A decision with strong evidence for the top-ranked document. */
+const strong = {
+  skillNone: 0.05,
+  wide: { a: 0.7, b: 0.2, c: 0.1 },
+  nouls: { starts_governed_task: 0.9, prose_suffices: 0.1, n_named: 0.8 },
+  winner: "a",
+  fits: { a: 0.9, b: 0.3, c: 0.1 },
+};
+const scoreOf = (seam: "input" | "agent_end", d: Parameters<typeof decisionFeatures>[0]) => decisionScore(seam, decisionFeatures(d));
 
-describe("CORE-2366: missing evidence can no longer raise the gate", () => {
-  it("a classifier that answered nothing does not fire", () => {
-    // THE logged defect: three omitted nouls used to mean [0, 1, 1] -> 0.67, a
-    // confident fire on total silence.
-    const v = evaluateGate({ nouls: {}, confidence: 0.9, noneConfidence: 0.05, hasEntry: true });
-    expect(v.fire).toBe(false);
-    expect(v.reason).toBe("missing-positive-noul");
+describe("CORE-2564: the fitted score decides", () => {
+  it("fires at both seams when the evidence is genuinely there", () => {
+    for (const seam of ["input", "agent_end"] as const) {
+      expect(scoreOf(seam, strong).score!).toBeGreaterThanOrEqual(SCORE_MODEL[seam].threshold);
+    }
   });
-
-  it("a missing NEGATING noul is imputed neutral, not maximal", () => {
-    const withMissingNegator = { would_follow_documented_procedure: 0.9, prose_suffices: 0.1 };
-    const { terms } = gateTerms(withMissingNegator);
-    // prose_suffices is present -> 0.9; asks_about_the_tooling missing -> 0.5,
-    // NOT the 1.0 the old `?? 0` default produced.
-    expect(terms).toEqual([0.9, 0.9, 0.5]);
+  it("does not fire when the reread document does not fit", () => {
+    const weak = { ...strong, fits: { a: 0.05, b: 0.05, c: 0.05 } };
+    for (const seam of ["input", "agent_end"] as const) {
+      expect(scoreOf(seam, weak).score!).toBeLessThan(SCORE_MODEL[seam].threshold);
+    }
   });
-
-  it("keeps a genuine negative able to veto", () => {
-    // Imputing neutral must not neuter the gate: a real prose_suffices still counts.
-    const v = evaluateGate({
-      nouls: { would_follow_documented_procedure: 0.9, prose_suffices: 1.0, asks_about_the_tooling: 1.0, starts_governed_task: 0.9 },
-      confidence: 0.9,
-      noneConfidence: 0.05,
-      hasEntry: true,
-    });
-    expect(v.fire).toBe(false);
-    expect(v.reason).toBe("vetoed-by-negators");
+  it("does not fire at input when the narrow choice puts its weight on none", () => {
+    expect(scoreOf("input", { ...strong, skillNone: 0.95 }).score!).toBeLessThan(SCORE_MODEL.input.threshold);
   });
-
-  it("still fires when only one negator objects", () => {
-    const v = evaluateGate({
-      nouls: { would_follow_documented_procedure: 0.9, prose_suffices: 1.0, asks_about_the_tooling: 0.2, starts_governed_task: 0.9 },
-      confidence: 0.8,
-      noneConfidence: 0.1,
-      hasEntry: true,
-    });
-    expect(v.fire).toBe(true);
+  it("ranks by probability and keeps the answer's order on ties", () => {
+    expect(rankedIds({ x: 0, y: 0.5, z: 0, w: 0.5 })).toEqual(["y", "w", "x", "z"]);
   });
 });
 
-describe("CORE-2366: confidence is required at BOTH seams", () => {
-  it("rejects a near-zero-confidence pick behind a healthy gate", () => {
-    const v = evaluateGate({ nouls: strong, confidence: 0.04, noneConfidence: 0.01, hasEntry: true });
-    expect(v.fire).toBe(false);
-    expect(v.reason).toBe("below-fits");
+describe("CORE-2366: missing evidence never fires", () => {
+  it("a classifier that answered nothing abstains instead of scoring", () => {
+    const v = scoreOf("input", { skillNone: null, wide: {}, nouls: {}, winner: null, fits: {} });
+    expect(v.score).toBeNull();
+    expect(v.missing).not.toBeNull();
   });
-
-  it("rejects a missing confidence rather than treating it as fine", () => {
-    const v = evaluateGate({ nouls: strong, confidence: null, noneConfidence: 0.01, hasEntry: true });
-    expect(v.fire).toBe(false);
-    expect(v.reason).toBe("missing-confidence");
+  it("each missing answer is named", () => {
+    expect(scoreOf("agent_end", { ...strong, fits: {} }).missing).toBe("fits_win");
+    expect(scoreOf("agent_end", { ...strong, nouls: { prose_suffices: 0.1 } }).missing).toBe("task");
+    expect(scoreOf("input", { ...strong, skillNone: null }).missing).toBe("skill_none_inv");
+    expect(scoreOf("input", { ...strong, nouls: { starts_governed_task: 0.9, prose_suffices: 0.1 } }).missing).toBe("n_named");
   });
-
-  it("fires when the evidence is genuinely there", () => {
-    const v = evaluateGate({ nouls: strong, confidence: 0.8, noneConfidence: 0.1, hasEntry: true });
-    expect(v.fire).toBe(true);
-    expect(v.reason).toBe("fire");
+  it("a winner the reread did not score abstains", () => {
+    expect(scoreOf("agent_end", { ...strong, winner: "z" }).missing).toBe("fits_win");
   });
-});
-
-describe("CORE-2366: the winner must beat `none`", () => {
-  it("rejects a winner that barely clears the absolute bar but trails none", () => {
-    const v = evaluateGate({ nouls: strong, confidence: 0.32, noneConfidence: 0.31, hasEntry: true });
-    expect(v.fire).toBe(false);
-    expect(v.reason).toBe("below-none-margin");
-  });
-
-  it("fires when the winner is meaningfully ahead of none", () => {
-    const v = evaluateGate({ nouls: strong, confidence: 0.6, noneConfidence: 0.2, hasEntry: true });
-    expect(v.fire).toBe(true);
-  });
-
-  it("does not invent a margin when none was not scored", () => {
-    const v = evaluateGate({ nouls: strong, confidence: 0.35, noneConfidence: null, hasEntry: true });
-    expect(v.fire).toBe(true);
-  });
-});
-
-describe("CORE-2366: abstention is its own outcome, not `none`", () => {
-  it("every refusal carries a distinct reason", () => {
-    const reasons = new Set([
-      evaluateGate({ nouls: {}, confidence: 0.9, noneConfidence: 0.1, hasEntry: true }).reason,
-      evaluateGate({ nouls: strong, confidence: 0.05, noneConfidence: 0.0, hasEntry: true }).reason,
-      evaluateGate({ nouls: strong, confidence: 0.9, noneConfidence: 0.89, hasEntry: true }).reason,
-      evaluateGate({ nouls: strong, confidence: 0.9, noneConfidence: 0.1, hasEntry: false }).reason,
-    ]);
-    expect(reasons.size).toBe(4);
-    expect(reasons.has("fire")).toBe(false);
-  });
-
-  it("an unknown entry is not treated as the none answer", () => {
-    const v = evaluateGate({ nouls: strong, confidence: 0.9, noneConfidence: 0.1, hasEntry: false });
-    expect(v.reason).toBe("unknown-entry");
-  });
-});
-
-describe("CORE-2553: the task noul and the none ceiling", () => {
-  it("does not fire when the turn starts no governed work", () => {
-    const v = evaluateGate({ nouls: { ...strong, starts_governed_task: 0.6 }, confidence: 0.9, noneConfidence: 0.05, hasEntry: true });
-    expect(v).toMatchObject({ fire: false, reason: "below-task" });
-  });
-  it("abstains when the task noul is missing", () => {
-    const { starts_governed_task: _, ...rest } = strong;
-    expect(evaluateGate({ nouls: rest, confidence: 0.9, noneConfidence: 0.05, hasEntry: true }).reason).toBe("missing-task-noul");
-  });
-  it("does not fire while none holds real weight, even when the winner beats it", () => {
-    const v = evaluateGate({ nouls: strong, confidence: 0.6, noneConfidence: 0.3, hasEntry: true });
-    expect(v).toMatchObject({ fire: false, reason: "above-none-max" });
+  it("the agent_end seam does not need the input-only answers", () => {
+    expect(scoreOf("agent_end", { ...strong, skillNone: null, nouls: { starts_governed_task: 0.9, prose_suffices: 0.1 } }).missing).toBeNull();
   });
 });
 

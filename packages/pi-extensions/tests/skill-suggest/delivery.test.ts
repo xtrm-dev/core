@@ -20,12 +20,18 @@ const readLogSize = async () => (await flushLog(), existsSync(LOG_PATH) ? statSy
 const readLogSince = async (size: number): Promise<Array<Record<string, unknown>>> =>
   (await flushLog(), readFileSync(LOG_PATH, "utf8").slice(size).split("\n").filter(Boolean).map((l) => JSON.parse(l)));
 
+// CORE-2564: both stages' answers; a stage reads only the ids it asked.
 const CLASSIFIER_ANSWERS = {
   skill: { type: "choice", choice: "demo-skill", probabilities: { "demo-skill": 0.9, none: 0.1 }, confidence: 0.9 },
-  would_follow_documented_procedure: { type: "bool", probability: 0.9 },
+  wide: { type: "choice", choice: "demo-skill", probabilities: { "demo-skill": 0.9 }, confidence: 0.9 },
+  rr_wide: { type: "choice", choice: "demo-skill", probabilities: { "demo-skill": 1 }, confidence: 1 },
+  "fits::0": { type: "bool", probability: 0.9 },
   prose_suffices: { type: "bool", probability: 0.1 },
   starts_governed_task: { type: "bool", probability: 0.9 },
+  n_named: { type: "bool", probability: 0.9 },
 };
+/** A stage-1 request: one judgement of a seam (stage 2 rereads its shortlist). */
+const judged = (req: unknown) => Boolean((req as { questions?: Record<string, unknown> } | undefined)?.questions?.["wide"]);
 const stubRegistry = {
   getAvailableOfType: async () => [{ id: "jev-test", provider: "typesafe" }],
   classify: async () => ({ stopReason: "stop", answers: CLASSIFIER_ANSWERS, model: "typesafe/jev-test" }),
@@ -139,34 +145,37 @@ describe("CORE-2367: read-after-suggest accounting", () => {
 });
 
 describe("CORE-2533: the classifier never sees more than the shortlist", () => {
-  it("a 300-skill roster sends at most 24 criteria plus none, on both seams", async () => {
+  it("a 300-skill roster sends at most 24 criteria plus none to the narrow choice and 120 to the wide one, on both seams", async () => {
     for (let i = 0; i < 300; i++) {
       mkdirSync(join(repo, ".xtrm", "skills", `bulk-${i}`), { recursive: true });
       writeFileSync(join(repo, ".xtrm", "skills", `bulk-${i}`, "SKILL.md"), `---\nname: bulk-${i}\ndescription: Demo procedure variant ${i} for deploy work.\n---\n`);
     }
-    const sizes: number[] = [];
+    const sizes: Record<string, number[]> = {};
     const capturing = {
       getAvailableOfType: async () => [{ id: "jev-test", provider: "typesafe" }],
       classify: async (_m: unknown, req: { questions: Record<string, { criteria?: Record<string, string> }> }) => {
-        sizes.push(Object.keys(req.questions["skill"]?.criteria ?? {}).length);
+        for (const [id, q] of Object.entries(req.questions)) if (q.criteria) (sizes[id] ??= []).push(Object.keys(q.criteria).length);
         return { stopReason: "stop", answers: CLASSIFIER_ANSWERS, model: "typesafe/jev-test" };
       },
     };
     const { handlers } = await boot();
     await handlers["input"]!({ text: "follow the demo procedure for this deploy" }, { modelRegistry: capturing });
     await handlers["agent_end"]!(WORKING_TURN, { modelRegistry: capturing });
-    expect(sizes.length).toBe(2);
-    for (const n of sizes) {
-      expect(n).toBeGreaterThan(1);
-      expect(n).toBeLessThanOrEqual(25);
+    expect(sizes["wide"]).toHaveLength(2);
+    expect(sizes["skill"]).toHaveLength(1); // the narrow choice rides the input seam only
+    for (const n of sizes["skill"]!) expect(n).toBeLessThanOrEqual(25);
+    for (const n of sizes["wide"]!) {
+      expect(n).toBeGreaterThan(25);
+      expect(n).toBeLessThanOrEqual(120);
     }
+    for (const n of sizes["rr_wide"] ?? []) expect(n).toBeLessThanOrEqual(3);
   });
 });
 
 describe("CORE-2551: injected text never reaches the input classifier", () => {
   it("skips mid-session input with source 'extension', logs 'injected', and still judges the working turn", async () => {
     let asked = 0;
-    const counting = { ...stubRegistry, classify: async (...a: [unknown, unknown]) => (asked++, stubRegistry.classify(...(a as []))) };
+    const counting = { ...stubRegistry, classify: async (_m: unknown, req: unknown) => (judged(req) && asked++, stubRegistry.classify()) };
     const { handlers, sent } = await boot();
     await handlers["input"]!({ text: "/earlier", source: "interactive" }, { modelRegistry: counting });
     const before = await readLogSize();
@@ -179,7 +188,7 @@ describe("CORE-2551: injected text never reaches the input classifier", () => {
   });
   it("an injected task that opens the session is judged (a dispatched worker's request)", async () => {
     let asked = 0;
-    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const counting = { ...stubRegistry, classify: async (_m: unknown, req: unknown) => (judged(req) && asked++, stubRegistry.classify()) };
     const { handlers } = await boot();
     // A fresh instance has seen no input: this one opens the session.
     await handlers["input"]!({ text: "# Task: follow the demo procedure for this deploy", source: "extension" }, { modelRegistry: counting });
@@ -187,7 +196,7 @@ describe("CORE-2551: injected text never reaches the input classifier", () => {
   });
   it("typed input is still judged", async () => {
     let asked = 0;
-    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const counting = { ...stubRegistry, classify: async (_m: unknown, req: unknown) => (judged(req) && asked++, stubRegistry.classify()) };
     const { handlers } = await boot();
     await handlers["input"]!({ text: "follow the demo procedure for this deploy", source: "interactive" }, { modelRegistry: counting });
     expect(asked).toBe(1);
@@ -197,7 +206,7 @@ describe("CORE-2551: injected text never reaches the input classifier", () => {
 describe("CORE-2564: a peer's message typed into the pane is a relay, not a request", () => {
   it("skips a mid-session interactive relay, logs 'peer_relay', and still judges the working turn", async () => {
     let asked = 0;
-    const counting = { ...stubRegistry, classify: async (...a: [unknown, unknown]) => (asked++, stubRegistry.classify(...(a as []))) };
+    const counting = { ...stubRegistry, classify: async (_m: unknown, req: unknown) => (judged(req) && asked++, stubRegistry.classify()) };
     const { handlers, sent } = await boot();
     await handlers["input"]!({ text: "/earlier", source: "interactive" }, { modelRegistry: counting });
     const before = await readLogSize();
@@ -217,7 +226,7 @@ describe("CORE-2564: a peer's message typed into the pane is a relay, not a requ
   });
   it("an operator request with a colon is still judged", async () => {
     let asked = 0;
-    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const counting = { ...stubRegistry, classify: async (_m: unknown, req: unknown) => (judged(req) && asked++, stubRegistry.classify()) };
     const { handlers } = await boot();
     await handlers["input"]!({ text: "/earlier", source: "interactive" }, { modelRegistry: counting });
     await handlers["input"]!({ text: "deploy: follow the demo procedure for this deploy", source: "interactive" }, { modelRegistry: counting });
@@ -230,7 +239,7 @@ describe("CORE-2564: agent_end reads each run's own messages", () => {
     // pi-agent-core emits agent_end with the messages the run generated, a new
     // array per run; a cursor carried across runs skipped the later ones.
     const states: Array<Record<string, unknown>> = [];
-    const capturing = { ...stubRegistry, classify: async (_m: unknown, req: { state: Record<string, unknown> }) => (states.push(req.state), stubRegistry.classify()) };
+    const capturing = { ...stubRegistry, classify: async (_m: unknown, req: { state: Record<string, unknown> }) => (judged(req) && states.push(req.state), stubRegistry.classify()) };
     const { handlers } = await boot();
     const long = { messages: [...WORKING_TURN.messages, ...WORKING_TURN.messages, ...WORKING_TURN.messages] };
     await handlers["agent_end"]!(long, { modelRegistry: capturing });
@@ -249,7 +258,7 @@ describe("CORE-2564: agent_end reads each run's own messages", () => {
 describe("CORE-2532: a session's first prompt is judged while the index still builds", () => {
   it("waits for the index off the handler path instead of skipping as index_warming", async () => {
     let asked = 0;
-    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const counting = { ...stubRegistry, classify: async (_m: unknown, req: unknown) => (judged(req) && asked++, stubRegistry.classify()) };
     const { handlers } = await boot();
     (await import("../../extensions/skill-suggest/index.ts")).resetIndex(); // as at session_start: no index yet
     const before = await readLogSize();
