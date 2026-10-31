@@ -2592,6 +2592,69 @@ describe('assertClaudeSkillsDiscoverable', () => {
             rmSync(sandbox, { recursive: true, force: true });
         }
     });
+
+    it('substitutes the enabled view for a repo-managed tier declaration when allowed', () => {
+        const declared = path.join(fakeRepo, '.xtrm', 'skills', 'default', 'foo');
+        const installed = path.join(fakeHome, '.xtrm', 'skills', 'default', 'foo');
+        const pointer = path.join(fakeHome, '.claude', 'skills', 'foo');
+        mkdirSync(declared, { recursive: true });
+        mkdirSync(installed, { recursive: true });
+        mkdirSync(path.dirname(pointer), { recursive: true });
+        writeFileSync(path.join(declared, 'SKILL.md'), '# declared');
+        writeFileSync(path.join(installed, 'SKILL.md'), '# installed');
+        symlinkSync(installed, pointer, 'dir');
+        const previousHome = process.env.HOME;
+        process.env.HOME = fakeHome;
+        try {
+            // A declared copy is not what Claude can load: strict mode refuses.
+            expect(() => assertClaudeSkillsDiscoverable(fakeRepo, [path.join(declared, 'SKILL.md')]))
+                .toThrow(/not discoverable by Claude as '\/foo'/);
+            expect(assertClaudeSkillsDiscoverable(fakeRepo, [path.join(declared, 'SKILL.md')], { acceptManagedViewSubstitution: true }))
+                .toEqual([{ declared: path.join(declared, 'SKILL.md'), loaded: path.join(pointer, 'SKILL.md') }]);
+        } finally {
+            process.env.HOME = previousHome;
+            rmSync(sandbox, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a repo-managed declaration served by an unmanaged same-name skill', () => {
+        const declared = path.join(fakeRepo, '.xtrm', 'skills', 'default', 'foo');
+        const unmanaged = path.join(fakeHome, '.claude', 'skills', 'foo');
+        mkdirSync(declared, { recursive: true });
+        mkdirSync(unmanaged, { recursive: true });
+        writeFileSync(path.join(declared, 'SKILL.md'), '# declared');
+        writeFileSync(path.join(unmanaged, 'SKILL.md'), '# unmanaged');
+        const previousHome = process.env.HOME;
+        process.env.HOME = fakeHome;
+        try {
+            expect(() => assertClaudeSkillsDiscoverable(fakeRepo, [path.join(declared, 'SKILL.md')], { acceptManagedViewSubstitution: true }))
+                .toThrow(/not discoverable by Claude as '\/foo'/);
+        } finally {
+            process.env.HOME = previousHome;
+            rmSync(sandbox, { recursive: true, force: true });
+        }
+    });
+
+    it('never substitutes a project pack declaration', () => {
+        const declared = path.join(fakeRepo, '.xtrm', 'skills', 'infra', 'foo');
+        const installed = path.join(fakeHome, '.xtrm', 'skills', 'default', 'foo');
+        const pointer = path.join(fakeHome, '.claude', 'skills', 'foo');
+        mkdirSync(declared, { recursive: true });
+        mkdirSync(installed, { recursive: true });
+        mkdirSync(path.dirname(pointer), { recursive: true });
+        writeFileSync(path.join(declared, 'SKILL.md'), '# declared');
+        writeFileSync(path.join(installed, 'SKILL.md'), '# installed');
+        symlinkSync(installed, pointer, 'dir');
+        const previousHome = process.env.HOME;
+        process.env.HOME = fakeHome;
+        try {
+            expect(() => assertClaudeSkillsDiscoverable(fakeRepo, [path.join(declared, 'SKILL.md')], { acceptManagedViewSubstitution: true }))
+                .toThrow(/not discoverable by Claude as '\/foo'/);
+        } finally {
+            process.env.HOME = previousHome;
+            rmSync(sandbox, { recursive: true, force: true });
+        }
+    });
 });
 
 describe('buildBufferedRuntimeCommand', () => {

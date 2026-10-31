@@ -58640,23 +58640,38 @@ function ensureClaudePackSkillLinks(worktreePath, mainRepoRoot, resolvedPaths) {
     throw error51;
   }
 }
-function assertClaudeSkillsDiscoverable(mainRepoRoot, requestedPaths) {
+var REPO_MANAGED_DECLARATION_TIERS = /* @__PURE__ */ new Set(["default", "optional"]);
+function isRepoManagedTierDeclaration(mainRepoRoot, requestedFile, name) {
+  const tierRoot = import_node_path15.default.join(mainRepoRoot, ".xtrm", "skills");
+  const relative = import_node_path15.default.relative(tierRoot, import_node_path15.default.dirname(requestedFile));
+  if (!relative || relative.startsWith("..") || import_node_path15.default.isAbsolute(relative)) return false;
+  const [tier, ...rest] = relative.split(import_node_path15.default.sep);
+  return REPO_MANAGED_DECLARATION_TIERS.has(tier) && rest.join(import_node_path15.default.sep) === name;
+}
+function isManagedSkillsStorePath(skillFile) {
+  return isPathInside((0, import_node_fs3.realpathSync)(skillFile), import_node_path15.default.join(import_node_os8.default.homedir(), ".xtrm", "skills"));
+}
+function assertClaudeSkillsDiscoverable(mainRepoRoot, requestedPaths, options = {}) {
+  const substitutions = [];
   for (const requestedPath of requestedPaths) {
     const requestedFile = import_node_path15.default.basename(requestedPath) === "SKILL.md" ? requestedPath : import_node_path15.default.join(requestedPath, "SKILL.md");
     const name = import_node_path15.default.basename(import_node_path15.default.dirname(requestedFile));
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
       throw new Error(`invalid Claude skill name '${name}' from '${requestedPath}'`);
     }
-    const candidates = [
-      import_node_path15.default.join(mainRepoRoot, ".claude", "skills", name, "SKILL.md"),
-      import_node_path15.default.join(import_node_os8.default.homedir(), ".claude", "skills", name, "SKILL.md")
-    ];
+    const repoCandidate = import_node_path15.default.join(mainRepoRoot, ".claude", "skills", name, "SKILL.md");
+    const homeCandidate = import_node_path15.default.join(import_node_os8.default.homedir(), ".claude", "skills", name, "SKILL.md");
     const requestedRealPath = (0, import_node_fs3.realpathSync)(requestedFile);
-    if (candidates.some((candidate) => (0, import_node_fs3.existsSync)(candidate) && (0, import_node_fs3.realpathSync)(candidate) === requestedRealPath)) continue;
+    if ([repoCandidate, homeCandidate].some((candidate) => (0, import_node_fs3.existsSync)(candidate) && (0, import_node_fs3.realpathSync)(candidate) === requestedRealPath)) continue;
+    if (options.acceptManagedViewSubstitution && isRepoManagedTierDeclaration(mainRepoRoot, requestedFile, name) && (0, import_node_fs3.existsSync)(homeCandidate) && isManagedSkillsStorePath(homeCandidate)) {
+      substitutions.push({ declared: requestedPath, loaded: homeCandidate });
+      continue;
+    }
     throw new Error(
       `skill '${requestedPath}' is not discoverable by Claude as '/${name}'. Install or enable the same skill under .claude/skills/${name} before launching.`
     );
   }
+  return substitutions;
 }
 function parseSpecialistJson(name, raw, mainRepoRoot = process.cwd()) {
   let parsed;
@@ -59489,8 +59504,17 @@ async function launchWorktreeSession(opts) {
           merged.push(entry);
         }
         claudePackEntries = merged;
-        const claudeCombined = [...resolvedRole.skillPaths, ...explicitSkillPaths];
-        assertClaudeSkillsDiscoverable(mainRepoRoot, claudeCombined.filter((p) => !isProjectPackSkillPath(mainRepoRoot, p)));
+        const roleDiscoveryPaths = resolvedRole.skillPaths.filter((p) => !isProjectPackSkillPath(mainRepoRoot, p));
+        const explicitDiscoveryPaths = explicitSkillPaths.filter((p) => !isProjectPackSkillPath(mainRepoRoot, p));
+        const substitutions = assertClaudeSkillsDiscoverable(mainRepoRoot, roleDiscoveryPaths, { acceptManagedViewSubstitution: true });
+        assertClaudeSkillsDiscoverable(mainRepoRoot, explicitDiscoveryPaths);
+        for (const substitution of substitutions) {
+          const declaredDir = import_node_path15.default.dirname(substitution.declared);
+          process.stderr.write(kleur_default.yellow(
+            `  \u26A0 role skill '${import_node_path15.default.basename(declaredDir)}' is declared at ${declaredDir} (repo-managed tier); Claude loads it from the enabled view ${import_node_path15.default.dirname(substitution.loaded)}
+`
+          ));
+        }
         assertClaudePackSkillsLoadable(mainRepoRoot, claudePackEntries);
       }
       const trustedSkillPrefix = runtime === "claude" ? composeClaudeRoleBlock(mainRepoRoot, rawRoleSkillPaths, spPrefix?.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("/")).map((line) => line.slice(1)) ?? null, claudeRoleEntries, runtime) : spPrefix ?? renderDeclaredSkillPrefix(resolvedRole.skillPaths, runtime, mainRepoRoot);
@@ -77896,7 +77920,7 @@ var xtrm_agent_command_v1_default = {
         type: { const: "wake" },
         commandId: { $ref: "#/definitions/commandId" },
         messageId: { type: "string", minLength: 1, maxLength: 128 },
-        payloadRef: { type: "string", minLength: 1, maxLength: 524288 }
+        payloadRef: { type: "string", minLength: 1, maxLength: 1024 }
       }
     },
     listener_replaced: {
