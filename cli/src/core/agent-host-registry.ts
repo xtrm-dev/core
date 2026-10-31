@@ -117,6 +117,9 @@ const INPUT_NOTIFICATIONS = new Set(['permission_prompt', 'elicitation_dialog'])
 /** Presence-only sessions (Claude hooks) outlive their short-lived connections; cap how many are kept. */
 const MAX_DISCONNECTED_SESSIONS = 256;
 
+/** Session start times remembered across reconnects (CORE-2554 D5). */
+const MAX_REMEMBERED_STARTS = 1024;
+
 /** Launched panes remembered for binding; pane ids are unique for a tmux server's lifetime. */
 const MAX_LAUNCHED_PANES = 256;
 
@@ -289,11 +292,14 @@ export class AgentHostRegistry {
                     toolOrigins: new Map(),
                     frameCount: 0,
                     frames: [],
-                    startedAt: frame.at,
+                    // CORE-2554 D5: a session that reconnects (extension restart, host
+                    // hiccup) keeps the start it first registered with.
+                    startedAt: this.startedAtBySession.get(sessionId) ?? frame.at,
                     lastActivityAt: frame.at,
                     lastSeq: frame.seq,
                 };
                 this.sessions.set(sessionId, session);
+                this.rememberStartedAt(sessionId, session.startedAt);
             }
             if (previousConnection && (verdict === 'replace' || verdict === 'handover')) {
                 // R5: the replaced listener is told, so it can re-assert with a bumped generation.
@@ -1151,6 +1157,19 @@ export class AgentHostRegistry {
         const session = this.sessions.get(sessionId);
         if (session) this.stopPromptStartTimer(session);
         this.sessions.delete(sessionId);
+    }
+
+    /** First registration time per session id, bounded (oldest evicted first). */
+    private readonly startedAtBySession = new Map<string, number>();
+
+    private rememberStartedAt(sessionId: string, startedAt: number): void {
+        if (this.startedAtBySession.has(sessionId)) return;
+        this.startedAtBySession.set(sessionId, startedAt);
+        while (this.startedAtBySession.size > MAX_REMEMBERED_STARTS) {
+            const oldest = this.startedAtBySession.keys().next().value;
+            if (oldest === undefined) break;
+            this.startedAtBySession.delete(oldest);
+        }
     }
 
     private pruneDisconnected(): void {

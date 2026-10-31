@@ -52,7 +52,7 @@ function makeProject(root: string): string {
 }
 
 /** Run the hook as Claude does: JSON on stdin, inherited env, no tmux pane (never touch the caller's). */
-function runHook(socketPath: string, input: Record<string, unknown>, nodeArgs: string[] = []): Promise<HookRun> {
+function runHook(socketPath: string, input: Record<string, unknown>, nodeArgs: string[] = [], extraEnv: Record<string, string> = {}): Promise<HookRun> {
     const cwd = path.join(path.dirname(socketPath), 'project');
     const env: NodeJS.ProcessEnv = {
         ...process.env,
@@ -60,9 +60,10 @@ function runHook(socketPath: string, input: Record<string, unknown>, nodeArgs: s
         XTRM_SESSION_NAME: 'claude-test',
         CLAUDE_PROJECT_DIR: cwd,
     };
-    for (const key of ['TMUX', 'TMUX_PANE', 'XTMUX_AGENT_ROLE', 'XTMUX_AGENT_BEAD', 'XTRM_AGENT_HOST', 'XTRM_AGENT_LAUNCH']) {
+    for (const key of ['TMUX', 'TMUX_PANE', 'XTMUX_AGENT_ROLE', 'XTMUX_AGENT_BEAD', 'XTRM_AGENT_HOST', 'XTRM_AGENT_LAUNCH', 'SUBSTRATE_HOLDER']) {
         delete env[key];
     }
+    Object.assign(env, extraEnv);
     return new Promise((resolve, reject) => {
         const started = performance.now();
         const child = spawn(process.execPath, [...nodeArgs, ...commandFor(input.hook_event_name)], { cwd, env, stdio: ['pipe', 'pipe', 'ignore'] });
@@ -115,7 +116,7 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
     // should be rare; a zero-frame invocation is still re-invoked (and logged) rather than
     // failed. Retries only ever happen after a miss, so no duplicate frames can distort the
     // assertions below, and the retry log keeps a regression visible.
-    const hook = async (input: Record<string, unknown>) => {
+    const hook = async (input: Record<string, unknown>, extraEnv: Record<string, string> = {}) => {
         const before = frames.length;
         let run: HookRun | undefined;
         let misses = 0;
@@ -124,7 +125,7 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
         // would time out inside vitest instead of reporting the budget miss.
         const giveUpAt = Date.now() + 25000;
         for (;;) {
-            run = await runHook(socketPath, input);
+            run = await runHook(socketPath, input, [], extraEnv);
             expect(run.code).toBe(0);
             expect(run.stdout).toBe('');
             if (await until(() => frames.length > before, 250).then(() => true, () => false)) {
@@ -139,6 +140,11 @@ describe('Claude hook reporter → xt host (XTRM-569)', () => {
             if (run.ms >= 250) await new Promise((r) => setTimeout(r, 500));
         }
     };
+
+    it('names the session after the xt worker (SUBSTRATE_HOLDER), not the shared tmux session (CORE-2554 D2)', async () => {
+        await hook({ hook_event_name: 'SessionStart', source: 'startup' }, { SUBSTRATE_HOLDER: 'worker-7' });
+        expect(host.registry.detail(sessionId)!.identity!).toMatchObject({ sessionName: 'worker-7' });
+    });
 
     it('reports presence, state transitions and classified tools until SessionEnd', async () => {
         await hook({ hook_event_name: 'SessionStart', source: 'startup' });

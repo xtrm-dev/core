@@ -365,9 +365,12 @@ describe("ListAgents tool registration", () => {
     expect(String(result.content[0].text)).toMatch(/needs the current session id/);
   });
 
-  test("an unreachable agent host reads as an empty Pi roster, never a throw", async () => {
-    const sessions = await roster.fetchPiSessions({ infoPath: "/nonexistent-dir/agent-host.json", timeoutMs: 200 });
-    expect(sessions).toEqual([]);
+  test("no host info file throws a down registry error, never a silent empty roster (CORE-2554)", async () => {
+    roster.__resetRegistryReadClock();
+    const err = await roster.fetchPiSessions({ infoPath: "/nonexistent-dir/agent-host.json", timeoutMs: 200 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(roster.PiRegistryError);
+    expect((err as any).kind).toBe("down");
+    expect(String((err as Error).message)).toMatch(/no successful registry read in this session/);
   });
 
   test("a live agent host round-trips through fetchPiSessions", async () => {
@@ -508,6 +511,93 @@ describe("fetch retry on transport failure (CORE-2470)", () => {
       }
     } finally {
       await new Promise((r) => server.close(r));
+    }
+  });
+});
+
+describe("registry error classes and stall-length retry (CORE-2554 §1)", () => {
+  async function stubServer(onRequest: (n: number, req: any, res: any) => void) {
+    const { createServer } = await import("node:http");
+    let hits = 0;
+    const server = createServer((req: any, res: any) => {
+      hits += 1;
+      onRequest(hits, req, res);
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    return { server, port: (server.address() as any).port, hits: () => hits };
+  }
+  const close = (server: any) => {
+    server.closeAllConnections?.();
+    return new Promise((r) => server.close(r));
+  };
+
+  test("a stalled first reply retries with the longer budget and lists", async () => {
+    const { server, port, hits } = await stubServer((n, _req, res) => {
+      // First request: answer after 400 ms (past the 150 ms first budget).
+      // Second: answer after 400 ms, inside the 2000 ms retry budget.
+      setTimeout(() => {
+        if (res.destroyed) return;
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ kind: "session_list", sessions: [piSummary({ sessionId: "sess-slow", name: "slow" })] }));
+      }, 400);
+    });
+    try {
+      const sessions = await roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 150, retryTimeoutMs: 2000 });
+      expect(hits()).toBe(2);
+      expect(sessions.some((s: any) => s.sessionId === "sess-slow")).toBe(true);
+    } finally {
+      await close(server);
+    }
+  });
+
+  test("a host that accepts but never answers reports busy, not down", async () => {
+    const { server, port, hits } = await stubServer(() => {
+      /* accept and hold: the event loop of a stalled host */
+    });
+    try {
+      const err = await roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 100, retryTimeoutMs: 150 }).catch((e: unknown) => e);
+      expect(hits()).toBe(2);
+      expect((err as any).kind).toBe("busy");
+      expect(String((err as Error).message)).toMatch(/registry is busy/);
+    } finally {
+      await close(server);
+    }
+  });
+
+  test("a refused connection reports down", async () => {
+    const { server, port } = await stubServer(() => {});
+    await close(server);
+    const err = await roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 200 }).catch((e: unknown) => e);
+    expect((err as any).kind).toBe("down");
+    expect(String((err as Error).message)).toMatch(/registry is down/);
+  });
+
+  test("the error names how long ago the last successful read was", async () => {
+    const ok = await stubServer((_n, _req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ kind: "session_list", sessions: [] }));
+    });
+    try {
+      await roster.fetchPiSessions({ address: "127.0.0.1", port: ok.port, timeoutMs: 1000 });
+    } finally {
+      await close(ok.server);
+    }
+    const err = await roster.fetchPiSessions({ address: "127.0.0.1", port: ok.port, timeoutMs: 200 }).catch((e: unknown) => e);
+    expect(String((err as Error).message)).toMatch(/last successful registry read under 1 min ago/);
+  });
+
+  test("an oversized reply settles instead of hanging (B5)", async () => {
+    const { server, port } = await stubServer((_n, _req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      const chunk = "x".repeat(1024 * 1024);
+      for (let i = 0; i < 5; i += 1) res.write(chunk);
+      res.end();
+    });
+    try {
+      const sessions = await roster.fetchPiSessions({ address: "127.0.0.1", port, timeoutMs: 5000 });
+      expect(sessions).toEqual([]);
+    } finally {
+      await close(server);
     }
   });
 });

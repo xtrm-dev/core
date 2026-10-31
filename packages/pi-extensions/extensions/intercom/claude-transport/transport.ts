@@ -182,6 +182,8 @@ export interface ClaudeTransportHandlers {
   onUserMessage?: (message: ClaudeUserMessage) => void;
   onReceipt?: (receipt: ClaudeReceipt) => void;
   onUnknownVersion?: (seen: unknown) => void;
+  /** A receipt whose status is not delivered/held/refused (CORE-2554 C4). */
+  onUnknownReceipt?: (receipt: { seen: unknown; origMessageId?: string; from?: string }) => void;
 }
 
 export interface BoundClaudeSocket {
@@ -249,6 +251,13 @@ export async function bindClaudeTransportSocket(
               ...(stripped.fromName ? { fromName: stripped.fromName } : {}),
               ...(stripped.fromMode ? { fromMode: stripped.fromMode } : {}),
               ...(typeof frameSessionId === "string" && frameSessionId ? { sessionId: frameSessionId } : {}),
+            });
+          } else if (parsed.kind === "unknown_receipt") {
+            intercomTrace("receipt.in", { origMessageId: parsed.origMessageId, from: parsed.from, statusRaw: typeof parsed.seen === "string" ? parsed.seen : JSON.stringify(parsed.seen) ?? String(parsed.seen), status: "unknown" });
+            handlers.onUnknownReceipt?.({
+              seen: parsed.seen,
+              ...(parsed.origMessageId ? { origMessageId: parsed.origMessageId } : {}),
+              ...(parsed.from ? { from: parsed.from } : {}),
             });
           } else if (parsed.kind === "receipt") {
             // CORE-2488 phase 1: every received receipt names the message it
@@ -334,16 +343,25 @@ export function isClaudeReceiptTimeout(error: unknown): boolean {
  */
 export class ClaudeReceiptWaiter {
   private readonly pending = new Map<string, (receipt: ClaudeReceipt) => void>();
+  private readonly rejecters = new Map<string, (error: Error) => void>();
 
   wait(messageId: string, timeoutMs = 30_000): Promise<ClaudeDeliveryOutcome> {
     return new Promise<ClaudeDeliveryOutcome>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(messageId);
+        this.rejecters.delete(messageId);
         reject(new ClaudeReceiptTimeoutError(messageId));
       }, timeoutMs);
+      this.rejecters.set(messageId, (error) => {
+        clearTimeout(timer);
+        this.pending.delete(messageId);
+        this.rejecters.delete(messageId);
+        reject(error);
+      });
       this.pending.set(messageId, (receipt) => {
         clearTimeout(timer);
         this.pending.delete(messageId);
+        this.rejecters.delete(messageId);
         try {
           resolve(mapReceiptStatus(receipt.status));
         } catch (error) {
@@ -351,6 +369,15 @@ export class ClaudeReceiptWaiter {
         }
       });
     });
+  }
+
+  /** Fail one waiter with `error` (an unrecognised receipt status). */
+  rejectReceipt(origMessageId: string | undefined, error: Error): boolean {
+    if (!origMessageId) return false;
+    const reject = this.rejecters.get(origMessageId);
+    if (!reject) return false;
+    reject(error);
+    return true;
   }
 
   resolveReceipt(receipt: ClaudeReceipt): boolean {

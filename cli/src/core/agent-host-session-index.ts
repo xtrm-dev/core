@@ -11,6 +11,9 @@
  *   state. Deleting it loses nothing: the next start rebuilds the same list.
  * - Only journals directly inside a project directory (`<root>/<dir>/<file>.jsonl`) count;
  *   deeper files (Claude subagent transcripts) are not sessions of their own.
+ * - Repository identity lookups (git) never start on the request path (CORE-2554). A timer
+ *   starts a few per tick, most recently active cwds first; a failing cwd backs off and logs once.
+ *   Starting ~1800 git processes in one tick from list() blocked the event loop for 8-10 s.
  */
 
 import { execFile, type ExecFileException } from 'node:child_process';
@@ -33,8 +36,22 @@ export interface SessionIndexOptions {
     roots: SessionIndexRoot[];
     /** Rebuildable cache file; omit to keep the index in memory only. */
     cachePath?: string;
-    /** How long a resolved git identity for one cwd stays valid before an async refresh (default 60s). */
+    /**
+     * Minimum age of a resolved git identity before it is looked up again (default 60 s). A floor,
+     * not a freshness promise: one full pass takes about cwds / (lookups per tick x ticks per s)
+     * seconds (~226 s for 903 cwds at the defaults); the most recently active cwds go first.
+     */
     repoTtlMs?: number;
+    /** Interval of the repository lookup timer (default 500 ms). */
+    repoTickMs?: number;
+    /** Lookups the timer may start per tick (default 2; each starts two git processes). */
+    repoLookupsPerTick?: number;
+    /** Slot release deadline per lookup (default 2.5 s); test seam. */
+    repoLookupDeadlineMs?: number;
+    /** Saturation duration before the one wedge log line (default 60 s); test seam. */
+    repoSaturationLogMs?: number;
+    /** Test seam: replaces the git lookup. */
+    repoLookup?: (cwd: string) => Promise<RepoIdentity>;
     log?: (message: string) => void;
 }
 
@@ -50,9 +67,20 @@ const HAS_CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
 /** Hard bound on one git identity lookup; the request path is never blocked by it. */
 const REPO_LOOKUP_TIMEOUT_MS = 2_000;
 const REPO_TTL_MS = 60_000;
+const REPO_TICK_MS = 500;
+const REPO_LOOKUPS_PER_TICK = 2;
+/** Lookups in flight at once, across ticks. */
+const REPO_MAX_PENDING = 4;
+/** A cwd whose lookup failed is not retried before this (negative cache). */
+const REPO_FAILURE_BACKOFF_MS = 10 * 60_000;
+
+/** Slot release deadline per lookup: a lookup still unsettled then is abandoned and counts as failed. */
+const REPO_LOOKUP_DEADLINE_MS = REPO_LOOKUP_TIMEOUT_MS + 500;
+/** Log once when every lookup slot stays taken this long (a wedged sweep, not an idle one). */
+const REPO_SATURATION_LOG_MS = 60_000;
 
 /** Repository identity a host fills for the session cwd (matching what a live session reports). */
-interface RepoIdentity {
+export interface RepoIdentity {
     repository?: string;
     repositoryPath?: string;
 }
@@ -115,6 +143,22 @@ export class SessionIndex {
     /** When each cwd was last resolved (fresh or expired), gating the per-cwd re-lookup. */
     private readonly repoLookedUpAt = new Map<string, number>();
     private readonly repoPending = new Set<string>();
+    /** When a cwd's lookup last failed; such a cwd waits REPO_FAILURE_BACKOFF_MS. */
+    private readonly repoFailedAt = new Map<string, number>();
+    /** Cwds whose failure was already logged: one line per cwd, ever. */
+    private readonly repoFailureLogged = new Set<string>();
+    private readonly repoTickMs: number;
+    private readonly repoLookupsPerTick: number;
+    private readonly repoLookup: (cwd: string) => Promise<RepoIdentity>;
+    private readonly repoLookupDeadlineMs: number;
+    private readonly repoSaturationLogMs: number;
+    private repoTimer: NodeJS.Timeout | null = null;
+    /** Lookup generation per cwd: a settle from an abandoned lookup is ignored. */
+    private readonly repoGeneration = new Map<string, number>();
+    /** Since when every slot has been taken (undefined while one is free). */
+    private repoSaturatedSince: number | undefined;
+    private repoSaturationLogged = false;
+    private repoTicks = 0;
     private readonly log: (message: string) => void;
     private readonly journals = new Map<string, JournalRecord>();
     private readonly watchers = new Map<string, FSWatcher>();
@@ -133,19 +177,24 @@ export class SessionIndex {
         this.roots = options.roots.map((r) => ({ provider: r.provider, dir: path.resolve(r.dir) }));
         this.cachePath = options.cachePath;
         this.repoTtlMs = options.repoTtlMs ?? REPO_TTL_MS;
+        this.repoTickMs = options.repoTickMs ?? REPO_TICK_MS;
+        this.repoLookupsPerTick = options.repoLookupsPerTick ?? REPO_LOOKUPS_PER_TICK;
+        this.repoLookup = options.repoLookup ?? lookupRepository;
+        this.repoLookupDeadlineMs = options.repoLookupDeadlineMs ?? REPO_LOOKUP_DEADLINE_MS;
+        this.repoSaturationLogMs = options.repoSaturationLogMs ?? REPO_SATURATION_LOG_MS;
         this.log = options.log ?? (() => {});
         this.ready = this.build();
+        this.repoTimer = setInterval(() => this.refreshRepositories(), this.repoTickMs);
+        this.repoTimer.unref();
     }
 
-    /** History-only summaries, most recent activity first. Served from memory. */
+    /** History-only summaries, most recent activity first. Served from memory; never spawns. */
     list(): AgentSessionSummary[] {
-        this.refreshRepositories();
         this.project();
         return this.summaries!;
     }
 
     get(sessionId: string): AgentSessionSummary | null {
-        this.refreshRepositories();
         this.project();
         return this.byId!.get(sessionId) ?? null;
     }
@@ -168,6 +217,8 @@ export class SessionIndex {
     async close(): Promise<void> {
         if (this.closed) return;
         this.closed = true;
+        if (this.repoTimer) clearInterval(this.repoTimer);
+        this.repoTimer = null;
         for (const watcher of this.watchers.values()) watcher.close();
         this.watchers.clear();
         this.queue.clear();
@@ -366,45 +417,119 @@ export class SessionIndex {
 
     // --- repository identity (XTRM-608) ---
 
-    /** Kick the per-cwd git lookups for every tracked cwd; the TTL map coalesces repeats. */
+    /**
+     * One timer tick: start at most `repoLookupsPerTick` lookups (and never more than
+     * REPO_MAX_PENDING in flight), most recently active cwds first. Fresh, pending and
+     * backed-off cwds are skipped. The walk is plain in-memory work; only the started
+     * lookups spawn, so a tick's cost is bounded no matter how many journals exist.
+     */
     private refreshRepositories(): void {
         if (this.closed) return;
+        const now = Date.now();
+        let budget = Math.min(this.repoLookupsPerTick, REPO_MAX_PENDING - this.repoPending.size);
+        if (REPO_MAX_PENDING - this.repoPending.size <= 0) {
+            this.repoSaturatedSince ??= now;
+            if (!this.repoSaturationLogged && now - this.repoSaturatedSince >= this.repoSaturationLogMs) {
+                this.repoSaturationLogged = true;
+                this.log(`session index: all ${REPO_MAX_PENDING} repository lookup slots busy for ${Math.round((now - this.repoSaturatedSince) / 1000)} s: ${[...this.repoPending].join(', ')}`);
+            }
+            return;
+        }
+        this.repoSaturatedSince = undefined;
+        this.repoSaturationLogged = false;
+        if (budget <= 0) return;
+        const latest = new Map<string, number>();
+        const known = new Set<string>();
         for (const record of this.journals.values()) {
-            if (record.state.cwd) this.refreshRepository(record.state.cwd);
+            const cwd = record.state.cwd;
+            if (!cwd) continue;
+            known.add(cwd);
+            if (this.repoPending.has(cwd)) continue;
+            const at = this.repoLookedUpAt.get(cwd);
+            if (at !== undefined && now - at < this.repoTtlMs) continue;
+            const failedAt = this.repoFailedAt.get(cwd);
+            if (failedAt !== undefined && now - failedAt < REPO_FAILURE_BACKOFF_MS) continue;
+            const activity = record.state.lastActivityAt ?? record.state.startedAt ?? 0;
+            if (activity >= (latest.get(cwd) ?? -1)) latest.set(cwd, activity);
+        }
+        // Prune about once a minute: a size comparison misses stale and new entries that balance.
+        if (++this.repoTicks % Math.max(1, Math.round(60_000 / this.repoTickMs)) === 0) this.pruneRepositoryState(known);
+        if (latest.size === 0) return;
+        const due = [...latest].sort((a, b) => b[1] - a[1]);
+        for (const [cwd] of due) {
+            if (budget-- <= 0) break;
+            this.refreshRepository(cwd, now);
         }
     }
 
     /**
-     * Serve the cached git identity for `cwd` and, when it is missing or stale, start an async
-     * refresh (all lookups for one cwd coalesce). The request path stays synchronous: an identity
-     * resolving later only causes a re-projection, and a lookup failure leaves the fields absent.
+     * Start one async lookup for `cwd`. An identity resolving later only invalidates the
+     * projection (identity is not part of the on-disk cache); a failure leaves the fields
+     * absent, backs the cwd off, and logs one line the first time.
      */
-    private refreshRepository(cwd: string): void {
-        if (this.closed || this.repoPending.has(cwd)) return;
-        const at = this.repoLookedUpAt.get(cwd);
-        if (at !== undefined && Date.now() - at < this.repoTtlMs) return;
-        this.repoLookedUpAt.set(cwd, Date.now());
+    private refreshRepository(cwd: string, now: number): void {
+        this.repoLookedUpAt.set(cwd, now);
         this.repoPending.add(cwd);
-        void lookupRepository(cwd).then(
+        const generation = (this.repoGeneration.get(cwd) ?? 0) + 1;
+        this.repoGeneration.set(cwd, generation);
+        const current = () => this.repoGeneration.get(cwd) === generation;
+        // The slot is released by time, not by the child: a git stuck in uninterruptible
+        // sleep cannot be reaped, and four such cwds would otherwise stop the sweep for good.
+        const deadline = setTimeout(() => {
+            if (!current()) return;
+            this.repoGeneration.set(cwd, generation + 1);
+            fail(new Error(`lookup unsettled after ${this.repoLookupDeadlineMs} ms; abandoned`));
+        }, this.repoLookupDeadlineMs);
+        deadline.unref();
+        const fail = (error: unknown) => {
+            this.repoPending.delete(cwd);
+            if (this.closed) return;
+            this.repoFailedAt.set(cwd, Date.now());
+            // A missing or deleted cwd, or git failing for it, leaves the fields absent.
+            const previous = this.repoIdentity.get(cwd);
+            this.repoIdentity.delete(cwd);
+            if (previous?.repository !== undefined || previous?.repositoryPath !== undefined) this.reproject();
+            if (!this.repoFailureLogged.has(cwd)) {
+                this.repoFailureLogged.add(cwd);
+                const first = String((error as Error)?.message ?? error).split('\n')[0].slice(0, 200);
+                this.log(`session index: no repository identity for ${cwd} (retry in ${REPO_FAILURE_BACKOFF_MS / 60_000} min): ${first}`);
+            }
+        };
+        void this.repoLookup(cwd).then(
             (identity) => {
+                clearTimeout(deadline);
+                if (!current()) return;
                 this.repoPending.delete(cwd);
+                this.repoFailedAt.delete(cwd);
+                // A recovered cwd logs again if it fails again later.
+                this.repoFailureLogged.delete(cwd);
                 if (this.closed) return;
                 const previous = this.repoIdentity.get(cwd);
                 this.repoIdentity.set(cwd, identity);
                 if (previous?.repository !== identity.repository || previous?.repositoryPath !== identity.repositoryPath) {
-                    this.changed();
+                    this.reproject();
                 }
             },
             (error) => {
-                this.repoPending.delete(cwd);
-                if (this.closed) return;
-                // A missing or deleted cwd, or git failing for it, leaves the fields absent.
-                const previous = this.repoIdentity.get(cwd);
-                this.repoIdentity.delete(cwd);
-                if (previous?.repository !== undefined || previous?.repositoryPath !== undefined) this.changed();
-                this.log(`session index: repository identity for ${cwd}: ${(error as Error).message}`);
+                clearTimeout(deadline);
+                if (!current()) return;
+                fail(error);
             },
         );
+    }
+
+    /** Forget per-cwd lookup state for cwds no journal references any more. */
+    private pruneRepositoryState(live: Set<string>): void {
+        for (const map of [this.repoLookedUpAt, this.repoFailedAt, this.repoIdentity, this.repoGeneration] as Map<string, unknown>[]) {
+            for (const cwd of map.keys()) if (!live.has(cwd) && !this.repoPending.has(cwd)) map.delete(cwd);
+        }
+        for (const cwd of this.repoFailureLogged) if (!live.has(cwd)) this.repoFailureLogged.delete(cwd);
+    }
+
+    /** Drop the projection only: identity changes never dirty the on-disk cache. */
+    private reproject(): void {
+        this.summaries = null;
+        this.byId = null;
     }
 
     // --- cache ---
@@ -526,7 +651,8 @@ function git(cwd: string, args: string[]): Promise<string> {
         execFile(
             'git',
             ['-C', cwd, ...args],
-            { timeout: REPO_LOOKUP_TIMEOUT_MS, maxBuffer: 1 << 20, encoding: 'utf8' },
+            // SIGKILL: execFile's timeout only signals; a child ignoring SIGTERM kept the callback pending.
+            { timeout: REPO_LOOKUP_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 1 << 20, encoding: 'utf8' },
             (error: ExecFileException | null, stdout: string) => {
                 const code = error && typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : null;
                 if (error && code !== 1) reject(error);

@@ -1025,3 +1025,17 @@ describe("agent-host self-heal (CORE-2467 A+B)", () => {
     expect(typeof bridge.state).toBe("string");
   });
 });
+
+describe("session name order (CORE-2554 D2)", () => {
+  test("Pi name, then SUBSTRATE_HOLDER, then tmux window, then the shared tmux session", async () => {
+    const { sessionNameFor } = await import("./index.ts");
+    const env = { SUBSTRATE_HOLDER: "worker-7", XTRM_SESSION_NAME: "market-data" };
+    expect(sessionNameFor("renamed", env, "win", "market-data")).toBe("renamed");
+    expect(sessionNameFor(undefined, env, "win", "market-data")).toBe("worker-7");
+    expect(sessionNameFor(undefined, { XTRM_SESSION_NAME: "market-data" }, "win", "market-data")).toBe("win");
+    expect(sessionNameFor(undefined, { XTRM_SESSION_NAME: "market-data" }, undefined, "market-data")).toBe("market-data");
+    expect(sessionNameFor("x".repeat(500), {}, undefined, undefined)).toHaveLength(128);
+    // A message-shaped name falls through to the next candidate (CORE-2554 D3).
+    expect(sessionNameFor("please fix the flaky test in the roster module", env, "win", "market-data")).toBe("worker-7");
+  });
+});

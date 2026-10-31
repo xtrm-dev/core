@@ -241,14 +241,54 @@ export function parseReceiptTargets(input) {
 }
 
 /**
+ * The inbound text of one transcript record, or '' (CORE-2554 C3). Only
+ * records that carry a delivered message count: a user record's string or
+ * text parts (tool_result parts excluded), and a queued_command attachment
+ * (a message absorbed mid-turn). An envelope quoted by the assistant, in a
+ * tool result, or in a request log is not a delivery and draws no receipt.
+ */
+function inboundRecordText(record) {
+  if (!record || typeof record !== 'object') return '';
+  if (record.type === 'user' && record.message?.role === 'user') {
+    const content = record.message.content;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter((part) => part && part.type === 'text' && typeof part.text === 'string')
+        .map((part) => part.text)
+        .join('\n');
+    }
+    return '';
+  }
+  if (record.type === 'attachment' && record.attachment?.type === 'queued_command' && typeof record.attachment.prompt === 'string') {
+    return record.attachment.prompt;
+  }
+  return '';
+}
+
+/**
  * Every (messageId, sender-socket) pair in one transcript tail chunk
- * (CORE-2496). Same tag grammar as the prompt scan; the chunk is already
- * bounded by the positioned tail read. Never throws.
+ * (CORE-2496). The chunk is JSONL: each line parses as one record and only
+ * inbound records are scanned (CORE-2554 C3); a line that does not parse
+ * (a partial tail) is skipped. Same tag grammar as the prompt scan; the
+ * chunk is already bounded by the positioned tail read. Never throws.
  */
 export function parseTranscriptTargets(text) {
   try {
     if (typeof text !== 'string' || !text) return [];
-    return parseTargetsFromText(text);
+    const inbound = [];
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const recordText = inboundRecordText(record);
+      if (recordText) inbound.push(recordText);
+    }
+    return inbound.length > 0 ? parseTargetsFromText(inbound.join('\n')) : [];
   } catch {
     return [];
   }

@@ -168,3 +168,33 @@ describe("monitorAgentHostSession", () => {
     }
   });
 });
+
+describe("self-heal re-arms after the first healthy probe (CORE-2554 E3)", () => {
+  test("a host that dies after a healthy start is ensured again once re-armed", async () => {
+    const live = await liveSocket();
+    let calls = 0;
+    const runEnsure = async () => {
+      calls += 1;
+      return { ok: false, detail: "down" };
+    };
+    try {
+      ensure.monitorAgentHostSession({ notify: () => {} }, { enabled: true, socketPath: live.sock, runEnsure });
+      await sleep(50);
+      expect(calls).toBe(0);
+      await live.close();
+      // The bridge lost its connection: re-armed, the next call ensures.
+      // (No "inside the window" assertion: other suites' bridges share this
+      // module state in one bun process and may re-arm it concurrently.)
+      ensure.rearmAgentHostEnsure();
+      ensure.monitorAgentHostSession({ notify: () => {} }, { enabled: true, socketPath: live.sock, runEnsure });
+      await sleep(100);
+      expect(calls).toBe(1);
+    } finally {
+      rmSync(live.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the ensure spawn drops session identity", () => {
+    expect(ensure.ensureSpawnEnv({ PATH: "/usr/bin", HOME: "/h", SUBSTRATE_HOLDER: "w", XTRM_SESSION_NAME: "s", TMUX_PANE: "%1" })).toEqual({ PATH: "/usr/bin", HOME: "/h" });
+  });
+});

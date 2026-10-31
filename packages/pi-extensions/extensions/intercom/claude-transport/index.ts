@@ -31,6 +31,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { WakeDeliveryState } from "@xtrm/contracts";
 import { injectIntercomWake, wakeDeliveryOptions, WakeDedupe } from "../delivery.ts";
 import { intercomTrace } from "../trace.ts";
+import { UnknownReceiptStatusError } from "./protocol.ts";
 import { ccSocksDir, CLAUDE_SESSION_SOCK_SOURCE, FRAME_FROM_SOCK_SOURCE, listClaudeSessions, resolveClaudeSenderSock, type ClaudePeer } from "./registry.ts";
 import {
   ackClaudeMessage,
@@ -59,6 +60,7 @@ export {
   SUPPORTED_FRAME_VERSION,
   UnknownFrameVersionError,
   UnknownReceiptStatusError,
+  ClaudeFrameTooLargeError,
   type ClaudeDeliveryOutcome,
 } from "./protocol.ts";
 export {
@@ -335,6 +337,9 @@ export default function claudeTransportExtension(pi: ExtensionAPI, options: Clau
         },
         onReceipt: (receipt) => {
           claudeReceipts.resolveReceipt(receipt);
+        },
+        onUnknownReceipt: (receipt) => {
+          claudeReceipts.rejectReceipt(receipt.origMessageId, new UnknownReceiptStatusError(receipt.seen));
         },
       });
       boundIdentity = await socketIdentity(sockPath).catch(() => null);
