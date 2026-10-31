@@ -225,6 +225,27 @@ describe("CORE-2564: a peer's message typed into the pane is a relay, not a requ
   });
 });
 
+describe("CORE-2564: agent_end reads each run's own messages", () => {
+  it("judges a later, shorter run of the session, not only the first", async () => {
+    // pi-agent-core emits agent_end with the messages the run generated, a new
+    // array per run; a cursor carried across runs skipped the later ones.
+    const states: Array<Record<string, unknown>> = [];
+    const capturing = { ...stubRegistry, classify: async (_m: unknown, req: { state: Record<string, unknown> }) => (states.push(req.state), stubRegistry.classify()) };
+    const { handlers } = await boot();
+    const long = { messages: [...WORKING_TURN.messages, ...WORKING_TURN.messages, ...WORKING_TURN.messages] };
+    await handlers["agent_end"]!(long, { modelRegistry: capturing });
+    const second = {
+      messages: [{
+        role: "assistant",
+        content: [{ type: "text", text: "Second run: next I will follow the demo procedure." }, { type: "toolCall", id: "c2", name: "edit", arguments: { path: "b.ts" } }],
+      }, { role: "toolResult", toolCallId: "c2", toolName: "edit", content: [{ type: "text", text: "ok" }], isError: false }],
+    };
+    await handlers["agent_end"]!(second, { modelRegistry: capturing });
+    expect(states).toHaveLength(2);
+    expect(String(states[1]!["agent_final_message"])).toContain("Second run");
+  });
+});
+
 describe("CORE-2532: a session's first prompt is judged while the index still builds", () => {
   it("waits for the index off the handler path instead of skipping as index_warming", async () => {
     let asked = 0;

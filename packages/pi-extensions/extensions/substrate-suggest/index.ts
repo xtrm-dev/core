@@ -323,7 +323,6 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
 
   const cooldowns: Cooldowns = {};
   let lastClaimHolder: string | null | undefined; // undefined = never seen
-  let messageCursor = 0;
 
   // In-session binding state (auto; no env var required).
   let sessionClaimRef: string | null = null;
@@ -607,7 +606,6 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   pi.on("session_before_compact", () => {
     // Compaction resets the dedupe window, like the mod resets after /clear.
     resetCooldowns(cooldowns);
-    messageCursor = 0;
   });
 
   pi.on("agent_end", async (event, ctx) => {
@@ -617,8 +615,9 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     // work that has not settled and repeats across continuations.
     if ((event as { willRetry?: boolean }).willRetry === true) return;
     const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
-    const { excerpt, lastAssistant, wasActive, nextIdx } = turnEvidence(messages, messageCursor);
-    messageCursor = nextIdx;
+    // CORE-2569: pi emits the messages this run generated, a new array per
+    // run (pi-agent-core agent-loop), so every run is read from its start.
+    const { excerpt, lastAssistant, wasActive } = turnEvidence(messages, 0);
     const monitorSet = turnMonitorSet;
     turnMonitorSet = false;
     const notifyingRecently = turnsSinceNotifying <= 2;
