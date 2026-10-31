@@ -237,3 +237,104 @@
 {"decision": "sample-403|input|open-code-review", "verdict": "no", "why": "Author fixing review findings; not running a review."}
 {"decision": "sample-420|input|mercury-release", "verdict": "yes", "why": "Promote, migrate and deploy via make is the release router's scope."}
 {"decision": "sample-173|input|gitnexus/pr-review", "verdict": "no", "why": "Author fixing test gaps after a review; doc is for conducting a review."}
+{"decision": "audit-service-prompt-007|input|service-knowledge/services/migrating-schema/references/architecture_ssot", "verdict": "partly", "why": "Migration chain doc relates to the alembic/DuplicateTable hold, but the moment is a read-only report and DRY=1 output."}
+{"decision": "control-injected-134|agent_end|board-audit/agentrun", "verdict": "yes", "why": "Agent is building an AgentRun audit workflow for a Jira board batch; the cookbook covers exactly that."}
+{"decision": "control-trivial-142|input|engineering-quality/review", "verdict": "yes", "why": "Asked to check a PR; the review document covers reviewing the contract and actual diff."}
+{"decision": "fire-023|input|service-knowledge/services/release-flow", "verdict": "partly", "why": "Release-flow main/stable rules touch the push and make-target work, but the task is a patch, dry-run and R2 check, not a release."}
+{"decision": "fire-028|input|session-recovery", "verdict": "partly", "why": "An existing session-recovery skill is related to the new skill being authored, but skill-creator is the main need."}
+{"decision": "fire-029|input|session-recovery", "verdict": "partly", "why": "An existing session-recovery skill is related to the new skill being authored, but skill-creator is the main need."}
+{"decision": "fire-031|input|service-knowledge/services/release-flow", "verdict": "yes", "why": "Production rollout in darth-feedor is governed by the main/stable release flow and its critical requirements."}
+{"decision": "fire-032|input|multiplexing", "verdict": "yes", "why": "Operator asks to coordinate with another worker on the same app via pi-intercom; multiplexing covers that."}
+{"decision": "fire-039|input|engineering-quality/review", "verdict": "yes", "why": "Asked to check a PR; the review document covers reviewing the contract and actual diff."}
+{"decision": "fire-040|input|jira-cleanup/acli-limitations", "verdict": "partly", "why": "acli limitations apply to the Jira update that comes later, but the moment is 'continue the work'."}
+{"decision": "fire-048|agent_end|service-knowledge/services/release-flow", "verdict": "partly", "why": "darth-feedor release flow is adjacent to a library release, but the turn only checks platform merge state."}
+{"decision": "fire-048|input|releasing", "verdict": "partly", "why": "Generic release procedure could apply to 'Release library-v0.1.1', but it targets xtrm-style releases, not clearly this one."}
+{"decision": "fire-053|agent_end|mercury-brand", "verdict": "yes", "why": "User asks which header font the design system wants and requests UI spacing changes; brand tokens and fonts cover it."}
+{"decision": "fire-054|input|mercury-brand", "verdict": "yes", "why": "User picks a font for the UI; the brand system defines type tokens and font rules."}
+{"decision": "fire-058|input|release-note-drafter", "verdict": "partly", "why": "Release-note drafter is a stage in the docs-creation pipeline the user is asking about, but it is only one stage."}
+{"decision": "fire-061|agent_end|board-audit/verification", "verdict": "no", "why": "Board-audit verification checklists are for Jira board writes; the agent is verifying a DB migration and alerts."}
+{"decision": "fire-063|agent_end|programme-coordination/jira", "verdict": "partly", "why": "Jira reference is related to triage, but the brief requires acli only and the doc centres on a different tool."}
+{"decision": "fire-087|agent_end|service-knowledge/services/releasing-mcp-candidate", "verdict": "yes", "why": "The document is the exact SKILL.md the agent is asked to update."}
+{"decision": "fire-090|input|engineering-quality/causal-debugging", "verdict": "partly", "why": "Fail-closed bug fix is a defect fix, but the task is already specified, so full causal debugging is more than needed."}
+{"decision": "fire-102|input|service-knowledge/services/ingesting-tick-data/references/deploy-runbook", "verdict": "yes", "why": "Tonight's ingestor swap is exactly what the deploy runbook covers."}
+{"decision": "fire-111|input|codemode", "verdict": "partly", "why": "Prompt names codemode as one tool to use, but the main work is updating service knowledge, which has a better document."}
+{"decision": "fire-111|input|using-xtrm", "verdict": "no", "why": "Generic doctrine; the task is a knowledge-drift update with codemode, gitnexus and service-knowledge tooling."}
+{"decision": "sample-011|agent_end|using-specialists/specialist-definitions", "verdict": "yes", "why": "User asks to design a specialist per the using-specialists authoring part; this is the definition authoring document."}
+{"decision": "sample-011|input|using-specialists/chain-recipes", "verdict": "no", "why": "Chain recipes cover dispatching specialist stages, not designing a new specialist definition."}
+{"decision": "sample-014|agent_end|deploy-monitoring", "verdict": "yes", "why": "Agent is wiring a deploy-window watch with check pairs and no deployment action; deploy-monitoring covers it."}
+{"decision": "sample-022|agent_end|engineering-quality/kernel-workbench", "verdict": "no", "why": "One-off Jira lookup to answer a question; kernel workbench says it is not for one-off commands."}
+{"decision": "sample-023|agent_end|engineering-quality/kernel-workbench", "verdict": "no", "why": "Coordinator is idle-waiting on a time-gated goal and already uses python; the kernel guide adds nothing now."}
+{"decision": "sample-027|agent_end|service-knowledge/services/release-flow", "verdict": "yes", "why": "User asks whether a service-knowledge skill covers the release rules; this is that skill."}
+{"decision": "sample-027|input|service-knowledge/services/release-flow", "verdict": "yes", "why": "User asks whether a service-knowledge skill covers the release rules; this is that skill."}
+{"decision": "sample-032|input|programme-coordination/substrate", "verdict": "partly", "why": "sb claim and journal mechanics are involved, but the message is mostly a schedule/context relay."}
+{"decision": "sample-033|input|using-xtrm/continuity", "verdict": "yes", "why": "Message is about renewing claims, goal refresh after compaction and handoff at 60% context; continuity checklists cover it."}
+{"decision": "sample-035|input|service-knowledge/services/migrating-schema/references/architecture_ssot", "verdict": "no", "why": "Coordinator reply acknowledging an alembic-chain note; no migration work or procedure is needed now."}
+{"decision": "sample-037|input|awesome-jev", "verdict": "yes", "why": "User asks to search the awesome-jev list and pick a repo; this skill catalogs that list."}
+{"decision": "sample-038|agent_end|multiplexing/operator-help-patterns", "verdict": "no", "why": "Operator help patterns (inventory, handoff on request) are not what a builder worker needs to start a brief."}
+{"decision": "sample-038|input|programme-coordination/workers", "verdict": "no", "why": "Worker-fleet guidance is for coordinators; this agent is a builder receiving a brief."}
+{"decision": "sample-060|input|planning/contracts", "verdict": "no", "why": "Contract-writing guidance does not help a worker who consumes an existing contract."}
+{"decision": "sample-065|input|board-audit/agentrun", "verdict": "partly", "why": "The AgentRun cookbooks are what the later audit will use, but the agent is only setting a reminder and relaying."}
+{"decision": "sample-070|input|sync-docs", "verdict": "no", "why": "Writing a state README and a handoff journal entry is not a docs-sync-with-code task."}
+{"decision": "sample-074|input|using-xtrm", "verdict": "no", "why": "Generic doctrine; the task is a knowledge-drift update with codemode, gitnexus and service-knowledge tooling."}
+{"decision": "sample-091|agent_end|programme-coordination", "verdict": "yes", "why": "Agent is editing the programme-coordination skill's Jira reference and discussing shared coordination doctrine."}
+{"decision": "sample-097|input|agentrun-author", "verdict": "yes", "why": "User asks about /agentrun-author and AgentRun workflows to run the jev check; this is that skill."}
+{"decision": "sample-103|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker will run sb issue show/claim, which the sb reference covers, but that is a side aspect of the evidence lane."}
+{"decision": "sample-113|agent_end|board-audit/verification", "verdict": "yes", "why": "Agent is doing a sample check before publishing board-audit verdicts; verification checklists cover this."}
+{"decision": "sample-138|agent_end|codemode", "verdict": "yes", "why": "Prompt invokes the codemode skill and the agent is running codemode cells."}
+{"decision": "sample-144|agent_end|multiplexing/operator-help-patterns", "verdict": "no", "why": "Operator inventory/handoff patterns do not fit building workflows, plans and transcript analysis."}
+{"decision": "sample-147|input|board-audit", "verdict": "yes", "why": "Operator authorizes board-wide fixes; the board-audit snapshot/propose/apply/verify procedure covers it."}
+{"decision": "sample-152|input|jira-cleanup/acli-limitations", "verdict": "partly", "why": "acli limitations apply to the later Jira update, but the moment is 'continue the work'."}
+{"decision": "sample-153|input|service-knowledge/services/release-flow", "verdict": "partly", "why": "Release-flow promotion rules relate to the promo train, but the message is a schedule relay."}
+{"decision": "sample-159|input|engineering-quality/causal-debugging", "verdict": "partly", "why": "Regression test for a fixed defect relates to debugging, but a testing document would fit better."}
+{"decision": "sample-162|input|service-knowledge/services/ingesting-tick-data/references/deploy-runbook", "verdict": "yes", "why": "Tonight's ingestor swap is exactly what the deploy runbook covers."}
+{"decision": "sample-165|input|multiplexing/handoff", "verdict": "yes", "why": "Operator asks to hand off to a new helper with a briefing; the handoff template covers it."}
+{"decision": "sample-170|input|board-audit", "verdict": "yes", "why": "Operator is scoping a Wednesday board audit; the doc is the board-audit procedure."}
+{"decision": "sample-172|agent_end|production-via-make", "verdict": "yes", "why": "Operator authorised a production deploy by make and the agent found a stray raw-docker container; the doc covers exactly this."}
+{"decision": "sample-176|input|board-audit", "verdict": "yes", "why": "Jira ticket consolidation under epics is board-audit work; the PR-sequence part is a side aspect."}
+{"decision": "sample-203|input|using-xtrm", "verdict": "no", "why": "Generic worker brief with exact claim/journal commands already given; the real work is a Rust bar-writer merge."}
+{"decision": "sample-206|input|service-knowledge/services/ingesting-tick-data", "verdict": "yes", "why": "Ruling on unbundled sub-trade semantics in the Sierra tick ingestor; the tick-ingestor service skill covers it."}
+{"decision": "sample-211|agent_end|board-audit/agentrun", "verdict": "yes", "why": "Agent is running the board-batch AgentRun verdict workflow; the cookbook covers it."}
+{"decision": "sample-254|input|open-code-review", "verdict": "yes", "why": "Operator asks for OCR review explicitly."}
+{"decision": "sample-254|input|open-code-review/delegate", "verdict": "partly", "why": "Delegation mode is a variant of the requested OCR review; the plain OCR doc fits better."}
+{"decision": "sample-259|input|goal-prompt", "verdict": "yes", "why": "Operator explicitly asks for /goal-prompt inline."}
+{"decision": "sample-260|input|using-specialists/chain-recipes", "verdict": "partly", "why": "Roster exploration needs specialist_list; the chain recipes doc touches roles but is about chains."}
+{"decision": "sample-274|input|multiplexing/operator-help-patterns", "verdict": "yes", "why": "Operator asks to send a message to an agent via tmux; the doc covers assisted send/handoff patterns and when tmux is allowed."}
+{"decision": "sample-284|agent_end|agentrun", "verdict": "partly", "why": "Agent runs an existing AgentRun workflow; the board-audit AgentRun cookbook fits better than the authoring guide."}
+{"decision": "sample-284|input|board-audit/agentrun", "verdict": "yes", "why": "Resumed board-slice verdicts with AgentRun judgments; the cookbook for board batches is exactly this."}
+{"decision": "sample-295|agent_end|service-knowledge/services/release-flow", "verdict": "no", "why": "Moment is writing a compaction handoff goal prompt; release-flow does not help."}
+{"decision": "sample-305|input|planning/contracts", "verdict": "no", "why": "Worker consumes an existing contract; the doc is for authoring contracts."}
+{"decision": "sample-312|input|releasing", "verdict": "no", "why": "Short go-ahead to dispatch; no release procedure is needed at this moment."}
+{"decision": "sample-314|agent_end|engineering-quality/causal-debugging", "verdict": "no", "why": "Agent is mutation-testing and auditing a release docs revision, not debugging a failure."}
+{"decision": "sample-319|input|engineering-quality/kernel-workbench", "verdict": "partly", "why": "Fix needs probe-before-fix and pre-edit history, which this covers; it is a side aspect of a regex-semantics fix."}
+{"decision": "sample-319|input|service-knowledge/services/repository-ci-cd", "verdict": "no", "why": "Fix is about manifest regex guards for docs revisions, not repository CI/CD territory."}
+{"decision": "sample-321|input|multiplexing", "verdict": "no", "why": "Short factual correction about which link was used; no procedure needed."}
+{"decision": "sample-323|agent_end|service-knowledge/services/release-flow", "verdict": "partly", "why": "Same main-to-stable promote pattern, but the doc is for darth-feedor and the work is in the platform repo."}
+{"decision": "sample-327|input|open-code-review", "verdict": "partly", "why": "Adversarial re-review is covered, but OCR applies fixes and the request forbids edits; the review doc fits better."}
+{"decision": "sample-337|input|engineering-quality/review", "verdict": "yes", "why": "Exact-SHA adversarial PR re-review is the review doc's job."}
+{"decision": "sample-338|input|mercury-brand", "verdict": "yes", "why": "Choosing a font for Mercury work is directly covered by the brand type tokens."}
+{"decision": "sample-339|input|engineering-quality/review", "verdict": "partly", "why": "Probably a PR review but the request is ambiguous; the review doc is plausible."}
+{"decision": "sample-348|agent_end|updating-dependencies/templates/upgrade-dossier", "verdict": "partly", "why": "Agent bumped pinned deps to clear advisories; the dossier is only the output template of the dependency-update skill."}
+{"decision": "sample-349|input|programme-coordination/workers", "verdict": "partly", "why": "Briefing a worker with context is coordination work, but the doc content is unknown and a handoff doc may fit better."}
+{"decision": "sample-359|input|open-code-review", "verdict": "no", "why": "Relay of external findings and an instruction to finish the report; no OCR run needed."}
+{"decision": "sample-367|input|service-knowledge/services/release-flow", "verdict": "yes", "why": "Operator states the main/stable deploy rule, which is the core of the release-flow doc."}
+{"decision": "sample-371|agent_end|session-recovery", "verdict": "yes", "why": "Operator asks which agents were active before the OOM from session files; session-recovery covers inventory and triage."}
+{"decision": "sample-376|input|multiplexing/handoff", "verdict": "yes", "why": "Operator asks for a handoff message via SendMessage; the handoff doc covers the template."}
+{"decision": "sample-377|agent_end|production-via-make", "verdict": "yes", "why": "Agent is restarting production services and must route them through make targets."}
+{"decision": "sample-382|agent_end|production-via-make", "verdict": "no", "why": "Turn ended with a repo PR for alert rules and docs; no production change is being made."}
+{"decision": "sample-383|input|ci-light-heavy", "verdict": "yes", "why": "CI cost, test sprawl and lane placement are what the CI light/heavy doc covers."}
+{"decision": "sample-384|agent_end|skill-creator", "verdict": "yes", "why": "Agent is finishing a skill the operator asked to create with /skill-creator."}
+{"decision": "sample-384|input|session-recovery", "verdict": "partly", "why": "Task is to create the skill; skill-creator fits, session-recovery is only the artifact being built."}
+{"decision": "sample-394|input|service-knowledge/services/grafana-dashboards", "verdict": "yes", "why": "Enriching the runners Grafana dashboard is covered by the Grafana dashboards skill."}
+{"decision": "sample-397|input|docs", "verdict": "no", "why": "Read-only evidence lane for an epic; creating shareable docs is not the work."}
+{"decision": "sample-404|agent_end|service-knowledge/services/release-flow", "verdict": "yes", "why": "Agent prepares promote and deploy sequence for infra stable; the release-flow doc covers it."}
+{"decision": "sample-411|agent_end|service-knowledge/services/runners", "verdict": "yes", "why": "Operator shares a runners recovery report and the agent reasons about runner limits; the runners skill covers it."}
+{"decision": "sample-416|agent_end|service-knowledge/services/runners", "verdict": "yes", "why": "Creating a darth-feedor runner and setting CI_RUNNER_DOCKER is runners territory."}
+{"decision": "sample-418|input|session-recovery", "verdict": "yes", "why": "Operator looks for lost Claude sessions; session recovery covers inventory and reopening."}
+{"decision": "sample-420|input|production-via-make", "verdict": "yes", "why": "Task deploys services and applies migrations in production through make."}
+{"decision": "sample-428|input|session-recovery", "verdict": "yes", "why": "Operator cannot find a closed pane; the session inventory in this doc helps locate it."}
+{"decision": "sample-431|agent_end|session-recovery", "verdict": "yes", "why": "Operator invoked /session-recovery to find earlier panes and worktrees."}
+{"decision": "sample-431|input|session-recovery", "verdict": "yes", "why": "Operator invoked /session-recovery to find earlier panes and worktrees."}
+{"decision": "sample-434|input|service-knowledge", "verdict": "no", "why": "Task is an admin push in specialists and patching an npm copy; economic-data service index does not apply."}
+{"decision": "sample-442|input|ci-light-heavy", "verdict": "partly", "why": "Promotion of master to stable is mentioned, but this is a production rollout with make steps and a better rollout doc exists."}
+{"decision": "sample-442|input|programme-coordination/build-coordinator", "verdict": "no", "why": "Worker rollout task; the doc is for build coordinators."}
+{"decision": "sample-449|input|programme-coordination/substrate", "verdict": "no", "why": "Worker implements a docs producer; the doc is for programme coordinators using Substrate."}

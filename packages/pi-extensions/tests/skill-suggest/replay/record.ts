@@ -78,17 +78,30 @@ export function recordingRegistry(sink: Recorded[], row: string, seam: Recorded[
   };
 }
 
-/** The committed recording (answers.jsonl): answers only, rounded to 4 places. */
-export function loadAnswers(): Array<Pick<Recorded, "row" | "seam" | "answers" | "model">> {
+/**
+ * The committed recording (answers.jsonl): per row and seam, the stage-1 and
+ * stage-2 answers in the registry shape, reduced to what the decision reads.
+ */
+export interface CannedAnswers {
+  row: string;
+  seam: Recorded["seam"];
+  model: string | null;
+  s1: Record<string, Record<string, unknown>> | null;
+  s2: Record<string, Record<string, unknown>> | null;
+}
+export function loadAnswers(): CannedAnswers[] {
   const file = join(new URL(".", import.meta.url).pathname, "answers.jsonl");
   return readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
 
-export function cannedRegistry(recorded: Array<Pick<Recorded, "row" | "seam" | "answers" | "model">>, row: string, seam: Recorded["seam"]) {
+/** Answers from the recording: the rerank request (it asks rr_wide) gets stage 2, any other stage 1. */
+export function cannedRegistry(recorded: CannedAnswers[], row: string, seam: Recorded["seam"]) {
   const hit = recorded.find((r) => r.row === row && r.seam === seam);
   return {
     getAvailableOfType: async () => MODELS,
-    classify: async () =>
-      hit?.answers ? { stopReason: "stop", answers: hit.answers, model: hit.model ?? "typesafe/jev-latest" } : { stopReason: "error", errorMessage: "not recorded" },
+    classify: async (_m: unknown, req: { questions: Record<string, unknown> }) => {
+      const answers = "rr_wide" in req.questions ? hit?.s2 : hit?.s1;
+      return answers ? { stopReason: "stop", answers, model: hit?.model ?? "typesafe/jev-latest" } : { stopReason: "error", errorMessage: "not recorded" };
+    },
   };
 }

@@ -32,7 +32,10 @@ export interface JevChoiceAnswer {
 }
 
 export interface JevResult {
+  /** The first choice question's answer (single-choice callers). */
   choice: JevChoiceAnswer;
+  /** CORE-2564: every choice answer by question id, for requests with more than one. */
+  choices: Record<string, JevChoiceAnswer>;
   nouls: Record<string, number>;
   model: string | null;
   usage: { input_tokens?: number; output_tokens?: number } | null;
@@ -178,11 +181,17 @@ export async function classifyViaRegistry(
     };
     if (!choice.choice) return fail("bad_answer");
     const nouls: Record<string, number> = {};
+    const choices: Record<string, JevChoiceAnswer> = {};
     for (const [id, a] of Object.entries(answers)) {
       if (a?.["type"] === "bool") nouls[id] = toNumber(a["probability"]);
+      else if (a?.["type"] === "choice") {
+        const c = parseAnswerPayload(a).choice;
+        if (c) choices[id] = c;
+      }
     }
     return {
       choice,
+      choices,
       nouls,
       model: res.model ?? `${used.provider}/${used.id}`,
       usage: res.usage ? { input_tokens: res.usage.input, output_tokens: res.usage.output } : null,
@@ -258,13 +267,16 @@ export async function systemOne(
     const choice = parsed.find((p) => p.choice)?.choice;
     if (!choice || !choice.choice) return fail("bad_answer");
     const nouls: Record<string, number> = {};
+    const choices: Record<string, JevChoiceAnswer> = {};
     for (const [id, raw] of Object.entries(answers as Record<string, unknown>)) {
       const p = parseAnswer(raw);
       if (p.noul !== undefined) nouls[id] = p.noul;
+      if (p.choice) choices[id] = p.choice;
     }
     const usage = (body["usage"] ?? null) as Record<string, unknown> | null;
     return {
       choice,
+      choices,
       nouls,
       model: typeof body["model"] === "string" ? body["model"] : null,
       usage: usage ? { input_tokens: Number(usage["input_tokens"]), output_tokens: Number(usage["output_tokens"]) } : null,
