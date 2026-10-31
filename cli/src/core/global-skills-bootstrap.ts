@@ -74,12 +74,12 @@ function hashArchive(archivePath: string): string {
   return crypto.createHash('sha256').update(fs.readFileSync(archivePath)).digest('hex');
 }
 
-async function createVerifiedSkillsBackup(globalSkillsRoot: string): Promise<VerifiedSkillsBackup | null> {
+export async function createVerifiedSkillsBackup(globalSkillsRoot: string, backupRootOverride?: string): Promise<VerifiedSkillsBackup | null> {
   if (!await fs.pathExists(globalSkillsRoot)) {
     return null;
   }
 
-  const backupRoot = path.join(path.dirname(globalSkillsRoot), 'migration-backups');
+  const backupRoot = backupRootOverride ?? path.join(path.dirname(globalSkillsRoot), 'migration-backups');
   await fs.ensureDir(backupRoot);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const archivePath = path.join(backupRoot, `global-skills-${stamp}.tgz`);

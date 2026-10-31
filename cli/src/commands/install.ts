@@ -23,6 +23,7 @@ import {
     installFromRegistry,
     resolvePackageRoot,
     scaffoldSkillsDefaultFromPackage,
+    ALLOW_LARGE_PRUNE_ENV,
     pruneRetiredManagedSkills,
     pruneRetiredOptionalSkills,
     type InstallStats,
@@ -196,7 +197,11 @@ export async function runInstall(opts: InstallOpts = {}): Promise<InstallResult>
         registry,
         dryRun,
         overrideRoots: getGlobalSkillsOverrideRoots(projectRoot),
+        registrySource: registryPath,
     });
+    if (pruneResult.refused) {
+        console.log(kleur.yellow(`  • Refused to prune ${pruneResult.refused.retired.length} retired skill(s): ${pruneResult.refused.reason}. Re-run with ${ALLOW_LARGE_PRUNE_ENV}=1 to confirm.`));
+    }
     if (pruneResult.removed.length > 0) {
         const verb = dryRun ? 'Would remove' : 'Removed';
         console.log(kleur.dim(`  • ${verb} ${pruneResult.removed.length} retired managed skill(s): ${pruneResult.removed.join(', ')}`));
