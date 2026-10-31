@@ -1,3 +1,4 @@
+import "./isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { describe, expect, it } from "bun:test";
 import {
   contextBlock,
@@ -188,13 +189,13 @@ describe("service-knowledge pack discovery", () => {
     const a = repoWithPack(["alpha"]);
     const b = repoWithPack(["beta", "gamma"]);
     try {
-      const discoverIds = (repo: string) => mod.discoverSkillPacks(repo).flatMap((p) => p.entries).map((e) => e.id);
+      const discoverIds = async (repo: string) => (await mod.discoverSkillPacks(repo)).flatMap((p) => p.entries).map((e) => e.id);
       mod.resetRosterCache();
-      expect(discoverIds(a)).toEqual(["alpha"]);
+      expect(await discoverIds(a)).toEqual(["alpha"]);
       // No reset: the cache must be keyed by repo, not a single slot that answers for
       // whichever repo was scanned first.
-      expect(discoverIds(b)).toEqual(["beta", "gamma"]);
-      expect(discoverIds(a)).toEqual(["alpha"]);
+      expect(await discoverIds(b)).toEqual(["beta", "gamma"]);
+      expect(await discoverIds(a)).toEqual(["alpha"]);
       // A service whose skill file is missing must not become a card: the instruction
       // would name a path the agent cannot read.
       const withGap = repoWithPack(["present"]);
@@ -203,7 +204,7 @@ describe("service-knowledge pack discovery", () => {
         JSON.stringify({ services: { present: { description: "has a skill" }, ghost: { description: "no skill file" } } }),
       );
       mod.resetRosterCache();
-      const ids = discoverIds(withGap);
+      const ids = await discoverIds(withGap);
       expect(ids).toEqual(["present"]);
       fs.rmSync(withGap, { recursive: true, force: true });
     } finally {
@@ -331,7 +332,7 @@ describe("provenance steer gates", () => {
     expect(partitionTracked([], () => true)).toEqual({ tracked: [], untracked: [] });
   });
 
-  it("trackedEditedFiles keeps only git-tracked paths (temp repo)", () => {
+  it("trackedEditedFiles keeps only git-tracked paths (temp repo)", async () => {
     const dir = `${process.env.TMPDIR ?? "/tmp"}/prov-gate-${Date.now()}`;
     const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
     const fs = require("node:fs") as typeof import("node:fs");
@@ -343,16 +344,16 @@ describe("provenance steer gates", () => {
     fs.writeFileSync(`${dir}/new.ts`, "export const b = 2;\n");
     execFileSync("git", ["add", "tracked.ts"], { cwd: dir });
     execFileSync("git", ["commit", "-qm", "seed tracked history"], { cwd: dir });
-    expect(trackedEditedFiles([`${dir}/tracked.ts`, `${dir}/new.ts`], dir)).toEqual([`${dir}/tracked.ts`]);
-    expect(trackedEditedFiles([`${dir}/new.ts`], dir)).toEqual([]);
+    expect(await trackedEditedFiles([`${dir}/tracked.ts`, `${dir}/new.ts`], dir)).toEqual([`${dir}/tracked.ts`]);
+    expect(await trackedEditedFiles([`${dir}/new.ts`], dir)).toEqual([]);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("trackedEditedFiles stays silent outside a repo", () => {
-    expect(trackedEditedFiles(["/tmp/ocr-shim/shim.js"], "/tmp")).toEqual([]);
+  it("trackedEditedFiles stays silent outside a repo", async () => {
+    expect(await trackedEditedFiles(["/tmp/ocr-shim/shim.js"], "/tmp")).toEqual([]);
   });
 
-  it("buildProvenanceEvidence carries diffstat, last touch, and next commands", () => {
+  it("buildProvenanceEvidence carries diffstat, last touch, and next commands", async () => {
     const dir = `${process.env.TMPDIR ?? "/tmp"}/prov-ev-${Date.now()}`;
     const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
     const fs = require("node:fs") as typeof import("node:fs");
@@ -364,13 +365,13 @@ describe("provenance steer gates", () => {
     execFileSync("git", ["add", "."], { cwd: dir });
     execFileSync("git", ["commit", "-qm", "seed the why"], { cwd: dir });
     fs.writeFileSync(`${dir}/f.ts`, "export const a = 2;\n");
-    const body = buildProvenanceEvidence([`${dir}/f.ts`], dir);
+    const body = await buildProvenanceEvidence([`${dir}/f.ts`], dir);
     expect(body).toMatch(/1 insertion/);
     expect(body).toMatch(/seed the why/);
     expect(body).toMatch(/git log -p --follow/);
     expect(body.length).toBeLessThanOrEqual(2000);
     // CORE-2546: the same git calls give the operator's card; the agent's text is unchanged.
-    const steer = buildProvenanceSteer([`${dir}/f.ts`], dir);
+    const steer = await buildProvenanceSteer([`${dir}/f.ts`], dir);
     expect(steer.text).toBe(body);
     expect(steer.text).not.toContain("\x1b");
     expect(steer.card).toMatchObject({ identity: "provenance unread", summary: "1 file changed without reading its history", tint: "substrate" });
@@ -427,7 +428,7 @@ describe("provenance steer ordering (CORE-2406)", () => {
     expect(delivered).toHaveLength(1);
   });
 
-  it("repoRoot resolves the git toplevel from a nested dir, and falls back outside a repo (hermetic temp repo)", () => {
+  it("repoRoot resolves the git toplevel from a nested dir, and falls back outside a repo (hermetic temp repo)", async () => {
     const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
     const fs = require("node:fs") as typeof import("node:fs");
     const outer = fs.mkdtempSync(`${process.env.TMPDIR ?? "/tmp"}/prov-root-`);
@@ -438,21 +439,22 @@ describe("provenance steer ordering (CORE-2406)", () => {
     execFileSync("git", ["config", "user.email", "t@t"], { cwd: dir });
     execFileSync("git", ["config", "user.name", "t"], { cwd: dir });
     const top = fs.realpathSync(dir);
-    expect(repoRoot(dir)).toBe(top);
-    expect(repoRoot(nested)).toBe(top);
+    expect(await repoRoot(dir)).toBe(top);
+    expect(await repoRoot(nested)).toBe(top);
     // Not a repo: the launch directory is the only thing left to return.
     const outside = `${outer}/outside`;
     fs.mkdirSync(outside, { recursive: true });
-    expect(repoRoot(outside)).toBe(outside);
+    expect(await repoRoot(outside)).toBe(outside);
     fs.rmSync(outer, { recursive: true, force: true });
   });
 
-  it("repoRoot is resolved once per session, not once per steer (CORE-2406)", () => {
+  it("repoRoot is resolved once per session, not once per steer (CORE-2406)", async () => {
     let calls = 0;
     const resolve = createRepoRootResolver(() => {
       calls += 1;
       return "/repo";
     });
+    expect(await resolve.ready()).toBe("/repo");
     expect(resolve()).toBe("/repo");
     expect(resolve()).toBe("/repo");
     expect(calls).toBe(1);
@@ -507,10 +509,41 @@ describe("extension wiring (CORE-2406)", () => {
     substrateSuggestExtension(pi as never);
     // A typo or rename here leaves the handler attached to nothing and the
     // steer silently dead, so the real event names are pinned.
-    expect([...registered.keys()].sort()).toEqual(["agent_end", "session_before_compact", "tool_call", "tool_result"]);
+    expect([...registered.keys()].sort()).toEqual(["agent_end", "agent_start", "session_before_compact", "session_start", "tool_call", "tool_result"]);
     const handler = registered.get("tool_result")?.[0];
     expect(typeof handler).toBe("function");
     // A real-shaped edit result rides this event; the handler accepts it.
     await handler!({ type: "tool_result", toolName: "edit", input: { path: "x.ts" }, args: {}, content: [] } as never);
+  });
+});
+
+describe("turnEvidence reads pi's real message shapes (CORE-2547)", () => {
+  it("a toolCall block marks an active turn; tool output stays out of the excerpt", async () => {
+    const { turnEvidence } = await import("../extensions/substrate-suggest/index.ts");
+    const ev = turnEvidence([
+      { role: "assistant", content: [{ type: "text", text: "Running the suite." }, { type: "toolCall", id: "c1", name: "bash", arguments: { command: "npm test" } }] },
+      { role: "toolResult", content: [{ type: "text", text: "noisy output" }], isError: false },
+    ], 0);
+    expect(ev.wasActive).toBe(true);
+    expect(ev.lastAssistant).toBe("Running the suite.");
+    expect(ev.excerpt).not.toContain("noisy output");
+  });
+
+  it("an erroring toolResult marks an active turn even without a write-class call", async () => {
+    const { turnEvidence } = await import("../extensions/substrate-suggest/index.ts");
+    const ev = turnEvidence([
+      { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "read", arguments: { path: "a.ts" } }] },
+      { role: "toolResult", content: [{ type: "text", text: "ENOENT" }], isError: true },
+    ], 0);
+    expect(ev.wasActive).toBe(true);
+  });
+
+  it("a read-only, text-free turn is not active", async () => {
+    const { turnEvidence } = await import("../extensions/substrate-suggest/index.ts");
+    const ev = turnEvidence([
+      { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "read", arguments: { path: "a.ts" } }] },
+      { role: "toolResult", content: [{ type: "text", text: "ok" }], isError: false },
+    ], 0);
+    expect(ev.wasActive).toBe(false);
   });
 });

@@ -41,7 +41,6 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -56,8 +55,8 @@ import {
   suggestionCardFields,
   tintSuggestionGlyph,
   TERMINAL_LIFECYCLE,
-  systemOne,
-  classifyViaRegistry,
+  classify,
+  primeApiKey,
   readApiKey,
   type Cooldowns,
   type StateSnapshot,
@@ -66,9 +65,16 @@ import {
   type Question,
   type RegistryLike,
 } from "../../shared/suggest.ts";
+import { createJsonlLog } from "../../shared/jsonl-log.ts";
+import { currentEpoch, detach, DELIVERY, noteRunStart, propose, resetSession } from "../../shared/suggest-pipeline.ts";
 import {
+  cachedSkillPacks,
   discoverSkillPacks,
   isMonitorSetter,
+  isNotifyingWork,
+  waitFacts,
+  waitGate,
+  waitPrecondition,
   skillVerb,
   territoryHit,
   waitGuardVerb,
@@ -86,8 +92,8 @@ import { evaluateToolNudge, newCounters, observeTool, type ToolCounters } from "
 import { registerEventRenderer } from "../../shared/event.ts";
 
 const CUSTOM_TYPE = "substrate_suggestion";
-const LOG_DIR = join(homedir(), ".xtrm", "substrate-suggest");
-const LOG_FILE = join(LOG_DIR, "log.jsonl");
+// Resolved per write so tests can redirect the log (SUBSTRATE_SUGGEST_LOG_DIR) after import.
+const logDir = (): string => process.env["SUBSTRATE_SUGGEST_LOG_DIR"] ?? join(homedir(), ".xtrm", "substrate-suggest");
 
 const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
 const FITS_THRESHOLD = 0.3; // best verify noul under this -> drop the pick
@@ -106,14 +112,24 @@ const SKILL_SOURCE_VERB: VerbSpec = {
 
 const REF_RE = /\b([A-Z][A-Z0-9]{1,15}-\d+)\b/;
 
-/** Extract bounded turn evidence from finished agent messages. */
-function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fromIdx: number): { excerpt: string; lastAssistant: string; wasActive: boolean; nextIdx: number } {
+/**
+ * Extract bounded turn evidence from finished agent messages.
+ *
+ * Pi's shapes (docs/message-types.md): tool calls are `{type: "toolCall", name}`
+ * content blocks on assistant messages; results are separate
+ * `{role: "toolResult", isError}` messages (CORE-2547).
+ */
+export function turnEvidence(messages: Array<{ role?: string; content?: unknown; isError?: unknown }>, fromIdx: number): { excerpt: string; lastAssistant: string; wasActive: boolean; nextIdx: number } {
   const parts: string[] = [];
   let lastAssistant = "";
   let wasActive = false;
   let userText = 0;
   for (let i = fromIdx; i < messages.length; i++) {
     const m = messages[i];
+    if (m?.role === "toolResult") {
+      if (m.isError === true) wasActive = true;
+      continue; // tool output is not turn text
+    }
     const content = Array.isArray(m?.content) ? (m!.content as Array<Record<string, unknown>>) : [];
     for (const p of content) {
       if (p?.["type"] === "text" && typeof p["text"] === "string") {
@@ -122,11 +138,10 @@ function turnEvidence(messages: Array<{ role?: string; content?: unknown }>, fro
         if (role === "assistant") lastAssistant = p["text"];
         if (role === "user") userText++;
       }
-      if (p?.["type"] === "tool_call") {
-        const name = String(p["toolName"] ?? p["name"] ?? "");
+      if (p?.["type"] === "toolCall") {
+        const name = String(p["name"] ?? "");
         if (["edit", "write", "bash", "python", "structured_return"].includes(name)) wasActive = true;
       }
-      if (p?.["type"] === "tool_result" && p["isError"] === true) wasActive = true;
     }
   }
   const excerpt = parts.join("\n").slice(0, 8000);
@@ -226,13 +241,14 @@ async function openServices(): Promise<SubstrateServices | null> {
   }
 }
 
+// CORE-2534: rows queue in memory and are appended asynchronously.
+const decisionLog = createJsonlLog(logDir);
 function logDecision(row: Record<string, unknown>): void {
-  try {
-    mkdirSync(LOG_DIR, { recursive: true });
-    appendFileSync(LOG_FILE, `${JSON.stringify(row)}\n`);
-  } catch {
-    /* logging is best-effort, never load-bearing */
-  }
+  decisionLog.append(row);
+}
+/** Wait for queued decision rows to reach disk (tests, shutdown). */
+export function flushDecisionLog(): Promise<void> {
+  return decisionLog.flush();
 }
 
 /** Shared Jev runner: Pi-native classifier first, direct REST second. */
@@ -240,10 +256,15 @@ async function askJev(
   registry: RegistryLike | null,
   state: Record<string, unknown>,
   questions: Record<string, Question>,
+  duty: string,
 ) {
-  let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
-  if (!result) result = await systemOne(state, questions);
-  return result;
+  const outcome = await classify(registry, state, questions);
+  // CORE-2534: a failed classification is a row with its reason and wall time,
+  // never a silent null.
+  if (!outcome.result) {
+    logDecision({ ts: new Date().toISOString(), issue: null, verb: null, source: "jev", duty, gate: `classifier:${outcome.failure}`, jev_ms: outcome.ms });
+  }
+  return outcome.result;
 }
 
 /** The Jev semantic stage: pick one journal kind for the turn, or none. */
@@ -276,7 +297,7 @@ async function jevPickKind(
     entries_since_checkpoint: snapshot.journalSeq - snapshot.lastCheckpointSeq,
     working_turn_excerpt: excerpt.slice(0, 8000),
   };
-  const result = await askJev(registry, state, questions);
+  const result = await askJev(registry, state, questions, "journal_kind");
   if (!result) return null;
 
   const gate = [result.nouls["material_event"] ?? 0, 1 - (result.nouls["prose_would_suffice"] ?? 0)];
@@ -309,6 +330,8 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
   let lastTouchedRef: string | null = null;
   let lastClaimScan = { at: 0, ref: null as string | null };
   let turnMonitorSet = false;
+  /** Turns since notifying work (subagent, specialist, background task, monitor) started; Infinity if none. */
+  let turnsSinceNotifying = Number.POSITIVE_INFINITY;
   let turnEditedFiles: string[] = [];
   let turnSteeredFiles: string[] = [];
   let turnProvenanceSeen = false;
@@ -326,10 +349,27 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     tintGlyph: (glyph, details, theme) => tintSuggestionGlyph(glyph, details.tint, theme),
   });
 
-  const emit = (verb: VerbSpec, ref: string, opts: { confidence?: number | null; revision?: number | null; source: string; model?: string | null }) => {
+  /**
+   * Offer one suggestion through the shared arbiter (CORE-2549): at most one
+   * per agent run across both suggest extensions, never stale, never repeated
+   * in the session. Delivered as a steer that triggers no turn (CORE-2548): a
+   * suggestion informs the model's next request; it never starts a run.
+   * Returns whether it was delivered.
+   */
+  const emit = (verb: VerbSpec, ref: string, opts: { confidence?: number | null; revision?: number | null; source: string; model?: string | null; epoch: number }): boolean => {
     const suggestion = { verb, ref, confidence: opts.confidence, revision: opts.revision };
     const card = formatSuggestionPlain(suggestion);
-    applyCooldown(cooldowns, ref, verb);
+    const outcome = propose({
+      epoch: opts.epoch,
+      key: `substrate:${verb.id}:${ref}`,
+      deliver: () => {
+        applyCooldown(cooldowns, ref, verb);
+        pi.sendMessage(
+          { customType: CUSTOM_TYPE, content: card, display: true, details: { verb: verb.id, ref, severity: verb.severity, card: suggestionCardFields(suggestion) } },
+          DELIVERY,
+        );
+      },
+    });
     logDecision({
       ts: new Date().toISOString(),
       issue: ref,
@@ -337,14 +377,9 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       severity: verb.severity,
       source: opts.source,
       model: opts.model ?? null,
+      ...(outcome === "delivered" ? {} : { gate: `arbiter:${outcome}` }),
     });
-    pi.sendMessage(
-      { customType: CUSTOM_TYPE, content: card, display: true, details: { verb: verb.id, ref, severity: verb.severity, card: suggestionCardFields(suggestion) } },
-      // Wake the agent like specialists events do: every suggestion is
-      // information for the model. Cooldowns plus self-extinguishing rules
-      // bound the turn cost.
-      { deliverAs: "followUp", triggerTurn: true },
-    );
+    return outcome === "delivered";
   };
 
   /** The unique live claim in the checkout's bound project (60s cached). */
@@ -408,6 +443,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         /* counters are best-effort */
       }
       if (isMonitorSetter(tool, e.args, e.input)) turnMonitorSet = true;
+      if (isNotifyingWork(tool, e.args, e.input)) turnsSinceNotifying = 0;
       if (isEditor(tool)) turnEditedFiles = turnEditedFileInto(turnEditedFiles, e, tool); else if (isProvenanceReader(tool, e.args, e.input)) turnProvenanceSeen = true;
       const { ref, isClaim } = observeToolCall(tool, e.args ?? e.input);
       if (ref) {
@@ -467,11 +503,13 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         const suggestion = { verb: nudge.verb, ref: "—" };
         pi.sendMessage(
           { customType: CUSTOM_TYPE, content: formatSuggestionPlain(suggestion), display: true, details: { verb: nudge.verb.id, nudge: nudge.kind, card: suggestionCardFields(suggestion) } },
-          { deliverAs: "followUp", triggerTurn: false },
+          DELIVERY,
         );
         return { content, structuredContent: e.structuredContent } as never;
       }
-      const packs = discoverSkillPacks(resolveRepoRoot());
+      // The deterministic append stays synchronous, so it reads the cached
+      // scan and never waits for one (CORE-2534).
+      const packs = cachedSkillPacks(resolveRepoRoot());
       const hit = packs.length > 0 ? territoryHit(packs, e.input, resolveRepoRoot()) : null;
       if (hit) {
         const verb = skillVerb(hit);
@@ -487,7 +525,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           const suggestion = { verb, ref: "—" };
           pi.sendMessage(
             { customType: CUSTOM_TYPE, content: formatSuggestionPlain(suggestion), display: true, details: { verb: "skill_suggest", skill: hit.id, midTurn: true, card: suggestionCardFields(suggestion, "skill") } },
-            { deliverAs: "followUp", triggerTurn: false },
+            DELIVERY,
           );
           return { content, structuredContent: e.structuredContent } as never;
         }
@@ -501,11 +539,12 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       try {
         const fresh = turnEditedFiles.filter((f) => !turnSteeredFiles.includes(f));
         if (fresh.length > 0 && !turnProvenanceSeen) {
-          const tracked = trackedEditedFiles(fresh, resolveRepoRoot());
-          if (tracked.length > 0) {
-            const files = tracked;
-            void (async () => {
-              try {
+          const provenanceEpoch = currentEpoch();
+          detach(async () => {
+            try {
+              // git runs with async IO inside the detached block (CORE-2534).
+              const files = await trackedEditedFiles(fresh, resolveRepoRoot());
+              if (files.length === 0) return;
                 await runProvenanceSteer({
                   files,
                   steered: turnSteeredFiles,
@@ -526,7 +565,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
                       },
                       provenance_materially_helpful: { type: "noul", instructions: "Given these files were changed this turn without consulting commit or PR history, would the history plausibly change what the change should be or reveal it repeats a past mistake?" },
                       sonata_harm: { type: "noul", instructions: "Is the change clearly the provenance-free kind (mechanical refactor, asked-for rename) where history consultation would be noise? (Untracked files never reach this question.)" },
-                    } as Record<string, Question>);
+                    } as Record<string, Question>, "provenance");
                     if (!result) return null;
                     const mean =
                       ((result.nouls["provenance_materially_helpful"] ?? 0) +
@@ -534,24 +573,35 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
                       2;
                     return { mean, model: result.model ?? null };
                   },
-                  deliver: (fs, model) => {
+                  deliver: async (fs, model) => {
                     const verb = provenanceDutyVerb(fs);
-                    const steer = buildProvenanceSteer(fs, resolveRepoRoot());
-                    logDecision({ ts: new Date().toISOString(), issue: null, verb: verb.id, source: "jev", model });
-                    pi.sendMessage(
-                      { customType: CUSTOM_TYPE, content: steer.text, display: true, details: { verb: verb.id, midTurn: true, card: steer.card } },
-                      { deliverAs: "followUp", triggerTurn: false },
-                    );
+                    const steer = await buildProvenanceSteer(fs, resolveRepoRoot());
+                    const outcome = propose({
+                      epoch: provenanceEpoch,
+                      key: `substrate:${verb.id}:${fs.join(",")}`,
+                      deliver: () => pi.sendMessage(
+                        { customType: CUSTOM_TYPE, content: steer.text, display: true, details: { verb: verb.id, midTurn: true, card: steer.card } },
+                        DELIVERY,
+                      ),
+                    });
+                    logDecision({ ts: new Date().toISOString(), issue: null, verb: verb.id, source: "jev", model, ...(outcome === "delivered" ? {} : { gate: `arbiter:${outcome}` }) });
                   },
                 });
-              } catch { /* fail-open: the turn continues without the steer */ }
-            })();
-          }
+            } catch { /* fail-open: the turn continues without the steer */ }
+          });
         }
       } catch { /* observation is best-effort */ }
     } catch {
       /* observation is best-effort */
     }
+  });
+
+  // Warm everything a handler reads synchronously, off the hot path (CORE-2534).
+  pi.on("agent_start", () => noteRunStart());
+  pi.on("session_start", () => {
+    resetSession();
+    void primeApiKey();
+    void resolveRepoRoot.ready().then((root) => discoverSkillPacks(root));
   });
 
   pi.on("session_before_compact", () => {
@@ -571,28 +621,40 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
     messageCursor = nextIdx;
     const monitorSet = turnMonitorSet;
     turnMonitorSet = false;
+    const notifyingRecently = turnsSinceNotifying <= 2;
+    turnsSinceNotifying += 1;
     turnEditedFiles = [];
     turnSteeredFiles = [];
     turnProvenanceSeen = false;
 
     const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
     const jevAvailable = registry !== null || readApiKey() !== null;
+    const epoch = currentEpoch();
 
+    // CORE-2549: everything below runs detached; pi never waits for Jev,
+    // sqlite or git at agent_end.
+    detach(async () => {
     // Duty 0 — wait-guard. Needs no bound issue and no substrate services:
     // a wait commitment without a monitor is a duty the moment it is spoken.
     // CORE-2361: no regex pre-gate — the old waitCommitment() match essentially
     // never fired, so this advisor was silent. Jev reads the full final
     // message and the gate nouls decide; wasActive bounds the call cost.
-    if (jevAvailable && wasActive && lastAssistant && !monitorSet) {
+    const waitGuard = async (): Promise<boolean> => {
+    // CORE-2550: code decides whether anything external is pending that
+    // nothing will surface; Jev is asked only then, and must say yes twice.
+    if (jevAvailable && wasActive && lastAssistant) {
+      const facts = waitFacts(lastAssistant, { notifyingRecently, monitorSet });
+      const blocked = waitPrecondition(facts);
       const verb = waitGuardVerb();
-      if (cooldownAllows(cooldowns, "wait", verb.id, Date.now(), verb)) {
+      if (blocked) {
+        if (facts.externalTarget) logDecision({ ts: new Date().toISOString(), issue: null, verb: null, source: "deterministic", duty: "wait_guard", gate: `wait_precondition:${blocked}`, facts });
+      } else if (cooldownAllows(cooldowns, "wait", verb.id, Date.now(), verb)) {
         const result = await askJev(registry, {
           final_message: lastAssistant,
           monitor_set_this_turn: monitorSet,
         }, {
           // CORE-2361: a choice question is mandatory — both Jev client paths
-          // null out a result with no choice answer, which is why this duty
-          // never fired even when the regex matched.
+          // null out a result with no choice answer.
           monitor_kind: {
             type: "choice",
             instructions: "If the agent should set up a monitor before waiting, pick the kind that fits; none otherwise.",
@@ -605,23 +667,32 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
           },
           wait_warranted: { type: "noul", instructions: "Is the agent's final message genuinely committing to WAIT for a specific external event (CI, deploy, review, another agent's reply, a long job) with no other continuation path? Waiting on the operator's next message inside an active conversation is NOT waiting — the conversation is the continuation path. Narrating observation ('watch for it', 'let's see what happens') is NOT a wait commitment." },
           monitor_would_help: { type: "noul", instructions: "Would a timer, monitor or durable reminder materially help here — i.e. is there something pending that the conversation itself will not surface? If the only continuation is the operator replying, answer no." },
-        } as Record<string, Question>);
-        const g = result ? ((result.nouls["wait_warranted"] ?? 0) + (result.nouls["monitor_would_help"] ?? 0)) / 2 : 0;
-        if (result && g >= GATE_THRESHOLD) {
-          emit(verb, "—", { confidence: result.choice.confidence ?? g, source: "jev", model: result.model });
-          return;
+        } as Record<string, Question>, "wait_guard");
+        if (result) {
+          const refused = waitGate({
+            waitWarranted: result.nouls["wait_warranted"],
+            monitorWouldHelp: result.nouls["monitor_would_help"],
+            monitorKind: result.choice.choice,
+          });
+          if (!refused) {
+            if (emit(verb, "—", { confidence: result.choice.confidence, source: "jev", model: result.model, epoch })) return true;
+          }
+          logDecision({ ts: new Date().toISOString(), issue: null, verb: null, source: "jev", duty: "wait_guard", gate: `wait_gate:${refused}`, nouls: result.nouls, monitor_kind: result.choice.choice });
         }
       }
     }
 
+      return false;
+    };
     // Duty 0.5 — provenance steer moved mid-turn: the tool_result seam above
     // delivers evidence (diffstat, last-touch lines, exact history commands)
     // for tracked edits as they happen. Nothing fires here by design.
 
+    const serviceSkill = async (): Promise<boolean> => {
     // Duty 1 — service skill (turn end). Also pre-binding: skills are repo
     // knowledge, not issue knowledge.
     if (jevAvailable && wasActive) {
-      const all = discoverSkillPacks(resolveRepoRoot()).flatMap((p) => p.entries);
+      const all = (await discoverSkillPacks(resolveRepoRoot())).flatMap((p) => p.entries);
       if (all.length > 0 && cooldownAllows(cooldowns, "skills", SKILL_SOURCE_VERB.id, Date.now(), SKILL_SOURCE_VERB)) {
         const result = await askJev(registry, {
           working_turn_excerpt: excerpt.slice(0, 4000),
@@ -635,7 +706,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
             ]),
           },
           service_specific: { type: "noul", instructions: "Would the picked service's expert skill materially change how the agent proceeds right now?" },
-        } as Record<string, Question>);
+        } as Record<string, Question>, "service_skill");
         const fit = result?.nouls["service_specific"] ?? 0;
         const pick = result?.choice.choice;
         if (result && pick && pick !== "none" && fit >= FITS_THRESHOLD) {
@@ -644,13 +715,19 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
             const verb = skillVerb(entry);
             if (cooldownAllows(cooldowns, "skills", verb.id, Date.now(), verb)) {
               applyCooldown(cooldowns, "skills", SKILL_SOURCE_VERB);
-              emit(verb, "—", { confidence: result.choice.confidence ?? fit, source: "jev", model: result.model });
-              return;
+              if (emit(verb, "—", { confidence: result.choice.confidence ?? fit, source: "jev", model: result.model, epoch })) return true;
             }
           }
         }
       }
     }
+
+      return false;
+    };
+
+    // The two Jev duties are independent: ask them in parallel.
+    const [waited, served] = await Promise.all([waitGuard(), serviceSkill()]);
+    if (waited || served) return;
 
     // CORE-2359: every early return below used to be silent, so "the gate said no" and
     // "the extension never ran" were indistinguishable in the log — the log only ever
@@ -707,7 +784,7 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
         if (!cooldownAllows(cooldowns, snapshot.ref, verb.id, snapshot.now, verb)) {
           return gate("cooldown", { issue: snapshot.ref, verb: verb.id });
         }
-        emit(verb, snapshot.ref, { source: "deterministic", revision: meta.currentRevision });
+        emit(verb, snapshot.ref, { source: "deterministic", revision: meta.currentRevision, epoch });
         return;
       }
 
@@ -720,9 +797,10 @@ export default function substrateSuggestExtension(pi: ExtensionAPI): void {
       }
       const verb = VERB_BY_ID.get(pick.verbId)!;
       if (!cooldownAllows(cooldowns, snapshot.ref, verb.id, snapshot.now, verb)) return;
-      emit(verb, snapshot.ref, { confidence: pick.confidence, revision: meta.currentRevision, source: "jev", model: pick.model });
+      emit(verb, snapshot.ref, { confidence: pick.confidence, revision: meta.currentRevision, source: "jev", model: pick.model, epoch });
     } catch {
       // Fail-open: a suggestion extension must never surface errors.
     }
+    });
   });
 }

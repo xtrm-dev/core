@@ -2,33 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deliverySeam, type Situation } from "../../extensions/skill-suggest/index.ts";
-
-const at = (o: Partial<Situation>): Situation => ({ prompted: false, pending: false, usedTool: false, activeTurn: false, ...o });
-
-describe("delivery covers every situation", () => {
-  it("prompted turn with tools delivers inline at the first tool_result", () => {
-    expect(deliverySeam(at({ prompted: true, pending: true, usedTool: true }))).toBe("tool_result");
-  });
-
-  it("prompted turn WITHOUT tools still delivers — the regression that dropped a block", () => {
-    expect(deliverySeam(at({ prompted: true, pending: true, usedTool: false }))).toBe("agent_end_flush");
-  });
-
-  it("unprompted turn (autonomous continue, resume) is judged at the boundary", () => {
-    expect(deliverySeam(at({ prompted: false, pending: false, usedTool: true, activeTurn: true }))).toBe("agent_end_decision");
-    expect(deliverySeam(at({ prompted: false, usedTool: false, activeTurn: true }))).toBe("agent_end_decision");
-  });
-
-  it("prompted turn that already delivered falls through to the boundary decision", () => {
-    expect(deliverySeam(at({ prompted: true, pending: false, usedTool: true, activeTurn: true }))).toBe("agent_end_decision");
-  });
-
-  it("idle turns deliver nothing", () => {
-    expect(deliverySeam(at({}))).toBe("none");
-    expect(deliverySeam(at({ prompted: true, activeTurn: false }))).toBe("none");
-  });
-});
+import { resetPipeline, settle } from "../../shared/suggest-pipeline.ts";
 
 // ---- behavioural harness: drive the registered handlers of a real extension instance ----
 
@@ -40,14 +14,17 @@ const LOG_DIR = mkdtempSync(join(tmpdir(), "skill-suggest-log-"));
 process.env["SKILL_SUGGEST_LOG_DIR"] = LOG_DIR;
 afterAll(() => rmSync(LOG_DIR, { recursive: true, force: true }));
 const LOG_PATH = join(LOG_DIR, "log.jsonl");
-const readLogSize = () => (existsSync(LOG_PATH) ? statSync(LOG_PATH).size : 0);
-const readLogSince = (size: number): Array<Record<string, unknown>> =>
-  readFileSync(LOG_PATH, "utf8").slice(size).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+// Rows are appended asynchronously (CORE-2534): drain the queue before reading.
+const flushLog = async () => (await import("../../extensions/skill-suggest/index.ts")).flushDecisionLog();
+const readLogSize = async () => (await flushLog(), existsSync(LOG_PATH) ? statSync(LOG_PATH).size : 0);
+const readLogSince = async (size: number): Promise<Array<Record<string, unknown>>> =>
+  (await flushLog(), readFileSync(LOG_PATH, "utf8").slice(size).split("\n").filter(Boolean).map((l) => JSON.parse(l)));
 
 const CLASSIFIER_ANSWERS = {
   skill: { type: "choice", choice: "demo-skill", probabilities: { "demo-skill": 0.9, none: 0.1 }, confidence: 0.9 },
   would_follow_documented_procedure: { type: "bool", probability: 0.9 },
   prose_suffices: { type: "bool", probability: 0.1 },
+  starts_governed_task: { type: "bool", probability: 0.9 },
 };
 const stubRegistry = {
   getAvailableOfType: async () => [{ id: "jev-test", provider: "typesafe" }],
@@ -57,8 +34,8 @@ const stubRegistry = {
 const WORKING_TURN = {
   messages: [{
     role: "assistant",
-    content: [{ type: "text", text: "Next I will follow the demo procedure." }, { type: "tool_call", toolName: "edit", input: { path: "a.ts" } }],
-  }],
+    content: [{ type: "text", text: "Next I will follow the demo procedure." }, { type: "toolCall", id: "c1", name: "edit", arguments: { path: "a.ts" } }],
+  }, { role: "toolResult", toolCallId: "c1", toolName: "edit", content: [{ type: "text", text: "ok" }], isError: false }],
 };
 
 let repo: string;
@@ -79,18 +56,26 @@ afterEach(() => {
 
 async function boot() {
   const handlers: Record<string, Handler> = {};
+  const raw: Record<string, Handler> = {};
   const sent: Sent[] = [];
   let renderer: ((m: { content?: unknown }) => { render: () => string[] }) | null = null;
   const pi = {
     getFlag: () => false,
-    on: (name: string, fn: Handler) => { handlers[name] = fn; },
+    // Handlers return before detached classification finishes (CORE-2549):
+    // the harness waits for the pipeline to settle after each call.
+    on: (name: string, fn: Handler) => { handlers[name] = async (e: unknown, c?: unknown) => { const r = await fn(e, c); await settle(); return r; }; raw[name] = fn; },
     sendMessage: (m: Sent) => { sent.push(m); },
     registerMessageRenderer: (_t: string, fn: typeof renderer) => { renderer = fn; },
   };
-  const { default: ext } = await import("../../extensions/skill-suggest/index.ts");
-  ext(pi as never);
+  resetPipeline();
+  const mod = await import("../../extensions/skill-suggest/index.ts");
+  mod.default(pi as never);
+  // The index builds off the hot path; a test waits for it the way a session
+  // gets it at session_start (CORE-2533).
+  mod.resetIndex();
+  await mod.rebuildIndex(process.cwd());
   const ctx = { modelRegistry: stubRegistry };
-  return { handlers, sent, ctx, render: (m: Sent) => (renderer ? renderer(m).render().join("\n") : "") };
+  return { handlers, raw, sent, ctx, render: (m: Sent) => (renderer ? renderer(m).render().join("\n") : "") };
 }
 
 describe("CORE-2367: agent_end delivers the doctrine to the model", () => {
@@ -116,28 +101,28 @@ describe("CORE-2367: agent_end delivers the doctrine to the model", () => {
 describe("CORE-2367: read-after-suggest accounting", () => {
   it("counts a real Pi read event ({toolName, input}) of the suggested path", async () => {
     const { handlers, ctx } = await boot();
-    const before = readLogSize();
+    const before = await readLogSize();
     await handlers["agent_end"]!(WORKING_TURN, ctx);
     const skillPath = join(repo, ".xtrm", "skills", "demo-skill", "SKILL.md");
     handlers["tool_call"]!({ toolName: "read", input: { path: skillPath } });
-    const rows = readLogSince(before).filter((r) => r["seam"] === "read_after_suggest");
+    const rows = (await readLogSince(before)).filter((r) => r["seam"] === "read_after_suggest");
     expect(rows.map((r) => r["outcome"])).toEqual(["read"]);
     expect(rows[0]!["pick"]).toBe("demo-skill");
   });
 
   it("logs 'expired' once the window of turns passes with no read", async () => {
     const { handlers, ctx } = await boot();
-    const before = readLogSize();
+    const before = await readLogSize();
     await handlers["agent_end"]!(WORKING_TURN, ctx); // arms the watch
     await handlers["agent_end"]!({ messages: [] }, ctx); // turn 1 after
-    expect(readLogSince(before).some((r) => r["outcome"] === "expired")).toBe(false);
+    expect((await readLogSince(before)).some((r) => r["outcome"] === "expired")).toBe(false);
     await handlers["agent_end"]!({ messages: [] }, ctx); // turn 2 after: window over
-    const expired = readLogSince(before).filter((r) => r["outcome"] === "expired");
+    const expired = (await readLogSince(before)).filter((r) => r["outcome"] === "expired");
     expect(expired).toHaveLength(1);
     expect(expired[0]!["pick"]).toBe("demo-skill");
     // A read after expiry is no longer credited.
     handlers["tool_call"]!({ toolName: "read", input: { path: join(repo, ".xtrm", "skills", "demo-skill", "SKILL.md") } });
-    expect(readLogSince(before).some((r) => r["outcome"] === "read")).toBe(false);
+    expect((await readLogSince(before)).some((r) => r["outcome"] === "read")).toBe(false);
   });
 
   it("a cooldown-suppressed suggestion arms no watch", async () => {
@@ -145,11 +130,80 @@ describe("CORE-2367: read-after-suggest accounting", () => {
     await handlers["agent_end"]!(WORKING_TURN, ctx); // fires, arms, sets cooldown
     await handlers["agent_end"]!({ messages: [] }, ctx);
     await handlers["agent_end"]!({ messages: [] }, ctx); // watch expires
-    const before = readLogSize();
+    const before = await readLogSize();
     await handlers["agent_end"]!(WORKING_TURN, ctx); // same id within cooldown: suppressed
     await handlers["agent_end"]!({ messages: [] }, ctx);
     await handlers["agent_end"]!({ messages: [] }, ctx);
-    expect(readLogSince(before).filter((r) => r["outcome"] === "expired")).toHaveLength(0);
+    expect((await readLogSince(before)).filter((r) => r["outcome"] === "expired")).toHaveLength(0);
+  });
+});
+
+describe("CORE-2533: the classifier never sees more than the shortlist", () => {
+  it("a 300-skill roster sends at most 24 criteria plus none, on both seams", async () => {
+    for (let i = 0; i < 300; i++) {
+      mkdirSync(join(repo, ".xtrm", "skills", `bulk-${i}`), { recursive: true });
+      writeFileSync(join(repo, ".xtrm", "skills", `bulk-${i}`, "SKILL.md"), `---\nname: bulk-${i}\ndescription: Demo procedure variant ${i} for deploy work.\n---\n`);
+    }
+    const sizes: number[] = [];
+    const capturing = {
+      getAvailableOfType: async () => [{ id: "jev-test", provider: "typesafe" }],
+      classify: async (_m: unknown, req: { questions: Record<string, { criteria?: Record<string, string> }> }) => {
+        sizes.push(Object.keys(req.questions["skill"]?.criteria ?? {}).length);
+        return { stopReason: "stop", answers: CLASSIFIER_ANSWERS, model: "typesafe/jev-test" };
+      },
+    };
+    const { handlers } = await boot();
+    await handlers["input"]!({ text: "follow the demo procedure for this deploy" }, { modelRegistry: capturing });
+    await handlers["agent_end"]!(WORKING_TURN, { modelRegistry: capturing });
+    expect(sizes.length).toBe(2);
+    for (const n of sizes) {
+      expect(n).toBeGreaterThan(1);
+      expect(n).toBeLessThanOrEqual(25);
+    }
+  });
+});
+
+describe("CORE-2551: injected text never reaches the input classifier", () => {
+  it("skips mid-session input with source 'extension', logs 'injected', and still judges the working turn", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async (...a: [unknown, unknown]) => (asked++, stubRegistry.classify(...(a as []))) };
+    const { handlers, sent } = await boot();
+    await handlers["input"]!({ text: "/earlier", source: "interactive" }, { modelRegistry: counting });
+    const before = await readLogSize();
+    await handlers["input"]!({ text: "[cross-agent message] follow the demo procedure for this deploy", source: "extension" }, { modelRegistry: counting });
+    expect(asked).toBe(0);
+    expect((await readLogSince(before)).filter((r) => r["seam"] === "input").map((r) => r["reason"])).toEqual(["injected"]);
+    await handlers["agent_end"]!(WORKING_TURN, { modelRegistry: counting });
+    expect(asked).toBe(1);
+    expect(sent).toHaveLength(1);
+  });
+  it("an injected task that opens the session is judged (a dispatched worker's request)", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const { handlers } = await boot();
+    // A fresh instance has seen no input: this one opens the session.
+    await handlers["input"]!({ text: "# Task: follow the demo procedure for this deploy", source: "extension" }, { modelRegistry: counting });
+    expect(asked).toBe(1);
+  });
+  it("typed input is still judged", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const { handlers } = await boot();
+    await handlers["input"]!({ text: "follow the demo procedure for this deploy", source: "interactive" }, { modelRegistry: counting });
+    expect(asked).toBe(1);
+  });
+});
+
+describe("CORE-2532: a session's first prompt is judged while the index still builds", () => {
+  it("waits for the index off the handler path instead of skipping as index_warming", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const { handlers } = await boot();
+    (await import("../../extensions/skill-suggest/index.ts")).resetIndex(); // as at session_start: no index yet
+    const before = await readLogSize();
+    await handlers["input"]!({ text: "follow the demo procedure for this deploy", source: "interactive" }, { modelRegistry: counting });
+    expect(asked).toBe(1);
+    expect((await readLogSince(before)).some((r) => r["reason"] === "index_warming")).toBe(false);
   });
 });
 

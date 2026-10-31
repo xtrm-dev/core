@@ -10,7 +10,7 @@
  * Agent Skills locations pi discovers (~/.agents/skills, .agents/skills).
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { access, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -24,20 +24,32 @@ export interface RosterEntry {
   description: string;
   /** Absolute path — the injection source. */
   path: string;
+  /** H2/H3 headings of the doc, bounded: retrieval terms and the card's router. */
+  headings: string[];
 }
 
 const CACHE_TTL_MS = 5 * 60_000;
-// CORE-2361: the real union (repo packs 131 + top-level home skills) is ~163
-// today; the old bound of 60 silently hid more than half the catalog from
-// ranking. 280 covers the union plus global packs (~/.xtrm/skills) and
-// personal pi skills (~/.pi/agent/skills) with headroom; one-line criteria
-// keep the classifier call bounded (~30 tokens per entry).
-const ROSTER_MAX = 280;
+// CORE-2533: the roster is no longer the classifier's criteria list — a
+// shortlist (shared/shortlist.ts) picks at most 24 candidates from it — so
+// discovery keeps everything. This cap only bounds a pathological tree.
+const ROSTER_SAFETY_MAX = 2000;
 const DESC_MAX = 240;
-let cache: { at: number; entries: RosterEntry[] } = { at: 0, entries: [] };
+const NON_DOCTRINE_DIRS = new Set(["scripts", "refs", "node_modules", "tests", "test", "fixtures", "evals", ".git"]);
+let cache: { at: number; key: string; entries: RosterEntry[] } = { at: 0, key: "", entries: [] };
 
 export function resetRosterCache(): void {
-  cache = { at: 0, entries: [] };
+  cache = { at: 0, key: "", entries: [] };
+}
+
+/** H2/H3 headings, deduped and bounded. The H1 is the title, not a place to look. */
+export function headingsOf(md: string, max = 12): string[] {
+  const out: string[] = [];
+  for (const line of md.split("\n")) {
+    const m = /^#{2,3}\s+(.{1,80}?)\s*$/.exec(line);
+    if (m && !out.includes(m[1])) out.push(m[1]);
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 /** Parse minimal frontmatter (--- fenced) for name/description, folded or inline. */
@@ -95,9 +107,9 @@ export function extractReferenceSummary(md: string): { name: string; description
   return { name, description: description.length > 0 ? description : heading };
 }
 
-function skillDirs(repoRoot: string): string[] {
+async function skillDirs(repoRoot: string): Promise<string[]> {
   const home = homedir();
-  return [
+  const roots = [
     join(repoRoot, ".xtrm", "skills"),
     join(repoRoot, ".agents", "skills"),
     join(home, ".agents", "skills"),
@@ -107,22 +119,53 @@ function skillDirs(repoRoot: string): string[] {
     // are written.
     join(home, ".xtrm", "skills"),
     join(home, ".pi", "agent", "skills"),
-  ].filter((d) => existsSync(d));
+  ];
+  const present = await Promise.all(roots.map(exists));
+  return roots.filter((_, i) => present[i]);
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isDir(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function listDir(path: string): Promise<string[]> {
+  try {
+    return (await readdir(path)).sort(); // sorted: deterministic order for replays
+  } catch {
+    return [];
+  }
 }
 
 /** Scan one skill dir: the SKILL.md itself plus every other doc under it. */
-function scanSkillDir(entries: RosterEntry[], cwd: string, skillDir: string, skill: string): void {
+async function scanSkillDir(entries: RosterEntry[], cwd: string, skillDir: string, skill: string): Promise<void> {
+  const shown = (full: string) => {
+    const rel = relative(cwd, full) || full;
+    return rel.startsWith("..") ? full : rel;
+  };
   try {
-    const md = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+    const md = await readFile(join(skillDir, "SKILL.md"), "utf8");
     const fm = parseFrontmatter(md);
-    const rel = relative(cwd, join(skillDir, "SKILL.md")) || join(skillDir, "SKILL.md");
     entries.push({
       id: skill,
       skill,
       level: "skill",
       name: fm.name ?? skill,
       description: (fm.description ?? "").slice(0, DESC_MAX),
-      path: rel.startsWith("..") ? join(skillDir, "SKILL.md") : rel,
+      path: shown(join(skillDir, "SKILL.md")),
+      headings: headingsOf(md),
     });
   } catch {
     return; // unreadable skill: skip entirely
@@ -130,105 +173,97 @@ function scanSkillDir(entries: RosterEntry[], cwd: string, skillDir: string, ski
   // Tier 2 (CORE-2361): every *.md under the skill dir, not just references/ —
   // agents/, assets/, README/REFERENCE are doctrine depth too. Ids keep the
   // legacy `<skill>/<file>` shape for direct references/*.md; other locations
-  // carry their relative path (`<skill>/agents/analyzer`).
-  const walk = (dir: string) => {
-    let names: string[];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      return;
-    }
-    for (const name of names) {
+  // carry their relative path (`<skill>/agents/analyzer`). A NESTED SKILL.md
+  // (service-knowledge/services/<id>/SKILL.md) is a sub-skill: it was skipped
+  // before CORE-2533, which hid every per-service skill from the roster. Its id
+  // drops the trailing /SKILL and its frontmatter wins over the summary.
+  const walk = async (dir: string): Promise<void> => {
+    for (const name of await listDir(dir)) {
       const full = join(dir, name);
-      let isDir = false;
-      try {
-        isDir = statSync(full).isDirectory();
-      } catch {
+      if (await isDir(full)) {
+        // Code, saved prompt sources and test data are not doctrine: they
+        // out-scored real references on surface words (CORE-2533).
+        if (!NON_DOCTRINE_DIRS.has(name)) await walk(full);
         continue;
       }
-      if (isDir) {
-        walk(full);
-        continue;
-      }
-      if (!name.endsWith(".md") || name === "SKILL.md") continue;
+      if (!name.endsWith(".md") || full === join(skillDir, "SKILL.md")) continue;
       try {
-        const refMd = readFileSync(full, "utf8");
-        const { name: rName, description } = extractReferenceSummary(refMd);
+        const refMd = await readFile(full, "utf8");
+        const summary = extractReferenceSummary(refMd);
+        const fm = name === "SKILL.md" ? parseFrontmatter(refMd) : {};
+        const description = (fm.description ?? summary.description).slice(0, DESC_MAX);
         if (!description) continue;
-        const relInside = relative(skillDir, full).replace(/\.md$/, "").split(/[\\/]/).join("/");
+        const relInside = relative(skillDir, full).replace(/\.md$/, "").split(/[\\/]/).join("/").replace(/\/SKILL$/, "");
         const idPart = relInside.startsWith("references/") ? relInside.slice("references/".length) : relInside;
-        const refRel = relative(cwd, full) || full;
         entries.push({
           id: `${skill}/${idPart}`,
           skill,
           level: "reference",
-          name: rName,
+          name: fm.name ?? summary.name,
           description,
-          path: refRel.startsWith("..") ? full : refRel,
+          path: shown(full),
+          headings: headingsOf(refMd),
         });
       } catch {
         /* unreadable reference: skip */
       }
     }
   };
-  walk(skillDir);
+  await walk(skillDir);
 }
 
-/** Discover the two-tier roster. 5-min cached; bounded. */
-export function discoverRoster(cwd: string, now = Date.now()): RosterEntry[] {
-  if (now - cache.at < CACHE_TTL_MS) return cache.entries;
-  let repoRoot = cwd;
+/** The enclosing git root (nearest `.git` within 8 levels), else cwd. */
+export async function repoRootOf(cwd: string): Promise<string> {
   let dir = cwd;
   for (let guard = 0; guard < 8; guard++) {
-    if (existsSync(join(dir, ".git"))) { repoRoot = dir; break; }
+    if (await exists(join(dir, ".git"))) return dir;
     const parent = join(dir, "..");
     if (parent === dir) break;
     dir = parent;
   }
+  return cwd;
+}
+
+/**
+ * Discover the two-tier roster with async IO, so a rebuild never blocks pi's
+ * event loop. 5-min cached per cwd.
+ */
+export async function discoverRoster(cwd: string, now = Date.now()): Promise<RosterEntry[]> {
+  if (cache.key === cwd && now - cache.at < CACHE_TTL_MS) return cache.entries;
+  const repoRoot = await repoRootOf(cwd);
   const entries: RosterEntry[] = [];
   try {
-    for (const root of skillDirs(repoRoot)) {
-      let rootChildren: string[];
-      try {
-        rootChildren = readdirSync(root);
-      } catch {
-        continue;
-      }
-      for (const childName of rootChildren) {
+    for (const root of await skillDirs(repoRoot)) {
+      for (const childName of await listDir(root)) {
         const childDir = join(root, childName);
         // CORE-2361: pack-less root — ~/.agents/skills/<skill>/SKILL.md sits at
         // the top level; the old pack-only scan found zero entries there.
-        if (existsSync(join(childDir, "SKILL.md"))) {
-          scanSkillDir(entries, cwd, childDir, childName);
+        if (await exists(join(childDir, "SKILL.md"))) {
+          await scanSkillDir(entries, cwd, childDir, childName);
           continue;
         }
         if (childName === "active") continue; // runtime view shadows default skills
         // Pack layout: .xtrm/skills/<pack>/<skill>/SKILL.md. Pack containers
-        // hold skills one level deeper (optional/<pack>/<skill>.descend only
+        // hold skills one level deeper (optional/<pack>/<skill>); descend only
         // when no skill sits directly under the pack.
-        const packSkills = (dir: string, depth: number): string[] => {
-          let names: string[];
-          try {
-            names = readdirSync(dir);
-          } catch {
-            return [];
-          }
-          const direct: string[] = [];
-          for (const s of names) {
-            if (existsSync(join(dir, s, "SKILL.md"))) direct.push(s);
-          }
+        const packSkills = async (dir: string, depth: number): Promise<string[]> => {
+          const names = await listDir(dir);
+          const has = await Promise.all(names.map((s) => exists(join(dir, s, "SKILL.md"))));
+          const direct = names.filter((_, i) => has[i]);
           if (direct.length === 0 && depth > 0) {
             for (const s of names) {
-              for (const nested of packSkills(join(dir, s), depth - 1)) {
-                direct.push(`${s}/${nested}`);
-              }
+              for (const nested of await packSkills(join(dir, s), depth - 1)) direct.push(`${s}/${nested}`);
             }
           }
           return direct;
         };
-        for (const rel of packSkills(childDir, 1)) {
-          const bare = rel.split(/[\\/]/).pop() ?? rel;
-          scanSkillDir(entries, cwd, join(childDir, ...rel.split("/")), bare);
+        for (const rel of await packSkills(childDir, 1)) {
+          // CORE-2555: an installed tool package keeps its skill in a `skills/`
+          // folder (default/service-knowledge/skills/SKILL.md); the skill is
+          // the package, not "skills".
+          const parts = rel.split(/[\\/]/);
+          const bare = (parts.length > 1 && parts[parts.length - 1] === "skills" ? parts[parts.length - 2] : parts[parts.length - 1]) ?? rel;
+          await scanSkillDir(entries, cwd, join(childDir, ...rel.split("/")), bare);
         }
       }
     }
@@ -244,7 +279,7 @@ export function discoverRoster(cwd: string, now = Date.now()): RosterEntry[] {
     seen.add(e.id);
     return true;
   });
-  const bounded = deduped.slice(0, ROSTER_MAX);
-  cache = { at: now, entries: bounded };
+  const bounded = deduped.slice(0, ROSTER_SAFETY_MAX);
+  cache = { at: now, key: cwd, entries: bounded };
   return bounded;
 }

@@ -1,3 +1,4 @@
+import "./isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter, extractReferenceSummary, discoverRoster, resetRosterCache } from "../extensions/skill-suggest/roster.ts";
 import { conversationContext, isControlNudge, turnEvidence } from "../extensions/skill-suggest/index.ts";
@@ -18,9 +19,9 @@ describe("roster parsing", () => {
     expect(description).toContain("Use for bugs, regressions");
   });
 
-  it("discovers the curated pack two-tier from the repo worktree", () => {
+  it("discovers the curated pack two-tier from the repo worktree", async () => {
     resetRosterCache();
-    const roster = discoverRoster(process.cwd());
+    const roster = await discoverRoster(process.cwd());
     expect(roster.length).toBeGreaterThan(20);
     const skills = roster.filter((r) => r.level === "skill");
     const refs = roster.filter((r) => r.level === "reference");
@@ -59,25 +60,24 @@ describe("labelled injected context", () => {
 });
 
 describe("input seam decides, never mutates", () => {
-  it("returns continue and defers delivery to the first tool_result", async () => {
+  it("returns continue at once and delivers through the shared pipeline (CORE-2549)", async () => {
     // Anchor the probe to this file: the suite runs from two directories.
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
-    expect(src).toContain("deferred-to-tool-result");
-    expect(src).toContain("pending = { entry, block, confidence: result.choice.confidence }");
     // No prompt mutation anywhere in the file, and no wake at submit.
     expect(src).not.toContain('action: "transform"');
-    const deliver = src.slice(src.indexOf('pi.on("tool_result"'), src.indexOf('pi.on("tool_result"') + 1200);
-    expect(deliver).toContain("triggerTurn: false");
-    expect(deliver).not.toContain("triggerTurn: true");
+    expect(src).not.toContain("triggerTurn: true");
+    // Every delivery goes through the arbiter with the measured steer rule.
+    expect(src).not.toContain('deliverAs: "followUp"');
+    expect(src).toContain("DELIVERY,");
+    expect(src).toContain("detach(");
   });
 
   it("logs Jev spend next to confidence on both deciding seams", async () => {
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
-    // Both confidence-bearing rows carry elapsed ms + registry/fallback split.
-    expect(src).toContain("jev_ms: jevMs");
-    expect(src).toContain("jev_path: jevPath");
-    expect(src).toContain('jevPath = "registry"');
-    expect(src).toContain('jevPath = "fallback"');
+    // Both confidence-bearing rows carry elapsed ms + registry/fallback split,
+    // now measured by the shared classify() (CORE-2534).
+    expect(src).toContain("jev_ms: outcome.ms, jev_path: outcome.path");
+    expect(src.match(/const outcome = await classify\(/g)?.length).toBe(2);
   });
   it("restores the skill description, plain and period-stripped, at the end of the block", async () => {
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
@@ -153,11 +153,14 @@ describe("conversation context for the classifier", () => {
 });
 
 describe("turn evidence beats final-message-only", () => {
+  // Pi's real shapes (docs/message-types.md): toolCall content blocks with
+  // name/arguments, and separate toolResult messages carrying isError.
   const turn = [
     { role: "user", content: [{ type: "text", text: "the auth test fails intermittently" }] },
-    { role: "assistant", content: [{ type: "text", text: "I suspect the fixture races." }, { type: "tool_call", toolName: "bash", input: { command: "npm test" } }] },
-    { role: "assistant", content: [{ type: "tool_result", toolName: "bash" }] },
-    { role: "assistant", content: [{ type: "tool_call", toolName: "edit", input: { file_path: "src/auth.ts" } }] },
+    { role: "assistant", content: [{ type: "text", text: "I suspect the fixture races." }, { type: "toolCall", id: "c1", name: "bash", arguments: { command: "npm test" } }] },
+    { role: "toolResult", toolCallId: "c1", toolName: "bash", content: [{ type: "text", text: "1 failed" }], isError: true },
+    { role: "assistant", content: [{ type: "toolCall", id: "c2", name: "edit", arguments: { path: "src/auth.ts" } }] },
+    { role: "toolResult", toolCallId: "c2", toolName: "edit", content: [{ type: "text", text: "ok" }], isError: false },
     { role: "assistant", content: [{ type: "text", text: "Done — verifying now." }] },
   ];
 
@@ -169,6 +172,23 @@ describe("turn evidence beats final-message-only", () => {
     expect(ev.editedFiles).toEqual(["src/auth.ts"]);
     expect(ev.excerpt).toContain("user: the auth test fails intermittently");
     expect(ev.excerpt).toContain("tool: bash");
+    expect(ev.excerpt).toContain("tool_error: bash");
+    expect(ev.excerpt).not.toContain("1 failed"); // tool output is not turn text
+  });
+
+  it("a successful tool turn is active but not errored (CORE-2547)", () => {
+    const ok = [
+      { role: "assistant", content: [{ type: "text", text: "Next I will run the suite." }, { type: "toolCall", id: "c1", name: "bash", arguments: { command: "npm test" } }] },
+      { role: "toolResult", toolCallId: "c1", toolName: "bash", content: [{ type: "text", text: "all green" }], isError: false },
+    ];
+    const ev = turnEvidence(ok, 0);
+    expect(ev.wasActive).toBe(true);
+    expect(ev.errored).toBe(false);
+    expect(ev.editedFiles).toEqual([]);
+  });
+
+  it("a text-only turn is not active", () => {
+    expect(turnEvidence([{ role: "assistant", content: [{ type: "text", text: "Here is the answer." }] }], 0).wasActive).toBe(false);
   });
 
   it("advances its cursor so consecutive turns do not double-count", () => {

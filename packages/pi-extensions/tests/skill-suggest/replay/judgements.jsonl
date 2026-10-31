@@ -1,0 +1,140 @@
+{"decision": "audit-service-prompt-000|input|service-knowledge/services/mcp_server", "verdict": "yes", "why": "Extending MCP tools via FastMCP is the service's stated use."}
+{"decision": "audit-service-prompt-000|input|service-knowledge/services/mcp_server/references/architecture_ssot", "verdict": "partly", "why": "MCP server architecture note is thin and the task is producer metadata work."}
+{"decision": "audit-service-prompt-001|input|planning/premortem", "verdict": "yes", "why": "Premortem of a risky production run is the doc's stated use."}
+{"decision": "audit-service-prompt-002|agent_end|xtrm-maintenance/finalize", "verdict": "no", "why": "Read-only evidence lane left open for coordinator; finalize/PR flow does not apply."}
+{"decision": "audit-service-prompt-002|input|programme-coordination/substrate", "verdict": "partly", "why": "Uses sb show/claim/note but the doc is for programme coordinators."}
+{"decision": "audit-service-prompt-003|agent_end|service-knowledge/updating", "verdict": "yes", "why": "Service knowledge drift sync for one service is the updating flow."}
+{"decision": "audit-service-prompt-004|input|board-audit/audit-harness", "verdict": "no", "why": "A quant ruling task is not a board-audit harness job."}
+{"decision": "audit-service-prompt-005|input|engineering-quality/causal-debugging", "verdict": "no", "why": "Series identity correction from a catalog is data mapping, not debugging."}
+{"decision": "audit-service-prompt-009|agent_end|service-knowledge/services/repository-ci-cd", "verdict": "partly", "why": "CI gate context for a pushed fix awaiting hosted checks."}
+{"decision": "audit-service-prompt-011|agent_end|engineering-quality/kernel-workbench", "verdict": "partly", "why": "Board audit cycle uses python probes, but the turn is a routine read cycle."}
+{"decision": "audit-service-prompt-013|input|docs", "verdict": "no", "why": "'resume' keyword only; the task is a ops brief."}
+{"decision": "audit-service-prompt-014|input|session-recovery", "verdict": "partly", "why": "Restart handoff of background state is adjacent to recovery but not session loss."}
+{"decision": "control-injected-134|agent_end|agentrun/workflow-format", "verdict": "yes", "why": "Designing a v2 AgentRun workflow needs the workflow document format."}
+{"decision": "control-injected-134|input|board-audit", "verdict": "partly", "why": "Jira board audit workflow design, but the work is read-only workflow v2 building."}
+{"decision": "control-trivial-136|agent_end|multiplexing/fleet-window-dispatch", "verdict": "no", "why": "Chat continue; dispatch of fleet windows is not in play."}
+{"decision": "control-trivial-138|input|service-knowledge/services/release-flow", "verdict": "partly", "why": "Landed-on-main check relates to the flow but is a quick git question."}
+{"decision": "control-trivial-140|agent_end|service-knowledge/services/runners", "verdict": "yes", "why": "Starting the runners that PR checks need is runner-fleet work."}
+{"decision": "control-trivial-142|agent_end|service-knowledge/services/release-flow", "verdict": "partly", "why": "CI-lane context for a green PR status, but the turn is a status report."}
+{"decision": "control-trivial-142|input|engineering-quality/quality-baseline", "verdict": "no", "why": "'check the pr' is a status check; quality baseline setup is unrelated."}
+{"decision": "control-trivial-149|input|board-audit", "verdict": "no", "why": "'delete board audit' is not an audit run."}
+{"decision": "fire-017|input|multiplexing", "verdict": "partly", "why": "Queue takeover handoff touches multiplexing continuation but the doc is generic."}
+{"decision": "fire-018|agent_end|session-recovery", "verdict": "yes", "why": "Restoring agents after an OOM is the stated use."}
+{"decision": "fire-018|input|session-recovery", "verdict": "yes", "why": "Identifying agents active before an OOM is the stated use."}
+{"decision": "fire-021|input|session-recovery", "verdict": "yes", "why": "Reopening sessions after a crash is the stated use."}
+{"decision": "fire-022|input|ci-light-heavy", "verdict": "yes", "why": "Question about CI lanes vs hooks is the doc's subject."}
+{"decision": "fire-023|agent_end|engineering-quality/kernel-workbench", "verdict": "no", "why": "Reconnaissance with a few one-off git and find commands; the doc excludes that."}
+{"decision": "fire-023|input|production-via-make", "verdict": "yes", "why": "Production change only through make targets is the task rule."}
+{"decision": "fire-025|input|service-knowledge/services/release-flow", "verdict": "yes", "why": "Merging PRs to main follows the repo release flow."}
+{"decision": "fire-027|input|service-knowledge/services/release-flow", "verdict": "yes", "why": "Question about deploying from stable is the release flow."}
+{"decision": "fire-028|agent_end|skill-creator", "verdict": "yes", "why": "Skill creation is in progress."}
+{"decision": "fire-028|input|skill-creator", "verdict": "yes", "why": "Operator asks to create a skill with /skill-creator."}
+{"decision": "fire-029|agent_end|session-recovery", "verdict": "partly", "why": "The agent is authoring this skill, so the doc is context but not new guidance."}
+{"decision": "fire-029|agent_end|skill-creator", "verdict": "yes", "why": "Skill creation is in progress."}
+{"decision": "fire-029|input|skill-creator", "verdict": "yes", "why": "Operator asks to create a skill with /skill-creator."}
+{"decision": "fire-030|agent_end|engineering-quality/kernel-workbench", "verdict": "no", "why": "Verifying a few git states is one-off command work, not repeated data handling."}
+{"decision": "fire-031|input|mercury-release", "verdict": "yes", "why": "PR fix then production rollout of a Mercury repo is release work."}
+{"decision": "fire-032|agent_end|multiplexing/operator-help-patterns", "verdict": "yes", "why": "Checking sessions via intercom to avoid overlap is the inventory/coordination pattern."}
+{"decision": "fire-034|input|docs", "verdict": "no", "why": "A relay report to a coordinator is chat, not an editable doc."}
+{"decision": "fire-035|input|multiplexing", "verdict": "no", "why": "Status chat; no coordination procedure needed."}
+{"decision": "fire-035|input|multiplexing/messaging-and-continuation", "verdict": "no", "why": "Status chat after a merge; no messaging procedure needed."}
+{"decision": "fire-037|agent_end|using-specialists/merge-and-integration", "verdict": "partly", "why": "Merging in order relates to integration but not specialists merges."}
+{"decision": "fire-038|agent_end|service-knowledge/services/release-flow", "verdict": "yes", "why": "Promote to stable and tag per runbook is exactly the release flow."}
+{"decision": "fire-039|input|engineering-quality/quality-baseline", "verdict": "no", "why": "'check the pr' is a status check; quality baseline setup is unrelated."}
+{"decision": "fire-039|input|open-code-review", "verdict": "no", "why": "'check the pr' does not ask for an ocr review."}
+{"decision": "fire-040|agent_end|research/documentation", "verdict": "partly", "why": "Checking acli help is CLI behaviour lookup, only loosely a doc check."}
+{"decision": "fire-040|input|jira-cleanup", "verdict": "partly", "why": "acli is named but the moment is continue work with a later Jira update."}
+{"decision": "fire-041|input|service-knowledge/services/ingesting-pipeline", "verdict": "no", "why": "A status question about an engine, not raw feed pipelines."}
+{"decision": "fire-045|agent_end|codemode", "verdict": "partly", "why": "Agent runs a three-part search; batching helps but it is already one bash call."}
+{"decision": "fire-046|input|deploy-monitoring", "verdict": "partly", "why": "Monitoring role fits but the moment is compaction and planning."}
+{"decision": "fire-047|agent_end|sre-ops", "verdict": "yes", "why": "User asked for /sre-ops while arming prod monitoring."}
+{"decision": "fire-047|input|programme-coordination/jira", "verdict": "yes", "why": "Reading the next-day assignment on Jira needs the Jira tool notes."}
+{"decision": "fire-048|input|mercury-release", "verdict": "yes", "why": "Shipping a platform library release is the release router's use."}
+{"decision": "fire-049|input|using-specialists/monitoring", "verdict": "partly", "why": "Monitoring principle applies but the doc is about specialist jobs."}
+{"decision": "fire-050|input|antislop-ui", "verdict": "partly", "why": "UI edits relate to the interface skill but the issues are specific behaviour changes."}
+{"decision": "fire-050|input|redesign-existing-projects", "verdict": "partly", "why": "UX fixes on an existing app relate to redesign guidance but are specific edits."}
+{"decision": "fire-051|agent_end|planning", "verdict": "yes", "why": "Operator asks for an epic with children via /planning."}
+{"decision": "fire-051|input|planning", "verdict": "yes", "why": "Operator asks for an epic with children via /planning."}
+{"decision": "fire-053|input|design-taste-frontend", "verdict": "no", "why": "Small UI tweaks, not a landing page or redesign."}
+{"decision": "fire-054|input|high-end-visual-design", "verdict": "no", "why": "User picks a font; no procedure needed and the skill targets agency-style sites."}
+{"decision": "fire-056|input|service-knowledge/services/node-exporter", "verdict": "yes", "why": "Host disk pressure is the node-exporter disk knowledge."}
+{"decision": "fire-057|agent_end|multiplexing/messaging-and-continuation", "verdict": "partly", "why": "Handling and replying to peer messages is messaging, but the doc is generic."}
+{"decision": "fire-057|input|service-knowledge/services/node-exporter", "verdict": "yes", "why": "Host disk pressure is the node-exporter disk knowledge."}
+{"decision": "fire-058|input|mercury-release", "verdict": "partly", "why": "Release process documentation discussion; router is related but vague."}
+{"decision": "fire-058|input|releasing", "verdict": "partly", "why": "Release process fix discussion relates to releasing gates, but no release is being cut."}
+{"decision": "fire-060|agent_end|open-code-review", "verdict": "partly", "why": "Gate review could use ocr but the turn is manual file verification."}
+{"decision": "fire-060|input|engineering-quality/review", "verdict": "yes", "why": "Independent PR review for a merge gate matches the review doc."}
+{"decision": "fire-060|input|gitnexus/pr-review", "verdict": "yes", "why": "Reviewing a PR diff against its contract matches PR review."}
+{"decision": "fire-060|input|open-code-review", "verdict": "partly", "why": "Independent review could use the ocr tool but a manual gate review is the task."}
+{"decision": "fire-061|agent_end|engineering-quality/verification", "verdict": "partly", "why": "Verification discipline helps, but a deploy monitoring doc fits better."}
+{"decision": "fire-061|agent_end|sre-ops/deploy-monitoring", "verdict": "yes", "why": "Post-deploy verification is the deploy monitoring use."}
+{"decision": "fire-061|input|multiplexing", "verdict": "no", "why": "Generic peer message handling; the doc adds no procedure."}
+{"decision": "fire-062|input|multiplexing/operator-help-patterns", "verdict": "partly", "why": "Needs claude-link list/send; commands are already given, doc is a pattern table."}
+{"decision": "fire-063|input|multiplexing", "verdict": "partly", "why": "Parallel subagent use fits multiplexing but the doc is generic."}
+{"decision": "fire-063|input|programme-coordination/workers", "verdict": "partly", "why": "Operator-launched brief worker; worker rules apply but the prompt does not state a programme role."}
+{"decision": "fire-064|input|programme-coordination/substrate", "verdict": "yes", "why": "Read-only sb sweep uses the Substrate command notes."}
+{"decision": "fire-065|input|codemode", "verdict": "yes", "why": "Multi-directory read-only sweep benefits from batched reads and filtering."}
+{"decision": "fire-065|input|planning/board-triage", "verdict": "partly", "why": "Triage related, but the task is a docs sweep."}
+{"decision": "fire-066|input|planning/board-triage", "verdict": "partly", "why": "Board triage related, but the task is a PR and branch sweep."}
+{"decision": "fire-067|input|jira-cleanup", "verdict": "partly", "why": "Jira triage router, but the task is a read-only sweep rather than triage."}
+{"decision": "fire-067|input|jira-cleanup/acli-limitations", "verdict": "yes", "why": "Read-only acli Jira sweep is covered by acli limitations."}
+{"decision": "fire-067|input|programme-coordination/jira", "verdict": "yes", "why": "Jira tooling and acli limits cover the read-only sweep."}
+{"decision": "fire-068|input|multiplexing/operator-help-patterns", "verdict": "partly", "why": "claude-link list/send is spelled out; doc is a pattern table."}
+{"decision": "fire-069|input|multiplexing/operator-help-patterns", "verdict": "yes", "why": "Operator asks to send a claude-link hello, the assisted-handoff pattern."}
+{"decision": "fire-071|input|service-knowledge/services/ingesting-tick-data/references/deploy-runbook", "verdict": "yes", "why": "Aborted ingestor swap precheck is covered by the swap deploy runbook."}
+{"decision": "fire-072|agent_end|multiplexing/discovery-and-preflight", "verdict": "no", "why": "Deploy pre-flight is not agent discovery before messaging."}
+{"decision": "fire-074|agent_end|gitnexus", "verdict": "partly", "why": "Pre-edit code study could use impact analysis but no edit has started."}
+{"decision": "fire-074|input|open-code-review", "verdict": "no", "why": "The task is to fix review findings, not to run a review."}
+{"decision": "fire-075|input|programme-coordination/workers", "verdict": "yes", "why": "Named worker under a coordinator follows the worker rules."}
+{"decision": "fire-076|input|programme-coordination/workers", "verdict": "yes", "why": "Named worker under a coordinator follows the worker rules."}
+{"decision": "fire-077|input|programme-coordination/substrate", "verdict": "yes", "why": "Writing sb handoff journal entries is covered by the Substrate programme doc."}
+{"decision": "fire-078|input|programme-coordination/workers", "verdict": "yes", "why": "Named worker under a coordinator follows the worker rules."}
+{"decision": "fire-079|agent_end|engineering-quality/planning-tests", "verdict": "partly", "why": "Validating a new check against a known-bad input touches test design only lightly."}
+{"decision": "fire-079|input|programme-coordination/workers", "verdict": "yes", "why": "Named worker under a coordinator follows the worker rules."}
+{"decision": "fire-080|input|programme-coordination/workers", "verdict": "yes", "why": "Named worker under a coordinator follows the worker rules."}
+{"decision": "fire-082|input|programme-coordination/workers", "verdict": "yes", "why": "Dispatched fix worker under a coordinator follows the worker rules."}
+{"decision": "fire-083|input|programme-coordination/workers", "verdict": "yes", "why": "Dispatched fix worker under a coordinator follows the worker rules."}
+{"decision": "fire-084|input|board-audit", "verdict": "no", "why": "A quant ruling on PR tombstoning rows is not a Jira board audit."}
+{"decision": "fire-085|input|open-code-review", "verdict": "no", "why": "The task is to apply review items, not run a review."}
+{"decision": "fire-086|input|engineering-quality/planning-tests", "verdict": "partly", "why": "Adding two specified tests needs little planning beyond the given spec."}
+{"decision": "fire-086|input|python-testing", "verdict": "yes", "why": "Writing pytest tests with tmp_path patches is the stated use."}
+{"decision": "fire-087|input|service-knowledge/services/releasing-mcp-candidate", "verdict": "yes", "why": "The doc is the file the agent has to update."}
+{"decision": "fire-087|input|service-knowledge/updating", "verdict": "yes", "why": "Updating a service-knowledge skill file is the updating flow."}
+{"decision": "fire-087|input|sync-docs", "verdict": "yes", "why": "Updating one named stale doc against evidence is sync-docs."}
+{"decision": "fire-088|input|sync-docs", "verdict": "yes", "why": "Updating one stale doc line against evidence is sync-docs."}
+{"decision": "fire-090|input|service-knowledge/services/ingesting-tick-data/references/deploy-runbook", "verdict": "partly", "why": "Fix is in ingestor_swap.py; the runbook gives context but this is a code change."}
+{"decision": "fire-091|agent_end|engineering-quality/kernel-workbench", "verdict": "partly", "why": "Investigate-before-touching disk growth is a probe-first decision, but the commands are plain shell."}
+{"decision": "fire-091|agent_end|service-knowledge/services/node-exporter", "verdict": "yes", "why": "Host disk growth investigation matches the disk alert knowledge."}
+{"decision": "fire-091|agent_end|sre-ops/capacity", "verdict": "yes", "why": "Disk growth investigation is capacity work."}
+{"decision": "fire-092|agent_end|codemode", "verdict": "yes", "why": "Four separate file reads are the batching case."}
+{"decision": "fire-092|input|gitnexus/exploring", "verdict": "yes", "why": "Mapping code paths in an unfamiliar area matches graph exploration."}
+{"decision": "fire-092|input|service-knowledge/services/serving-mcp-tools", "verdict": "yes", "why": "Mapping MCP candle code paths matches the serving MCP tools service map."}
+{"decision": "fire-093|input|gitnexus/exploring", "verdict": "yes", "why": "Mapping a builder's code paths is exploration work."}
+{"decision": "fire-093|input|research/code-search", "verdict": "no", "why": "Public code examples are not needed to map a local builder."}
+{"decision": "fire-095|agent_end|gitnexus", "verdict": "partly", "why": "Removing code from a PR could use impact/change checks, but it is a simple revert."}
+{"decision": "fire-095|input|board-audit", "verdict": "no", "why": "Code scope change on a PR, not a board audit."}
+{"decision": "fire-096|input|programme-coordination/coordinator-operations", "verdict": "partly", "why": "Slot confirmation for windows touches coordinator rules, but the agent is not clearly the coordinator."}
+{"decision": "fire-098|input|programme-coordination/workers", "verdict": "yes", "why": "Read-only programme investigator is a dispatched worker."}
+{"decision": "fire-099|input|service-knowledge/services/backfilling-curve-history/references/architecture_ssot", "verdict": "partly", "why": "Curve backfill architecture plausibly covers plan_backfill_batches, but only a title is shown."}
+{"decision": "fire-101|input|programme-coordination/workers", "verdict": "yes", "why": "Read-only investigator is a dispatched worker."}
+{"decision": "fire-103|input|engineering-quality/causal-debugging", "verdict": "partly", "why": "A bug fix with the root cause already given needs little causal debugging."}
+{"decision": "fire-103|input|service-knowledge/services/session-authority", "verdict": "no", "why": "Session-window authority is about trading sessions, not a backfill off-by-one."}
+{"decision": "fire-104|input|service-knowledge/services/release-flow", "verdict": "yes", "why": "A PR into master with promotion blocked is the release/CI flow."}
+{"decision": "fire-104|input|service-knowledge/services/repository-ci-cd", "verdict": "yes", "why": "A Bandit fix PR blocking promotion is covered by repository CI/CD contract."}
+{"decision": "fire-105|input|codemode", "verdict": "yes", "why": "Operator instruction to use codemode more."}
+{"decision": "fire-107|input|codemode", "verdict": "yes", "why": "Operator instruction to use codemode more."}
+{"decision": "fire-109|input|programme-coordination/coordinator-operations", "verdict": "no", "why": "A rule to obey needs no procedure and the doc targets coordinators."}
+{"decision": "fire-111|agent_end|using-xtrm", "verdict": "no", "why": "Generic doctrine; the work is a service-knowledge drift update."}
+{"decision": "fire-111|input|service-knowledge/updating", "verdict": "yes", "why": "Drift reconcile and knowledge update is the updating flow."}
+{"decision": "fire-112|input|service-knowledge/services/infrastructure-platform/references/production-deploy-runbook", "verdict": "yes", "why": "Deploy timer and post-deploy checks are covered by the production deploy runbook."}
+{"decision": "fire-113|input|multiplexing/messaging-and-continuation", "verdict": "partly", "why": "Handoff is via journal and README, so continuity doc fits better than messaging."}
+{"decision": "fire-113|input|using-xtrm/continuity", "verdict": "yes", "why": "Context-guard stop with a journal handoff is the continuity checklist use."}
+{"decision": "fire-114|input|multiplexing/scope", "verdict": "no", "why": "Unclear pasted scope request; the doc has no stated relevance."}
+{"decision": "injected-fire-015|agent_end|production-via-make", "verdict": "yes", "why": "Restarting production services through make targets is the stated use."}
+{"decision": "injected-fire-015|input|production-via-make", "verdict": "yes", "why": "Restarting production services through make targets is the stated use."}
+{"decision": "injected-fire-016|agent_end|production-via-make", "verdict": "yes", "why": "Restarting production services through make targets is the stated use."}
+{"decision": "injected-fire-016|input|production-via-make", "verdict": "yes", "why": "Restarting production services through make targets is the stated use."}
+{"decision": "injected-fire-026|agent_end|ci-light-heavy", "verdict": "yes", "why": "Running make ci-light before pushing to main is the doc's stated use."}
+{"decision": "injected-fire-108|agent_end|multiplexing/operator-help-patterns", "verdict": "partly", "why": "Worker cannot find the coordinator in the list; messaging patterns help somewhat."}
+{"decision": "injected-fire-108|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker runs sb resume/claim/journal but the doc targets coordinators."}
+{"decision": "injected-fire-108|input|programme-coordination/workers", "verdict": "yes", "why": "Builder worker in the programme follows the worker rules."}

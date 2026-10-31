@@ -1,7 +1,8 @@
+import "../isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { describe, expect, it } from "bun:test";
-import { evaluateGate, gateTerms } from "../../extensions/skill-suggest/index.ts";
+import { criteriaOf, evaluateGate, gateTerms, NONE_CRITERION } from "../../extensions/skill-suggest/index.ts";
 
-const strong = { would_follow_documented_procedure: 0.9, prose_suffices: 0.1, asks_about_the_tooling: 0.05 };
+const strong = { would_follow_documented_procedure: 0.9, prose_suffices: 0.1, asks_about_the_tooling: 0.05, starts_governed_task: 0.9 };
 
 describe("CORE-2366: missing evidence can no longer raise the gate", () => {
   it("a classifier that answered nothing does not fire", () => {
@@ -23,7 +24,7 @@ describe("CORE-2366: missing evidence can no longer raise the gate", () => {
   it("keeps a genuine negative able to veto", () => {
     // Imputing neutral must not neuter the gate: a real prose_suffices still counts.
     const v = evaluateGate({
-      nouls: { would_follow_documented_procedure: 0.9, prose_suffices: 1.0, asks_about_the_tooling: 1.0 },
+      nouls: { would_follow_documented_procedure: 0.9, prose_suffices: 1.0, asks_about_the_tooling: 1.0, starts_governed_task: 0.9 },
       confidence: 0.9,
       noneConfidence: 0.05,
       hasEntry: true,
@@ -34,7 +35,7 @@ describe("CORE-2366: missing evidence can no longer raise the gate", () => {
 
   it("still fires when only one negator objects", () => {
     const v = evaluateGate({
-      nouls: { would_follow_documented_procedure: 0.9, prose_suffices: 1.0, asks_about_the_tooling: 0.2 },
+      nouls: { would_follow_documented_procedure: 0.9, prose_suffices: 1.0, asks_about_the_tooling: 0.2, starts_governed_task: 0.9 },
       confidence: 0.8,
       noneConfidence: 0.1,
       hasEntry: true,
@@ -96,5 +97,39 @@ describe("CORE-2366: abstention is its own outcome, not `none`", () => {
   it("an unknown entry is not treated as the none answer", () => {
     const v = evaluateGate({ nouls: strong, confidence: 0.9, noneConfidence: 0.1, hasEntry: false });
     expect(v.reason).toBe("unknown-entry");
+  });
+});
+
+describe("CORE-2553: the task noul and the none ceiling", () => {
+  it("does not fire when the turn starts no governed work", () => {
+    const v = evaluateGate({ nouls: { ...strong, starts_governed_task: 0.6 }, confidence: 0.9, noneConfidence: 0.05, hasEntry: true });
+    expect(v).toMatchObject({ fire: false, reason: "below-task" });
+  });
+  it("abstains when the task noul is missing", () => {
+    const { starts_governed_task: _, ...rest } = strong;
+    expect(evaluateGate({ nouls: rest, confidence: 0.9, noneConfidence: 0.05, hasEntry: true }).reason).toBe("missing-task-noul");
+  });
+  it("does not fire while none holds real weight, even when the winner beats it", () => {
+    const v = evaluateGate({ nouls: strong, confidence: 0.6, noneConfidence: 0.3, hasEntry: true });
+    expect(v).toMatchObject({ fire: false, reason: "above-none-max" });
+  });
+});
+
+describe("CORE-2553: criteria name the document and, for a reference, its skill", () => {
+  const skill = { id: "pc", skill: "pc", level: "skill", name: "programme-coordination", description: "Coordinate a programme of workers. Long tail.", path: "", headings: [] } as const;
+  const ref = { id: "pc/workers", skill: "pc", level: "reference", name: "Workers", description: "Read this file at launch.", path: "", headings: [] } as const;
+  it("prefixes a reference with its skill's first sentence and lists what none covers", () => {
+    const c = criteriaOf([ref, skill], { entries: [skill, ref] });
+    expect(c["pc/workers"]).toBe("Workers (part of pc: Coordinate a programme of workers.) — Read this file at launch.");
+    expect(c["pc"]).toBe("programme-coordination: Coordinate a programme of workers. Long tail.");
+    expect(c["none"]).toBe(NONE_CRITERION);
+  });
+  it("describes a service by its registry entry, and its docs as part of that service (CORE-2555)", () => {
+    const head = { id: "sk/services/api", skill: "sk", level: "reference", name: "api", description: "Documentation authority: origin/master", path: "", headings: [] } as const;
+    const doc = { id: "sk/services/api/references/runbook", skill: "sk", level: "reference", name: "Runbook", description: "Restart steps.", path: "", headings: [] } as const;
+    const svc = { id: "api", name: "API Gateway", description: "Use when the gateway returns 5xx.", container: null, territory: [], skillPath: "" };
+    const c = criteriaOf([head, doc], { entries: [head, doc], serviceOf: new Map([[head.id, svc], [doc.id, svc]]), serviceSkill: new Map([["api", head.id]]) });
+    expect(c["sk/services/api"]).toBe("API Gateway service: Use when the gateway returns 5xx.");
+    expect(c["sk/services/api/references/runbook"]).toBe("Runbook (part of the API Gateway service) — Restart steps.");
   });
 });

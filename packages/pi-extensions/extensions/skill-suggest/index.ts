@@ -31,46 +31,95 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { buildRetrievalIndex, loadServices, shortlist, type RetrievalIndex, type ServiceRecord } from "../../shared/shortlist.ts";
 import { contextBlock, parseContextBlock, resolveSuggestionMessage, stripEndPeriod, suggestionFacts, tintSuggestionGlyph } from "../../shared/suggest.ts";
 import { registerEventRenderer } from "../../shared/event.ts";
-import { classifyViaRegistry, systemOne, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
-import { discoverRoster, resetRosterCache, type RosterEntry } from "./roster.ts";
+import { classify, primeApiKey, readApiKey, type Question, type RegistryLike } from "../../shared/suggest.ts";
+import { createJsonlLog } from "../../shared/jsonl-log.ts";
+import { currentEpoch, detach, DELIVERY, notePrompt, noteRunStart, propose, resetSession } from "../../shared/suggest-pipeline.ts";
+import { discoverRoster, headingsOf, repoRootOf, resetRosterCache, type RosterEntry } from "./roster.ts";
 
 /**
- * Which seam delivers a decision, for every situation a session can be in.
- *
- * The bug this encodes: submitting decided a doctrine, then the turn made no
- * tool call, and the block was dropped. Keep this table honest — a new
- * situation needs a row, not a hope.
+ * The retrieval index, built off the hot path (CORE-2533): a handler reads the
+ * current index or none and never waits for a build. A stale index keeps
+ * serving while its replacement builds in the background.
  */
-export type DeliverySeam = "tool_result" | "agent_end_flush" | "agent_end_decision" | "none";
-export interface Situation {
-  /** The operator submitted a prompt this turn. */
-  prompted: boolean;
-  /** Submit produced a decision that is still pending. */
-  pending: boolean;
-  /** The turn has at least one tool call. */
-  usedTool: boolean;
-  /** The turn ended with agent activity worth judging. */
-  activeTurn: boolean;
+const INDEX_TTL_MS = 5 * 60_000;
+let indexState: { cwd: string; at: number; index: RetrievalIndex<RosterEntry> } | null = null;
+let indexBuild: Promise<void> | null = null;
+
+export function currentIndex(cwd: string, now = Date.now()): RetrievalIndex<RosterEntry> | null {
+  const fresh = indexState && indexState.cwd === cwd && now - indexState.at < INDEX_TTL_MS;
+  if (!fresh && !indexBuild) void rebuildIndex(cwd);
+  return indexState && indexState.cwd === cwd ? indexState.index : null;
 }
 
-export function deliverySeam(s: Situation): DeliverySeam {
-  if (s.pending) return s.usedTool ? "tool_result" : "agent_end_flush";
-  if (!s.prompted && s.activeTurn) return "agent_end_decision"; // unprompted: judge the turn itself
-  if (s.prompted && s.activeTurn) return "agent_end_decision";
-  return "none";
+export function rebuildIndex(cwd: string): Promise<void> {
+  if (indexBuild) return indexBuild;
+  indexBuild = (async () => {
+    try {
+      const repoRoot = await repoRootOf(cwd);
+      const [entries, services] = await Promise.all([discoverRoster(cwd), loadServices(repoRoot)]);
+      indexState = { cwd, at: Date.now(), index: buildRetrievalIndex(entries, services, repoRoot, cwd) };
+    } catch {
+      /* fail-open: the seams skip while no index exists */
+    } finally {
+      indexBuild = null;
+    }
+  })();
+  return indexBuild;
 }
 
-/** Decided at submit, delivered at the first ordered boundary in the turn. */
-interface PendingDoctrine {
-  entry: RosterEntry;
-  block: string;
-  confidence: number | null;
+/**
+ * The index for `cwd`, waiting for an in-flight or first build. Only detached
+ * classification calls this (CORE-2549): a session's first prompt must not be
+ * dropped because the build started at session_start has not finished.
+ */
+export async function readyIndex(cwd: string): Promise<RetrievalIndex<RosterEntry> | null> {
+  const now = currentIndex(cwd);
+  if (now) return now;
+  await rebuildIndex(cwd);
+  return indexState && indexState.cwd === cwd ? indexState.index : null;
 }
+
+export function resetIndex(): void {
+  indexState = null;
+  indexBuild = null;
+  resetRosterCache();
+}
+
+/**
+ * The classifier's choice criteria: the shortlist plus an explicit `none`.
+ *
+ * CORE-2553: Jev never sees ids, so each criterion names its document, and a
+ * reference names the skill it belongs to with that skill's first sentence.
+ * A reference's own summary is often a launch instruction ("Read this file at
+ * launch…") that says nothing about when it applies. `none` lists what does
+ * not call for a procedure instead of one generic sentence.
+ */
+export function criteriaOf(
+  candidates: RosterEntry[],
+  index: { entries: readonly RosterEntry[]; serviceOf?: ReadonlyMap<string, ServiceRecord>; serviceSkill?: ReadonlyMap<string, string> },
+): Record<string, string> {
+  const skills = new Map(index.entries.filter((e) => e.level === "skill").map((e) => [e.skill, e]));
+  const firstSentence = (s: string) => (s.split(/(?<=[.;])\s/)[0] ?? "").slice(0, 140);
+  const criterion = (e: RosterEntry) => {
+    // CORE-2555: a service's SKILL.md often has no frontmatter; the registry
+    // description is written to say when the service applies.
+    const svc = index.serviceOf?.get(e.id);
+    if (svc && index.serviceSkill?.get(svc.id) === e.id && svc.description) return `${svc.name} service: ${svc.description}`;
+    if (svc && index.serviceSkill?.get(svc.id) !== e.id) return `${e.name} (part of the ${svc.name} service) — ${e.description}`;
+    if (e.level === "skill") return `${e.name}: ${e.description}`;
+    const parent = skills.get(e.skill);
+    return `${e.name} (part of ${e.skill}${parent ? `: ${firstSentence(parent.description)}` : ""}) — ${e.description}`;
+  };
+  return Object.fromEntries([...candidates.map((e) => [e.id, criterion(e)]), ["none", NONE_CRITERION]]);
+}
+
+export const NONE_CRITERION =
+  "No listed procedure governs this: narration or a status report, a reply or relay to another agent, a decision the operator states, a question answered from the conversation, or work only sharing a topic or keyword with a listed procedure.";
 
 /** The last extension context seen, so the input handler can reach the session. */
 let latestCtx: unknown = null;
@@ -107,7 +156,7 @@ export function gateTerms(nouls: Record<string, number | null | undefined>): {
   const terms: number[] = [];
   let abstain: string | null = null;
 
-  // Positive noul: absent evidence cannot support firing.
+  // Positive nouls: absent evidence cannot support firing.
   const positive = nouls["would_follow_documented_procedure"];
   if (typeof positive !== "number") {
     abstain = "missing-positive-noul";
@@ -115,6 +164,8 @@ export function gateTerms(nouls: Record<string, number | null | undefined>): {
   } else {
     terms.push(positive);
   }
+  // CORE-2553: the task noul is a separate bar (evaluateGate), not a mean term.
+  if (typeof nouls["starts_governed_task"] !== "number") abstain ??= "missing-task-noul";
 
   // Negating nouls: absent evidence is neutral, not maximal.
   for (const key of ["prose_suffices", "asks_about_the_tooling"] as const) {
@@ -149,6 +200,9 @@ export function evaluateGate(input: {
   }
 
   if (gateMean < GATE_THRESHOLD) return { fire: false, gateMean, reason: "below-gate" };
+  // CORE-2553: on the labelled replay this noul separated turns that start
+  // governed work from chat, status and relays better than the mean did.
+  if ((input.nouls["starts_governed_task"] ?? 0) < TASK_THRESHOLD) return { fire: false, gateMean, reason: "below-task" };
   if (!input.hasEntry) return { fire: false, gateMean, reason: "unknown-entry" };
 
   // The agent_end seam had NO confidence sub-gate at all, so a near-zero pick with
@@ -164,13 +218,29 @@ export function evaluateGate(input: {
   if (typeof none === "number" && confidence - none < NONE_MARGIN) {
     return { fire: false, gateMean, reason: "below-none-margin" };
   }
+  // CORE-2553: any real weight on `none` means the choice is unsure whether a
+  // procedure applies at all; wrong fires sat there, right ones near zero.
+  if (typeof none === "number" && none > NONE_MAX) return { fire: false, gateMean, reason: "above-none-max" };
 
   return { fire: true, gateMean, reason: "fire" };
 }
 
+/**
+ * Gate constants. CORE-2553 fitted TASK_THRESHOLD and NONE_MAX on one seeded
+ * half of the labelled replay (tests/skill-suggest/replay) and scored the
+ * other half, live, through this decision path: precision 0.27 -> 0.55,
+ * NO-SUGGESTION false-fire 0.37 -> 0.05. The recorded answers are a test
+ * fixture (tests/skill-suggest/replay/answers.jsonl).
+ * Confidences are gate inputs, not calibrated probabilities.
+ */
 const GATE_THRESHOLD = 0.3; // mean of gate nouls under this -> nothing
 const FITS_THRESHOLD = 0.3; // winner's own confidence under this -> nothing (both seams, CORE-2366)
 const NONE_MARGIN = 0.05; // the winner must BEAT `none`, not merely clear a bar
+const TASK_THRESHOLD = 0.8; // starts_governed_task under this -> nothing
+const NONE_MAX = 0.2; // `none` holding more than this -> nothing
+/** CORE-2553: the task gate, asked in the same call as the choice at both seams. */
+const TASK_NOUL =
+  "Does the request (or the agent's stated next step) start a concrete piece of work, such as debugging, reviewing, releasing, deploying, planning, coordinating workers or operating a named service, rather than chat, a status check, a decision the operator states, or a reply to another agent?";
 const INJECT_TIMEOUT_MS = 2500;
 
 const COOLDOWN_MIN = 30;
@@ -188,14 +258,43 @@ export function isControlNudge(prompt: string): boolean {
   return /^(continue|cont|go on|go ahead|proceed|carry on|keep going|next|yes|yep|yeah|ok|okay|k|do it|go|thanks|thank you|ty|nice|cool|perfect|great)( please| pls| now| then| on)?$/.test(t);
 }
 
+// CORE-2534: rows queue in memory and are appended asynchronously.
+const decisionLog = createJsonlLog(logDir);
 function logDecision(row: Record<string, unknown>): void {
-  try {
-    const dir = logDir();
-    mkdirSync(dir, { recursive: true });
-    appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(row)}\n`);
-  } catch {
-    /* logging is best-effort */
-  }
+  decisionLog.append(row);
+}
+/** Wait for queued decision rows to reach disk (tests, shutdown). */
+export function flushDecisionLog(): Promise<void> {
+  return decisionLog.flush();
+}
+
+/** One row for a seam that decided not to classify or not to fire, with its reason. */
+function logSkip(seam: string, reason: string, extra: Record<string, unknown> = {}): void {
+  logDecision({ ts: new Date().toISOString(), seam, outcome: "skip", reason, ...extra });
+}
+
+/**
+ * Repeated classifier failures of one class warn the operator once per session
+ * (CORE-2534): the 2026-10-21 outage ran eight days with no visible symptom.
+ */
+const WARN_AFTER_FAILURES = 3;
+export function createFailureWatch(warn: (message: string) => void) {
+  const streak = new Map<string, number>();
+  const warned = new Set<string>();
+  return {
+    failed(reason: string): void {
+      const cls = reason.startsWith("http_") ? "http" : reason;
+      const n = (streak.get(cls) ?? 0) + 1;
+      streak.set(cls, n);
+      if (n >= WARN_AFTER_FAILURES && !warned.has(cls)) {
+        warned.add(cls);
+        warn(`skill-suggest: the classifier failed ${n} times in a row (${reason}); suggestions are paused until it recovers.`);
+      }
+    },
+    succeeded(): void {
+      streak.clear();
+    },
+  };
 }
 
 /**
@@ -222,9 +321,15 @@ export interface TurnEvidence {
  * assistant message, a tool error, or an edited file, and the finale is "done,
  * let me verify". Cursor-based so consecutive turns do not double-count.
  * Mirrors substrate-suggest's turnEvidence.
+ *
+ * Pi's shapes (docs/message-types.md): an assistant tool call is a
+ * `{type: "toolCall", name, arguments}` content block; its result is a separate
+ * `{role: "toolResult", toolName, isError}` message. Reading invented
+ * `tool_call`/`tool_result` blocks left wasActive false on every real turn, so
+ * this seam never classified anything (CORE-2547).
  */
 export function turnEvidence(
-  messages: ReadonlyArray<{ role?: string; content?: unknown }>,
+  messages: ReadonlyArray<{ role?: string; content?: unknown; toolName?: unknown; isError?: unknown }>,
   fromIdx: number,
 ): TurnEvidence {
   const parts: string[] = [];
@@ -234,6 +339,14 @@ export function turnEvidence(
   let errored = false;
   for (let i = Math.max(0, fromIdx); i < messages.length; i++) {
     const m = messages[i];
+    if (m?.role === "toolResult") {
+      wasActive = true;
+      if (m.isError === true) {
+        errored = true;
+        parts.push(`tool_error: ${String(m.toolName ?? "").slice(0, 40)}`);
+      }
+      continue; // tool output is not turn text; it would crowd out the intention
+    }
     const content = Array.isArray(m?.content) ? (m!.content as Array<Record<string, unknown>>) : [];
     for (const p of content) {
       const type = p?.["type"];
@@ -241,19 +354,15 @@ export function turnEvidence(
         const text = p["text"];
         if (m?.role === "assistant") lastAssistant = text;
         if (text.trim()) parts.push(`${m?.role ?? "?"}: ${text.slice(0, 1200)}`);
-      } else if (type === "tool_call") {
-        const name = String(p["toolName"] ?? p["name"] ?? "");
+      } else if (type === "toolCall") {
+        const name = String(p["name"] ?? "");
         wasActive = true;
         if (/^(edit|write|apply_patch|multi_edit)$/.test(name)) {
-          const path = (p["input"] ?? p["args"] ?? {}) as Record<string, unknown>;
-          const file = ["file_path", "filePath", "path", "file"].map((k) => path[k]).find((v) => typeof v === "string");
+          const args = (p["arguments"] ?? {}) as Record<string, unknown>;
+          const file = ["path", "file_path", "filePath", "file"].map((k) => args[k]).find((v) => typeof v === "string");
           if (typeof file === "string" && !editedFiles.includes(file)) editedFiles.push(file);
         }
         parts.push(`tool: ${name}`);
-      } else if (type === "tool_result" || type === "tool_error") {
-        wasActive = true;
-        errored = true;
-        parts.push(`tool_error: ${String(p["toolName"] ?? "").slice(0, 40)}`);
       }
     }
   }
@@ -281,19 +390,6 @@ export function conversationContext(
   return recent.join("\n").slice(-maxChars);
 }
 
-/** Shared Jev runner for both seams: Pi-native classifier first, REST second.
- *  Returns spend telemetry with the answer: elapsed ms and which path served. */
-async function askJev(
-  registry: RegistryLike | null,
-  state: Record<string, unknown>,
-  questions: Record<string, Question>,
-) {
-  const start = Date.now();
-  let result = registry ? await classifyViaRegistry(registry, state, questions) : null;
-  const path = result ? "registry" : "fallback";
-  if (!result) result = await systemOne(state, questions);
-  return { result, jevMs: Date.now() - start, jevPath: path };
-}
 
 /**
  * Read-after-suggest accounting (CORE-2367).
@@ -361,23 +457,7 @@ export function isServiceEntry(entry: { id: string; skill: string }): boolean {
  * and it cannot go stale in the way quoted paragraphs do.
  */
 export function routerSections(md: string, max = 12): string[] {
-  const out: string[] = [];
-  for (const line of md.split("\n")) {
-    // H2/H3 only: the H1 is the document title, not a place to look.
-    const m = /^#{2,3}\s+(.{1,80}?)\s*$/.exec(line);
-    if (m && !out.includes(m[1])) out.push(m[1]);
-    if (out.length >= max) break;
-  }
-  return out;
-}
-
-/** Sections for the entry's own file, or [] when it cannot be read. */
-function sectionsFor(entry: RosterEntry): string[] {
-  try {
-    return routerSections(readFileSync(entry.path, "utf-8"));
-  } catch {
-    return [];
-  }
+  return headingsOf(md, max);
 }
 
 export function doctrineBlock(
@@ -393,7 +473,8 @@ export function doctrineBlock(
   // The router: where to look, not what it says. A service-backed entry also
   // names the CLI, because the registry is queryable and a file read is only
   // one of the two routes to the evidence.
-  const sections = sectionsFor(entry);
+  // Headings were read once, when the index was built: no file IO at delivery.
+  const sections = entry.headings ?? [];
   const router = [
     sections.length ? `Sections: ${sections.join(" \u00b7 ")}` : null,
     isServiceEntry(entry)
@@ -427,10 +508,18 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   const cooldowns: Record<string, number> = {};
   /** Advances per turn so consecutive turns do not double-count evidence. */
   let messageCursor = 0;
-  /** Set by the input seam, consumed by the first tool_result of the turn. */
-  let pending: PendingDoctrine | null = null;
+  /** Inputs seen this session: an extension-sourced input that opens the session is a dispatched task (CORE-2551). */
+  let inputsThisSession = 0;
   /** CORE-2367: the outstanding suggestion whose file read we are waiting on. */
   let readWatch: ReadWatch | null = null;
+  /** Files read or edited this session, newest last, bounded: territory evidence for the shortlist. */
+  const sessionFiles: string[] = [];
+  const noteFile = (path: string) => {
+    const i = sessionFiles.indexOf(path);
+    if (i >= 0) sessionFiles.splice(i, 1);
+    sessionFiles.push(path);
+    if (sessionFiles.length > 20) sessionFiles.shift();
+  };
   /** Turns AFTER the arming turn in which a read still counts. */
   const READ_WINDOW_TURNS = 2;
   // The input seam arms mid-turn, and that same turn's agent_end ages the watch once,
@@ -469,31 +558,81 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     tintGlyph: (glyph, details, theme) => tintSuggestionGlyph(glyph, details.tint, theme),
   });
 
-  const handler = async (event: { text?: string }, ctx?: { modelRegistry?: unknown; sessionManager?: unknown }) => {
+  const failures = createFailureWatch((message) => {
+    try {
+      (latestCtx as { ui?: { notify?: (m: string, t?: string) => void } } | null)?.ui?.notify?.(message, "warning");
+    } catch {
+      /* a warning must never break a turn */
+    }
+  });
+
+  /**
+   * Arbitrate and deliver one doctrine block (CORE-2549): at most one
+   * suggestion per agent run across both suggest extensions, none stale, none
+   * repeated in the session. Exactly one log row either way.
+   */
+  const offer = (seam: string, entry: RosterEntry, block: string, epoch: number, watchTurns: number, facts: Record<string, unknown>) => {
+    const verdict = cooldownOk(entry.id, Date.now())
+      ? propose({
+          epoch,
+          key: `skill:${entry.id}`,
+          deliver: () => {
+            cooldownSet(entry.id);
+            readWatch = { id: entry.id, path: entry.path, turnsLeft: watchTurns };
+            // The renderer draws the card from the labelled block's fields, so
+            // the model receives the doctrine and the operator sees the card.
+            pi.sendMessage(
+              { customType: CUSTOM_TYPE, content: block, display: true, details: { skill: entry.id, level: entry.level, seam } },
+              DELIVERY,
+            );
+          },
+        })
+      : "cooldown";
+    const fired = verdict === "delivered";
+    logDecision({ ts: new Date().toISOString(), seam, pick: entry.id, outcome: fired ? "fire" : "skip", reason: fired ? "fire" : verdict, injected: fired, ...facts });
+  };
+
+  const handler = async (event: { text?: string; source?: string }, ctx?: { modelRegistry?: unknown; sessionManager?: unknown }) => {
     latestCtx = ctx;
     if (off()) return { action: "continue" } as const;
+    // A new prompt moves the evidence on: answers still in flight for the
+    // previous one become stale (CORE-2549).
+    const epoch = notePrompt(event);
     const prompt = typeof event?.text === "string" ? event.text : "";
-    if (prompt.startsWith("/")) return { action: "continue" } as const; // commands decide for themselves
-    if (isControlNudge(prompt)) return { action: "continue" } as const; // "continue" carries no task signal
-    if (prompt.trim().length < 12) return { action: "continue" } as const;
+    // CORE-2551: peer, coordinator and intercom text arrives with source
+    // "extension" mid-session; it is not a request to this agent, and the
+    // working turn it starts is judged at agent_end. The input that opens a
+    // session is the dispatched task itself, so it is judged here.
+    const opensSession = inputsThisSession++ === 0;
+    if (event?.source === "extension" && !opensSession) return logSkip("input", "injected"), { action: "continue" } as const;
+    if (prompt.startsWith("/")) return logSkip("input", "command"), { action: "continue" } as const; // commands decide for themselves
+    if (isControlNudge(prompt)) return logSkip("input", "control_nudge"), { action: "continue" } as const; // "continue" carries no task signal
+    if (prompt.trim().length < 12) return logSkip("input", "too_short"), { action: "continue" } as const;
 
     const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
-    if (!registry && !readApiKey()) return { action: "continue" } as const;
+    if (!registry && !readApiKey()) return logSkip("input", "no_key"), { action: "continue" } as const;
 
-    const roster = discoverRoster(process.cwd());
-    if (roster.length === 0) return { action: "continue" } as const;
+    const cwd = process.cwd();
+    const context = recentContext(prompt);
+    const files = [...sessionFiles];
 
     try {
+      // CORE-2549: pi never waits for the index or Jev. Retrieval and the
+      // answer run detached; the answer is arbitrated whenever it lands.
+      detach(async () => {
+      const index = await readyIndex(cwd);
+      if (!index) return logSkip("input", "index_unavailable");
+      const sl = shortlist(index, { text: `${prompt}\n${context}`, files });
+      const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
+      if (sl.candidates.length === 0) return logSkip("input", "no_candidates", shortlistFacts);
       const questions: Record<string, Question> = {
         skill: {
           type: "choice",
           instructions:
-            "Pick the single skill or reference document a careful expert would follow for this request, or none. Base it only on the request and the provided descriptions.",
-          criteria: Object.fromEntries([
-            ...roster.map((r) => [r.id, r.description]),
-            ["none", "No documented procedure adds value; general expertise suffices."],
-          ]),
+            "Pick the single skill or reference document whose stated use applies to the task this request starts, so that following it would change what the agent does next; otherwise pick none. A procedure that only shares a topic or keyword does not apply. Base it only on the request and the provided descriptions.",
+          criteria: criteriaOf(sl.candidates, index),
         },
+        starts_governed_task: { type: "noul", instructions: TASK_NOUL },
         would_follow_documented_procedure: {
           type: "noul",
           instructions: "Would a careful expert consult a specific documented procedure or set of commands here, rather than answer from general understanding?",
@@ -509,78 +648,56 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       };
       const state = {
         request: prompt.slice(0, 2000),
-        recent_conversation: recentContext(prompt),
-        cwd: process.cwd(),
+        recent_conversation: context,
+        cwd,
       };
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), INJECT_TIMEOUT_MS);
-      let result: Awaited<ReturnType<typeof classifyViaRegistry>> = null;
-      let jevPath: string | null = null;
-      const jevStart = Date.now();
-      try {
-        result = (await Promise.race([
-          (async () => {
-            let r = registry ? await classifyViaRegistry(registry, state, questions) : null;
-            if (r) jevPath = "registry";
-            if (!r) {
-              r = await systemOne(state, questions);
-              if (r) jevPath = "fallback";
-            }
-            return r;
-          })(),
-          new Promise<null>((resolve) => { controller.signal.addEventListener("abort", () => resolve(null)); }),
-        ]));
-      } finally {
-        clearTimeout(timer);
+      const outcome = await classify(registry, state, questions, { timeoutMs: INJECT_TIMEOUT_MS });
+      const jevFacts = { jev_ms: outcome.ms, jev_path: outcome.path, prompt_chars: prompt.length, ...shortlistFacts };
+      const result = outcome.result;
+      if (!result) {
+        failures.failed(outcome.failure ?? "transport");
+        return logSkip("input", `classifier:${outcome.failure}`, jevFacts);
       }
-      const jevMs = Date.now() - jevStart;
-      if (!result) return { action: "continue" } as const;
+      failures.succeeded();
 
       const pick = result.choice.choice;
-      const entry = roster.find((r) => r.id === pick);
+      const entry = sl.candidates.find((r) => r.id === pick);
       const verdict = evaluateGate({
         nouls: result.nouls,
         confidence: result.choice.confidence,
         noneConfidence: result.choice.probabilities?.["none"] ?? null,
         hasEntry: Boolean(entry),
       });
-      const gateMean = verdict.gateMean;
+      // One card per prompt, per catalog id: a fire suppressed by cooldown is
+      // logged as such, not as a fire.
+      const cooled = verdict.fire && entry !== undefined && !cooldownOk(entry.id, Date.now());
       // Log every evaluation — negatives are the tuning signal. An ABSTAIN is
       // recorded distinctly from a genuine `none` answer: collapsing the two
       // reintroduces this defect in a new shape, because both would otherwise
       // read as "the classifier considered and declined".
-      const noneConfidence = result.choice.probabilities?.["none"] ?? null;
-      logDecision({
-        ts: new Date().toISOString(),
-        seam: "input",
-        pick: pick ?? "none",
-        outcome: verdict.fire ? "fire" : "abstain",
-        reason: verdict.reason,
-        gate: Number(gateMean.toFixed(3)),
+      const gateFacts = {
+        gate: Number(verdict.gateMean.toFixed(3)),
         confidence: result.choice.confidence,
-        noneConfidence,
-        injected: verdict.fire,
-        prompt_chars: prompt.length,
-        jev_ms: jevMs,
-        jev_path: jevPath,
+        noneConfidence: result.choice.probabilities?.["none"] ?? null,
+        task: result.nouls["starts_governed_task"] ?? null,
+        ...jevFacts,
+      };
+      if (!verdict.fire || !entry || cooled) {
+        logDecision({
+          ts: new Date().toISOString(),
+          seam: "input",
+          pick: pick ?? "none",
+          outcome: cooled ? "skip" : "abstain",
+          reason: cooled ? "cooldown" : verdict.reason,
+          injected: false,
+          ...gateFacts,
+        });
+        return;
+      }
+      // The prompt is never mutated: a transform echoes into the operator's
+      // input line. The block rides a steer message instead (CORE-2548).
+      offer("input", entry, doctrineBlock(entry, `the current request`, result.choice.confidence, result.model), epoch, INPUT_SEAM_TURNS, gateFacts);
       });
-      if (!verdict.fire || !entry) return { action: "continue" } as const;
-
-      // One card per prompt, per catalog id.
-      if (!cooldownOk(entry.id, Date.now())) return { action: "continue" } as const;
-      cooldownSet(entry.id);
-
-      const block = doctrineBlock(entry, `the current request`, result.choice.confidence, result.model);
-
-      // Decide here (the prompt is the signal), deliver at the first ordered
-      // boundary inside the turn. The prompt is never mutated: a transform
-      // echoes into the operator's input line, and sendMessage here races the
-      // in-flight turn ("Agent is already processing") and displaced the
-      // operator's prompt outright.
-      pending = { entry, block, confidence: result.choice.confidence };
-      readWatch = { id: entry.id, path: entry.path, turnsLeft: INPUT_SEAM_TURNS };
-      logDecision({ ts: new Date().toISOString(), seam: "input", pick: entry.id, injected: true, delivery: "deferred-to-tool-result" });
-
       return { action: "continue" } as const;
     } catch {
       return { action: "continue" } as const; // fail-open: prompt untouched
@@ -595,7 +712,14 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   pi.on("tool_call", (event) => {
     // Pi's ToolCallEvent carries `input`; `args` is the legacy shape.
     const e = event as { toolName?: string; input?: unknown; args?: unknown };
-    const path = readPathOf(String(e.toolName ?? ""), e.input ?? e.args);
+    const tool = String(e.toolName ?? "");
+    const input = (e.input ?? e.args ?? {}) as Record<string, unknown>;
+    const touched = /^(edit|write|apply_patch|multi_edit)$/.test(tool)
+      ? ["path", "file_path", "filePath", "file"].map((k) => input[k]).find((v) => typeof v === "string")
+      : null;
+    if (typeof touched === "string") noteFile(touched);
+    const path = readPathOf(tool, input);
+    if (path) noteFile(path);
     if (!path || !readWatch) return;
     const id = readWatch.id;
     const next = watchRead(readWatch, path, false);
@@ -604,33 +728,6 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       logDecision({ ts: new Date().toISOString(), seam: "read_after_suggest", pick: id, outcome: "read", path });
     }
   });
-
-  // Delivery: the first tool_result of the turn is the first ordered point
-  // inside the turn, and the card is a context-bearing custom message, so the
-  // agent reads it. No inline copy: a block appended to tool output renders as
-  // raw XML in the transcript — exactly what the operator should not wade
-  // through.
-  pi.on("tool_result", () => {
-    if (!pending || off()) return undefined;
-    // The table decides, so it is not a test-only spec: this seam asserts its
-    // own row, and a change there stops delivery instead of drifting.
-    if (deliverySeam({ prompted: true, pending: true, usedTool: true, activeTurn: true }) !== "tool_result") return undefined;
-    const item = pending;
-    pending = null;
-    logDecision({ ts: new Date().toISOString(), seam: "tool_result", pick: item.entry.id, injected: true, confidence: item.confidence });
-    pi.sendMessage(
-      {
-        customType: CUSTOM_TYPE,
-        content: item.block,
-        display: true,
-        details: { skill: item.entry.id, level: item.entry.level, seam: "tool_result" },
-      },
-      { deliverAs: "followUp", triggerTurn: false },
-    );
-    return undefined;
-  });
-
-
 
   // Conversation context for the classifier, read from the session projection
   // (compaction-aware). InputEvent itself carries only the new text, so this
@@ -654,21 +751,24 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
   // The intention seam: the agent declares what it is doing in its own final
   // message. Same two-stage Jev over the turn evidence; the doctrine rides
   // into the next turn as a followUp the model reads.
-  const runAgentEnd = async (event: unknown, ctx: unknown): Promise<void> => {
+  const runAgentEnd = async (messages: unknown[], turn: TurnEvidence, ctx: unknown, epoch: number): Promise<void> => {
     try {
-      if (off()) return;
-      pending = null; // already flushed, or superseded by a fresh decision
-      const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
-      const turn = turnEvidence(messages, messageCursor);
-      messageCursor = turn.nextIdx;
       const { lastAssistant, wasActive } = turn;
-      if (!lastAssistant || !wasActive) return;
+      // An empty boundary (no new messages) is not a decision: no row.
+      if (messages.length === 0 || (!lastAssistant && !wasActive)) return;
+      if (!lastAssistant || !wasActive) return logSkip("agent_end", "inactive_turn");
       const registry = ((ctx as unknown as { modelRegistry?: RegistryLike } | undefined)?.modelRegistry ?? null);
-      if (!registry && !readApiKey()) return;
-      const roster = discoverRoster(process.cwd());
-      if (roster.length === 0) return;
+      if (!registry && !readApiKey()) return logSkip("agent_end", "no_key");
+      const index = await readyIndex(process.cwd());
+      if (!index) return logSkip("agent_end", "index_unavailable");
+      const sl = shortlist(index, {
+        text: `${lastAssistant}\n${turn.excerpt}`,
+        files: [...sessionFiles, ...turn.editedFiles],
+      });
+      const shortlistFacts = { roster: sl.total, shortlist: sl.candidates.length, dropped: sl.dropped, territory: sl.territoryHits };
+      if (sl.candidates.length === 0) return logSkip("agent_end", "no_candidates", shortlistFacts);
 
-      const { result, jevMs, jevPath } = await askJev(registry, {
+      const outcome = await classify(registry, {
         agent_final_message: lastAssistant.slice(0, 1500),
         working_turn_excerpt: turn.excerpt.slice(0, 6000),
         edited_files: turn.editedFiles.slice(0, 8),
@@ -676,66 +776,60 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       }, {
         skill: {
           type: "choice",
-          instructions: "The agent just ended a working turn stating its intention. Pick the single skill or reference document its stated next step most needs, or none.",
-          criteria: Object.fromEntries([
-            ...roster.map((r) => [r.id, r.description]),
-            ["none", "No documented procedure adds value to the stated next step."],
-          ]),
+          instructions: "The agent just ended a working turn stating its next step. Pick the single skill or reference document whose stated use applies to that next step, so that following it would change what the agent does; otherwise pick none. A procedure that only shares a topic or keyword does not apply.",
+          criteria: criteriaOf(sl.candidates, index),
         },
+        starts_governed_task: { type: "noul", instructions: TASK_NOUL },
         would_follow_documented_procedure: { type: "noul", instructions: "For the stated next step, would a careful expert follow a specific documented procedure rather than improvise?" },
         prose_suffices: { type: "noul", instructions: "Is the stated next step purely mechanical or narrative, needing no doctrine? (Counts against suggesting.)" },
       } as Record<string, Question>);
-      if (!result) return;
+      const jevFacts = { jev_ms: outcome.ms, jev_path: outcome.path, ...shortlistFacts };
+      const result = outcome.result;
+      if (!result) {
+        failures.failed(outcome.failure ?? "transport");
+        return logSkip("agent_end", `classifier:${outcome.failure}`, jevFacts);
+      }
+      failures.succeeded();
       const pick = result.choice.choice;
-      const entry = roster.find((r) => r.id === pick);
+      const entry = sl.candidates.find((r) => r.id === pick);
       const verdict = evaluateGate({
         nouls: result.nouls,
         confidence: result.choice.confidence,
         noneConfidence: result.choice.probabilities?.["none"] ?? null,
         hasEntry: Boolean(entry),
       });
-      if (!verdict.fire || !entry) {
+      const cooled = verdict.fire && entry !== undefined && !cooldownOk(entry.id, Date.now());
+      if (!verdict.fire || !entry || cooled) {
         logDecision({
           ts: new Date().toISOString(),
           seam: "agent_end",
           pick: pick ?? "none",
-          outcome: "abstain",
-          reason: verdict.reason,
+          outcome: cooled ? "skip" : "abstain",
+          reason: cooled ? "cooldown" : verdict.reason,
           gate: Number(verdict.gateMean.toFixed(3)),
           confidence: result.choice.confidence,
           noneConfidence: result.choice.probabilities?.["none"] ?? null,
+          task: result.nouls["starts_governed_task"] ?? null,
+          ...jevFacts,
         });
         return;
       }
-      if (!cooldownOk(entry.id, Date.now())) return;
-      cooldownSet(entry.id);
-      readWatch = { id: entry.id, path: entry.path, turnsLeft: READ_WINDOW_TURNS };
-
-      // CORE-2367: this block used to be built and DISCARDED, so the intention
-      // seam showed the operator a card while sending the model nothing at all -
-      // which is why "the agent never reads it" looked like disobedience rather
-      // than the delivery that actually happened. Both audiences get it now.
-      const block = doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model);
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end", pick: entry.id, injected: true, confidence: result.choice.confidence, gate: Number(verdict.gateMean.toFixed(3)), jev_ms: jevMs, jev_path: jevPath });
-      // The renderer draws the card from the labelled block's fields, so the model
-      // receives the doctrine and the operator still sees the house card.
-      pi.sendMessage(
-        {
-          customType: CUSTOM_TYPE,
-          content: block,
-          display: true,
-          details: { skill: entry.id, level: entry.level, seam: "agent_end" },
-        },
-        { deliverAs: "followUp", triggerTurn: false },
-      );
+      // CORE-2367: the intention block reaches the model, not only the card.
+      offer("agent_end", entry, doctrineBlock(entry, `your stated next step`, result.choice.confidence, result.model), epoch, READ_WINDOW_TURNS, {
+        confidence: result.choice.confidence,
+        gate: Number(verdict.gateMean.toFixed(3)),
+        ...jevFacts,
+      });
     } catch {
       /* fail-open: a suggestion extension must never break a session */
     }
   };
 
-  // Coverage: a turn with no tool call would otherwise drop what submit
-  // decided, so agent_end flushes it before its own decision runs.
-  pi.on("agent_end", async (event: unknown, ctx: unknown) => {
+  pi.on("agent_start", () => noteRunStart());
+
+  // The intention seam: evidence is read synchronously (cheap, in memory), the
+  // classification runs detached (CORE-2549).
+  pi.on("agent_end", (event: unknown, ctx: unknown) => {
     // Turn boundary: age the read watch BEFORE this turn's own decision can arm a new one.
     if (readWatch) {
       const id = readWatch.id;
@@ -743,25 +837,23 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
       readWatch = next.watch;
       if (next.expired) logDecision({ ts: new Date().toISOString(), seam: "read_after_suggest", pick: id, outcome: "expired" });
     }
-    if (pending && deliverySeam({ prompted: true, pending: true, usedTool: false, activeTurn: true }) === "agent_end_flush") {
-      const item = pending;
-      pending = null;
-      logDecision({ ts: new Date().toISOString(), seam: "agent_end_flush", pick: item.entry.id, injected: true, confidence: item.confidence });
-      pi.sendMessage(
-        {
-          customType: CUSTOM_TYPE,
-          content: item.block,
-          display: true,
-          details: { skill: item.entry.id, level: item.entry.level, seam: "agent_end_flush" },
-        },
-        { deliverAs: "followUp", triggerTurn: false },
-      );
-    }
-    return runAgentEnd(event, ctx);
+    if (off()) return;
+    const messages = (event as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? [];
+    const turn = turnEvidence(messages, messageCursor);
+    messageCursor = turn.nextIdx;
+    const epoch = currentEpoch();
+    detach(() => runAgentEnd(messages, turn, ctx, epoch));
   });
 
   // Reload the roster when packs change on disk (cheap: cache TTL governs).
   if (typeof pi.on === "function") {
-    pi.on("session_start", () => resetRosterCache());
+    // Build the index as the session starts, off any handler's critical path.
+    pi.on("session_start", () => {
+      inputsThisSession = 0;
+      resetSession();
+      resetIndex();
+      void rebuildIndex(process.cwd());
+      void primeApiKey();
+    });
   }
 }
