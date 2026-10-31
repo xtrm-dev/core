@@ -138,3 +138,102 @@
 {"decision": "injected-fire-108|agent_end|multiplexing/operator-help-patterns", "verdict": "partly", "why": "Worker cannot find the coordinator in the list; messaging patterns help somewhat."}
 {"decision": "injected-fire-108|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker runs sb resume/claim/journal but the doc targets coordinators."}
 {"decision": "injected-fire-108|input|programme-coordination/workers", "verdict": "yes", "why": "Builder worker in the programme follows the worker rules."}
+{"decision": "sample-032|input|service-knowledge/services/release-flow", "verdict": "yes", "why": "Real promote-merge of master to stable is the work; the market-data release-flow doc covers it."}
+{"decision": "sample-340|input|open-code-review/provenance", "verdict": "no", "why": "Empty-description OCR provenance sub-doc; the task is a manual adversarial PR re-review, 'provenance' is only a keyword."}
+{"decision": "sample-070|input|programme-coordination/substrate", "verdict": "partly", "why": "Writing an sb handoff needs sb syntax, but this is a side aspect of the step list."}
+{"decision": "sample-105|input|ci-light-heavy", "verdict": "yes", "why": "Task is make ci-light plus Semgrep baseline scan on a fix PR; the CI light/heavy and scan doc covers it."}
+{"decision": "sample-371|input|session-recovery", "verdict": "yes", "why": "Identifying which agents were active before an OOM is session-recovery inventory work."}
+{"decision": "control-trivial-140|agent_end|production-via-make", "verdict": "no", "why": "Agent asks the operator for sudo to start CI runner units; not a production deploy via make."}
+{"decision": "sample-203|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker will run sb issue show/claim, so sb quirks help a little, but the real work is the PR."}
+{"decision": "sample-444|input|service-knowledge/services/mcp_server/references/architecture_ssot", "verdict": "partly", "why": "Points to server.py where FastMCP tool definitions live, but it is a thin pointer and covers only one of the two repos."}
+{"decision": "sample-074|input|service-knowledge/updating", "verdict": "yes", "why": "User asks for a service-knowledge drift update; this is the update/drift-sync procedure."}
+{"decision": "sample-254|input|open-code-review/usage", "verdict": "yes", "why": "User explicitly asks to review with ocr; the ocr review flags doc fits."}
+{"decision": "sample-397|input|programme-coordination/substrate", "verdict": "partly", "why": "Lane starts with sb issue show/claim, so sb syntax helps slightly; the contract is the main guide."}
+{"decision": "sample-172|input|production-via-make", "verdict": "yes", "why": "A production deploy with make deploy is exactly what the production-via-make doc governs."}
+{"decision": "sample-379|input|programme-coordination/substrate", "verdict": "no", "why": "Task is a code fix to a smoke probe; the sb journal show call is incidental."}
+{"decision": "sample-049|input|jira-cleanup", "verdict": "yes", "why": "Jira triage that cites tickets and checks comments is the jira-cleanup procedure."}
+{"decision": "sample-372|input|using-xtrm", "verdict": "no", "why": "Task is folding an artifact into the here-now skill and committing; the generic XTRM contract adds nothing specific."}
+{"decision": "sample-403|agent_end|python-testing/configuration", "verdict": "no", "why": "Agent already runs pytest fine; a run-a-single-file snippet adds nothing to this fix."}
+{"decision": "sample-058|input|programme-coordination/coordinator-transition", "verdict": "no", "why": "Recipient is a helper told who the new coordinator is; the handover doc is for the coordinators."}
+{"decision": "sample-375|input|open-code-review", "verdict": "no", "why": "Task is applying review follow-ups (runbook, script mapping, test shim), not running a review."}
+{"decision": "sample-197|input|service-knowledge/services/releasing-mcp-candidate", "verdict": "yes", "why": "The named SKILL.md is the file to be edited and holds the candidate/rollback SHA lines in question."}
+{"decision": "sample-337|input|open-code-review", "verdict": "partly", "why": "A review is in progress, but it is a manual attack re-run with PASS/HOLD, not an OCR run."}
+{"decision": "sample-294|input|ci-light-heavy", "verdict": "partly", "why": "make ci-light is one step; main work is merging master and resolving conflicts."}
+{"decision": "sample-416|input|service-knowledge/services/runners", "verdict": "yes", "why": "Creating a docker runner and setting CI_RUNNER_DOCKER is runner-class territory covered by the runners skill."}
+{"decision": "sample-312|agent_end|service-knowledge/services/release-flow", "verdict": "no", "why": "Turn is a dispatch status report; no procedure needed now, and the repo may not match the darth-feedor release doc."}
+{"decision": "sample-119|input|jira-cleanup", "verdict": "no", "why": "Task is closing an sb issue and going idle; the Jira cleanup doc is for different work."}
+{"decision": "sample-289|input|engineering-quality/planning-tests", "verdict": "partly", "why": "Fixes are test changes where test-quality rules apply, but the doc is about planning tests."}
+{"decision": "sample-060|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker opens with sb issue show/journal, so sb notes help a little; the brief is the authority."}
+{"decision": "sample-327|input|engineering-quality/review", "verdict": "yes", "why": "Adversarial re-review of an exact head is what the review doc covers (check the diff, not the summary)."}
+{"decision": "sample-400|input|mercury-visual-style", "verdict": "yes", "why": "Updating an artifact with SVG flow diagrams is the case the Mercury visual style doc is for."}
+{"decision": "sample-199|input|ci-light-heavy", "verdict": "yes", "why": "Fixing a CI pyright failure and running make ci-light is covered by the CI light/heavy doc."}
+{"decision": "sample-009|input|using-xtrm/continuity", "verdict": "yes", "why": "Resume from checkpoint, re-claim and handoff scheduling are the continuity checklist's subject."}
+{"decision": "sample-239|input|agentrun-author", "verdict": "yes", "why": "User names the agentrun-author skill and asks to plan and execute a workflow."}
+{"decision": "sample-116|input|jira-cleanup", "verdict": "yes", "why": "Auditing Jira linkage, windows, sprints/epics and statuses with a report is jira-cleanup work."}
+{"decision": "sample-407|input|service-knowledge/services/runners", "verdict": "yes", "why": "Verifying a docker runner against the host runbook is runners-skill work."}
+{"decision": "sample-129|input|board-audit/audit-harness", "verdict": "partly", "why": "Updating a board audit with shadow-read results touches audit-harness, though the ask is a short update and reply."}
+{"decision": "sample-096|input|multiplexing/scope", "verdict": "no", "why": "Coordinator relay to read a brief and continue; a generic multiplexing scope doc adds nothing."}
+{"decision": "sample-214|input|multiplexing/operator-help-patterns", "verdict": "partly", "why": "Debugging claude-link peer registration touches multiplexing, but this sub-doc is operator request patterns."}
+{"decision": "sample-384|input|skill-creator", "verdict": "yes", "why": "User explicitly asks to create a skill with skill-creator."}
+{"decision": "sample-131|input|programme-coordination/coordinator-transition", "verdict": "partly", "why": "Writing a handoff and stopping is related, but the doc is for coordinator transitions, not a worker handoff."}
+{"decision": "sample-328|input|multiplexing", "verdict": "yes", "why": "Coordinating with a peer worker via intercom to avoid overlap is the multiplexing guide's subject."}
+{"decision": "sample-442|input|production-via-make", "verdict": "yes", "why": "Merging a promotion PR, backup and applying migrations through make is production-via-make work."}
+{"decision": "sample-176|input|jira-cleanup", "verdict": "yes", "why": "Reviewing Jira tickets under epics for consolidation and sequencing is jira-cleanup work."}
+{"decision": "sample-144|agent_end|board-audit", "verdict": "yes", "why": "Turning audit findings into a plan of exact mutations to apply on approval matches the board-audit propose/apply flow."}
+{"decision": "sample-286|input|mercury-release", "verdict": "partly", "why": "Syncing service docs to a new release range and refs fits a release router, but the service-knowledge update flow is more direct."}
+{"decision": "sample-208|input|board-audit", "verdict": "yes", "why": "User asks for a board-audit specialist to find wrong statuses; the skill directly covers it."}
+{"decision": "sample-348|agent_end|updating-dependencies", "verdict": "yes", "why": "Agent is bumping pinned packages for OSV advisories and verifying compatibility, the dependency-update procedure."}
+{"decision": "sample-253|input|board-audit", "verdict": "partly", "why": "Board-helper GO/DRY comment is one step, but the window runbook is mostly about production and release."}
+{"decision": "sample-323|input|releasing", "verdict": "yes", "why": "Release of library-v0.1.1 via promote and tag is covered by the releasing doc."}
+{"decision": "sample-090|input|programme-coordination/coordinator-operations", "verdict": "yes", "why": "A production window with DRY then APPLY is what the coordinator-operations rules cover."}
+{"decision": "sample-175|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker opens with sb resume/claim, so sb notes help a little; finishing the PR is the main work."}
+{"decision": "sample-320|input|ci-light-heavy", "verdict": "yes", "why": "Task reruns OSV scans and make ci-light; doc covers both."}
+{"decision": "sample-011|input|using-specialists/specialist-definitions", "verdict": "yes", "why": "Operator asks to design a specialist using the authoring material."}
+{"decision": "sample-039|input|engineering-quality/planning-tests", "verdict": "partly", "why": "Two fully specified tests to add; test-planning procedure is only a side aid."}
+{"decision": "sample-137|input|gitnexus/impact-and-refactoring", "verdict": "yes", "why": "Renaming a shared warning code across definition, tests and artifacts is the impact/refactor case."}
+{"decision": "sample-436|input|updating-dependencies", "verdict": "partly", "why": "Dependency lock and pinning work, but the doc targets updating versions, not building a hashed lock."}
+{"decision": "sample-159|input|engineering-quality/planning-tests", "verdict": "partly", "why": "Adding one regression test; the test-planning procedure helps only marginally."}
+{"decision": "sample-198|input|board-audit", "verdict": "yes", "why": "Redoing audit verdict rows with evidence is board-audit work."}
+{"decision": "sample-307|input|engineering-quality/testing", "verdict": "partly", "why": "Slug-rejection tests are one part of a mostly doc-correction fix commit."}
+{"decision": "sample-282|input|service-knowledge/services/ingesting-tick-data/references/deploy-runbook", "verdict": "yes", "why": "Planning an ingestor image swap in the CME halt window is exactly the deploy runbook."}
+{"decision": "sample-144|input|board-audit", "verdict": "yes", "why": "Operator wants clear row-by-row proposals then mutations on a Jira board."}
+{"decision": "sample-157|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker will run sb journal commands, but the brief supplies the procedure."}
+{"decision": "sample-348|input|engineering-quality/causal-debugging", "verdict": "partly", "why": "Root cause is already known; this is implementing fixes, not diagnosing."}
+{"decision": "sample-266|input|open-code-review", "verdict": "no", "why": "Author fixing review findings; the doc is for running a review."}
+{"decision": "sample-271|agent_end|programme-coordination/coordinator-transition", "verdict": "yes", "why": "Agent is writing the coordinator transition procedure this doc describes."}
+{"decision": "sample-412|input|mercury-visual-style", "verdict": "yes", "why": "Building an SVG-diagram artifact needs the visual style rules."}
+{"decision": "sample-434|input|using-specialists/specialist-definitions", "verdict": "no", "why": "Admin push and patching an installed copy; not authoring a definition."}
+{"decision": "sample-188|input|vaultctl", "verdict": "no", "why": "Task is to read a Substrate note on MMD-2474, not search a vault."}
+{"decision": "sample-015|input|programme-coordination/coordinator-operations", "verdict": "yes", "why": "Goal is shipping production windows as programme coordinator."}
+{"decision": "sample-200|agent_end|codemode", "verdict": "partly", "why": "Agent is already using codemode; the cell discipline is a side aid for its query error."}
+{"decision": "sample-038|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker will use sb claim/show, but the prompt already gives the commands."}
+{"decision": "sample-127|input|xtrm-maintenance/finalize", "verdict": "partly", "why": "Push, check CI and journal is a small slice of the finalize flow."}
+{"decision": "sample-284|input|board-audit/audit-harness", "verdict": "yes", "why": "Resuming an audit where code facts and AgentRun judgments must be split."}
+{"decision": "sample-157|input|programme-coordination/workers", "verdict": "partly", "why": "Worker role in a programme, but the description is empty and likely coordinator-facing."}
+{"decision": "sample-295|agent_end|goal-prompt/self-injection", "verdict": "yes", "why": "Agent is producing a post-compaction goal prompt; self-injection is the re-entry mechanism."}
+{"decision": "sample-390|input|session-recovery", "verdict": "yes", "why": "User asks to restore lost tmux sessions and build recovery tooling."}
+{"decision": "sample-421|input|using-specialists/specialist-definitions", "verdict": "yes", "why": "Editing specialist prompts is changing specialist definitions."}
+{"decision": "sample-449|input|gitnexus/impact-and-refactoring", "verdict": "partly", "why": "Prompt demands GitNexus impact before symbol edits, but the bulk is new docs work."}
+{"decision": "sample-126|input|engineering-quality/testing", "verdict": "yes", "why": "Regression test with updated pinned values for a calculation fix."}
+{"decision": "sample-305|input|programme-coordination/substrate", "verdict": "partly", "why": "Worker uses sb claim, but the main need is test-quality on a security gate."}
+{"decision": "sample-441|input|service-knowledge/services/calendar_updater/references/architecture_ssot", "verdict": "yes", "why": "Removing a provider branch in calendar_updater.py; doc covers that file's orchestration."}
+{"decision": "audit-service-prompt-007|input|service-knowledge/services/migrating-schema/references/deep_dive", "verdict": "no", "why": "Template doc with FILL placeholders; moment needs a prod-state report, not a procedure."}
+{"decision": "sample-379|input|engineering-quality/kernel-workbench", "verdict": "no", "why": "Fixing a smoke script; not repeated data handling or a probe decision."}
+{"decision": "sample-080|input|open-code-review", "verdict": "no", "why": "Author fixing review items; not running a review."}
+{"decision": "sample-141|input|open-code-review", "verdict": "no", "why": "Author fixing review findings; not running a review."}
+{"decision": "sample-165|input|multiplexing/operator-help-patterns", "verdict": "yes", "why": "Handing off and briefing a new helper agent is the assisted-handoff pattern."}
+{"decision": "sample-404|input|service-knowledge/services/release-flow", "verdict": "yes", "why": "Preparing promote-to-stable and deploy sequence for infra per its release flow."}
+{"decision": "sample-182|input|service-knowledge/services/ingesting-tick-data/references/deploy-runbook", "verdict": "partly", "why": "Fixing the swap script's finally block; runbook gives context but code is the focus."}
+{"decision": "sample-337|input|gitnexus/pr-review", "verdict": "yes", "why": "Re-reviewing a PR at an exact SHA with a GitNexus path to reassess."}
+{"decision": "sample-010|input|planning/premortem", "verdict": "yes", "why": "Task is a premortem on a risky production run."}
+{"decision": "sample-375|input|engineering-quality/planning-tests", "verdict": "partly", "why": "Test shim and mode-pin tests are part of a mostly script/runbook fix."}
+{"decision": "sample-056|input|xtrm-maintenance/update", "verdict": "no", "why": "Task advances a service skill ref; xt update is a different maintenance flow."}
+{"decision": "sample-417|input|production-via-make", "verdict": "yes", "why": "Production make targets and rollback steps are the work at hand."}
+{"decision": "sample-440|input|service-knowledge/services/calendar_updater/references/architecture_ssot", "verdict": "partly", "why": "Doc lists FMP files, but task is a canonical value/scale data change."}
+{"decision": "sample-359|input|engineering-quality/review", "verdict": "yes", "why": "Independent review of a head against automated findings."}
+{"decision": "sample-426|input|service-knowledge/updating", "verdict": "partly", "why": "Testing the service-knowledge index updater; doc is about drift sync, adjacent."}
+{"decision": "sample-284|agent_end|agentrun-author", "verdict": "partly", "why": "Agent runs an AgentRun path; authoring may or may not be needed."}
+{"decision": "sample-115|input|open-code-review", "verdict": "no", "why": "Author fixing review findings; not running a review."}
+{"decision": "sample-403|input|open-code-review", "verdict": "no", "why": "Author fixing review findings; not running a review."}
+{"decision": "sample-420|input|mercury-release", "verdict": "yes", "why": "Promote, migrate and deploy via make is the release router's scope."}
+{"decision": "sample-173|input|gitnexus/pr-review", "verdict": "no", "why": "Author fixing test gaps after a review; doc is for conducting a review."}

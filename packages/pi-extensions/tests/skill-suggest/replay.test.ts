@@ -12,17 +12,18 @@ const corpus = loadCorpus();
 const fixture = loadFixture();
 
 /**
- * Set 2026-10-30 from the first labelled run on the post-fix code (CORE-2551
- * included), minus a margin of one corpus row per measure. Measured then:
- * recall 53/71 = 0.746, service recall 24/26 = 0.923, top-1 27/71 = 0.380,
- * injected reach 0/19, agent_end reach 73/73, criteria max 25.
+ * Reset 2026-10-31 (CORE-2564) when the corpus grew from 150 to 600 rows: 450
+ * rows are a seeded, unbiased sample of real prompts, so these are lower than
+ * the 150-row values (recall 0.746, service 0.923), not a regression. Measured:
+ * recall 143/197 = 0.726, service recall 56/65 = 0.862, top-1 76/197 = 0.386,
+ * agent_end reach 1.0, criteria max 25. Floors sit two or three rows below.
  * Hard caps are contract values.
  */
 export const FLOORS = {
   criteria_max: 240, // AgentRun core cap; the API rejects more than 255
-  recall_shortlist: 0.73, // 52/71
-  service_recall_shortlist: 0.88, // 23/26
-  top1: 0.36, // 26/71
+  recall_shortlist: 0.71, // 140/197
+  service_recall_shortlist: 0.83, // 54/65
+  top1: 0.37, // 73/197
   control_reach_max: 0.1,
   agent_end_reach: 0.95,
 } as const;

@@ -258,6 +258,17 @@ export function isControlNudge(prompt: string): boolean {
   return /^(continue|cont|go on|go ahead|proceed|carry on|keep going|next|yes|yep|yeah|ok|okay|k|do it|go|thanks|thank you|ty|nice|cool|perfect|great)( please| pls| now| then| on)?$/.test(t);
 }
 
+/**
+ * CORE-2564: a message from another agent typed into this agent's pane
+ * arrives with source "interactive", so the CORE-2551 source check misses it.
+ * Its head names the sender ("Coordinator 8qox: ...", "fri-coord-b: ...",
+ * "thur-coord -> wed2-helper: ...", "From <session>: ...") or carries the
+ * intercom marker. On the labelled replay these were a third of the false fires.
+ */
+export function isPeerRelay(prompt: string): boolean {
+  return /^\s*(?:\[cross-agent message\b|Coordinator\b|From\s+\S+|[\w.-]*coord[\w.-]*\s*(?:->|→|:)|\S+\s*(?:->|→)\s*\S+\s*:)/i.test(prompt);
+}
+
 // CORE-2534: rows queue in memory and are appended asynchronously.
 const decisionLog = createJsonlLog(logDir);
 function logDecision(row: Record<string, unknown>): void {
@@ -605,6 +616,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     // session is the dispatched task itself, so it is judged here.
     const opensSession = inputsThisSession++ === 0;
     if (event?.source === "extension" && !opensSession) return logSkip("input", "injected"), { action: "continue" } as const;
+    if (isPeerRelay(prompt) && !opensSession) return logSkip("input", "peer_relay"), { action: "continue" } as const;
     if (prompt.startsWith("/")) return logSkip("input", "command"), { action: "continue" } as const; // commands decide for themselves
     if (isControlNudge(prompt)) return logSkip("input", "control_nudge"), { action: "continue" } as const; // "continue" carries no task signal
     if (prompt.trim().length < 12) return logSkip("input", "too_short"), { action: "continue" } as const;

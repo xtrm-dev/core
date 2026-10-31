@@ -1,6 +1,6 @@
 /**
  * CORE-2553/CORE-2555: the decision gate over recorded Jev answers.
- * answers.jsonl holds what live Jev answered (2026-10-30, jev-1.14.0) for every
+ * answers.jsonl holds what live Jev answered (2026-10-31, jev-1.14.0) for every
  * replayed decision of the current question set; replaying it is
  * deterministic and offline.
  *
@@ -26,12 +26,16 @@ const verdicts = new Map<string, string>(
 );
 
 /**
- * Measured on 2026-10-30: label precision 18/36 = 0.50, false fires 4/79 =
- * 0.051, judged useful 26/36 = 0.72, judged not useful 4/36. Floors sit one
- * or two suggestions from the measured values; a fire the judge never saw
- * counts as not useful.
+ * CORE-2564, 2026-10-31: 600 rows (150 earlier + 450 seeded unbiased real
+ * prompts), recorded live with the CORE-2564 peer-relay skip. Measured:
+ * label precision 40/88 = 0.455, false fires 18/403 = 0.045, judged useful
+ * 55/88 = 0.625, judged not useful 7/88 = 0.080. Three live runs averaged
+ * 0.62 useful / 0.10 not useful with a spread under 0.015. On the earlier 150
+ * rows alone useful was 0.72; the unbiased sample is the harder, truer
+ * measure. Floors sit two or three suggestions from the measured values; a
+ * fire the judge never saw counts as not useful.
  */
-const FLOORS = { precision: 0.45, false_fire_max: 0.08, right_fires: 16, useful: 0.65, not_useful_max: 0.15 } as const;
+const FLOORS = { precision: 0.43, false_fire_max: 0.055, right_fires: 38, useful: 0.6, not_useful_max: 0.11 } as const;
 
 describe("CORE-2553: the gate over recorded answers", () => {
   it("fires rarely on turns that need nothing and mostly suggests something useful", async () => {

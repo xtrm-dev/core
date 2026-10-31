@@ -194,6 +194,37 @@ describe("CORE-2551: injected text never reaches the input classifier", () => {
   });
 });
 
+describe("CORE-2564: a peer's message typed into the pane is a relay, not a request", () => {
+  it("skips a mid-session interactive relay, logs 'peer_relay', and still judges the working turn", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async (...a: [unknown, unknown]) => (asked++, stubRegistry.classify(...(a as []))) };
+    const { handlers, sent } = await boot();
+    await handlers["input"]!({ text: "/earlier", source: "interactive" }, { modelRegistry: counting });
+    const before = await readLogSize();
+    for (const text of [
+      "Coordinator 8qox: follow the demo procedure for this deploy",
+      "thur-coord -> wed2-helper: follow the demo procedure for this deploy",
+      "fri-coord-b: scope addition, follow the demo procedure for this deploy",
+      "From market-data-xt-claude-8qox: follow the demo procedure for this deploy",
+    ]) {
+      await handlers["input"]!({ text, source: "interactive" }, { modelRegistry: counting });
+    }
+    expect(asked).toBe(0);
+    expect((await readLogSince(before)).filter((r) => r["seam"] === "input").map((r) => r["reason"])).toEqual(["peer_relay", "peer_relay", "peer_relay", "peer_relay"]);
+    await handlers["agent_end"]!(WORKING_TURN, { modelRegistry: counting });
+    expect(asked).toBe(1);
+    expect(sent).toHaveLength(1);
+  });
+  it("an operator request with a colon is still judged", async () => {
+    let asked = 0;
+    const counting = { ...stubRegistry, classify: async () => (asked++, stubRegistry.classify()) };
+    const { handlers } = await boot();
+    await handlers["input"]!({ text: "/earlier", source: "interactive" }, { modelRegistry: counting });
+    await handlers["input"]!({ text: "deploy: follow the demo procedure for this deploy", source: "interactive" }, { modelRegistry: counting });
+    expect(asked).toBe(1);
+  });
+});
+
 describe("CORE-2532: a session's first prompt is judged while the index still builds", () => {
   it("waits for the index off the handler path instead of skipping as index_warming", async () => {
     let asked = 0;
