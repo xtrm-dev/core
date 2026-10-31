@@ -57915,6 +57915,7 @@ var FOREIGN_MODEL_PROVIDERS = /* @__PURE__ */ new Set([
   "azure-openai-responses",
   "cerebras",
   "codex",
+  "commandcode",
   "copilot",
   "deepseek",
   "fireworks",
@@ -57963,6 +57964,24 @@ function isForeignProviderModel(model) {
   const slash = name.indexOf("/");
   if (slash <= 0) return false;
   return FOREIGN_MODEL_PROVIDERS.has(name.slice(0, slash));
+}
+var CLAUDE_MODEL_ALIASES = /* @__PURE__ */ new Set([
+  "best",
+  "default",
+  "haiku",
+  "opus",
+  "opusplan",
+  "sonnet"
+]);
+function isClaudeRunnableModel(model, env3 = process.env) {
+  const name = model.trim().toLowerCase();
+  if (!name) return false;
+  if (env3.ANTHROPIC_BASE_URL) return true;
+  const base = name.replace(/\[[^\]]*\]$/, "");
+  if (CLAUDE_MODEL_ALIASES.has(base)) return true;
+  if (base.startsWith("claude-")) return true;
+  if (base.startsWith("arn:aws:bedrock:")) return true;
+  return base.startsWith("anthropic.") || base.includes(".anthropic.");
 }
 function passthroughModels(passthrough) {
   const models = [];
@@ -59054,9 +59073,9 @@ function buildRoleTmuxPlan(args) {
     runtimeArgs.push("--dangerously-skip-permissions");
   }
   let model = modelOverride ?? role.model;
-  if (runtime === "claude" && !modelOverride && role.model && isForeignProviderModel(role.model)) {
+  if (runtime === "claude" && !modelOverride && role.model && !isClaudeRunnableModel(role.model)) {
     process.stderr.write(kleur_default.yellow(
-      `  \u26A0 role '${role.name}': ignoring non-Claude model '${role.model}'; claude inherits the parent model. Declare execution.surface_models.claude on the specialist (or pass --model) to pin one.
+      `  \u26A0 role '${role.name}': ignoring model '${role.model}'; claude inherits its own default. Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.
 `
     ));
     model = void 0;
@@ -77920,7 +77939,7 @@ var xtrm_agent_command_v1_default = {
         type: { const: "wake" },
         commandId: { $ref: "#/definitions/commandId" },
         messageId: { type: "string", minLength: 1, maxLength: 128 },
-        payloadRef: { type: "string", minLength: 1, maxLength: 1024 }
+        payloadRef: { type: "string", minLength: 1, maxLength: 524288 }
       }
     },
     listener_replaced: {

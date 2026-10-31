@@ -290,7 +290,7 @@ export interface ResolvedRole {
 // A bare foreign name with no provider prefix (`gpt-5.4`) still passes — sp
 // never emits one. xtrm-wiy5n.4.19.
 const FOREIGN_MODEL_PROVIDERS: ReadonlySet<string> = new Set([
-    'ant-ling', 'azure-openai-responses', 'cerebras', 'codex', 'copilot', 'deepseek',
+    'ant-ling', 'azure-openai-responses', 'cerebras', 'codex', 'commandcode', 'copilot', 'deepseek',
     'fireworks', 'gemini', 'gemini-cli', 'github-copilot', 'glm', 'google', 'grok',
     'groq', 'huggingface', 'kimi', 'kimi-coding', 'llama', 'minimax', 'minimax-cn',
     'mistral', 'moonshot', 'moonshotai', 'moonshotai-cn', 'nano-gpt', 'nvidia',
@@ -305,6 +305,39 @@ export function isForeignProviderModel(model: string): boolean {
     const slash = name.indexOf('/');
     if (slash <= 0) return false;
     return FOREIGN_MODEL_PROVIDERS.has(name.slice(0, slash));
+}
+
+// What Claude Code itself can resolve as `--model`: bare aliases (`opus`,
+// `sonnet[1m]`, `opusplan`), `claude-*` ids in every form Claude accepts
+// (`@date`/`[1m]` suffixes, `*.anthropic.*` Vertex ones) and Bedrock
+// application-inference-profile ARNs. Anything else only runs when the session
+// is routed to an Anthropic-compatible endpoint that translates ids, which is
+// exactly what ANTHROPIC_BASE_URL configures.
+//
+// This is a POSITIVE test, unlike FOREIGN_MODEL_PROVIDERS, because role
+// defaults are authored for the pi surface: the specialists an operator
+// configures carry pi ids (`commandcode/deepseek/…`, `opencode-go/…`) that no
+// denylist can keep up with, and each miss spawned a session that died at turn
+// 1. Explicit operator `--model` keeps the denylist — an unrecognised id there
+// is the operator's own call (custom gateways), documented on
+// docs/xt-pi-role.md.
+const CLAUDE_MODEL_ALIASES: ReadonlySet<string> = new Set([
+    'best', 'default', 'haiku', 'opus', 'opusplan', 'sonnet',
+]);
+
+export function isClaudeRunnableModel(
+    model: string,
+    env: Record<string, string | undefined> = process.env,
+): boolean {
+    const name = model.trim().toLowerCase();
+    if (!name) return false;
+    // A routed session lets the endpoint translate the id.
+    if (env.ANTHROPIC_BASE_URL) return true;
+    const base = name.replace(/\[[^\]]*\]$/, '');
+    if (CLAUDE_MODEL_ALIASES.has(base)) return true;
+    if (base.startsWith('claude-')) return true;
+    if (base.startsWith('arn:aws:bedrock:')) return true;
+    return base.startsWith('anthropic.') || base.includes('.anthropic.');
 }
 
 // `xt claude … -- --model <name>` reaches claude through the passthrough tail
@@ -2151,14 +2184,15 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
         runtimeArgs.push('--dangerously-skip-permissions');
     }
 
-    // CLI override wins over the specialist default. On claude a cross-provider
-    // role default is unusable, so drop it and let claude inherit the parent
-    // runtime model instead of spawning a session that dies at turn 1.
+    // CLI override wins over the specialist default. A role default is authored
+    // for the pi surface, so when claude cannot resolve it in its own catalogue
+    // drop it and let claude inherit its configured model instead of spawning a
+    // session that dies at turn 1.
     let model = modelOverride ?? role.model;
-    if (runtime === 'claude' && !modelOverride && role.model && isForeignProviderModel(role.model)) {
+    if (runtime === 'claude' && !modelOverride && role.model && !isClaudeRunnableModel(role.model)) {
         process.stderr.write(kleur.yellow(
-            `  ⚠ role '${role.name}': ignoring non-Claude model '${role.model}'; claude inherits the parent model.`
-            + ` Declare execution.surface_models.claude on the specialist (or pass --model) to pin one.\n`,
+            `  ⚠ role '${role.name}': ignoring model '${role.model}'; claude inherits its own default.`
+            + ` Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.\n`,
         ));
         model = undefined;
     }
@@ -2766,8 +2800,11 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // An explicit --model is the operator's word — only a pi-surface
     // `provider/model` pair is refused, because claude cannot run one and would
     // start into a session that never takes turn 1. Fail loudly here, before a
-    // worktree exists. Role defaults are handled in buildRoleTmuxPlan (warn +
-    // inherit the parent model). xtrm-wiy5n.4.19.
+    // worktree exists. Deliberately the vendor denylist and not
+    // isClaudeRunnableModel: an unrecognised explicit id (custom gateway,
+    // `acme/production`) stays the operator's call. Role defaults are handled in
+    // buildRoleTmuxPlan (positive gate, warn + inherit claude's own default).
+    // xtrm-wiy5n.4.19.
     const selectedModel = effectiveModel(model, opts.passthrough ?? []);
     const foreignModel = runtime === 'claude' && selectedModel && isForeignProviderModel(selectedModel)
         ? selectedModel
