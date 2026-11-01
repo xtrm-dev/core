@@ -1,17 +1,44 @@
-import { beforeEach, describe, expect, test } from "bun:test";
-import {
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+const {
   buildGroupSummary,
   classifyAssistant,
+  closeGroup,
   noteBoundary,
   noteCarrier,
   noteSetExpanded,
+  openGroup,
   planFor,
   resetGroups,
-  RUNNING_ROW_DELAY_MS,
+  THINKING_HOLD_MS,
   setAgentRunning,
   takeLateJoin,
-} from "./tool-groups.ts";
-import { formatGroupHeader, renderGroupedTool, routeGroupedMouse, NOT_GROUPED, type GroupedTool } from "./tool-group-view.ts";
+} = await import("./tool-groups.ts");
+const { formatGroupHeader, PINNED_TOOLS, renderGroupedTool, routeGroupedMouse, settleLiveGroup, NOT_GROUPED } = await import("./tool-group-view.ts");
+type GroupedTool = import("./tool-group-view.ts").GroupedTool;
+
+const visibleWidth = (text: string): number => text.length;
+
+/**
+ * Runs a body against the real pi-tui. Other test files stub it and bun leaks
+ * that across files, so clipping is only observable in a process of its own.
+ */
+function realClip(body: string): string {
+  const script = `
+    const { formatGroupHeader, renderGroupedTool } = await import("./tool-group-view.ts");
+    const { noteBoundary, setAgentRunning } = await import("./tool-groups.ts");
+    const theme = { fg: (_t, text) => text };
+    const user = {};
+    const a = { toolName: "bash", isPartial: false, expanded: false, result: {}, setExpanded() {} };
+    setAgentRunning(true);
+    const run = () => { ${body} };
+    console.log(run().replace(/\\x1b\\[[0-9;]*m/g, ""));
+    process.exit(0);
+  `;
+  const out = Bun.spawnSync(["bun", "-e", script], { cwd: import.meta.dir });
+  if (out.exitCode !== 0) throw new Error(out.stderr.toString());
+  return out.stdout.toString().trimEnd();
+}
 
 const theme = { fg: (_token: string, text: string) => text };
 
@@ -46,10 +73,236 @@ const own = (t: GroupedTool) => () => (t.expanded ? ["", `  ${t.toolName} row`, 
 /** One frame: every component renders top to bottom, as pi does. */
 function frame(user: object, tools: GroupedTool[]): Array<string[] | undefined> {
   noteBoundary(user);
-  return tools.map((t) => renderGroupedTool(t, 80, theme, own(t)));
+  return tools.map((t) => renderGroupedTool(t, 80, theme, own(t), viewOptions));
 }
 
+const viewOptions = { thinkingRow: (carrier: object) => `  thinking: ${(carrier as { recap: string }).recap}` };
+
 beforeEach(() => resetGroups());
+
+describe("live group", () => {
+  const realNow = Date.now;
+  let now = 0;
+  beforeEach(() => {
+    now = realNow();
+    Date.now = () => now;
+    setAgentRunning(true);
+  });
+  afterEach(() => {
+    Date.now = realNow;
+  });
+
+  /** Drawn rows of one settled frame: blank spacers do not count. */
+  function rows(render: () => Array<string[] | undefined>): string[] {
+    render();
+    return render().flatMap((lines) => lines ?? []).filter((line) => line !== "");
+  }
+
+  test("the group draws two rows from its first call and holds them through a running call", () => {
+    const user = {};
+    const a = tool("bash", { isPartial: true, result: undefined });
+    const b = tool("read", { isPartial: true, result: undefined });
+    expect(rows(() => frame(user, [a]))).toEqual(["▸ Used shell once", "  └ bash row"]);
+    Object.assign(a, { isPartial: false, result: { durationMs: 10, isError: false } });
+    expect(rows(() => frame(user, [a]))).toHaveLength(2);
+    const heights = [rows(() => frame(user, [a, b]))];
+    now += 5000;
+    heights.push(rows(() => frame(user, [a, b])));
+    Object.assign(b, { isPartial: false, result: { durationMs: 5000, isError: false } });
+    heights.push(rows(() => frame(user, [a, b])));
+    expect(heights.map((drawn) => drawn.length)).toEqual([2, 2, 2]);
+    expect(heights[0]).toEqual(["▸ Used shell once, read once", "  └ read row"]);
+  });
+
+  test("with nothing running the second row keeps the last thing done", () => {
+    const user = {};
+    const a = tool("bash");
+    const b = tool("read");
+    expect(rows(() => frame(user, [a, b]))[1]).toBe("  └ read row");
+  });
+
+  test("parallel calls show the newest one still running", () => {
+    const user = {};
+    const a = tool("bash", { isPartial: true, result: undefined });
+    const b = tool("read");
+    expect(rows(() => frame(user, [a, b]))[1]).toBe("  └ bash row");
+  });
+
+  test("a boundary closes the group to one row, in a repaint", () => {
+    const user = {};
+    const text = {};
+    const a = tool("bash");
+    const b = tool("read");
+    rows(() => frame(user, [a, b]));
+    takeLateJoin();
+    const render = () => {
+      noteBoundary(user);
+      const drawn = [renderGroupedTool(a, 80, theme, own(a), viewOptions), renderGroupedTool(b, 80, theme, own(b), viewOptions)];
+      noteBoundary(text);
+      return drawn;
+    };
+    // The frame that first meets the boundary already drew the rows above it.
+    render();
+    expect(takeLateJoin()).toBe(true);
+    expect(rows(render)).toEqual(["▸ Used shell once, read once"]);
+  });
+
+  test("the end of the run closes the group and repaints it", () => {
+    const user = {};
+    const a = tool("bash");
+    const b = tool("read");
+    rows(() => frame(user, [a, b]));
+    const before = b.renders;
+    setAgentRunning(false);
+    settleLiveGroup();
+    expect(a.renders + b.renders).toBeGreaterThan(before);
+    expect(rows(() => frame(user, [a, b]))).toEqual(["▸ Used shell once, read once"]);
+  });
+
+  test("a group of one closes to its own row", () => {
+    const user = {};
+    const a = tool("bash");
+    expect(rows(() => frame(user, [a]))).toHaveLength(2);
+    setAgentRunning(false);
+    expect(frame(user, [a])[0]).toBeUndefined();
+  });
+
+  test("a finished call holds until new thinking has streamed for the hold", () => {
+    const user = {};
+    const a = tool("bash");
+    const b = tool("read");
+    const carrier = { recap: "the config is next", isStreaming: true };
+    const render = () => {
+      const drawn = frame(user, [a, b]);
+      noteCarrier(carrier);
+      return drawn;
+    };
+    expect(rows(() => frame(user, [a, b]))[1]).toBe("  └ read row");
+    expect(rows(render)[1]).toBe("  └ read row");
+    now += THINKING_HOLD_MS - 1;
+    expect(planFor(b)).toMatchObject({ liveRow: true, revealIn: 1 });
+    expect(rows(render)[1]).toBe("  └ read row");
+    now += 1;
+    expect(rows(render)[1]).toBe("  └ thinking: the config is next");
+    expect(rows(render)).toHaveLength(2);
+    // Newest wins: the call that thinking led to takes the row at once.
+    carrier.isStreaming = false;
+    const c = tool("bash", { isPartial: true, result: undefined });
+    const next = () => {
+      noteBoundary(user);
+      const drawn = [a, b].map((t) => renderGroupedTool(t, 80, theme, own(t), viewOptions));
+      noteCarrier(carrier);
+      drawn.push(renderGroupedTool(c, 80, theme, own(c), viewOptions));
+      return drawn;
+    };
+    expect(rows(next)[1]).toBe("  └ bash row");
+  });
+
+  test("the second row is one line, clipped to the width", () => {
+    const user = {};
+    const a = tool("bash");
+    const long = () => ["", "  first line", "  second line"];
+    const render = () => {
+      noteBoundary(user);
+      return [renderGroupedTool(a, 40, theme, long, viewOptions)];
+    };
+    expect(rows(render)).toEqual(["▸ Used shell once", "  └ first line"]);
+    const clipped = realClip(`
+      noteBoundary(user);
+      const draw = () => renderGroupedTool(a, 40, theme, () => ["", "  " + "x".repeat(200)]);
+      draw(); noteBoundary(user); return draw().at(-1);
+    `);
+    expect(visibleWidth(clipped)).toBeLessThanOrEqual(40);
+    expect(clipped).toEndWith("…");
+  });
+
+  test("a failed call stays on the first row and keeps its marker on the second", () => {
+    const user = {};
+    const a = tool("bash", { result: { durationMs: 10, isError: true } });
+    const b = tool("read", { result: { durationMs: 10, isError: true } });
+    const failed = () => ["", "! read row"];
+    const render = () => {
+      noteBoundary(user);
+      return [renderGroupedTool(a, 80, theme, own(a), viewOptions), renderGroupedTool(b, 80, theme, failed, viewOptions)];
+    };
+    expect(rows(render)).toEqual(["▸ Used shell once, read once  2 failed", "  ! read row"]);
+  });
+
+  test("elapsed time runs from the first step to the last call's end, shown only once closed", () => {
+    const user = {};
+    const t0 = now;
+    const carrierA = { lastMessage: { timestamp: t0 } };
+    const carrierB = { lastMessage: { timestamp: t0 + 20000 } };
+    const a = tool("bash", { result: { durationMs: 50, isError: false } });
+    const b = tool("read", { result: { durationMs: 7000, isError: false } });
+    const render = () => {
+      noteBoundary(user);
+      noteCarrier(carrierA);
+      const first = renderGroupedTool(a, 80, theme, own(a), viewOptions);
+      noteCarrier(carrierB);
+      return [first, renderGroupedTool(b, 80, theme, own(b), viewOptions)];
+    };
+    expect(rows(render)[0]).toBe("▸ Used shell once, read once");
+    setAgentRunning(false);
+    expect(rows(render)).toEqual(["▸ Used shell once, read once  27s"]);
+  });
+
+  test("a reloaded session uses message timestamps and no render time", () => {
+    setAgentRunning(false);
+    const user = {};
+    const t0 = now - 3_600_000;
+    const carrierA = { lastMessage: { timestamp: t0 } };
+    const carrierB = { lastMessage: { timestamp: t0 + 4000 } };
+    const a = tool("bash");
+    const b = tool("read", { result: { durationMs: 1000, isError: false } });
+    const render = () => {
+      noteBoundary(user);
+      noteCarrier(carrierA);
+      const first = renderGroupedTool(a, 80, theme, own(a), viewOptions);
+      noteCarrier(carrierB);
+      return [first, renderGroupedTool(b, 80, theme, own(b), viewOptions)];
+    };
+    expect(rows(render)).toEqual(["▸ Used shell once, read once  5.0s"]);
+  });
+
+  test("without message timestamps the row shows no time rather than an invented one", () => {
+    setAgentRunning(false);
+    const user = {};
+    const a = tool("bash", { result: { durationMs: 9000, isError: false } });
+    const b = tool("read", { result: { durationMs: 9000, isError: false } });
+    expect(rows(() => frame(user, [a, b]))).toEqual(["▸ Used shell once, read once"]);
+  });
+});
+
+describe("closed row", () => {
+  const styled = { ...theme, style: (text: string, attrs: { bold?: boolean }) => (attrs.bold ? `**${text}**` : text) };
+
+  test("the tool or action is bold and the rest regular, on one line", () => {
+    const line = formatGroupHeader(buildGroupSummary([tool("bash"), tool("bash"), tool("read")]), "closed", styled);
+    expect(line).toBe("▸ Used **shell** twice, **read** once");
+  });
+
+  test("a run of used phrases says the verb once, and a verbless first phrase capitalises", () => {
+    expect(formatGroupHeader(buildGroupSummary([tool("bash"), tool("bash"), tool("gitnexus_query")]), "closed", styled)).toBe("▸ Used **shell** twice, **GitNexus** once");
+    expect(formatGroupHeader(buildGroupSummary([tool("read"), tool("read"), tool("codemode")]), "closed", styled)).toBe("▸ **Read** twice, ran **code** once");
+  });
+
+  test("the live row hides the time and a failure outlasts a clip", () => {
+    const summary = { count: 9, failed: 1, elapsedMs: 4200, breakdown: [{ name: "bash", count: 4 }, { name: "gitnexus_query", count: 3 }, { name: "grep", count: 2 }] };
+    expect(formatGroupHeader(summary, "closed", theme, 80, true)).toEndWith("1 failed");
+    const clipped = realClip(`return formatGroupHeader(${JSON.stringify(summary)}, "closed", theme, 40);`);
+    expect(clipped).toEndWith("…  1 failed  4.2s");
+    expect(visibleWidth(clipped)).toBeLessThanOrEqual(40);
+  });
+
+  test("edits and writes fold; messages, background and worker control keep their row; subagent is gone", () => {
+    for (const name of ["edit", "write", "subagent"]) expect(PINNED_TOOLS.has(name)).toBe(false);
+    for (const name of ["SendMessage", "intercom", "BashBackground", "Monitor", "BackgroundStop", "bg_run", "bg_kill", "specialist_dispatch", "specialist_reply", "specialist_steer", "specialist_stop_activation", "ask_coordinator"]) {
+      expect(PINNED_TOOLS.has(name)).toBe(true);
+    }
+    expect(formatGroupHeader(buildGroupSummary([tool("edit"), tool("edit"), tool("write")]), "closed", theme)).toBe("▸ Edited twice, wrote once");
+  });
+});
 
 describe("tool folding", () => {
   test("two calls fold into one summary line carried by the first member", () => {
@@ -113,15 +366,15 @@ describe("tool folding", () => {
     expect(lines[0]).toEqual(["", "▸ Used shell once, searched once"]);
   });
 
-  test("a pinned edit renders as usual and starts a new group after it", () => {
+  test("a pinned call renders as usual and starts a new group after it", () => {
     const user = {};
     const a = tool("bash");
     const b = tool("bash");
-    const edit = tool("edit");
+    const message = tool("SendMessage");
     const c = tool("read");
     const d = tool("read");
-    frame(user, [a, b, edit, c, d]);
-    const lines = frame(user, [a, b, edit, c, d]);
+    frame(user, [a, b, message, c, d]);
+    const lines = frame(user, [a, b, message, c, d]);
     expect(lines[0]).toEqual(["", "▸ Used shell twice"]);
     expect(lines[2]).toBeUndefined();
     expect(lines[3]).toEqual(["", "▸ Read twice"]);
@@ -152,29 +405,61 @@ describe("tool folding", () => {
     expect(routeGroupedMouse(solo, { type: "click", button: "left", y: 1 }, asPointer)).toBe(NOT_GROUPED);
   });
 
-  test("a running call surfaces under the folded header only after the delay", () => {
+  test("an open group lists each thinking step above its call, in transcript order", () => {
     const user = {};
+    const carrierA = { recap: "checking the log" };
+    const carrierB = { recap: "the config is next" };
     const a = tool("bash");
-    const b = tool("bash", { isPartial: true, result: undefined });
-    noteBoundary(user);
-    const t0 = Date.now();
-    planFor(a, false, t0);
-    planFor(b, false, t0);
-    takeLateJoin();
-    noteBoundary(user);
-    expect(planFor(b, false, t0 + 10)).toMatchObject({ line: false, revealIn: RUNNING_ROW_DELAY_MS - 10 });
-    expect(planFor(b, false, t0 + RUNNING_ROW_DELAY_MS + 50)).toMatchObject({ line: true });
+    const b = tool("read");
+    const render = () => {
+      noteBoundary(user);
+      noteCarrier(carrierA);
+      const first = renderGroupedTool(a, 80, theme, own(a), viewOptions);
+      noteCarrier(carrierB);
+      const second = renderGroupedTool(b, 80, theme, own(b), viewOptions);
+      return [...(first ?? []), ...(second ?? [])];
+    };
+    render();
+    render();
+    openGroup(a);
+    const rows = render().map((line) => line.trim());
+    expect(rows.slice(1)).toEqual(["▾ Used shell once, read once", "└ thinking: checking the log", "bash row", "thinking: the config is next", "read row"]);
+    // Folded, the same steps add nothing.
+    closeGroup(a);
+    expect(render().filter((line) => line.includes("thinking:"))).toEqual([]);
   });
 
-  test("the summary counts failures, the running call and a streaming carrier", () => {
+  test("a click on a call's row still opens that call when a thinking row sits above it", () => {
+    const user = {};
+    const carrier = { recap: "checking the log" };
+    const a = tool("bash");
+    const b = tool("read");
+    const render = () => {
+      noteBoundary(user);
+      noteCarrier(carrier);
+      return [renderGroupedTool(a, 80, theme, own(a), viewOptions), renderGroupedTool(b, 80, theme, own(b), viewOptions)];
+    };
+    render();
+    render();
+    openGroup(a);
+    const lines = render()[0]!;
+    const y = lines.findIndex((line) => line.includes("bash row"));
+    routeGroupedMouse(a, { type: "click", button: "left", y: y - 1 }, asPointer);
+    expect(a.expanded).toBe(false);
+    routeGroupedMouse(a, { type: "click", button: "left", y }, asPointer);
+    expect(a.expanded).toBe(true);
+  });
+
+  test("the summary counts failures and has no time while a call runs", () => {
     const members = [
       tool("bash", { result: { durationMs: 1200, isError: true } }),
       tool("bash", { result: { durationMs: 900, isError: false } }),
       tool("read", { isPartial: true, result: undefined }),
     ];
-    const summary = buildGroupSummary(members, true);
-    expect(summary).toMatchObject({ count: 3, failed: 1, running: "read", durationMs: 2100, thinking: true });
-    expect(formatGroupHeader(summary, "closed", theme)).toBe("▸ Used shell twice, read once  1 failed  2.1s");
+    const summary = buildGroupSummary(members, 1000);
+    expect(summary).toMatchObject({ count: 3, failed: 1 });
+    expect(summary.elapsedMs).toBeUndefined();
+    expect(formatGroupHeader(summary, "closed", theme)).toBe("▸ Used shell twice, read once  1 failed");
   });
 
   test("two carriers in one group stop asking for repaints once both are known", () => {
@@ -199,31 +484,28 @@ describe("tool folding", () => {
     expect(a.renders + b.renders).toBe(before);
   });
 
-  test("a streaming carrier marks the group as thinking", () => {
+  test("after the run a dropped component that still claims to stream shows nothing", () => {
     const user = {};
     const a = tool("bash");
     const b = tool("bash");
     frame(user, [a, b]);
-    noteCarrier({ isStreaming: true });
-    setAgentRunning(true);
-    const lines = frame(user, [a, b]);
-    expect(lines[0]?.[1]).toContain("thinking");
-    // After agent_end a dropped component may still claim to stream: no marker.
+    noteCarrier({ isStreaming: true, recap: "stale" });
     setAgentRunning(false);
-    expect(frame(user, [a, b])[0]?.[1]).not.toContain("thinking");
+    frame(user, [a, b]);
+    expect(frame(user, [a, b]).flat().join("\n")).not.toContain("stale");
   });
 
-  test("a step that gains text leaves the previous group's thinking marker", () => {
+  test("a step that gains text closes the group it was thinking in", () => {
     const user = {};
     const a = tool("bash");
     const b = tool("bash");
-    const step = { isStreaming: true };
+    const step = { isStreaming: true, recap: "stale" };
     setAgentRunning(true);
     frame(user, [a, b]);
     noteCarrier(step);
-    expect(frame(user, [a, b])[0]?.[1]).toContain("thinking");
     noteBoundary(step);
-    expect(frame(user, [a, b])[0]?.[1]).not.toContain("thinking");
+    frame(user, [a, b]);
+    expect(frame(user, [a, b]).flat().filter(Boolean)).toEqual(["▸ Used shell twice"]);
   });
 
   test("after a rebuild, tools rendered before any boundary still fold under a live summary", async () => {
