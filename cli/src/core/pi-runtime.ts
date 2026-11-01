@@ -281,14 +281,14 @@ export interface ManagedPackage {
 
 const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true },
-    { id: 'npm:@robhowley/pi-structured-return', displayName: 'pi-structured-return', required: true },
     { id: 'npm:@aliou/pi-guardrails', displayName: 'pi-guardrails', required: false },
     { id: 'npm:@narumitw/pi-goal', displayName: 'pi-goal', required: false },
-    { id: 'git:github.com/DietrichGebert/ponytail', displayName: 'ponytail', required: false },
     { id: 'npm:@tintinweb/pi-tasks', displayName: 'pi-tasks', required: false },
-    { id: 'npm:pi-mermaid-viewer', displayName: 'pi-mermaid-viewer', required: false },
     { id: 'npm:@jaggerxtrm/pi-service-knowledge', displayName: 'pi-service-knowledge', required: true },
     { id: 'npm:pi-ast-grep', displayName: 'pi-ast-grep', required: true },
+    { id: 'npm:@parcha/agentrun-pi@beta', displayName: 'agentrun-pi', required: false },
+    { id: 'npm:billion-context', displayName: 'billion-context', required: false },
+    { id: 'npm:@jaggerxtrm/substrate', displayName: 'substrate', required: false },
 ];
 
 const PROJECT_REQUIRED_PACKAGE_IDS = [
@@ -1220,7 +1220,23 @@ async function dropRetiredPiMcpAdapterEntry(
  * each settings file is backed up once (`.pre-m1-retire.bak`) before its first
  * write, and every removal is logged.
  */
-const RETIRED_M1_NPM_PACKAGES = ['pi-intercom', 'pi-background-tasks', '@aliou/pi-processes'];
+const RETIRED_M1_NPM_PACKAGES = [
+    'pi-intercom',
+    'pi-background-tasks',
+    '@aliou/pi-processes',
+    // CORE-2572: dropped from the managed set, or retired earlier and never swept.
+    '@robhowley/pi-structured-return',
+    'pi-mermaid-viewer',
+    '@gotgenes/pi-subagents',
+    '@zenobius/pi-worktrees',
+];
+
+/** GitHub repos (`owner/repo`) of retired git packages; checkouts live under `<agentDir>/git/github.com/`. */
+const RETIRED_M1_GIT_REPOS = ['alonw0/pi-claude-link', 'DietrichGebert/ponytail'];
+
+/** Same-named dirs under `<agentDir>/extensions/` swept by the M1 retirement. CORE-2572 packages are
+ * excluded on purpose: a dir there may be an operator's local checkout, which cleanup must not touch. */
+const RETIRED_M1_EXTENSION_NAMES = ['pi-intercom', 'pi-background-tasks', 'pi-processes', 'pi-claude-link'];
 
 /** A settings `packages` entry names an M1-retired package: npm name match (any
  * version selector) or the retired git repo in any Pi spec form. */
@@ -1234,7 +1250,7 @@ function isRetiredM1Package(entry: unknown): boolean {
 }
 
 /**
- * The retired pi-claude-link repo in any Pi git-spec form: with or without the
+ * A retired git repo in any Pi git-spec form: with or without the
  * `git:` prefix, `https://`, `ssh://` or scp-like `git@` transport, an optional
  * `.git` suffix, and any `#ref` or `@ref` pin. Anything else on github.com —
  * including look-alike repo names — is not a match.
@@ -1244,7 +1260,7 @@ function isRetiredM1GitSpec(rest: string): boolean {
     const onGithub = noFrag.match(/github\.com[/:](.+)$/);
     if (!onGithub) return false;
     const repoPath = onGithub[1].replace(/^\/+/, '').replace(/@[^/]*$/, '').replace(/\.git$/, '');
-    return repoPath === 'alonw0/pi-claude-link';
+    return RETIRED_M1_GIT_REPOS.includes(repoPath);
 }
 
 /** Install dirs the M1 sweep checks: npm trees, the git checkout, and extension overrides. */
@@ -1253,9 +1269,11 @@ function retiredM1InstallDirs(agentDir: string): string[] {
         // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- `agentDir` is the operator's own Pi agent dir; the leaf segments are M1-retired package constants.
         path.join(agentDir, 'npm', 'node_modules', name),
     );
-    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- same agent dir; constant retired git path.
-    dirs.push(path.join(agentDir, 'git', 'github.com', 'alonw0', 'pi-claude-link'));
-    for (const name of [...RETIRED_M1_NPM_PACKAGES.map((entry) => entry.split('/').pop() as string), 'pi-claude-link']) {
+    for (const repo of RETIRED_M1_GIT_REPOS) {
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- same agent dir; constant retired git repos.
+        dirs.push(path.join(agentDir, 'git', 'github.com', ...repo.split('/')));
+    }
+    for (const name of RETIRED_M1_EXTENSION_NAMES) {
         // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal -- same agent dir; constant retired extension names.
         dirs.push(path.join(agentDir, 'extensions', name));
     }

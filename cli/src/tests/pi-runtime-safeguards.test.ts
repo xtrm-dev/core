@@ -138,14 +138,14 @@ describe('pi runtime safeguards', () => {
     expect(getXtManagedPiPackages().map(pkg => pkg.id)).toEqual([
       'npm:@jaggerxtrm/pi-extensions',
       'npm:pi-gitnexus',
-      'npm:@robhowley/pi-structured-return',
       'npm:@aliou/pi-guardrails',
       'npm:@narumitw/pi-goal',
-      'git:github.com/DietrichGebert/ponytail',
       'npm:@tintinweb/pi-tasks',
-      'npm:pi-mermaid-viewer',
       'npm:@jaggerxtrm/pi-service-knowledge',
       'npm:pi-ast-grep',
+      'npm:@parcha/agentrun-pi@beta',
+      'npm:billion-context',
+      'npm:@jaggerxtrm/substrate',
     ]);
   });
 
@@ -597,6 +597,41 @@ describe('pi runtime safeguards', () => {
       expect(await fs.pathExists(path.join(agentDir, 'settings.json.pre-m1-retire.bak'))).toBe(true);
       expect(logs.join('\n')).toContain('Backed up');
       expect(logs.join('\n')).toContain('Removed npm:pi-intercom');
+    });
+
+    // regression: CORE-2572 - xt update must leave exactly the managed set in settings.json.
+    it('cleans a settings.json holding every retired package down to exactly the managed set', async () => {
+      const { removeRetiredM1Packages, getXtManagedPiPackages } = await import('../core/pi-runtime.js');
+      const agentDir = path.join(tempRoot, 'c2572-agent');
+      const managed = getXtManagedPiPackages().map(pkg => pkg.id);
+      const retired = [
+        'npm:@robhowley/pi-structured-return',
+        'git:github.com/DietrichGebert/ponytail',
+        'npm:pi-mermaid-viewer',
+        'npm:@gotgenes/pi-subagents',
+        'npm:@zenobius/pi-worktrees',
+        'npm:pi-intercom',
+        'npm:pi-background-tasks@latest',
+        'npm:@aliou/pi-processes',
+        'git:github.com/alonw0/pi-claude-link',
+      ];
+      const ponytailCheckout = path.join(agentDir, 'git', 'github.com', 'DietrichGebert', 'ponytail');
+      const subagentsTree = path.join(agentDir, 'npm', 'node_modules', '@gotgenes', 'pi-subagents');
+      const localExtension = path.join(agentDir, 'extensions', 'pi-worktrees');
+      await fs.ensureDir(ponytailCheckout);
+      await fs.ensureDir(subagentsTree);
+      await fs.ensureDir(localExtension);
+      await fs.outputJson(path.join(agentDir, 'settings.json'), {
+        packages: [...retired.slice(0, 4), ...managed, ...retired.slice(4)],
+      });
+
+      await removeRetiredM1Packages(false, undefined, agentDir);
+
+      expect((await fs.readJson(path.join(agentDir, 'settings.json'))).packages).toEqual(managed);
+      expect(await fs.pathExists(ponytailCheckout)).toBe(false);
+      expect(await fs.pathExists(subagentsTree)).toBe(false);
+      // A same-named dir under extensions/ may be a local checkout; cleanup must keep it.
+      expect(await fs.pathExists(localExtension)).toBe(true);
     });
 
     it('removes every git-spec form of the retired repo but keeps look-alikes', async () => {

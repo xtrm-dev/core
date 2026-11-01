@@ -22,11 +22,6 @@ const EXCEPTIONS: Array<PackageParityException> = [
         missingFrom: ['package.json', 'install-schema', 'settings'],
         reason: 'project-local package, not a Pi-managed install target',
     },
-    {
-        package: 'npm:@robhowley/pi-structured-return',
-        missingFrom: ['install-schema', 'settings'],
-        reason: 'runtime-managed only; not mirrored in Pi setup templates',
-    },
 ];
 
 function assertStringArray(value: unknown, filePath: string, fieldName: string): asserts value is string[] {
