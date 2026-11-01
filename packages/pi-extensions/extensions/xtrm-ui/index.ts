@@ -25,7 +25,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   cleanOutputLines,
@@ -43,7 +43,7 @@ import {
   shortenPath,
 } from "./format";
 import { classifyAssistant, currentGroupHasMembers, noteBoundary, noteCarrier, noteSetExpanded, setAgentRunning } from "./tool-groups";
-import { NOT_GROUPED, renderGroupedTool, routeGroupedMouse, type GroupedTool } from "./tool-group-view";
+import { NOT_GROUPED, renderGroupedTool, routeGroupedMouse, settleLiveGroup, type GroupedTool, type GroupViewOptions } from "./tool-group-view";
 
 // ============================================================================
 // Types
@@ -703,7 +703,7 @@ const ORIGINAL_EXTERNAL_SET_EXPANDED = "__xtrmUiExternalToolFrameOriginalSetExpa
 // Message-component render wrappers for tool folding; versioned with the frame.
 const GROUP_BOUNDARY_PATCH = "__xtrmUiGroupBoundary";
 const ORIGINAL_BOUNDARY_RENDER = "__xtrmUiGroupBoundaryOriginalRender";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 54;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 56;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension rows render through the active theme (tokens only). The
@@ -1054,9 +1054,9 @@ export function ultraExternalSubject(toolName: string | undefined, args: Record<
   if (firstCode) return shortenCommand(firstCode);
   switch (toolName) {
     case "BashBackground":
-      return typeof args.command === "string" && args.command ? shortenCommand(args.command) : undefined;
+      return typeof args.command === "string" && args.command ? shortenCommand(stripSetupPrefix(args.command)) : undefined;
     case "Monitor": {
-      if (typeof args.command === "string" && args.command) return shortenCommand(args.command);
+      if (typeof args.command === "string" && args.command) return shortenCommand(stripSetupPrefix(args.command));
       const ws = asRecord(args.ws);
       return typeof ws?.url === "string" && ws.url ? shortenCommand(ws.url) : undefined;
     }
@@ -1273,7 +1273,7 @@ async function installExternalToolFramePatch(): Promise<void> {
     const theme = activeFoldTools() ? activeTheme() : undefined;
     if (theme) {
       try {
-        const grouped = renderGroupedTool(this as unknown as GroupedTool, width, theme, (w) => frameRender.call(this, w));
+        const grouped = renderGroupedTool(this as unknown as GroupedTool, width, theme, (w) => frameRender.call(this, w), GROUP_VIEW);
         if (grouped) return grouped;
       } catch {
         // Never take the interactive mode down; draw the ungrouped row.
@@ -1422,6 +1422,23 @@ export function alignAssistantLines(lines: string[], shift: number): string[] {
     return stripAnsi(line).length > 0 ? pad + line : line;
   });
 }
+
+/** A carrier's thinking as a group row: pi's collapsed row on the two marker columns. */
+export function carrierThinkingRow(carrier: AssistantLike): string | undefined {
+  const blocks = (carrier.lastMessage as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(blocks)) return undefined;
+  const text = (blocks as Array<{ type?: unknown; thinking?: unknown }>)
+    .filter((block) => block?.type === "thinking" && typeof block.thinking === "string")
+    .map((block) => block.thinking as string)
+    .join("\n");
+  if (!text.trim()) return undefined;
+  const row = buildCollapsedThinkingRow(buildThinkingRecap(text), collapsedThinkingStyle(activeTheme));
+  return row.replace(INDENT_ANCHOR, " ");
+}
+
+const GROUP_VIEW: GroupViewOptions = {
+  thinkingRow: (carrier) => carrierThinkingRow(carrier as AssistantLike),
+};
 
 function wrapBoundaryRender<C extends object>(
   proto: BoundaryProto | undefined,
@@ -1700,6 +1717,7 @@ function registerTurnSummary(pi: ExtensionAPI): void {
 	});
 	pi.on("agent_end", () => {
 		setAgentRunning(false);
+		settleLiveGroup();
 		freezeTurnClock();
 	});
 	pi.on("agent_settled", (_event, ctx) => {
@@ -2386,28 +2404,35 @@ export function renderUltraRow(theme: any, parts: UltraRowParts): string {
 }
 
 /** First command segment without a dangling `&&`/`||` tail. */
+const SHELL_SEP = String.raw`\s*(?:&&|\|\||;|\n)\s*`;
+const SHELL_WORD = String.raw`(?:"[^"]*"|'[^']*'|\$\([^)]*\)|[^\s;&|]+)`;
+
+/** Setup a shell call runs before its real command. Only ever trimmed for display. */
+const SETUP_PREFIXES = [
+  new RegExp(String.raw`^\s*cd(?:\s+${SHELL_WORD})?${SHELL_SEP}`),
+  new RegExp(String.raw`^\s*export\s+[A-Za-z_]\w*(?:=${SHELL_WORD}?)?(?:\s+[A-Za-z_]\w*(?:=${SHELL_WORD}?)?)*${SHELL_SEP}`),
+  new RegExp(String.raw`^\s*[A-Za-z_]\w*=${SHELL_WORD}?(?:${SHELL_SEP}|\s+)`),
+  new RegExp(String.raw`^\s*set\s+[-+]\w+(?:\s+[-+]?\w+)*${SHELL_SEP}`),
+  new RegExp(String.raw`^\s*(?:source|\.)\s+${SHELL_WORD}(?:\s+${SHELL_WORD})*?${SHELL_SEP}`),
+  /^\s*nice(?:\s+-n\s*-?\d+|\s+-\S+)*\s+/,
+  /^\s*ionice(?:\s+-[cnp]\s*\d+|\s+-\S+)*\s+/,
+  /^\s*timeout(?:\s+-[ks]\s+\S+|\s+-\S+)*\s+\d[\d.]*[smhd]?\s+/,
+];
+
 /**
- * Drops a leading `cd <cwd>` chain. A shell call routinely starts by entering the
- * directory the session is already in, and that prefix then eats the whole
- * one-line budget on every consecutive row (`cd` … `&&` …). The HUD already
- * shows where the session is, so the prefix carries no information.
+ * Drops the setup in front of a shell call. Most calls open with `cd`, env
+ * assignments or wrappers such as `nice`, and that prefix then eats the whole
+ * one-line budget on every row, so the row never says what ran. A command that
+ * is nothing but setup keeps its text.
  */
-export function stripCwdCd(command: string, cwd: string = process.cwd()): string {
+export function stripSetupPrefix(command: string): string {
   let rest = command;
-  const prefix = /^\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)\s*(?:&&|\|\||;|\n)\s*/;
   for (;;) {
-    const match = rest.match(prefix);
-    if (!match) return rest;
-    const target = match[1]!.replace(/^['"]|['"]$/g, "");
-    let same = false;
-    try {
-      same = resolve(target) === resolve(cwd);
-    } catch {
-      same = target === cwd;
-    }
-    if (!same) return rest;
-    rest = rest.slice(match[0].length);
+    const before = rest;
+    for (const prefix of SETUP_PREFIXES) rest = rest.replace(prefix, "");
+    if (rest === before) break;
   }
+  return rest.trim() ? rest : command;
 }
 
 /**
@@ -2440,12 +2465,12 @@ export function codeBody(code: string): string {
 
 export function externalHiddenLines(toolName: string | undefined, args: Record<string, unknown>): number {
   if (typeof args.code === "string" && args.code.trim().length > 0) return hiddenLineCount(codeBody(args.code));
-  if (typeof args.command === "string" && args.command.trim().length > 0) return hiddenLineCount(stripCwdCd(args.command));
+  if (typeof args.command === "string" && args.command.trim().length > 0) return hiddenLineCount(stripSetupPrefix(args.command));
   return 0;
 }
 
-export function ultraBashSubject(command: string, cwd: string = process.cwd()): string {
-  const first = stripCwdCd(command, cwd).split("\n")[0] ?? "";
+export function ultraBashSubject(command: string): string {
+  const first = stripSetupPrefix(command).split("\n")[0] ?? "";
   return shortenCommand(first.replace(/\s*(&&|\|\|)\s*$/, ""));
 }
 
@@ -2702,7 +2727,7 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
       const args = context.args as Record<string, unknown>;
       const command = String(args.command ?? "");
       if (getPrefs().ultracompact && !expanded) {
-        const hiddenCommands = hiddenLineCount(stripCwdCd(command));
+        const hiddenCommands = hiddenLineCount(stripSetupPrefix(command));
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
           verb: ULTRA_BASH_VERB,

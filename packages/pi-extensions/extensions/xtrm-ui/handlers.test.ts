@@ -33,6 +33,7 @@ const xtrmUiExtension = (await import("./index.ts")).default;
 const { createPatchedUpdateContent } = await import("./index.ts");
 const { buildThinkingRecap } = await import("./index.ts");
 const { createThinkingPreviewInstallState } = await import("./index.ts");
+const { carrierThinkingRow, INDENT_ANCHOR } = await import("./index.ts");
 
 type RegisteredTool = {
   name: string;
@@ -783,7 +784,7 @@ describe("one-line rows keep their line", () => {
 });
 
 describe("ultracompact rows", async () => {
-  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, ultraBashSubject, stripCwdCd, hiddenLineCount, ULTRA_BASH_VERB, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
+  const { renderUltraRow, buildUltraExternalLine, ultraExternalSubject, ultraExternalPrimary, ultraBashSubject, stripSetupPrefix, hiddenLineCount, ULTRA_BASH_VERB, normalizePrefs, DEFAULT_PREFS } = await import("./index.ts");
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
   const theme = { fg: (_n: string, t: string) => t, bold: (t: string) => t };
@@ -901,15 +902,34 @@ describe("ultracompact rows", async () => {
     expect(ultraBashSubject("npm test")).toBe("npm test");
   });
 
-  test("a cd into the current directory is dropped from the subject", () => {
-    const cwd = "/tmp/wt";
-    expect(stripCwdCd("cd /tmp/wt && sed -n '1,2p' x", cwd)).toBe("sed -n '1,2p' x");
-    expect(stripCwdCd("cd /tmp/wt && cd /tmp/wt && npm test", cwd)).toBe("npm test");
-    expect(stripCwdCd('cd "/tmp/wt" && make', cwd)).toBe("make");
-    // A cd somewhere else stays: it changes what the command means.
-    expect(stripCwdCd("cd /tmp/other && make", cwd)).toBe("cd /tmp/other && make");
-    expect(ultraBashSubject("cd /tmp/wt && npm test", cwd)).toBe("npm test");
-    expect(ultraBashSubject("cd /tmp/other && make", cwd)).toBe("cd /tmp/other && make");
+  test("setup in front of a shell call is dropped from the subject", () => {
+    expect(stripSetupPrefix("cd /tmp/wt && sed -n '1,2p' x")).toBe("sed -n '1,2p' x");
+    expect(stripSetupPrefix("cd /tmp/wt && cd /tmp/other && npm test")).toBe("npm test");
+    expect(stripSetupPrefix('cd "/tmp/w t" && make')).toBe("make");
+    expect(stripSetupPrefix("cd /tmp/other && make")).toBe("make");
+    expect(stripSetupPrefix("cd /tmp/other; make")).toBe("make");
+    expect(stripSetupPrefix("cd /tmp/other\nmake")).toBe("make");
+    expect(ultraBashSubject("cd /tmp/wt && npm test --workspace cli")).toBe("npm test --workspace cli");
+    expect(stripSetupPrefix("FOO=1 BAR='a b' npm test")).toBe("npm test");
+    expect(stripSetupPrefix("export FOO=1 && npm test")).toBe("npm test");
+    expect(stripSetupPrefix("STAMP=$(date -u +%F) && make")).toBe("make");
+    expect(stripSetupPrefix('STAMP="$(date -u)"; make')).toBe("make");
+    expect(stripSetupPrefix("nice -n 19 npm test")).toBe("npm test");
+    expect(stripSetupPrefix("ionice -c3 nice npm test")).toBe("npm test");
+    expect(stripSetupPrefix("timeout 60 npm test")).toBe("npm test");
+    expect(stripSetupPrefix("timeout -k 5 60s npm test")).toBe("npm test");
+    expect(stripSetupPrefix("set -euo pipefail; npm test")).toBe("npm test");
+    expect(stripSetupPrefix("source ~/.env && npm test")).toBe("npm test");
+    expect(stripSetupPrefix(". .venv/bin/activate && pytest")).toBe("pytest");
+    expect(stripSetupPrefix("cd /tmp/x && FOO=1 nice timeout 9 make")).toBe("make");
+    // Nothing but setup keeps its text; a real command is left alone.
+    expect(stripSetupPrefix("cd /tmp/x")).toBe("cd /tmp/x");
+    expect(stripSetupPrefix("cd /tmp/x && ")).toBe("cd /tmp/x && ");
+    expect(stripSetupPrefix("FOO=1")).toBe("FOO=1");
+    expect(stripSetupPrefix("nicely run")).toBe("nicely run");
+    expect(stripSetupPrefix("timeout-check now")).toBe("timeout-check now");
+    expect(stripSetupPrefix("npm test && cd /tmp")).toBe("npm test && cd /tmp");
+    expect(ultraExternalSubject("BashBackground", { command: "cd /tmp/x && npm run dev" })).toBe("npm run dev");
   });
 
   test("aligned ladder: tool name above subject, no faint dimming", () => {
@@ -1601,4 +1621,14 @@ describe("markdown transformer wiring", () => {
       expect(prefixAssistantDot(`${label}  a recap  42`)).toBeUndefined();
     }
   });
+});
+
+describe("fold group rows", () => {
+	test("a carrier's thinking becomes one row on the marker columns; no thinking, no row", () => {
+		const row = carrierThinkingRow({ lastMessage: { content: [{ type: "thinking", thinking: "Check the log first." }, { type: "toolCall" }] } as never });
+		expect(row?.startsWith("  ")).toBe(true);
+		expect(row).toContain("Check the log first");
+		expect(row).not.toContain(INDENT_ANCHOR);
+		expect(carrierThinkingRow({ lastMessage: { content: [{ type: "toolCall" }] } as never })).toBeUndefined();
+	});
 });

@@ -17,6 +17,7 @@ import {
   openGroup,
   planFor,
   takeLateJoin,
+  thinkingCarrierFor,
   type GroupSummary,
   type ToolLike,
   type ViewPlan,
@@ -24,6 +25,8 @@ import {
 
 export interface GroupThemeLike {
   fg(token: string, text: string): string;
+  /** pi's dependable route to weight; test stubs have only `fg`. */
+  style?(text: string, attrs: { bold?: boolean; fg?: string }): string;
 }
 
 export interface GroupedTool extends ToolLike {
@@ -35,13 +38,11 @@ export interface GroupedTool extends ToolLike {
 
 /**
  * Tools that never fold: their row stays where it is and ends the group.
- * File changes, messages to other agents, background jobs and specialist
- * lifecycle calls change state outside the reply; read-only checks on them
- * (bg_status, specialist_result, ...) fold like any other call.
+ * Messages to other agents, background jobs and specialist lifecycle calls act
+ * outside the reply; read-only checks on them (bg_status, specialist_result,
+ * ...) fold like any other call.
  */
 export const PINNED_TOOLS = new Set([
-  "edit",
-  "write",
   "SendMessage",
   "intercom",
   "ask_coordinator",
@@ -54,34 +55,54 @@ export const PINNED_TOOLS = new Set([
   "specialist_reply",
   "specialist_steer",
   "specialist_stop_activation",
-  "subagent",
 ]);
 
-/** Summary phrases: calls of the same kind read as one activity. */
-const ACTIVITY: Record<string, string> = {
-  bash: "used shell",
-  python: "ran code",
-  codemode: "ran code",
-  code: "ran code",
-  read: "read",
-  grep: "searched",
-  find: "searched",
-  ls: "searched",
-  ast_grep: "searched",
-  search_context: "searched",
-  tool_search: "searched",
-  bg_status: "checked jobs",
-  bg_logs: "checked jobs",
-  specialist_status: "checked specialists",
-  specialist_result: "checked specialists",
-  specialist_feed: "checked specialists",
-  specialist_list: "checked specialists",
+/** Summary phrases: calls of the same kind read as one activity. The noun is the bold part. */
+interface Activity {
+  verb?: string;
+  noun: string;
+}
+
+const SHELL: Activity = { verb: "used", noun: "shell" };
+const CODE: Activity = { verb: "ran", noun: "code" };
+const SEARCHED: Activity = { noun: "searched" };
+const JOBS: Activity = { verb: "checked", noun: "jobs" };
+const SPECIALISTS: Activity = { verb: "checked", noun: "specialists" };
+
+const ACTIVITY: Record<string, Activity> = {
+  bash: SHELL,
+  python: CODE,
+  codemode: CODE,
+  code: CODE,
+  read: { noun: "read" },
+  edit: { noun: "edited" },
+  write: { noun: "wrote" },
+  grep: SEARCHED,
+  find: SEARCHED,
+  ls: SEARCHED,
+  ast_grep: SEARCHED,
+  search_context: SEARCHED,
+  tool_search: SEARCHED,
+  bg_status: JOBS,
+  bg_logs: JOBS,
+  specialist_status: SPECIALISTS,
+  specialist_result: SPECIALISTS,
+  specialist_feed: SPECIALISTS,
+  specialist_list: SPECIALISTS,
 };
 
-function activity(toolName: string): string {
+function activity(toolName: string): Activity {
   if (ACTIVITY[toolName]) return ACTIVITY[toolName]!;
-  if (toolName.startsWith("gitnexus_")) return "used GitNexus";
-  return `used ${toolName}`;
+  if (toolName.startsWith("gitnexus_")) return { verb: "used", noun: "GitNexus" };
+  return { verb: "used", noun: toolName };
+}
+
+function bold(theme: GroupThemeLike, token: string, text: string): string {
+  return theme.style ? theme.style(text, { bold: true, fg: token }) : theme.fg(token, text);
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function times(count: number): string {
@@ -91,7 +112,7 @@ function times(count: number): string {
 const INDENT = "  ";
 const INDENT_CELLS = 2;
 
-/** One repaint per tool when a hidden running row is due. */
+/** One repaint per tool when the live row is due to show thinking. */
 const revealScheduled = new WeakSet<object>();
 
 function scheduleReveal(tool: GroupedTool, delayMs: number): void {
@@ -129,36 +150,46 @@ function dropLeadingBlanks(lines: string[]): string[] {
  * The arrow sits in the two columns every ultracompact row reserves for its
  * marker, so the sentence lines up with the rows under it.
  *
- * It stands for rows it hides, so it sits on the rows' subject level
- * (toolTitle, regular weight), never above their bold verbs. Commas join the
- * activities only; the outcome follows as row metadata does, two spaces apart.
+ * Every part sits at toolTitle; the tool or action is bold, so the eye lands on
+ * what was used. Commas join the activities only; the outcome follows as row
+ * metadata does, two spaces apart. The time is the group's elapsed total and
+ * shows once it closes (`live: false`), so nothing ticks. With a `width`, the
+ * activities clip first, so a failure always stays readable.
  */
-export function formatGroupHeader(summary: GroupSummary, state: "closed" | "open", theme: GroupThemeLike): string {
-  const counts = new Map<string, number>();
+export function formatGroupHeader(
+  summary: GroupSummary,
+  state: "closed" | "open",
+  theme: GroupThemeLike,
+  width?: number,
+  live = false,
+): string {
+  const counts = new Map<string, { activity: Activity; count: number }>();
   for (const entry of summary.breakdown) {
-    const phrase = activity(entry.name);
-    counts.set(phrase, (counts.get(phrase) ?? 0) + entry.count);
+    const kind = activity(entry.name);
+    const key = `${kind.verb ?? ""} ${kind.noun}`;
+    const known = counts.get(key);
+    if (known) known.count += entry.count;
+    else counts.set(key, { activity: kind, count: entry.count });
   }
-  const phrases = [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([phrase, count]) => `${phrase} ${times(count)}`);
-  // "Used shell 4 times, GitNexus twice": a run of `used …` phrases says the
-  // verb once, at the start of the run.
-  for (let i = phrases.length - 1; i > 0; i--) {
-    if (phrases[i]!.startsWith("used ") && phrases[i - 1]!.startsWith("used ")) phrases[i] = phrases[i]!.slice(5);
-  }
-  const first = phrases[0] ?? "";
-  if (phrases.length > 0) phrases[0] = first.charAt(0).toUpperCase() + first.slice(1);
-  const parts = [phrases.map((phrase) => theme.fg("toolTitle", phrase)).join(theme.fg("dim", ", "))];
+  const entries = [...counts.values()].sort((a, b) => b.count - a.count);
+  const phrases = entries.map(({ activity: kind, count }, index) => {
+    // "Used shell 4 times, GitNexus twice": a run of `used …` phrases says the
+    // verb once, at the start of the run.
+    const repeated = kind.verb === "used" && entries[index - 1]?.activity.verb === "used";
+    const verb = repeated ? undefined : kind.verb;
+    const noun = index === 0 && !verb ? capitalize(kind.noun) : kind.noun;
+    const lead = verb ? `${index === 0 ? capitalize(verb) : verb} ` : "";
+    return `${lead ? theme.fg("toolTitle", lead) : ""}${bold(theme, "toolTitle", noun)}${theme.fg("toolTitle", ` ${times(count)}`)}`;
+  });
+  const activities = phrases.join(theme.fg("dim", ", "));
+  const parts: string[] = [];
   if (summary.failed > 0) parts.push(theme.fg("error", `${summary.failed} failed`));
-  // A running call is not named here: after RUNNING_ROW_DELAY_MS it gets its
-  // own row under the summary, and naming it at once made short calls flash
-  // `running …` at the end of the line. Thinking has no row, so it says so.
-  // In the thinking tone, a step below the activities, as pi's thinking rows.
-  if (summary.thinking && !summary.running) parts.push(theme.fg("thinkingText", "thinking"));
-  const duration = summary.durationMs >= 1000 ? formatDuration(summary.durationMs) : undefined;
-  if (duration) parts.push(theme.fg("dim", duration));
-  return `${theme.fg("dim", state === "closed" ? "▸" : "▾")} ${parts.join("  ")}`;
+  const elapsed = !live && summary.elapsedMs !== undefined && summary.elapsedMs >= 1000 ? formatDuration(summary.elapsedMs) : undefined;
+  if (elapsed) parts.push(theme.fg("dim", elapsed));
+  const tail = parts.map((part) => `  ${part}`).join("");
+  const room = width === undefined ? Infinity : width - 2 - visibleWidth(tail);
+  const head = visibleWidth(activities) > room ? truncateToWidth(activities, Math.max(1, room), "…") : activities;
+  return `${theme.fg("dim", state === "closed" ? "▸" : "▾")} ${head}${tail}`;
 }
 
 /** Row geometry of the last grouped render, for click routing. */
@@ -173,6 +204,14 @@ interface Geometry {
 
 const geometry = new WeakMap<object, Geometry>();
 
+/** A component of the live group, the handle for the repaint at the end of a run. */
+let liveTool: GroupedTool | undefined;
+
+export interface GroupViewOptions {
+  /** A carrier's thinking as one row on the two-column grid, if it has any. */
+  thinkingRow?: (carrier: object) => string | undefined;
+}
+
 /**
  * The tool's lines while folding is on, or `undefined` when it renders as usual
  * (pinned, a group of one, or not grouped). `own` is the tool's regular render.
@@ -182,8 +221,10 @@ export function renderGroupedTool(
   width: number,
   theme: GroupThemeLike,
   own: (width: number) => string[],
+  options: GroupViewOptions = {},
 ): string[] | undefined {
   const plan = planFor(tool, PINNED_TOOLS.has(tool.toolName));
+  if (plan.live) liveTool = tool;
   if (takeLateJoin()) tool.ui?.requestRender?.();
   if (plan.revealIn !== undefined) scheduleReveal(tool, plan.revealIn);
   if (!isGroupedPlan(plan)) {
@@ -199,11 +240,26 @@ export function renderGroupedTool(
       // The blank row stands in for pi's own spacer above a tool box.
       lines.push("");
       headerRow = lines.length;
-      lines.push(truncateToWidth(formatGroupHeader(summary, plan.header, theme), width, "…"));
+      lines.push(truncateToWidth(formatGroupHeader(summary, plan.header, theme, width, plan.live), width, "…"));
     }
   }
-  const bodyFrom = lines.length;
+  let bodyFrom = lines.length;
+  if (plan.liveRow) {
+    const row = liveRow(plan, width, theme, own, options);
+    if (row !== undefined) lines.push(truncateToWidth(row, width, "…"));
+    geometry.set(tool, { plan, headerRow, bodyFrom, bodyTo: lines.length });
+    return lines;
+  }
   if (plan.line || plan.full) {
+    // Thinking sits where it happened, above the call it led to. It takes the
+    // anchor when it comes first, and clicks stay with the call's own rows.
+    const carrier = thinkingCarrierFor(tool);
+    const thinking = carrier ? options.thinkingRow?.(carrier) : undefined;
+    if (thinking !== undefined) {
+      const row = truncateToWidth(thinking, Math.max(8, width - INDENT_CELLS), "…");
+      lines.push(headerRow >= 0 ? `${INDENT}${theme.fg("dim", "└")} ${dropTwoCells(row)}` : INDENT + row);
+      bodyFrom = lines.length;
+    }
     // The bash-tree idiom: rows nest by indentation alone, and one muted `└`
     // anchors the first row under the summary. It takes the row's own two
     // marker columns, so a failed first row keeps its `!` instead.
@@ -219,12 +275,35 @@ export function renderGroupedTool(
     const rows = dropLeadingBlanks(own(Math.max(8, width - INDENT_CELLS)));
     rows.forEach((raw, index) => {
       const line = index === 0 ? raw.replace(LEADING_DOT, "$1 $2") : raw;
-      const anchored = index === 0 && headerRow >= 0 && stripAnsi(line).startsWith("  ");
+      const anchored = index === 0 && headerRow >= 0 && bodyFrom === headerRow + 1 && stripAnsi(line).startsWith("  ");
       lines.push(anchored ? `${INDENT}${theme.fg("dim", "└")} ${dropTwoCells(line)}` : INDENT + line);
     });
   }
   geometry.set(tool, { plan, headerRow, bodyFrom, bodyTo: lines.length });
   return lines;
+}
+
+/** A live group's second row: the thinking step when it is due, else the call. */
+function liveRow(
+  plan: ViewPlan,
+  width: number,
+  theme: GroupThemeLike,
+  own: (width: number) => string[],
+  options: GroupViewOptions,
+): string | undefined {
+  const anchor = `${INDENT}${theme.fg("dim", "└")} `;
+  const thinking = plan.liveThinking ? options.thinkingRow?.(plan.liveThinking) : undefined;
+  if (thinking !== undefined) return `${anchor}${dropTwoCells(truncateToWidth(thinking, Math.max(8, width - INDENT_CELLS), "…"))}`;
+  const raw = dropLeadingBlanks(own(Math.max(8, width - INDENT_CELLS)))[0];
+  if (raw === undefined) return undefined;
+  const line = raw.replace(LEADING_DOT, "$1 $2");
+  return stripAnsi(line).startsWith("  ") ? `${anchor}${dropTwoCells(line)}` : INDENT + line;
+}
+
+/** The run ended: repaint so the live group closes even if nothing else draws. */
+export function settleLiveGroup(): void {
+  liveTool?.ui?.requestRender?.();
+  liveTool = undefined;
 }
 
 export const NOT_GROUPED = Symbol("xtrm-ui:not-grouped");

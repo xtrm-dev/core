@@ -2,8 +2,8 @@
 title: XTRM UI Extension
 scope: xtrm-ui
 category: reference
-version: 2.2.0
-updated: 2026-10-26
+version: 2.4.0
+updated: 2026-11-01
 description: "XTRM-owned Pi chrome, themes, and native/external tool rendering"
 source_of_truth_for:
   - "packages/pi-extensions/extensions/xtrm-ui/index.ts"
@@ -132,6 +132,45 @@ extension drives the same `setExpanded` toggle from the component prototype.
 Ctrl+O keeps its global meaning and still expands every row. Rendering does not
 mutate tool-result payloads.
 
+In ultracompact mode the calls of one reply fold into one group. While the agent
+runs, the newest group is live and draws two fixed rows from its first call, so
+no call moves the transcript:
+
+```text
+▸ Used shell 3 times, read twice  1 failed
+  └ Ran shell command npm test --workspace cli  +10 lines
+```
+
+The first row says what the group has done. The second shows the newest running
+call or, once new thinking has streamed for 500 ms, its recap. With nothing
+running it keeps the last thing done. It stays one line, clipped to the width.
+The newest value wins, with no queue. The 500 ms hold exists because most calls
+end within 250 ms and would otherwise flash between two thinking rows.
+
+At the next boundary or at the end of the run the group closes to one row:
+
+```text
+▸ Used **shell** 3 times, **read** twice  1 failed  47s
+```
+
+Bold marks the tool or action; the rest stays regular, all at `toolTitle`. A
+failure sits at `error`, and the time at `dim`. The time is elapsed from the first
+call to the last, from message timestamps, so it includes model time and works on
+a reloaded session. It shows only once the group closes, and is omitted when
+timestamps are missing. When the row is too long the activities clip first. A
+click on the summary opens the group into one row per call. Each thinking step is
+listed above the call it led to, in transcript order, and a click on a call's row
+opens its output.
+
+Everything folds except calls that act outside the reply: messages to other
+agents, background jobs, specialist control and `ask_coordinator` keep one row and
+start a new group. Edits and writes fold; open the row for the diff. User messages,
+assistant text, summaries and extension messages never fold.
+
+Shell subjects drop setup for display: a leading `cd`, env assignments, `export`,
+`set`, `source`, `nice`, `ionice` and `timeout`. A command that is only setup keeps
+its text. What runs never changes.
+
 Code-carrying tools (`codemode`, `python`) keep the `● used <tool>` header
 unchanged but render the body like native bash rows: bold execution lines with
 their own hidden-count, output hung off a muted `└` tree, and a plain dim meta
@@ -147,8 +186,8 @@ Chrome is a grayscale ladder; contrast and weight do the work, with no hue:
 | Token | Dark | Light | Used for |
 |---|---|---|---|
 | `text` | `#E0E0E0` | `#1A1A1A` | primary output, headings, key values |
-| `toolTitle` | `#C0C0C0` | `#3A3A3A` | tool names and row headers (verb + subject) |
-| `toolOutput` | `#A0A0A0` | `#5F5F5F` | tool output bodies and result previews |
+| `toolTitle` | `#A0A0A0` | `#5F5F5F` | tool names and row headers (verb + subject) |
+| `toolOutput` | `#858585` | `#6A6A6A` | tool output bodies and result previews |
 | `muted` | `#A0A0A0` | `#5F5F5F` | secondary labels, branch/model metadata, thinking label |
 | `thinkingText` | `#858585` | `#6A6A6A` | collapsed thinking recap (italic) |
 | `dim` | `#707070` | `#7A7A7A` | durations, lower-priority metadata |
