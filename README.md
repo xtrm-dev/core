@@ -196,23 +196,21 @@ Decisions are gated by a two-stage Jev classification (evaluating whether docume
 
 `xt init` / `xt update` manage the Pi environment XTRM expects rather than leaving every machine to accumulate a different ad-hoc package set.
 
-The managed set includes code intelligence, structured returns, guardrails, goals/tasks/background work, subagents, MCP access, Mermaid rendering, XTRM extensions/service knowledge, inter-agent communication, structural code search, worktrees, and process helpers.
+The managed set includes code intelligence, guardrails, goals and tasks, XTRM extensions and service knowledge, structural code search, agent runs, context tooling, and the Substrate integration. Subagents, MCP access, worktrees, inter-agent communication and background work are built into Pi or the first-party extensions.
 
 Representative packages include:
 
 ```text
 pi-gitnexus
-@robhowley/pi-structured-return
 @aliou/pi-guardrails
 @narumitw/pi-goal
-DietrichGebert/ponytail
 @tintinweb/pi-tasks
-@gotgenes/pi-subagents
-pi-mermaid-viewer
+pi-ast-grep
 @jaggerxtrm/pi-extensions
 @jaggerxtrm/pi-service-knowledge
-pi-ast-grep
-@zenobius/pi-worktrees
+@parcha/agentrun-pi@beta
+billion-context
+@jaggerxtrm/substrate
 ```
 
 The live managed registry in Core is authority for exact install selectors. Local Core development may load `packages/pi-extensions` from the checkout, but the portable managed identity is `npm:@jaggerxtrm/pi-extensions`—never a developer-specific absolute path.

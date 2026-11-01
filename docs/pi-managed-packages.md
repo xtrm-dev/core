@@ -32,14 +32,18 @@ The runtime also marks packages as either required or optional for health semant
 |---|---|---|
 | `npm:@jaggerxtrm/pi-extensions` | required | XTRM-owned Pi runtime extensions: `xtrm-ui`, python kernel, lifecycle/presentation helpers |
 | `npm:pi-gitnexus` | required | code graph / code intelligence integration |
-| `npm:@robhowley/pi-structured-return` | required | structured agent/tool result contracts |
 | `npm:@aliou/pi-guardrails` | managed optional | additional Pi guardrail surface |
 | `npm:@narumitw/pi-goal` | managed optional | session goal workflow |
-| `git:github.com/DietrichGebert/ponytail` | managed optional | minimal-engineering/reduction guidance |
 | `npm:@tintinweb/pi-tasks` | managed optional | task tracking / task UI and optional task execution integration |
-| `npm:pi-mermaid-viewer` | managed optional | Mermaid rendering in the Pi TUI |
 | `npm:@jaggerxtrm/pi-service-knowledge` | required | XTRM service-knowledge runtime integration |
 | `npm:pi-ast-grep` | required | compact read-only structural code search |
+| `npm:@parcha/agentrun-pi@beta` | managed optional | agent run integration (`beta` dist-tag selector) |
+| `npm:billion-context` | managed optional | context tooling |
+| `npm:@jaggerxtrm/substrate` | managed optional | Substrate integration for Pi |
+
+`native-specialists` and `xtmux` are local packages added by their own repos; Core does not install them.
+
+`npm:@robhowley/pi-structured-return`, `git:github.com/DietrichGebert/ponytail` and `npm:pi-mermaid-viewer` were removed from the managed set (CORE-2572, operator ruling 2026-11-01). Together with the already retired `npm:@gotgenes/pi-subagents` and `npm:@zenobius/pi-worktrees`, `xt update --apply` removes them from settings `packages` lists, the `<agentDir>/npm` tree, `<agentDir>/npm/package.json` dependencies and the `<agentDir>/git` checkout. It never touches a same-named directory under `<agentDir>/extensions/`, because that may be a local checkout. No package is required for health except `pi-gitnexus`, `pi-service-knowledge` and `pi-ast-grep`.
 
 `npm:pi-mcp-adapter` is retired (CORE-2399): Pi has built-in MCP, so the managed baseline no longer installs an adapter and `xt update` removes the package entry and the `~/.pi/agent/extensions/pi-mcp-adapter` override from machines that still carry them.
 
@@ -53,13 +57,13 @@ The baseline is intentionally biased toward removing repeated setup/reconstructi
 
 ```text
 codebase intelligence   pi-gitnexus + pi-ast-grep
-structured execution    structured-return + guardrails
+guardrails               guardrails
 continuation/work        goal + tasks + first-party background extension
 runtime access           Pi built-in MCP (`pi.mcp.json`)
 coordination             first-party intercom extension (SendMessage, ListAgents)
 XTRM context/runtime     pi-extensions + pi-service-knowledge
-operator UX              pi-mermaid-viewer + xtrm-ui (inside pi-extensions)
-engineering posture      ponytail + XTRM engineering-quality doctrine
+operator UX              xtrm-ui (inside pi-extensions)
+engineering posture      XTRM engineering-quality doctrine
 ```
 
 They complement XTRM's own skills/contracts rather than replacing them. A third-party package can provide a useful tool or execution primitive while XTRM still owns the durable work contract, worker identity, lifecycle, coordination semantics and evidence requirements.
@@ -85,7 +89,7 @@ For an npm selector such as `@latest`, XTRM keeps the full selector for installa
 Examples:
 
 ```text
-git:github.com/DietrichGebert/ponytail
+git:github.com/<owner>/<repo>
 ```
 
 Pi stores Git packages separately from npm packages and `pi list` reports their configured sources. XTRM uses that source identity for presence checks rather than pretending a Git source has an npm version.

@@ -56913,14 +56913,14 @@ var MANAGED_PI_EXTENSION_OWNED_IDS = /* @__PURE__ */ new Set([
 ]);
 var MANAGED_PACKAGES = [
   { id: "npm:pi-gitnexus", displayName: "pi-gitnexus", required: true },
-  { id: "npm:@robhowley/pi-structured-return", displayName: "pi-structured-return", required: true },
   { id: "npm:@aliou/pi-guardrails", displayName: "pi-guardrails", required: false },
   { id: "npm:@narumitw/pi-goal", displayName: "pi-goal", required: false },
-  { id: "git:github.com/DietrichGebert/ponytail", displayName: "ponytail", required: false },
   { id: "npm:@tintinweb/pi-tasks", displayName: "pi-tasks", required: false },
-  { id: "npm:pi-mermaid-viewer", displayName: "pi-mermaid-viewer", required: false },
   { id: "npm:@jaggerxtrm/pi-service-knowledge", displayName: "pi-service-knowledge", required: true },
-  { id: "npm:pi-ast-grep", displayName: "pi-ast-grep", required: true }
+  { id: "npm:pi-ast-grep", displayName: "pi-ast-grep", required: true },
+  { id: "npm:@parcha/agentrun-pi@beta", displayName: "agentrun-pi", required: false },
+  { id: "npm:billion-context", displayName: "billion-context", required: false },
+  { id: "npm:@jaggerxtrm/substrate", displayName: "substrate", required: false }
 ];
 var PROJECT_REQUIRED_PACKAGE_IDS = [
   PROJECT_EXTENSION_PACKAGE_ID,
@@ -57476,7 +57476,18 @@ async function dropRetiredPiMcpAdapterEntry(settingsPath, dryRun, log) {
   log?.(kleur_default.dim(`Removed ${RETIRED_PI_MCP_ADAPTER_PACKAGE} from ${settingsPath}`));
   return true;
 }
-var RETIRED_M1_NPM_PACKAGES = ["pi-intercom", "pi-background-tasks", "@aliou/pi-processes"];
+var RETIRED_M1_NPM_PACKAGES = [
+  "pi-intercom",
+  "pi-background-tasks",
+  "@aliou/pi-processes",
+  // CORE-2572: dropped from the managed set, or retired earlier and never swept.
+  "@robhowley/pi-structured-return",
+  "pi-mermaid-viewer",
+  "@gotgenes/pi-subagents",
+  "@zenobius/pi-worktrees"
+];
+var RETIRED_M1_GIT_REPOS = ["alonw0/pi-claude-link", "DietrichGebert/ponytail"];
+var RETIRED_M1_EXTENSION_NAMES = ["pi-intercom", "pi-background-tasks", "pi-processes", "pi-claude-link"];
 function isRetiredM1Package(entry) {
   const spec = packageEntrySpec(entry);
   if (spec === null) return false;
@@ -57489,7 +57500,7 @@ function isRetiredM1GitSpec(rest) {
   const onGithub = noFrag.match(/github\.com[/:](.+)$/);
   if (!onGithub) return false;
   const repoPath = onGithub[1].replace(/^\/+/, "").replace(/@[^/]*$/, "").replace(/\.git$/, "");
-  return repoPath === "alonw0/pi-claude-link";
+  return RETIRED_M1_GIT_REPOS.includes(repoPath);
 }
 function retiredM1InstallDirs(agentDir) {
   const dirs = RETIRED_M1_NPM_PACKAGES.map(
@@ -57498,8 +57509,10 @@ function retiredM1InstallDirs(agentDir) {
       import_path3.default.join(agentDir, "npm", "node_modules", name)
     )
   );
-  dirs.push(import_path3.default.join(agentDir, "git", "github.com", "alonw0", "pi-claude-link"));
-  for (const name of [...RETIRED_M1_NPM_PACKAGES.map((entry) => entry.split("/").pop()), "pi-claude-link"]) {
+  for (const repo of RETIRED_M1_GIT_REPOS) {
+    dirs.push(import_path3.default.join(agentDir, "git", "github.com", ...repo.split("/")));
+  }
+  for (const name of RETIRED_M1_EXTENSION_NAMES) {
     dirs.push(import_path3.default.join(agentDir, "extensions", name));
   }
   return dirs;

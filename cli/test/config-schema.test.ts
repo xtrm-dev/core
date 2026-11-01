@@ -24,15 +24,19 @@ describe('config schema integrity', () => {
     describe('config/pi/install-schema.json packages (m54d, x87v)', () => {
         const schema = JSON.parse(readFileSync(resolve(ROOT, 'config', 'pi', 'install-schema.json'), 'utf8'));
 
-        it('contains npm:@robhowley/pi-structured-return', () => {
-            expect(schema.packages).toContain('npm:@robhowley/pi-structured-return');
+        it('excludes the packages the operator removed from the managed set', () => {
+            for (const pkg of ['npm:@robhowley/pi-structured-return', 'git:github.com/DietrichGebert/ponytail', 'npm:pi-mermaid-viewer']) {
+                expect(schema.packages).not.toContain(pkg);
+            }
         });
 
         it('contains all expected canonical packages and excludes retired Serena tooling', () => {
             const expected = [
                 'npm:pi-gitnexus',
-                'npm:@robhowley/pi-structured-return',
                 'npm:pi-ast-grep',
+                'npm:@parcha/agentrun-pi@beta',
+                'npm:billion-context',
+                'npm:@jaggerxtrm/substrate',
             ];
             for (const pkg of expected) {
                 expect(schema.packages).toContain(pkg);

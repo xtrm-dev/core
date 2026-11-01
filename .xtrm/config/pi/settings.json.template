@@ -6,14 +6,14 @@
   "theme": "light",
   "packages": [
     "npm:pi-gitnexus",
-    "npm:@robhowley/pi-structured-return",
     "npm:@aliou/pi-guardrails",
     "npm:@narumitw/pi-goal",
-    "git:github.com/DietrichGebert/ponytail",
     "npm:@tintinweb/pi-tasks",
-    "npm:pi-mermaid-viewer",
     "npm:@jaggerxtrm/pi-service-knowledge",
-    "npm:pi-ast-grep"
+    "npm:pi-ast-grep",
+    "npm:@parcha/agentrun-pi@beta",
+    "npm:billion-context",
+    "npm:@jaggerxtrm/substrate"
   ],
   "steeringMode": "all",
   "followUpMode": "all",
