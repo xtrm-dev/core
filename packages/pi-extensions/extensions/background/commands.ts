@@ -17,7 +17,6 @@
 import { closeSync, openSync, readFileSync, readSync, statSync, watch } from "node:fs";
 import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { fitToWidth } from "./widget.ts";
-import { BG_TASKS_ACCENT, bandRow } from "../../shared/suggest.ts";
 
 import {
   formatElapsed,
@@ -789,7 +788,11 @@ export class TasksOverlay {
     if (this.selected < this.listScroll) this.listScroll = this.selected;
     if (this.selected >= this.listScroll + OVERLAY_VISIBLE_ROWS) this.listScroll = this.selected - OVERLAY_VISIBLE_ROWS + 1;
     this.listScroll = Math.min(this.listScroll, maxOffset);
-    const out = [bandRow(rows.length === 1 ? "tasks · 1" : `tasks · ${rows.length}`, BG_TASKS_ACCENT, safe), ""];
+    // The list header is a chrome row: bold and padded, no hue. The 24-bit
+    // gold band (shared/suggest.ts `bandRow`) put raw SGR on /bg rows; the
+    // chrome rule is theme tokens only, so the band is weight only.
+    const band = (text: string): string => theme.bold(text + " ".repeat(Math.max(0, safe - visibleWidth(text))));
+    const out = [band(rows.length === 1 ? "tasks · 1" : `tasks · ${rows.length}`), ""];
     const dropped = this.options.store.droppedUnseenFailures();
     if (dropped > 0) {
       out.push(cut(theme.fg("dim", dropped === 1 ? "+1 earlier failure dropped" : `+${dropped} earlier failures dropped`)));

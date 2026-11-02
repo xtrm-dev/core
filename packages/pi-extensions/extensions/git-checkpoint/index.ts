@@ -49,8 +49,14 @@ export default function (pi: ExtensionAPI) {
 		]);
 
 		if (choice?.startsWith("Yes")) {
-			await pi.exec("git", ["stash", "apply", ref]);
-			ctx.ui.notify("Code restored to checkpoint", "info");
+			const result = await pi.exec("git", ["stash", "apply", ref]);
+			if (result.code === 0) {
+				ctx.ui.notify("Code restored to checkpoint", "info");
+			} else {
+				// A conflicted or dropped stash must not read as a success.
+				const detail = (result.stderr || result.stdout).trim().split("\n")[0];
+				ctx.ui.notify(`! Code restore failed: ${detail || `git exited ${result.code}`}`, "error");
+			}
 		}
 	});
 

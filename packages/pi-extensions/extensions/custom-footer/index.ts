@@ -9,7 +9,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { clipStyledToWidth } from "../../shared/event.ts";
 
 import { SubprocessRunner } from "../../src/core";
 import {
@@ -251,11 +251,11 @@ export default function registerCustomFooter(pi: ExtensionAPI): void {
 						thinkingLevel: pi.getThinkingLevel?.() ?? undefined,
 						usage: readUsage(ctx),
 					});
-					const line = renderHud(hud, width, theme, truncateToWidth);
+					const line = renderHud(hud, width, theme, clipStyledToWidth);
 					const lines = line ? [line] : [];
 					for (const renderBelow of footerSections.values()) {
 						try {
-							for (const sectionLine of renderBelow(width) ?? []) lines.push(truncateToWidth(sectionLine, width));
+							for (const sectionLine of renderBelow(width) ?? []) lines.push(clipStyledToWidth(sectionLine, width));
 						} catch {
 							// A faulty section must never break the statusline.
 						}

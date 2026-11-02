@@ -361,9 +361,9 @@ export function renderHud(state: HudState, width: number, colors?: HudColors, tr
   }
 
   const line = joinPainted(segments, colors);
-  // Always hand the assembled line to the ANSI-aware truncator when one is
-  // available: the code-point count above cannot see double-width glyphs in a
-  // branch or model label, and `truncateToWidth` is the only width-true guard.
+  // Always hand the assembled line to the clip when one is available: the
+  // code-point count above cannot see double-width glyphs in a branch or model
+  // label, and the shared `clipToWidth` is the only width-true guard.
   if (truncate) return truncate(line, maxWidth);
   if (visibleLength(joinPlain(segments)) <= maxWidth) return line;
   const plain = joinPlain(segments);
