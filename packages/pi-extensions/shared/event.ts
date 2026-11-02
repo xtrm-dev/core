@@ -346,6 +346,18 @@ export function clipToWidth(text: string, width: number): string {
   return stripAnsi(truncateToWidth(plain, Math.floor(width), "…", false));
 }
 
+/**
+ * The same cut for text that is ALREADY styled. `clipToWidth` measures plain
+ * text and returns plain text, which is right for card rows built from plain
+ * segments; a statusline, an overlay row or a widget line that carries theme
+ * tokens must keep them when it is cut, so this variant lets pi-tui cut on
+ * display width and keeps the SGR runs. Same single `…` glyph, still no pad.
+ */
+export function clipStyledToWidth(text: string, width: number): string {
+  if (!(width > 0)) return "";
+  return truncateToWidth(text, Math.floor(width), "…", false);
+}
+
 /** Body lines and the dim facts trailer of an opened card (never clipped). */
 interface CardBody {
   bodyLines: string[];

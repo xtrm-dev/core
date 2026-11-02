@@ -19,7 +19,7 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { clipToWidth } from "../../shared/event.ts";
+import { clipStyledToWidth } from "../../shared/event.ts";
 
 import {
   isMonitorFailureStatus,
@@ -136,7 +136,7 @@ export function hardCut(line: string, maxWidth: number): string {
 
 export function fitToWidth(line: string, maxWidth: number): string {
   const width = Math.max(8, Math.floor(maxWidth) || 80);
-  const first = clipToWidth(line, width);
+  const first = clipStyledToWidth(line, width);
   if (visibleWidth(first) <= width) return first;
   return hardCut(line, width);
 }

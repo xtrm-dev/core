@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { clipToWidth } from "../../shared/event.ts";
+import { clipStyledToWidth } from "../../shared/event.ts";
 
 const MAX_BUFFER_LINES = 2000;
 const DEFAULT_VISIBLE_LINES = 24;
@@ -154,7 +154,7 @@ class StreamingTerminalOverlay {
     const title = ` ${theme.fg("accent", theme.bold(this.options.title))} ${statusText} `;
     const top = border("╭") + truncateToWidth(title, Math.max(0, innerWidth), "") + border("─".repeat(Math.max(0, innerWidth - visibleWidth(title)))) + border("╮");
     const row = (content: string) => {
-      const truncated = resetAnsi(clipToWidth(content, contentWidth));
+      const truncated = resetAnsi(clipStyledToWidth(content, contentWidth));
       return `${border("│")} ${padVisible(truncated, contentWidth)} ${border("│")}`;
     };
 
