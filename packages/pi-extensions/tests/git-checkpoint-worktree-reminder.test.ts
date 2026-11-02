@@ -41,21 +41,27 @@ const gitCheckpoint = (await import("../extensions/git-checkpoint/index.ts")).de
 
 type Handler = (event: any, ctx: any) => unknown;
 
-function fakePi() {
+type ExecResult = { stdout: string; stderr: string; code: number };
+
+function fakePi(exec: (args: string[]) => ExecResult = () => ({ stdout: "", stderr: "", code: 0 })) {
   const handlers = new Map<string, Handler[]>();
+  const calls: string[][] = [];
   const pi = {
     on(name: string, handler: Handler) {
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
       return () => {};
     },
-    exec: async () => ({ stdout: "", stderr: "", code: 0 }),
+    exec: async (_command: string, args: string[]) => {
+      calls.push(args);
+      return exec(args);
+    },
   };
   const fire = async (name: string, event: any, ctx: any) => {
     const out: unknown[] = [];
     for (const handler of handlers.get(name) ?? []) out.push(await handler({ type: name, ...event }, ctx));
     return out;
   };
-  return { pi, fire };
+  return { pi, fire, calls };
 }
 
 const notifyCtx = (cwd: string, hasUI = true) => {
@@ -113,5 +119,63 @@ describe("git-checkpoint xt end worktree reminder", () => {
     const second = notifyCtx(OTHER_WORKTREE);
     await fire("agent_end", {}, second.ctx);
     expect(second.notify).toHaveBeenCalledTimes(1);
+  });
+});
+
+// CORE-2578: the restore used to report success from the dialog answer alone,
+// so a conflicted or dropped `git stash apply` still printed "Code restored".
+// The report now follows the exit code: success only on 0, and a genuine
+// failure leads with `!` and carries the error line.
+describe("git-checkpoint restore reporting", () => {
+  const ENTRY = "entry-1";
+
+  const forkCtx = (notify: ReturnType<typeof mock>, choice: string) => ({
+    cwd: WORKTREE,
+    hasUI: true,
+    ui: { notify, select: async () => choice },
+    sessionManager: { getLeafEntry: () => ({ id: ENTRY }) },
+  });
+
+  const execResults = (apply: ExecResult) => (args: string[]) =>
+    args[0] === "stash" && args[1] === "create" ? { stdout: "deadbeef\n", stderr: "", code: 0 } : apply;
+
+  async function fork(options: { apply?: ExecResult; choice?: string }) {
+    const { pi, fire, calls } = fakePi(execResults(options.apply ?? { stdout: "", stderr: "", code: 0 }));
+    gitCheckpoint(pi as any);
+    const notify = mock(() => {});
+    const ctx = forkCtx(notify, options.choice ?? "Yes, restore code to that point");
+    await fire("tool_result", {}, ctx);
+    await fire("turn_start", {}, ctx);
+    await fire("session_before_fork", { entryId: ENTRY }, ctx);
+    return { notify, calls };
+  }
+
+  test("a zero exit reports the restore", async () => {
+    const { notify, calls } = await fork({});
+
+    expect(calls).toContainEqual(["stash", "apply", "deadbeef"]);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(String(notify.mock.calls[0][0])).toBe("Code restored to checkpoint");
+    expect(notify.mock.calls[0][1]).toBe("info");
+  });
+
+  test("a non-zero exit reports the failure, never a restore", async () => {
+    const { notify } = await fork({
+      apply: { stdout: "", stderr: "error: Your local changes would be overwritten\n", code: 1 },
+    });
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    const [message, level] = notify.mock.calls[0] as [string, string];
+    expect(message).not.toContain("Code restored");
+    expect(message.startsWith("!")).toBe(true);
+    expect(message).toContain("Your local changes would be overwritten");
+    expect(level).toBe("error");
+  });
+
+  test("declining the dialog restores nothing and reports nothing", async () => {
+    const { notify, calls } = await fork({ choice: "No, keep current code" });
+
+    expect(calls.some((args) => args[1] === "apply")).toBe(false);
+    expect(notify).not.toHaveBeenCalled();
   });
 });
