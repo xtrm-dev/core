@@ -199,11 +199,11 @@ describe("delivery and idle notices (CORE-2438 I7, D7-D8)", () => {
 });
 
 describe("operator cards (CORE-2438 I7, D4)", () => {
-  test("an incoming message folds to one row: › From @<name>  <snippet>", () => {
+  test("an incoming message folds to one row: › message from @<name>  <snippet>", () => {
     const lines = visible(formatEventCard(messageDetails({ preview: ["hello world", "second"] }), light, 80));
-    expect(lines).toEqual(["› From @Probe  hello world"]);
+    expect(lines).toEqual(["› message from @Probe  hello world"]);
     const raw = formatEventCard(messageDetails(), light, 80);
-    expect(raw).toContain("<light:bold>From</light:bold>");
+    expect(raw).toContain("<light:bold>from</light:bold>");
     expect(raw).not.toContain("<light:bold>@Probe</light:bold>");
   });
 
@@ -217,7 +217,7 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
       ),
     );
     expect(lines).toHaveLength(1 + 5);
-    expect(lines[0]).toBe("› From @Probe");
+    expect(lines[0]).toBe("› message from @Probe");
     expect(lines[lines.length - 1].endsWith("m1 · 1.2s · 3 KiB")).toBe(true);
   });
 
@@ -228,11 +228,11 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     }
   });
 
-  test("a folded message is one row: › From @<name>  <snippet>, no id and no expand hint", () => {
+  test("a folded message is one row: › message from @<name>  <snippet>, no id and no expand hint", () => {
     const lines = visible(formatEventCard(messageDetails(), light, 120, { expanded: false }));
-    expect(lines).toEqual(["› From @Probe  hello world"]);
+    expect(lines).toEqual(["› message from @Probe  hello world"]);
     const raw = formatEventCard(messageDetails(), light, 120, { expanded: false });
-    expect(raw).toContain("<light:bold>From</light:bold>");
+    expect(raw).toContain("<light:bold>from</light:bold>");
     expect(raw).not.toContain("<light:bold>@Probe</light:bold>");
     // The id leaves the folded row and stays on the opened card.
     expect(raw).not.toContain("m1");
@@ -250,7 +250,7 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
       const lines = visible(formatEventCard(long, light, width, { expanded: false }));
       expect(lines).toHaveLength(1);
       for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-      expect(lines[0]).toContain("From @core-xt-pi-2ard");
+      expect(lines[0]).toContain("message from @core-xt-pi-2ard");
       expect(lines[0]).not.toContain("ctrl+o");
     }
     // The id opens with the card, unclipped.
@@ -268,15 +268,15 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     expect(lines.join("\n")).not.toContain("ctrl+o");
   });
 
-  test("a failed task card folds with ! and the bold verb Failed", () => {
+  test("a failed task card folds with ! and the bold verb failed", () => {
     const raw = formatEventCard(
       { kind: "task", state: "failed", identity: "task ab12", preview: ["boom"], facts: "ab12 · 3.1s" },
       dark,
       80,
     );
-    expect(visible(raw)).toEqual(["! Failed task  boom  ab12 · 3.1s"]);
+    expect(visible(raw)).toEqual(["! task failed  boom  ab12 · 3.1s"]);
     expect(raw).toContain("<dark:error>!</dark:error>");
-    expect(raw).toContain("<dark:bold>Failed</dark:bold>");
+    expect(raw).toContain("<dark:bold>failed</dark:bold>");
   });
 });
 
@@ -287,9 +287,9 @@ describe("folded cards: one row, one bold verb, one clip glyph (CORE-2576)", () 
       dark,
       120,
     );
-    expect(visible(raw)).toEqual(["› Completed task  npm test --workspace cli  2m14s"]);
+    expect(visible(raw)).toEqual(["› task completed  npm test --workspace cli  2m14s"]);
     expect(raw.match(/<dark:bold>/g)).toHaveLength(1);
-    expect(raw).toContain("<dark:bold>Completed</dark:bold>");
+    expect(raw).toContain("<dark:bold>completed</dark:bold>");
     expect(raw).toContain("<dark:dim>2m14s</dark:dim>");
     expect(raw).not.toContain("bg_1a2b");
   });
@@ -300,13 +300,13 @@ describe("folded cards: one row, one bold verb, one clip glyph (CORE-2576)", () 
       dark,
       120,
     );
-    expect(visible(raw)).toEqual(["! Failed task  npm test --workspace cli  exit 1 · 12s"]);
+    expect(visible(raw)).toEqual(["! task failed  npm test --workspace cli  exit 1 · 12s"]);
     expect(raw).toContain("<dark:error>!</dark:error>");
-    expect(raw).toContain("<dark:bold>Failed</dark:bold>");
+    expect(raw).toContain("<dark:bold>failed</dark:bold>");
     expect(raw.match(/<dark:bold>/g)).toHaveLength(1);
   });
 
-  test("a message card folds to one row: › From @name  <snippet>", () => {
+  test("a message card folds to one row: › message from @name  <snippet>", () => {
     const raw = formatEventCard(
       {
         kind: "message",
@@ -319,8 +319,8 @@ describe("folded cards: one row, one bold verb, one clip glyph (CORE-2576)", () 
       dark,
       120,
     );
-    expect(visible(raw)).toEqual(["› From @core-review  Review done, two findings, see Journal seq 12."]);
-    expect(raw).toContain("<dark:bold>From</dark:bold>");
+    expect(visible(raw)).toEqual(["› message from @core-review  Review done, two findings, see Journal seq 12."]);
+    expect(raw).toContain("<dark:bold>from</dark:bold>");
     expect(raw.match(/<dark:bold>/g)).toHaveLength(1);
     expect(raw).not.toContain("m-1234");
   });
@@ -468,7 +468,7 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
     expect(url).toContain("https://example.com/");
     expect(url).toContain("/tail");
     const head = visible(formatEventCard(adversarial[2].details, light, 80, { expanded: false }))[0];
-    expect(head.startsWith("› Running task")).toBe(true);
+    expect(head.startsWith("› task running")).toBe(true);
     // Oversized facts clip with the single ellipsis glyph in the folded row.
     const factsRow = visible(
       formatEventCard(
@@ -553,7 +553,7 @@ describe("renderer registration (CORE-2438 I7)", () => {
       }
     )({ content: "hi" }, { expanded: true }, light);
     captured = component.render(80).join("\n");
-    expect(visible(captured)[0]).toBe("› From @probe");
+    expect(visible(captured)[0]).toBe("› message from @probe");
   });
 
   test("an unresolvable message renders nothing", () => {
@@ -601,7 +601,7 @@ describe("renderer registration (CORE-2438 I7)", () => {
     expect(card.handleMouse?.(click)).toEqual({ handled: true });
     const expandedLines = visible(card.render(120).join("\n"));
     expect(expandedLines.length).toBeGreaterThan(1);
-    expect(expandedLines[0]).toBe("› From @Probe");
+    expect(expandedLines[0]).toBe("› message from @Probe");
     // Clicking again collapses it: the same toggle pi's own tool rows use.
     expect(card.handleMouse?.(click)).toEqual({ handled: true });
     expect(visible(card.render(120).join("\n"))).toHaveLength(1);

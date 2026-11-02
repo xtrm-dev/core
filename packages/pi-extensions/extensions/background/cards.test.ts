@@ -25,7 +25,7 @@ describe("task cards through the I7 module", () => {
     expect(details).toMatchObject({ kind: "task", state: "failed", identity: "task bg_1a2b" });
     expect(glyphFor(details as never)).toBe("!");
     // Folded: one row, no id, the command as the subject.
-    expect(formatEventCard(details as never, theme, 80)).toBe("! Failed task  make build  exit 2 · 12.5s");
+    expect(formatEventCard(details as never, theme, 80)).toBe("! task failed  make build  exit 2 · 12.5s");
     // Opened: the id, the full summary and the output path.
     const opened = formatEventCard(details as never, theme, 80, { expanded: true });
     expect(opened).toContain("task bg_1a2b");
@@ -45,7 +45,7 @@ describe("task cards through the I7 module", () => {
     });
     expect(details).toMatchObject({ kind: "task", state: "completed" });
     expect(glyphFor(details as never)).toBe("○");
-    expect(formatEventCard(details as never, theme, 80)).toBe("› Completed task  true  0.1s");
+    expect(formatEventCard(details as never, theme, 80)).toBe("› task completed  true  0.1s");
     expect(formatEventCard(details as never, theme, 80, { expanded: true })).toContain("Read /tmp/background-bg_1a2b.log");
   });
 
@@ -71,7 +71,7 @@ describe("monitor cards through the I7 module", () => {
     expect(details).toMatchObject({ kind: "monitor", state: "event", identity: "monitor mn_3c4d" });
     expect(glyphFor(details as never)).toBe("○");
     // Folded: the first event line is the subject; the rest open with the card.
-    expect(formatEventCard(details as never, theme, 80)).toBe("○ Matched monitor  build ok  event #2 · 3 lines");
+    expect(formatEventCard(details as never, theme, 80)).toBe("○ monitor matched  build ok  event #2 · 3 lines");
     const card = formatEventCard(details as never, theme, 80, { expanded: true });
     expect(card).toContain("build ok");
     expect(card).toContain("tests ok");
@@ -88,7 +88,7 @@ describe("monitor cards through the I7 module", () => {
       },
     });
     expect(details).toMatchObject({ kind: "monitor", state: "expired" });
-    expect(formatEventCard(details as never, theme, 80)).toBe("○ Expired monitor  300000ms timeout  5 events · 41 lines");
+    expect(formatEventCard(details as never, theme, 80)).toBe("○ monitor expired  300000ms timeout  5 events · 41 lines");
     const card = formatEventCard(details as never, theme, 80, { expanded: true });
     expect(card).toContain("mn_3c4d");
     expect(card).toContain("5");

@@ -43,14 +43,14 @@ describe("suggestion card layout", () => {
   test("folds to one row: hollow marker, bold verb, action, summary, hidden-line count", () => {
     const details = resolveSuggestionMessage({ details: { card: steerCard } })!;
     expect(formatSuggestionCardPlain(details, 100)).toBe(
-      "○ Suggested provenance unread  4 files changed without reading their history  +4 lines",
+      "○ provenance unread suggested  4 files changed without reading their history  +4 lines",
     );
   });
 
   test("opens with the reason, then the body under a └ anchor", () => {
     const details = resolveSuggestionMessage({ details: { card: steerCard } })!;
     expect(formatSuggestionCardPlain(details, 100, { expanded: true }).split("\n")).toEqual([
-      "○ Suggested provenance unread  4 files changed without reading their history",
+      "○ provenance unread suggested  4 files changed without reading their history",
       "  Behavior changed without consulting why the code was the way it was.",
       "  └ xtrm-dark.json             last bded0224 2026-10-26 feat(pi): one-line tool rows",
       "    xtrm-light.json            last bded0224 2026-10-26 feat(pi): one-line tool rows",
@@ -83,7 +83,7 @@ describe("suggestion card layout", () => {
       expanded: true,
       tintGlyph: (glyph) => `<tint>${glyph}`,
     }).split("\n");
-    expect(lines[0]).toBe("<tint>○ *[toolTitle]Suggested* [toolTitle]provenance unread  [toolTitle]4 files changed without reading their history");
+    expect(lines[0]).toBe("<tint>○ [toolTitle]provenance unread *[toolTitle]suggested*  [toolTitle]4 files changed without reading their history");
     expect(lines[1]).toBe("  _[thinkingText]Behavior changed without consulting why the code was the way it was._");
     expect(lines[2]).toStartWith("  [dim]└ [toolOutput]xtrm-dark.json");
     // High severity no longer sets the failure marker: only an error state does.
@@ -113,18 +113,18 @@ describe("skill-suggest row wording (CORE-2576)", () => {
     expect(suggestionFacts(null)).toBeUndefined();
   });
 
-  test("a skill folds to ○ Suggested <name>  <description…>  score 0.71, unclipped when opened", () => {
+  test("a skill folds to ○ <name> suggested  <description…>  score 0.71, unclipped when opened", () => {
     const description =
       "Use Specialists as a governed XTRM execution backend for tracked implementation, debugging, review, testing and documentation.";
     const details = resolveSuggestionMessage({
       details: { card: { identity: "using-specialists", summary: description, facts: suggestionFacts(0.71), tint: "skill" } },
     })!;
     const folded = formatSuggestionCardPlain(details, 80);
-    expect(folded.startsWith("○ Suggested using-specialists  Use Specialists as a governed")).toBe(true);
+    expect(folded.startsWith("○ using-specialists suggested  Use Specialists as a governed")).toBe(true);
     expect(folded).toContain("score 0.71");
     expect(folded.endsWith("…  score 0.71")).toBe(true);
     expect(formatSuggestionCardPlain(details, 80, { expanded: true }).split("\n")[0]).toBe(
-      `○ Suggested using-specialists  ${description}  score 0.71`,
+      `○ using-specialists suggested  ${description}  score 0.71`,
     );
   });
 });

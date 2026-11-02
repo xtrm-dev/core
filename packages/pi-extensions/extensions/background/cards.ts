@@ -44,7 +44,7 @@ export function resolveTaskCard(message: unknown): EventDetails | null {
   const outputFile = textField(details.output_file);
   const elapsed = textField(details.elapsed);
   const preview = [summary, ...(outputFile ? [`Read ${outputFile}`] : [])];
-  // Folded row: `› Completed task  <command>  <elapsed>`; the id and the
+  // Folded row: `› task completed  <command>  <elapsed>`; the id and the
   // output path stay on the opened card.
   const facts = [exitFact(status, summary), elapsed].filter((part): part is string => !!part).join(" · ") || undefined;
   return {

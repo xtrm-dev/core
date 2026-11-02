@@ -99,8 +99,8 @@ describe("CORE-2367: agent_end delivers the doctrine to the model", () => {
     const { handlers, sent, ctx, render } = await boot();
     await handlers["agent_end"]!(WORKING_TURN, ctx);
     const card = render(sent[0]!);
-    // Folded row: the verb, the skill name, then the description and score.
-    expect(card).toContain("Suggested demo-skill");
+    // Folded row: the skill name, then the verb, the description and the score.
+    expect(card).toContain("demo-skill suggested");
     expect(card).toContain("score 0.94");
     expect(card).not.toContain("skill loaded");
   });

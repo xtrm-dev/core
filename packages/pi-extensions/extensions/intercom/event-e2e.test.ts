@@ -164,10 +164,10 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
         expect(content).not.toContain("› Message");
 
         const lines = renderCard(receiver.renderers, "intercom_message", injected[0].message, 80);
-        expect(lines[0]).toBe("› From @coordinator");
+        expect(lines[0]).toBe("› message from @coordinator");
         expect(lines[1]).toBe("  hello e2e  m-e2e-1");
         const collapsed = renderCard(receiver.renderers, "intercom_message", injected[0].message, 120, false);
-        expect(collapsed).toEqual(["› From @coordinator  hello e2e"]);
+        expect(collapsed).toEqual(["› message from @coordinator  hello e2e"]);
       } finally {
         await host.close();
         rmSync(dir, { recursive: true, force: true });
@@ -299,7 +299,7 @@ describe("event end-to-end through the shared module (CORE-2438 I7)", () => {
           expect(acked).toEqual(["delivered:m-c2p-1"]);
 
           const lines = renderCard(receiver.renderers, "intercom_message", injected, 80);
-          expect(lines[0]).toBe("› From @cass");
+          expect(lines[0]).toBe("› message from @cass");
           expect(lines[1]).toBe("  hello from claude  m-c2p-1");
         } finally {
           await sink.close();

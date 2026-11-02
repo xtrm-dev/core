@@ -626,7 +626,7 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     return resolveSuggestionMessage({
       details: {
         card: {
-          // Folded row: `○ Suggested <name>  <description>  score 0.71`.
+          // Folded row: `○ <name> suggested  <description>  score 0.71`.
           // The load path and the full description open below the row.
           identity:
             meta.kind === "agent-settlement"

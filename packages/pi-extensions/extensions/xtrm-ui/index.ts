@@ -1199,10 +1199,11 @@ function parsedResultObject(resultTexts: string[]): Record<string, unknown> | un
 }
 
 /**
- * specialist_* rows: `● Dispatched reviewer  CORE-2573`, `○ Finished
- * reviewer  CORE-2573  PASS  4m12s`, `! Failed reviewer  CORE-2573  lease
- * expired  1m03s`. The name, ref and outcome come from the result payload,
- * with args as the fallback; the JSON key list never rides the row.
+ * specialist_* rows: `● reviewer dispatched  CORE-2573`, `○ reviewer finished
+ * CORE-2573  PASS  4m12s`, `! reviewer failed  CORE-2573  lease expired
+ * 1m03s`. The identity leads and the verb follows it in lower case. The name,
+ * ref and outcome come from the result payload, with args as the fallback; the
+ * JSON key list never rides the row.
  */
 function buildSpecialistUltraLine(
   toolName: string,
@@ -1222,13 +1223,14 @@ function buildSpecialistUltraLine(
   const failure = status === "error" || state === "failed" || subjectText(data["status"]) === "failed";
   const running = !failure && (status === "pending" || state === "running" || state === "pending" || state === "queued");
   const base = SPECIALIST_VERBS[toolName] ?? "Checked";
-  const verb = failure ? "Failed" : running ? base : SPECIALIST_FINISHING.has(toolName) ? "Finished" : base;
+  const words = failure ? "Failed" : running ? base : SPECIALIST_FINISHING.has(toolName) ? "Finished" : base;
+  const verb = words.charAt(0).toLowerCase() + words.slice(1);
   const marker = failure ? ultraFg("error", "!") : ultraFg("dim", running ? "●" : "○");
   const extra = failure
     ? subjectText(data["reason"]) ?? subjectText(data["detail"])
     : subjectText(data["result_status"]);
-  let row = `${marker} ${ultraBold("toolTitle", verb)}`;
-  if (specialist) row += ` ${ultraFg("toolTitle", specialist)}`;
+  const identity = specialist ?? "specialist";
+  let row = `${marker} ${ultraFg("toolTitle", identity)} ${ultraBold("toolTitle", verb)}`;
   if (subject) row += `  ${ultraFg("toolTitle", subject)}`;
   if (extra) row += `  ${ultraFg("dim", extra)}`;
   if (durationMs != null && durationMs >= 1000) row += `  ${ultraFg("dim", specialistDuration(durationMs))}`;
