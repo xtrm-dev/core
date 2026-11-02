@@ -1,7 +1,7 @@
 /**
  * Background operator cards through the I7 shared event module (B3
  * CORE-2441). Task and monitor wakes render as theme-only cards: no new
- * accent, glyphs ●/◐/◉/! from amendment 1. Model envelopes stay byte-equal
+ * accent, glyphs ›/◉/! from amendment 1. Model envelopes stay byte-equal
  * in ./store.ts; only the operator render changes.
  */
 
@@ -13,6 +13,19 @@ import { MONITOR_EVENT_TYPE, TASK_NOTIFICATION_TYPE } from "./store.ts";
 
 function textField(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** The command a task ran, without the envelope's "Background command … completed" wrapper. */
+function taskSubject(summary: string): string {
+  const match = /^Background command "([\s\S]*)" (?:completed|failed|timed out|timed_out|stopped)/.exec(summary);
+  return (match?.[1] ?? summary).trim();
+}
+
+/** Failure exit code as a folded-row fact; success rows stay quiet. */
+function exitFact(status: string, summary: string): string | undefined {
+  if (status !== "failed" && status !== "timed_out") return undefined;
+  const match = /\(exit code (-?\d+)\)/.exec(summary);
+  return match ? `exit ${match[1]}` : undefined;
 }
 
 /**
@@ -31,13 +44,16 @@ export function resolveTaskCard(message: unknown): EventDetails | null {
   const outputFile = textField(details.output_file);
   const elapsed = textField(details.elapsed);
   const preview = [summary, ...(outputFile ? [`Read ${outputFile}`] : [])];
-  const facts = [elapsed, outputFile].filter((part): part is string => !!part).join(" · ") || undefined;
+  // Folded row: `› Completed task  <command>  <elapsed>`; the id and the
+  // output path stay on the opened card.
+  const facts = [exitFact(status, summary), elapsed].filter((part): part is string => !!part).join(" · ") || undefined;
   return {
     kind: "task",
     // Wakes render hollow: the state word and identity carry the kind.
     automatic: true,
     state: status,
     identity: `task ${id}`,
+    subject: taskSubject(summary),
     preview,
     ...(facts ? { facts } : {}),
   };
@@ -72,6 +88,7 @@ export function resolveMonitorCard(message: unknown): EventDetails | null {
       automatic: true,
       state: "event",
       identity: `monitor ${id}`,
+      subject: lines[0],
       preview: lines,
       totalLines: lines.length,
       facts:
@@ -88,6 +105,7 @@ export function resolveMonitorCard(message: unknown): EventDetails | null {
       automatic: true,
       state: kind,
       identity: `monitor ${id}`,
+      subject: reason,
       preview: [`${kind}: ${reason}`],
       facts: `${eventCount} events · ${lineCount} lines`,
     };

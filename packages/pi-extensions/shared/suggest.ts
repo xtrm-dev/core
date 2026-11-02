@@ -663,7 +663,6 @@ const FG = [24, 20, 16] as const;
 const bandOn = (bg: CardAccent) => `\x1b[48;2;${bg[0]};${bg[1]};${bg[2]}m\x1b[38;2;${FG[0]};${FG[1]};${FG[2]}m`;
 const BAND_OFF = "\x1b[49m\x1b[39m";
 const DOT = "\x1b[1m●\x1b[22m"; // white, out of the gold block
-const WARN = "\x1b[33m!\x1b[0m";
 const WHITE = (t: string) => `\x1b[37m${t}\x1b[39m`;
 /** Body ink: soft gray — a step below full-bright, a step above dim facts. */
 const BODY_FG = [208, 208, 208] as const;
@@ -673,7 +672,7 @@ const DIM = (t: string) => `\x1b[2m${t}\x1b[22m`;
 const INDENT = "  ";
 const CARD_MIN = 44;
 const CARD_MAX = 88;
-const CONF_LABEL = "jev_confidence";
+const CONF_LABEL = "score";
 
 const stripAnsi = (v: string) => v.replace(/\x1b\[[0-9;]*m/g, "");
 
@@ -827,7 +826,8 @@ export function stripEndPeriod(s: string): string {
 }
 
 export function formatSuggestionCard(c: SuggestionCard, accent: CardAccent = SUBSTRATE_ACCENT): string {
-  const glyph = c.verb.severity === "high" ? WARN : DOT;
+  // `!` and the error tone mean failure only; high severity never sets them.
+  const glyph = DOT;
   // No dangling separator: without a real ref the header is the action alone.
   const header = c.ref && c.ref !== "—" ? `${c.verb.action} · ${c.ref}` : c.verb.action;
   const parts = [
@@ -874,34 +874,25 @@ export interface SuggestionCardFields {
 
 const TINTS: Record<SuggestionTint, CardAccent> = { substrate: SUBSTRATE_ACCENT, skill: SKILL_ACCENT };
 
-/** Nearest xterm-256 colour cube index for one accent. */
-function cube256(rgb: CardAccent): number {
-  const step = (v: number) => (v < 48 ? 0 : v < 115 ? 1 : Math.min(5, Math.floor((v - 35) / 40)));
-  return 16 + 36 * step(rgb[0]) + 6 * step(rgb[1]) + step(rgb[2]);
-}
-
 /**
- * The accent on the marker, at the terminal's colour level: 24-bit when pi
- * runs truecolor, the nearest 256-colour cube entry otherwise, and the
- * theme's own accent token when the theme says neither.
+ * Marker colour at the theme's own tokens only: no 24-bit or 256-colour SGR
+ * on chrome. A known tint reads at the theme's accent (the grey emphasis
+ * ramp), an unknown one at dim. The function name and its `tintGlyph` seam
+ * stay so callers do not change.
  */
 export function tintSuggestionGlyph(
   glyph: string,
   tint: string | undefined,
-  theme: { fg(token: string, text: string): string; getColorMode?(): string },
+  theme: { fg(token: string, text: string): string },
 ): string {
-  const rgb = tint && tint in TINTS ? TINTS[tint as SuggestionTint] : undefined;
-  if (!rgb) return theme.fg("dim", glyph);
-  const mode = typeof theme.getColorMode === "function" ? theme.getColorMode() : undefined;
-  if (mode === "truecolor") return `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[2]}m${glyph}\x1b[39m`;
-  if (mode === "256color") return `\x1b[38;5;${cube256(rgb)}m${glyph}\x1b[39m`;
-  return theme.fg("accent", glyph);
+  const known = tint !== undefined && tint in TINTS;
+  return theme.fg(known ? "accent" : "dim", glyph);
 }
 
-/** Facts trailer in tool-row words: `jev 0.39 · rev 3`. */
+/** Facts trailer in tool-row words: `score 0.39 · rev 3`. */
 export function suggestionFacts(confidence?: number | null, revision?: number | null): string | undefined {
   const parts = [
-    confidence != null ? `jev ${confidence.toFixed(2)}` : null,
+    confidence != null ? `score ${confidence.toFixed(2)}` : null,
     revision != null ? `rev ${revision}` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : undefined;
@@ -918,7 +909,6 @@ export function suggestionCardFields(c: SuggestionCard, tint: SuggestionTint = "
     ...(instruction ? { body: [instruction] } : {}),
     ...(facts ? { facts } : {}),
     tint,
-    ...(c.verb.severity === "high" ? { severityHigh: true } : {}),
   };
 }
 

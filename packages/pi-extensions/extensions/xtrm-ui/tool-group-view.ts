@@ -55,6 +55,9 @@ export const PINNED_TOOLS = new Set([
   "specialist_reply",
   "specialist_steer",
   "specialist_stop_activation",
+  "specialist_resume",
+  "specialist_retry",
+  "specialist_lease_reconcile",
 ]);
 
 /** Summary phrases: calls of the same kind read as one activity. The noun is the bold part. */

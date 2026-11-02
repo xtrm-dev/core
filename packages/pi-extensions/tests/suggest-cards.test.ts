@@ -12,6 +12,7 @@ import {
   parseContextBlock,
   resolveSuggestionMessage,
   suggestionCardFields,
+  suggestionFacts,
   tintSuggestionGlyph,
   type VerbSpec,
 } from "../shared/suggest.ts";
@@ -39,17 +40,17 @@ const waitVerb: VerbSpec = {
 };
 
 describe("suggestion card layout", () => {
-  test("folds to one row: hollow marker, action, summary, hidden-line count", () => {
+  test("folds to one row: hollow marker, bold verb, action, summary, hidden-line count", () => {
     const details = resolveSuggestionMessage({ details: { card: steerCard } })!;
     expect(formatSuggestionCardPlain(details, 100)).toBe(
-      "○ provenance unread 4 files changed without reading their history  +4 lines",
+      "○ Suggested provenance unread  4 files changed without reading their history  +4 lines",
     );
   });
 
   test("opens with the reason, then the body under a └ anchor", () => {
     const details = resolveSuggestionMessage({ details: { card: steerCard } })!;
     expect(formatSuggestionCardPlain(details, 100, { expanded: true }).split("\n")).toEqual([
-      "○ provenance unread 4 files changed without reading their history",
+      "○ Suggested provenance unread  4 files changed without reading their history",
       "  Behavior changed without consulting why the code was the way it was.",
       "  └ xtrm-dark.json             last bded0224 2026-10-26 feat(pi): one-line tool rows",
       "    xtrm-light.json            last bded0224 2026-10-26 feat(pi): one-line tool rows",
@@ -60,18 +61,19 @@ describe("suggestion card layout", () => {
   test("every line fits a narrow width, and a long path is split, never left to orphan a word", () => {
     const path = "/home/dawid/projects/mercury/market-data/.xtrm/worktrees/market-data-xt-pi-ISSUE-214-r2-watcher/.xtrm/skills/market-data/service-knowledge/services/ingesting-ohlcv/SKILL.md";
     const details = resolveSuggestionMessage({
-      details: { card: { identity: "consider skill · ingesting-ohlcv", summary: "the OHLCV Ingestor service is in play", body: [`Open its expert skill at ${path} before going deeper`], facts: "jev 0.82", tint: "skill" } },
+      details: { card: { identity: "consider skill · ingesting-ohlcv", summary: "the OHLCV Ingestor service is in play", body: [`Open its expert skill at ${path} before going deeper`], facts: "score 0.82", tint: "skill" } },
     })!;
     for (const width of [40, 60, 100]) {
-      for (const expanded of [false, true]) {
-        const lines = formatSuggestionCardPlain(details, width, { expanded }).split("\n");
-        for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-        if (expanded) expect(lines.some((line) => line.trim() === "at")).toBe(false);
-      }
+      // Folded rows clip, so every line fits.
+      const folded = formatSuggestionCardPlain(details, width, { expanded: false }).split("\n");
+      for (const line of folded) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+      // Expanded rows do not clip the summary; the body still wraps cleanly.
+      const expanded = formatSuggestionCardPlain(details, width, { expanded: true }).split("\n");
+      expect(expanded.some((line) => line.trim() === "at")).toBe(false);
     }
     // The facts and the count survive a cut: the head gives way first. The
     // count is the opened card's line total at this width.
-    expect(formatSuggestionCardPlain(details, 50)).toMatch(/jev 0\.82  \+\d+ lines$/);
+    expect(formatSuggestionCardPlain(details, 50)).toMatch(/score 0\.82  \+\d+ lines$/);
   });
 
   test("themed card: tool-row tokens, tint on the marker only, failures keep !", () => {
@@ -81,25 +83,49 @@ describe("suggestion card layout", () => {
       expanded: true,
       tintGlyph: (glyph) => `<tint>${glyph}`,
     }).split("\n");
-    expect(lines[0]).toBe("<tint>○ *[toolTitle]provenance unread* [toolTitle]4 files changed without reading their history");
+    expect(lines[0]).toBe("<tint>○ *[toolTitle]Suggested* [toolTitle]provenance unread  [toolTitle]4 files changed without reading their history");
     expect(lines[1]).toBe("  _[thinkingText]Behavior changed without consulting why the code was the way it was._");
     expect(lines[2]).toStartWith("  [dim]└ [toolOutput]xtrm-dark.json");
+    // High severity no longer sets the failure marker: only an error state does.
     const high = resolveSuggestionMessage({ details: { card: { ...steerCard, severityHigh: true } } })!;
-    expect(formatSuggestionEventCard(high, theme, 120, { tintGlyph: (g) => `<tint>${g}` })).toStartWith("[error]! ");
+    expect(formatSuggestionEventCard(high, theme, 120, { tintGlyph: (g) => `<tint>${g}` })).toStartWith("<tint>○ ");
   });
 });
 
 describe("marker tint", () => {
   const theme = (mode?: string) => ({ fg: (t: string, s: string) => `[${t}]${s}`, ...(mode ? { getColorMode: () => mode } : {}) });
 
-  test("truecolor uses the CORE-2348 accent, 256-colour its nearest cube entry, otherwise the theme accent", () => {
-    expect(tintSuggestionGlyph("○", "substrate", theme("truecolor"))).toBe("\x1b[38;2;255;112;52m○\x1b[39m");
-    expect(tintSuggestionGlyph("○", "skill", theme("truecolor"))).toBe("\x1b[38;2;0;103;188m○\x1b[39m");
-    // xterm cube levels 0/95/135/175/215/255: #FF7034 → (255, 95, 95) = 203, #0067BC → (0, 95, 175) = 25.
-    expect(tintSuggestionGlyph("○", "substrate", theme("256color"))).toBe("\x1b[38;5;203m○\x1b[39m");
-    expect(tintSuggestionGlyph("○", "skill", theme("256color"))).toBe("\x1b[38;5;25m○\x1b[39m");
-    expect(tintSuggestionGlyph("○", "skill", theme())).toBe("[accent]○");
-    expect(tintSuggestionGlyph("○", undefined, theme("truecolor"))).toBe("[dim]○");
+  test("markers use theme tokens only: no 24-bit or 256-colour SGR on chrome", () => {
+    for (const mode of ["truecolor", "256color", undefined]) {
+      const glyph = tintSuggestionGlyph("○", "substrate", theme(mode));
+      expect(glyph).toBe("[accent]○");
+      expect(glyph).not.toContain("\x1b[");
+      expect(tintSuggestionGlyph("○", "skill", theme(mode))).toBe("[accent]○");
+      expect(tintSuggestionGlyph("○", undefined, theme(mode))).toBe("[dim]○");
+    }
+  });
+});
+
+describe("skill-suggest row wording (CORE-2576)", () => {
+  test("the number reads score, never jev", () => {
+    expect(suggestionFacts(0.71)).toBe("score 0.71");
+    expect(suggestionFacts(0.71, 3)).toBe("score 0.71 · rev 3");
+    expect(suggestionFacts(null)).toBeUndefined();
+  });
+
+  test("a skill folds to ○ Suggested <name>  <description…>  score 0.71, unclipped when opened", () => {
+    const description =
+      "Use Specialists as a governed XTRM execution backend for tracked implementation, debugging, review, testing and documentation.";
+    const details = resolveSuggestionMessage({
+      details: { card: { identity: "using-specialists", summary: description, facts: suggestionFacts(0.71), tint: "skill" } },
+    })!;
+    const folded = formatSuggestionCardPlain(details, 80);
+    expect(folded.startsWith("○ Suggested using-specialists  Use Specialists as a governed")).toBe(true);
+    expect(folded).toContain("score 0.71");
+    expect(folded.endsWith("…  score 0.71")).toBe(true);
+    expect(formatSuggestionCardPlain(details, 80, { expanded: true }).split("\n")[0]).toBe(
+      `○ Suggested using-specialists  ${description}  score 0.71`,
+    );
   });
 });
 
@@ -113,7 +139,7 @@ describe("model-visible content stays plain", () => {
       identity: "wait without a monitor",
       summary: "nothing is watching the event you wait for",
       body: ["Start a monitor (Monitor, or BashBackground for shell work) or journal a blocker"],
-      facts: "jev 0.39",
+      facts: "score 0.39",
       tint: "substrate",
     });
   });

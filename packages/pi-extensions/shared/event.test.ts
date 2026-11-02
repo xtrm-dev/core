@@ -79,24 +79,29 @@ describe("event design system vocabulary (CORE-2438 I7, D7)", () => {
     expect([...MONITOR_STATES]).toEqual(["armed", "event", "expired", "stopped"]);
   });
 
-  test("glyphs follow amendment 1: ● message, ◐ running task, ◉ monitor, ! failure", () => {
+  test("glyphs follow amendment 1: ● message, › arrival, ◉ monitor, ! failure", () => {
     expect(EVENT_GLYPHS.message).toBe("●");
-    expect(EVENT_GLYPHS.task).toBe("◐");
+    expect(EVENT_GLYPHS.task).toBe("›");
     expect(EVENT_GLYPHS.monitor).toBe("◉");
     expect(EVENT_GLYPHS.failure).toBe("!");
   });
 
-  test("glyphFor picks ! for failures and high severity, ○ for automatic wakes, else the kind glyph", () => {
+  test("glyphFor picks ! for failures, ○ for automatic wakes, else the kind glyph", () => {
     expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [] })).toBe("●");
     expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [], automatic: true })).toBe("○");
-    expect(glyphFor({ kind: "task", state: "running", identity: "x", preview: [] })).toBe("◐");
+    expect(glyphFor({ kind: "task", state: "running", identity: "x", preview: [] })).toBe("›");
     expect(glyphFor({ kind: "task", state: "running", identity: "x", preview: [], automatic: true })).toBe("○");
     expect(glyphFor({ kind: "monitor", state: "event", identity: "x", preview: [] })).toBe("◉");
     expect(glyphFor({ kind: "monitor", state: "event", identity: "x", preview: [], automatic: true })).toBe("○");
     expect(glyphFor({ kind: "message", state: "refused", identity: "x", preview: [] })).toBe("!");
     expect(glyphFor({ kind: "message", state: "refused", identity: "x", preview: [], automatic: true })).toBe("!");
     expect(glyphFor({ kind: "task", state: "failed", identity: "x", preview: [] })).toBe("!");
-    expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [], severityHigh: true })).toBe("!");
+    expect(glyphFor({ kind: "task", state: "running", identity: "x", preview: [], failure: true })).toBe("!");
+  });
+
+  test("high severity no longer forces the failure marker", () => {
+    expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [], severityHigh: true })).toBe("●");
+    expect(glyphFor({ kind: "message", state: "delivered", identity: "x", preview: [], automatic: true, severityHigh: true })).toBe("○");
   });
 
   test("stateToken uses theme text/dim/ok-warning-error tokens only, never new accents", () => {
@@ -194,47 +199,48 @@ describe("delivery and idle notices (CORE-2438 I7, D7-D8)", () => {
 });
 
 describe("operator cards (CORE-2438 I7, D4)", () => {
-  test("an incoming message shows › Message from @<name>: <first line>", () => {
+  test("an incoming message folds to one row: › From @<name>  <snippet>", () => {
     const lines = visible(formatEventCard(messageDetails({ preview: ["hello world", "second"] }), light, 80));
-    expect(lines[0]).toMatch(/^● @probe delivered$/);
-    expect(lines[1]).toBe("  › Message from @Probe: hello world");
-    expect(lines[2]).toBe("  second");
+    expect(lines).toEqual(["› From @Probe  hello world"]);
+    const raw = formatEventCard(messageDetails(), light, 80);
+    expect(raw).toContain("<light:bold>From</light:bold>");
+    expect(raw).not.toContain("<light:bold>@Probe</light:bold>");
   });
 
-  test("dim facts ride the last line; overflow shows +N lines · ctrl+o expands", () => {
+  test("expanded cards carry the full corpus and the dim facts", () => {
     const lines = visible(
       formatEventCard(
         messageDetails({ preview: ["one", "two", "three", "four", "five"], facts: "m1 · 1.2s · 3 KiB" }),
         light,
         80,
+        { expanded: true },
       ),
     );
-    expect(lines).toHaveLength(1 + 3 + 1);
-    expect(lines[lines.length - 1]).toBe("  +2 lines · ctrl+o expands");
-    expect(lines[lines.length - 2].endsWith("m1 · 1.2s · 3 KiB")).toBe(true);
+    expect(lines).toHaveLength(1 + 5);
+    expect(lines[0]).toBe("› From @Probe");
+    expect(lines[lines.length - 1].endsWith("m1 · 1.2s · 3 KiB")).toBe(true);
   });
 
-  test("a card never looks like operator input: it opens with the glyph, never > or $", () => {
+  test("a card never looks like operator input: it opens with the marker, never > or $", () => {
     for (const theme of [light, dark]) {
       const lines = visible(formatEventCard(messageDetails(), theme, 80));
-      expect(lines[0][0]).toBe("●");
+      expect(lines[0][0]).toBe("›");
     }
   });
 
-  test("a collapsed message is one received line: snippet and id, no expand hint", () => {
+  test("a folded message is one row: › From @<name>  <snippet>, no id and no expand hint", () => {
     const lines = visible(formatEventCard(messageDetails(), light, 120, { expanded: false }));
-    expect(lines).toEqual(["› Message from @Probe received: hello world m1"]);
+    expect(lines).toEqual(["› From @Probe  hello world"]);
     const raw = formatEventCard(messageDetails(), light, 120, { expanded: false });
-    expect(raw).toContain("<light:bold>@Probe</light:bold>");
-    expect(raw).toContain("<light:success>received</light:success>");
-    expect(raw).toContain("<light:dim>hello world</light:dim>");
-    expect(raw).toContain("<light:dim>m1</light:dim>");
+    expect(raw).toContain("<light:bold>From</light:bold>");
+    expect(raw).not.toContain("<light:bold>@Probe</light:bold>");
+    // The id leaves the folded row and stays on the opened card.
+    expect(raw).not.toContain("m1");
     // The card is the affordance (click expands); no ctrl+o hint rides the row.
     expect(raw).not.toContain("ctrl+o");
-    expect(raw).not.toContain("delivered");
   });
 
-  test("a collapsed message cuts the snippet before the id and never overruns", () => {
+  test("a folded message stays one row and never overruns", () => {
     const long = messageDetails({
       fromName: "core-xt-pi-2ard",
       preview: ["this is a very long message body that must be cut to fit one line"],
@@ -244,11 +250,12 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
       const lines = visible(formatEventCard(long, light, width, { expanded: false }));
       expect(lines).toHaveLength(1);
       for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-      expect(lines[0]).toContain("received:");
+      expect(lines[0]).toContain("From @core-xt-pi-2ard");
       expect(lines[0]).not.toContain("ctrl+o");
     }
-    const at200 = visible(formatEventCard(long, light, 200, { expanded: false }))[0];
-    expect(at200).toContain("82a690db-9202-4798-aaaa-bb497e18396e");
+    // The id opens with the card, unclipped.
+    const expanded = visible(formatEventCard(long, light, 80, { expanded: true }));
+    expect(expanded.join("\n")).toContain("82a690db-9202-4798-aaaa-bb497e18396e");
     const plain80 = formatEventCardPlain(long, 80, { expanded: false });
     expect(plain80).not.toMatch(/\u001b/);
     expect(visibleWidth(plain80)).toBeLessThanOrEqual(80);
@@ -261,14 +268,146 @@ describe("operator cards (CORE-2438 I7, D4)", () => {
     expect(lines.join("\n")).not.toContain("ctrl+o");
   });
 
-  test("a failed task card opens with ! and tints the state error", () => {
+  test("a failed task card folds with ! and the bold verb Failed", () => {
     const raw = formatEventCard(
       { kind: "task", state: "failed", identity: "task ab12", preview: ["boom"], facts: "ab12 · 3.1s" },
       dark,
       80,
     );
-    expect(visible(raw)[0][0]).toBe("!");
-    expect(raw).toContain("<dark:error>failed</dark:error>");
+    expect(visible(raw)).toEqual(["! Failed task  boom  ab12 · 3.1s"]);
+    expect(raw).toContain("<dark:error>!</dark:error>");
+    expect(raw).toContain("<dark:bold>Failed</dark:bold>");
+  });
+});
+
+describe("folded cards: one row, one bold verb, one clip glyph (CORE-2576)", () => {
+  test("a task card folds to exactly one row with the verb bold and the elapsed time dim", () => {
+    const raw = formatEventCard(
+      { kind: "task", state: "completed", identity: "task bg_1a2b", subject: "npm test --workspace cli", facts: "2m14s" },
+      dark,
+      120,
+    );
+    expect(visible(raw)).toEqual(["› Completed task  npm test --workspace cli  2m14s"]);
+    expect(raw.match(/<dark:bold>/g)).toHaveLength(1);
+    expect(raw).toContain("<dark:bold>Completed</dark:bold>");
+    expect(raw).toContain("<dark:dim>2m14s</dark:dim>");
+    expect(raw).not.toContain("bg_1a2b");
+  });
+
+  test("a failed task card leads with ! and stays one row", () => {
+    const raw = formatEventCard(
+      { kind: "task", state: "failed", identity: "task bg_1a2b", subject: "npm test --workspace cli", facts: "exit 1 · 12s" },
+      dark,
+      120,
+    );
+    expect(visible(raw)).toEqual(["! Failed task  npm test --workspace cli  exit 1 · 12s"]);
+    expect(raw).toContain("<dark:error>!</dark:error>");
+    expect(raw).toContain("<dark:bold>Failed</dark:bold>");
+    expect(raw.match(/<dark:bold>/g)).toHaveLength(1);
+  });
+
+  test("a message card folds to one row: › From @name  <snippet>", () => {
+    const raw = formatEventCard(
+      {
+        kind: "message",
+        state: "delivered",
+        identity: "@core-review",
+        from: "core-review",
+        preview: ["Review done, two findings, see Journal seq 12."],
+        facts: "m-1234",
+      },
+      dark,
+      120,
+    );
+    expect(visible(raw)).toEqual(["› From @core-review  Review done, two findings, see Journal seq 12."]);
+    expect(raw).toContain("<dark:bold>From</dark:bold>");
+    expect(raw.match(/<dark:bold>/g)).toHaveLength(1);
+    expect(raw).not.toContain("m-1234");
+  });
+
+  test("expanded cards are not clipped: long ids and urls stay whole", () => {
+    const longId = `bg_${"a".repeat(180)}`;
+    const longUrl = `https://example.com/${"p".repeat(160)}/tail`;
+    const task = formatEventCard(
+      { kind: "task", state: "completed", identity: `task ${longId}`, preview: [longUrl], facts: longId },
+      light,
+      40,
+      { expanded: true },
+    );
+    expect(task).toContain(longId);
+    expect(task.replace(/\s+/g, "")).toContain(longUrl);
+    const message = formatEventCard(
+      messageDetails({ facts: "82a690db-9202-4798-aaaa-bb497e18396e", preview: [longUrl] }),
+      light,
+      40,
+      { expanded: true },
+    );
+    expect(message).toContain("82a690db-9202-4798-aaaa-bb497e18396e");
+    expect(message.replace(/\s+/g, "")).toContain(longUrl);
+  });
+
+  /**
+   * Runs a body against the real pi-tui. Other test files stub pi-tui and bun
+   * leaks that across files, so clipping is only observable in its own process.
+   */
+  function realClip(body: string): string {
+    const script = `
+      const { formatEventCard } = await import("./shared/event.ts");
+      const { visibleWidth } = await import("@earendil-works/pi-tui");
+      const theme = { fg: (_t, text) => text, bold: (text) => text };
+      const run = () => { ${body} };
+      const out = run();
+      console.log(JSON.stringify({ out, width: visibleWidth(out) }));
+      process.exit(0);
+    `;
+    const result = Bun.spawnSync(["bun", "-e", script], { cwd: `${import.meta.dir}/..` });
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+    return result.stdout.toString().trim();
+  }
+
+  test("every clipped card row ends in … and never in ...", () => {
+    const parsed = JSON.parse(realClip(`
+      return formatEventCard(
+        { kind: "task", state: "completed", identity: "task bg_1", subject: "a command with a very long tail of arguments that cannot fit", facts: "2m14s" },
+        theme,
+        40,
+      );
+    `)) as { out: string; width: number };
+    expect(parsed.width).toBeLessThanOrEqual(40);
+    expect(parsed.out.endsWith("…")).toBe(true);
+    expect(parsed.out.endsWith("...")).toBe(false);
+    expect(parsed.out).not.toContain("...");
+
+    const message = JSON.parse(realClip(`
+      return formatEventCard(
+        { kind: "message", state: "delivered", identity: "@core-review", from: "core-review", preview: ["a snippet long enough to need the one clip glyph in a narrow card"] },
+        theme,
+        36,
+      );
+    `)) as { out: string; width: number };
+    expect(message.width).toBeLessThanOrEqual(36);
+    expect(message.out.endsWith("…")).toBe(true);
+    expect(message.out).not.toContain("...");
+  });
+
+  test("the retired running glyph appears nowhere in the package", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const needle = String.fromCodePoint(0x25d0);
+    const root = join(import.meta.dir, "..");
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name === ".git") continue;
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (/\.(ts|tsx|js|json|md)$/.test(entry.name) && readFileSync(path, "utf8").includes(needle)) {
+          offenders.push(path.slice(root.length + 1));
+        }
+      }
+    };
+    walk(root);
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -306,9 +445,9 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
         preview: [long, "short line"],
         facts: "m1 · 1.2s · 3 KiB",
       };
-      const raw = formatEventCard(details, theme, width);
+      const raw = formatEventCard(details, theme, width, { expanded: true });
       const lines = visible(raw);
-      expect(lines.length).toBeGreaterThan(3);
+      expect(lines.length).toBeGreaterThanOrEqual(3);
       for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
       // The theme is really used: the tags name the mode.
       expect(raw).toContain(`<${name}:`);
@@ -316,7 +455,7 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
 
     for (const { name: caseName, details } of adversarial) {
       test(`snapshot at ${width} cols ${name}: ${caseName} never overruns`, () => {
-        const raw = formatEventCard(details, theme, width);
+        const raw = formatEventCard(details, theme, width, { expanded: false });
         const lines = visible(raw);
         expect(lines.length).toBeGreaterThan(0);
         for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
@@ -324,17 +463,23 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
     }
   }
 
-  test("adversarial cases keep their meaning: URL survives split, identity keeps state", () => {
-    const url = visible(formatEventCard(adversarial[0].details, light, 80)).join("").replace(/ /g, "");
+  test("adversarial cases keep their meaning: URL survives split, folded identity keeps the kind", () => {
+    const url = visible(formatEventCard(adversarial[0].details, light, 80, { expanded: true })).join("").replace(/ /g, "");
     expect(url).toContain("https://example.com/");
     expect(url).toContain("/tail");
-    const head = visible(formatEventCard(adversarial[2].details, light, 80))[0];
-    expect(head.startsWith("◐ ")).toBe(true);
-    expect(head.endsWith("running")).toBe(true);
-    // Oversized facts truncate with an ellipsis instead of overrunning.
-    const asciiFacts = visible(formatEventCard(adversarial[3].details, light, 80));
-    expect(asciiFacts.some((l) => l.trimEnd().endsWith("..."))).toBe(true);
-    const cjkFactsLines = visible(formatEventCard(adversarial[4].details, light, 80));
+    const head = visible(formatEventCard(adversarial[2].details, light, 80, { expanded: false }))[0];
+    expect(head.startsWith("› Running task")).toBe(true);
+    // Oversized facts clip with the single ellipsis glyph in the folded row.
+    const factsRow = visible(
+      formatEventCard(
+        { kind: "task", state: "completed", identity: "task bg_1", subject: "ok", facts: "e".repeat(200) },
+        light,
+        80,
+      ),
+    )[0];
+    expect(visibleWidth(factsRow)).toBeLessThanOrEqual(80);
+    expect(factsRow.endsWith("…")).toBe(true);
+    const cjkFactsLines = visible(formatEventCard(adversarial[4].details, light, 80, { expanded: false }));
     for (const line of cjkFactsLines) expect(visibleWidth(line)).toBeLessThanOrEqual(80);
   });
 
@@ -356,7 +501,7 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
         facts: "m1 · 1.2s · 3 KiB",
       };
       for (const width of [80, 120]) {
-        const lines = visible(formatEventCard(details, theme, width));
+        const lines = visible(formatEventCard(details, theme, width, { expanded: true }));
         for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
       }
       // The real theme styles: bold identity, tinted state, dim facts.
@@ -371,8 +516,8 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
   });
 
   test("120 cols fits more per line than 80 cols", () => {
-    // Prefixed (~23 chars) this wraps at 80 (78 inner) but fits at 120 (118 inner).
-    const mid = "a mid-length preview line that wraps at eighty columns but fits at one-twenty";
+    // Prefixed (~2 chars) this wraps at 80 (78 inner) but fits at 120 (118 inner).
+    const mid = "a mid-length preview line that wraps at eighty columns because it is longer than seventy-eight characters";
     const details: EventDetails = {
       kind: "message",
       state: "delivered",
@@ -380,8 +525,8 @@ describe("card snapshots at 80 and 120 columns, light and dark (CORE-2438 I7)", 
       fromName: "Probe",
       preview: [mid],
     };
-    const at80 = visible(formatEventCard(details, light, 80));
-    const at120 = visible(formatEventCard(details, light, 120));
+    const at80 = visible(formatEventCard(details, light, 80, { expanded: true }));
+    const at120 = visible(formatEventCard(details, light, 120, { expanded: true }));
     expect(at120.length).toBeLessThan(at80.length);
   });
 });
@@ -408,7 +553,7 @@ describe("renderer registration (CORE-2438 I7)", () => {
       }
     )({ content: "hi" }, { expanded: true }, light);
     captured = component.render(80).join("\n");
-    expect(visible(captured)[0]).toMatch(/^● @probe delivered$/);
+    expect(visible(captured)[0]).toBe("› From @probe");
   });
 
   test("an unresolvable message renders nothing", () => {
@@ -456,7 +601,7 @@ describe("renderer registration (CORE-2438 I7)", () => {
     expect(card.handleMouse?.(click)).toEqual({ handled: true });
     const expandedLines = visible(card.render(120).join("\n"));
     expect(expandedLines.length).toBeGreaterThan(1);
-    expect(expandedLines[0]).toMatch(/^● @probe delivered$/);
+    expect(expandedLines[0]).toBe("› From @Probe");
     // Clicking again collapses it: the same toggle pi's own tool rows use.
     expect(card.handleMouse?.(click)).toEqual({ handled: true });
     expect(visible(card.render(120).join("\n"))).toHaveLength(1);

@@ -95,11 +95,13 @@ describe("CORE-2367: agent_end delivers the doctrine to the model", () => {
     expect(sent[0]!.content).toContain("Load this skill: /skill:demo-skill");
   });
 
-  it("renders an imperative header, never a completed load", async () => {
+  it("renders the suggested skill, never a completed load", async () => {
     const { handlers, sent, ctx, render } = await boot();
     await handlers["agent_end"]!(WORKING_TURN, ctx);
     const card = render(sent[0]!);
-    expect(card).toContain("load /skill:demo-skill/SKILL.md");
+    // Folded row: the verb, the skill name, then the description and score.
+    expect(card).toContain("Suggested demo-skill");
+    expect(card).toContain("score 0.94");
     expect(card).not.toContain("skill loaded");
   });
 });

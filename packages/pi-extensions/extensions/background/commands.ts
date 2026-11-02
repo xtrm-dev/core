@@ -60,14 +60,15 @@ export function parseTasksArgs(args: string): TasksAction {
 }
 
 /**
- * Row glyphs from the amendment-1 set (◐ running task, ◉ monitor, !
+ * Row glyphs from the amendment-1 set (● running task, ◉ monitor, !
  * failure) plus two quiet terminals: ✓ completed, ○ stopped/expired. The
- * state word always rides along, so the glyph is a redundant cue.
+ * state word always rides along, so the glyph is a redundant cue. The old
+ * running glyph is retired.
  */
 export function stateGlyph(kind: "task" | "monitor", status: string, killReason?: string | null): string {
   if (kind === "task" && (status === "failed" || status === "timed_out")) return "!";
   if (kind === "monitor" && status === "stopped" && killReason === "firehose") return "!";
-  if (status === "running") return "◐";
+  if (status === "running") return "●";
   if (status === "armed" || status === "event") return "◉";
   if (status === "completed") return "✓";
   return "○";

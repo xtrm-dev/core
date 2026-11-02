@@ -53,7 +53,7 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
     expect(renderers.has(INTERCOM_MESSAGE_TYPE)).toBe(true);
   });
 
-  test("an inbound wake renders the › Message preview with dim facts when expanded", () => {
+  test("an inbound wake folds to › From @name, then its body and dim facts when expanded", () => {
     const { pi, renderers } = fakePiWithRenderer();
     intercomExtension(pi, { env: {}, exec: async () => "" } as never);
     const renderer = renderers.get(INTERCOM_MESSAGE_TYPE) as unknown as (
@@ -71,12 +71,12 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
         tagTheme("dark"),
       ).render(80).join("\n"),
     );
-    expect(lines[0]).toBe("○ @Bob delivered");
-    expect(lines[1]).toBe("  › Message from @Bob: hello world");
+    expect(lines[0]).toBe("› From @Bob");
+    expect(lines[1]).toBe("  hello world");
     expect(lines[2]).toBe("  second line  m7");
   });
 
-  test("a collapsed inbound wake is one received line, dim snippet and id, no expand hint", () => {
+  test("a collapsed inbound wake is one folded row: › From @name  <snippet>, no id", () => {
     const { pi, renderers } = fakePiWithRenderer();
     intercomExtension(pi, { env: {}, exec: async () => "" } as never);
     const renderer = renderers.get(INTERCOM_MESSAGE_TYPE) as unknown as (
@@ -91,10 +91,10 @@ describe("intercom card rendering through the shared module (CORE-2438 I7)", () 
       {},
       tagTheme("dark"),
     ).render(120);
-    expect(visible(raw)).toEqual(["› Message from @Bob received: hello world m7"]);
-    expect(raw.join("\n")).toContain("<dark:bold>@Bob</dark:bold>");
-    expect(raw.join("\n")).toContain("<dark:success>received</dark:success>");
-    expect(raw.join("\n")).toContain("<dark:dim>hello world</dark:dim>");
+    expect(visible(raw)).toEqual(["› From @Bob  hello world"]);
+    expect(raw.join("\n")).toContain("<dark:bold>From</dark:bold>");
+    expect(raw.join("\n")).not.toContain("m7");
+    expect(raw.join("\n")).not.toContain("<dark:bold>@Bob</dark:bold>");
   });
 
   test("a long inbound wake wraps at the render width with the ctrl+o hint when expanded", () => {

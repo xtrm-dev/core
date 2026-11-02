@@ -3,7 +3,7 @@
  *
  * One details object renders twice: the model envelope (D1-D3) and the
  * operator card (D4). This module is the single home for the D7 state
- * vocabularies, the amendment-1 glyphs (● message, ◐ running task, ◉ monitor,
+ * vocabularies, the amendment-1 glyphs (● message, › arrival, ◉ monitor,
  * ! failure), the D2 provenance line, and the theme-only card layout.
  *
  * Theme rule (amendment 1, D-3): cards use the theme's text, dim and
@@ -34,10 +34,10 @@ export type MessageState = (typeof MESSAGE_STATES)[number];
 export type TaskState = (typeof TASK_STATES)[number];
 export type MonitorState = (typeof MONITOR_STATES)[number];
 
-/** Amendment-1 glyphs: ● message, ◐ running task, ◉ monitor, ! failure. */
+/** Amendment-1 glyphs: ● message, › arrival (tasks and messages), ◉ monitor, ! failure. */
 export const EVENT_GLYPHS = {
   message: "●",
-  task: "◐",
+  task: "›",
   monitor: "◉",
   failure: "!",
 } as const;
@@ -97,7 +97,13 @@ export interface EventDetails {
   totalLines?: number;
   /** Dim facts trailer: "id · elapsed · size". */
   facts?: string;
-  /** Force the ! glyph (high severity) even for a non-error state. */
+  /** Folded-card verb: the one bold word on the row (Completed, From, Matched, Suggested). */
+  verb?: string;
+  /** Folded-card subject: the command or line the verb acted on. */
+  subject?: string;
+  /** Explicit failure: `!` and the error tone without an error state. */
+  failure?: boolean;
+  /** @deprecated High severity no longer sets the failure marker; kept for stored cards. */
   severityHigh?: boolean;
   /** Sender address for the D3 reply line. */
   from?: string;
@@ -117,11 +123,11 @@ export interface EventDetails {
   tint?: string;
 }
 
-/** Glyph for one event: ! on failure or high severity, ○ on automatic
- * wakes, else the kind glyph (● message, ◐ task, ◉ monitor). Proactive
- * operator rows keep their own filled dot; every wake renders hollow. */
-export function glyphFor(details: Pick<EventDetails, "kind" | "state" | "severityHigh" | "automatic">): string {
-  if (details.severityHigh || stateToken(details.state) === "error") return EVENT_GLYPHS.failure;
+/** Glyph for one event: ! on failure, ○ on automatic wakes, else the kind
+ * glyph (● message, › task, ◉ monitor). Proactive operator rows keep their
+ * own filled dot; every wake renders hollow. High severity is not failure. */
+export function glyphFor(details: Pick<EventDetails, "kind" | "state" | "automatic" | "failure">): string {
+  if (details.failure || stateToken(details.state) === "error") return EVENT_GLYPHS.failure;
   if (details.automatic) return "○";
   switch (details.kind) {
     case "task":
@@ -329,56 +335,45 @@ function wrapDisplay(plain: string, max: number): string[] {
   return out.length ? out : [""];
 }
 
-/** One laid-out card: plain segments, every line within width by display width. */
-interface CardLayout {
-  glyph: string;
-  identity: string;
-  state: string;
+/**
+ * The one clip helper for card text: strip ANSI, cut with pi-tui's own
+ * display-width ruler using the explicit `…` suffix, and never pad. Plain
+ * text in, plain text out, so a clipped row carries no half-open styling.
+ */
+export function clipToWidth(text: string, width: number): string {
+  if (!(width > 0)) return "";
+  const plain = stripAnsi(text);
+  return stripAnsi(truncateToWidth(plain, Math.floor(width), "…", false));
+}
+
+/** Body lines and the dim facts trailer of an opened card (never clipped). */
+interface CardBody {
   bodyLines: string[];
   facts: string | null;
   factsOnLast: boolean;
   hidden: number;
 }
 
-/** Lay out one card from the details object (shared by plain and themed render). */
-function layoutCard(details: EventDetails, width: number, expanded = true): CardLayout {
+/** Lay out the opened card body: full corpus, wrapped, ids and facts intact. */
+function layoutBody(details: EventDetails, width: number): CardBody {
   const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
-  const glyph = glyphFor(details);
-  const state = details.state ?? "";
-  // The identity truncates by display width so the header never overruns:
-  // a 200-char identity (or CJK text) keeps glyph, ellipsis and state.
-  const fixedWidth = visibleWidth(glyph) + 1 + (state ? 1 + visibleWidth(state) : 0);
-  const maxIdent = Math.max(1, w - fixedWidth);
-  const identity =
-    visibleWidth(details.identity) <= maxIdent ? details.identity : truncateToWidth(details.identity, maxIdent);
   const inner = Math.max(8, w - visibleWidth(INDENT));
   const bodies = details.preview.map(sanitizeCardLine);
-  if (details.kind === "message" && bodies.length > 0) {
-    const name = details.fromName || details.from;
-    if (name) bodies[0] = `› Message from @${sanitizeCardLine(name)}: ${bodies[0]}`;
-  }
-  // Expanded message cards show the full corpus (ctrl+o); the collapsed
-  // one-liner below never reaches this layout, so the 3-line cap only
-  // binds non-message kinds and callers that never pass expanded.
   const total = details.totalLines ?? bodies.length;
-  const shown =
-    expanded || details.kind !== "message" ? bodies : bodies.slice(0, MAX_PREVIEW_LINES);
-  const hidden = Math.max(0, total - shown.length);
-  const bodyLines = shown.flatMap((body) => wrapDisplay(body, inner).map((line) => `${INDENT}${line}`));
+  const hidden = Math.max(0, total - bodies.length);
+  const bodyLines = bodies.flatMap((body) => wrapDisplay(body, inner).map((line) => `${INDENT}${line}`));
   const rawFacts = details.facts?.trim();
-  // Facts truncate to the inner width like every other line: a 200-char
-  // (or CJK) facts trailer must never overrun the card on its own line.
-  const facts = rawFacts ? truncateToWidth(sanitizeCardLine(rawFacts), inner) : null;
-  // Facts ride the last content line when they fit by display width, else
-  // their own line — every visible line stays within the width.
+  // Expanded rows are never clipped: the full fact line (long id, long url)
+  // stays readable.
+  const facts = rawFacts ? sanitizeCardLine(rawFacts) : null;
   const last = bodyLines[bodyLines.length - 1];
   const factsOnLast =
     facts !== null && last !== undefined && visibleWidth(last) + 2 + visibleWidth(facts) <= w;
-  return { glyph, identity, state, bodyLines, facts, factsOnLast, hidden };
+  return { bodyLines, facts, factsOnLast, hidden };
 }
 
 /** Body lines shared by both renders: facts ride last or stand alone, then the expander. */
-function layoutBodyLines(layout: CardLayout, styleFacts: (text: string) => string): string[] {
+function layoutBodyLines(layout: CardBody, styleFacts: (text: string) => string): string[] {
   const lines = [...layout.bodyLines];
   if (layout.facts !== null) {
     if (layout.factsOnLast && lines.length > 0) lines[lines.length - 1] = `${lines[lines.length - 1]}${styleFacts(`  ${layout.facts}`)}`;
@@ -388,98 +383,185 @@ function layoutBodyLines(layout: CardLayout, styleFacts: (text: string) => strin
   return lines;
 }
 
-/**
- * Collapsed one-liner for inbound messages: the full corpus arrives via
- * ctrl+o (Pi passes `expanded` to the renderer), so the resting state is a
- * single width-fitted line — `received`, not `delivered`, because the
- * operator received it; nothing here claims we delivered anything.
- * Priority is who + what over reference: the snippet truncates last, the id
- * first (short 8-char ref, then dropped); the line hard-truncates only as a
- * last resort. pi-tui's truncateToWidth pads its ellipsis with reset codes
- * (styled-input hygiene), so every fit below strips ANSI back off.
- */
-function fitWidth(text: string, width: number): string {
-  if (width <= 1) return "";
-  return stripAnsi(truncateToWidth(text, Math.floor(width)));
+const ARRIVAL_GLYPH = "›";
+
+/** State words used when a card carries no explicit verb. */
+const VERB_BY_STATE: Record<string, string> = {
+  completed: "Completed",
+  failed: "Failed",
+  timed_out: "Failed",
+  running: "Running",
+  stopped: "Stopped",
+  delivered: "From",
+  queued: "Queued",
+  held: "Held",
+  refused: "Refused",
+  undelivered: "Undelivered",
+  expired: "Expired",
+  armed: "Armed",
+  event: "Matched",
+};
+
+function isFailure(details: EventDetails): boolean {
+  return details.failure === true || stateToken(details.state) === "error";
 }
 
-function collapsedSegments(details: EventDetails, width: number): { prefix: string; snippet: string; id: string } {
+/** The folded card's one bold word: the verb the details carry, else the state's. */
+export function cardVerb(details: Pick<EventDetails, "kind" | "state" | "verb" | "failure">): string {
+  const explicit = details.verb?.trim();
+  if (explicit) return explicit;
+  if (isFailure(details as EventDetails)) return "Failed";
+  const byState = details.state ? VERB_BY_STATE[details.state] : undefined;
+  if (byState) return byState;
+  switch (details.kind) {
+    case "task":
+      return "Task";
+    case "monitor":
+      return "Monitor";
+    case "suggestion":
+      return "Suggested";
+    default:
+      return "From";
+  }
+}
+
+function messageName(details: EventDetails): string {
+  const raw = details.fromName || details.from || details.identity.replace(/^@/, "");
+  return sanitizeField(raw, 256) || "unknown";
+}
+
+/** Folded identity: the kind word or the sender, never an id (ids open on expansion). */
+function foldedIdentity(details: EventDetails): string {
+  switch (details.kind) {
+    case "task":
+      return "task";
+    case "monitor":
+      return "monitor";
+    case "message":
+      return `@${messageName(details)}`;
+    default:
+      return sanitizeCardLine(details.identity);
+  }
+}
+
+/** Folded subject: the explicit subject, else the first preview line. */
+function foldedSubject(details: EventDetails): string {
+  if (details.subject) return sanitizeCardLine(details.subject).replace(/\s+/g, " ").trim();
+  const first = details.preview.map(sanitizeCardLine).find((line) => line.trim().length > 0);
+  return first ? first.replace(/\s+/g, " ").trim() : "";
+}
+
+/** Arrivals use › (and ! on failure); monitors, suggestions and wakes keep their own markers. */
+function cardMarker(details: EventDetails): { glyph: string; failure: boolean } {
+  const failure = isFailure(details);
+  if (details.kind === "task" || details.kind === "message" || details.kind === "notice") {
+    return { glyph: failure ? EVENT_GLYPHS.failure : ARRIVAL_GLYPH, failure };
+  }
+  return { glyph: glyphFor(details), failure };
+}
+
+interface FoldedRow {
+  glyph: string;
+  failure: boolean;
+  verb: string;
+  identity: string;
+  subject: string;
+  facts: string;
+}
+
+function foldedRow(details: EventDetails): FoldedRow {
+  const { glyph, failure } = cardMarker(details);
+  return {
+    glyph,
+    failure,
+    verb: cardVerb(details),
+    identity: foldedIdentity(details),
+    subject: foldedSubject(details),
+    // Message ids leave the folded row; the opened card still carries them.
+    facts: details.kind === "message" ? "" : (details.facts?.trim() ?? ""),
+  };
+}
+
+function foldedPlainText(row: FoldedRow): string {
+  return (
+    `${row.glyph} ${row.verb} ${row.identity}` +
+    (row.subject ? `  ${row.subject}` : "") +
+    (row.facts ? `  ${row.facts}` : "")
+  );
+}
+
+/** Plain folded row: one line, width-clipped with the single `…` glyph. */
+function foldedRowPlain(details: EventDetails, width: number): string {
   const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
-  const rawName = details.fromName || details.from || details.identity.replace(/^@/, "") || "unknown";
-  const name = fitWidth(sanitizeCardLine(rawName), 32) || "unknown";
-  const prefix = `› Message from @${name} received:`;
-  const rawFacts = details.facts?.trim() || (typeof details.messageId === "string" ? details.messageId : "");
-  let id = rawFacts ? sanitizeCardLine(rawFacts) : "";
-  let snippet = sanitizeCardLine(details.preview.join(" ")).replace(/\s+/g, " ").trim();
-  const joinedWidth = (s: string, i: string) =>
-    visibleWidth(prefix) + (s ? 1 + visibleWidth(s) : 0) + (i ? 1 + visibleWidth(i) : 0);
-  // Shrink the id first (an 8-char short ref at minimum) so the snippet
-  // — the who + what — survives as long as possible.
-  if (joinedWidth(snippet, id) > w && id) {
-    const idBudget = w - visibleWidth(prefix) - (snippet ? 1 + visibleWidth(snippet) : 0) - 1;
-    id = idBudget >= visibleWidth(id) ? id : idBudget >= 8 ? fitWidth(id, idBudget) : "";
-  }
-  if (joinedWidth(snippet, id) > w && snippet) {
-    const snipBudget = w - visibleWidth(prefix) - (id ? 1 + visibleWidth(id) : 0) - 1;
-    snippet = fitWidth(snippet, snipBudget);
-  }
-  return { prefix, snippet, id };
+  const line = foldedPlainText(foldedRow(details));
+  return visibleWidth(line) <= w ? line : clipToWidth(line, w);
 }
 
-/** Plain collapsed one-liner (no theme). */
+/**
+ * Themed folded row: marker dim (error on failure), the verb bold, identity,
+ * subject and facts regular, facts dim. No other bold on the row.
+ */
+function foldedRowThemed(details: EventDetails, theme: EventTheme, width: number): string {
+  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
+  const row = foldedRow(details);
+  const plain = foldedPlainText(row);
+  if (visibleWidth(plain) > w) return clipToWidth(plain, w);
+  const marker = row.failure ? theme.fg("error", row.glyph) : theme.fg("dim", row.glyph);
+  return (
+    `${marker} ${theme.bold(row.verb)} ${row.identity}` +
+    (row.subject ? `  ${row.subject}` : "") +
+    (row.facts ? `  ${theme.fg("dim", row.facts)}` : "")
+  );
+}
+
+/** Opened identity: message sends name the sender; tasks and monitors keep their id. */
+function expandedIdentity(details: EventDetails): string {
+  if (details.kind === "message") return `@${messageName(details)}`;
+  return sanitizeCardLine(details.identity);
+}
+
+function expandedHeadPlain(details: EventDetails): string {
+  const { glyph } = cardMarker(details);
+  return `${glyph} ${cardVerb(details)} ${expandedIdentity(details)}`;
+}
+
+function expandedHeadThemed(details: EventDetails, theme: EventTheme): string {
+  const { glyph, failure } = cardMarker(details);
+  const marker = failure ? theme.fg("error", glyph) : theme.fg("dim", glyph);
+  return `${marker} ${theme.bold(cardVerb(details))} ${expandedIdentity(details)}`;
+}
+
+/**
+ * Collapsed one-liner for inbound messages: `› From @<name>  <snippet>`.
+ * The full corpus arrives via ctrl+o (Pi passes `expanded` to the renderer).
+ */
 export function formatMessageCollapsedPlain(details: EventDetails, width: number): string {
-  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
-  const { prefix, snippet, id } = collapsedSegments(details, w);
-  const line = [prefix, snippet, id].filter((s) => s.length > 0).join(" ");
-  return visibleWidth(line) <= w ? line : truncateToWidth(line, w);
+  return foldedRowPlain({ ...details, kind: "message" }, width);
+}
+
+/** Themed collapsed one-liner; same shape, marker dim, verb bold, snippet regular. */
+export function formatMessageCollapsed(details: EventDetails, theme: EventTheme, width: number): string {
+  return foldedRowThemed({ ...details, kind: "message" }, theme, width);
 }
 
 /**
- * Themed collapsed one-liner: bold @name, tinted received (the wake state
- * token — success for delivered), dim snippet, dim id. No expand hint: the
- * card itself is the affordance (click to expand, ctrl+o expands globally).
- * Same vocabulary as the roster overlay (bold name) and the expanded
- * header (tinted state).
+ * Plain card (no theme). Folded by default: one row in the approved shape.
+ * `{ expanded: true }` opens it: the full corpus, ids included, never clipped.
  */
-export function formatMessageCollapsed(details: EventDetails, theme: EventTheme, width: number): string {
-  const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
-  const { prefix, snippet, id } = collapsedSegments(details, w);
-  const dim = (text: string) => theme.fg("dim", text);
-  const italicize = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
-  const lead = "› Message from @";
-  const trail = " received:";
-  const head =
-    prefix.startsWith(lead) && prefix.endsWith(trail)
-      ? `› Message from ${theme.bold(`@${prefix.slice(lead.length, prefix.length - trail.length)}`)} ${theme.fg(stateToken(details.state), "received")}:`
-      : prefix;
-  const parts = [head, ...(snippet ? [dim(italicize(snippet))] : []), ...(id ? [dim(id)] : [])];
-  return parts.join(" ");
-}
-
-/** Plain card (no theme): the layout every themed card shares. */
 export function formatEventCardPlain(
   details: EventDetails,
   width: number,
   opts?: { expanded?: boolean },
 ): string {
-  if (details.kind === "message" && opts?.expanded === false) return formatMessageCollapsedPlain(details, width);
-  const layout = layoutCard(details, width, opts?.expanded === true);
-  const header = `${layout.glyph} ${layout.identity}${layout.state ? ` ${layout.state}` : ""}`;
-  return [header, ...layoutBodyLines(layout, (s) => s)].join("\n");
+  if (opts?.expanded !== true) return foldedRowPlain(details, width);
+  return [expandedHeadPlain(details), ...layoutBodyLines(layoutBody(details, width), (s) => s)].join("\n");
 }
 
 /**
- * Operator card (D4): glyph, bold identity, tinted state, italic message
- * bodies, dim facts, up to 3 preview lines, "+N lines · ctrl+o expands".
- * Pass `{ expanded: false }` for a message to get the collapsed one-liner
- * (`› Message from @<name> received: <snippet> <id>`; a click expands it,
- * ctrl+o still expands every message globally)
- * Pi's ctrl+o path uses; `{ expanded: true }` shows the full corpus with no
- * line cap. Without opts the classic 3-line card renders (pinned tests).
- * Theme tokens only — this file holds no SGR. Both renders share `layoutCard`,
- * so the themed card matches the plain layout line for line; only styling
- * differs. Bodies render italic (the message corpus) when the theme offers
- * it; fakes without `italic` fall back to plain bodies so pinned tests hold.
+ * Operator card (D4): folded, one row — marker, the verb bold, identity,
+ * subject and dim facts. `{ expanded: true }` opens it: the same header with
+ * the full identity (ids included) and the full corpus below, never clipped.
+ * Theme tokens only — this file holds no SGR.
  */
 export function formatEventCard(
   details: EventDetails,
@@ -487,28 +569,26 @@ export function formatEventCard(
   width: number,
   opts?: { expanded?: boolean },
 ): string {
-  if (details.kind === "message" && opts?.expanded === false) return formatMessageCollapsed(details, theme, width);
-  const layout = layoutCard(details, width, opts?.expanded === true);
-  const head =
-    `${layout.glyph} ${theme.bold(layout.identity)}` +
-    (layout.state ? ` ${theme.fg(stateToken(details.state), layout.state)}` : "");
+  if (opts?.expanded !== true) return foldedRowThemed(details, theme, width);
+  const layout = layoutBody(details, width);
   const dim = (text: string) => theme.fg("dim", text);
   const italicize = theme.italic ? (text: string) => theme.italic!(text) : (text: string) => text;
   const lines = layoutBodyLines(layout, dim);
   // Only the corpus lines (not the facts trailer or the expander hint) read
-  // italic: header stays bold, facts stay dim.
+  // italic: the header stays quiet, facts stay dim.
   const styled =
     details.kind === "message"
       ? lines.map((line, i) => (i < layout.bodyLines.length ? italicize(line) : line))
       : lines;
-  return [head, ...styled].join("\n");
+  return [expandedHeadThemed(details, theme), ...styled].join("\n");
 }
 
 /**
  * Suggestion card (CORE-2546), on the tool rows' grid: marker in columns
- * 0-1, text from column 2. Folded, one row: bold action, summary, dim facts
- * and the hidden-line count. Opened: the reason in the thinking tone, then
- * the body under a dim └ anchor. `tintGlyph` colours the marker only.
+ * 0-1, text from column 2. Folded, one row: the verb bold (Suggested), the
+ * action, summary, dim facts and the hidden-line count. Opened: the same row
+ * with the full unclipped summary, the reason in the thinking tone, then the
+ * body under a dim └ anchor. `tintGlyph` colours the marker only.
  */
 function suggestionLines(
   details: EventDetails,
@@ -516,6 +596,7 @@ function suggestionLines(
   expanded: boolean,
   style: {
     glyph: (glyph: string) => string;
+    verb: (text: string) => string;
     head: (text: string) => string;
     summary: (text: string) => string;
     dim: (text: string) => string;
@@ -530,23 +611,33 @@ function suggestionLines(
   const body = details.preview.flatMap((line) => wrapDisplay(sanitizeCardLine(line), inner));
   const hidden = reason.length + body.length;
   const glyph = glyphFor(details);
+  const verb = cardVerb({ ...details, kind: "suggestion" });
   const plainHead = sanitizeCardLine(details.identity);
   const summary = details.summary ? sanitizeCardLine(details.summary) : "";
   const facts = details.facts ? sanitizeCardLine(details.facts) : "";
   const count = !expanded && hidden > 0 ? `+${hidden} ${hidden === 1 ? "line" : "lines"}` : "";
-  // Fit by plain width first, so the styled row is cut only where text is.
   const tail = [facts, count].filter(Boolean).join("  ");
+  // Folded rows keep the tail (score and hidden count) and cut the head and
+  // summary first, always with the single `…` glyph.
   const tailWidth = tail ? 2 + visibleWidth(tail) : 0;
-  const room = Math.max(1, w - 2 - tailWidth);
-  const headFit = visibleWidth(plainHead) <= room ? plainHead : stripAnsi(truncateToWidth(plainHead, room));
-  const summaryRoom = room - visibleWidth(headFit) - 1;
-  const summaryFit = summary && summaryRoom >= 6
-    ? visibleWidth(summary) <= summaryRoom ? summary : stripAnsi(truncateToWidth(summary, summaryRoom))
-    : "";
-  let row = `${style.glyph(glyph)} ${style.head(headFit)}`;
-  if (summaryFit) row += ` ${style.summary(summaryFit)}`;
+  const room = Math.max(1, w - 2 - tailWidth - visibleWidth(verb) - 1);
+  const headFit = !expanded && visibleWidth(plainHead) > room ? clipToWidth(plainHead, room) : plainHead;
+  const summaryRoom = room - visibleWidth(headFit) - 2;
+  const summaryFit = expanded
+    ? summary
+    : summary && summaryRoom >= 6
+      ? visibleWidth(summary) > summaryRoom
+        ? clipToWidth(summary, summaryRoom)
+        : summary
+      : "";
+  const plainRow =
+    `${glyph} ${verb} ${headFit}` +
+    (summaryFit ? `  ${summaryFit}` : "") +
+    (tail ? `  ${tail}` : "");
+  let row = `${style.glyph(glyph)} ${style.verb(verb)} ${style.head(headFit)}`;
+  if (summaryFit) row += `  ${style.summary(summaryFit)}`;
   if (tail) row += `  ${style.dim(tail)}`;
-  if (!expanded) return [row];
+  if (!expanded) return [visibleWidth(plainRow) > w ? clipToWidth(plainRow, w) : row];
   return [
     row,
     ...reason.map((line) => `${INDENT}${style.reason(line)}`),
@@ -558,11 +649,11 @@ function suggestionLines(
 export function formatSuggestionCardPlain(details: EventDetails, width: number, opts?: { expanded?: boolean }): string {
   const same = (text: string) => text;
   return suggestionLines(details, width, opts?.expanded === true, {
-    glyph: same, head: same, summary: same, dim: same, reason: same, body: same, anchor: same,
+    glyph: same, verb: same, head: same, summary: same, dim: same, reason: same, body: same, anchor: same,
   }).join("\n");
 }
 
-/** Themed suggestion card: tool-name level header, thinking-tone reason, output-tone body. */
+/** Themed suggestion card: verb bold, action at tool-name level, thinking-tone reason, output-tone body. */
 export function formatSuggestionEventCard(
   details: EventDetails,
   theme: EventTheme,
@@ -573,7 +664,8 @@ export function formatSuggestionEventCard(
   const failed = glyphFor(details) === EVENT_GLYPHS.failure;
   return suggestionLines(details, width, opts?.expanded === true, {
     glyph: (glyph) => (failed ? theme.fg("error", glyph) : opts?.tintGlyph ? opts.tintGlyph(glyph, details) : theme.fg("dim", glyph)),
-    head: (text) => theme.bold(theme.fg("toolTitle", text)),
+    verb: (text) => theme.bold(theme.fg("toolTitle", text)),
+    head: (text) => theme.fg("toolTitle", text),
     summary: (text) => theme.fg("toolTitle", text),
     dim: (text) => theme.fg("dim", text),
     reason: (text) => italic(theme.fg("thinkingText", text)),

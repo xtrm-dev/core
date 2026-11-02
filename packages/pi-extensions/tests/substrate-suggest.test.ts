@@ -238,7 +238,7 @@ describe("wake card", () => {
     }
 
     // confidence is labelled by its actual name
-    expect(plain).toContain("jev_confidence: 0.72");
+    expect(plain).toContain("score: 0.72");
     expect(plain).toContain("rev 3");
   });
 
@@ -278,8 +278,8 @@ describe("CORE-2348 card polish", () => {
     expect(stripEndPeriod("Ends with a period.")).toBe("Ends with a period");
     expect(stripEndPeriod("No period")).toBe("No period");
     const plain = formatSuggestionPlain({ verb: dotted, ref: "CORE-1", confidence: 0.66, compact: true });
-    expect(plain).not.toContain("contracts.  jev_confidence");
-    expect(plain).toContain("contracts  jev_confidence: 0.66");
+    expect(plain).not.toContain("contracts.  score");
+    expect(plain).toContain("contracts  score: 0.66");
     expect(plain.split("\n")[0]).not.toContain("· —");
   });
   it("bands substrate orange by default and skill blue on request", () => {
@@ -297,7 +297,7 @@ describe("CORE-2348 non-compact trailer", () => {
     const plain = formatSuggestionPlain({ verb: v, ref: "—", confidence: 0.87 });
     const last = plain.split("\n").pop()!;
     expect(last).not.toMatch(/\.\s{2}/);
-    expect(last).toMatch(/[^.]  jev_confidence/);
+    expect(last).toMatch(/[^.]  score/);
   });
 });
 
