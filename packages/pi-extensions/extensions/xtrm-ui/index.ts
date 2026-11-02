@@ -749,7 +749,9 @@ function externalToolHeaderLine(
   const ext = trBoldFg(theme, "toolTitle", provider);
   const toolToken = status === "pending" ? "dim" : "toolTitle";
   const toolName = tool ? ` ${trBoldFg(theme, toolToken, tool)}` : "";
-  return `${dot} ${trBoldFg(theme, "toolTitle", "used")} ${ext}${toolName}`;
+  // The action word stays plain; the tool name alone is bold, so the eye lands
+  // on what ran rather than on a wholly bold head.
+  return `${dot} ${trFg(theme, "toolTitle", "used")} ${ext}${toolName}`;
 }
 
 function stripAnsi(text: string): string {
@@ -1260,16 +1262,19 @@ export function buildUltraExternalLine(
   const isError = status === "error";
   // No dots on tool rows, ever: the dot marks assistant messages only.
   const dot = isError ? `${ultraFg("error", "!")} ` : "  ";
-  // Uniform with native rows: the whole `used <Tool> [<action>]` head is one
-  // bold tool-name span, the subject one step back. No provider hue.
+  // The action word stays plain and the tool name alone is bold — `used
+  // SendMessage`, never a wholly bold head. No provider hue.
+  const verb = (text: string) => ultraFg("toolTitle", text);
   const span = (text: string) => ultraBold("toolTitle", text);
   const sub = (text: string) => ultraFg("toolTitle", text);
   const actionPart = bare.action && bare.action !== bare.provider ? bare.action : undefined;
-  // A program reads as what it is, in the shell row's words ("Ran shell
-  // command" / "Ran code"), and matches the folded group's summary.
+  // A program reads as what it is, in the shell row's words ("Ran code"), and
+  // matches the folded group's summary.
   const runsCode = typeof args.code === "string" && args.code.trim().length > 0;
-  const head = runsCode ? ULTRA_CODE_VERB : ["used", bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
-  let row = `${dot}${span(head)}`;
+  const name = runsCode
+    ? ULTRA_CODE_NOUN
+    : [bare.provider, ...(actionPart ? [actionPart] : [])].join(" ");
+  let row = `${dot}${verb(runsCode ? ULTRA_CODE_VERB : "used")} ${span(name)}`;
   if (subject) row += ` ${sub(subject)}`;
   // The code the row does not show, counted in the same words as a bash row so
   // `+N lines` means one thing everywhere. Metadata tier, one slot only.
@@ -2497,6 +2502,8 @@ function renderNamedToolTree(
 export interface UltraRowParts {
   statusColor: string;
   verb: string;
+  /** Bold half of a two-part head (`Ran **shell command**`); absent keeps `verb` bold. */
+  noun?: string;
   subject?: string;
   /** Primary meta: dim level. */
   primary?: string;
@@ -2513,7 +2520,11 @@ export function renderUltraRow(theme: any, parts: UltraRowParts): string {
   // thinking row. A failure keeps the header on that ladder: only the `!`
   // marker and the `failed` word take the brightest token, so a failed row
   // never outshines the prose. Nothing in a tool row is ever coloured.
-  const verb = styledText(theme, "toolTitle", parts.verb);
+  // A two-part head keeps the action word plain and bolds the subject noun, so
+  // a row never reads as one bold block: `used **SendMessage**`, `Ran **code**`.
+  const verb = parts.noun
+    ? `${theme.fg("toolTitle", parts.verb)} ${styledText(theme, "toolTitle", parts.noun)}`
+    : styledText(theme, "toolTitle", parts.verb);
   const subject = parts.subject ? ` ${theme.fg("toolTitle", parts.subject)}` : "";
   // Neutral rows keep two columns so text aligns with pi's `● ` marker width;
   // a failure replaces that prefix with `! ` at the same columns.
@@ -2602,11 +2613,15 @@ export function ultraBashSubject(command: string): string {
 
 /** Ultra verb for shell calls: the full phrase, not bare `Ran`. */
 export const ULTRA_BASH_VERB = "Ran shell command";
+/** The bold half of the shell head: `Ran **shell command**`. */
+export const ULTRA_BASH_NOUN = "shell command";
 /** Ultra verb for code tools (codemode, python): any call carrying a `code` arg. */
-export const ULTRA_CODE_VERB = "Ran code";
+export const ULTRA_CODE_VERB = "Ran";
+/** The bold half of the code row's head: `Ran **code**`. */
+export const ULTRA_CODE_NOUN = "code";
 
 function renderUltraPendingCall(theme: any, toolName: string, args: Record<string, unknown>): Text {
-  const verb = toolName === "bash" ? ULTRA_BASH_VERB : toolName;
+  const verb = toolName === "bash" ? "Ran" : toolName;
   const subject = toolName === "bash"
     ? ultraBashSubject(String(args.command ?? ""))
     : summarizeToolSubject(toolName, args);
@@ -2856,7 +2871,8 @@ function registerXtrmUiTools(pi: ExtensionAPI, getPrefs: () => XtrmUiPrefs): voi
         const hiddenCommands = hiddenLineCount(stripSetupPrefix(command));
         return toolRowText(theme, renderUltraRow(theme, {
           statusColor: isPartial ? "accent" : context.isError ? "error" : "success",
-          verb: ULTRA_BASH_VERB,
+          verb: "Ran",
+          noun: ULTRA_BASH_NOUN,
           subject: ultraBashSubject(command),
           primary: hiddenCommands > 0 ? `+${hiddenCommands} ${hiddenCommands === 1 ? "line" : "lines"}` : undefined,
           secondary: renderDuration(context),
