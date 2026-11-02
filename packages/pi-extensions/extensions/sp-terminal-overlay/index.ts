@@ -2,6 +2,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
+import { clipToWidth } from "../../shared/event.ts";
+
 const MAX_BUFFER_LINES = 2000;
 const DEFAULT_VISIBLE_LINES = 24;
 const RENDER_THROTTLE_MS = 100;
@@ -146,10 +148,13 @@ class StreamingTerminalOverlay {
     const hiddenBelow = Math.max(0, allLines.length - end);
 
     const border = (text: string) => theme.fg("border", text);
-    const title = ` ${theme.fg("accent", theme.bold(this.options.title))} ${theme.fg("dim", this.status)} `;
+    // "! leads a genuine failure" (operator ruling): only a failed child wears
+    // the error token, and only then does the status stop being dim.
+    const statusText = this.status.startsWith("!") ? theme.fg("error", this.status) : theme.fg("dim", this.status);
+    const title = ` ${theme.fg("accent", theme.bold(this.options.title))} ${statusText} `;
     const top = border("╭") + truncateToWidth(title, Math.max(0, innerWidth), "") + border("─".repeat(Math.max(0, innerWidth - visibleWidth(title)))) + border("╮");
     const row = (content: string) => {
-      const truncated = resetAnsi(truncateToWidth(content, contentWidth));
+      const truncated = resetAnsi(clipToWidth(content, contentWidth));
       return `${border("│")} ${padVisible(truncated, contentWidth)} ${border("│")}`;
     };
 
@@ -157,9 +162,18 @@ class StreamingTerminalOverlay {
     output.push(row(theme.fg("dim", `$ ${this.options.command}`)));
     output.push(row(theme.fg("dim", "Esc/q close • r restart • ↑↓ scroll • PgUp/PgDn page")));
     output.push(row(""));
+
+    // The window is exactly visibleCount rows, markers included. A marker row
+    // therefore takes its slot from the oldest visible line, never from the
+    // newest one, and the count it reports grows to stay truthful.
+    const markerRows = (hiddenAbove > 0 ? 1 : 0) + (hiddenBelow > 0 ? 1 : 0);
+    const contentRows = Math.max(0, visibleCount - markerRows);
+    const window = visible.slice(Math.max(0, visible.length - contentRows));
+    const aboveCount = hiddenAbove + (visible.length - window.length);
+
     const bodyRows: string[] = [];
-    if (hiddenAbove > 0) bodyRows.push(theme.fg("dim", `… ${hiddenAbove} lines above`));
-    bodyRows.push(...visible);
+    if (aboveCount > 0) bodyRows.push(theme.fg("dim", `… ${aboveCount} lines above`));
+    bodyRows.push(...window);
     if (visible.length === 0) bodyRows.push(theme.fg("dim", "waiting for output…"));
     if (hiddenBelow > 0) bodyRows.push(theme.fg("dim", `… ${hiddenBelow} lines below`));
 
@@ -206,12 +220,16 @@ class StreamingTerminalOverlay {
     this.child.stdout.on("data", (chunk) => this.append(String(chunk)));
     this.child.stderr.on("data", (chunk) => this.append(String(chunk)));
     this.child.on("error", (error) => {
-      this.status = "error";
+      this.status = "! error";
       this.append(`\n[error] ${error.message}\n`);
     });
     this.child.on("close", (code, signal) => {
       this.flushCurrentLine();
-      this.status = signal ? `stopped (${signal})` : `exited ${code ?? "unknown"}`;
+      this.status = signal
+        ? `stopped (${signal})`
+        : code === 0
+          ? "exited 0"
+          : `! exited ${code ?? "unknown"}`;
       this.requestRenderSoon(true);
     });
 
