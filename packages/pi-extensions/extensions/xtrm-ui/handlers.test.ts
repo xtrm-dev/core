@@ -195,6 +195,37 @@ describe("xtrm-ui presentation-only boundary", () => {
     expect(rendered).not.toContain("138 | 138 |");
   });
 
+  test("pi's isStreaming reaches the component on every path through the patch", () => {
+    type ContentBlock = { type: string; text?: string; thinking?: string };
+    // pi's signature: the argument is the only way the flag is set, and leaving
+    // it out keeps the last value.
+    const component = {
+      isStreaming: false,
+      updateContent(_message: { content: ContentBlock[] }, isStreaming: boolean = component.isStreaming) {
+        component.isStreaming = isStreaming;
+      },
+    };
+    component.updateContent = createPatchedUpdateContent(
+      component.updateContent as never,
+      { label: (text: string) => text, recap: (text: string) => text, sep: " · " },
+      { followsToggle: false },
+    ) as never;
+    const paths: ContentBlock[][] = [
+      [{ type: "thinking", thinking: "Looking around" }],
+      [{ type: "thinking", thinking: "Summarizing evidence" }, { type: "text", text: "Done." }],
+      [{ type: "text", text: "Done." }],
+    ];
+    for (const content of paths) {
+      component.updateContent({ content }, true);
+      expect(component.isStreaming).toBe(true);
+      // A repaint from lastMessage passes no flag and must not clear it.
+      (component.updateContent as (message: { content: ContentBlock[] }) => void)({ content });
+      expect(component.isStreaming).toBe(true);
+      component.updateContent({ content }, false);
+      expect(component.isStreaming).toBe(false);
+    }
+  });
+
   test("with folding on, a reply that has text draws no thinking; a step without text keeps it", () => {
     type ContentBlock = { type: string; text?: string; thinking?: string };
     const rendered: ContentBlock[][] = [];

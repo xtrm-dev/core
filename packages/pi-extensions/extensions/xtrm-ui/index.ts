@@ -176,7 +176,7 @@ function persistPrefs(pi: ExtensionAPI, prefs: XtrmUiPrefs): void {
 
 type AssistantMessageComponentCtor = {
 	prototype: {
-		updateContent?: (message: AssistantMessageLike) => void;
+		updateContent?: (message: AssistantMessageLike, isStreaming?: boolean) => void;
 	};
 };
 
@@ -186,12 +186,12 @@ type PatchableAssistantMessage = {
 	hideThinkingBlock?: boolean;
 	hiddenThinkingLabel?: string;
 	lastMessage?: AssistantMessageLike;
-	updateContent?: (message: AssistantMessageLike) => void;
+	updateContent?: (message: AssistantMessageLike, isStreaming?: boolean) => void;
 };
 
 const PATCHED_ASSISTANT_MESSAGE = "__xtrmUiThinkingPreview5";
 const ORIGINAL_ASSISTANT_UPDATE = "__xtrmUiThinkingPreviewOriginalUpdate";
-const THINKING_PREVIEW_PATCH_VERSION = 11;
+const THINKING_PREVIEW_PATCH_VERSION = 12;
 
 // The recap preserves awareness of the model's activity; it does not compete
 // with the answer. One clause, then stop (the ellipsis keeps the cut honest).
@@ -509,12 +509,14 @@ const thinkingToggleLatch: ThinkingToggleLatch = { followsToggle: false };
  * a collapsed style, and (optionally) an isolated latch and expanded style.
  */
 export function createPatchedUpdateContent(
-	updateContent: (message: AssistantMessageLike) => void,
+	updateContent: (message: AssistantMessageLike, isStreaming?: boolean) => void,
 	collapsedStyle: ThinkingRowStyle,
 	latch: ThinkingToggleLatch = thinkingToggleLatch,
 	expandedStyle: ThinkingRowStyle = collapsedStyle,
-): (this: PatchableAssistantMessage, message: AssistantMessageLike) => void {
-	return function patchedUpdateContent(this: PatchableAssistantMessage, message: AssistantMessageLike) {
+): (this: PatchableAssistantMessage, message: AssistantMessageLike, isStreaming?: boolean) => void {
+	// pi passes isStreaming here and nowhere else: the fold reads it off the
+	// component to keep a thinking step inside its group. Undefined keeps pi's default.
+	return function patchedUpdateContent(this: PatchableAssistantMessage, message: AssistantMessageLike, isStreaming?: boolean) {
 		const blocks = message.content;
 		// Folded tool groups: once the reply has text, its thinking is not drawn.
 		// Thinking shows only as a sign of life (a turn's first step before any
@@ -522,7 +524,7 @@ export function createPatchedUpdateContent(
 		if (Array.isArray(blocks) && activeFoldTools()
 			&& blocks.some((block) => block.type === "text" && block.text?.trim())
 			&& blocks.some((block) => block.type === "thinking")) {
-			updateContent.call(this, { ...message, content: blocks.filter((block) => block.type !== "thinking") });
+			updateContent.call(this, { ...message, content: blocks.filter((block) => block.type !== "thinking") }, isStreaming);
 			this.lastMessage = message;
 			return;
 		}
@@ -549,7 +551,7 @@ export function createPatchedUpdateContent(
 						? [{ type: "text", text: row }, { type: "text", text: "\u200b" }]
 						: [{ type: "text", text: row }];
 				});
-				updateContent.call(this, { ...message, content });
+				updateContent.call(this, { ...message, content }, isStreaming);
 				// Pi stores lastMessage and re-renders from it in
 				// setHideThinkingBlock()/invalidate()/setHiddenThinkingLabel().
 				// Restore the RAW message so those re-renders re-enter this patch
@@ -559,7 +561,7 @@ export function createPatchedUpdateContent(
 				return;
 			}
 		}
-		updateContent.call(this, message);
+		updateContent.call(this, message, isStreaming);
 	};
 }
 
