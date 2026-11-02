@@ -897,10 +897,44 @@ describe("ultracompact rows", async () => {
     setActiveThemeProvider(() => tokened);
     try {
       for (const status of ["pending", "success", "error"] as const) {
-        const native = renderUltraRow(tokened, { statusColor: status, verb: "Ran code", subject: "x = 1", primary: "ok" });
+        const native = renderUltraRow(tokened, { statusColor: status, verb: "Ran", noun: "code", subject: "x = 1", primary: "ok" });
         const framed = buildUltraExternalLine("codemode", { code: "x = 1" }, ["ok"], status);
         expect(framed).toBe(native);
       }
+    } finally {
+      setActiveThemeProvider(null);
+    }
+  });
+
+  test("the action word stays plain: only the tool name is bold (operator ruling)", async () => {
+    const { setActiveThemeProvider, renderUltraRow, renderExternalToolBackgroundLines } = await import("./index.ts");
+    const tokened = {
+      fg: (c: string, t: string) => `<${c}>${t}</${c}>`,
+      bold: (t: string) => `*${t}*`,
+      italic: (t: string) => `_${t}_`,
+    };
+    setActiveThemeProvider(() => tokened);
+    try {
+      // Every external tool, whatever the provider: `used **<tool>**`.
+      for (const tool of [
+        "SendMessage", "ListAgents", "BashBackground", "Monitor", "ast_grep",
+        "mcp__deepwiki__read_wiki_structure", "google_drive_search", "acp_delegate",
+      ]) {
+        const row = buildUltraExternalLine(tool, {}, ["ok"], "success");
+        expect(row).toContain("used");
+        expect(row).not.toContain("*used*");
+        // Exactly one bold span on the head, and it is not the action word.
+        expect(row.split("*").length - 1).toBe(2);
+      }
+      // Native shell and code rows follow the same split.
+      expect(renderUltraRow(tokened, { statusColor: "success", verb: "Ran", noun: "code", subject: "x = 1" }))
+        .toBe("  <toolTitle>Ran</toolTitle> <toolTitle>*code*</toolTitle> <toolTitle>x = 1</toolTitle>");
+      expect(renderUltraRow(tokened, { statusColor: "success", verb: "Ran", noun: "shell command", subject: "ls" }))
+        .toBe("  <toolTitle>Ran</toolTitle> <toolTitle>*shell command*</toolTitle> <toolTitle>ls</toolTitle>");
+      // The classic (non-ultra) external header bolds the name, never `used`.
+      const header = renderExternalToolBackgroundLines(["x"], 80, "external", false, "SendMessage")[0]!;
+      expect(header).toContain("used");
+      expect(header).not.toContain("*used*");
     } finally {
       setActiveThemeProvider(null);
     }
@@ -1052,7 +1086,10 @@ describe("weight in a chalk-less runtime", async () => {
     setActiveThemeProvider(() => theme);
     try {
       const header = renderExternalToolBackgroundLines(["x"], 80, "external", false, "codemode")[0]!;
-      expect(header).toContain("\u00abused\u00bb");
+      // The action word stays plain; only the tool name is bold (operator
+      // ruling: `used **SendMessage**`, never a wholly bold head).
+      expect(header).toContain("used");
+      expect(header).not.toContain("\u00abused\u00bb");
       expect(header).toContain("\u00abcodemode\u00bb");
       expect(header).not.toContain("CHALK-NOOP");
     } finally {
@@ -1155,7 +1192,8 @@ describe("grayscale row ladder (CORE-2502 follow-ups)", async () => {
       expect(line).toContain("[toolTitle]");
       expect(line).not.toMatch(/#[0-9a-fA-F]{3,6}/);
       expect(line).not.toMatch(/\x1b\[/);
-      expect(line).toContain("Ran code");
+      expect(line).toContain("Ran");
+      expect(line).toContain("[toolTitle]*code*");
       // Thinking rows and tool rows share the ladder, not the same level.
       const row = buildCollapsedThinkingRow("recap", collapsedThinkingStyle(() => tokened()));
       expect(row).toContain("[muted]Thinking...");
