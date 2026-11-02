@@ -72,9 +72,29 @@ describe("monitor cards through the I7 module", () => {
     expect(glyphFor(details as never)).toBe("○");
     // Folded: the first event line is the subject; the rest open with the card.
     expect(formatEventCard(details as never, theme, 80)).toBe("○ monitor matched  build ok  event #2 · 3 lines");
+
+
     const card = formatEventCard(details as never, theme, 80, { expanded: true });
     expect(card).toContain("build ok");
     expect(card).toContain("tests ok");
+  });
+  test("a single-line monitor event counts in the singular", () => {
+    // A live e2e run surfaced "event #1 · 1 lines"; the facts trailer must agree with its noun.
+    const details = resolveMonitorCard({
+      details: {
+        monitor_id: "mn_3c4d",
+        kind: "event",
+        event_index: 1,
+        lines: ["FAIL tool-groups.test.ts"],
+        event_count: 2,
+        line_count: 1,
+      },
+    });
+    expect(formatEventCard(details as never, theme, 80)).toBe("○ monitor matched  FAIL tool-groups.test.ts  event #1 · 1 line");
+    const expired = resolveMonitorCard({
+      details: { monitor_id: "mn_3c4d", kind: "expired", reason: "timeout", event_count: 1, line_count: 1 },
+    });
+    expect(formatEventCard(expired as never, theme, 80)).toBe("○ monitor expired  timeout  1 event · 1 line");
   });
 
   test("a terminal notice resolves with its counts", () => {

@@ -92,7 +92,9 @@ export function resolveMonitorCard(message: unknown): EventDetails | null {
       preview: lines,
       totalLines: lines.length,
       facts:
-        typeof details.event_index === "number" ? `event #${details.event_index} · ${lines.length} lines` : `${lines.length} lines`,
+        typeof details.event_index === "number"
+          ? `event #${details.event_index} · ${lines.length} ${lines.length === 1 ? "line" : "lines"}`
+          : `${lines.length} ${lines.length === 1 ? "line" : "lines"}`,
     };
   }
   if (kind === "expired" || kind === "stopped") {
@@ -107,7 +109,7 @@ export function resolveMonitorCard(message: unknown): EventDetails | null {
       identity: `monitor ${id}`,
       subject: reason,
       preview: [`${kind}: ${reason}`],
-      facts: `${eventCount} events · ${lineCount} lines`,
+      facts: `${eventCount} ${eventCount === 1 ? "event" : "events"} · ${lineCount} ${lineCount === 1 ? "line" : "lines"}`,
     };
   }
   return null;
