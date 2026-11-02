@@ -19,6 +19,8 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
+import { clipToWidth } from "../../shared/event.ts";
+
 import {
   isMonitorFailureStatus,
   isTaskFailure,
@@ -113,19 +115,18 @@ export function formatIndicatorStyled(summary: BackgroundSummary, colors?: Indic
  * Width-safe cut with a repair fallback. Several older suites stub
  * pi-tui process-wide through bun's mock.module (identity or naive-slice
  * truncateToWidth), and which stub wins depends on scheduling: the real
- * library locally, a stub in CI. First try truncateToWidth; if the result
- * still overflows per visibleWidth, hard-cut the longest fitting raw
- * prefix plus "...". The repair loop always terminates (the prefix
- * shrinks every pass; "..." fits any maxWidth >= 8, which every caller
- * guarantees). The width invariant holds under every stub; the exact cut
- * point and ellipsis styling may differ, so tests assert widths, never
- * the literal cut text.
+ * library locally, a stub in CI. First try the shared `clipToWidth`; if the
+ * result still overflows per visibleWidth, hard-cut the longest fitting raw
+ * prefix plus the single ellipsis glyph. The repair loop always terminates
+ * (the prefix shrinks every pass; "…" fits any maxWidth >= 8, which every
+ * caller guarantees). The width invariant holds under every stub; the exact
+ * cut point may differ, so tests assert widths, never the literal cut text.
  */
-/** Repair primitive for fitToWidth below: longest fitting raw prefix plus "...". */
+/** Repair primitive for fitToWidth below: longest fitting raw prefix plus "…". */
 export function hardCut(line: string, maxWidth: number): string {
   const width = Math.max(8, Math.floor(maxWidth) || 80);
   if (visibleWidth(line) <= width) return line;
-  const ellipsis = "...";
+  const ellipsis = "…";
   let prefix = line;
   while (prefix.length > 0 && visibleWidth(`${prefix}${ellipsis}`) > width) {
     prefix = prefix.slice(0, -1);
@@ -135,7 +136,7 @@ export function hardCut(line: string, maxWidth: number): string {
 
 export function fitToWidth(line: string, maxWidth: number): string {
   const width = Math.max(8, Math.floor(maxWidth) || 80);
-  const first = truncateToWidth(line, width);
+  const first = clipToWidth(line, width);
   if (visibleWidth(first) <= width) return first;
   return hardCut(line, width);
 }
