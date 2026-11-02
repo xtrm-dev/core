@@ -103,34 +103,59 @@ The App receives events only for repositories where it is installed, and only fo
 - Source: <https://docs.github.com/en/webhooks/webhook-events-and-payloads#issue_comment>
 - Source: <https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/using-webhooks-with-github-apps>
 
-### 5. How a mention reaches XTRM with no public endpoint and Actions locked: polling
+### 5. How a mention reaches XTRM: polling by default, a webhook is an option
 
-Webhooks need a reachable server: "the webhook URL is the address of a web server that will receive the webhook event payloads". Neither machine in this programme has public ingress: the workstation (the machine that runs `xt`, this runbook and the agent sessions) is behind NAT, and the server host is reachable only over the operator's ssh. `xtrm-dev` CI is billing-locked with no runners, so an Actions-based poller is unavailable too.
+Webhooks need a reachable server: "the webhook URL is the address of a web server that will receive the webhook event payloads". Which machine can be that server decides which inbound path exists.
 
-Two machines, one decision. Pick one place for the key and the poller and record the choice in `app.json`:
+Verified live:
+
+- The **workstation** has no ingress: it sits behind NAT and publishes no port to the internet. It can poll outbound; it cannot host a webhook receiver or an Actions runner.
+- The **server host** does have public ingress: public IPv4 `159.195.49.110` on `eth0` (`ip -4 addr show eth0`), and the `infra-traefik` container publishes `0.0.0.0:80` and `0.0.0.0:443` (`docker ps`). It is a production host that already carries routes.
+- `xtrm-dev` CI is billing-locked with no runners, so an Actions-based poller is unavailable on either machine.
+
+A webhook receiver is therefore technically possible on the server behind Traefik, and an instant mention is not ruled out by the infrastructure. It is a choice with a cost, not the default. Two options:
+
+#### Option A — polling (starting recommendation)
+
+No new public surface. A local reconciler asks GitHub for new comments and answers them. Latency equals the poll interval; five minutes is a reasonable starting point.
+
+1. A timer on the chosen machine (systemd user timer or cron, one entry) mints a `xtrm-coord` installation token for the **recorded** installation id, valid 1 hour, and calls
+   `GET /repos/{owner}/{repo}/issues/comments?since=<last run>&per_page=100`
+   for each repository in scope, plus `GET /repos/{owner}/{repo}/pulls/{n}/comments` when inline threads matter.
+2. The poller keeps `@xtrm-coord` comments whose author is a person, keyed by comment id, in a small state file, so a re-run never answers twice.
+3. Each new mention becomes one routing request to the coordinator (a Substrate Journal entry on the programme Issue, or a message to the coordinator session), carrying the repository, pull request number, comment id and body.
+4. The answer is posted back as the App with the run header, as a reply on the same pull request.
+
+Depends on: the App installed on the three accounts with **Issues: read** (plus **Pull requests: read** if inline review comments are polled), the App key and App ID on the chosen machine, the timer, and the dedupe state file.
+
+With this option an instant answer is unavailable **by choice**: the mention is answered when the poller next runs, not when it is written.
+
+#### Option B — webhook behind Traefik on the server (an option, needs a ruling)
+
+Near-instant delivery: GitHub posts the event to a URL whose TLS the Traefik entrypoint already terminates. It also adds a public route to a production host, so it is not a free upgrade of Option A. An operator ruling comes first. The build then needs all of:
+
+- **A webhook secret with HMAC verification.** GitHub signs every delivery in `X-Hub-Signature-256`; a receiver on a public route that does not verify the signature accepts forged posts. The secret is a new operator secret, stored beside the App key, never in a worktree.
+- **A Traefik route owned by the infra repository.** The route is configuration in the repo that owns `infra-traefik` and is reviewed like any other production change. Nothing in this runbook creates it, and no such route exists today.
+- **Its own process and resource limit.** A separate service with memory and CPU limits, a restart policy and its own log destination; never a shared container with the coordinator.
+- **Replay and dedupe handling.** Delivery ids recorded the way Option A records comment ids, because GitHub retries deliveries.
+- **Webhooks switched on for the App**, with `issue_comment` (and, if wanted, `pull_request_review_comment`) subscribed; that changes the registration described below.
+
+Option B is a possibility, not an existing design: this runbook neither describes a Traefik route nor assumes one. Record the choice as `inbound` in `app.json` (`polling` or `webhook`).
+
+- Source: <https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/using-webhooks-with-github-apps> (webhook URL must be a web server; webhooks may be turned off for an app that will only authenticate)
+- Source: <https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation> (installation access tokens, 1 hour)
+- Source: <https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries> (`X-Hub-Signature-256`, HMAC verification)
+
+## Where the key and the poller live
+
+Two machines, one decision. Pick one place for the key and the poller, and record the choice in `app.json`:
 
 | Placement | Key lives | Poller runs | Trade-off |
 |---|---|---|---|
 | **Workstation** (recommended) | `~/.secrets/github-apps/<slug>.pem` on the workstation | systemd user timer on the workstation | Keys stay on the machine where `xt` runs and where commits are made; the poller stops when the workstation sleeps, so answers arrive after resume |
-| **Server host** | the same path on the server host | systemd timer on the server host | Always on, but the key now lives on a second machine and every consumer on the workstation needs an ssh hop to mint a token |
+| **Server host** | the same path on the server host | systemd timer on the server host | Always on, but the key now lives on a second machine, and every consumer on the workstation needs an ssh hop to mint a token |
 
-Both are supported. Do not split them: a key on one machine with a poller on the other needs a second hop for every poll and doubles the place a key can leak. Whichever you pick, `app.json` carries `keyPath` and `pollerHost`.
-
-Recommended inbound path: **polling by a local reconciler**, not webhooks.
-
-1. A timer on the machine chosen above (systemd user timer or cron, one entry) mints a `xtrm-coord` installation token for the **recorded** installation id, valid 1 hour, and calls
-   `GET /repos/{owner}/{repo}/issues/comments?since=<last run>&per_page=100`
-   for each repository in scope, plus `GET /repos/{owner}/{repo}/pulls/{n}/comments` when inline threads matter.
-2. The poller keeps `@xtrm-coord` comments whose author is a person, keyed by comment id, in a small state file so a re-run never answers twice.
-3. Each new mention becomes one routing request to the coordinator (a Substrate Journal entry on the programme Issue, or a message to the coordinator session), carrying the repository, pull request number, comment id and body.
-4. The answer is posted back as the App with the run header, as a reply on the same pull request.
-
-What this depends on: the App installed on the three accounts with **Issues: read** (plus **Pull requests: read** if inline review comments are polled), the App key and App ID on this host, the timer, and the dedupe state file. Latency equals the poll interval; five minutes is a reasonable starting point.
-
-State this plainly to anyone who expects an instant reaction: with no public webhook endpoint and Actions locked, a mention is answered when the poller next runs, not when it is written. An instant, push-style response is not available in this setup.
-
-- Source: <https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/using-webhooks-with-github-apps> (webhook URL must be a web server; webhooks may be turned off for an app that will only authenticate)
-- Source: <https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation> (installation access tokens, 1 hour)
+Both placements are supported. If Option B (webhook) is chosen, the receiver must run where the public ingress is — the server host — so the key and the poller follow it. Do not split them: a key on one machine with a poller on the other needs a second hop for every poll and doubles the number of places a key can leak. Whichever you pick, `app.json` carries `keyPath` and `pollerHost`.
 
 ## The three Apps
 
@@ -139,7 +164,7 @@ Repository permissions only. Every App also needs `Metadata: read`, which GitHub
 | App | Purpose | Permissions | Subscribed events | May never |
 |---|---|---|---|---|
 | `xtrm-reviewer` | Formal reviews and review comments at a head SHA | Contents: read, Pull requests: write, Issues: write | none (webhooks inactive) | push, merge, hold `Contents: write` |
-| `xtrm-coord` | Answer and route `@xtrm-coord` mentions on pull requests | Contents: read, Issues: write, Pull requests: write | none (webhooks inactive) | merge, push, review-approve a change it did not analyse |
+| `xtrm-coord` | Answer and route `@xtrm-coord` mentions on pull requests | Contents: read, Issues: write, Pull requests: write | none for Option A; `issue_comment` for Option B | merge, push, review-approve a change it did not analyse |
 | `xtrm-worker` | Push `xt/*` branches, open pull requests, comment | Contents: write, Pull requests: write, Issues: write | none (webhooks inactive) | merge, push outside `xt/*`, act on `master` or `stable` |
 
 Notes on the permission choices:
@@ -158,7 +183,7 @@ Repeat for `xtrm-reviewer`, `xtrm-coord` and `xtrm-worker`. Use the exact names:
 2. Under "GitHub App name", enter the name. The slug appears under it; confirm it is `xtrm-reviewer`, `xtrm-coord` or `xtrm-worker`.
 3. Under "Homepage URL", enter <https://github.com/xtrm-dev/core>.
 4. Leave "Callback URL", "Setup URL" and "Request user authorization (OAuth) during installation" empty. These Apps act as themselves, never on behalf of a user.
-5. Deselect **Active** under "Webhook". No public endpoint exists, so a webhook would only accumulate failed deliveries. The subscribing App can be enabled later without re-registering.
+5. Leave **Active** deselected under "Webhook" for now. This follows from choosing Option A (polling); it is not a claim that no endpoint could exist, because the server host does have public ingress behind Traefik. An active webhook with no receiver at its URL would only accumulate failed deliveries. It can be enabled later without re-registering the App, which is what Option B requires.
 6. Under "Permissions", set exactly the values in the table above and leave every other permission at **No access**.
 7. Under "Where can this GitHub App be installed?", select **Any account**.
 8. Click **Create GitHub App**.
@@ -247,6 +272,7 @@ The release App (merge, release, workflow dispatch) stays deferred. Merging need
 - Private keys and installation tokens: <https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/managing-private-keys-for-github-apps>, <https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation>
 - Webhooks and their requirement for a reachable server: <https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/using-webhooks-with-github-apps>
 - Webhook events: <https://docs.github.com/en/webhooks/webhook-events-and-payloads#issue_comment>
+- Webhook signatures: <https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries>
 - Required reviews: <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets>
 - REST permission sets: <https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request>, <https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request>, <https://docs.github.com/en/rest/issues/comments#create-an-issue-comment>
 - Mention precedent: <https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-pull-request-comment-commands>
