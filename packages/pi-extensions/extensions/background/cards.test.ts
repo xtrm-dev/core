@@ -25,7 +25,7 @@ describe("task cards through the I7 module", () => {
     expect(details).toMatchObject({ kind: "task", state: "failed", identity: "task bg_1a2b" });
     expect(glyphFor(details as never)).toBe("!");
     // Folded: one row, no id, the command as the subject.
-    expect(formatEventCard(details as never, theme, 80)).toBe("! Failed task  make build  exit 2 · 12.5s");
+    expect(formatEventCard(details as never, theme, 80)).toBe("! task failed  make build  exit 2 · 12.5s");
     // Opened: the id, the full summary and the output path.
     const opened = formatEventCard(details as never, theme, 80, { expanded: true });
     expect(opened).toContain("task bg_1a2b");
@@ -45,7 +45,7 @@ describe("task cards through the I7 module", () => {
     });
     expect(details).toMatchObject({ kind: "task", state: "completed" });
     expect(glyphFor(details as never)).toBe("○");
-    expect(formatEventCard(details as never, theme, 80)).toBe("› Completed task  true  0.1s");
+    expect(formatEventCard(details as never, theme, 80)).toBe("› task completed  true  0.1s");
     expect(formatEventCard(details as never, theme, 80, { expanded: true })).toContain("Read /tmp/background-bg_1a2b.log");
   });
 
@@ -71,10 +71,30 @@ describe("monitor cards through the I7 module", () => {
     expect(details).toMatchObject({ kind: "monitor", state: "event", identity: "monitor mn_3c4d" });
     expect(glyphFor(details as never)).toBe("○");
     // Folded: the first event line is the subject; the rest open with the card.
-    expect(formatEventCard(details as never, theme, 80)).toBe("○ Matched monitor  build ok  event #2 · 3 lines");
+    expect(formatEventCard(details as never, theme, 80)).toBe("○ monitor matched  build ok  event #2 · 3 lines");
+
+
     const card = formatEventCard(details as never, theme, 80, { expanded: true });
     expect(card).toContain("build ok");
     expect(card).toContain("tests ok");
+  });
+  test("a single-line monitor event counts in the singular", () => {
+    // A live e2e run surfaced "event #1 · 1 lines"; the facts trailer must agree with its noun.
+    const details = resolveMonitorCard({
+      details: {
+        monitor_id: "mn_3c4d",
+        kind: "event",
+        event_index: 1,
+        lines: ["FAIL tool-groups.test.ts"],
+        event_count: 2,
+        line_count: 1,
+      },
+    });
+    expect(formatEventCard(details as never, theme, 80)).toBe("○ monitor matched  FAIL tool-groups.test.ts  event #1 · 1 line");
+    const expired = resolveMonitorCard({
+      details: { monitor_id: "mn_3c4d", kind: "expired", reason: "timeout", event_count: 1, line_count: 1 },
+    });
+    expect(formatEventCard(expired as never, theme, 80)).toBe("○ monitor expired  timeout  1 event · 1 line");
   });
 
   test("a terminal notice resolves with its counts", () => {
@@ -88,7 +108,7 @@ describe("monitor cards through the I7 module", () => {
       },
     });
     expect(details).toMatchObject({ kind: "monitor", state: "expired" });
-    expect(formatEventCard(details as never, theme, 80)).toBe("○ Expired monitor  300000ms timeout  5 events · 41 lines");
+    expect(formatEventCard(details as never, theme, 80)).toBe("○ monitor expired  300000ms timeout  5 events · 41 lines");
     const card = formatEventCard(details as never, theme, 80, { expanded: true });
     expect(card).toContain("mn_3c4d");
     expect(card).toContain("5");

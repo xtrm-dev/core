@@ -184,22 +184,24 @@ Pending tools have no metadata footer. Expansion hints appear only when content 
 ## Cards
 
 Every event card folds to one row on the two-column marker grid. The row is
-marker, verb, identity, subject, then dim facts:
+marker, identity, verb, subject, then dim facts. The verb is lower-case because
+it no longer starts the phrase:
 
 ```text
-› Completed task  npm test --workspace cli  2m14s
-! Failed task  npm test --workspace cli  exit 1 · 12s
-› From @core-review  Review done, two findings, see Journal seq 12.
-○ Matched monitor  FAIL tool-groups.test.ts  40s
-○ Suggested using-specialists  Use Specialists as a governed XTRM execution backend…  score 0.71
-● Dispatched reviewer  CORE-2573
+› task completed  npm test --workspace cli  2m14s
+! task failed  npm test --workspace cli  exit 1 · 12s
+› message from @core-review  Review done, two findings, see Journal seq 12.
+○ monitor matched  FAIL tool-groups.test.ts  40s
+○ using-specialists suggested  Use Specialists as a governed XTRM execution backend…  score 0.71
+● reviewer dispatched  CORE-2573
 ```
 
 The verb is the only bold text on the row; the identity, subject and facts stay
-regular, and the facts are dim. Arrivals (task and message cards) use `›`;
-monitors keep `◉` (and `○` for wakes), suggestions and wakes keep their markers.
-`!` and the error tone mean failure only: a failure leads with `!` and the verb
-`Failed`, while high severity never sets them.
+regular, and the facts are dim. A message row names the kind (`message`), then
+the verb (`from`), then the sender, then the snippet. Arrivals (task and message
+cards) use `›`; monitors keep `◉` (and `○` for wakes), suggestions and wakes keep
+their markers. `!` and the error tone mean failure only: a failure leads with
+`!` and the verb `failed`, while high severity never sets them.
 
 A folded row clips to the width with the single `…` glyph and never pads.
 Opening a card (click, and `ctrl+o` globally) shows the same header with the

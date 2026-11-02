@@ -89,7 +89,7 @@ export function stateToken(state: string | undefined): StateToken {
 export interface EventDetails {
   kind: EventKind;
   state?: string;
-  /** Bold identity: "@name" for messages, "task <id>", "monitor <id>". */
+  /** Identity: the kind word on the folded row ("task", "monitor", "message"), the id-bearing form when opened. */
   identity: string;
   /** Full body lines kept by the caller (first lines; see totalLines). */
   preview: string[];
@@ -97,7 +97,7 @@ export interface EventDetails {
   totalLines?: number;
   /** Dim facts trailer: "id · elapsed · size". */
   facts?: string;
-  /** Folded-card verb: the one bold word on the row (Completed, From, Matched, Suggested). */
+  /** Folded-card verb words (Completed, From, Matched, Suggested); rendered lower-case after the identity. */
   verb?: string;
   /** Folded-card subject: the command or line the verb acted on. */
   subject?: string;
@@ -418,7 +418,11 @@ function isFailure(details: EventDetails): boolean {
   return details.failure === true || stateToken(details.state) === "error";
 }
 
-/** The folded card's one bold word: the verb the details carry, else the state's. */
+/**
+ * The folded card's one bold word: the verb the details carry, else the
+ * state's. The words stay Title case here; a row lower-cases the verb because
+ * it follows the identity and no longer starts the phrase.
+ */
 export function cardVerb(details: Pick<EventDetails, "kind" | "state" | "verb" | "failure">): string {
   const explicit = details.verb?.trim();
   if (explicit) return explicit;
@@ -442,7 +446,13 @@ function messageName(details: EventDetails): string {
   return sanitizeField(raw, 256) || "unknown";
 }
 
-/** Folded identity: the kind word or the sender, never an id (ids open on expansion). */
+/** Row verb: cardVerb's words, lower-cased because the identity now leads the row. */
+function rowVerb(details: EventDetails): string {
+  const verb = cardVerb(details);
+  return verb.charAt(0).toLowerCase() + verb.slice(1);
+}
+
+/** The identity word that leads the row; never an id (ids open on expansion). */
 function foldedIdentity(details: EventDetails): string {
   switch (details.kind) {
     case "task":
@@ -450,10 +460,15 @@ function foldedIdentity(details: EventDetails): string {
     case "monitor":
       return "monitor";
     case "message":
-      return `@${messageName(details)}`;
+      return "message";
     default:
       return sanitizeCardLine(details.identity);
   }
+}
+
+/** The word that follows the verb on its own space: a message's sender, else nothing. */
+function foldedAfterVerb(details: EventDetails): string {
+  return details.kind === "message" ? `@${messageName(details)}` : "";
 }
 
 /** Folded subject: the explicit subject, else the first preview line. */
@@ -475,8 +490,10 @@ function cardMarker(details: EventDetails): { glyph: string; failure: boolean } 
 interface FoldedRow {
   glyph: string;
   failure: boolean;
-  verb: string;
   identity: string;
+  verb: string;
+  /** One token after the verb on a single space (the message sender). */
+  afterVerb: string;
   subject: string;
   facts: string;
 }
@@ -486,17 +503,23 @@ function foldedRow(details: EventDetails): FoldedRow {
   return {
     glyph,
     failure,
-    verb: cardVerb(details),
     identity: foldedIdentity(details),
+    verb: rowVerb(details),
+    afterVerb: foldedAfterVerb(details),
     subject: foldedSubject(details),
     // Message ids leave the folded row; the opened card still carries them.
     facts: details.kind === "message" ? "" : (details.facts?.trim() ?? ""),
   };
 }
 
+/** Row head: identity, then the lower-case verb, then a message's sender. */
+function headPlain(row: FoldedRow): string {
+  return `${row.glyph} ${row.identity} ${row.verb}` + (row.afterVerb ? ` ${row.afterVerb}` : "");
+}
+
 function foldedPlainText(row: FoldedRow): string {
   return (
-    `${row.glyph} ${row.verb} ${row.identity}` +
+    headPlain(row) +
     (row.subject ? `  ${row.subject}` : "") +
     (row.facts ? `  ${row.facts}` : "")
   );
@@ -509,49 +532,61 @@ function foldedRowPlain(details: EventDetails, width: number): string {
   return visibleWidth(line) <= w ? line : clipToWidth(line, w);
 }
 
+/** Marker and head, themed: the marker dim (error on failure), identity regular, verb bold. */
+function headThemed(row: FoldedRow, theme: EventTheme): string {
+  const marker = row.failure ? theme.fg("error", row.glyph) : theme.fg("dim", row.glyph);
+  return `${marker} ${row.identity} ${theme.bold(row.verb)}` + (row.afterVerb ? ` ${row.afterVerb}` : "");
+}
+
 /**
- * Themed folded row: marker dim (error on failure), the verb bold, identity,
- * subject and facts regular, facts dim. No other bold on the row.
+ * Themed folded row: identity leads, the verb is the one bold word, subject
+ * and facts stay regular, facts dim. No other bold on the row.
  */
 function foldedRowThemed(details: EventDetails, theme: EventTheme, width: number): string {
   const w = Number.isFinite(width) && width > 0 ? Math.floor(width) : 80;
   const row = foldedRow(details);
   const plain = foldedPlainText(row);
   if (visibleWidth(plain) > w) return clipToWidth(plain, w);
-  const marker = row.failure ? theme.fg("error", row.glyph) : theme.fg("dim", row.glyph);
   return (
-    `${marker} ${theme.bold(row.verb)} ${row.identity}` +
+    headThemed(row, theme) +
     (row.subject ? `  ${row.subject}` : "") +
     (row.facts ? `  ${theme.fg("dim", row.facts)}` : "")
   );
 }
 
-/** Opened identity: message sends name the sender; tasks and monitors keep their id. */
+/** Opened identity: the same word as the folded row, widened with the id where the card carries one. */
 function expandedIdentity(details: EventDetails): string {
-  if (details.kind === "message") return `@${messageName(details)}`;
-  return sanitizeCardLine(details.identity);
+  switch (details.kind) {
+    case "task":
+    case "monitor":
+      return sanitizeCardLine(details.identity);
+    default:
+      return foldedIdentity(details);
+  }
+}
+
+/** Opened head: the folded order, with the id-bearing identity. */
+function expandedRow(details: EventDetails): FoldedRow {
+  return { ...foldedRow(details), identity: expandedIdentity(details) };
 }
 
 function expandedHeadPlain(details: EventDetails): string {
-  const { glyph } = cardMarker(details);
-  return `${glyph} ${cardVerb(details)} ${expandedIdentity(details)}`;
+  return headPlain(expandedRow(details));
 }
 
 function expandedHeadThemed(details: EventDetails, theme: EventTheme): string {
-  const { glyph, failure } = cardMarker(details);
-  const marker = failure ? theme.fg("error", glyph) : theme.fg("dim", glyph);
-  return `${marker} ${theme.bold(cardVerb(details))} ${expandedIdentity(details)}`;
+  return headThemed(expandedRow(details), theme);
 }
 
 /**
- * Collapsed one-liner for inbound messages: `› From @<name>  <snippet>`.
+ * Collapsed one-liner for inbound messages: `› message from @<name>  <snippet>`.
  * The full corpus arrives via ctrl+o (Pi passes `expanded` to the renderer).
  */
 export function formatMessageCollapsedPlain(details: EventDetails, width: number): string {
   return foldedRowPlain({ ...details, kind: "message" }, width);
 }
 
-/** Themed collapsed one-liner; same shape, marker dim, verb bold, snippet regular. */
+/** Themed collapsed one-liner; same shape, marker dim, the verb bold, snippet regular. */
 export function formatMessageCollapsed(details: EventDetails, theme: EventTheme, width: number): string {
   return foldedRowThemed({ ...details, kind: "message" }, theme, width);
 }
@@ -570,7 +605,7 @@ export function formatEventCardPlain(
 }
 
 /**
- * Operator card (D4): folded, one row — marker, the verb bold, identity,
+ * Operator card (D4): folded, one row — marker, identity, the verb bold,
  * subject and dim facts. `{ expanded: true }` opens it: the same header with
  * the full identity (ids included) and the full corpus below, never clipped.
  * Theme tokens only — this file holds no SGR.
@@ -597,10 +632,10 @@ export function formatEventCard(
 
 /**
  * Suggestion card (CORE-2546), on the tool rows' grid: marker in columns
- * 0-1, text from column 2. Folded, one row: the verb bold (Suggested), the
- * action, summary, dim facts and the hidden-line count. Opened: the same row
- * with the full unclipped summary, the reason in the thinking tone, then the
- * body under a dim └ anchor. `tintGlyph` colours the marker only.
+ * 0-1, text from column 2. Folded, one row: the action, the bold verb
+ * (suggested), summary, dim facts and the hidden-line count. Opened: the same
+ * row with the full unclipped summary, the reason in the thinking tone, then
+ * the body under a dim └ anchor. `tintGlyph` colours the marker only.
  */
 function suggestionLines(
   details: EventDetails,
@@ -623,7 +658,7 @@ function suggestionLines(
   const body = details.preview.flatMap((line) => wrapDisplay(sanitizeCardLine(line), inner));
   const hidden = reason.length + body.length;
   const glyph = glyphFor(details);
-  const verb = cardVerb({ ...details, kind: "suggestion" });
+  const verb = rowVerb({ ...details, kind: "suggestion" });
   const plainHead = sanitizeCardLine(details.identity);
   const summary = details.summary ? sanitizeCardLine(details.summary) : "";
   const facts = details.facts ? sanitizeCardLine(details.facts) : "";
@@ -632,7 +667,9 @@ function suggestionLines(
   // Folded rows keep the tail (score and hidden count) and cut the head and
   // summary first, always with the single `…` glyph.
   const tailWidth = tail ? 2 + visibleWidth(tail) : 0;
-  const room = Math.max(1, w - 2 - tailWidth - visibleWidth(verb) - 1);
+  // Identity leads the row; the verb follows it, so the two swap columns and
+  // the width budget stays the same as the old verb-first layout.
+  const room = Math.max(1, w - 4 - tailWidth - visibleWidth(verb));
   const headFit = !expanded && visibleWidth(plainHead) > room ? clipToWidth(plainHead, room) : plainHead;
   const summaryRoom = room - visibleWidth(headFit) - 2;
   const summaryFit = expanded
@@ -643,10 +680,10 @@ function suggestionLines(
         : summary
       : "";
   const plainRow =
-    `${glyph} ${verb} ${headFit}` +
+    `${glyph} ${headFit} ${verb}` +
     (summaryFit ? `  ${summaryFit}` : "") +
     (tail ? `  ${tail}` : "");
-  let row = `${style.glyph(glyph)} ${style.verb(verb)} ${style.head(headFit)}`;
+  let row = `${style.glyph(glyph)} ${style.head(headFit)} ${style.verb(verb)}`;
   if (summaryFit) row += `  ${style.summary(summaryFit)}`;
   if (tail) row += `  ${style.dim(tail)}`;
   if (!expanded) return [visibleWidth(plainRow) > w ? clipToWidth(plainRow, w) : row];
@@ -665,7 +702,7 @@ export function formatSuggestionCardPlain(details: EventDetails, width: number, 
   }).join("\n");
 }
 
-/** Themed suggestion card: verb bold, action at tool-name level, thinking-tone reason, output-tone body. */
+/** Themed suggestion card: action and verb at tool-name level, thinking-tone reason, output-tone body. */
 export function formatSuggestionEventCard(
   details: EventDetails,
   theme: EventTheme,

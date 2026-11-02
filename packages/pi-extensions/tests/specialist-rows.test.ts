@@ -21,7 +21,7 @@ describe("specialist_* rows (CORE-2576)", () => {
       ['{"status":"ok","activation_id":"act:1e362bb0","specialist":"reviewer","issue_ref":"CORE-2573","state":"running"}'],
       "success",
     );
-    expect(dispatch).toBe("● Dispatched reviewer  CORE-2573");
+    expect(dispatch).toBe("● reviewer dispatched  CORE-2573");
     expect(dispatch).not.toContain("{");
     expect(dispatch).not.toContain("activation_id");
   });
@@ -34,7 +34,7 @@ describe("specialist_* rows (CORE-2576)", () => {
         ['{"status":"ok","activation_id":"act:1e362bb0","specialist":"reviewer","state":"running"}'],
         "success",
       ),
-    ).toBe("● Resumed reviewer  act:1e362bb0");
+    ).toBe("● reviewer resumed  act:1e362bb0");
     expect(
       row(
         "specialist_result",
@@ -43,7 +43,7 @@ describe("specialist_* rows (CORE-2576)", () => {
         "success",
         252_000,
       ),
-    ).toBe("○ Finished reviewer  CORE-2573  PASS  4m12s");
+    ).toBe("○ reviewer finished  CORE-2573  PASS  4m12s");
   });
 
   test("a failed result leads with ! and states why", () => {
@@ -55,7 +55,7 @@ describe("specialist_* rows (CORE-2576)", () => {
         "error",
         63_000,
       ),
-    ).toBe("! Failed reviewer  CORE-2573  lease expired  1m03s");
+    ).toBe("! reviewer failed  CORE-2573  lease expired  1m03s");
   });
 
   test("resume, retry and lease reconcile stay pinned so they keep their own row", async () => {
