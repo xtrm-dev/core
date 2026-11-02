@@ -626,13 +626,12 @@ export default function skillSuggestExtension(pi: ExtensionAPI): void {
     return resolveSuggestionMessage({
       details: {
         card: {
-          // CORE-2348: header carries the full load subpath.
+          // Folded row: `○ Suggested <name>  <description>  score 0.71`.
+          // The load path and the full description open below the row.
           identity:
             meta.kind === "agent-settlement"
               ? "result settled"
-              : meta.level === "reference"
-                ? `load /skill:${meta.source ?? "—"}`
-                : `load /skill:${meta.skill ?? meta.source ?? "—"}/SKILL.md`,
+              : (meta.level === "reference" ? meta.source : meta.skill ?? meta.source) ?? "—",
           ...(meta.body ? { summary: stripEndPeriod(meta.body) } : {}),
           ...(suggestionFacts(meta.confidence) ? { facts: suggestionFacts(meta.confidence) } : {}),
           tint: "skill",

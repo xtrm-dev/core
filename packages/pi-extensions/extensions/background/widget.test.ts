@@ -44,7 +44,7 @@ describe("background indicator text", () => {
       summary({ unseenFailures: 3 }),
     ]) {
       const line = formatIndicator(shape) ?? "";
-      for (const glyph of ["◐", "◉", "○", "◓", "⟳"]) expect(line).not.toContain(glyph);
+      for (const glyph of [String.fromCodePoint(0x25d0), "◉", "○", "◓", "⟳"]) expect(line).not.toContain(glyph);
       expect(line.startsWith("!")).toBe(shape.unseenFailures > 0 && shape.runningTasks === 0 && shape.activeMonitors === 0);
     }
   });
@@ -140,13 +140,13 @@ describe("background summary", () => {
 
 describe("fitToWidth", () => {
   test("short lines pass through untouched", () => {
-    expect(fitToWidth("◐ 3 tasks running · /bg", 80)).toBe("◐ 3 tasks running · /bg");
+    expect(fitToWidth("3 tasks running · /bg", 80)).toBe("3 tasks running · /bg");
   });
 
   test("long lines fit, measured by the same ruler the tests use", () => {
     // Width only: under the process-wide pi-tui stubs the cut point and
     // ellipsis styling vary (identity stub, naive slice, real library).
-    const out = fitToWidth("◐ 12345 tasks running · 67890 monitors · ! 42 failed · /bg", 20);
+    const out = fitToWidth("12345 tasks running · 67890 monitors · ! 42 failed · /bg", 20);
     expect(visibleWidth(out)).toBeLessThanOrEqual(20);
     expect(out.length).toBeGreaterThan(0);
   });
@@ -162,7 +162,7 @@ describe("fitToWidth", () => {
     // The CI-engine regression proof in miniature: hardCut uses only the
     // width ruler, so it holds even where truncateToWidth no-ops.
     for (const width of [8, 20]) {
-      const out = hardCut("◐ 12345 tasks running · 67890 monitors · ! 42 failed · /bg", width);
+      const out = hardCut("12345 tasks running · 67890 monitors · ! 42 failed · /bg", width);
       expect(visibleWidth(out)).toBeLessThanOrEqual(width);
     }
     expect(hardCut("short", 80)).toBe("short");

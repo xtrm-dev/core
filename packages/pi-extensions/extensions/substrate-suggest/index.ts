@@ -10,7 +10,7 @@
  * wake card per turn in the house style:
  *
  *   ● sb journal checkpoint · CORE-2295
- *   Checkpoint now: … Ignore this if it does not fit. · jev 0.72
+ *   Checkpoint now: … Ignore this if it does not fit. · score 0.72
  *
  * Binding is fully in-session and automatic — the operator never exports
  * SUBSTRATE_ISSUE_REF. The bound issue resolves, in order:

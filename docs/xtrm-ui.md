@@ -20,6 +20,7 @@ domain: [pi, extensions, ui, themes]
 | [Credits](#credits) | The original theme palette and header layout were derived from |
 | [Themes](#themes) | The extension discovers four themes: |
 | [Tool Rendering](#tool-rendering) | Native tools (`bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`) retain |
+| [Cards](#cards) | Every event card folds to one row: marker, one bold verb, identity, subject, dim facts |
 | [Assistant Text and Hierarchy](#assistant-text-and-hierarchy) | Four semantic levels carry the interface; contrast and weight do the work, with |
 | [Thinking Rows](#thinking-rows) | Collapsed: `  Thinking |
 | [Preferences](#preferences) | Only active, user-controlled behavior is persisted: |
@@ -88,8 +89,8 @@ At most two fields appear, and no field is a restatement: no `1 line`, no
 padded to the terminal width, so the transcript keeps natural line lengths
 instead of reading like a filled-in form.
 
-A one-line row never wraps. Each line is clipped to the terminal width and ends
-in `…`, and a bash row shows the command's first physical line clipped to 72
+A one-line row never wraps. Each line is clipped to the terminal width with the
+single `…` glyph (never `...`), and a bash row shows the command's first physical line clipped to 72
 characters, so the informative part is what stays visible. A leading `cd` into
 the directory the session already works in is dropped from that line: it is a
 no-op, and left in place it consumed the whole budget on every consecutive row.
@@ -164,20 +165,47 @@ opens its output.
 
 Everything folds except calls that act outside the reply: messages to other
 agents, background jobs, specialist control and `ask_coordinator` keep one row and
-start a new group. Edits and writes fold; open the row for the diff. User messages,
-assistant text, summaries and extension messages never fold.
+start a new group. Edits and writes fold; open the row for the diff. User messages
+and assistant text never fold. Extension message cards fold to one row (see
+[Cards](#cards)).
 
 Shell subjects drop setup for display: a leading `cd`, env assignments, `export`,
 `set`, `source`, `nice`, `ionice` and `timeout`. A command that is only setup keeps
 its text. What runs never changes.
 
-Code-carrying tools (`codemode`, `python`) keep the `● used <tool>` header
+Code-carrying tools (`codemode`, `python`) keep the `used <tool>` header
 unchanged but render the body like native bash rows: bold execution lines with
 their own hidden-count, output hung off a muted `└` tree, and a plain dim meta
 footer. Execution and result cap independently (`commandPreviewLines` and
 `extPreviewLines`), so a long program never starves its output.
 
 Pending tools have no metadata footer. Expansion hints appear only when content is hidden.
+
+## Cards
+
+Every event card folds to one row on the two-column marker grid. The row is
+marker, verb, identity, subject, then dim facts:
+
+```text
+› Completed task  npm test --workspace cli  2m14s
+! Failed task  npm test --workspace cli  exit 1 · 12s
+› From @core-review  Review done, two findings, see Journal seq 12.
+○ Matched monitor  FAIL tool-groups.test.ts  40s
+○ Suggested using-specialists  Use Specialists as a governed XTRM execution backend…  score 0.71
+● Dispatched reviewer  CORE-2573
+```
+
+The verb is the only bold text on the row; the identity, subject and facts stay
+regular, and the facts are dim. Arrivals (task and message cards) use `›`;
+monitors keep `◉` (and `○` for wakes), suggestions and wakes keep their markers.
+`!` and the error tone mean failure only: a failure leads with `!` and the verb
+`Failed`, while high severity never sets them.
+
+A folded row clips to the width with the single `…` glyph and never pads.
+Opening a card (click, and `ctrl+o` globally) shows the same header with the
+full identity — ids included — and the full corpus, unclipped; long content
+wraps instead. Message and task ids leave the folded row and stay on the opened
+card. Suggestion markers use theme tokens only: no hue on chrome.
 
 ## Assistant Text and Hierarchy
 

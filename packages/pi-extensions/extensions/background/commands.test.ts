@@ -60,8 +60,8 @@ describe("tasks command parsing", () => {
 });
 
 describe("tasks row glyphs", () => {
-  test("running tasks show ◐, armed monitors ◉, failures !", () => {
-    expect(stateGlyph("task", "running")).toBe("◐");
+  test("running tasks show ●, armed monitors ◉, failures !", () => {
+    expect(stateGlyph("task", "running")).toBe("●");
     expect(stateGlyph("monitor", "armed")).toBe("◉");
     expect(stateGlyph("monitor", "event")).toBe("◉");
     expect(stateGlyph("task", "failed")).toBe("!");
@@ -87,7 +87,7 @@ describe("tasks list", () => {
     const monitor = store.createMonitor({ command: "tail", wsUrl: null, description: "tail", outputFile: "/tmp/c.log", sessionId: "session" });
     const rows = buildTasksRows(store.list(), store.listMonitors(), NOW);
     expect(rows.map((row) => row.id)).toEqual([running.id, done.id, monitor.id]);
-    expect(rows[0]).toMatchObject({ kind: "task", glyph: "◐", state: "running" });
+    expect(rows[0]).toMatchObject({ kind: "task", glyph: "●", state: "running" });
     expect(rows[2]).toMatchObject({ kind: "monitor", glyph: "◉" });
   });
 
