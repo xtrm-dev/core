@@ -1015,10 +1015,14 @@ describe("ultracompact rows", async () => {
   });
 
   test("JSON results summarize shape, never a bare brace", () => {
-    expect(ultraExternalPrimary("specialist_status", ['{\n  "activations": [],\n  "pending_asks": []\n}'])).toBe("{activations, pending_asks}");
-    expect(ultraExternalPrimary("specialist_list", ['{"a":1,"b":2,"c":3,"d":4}'])).toBe("{a, b, c, +1}");
     expect(ultraExternalPrimary("x", ['[1,2,3]'])).toBe("[3 items]");
     expect(ultraExternalPrimary("x", ['{broken'])).toBe("{broken");
+  });
+
+  test("ListAgents primary is the peer count", () => {
+    expect(ultraExternalPrimary("ListAgents", ["This session is a\nPeer sessions (3):\n  x"])).toBe("3 peers");
+    expect(ultraExternalPrimary("BashBackground", ["Started task t1"])).toContain("t1");
+    expect(ultraExternalPrimary("BashBackground", [])).toBeUndefined();
   });
 });
 

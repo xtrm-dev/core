@@ -705,7 +705,7 @@ const ORIGINAL_EXTERNAL_SET_EXPANDED = "__xtrmUiExternalToolFrameOriginalSetExpa
 // Message-component render wrappers for tool folding; versioned with the frame.
 const GROUP_BOUNDARY_PATCH = "__xtrmUiGroupBoundary";
 const ORIGINAL_BOUNDARY_RENDER = "__xtrmUiGroupBoundaryOriginalRender";
-const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 56;
+const EXTERNAL_TOOL_FRAME_PATCH_VERSION = 57;
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 // XTRM extension rows render through the active theme (tokens only). The
@@ -1072,8 +1072,29 @@ export function ultraExternalSubject(toolName: string | undefined, args: Record<
       return undefined;
     }
     default:
-      return undefined;
+      break;
   }
+  // Specialist lifecycle and Substrate calls name their subject from args:
+  // the issue ref for a dispatch or a Substrate read, the activation id for
+  // a follow-up on an already-started activation.
+  if (toolName?.startsWith("specialist_")) {
+    const ref = subjectText(args.issue_ref) ?? subjectText(args.bead_id);
+    const activation = subjectText(args.activation_id);
+    const specialist = subjectText(args.specialist);
+    return [specialist, ref ?? activation].filter(Boolean).join("  ") || ref || activation || specialist;
+  }
+  if (toolName?.startsWith("substrate_")) {
+    const ref = subjectText(args.ref) ?? subjectText(args.issue_ref);
+    if (ref) return ref;
+    const project = subjectText(args.project);
+    const query = subjectText(args.query);
+    return [project, query].filter(Boolean).join("  ") || subjectText(args.action);
+  }
+  return undefined;
+}
+
+function subjectText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 export function ultraExternalPrimary(toolName: string | undefined, resultTexts: string[]): string | undefined {
@@ -1091,6 +1112,13 @@ export function ultraExternalPrimary(toolName: string | undefined, resultTexts: 
     .replace(/^\[[^\]\n]*\]\s*\n/, "")
     .split(/\n+---\s*\n/)[0]!
     .trim();
+  // Specialist and Substrate payloads carry no readable outcome on a folded
+  // row; a `{status, issue_ref, +N}` key list says nothing. Their subjects
+  // come from args, and specialist rows render their own line below.
+  if ((toolName?.startsWith("specialist_") || toolName?.startsWith("substrate_")) &&
+      (body.startsWith("{") || body.startsWith("["))) {
+    return undefined;
+  }
   if (body.startsWith("{") || body.startsWith("[")) {
     try {
       const summary = summarizeJsonValue(JSON.parse(body));
@@ -1123,12 +1151,105 @@ function summarizeJsonValue(value: unknown): string | undefined {
 
 /** Single-line ultra frame row: bare provider/action header (never sniffed),
  *  no `●` except Class B, no `·` — the outcome rides the dim level. */
+/** Specialist lifecycle verbs for the folded row; the tool name picks one. */
+const SPECIALIST_VERBS: Record<string, string> = {
+  specialist_dispatch: "Dispatched",
+  specialist_resume: "Resumed",
+  specialist_retry: "Retried",
+  specialist_reply: "Replied",
+  specialist_steer: "Steered",
+  specialist_stop_activation: "Stopped",
+  specialist_result: "Finished",
+  specialist_status: "Checked",
+  specialist_feed: "Read",
+  specialist_list: "Listed",
+  specialist_lease_reconcile: "Reconciled",
+};
+
+/** Specialist calls that report a settled activation when the result is done. */
+const SPECIALIST_FINISHING = new Set([
+  "specialist_dispatch",
+  "specialist_resume",
+  "specialist_retry",
+  "specialist_result",
+  "specialist_status",
+]);
+
+/** Activation durations read in minutes: `4m12s`, not `252s`. */
+function specialistDuration(durationMs: number): string {
+  if (durationMs < 60_000) return formatDuration(durationMs) ?? "";
+  const total = Math.round(durationMs / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}m${String(seconds).padStart(2, "0")}s`;
+}
+
+function parsedResultObject(resultTexts: string[]): Record<string, unknown> | undefined {
+  if (resultTexts.length === 0) return undefined;
+  const body = resultTexts.join("\n").trim()
+    .replace(/^\[[^\]\n]*\]\s*\n/, "")
+    .split(/\n+---\s*\n/)[0]!
+    .trim();
+  try {
+    const value = JSON.parse(body);
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * specialist_* rows: `● Dispatched reviewer  CORE-2573`, `○ Finished
+ * reviewer  CORE-2573  PASS  4m12s`, `! Failed reviewer  CORE-2573  lease
+ * expired  1m03s`. The name, ref and outcome come from the result payload,
+ * with args as the fallback; the JSON key list never rides the row.
+ */
+function buildSpecialistUltraLine(
+  toolName: string,
+  args: Record<string, unknown>,
+  resultTexts: string[],
+  status: ToolRowStatus,
+  durationMs?: number,
+): string | undefined {
+  const data = parsedResultObject(resultTexts) ?? {};
+  const specialist = subjectText(data["specialist"]) ?? subjectText(args.specialist);
+  const ref = subjectText(data["issue_ref"]) ?? subjectText(data["bead_id"])
+    ?? subjectText(args.issue_ref) ?? subjectText(args.bead_id);
+  const activation = subjectText(data["activation_id"]) ?? subjectText(args.activation_id);
+  const subject = ref ?? activation ?? subjectText(args.worktree);
+  if (!specialist && !subject) return undefined;
+  const state = subjectText(data["state"]);
+  const failure = status === "error" || state === "failed" || subjectText(data["status"]) === "failed";
+  const running = !failure && (status === "pending" || state === "running" || state === "pending" || state === "queued");
+  const base = SPECIALIST_VERBS[toolName] ?? "Checked";
+  const verb = failure ? "Failed" : running ? base : SPECIALIST_FINISHING.has(toolName) ? "Finished" : base;
+  const marker = failure ? ultraFg("error", "!") : ultraFg("dim", running ? "●" : "○");
+  const extra = failure
+    ? subjectText(data["reason"]) ?? subjectText(data["detail"])
+    : subjectText(data["result_status"]);
+  let row = `${marker} ${ultraBold("toolTitle", verb)}`;
+  if (specialist) row += ` ${ultraFg("toolTitle", specialist)}`;
+  if (subject) row += `  ${ultraFg("toolTitle", subject)}`;
+  if (extra) row += `  ${ultraFg("dim", extra)}`;
+  if (durationMs != null && durationMs >= 1000) row += `  ${ultraFg("dim", specialistDuration(durationMs))}`;
+  return row;
+}
+
 export function buildUltraExternalLine(
   toolName: string | undefined,
   args: Record<string, unknown>,
   resultTexts: string[],
   status: ToolRowStatus,
+  durationMs?: number,
 ): string {
+  if (toolName?.startsWith("specialist_")) {
+    try {
+      const specialistRow = buildSpecialistUltraLine(toolName, args, resultTexts, status, durationMs);
+      if (specialistRow) return specialistRow;
+    } catch {
+      // Fall through to the generic row: a specialist row must never break a render.
+    }
+  }
   const kind = externalToolFrameKind(toolName) ?? "external";
   const bare = bareExternalToolHeader(kind, toolName);
   const subject = ultraExternalSubject(toolName, args);
@@ -1319,6 +1440,7 @@ async function installExternalToolFramePatch(): Promise<void> {
           getToolArgs(this),
           this.result ? collectResultTexts(this) : [],
           status,
+          this.__xtrmExternalDurationMs,
         );
         return [...leading, truncateToWidth(line, Math.max(8, width))];
       } catch {
