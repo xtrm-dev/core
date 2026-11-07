@@ -66,7 +66,6 @@ for (const modulePath of [
   "../../src/extensions/compact-header.ts",
   "../../src/extensions/custom-footer.ts",
   "../../src/extensions/git-checkpoint.ts",
-  "../../src/extensions/quality-gates.ts",
   "../../src/extensions/service-skills.ts",
   "../../src/extensions/sp-terminal-overlay.ts",
   "../../src/extensions/xtrm-ui.ts",

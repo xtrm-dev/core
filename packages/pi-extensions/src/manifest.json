@@ -94,7 +94,7 @@
     }
   ],
   "disabled": {
-    "quality-gates": "Hook-script lookup still targets .claude/hooks instead of the managed .xtrm/hooks layout.",
+    "quality-gates": "Retired (CORE-2386): disabled AND inert; its hook-script lookup still targeted .claude/hooks instead of the managed .xtrm/hooks layout, and Pi runs no command-hook surface, so it never fired. Sources, policy, shim, mirror and legacy-path-map entry removed; the id stays here so stale global installs are pruned. Pi-side gating returns through CORE-2584.",
     "service-skills": "Superseded by service-knowledge (xtrm-6z6.1): stale registry resolution (only scanned user/packs + service-skills umbrella), blind to the canonical find_umbrella_packs layout. Replaced by the self-gating service-knowledge extension.",
     "pi-serena-compact": "Passive legacy extension superseded by pi-serena-tools; do not enroll it as a global directory.",
     "core": "Library source lives under src/core; it is not an extension directory.",

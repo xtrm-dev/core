@@ -3,7 +3,6 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import compactHeaderExtension from "./extensions/compact-header.ts";
 import customFooterExtension from "./extensions/custom-footer.ts";
 import gitCheckpointExtension from "./extensions/git-checkpoint.ts";
-import qualityGatesExtension from "./extensions/quality-gates.ts";
 import serviceSkillsExtension from "./extensions/service-skills.ts";
 import xtrmLoaderExtension from "./extensions/xtrm-loader.ts";
 import xtrmUiExtension from "./extensions/xtrm-ui.ts";
@@ -17,7 +16,6 @@ export const managedPiExtensions: readonly ManagedPiExtension[] = [
   { id: "compact-header", register: compactHeaderExtension },
   { id: "custom-footer", register: customFooterExtension },
   { id: "git-checkpoint", register: gitCheckpointExtension },
-  { id: "quality-gates", register: qualityGatesExtension },
   { id: "service-skills", register: serviceSkillsExtension },
   { id: "xtrm-loader", register: xtrmLoaderExtension },
   { id: "xtrm-ui", register: xtrmUiExtension },

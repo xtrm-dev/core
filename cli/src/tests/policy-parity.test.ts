@@ -73,17 +73,17 @@ describe('policy structure', () => {
 // ── Cross-runtime parity ──────────────────────────────────────────────────────
 
 const claudePolicies = policies.filter(({ policy }) => (policy.claude?.hooks?.length ?? 0) > 0);
-const piPolicies = policies.filter(({ policy }) => Boolean(policy.pi?.extension));
 
 describe('cross-runtime coverage', () => {
   // The invariant this file protects: an enforcement area that exists on both
   // runtimes must keep existing on both.
   //
   // CORE-2339 moved every Claude hook into one dispatcher process, so the
-  // quality gate is no longer declared twice inside one `runtime: both` policy:
-  // quality-gates.json now carries the Pi extension and the Claude side is wired
-  // by hook-dispatcher.json. The two halves are asserted together below, so a
-  // future edit that drops either side still fails here.
+  // quality gate is declared once, by hook-dispatcher.json. CORE-2386 removed
+  // the Pi half: quality-gates.json's extension was disabled AND inert (its
+  // hook lookup still targeted .claude/hooks), and Pi runs no command-hook
+  // surface, so no enforcement lived there to keep. The Claude side stays
+  // asserted below; restoring real Pi gating is CORE-2584.
   //
   // Recorded gap (pre-existing, NOT introduced by CORE-2339): the
   // worktree-boundary and specialists-agent-guard guards have no Pi equivalent —
@@ -91,10 +91,7 @@ describe('cross-runtime coverage', () => {
   // section. Porting them to Pi is separate work; until then they are
   // Claude-only by design, not by regression.
 
-  it('the quality gate is wired on Claude (dispatcher) and on Pi (extension)', () => {
-    const gate = policies.find(p => p.file === 'quality-gates.json')!.policy;
-    expect(gate.pi?.extension, 'quality gate lost its Pi extension').toBeTruthy();
-
+  it('the quality gate is wired on Claude through the dispatcher', () => {
     const dispatcher = policies.find(p => p.file === 'hook-dispatcher.json')!.policy;
     const commands = (dispatcher.claude?.hooks ?? []).map(h => h.command).join('\n');
     expect(commands, 'quality gate lost its Claude wiring').toContain('dispatch.mjs post');
@@ -127,7 +124,15 @@ describe('cross-runtime coverage', () => {
     expect(claudeOnly).toEqual([]);
   });
 
-  it('at least one policy wires a Pi extension', () => {
-    expect(piPolicies.length).toBeGreaterThan(0);
+  it('records the empty Pi policy set instead of losing it silently', () => {
+    // CORE-2386: quality-gates.json was the last Pi-side policy, and it carried
+    // a disabled, inert extension. Removing it lost no enforcement (the gate
+    // never ran for Pi tool results) but left NO policy targeting Pi. CORE-2584
+    // restores it. When a Pi policy returns, this test fails until it is given
+    // its extension and the gap note above is updated.
+    const piTargetedPolicies = policies
+      .filter(({ policy }) => policy.runtime === 'pi' || Boolean(policy.pi?.extension))
+      .map(({ file }) => file);
+    expect(piTargetedPolicies).toEqual([]);
   });
 });

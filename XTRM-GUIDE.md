@@ -147,7 +147,6 @@ Policies are the **single source of truth** for all enforcement rules.
 | Policy | Runtime | Order | Purpose |
 |--------|---------|-------|---------|
 | `hook-dispatcher.json` | claude | 10 | One process per Claude Code event: boundary guard, agent guard, quality gates, GitNexus enrichment, debug loggers (CORE-2339), agent host presence reporter and Stop inbox reminder (XTRM-592) |
-| `quality-gates.json` | pi | 30 | Linting/typechecking (Pi); the Claude side runs inside `hook-dispatcher` |
 | `service-skills.json` | pi | 40 | Territory-based skill activation |
 
 The former `worktree-boundary`, `specialists-agent-guard`, `gitnexus`,
@@ -213,7 +212,6 @@ Enriches tool output with knowledge graph context via `gitnexus augment`.
 
 | Extension | Events | Purpose |
 |-----------|--------|---------|
-| `quality-gates.ts` | `tool_result` | Linting/typechecking after file edits |
 | `service-skills.ts` | before_agent_start, tool_result | Territory-based skill activation |
 
 ---

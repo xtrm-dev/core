@@ -123,6 +123,44 @@ describe("retired Pi extensions", () => {
     }
   });
 
+  test("quality-gates is gone from shipped sources but stays a stale-install target", () => {
+    // CORE-2386: the extension was disabled in the manifest AND inert (it
+    // resolved .claude/hooks, which the managed layout no longer uses), and Pi
+    // has no command-hook surface — so no enforcement lived there. Only the dead
+    // surface was removed; CORE-2584 restores real Pi-side gating.
+    for (const relativePath of [
+      "packages/pi-extensions/extensions/quality-gates",
+      "packages/pi-extensions/src/extensions/quality-gates.ts",
+      ".xtrm/packages/pi-extensions/extensions/quality-gates",
+      ".xtrm/packages/pi-extensions/src/extensions/quality-gates.ts",
+      "policies/quality-gates.json",
+      "cli/test/extensions/quality-gates.test.ts",
+      "cli/test/extensions/quality-gates-parity.test.ts",
+    ]) {
+      expect(existsSync(join(repoRoot, relativePath)), `${relativePath} should be absent`).toBe(false);
+    }
+
+    for (const relativePath of [
+      "packages/pi-extensions/src/registry.ts",
+      "packages/pi-extensions/src/shared/legacy-path-map.ts",
+      ".xtrm/packages/pi-extensions/src/registry.ts",
+      ".xtrm/packages/pi-extensions/src/shared/legacy-path-map.ts",
+    ]) {
+      expect(readFileSync(join(repoRoot, relativePath), "utf8"), relativePath).not.toContain("quality-gates");
+    }
+
+    // Ownership tombstone, not enrollment: the id must stay in BOTH stale-install
+    // inventories, or machines that already installed the extension keep a dead
+    // directory that no later xt run will ever remove.
+    const manifest = JSON.parse(readFileSync(join(repoRoot, "packages/pi-extensions/src/manifest.json"), "utf8")) as {
+      active: Array<{ id: string }>;
+      disabled: Record<string, string>;
+    };
+    expect(manifest.active.map((entry) => entry.id)).not.toContain("quality-gates");
+    expect(manifest.disabled["quality-gates"]).toContain("CORE-2386");
+    expect(readFileSync(join(repoRoot, "cli/src/core/plugin-era-cleanup.ts"), "utf8")).toContain("'quality-gates'");
+  });
+
   test("no shipped extension source authorizes edits or commits on Beads claim state", () => {
     // CORE-2403: the canonical tree is not the only shipped tree — walk the
     // committed npm mirror too. `.xtrm/ext-src` was the other mirror root;
