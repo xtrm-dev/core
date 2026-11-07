@@ -5,7 +5,6 @@ import compactHeaderExtension from "./extensions/compact-header.ts";
 import customFooterExtension from "./extensions/custom-footer.ts";
 import gitCheckpointExtension from "./extensions/git-checkpoint.ts";
 import pythonKernelExtension from "./extensions/python-kernel.ts";
-import qualityGatesExtension from "./extensions/quality-gates.ts";
 import readLineNumbersExtension from "./extensions/read-line-numbers.ts";
 import spTerminalOverlayExtension from "./extensions/sp-terminal-overlay.ts";
 import substrateSuggestExtension from "./extensions/substrate-suggest.ts";
@@ -27,7 +26,6 @@ const availableManagedPiExtensions: readonly ManagedPiExtension[] = [
   { id: "custom-footer", register: customFooterExtension },
   { id: "git-checkpoint", register: gitCheckpointExtension },
   { id: "python-kernel", register: pythonKernelExtension },
-  { id: "quality-gates", register: qualityGatesExtension },
   { id: "read-line-numbers", register: readLineNumbersExtension },
   { id: "sp-terminal-overlay", register: spTerminalOverlayExtension },
   { id: "substrate-suggest", register: substrateSuggestExtension },

@@ -158,9 +158,17 @@ The disabled manifest entry in `pi-extensions` is an ownership/migration tombsto
 
 Service-specific topology, freshness, and runbook maintenance belong to the service-knowledge subsystem. Generic XTRM/SRE skills consume that state rather than duplicating it.
 
-### `quality-gates` Pi extension
+### `quality-gates` (retired, CORE-2386)
 
-The old extension source can remain for migration history, but the manifest disables it because its hook lookup contract is obsolete. Current quality enforcement follows the managed hook/policy architecture documented in [hooks.md](hooks.md) and [policies.md](policies.md).
+The extension is removed. It was disabled in `src/manifest.json` and inert by
+bug: its hook lookup still targeted `.claude/hooks/quality-check.cjs|py`, while
+the managed hook layout moved to `.xtrm/hooks`. Pi also runs no command-hook
+surface — enforcement on Pi is extensions only — so there was no hooks-to-dispatch
+route and the gate never ran for Pi tool results. Quality enforcement is
+currently Claude-side only, inside the dispatcher described in [hooks.md](hooks.md)
+and [policies.md](policies.md). Restoring Pi-side gating is tracked as CORE-2584;
+the retired id remains a stale-install cleanup target so existing global installs
+are pruned.
 
 ### GitNexus extension / Serena
 

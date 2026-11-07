@@ -7,7 +7,6 @@
 | `packages/pi-extensions/extensions/compact-header` | `packages/pi-extensions/extensions/compact-header` | extension source moved unchanged |
 | `packages/pi-extensions/extensions/custom-footer` | `packages/pi-extensions/extensions/custom-footer` | now imports `../../src/core` |
 | `packages/pi-extensions/extensions/git-checkpoint` | `packages/pi-extensions/extensions/git-checkpoint` | extension source moved unchanged |
-| `packages/pi-extensions/extensions/quality-gates` | `packages/pi-extensions/extensions/quality-gates` | now imports `../../src/core` |
 | `packages/pi-extensions/extensions/service-skills` | `packages/pi-extensions/extensions/service-knowledge` | retired service-skills; replaced by self-gating service-knowledge (xtrm-6z6.1) |
 | `packages/pi-extensions/extensions/xtrm-loader` | `packages/pi-extensions/extensions/xtrm-loader` | now imports `../../src/core` |
 | `packages/pi-extensions/extensions/xtrm-ui` | `packages/pi-extensions/extensions/xtrm-ui` | theme assets moved to package-level `themes/xtrm-ui` |
@@ -30,7 +29,19 @@
 
 ## Retired extensions
 
-## Retired extensions
+- `quality-gates` was retired (CORE-2386). It was disabled in `src/manifest.json`
+  and inert by bug: `extensions/quality-gates/index.ts` resolved
+  `.claude/hooks/quality-check.cjs|py`, but the managed hook layout moved to
+  `.xtrm/hooks`, so the lookup always missed and the extension never fired. Pi
+  has no command-hook surface either (enforcement is extensions only), so there
+  was no hooks-to-dispatch route to keep: the gate simply did not run for Pi
+  tool results. The dead extension (source, `src/extensions/quality-gates.ts`
+  shim, package.json), `policies/quality-gates.json`, its two `cli/test`
+  suites, the mirror copies and the legacy-path-map entry are removed. The
+  `quality-gates` id stays in `src/manifest.json.disabled` and in
+  `cli/src/core/plugin-era-cleanup.ts` so stale global installs are still
+  pruned; that is inventory, not enrollment. Restoring real Pi-side gating is
+  CORE-2584.
 
 - `beads` and `session-flow` were retired (CORE-2372). The `beads` extension blocked
   every mutating file tool while `cwd/.beads` existed and no active `bd` claim (or
