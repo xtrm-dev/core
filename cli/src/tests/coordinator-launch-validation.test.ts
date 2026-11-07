@@ -1,5 +1,7 @@
-// Coordinator-aware launch validation (audit P1-05) and merge authority
-// (audit P1-04). xtrm-6hey0.3 / xtrm-6hey0.4.
+// Coordinator-aware launch validation (audit P1-05). xtrm-6hey0.3.
+//
+// The merge-authority gate (audit P1-04) lived in `xt merge` and retired with
+// that command (CORE-2552); its guard moves to the gh wrapper under CORE-2530.
 //
 // Every check here runs BEFORE any worktree is created — a rejected coordinator
 // launch must leave nothing on disk. The "leaks nothing" property is asserted
@@ -18,7 +20,6 @@ import {
     subordinateRejection,
     type ResolvedRole,
 } from '../utils/worktree-session.js';
-import { readSubordinateIdentity } from '../commands/merge.js';
 
 const ROLE: ResolvedRole = {
     name: 'chain-coordinator',
@@ -164,42 +165,6 @@ describe('checkSubordinateRole — role-level P1-05 checks', () => {
             role: { ...ROLE, interactive: true },
             launchingPaneRole: 'reviewer',
         })).toEqual({ ok: true });
-    });
-});
-
-describe('readSubordinateIdentity — merge authority (P1-04)', () => {
-    const fake = (answers: Record<string, string>) => (args: string[]): string => {
-        if (args.includes('#{pane_id}')) return answers.pane ?? '';
-        if (args.includes('#{session_id}')) return answers.own ?? '';
-        if (args.includes('@agent_role')) return answers.role ?? '';
-        if (args.includes('@agent_parent_session')) return answers.parent ?? '';
-        return '';
-    };
-
-    it('reports subordinate for a role pane parented to another session', () => {
-        const id = readSubordinateIdentity(
-            fake({ pane: '%9', role: 'chain-coordinator', parent: '$1', own: '$7' }), true,
-        );
-        expect(id).toEqual({ subordinate: true, role: 'chain-coordinator', parent: '$1' });
-    });
-
-    it('is a no-op outside tmux', () => {
-        expect(readSubordinateIdentity(fake({ pane: '%9', role: 'x', parent: '$1', own: '$7' }), false))
-            .toEqual({ subordinate: false });
-    });
-
-    it('is a no-op when the pane carries no role', () => {
-        expect(readSubordinateIdentity(fake({ pane: '%9', parent: '$1', own: '$7' }), true))
-            .toEqual({ subordinate: false });
-    });
-
-    it('is a no-op when the pane is its own parent — operator primed their pane', () => {
-        expect(readSubordinateIdentity(fake({ pane: '%9', role: 'reviewer', parent: '$7', own: '$7' }), true))
-            .toEqual({ subordinate: false });
-    });
-
-    it('is a no-op when tmux answers nothing at all', () => {
-        expect(readSubordinateIdentity(() => '', true)).toEqual({ subordinate: false });
     });
 });
 

@@ -114,21 +114,21 @@ Forbidden by construction of the ladder:
 | the integration branch is discoverable | **Core** (code) | `@agent_branch` / `XTMUX_AGENT_BRANCH` |
 | a subordinate coordinator is launched safely | **Core** (code) | `--subordinate` + the P1-05 checks in `resolveSubordinateLaunch` / `checkSubordinateRole` |
 | no nested chain coordinators | **Core** (code) | `checkSubordinateRole` compares the launching pane's `@agent_role` to the role being launched |
-| `xt merge` is main-orchestrator authority | **Core** (code) | `readSubordinateIdentity` gate in `xt merge`, with `--override-authority` for the operator |
+| merging into `main` is operator/coordinator authority | **process** (retired code gate) | `xt merge` and its `readSubordinateIdentity` gate were retired (CORE-2552); the review guard is being rebuilt in the `gh pr merge` wrapper under CORE-2530 |
 | `sp/*` derives from the coordinator branch | **Specialists** | consumes the published base when creating job worktrees |
 | specialist job lineage / `root_runtime_origin` | **Specialists** | `SupervisorStatus` |
 | coordinator does not author implementation | **prompt** | `chain-coordinator.specialist.json` system prompt; not mechanically checkable |
 | coordinator merges only *accepted* branches | **prompt + reviewer gate** | judgement, by definition |
 
-### The `xt merge` gate is a guardrail, not a boundary
+### The retired `xt merge` gate was a guardrail, not a boundary
 
-It reads `@agent_role` and `@agent_parent_session` from the current pane. With no
-tmux, no pane options, or no launcher metadata it does nothing. Anyone who can
-run `xt merge` can also run `gh pr merge` directly. Its purpose is to stop an
+It read `@agent_role` and `@agent_parent_session` from the current pane. With no
+tmux, no pane options, or no launcher metadata it did nothing, and anyone who can
+run `xt merge` can also run `gh pr merge` directly. Its purpose was to stop an
 agent from *absent-mindedly* draining the queue from inside a subordinate
-session — the mistake the audit describes — not to make that impossible.
-
-`--dry-run` is always allowed: inspecting the queue is not an authority act.
+session — not to make that impossible. CORE-2552 retired the command, so that
+ladder now exists only as process discipline; CORE-2530 puts a real review guard
+in the `gh pr merge` wrapper instead.
 
 ---
 

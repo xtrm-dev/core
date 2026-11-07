@@ -140,9 +140,10 @@ that itself on its first turn via `bd show`.
 ### Merge authority
 
 A subordinate session may publish its branch and open a PR; it may not merge into
-`main`. `xt merge` refuses to run from a pane that carries `@agent_role` and names
-a different session as its parent, with `--override-authority` for the operator
-and `--dry-run` always allowed. Full ladder and enforcement table:
+`main`. `xt merge` used to enforce this in code (refusing from a pane whose
+`@agent_role` names a different parent session, `--override-authority` for the
+operator); CORE-2552 retired that command, so the rule is process discipline until
+CORE-2530 lands its guard in the `gh pr merge` wrapper. Full ladder and enforcement table:
 [`architecture/coordinator-branch-ancestry.md`](./architecture/coordinator-branch-ancestry.md).
 
 ---

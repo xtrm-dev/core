@@ -658,7 +658,7 @@
           "version": "0.15.3"
         },
         "using-xtrm/references/surfaces.md": {
-          "hash": "d3419b144e9ad254c1300a4cf328032c1ba20a20823fa84567628a3f5792316a",
+          "hash": "6eedd768c531c1d850ce6fcd97ce09d86ea9018bc04b4691ccd8bca0b8126cd7",
           "version": "0.15.3"
         },
         "using-xtrm/SKILL.md": {
@@ -1472,7 +1472,7 @@
           "version": "0.15.3"
         },
         "pi/install-schema.json": {
-          "hash": "e3bd283a4b702ebdc801181a1d5b88ff1b8756cc024580d666f11e3c44f36d4c",
+          "hash": "192ac620b5b47906d89aaedc9efd2da7e845674668e673c310d558a768a5c313",
           "version": "0.15.3"
         },
         "pi/models.json.template": {
@@ -1484,7 +1484,7 @@
           "version": "0.15.3"
         },
         "pi/settings.json.template": {
-          "hash": "c5a35f0ce4ee6bdf5f1e47578db7cb4e41e92b84da030037fc3f8267fdd7aa9d",
+          "hash": "2e9ddf828273717a389d8d81d2c1f2ffb79f9723ac27aa50001d7027eb1d3d91",
           "version": "0.15.3"
         },
         "README.md": {

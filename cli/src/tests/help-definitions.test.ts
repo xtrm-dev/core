@@ -5,7 +5,6 @@ import { createStatusCommand } from '../commands/status.js';
 import { createUpdateCommand } from '../commands/update.js';
 import { createDocsCommand } from '../commands/docs.js';
 import { createEndCommand } from '../commands/end.js';
-import { createMergeCommand } from '../commands/merge.js';
 import { createDebugCommand } from '../commands/debug.js';
 import { createSpecCommand } from '../commands/spec.js';
 import { createTopologyCommand } from '../commands/topology.js';
@@ -50,7 +49,7 @@ describe('xt help vs commander definitions (CORE-2321)', () => {
     expect(desc).toContain('legacy Beads event history');
   });
 
-  it('update/status/end/merge flags in help match commander definitions', async () => {
+  it('update/status/end flags in help match commander definitions', async () => {
     const out = await renderHelp();
     // update
     expect(optionFlags(createUpdateCommand() as never)).toEqual(
@@ -71,16 +70,10 @@ describe('xt help vs commander definitions (CORE-2321)', () => {
       expect.arrayContaining([expect.stringContaining('--dry-run')]),
     );
     expect(out).toContain('--dry-run');
-    // merge: live defs have --override-authority and no --rebase
-    expect(optionFlags(createMergeCommand() as never)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('--dry-run'),
-        expect.stringContaining('--override-authority'),
-      ]),
-    );
-    expect(createMergeCommand().options.map((o) => o.flags).join(' ')).not.toContain('--rebase');
-    expect(out).toContain('--override-authority');
-    expect(out).not.toContain('(FIFO, --rebase)');
+    // CORE-2552: the merge command is retired. Help must not advertise it, and
+    // no other command may pick up its authority flag.
+    expect(out).not.toContain('merge [--dry-run');
+    expect(out).not.toContain('--override-authority');
   });
 
   it('commander descriptions name Substrate Issues, not bd/beads', () => {

@@ -25,7 +25,6 @@ Agent infrastructure: runtimes, skills, hooks, packages.
 | `xt topology` | Read-only projection joining panes, roles, specialist jobs, Issues, worktrees, branches, PRs |
 | `xt attach <name>` | Re-attach to an existing worktree and resume its session |
 | `xt end` | Close session: rebase, push, open PR, link beads, clean worktree |
-| `xt merge` | Drain the worktree PR merge queue via the xt-merge specialist |
 | `xt worktree` | Manage session worktrees |
 | `xt status` / `xt docs` / `xt memory` | Status+sync, doc drift checks, project memory |
 

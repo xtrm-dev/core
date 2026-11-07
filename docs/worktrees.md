@@ -53,11 +53,11 @@ xt attach ab3k     # specific worktree by slug
 # Publish the worktree branch as a PR
 xt end
 
-# If several xt/* PRs are open, drain the queue safely oldest-first
-xt merge
+# If several xt/* PRs are open, drain the queue oldest-first (operator/coordinator)
+gh pr merge <n> --rebase --delete-branch
 ```
 
-`xt end` is the publish step for one worktree: it rebases the branch onto the current target branch, pushes it, opens the PR, and can clean up the local worktree. `xt merge` is the queue-drain operator for the next stage: it delegates to the `xt-merge` specialist, processes open `xt/*` PRs FIFO, waits for green CI on the oldest PR, merges it with `--rebase --delete-branch`, then rebases and force-pushes the remaining queued branches before repeating.
+`xt end` is the publish step for one worktree: it rebases the branch onto the current target branch, pushes it, opens the PR, and can clean up the local worktree. The queue drain after that is an operator/coordinator act: process open `xt/*` PRs FIFO, wait for green CI on the oldest PR, merge it with `--rebase --delete-branch`, then rebase and force-push the remaining queued branches before repeating. `xt merge` used to wrap that loop; it was retired in CORE-2552 (no recorded use), and the review guard now lands in the `gh pr merge` wrapper under CORE-2530.
 
 ## What Happens on Launch
 
@@ -144,7 +144,7 @@ xt worktree remove xt/ab3k
 
 `xt end` belongs to the same lifecycle even though it is not a `worktree` subcommand: it is the publish step for a single worktree session. Run it from inside the worktree when you are ready to rebase, push, open the PR, and optionally remove that worktree.
 
-When multiple `xt/*` PRs are open at once, run `xt merge` from a normal checkout to drain the queue safely. `xt merge` wraps the `xt-merge` specialist: oldest PR first, CI must be green, merge with `--rebase --delete-branch`, then rebase the remaining queued xt branches onto the updated target branch and push them with `--force-with-lease`. Use `xt merge --dry-run` when you want queue order and CI status without performing any merge.
+When multiple `xt/*` PRs are open at once, drain the queue from a normal checkout, oldest PR first, with `gh pr merge --rebase --delete-branch`: CI must be green on the current head, then rebase the remaining queued xt branches onto the updated target branch and push them with `--force-with-lease`. Inspect queue order and CI status with `gh pr list --state open --json number,createdAt,headRefName`. The `xt merge` wrapper for this loop was retired in CORE-2552; the `xt-merge` Specialist definition remains available for ad-hoc dispatch.
 
 ## Session Close & Merge Pipeline
 
@@ -163,7 +163,7 @@ Worktree session
         ↓
   xt/* PR queue on GitHub
         │
-  xt merge                        ← run from main checkout
+  gh pr merge --rebase            ← operator/coordinator, from main checkout
         │  FIFO: oldest PR first
         │  gh pr merge --rebase --delete-branch
         │  rebase all remaining xt/* branches onto new main
@@ -206,9 +206,9 @@ git rebase --continue
 xt end --yes
 ```
 
-### xt merge — Queue Drain
+### PR Queue Drain (no `xt merge`)
 
-Run from the **main checkout** (not from inside a worktree). Delegates to the `xt-merge` specialist which processes all open `xt/*` PRs in FIFO order.
+`xt merge` was retired (CORE-2552, usage evidence in that Issue's Journal); the queue-drain loop below is now an operator/coordinator procedure run from the **main checkout**, not a Core subcommand. The `xt-merge` Specialist definition is kept for explicit dispatch.
 
 **Why FIFO + rebase cascade:**
 
@@ -222,11 +222,13 @@ Each `xt end` rebases its branch onto main at push time. After the oldest PR mer
 4. For each remaining branch: `git rebase origin/main && git push origin xt/<branch> --force-with-lease`
 5. Repeat until queue is empty
 
-**Flags:**
+**Inspect first (no mutation):**
 
-| Flag | Effect |
-|---|---|
-| `--dry-run` | Show queue order and CI status, no merge |
+```bash
+gh pr list --state open --json number,createdAt,headRefName,title \
+  --jq '.[] | select(.headRefName | startswith("xt/")) | [.number, .createdAt, .headRefName, .title] | @tsv' \
+  | sort -k2
+```
 
 **Rebase conflict during cascade:**
 
@@ -236,7 +238,7 @@ git status                        # see conflicted files
 git add <resolved-files>
 git rebase --continue
 git push origin xt/<branch> --force-with-lease
-# re-run xt merge to continue with the next PR
+# continue with the next PR
 ```
 
 ---
