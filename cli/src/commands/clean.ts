@@ -51,7 +51,9 @@ async function cleanHooks(
             .map(operation => operation.label)
             .sort((left, right) => left.localeCompare(right)),
         updatedSettings: cleanup.planned
-            .filter(operation => operation.type === 'delete-json-map-entries')
+            .filter(operation => operation.type === 'delete-json-map-entries'
+                || operation.type === 'prune-hook-rows'
+                || operation.type === 'prune-hook-commands')
             .map(operation => operation.label)
             .sort((left, right) => left.localeCompare(right)),
         preserved: ['~/.claude/hooks/* (unknown entries preserved; directory not scanned)'],
