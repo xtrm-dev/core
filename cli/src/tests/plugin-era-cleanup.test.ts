@@ -175,4 +175,87 @@ describe('runPluginEraCleanup', () => {
     expect(warning).toHaveBeenCalledWith(expect.stringContaining(path.join(projectRoot, '.xtrm', 'hooks', 'missing.mjs')));
     warning.mockRestore();
   });
+
+  it('prunes the CORE-2393 herdr/orca known orphans and their hook command', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const homeDir = process.env.HOME as string;
+
+    const herdrHook = path.join(homeDir, '.claude', 'hooks', 'herdr-agent-state.sh');
+    const orcaExtension = path.join(homeDir, '.pi', 'agent', 'extensions', 'orca-agent-status.ts');
+    const herdrExtension = path.join(homeDir, '.pi', 'agent', 'extensions', 'herdr-agent-state.ts');
+    const herdrBinary = path.join(homeDir, '.local', 'bin', 'herdr');
+    const herdrConfigDir = path.join(homeDir, '.config', 'herdr');
+
+    await fs.ensureDir(path.dirname(herdrHook));
+    await fs.writeFile(herdrHook, '#!/bin/sh\n');
+    await fs.writeFile(herdrExtension, '// herdr\n');
+    await fs.writeFile(orcaExtension, '// orca\n');
+    await fs.ensureDir(path.dirname(herdrBinary));
+    await fs.writeFile(herdrBinary, '#!/bin/sh\n');
+    await fs.ensureDir(path.join(herdrConfigDir, 'logs'));
+
+    const keptCommand = '~/.tmux/scripts/xtmux-agent-state.sh';
+    // CORE-2393 review: the matcher keys on the executed program, so a row that
+    // merely mentions the retired name as an argument to a non-interpreter must
+    // survive. `echo herdr-agent-state.sh` is the canonical such row.
+    const mentionsNameOnly = 'echo herdr-agent-state.sh';
+    await fs.writeJson(path.join(homeDir, '.claude', 'settings.json'), {
+      permissions: { allow: ['Bash(git status)'], defaultMode: 'acceptEdits' },
+      model: 'claude-sonnet-4-5',
+      hooks: {
+        SessionStart: [
+          { hooks: [{ type: 'command', command: `bash ${herdrHook}` }] },
+          { hooks: [{ type: 'command', command: mentionsNameOnly }] },
+        ],
+        PostToolUse: [
+          { hooks: [{ type: 'command', command: keptCommand }] },
+        ],
+        // Interpreter with a flag before the script must still be pruned.
+        SessionEnd: [
+          { hooks: [{ type: 'command', command: `node --no-warnings ${path.join(homeDir, '.claude', 'hooks', 'orca-agent-status.ts')}` }] },
+        ],
+      },
+      statusLine: { type: 'command', command: 'echo ok' },
+    }, { spaces: 2 });
+
+    const dryRunResult = await runPluginEraCleanup({
+      dryRun: true,
+      yes: true,
+      scope: 'global',
+      repoRoot: projectRoot,
+    });
+    expect(dryRunResult.planned.map((operation) => operation.label)).toEqual(expect.arrayContaining([
+      '~/.claude/hooks/herdr-agent-state.sh',
+      '~/.pi/agent/extensions/herdr-agent-state.ts',
+      '~/.pi/agent/extensions/orca-agent-status.ts',
+      '~/.local/bin/herdr',
+      '~/.config/herdr',
+    ]));
+    expect(await fs.pathExists(herdrHook)).toBe(true);
+    expect(await fs.pathExists(herdrConfigDir)).toBe(true);
+
+    await runPluginEraCleanup({
+      dryRun: false,
+      yes: true,
+      scope: 'global',
+      repoRoot: projectRoot,
+    });
+
+    expect(await fs.pathExists(herdrHook)).toBe(false);
+    expect(await fs.pathExists(herdrExtension)).toBe(false);
+    expect(await fs.pathExists(orcaExtension)).toBe(false);
+    expect(await fs.pathExists(herdrBinary)).toBe(false);
+    expect(await fs.pathExists(herdrConfigDir)).toBe(false);
+
+    const globalSettings = await fs.readJson(path.join(homeDir, '.claude', 'settings.json')) as Record<string, unknown>;
+    expect(globalSettings.permissions).toEqual({ allow: ['Bash(git status)'], defaultMode: 'acceptEdits' });
+    expect(globalSettings.model).toBe('claude-sonnet-4-5');
+    expect(globalSettings.statusLine).toEqual({ type: 'command', command: 'echo ok' });
+    expect(globalSettings.hooks).toEqual({
+      SessionStart: [{ hooks: [{ type: 'command', command: mentionsNameOnly }] }],
+      PostToolUse: [{ hooks: [{ type: 'command', command: keptCommand }] }],
+    });
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('herdr-agent-state.sh'));
+    warning.mockRestore();
+  });
 });

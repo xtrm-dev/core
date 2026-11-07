@@ -8,7 +8,11 @@ import { resolveGlobalHooksConfigPath } from './global-hooks-bootstrap.js';
 
 export type CleanupScope = 'global' | 'project' | 'all';
 
-type CleanupOperationType = 'delete-path' | 'delete-json-map-entries' | 'prune-hook-rows';
+type CleanupOperationType =
+  | 'delete-path'
+  | 'delete-json-map-entries'
+  | 'prune-hook-rows'
+  | 'prune-hook-commands';
 
 interface JsonMapEntryDelete {
   parentKey: string;
@@ -22,6 +26,13 @@ interface HookRowDelete {
   scriptPath: string;
 }
 
+interface HookCommandDelete {
+  eventName: string;
+  rowIndex: number;
+  commandIndex: number;
+  command: string;
+}
+
 interface CleanupOperation {
   scope: Exclude<CleanupScope, 'all'>;
   type: CleanupOperationType;
@@ -29,6 +40,7 @@ interface CleanupOperation {
   label: string;
   mapEntryDeletes?: readonly JsonMapEntryDelete[];
   hookRowDeletes?: readonly HookRowDelete[];
+  hookCommandDeletes?: readonly HookCommandDelete[];
 }
 
 export interface RunPluginEraCleanupOptions {
@@ -86,12 +98,35 @@ const LEGACY_PROJECT_HOOK_FILES: Array<{ legacyFile: string; duplicatePath: stri
   { legacyFile: 'quality-check.py', duplicatePath: path.join('.xtrm', 'hooks', 'quality-check.py') },
 ];
 
+// Retired agent-state writers, relative to $HOME (CORE-2393). herdr and orca
+// are unused but kept writing agent state beside the xtmux picker pipeline;
+// they live outside every repo and outside xt's managed surface, so the only
+// way to clean other machines is this explicit known-orphan list. Each entry
+// is removed only when it exists — nothing here is created or re-registered.
+const KNOWN_ORPHAN_HOME_PATHS: readonly string[] = [
+  path.join('.claude', 'hooks', 'herdr-agent-state.sh'),
+  path.join('.pi', 'agent', 'extensions', 'herdr-agent-state.ts'),
+  path.join('.pi', 'agent', 'extensions', 'orca-agent-status.ts'),
+  path.join('.local', 'bin', 'herdr'),
+  path.join('.config', 'herdr'),
+];
+
+// Script leaf names that retired hook rows in ~/.claude/settings.json may still
+// reference. A row whose script is gone must be pruned too, otherwise every
+// session start invokes a missing command.
+const KNOWN_ORPHAN_HOOK_SCRIPTS: readonly string[] = [
+  'herdr-agent-state.sh',
+  'orca-agent-status.ts',
+];
+
 export const PLUGIN_ERA_ARTIFACTS = {
   settingsMapEntryDeletes: SETTINGS_MAP_ENTRY_DELETES,
   installedPluginsEntry: LEGACY_PLUGIN_INSTALL_ID,
   knownMarketplaceEntry: LEGACY_MARKETPLACE_ID,
   piExtensionIds: Array.from(XTRM_MANAGED_PI_EXTENSIONS),
   legacyProjectHookFiles: LEGACY_PROJECT_HOOK_FILES.map((entry) => entry.legacyFile),
+  knownOrphanHomePaths: KNOWN_ORPHAN_HOME_PATHS,
+  knownOrphanHookScripts: KNOWN_ORPHAN_HOOK_SCRIPTS,
 } as const;
 
 export async function runPluginEraCleanup(opts: RunPluginEraCleanupOptions = {}): Promise<CleanupResult> {
@@ -163,6 +198,13 @@ export async function runPluginEraCleanup(opts: RunPluginEraCleanupOptions = {})
       if (operation.type === 'prune-hook-rows') {
         if (!dryRun) {
           await pruneHookRows(operation.targetPath, operation.hookRowDeletes ?? []);
+        }
+        updatedSettings.push(operation.targetPath);
+      }
+
+      if (operation.type === 'prune-hook-commands') {
+        if (!dryRun) {
+          await pruneHookCommands(operation.targetPath, operation.hookCommandDeletes ?? []);
         }
         updatedSettings.push(operation.targetPath);
       }
@@ -277,6 +319,13 @@ async function planGlobalOperations(managedAgentSkills: ReadonlySet<string>): Pr
     filePath: resolveGlobalHooksConfigPath(),
   }));
 
+  operations.push(...await planKnownOrphanHomePaths());
+
+  operations.push(...await planKnownOrphanHookCommands({
+    scope: 'global',
+    filePath: claudeSettingsPath,
+  }));
+
   const piExtensionsDir = path.join(os.homedir(), '.pi', 'agent', 'extensions');
   operations.push(...await planManagedDirectoryEntryDeletes({
     scope: 'global',
@@ -372,7 +421,7 @@ function printCleanupPlan(operations: CleanupOperation[], dryRun: boolean): void
     for (const operation of scopeOps) {
       const action = operation.type === 'delete-json-map-entries'
         ? 'update'
-        : operation.type === 'prune-hook-rows' ? 'prune' : 'delete';
+        : operation.type === 'prune-hook-rows' || operation.type === 'prune-hook-commands' ? 'prune' : 'delete';
       const prefix = dryRun ? '[DRY RUN] would' : 'will';
       console.log(kleur.dim(`    • ${prefix} ${action} ${operation.label}`));
     }
@@ -446,6 +495,174 @@ async function planMissingHookRows(params: {
     label: `${params.filePath}: ${hookRowDeletes.length} missing hook script(s)`,
     hookRowDeletes,
   }];
+}
+
+async function planKnownOrphanHomePaths(): Promise<CleanupOperation[]> {
+  const homeDir = os.homedir();
+  const operations: CleanupOperation[] = [];
+
+  for (const relativePath of KNOWN_ORPHAN_HOME_PATHS) {
+    const targetPath = path.join(homeDir, relativePath);
+    if (!await fs.pathExists(targetPath)) {
+      continue;
+    }
+
+    operations.push({
+      scope: 'global',
+      type: 'delete-path',
+      targetPath,
+      label: `~/${relativePath.split(path.sep).join('/')}`,
+    });
+  }
+
+  return operations;
+}
+
+// Claude's native settings.json keeps hook rows as
+// `hooks.<Event>[{ hooks: [{ type, command }] }]`. A retired writer can leave a
+// command behind after its script is deleted; match on the script leaf name so
+// absolute, `~/`-prefixed and wrapped (`bash <script>`) commands all match.
+async function planKnownOrphanHookCommands(params: {
+  scope: Exclude<CleanupScope, 'all'>;
+  filePath: string;
+}): Promise<CleanupOperation[]> {
+  const record = await readJsonObject(params.filePath);
+  if (!record || !record.hooks || typeof record.hooks !== 'object' || Array.isArray(record.hooks)) {
+    return [];
+  }
+
+  const hookCommandDeletes: HookCommandDelete[] = [];
+  for (const [eventName, rows] of Object.entries(record.hooks as Record<string, unknown>)) {
+    if (!Array.isArray(rows)) {
+      continue;
+    }
+
+    rows.forEach((row, rowIndex) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return;
+      }
+
+      const commands = (row as Record<string, unknown>).hooks;
+      if (!Array.isArray(commands)) {
+        return;
+      }
+
+      commands.forEach((commandEntry, commandIndex) => {
+        if (!commandEntry || typeof commandEntry !== 'object' || Array.isArray(commandEntry)) {
+          return;
+        }
+
+        const command = (commandEntry as Record<string, unknown>).command;
+        if (typeof command !== 'string' || !referencesKnownOrphanScript(command)) {
+          return;
+        }
+
+        console.warn(`WARN: pruning ${eventName} hook command; retired script ${command}`);
+        hookCommandDeletes.push({ eventName, rowIndex, commandIndex, command });
+      });
+    });
+  }
+
+  if (hookCommandDeletes.length === 0) {
+    return [];
+  }
+
+  const events = Array.from(new Set(hookCommandDeletes.map((deletion) => deletion.eventName)));
+  return [{
+    scope: params.scope,
+    type: 'prune-hook-commands',
+    targetPath: params.filePath,
+    label: `~/.claude/settings.json hooks: ${hookCommandDeletes.length} retired command(s) (${events.join(', ')})`,
+    hookCommandDeletes,
+  }];
+}
+
+// Interpreters that *execute* the script named in a later token. Only these may
+// carry the retired writer as a bare argument; a program like `echo` that merely
+// prints the name must never make a live row a deletion candidate.
+const HOOK_SCRIPT_INTERPRETERS: ReadonlySet<string> = new Set([
+  'bash', 'sh', 'zsh', 'dash', 'node', 'bun', 'deno', 'tsx',
+  'python', 'python3', 'uv', 'env', 'npx',
+]);
+
+function referencesKnownOrphanScript(command: string): boolean {
+  const tokens = command
+    .split(/\s+/)
+    .map((token) => token
+      .replace(/^['"]|['"]$/g, '')
+      .replace(/[;&|)]+$/, ''))
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    return false;
+  }
+
+  const matches = (token: string | undefined): boolean => (
+    token !== undefined && KNOWN_ORPHAN_HOOK_SCRIPTS.includes(path.basename(token))
+  );
+
+  const program = path.basename(tokens[0]);
+  if (!HOOK_SCRIPT_INTERPRETERS.has(program)) {
+    // Direct execution only: `~/.claude/hooks/herdr-agent-state.sh`, `./x.sh`.
+    // `echo herdr-agent-state.sh` stays untouched because its program is `echo`.
+    return matches(tokens[0]);
+  }
+
+  return tokens.slice(1).some((token) => matches(token));
+}
+
+async function pruneHookCommands(filePath: string, deletes: readonly HookCommandDelete[]): Promise<void> {
+  const record = await readJsonObject(filePath);
+  if (!record || !record.hooks || typeof record.hooks !== 'object' || Array.isArray(record.hooks)) {
+    return;
+  }
+
+  const byEvent = new Map<string, Map<number, Set<number>>>();
+  for (const deletion of deletes) {
+    const rows = byEvent.get(deletion.eventName) ?? new Map<number, Set<number>>();
+    const commandIndexes = rows.get(deletion.rowIndex) ?? new Set<number>();
+    commandIndexes.add(deletion.commandIndex);
+    rows.set(deletion.rowIndex, commandIndexes);
+    byEvent.set(deletion.eventName, rows);
+  }
+
+  const hooks = record.hooks as Record<string, unknown>;
+  for (const [eventName, rowsToPrune] of byEvent) {
+    const rows = hooks[eventName];
+    if (!Array.isArray(rows)) {
+      continue;
+    }
+
+    const nextRows = rows
+      .map((row, rowIndex) => {
+        const commandIndexes = rowsToPrune.get(rowIndex);
+        if (!commandIndexes || !row || typeof row !== 'object' || Array.isArray(row)) {
+          return row;
+        }
+
+        const rowRecord = row as Record<string, unknown>;
+        const commands = rowRecord.hooks;
+        if (!Array.isArray(commands)) {
+          return row;
+        }
+
+        const keptCommands = commands.filter((_entry, commandIndex) => !commandIndexes.has(commandIndex));
+        if (keptCommands.length === 0) {
+          return null;
+        }
+
+        return { ...rowRecord, hooks: keptCommands };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+
+    if (nextRows.length === 0) {
+      delete hooks[eventName];
+      continue;
+    }
+
+    hooks[eventName] = nextRows;
+  }
+
+  await fs.writeJson(filePath, record, { spaces: 2 });
 }
 
 async function pruneHookRows(filePath: string, deletes: readonly HookRowDelete[]): Promise<void> {
