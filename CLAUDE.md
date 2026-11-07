@@ -137,7 +137,7 @@ For full Substrate workflow details, load `/using-xtrm` and use `sb --help`, `sb
 | Tests and quality workflow | `/using-quality-gates`, `/using-tdd`, `/test-planning` |
 | Docs sync | `/sync-docs`; use the canonical service-skills skill set for project/service context |
 | Release | `/releasing` |
-| Session close / PR flow | `/xt-end`, `/session-close-report`, `/xt-merge` |
+| Session close / PR flow | `/xt-end`, `/session-close-report` |
 | Skill creation/update | `/skill-creator` |
 | Hook work | `/hook-development` |
 | Service routing | `/scope`, `/using-service-skills` when service territories exist |

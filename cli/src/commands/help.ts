@@ -65,10 +65,6 @@ export function createHelpCommand(): Command {
                 '  xtrm docs cross-check [--days <n>] [--json]',
                 '    Validate docs against recent PR activity and closed Issue data.',
                 '',
-                '  xtrm merge [--dry-run] [--yes/-y] [--no-beads] [--override-authority]',
-                '    Drain the xt worktree PR merge queue via the xt-merge specialist (FIFO).',
-                '    --dry-run: list queue and CI status without merging.',
-                '',
                 '  xtrm debug [options]',
                 '    Stream xtrm event log (tool calls, gates, session/issue lifecycle).',
                 '    Options: --follow, --all, --session <id>, --type <domain>, --json',
@@ -172,8 +168,6 @@ export function createHelpCommand(): Command {
                 '    Rebase onto the default branch, push, open PR, link issues, and optionally clean worktree.',
                 '    Options: --draft, --keep, --yes/-y, --dry-run',
                 '',
-                '  xt merge [--dry-run] [--yes/-y] [--no-beads] [--override-authority]',
-                '    Run xt-merge to drain queued xt/* PRs FIFO: CI gate → rebase merge → rebase cascade.',
             ]));
 
             blocks.push(section('NOTES', [

@@ -203,8 +203,10 @@ docs/skills-ownership.release.json
 Core must not locally fork Specialist-authored content. Change the source in
 `xtrm-dev/specialists`, then re-vendor and update the pin.
 
-`xt merge` remains a Core CLI wrapper backed by the canonical Specialists `xt-merge` role;
-there is no separate default `xt-merge` skill in skills-v4.
+`xt merge` was retired (CORE-2552; usage evidence in that Issue's Journal). Merging is an
+operator/coordinator act through `gh pr merge`, and the review guard lands in the gh wrapper
+under CORE-2530 — there is no Core merge wrapper and no default `xt-merge` skill. The
+Specialists `xt-merge` role definition is kept for ad-hoc dispatch.
 
 ## Generated and tracked outputs
 
@@ -223,8 +225,8 @@ CI should fail on drift rather than accepting a hand-edited generated artifact.
 ## Worktree and publication primitives
 
 `xt worktree` owns read-only audit/restart/branch-GC primitives and explicit cleanup actions.
-`xt end` owns normal session publication/PR cleanup. `xt merge` delegates governed merge
-queue behavior to Specialists.
+`xt end` owns normal session publication/PR cleanup and is the last worktree command; a merge
+is a separate operator/coordinator step (`gh pr merge`), not a Core subcommand.
 
 Use live help for exact destructive/apply flags. Read-only audit should remain the default
 where an operator has not explicitly requested mutation.
