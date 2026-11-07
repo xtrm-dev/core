@@ -109,7 +109,7 @@
     "prompts": "^2.4.2"
   },
   "overrides": {
-    "fast-uri": "^3.1.7",
+    "fast-uri": "^3.1.9",
     "nanoid": "^3.3.18",
     "postcss": "^8.5.23",
     "@aws-sdk/xml-builder": "3.972.22",
@@ -134,7 +134,7 @@
   },
   "pnpm": {
     "overrides": {
-      "fast-uri": "^3.1.7",
+      "fast-uri": "^3.1.9",
       "nanoid": "^3.3.18",
       "postcss": "^8.5.23",
       "vite": "8.0.16",
