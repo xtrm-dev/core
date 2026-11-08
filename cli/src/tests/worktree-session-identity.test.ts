@@ -155,6 +155,11 @@ describe('xt/tmux launcher session-identity propagation', () => {
   }
 
   beforeEach(async () => {
+    // CORE-2525 review: a GIT_* value exported in the developer's shell must
+    // never make these tests pass or fail; the launcher resolves its own.
+    for (const key of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) {
+      delete process.env[key];
+    }
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-session-id-'));
     repoRoot = path.join(tempRoot, 'repo');
     homeRoot = path.join(tempRoot, 'home');
@@ -355,7 +360,7 @@ describe('xt/tmux launcher session-identity propagation', () => {
 
       await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk3', attach: false })).rejects.toThrow('exit:0');
       expectDispatcher(envPairs(h.newSessionArgs), 'dwk3');
-      // The tmux plan path carries the same git identity (CORE-2525).
+      // The tmux plan path carries the same git identity and email (CORE-2525).
       expect(envPairs(h.newSessionArgs)['GIT_AUTHOR_NAME']).toBe('dwk3');
       expect(envPairs(h.newSessionArgs)['GIT_COMMITTER_NAME']).toBe('dwk3');
 
@@ -364,6 +369,17 @@ describe('xt/tmux launcher session-identity propagation', () => {
       expectDispatcher(envPairs(h.newSessionArgs), 'dwk4');
       // The role payload keeps its XTRM_SESSION_* contract; the holder rides -e only.
       expect(Object.keys((h.loadedPayload?.['sessionEnv'] ?? {}) as object).every((k) => k.startsWith('XTRM_SESSION_'))).toBe(true);
+    });
+
+    it('carries the resolved operator email on the tmux plan path too (CORE-2525)', async () => {
+      armDispatcher();
+      installMock(h, { gitEmail: 'op@example.com' });
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk3-mail', attach: false })).rejects.toThrow('exit:0');
+
+      expect(envPairs(h.newSessionArgs)['GIT_AUTHOR_EMAIL']).toBe('op@example.com');
+      expect(envPairs(h.newSessionArgs)['GIT_COMMITTER_EMAIL']).toBe('op@example.com');
     });
 
     it('--window opens a detached window in the caller session with the identity in -e', async () => {
