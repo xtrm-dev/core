@@ -14,8 +14,10 @@
  *   new head, then post the new review.
  * - Reviews carry a body only: no inline comments are ever sent, so no
  *   unresolved thread can block a merge.
- * - Line 1 is `Review by <role> (<model>) at head <sha12>`; line 2 is the hidden
- *   marker with agent=, run= and the Issue ref.
+ * - The MODEL writes line 1 (`Review by <role> (<model>) at head <sha12>`) and
+ *   exactly one `- Verdict:` line; the tool refuses a body without them and adds
+ *   the hidden line-2 marker (agent, run, Issue). Attribution is never typed by
+ *   the model, and the head/model/verdict are derived from its text, not flags.
  */
 
 import { githubRequest, type GitHubRequestDeps } from './github-apps.js';
@@ -46,8 +48,9 @@ export function eventForOutcome(outcome: string | null | undefined): ReviewVerdi
 
 export interface ReviewHeader {
     role: string;
+    /** The model that produced the review, exactly as line 1 names it. */
     model: string;
-    /** Full SHA; the header carries its first 12 characters. */
+    /** Full SHA; line 1 carries its first 12 characters. */
     head: string;
     holder: string;
     runId: string;
@@ -59,53 +62,60 @@ export function sha12(sha: string): string {
     return sha.trim().slice(0, 12);
 }
 
-/** Line 1 + hidden marker line, as the review body must carry them. */
-export function buildReviewHeader(input: ReviewHeader): string {
-    const marker = [
+const LINE1 = /^Review by ([A-Za-z][A-Za-z0-9-]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
+const VERDICT_LINE = /^- Verdict: (PASS|PARTIAL|FAIL)\s*$/;
+
+/** The header the MODEL writes on line 1: role, model and the reviewed head. */
+export interface ParsedHeader { role: string; model: string; head12: string }
+
+/**
+ * Parse line 1 of a review body. The model writes it, the shim reads it: the
+ * head it reviewed and the model it ran on are derived from the text, never
+ * from a flag or an environment variable.
+ */
+export function parseHeaderLine(body: string): ParsedHeader | null {
+    const first = (body.split('\n')[0] ?? '').trim();
+    const match = LINE1.exec(first);
+    if (!match) return null;
+    return { role: match[1], model: match[2].trim(), head12: match[3].toLowerCase() };
+}
+
+/** Every `- Verdict:` line in the body, in order. Exactly one is required. */
+export function bodyVerdicts(body: string): ReviewVerdict[] {
+    const out: ReviewVerdict[] = [];
+    for (const line of body.split('\n')) {
+        const match = VERDICT_LINE.exec(line.trim());
+        if (match) out.push(OUTCOME_TO_EVENT[match[1] as ReviewOutcome]);
+    }
+    return out;
+}
+
+/** The hidden marker the TOOL adds on line 2 (agent, run, Issue). */
+export function buildMarker(input: { holder: string; runId: string; issueRef?: string | null; activationId?: string | null }): string {
+    const parts = [
         `agent=${input.holder}`,
         `run=${input.runId}`,
         ...(input.issueRef ? [`issue=${input.issueRef}`] : []),
         ...(input.activationId ? [`activation=${input.activationId}`] : []),
-    ].join(' ');
-    return `Review by ${input.role} (${input.model}) at head ${sha12(input.head)}\n\n<!-- ${marker} -->\n`;
+    ];
+    return `<!-- ${parts.join(' ')} -->`;
 }
 
-const LINE1 = /^Review by ([A-Za-z][A-Za-z0-9-]*) \((.+)\) at head ([0-9a-f]{7,40})$/;
-const MARKER = /<!--(.*?)-->/;
-
 /**
- * The pre-post lint: a review body without the review line and the agent marker
- * is refused before any network call. Returns the reason, or null when it passes.
+ * The pre-post lint over the MODEL's body: line 1 is the header, the body holds
+ * exactly one `- Verdict:` line, and no self-written marker is allowed (the
+ * tool owns attribution). Returns the reason, or null when it passes.
  */
-export function lintReviewBody(
-    body: string,
-    expected: { holder: string; head: string; issueRef?: string | null; runId?: string | null },
-): string | null {
-    const lines = body.split('\n');
-    const first = (lines[0] ?? '').trim();
-    const line1 = LINE1.exec(first);
-    if (!line1) {
-        return 'review body line 1 must be "Review by <role> (<model>) at head <sha12>"';
+export function lintModelBody(body: string): string | null {
+    const header = parseHeaderLine(body);
+    if (!header) return 'review body line 1 must be "Review by <role> (<model>) at head <sha12>"';
+    const rest = body.split('\n').slice(1).join('\n');
+    if (/<!--/.test(rest)) {
+        return 'the review body must not carry a hidden marker: the tool writes it (agent, run, Issue)';
     }
-    const headerHead = line1[3];
-    if (!expected.head.toLowerCase().startsWith(headerHead.toLowerCase())) {
-        return `review body names head ${headerHead}, which is not the reviewed head ${sha12(expected.head)}`;
-    }
-    const markerLine = lines.find((line) => MARKER.test(line));
-    const marker = markerLine ? (MARKER.exec(markerLine)?.[1] ?? '') : '';
-    if (!marker) return 'review body needs the hidden marker on line 2 (<!-- agent=<holder> run=<id> -->)';
-    if (!/(^|\s)agent=\S+/.test(marker)) return 'review marker is missing agent=<holder>';
-    if (!/(^|\s)run=\S+/.test(marker)) return 'review marker is missing run=<id>';
-    const holder = /(^|\s)agent=(\S+)/.exec(marker)?.[2];
-    if (expected.holder && holder !== expected.holder) {
-        return `review marker names agent ${holder ?? '(none)'}, not the posting holder ${expected.holder}`;
-    }
-    if (expected.runId && !new RegExp(`(^|\\s)run=${expected.runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(marker)) {
-        return `review marker does not carry this run id (${expected.runId})`;
-    }
-    if (expected.issueRef && !new RegExp(`(^|\\s)issue=${expected.issueRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(marker)) {
-        return `review marker does not carry the Issue ref ${expected.issueRef}`;
-    }
+    const verdicts = bodyVerdicts(body);
+    if (verdicts.length === 0) return 'the review body needs exactly one "- Verdict: PASS|PARTIAL|FAIL" line, found none';
+    if (verdicts.length > 1) return `the review body needs exactly one "- Verdict:" line, found ${verdicts.length}`;
     return null;
 }
 
@@ -136,23 +146,31 @@ export function issueRefFromBranch(ref: string | null | undefined): string | nul
 export interface PostReviewInput {
     repo: string;
     pr: number;
-    /** The head the reviewer read; the review is pinned to it. */
-    head: string;
-    verdict: ReviewVerdict;
-    /** The reviewer's findings, without the header. */
-    findings: string;
-    role: string;
-    model: string;
+    /**
+     * The MODEL's review body: line 1 is `Review by <role> (<model>) at head
+     * <sha12>`, the findings follow, and exactly one `- Verdict:` line is
+     * present. The tool adds the hidden marker; the model must not.
+     */
+    body: string;
     holder: string;
     runId: string;
+    /** Fallbacks when the PR carries no marker; the header's role wins otherwise. */
+    role?: string | null;
     issueRef?: string | null;
     activationId?: string | null;
+    /** Optional cross-checks; a disagreement is refused, never resolved silently. */
+    expectedHead?: string | null;
+    expectedVerdict?: ReviewVerdict | null;
+    expectedModel?: string | null;
 }
 
 export interface PostedReview {
     id: number;
     url: string;
     verdict: ReviewVerdict;
+    /** GitHub's review state (APPROVE posts as APPROVED). */
+    state: string;
+    /** Full reviewed head SHA. */
     head: string;
     issueRef: string | null;
     dismissed: number[];
@@ -177,22 +195,65 @@ type PullResponse = {
     state?: string;
     head?: { sha?: string; ref?: string };
 };
-type ReviewResponse = { id?: number; state?: string; user?: { login?: string }; html_url?: string; commit_id?: string };
+type CommitResponse = { sha?: string };
+type ReviewResponse = {
+    id?: number; state?: string; user?: { login?: string }; html_url?: string; commit_id?: string;
+};
 
-/** Post one formal review. Refuses (throws ReviewRefused) rather than posting an unpinned or self review. */
+/** Full SHA for a 7-40 hex prefix among the PR's commits, or null. */
+async function resolveHead(repo: string, pr: number, prefix: string, deps: ReviewDeps): Promise<string | null> {
+    if (prefix.length >= 40) return prefix;
+    const listed = await githubRequest<CommitResponse[]>({
+        method: 'GET',
+        path: `/repos/${repo}/pulls/${pr}/commits?per_page=100`,
+    }, deps);
+    if (listed.status === 200 && Array.isArray(listed.data)) {
+        const hit = listed.data.find((commit) => (commit.sha ?? '').toLowerCase().startsWith(prefix));
+        if (hit?.sha) return hit.sha;
+    }
+    return null;
+}
+
+/**
+ * Post one formal review. Everything the pinning needs is derived from the
+ * model's body: line 1 names the reviewed head and the model, the `- Verdict:`
+ * line names the event. A flag or env value that disagrees is refused.
+ */
 export async function postReview(input: PostReviewInput, deps: ReviewDeps): Promise<PostedReview> {
     const warnings: string[] = [];
+    const lint = lintModelBody(input.body);
+    if (lint) throw new ReviewRefused(`review body refused by the lint: ${lint}`);
+    const header = parseHeaderLine(input.body)!;
+    const verdict = bodyVerdicts(input.body)[0];
+    if (!verdict) throw new ReviewRefused('review body has no "- Verdict:" line');
+
+    if (input.expectedModel && input.expectedModel !== header.model) {
+        throw new ReviewRefused(`--model says ${input.expectedModel}, line 1 says ${header.model}; line 1 is authoritative`);
+    }
+    if (input.expectedVerdict && input.expectedVerdict !== verdict) {
+        throw new ReviewRefused(`the flag requests ${input.expectedVerdict}, the body's verdict line says ${verdict}`);
+    }
+
     const pull = await githubRequest<PullResponse>({ method: 'GET', path: `/repos/${input.repo}/pulls/${input.pr}` }, deps);
     if (pull.status !== 200) {
         throw new ReviewRefused(`cannot read PR #${input.pr} in ${input.repo} (HTTP ${pull.status})`);
     }
-    const headSha = pull.data.head?.sha ?? '';
-    if (!headSha) throw new ReviewRefused(`PR #${input.pr} returned no head SHA`);
-    if (headSha !== input.head) {
+    const currentHead = (pull.data.head?.sha ?? '').toLowerCase();
+    if (!currentHead) throw new ReviewRefused(`PR #${input.pr} returned no head SHA`);
+    if (input.expectedHead && !input.expectedHead.toLowerCase().startsWith(header.head12) && !currentHead.startsWith(input.expectedHead.toLowerCase())) {
+        throw new ReviewRefused(`the supplied head ${sha12(input.expectedHead)} does not match line 1 (${header.head12})`);
+    }
+    const resolved = await resolveHead(input.repo, input.pr, header.head12, deps)
+        ?? (currentHead.startsWith(header.head12) ? currentHead : null);
+    if (!resolved) {
+        throw new ReviewRefused(`reviewed head ${header.head12} is not among the commits of PR #${input.pr}; review the current head`);
+    }
+    if (resolved !== currentHead) {
         throw new ReviewRefused(
-            `PR head moved: reviewed ${sha12(input.head)}, current ${sha12(headSha)} — review the current head`,
+            `PR head moved: reviewed ${sha12(resolved)}, current ${sha12(currentHead)} — review the current head`,
         );
     }
+
     const marker = parseIssueMarker(pull.data.body ?? '');
     if (marker?.holder && marker.holder === input.holder) {
         throw new ReviewRefused(`refusing own-PR review: PR #${input.pr} was opened by holder ${input.holder}`);
@@ -200,16 +261,17 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     const issueRef = input.issueRef ?? marker?.issue ?? issueRefFromBranch(pull.data.head?.ref);
     if (!issueRef) warnings.push('no Substrate Issue ref in the PR body or branch; the review is not journaled');
 
-    const body = `${buildReviewHeader({ ...input, issueRef })}\n${input.findings.trim()}\n`;
-    const lint = lintReviewBody(body, { holder: input.holder, head: input.head, issueRef, runId: input.runId });
-    if (lint) throw new ReviewRefused(`review body refused by the pre-post lint: ${lint}`);
+    const lines = input.body.split('\n');
+    const line1 = (lines[0] ?? '').trim();
+    const rest = lines.slice(1).join('\n').trim();
+    const body = `${line1}\n\n${buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId })}\n${rest}\n`;
 
-    const dismissed = await dismissStaleChangesRequested(input, deps, `${deps.slug}[bot]`);
+    const dismissed = await dismissStaleChangesRequested({ repo: input.repo, pr: input.pr, head: resolved }, deps, `${deps.slug}[bot]`);
 
-    const created = await githubRequest<{ id?: number; html_url?: string }>({
+    const created = await githubRequest<ReviewResponse>({
         method: 'POST',
         path: `/repos/${input.repo}/pulls/${input.pr}/reviews`,
-        body: { commit_id: input.head, event: input.verdict, body },
+        body: { commit_id: resolved, event: verdict, body },
     }, deps);
     if (created.status !== 200 && created.status !== 201) {
         throw new ReviewRefused(`review post refused (HTTP ${created.status})`);
@@ -218,15 +280,16 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     return {
         id: created.data.id ?? 0,
         url,
-        verdict: input.verdict,
-        head: input.head,
-        issueRef,
+        verdict,
+        state: created.data.state ?? (verdict === 'APPROVE' ? 'APPROVED' : verdict === 'COMMENT' ? 'COMMENTED' : 'CHANGES_REQUESTED'),
+        head: resolved,
+        issueRef: issueRef ?? null,
         dismissed,
         warnings,
     };
 }
 
-async function dismissStaleChangesRequested(input: PostReviewInput, deps: ReviewDeps, botLogin: string): Promise<number[]> {
+async function dismissStaleChangesRequested(input: { repo: string; pr: number; head: string }, deps: ReviewDeps, botLogin: string): Promise<number[]> {
     const listed = await githubRequest<ReviewResponse[]>({
         method: 'GET',
         path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100`,
@@ -255,15 +318,15 @@ export function reviewJournalArgs(receipt: PostedReview, input: PostReviewInput,
         value: {
             repo: input.repo,
             pr: input.pr,
-            head: input.head,
-            actor: `${input.role} app`,
+            head: receipt.head,
+            actor: 'reviewer app',
         },
     }]);
     const result = JSON.stringify({
-        summary: `Review ${input.verdict} at head ${sha12(input.head)} for ${input.repo}#${input.pr}`,
-        verdict: input.verdict,
-        head: input.head,
-        artifact: { kind: 'review', head: input.head, verdict: input.verdict, url: receipt.url },
+        summary: `Review ${receipt.verdict} at head ${sha12(receipt.head)} for ${input.repo}#${input.pr}`,
+        verdict: receipt.verdict,
+        head: receipt.head,
+        artifact: { kind: 'review', head: receipt.head, verdict: receipt.verdict, url: receipt.url },
     });
     return ['journal', 'append', issueRef, '--kind', 'result', '--result', result, '--refs', refs, '--json'];
 }

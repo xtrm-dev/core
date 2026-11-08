@@ -119,6 +119,15 @@ describe('ghShimSource', () => {
         expect(source).toContain("'--match-head-commit'");
     });
 
+    it('takes the PR and repo from the review arguments, not from the current branch', () => {
+        // The head, the model and the verdict are derived by the CLI from the
+        // body file; the shim never guesses them.
+        expect(source).toContain("rest.indexOf('--repo')");
+        expect(source).toContain('const restNoRepo');
+        expect(source).toContain('if (!repo || !pr)');
+        expect(source).not.toContain('XTRM_REVIEW_HEAD');
+    });
+
     it('leaves the operator outside an agent tree untouched', () => {
         expect(source).toContain('if (!isAgent())');
         expect(source).toContain('SUBSTRATE_HOLDER');
