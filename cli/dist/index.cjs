@@ -31061,11 +31061,13 @@ var review_posting_exports = {};
 __export(review_posting_exports, {
   OUTCOME_TO_EVENT: () => OUTCOME_TO_EVENT,
   ReviewRefused: () => ReviewRefused,
-  buildReviewHeader: () => buildReviewHeader,
+  bodyVerdicts: () => bodyVerdicts,
+  buildMarker: () => buildMarker,
   eventForFlags: () => eventForFlags,
   eventForOutcome: () => eventForOutcome,
   issueRefFromBranch: () => issueRefFromBranch,
-  lintReviewBody: () => lintReviewBody,
+  lintModelBody: () => lintModelBody,
+  parseHeaderLine: () => parseHeaderLine,
   parseIssueMarker: () => parseIssueMarker,
   postReview: () => postReview,
   reviewJournalArgs: () => reviewJournalArgs,
@@ -31086,44 +31088,39 @@ function eventForOutcome(outcome) {
 function sha12(sha) {
   return sha.trim().slice(0, 12);
 }
-function buildReviewHeader(input) {
-  const marker = [
+function parseHeaderLine(body) {
+  const first = (body.split("\n")[0] ?? "").trim();
+  const match = LINE1.exec(first);
+  if (!match) return null;
+  return { role: match[1], model: match[2].trim(), head12: match[3].toLowerCase() };
+}
+function bodyVerdicts(body) {
+  const out = [];
+  for (const line of body.split("\n")) {
+    const match = VERDICT_LINE.exec(line.trim());
+    if (match) out.push(OUTCOME_TO_EVENT[match[1]]);
+  }
+  return out;
+}
+function buildMarker(input) {
+  const parts = [
     `agent=${input.holder}`,
     `run=${input.runId}`,
     ...input.issueRef ? [`issue=${input.issueRef}`] : [],
     ...input.activationId ? [`activation=${input.activationId}`] : []
-  ].join(" ");
-  return `Review by ${input.role} (${input.model}) at head ${sha12(input.head)}
-
-<!-- ${marker} -->
-`;
+  ];
+  return `<!-- ${parts.join(" ")} -->`;
 }
-function lintReviewBody(body, expected) {
-  const lines = body.split("\n");
-  const first = (lines[0] ?? "").trim();
-  const line1 = LINE1.exec(first);
-  if (!line1) {
-    return 'review body line 1 must be "Review by <role> (<model>) at head <sha12>"';
+function lintModelBody(body) {
+  const header = parseHeaderLine(body);
+  if (!header) return 'review body line 1 must be "Review by <role> (<model>) at head <sha12>"';
+  const rest = body.split("\n").slice(1).join("\n");
+  if (/<!--/.test(rest)) {
+    return "the review body must not carry a hidden marker: the tool writes it (agent, run, Issue)";
   }
-  const headerHead = line1[3];
-  if (!expected.head.toLowerCase().startsWith(headerHead.toLowerCase())) {
-    return `review body names head ${headerHead}, which is not the reviewed head ${sha12(expected.head)}`;
-  }
-  const markerLine = lines.find((line) => MARKER.test(line));
-  const marker = markerLine ? MARKER.exec(markerLine)?.[1] ?? "" : "";
-  if (!marker) return "review body needs the hidden marker on line 2 (<!-- agent=<holder> run=<id> -->)";
-  if (!/(^|\s)agent=\S+/.test(marker)) return "review marker is missing agent=<holder>";
-  if (!/(^|\s)run=\S+/.test(marker)) return "review marker is missing run=<id>";
-  const holder = /(^|\s)agent=(\S+)/.exec(marker)?.[2];
-  if (expected.holder && holder !== expected.holder) {
-    return `review marker names agent ${holder ?? "(none)"}, not the posting holder ${expected.holder}`;
-  }
-  if (expected.runId && !new RegExp(`(^|\\s)run=${expected.runId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(marker)) {
-    return `review marker does not carry this run id (${expected.runId})`;
-  }
-  if (expected.issueRef && !new RegExp(`(^|\\s)issue=${expected.issueRef.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(marker)) {
-    return `review marker does not carry the Issue ref ${expected.issueRef}`;
-  }
+  const verdicts = bodyVerdicts(body);
+  if (verdicts.length === 0) return 'the review body needs exactly one "- Verdict: PASS|PARTIAL|FAIL" line, found none';
+  if (verdicts.length > 1) return `the review body needs exactly one "- Verdict:" line, found ${verdicts.length}`;
   return null;
 }
 function parseIssueMarker(text) {
@@ -31144,17 +31141,47 @@ function issueRefFromBranch(ref) {
   const match = /(?:^|[^A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d+)(?![0-9])/.exec(ref ?? "");
   return match ? match[1] : null;
 }
+async function resolveHead(repo, pr, prefix, deps) {
+  if (prefix.length >= 40) return prefix;
+  const listed = await githubRequest({
+    method: "GET",
+    path: `/repos/${repo}/pulls/${pr}/commits?per_page=100`
+  }, deps);
+  if (listed.status === 200 && Array.isArray(listed.data)) {
+    const hit = listed.data.find((commit) => (commit.sha ?? "").toLowerCase().startsWith(prefix));
+    if (hit?.sha) return hit.sha;
+  }
+  return null;
+}
 async function postReview(input, deps) {
   const warnings = [];
+  const lint = lintModelBody(input.body);
+  if (lint) throw new ReviewRefused(`review body refused by the lint: ${lint}`);
+  const header = parseHeaderLine(input.body);
+  const verdict = bodyVerdicts(input.body)[0];
+  if (!verdict) throw new ReviewRefused('review body has no "- Verdict:" line');
+  if (input.expectedModel && input.expectedModel !== header.model) {
+    throw new ReviewRefused(`--model says ${input.expectedModel}, line 1 says ${header.model}; line 1 is authoritative`);
+  }
+  if (input.expectedVerdict && input.expectedVerdict !== verdict) {
+    throw new ReviewRefused(`the flag requests ${input.expectedVerdict}, the body's verdict line says ${verdict}`);
+  }
   const pull = await githubRequest({ method: "GET", path: `/repos/${input.repo}/pulls/${input.pr}` }, deps);
   if (pull.status !== 200) {
     throw new ReviewRefused(`cannot read PR #${input.pr} in ${input.repo} (HTTP ${pull.status})`);
   }
-  const headSha = pull.data.head?.sha ?? "";
-  if (!headSha) throw new ReviewRefused(`PR #${input.pr} returned no head SHA`);
-  if (headSha !== input.head) {
+  const currentHead = (pull.data.head?.sha ?? "").toLowerCase();
+  if (!currentHead) throw new ReviewRefused(`PR #${input.pr} returned no head SHA`);
+  if (input.expectedHead && !input.expectedHead.toLowerCase().startsWith(header.head12) && !currentHead.startsWith(input.expectedHead.toLowerCase())) {
+    throw new ReviewRefused(`the supplied head ${sha12(input.expectedHead)} does not match line 1 (${header.head12})`);
+  }
+  const resolved = await resolveHead(input.repo, input.pr, header.head12, deps) ?? (currentHead.startsWith(header.head12) ? currentHead : null);
+  if (!resolved) {
+    throw new ReviewRefused(`reviewed head ${header.head12} is not among the commits of PR #${input.pr}; review the current head`);
+  }
+  if (resolved !== currentHead) {
     throw new ReviewRefused(
-      `PR head moved: reviewed ${sha12(input.head)}, current ${sha12(headSha)} \u2014 review the current head`
+      `PR head moved: reviewed ${sha12(resolved)}, current ${sha12(currentHead)} \u2014 review the current head`
     );
   }
   const marker = parseIssueMarker(pull.data.body ?? "");
@@ -31163,16 +31190,19 @@ async function postReview(input, deps) {
   }
   const issueRef = input.issueRef ?? marker?.issue ?? issueRefFromBranch(pull.data.head?.ref);
   if (!issueRef) warnings.push("no Substrate Issue ref in the PR body or branch; the review is not journaled");
-  const body = `${buildReviewHeader({ ...input, issueRef })}
-${input.findings.trim()}
+  const lines = input.body.split("\n");
+  const line1 = (lines[0] ?? "").trim();
+  const rest = lines.slice(1).join("\n").trim();
+  const body = `${line1}
+
+${buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId })}
+${rest}
 `;
-  const lint = lintReviewBody(body, { holder: input.holder, head: input.head, issueRef, runId: input.runId });
-  if (lint) throw new ReviewRefused(`review body refused by the pre-post lint: ${lint}`);
-  const dismissed = await dismissStaleChangesRequested(input, deps, `${deps.slug}[bot]`);
+  const dismissed = await dismissStaleChangesRequested({ repo: input.repo, pr: input.pr, head: resolved }, deps, `${deps.slug}[bot]`);
   const created = await githubRequest({
     method: "POST",
     path: `/repos/${input.repo}/pulls/${input.pr}/reviews`,
-    body: { commit_id: input.head, event: input.verdict, body }
+    body: { commit_id: resolved, event: verdict, body }
   }, deps);
   if (created.status !== 200 && created.status !== 201) {
     throw new ReviewRefused(`review post refused (HTTP ${created.status})`);
@@ -31181,9 +31211,10 @@ ${input.findings.trim()}
   return {
     id: created.data.id ?? 0,
     url: url2,
-    verdict: input.verdict,
-    head: input.head,
-    issueRef,
+    verdict,
+    state: created.data.state ?? (verdict === "APPROVE" ? "APPROVED" : verdict === "COMMENT" ? "COMMENTED" : "CHANGES_REQUESTED"),
+    head: resolved,
+    issueRef: issueRef ?? null,
     dismissed,
     warnings
   };
@@ -31215,19 +31246,19 @@ function reviewJournalArgs(receipt, input, issueRef) {
     value: {
       repo: input.repo,
       pr: input.pr,
-      head: input.head,
-      actor: `${input.role} app`
+      head: receipt.head,
+      actor: "reviewer app"
     }
   }]);
   const result = JSON.stringify({
-    summary: `Review ${input.verdict} at head ${sha12(input.head)} for ${input.repo}#${input.pr}`,
-    verdict: input.verdict,
-    head: input.head,
-    artifact: { kind: "review", head: input.head, verdict: input.verdict, url: receipt.url }
+    summary: `Review ${receipt.verdict} at head ${sha12(receipt.head)} for ${input.repo}#${input.pr}`,
+    verdict: receipt.verdict,
+    head: receipt.head,
+    artifact: { kind: "review", head: receipt.head, verdict: receipt.verdict, url: receipt.url }
   });
   return ["journal", "append", issueRef, "--kind", "result", "--result", result, "--refs", refs, "--json"];
 }
-var OUTCOME_TO_EVENT, LINE1, MARKER, ReviewRefused;
+var OUTCOME_TO_EVENT, LINE1, VERDICT_LINE, ReviewRefused;
 var init_review_posting = __esm({
   "src/core/review-posting.ts"() {
     "use strict";
@@ -31237,8 +31268,8 @@ var init_review_posting = __esm({
       PARTIAL: "COMMENT",
       FAIL: "REQUEST_CHANGES"
     };
-    LINE1 = /^Review by ([A-Za-z][A-Za-z0-9-]*) \((.+)\) at head ([0-9a-f]{7,40})$/;
-    MARKER = /<!--(.*?)-->/;
+    LINE1 = /^Review by ([A-Za-z][A-Za-z0-9-]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
+    VERDICT_LINE = /^- Verdict: (PASS|PARTIAL|FAIL)\s*$/;
     ReviewRefused = class extends Error {
       constructor(message) {
         super(message);
@@ -68506,9 +68537,11 @@ function createHelpCommand() {
       "  xt identity role-map | token --repo <owner/name> | credential <get|store|erase>",
       "    Role routing (reviewer | coordinator | worker), one-hour App tokens, and the",
       "    git credential helper that answers only for this role's App.",
-      "  xt identity review-post --repo <r> --pr <n> [--head <sha>] --verdict PASS|PARTIAL|FAIL",
-      "    One formal review, pinned to the reviewed head (PASS=APPROVE, PARTIAL=COMMENT,",
-      "    FAIL=REQUEST_CHANGES). Agents reach it through the gh shim: plain `gh pr review`.",
+      "  xt identity review-post --repo <r> --pr <n> --body-file <file>",
+      '    One formal review. The body carries line 1 "Review by <role> (<model>) at head',
+      '    <sha12>" and exactly one "- Verdict: PASS|PARTIAL|FAIL"; head, model and event are',
+      "    derived from it, a disagreeing flag is refused, and the tool adds the line-2 marker.",
+      "    Agents reach it through the gh shim: plain `gh pr review`.",
       "  xt identity merge-check --repo <r> --pr <n>",
       "    Allow or refuse a merge; called by the gh shim and by the xtrm-review-gate hook.",
       "    Allows only a reviewer-App review at the current head (or PARTIAL plus a Journal",
@@ -71560,8 +71593,22 @@ function main() {
   const role = (process.env.XTRM_ROLE || '').trim();
 
   if (verb === 'review') {
-    const info = pullInfo(real);
-    process.exit(xtPassthrough(['identity', 'review-post', '--repo', info.repo, '--pr', String(info.pr), ...args.slice(2)]));
+    // The PR number and --repo come from the arguments; the current directory is only
+    // the fallback, so a detached worktree (no branch) still works. The head,
+    // the model and the verdict are derived by the CLI from the body file.
+    const rest = args.slice(2);
+    const repoAt = Math.max(rest.indexOf('--repo'), rest.indexOf('-R'));
+    const repoFromArgs = repoAt >= 0 ? rest[repoAt + 1] : '';
+    const restNoRepo = repoAt >= 0 ? [...rest.slice(0, repoAt), ...rest.slice(repoAt + 2)] : rest;
+    const prFromArgs = restNoRepo.find((arg) => arg !== '' && !/[^0-9]/.test(arg));
+    let repo = repoFromArgs || '';
+    let pr = prFromArgs ? Number(prFromArgs) : 0;
+    if (!repo || !pr) {
+      const info = pullInfo(real);
+      repo = repo || info.repo;
+      pr = pr || info.pr;
+    }
+    process.exit(xtPassthrough(['identity', 'review-post', '--repo', repo, '--pr', String(pr), ...restNoRepo]));
   }
 
   if (verb === 'merge') {
@@ -72059,7 +72106,7 @@ function createIdentityCommand() {
 `);
     }
   });
-  identity.command("review-post").description("Post one formal review pinned to the reviewed head (called by the gh shim)").requiredOption("--repo <owner/name>", "Repository").requiredOption("--pr <number>", "Pull request number").option("--head <sha>", "Reviewed head (default: $XTRM_REVIEW_HEAD)").option("-b, --body <text>", "Review body (findings)").option("--body-file <file>", "Read the review body from a file").option("--verdict <outcome>", "PASS | PARTIAL | FAIL").option("--approve", "Same as --verdict PASS", false).option("--request-changes", "Same as --verdict FAIL", false).option("--comment", "Same as --verdict PARTIAL", false).option("--model <model>", "Model that produced the review (header line 1)").option("--json", "Emit JSON", false).action(async (opts) => {
+  identity.command("review-post").description("Post one formal review: head, model and verdict come from the body (called by the gh shim)").requiredOption("--repo <owner/name>", "Repository (the shim passes it; cwd is only a fallback)").requiredOption("--pr <number>", "Pull request number").option("-b, --body <text>", "The review body: line 1 header, findings, one verdict line").option("--body-file <file>", "Read the review body from a file").option("--head <sha>", "Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_HEAD)").option("--verdict <outcome>", "Cross-check only: must agree with the body's verdict line").option("--approve", "Cross-check: must agree with a PASS body", false).option("--request-changes", "Cross-check: must agree with a FAIL body", false).option("--comment", "Cross-check: must agree with a PARTIAL body", false).option("--model <model>", "Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_MODEL)").option("--json", "Emit JSON", false).action(async (opts) => {
     const holder = (process.env[SUBSTRATE_HOLDER_VAR] ?? "").trim();
     if (!holder) fail2("no agent identity: SUBSTRATE_HOLDER is unset, so a review cannot be attributed");
     const { role, map: map2 } = effectiveRole();
@@ -72067,22 +72114,19 @@ function createIdentityCommand() {
     if (role !== "reviewer") fail2(`the ${role ?? "operator"} role may not post formal reviews; use the reviewer subagent or xt claude --role pr-reviewer`);
     const pr = Number(opts.pr);
     if (!Number.isInteger(pr) || pr <= 0) fail2(`--pr ${opts.pr} is not a pull request number`);
-    const head = (opts.head ?? process.env.XTRM_REVIEW_HEAD ?? "").trim();
-    if (!/^[0-9a-f]{7,40}$/.test(head)) {
-      fail2("no reviewed head: pass --head or set XTRM_REVIEW_HEAD to the SHA the review read");
-    }
-    const verdict = opts.verdict ? eventForOutcome(opts.verdict) : eventForFlags({ approve: opts.approve, requestChanges: opts.requestChanges, comment: opts.comment });
-    if (!verdict) fail2("choose exactly one of --verdict PASS|PARTIAL|FAIL, --approve, --request-changes, --comment");
-    let findings = opts.body ?? "";
+    let body = opts.body ?? "";
     if (opts.bodyFile) {
       try {
-        findings = (0, import_node_fs22.readFileSync)(opts.bodyFile, "utf8");
+        body = (0, import_node_fs22.readFileSync)(opts.bodyFile, "utf8");
       } catch (error51) {
         fail2(`cannot read --body-file: ${error51.message}`);
       }
     }
-    if (!findings.trim()) fail2("an empty review body is refused: pass -b/--body or --body-file");
-    const model = (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? "unknown").trim();
+    if (!body.trim()) {
+      fail2('an empty review body is refused: line 1 must be "Review by <role> (<model>) at head <sha12>" and the body needs exactly one "- Verdict:" line');
+    }
+    const flagVerdict = opts.verdict ? eventForOutcome(opts.verdict) : eventForFlags({ approve: opts.approve, requestChanges: opts.requestChanges, comment: opts.comment });
+    if (opts.verdict && !flagVerdict) fail2(`--verdict ${opts.verdict} is not PASS, PARTIAL or FAIL`);
     let token;
     try {
       token = (await reviewerTokenFor(opts.repo, map2)).token;
@@ -72093,30 +72137,22 @@ function createIdentityCommand() {
       const posted = await postReview({
         repo: opts.repo,
         pr,
-        head,
-        verdict,
-        findings,
-        role: "reviewer",
-        model,
+        body,
         holder,
+        role: "reviewer",
         runId: resolveAgentRunId(),
-        activationId: (process.env.SUBSTRATE_ACTIVATION_ID ?? "").trim() || null
+        activationId: (process.env.SUBSTRATE_ACTIVATION_ID ?? "").trim() || null,
+        expectedHead: (opts.head ?? process.env.XTRM_REVIEW_HEAD ?? "").trim() || null,
+        expectedVerdict: flagVerdict,
+        expectedModel: (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? "").trim() || null
       }, { token, slug: appSlugForRole("reviewer", map2), apiBase: DEFAULT_API_BASE });
       let journaled = null;
-      if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, {
-        repo: opts.repo,
-        pr,
-        head,
-        verdict,
-        findings,
-        role: "reviewer",
-        model,
-        holder,
-        runId: resolveAgentRunId()
-      }, posted.issueRef));
+      if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef));
       const out = {
         url: posted.url,
         id: posted.id,
+        commit_id: posted.head,
+        state: posted.state,
         verdict: posted.verdict,
         head: posted.head,
         issueRef: posted.issueRef,
@@ -72127,8 +72163,9 @@ function createIdentityCommand() {
       if (opts.json) {
         console.log(JSON.stringify(out, null, 2));
       } else {
-        console.log(`${posted.verdict} review posted: ${posted.url}`);
-        console.log(`head ${sha12(posted.head)}${posted.issueRef ? `, Issue ${posted.issueRef}` : ""}`);
+        console.log(`review posted: ${posted.url}`);
+        console.log(`id ${posted.id}  state ${posted.state}  commit_id ${posted.head}`);
+        console.log(`verdict ${posted.verdict} at head ${sha12(posted.head)}${posted.issueRef ? `, Issue ${posted.issueRef}` : ""}`);
         for (const id of posted.dismissed) console.log(`dismissed stale review ${id}`);
         for (const warning of posted.warnings) console.log(kleur_default.yellow(`warning: ${warning}`));
         if (journaled && !journaled.ok) console.log(kleur_default.yellow(`warning: Journal receipt failed: ${journaled.error}`));

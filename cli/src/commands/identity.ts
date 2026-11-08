@@ -229,20 +229,20 @@ export function createIdentityCommand(): Command {
 
     identity
         .command('review-post')
-        .description('Post one formal review pinned to the reviewed head (called by the gh shim)')
-        .requiredOption('--repo <owner/name>', 'Repository')
+        .description('Post one formal review: head, model and verdict come from the body (called by the gh shim)')
+        .requiredOption('--repo <owner/name>', 'Repository (the shim passes it; cwd is only a fallback)')
         .requiredOption('--pr <number>', 'Pull request number')
-        .option('--head <sha>', 'Reviewed head (default: $XTRM_REVIEW_HEAD)')
-        .option('-b, --body <text>', 'Review body (findings)')
+        .option('-b, --body <text>', 'The review body: line 1 header, findings, one verdict line')
         .option('--body-file <file>', 'Read the review body from a file')
-        .option('--verdict <outcome>', 'PASS | PARTIAL | FAIL')
-        .option('--approve', 'Same as --verdict PASS', false)
-        .option('--request-changes', 'Same as --verdict FAIL', false)
-        .option('--comment', 'Same as --verdict PARTIAL', false)
-        .option('--model <model>', 'Model that produced the review (header line 1)')
+        .option('--head <sha>', 'Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_HEAD)')
+        .option('--verdict <outcome>', 'Cross-check only: must agree with the body\'s verdict line')
+        .option('--approve', 'Cross-check: must agree with a PASS body', false)
+        .option('--request-changes', 'Cross-check: must agree with a FAIL body', false)
+        .option('--comment', 'Cross-check: must agree with a PARTIAL body', false)
+        .option('--model <model>', 'Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_MODEL)')
         .option('--json', 'Emit JSON', false)
         .action(async (opts: {
-            repo: string; pr: string; head?: string; body?: string; bodyFile?: string;
+            repo: string; pr: string; body?: string; bodyFile?: string; head?: string;
             verdict?: string; approve: boolean; requestChanges: boolean; comment: boolean;
             model?: string; json: boolean;
         }) => {
@@ -253,24 +253,21 @@ export function createIdentityCommand(): Command {
             if (role !== 'reviewer') fail(`the ${role ?? 'operator'} role may not post formal reviews; use the reviewer subagent or xt claude --role pr-reviewer`);
             const pr = Number(opts.pr);
             if (!Number.isInteger(pr) || pr <= 0) fail(`--pr ${opts.pr} is not a pull request number`);
-            const head = (opts.head ?? process.env.XTRM_REVIEW_HEAD ?? '').trim();
-            if (!/^[0-9a-f]{7,40}$/.test(head)) {
-                fail('no reviewed head: pass --head or set XTRM_REVIEW_HEAD to the SHA the review read');
-            }
-            const verdict: ReviewVerdict | null = opts.verdict
-                ? eventForOutcome(opts.verdict)
-                : eventForFlags({ approve: opts.approve, requestChanges: opts.requestChanges, comment: opts.comment });
-            if (!verdict) fail('choose exactly one of --verdict PASS|PARTIAL|FAIL, --approve, --request-changes, --comment');
-            let findings = opts.body ?? '';
+            let body = opts.body ?? '';
             if (opts.bodyFile) {
                 try {
-                    findings = readFileSync(opts.bodyFile, 'utf8');
+                    body = readFileSync(opts.bodyFile, 'utf8');
                 } catch (error) {
                     fail(`cannot read --body-file: ${(error as Error).message}`);
                 }
             }
-            if (!findings.trim()) fail('an empty review body is refused: pass -b/--body or --body-file');
-            const model = (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? 'unknown').trim();
+            if (!body.trim()) {
+                fail('an empty review body is refused: line 1 must be "Review by <role> (<model>) at head <sha12>" and the body needs exactly one "- Verdict:" line');
+            }
+            const flagVerdict: ReviewVerdict | null = opts.verdict
+                ? eventForOutcome(opts.verdict)
+                : eventForFlags({ approve: opts.approve, requestChanges: opts.requestChanges, comment: opts.comment });
+            if (opts.verdict && !flagVerdict) fail(`--verdict ${opts.verdict} is not PASS, PARTIAL or FAIL`);
             let token: string;
             try {
                 token = (await reviewerTokenFor(opts.repo, map)).token;
@@ -281,22 +278,22 @@ export function createIdentityCommand(): Command {
                 const posted = await postReview({
                     repo: opts.repo,
                     pr,
-                    head,
-                    verdict,
-                    findings,
-                    role: 'reviewer',
-                    model,
+                    body,
                     holder,
+                    role: 'reviewer',
                     runId: resolveAgentRunId(),
                     activationId: (process.env.SUBSTRATE_ACTIVATION_ID ?? '').trim() || null,
+                    expectedHead: (opts.head ?? process.env.XTRM_REVIEW_HEAD ?? '').trim() || null,
+                    expectedVerdict: flagVerdict,
+                    expectedModel: (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? '').trim() || null,
                 }, { token, slug: appSlugForRole('reviewer', map), apiBase: DEFAULT_API_BASE });
                 let journaled: { ok: boolean; error?: string } | null = null;
-                if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, {
-                    repo: opts.repo, pr, head, verdict, findings, role: 'reviewer', model, holder, runId: resolveAgentRunId(),
-                }, posted.issueRef));
+                if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef));
                 const out = {
                     url: posted.url,
                     id: posted.id,
+                    commit_id: posted.head,
+                    state: posted.state,
                     verdict: posted.verdict,
                     head: posted.head,
                     issueRef: posted.issueRef,
@@ -307,8 +304,9 @@ export function createIdentityCommand(): Command {
                 if (opts.json) {
                     console.log(JSON.stringify(out, null, 2));
                 } else {
-                    console.log(`${posted.verdict} review posted: ${posted.url}`);
-                    console.log(`head ${sha12(posted.head)}${posted.issueRef ? `, Issue ${posted.issueRef}` : ''}`);
+                    console.log(`review posted: ${posted.url}`);
+                    console.log(`id ${posted.id}  state ${posted.state}  commit_id ${posted.head}`);
+                    console.log(`verdict ${posted.verdict} at head ${sha12(posted.head)}${posted.issueRef ? `, Issue ${posted.issueRef}` : ''}`);
                     for (const id of posted.dismissed) console.log(`dismissed stale review ${id}`);
                     for (const warning of posted.warnings) console.log(kleur.yellow(`warning: ${warning}`));
                     if (journaled && !journaled.ok) console.log(kleur.yellow(`warning: Journal receipt failed: ${journaled.error}`));

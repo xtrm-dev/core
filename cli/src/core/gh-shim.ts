@@ -171,8 +171,22 @@ function main() {
   const role = (process.env.XTRM_ROLE || '').trim();
 
   if (verb === 'review') {
-    const info = pullInfo(real);
-    process.exit(xtPassthrough(['identity', 'review-post', '--repo', info.repo, '--pr', String(info.pr), ...args.slice(2)]));
+    // The PR number and --repo come from the arguments; the current directory is only
+    // the fallback, so a detached worktree (no branch) still works. The head,
+    // the model and the verdict are derived by the CLI from the body file.
+    const rest = args.slice(2);
+    const repoAt = Math.max(rest.indexOf('--repo'), rest.indexOf('-R'));
+    const repoFromArgs = repoAt >= 0 ? rest[repoAt + 1] : '';
+    const restNoRepo = repoAt >= 0 ? [...rest.slice(0, repoAt), ...rest.slice(repoAt + 2)] : rest;
+    const prFromArgs = restNoRepo.find((arg) => arg !== '' && !/[^0-9]/.test(arg));
+    let repo = repoFromArgs || '';
+    let pr = prFromArgs ? Number(prFromArgs) : 0;
+    if (!repo || !pr) {
+      const info = pullInfo(real);
+      repo = repo || info.repo;
+      pr = pr || info.pr;
+    }
+    process.exit(xtPassthrough(['identity', 'review-post', '--repo', repo, '--pr', String(pr), ...restNoRepo]));
   }
 
   if (verb === 'merge') {
