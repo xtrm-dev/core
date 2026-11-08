@@ -105,3 +105,25 @@ shell nodes and mutating tools run only after the operator issues the trusted-ru
 that run — never assume it. Experimental workflow flags stay off by default. The receipt is the
 inspected revision digest plus the run result, or the failure evidence when a run fails; record
 it verbatim and invent nothing.
+## Merge gate and reviewer routing (CORE-2530)
+
+A PR merges only with a review by the reviewer App (**`xtrm-reviewer[bot]`**) at its current
+head. GitHub Actions is billing-locked and the organisation is on the Free plan, so nothing on
+GitHub enforces it: the check runs on the agent's machine.
+
+- `gh pr merge` first runs `xt identity merge-check`. It refuses when the bot's latest review is
+  missing, is at an older head, or requested changes. A `COMMENT` (PARTIAL) review passes only
+  with a later coordinator decision, for that head, in the Issue Journal. The refusal text names
+  the allowed reviewer paths; `XTRM_MERGE_GUARD_OVERRIDE=<reason>` is for the coordinator and the
+  operator, is logged, and journals a decision on the Issue.
+- `gh pr create` prints the routing reminder (`~/.xtrm/config/reviewer-routing.md`, installed by
+  `xt identity setup`). The tier rule — HIGH or critical needs a Claude-backed reviewer — is the
+  reminder's job, not a second copy in this reference.
+- The `gh` shim carries both (`xt identity setup` installs it as `~/.local/bin/gh`). Agents keep
+  plain `gh`; `gh pr review` becomes a formal review pinned to the reviewed head when the agent
+  runs as the reviewer role.
+- The Claude Code hook `xtrm-review-gate` (policy `policies/xtrm-review-gate.json`) runs the same
+  guard as a PreToolUse check on `gh pr merge`, and prints the reminder after `gh pr create`.
+
+For a review, read the pushed head and post one review at that head: PASS -> APPROVE,
+PARTIAL -> COMMENT, FAIL -> REQUEST_CHANGES. A stale approval is not evidence.

@@ -425,8 +425,13 @@ describe('upgrade from 0.14.0 hooks (XTRM-592)', () => {
     for (const retired of RETIRED) expect(JSON.stringify(after)).not.toContain(retired);
     expect(Object.keys(xtCommands).sort()).toEqual(EVENTS);
     for (const event of EVENTS) {
-      expect(xtCommands[event], event).toHaveLength(1);
-      expect(xtCommands[event][0], event).toMatch(/dispatch\.mjs"? (pre|post|session|event)$/);
+      const dispatchers = xtCommands[event].filter((command) => /dispatch\.mjs/.test(command));
+      expect(dispatchers, event).toHaveLength(1);
+      expect(dispatchers[0], event).toMatch(/dispatch\.mjs"? (pre|post|session|event)$/);
+      // CORE-2530: the only other xt-managed command is the Bash-only review gate.
+      for (const extra of xtCommands[event].filter((command) => !/dispatch\.mjs/.test(command))) {
+        expect(extra, `${event} extra: ${extra}`).toMatch(/xtrm-review-gate\.mjs"? (pre|post)$/);
+      }
     }
     expect(after.Stop).toContain(foreign.hooks[0].command);
 
@@ -446,7 +451,13 @@ describe('upgrade from 0.14.0 hooks (XTRM-592)', () => {
     const after = commandsByEvent(fs.readJsonSync(settingsPath).hooks);
     for (const retired of RETIRED) expect(JSON.stringify(after)).not.toContain(retired);
     expect(Object.keys(after).sort()).toEqual(EVENTS);
-    for (const event of EVENTS) expect(after[event], event).toHaveLength(1);
+    for (const event of EVENTS) {
+      const dispatchers = after[event].filter((command) => /dispatch\.mjs/.test(command));
+      expect(dispatchers, event).toHaveLength(1);
+      for (const extra of after[event].filter((command) => !/dispatch\.mjs/.test(command))) {
+        expect(extra, `${event} extra: ${extra}`).toMatch(/xtrm-review-gate\.mjs"? (pre|post)$/);
+      }
+    }
   });
 });
 

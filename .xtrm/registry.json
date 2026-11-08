@@ -70,6 +70,10 @@
           "hash": "7af0f720b6cf33701a9b676e4fc3deaeaa9ecc898dbda789480e2c670ad0bd1c",
           "version": "0.15.3"
         },
+        "xtrm-review-gate.mjs": {
+          "hash": "e8710e71eaea70c0e1570e1835e59ae2b50f90332354aff5637b13495886bc4a",
+          "version": "0.15.3"
+        },
         "xtrm-session-logger.mjs": {
           "hash": "23ce98e0b5f616c5b67e816b4707d5bb6a51b691a80391bbb2149d1128f228d8",
           "version": "0.15.3"
@@ -118,7 +122,7 @@
           "version": "0.15.3"
         },
         "engineering-quality/references/review.md": {
-          "hash": "6ab6b92f672681698c31d9dda28f9d8320bbc5e2c7d7435c63c3eec3c087ad9f",
+          "hash": "fc6669f8fe1b0b507d764021bb91ed8c9cbf9a11ee9fb000d91e84404e3d8c92",
           "version": "0.15.3"
         },
         "engineering-quality/references/testing.md": {
@@ -1440,7 +1444,7 @@
           "version": "0.15.3"
         },
         "hooks.json": {
-          "hash": "99b17e2d576f600d9964f099b346bcf1cca37414478a9defba73c800f8f9b3af",
+          "hash": "3e51a27bca99a855f493ab4126bdbfeba3453471c0bcb9fff09296dbb8a0c77a",
           "version": "0.15.3"
         },
         "instructions/agent-contract.md": {

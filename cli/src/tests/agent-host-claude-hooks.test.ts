@@ -28,9 +28,14 @@ const compiled = JSON.parse(readFileSync(path.join(xtrmDir, 'config', 'hooks.jso
     hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
 };
 
-/** The script argv Claude runs for an event: the event's single registered xt command. */
+/** The script argv Claude runs for an event: the event's single dispatcher command. */
 function commandFor(event: unknown): string[] {
-    const commands = (compiled.hooks[String(event)] ?? []).flatMap((group) => group.hooks.map((h) => h.command));
+    const registered = (compiled.hooks[String(event)] ?? []).flatMap((group) => group.hooks.map((h) => h.command));
+    // CORE-2530 registers one extra Bash-only command (the review gate); the
+    // dispatcher must still be exactly one per event.
+    const extras = registered.filter((command) => !command.includes('dispatch.mjs'));
+    for (const extra of extras) expect(extra).toMatch(/xtrm-review-gate\.mjs (pre|post)$/);
+    const commands = registered.filter((command) => command.includes('dispatch.mjs'));
     expect(commands, `${String(event)} must register exactly one xt hook process`).toHaveLength(1);
     const [node, script, ...args] = commands[0].split(' ');
     expect(node).toBe('node');

@@ -29,10 +29,13 @@ describe('hook routing tables (.xtrm/hooks/hook-routing.mjs)', () => {
             hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>;
         };
         const pre = hooks.hooks.PreToolUse ?? [];
-        expect(pre).toHaveLength(1);
-        expect(pre[0].matcher ?? '').toBe('');
-        expect(pre[0].hooks).toHaveLength(1);
-        expect(pre[0].hooks[0].command).toContain('dispatch.mjs pre');
+        // CORE-2530 adds one Bash-only gate process; the dispatcher stays the
+        // single unconditional PreToolUse registration.
+        const dispatcher = pre.filter((group) => group.hooks.some((hook) => hook.command.includes('dispatch.mjs pre')));
+        expect(dispatcher).toHaveLength(1);
+        expect(dispatcher[0].matcher ?? '').toBe('');
+        expect(pre.map((group) => group.matcher ?? '')).toEqual(['', 'Bash']);
+        expect(pre[1].hooks.map((hook) => hook.command)).toEqual(['node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-review-gate.mjs pre']);
     });
 
     it('GITNEXUS_TOOLS covers every tool gitnexus-hook.cjs can extract from', () => {
