@@ -6,6 +6,11 @@
  * one line at every width and never fabricates a metric a provider does not
  * report. Git data comes from a detached-ish refresh loop (cached, async via
  * SubprocessRunner): rendering never blocks on git.
+ *
+ * Inside a tmux pane the git group is dropped: the pane border and the status
+ * bar already render the worktree name and branch, and the pane border does it
+ * per pane rather than per focused pane. `XTRM_FOOTER_GIT=always|never` forces
+ * the group back on or off; the default (`auto`) follows `$TMUX`.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -31,6 +36,24 @@ const TOOL_RESULT_REFRESH_DELAY_MS = 200;
 const FOOTER_REAPPLY_DELAY_MS = 40;
 
 export type FooterSectionRenderer = (width: number) => string[];
+
+/**
+ * Whether this process runs inside a tmux pane, where the worktree name and
+ * branch are already rendered per pane by `pane-border-format`.
+ *
+ * One environment read: no subprocess, no filesystem, no network. Cached by the
+ * caller, because `$TMUX` cannot change within a process lifetime.
+ */
+export function shouldHideGitGroup(env: Record<string, string | undefined> = process.env): boolean {
+	switch (env.XTRM_FOOTER_GIT) {
+		case "always":
+			return false;
+		case "never":
+			return true;
+		default:
+			return Boolean(env.TMUX);
+	}
+}
 
 const footerSections = new Map<string, FooterSectionRenderer>();
 let footerDisabled = false;
@@ -141,6 +164,8 @@ export function buildFooterHud(input: {
 
 export default function registerCustomFooter(pi: ExtensionAPI): void {
 	publishFooterHook();
+	// `$TMUX` is fixed for the process lifetime, so this is decided once.
+	const hideGitGroup = shouldHideGitGroup();
 	let capturedCtx: any = null;
 	let requestRender: (() => void) | null = null;
 	let branchChangeUnsub: (() => void) | null = null;
@@ -162,6 +187,8 @@ export default function registerCustomFooter(pi: ExtensionAPI): void {
 	};
 
 	const refreshRuntime = async (): Promise<void> => {
+		// Nothing renders the git group here, so do not spend git subprocesses on it.
+		if (hideGitGroup) return;
 		if (refreshingRuntime || Date.now() - runtimeState.lastFetch < CACHE_TTL) return;
 		refreshingRuntime = true;
 		try {
@@ -235,11 +262,13 @@ export default function registerCustomFooter(pi: ExtensionAPI): void {
 					// the branch before the first asynchronous git refresh lands. The
 					// provider never supplies a parent-repo branch for a worktree.
 					const providerBranch = footerData.getGitBranch?.() ?? undefined;
-					const git = runtimeState.git.repo
-						? { ...runtimeState.git, branch: runtimeState.git.branch ?? providerBranch }
-						: providerBranch
-							? { repo: true, branch: providerBranch }
-							: runtimeState.git;
+					const git = hideGitGroup
+						? EMPTY_GIT
+						: runtimeState.git.repo
+							? { ...runtimeState.git, branch: runtimeState.git.branch ?? providerBranch }
+							: providerBranch
+								? { repo: true, branch: providerBranch }
+								: runtimeState.git;
 					const hud = buildFooterHud({
 						git,
 						contextPercent: usage?.percent ?? null,

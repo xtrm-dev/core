@@ -1,8 +1,11 @@
 /**
  * One-line XTRM status HUD (CORE-2501 follow-up).
  *
- * Git context, context utilization, model/thinking level, token usage and the
- * recent cache hit rate, in that priority order, on one line that never wraps.
+ * Git context, model/thinking level, context utilization, token usage and the
+ * recent cache hit rate, in that display order, on one line that never wraps.
+ * The git group leads only when the caller supplies one: a tmux-hosted footer
+ * drops it because the pane border and the status bar already render the
+ * worktree name and branch.
  * The Claude statusline (`.xtrm/hooks/statusline.mjs`) prints the same layout and
  * the same cache figure; change them together.
  *
@@ -274,10 +277,20 @@ function buildSegments(state: HudState): HudSegment[] {
   const repo = state.git.repo;
   const name = repoLabel(state.git);
   const branch = branchLabel(state.git);
+
+  const context = contextLabel(state);
+  const model = modelLabel(state);
+  const tokens = tokenLabel(state.usage);
+  const cache = cacheLabel(state.usage);
+
+  // Display order: identity first when the caller keeps it (tmux renders it per
+  // pane, so an tmux-hosted footer drops it), then what the operator acts on.
+  // `priority` is the width-drop order, not the display order: renderHud drops
+  // the highest number first, so the model is the last field to go.
   if (repo) {
     const plain = [name, branch].filter(Boolean).join(" ");
     segments.push({
-      priority: 0,
+      priority: 2,
       plain: plain || "detached",
       // Identifier is upright: the tier alone carries the emphasis, matching
       // the restrained weight of the rest of the HUD.
@@ -287,19 +300,9 @@ function buildSegments(state: HudState): HudSegment[] {
     });
   }
 
-  const context = contextLabel(state);
-  if (context) {
-    const percent = state.contextPercent;
-    // No colour accent: thresholds move through weight and brightness only.
-    const token = typeof percent === "number" && percent > 90 ? "text" : typeof percent === "number" && percent > 70 ? "muted" : "dim";
-    const bold = typeof percent === "number" && percent > 70;
-    segments.push({ priority: 1, plain: context, paint: (colors) => paint(colors, token, context, bold) });
-  }
-
-  const model = modelLabel(state);
   if (model) {
     segments.push({
-      priority: 2,
+      priority: 0,
       plain: model,
       paint: (colors) => {
         const id = truncateLabel(state.modelId ?? "", MAX_MODEL);
@@ -312,10 +315,16 @@ function buildSegments(state: HudState): HudSegment[] {
     });
   }
 
-  const tokens = tokenLabel(state.usage);
+  if (context) {
+    const percent = state.contextPercent;
+    // No colour accent: thresholds move through weight and brightness only.
+    const token = typeof percent === "number" && percent > 90 ? "text" : typeof percent === "number" && percent > 70 ? "muted" : "dim";
+    const bold = typeof percent === "number" && percent > 70;
+    segments.push({ priority: 1, plain: context, paint: (colors) => paint(colors, token, context, bold) });
+  }
+
   if (tokens) segments.push({ priority: 3, plain: tokens, paint: (colors) => paint(colors, "dim", tokens) });
 
-  const cache = cacheLabel(state.usage);
   if (cache) segments.push({ priority: 4, plain: cache, paint: (colors) => paint(colors, "dim", cache) });
 
   return segments;
