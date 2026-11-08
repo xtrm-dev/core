@@ -13,6 +13,7 @@ import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
 import { buildDispatcherEnv, stripDispatcherEnv } from '../core/dispatcher-identity.js';
+import { resolveGitEmail } from '../core/git-identity.js';
 import {
     buildDetachedLaunchOutcome,
     checkStructuredLaunchPaths,
@@ -3364,7 +3365,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug), ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }), ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3518,7 +3519,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
 
     const agentEnv = buildAgentEnv(plan.paneOptions);
     // CORE-2390: who dispatched this worker and its Substrate participant name.
-    const dispatcherEnv = buildDispatcherEnv(sessionSlug);
+    const dispatcherEnv = buildDispatcherEnv(sessionSlug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) });
     // CORE-2454: first-turn hold signal — only Pi, only with an initial prompt.
     const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
 

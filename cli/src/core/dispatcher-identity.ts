@@ -27,6 +27,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { buildGitIdentityEnv, GIT_IDENTITY_ENV_KEYS } from './git-identity.js';
 import type { TmuxProbe } from './session-identity.js';
 
 export const SUBSTRATE_HOLDER_VAR = 'SUBSTRATE_HOLDER';
@@ -42,6 +43,10 @@ export const DISPATCHER_ENV_KEYS = [
     XTRM_DISPATCHER_ADDRESS_VAR,
     XTRM_PARENT_SESSION_ID_VAR,
     XTRM_PARENT_PANE_ID_VAR,
+    // CORE-2525: the git author identity of the launched agent, so a nested
+    // launch recomputes it from its own holder instead of inheriting the
+    // dispatcher's name as its author.
+    ...GIT_IDENTITY_ENV_KEYS,
 ] as const;
 
 const MAX_ANCESTOR_HOPS = 64;
@@ -60,6 +65,12 @@ export interface DispatcherIdentityDeps {
     sessionsDir?: string;
     readProcess?: (pid: number) => ProcessInfo | null;
     tmux?: TmuxProbe;
+    /**
+     * CORE-2525: author/committer email for the launched agent, resolved by the
+     * launcher (resolveGitEmail). Omitted means no git identity is emitted, so
+     * callers that do not launch a runtime stay byte-identical to before.
+     */
+    gitEmail?: string | null;
 }
 
 export interface DispatcherIdentity {
@@ -151,7 +162,13 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
     const env = deps.env ?? process.env;
     const out: Record<string, string> = {};
     const holder = clean(workerName);
-    if (holder) out[SUBSTRATE_HOLDER_VAR] = holder;
+    if (holder) {
+        out[SUBSTRATE_HOLDER_VAR] = holder;
+        // Git identity follows the holder, never the inherited environment.
+        if (deps.gitEmail !== undefined) {
+            Object.assign(out, buildGitIdentityEnv({ holder, email: deps.gitEmail }));
+        }
+    }
 
     const dispatcher = resolveDispatcher(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;

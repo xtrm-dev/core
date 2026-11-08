@@ -163,6 +163,13 @@ export function createHelpCommand(): Command {
                 '    After a shim change run xt jira setup. See docs/jira-identity.md.',
             ]));
 
+            blocks.push(section('AGENT GIT IDENTITY', [
+                '  xt identity env [--json]',
+                '    Print the git author/committer env an agent commit carries (CORE-2525).',
+                '    Name = SUBSTRATE_HOLDER; email = the operator email until the role Apps exist.',
+                '    Empty for an operator session (no SUBSTRATE_HOLDER). Launchers export the same env.',
+            ]));
+
             blocks.push(section('SESSION CLOSE', [
                 '  xt end [options]',
                 '    Rebase onto the default branch, push, open PR, link issues, and optionally clean worktree.',
