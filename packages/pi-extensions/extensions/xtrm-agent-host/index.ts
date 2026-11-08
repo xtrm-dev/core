@@ -761,6 +761,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     let parentTmux: string | undefined;
     let worktree: string | undefined;
     let branch: string | undefined;
+    let paneWorktree: string | undefined;
+    let paneBranch: string | undefined;
 
     const tmuxInfo = pane
       ? exec("tmux", [
@@ -776,14 +778,16 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
     const [tmuxOut, gitOut, branchOut, remoteOut] = await Promise.all([tmuxInfo, gitInfo, branchInfo, remoteInfo]);
     if (tmuxOut) {
-      const [name, paneRole, paneBead, parent, paneWorktree, paneBranch, windowName] = tmuxOut.replace(/\n$/, "").split("\t");
+      const [name, paneRole, paneBead, parent, observedWorktree, observedBranch, windowName] = tmuxOut.replace(/\n$/, "").split("\t");
       tmuxSession = bounded(name);
       tmuxWindow = bounded(windowName, SESSION_NAME_MAX);
       role = bounded(paneRole) ?? role;
       bead = bounded(paneBead) ?? bead;
       parentTmux = bounded(parent);
-      worktree = bounded(paneWorktree, 4096);
-      branch = bounded(paneBranch);
+      paneWorktree = bounded(observedWorktree, 4096);
+      paneBranch = bounded(observedBranch);
+      worktree = paneWorktree;
+      branch = paneBranch;
     }
     const [gitTop, gitCommonDir] = gitOut.split("\n");
     worktree ??= bounded(gitTop, 4096);
@@ -795,6 +799,18 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const repository = repositoryPath && remote ? repositoryFromRemote(remote) : undefined;
     // A detached HEAD is not a symbolic ref: no branch.
     branch ??= bounded(branchOut.trim());
+
+    // tmux formats render the pane border and the status bar from pane options,
+    // while `#{pane_current_path}` keeps the last OSC 7 value the SHELL reported:
+    // an agent working in a worktree it did not start in would otherwise render
+    // the wrong worktree name and branch (CORE-2586). Publish the observed truth
+    // only when the pane disagrees, so the launcher's own values stay untouched.
+    if (pane && worktree && worktree !== paneWorktree) {
+      void exec("tmux", ["set-option", "-p", "-t", pane, "@agent_worktree", worktree]);
+    }
+    if (pane && branch && branch !== paneBranch) {
+      void exec("tmux", ["set-option", "-p", "-t", pane, "@agent_branch", branch]);
+    }
 
     // @agent_parent_session holds the parent's tmux session id; the parent's bridge publishes
     // its Pi session id on its pane, which turns that into a session id the host can join on.
