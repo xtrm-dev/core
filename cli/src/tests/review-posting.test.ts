@@ -108,6 +108,9 @@ describe('reading the model body', () => {
         expect(bodyVerdicts(modelBody({ verdict: 'FAIL' }))).toEqual(['REQUEST_CHANGES']);
         expect(bodyVerdicts(modelBody({ extraVerdict: true }))).toEqual(['COMMENT', 'APPROVE']);
         expect(bodyVerdicts('no verdict here')).toEqual([]);
+        // Parity with the pr-reviewer lint: an indented verdict line is not a verdict.
+        expect(bodyVerdicts('  - Verdict: PASS')).toEqual([]);
+        expect(lintModelBody(modelBody().replace('- Verdict: PARTIAL', '  - Verdict: PARTIAL'))).toMatch(/exactly one "- Verdict:/);
     });
 
     it('refuses a body without line 1, without a verdict, with two verdicts, or with a self-written marker', () => {

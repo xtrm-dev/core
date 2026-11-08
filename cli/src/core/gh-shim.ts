@@ -20,7 +20,11 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync,
 import os from 'node:os';
 import path from 'node:path';
 
-export const GH_SHIM_MARKER = '# xtrm-gh-agent-shim v1';
+// A JavaScript line comment: the shim is a .js file, so a `#` line here would be
+// a SyntaxError on every agent `gh` call. The detection substring stays stable
+// for files written by earlier versions.
+export const GH_SHIM_MARKER = '// xtrm-gh-agent-shim v1';
+export const GH_SHIM_FINGERPRINT = 'xtrm-gh-agent-shim v1';
 const REAL_GH_PLACEHOLDER = '__XTRM_REAL_GH__';
 
 export interface ShimDeps {
@@ -60,7 +64,7 @@ function isExecutableFile(deps: ShimDeps, file: string): boolean {
 function isShimFile(deps: ShimDeps, file: string): boolean {
     const read = deps.readFile ?? ((f: string) => readFileSync(f, 'utf8'));
     try {
-        return read(file).slice(0, 512).includes(GH_SHIM_MARKER);
+        return read(file).slice(0, 512).includes(GH_SHIM_FINGERPRINT);
     } catch {
         return false;
     }
@@ -97,7 +101,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const MARKER = '${GH_SHIM_MARKER}';
+const MARKER = '${GH_SHIM_FINGERPRINT}';
 const REAL_GH = ${JSON.stringify(realGh ?? '')};
 const SELF = (() => { try { return fs.realpathSync(__filename); } catch { return __filename; } })();
 
@@ -186,7 +190,10 @@ function main() {
       repo = repo || info.repo;
       pr = pr || info.pr;
     }
-    process.exit(xtPassthrough(['identity', 'review-post', '--repo', repo, '--pr', String(pr), ...restNoRepo]));
+    // The positional number is only an input: forwarding it again makes
+    // commander see two PR arguments ("too many arguments for 'review-post'").
+    const forwarded = prFromArgs ? restNoRepo.filter((arg) => arg !== prFromArgs) : restNoRepo;
+    process.exit(xtPassthrough(['identity', 'review-post', '--repo', repo, '--pr', String(pr), ...forwarded]));
   }
 
   if (verb === 'merge') {
