@@ -264,6 +264,9 @@ describe('Codex worktree launcher', () => {
         const env = Object.fromEntries(windowArgs.flatMap((a, i) => (windowArgs[i - 1] === '-e' ? [a.split(/=(.*)/s, 2)] : [])));
         expect(env).toMatchObject({
             SUBSTRATE_HOLDER: 'win',
+            // CORE-2525: the worker's own git identity rides the same -e block.
+            GIT_AUTHOR_NAME: 'win',
+            GIT_COMMITTER_NAME: 'win',
             XTRM_DISPATCHER_NAME: 'coord-1',
             XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/77.sock',
             XTRM_PARENT_PANE_ID: '%5',

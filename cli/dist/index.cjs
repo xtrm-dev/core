@@ -57455,14 +57455,19 @@ function resolveGitEmail(deps = {}) {
     const result = (0, import_node_child_process2.spawnSync)(cmd, args, { encoding: "utf8", cwd: opts.cwd, stdio: "pipe" });
     return { status: result.status, stdout: String(result.stdout ?? "") };
   });
+  const usable = (candidate) => {
+    const email3 = (candidate ?? "").trim();
+    return email3 && !/\s/.test(email3) ? email3 : null;
+  };
   try {
     const result = run5("git", ["config", "--get", "user.email"], { cwd: deps.cwd });
-    if (result.status !== 0) return null;
-    const email3 = result.stdout.trim();
-    return email3 && !/\s/.test(email3) ? email3 : null;
+    if (result.status === 0) {
+      const email3 = usable(result.stdout);
+      if (email3) return email3;
+    }
   } catch {
-    return null;
   }
+  return usable((deps.env ?? process.env).GIT_AUTHOR_EMAIL);
 }
 function buildGitIdentityEnv(input) {
   const holder = (input.holder ?? "").trim();
@@ -68092,7 +68097,8 @@ function createHelpCommand() {
       "  xt identity env [--json]",
       "    Print the git author/committer env an agent commit carries (CORE-2525).",
       "    Name = SUBSTRATE_HOLDER; email = the operator email until the role Apps exist.",
-      "    Empty for an operator session (no SUBSTRATE_HOLDER). Launchers export the same env."
+      "    Empty for an operator session (no SUBSTRATE_HOLDER). Launchers export the same env.",
+      `    KEY=VALUE lines; load with: eval "$(xt identity env | sed 's/^/export /')".`
     ]));
     blocks.push(section("SESSION CLOSE", [
       "  xt end [options]",
@@ -70875,7 +70881,8 @@ function createIdentityCommand() {
       return;
     }
     if (!report.holder) {
-      console.log(kleur_default.dim("no agent identity: SUBSTRATE_HOLDER is unset (operator session)"));
+      process.stderr.write(`${kleur_default.dim("no agent identity: SUBSTRATE_HOLDER is unset (operator session)")}
+`);
       return;
     }
     for (const [key, value] of Object.entries(report.env)) console.log(`${key}=${value}`);

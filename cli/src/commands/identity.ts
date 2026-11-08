@@ -40,7 +40,8 @@ export function createIdentityCommand(): Command {
                 return;
             }
             if (!report.holder) {
-                console.log(kleur.dim('no agent identity: SUBSTRATE_HOLDER is unset (operator session)'));
+                // stdout must stay empty so `eval "$(xt identity env)"` is safe.
+                process.stderr.write(`${kleur.dim('no agent identity: SUBSTRATE_HOLDER is unset (operator session)')}\n`);
                 return;
             }
             for (const [key, value] of Object.entries(report.env)) console.log(`${key}=${value}`);

@@ -35,7 +35,7 @@ interface Harness {
   newWindowArgs?: string[] | null;
 }
 
-function installMock(h: Harness, opts: { sessionIdAnswer?: string | null } = {}): void {
+function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEmail?: string } = {}): void {
   const { repoRoot } = h;
   const answer = opts.sessionIdAnswer === undefined ? '$7' : opts.sessionIdAnswer;
   mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: Record<string, unknown> = {}) => {
@@ -46,7 +46,11 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null } = {})
     if (command === 'git' && args[0] === 'symbolic-ref') return { status: 0, stdout: 'origin/main\n', stderr: '' };
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === '--quiet' && (args[3] ?? '').startsWith('origin/')) return { status: 0, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'rev-parse') return { status: 1, stdout: '', stderr: '' };
-    if (command === 'git' && args[0] === 'config') return { status: 1, stdout: '', stderr: '' };
+    if (command === 'git' && args[0] === 'config') {
+      return opts.gitEmail
+        ? { status: 0, stdout: `${opts.gitEmail}\n`, stderr: '' }
+        : { status: 1, stdout: '', stderr: '' };
+    }
     if (command === 'git' && args[0] === 'ls-files') return { status: 0, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') {
       const wtPath = args.find((a) => a.startsWith(repoRoot));
@@ -320,6 +324,30 @@ describe('xt/tmux launcher session-identity propagation', () => {
       expect(h.piSpawnEnv?.['XTRM_PARENT_SESSION_ID']).toBe('$7');
     });
 
+    it('direct spawn carries the git author identity of the launched holder (CORE-2525)', async () => {
+      armDispatcher();
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'claude', name: 'dwk-git' })).rejects.toThrow('exit:0');
+
+      expect(h.piSpawnEnv?.['GIT_AUTHOR_NAME']).toBe('dwk-git');
+      expect(h.piSpawnEnv?.['GIT_COMMITTER_NAME']).toBe('dwk-git');
+      // Unknown email = unknown: the names do not invent one.
+      expect(h.piSpawnEnv?.['GIT_AUTHOR_EMAIL']).toBeUndefined();
+    });
+
+    it('carries the resolved operator email next to the holder name (CORE-2525)', async () => {
+      armDispatcher();
+      installMock(h, { gitEmail: 'op@example.com' });
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-mail' })).rejects.toThrow('exit:0');
+
+      expect(h.piSpawnEnv?.['GIT_AUTHOR_EMAIL']).toBe('op@example.com');
+      expect(h.piSpawnEnv?.['GIT_COMMITTER_EMAIL']).toBe('op@example.com');
+    });
+
     it('bare and role new-session launches pass the identity with -e', async () => {
       armDispatcher();
       installMock(h);
@@ -327,6 +355,9 @@ describe('xt/tmux launcher session-identity propagation', () => {
 
       await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk3', attach: false })).rejects.toThrow('exit:0');
       expectDispatcher(envPairs(h.newSessionArgs), 'dwk3');
+      // The tmux plan path carries the same git identity (CORE-2525).
+      expect(envPairs(h.newSessionArgs)['GIT_AUTHOR_NAME']).toBe('dwk3');
+      expect(envPairs(h.newSessionArgs)['GIT_COMMITTER_NAME']).toBe('dwk3');
 
       h.newSessionArgs = null;
       await expect(launchWorktreeSession({ runtime: 'claude', name: 'dwk4', role: 'testrole', attach: false })).rejects.toThrow('exit:0');

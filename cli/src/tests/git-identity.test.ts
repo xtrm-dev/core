@@ -29,13 +29,29 @@ describe('resolveGitEmail', () => {
     });
 
     it('treats a missing or unusable value as unknown', () => {
-        expect(resolveGitEmail({ run: () => ({ status: 1, stdout: '' }) })).toBeNull();
-        expect(resolveGitEmail({ run: () => ({ status: 0, stdout: '   \n' }) })).toBeNull();
-        expect(resolveGitEmail({ run: () => ({ status: 0, stdout: 'not an email\n' }) })).toBeNull();
+        expect(resolveGitEmail({ env: {}, run: () => ({ status: 1, stdout: '' }) })).toBeNull();
+        expect(resolveGitEmail({ env: {}, run: () => ({ status: 0, stdout: '   \n' }) })).toBeNull();
+        expect(resolveGitEmail({ env: {}, run: () => ({ status: 0, stdout: 'not an email\n' }) })).toBeNull();
     });
 
     it('survives a throwing runner', () => {
-        expect(resolveGitEmail({ run: () => { throw new Error('git missing'); } })).toBeNull();
+        expect(resolveGitEmail({ env: {}, run: () => { throw new Error('git missing'); } })).toBeNull();
+    });
+
+    it('falls back to the operator-exported GIT_AUTHOR_EMAIL', () => {
+        // The launcher resolves this before stripping inherited GIT_* keys, so
+        // an operator who only exported the variable still names the agent.
+        const env = { GIT_AUTHOR_EMAIL: 'exported@example.com' };
+        expect(resolveGitEmail({ env, run: () => ({ status: 1, stdout: '' }) })).toBe('exported@example.com');
+        expect(resolveGitEmail({ env, run: () => { throw new Error('git missing'); } })).toBe('exported@example.com');
+    });
+
+    it('prefers git config over the exported value and ignores an unusable export', () => {
+        expect(resolveGitEmail({
+            env: { GIT_AUTHOR_EMAIL: 'exported@example.com' },
+            run: () => ({ status: 0, stdout: 'configured@example.com\n' }),
+        })).toBe('configured@example.com');
+        expect(resolveGitEmail({ env: { GIT_AUTHOR_EMAIL: 'not an email' }, run: () => ({ status: 1, stdout: '' }) })).toBeNull();
     });
 });
 
@@ -89,6 +105,20 @@ describe('buildDispatcherEnv git identity', () => {
         const merged = { ...stripDispatcherEnv(inherited), ...buildDispatcherEnv('worker-a', { ...deps, gitEmail: 'op@example.com' }) };
         expect(merged.GIT_AUTHOR_NAME).toBe('worker-a');
         expect(merged.GIT_AUTHOR_EMAIL).toBe('op@example.com');
+    });
+
+    it('drops the inherited email when the new email is unknown (the strip earns its place)', () => {
+        // The strip is the only thing protecting this case: the fallback env
+        // supplies no email, so nothing overwrites the inherited one.
+        const inherited = {
+            GIT_AUTHOR_NAME: 'dispatcher',
+            GIT_AUTHOR_EMAIL: 'disp@example.com',
+            GIT_COMMITTER_EMAIL: 'disp@example.com',
+        };
+        const merged = { ...stripDispatcherEnv(inherited), ...buildDispatcherEnv('worker-a', { ...deps, gitEmail: null }) };
+        expect(merged.GIT_AUTHOR_NAME).toBe('worker-a');
+        expect('GIT_AUTHOR_EMAIL' in merged).toBe(false);
+        expect('GIT_COMMITTER_EMAIL' in merged).toBe(false);
     });
 });
 

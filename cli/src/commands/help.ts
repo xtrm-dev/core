@@ -168,6 +168,7 @@ export function createHelpCommand(): Command {
                 '    Print the git author/committer env an agent commit carries (CORE-2525).',
                 '    Name = SUBSTRATE_HOLDER; email = the operator email until the role Apps exist.',
                 '    Empty for an operator session (no SUBSTRATE_HOLDER). Launchers export the same env.',
+                '    KEY=VALUE lines; load with: eval "$(xt identity env | sed \'s/^/export /\')".',
             ]));
 
             blocks.push(section('SESSION CLOSE', [

@@ -36,29 +36,39 @@ export interface GitIdentity {
 export interface GitIdentityDeps {
     /** Directory the git config lookup runs in. Default: the process cwd. */
     cwd?: string;
+    /** Env to read the operator-exported GIT_AUTHOR_EMAIL from. Default: process.env. */
+    env?: NodeJS.ProcessEnv;
     /** Injected for tests; defaults to a real `git config --get user.email`. */
     run?: (cmd: string, args: string[], opts: { cwd?: string }) => { status: number | null; stdout: string };
 }
 
 /**
- * The operator's configured email (`git config --get user.email`), or null.
- * Used as the interim agent email until the role Apps mint their own noreply
- * addresses. Never throws: an absent or malformed answer is simply unknown.
+ * The operator's configured email, or null. Resolution order: git config
+ * `user.email`, else the operator-exported `GIT_AUTHOR_EMAIL` — the launcher
+ * resolves this BEFORE any inherited GIT_* key is stripped, so an operator who
+ * only exported the variable still names the agent's email. Never throws: an
+ * absent or malformed answer is simply unknown.
  */
 export function resolveGitEmail(deps: GitIdentityDeps = {}): string | null {
     const run = deps.run ?? ((cmd, args, opts) => {
         const result = spawnSync(cmd, args, { encoding: 'utf8', cwd: opts.cwd, stdio: 'pipe' });
         return { status: result.status, stdout: String(result.stdout ?? '') };
     });
-    try {
-        const result = run('git', ['config', '--get', 'user.email'], { cwd: deps.cwd });
-        if (result.status !== 0) return null;
-        const email = result.stdout.trim();
+    const usable = (candidate: string | undefined | null): string | null => {
+        const email = (candidate ?? '').trim();
         // A value with whitespace is not an address git can use.
         return email && !/\s/.test(email) ? email : null;
+    };
+    try {
+        const result = run('git', ['config', '--get', 'user.email'], { cwd: deps.cwd });
+        if (result.status === 0) {
+            const email = usable(result.stdout);
+            if (email) return email;
+        }
     } catch {
-        return null;
+        /* fall through to the exported value */
     }
+    return usable((deps.env ?? process.env).GIT_AUTHOR_EMAIL);
 }
 
 /**
