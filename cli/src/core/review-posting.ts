@@ -63,6 +63,8 @@ export function sha12(sha: string): string {
 }
 
 const LINE1 = /^Review by ([A-Za-z][A-Za-z0-9-]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
+// Column 0 only: the lint (`grep -Ec '^- Verdict:'`) and this parser must agree,
+// so an indented line is refused by both instead of passing one and failing the other.
 const VERDICT_LINE = /^- Verdict: (PASS|PARTIAL|FAIL)\s*$/;
 
 /** The header the MODEL writes on line 1: role, model and the reviewed head. */
@@ -84,7 +86,7 @@ export function parseHeaderLine(body: string): ParsedHeader | null {
 export function bodyVerdicts(body: string): ReviewVerdict[] {
     const out: ReviewVerdict[] = [];
     for (const line of body.split('\n')) {
-        const match = VERDICT_LINE.exec(line.trim());
+        const match = VERDICT_LINE.exec(line);
         if (match) out.push(OUTCOME_TO_EVENT[match[1] as ReviewOutcome]);
     }
     return out;
