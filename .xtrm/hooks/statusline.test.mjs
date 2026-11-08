@@ -25,7 +25,7 @@ function fixture() {
   return { root, cwd, cache, bin, log };
 }
 
-function run({ cwd, cache, bin }) {
+function run({ cwd, cache, bin }, env = {}) {
   const started = performance.now();
   const result = spawnSync(process.execPath, [hook], {
     input: JSON.stringify({ workspace: { current_dir: cwd } }),
@@ -34,6 +34,9 @@ function run({ cwd, cache, bin }) {
       ...process.env,
       XTRM_STATUSLINE_CACHE_DIR: cache,
       PATH: `${bin}:${process.env.PATH}`,
+      // These tests exercise the git group; the tmux suppression has its own test.
+      XTRM_FOOTER_GIT: 'always',
+      ...env,
     },
   });
   return { result, elapsed: performance.now() - started };
@@ -88,6 +91,7 @@ test('concurrent renders share one git refresh lease (no stampede)', async (t) =
       ...process.env,
       XTRM_STATUSLINE_CACHE_DIR: fx.cache,
       PATH: `${fx.bin}:${process.env.PATH}`,
+      XTRM_FOOTER_GIT: 'always',
     },
   }));
   for (const child of children) child.stdin.end(JSON.stringify({ workspace: { current_dir: fx.cwd } }));
@@ -104,22 +108,36 @@ test('corrupt git cache falls back safely without crashing', async (t) => {
 });
 
 // Layout and cache figure match the pi footer (custom-footer/hud.ts).
-function runWith(fx, input) {
+function runWith(fx, input, env = {}) {
   return spawnSync(process.execPath, [hook], {
     input: JSON.stringify({ workspace: { current_dir: fx.cwd }, ...input }),
     encoding: 'utf8',
-    env: { ...process.env, XTRM_STATUSLINE_CACHE_DIR: fx.cache, PATH: `${fx.bin}:${process.env.PATH}` },
+    env: { ...process.env, XTRM_STATUSLINE_CACHE_DIR: fx.cache, PATH: `${fx.bin}:${process.env.PATH}`, XTRM_FOOTER_GIT: 'always', ...env },
   }).stdout.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 const usageOf = (input, read, written = 0) => ({ context_window: { used_percentage: 12.5, context_window_size: 1_000_000, current_usage: { input_tokens: input, output_tokens: input, cache_creation_input_tokens: written, cache_read_input_tokens: read } } });
 
-test('pi-footer layout: worktree, branch glyph, context, model, separators', async (t) => {
+test('pi-footer layout: worktree, branch glyph, model, context, separators', async (t) => {
   const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
   run(fx);
   await waitForGitCache(fx.cache);
   const out = runWith(fx, { session_id: 'layout', model: { id: 'claude-x', display_name: 'Opus' }, effort: { level: 'high' }, ...usageOf(1, 0) });
-  assert.match(out, /^repo ⎇ main · 12\.5%\/1\.0M · Opus high/);
+  assert.match(out, /^repo ⎇ main · Opus high · 12\.5%\/1\.0M/);
+});
+
+test('inside a tmux pane the git group is dropped and the model leads', async (t) => {
+  const fx = fixture(); t.after(() => rmSync(fx.root, { recursive: true, force: true }));
+  const out = runWith(
+    fx,
+    { session_id: 'tmux', model: { id: 'claude-x', display_name: 'Opus' }, effort: { level: 'high' }, ...usageOf(1, 0) },
+    // Empty override falls through to $TMUX, like an unset variable.
+    { XTRM_FOOTER_GIT: '', TMUX: '/tmp/tmux-1000/default,1,0' },
+  );
+  assert.doesNotMatch(out, /⎇|repo/);
+  assert.match(out, /^Opus high · 12\.5%\/1\.0M/);
+  // Hidden git group means no detached refresh is spawned for it.
+  assert.equal(readdirSync(fx.cache).some(f => f.startsWith('xtrm-sl-git-')), false);
 });
 
 test('cache figure is the median of recent responses; a miss shows as (last N%)', (t) => {

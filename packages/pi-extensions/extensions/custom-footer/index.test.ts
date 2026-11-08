@@ -8,7 +8,7 @@ mock.module("@earendil-works/pi-tui", () => ({
 	truncateToWidth: (value: string, width: number) => (value.length > width ? value.slice(0, width) : value),
 }));
 
-const { default: registerExtension, registerFooterSection } = await import("./index.ts");
+const { default: registerExtension, registerFooterSection, shouldHideGitGroup } = await import("./index.ts");
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
 
@@ -41,23 +41,37 @@ const footerData = {
 	getAvailableProviderCount: () => 1,
 };
 
-async function makeFooter() {
+async function makeFooter(env: Record<string, string | undefined> = { XTRM_FOOTER_GIT: "always" }) {
+	const saved: Record<string, string | undefined> = {};
+	for (const [key, value] of Object.entries(env)) {
+		saved[key] = process.env[key];
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
 	const handlers = collectHandlers();
 	let factory: ((tui: unknown, theme: unknown, footerData: unknown) => { render: (width: number) => string[] }) | null =
 		null;
-	await handlers.get("session_start")?.(
-		{},
-		makeCtx((captured: unknown) => {
-			factory = captured as typeof factory;
-		}),
-	);
+	try {
+		await handlers.get("session_start")?.(
+			{},
+			makeCtx((captured: unknown) => {
+				factory = captured as typeof factory;
+			}),
+		);
+	} finally {
+		// The extension reads the environment once, at registration: restore it so
+		// the ambient tmux state cannot leak into other suites.
+		for (const [key, value] of Object.entries(saved)) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+	}
 	if (!factory) throw new Error("setFooter was not called");
 	const render = (width: number) => (factory as NonNullable<typeof factory>)(tui, theme, footerData).render(width);
 	return { handlers, render };
 }
 
-describe("registerFooterSection seam", () => {
-	test("statusline is a single line when no sections are registered", async () => {
+describe("registerFooterSection seam", () => {	test("statusline is a single line when no sections are registered", async () => {
 		const { render } = await makeFooter();
 		const lines = render(80);
 		expect(lines).toHaveLength(1);
@@ -198,5 +212,28 @@ describe("globalThis hook publication (unitAI-plbug)", () => {
 			delete g.__registerFooterSection;
 			collectHandlers();
 		}
+	});
+});
+
+describe("tmux-hosted footer (CORE-2586)", () => {
+	test("the policy is one environment read, with an explicit override", () => {
+		expect(shouldHideGitGroup({})).toBe(false);
+		expect(shouldHideGitGroup({ TMUX: "/tmp/tmux-1000/default,1,0" })).toBe(true);
+		expect(shouldHideGitGroup({ TMUX: "/tmp/x", XTRM_FOOTER_GIT: "always" })).toBe(false);
+		expect(shouldHideGitGroup({ XTRM_FOOTER_GIT: "never" })).toBe(true);
+	});
+
+	test("inside a tmux pane the git group is dropped, the rest is kept", async () => {
+		const { render } = await makeFooter({ TMUX: "/tmp/tmux-1000/default,1,0", XTRM_FOOTER_GIT: undefined });
+		const line = render(120).join("\n");
+		expect(line).not.toContain("⎇");
+		expect(line).not.toContain("main");
+		expect(line).toContain("test-model");
+		expect(line).toContain("100k");
+	});
+
+	test("XTRM_FOOTER_GIT=always keeps the group inside tmux", async () => {
+		const { render } = await makeFooter({ TMUX: "/tmp/tmux-1000/default,1,0", XTRM_FOOTER_GIT: "always" });
+		expect(render(120).join("\n")).toContain("⎇ main");
 	});
 });

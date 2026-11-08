@@ -7,7 +7,10 @@
 //
 // Layout and figures match the pi footer (packages/pi-extensions/extensions/
 // custom-footer/hud.ts); change them together:
-//   <worktree> ⎇ <branch><flags> · <used>%/<window> · (<provider>) <model> <effort> · <N>% cache [(last M%)]
+//   <worktree> ⎇ <branch><flags> · (<provider>) <model> <effort> · <used>%/<window> · <N>% cache [(last M%)]
+// Inside a tmux pane the leading git group is suppressed: pane-border-format
+// renders the worktree name and branch per pane. `XTRM_FOOTER_GIT=always|never`
+// forces it back on or off; the default (`auto`) follows `$TMUX`.
 // The cache figure is the median hit rate of the last CACHE_WINDOW responses, with
 // "(last M%)" when the latest response is CACHE_MISS_GAP points below it. Claude's
 // statusline input only carries the latest response (context_window.current_usage),
@@ -70,6 +73,14 @@ const CACHE_WINDOW = 10;
 const CACHE_MISS_GAP = 20;
 const MAX_BRANCH = 32, MAX_MODEL = 28;
 const SEPARATOR = ' · ';
+
+// One environment read, no subprocess: tmux renders the worktree name and branch
+// in the pane border and the status bar, so the footer yields them there.
+const HIDE_GIT = (() => {
+  if (process.env.XTRM_FOOTER_GIT === 'always') return false;
+  if (process.env.XTRM_FOOTER_GIT === 'never') return true;
+  return Boolean(process.env.TMUX);
+})();
 
 // Grayscale ladder like the pi footer: weight and brightness carry emphasis, no accent colour.
 const R = '\x1b[0m', B = '\x1b[1m', D = '\x1b[2m', M = '\x1b[90m';
@@ -272,10 +283,18 @@ function render(ctx, git) {
   const { displayDir, branch, gitFlags } = git;
   const segments = [];
 
-  // Git group: worktree name upright, branch muted, same as the pi footer.
-  // Never shortened: the worktree name is how the operator tells agents apart.
-  const name = displayDir;
-  segments.push(branch ? `${name} ${M}⎇ ${truncateLabel(branch, MAX_BRANCH)}${gitFlags}${R}` : name);
+  // Git group, first when the caller keeps it: worktree name upright, branch
+  // muted, same as the pi footer. Never shortened: the worktree name is how the
+  // operator tells agents apart. A tmux pane drops the group entirely.
+  if (!HIDE_GIT) {
+    const name = displayDir;
+    segments.push(branch ? `${name} ${M}⎇ ${truncateLabel(branch, MAX_BRANCH)}${gitFlags}${R}` : name);
+  }
+
+  let modelStr = truncateLabel(modelName, MAX_MODEL);
+  if (provider) modelStr = `(${provider}) ${modelStr}`;
+  const effort = ctx?.effort?.level ?? ctx?.effort_level ?? ctx?.thinking_level ?? readEffortSetting();
+  segments.push(`${M}${modelStr}${R}${effort ? ` ${D}${effort}${R}` : ''}`);
 
   // Context group: omitted when neither the percentage nor the window is known.
   const knownPct = typeof pct === 'number' && Number.isFinite(pct);
@@ -285,11 +304,6 @@ function render(ctx, git) {
     const style = knownPct && pct > 90 ? B : knownPct && pct > 70 ? B + M : D;
     segments.push(`${style}${label}${R}`);
   }
-
-  let modelStr = truncateLabel(modelName, MAX_MODEL);
-  if (provider) modelStr = `(${provider}) ${modelStr}`;
-  const effort = ctx?.effort?.level ?? ctx?.effort_level ?? ctx?.thinking_level ?? readEffortSetting();
-  segments.push(`${M}${modelStr}${R}${effort ? ` ${D}${effort}${R}` : ''}`);
 
   const cache = cacheLabel(readCacheWindow(ctx));
   if (cache) segments.push(`${D}${cache}${R}`);
@@ -304,10 +318,12 @@ if (process.argv[2] === '--refresh') {
   let ctx = {};
   try { ctx = JSON.parse(readFileSync(0, 'utf8')); } catch {}
   const cwd = ctx?.workspace?.current_dir ?? process.cwd();
-  const gitCached = readGitCache(cacheFile(cwd));
+  // Nothing renders the git group inside a tmux pane: skip the cache read and
+  // the detached refresh rather than keep them warm for a hidden segment.
+  const gitCached = HIDE_GIT ? null : readGitCache(cacheFile(cwd));
   const git = gitCached?.data ?? fallbackGit(cwd);
 
   render(ctx, git);
 
-  if (!gitCached?.fresh) startRefresh(cwd, started);
+  if (!HIDE_GIT && !gitCached?.fresh) startRefresh(cwd, started);
 }

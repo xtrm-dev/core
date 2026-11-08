@@ -215,7 +215,20 @@ describe("HUD layout", () => {
     }, 200, markTheme());
 
     const plain = line.replace(/\*([^*]*)\*/g, "$1").replace(/<\/?[A-Za-z]+>/g, "");
-    expect(plain).toBe("core-xt-pi-colors ⎇ xt/ui-trim · 31.4%/1.0M · deepseek-v4.1-flash high · ↑42k ↓8k · 86% cache");
+    expect(plain).toBe("core-xt-pi-colors ⎇ xt/ui-trim · deepseek-v4.1-flash high · 31.4%/1.0M · ↑42k ↓8k · 86% cache");
+  });
+
+  test("without a git group (tmux-hosted caller) the model still leads", () => {
+    const line = renderHud({
+      git: { repo: false },
+      contextPercent: 31.4,
+      contextWindow: 1_000_000,
+      modelId: "deepseek-v4.1-flash",
+      reasoning: true,
+      thinkingLevel: "high",
+      usage: { input: 42_000, output: 8_000, cacheRead: 86_000, cacheWrite: 0, cacheRate: 86 },
+    }, 200);
+    expect(line).toBe("deepseek-v4.1-flash high · 31.4%/1.0M · ↑42k ↓8k · 86% cache");
   });
 
   test("shows the context window at most once", () => {
@@ -268,9 +281,9 @@ describe("HUD layout", () => {
     }
 
     const narrow = renderHud(state, 40);
-    // The worktree/branch group is the last field to drop.
-    expect(narrow).toContain("core-xt-pi-colors");
-    expect(narrow).toContain("⎇");
+    // The model is the last field to drop; the git group yields before it.
+    expect(narrow).toContain("deepseek-v4.1-flash");
+    expect(narrow).not.toContain("core-xt-pi-colors");
     expect(narrow).not.toContain("cache");
   });
 
