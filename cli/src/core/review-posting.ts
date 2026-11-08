@@ -46,23 +46,12 @@ export function eventForOutcome(outcome: string | null | undefined): ReviewVerdi
     return OUTCOME_TO_EVENT[key] ?? null;
 }
 
-export interface ReviewHeader {
-    role: string;
-    /** The model that produced the review, exactly as line 1 names it. */
-    model: string;
-    /** Full SHA; line 1 carries its first 12 characters. */
-    head: string;
-    holder: string;
-    runId: string;
-    issueRef?: string | null;
-    activationId?: string | null;
-}
-
 export function sha12(sha: string): string {
     return sha.trim().slice(0, 12);
 }
 
-const LINE1 = /^Review by ([A-Za-z][A-Za-z0-9-]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
+// The role part allows spaces: the Claude mirror signs as `reviewer subagent`.
+const LINE1 = /^Review by ([A-Za-z][A-Za-z0-9 -]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
 // Column 0 only: the lint (`grep -Ec '^- Verdict:'`) and this parser must agree,
 // so an indented line is refused by both instead of passing one and failing the other.
 const VERDICT_LINE = /^- Verdict: (PASS|PARTIAL|FAIL)\s*$/;
@@ -140,6 +129,13 @@ export function parseIssueMarker(text: string): IssueMarker | null {
 }
 
 /** Branch names such as `issue/CORE-2309-...` or `xt/MMD-1234` carry the ref. */
+export const ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
+
+/** True only for a ref safe to pass to `sb` as an argument (no leading dash). */
+export function isSafeIssueRef(ref: string | null | undefined): boolean {
+    return ISSUE_REF_PATTERN.test((ref ?? '').trim());
+}
+
 export function issueRefFromBranch(ref: string | null | undefined): string | null {
     const match = /(?:^|[^A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d+)(?![0-9])/.exec(ref ?? '');
     return match ? match[1] : null;
@@ -260,7 +256,12 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     if (marker?.holder && marker.holder === input.holder) {
         throw new ReviewRefused(`refusing own-PR review: PR #${input.pr} was opened by holder ${input.holder}`);
     }
-    const issueRef = input.issueRef ?? marker?.issue ?? issueRefFromBranch(pull.data.head?.ref);
+    const candidate = input.issueRef ?? marker?.issue ?? issueRefFromBranch(pull.data.head?.ref) ?? null;
+    // A ref from the PR body is attacker-controlled text on its way to `sb`.
+    if (candidate && !isSafeIssueRef(candidate)) {
+        throw new ReviewRefused(`the Issue ref '${candidate}' is not a Substrate ref (expected e.g. CORE-2528); refusing to journal it`);
+    }
+    const issueRef = candidate;
     if (!issueRef) warnings.push('no Substrate Issue ref in the PR body or branch; the review is not journaled');
 
     const lines = input.body.split('\n');
@@ -268,8 +269,15 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     const rest = lines.slice(1).join('\n').trim();
     const body = `${line1}\n\n${buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId })}\n${rest}\n`;
 
-    const dismissed = await dismissStaleChangesRequested({ repo: input.repo, pr: input.pr, head: resolved }, deps, `${deps.slug}[bot]`);
+    // GitHub rejects a review body over 65536 characters; refuse here with a
+    // useful number instead of letting 422 lose the dismissal ordering.
+    const MAX_BODY = 65536;
+    if (body.length > MAX_BODY) {
+        throw new ReviewRefused(`the review body is ${body.length} characters; GitHub's limit is ${MAX_BODY} — shorten it and re-post`);
+    }
 
+    // Post FIRST: a failed post must not leave the earlier block dismissed with a
+    // message that claims a replacement exists (CORE-2528 rev 4 F5).
     const created = await githubRequest<ReviewResponse>({
         method: 'POST',
         path: `/repos/${input.repo}/pulls/${input.pr}/reviews`,
@@ -279,6 +287,12 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
         throw new ReviewRefused(`review post refused (HTTP ${created.status})`);
     }
     const url = created.data.html_url ?? `https://github.com/${input.repo}/pull/${input.pr}`;
+    const dismissed = await dismissStaleChangesRequested(
+        { repo: input.repo, pr: input.pr, head: resolved, postedId: created.data.id ?? 0 },
+        deps,
+        `${deps.slug}[bot]`,
+        warnings,
+    );
     return {
         id: created.data.id ?? 0,
         url,
@@ -291,29 +305,43 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     };
 }
 
-async function dismissStaleChangesRequested(input: { repo: string; pr: number; head: string }, deps: ReviewDeps, botLogin: string): Promise<number[]> {
-    const listed = await githubRequest<ReviewResponse[]>({
-        method: 'GET',
-        path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100`,
-    }, deps);
-    if (listed.status !== 200 || !Array.isArray(listed.data)) return [];
+async function dismissStaleChangesRequested(
+    input: { repo: string; pr: number; head: string; postedId: number },
+    deps: ReviewDeps,
+    botLogin: string,
+    warnings: string[],
+): Promise<number[]> {
+    const reviews: ReviewResponse[] = [];
+    for (let page = 1; page <= 10; page += 1) {
+        const listed = await githubRequest<ReviewResponse[]>({
+            method: 'GET',
+            path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100&page=${page}`,
+        }, deps);
+        if (listed.status !== 200 || !Array.isArray(listed.data)) {
+            warnings.push(`could not list reviews to dismiss a stale change request (HTTP ${listed.status})`);
+            break;
+        }
+        reviews.push(...listed.data);
+        if (listed.data.length < 100) break;
+    }
     const dismissed: number[] = [];
-    for (const review of listed.data) {
+    for (const review of reviews) {
         if (review.state !== 'CHANGES_REQUESTED') continue;
         if (review.user?.login !== botLogin) continue;
-        if (typeof review.id !== 'number') continue;
+        if (typeof review.id !== 'number' || review.id === input.postedId) continue;
         const response = await githubRequest({
             method: 'PUT',
             path: `/repos/${input.repo}/pulls/${input.pr}/reviews/${review.id}/dismissals`,
             body: { message: `Superseded by a review at head ${sha12(input.head)}` },
         }, deps);
         if (response.status === 200 || response.status === 204) dismissed.push(review.id);
+        else warnings.push(`could not dismiss stale review ${review.id} (HTTP ${response.status})`);
     }
     return dismissed;
 }
 
 /** The Journal receipt: a `github-review` ref plus a bounded result payload. */
-export function reviewJournalArgs(receipt: PostedReview, input: PostReviewInput, issueRef: string): string[] {
+export function reviewJournalArgs(receipt: PostedReview, input: PostReviewInput, issueRef: string, slug?: string | null): string[] {
     const refs = JSON.stringify([{
         kind: 'github-review',
         key: receipt.url,
@@ -321,7 +349,7 @@ export function reviewJournalArgs(receipt: PostedReview, input: PostReviewInput,
             repo: input.repo,
             pr: input.pr,
             head: receipt.head,
-            actor: 'reviewer app',
+            actor: slug ? `${slug}[bot]` : input.holder,
         },
     }]);
     const result = JSON.stringify({

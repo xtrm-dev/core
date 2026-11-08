@@ -252,6 +252,38 @@ describe('postReview', () => {
         expect(receipt.warnings.join(' ')).toMatch(/not journaled/);
     });
 
+    it('posts the review before dismissing, and warns when a dismissal fails', async () => {
+        const github = fakeGitHub(headRoutes({
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': {
+                status: 200,
+                data: [{ id: 7, state: 'CHANGES_REQUESTED', user: { login: 'xtrm-reviewer[bot]' }, commit_id: 'f'.repeat(40) }],
+            },
+            'PUT /repos/xtrm-dev/core/pulls/42/reviews/7/dismissals': { status: 500, data: {} },
+            'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 55, state: 'COMMENTED', html_url: 'u' } },
+        }));
+        const receipt = await postReview(input(), github.deps);
+        const order = github.calls.map((call) => call.method).filter((method) => method !== 'GET');
+        expect(order).toEqual(['POST', 'PUT']);
+        expect(receipt.dismissed).toEqual([]);
+        expect(receipt.warnings.join(' ')).toMatch(/could not dismiss stale review 7/);
+    });
+
+    it('refuses a body over GitHub\'s 65536-character limit', async () => {
+        const github = fakeGitHub(headRoutes());
+        const body = modelBody().replace('## Findings', `## Findings\n${'x'.repeat(65600)}`);
+        await expect(postReview(input({ body }), github.deps)).rejects.toThrow(/65536/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('refuses an Issue ref from the PR body that is not a Substrate ref', async () => {
+        const github = fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD }, body: '<!-- xtrm issue=--force holder=x run=y -->' } },
+            'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
+        });
+        await expect(postReview(input(), github.deps)).rejects.toThrow(/not a Substrate ref/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
     it('refuses rather than posting when GitHub refuses the review', async () => {
         const github = fakeGitHub(headRoutes({
             'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 422, data: { message: 'Unprocessable' } },

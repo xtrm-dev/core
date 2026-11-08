@@ -122,8 +122,10 @@ describe('ghShimSource', () => {
     it('takes the PR and repo from the review arguments, not from the current branch', () => {
         // The head, the model and the verdict are derived by the CLI from the
         // body file; the shim never guesses them.
-        expect(source).toContain("rest.indexOf('--repo')");
-        expect(source).toContain('const restNoRepo');
+        // A real parser, not an indexOf: values after value-flags are not targets.
+        expect(source).toContain('function parseTarget(');
+        expect(source).toContain('VALUE_FLAGS');
+        expect(source).toContain("arg.indexOf('--repo=')");
         expect(source).toContain('if (!repo || !pr)');
         expect(source).not.toContain('XTRM_REVIEW_HEAD');
     });

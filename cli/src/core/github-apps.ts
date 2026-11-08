@@ -187,8 +187,33 @@ function readCached(file: string, deps: GitHubAppDeps): CachedToken | null {
     }
 }
 
+/**
+ * A directory that only this user may read, at mint time (CORE-2528 rev 4 F7).
+ * `mkdirSync({mode})` only affects a NEW directory, so an existing wider one is
+ * tightened; if it cannot be tightened, the mint refuses rather than writing a
+ * token there.
+ */
+export function ensurePrivateDir(dir: string): void {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    let mode: number;
+    try {
+        mode = statSync(dir).mode & 0o777;
+    } catch (error) {
+        throw new GitHubAppError(`cannot stat the token cache directory ${dir}: ${(error as Error).message}`);
+    }
+    if ((mode & 0o077) !== 0) {
+        try {
+            chmodSync(dir, 0o700);
+            mode = statSync(dir).mode & 0o777;
+        } catch { /* fall through to the refusal below */ }
+    }
+    if ((mode & 0o077) !== 0) {
+        throw new GitHubAppError(`the token cache directory ${dir} is mode ${mode.toString(8)}; refusing to write a token into a directory other users can read`);
+    }
+}
+
 function writeCached(file: string, value: CachedToken): void {
-    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    ensurePrivateDir(path.dirname(file));
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 });
     renameSync(tmp, file);
@@ -234,6 +259,16 @@ export async function mintInstallationToken(
         return { token: cached.token, expiresAt: cached.expiresAt, cached: true, slug: config.slug, account: input.account, installationId };
     }
 
+    // The key must be private at MINT time, not only when `doctor` runs.
+    try {
+        const mode = statSync(config.keyPath).mode & 0o777;
+        if ((mode & 0o077) !== 0) {
+            throw new GitHubAppError(`${config.slug}: the App private key ${config.keyPath} is mode ${mode.toString(8)}; it must be 600`);
+        }
+    } catch (error) {
+        if (error instanceof GitHubAppError) throw error;
+        // ENOENT: an injected reader (tests) or a path the doctor reports; the read below decides.
+    }
     const read = deps.readFile ?? ((f: string) => readFileSync(f, 'utf8'));
     let privateKey: string;
     try {
@@ -266,9 +301,9 @@ export async function mintInstallationToken(
         ? Date.parse(data.expires_at)
         : now + TOKEN_TTL_MS;
     const value: CachedToken = { token, expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + TOKEN_TTL_MS };
-    try {
-        writeCached(cacheFile, value);
-    } catch { /* the token is still usable for this call */ }
+    // A cache we cannot make private is a refusal to cache, not a silent widening:
+    // surface it, because the next call would otherwise re-mint with no hint.
+    writeCached(cacheFile, value);
     return { token: value.token, expiresAt: value.expiresAt, cached: false, slug: config.slug, account: input.account, installationId };
 }
 

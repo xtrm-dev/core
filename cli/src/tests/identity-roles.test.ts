@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     DEFAULT_ROLE_MAP,
+    explainAgentRole,
     ROLE_MAP_VERSION,
     appSlugForRole,
     loadRoleMap,
@@ -69,19 +70,31 @@ describe('loadRoleMap', () => {
 });
 
 describe('resolveAgentRole', () => {
-    it('maps the reviewer names and defaults everything else to worker', () => {
+    it('maps the reviewer names, the mapped specialists, and refuses anything else', () => {
         expect(resolveAgentRole('reviewer')).toBe('reviewer');
         expect(resolveAgentRole('seconder')).toBe('reviewer');
         expect(resolveAgentRole('pr-reviewer')).toBe('reviewer');
-        expect(resolveAgentRole('executor')).toBe('worker');
-        expect(resolveAgentRole('some-new-specialist')).toBe('worker');
         expect(resolveAgentRole('coordinator')).toBe('coordinator');
+        // Not mapped, not a role: no credential (CORE-2528 rev 4 R1).
+        expect(resolveAgentRole('some-new-specialist')).toBeNull();
     });
 
     it('treats no name as the default role and no map as no role', () => {
         expect(resolveAgentRole(null)).toBe('worker');
         expect(resolveAgentRole('  ')).toBe('worker');
         expect(resolveAgentRole('reviewer', null)).toBeNull();
+    });
+
+    it('fails closed for an unknown name: no credential, never worker (CORE-2528 R1)', () => {
+        expect(resolveAgentRole('bogus')).toBeNull();
+        expect(resolveAgentRole('pr-reviewr')).toBeNull();
+        expect(explainAgentRole({ SUBSTRATE_HOLDER: 'h', XTRM_ROLE: 'bogus' })).toEqual({ role: null, source: 'unknown' });
+        // A plain xt session has no role and is the worker; a mapped specialist keeps its mapping.
+        expect(explainAgentRole({ SUBSTRATE_HOLDER: 'h' })).toEqual({ role: 'worker', source: 'default' });
+        expect(explainAgentRole({ SUBSTRATE_HOLDER: 'h', XTRM_ROLE: 'pr-reviewer' })).toEqual({ role: 'reviewer', source: 'specialist' });
+        // Unmapped specialists are the operator's map to extend: no credential by default.
+        expect(explainAgentRole({ SUBSTRATE_HOLDER: 'h', XTRM_ROLE: 'executor' })).toEqual({ role: null, source: 'unknown' });
+        expect(explainAgentRole({})).toEqual({ role: null, source: 'operator' });
     });
 
     it('honours an explicit null mapping as "no credential"', () => {

@@ -25,6 +25,18 @@ import { issueRefFromBranch, parseIssueMarker, sha12, type ReviewVerdict } from 
 
 export const OVERRIDE_ENV_VAR = 'XTRM_MERGE_GUARD_OVERRIDE';
 
+/**
+ * The guard is FLAG-GATED and OFF by default (CORE-2528 rev 4 R3): the operator's
+ * own merge path stays the fallback until the Apps are proven, so installing the
+ * shim cannot refuse every agent merge on a machine with no App configured.
+ * `XTRM_MERGE_GUARD=on|1|true|yes` turns it on.
+ */
+export const MERGE_GUARD_ENV_VAR = 'XTRM_MERGE_GUARD';
+export function mergeGuardEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+    const value = (env[MERGE_GUARD_ENV_VAR] ?? '').trim().toLowerCase();
+    return value === 'on' || value === '1' || value === 'true' || value === 'yes';
+}
+
 export interface RunResult { status: number | null; stdout: string; stderr: string }
 export type RunFn = (cmd: string, args: string[], opts: { input?: string }) => RunResult;
 
@@ -189,6 +201,10 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
         message: `merge allowed for ${input.repo}#${input.pr}: ${reason}`,
     });
 
+    if (!mergeGuardEnabled(deps.env ?? process.env)) {
+        return allow(`merge guard is off (${MERGE_GUARD_ENV_VAR} is not set); the merge is not checked`);
+    }
+
     // ── Reads. Any failure is a refusal (fail closed). ──────────────────────
     let pull: PullResponse;
     let reviews: ReviewResponse[];
@@ -198,14 +214,11 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
             return deny(`cannot read PR #${input.pr} (HTTP ${pulled.status}); GitHub or the App is unavailable`, { unreachable: true });
         }
         pull = pulled.data;
-        const listed = await githubRequest<ReviewResponse[]>({
-            method: 'GET',
-            path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100`,
-        }, deps);
-        if (listed.status !== 200 || !Array.isArray(listed.data)) {
-            return deny(`cannot list reviews for PR #${input.pr} (HTTP ${listed.status}); GitHub or the App is unavailable`, { unreachable: true });
+        const listed = await listReviews(input.repo, input.pr, deps);
+        if (!listed) {
+            return deny(`cannot list reviews for PR #${input.pr}; GitHub or the App is unavailable`, { unreachable: true });
         }
-        reviews = listed.data;
+        reviews = listed;
     } catch (error) {
         return deny(`cannot reach GitHub (${(error as Error).message}); the guard fails closed`, { unreachable: true });
     }
@@ -217,7 +230,11 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
 
     // ── The latest reviewer review (DISMISSED reviews no longer count). ──────
     const mine = reviews
-        .filter((review) => review.user?.login === botLogin && review.state && review.state !== 'DISMISSED')
+        // PENDING reviews were never submitted: they carry no state anyone can act on.
+        .filter((review) => review.user?.login === botLogin
+            && review.state
+            && review.state !== 'DISMISSED'
+            && (review.submitted_at ?? '') !== '')
         .sort((a, b) => Date.parse(a.submitted_at ?? '') - Date.parse(b.submitted_at ?? ''));
     const latest = mine[mine.length - 1];
     const reviewInfo = latest
@@ -237,7 +254,7 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
     if (latest.state === 'APPROVED') {
         return allow('xtrm-reviewer[bot] approved the current head', { head, issueRef, ...reviewInfo });
     }
-    if (latest.state !== 'COMMENT') {
+    if (latest.state !== 'COMMENTED' && latest.state !== 'COMMENT') {
         return deny(`the reviewer App's latest review state ${latest.state} does not allow a merge`, { head, issueRef, ...reviewInfo });
     }
 
@@ -264,6 +281,26 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
     return allow(`xtrm-reviewer[bot] reviewed head ${sha12(head)} as PARTIAL and ${issueRef} accepts the findings`, {
         head, issueRef, ...reviewInfo,
     });
+}
+
+/**
+ * Every review on the PR, following `Link: rel="next"`. A review list that stops
+ * at the first page can hide the latest review of a long PR, and the guard would
+ * then decide on a stale one.
+ */
+async function listReviews(repo: string, pr: number, deps: MergeGuardDeps): Promise<ReviewResponse[] | null> {
+    const out: ReviewResponse[] = [];
+    let page = 1;
+    for (; page <= 10; page += 1) {
+        const listed = await githubRequest<ReviewResponse[]>({
+            method: 'GET',
+            path: `/repos/${repo}/pulls/${pr}/reviews?per_page=100&page=${page}`,
+        }, deps);
+        if (listed.status !== 200 || !Array.isArray(listed.data)) return null;
+        out.push(...listed.data);
+        if (listed.data.length < 100) break;
+    }
+    return out;
 }
 
 /**
@@ -306,6 +343,15 @@ export async function applyOverride(
         if (!journaled) error = result.stderr.trim() || `sb exited ${result.status}`;
     } else {
         error = 'no resolvable Issue, so the override was not journaled';
+    }
+    if (!logged && !journaled) {
+        // An override nobody can audit is worse than a refusal: the operator has
+        // no record of who bypassed the guard, and the caller would read "allowed".
+        return {
+            ...refusal,
+            reason: `${refusal.reason} (override refused: the audit trail failed — log and Journal both failed${error ? `: ${error}` : ''})`,
+            message: `merge refused for ${refusal.repo}#${refusal.pr}: ${OVERRIDE_ENV_VAR} was set, but the audit trail failed${error ? ` (${error})` : ''}`,
+        };
     }
     return {
         ...refusal,

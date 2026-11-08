@@ -235,18 +235,34 @@ Secrets and non-secrets live apart.
 
 ## What the code provides once an App exists (CORE-2528)
 
-The implementation is inert until an App exists on disk: `readAppConfig` returns null, every token path
-fails closed with a message naming the missing file, and no agent picks up a credential. Once the files
-below exist, these commands are the operator surface.
+Without an App on disk, every token path fails closed with a message naming the missing file and no agent
+picks up a credential. Two routes behave differently by design: the review route refuses (a review cannot be
+postponed to the operator's login without lying about who reviewed), while the merge route is flag-gated and
+OFF by default, so installing the shim cannot refuse every agent merge before the Apps exist.
+
+Known limits, accepted rather than hidden:
+
+- `SUBSTRATE_HOLDER`, `XTRM_ROLE` and the `<!-- xtrm … -->` marker are writable by any process under the same
+  unix user, and the shim's pass-through uses that process's own `gh` login. The controls are attribution on
+  every review (agent/run marker plus a Journal receipt), refusal of a review of the holder's own PR, a
+  refusal to review a PR that carries no marker at all, and a merge guard that reads GitHub's review state
+  rather than the local declaration.
+- `xt identity token --role` is honoured only in an operator shell outside an agent tree; inside an agent tree
+  it may only name the process's own resolved role, and the reviewer token is minted solely by the
+  `review-post` path. An unknown role name gets no credential.
+- `XTRM_MERGE_GUARD` (unset = off; `on`, `1`, `true`, `yes` enable it) gates the merge check. With it off the
+  shim passes `gh pr merge` through and prints one line saying the guard is off. With it on, an unreachable
+  GitHub or App is still refusable by `XTRM_MERGE_GUARD_OVERRIDE` from the coordinator or the operator, and an
+  override whose log and Journal receipt both fail is refused, not allowed.
 
 | Command | What it does |
 | --- | --- |
 | `xt identity doctor` | Reports role map validity, each App's `app.json` and key mode, recorded installations and the `gh` shim. Exit 1 on a hard failure (bad role map, missing/foreign/stale shim, key readable by group/other). |
 | `xt identity setup` | Creates `~/.xtrm/config/identity-role-map.json` (when absent), installs the `gh` shim to `~/.local/bin/gh`, installs the reviewer routing reminder. Never creates an App. |
-| `xt identity token --repo <owner/name>` | Mints or reuses a one-hour installation token for this process's role. Prints the token; the shim and the credential helper mint internally. |
+| `xt identity token --repo <owner/name> [--role <role>]` | Mints or reuses a one-hour installation token for this process's resolved role. `--role` is an operator-shell convenience: inside an agent tree it may only name that session's own role, an unknown name is refused, and the reviewer token is refused here (the `review-post` path mints it). Prints the token; the shim and the credential helper mint internally. |
 | `xt identity credential get` | The git credential helper answer: `username=x-access-token`, `password=<installation token>`. Answers only for `https://github.com/<owner>/…` and only for this role's App; otherwise it stays silent. |
-| `xt identity review-post --repo <r> --pr <n> --verdict PASS\|PARTIAL\|FAIL` | One formal review pinned to `--head` (or `XTRM_REVIEW_HEAD`). Called by the `gh` shim, so agents keep plain `gh pr review`. |
-| `xt identity merge-check --repo <r> --pr <n>` | Allow or refuse a merge. Refusal names the ways to get a review and the coordinator/operator override. |
+| `xt identity review-post --repo <r> --pr <n> --body-file <file>` | One formal review. The body's line 1 (`Review by <role> (<model>) at head <sha12>`) supplies the head and model, and its single `- Verdict:` line supplies the event; a disagreeing flag or environment value is refused. The tool pins `commit_id`, adds the line-2 marker (agent, run, Issue) and prints url, id, `commit_id` and state. Called by the `gh` shim, so agents keep plain `gh pr review`. |
+| `xt identity merge-check --repo <r> --pr <n>` | Allow or refuse a merge. Off unless `XTRM_MERGE_GUARD=on`. Refusal names the ways to get a review and the coordinator/operator override; an override whose log and Journal writes both fail is itself refused. |
 | `xt identity merge-record` | Post-merge `github-merge` Journal ref, called by the shim after a successful `gh pr merge`. |
 
 Files the code reads (nothing else is authoritative):

@@ -30845,21 +30845,6 @@ var require_cli_table3 = __commonJS({
 });
 
 // src/core/github-apps.ts
-var github_apps_exports = {};
-__export(github_apps_exports, {
-  DEFAULT_API_BASE: () => DEFAULT_API_BASE,
-  GitHubAppError: () => GitHubAppError,
-  TOKEN_REUSE_SKEW_MS: () => TOKEN_REUSE_SKEW_MS,
-  appInstallationSummary: () => appInstallationSummary,
-  buildAppJwt: () => buildAppJwt,
-  fileMode: () => fileMode,
-  githubAppPaths: () => githubAppPaths,
-  githubRequest: () => githubRequest,
-  installationForRepo: () => installationForRepo,
-  mintInstallationToken: () => mintInstallationToken,
-  readAppConfig: () => readAppConfig,
-  repoOwner: () => repoOwner
-});
 function githubAppPaths(home = import_node_os20.default.homedir(), runtimeDir) {
   const identitiesDir = import_node_path41.default.join(home, ".xtrm", "identities", "github-apps");
   const runtime = runtimeDir ?? process.env.XDG_RUNTIME_DIR ?? import_node_path41.default.join(home, ".xtrm", "run");
@@ -30917,14 +30902,6 @@ function repoOwner(repo) {
   const match = /^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)$/.exec(repo.trim());
   return match ? match[1] : null;
 }
-function installationForRepo(config3, repo) {
-  const owner = repoOwner(repo);
-  if (!owner) return null;
-  for (const [account, id] of Object.entries(config3.installations)) {
-    if (account.toLowerCase() === owner.toLowerCase()) return { account, id };
-  }
-  return null;
-}
 function readCached(file2, deps) {
   const read = deps.readFile ?? ((f) => (0, import_node_fs16.readFileSync)(f, "utf8"));
   try {
@@ -30937,8 +30914,27 @@ function readCached(file2, deps) {
     return null;
   }
 }
+function ensurePrivateDir(dir) {
+  (0, import_node_fs16.mkdirSync)(dir, { recursive: true, mode: 448 });
+  let mode;
+  try {
+    mode = (0, import_node_fs16.statSync)(dir).mode & 511;
+  } catch (error51) {
+    throw new GitHubAppError(`cannot stat the token cache directory ${dir}: ${error51.message}`);
+  }
+  if ((mode & 63) !== 0) {
+    try {
+      (0, import_node_fs16.chmodSync)(dir, 448);
+      mode = (0, import_node_fs16.statSync)(dir).mode & 511;
+    } catch {
+    }
+  }
+  if ((mode & 63) !== 0) {
+    throw new GitHubAppError(`the token cache directory ${dir} is mode ${mode.toString(8)}; refusing to write a token into a directory other users can read`);
+  }
+}
 function writeCached(file2, value) {
-  (0, import_node_fs16.mkdirSync)(import_node_path41.default.dirname(file2), { recursive: true, mode: 448 });
+  ensurePrivateDir(import_node_path41.default.dirname(file2));
   const tmp = `${file2}.${process.pid}.tmp`;
   (0, import_node_fs16.writeFileSync)(tmp, JSON.stringify(value), { mode: 384 });
   (0, import_node_fs16.renameSync)(tmp, file2);
@@ -30974,6 +30970,14 @@ async function mintInstallationToken(input, deps = {}) {
   if (cached2 && cached2.expiresAt - now > TOKEN_REUSE_SKEW_MS) {
     return { token: cached2.token, expiresAt: cached2.expiresAt, cached: true, slug: config3.slug, account: input.account, installationId };
   }
+  try {
+    const mode = (0, import_node_fs16.statSync)(config3.keyPath).mode & 511;
+    if ((mode & 63) !== 0) {
+      throw new GitHubAppError(`${config3.slug}: the App private key ${config3.keyPath} is mode ${mode.toString(8)}; it must be 600`);
+    }
+  } catch (error51) {
+    if (error51 instanceof GitHubAppError) throw error51;
+  }
   const read = deps.readFile ?? ((f) => (0, import_node_fs16.readFileSync)(f, "utf8"));
   let privateKey;
   try {
@@ -31004,10 +31008,7 @@ async function mintInstallationToken(input, deps = {}) {
   if (!token) throw new GitHubAppError(`${config3.slug}: token mint returned no token`);
   const expiresAt = typeof data.expires_at === "string" && data.expires_at ? Date.parse(data.expires_at) : now + TOKEN_TTL_MS;
   const value = { token, expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + TOKEN_TTL_MS };
-  try {
-    writeCached(cacheFile, value);
-  } catch {
-  }
+  writeCached(cacheFile, value);
   return { token: value.token, expiresAt: value.expiresAt, cached: false, slug: config3.slug, account: input.account, installationId };
 }
 function appInstallationSummary(config3) {
@@ -31059,12 +31060,14 @@ var init_github_apps = __esm({
 // src/core/review-posting.ts
 var review_posting_exports = {};
 __export(review_posting_exports, {
+  ISSUE_REF_PATTERN: () => ISSUE_REF_PATTERN,
   OUTCOME_TO_EVENT: () => OUTCOME_TO_EVENT,
   ReviewRefused: () => ReviewRefused,
   bodyVerdicts: () => bodyVerdicts,
   buildMarker: () => buildMarker,
   eventForFlags: () => eventForFlags,
   eventForOutcome: () => eventForOutcome,
+  isSafeIssueRef: () => isSafeIssueRef,
   issueRefFromBranch: () => issueRefFromBranch,
   lintModelBody: () => lintModelBody,
   parseHeaderLine: () => parseHeaderLine,
@@ -31097,7 +31100,7 @@ function parseHeaderLine(body) {
 function bodyVerdicts(body) {
   const out = [];
   for (const line of body.split("\n")) {
-    const match = VERDICT_LINE.exec(line.trim());
+    const match = VERDICT_LINE.exec(line);
     if (match) out.push(OUTCOME_TO_EVENT[match[1]]);
   }
   return out;
@@ -31136,6 +31139,9 @@ function parseIssueMarker(text) {
     else if (key === "run") out.run = value;
   }
   return out.issue || out.holder || out.run ? out : null;
+}
+function isSafeIssueRef(ref) {
+  return ISSUE_REF_PATTERN.test((ref ?? "").trim());
 }
 function issueRefFromBranch(ref) {
   const match = /(?:^|[^A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d+)(?![0-9])/.exec(ref ?? "");
@@ -31188,7 +31194,11 @@ async function postReview(input, deps) {
   if (marker?.holder && marker.holder === input.holder) {
     throw new ReviewRefused(`refusing own-PR review: PR #${input.pr} was opened by holder ${input.holder}`);
   }
-  const issueRef = input.issueRef ?? marker?.issue ?? issueRefFromBranch(pull.data.head?.ref);
+  const candidate = input.issueRef ?? marker?.issue ?? issueRefFromBranch(pull.data.head?.ref) ?? null;
+  if (candidate && !isSafeIssueRef(candidate)) {
+    throw new ReviewRefused(`the Issue ref '${candidate}' is not a Substrate ref (expected e.g. CORE-2528); refusing to journal it`);
+  }
+  const issueRef = candidate;
   if (!issueRef) warnings.push("no Substrate Issue ref in the PR body or branch; the review is not journaled");
   const lines = input.body.split("\n");
   const line1 = (lines[0] ?? "").trim();
@@ -31198,7 +31208,10 @@ async function postReview(input, deps) {
 ${buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId })}
 ${rest}
 `;
-  const dismissed = await dismissStaleChangesRequested({ repo: input.repo, pr: input.pr, head: resolved }, deps, `${deps.slug}[bot]`);
+  const MAX_BODY = 65536;
+  if (body.length > MAX_BODY) {
+    throw new ReviewRefused(`the review body is ${body.length} characters; GitHub's limit is ${MAX_BODY} \u2014 shorten it and re-post`);
+  }
   const created = await githubRequest({
     method: "POST",
     path: `/repos/${input.repo}/pulls/${input.pr}/reviews`,
@@ -31208,6 +31221,12 @@ ${rest}
     throw new ReviewRefused(`review post refused (HTTP ${created.status})`);
   }
   const url2 = created.data.html_url ?? `https://github.com/${input.repo}/pull/${input.pr}`;
+  const dismissed = await dismissStaleChangesRequested(
+    { repo: input.repo, pr: input.pr, head: resolved, postedId: created.data.id ?? 0 },
+    deps,
+    `${deps.slug}[bot]`,
+    warnings
+  );
   return {
     id: created.data.id ?? 0,
     url: url2,
@@ -31219,27 +31238,36 @@ ${rest}
     warnings
   };
 }
-async function dismissStaleChangesRequested(input, deps, botLogin) {
-  const listed = await githubRequest({
-    method: "GET",
-    path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100`
-  }, deps);
-  if (listed.status !== 200 || !Array.isArray(listed.data)) return [];
+async function dismissStaleChangesRequested(input, deps, botLogin, warnings) {
+  const reviews = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const listed = await githubRequest({
+      method: "GET",
+      path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100&page=${page}`
+    }, deps);
+    if (listed.status !== 200 || !Array.isArray(listed.data)) {
+      warnings.push(`could not list reviews to dismiss a stale change request (HTTP ${listed.status})`);
+      break;
+    }
+    reviews.push(...listed.data);
+    if (listed.data.length < 100) break;
+  }
   const dismissed = [];
-  for (const review of listed.data) {
+  for (const review of reviews) {
     if (review.state !== "CHANGES_REQUESTED") continue;
     if (review.user?.login !== botLogin) continue;
-    if (typeof review.id !== "number") continue;
+    if (typeof review.id !== "number" || review.id === input.postedId) continue;
     const response = await githubRequest({
       method: "PUT",
       path: `/repos/${input.repo}/pulls/${input.pr}/reviews/${review.id}/dismissals`,
       body: { message: `Superseded by a review at head ${sha12(input.head)}` }
     }, deps);
     if (response.status === 200 || response.status === 204) dismissed.push(review.id);
+    else warnings.push(`could not dismiss stale review ${review.id} (HTTP ${response.status})`);
   }
   return dismissed;
 }
-function reviewJournalArgs(receipt, input, issueRef) {
+function reviewJournalArgs(receipt, input, issueRef, slug) {
   const refs = JSON.stringify([{
     kind: "github-review",
     key: receipt.url,
@@ -31247,7 +31275,7 @@ function reviewJournalArgs(receipt, input, issueRef) {
       repo: input.repo,
       pr: input.pr,
       head: receipt.head,
-      actor: "reviewer app"
+      actor: slug ? `${slug}[bot]` : input.holder
     }
   }]);
   const result = JSON.stringify({
@@ -31258,7 +31286,7 @@ function reviewJournalArgs(receipt, input, issueRef) {
   });
   return ["journal", "append", issueRef, "--kind", "result", "--result", result, "--refs", refs, "--json"];
 }
-var OUTCOME_TO_EVENT, LINE1, VERDICT_LINE, ReviewRefused;
+var OUTCOME_TO_EVENT, LINE1, VERDICT_LINE, ISSUE_REF_PATTERN, ReviewRefused;
 var init_review_posting = __esm({
   "src/core/review-posting.ts"() {
     "use strict";
@@ -31268,8 +31296,9 @@ var init_review_posting = __esm({
       PARTIAL: "COMMENT",
       FAIL: "REQUEST_CHANGES"
     };
-    LINE1 = /^Review by ([A-Za-z][A-Za-z0-9-]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
+    LINE1 = /^Review by ([A-Za-z][A-Za-z0-9 -]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
     VERDICT_LINE = /^- Verdict: (PASS|PARTIAL|FAIL)\s*$/;
+    ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
     ReviewRefused = class extends Error {
       constructor(message) {
         super(message);
@@ -71398,7 +71427,19 @@ function resolveAgentRole(name, map2 = DEFAULT_ROLE_MAP) {
     return map2.specialists[wanted];
   }
   if (isRole(wanted)) return wanted;
-  return map2.default;
+  return null;
+}
+function explainAgentRole(env3 = process.env, map2 = DEFAULT_ROLE_MAP) {
+  const holder = (env3.SUBSTRATE_HOLDER ?? "").trim();
+  const name = (env3[ROLE_ENV_VAR] ?? "").trim();
+  if (!map2) return { role: null, source: "unknown" };
+  if (!holder && !name) return { role: null, source: "operator" };
+  if (!name) return { role: map2.default, source: "default" };
+  if (Object.prototype.hasOwnProperty.call(map2.specialists, name)) {
+    return { role: map2.specialists[name], source: "specialist" };
+  }
+  if (isRole(name)) return { role: name, source: "env-role" };
+  return { role: null, source: "unknown" };
 }
 function processAgentRole(env3 = process.env, map2 = DEFAULT_ROLE_MAP) {
   const holder = (env3.SUBSTRATE_HOLDER ?? "").trim();
@@ -71420,7 +71461,13 @@ function buildGitTransportEnv(input) {
   const entries = [
     ["url.https://github.com/.insteadOf", "git@github.com:"],
     ["url.https://github.com/.insteadOf", "ssh://git@github.com/"],
-    ["credential.https://github.com.helper", "!xt identity credential"]
+    // Reset first: a global helper (`gh auth setup-git` writes one) is consulted
+    // before ours otherwise, and git would answer with the OPERATOR's token.
+    ["credential.https://github.com.helper", ""],
+    ["credential.https://github.com.helper", "!xt identity credential"],
+    // Without useHttpPath git sends no `path`, so the helper cannot tell which
+    // repository it is answering for and refuses (it must, to stay scoped).
+    ["credential.https://github.com.useHttpPath", "true"]
   ];
   const env3 = { GIT_CONFIG_COUNT: String(entries.length) };
   entries.forEach(([key, value], index) => {
@@ -71460,7 +71507,8 @@ password=${token}
 var import_node_fs18 = require("fs");
 var import_node_os22 = __toESM(require("os"), 1);
 var import_node_path43 = __toESM(require("path"), 1);
-var GH_SHIM_MARKER = "# xtrm-gh-agent-shim v1";
+var GH_SHIM_MARKER = "// xtrm-gh-agent-shim v1";
+var GH_SHIM_FINGERPRINT = "xtrm-gh-agent-shim v1";
 function realpathOf(deps, file2) {
   const read = deps.readRealPath ?? ((f) => (0, import_node_fs18.realpathSync)(f));
   try {
@@ -71487,7 +71535,7 @@ function isExecutableFile(deps, file2) {
 function isShimFile(deps, file2) {
   const read = deps.readFile ?? ((f) => (0, import_node_fs18.readFileSync)(f, "utf8"));
   try {
-    return read(file2).slice(0, 512).includes(GH_SHIM_MARKER);
+    return read(file2).slice(0, 512).includes(GH_SHIM_FINGERPRINT);
   } catch {
     return false;
   }
@@ -71519,7 +71567,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const MARKER = '${GH_SHIM_MARKER}';
+const MARKER = '${GH_SHIM_FINGERPRINT}';
 const REAL_GH = ${JSON.stringify(realGh ?? "")};
 const SELF = (() => { try { return fs.realpathSync(__filename); } catch { return __filename; } })();
 
@@ -71574,6 +71622,103 @@ function xtQuiet(args) {
   return spawnSync('xt', args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
 }
 
+
+// Flags whose NEXT argument is a value: a bare number after one of these is a
+// value, not the PR ("gh pr review 12 --body 42" must not look like PR 42).
+const VALUE_FLAGS = new Set([
+  '--body', '-b', '--body-file', '-F', '--title', '-t', '--subject', '-s',
+  '--match-head-commit', '--branch', '-B', '--base', '--head', '-H', '--label',
+  '--assignee', '-a', '--reviewer', '-r', '--milestone', '-m', '--repo', '-R',
+]);
+
+/**
+ * Split a gh argument list into its repository, its positional target and the
+ * remaining arguments. The target is a number, a PR URL or a branch name; the
+ * repository comes from --repo/-R (separate or --repo=value).
+ */
+function parseTarget(rest) {
+  let repo = '';
+  const kept = [];
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    if (arg === '--repo' || arg === '-R') {
+      repo = rest[i + 1] || repo;
+      i += 1;
+      continue;
+    }
+    if (arg.indexOf('--repo=') === 0) { repo = arg.slice('--repo='.length); continue; }
+    if (arg.indexOf('-R=') === 0) { repo = arg.slice('-R='.length); continue; }
+    kept.push(arg);
+  }
+  let target = '';
+  const forwarded = [];
+  for (let i = 0; i < kept.length; i += 1) {
+    const arg = kept[i];
+    if (arg === '--') { forwarded.push(...kept.slice(i + 1)); break; }
+    if (arg.charAt(0) === '-') {
+      forwarded.push(arg);
+      if (VALUE_FLAGS.has(arg) && i + 1 < kept.length) { forwarded.push(kept[i + 1]); i += 1; }
+      continue;
+    }
+    if (!target && (/^\\d+$/.test(arg) || /^https?:\\/\\//.test(arg))) {
+      target = arg;
+    } else {
+      forwarded.push(arg);
+    }
+  }
+  return { repo, target, forwarded };
+}
+
+/**
+ * The role this process acts as, through the xt role map: a raw XTRM_ROLE of
+ * "pr-reviewer" or "seconder" resolves to reviewer, and the shim honours that,
+ * not the string.
+ */
+function resolvedRole() {
+  const raw = (process.env.XTRM_ROLE || '').trim();
+  const answer = xtQuiet(['identity', 'role', '--json']);
+  if (answer.status === 0) {
+    try {
+      const parsed = JSON.parse(answer.stdout);
+      if (parsed && (parsed.role === null || typeof parsed.role === 'string')) return parsed.role;
+    } catch (error) { /* fall back to the raw value */ }
+  }
+  return raw || null;
+}
+
+function targetPr(target) {
+  if (!target) return 0;
+  const url = /^https?:\\/\\/github\\.com\\/[^/]+\\/[^/]+\\/pull\\/(\\d+)/.exec(target);
+  if (url) return Number(url[1]);
+  return /^\\d+$/.test(target) ? Number(target) : 0;
+}
+
+function viewInfo(view) {
+  if (view.status !== 0) return { repo: '', pr: 0, head: '' };
+  let info;
+  try { info = JSON.parse(view.stdout); } catch (error) { return { repo: '', pr: 0, head: '' }; }
+  const match = /^https?:\\/\\/github\\.com\\/([^/]+\\/[^/]+)\\/pull\\/(\\d+)$/.exec(info.url || '');
+  return { repo: match ? match[1] : '', pr: match ? Number(match[2]) : 0, head: info.headRefOid || '' };
+}
+
+function lookupPr(real, target) {
+  if (targetPr(target)) return { repo: '', pr: targetPr(target), head: '' };
+  return viewInfo(capture(real, ['pr', 'view', target, '--json', 'number,url,headRefOid']));
+}
+
+function currentPr(real) {
+  return viewInfo(capture(real, ['pr', 'view', '--json', 'number,url,headRefOid']));
+}
+
+function mergeGuardOn() {
+  const value = (process.env.XTRM_MERGE_GUARD || '').trim().toLowerCase();
+  return value === 'on' || value === '1' || value === 'true' || value === 'yes';
+}
+
+function isMergeApi(args) {
+  return /\\/merge(\\s|$)/.test(args.join(' '));
+}
+
 function pullInfo(real) {
   const view = capture(real, ['pr', 'view', '--json', 'number,url,headRefOid']);
   if (view.status !== 0) die('cannot read the current PR: ' + ((view.stderr || '').trim() || 'gh pr view failed'));
@@ -71590,39 +71735,56 @@ function main() {
   if (!isAgent()) { if (!real) die('real gh not found on PATH'); pass(real, args); }
   if (!real) die('real gh not found on PATH (the xtrm shim excludes itself)');
   const verb = args[0] === 'pr' ? args[1] : undefined;
-  const role = (process.env.XTRM_ROLE || '').trim();
+  // Resolved through the xt role map, so pr-reviewer/seconder are reviewers too.
+  const role = resolvedRole();
 
   if (verb === 'review') {
-    // The PR number and --repo come from the arguments; the current directory is only
-    // the fallback, so a detached worktree (no branch) still works. The head,
-    // the model and the verdict are derived by the CLI from the body file.
-    const rest = args.slice(2);
-    const repoAt = Math.max(rest.indexOf('--repo'), rest.indexOf('-R'));
-    const repoFromArgs = repoAt >= 0 ? rest[repoAt + 1] : '';
-    const restNoRepo = repoAt >= 0 ? [...rest.slice(0, repoAt), ...rest.slice(repoAt + 2)] : rest;
-    const prFromArgs = restNoRepo.find((arg) => arg !== '' && !/[^0-9]/.test(arg));
-    let repo = repoFromArgs || '';
-    let pr = prFromArgs ? Number(prFromArgs) : 0;
+    // A real parser: the target may be a number, a URL or a branch; --repo may be
+    // --repo=o/r; and "42" after --body is a value, not the PR.
+    const parsed = parseTarget(args.slice(2));
+    let repo = parsed.repo;
+    let pr = targetPr(parsed.target);
     if (!repo || !pr) {
-      const info = pullInfo(real);
-      repo = repo || info.repo;
-      pr = pr || info.pr;
+      const looked = parsed.target ? lookupPr(real, parsed.target) : currentPr(real);
+      repo = repo || looked.repo;
+      pr = pr || looked.pr;
     }
-    process.exit(xtPassthrough(['identity', 'review-post', '--repo', repo, '--pr', String(pr), ...restNoRepo]));
+    if (!repo || !pr) die('cannot tell which pull request to review: pass a number, a URL or --repo');
+    process.exit(xtPassthrough(['identity', 'review-post', '--repo', repo, '--pr', String(pr), ...parsed.forwarded]));
   }
 
   if (verb === 'merge') {
     if (role === 'reviewer') die('the reviewer role may not merge; ask the worker or coordinator');
-    const info = pullInfo(real);
-    const checked = xtPassthrough(['identity', 'merge-check', '--repo', info.repo, '--pr', String(info.pr)]);
+    const parsed = parseTarget(args.slice(2));
+    let repo = parsed.repo;
+    let pr = targetPr(parsed.target);
+    let head = '';
+    if (!repo || !pr || !head) {
+      const looked = parsed.target ? lookupPr(real, parsed.target) : currentPr(real);
+      repo = repo || looked.repo;
+      pr = pr || looked.pr;
+      head = looked.head;
+      if (pr && !head) {
+        const view = capture(real, ['pr', 'view', String(pr), '--repo', repo, '--json', 'headRefOid']);
+        if (view.status === 0) { try { head = JSON.parse(view.stdout).headRefOid || ''; } catch (error) { head = ''; } }
+      }
+    }
+    if (!repo || !pr) die('cannot tell which pull request to merge: pass a number, a URL or --repo');
+    // Flag-gated and OFF by default (CORE-2528 rev 4 R3): installing the shim must
+    // not refuse every agent merge on a machine whose Apps are not set up.
+    if (!mergeGuardOn()) {
+      process.stderr.write('gh (xtrm): merge guard is off (XTRM_MERGE_GUARD is not set); ' + repo + '#' + pr + ' is not checked\\n');
+      pass(real, args);
+    }
+    const checked = xtPassthrough(['identity', 'merge-check', '--repo', repo, '--pr', String(pr)]);
     if (checked !== 0) process.exit(checked);
     const pinned = args.some((arg) => arg === '--match-head-commit');
-    const mergeArgs = pinned || !info.head ? args : [...args, '--match-head-commit', info.head];
+    const mergeArgs = pinned || !head ? args : [...args, '--match-head-commit', head];
     const merged = spawnSync(real, mergeArgs, { stdio: 'inherit' });
     if (merged.error) die('cannot run ' + real + ': ' + merged.error.message);
     const status = merged.status === null ? 1 : merged.status;
     if (status === 0) {
-      const recorded = xtQuiet(['identity', 'merge-record', '--repo', info.repo, '--pr', String(info.pr), '--head', info.head]);
+      const recorded = xtQuiet(['identity', 'merge-record', '--repo', repo, '--pr', String(pr), '--head', head]);
       if (recorded.status !== 0) {
         process.stderr.write('gh (xtrm): merged, but the Journal receipt failed: ' + ((recorded.stderr || '').trim() || 'unknown error') + '\\n');
       }
@@ -71630,8 +71792,13 @@ function main() {
     process.exit(status);
   }
 
-  if (role === 'reviewer' && (verb === 'close' || verb === 'edit')) {
+  if (role === 'reviewer' && (verb === 'close' || verb === 'edit' || verb === 'ready' || verb === 'reopen')) {
     die('the reviewer role may not change PR state (gh pr ' + verb + ')');
+  }
+
+  // A merge through the API is the same merge: refuse it for the reviewer too.
+  if (role === 'reviewer' && args[0] === 'api' && isMergeApi(args.slice(1))) {
+    die('the reviewer role may not merge (gh api .../merge)');
   }
 
   // Everything else: the real gh, unchanged.
@@ -71728,6 +71895,11 @@ var import_node_path44 = __toESM(require("path"), 1);
 init_github_apps();
 init_review_posting();
 var OVERRIDE_ENV_VAR = "XTRM_MERGE_GUARD_OVERRIDE";
+var MERGE_GUARD_ENV_VAR = "XTRM_MERGE_GUARD";
+function mergeGuardEnabled(env3 = process.env) {
+  const value = (env3[MERGE_GUARD_ENV_VAR] ?? "").trim().toLowerCase();
+  return value === "on" || value === "1" || value === "true" || value === "yes";
+}
 var ROUTING_HINT = [
   "  - the reviewer subagent in PR mode (Claude-backed; required for HIGH or critical scrutiny)",
   "  - xt claude --role pr-reviewer (Claude-backed)",
@@ -71815,6 +71987,9 @@ async function mergeCheck(input, deps) {
     ...extra,
     message: `merge allowed for ${input.repo}#${input.pr}: ${reason}`
   });
+  if (!mergeGuardEnabled(deps.env ?? process.env)) {
+    return allow(`merge guard is off (${MERGE_GUARD_ENV_VAR} is not set); the merge is not checked`);
+  }
   let pull;
   let reviews;
   try {
@@ -71823,14 +71998,11 @@ async function mergeCheck(input, deps) {
       return deny(`cannot read PR #${input.pr} (HTTP ${pulled.status}); GitHub or the App is unavailable`, { unreachable: true });
     }
     pull = pulled.data;
-    const listed = await githubRequest({
-      method: "GET",
-      path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100`
-    }, deps);
-    if (listed.status !== 200 || !Array.isArray(listed.data)) {
-      return deny(`cannot list reviews for PR #${input.pr} (HTTP ${listed.status}); GitHub or the App is unavailable`, { unreachable: true });
+    const listed = await listReviews(input.repo, input.pr, deps);
+    if (!listed) {
+      return deny(`cannot list reviews for PR #${input.pr}; GitHub or the App is unavailable`, { unreachable: true });
     }
-    reviews = listed.data;
+    reviews = listed;
   } catch (error51) {
     return deny(`cannot reach GitHub (${error51.message}); the guard fails closed`, { unreachable: true });
   }
@@ -71838,7 +72010,7 @@ async function mergeCheck(input, deps) {
   if (!head) return deny("the PR returned no head SHA");
   const marker = parseIssueMarker(pull.body ?? "");
   const issueRef = marker?.issue ?? issueRefFromBranch(pull.head?.ref) ?? null;
-  const mine = reviews.filter((review) => review.user?.login === botLogin && review.state && review.state !== "DISMISSED").sort((a, b) => Date.parse(a.submitted_at ?? "") - Date.parse(b.submitted_at ?? ""));
+  const mine = reviews.filter((review) => review.user?.login === botLogin && review.state && review.state !== "DISMISSED" && (review.submitted_at ?? "") !== "").sort((a, b) => Date.parse(a.submitted_at ?? "") - Date.parse(b.submitted_at ?? ""));
   const latest = mine[mine.length - 1];
   const reviewInfo = latest ? { reviewState: latest.state, reviewUrl: latest.html_url, reviewHead: latest.commit_id } : {};
   if (!latest) return deny("no review by xtrm-reviewer[bot] exists", { head, issueRef, ...reviewInfo });
@@ -71854,7 +72026,7 @@ async function mergeCheck(input, deps) {
   if (latest.state === "APPROVED") {
     return allow("xtrm-reviewer[bot] approved the current head", { head, issueRef, ...reviewInfo });
   }
-  if (latest.state !== "COMMENT") {
+  if (latest.state !== "COMMENTED" && latest.state !== "COMMENT") {
     return deny(`the reviewer App's latest review state ${latest.state} does not allow a merge`, { head, issueRef, ...reviewInfo });
   }
   if (!issueRef) {
@@ -71881,6 +72053,20 @@ async function mergeCheck(input, deps) {
     issueRef,
     ...reviewInfo
   });
+}
+async function listReviews(repo, pr, deps) {
+  const out = [];
+  let page = 1;
+  for (; page <= 10; page += 1) {
+    const listed = await githubRequest({
+      method: "GET",
+      path: `/repos/${repo}/pulls/${pr}/reviews?per_page=100&page=${page}`
+    }, deps);
+    if (listed.status !== 200 || !Array.isArray(listed.data)) return null;
+    out.push(...listed.data);
+    if (listed.data.length < 100) break;
+  }
+  return out;
 }
 async function applyOverride(refusal, deps) {
   const env3 = deps.env ?? process.env;
@@ -71913,6 +72099,13 @@ async function applyOverride(refusal, deps) {
     if (!journaled) error51 = result.stderr.trim() || `sb exited ${result.status}`;
   } else {
     error51 = "no resolvable Issue, so the override was not journaled";
+  }
+  if (!logged && !journaled) {
+    return {
+      ...refusal,
+      reason: `${refusal.reason} (override refused: the audit trail failed \u2014 log and Journal both failed${error51 ? `: ${error51}` : ""})`,
+      message: `merge refused for ${refusal.repo}#${refusal.pr}: ${OVERRIDE_ENV_VAR} was set, but the audit trail failed${error51 ? ` (${error51})` : ""}`
+    };
   }
   return {
     ...refusal,
@@ -72009,6 +72202,25 @@ function effectiveRole(env3 = process.env) {
   const map2 = loadRoleMap();
   return { role: processAgentRole(env3, map2), map: map2 };
 }
+async function unreachableRefusal(repo, pr, detail, deps) {
+  const marker = repoOwner(repo);
+  if (!marker) fail2(`'${repo}' is not an owner/name repository slug`);
+  const guard = await mergeCheck({ repo, pr }, deps).catch(() => null);
+  const base = guard ?? {
+    allow: false,
+    reason: "",
+    repo,
+    pr,
+    unreachable: true
+  };
+  return {
+    ...base,
+    allow: false,
+    unreachable: true,
+    reason: `cannot mint the reviewer token: ${detail}; the guard fails closed`,
+    message: `merge refused for ${repo}#${pr}: cannot mint the reviewer token (${detail}). Set ${OVERRIDE_ENV_VAR} to override as coordinator/operator, or turn the guard off with ${MERGE_GUARD_ENV_VAR}.`
+  };
+}
 async function reviewerTokenFor(repo, map2) {
   const account = repoOwner(repo);
   if (!account) fail2(`'${repo}' is not an owner/name repository slug`);
@@ -72067,11 +72279,41 @@ function createIdentityCommand() {
     for (const [role2, slug] of Object.entries(map2.apps)) console.log(`  app ${role2}: ${slug}`);
     console.log(`this process: ${role ?? "operator (no App credential)"}`);
   });
+  identity.command("role").description("Print the role this process resolves to, and why (used by the gh shim)").option("--json", "Emit JSON", false).action((opts) => {
+    const map2 = loadRoleMap();
+    if (!map2) fail2("the role map is invalid; every role is unresolved");
+    const { role, source } = explainAgentRole(process.env, map2);
+    const holder = (process.env[SUBSTRATE_HOLDER_VAR] ?? "").trim() || null;
+    if (opts.json) {
+      console.log(JSON.stringify({ role, source, holder }, null, 2));
+    } else {
+      console.log(`${role ?? "(no credential)"} (${source})`);
+    }
+  });
   identity.command("token").description("Mint (or reuse) a one-hour installation token for a role App on one repository").requiredOption("--repo <owner/name>", "Repository whose owner installation is used").option("--role <role>", "Role to act as (default: this process's resolved role)").option("--json", "Emit JSON", false).action(async (opts) => {
     const { map: map2 } = effectiveRole();
     if (!map2) fail2("the role map is invalid; refusing to mint any token");
-    const role = opts.role ? resolveAgentRole(opts.role, map2) : processAgentRole(process.env, map2);
-    if (!role) fail2("no role for this process (operator session or an unmapped role)");
+    const env3 = process.env;
+    const inAgentTree = Boolean((env3[SUBSTRATE_HOLDER_VAR] ?? "").trim() || (env3[ROLE_ENV_VAR] ?? "").trim());
+    const own = processAgentRole(env3, map2);
+    const requested = (opts.role ?? "").trim();
+    let role;
+    if (requested) {
+      const resolved = resolveAgentRole(requested, map2);
+      if (!resolved) {
+        fail2(`--role ${requested} is neither an agent role nor a mapped specialist; refusing to mint any token`);
+      }
+      if (inAgentTree && resolved !== own) {
+        fail2(`this ${own ?? "unresolved"} session may not mint a ${resolved} token; --role only widens an operator shell`);
+      }
+      role = resolved;
+    } else {
+      role = own;
+    }
+    if (!role) fail2("no role for this process (operator session, or a role the map does not name)");
+    if (role === "reviewer") {
+      fail2("the reviewer token is minted only by the review-post path (gh pr review -> xt identity review-post), never by hand");
+    }
     const account = repoOwner(opts.repo);
     if (!account) fail2(`'${opts.repo}' is not an owner/name repository slug`);
     try {
@@ -72147,7 +72389,7 @@ function createIdentityCommand() {
         expectedModel: (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? "").trim() || null
       }, { token, slug: appSlugForRole("reviewer", map2), apiBase: DEFAULT_API_BASE });
       let journaled = null;
-      if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef));
+      if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole("reviewer", map2)));
       const out = {
         url: posted.url,
         id: posted.id,
@@ -72180,11 +72422,18 @@ function createIdentityCommand() {
     if (!Number.isInteger(pr) || pr <= 0) fail2(`--pr ${opts.pr} is not a pull request number`);
     const { map: map2 } = effectiveRole();
     if (!map2) fail2("the role map is invalid; the guard fails closed");
-    let token;
+    if (!mergeGuardEnabled()) {
+      const message = `merge guard is off (${MERGE_GUARD_ENV_VAR} is not set); ${opts.repo}#${pr} is not checked`;
+      if (opts.json) console.log(JSON.stringify({ allow: true, reason: "guard-disabled", message }, null, 2));
+      else console.log(message);
+      return;
+    }
+    let token = "";
+    let unreachable = null;
     try {
       token = (await reviewerTokenFor(opts.repo, map2)).token;
     } catch (error51) {
-      fail2(`cannot mint the reviewer token (${error51.message}); the guard fails closed`);
+      unreachable = error51 instanceof GitHubAppError ? error51.message : error51.message;
     }
     const deps = {
       token,
@@ -72192,12 +72441,19 @@ function createIdentityCommand() {
       reviewerSlug: appSlugForRole("reviewer", map2),
       roleMap: map2
     };
-    let decision = await mergeCheck({ repo: opts.repo, pr }, deps);
-    if (!decision.allow) decision = await applyOverride(decision, deps);
+    let decision = unreachable ? await unreachableRefusal(opts.repo, pr, unreachable, deps) : await mergeCheck({ repo: opts.repo, pr }, deps);
+    if (!decision.allow && (process.env[OVERRIDE_ENV_VAR] ?? "").trim()) {
+      decision = await applyOverride(decision, deps);
+    }
     if (opts.json) {
       console.log(JSON.stringify(decision, null, 2));
     } else if (decision.allow) {
       console.log(decision.message);
+      if (decision.override) {
+        if (!decision.override.journaled) {
+          console.log(kleur_default.yellow(`warning: the override was not journaled${decision.override.error ? `: ${decision.override.error}` : ""}`));
+        }
+      }
     } else {
       process.stderr.write(`${decision.message}
 `);
@@ -72312,8 +72568,7 @@ function createIdentityCommand() {
   return identity;
 }
 async function fetchPullBody(repo, pr, token) {
-  const { githubRequest: githubRequest2 } = await Promise.resolve().then(() => (init_github_apps(), github_apps_exports));
-  const pull = await githubRequest2(
+  const pull = await githubRequest(
     { method: "GET", path: `/repos/${repo}/pulls/${pr}` },
     { token, apiBase: DEFAULT_API_BASE }
   );
@@ -78923,7 +79178,7 @@ function parseJobs(stdout) {
     };
   }).filter((j) => j.job_id.length > 0);
 }
-var ISSUE_REF_PATTERN = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/;
+var ISSUE_REF_PATTERN2 = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/;
 var MAX_ISSUE_REFS = 64;
 var ISSUE_LOOKUP_CONCURRENCY = 8;
 function parseSubstrateIssue(ref, stdout) {
@@ -78948,7 +79203,7 @@ function parseSubstrateIssue(ref, stdout) {
 async function readSubstrateIssues(refs, opts) {
   const { bin, args, timeoutMs } = READ_ONLY_COMMANDS.substrate;
   const started = opts.now();
-  const wanted = [...new Set(refs)].filter((ref) => ISSUE_REF_PATTERN.test(ref)).slice(0, MAX_ISSUE_REFS);
+  const wanted = [...new Set(refs)].filter((ref) => ISSUE_REF_PATTERN2.test(ref)).slice(0, MAX_ISSUE_REFS);
   const issues = /* @__PURE__ */ new Map();
   const failures = [];
   let missing = false;

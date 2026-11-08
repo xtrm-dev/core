@@ -41,3 +41,32 @@ describe('xt identity env (CLI streams)', () => {
         expect(lines).toContain('GIT_COMMITTER_NAME=core-xt-pi-0fln');
     });
 });
+
+describe('xt identity token is not a bypass (CORE-2528 R2)', () => {
+    function runToken(args: string[], env: NodeJS.ProcessEnv): { status: number | null; stdout: string; stderr: string } {
+        const result = spawnSync(process.execPath, [CLI, 'identity', 'token', ...args], {
+            encoding: 'utf8',
+            env: { ...process.env, ...env },
+        });
+        return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
+    }
+
+    it('refuses an unknown --role instead of minting the worker token', () => {
+        const result = runToken(['--repo', 'xtrm-dev/core', '--role', 'bogus'], { SUBSTRATE_HOLDER: 'core-xt-pi-0fln' });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toMatch(/neither an agent role nor a mapped specialist/);
+        expect(result.stdout).toBe('');
+    });
+
+    it('refuses --role reviewer from an agent session: only the review-post path mints it', () => {
+        const result = runToken(['--repo', 'xtrm-dev/core', '--role', 'reviewer'], { SUBSTRATE_HOLDER: 'core-xt-pi-0fln', XTRM_ROLE: 'reviewer' });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toMatch(/minted only by the review-post path/);
+    });
+
+    it('refuses a role other than the session\'s own inside an agent tree', () => {
+        const result = runToken(['--repo', 'xtrm-dev/core', '--role', 'coordinator'], { SUBSTRATE_HOLDER: 'core-xt-pi-0fln', XTRM_ROLE: 'worker' });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toMatch(/may not mint a coordinator token/);
+    });
+});
