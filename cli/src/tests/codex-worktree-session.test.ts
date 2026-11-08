@@ -224,6 +224,8 @@ describe('Codex worktree launcher', () => {
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
             if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
             if (command === 'git' && joined.startsWith('show-ref --verify')) return { status: 1, stdout: '', stderr: '' };
+            // CORE-2525: the operator email the launcher resolves for the child.
+            if (command === 'git' && args[0] === 'config' && args[1] === '--get') return { status: 0, stdout: 'op@example.com\n', stderr: '' };
             if (command === 'git' && args[0] === 'worktree') {
                 fs.ensureDirSync(worktreePath);
                 return { status: 0, stdout: '', stderr: '' };
@@ -264,6 +266,11 @@ describe('Codex worktree launcher', () => {
         const env = Object.fromEntries(windowArgs.flatMap((a, i) => (windowArgs[i - 1] === '-e' ? [a.split(/=(.*)/s, 2)] : [])));
         expect(env).toMatchObject({
             SUBSTRATE_HOLDER: 'win',
+            // CORE-2525: the worker's own git identity rides the same -e block.
+            GIT_AUTHOR_NAME: 'win',
+            GIT_COMMITTER_NAME: 'win',
+            GIT_AUTHOR_EMAIL: 'op@example.com',
+            GIT_COMMITTER_EMAIL: 'op@example.com',
             XTRM_DISPATCHER_NAME: 'coord-1',
             XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/77.sock',
             XTRM_PARENT_PANE_ID: '%5',

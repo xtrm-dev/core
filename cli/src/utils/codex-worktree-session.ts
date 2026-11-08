@@ -19,6 +19,7 @@ import {
     type CodexTrustProfile,
 } from '../core/codex-session.js';
 import { buildDispatcherEnv } from '../core/dispatcher-identity.js';
+import { resolveGitEmail } from '../core/git-identity.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import {
     checkStructuredLaunchOptions,
@@ -378,7 +379,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         ...buildAgentEnv(paneOptions),
         XTMUX_AGENT_RUNTIME: 'codex',
         ...(windowIdentity ? buildSessionIdentityEnv(windowIdentity) : {}),
-        ...buildDispatcherEnv(slug),
+        ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }),
     };
     const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
     let windowPaneId = '';
