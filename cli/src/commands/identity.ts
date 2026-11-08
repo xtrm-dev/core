@@ -12,6 +12,7 @@ import {
     appInstallationSummary,
     fileMode,
     githubAppPaths,
+    githubRequest,
     mintInstallationToken,
     readAppConfig,
     repoOwner,
@@ -23,6 +24,7 @@ import {
     ROLE_ENV_VAR,
     ROLE_MAP_VERSION,
     appSlugForRole,
+    explainAgentRole,
     loadRoleMap,
     processAgentRole,
     resolveAgentRole,
@@ -48,7 +50,8 @@ import {
     ReviewRefused,
     type ReviewVerdict,
 } from '../core/review-posting.js';
-import { applyOverride, mergeCheck, recordMerge } from '../core/merge-guard.js';
+import { applyOverride, mergeCheck, mergeGuardEnabled, recordMerge, MERGE_GUARD_ENV_VAR, OVERRIDE_ENV_VAR, type MergeDecision } from '../core/merge-guard.js';
+import { isSafeIssueRef } from '../core/review-posting.js';
 import { installRoutingReminder } from '../core/reviewer-routing.js';
 
 export interface IdentityEnvReport {
@@ -103,6 +106,26 @@ function appDeps(): GitHubAppDeps {
 function effectiveRole(env: NodeJS.ProcessEnv = process.env): { role: AgentRole | null; map: RoleMap | null } {
     const map = loadRoleMap();
     return { role: processAgentRole(env, map), map };
+}
+
+/**
+ * The refusal the guard would produce when GitHub or the App cannot be read.
+ * Built here so the override path still runs: an unreachable App is exactly the
+ * case the override exists for (CORE-2528 rev 4 R3).
+ */
+async function unreachableRefusal(repo: string, pr: number, detail: string): Promise<MergeDecision> {
+    if (!repoOwner(repo)) fail(`'${repo}' is not an owner/name repository slug`);
+    // No token, no GitHub read: calling mergeCheck here would hang on the network
+    // exactly when the App is unavailable, which is the case the override exists
+    // for (CORE-2528 delta M6).
+    return {
+        allow: false,
+        reason: `cannot mint the reviewer token: ${detail}; the guard fails closed`,
+        repo,
+        pr,
+        unreachable: true,
+        message: `merge refused for ${repo}#${pr}: cannot mint the reviewer token (${detail}). Set ${OVERRIDE_ENV_VAR} to override as coordinator/operator, or turn the guard off with ${MERGE_GUARD_ENV_VAR}.`,
+    };
 }
 
 async function reviewerTokenFor(repo: string, map: RoleMap): Promise<{ token: string; slug: string; account: string }> {
@@ -178,6 +201,22 @@ export function createIdentityCommand(): Command {
         });
 
     identity
+        .command('role')
+        .description('Print the role this process resolves to, and why (used by the gh shim)')
+        .option('--json', 'Emit JSON', false)
+        .action((opts: { json: boolean }) => {
+            const map = loadRoleMap();
+            if (!map) fail('the role map is invalid; every role is unresolved');
+            const { role, source } = explainAgentRole(process.env, map);
+            const holder = (process.env[SUBSTRATE_HOLDER_VAR] ?? '').trim() || null;
+            if (opts.json) {
+                console.log(JSON.stringify({ role, source, holder }, null, 2));
+            } else {
+                console.log(`${role ?? '(no credential)'} (${source})`);
+            }
+        });
+
+    identity
         .command('token')
         .description('Mint (or reuse) a one-hour installation token for a role App on one repository')
         .requiredOption('--repo <owner/name>', 'Repository whose owner installation is used')
@@ -186,8 +225,29 @@ export function createIdentityCommand(): Command {
         .action(async (opts: { repo: string; role?: string; json: boolean }) => {
             const { map } = effectiveRole();
             if (!map) fail('the role map is invalid; refusing to mint any token');
-            const role = opts.role ? resolveAgentRole(opts.role, map) : processAgentRole(process.env, map);
-            if (!role) fail('no role for this process (operator session or an unmapped role)');
+            const env = process.env;
+            const inAgentTree = Boolean((env[SUBSTRATE_HOLDER_VAR] ?? '').trim() || (env[ROLE_ENV_VAR] ?? '').trim());
+            const own = processAgentRole(env, map);
+            const requested = (opts.role ?? '').trim();
+            let role: AgentRole | null;
+            if (requested) {
+                const resolved = resolveAgentRole(requested, map);
+                if (!resolved) {
+                    fail(`--role ${requested} is neither an agent role nor a mapped specialist; refusing to mint any token`);
+                }
+                // --role is an operator-shell convenience only: inside an agent
+                // tree it cannot escalate beyond the process's own role.
+                if (inAgentTree && resolved !== own) {
+                    fail(`this ${own ?? 'unresolved'} session may not mint a ${resolved} token; --role only widens an operator shell`);
+                }
+                role = resolved;
+            } else {
+                role = own;
+            }
+            if (!role) fail('no role for this process (operator session, or a role the map does not name)');
+            if (role === 'reviewer') {
+                fail('the reviewer token is minted only by the review-post path (gh pr review -> xt identity review-post), never by hand');
+            }
             const account = repoOwner(opts.repo);
             if (!account) fail(`'${opts.repo}' is not an owner/name repository slug`);
             try {
@@ -209,6 +269,20 @@ export function createIdentityCommand(): Command {
         .action(async (operation: string) => {
             const op = (operation ?? '').trim();
             if (op !== 'get') return; // store/erase: nothing to persist, the token is short-lived
+            const resolved = effectiveRole();
+            const role = resolved.map ? processAgentRole(process.env, resolved.map) : null;
+            if (!role) {
+                // One line, on stderr: git reads stdout for the answer and a silent
+                // helper looks like a broken environment.
+                process.stderr.write('xt identity credential: this session has no role, so no App credential is offered\n');
+                return;
+            }
+            if (role === 'reviewer') {
+                // The reviewer reviews; it never pushes. Answering would hand the
+                // reviewer App's token to a git operation it must not perform.
+                process.stderr.write('xt identity credential: the reviewer role does not push; no credential is offered\n');
+                return;
+            }
             let text = '';
             try {
                 text = readFileSync(0, 'utf8');
@@ -216,8 +290,7 @@ export function createIdentityCommand(): Command {
                 return;
             }
             const request = parseCredentialRequest(text);
-            const { role, map } = effectiveRole();
-            const app = credentialAppFor(request, role, map ?? DEFAULT_ROLE_MAP);
+            const app = credentialAppFor(request, role, resolved.map ?? DEFAULT_ROLE_MAP);
             if (!app) return; // fail closed: no answer, so git has no credential rather than the operator's
             try {
                 const minted = await mintInstallationToken(app, appDeps());
@@ -288,7 +361,7 @@ export function createIdentityCommand(): Command {
                     expectedModel: (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? '').trim() || null,
                 }, { token, slug: appSlugForRole('reviewer', map), apiBase: DEFAULT_API_BASE });
                 let journaled: { ok: boolean; error?: string } | null = null;
-                if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef));
+                if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole('reviewer', map)));
                 const out = {
                     url: posted.url,
                     id: posted.id,
@@ -328,11 +401,18 @@ export function createIdentityCommand(): Command {
             if (!Number.isInteger(pr) || pr <= 0) fail(`--pr ${opts.pr} is not a pull request number`);
             const { map } = effectiveRole();
             if (!map) fail('the role map is invalid; the guard fails closed');
-            let token: string;
-            try {
-                token = (await reviewerTokenFor(opts.repo, map)).token;
-            } catch (error) {
-                fail(`cannot mint the reviewer token (${(error as Error).message}); the guard fails closed`);
+            // One source of truth: mergeCheck owns the flag. The CLI only decides
+            // whether a token is needed, so removing the guard's early return turns
+            // the guard-off test red (CORE-2528 batch 5, item 5).
+            const guardOn = mergeGuardEnabled();
+            let token = '';
+            let unreachable: string | null = null;
+            if (guardOn) {
+                try {
+                    token = (await reviewerTokenFor(opts.repo, map)).token;
+                } catch (error) {
+                    unreachable = error instanceof GitHubAppError ? error.message : (error as Error).message;
+                }
             }
             const deps = {
                 token,
@@ -340,14 +420,30 @@ export function createIdentityCommand(): Command {
                 reviewerSlug: appSlugForRole('reviewer', map),
                 roleMap: map,
             };
-            let decision = await mergeCheck({ repo: opts.repo, pr }, deps);
-            if (!decision.allow) decision = await applyOverride(decision, deps);
+            // The override must be reachable exactly when the token cannot be
+            // minted, so applyOverride runs on the unreachable refusal too.
+            let decision = unreachable
+                ? await unreachableRefusal(opts.repo, pr, unreachable)
+                : await mergeCheck({ repo: opts.repo, pr }, deps);
+            if (!decision.allow && (process.env[OVERRIDE_ENV_VAR] ?? '').trim()) {
+                decision = await applyOverride(decision, deps);
+            }
             if (opts.json) {
                 console.log(JSON.stringify(decision, null, 2));
             } else if (decision.allow) {
                 console.log(decision.message);
+                if (decision.override) {
+                    if (!decision.override.journaled) {
+                        console.log(kleur.yellow(`warning: the override was not journaled${decision.override.error ? `: ${decision.override.error}` : ''}`));
+                    }
+                }
             } else {
                 process.stderr.write(`${decision.message}\n`);
+                // A refused override must say so on the agent's stderr, not only in
+                // the reason field the agent never sees (CORE-2528 delta L11).
+                if ((process.env[OVERRIDE_ENV_VAR] ?? '').trim() && /override refused/.test(decision.reason)) {
+                    process.stderr.write(`${decision.reason}\n`);
+                }
             }
             process.exit(decision.allow ? 0 : 1);
         });
@@ -376,6 +472,7 @@ export function createIdentityCommand(): Command {
                 issueRef = pull.issueRef ?? '';
             }
             if (!issueRef) fail('no Substrate Issue for this PR; cannot record the merge');
+            if (!isSafeIssueRef(issueRef)) fail(`'${issueRef}' is not a Substrate ref; refusing to journal the merge`);
             const result = recordMerge({ repo: opts.repo, pr, head: opts.head, issueRef }, { token: '', apiBase: DEFAULT_API_BASE });
             if (!result.ok) fail(`Journal receipt failed: ${result.error}`);
             console.log(`recorded merge of ${opts.repo}#${pr} on ${issueRef}`);
@@ -459,7 +556,6 @@ export function createIdentityCommand(): Command {
                         : 'no recorded installation for any account',
                     hard: false,
                 });
-                void role;
             }
             const shim = ghShimStatus({ home });
             checks.push({
@@ -489,7 +585,6 @@ export function createIdentityCommand(): Command {
 }
 
 async function fetchPullBody(repo: string, pr: number, token: string): Promise<{ issueRef?: string }> {
-    const { githubRequest } = await import('../core/github-apps.js');
     const pull = await githubRequest<{ body?: string | null; head?: { ref?: string } }>(
         { method: 'GET', path: `/repos/${repo}/pulls/${pr}` },
         { token, apiBase: DEFAULT_API_BASE },

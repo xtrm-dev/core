@@ -134,7 +134,27 @@ export function resolveAgentRole(name: string | null | undefined, map: RoleMap |
         return map.specialists[wanted];
     }
     if (isRole(wanted)) return wanted;
-    return map.default;
+    // Unknown fails closed (CORE-2528 rev 4 R1): a name that is neither a role
+    // nor a mapped specialist gets NO credential. It never falls back to worker,
+    // because that would hand an unmapped process a write identity.
+    return null;
+}
+
+/** Why a role was resolved, for `xt identity role` and for honest refusal text. */
+export function explainAgentRole(
+    env: NodeJS.ProcessEnv = process.env,
+    map: RoleMap | null = DEFAULT_ROLE_MAP,
+): { role: AgentRole | null; source: 'operator' | 'env-role' | 'specialist' | 'default' | 'unknown' } {
+    const holder = (env.SUBSTRATE_HOLDER ?? '').trim();
+    const name = (env[ROLE_ENV_VAR] ?? '').trim();
+    if (!map) return { role: null, source: 'unknown' };
+    if (!holder && !name) return { role: null, source: 'operator' };
+    if (!name) return { role: map.default, source: 'default' };
+    if (Object.prototype.hasOwnProperty.call(map.specialists, name)) {
+        return { role: map.specialists[name], source: 'specialist' };
+    }
+    if (isRole(name)) return { role: name, source: 'env-role' };
+    return { role: null, source: 'unknown' };
 }
 
 /** Role of the CURRENT process: operator (null) outside an agent tree. */

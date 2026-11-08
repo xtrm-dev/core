@@ -15,15 +15,27 @@
  * and a Journal decision entry.
  */
 
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { accessSync, appendFileSync, constants as fsConstants, mkdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { githubRequest, repoOwner, type FetchLike } from './github-apps.js';
-import { processAgentRole, type AgentRole, type RoleMap, DEFAULT_ROLE_MAP } from './identity-roles.js';
-import { issueRefFromBranch, parseIssueMarker, sha12, type ReviewVerdict } from './review-posting.js';
+import { explainAgentRole, type AgentRole, type RoleMap, DEFAULT_ROLE_MAP } from './identity-roles.js';
+import { isSafeIssueRef, issueRefFromBranch, parseIssueMarker, sha12, type ReviewVerdict } from './review-posting.js';
 
 export const OVERRIDE_ENV_VAR = 'XTRM_MERGE_GUARD_OVERRIDE';
+
+/**
+ * The guard is FLAG-GATED and OFF by default (CORE-2528 rev 4 R3): the operator's
+ * own merge path stays the fallback until the Apps are proven, so installing the
+ * shim cannot refuse every agent merge on a machine with no App configured.
+ * `XTRM_MERGE_GUARD=on|1|true|yes` turns it on.
+ */
+export const MERGE_GUARD_ENV_VAR = 'XTRM_MERGE_GUARD';
+export function mergeGuardEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+    const value = (env[MERGE_GUARD_ENV_VAR] ?? '').trim().toLowerCase();
+    return value === 'on' || value === '1' || value === 'true' || value === 'yes';
+}
 
 export interface RunResult { status: number | null; stdout: string; stderr: string }
 export type RunFn = (cmd: string, args: string[], opts: { input?: string }) => RunResult;
@@ -145,20 +157,52 @@ export function findValidDecision(
 }
 
 function overrideLogPath(deps: MergeGuardDeps): string {
+    const env = deps.env ?? process.env;
     const stateHome = deps.stateHome
-        ?? (deps.env?.XDG_STATE_HOME ?? '').trim()
+        ?? (env.XDG_STATE_HOME ?? '').trim()
         ?? path.join(os.homedir(), '.local', 'state');
     return path.join(stateHome || path.join(os.homedir(), '.local', 'state'), 'xtrm', 'merge-guard-override.log');
 }
 
-function appendOverrideLog(deps: MergeGuardDeps, line: Record<string, unknown>): boolean {
+/**
+ * Reject a state directory that cannot work BEFORE any recursive mkdir: a
+ * pathological path (a file as an ancestor, a non-directory, a read-only tree)
+ * must fail in microseconds, not spin in the kernel.
+ */
+export function checkStateDir(dir: string): string | null {
+    if (!path.isAbsolute(dir)) return `the state directory '${dir}' is not an absolute path`;
+    let probe = dir;
+    for (let depth = 0; depth < 40; depth += 1) {
+        try {
+            const stat = statSync(probe);
+            if (!stat.isDirectory()) return `'${probe}' exists and is not a directory`;
+            try {
+                accessSync(probe, fsConstants.W_OK);
+            } catch {
+                return `'${probe}' is not writable`;
+            }
+            return null;
+        } catch {
+            const parent = path.dirname(probe);
+            if (parent === probe) return `'${dir}' has no existing ancestor directory`;
+            probe = parent;
+        }
+    }
+    return `'${dir}' is nested too deeply to check`;
+}
+
+function appendOverrideLog(deps: MergeGuardDeps, line: Record<string, unknown>): { ok: boolean; error?: string } {
     try {
         const file = overrideLogPath(deps);
+        // The reason is surfaced, not swallowed: the operator must know that the
+        // STATE DIRECTORY is what made the audit trail fail (CORE-2528 delta L3).
+        const problem = checkStateDir(path.dirname(file));
+        if (problem) return { ok: false, error: `state directory '${path.dirname(file)}': ${problem}` };
         mkdirSync(path.dirname(file), { recursive: true });
         appendFileSync(file, `${JSON.stringify({ at: new Date((deps.now ?? Date.now)()).toISOString(), ...line })}\n`, { mode: 0o600 });
-        return true;
-    } catch {
-        return false;
+        return { ok: true };
+    } catch (error) {
+        return { ok: false, error: (error as Error).message };
     }
 }
 
@@ -168,7 +212,6 @@ function appendOverrideLog(deps: MergeGuardDeps, line: Record<string, unknown>):
  */
 export async function mergeCheck(input: { repo: string; pr: number }, deps: MergeGuardDeps): Promise<MergeDecision> {
     const env = deps.env ?? process.env;
-    const role: AgentRole | null = processAgentRole(env, deps.roleMap === undefined ? DEFAULT_ROLE_MAP : deps.roleMap);
     const reviewerSlug = deps.reviewerSlug ?? 'xtrm-reviewer';
     const botLogin = `${reviewerSlug}[bot]`;
     const base = { repo: input.repo, pr: input.pr } as const;
@@ -189,6 +232,10 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
         message: `merge allowed for ${input.repo}#${input.pr}: ${reason}`,
     });
 
+    if (!mergeGuardEnabled(deps.env ?? process.env)) {
+        return allow(`merge guard is off (${MERGE_GUARD_ENV_VAR} is not set); the merge is not checked`);
+    }
+
     // ── Reads. Any failure is a refusal (fail closed). ──────────────────────
     let pull: PullResponse;
     let reviews: ReviewResponse[];
@@ -198,14 +245,11 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
             return deny(`cannot read PR #${input.pr} (HTTP ${pulled.status}); GitHub or the App is unavailable`, { unreachable: true });
         }
         pull = pulled.data;
-        const listed = await githubRequest<ReviewResponse[]>({
-            method: 'GET',
-            path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100`,
-        }, deps);
-        if (listed.status !== 200 || !Array.isArray(listed.data)) {
-            return deny(`cannot list reviews for PR #${input.pr} (HTTP ${listed.status}); GitHub or the App is unavailable`, { unreachable: true });
+        const listed = await listReviews(input.repo, input.pr, deps);
+        if (!listed) {
+            return deny(`cannot list reviews for PR #${input.pr}; GitHub or the App is unavailable`, { unreachable: true });
         }
-        reviews = listed.data;
+        reviews = listed;
     } catch (error) {
         return deny(`cannot reach GitHub (${(error as Error).message}); the guard fails closed`, { unreachable: true });
     }
@@ -213,11 +257,20 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
     const head = pull.head?.sha ?? '';
     if (!head) return deny('the PR returned no head SHA');
     const marker = parseIssueMarker(pull.body ?? '');
-    const issueRef = marker?.issue ?? issueRefFromBranch(pull.head?.ref) ?? null;
+    const rawRef = marker?.issue ?? issueRefFromBranch(pull.head?.ref) ?? null;
+    // A ref from the PR body is attacker-controlled text on its way to `sb`.
+    const issueRef = rawRef && isSafeIssueRef(rawRef) ? rawRef : null;
+    if (rawRef && !issueRef) {
+        return deny(`the PR names '${rawRef}', which is not a Substrate ref; refusing to read or write a Journal entry for it`, { head: pull.head?.sha });
+    }
 
     // ── The latest reviewer review (DISMISSED reviews no longer count). ──────
     const mine = reviews
-        .filter((review) => review.user?.login === botLogin && review.state && review.state !== 'DISMISSED')
+        // PENDING reviews were never submitted: they carry no state anyone can act on.
+        .filter((review) => review.user?.login === botLogin
+            && review.state
+            && review.state !== 'DISMISSED'
+            && (review.submitted_at ?? '') !== '')
         .sort((a, b) => Date.parse(a.submitted_at ?? '') - Date.parse(b.submitted_at ?? ''));
     const latest = mine[mine.length - 1];
     const reviewInfo = latest
@@ -237,7 +290,7 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
     if (latest.state === 'APPROVED') {
         return allow('xtrm-reviewer[bot] approved the current head', { head, issueRef, ...reviewInfo });
     }
-    if (latest.state !== 'COMMENT') {
+    if (latest.state !== 'COMMENTED' && latest.state !== 'COMMENT') {
         return deny(`the reviewer App's latest review state ${latest.state} does not allow a merge`, { head, issueRef, ...reviewInfo });
     }
 
@@ -267,6 +320,26 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
 }
 
 /**
+ * Every review on the PR, following `Link: rel="next"`. A review list that stops
+ * at the first page can hide the latest review of a long PR, and the guard would
+ * then decide on a stale one.
+ */
+async function listReviews(repo: string, pr: number, deps: MergeGuardDeps): Promise<ReviewResponse[] | null> {
+    const out: ReviewResponse[] = [];
+    let page = 1;
+    for (; page <= 10; page += 1) {
+        const listed = await githubRequest<ReviewResponse[]>({
+            method: 'GET',
+            path: `/repos/${repo}/pulls/${pr}/reviews?per_page=100&page=${page}`,
+        }, deps);
+        if (listed.status !== 200 || !Array.isArray(listed.data)) return null;
+        out.push(...listed.data);
+        if (listed.data.length < 100) break;
+    }
+    return out;
+}
+
+/**
  * The override path: honoured only for the coordinator role and the operator
  * identity. Returns the decision to use (the caller printed the refusal first).
  * Every honoured use writes a log line and, when the Issue is resolvable, a
@@ -277,22 +350,31 @@ export async function applyOverride(
     deps: MergeGuardDeps,
 ): Promise<MergeDecision> {
     const env = deps.env ?? process.env;
-    const role = processAgentRole(env, deps.roleMap === undefined ? DEFAULT_ROLE_MAP : deps.roleMap);
+    const map = deps.roleMap === undefined ? DEFAULT_ROLE_MAP : deps.roleMap;
+    // `role === null` conflated the operator with an unknown/unmapped role: the
+    // operator may override, a hand-set unknown role may not (CORE-2528 delta M3).
+    const { role, source } = explainAgentRole(env, map);
     const reason = (env[OVERRIDE_ENV_VAR] ?? '').trim();
     if (!reason) return refusal;
-    if (role !== null && role !== 'coordinator') {
-        return { ...refusal, reason: `${refusal.reason} (override refused: role ${role} may not override the merge guard)` };
+    const mayOverride = source === 'operator' || role === 'coordinator';
+    if (!mayOverride) {
+        const who = source === 'unknown'
+            ? `an unresolved role (${(env.XTRM_ROLE ?? '').trim() || 'no role'} is not a role or a mapped specialist)`
+            : `role ${role}`;
+        return { ...refusal, reason: `${refusal.reason} (override refused: ${who} may not override the merge guard)` };
     }
-    const logged = appendOverrideLog(deps, {
+    const actorRole = source === 'operator' ? 'operator' : String(role);
+    const log = appendOverrideLog(deps, {
         holder: (env.SUBSTRATE_HOLDER ?? '').trim() || 'operator',
-        role: role ?? 'operator',
+        role: actorRole,
         repo: refusal.repo,
         pr: refusal.pr,
         head: refusal.head ?? '',
         reason,
     });
+    const logged = log.ok;
     let journaled = false;
-    let error: string | undefined;
+    let error: string | undefined = log.error;
     if (refusal.issueRef) {
         const run = deps.runSb ?? defaultRunSb();
         const semantic = JSON.stringify({
@@ -303,14 +385,27 @@ export async function applyOverride(
         });
         const result = run('sb', ['journal', 'append', refusal.issueRef, '--kind', 'decision', '--semantic', semantic, '--json'], {});
         journaled = result.status === 0;
-        if (!journaled) error = result.stderr.trim() || `sb exited ${result.status}`;
+        if (!journaled) {
+            const journalError = result.stderr.trim() || `sb exited ${result.status}`;
+            error = error ? `${error}; ${journalError}` : journalError;
+        }
     } else {
-        error = 'no resolvable Issue, so the override was not journaled';
+        const notJournaled = 'no resolvable Issue, so the override was not journaled';
+        error = error ? `${error}; ${notJournaled}` : notJournaled;
+    }
+    if (!logged && !journaled) {
+        // An override nobody can audit is worse than a refusal: the operator has
+        // no record of who bypassed the guard, and the caller would read "allowed".
+        return {
+            ...refusal,
+            reason: `${refusal.reason} (override refused: the audit trail failed — log and Journal both failed${error ? `: ${error}` : ''})`,
+            message: `merge refused for ${refusal.repo}#${refusal.pr}: ${OVERRIDE_ENV_VAR} was set, but the audit trail failed${error ? ` (${error})` : ''}`,
+        };
     }
     return {
         ...refusal,
         allow: true,
-        reason: `override honoured (${role ?? 'operator'}): ${reason}`,
+        reason: `override honoured (${actorRole}): ${reason}`,
         override: { reason, logged, journaled, error },
         message: `merge allowed for ${refusal.repo}#${refusal.pr} by ${OVERRIDE_ENV_VAR}: ${reason}`,
     };
@@ -335,4 +430,3 @@ export function recordMerge(
     return { ok: false, error: result.stderr.trim() || `sb exited ${result.status}` };
 }
 
-export { repoOwner };

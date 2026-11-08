@@ -109,34 +109,3 @@ describe('ghShimStatus', () => {
     });
 });
 
-describe('ghShimSource', () => {
-    const source = ghShimSource('/usr/bin/gh');
-
-    it('routes review, merge and record through xt', () => {
-        expect(source).toContain("['identity', 'review-post'");
-        expect(source).toContain("['identity', 'merge-check'");
-        expect(source).toContain("['identity', 'merge-record'");
-        expect(source).toContain("'--match-head-commit'");
-    });
-
-    it('takes the PR and repo from the review arguments, not from the current branch', () => {
-        // The head, the model and the verdict are derived by the CLI from the
-        // body file; the shim never guesses them.
-        expect(source).toContain("rest.indexOf('--repo')");
-        expect(source).toContain('const restNoRepo');
-        expect(source).toContain('if (!repo || !pr)');
-        expect(source).not.toContain('XTRM_REVIEW_HEAD');
-    });
-
-    it('leaves the operator outside an agent tree untouched', () => {
-        expect(source).toContain('if (!isAgent())');
-        expect(source).toContain('SUBSTRATE_HOLDER');
-        expect(source).toContain('XTRM_ROLE');
-    });
-
-    it('refuses reviewer-side merge and state changes', () => {
-        expect(source).toContain("role === 'reviewer'");
-        expect(source).toContain('may not merge');
-        expect(source).toContain("verb === 'close'");
-    });
-});

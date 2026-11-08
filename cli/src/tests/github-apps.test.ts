@@ -55,6 +55,15 @@ function fetchReturning(reply: (call: Call) => { status: number; data: unknown }
     };
 }
 
+describe('repoOwner', () => {
+    it('refuses a dot or dot-dot repository part', () => {
+        expect(repoOwner('xtrm-dev/core')).toBe('xtrm-dev');
+        expect(repoOwner('xtrm-dev/.')).toBeNull();
+        expect(repoOwner('xtrm-dev/..')).toBeNull();
+        expect(repoOwner('../core')).toBeNull();
+    });
+});
+
 describe('buildAppJwt', () => {
     it('signs RS256 with iss=appId and a sub-10-minute lifetime', () => {
         const jwt = buildAppJwt('4711', PEM, 1_700_000_000_000);
@@ -122,6 +131,32 @@ describe('mintInstallationToken', () => {
         const second = await mintInstallationToken({ slug: 'xtrm-reviewer', account: 'xtrm-dev' }, deps);
         expect(second.cached).toBe(true);
         expect(calls).toHaveLength(1);
+    });
+
+    it('tightens an existing wider token-cache directory to 0700 before writing', async () => {
+        writeApp('xtrm-reviewer');
+        const cacheDir = githubAppPaths(home, runtimeDir).tokenCacheDir;
+        fs.mkdirSync(cacheDir, { recursive: true, mode: 0o777 });
+        fs.chmodSync(cacheDir, 0o777);
+        const deps = {
+            home, runtimeDir,
+            now: () => 1_700_000_000_000,
+            fetch: fetchReturning(() => ({ status: 201, data: { token: 'ghs_test', expires_at: '2026-11-08T16:00:00Z' } }), []),
+        };
+        await mintInstallationToken({ slug: 'xtrm-reviewer', account: 'xtrm-dev' }, deps);
+        expect(fs.statSync(cacheDir).mode & 0o777).toBe(0o700);
+    });
+
+    it('refuses to mint when the private key is readable by others', async () => {
+        const keyFile = writeApp('xtrm-reviewer');
+        fs.chmodSync(keyFile, 0o644);
+        const deps = {
+            home, runtimeDir,
+            now: () => 1_700_000_000_000,
+            fetch: fetchReturning(() => ({ status: 201, data: { token: 'ghs_test' } }), []),
+        };
+        await expect(mintInstallationToken({ slug: 'xtrm-reviewer', account: 'xtrm-dev' }, deps))
+            .rejects.toThrow(/must be 600/);
     });
 
     it('re-mints when the cached token is inside the reuse skew', async () => {

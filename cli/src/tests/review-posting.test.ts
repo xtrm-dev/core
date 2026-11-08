@@ -30,11 +30,11 @@ type Call = { method: string; path: string; body?: unknown };
 function fakeGitHub(routes: Record<string, { status: number; data: unknown } | ((call: Call) => { status: number; data: unknown })>) {
     const calls: Call[] = [];
     const fetch = async (url: string, init?: { method?: string; body?: string }) => {
-        const path = url.replace('https://api.github.com', '');
-        const call: Call = { method: init?.method ?? 'GET', path, body: init?.body ? JSON.parse(init.body) : undefined };
+        const full = url.replace('https://api.github.com', '');
+        const call: Call = { method: init?.method ?? 'GET', path: full.split('?')[0], body: init?.body ? JSON.parse(init.body) : undefined };
         calls.push(call);
-        const route = routes[`${call.method} ${path}`] ?? routes[`${call.method} ${path.split('?')[0]}`];
-        if (!route) return { status: 404, json: async () => ({ message: `no route ${call.method} ${path}` }) };
+        const route = routes[`${call.method} ${full}`] ?? routes[`${call.method} ${full.split('?')[0]}`];
+        if (!route) return { status: 404, json: async () => ({ message: `no route ${call.method} ${full}` }) };
         const result = typeof route === 'function' ? route(call) : route;
         return { status: result.status, json: async () => result.data };
     };
@@ -232,24 +232,88 @@ describe('postReview', () => {
         await expect(postReview(input(), github.deps)).rejects.toThrow(/own-PR/);
     });
 
-    it('falls back to the branch for the Issue ref and warns when there is none', async () => {
+    it('falls back to the branch when the marker names no Issue, and refuses a PR with no marker at all', async () => {
         const withBranch = fakeGitHub({
-            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD, ref: 'xt/worker-CORE-2528-x' }, body: 'no marker' } },
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: { head: { sha: HEAD, ref: 'xt/worker-CORE-2528-x' }, body: '<!-- xtrm holder=core-2528-worker run=abc123 -->' },
+            },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
             'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [] },
             'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 1, html_url: 'u' } },
         });
         expect((await postReview(input(), withBranch.deps)).issueRef).toBe('CORE-2528');
 
+        // No marker, no attribution: refused, never posted with a warning.
         const orphan = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD, ref: 'main' }, body: 'no marker' } },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
-            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [] },
-            'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 1, html_url: 'u' } },
         });
-        const receipt = await postReview(input(), orphan.deps);
-        expect(receipt.issueRef).toBeNull();
-        expect(receipt.warnings.join(' ')).toMatch(/not journaled/);
+        await expect(postReview(input(), orphan.deps)).rejects.toThrow(/carries no xtrm marker/);
+        expect(orphan.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('posts the review before dismissing, and warns when a dismissal fails', async () => {
+        const github = fakeGitHub(headRoutes({
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': {
+                status: 200,
+                data: [{ id: 7, state: 'CHANGES_REQUESTED', user: { login: 'xtrm-reviewer[bot]' }, commit_id: 'f'.repeat(40) }],
+            },
+            'PUT /repos/xtrm-dev/core/pulls/42/reviews/7/dismissals': { status: 500, data: {} },
+            'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 55, state: 'COMMENTED', html_url: 'u' } },
+        }));
+        const receipt = await postReview(input(), github.deps);
+        const order = github.calls.map((call) => call.method).filter((method) => method !== 'GET');
+        expect(order).toEqual(['POST', 'PUT']);
+        expect(receipt.dismissed).toEqual([]);
+        expect(receipt.warnings.join(' ')).toMatch(/could not dismiss stale review 7/);
+    });
+
+    it('finds a stale change request on a later page', async () => {
+        const firstPage = Array.from({ length: 100 }, (_, index) => ({
+            id: index + 1, state: 'COMMENTED', user: { login: 'xtrm-reviewer[bot]' },
+        }));
+        const github = fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD, ref: 'xt/b' }, body: pullBody(ISSUE) } },
+            'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
+            'GET /repos/xtrm-dev/core/pulls/42/reviews?per_page=100&page=1': { status: 200, data: firstPage },
+            'GET /repos/xtrm-dev/core/pulls/42/reviews?per_page=100&page=2': {
+                status: 200,
+                data: [{ id: 999, state: 'CHANGES_REQUESTED', user: { login: 'xtrm-reviewer[bot]' } }],
+            },
+            'PUT /repos/xtrm-dev/core/pulls/42/reviews/999/dismissals': { status: 200, data: {} },
+            'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 1000, state: 'COMMENTED', html_url: 'u' } },
+        });
+        const receipt = await postReview(input(), github.deps);
+        expect(receipt.dismissed).toEqual([999]);
+    });
+
+    it('refuses a body over GitHub\'s 65536-character limit', async () => {
+        const github = fakeGitHub(headRoutes());
+        const body = modelBody().replace('## Findings', `## Findings\n${'x'.repeat(65600)}`);
+        await expect(postReview(input({ body }), github.deps)).rejects.toThrow(/65536/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('refuses a marker without holder= so an own-PR review cannot be excluded', async () => {
+        const github = fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: { head: { sha: HEAD, ref: 'xt/b' }, body: '<!-- xtrm issue=CORE-2528 run=abc -->' },
+            },
+            'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
+        });
+        await expect(postReview(input(), github.deps)).rejects.toThrow(/without holder=/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('refuses an Issue ref from the PR body that is not a Substrate ref', async () => {
+        const github = fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD }, body: '<!-- xtrm issue=--force holder=x run=y -->' } },
+            'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
+        });
+        await expect(postReview(input(), github.deps)).rejects.toThrow(/not a Substrate ref/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
     });
 
     it('refuses rather than posting when GitHub refuses the review', async () => {

@@ -42,7 +42,13 @@ export function buildGitTransportEnv(input: GitTransportInput): Record<string, s
     const entries: Array<[string, string]> = [
         ['url.https://github.com/.insteadOf', 'git@github.com:'],
         ['url.https://github.com/.insteadOf', 'ssh://git@github.com/'],
+        // Reset first: a global helper (`gh auth setup-git` writes one) is consulted
+        // before ours otherwise, and git would answer with the OPERATOR's token.
+        ['credential.https://github.com.helper', ''],
         ['credential.https://github.com.helper', '!xt identity credential'],
+        // Without useHttpPath git sends no `path`, so the helper cannot tell which
+        // repository it is answering for and refuses (it must, to stay scoped).
+        ['credential.https://github.com.useHttpPath', 'true'],
     ];
     const env: Record<string, string> = { GIT_CONFIG_COUNT: String(entries.length) };
     entries.forEach(([key, value], index) => {
