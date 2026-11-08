@@ -27,6 +27,14 @@ export type AgentRole = 'reviewer' | 'coordinator' | 'worker';
 export const AGENT_ROLES: readonly AgentRole[] = ['reviewer', 'coordinator', 'worker'] as const;
 export const ROLE_MAP_VERSION = 1;
 /** The env var carrying the launching role or specialist name (never a token). */
+/**
+ * The role marker a launch sets (CORE-2528). It is SPOOFABLE: any process under
+ * the same unix user can set XTRM_ROLE=reviewer and mint the reviewer token. The
+ * design buys attribution and least privilege against mistakes, not isolation
+ * from a hostile agent. Compensating controls: a review of the holder's own PR
+ * is refused, every review carries the agent/run marker and a Journal receipt,
+ * and the merge guard reads GitHub's review state, not the local declaration.
+ */
 export const ROLE_ENV_VAR = 'XTRM_ROLE';
 
 export interface RoleMap {
