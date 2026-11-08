@@ -127,3 +127,8 @@ GitHub enforces it: the check runs on the agent's machine.
 
 For a review, read the pushed head and post one review at that head: PASS -> APPROVE,
 PARTIAL -> COMMENT, FAIL -> REQUEST_CHANGES. A stale approval is not evidence.
+
+Client-side only: any agent that holds the operator's `gh` login can call the GitHub API directly.
+The guard catches errors and stale or missing reviews; it is not protection against a hostile
+agent on the same unix user. When the reviewer App is unavailable the guard blocks merges and the
+override is the documented way out.
