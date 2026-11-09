@@ -288,6 +288,14 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
         return deny('the reviewer App requested changes at the current head', { head, issueRef, ...reviewInfo });
     }
     if (latest.state === 'APPROVED') {
+        // The contract is unconditional (CORE-2528/CORE-2530): no resolvable Issue
+        // means no record of the merge, so an approval alone cannot pass the guard.
+        if (!issueRef) {
+            return deny(
+                'the PR names no resolvable Substrate Issue, so the guard refuses even an approval at the current head',
+                { head, issueRef, ...reviewInfo },
+            );
+        }
         return allow('xtrm-reviewer[bot] approved the current head', { head, issueRef, ...reviewInfo });
     }
     if (latest.state !== 'COMMENTED' && latest.state !== 'COMMENT') {

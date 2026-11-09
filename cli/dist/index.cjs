@@ -72092,6 +72092,12 @@ async function mergeCheck(input, deps) {
     return deny("the reviewer App requested changes at the current head", { head, issueRef, ...reviewInfo });
   }
   if (latest.state === "APPROVED") {
+    if (!issueRef) {
+      return deny(
+        "the PR names no resolvable Substrate Issue, so the guard refuses even an approval at the current head",
+        { head, issueRef, ...reviewInfo }
+      );
+    }
     return allow("xtrm-reviewer[bot] approved the current head", { head, issueRef, ...reviewInfo });
   }
   if (latest.state !== "COMMENTED" && latest.state !== "COMMENT") {
@@ -72761,6 +72767,11 @@ function createIdentityCommand() {
     };
     let decision = unreachable ? await unreachableRefusal(repo, pr, unreachable) : await mergeCheck({ repo, pr }, deps);
     if (!decision.allow && (process.env[OVERRIDE_ENV_VAR] ?? "").trim()) {
+      if (!decision.head) {
+        const argv = opts.ghArgs ?? JSON.stringify(["pr", "merge", "--repo", repo, String(pr)]);
+        const resolved = await resolveGhTarget(argv, opts.cwd ?? process.cwd());
+        if (resolved.head) decision = { ...decision, head: resolved.head };
+      }
       decision = await applyOverride(decision, deps);
     }
     if (opts.json) {
