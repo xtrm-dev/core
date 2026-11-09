@@ -408,21 +408,79 @@ describe('xt/tmux launcher session-identity propagation', () => {
       expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBe('5');
     });
 
-    it('keeps today’s env for a worker while only the reviewer App exists (CORE-2528)', async () => {
+    it('removes nothing the caller inherited and adds nothing for a worker (CORE-2528)', async () => {
       armDispatcher();
       installMock(h);
       writeIdentityConfig();
       const { launchWorktreeSession } = await import('../utils/worktree-session.js');
-
-      process.env.XTRM_ROLE = 'worker';
+      const saved = {
+        role: process.env.XTRM_ROLE,
+        count: process.env.GIT_CONFIG_COUNT,
+        key0: process.env.GIT_CONFIG_KEY_0,
+        value0: process.env.GIT_CONFIG_VALUE_0,
+      };
+      // The reviewer's ruling: the launcher touches nothing it does not set. A
+      // coordinator's marker and an operator's proxy entry must survive.
+      process.env.XTRM_ROLE = 'coordinator';
+      process.env.GIT_CONFIG_COUNT = '1';
+      process.env.GIT_CONFIG_KEY_0 = 'http.proxy';
+      process.env.GIT_CONFIG_VALUE_0 = 'http://proxy:3128';
       try {
         await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-w' })).rejects.toThrow('exit:0');
       } finally {
-        delete process.env.XTRM_ROLE;
+        for (const [key, value] of [['XTRM_ROLE', saved.role], ['GIT_CONFIG_COUNT', saved.count], ['GIT_CONFIG_KEY_0', saved.key0], ['GIT_CONFIG_VALUE_0', saved.value0]] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
       }
       expect(h.piSpawnEnv?.['SUBSTRATE_HOLDER']).toBe('dwk-w');
+      // Byte-identity for everything the identity feature could touch.
+      expect(h.piSpawnEnv?.['XTRM_ROLE']).toBe('coordinator');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBe('1');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_KEY_0']).toBe('http.proxy');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_VALUE_0']).toBe('http://proxy:3128');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_KEY_1']).toBeUndefined();
+    });
+
+    it('refuses an invalid role name before any worktree exists (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-bad', role: '../evil' })).rejects.toThrow('exit:1');
+      const worktreeCalls = mocked.spawnSync.mock.calls.filter(([, args]) => (args ?? []).includes('worktree') && (args ?? []).includes('add'));
+      expect(worktreeCalls).toHaveLength(0);
+    });
+
+    it('refuses an unmapped supervisor activation before any worktree exists (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const saved = process.env.SPECIALISTS_JOB_ID;
+      process.env.SPECIALISTS_JOB_ID = 'job-1';
+      try {
+        const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+        await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-sup', role: 'mystery-specialist' })).rejects.toThrow('exit:1');
+      } finally {
+        if (saved === undefined) delete process.env.SPECIALISTS_JOB_ID;
+        else process.env.SPECIALISTS_JOB_ID = saved;
+      }
+      const worktreeCalls = mocked.spawnSync.mock.calls.filter(([, args]) => (args ?? []).includes('worktree') && (args ?? []).includes('add'));
+      expect(worktreeCalls).toHaveLength(0);
+    });
+
+    it('launches an interactive unmapped role as today and warns on stderr (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-cc', role: 'chain-coordinator' })).rejects.toThrow('exit:0');
+      const said = stderr.mock.calls.map(([line]) => String(line)).join('');
+      expect(said).toMatch(/role chain-coordinator has no identity mapping/);
       expect(h.piSpawnEnv?.['XTRM_ROLE']).toBeUndefined();
-      expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBeUndefined();
+      stderr.mockRestore();
     });
 
     it('exports the reviewer identity in the tmux -e block (CORE-2528)', async () => {

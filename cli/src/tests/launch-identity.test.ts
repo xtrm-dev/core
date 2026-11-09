@@ -1,17 +1,17 @@
-// CORE-2528 remainder: launch-time identity.
+// CORE-2528 remainder: launch-time identity (review rulings).
 //
-// The rule under test (core-85 ruling): a launch exports XTRM_ROLE and the
-// GIT_CONFIG_* transport rewrite ONLY when this host has the role's App AND an
-// installation for the repo owner. Every other case keeps today's behaviour —
-// holder and git author only — because only xtrm-reviewer exists today and
-// rewriting transport without an App would break `git push` for workers.
+// The rule: export XTRM_ROLE and the GIT_CONFIG_* transport ONLY when this host
+// has the role's App AND an installation for the repo owner; APPEND, never
+// replace, the caller's entries; refuse before the worktree only for a
+// supervisor launch with no mapping (when a map exists), an invalid role name,
+// or an explicit reviewer that cannot get its App on a host where it exists.
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resolveLaunchIdentity, roleMapConfigured } from '../core/launch-identity.js';
+import { parseGithubOrigin, preflightLaunchIdentity, resolveLaunchIdentity, roleMapConfigured } from '../core/launch-identity.js';
 
 let home = '';
 
@@ -20,7 +20,7 @@ function writeFile(file: string, body: unknown): void {
     fs.writeFileSync(file, typeof body === 'string' ? body : JSON.stringify(body));
 }
 
-function writeRoleMap(specialists: Record<string, string> = { 'pr-reviewer': 'reviewer' }): void {
+function writeRoleMap(specialists: Record<string, string | null> = { 'pr-reviewer': 'reviewer' }): void {
     writeFile(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), {
         version: 1,
         default: 'worker',
@@ -38,8 +38,12 @@ function writeApp(slug: string, installations: Record<string, string>): void {
     });
 }
 
-function resolve(roleName: string | null, env: NodeJS.ProcessEnv = {}, repo = 'xtrm-dev/core') {
+function resolve(roleName: string | null, env: NodeJS.ProcessEnv = {}, repo: string | null = 'xtrm-dev/core') {
     return resolveLaunchIdentity({ holder: 'w', roleName, cwd: home, env, deps: { home, repo } });
+}
+
+function preflight(roleName: string | null, env: NodeJS.ProcessEnv = {}, repo: string | null = 'xtrm-dev/core') {
+    return preflightLaunchIdentity({ roleName, cwd: home, env, deps: { home, repo } });
 }
 
 beforeEach(() => {
@@ -51,16 +55,16 @@ afterEach(() => {
 });
 
 describe('no role map: identities are not configured', () => {
-    it('exports nothing and never refuses, whatever the role', () => {
+    it('exports nothing, refuses nothing, and says why for a named role', () => {
         expect(roleMapConfigured(home)).toBe(false);
-        const result = resolve('worker');
+        const result = resolve('chain-coordinator');
         expect(result.configured).toBe(false);
         expect(result.env).toEqual({});
         expect(result.refused).toBeNull();
-        expect(result.note).toMatch(/identities not configured/);
+        expect(result.note).toMatch(/role chain-coordinator has no identity mapping/);
     });
 
-    it('does not refuse a supervisor launch either', () => {
+    it('never refuses a supervisor launch when nothing is configured', () => {
         const result = resolve(null, { SPECIALISTS_JOB_ID: 'job-1' });
         expect(result.refused).toBeNull();
         expect(result.env).toEqual({});
@@ -73,7 +77,7 @@ describe('only the reviewer App exists (today)', () => {
         writeApp('xtrm-reviewer', { 'xtrm-dev': '42' });
     });
 
-    it('exports nothing for a worker: byte-identical to today apart from holder and git author', () => {
+    it('exports nothing for a worker and adds nothing it does not own', () => {
         const result = resolve('worker');
         expect(result.configured).toBe(true);
         expect(result.exported).toBe(false);
@@ -85,29 +89,45 @@ describe('only the reviewer App exists (today)', () => {
         expect(resolve('coordinator').env).toEqual({});
     });
 
-    it('exports the role and the transport for a reviewer whose installation matches', () => {
-        const result = resolve('reviewer');
+    it('appends the reviewer transport to the entries already in the environment', () => {
+        const env = {
+            GIT_CONFIG_COUNT: '2',
+            GIT_CONFIG_KEY_0: 'http.proxy',
+            GIT_CONFIG_VALUE_0: 'http://proxy:3128',
+            GIT_CONFIG_KEY_1: 'credential.helper',
+            GIT_CONFIG_VALUE_1: 'store',
+        };
+        const result = resolve('reviewer', env);
         expect(result.exported).toBe(true);
         expect(result.env.XTRM_ROLE).toBe('reviewer');
-        expect(result.env.GIT_CONFIG_COUNT).toBe('5');
-        expect(result.env.GIT_CONFIG_KEY_2).toBe('credential.https://github.com.helper');
+        expect(result.env.GIT_CONFIG_COUNT).toBe('7');
+        expect(result.env.GIT_CONFIG_KEY_2).toBe('url.https://github.com/.insteadOf');
+        expect(result.env.GIT_CONFIG_KEY_6).toBe('credential.https://github.com.useHttpPath');
+        // The inherited entries are not rewritten by this layer.
+        expect(result.env.GIT_CONFIG_KEY_0).toBeUndefined();
+        expect(result.env.GIT_CONFIG_KEY_1).toBeUndefined();
     });
 
-    it('exports nothing when the installation is for another account', () => {
+    it('refuses an explicit reviewer whose installation is for another account', () => {
         const result = resolve('reviewer', {}, 'somebody-else/core');
-        expect(result.exported).toBe(false);
+        expect(result.refused).toMatch(/refusing to launch a reviewer with the operator identity/);
         expect(result.env).toEqual({});
-        expect(result.note).toMatch(/not installed for somebody-else/);
     });
 
-    it('exports nothing when the worktree has no github.com origin', () => {
-        const result = resolveLaunchIdentity({ holder: 'w', roleName: 'reviewer', cwd: home, deps: { home, repo: null } });
-        expect(result.exported).toBe(false);
-        expect(result.note).toMatch(/no github\.com origin/);
+    it('does not refuse a reviewer when the App is not configured at all (today)', () => {
+        fs.rmSync(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer'), { recursive: true, force: true });
+        const result = resolve('reviewer');
+        expect(result.refused).toBeNull();
+        expect(result.note).toMatch(/no xtrm-reviewer App is configured/);
+    });
+
+    it('refuses an explicit reviewer when the origin cannot be read (App present)', () => {
+        const result = resolve('reviewer', {}, null);
+        expect(result.refused).toMatch(/no github\.com origin/);
     });
 });
 
-describe('role resolution', () => {
+describe('role resolution matches the runtime', () => {
     beforeEach(() => {
         writeRoleMap();
         writeApp('xtrm-reviewer', { 'xtrm-dev': '42' });
@@ -119,32 +139,73 @@ describe('role resolution', () => {
         expect(result.env.XTRM_ROLE).toBe('reviewer');
     });
 
-    it('refuses an unknown --role and lists the mapped specialists', () => {
-        const result = resolve('nonsense');
-        expect(result.refused).toMatch(/neither a role/);
-        expect(result.refused).toMatch(/pr-reviewer/);
+    it('does not refuse an interactive unmapped role; it launches as today and says so', () => {
+        const result = resolve('chain-coordinator');
+        expect(result.refused).toBeNull();
+        expect(result.env).toEqual({});
+        expect(result.note).toMatch(/launching with the operator identity/);
+        expect(preflight('chain-coordinator').refused).toBeNull();
+        expect(preflight('chain-coordinator').warning).toMatch(/launching with the operator identity/);
+    });
+
+    it('refuses an invalid role identifier before anything is created', () => {
+        for (const bad of ['../evil', 'a/b', '--force', 'space name']) {
+            expect(resolve(bad).refused).toMatch(/not a valid role or specialist name/);
+        }
+    });
+
+    it('never treats prototype keys as mapped specialists', () => {
+        for (const key of ['constructor', '__proto__', 'toString']) {
+            const result = resolve(null, { XTRM_ROLE: key });
+            expect(result.refused).toBeNull();
+            expect(result.env).toEqual({});
+        }
+    });
+
+    it('uses the runtime rule for a null specialist entry', () => {
+        writeRoleMap({ 'pr-reviewer': null, reviewer: null });
+        const result = resolve(null, { XTRM_ROLE: 'reviewer' });
+        expect(result.role).toBeNull();
         expect(result.env).toEqual({});
     });
 
-    it('refuses an unmapped specialist in a supervisor launch (configured host)', () => {
+    it('ignores the specialist default unless the launch is supervisor-driven', () => {
+        expect(resolve(null, { XTRM_SPECIALIST_DEFAULT: 'pr-reviewer' }).env).toEqual({});
+        expect(resolve(null, { XTRM_SPECIALIST_DEFAULT: 'pr-reviewer', SPECIALISTS_JOB_ID: 'job-1' }).env.XTRM_ROLE).toBe('reviewer');
+        expect(resolve(null, { XTRM_SPECIALIST_DEFAULT: 'pr-reviewer', XTRM_SUPERVISOR_LAUNCH: '1' }).env.XTRM_ROLE).toBe('reviewer');
+    });
+
+    it('refuses a supervisor launch with no role at all', () => {
+        const result = resolve(null, { SPECIALISTS_JOB_ID: 'job-1' });
+        expect(result.refused).toMatch(/supervisor-launched activation names no role/);
+    });
+
+    it('refuses an unmapped specialist in a supervisor launch', () => {
         const result = resolve(null, { SPECIALISTS_JOB_ID: 'job-1', XTRM_ROLE: 'mystery-specialist' });
         expect(result.refused).toMatch(/no role mapping/);
-        expect(result.note).toBeNull();
-    });
-
-    it('accepts the supervisor default when it is mapped', () => {
-        const result = resolve(null, { SPECIALISTS_JOB_ID: 'job-1', XTRM_SPECIALIST_DEFAULT: 'pr-reviewer' });
-        expect(result.role).toBe('reviewer');
-        expect(result.env.XTRM_ROLE).toBe('reviewer');
-    });
-
-    it('never lets a hand-set role be overridden by the default', () => {
-        const result = resolve(null, { XTRM_ROLE: 'reviewer', XTRM_SPECIALIST_DEFAULT: 'worker' });
-        expect(result.role).toBe('reviewer');
     });
 
     it('behaves as today for an interactive launch with no name', () => {
         expect(resolve(null).role).toBe('worker');
         expect(resolve(null).refused).toBeNull();
+    });
+});
+
+describe('origin parsing', () => {
+    it('accepts every github.com spelling and rejects other hosts', () => {
+        const cases: Array<[string, string | null]> = [
+            ['git@github.com:xtrm-dev/core.git', 'xtrm-dev/core'],
+            ['git@github.com:xtrm-dev/core', 'xtrm-dev/core'],
+            ['ssh://git@github.com/xtrm-dev/core.git', 'xtrm-dev/core'],
+            ['ssh://git@github.com:22/xtrm-dev/core', 'xtrm-dev/core'],
+            ['https://github.com/xtrm-dev/core', 'xtrm-dev/core'],
+            ['https://user:token@github.com/xtrm-dev/core.git/', 'xtrm-dev/core'],
+            ['https://www.github.com/xtrm-dev/core/', 'xtrm-dev/core'],
+            ['git://github.com/xtrm-dev/core.git', 'xtrm-dev/core'],
+            ['https://gitlab.com/xtrm-dev/core.git', null],
+            ['git@gitlab.com:xtrm-dev/core.git', null],
+            ['', null],
+        ];
+        for (const [url, expected] of cases) expect(parseGithubOrigin(url)).toBe(expected);
     });
 });

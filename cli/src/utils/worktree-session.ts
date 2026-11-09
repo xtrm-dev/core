@@ -13,7 +13,7 @@ import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
 import { buildDispatcherEnv, stripDispatcherEnv } from '../core/dispatcher-identity.js';
-import { resolveLaunchIdentity, stripIdentityEnv } from '../core/launch-identity.js';
+import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
 import {
     buildDetachedLaunchOutcome,
@@ -3111,6 +3111,16 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         }
     }
 
+    // CORE-2528: decide BEFORE any worktree or branch exists. An invalid role name,
+    // an unmapped supervisor activation, or an explicit reviewer that cannot get
+    // its App must not leave a worktree and a branch behind.
+    const identityPreflight = preflightLaunchIdentity({ roleName, cwd: mainRepoRoot });
+    if (identityPreflight.refused) {
+        console.error(kleur.red(`\n  ✗ ${identityPreflight.refused}\n`));
+        process.exit(1);
+    }
+    if (identityPreflight.warning) process.stderr.write(`xt: ${identityPreflight.warning}\n`);
+
     // Worktree path: inside repo under .xtrm/worktrees/
     const worktreeName = `${cwdBasename}-xt-${runtime}-${slug}`;
     const worktreePath = path.join(mainRepoRoot, '.xtrm', 'worktrees', worktreeName);
@@ -3374,7 +3384,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripIdentityEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3587,7 +3597,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
-                env: { ...stripIdentityEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
+                env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
             });
             process.exit(runtimeResult.status ?? 0);
         }
@@ -3598,7 +3608,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
             stdio: 'inherit',
-            env: { ...stripIdentityEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
+            env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
         });
         const runtimeExit = new Promise<number>((resolve) => {
             runtimeProcess.once('error', () => resolve(1));

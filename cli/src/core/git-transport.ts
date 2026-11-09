@@ -31,6 +31,14 @@ export interface GitTransportInput {
     role: AgentRole | null;
     map?: RoleMap;
     deps?: GitHubAppDeps;
+    /** The env the launcher is about to extend: its GIT_CONFIG_COUNT decides the base index. */
+    env?: NodeJS.ProcessEnv;
+    /**
+     * Append to the caller's existing GIT_CONFIG_* entries instead of replacing
+     * them (CORE-2528 review). An operator's http.proxy must survive a launch, so
+     * the launcher never touches an index it did not write.
+     */
+    append?: boolean;
 }
 
 /** The transport env for this role, or {} when its App is not configured here. */
@@ -50,10 +58,12 @@ export function buildGitTransportEnv(input: GitTransportInput): Record<string, s
         // repository it is answering for and refuses (it must, to stay scoped).
         ['credential.https://github.com.useHttpPath', 'true'],
     ];
-    const env: Record<string, string> = { GIT_CONFIG_COUNT: String(entries.length) };
-    entries.forEach(([key, value], index) => {
-        env[`GIT_CONFIG_KEY_${index}`] = key;
-        env[`GIT_CONFIG_VALUE_${index}`] = value;
+    const inherited = input.append ? Number.parseInt((input.env ?? {}).GIT_CONFIG_COUNT ?? '0', 10) : 0;
+    const base = Number.isInteger(inherited) && inherited > 0 ? inherited : 0;
+    const env: Record<string, string> = { GIT_CONFIG_COUNT: String(base + entries.length) };
+    entries.forEach(([key, value], offset) => {
+        env[`GIT_CONFIG_KEY_${base + offset}`] = key;
+        env[`GIT_CONFIG_VALUE_${base + offset}`] = value;
     });
     return env;
 }

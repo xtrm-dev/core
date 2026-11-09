@@ -284,7 +284,13 @@ Files the code reads (nothing else is authoritative):
 
 - `~/.xtrm/identities/github-apps/<slug>/app.json` — `slug`, `appId`, `owner`, `installations` (account to id).
 - `~/.secrets/github-apps/<slug>.pem` — the private key, mode `600`; its directory mode `700`.
-- `~/.xtrm/config/identity-role-map.json` — role and specialist routing. Absent means the shipped default (worker); invalid means every agent gets no credential.
+- `~/.xtrm/config/identity-role-map.json` — role and specialist routing. Absent means identities are not
+  configured: a launch keeps the operator identity and exports nothing, and `xt identity doctor` says so in one
+  line. Invalid (unreadable or unparsable) means the same behaviour with a loud stderr warning; nothing is
+  exported and no launch is refused. An interactive `--role` that maps to nothing also launches as today and
+  prints `role <name> has no identity mapping`. Only a supervisor-launched activation with no mapping, an
+  invalid role name, or an explicit reviewer that cannot get its App is refused, and always before a worktree
+  or branch exists.
 - `~/.xtrm/config/reviewer-routing.md` — the text the review reminder prints. Operator-editable.
 
 Token cache: `$XDG_RUNTIME_DIR/xtrm/gh-tokens/<slug>-<account>.json` (fallback `~/.xtrm/run/...`, created `0700`),

@@ -298,6 +298,45 @@ describe('Codex worktree launcher', () => {
         expect(stdoutSpy).toHaveBeenCalledWith('coord-sess:%21\n');
     });
 
+    it('refuses an invalid role name before creating a worktree (CORE-2528)', async () => {
+        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-role-'));
+        roots.push(repoRoot);
+        const saved = { HOME: process.env.HOME };
+        process.env.HOME = path.join(repoRoot, 'home');
+        process.chdir(repoRoot);
+        let worktreeAdds = 0;
+        mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            const joined = args.join(' ');
+            if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
+            if (command === 'git' && joined.includes('remote get-url origin')) return { status: 0, stdout: 'https://github.com/xtrm-dev/core.git\n', stderr: '' };
+            if (command === 'git' && joined.startsWith('show-ref --verify')) return { status: 1, stdout: '', stderr: '' };
+            if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') { worktreeAdds += 1; return { status: 0, stdout: '', stderr: '' }; }
+            return { status: 0, stdout: '', stderr: '' };
+        });
+        exitByThrow();
+        const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            const { launchCodexWorktreeSession } = await import('../utils/codex-worktree-session.js');
+            await expect(launchCodexWorktreeSession({ name: 'bad', role: '../evil', attach: false, yolo: true })).rejects.toThrow('exit:1');
+        } finally {
+            for (const [k, v] of Object.entries(saved)) {
+                if (v === undefined) delete process.env[k];
+                else process.env[k] = v;
+            }
+        }
+        const said = [
+            ...stderr.mock.calls.map(([line]) => String(line)),
+            ...consoleError.mock.calls.map(([line]) => String(line)),
+        ].join('');
+        stderr.mockRestore();
+        consoleError.mockRestore();
+        expect(said).toMatch(/not a valid role or specialist name/);
+        expect(worktreeAdds).toBe(0);
+    });
+
     it('removes the worktree and branch after a post-creation tmux failure', async () => {
         const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-cleanup-'));
         roots.push(repoRoot);

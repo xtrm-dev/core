@@ -658,14 +658,17 @@ export function createIdentityCommand(): Command {
                     hard: false,
                 });
             }
-            checks.push({
-                check: 'role map',
-                ok: map !== null,
-                detail: map
-                    ? `${roleMapPath(home)} (version ${ROLE_MAP_VERSION})`
-                    : `${roleMapPath(home)} is invalid: every agent acts as no role`,
-                hard: true,
-            });
+            // With no role map the next check would contradict the identities line.
+            if (roleMapConfigured(home)) {
+                checks.push({
+                    check: 'role map',
+                    ok: map !== null,
+                    detail: map
+                        ? `${roleMapPath(home)} (version ${ROLE_MAP_VERSION})`
+                        : `${roleMapPath(home)} is invalid; launches keep the operator identity and print a warning`,
+                    hard: false,
+                });
+            }
             for (const [role, slug] of Object.entries((map ?? DEFAULT_ROLE_MAP).apps)) {
                 const config = readAppConfig(slug, { home });
                 if (!config) {

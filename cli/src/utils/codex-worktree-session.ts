@@ -19,7 +19,7 @@ import {
     type CodexTrustProfile,
 } from '../core/codex-session.js';
 import { buildDispatcherEnv } from '../core/dispatcher-identity.js';
-import { resolveLaunchIdentity } from '../core/launch-identity.js';
+import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import {
@@ -217,6 +217,13 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     if (existingBranch.status === 0) fail(`Worktree branch already exists: ${branchName}`);
     if (existingBranch.status !== 1) fail(`Could not verify worktree branch ownership: ${branchName}`);
     if (existsSync(worktreePath)) fail(`Worktree path already exists: ${worktreePath}`);
+
+    // CORE-2528: decide BEFORE the worktree and branch are created, and before
+    // `sp view` runs: an invalid role name, an unmapped supervisor activation or
+    // an explicit reviewer without its App must not leave state behind.
+    const identityPreflight = preflightLaunchIdentity({ roleName: opts.role, cwd: mainRoot });
+    if (identityPreflight.refused) fail(identityPreflight.refused);
+    if (identityPreflight.warning) process.stderr.write(`xt: ${identityPreflight.warning}\n`);
 
     let roleName: string | undefined;
     let developerInstructions: string | undefined;

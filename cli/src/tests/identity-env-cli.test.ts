@@ -262,7 +262,7 @@ describe('a refused override is explained on stderr (batch 4, item 5)', () => {
 });
 
 describe('identity doctor without a role map (CORE-2528 remainder)', () => {
-    it('says identities are not configured instead of warning per App', () => {
+    it('says identities are not configured, prints no contradictory role-map line, and still names the Apps', () => {
         const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-nomap-'));
         try {
             const result = spawnSync(process.execPath, [CLI, 'identity', 'doctor', '--json'], {
@@ -274,6 +274,7 @@ describe('identity doctor without a role map (CORE-2528 remainder)', () => {
             const report = JSON.parse(String(result.stdout ?? '{}'));
             const checks = JSON.stringify(report);
             expect(checks).toContain('identities not configured');
+            expect(checks).not.toContain('"check":"role map"');
         } finally {
             fs.rmSync(home, { recursive: true, force: true });
         }
