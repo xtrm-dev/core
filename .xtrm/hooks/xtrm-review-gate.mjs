@@ -119,6 +119,7 @@ function simpleCommands(command) {
             continue;
         }
         if (char === "'" || char === '"') { quote = char; started = true; index += 1; continue; }
+        if (char === '\\' && command[index + 1] === '\n') { index += 2; continue; }
         if (char === '\\' && index + 1 < command.length) { word += command[index + 1]; started = true; index += 2; continue; }
         if (char === '<' && command[index + 1] === '<') {
             // Heredoc marker: <<EOF, <<'EOF', <<-EOF.
@@ -127,14 +128,22 @@ function simpleCommands(command) {
             while (cursor < command.length && command[cursor] === ' ') cursor += 1;
             let delimiter = '';
             while (cursor < command.length && /[A-Za-z0-9_]/.test(command[cursor])) { delimiter += command[cursor]; cursor += 1; }
-            flushWord();
+            // The command carrying the heredoc ends at the body: flush it, so the
+            // next command after the delimiter is parsed on its own.
+            flushCommand();
             heredoc = delimiter || null;
             index = cursor;
             continue;
         }
-        if (char === ';' || char === '|' || char === '&' || char === '\n') {
+        if (char === ';' || char === '|' || char === '&' || char === '\n' || char === '(' || char === ')' || char === '{' || char === '}') {
             flushCommand();
             index += 1;
+            continue;
+        }
+        if (char === '#' && !started) {
+            // A comment runs to the end of the line; an apostrophe in it is not a quote.
+            const newline = command.indexOf('\n', index);
+            index = newline < 0 ? command.length : newline + 1;
             continue;
         }
         if (char === ' ' || char === '\t') { flushWord(); index += 1; continue; }
@@ -159,6 +168,18 @@ function splitAssignments(argv) {
     return { assignments, rest: argv.slice(index) };
 }
 
+/** Flags whose next word is a value, so a `-h` there is a value, not help. */
+const VALUE_FLAGS = ['-b', '--body', '-F', '--body-file', '-t', '--subject', '-A', '--author-email', '-R', '--repo', '--match-head-commit'];
+
+function hasOwnHelp(argv) {
+    for (let i = 0; i < argv.length; i += 1) {
+        const arg = argv[i];
+        if (arg === '--help' || arg === '-h') return true;
+        if (VALUE_FLAGS.includes(arg)) i += 1;
+    }
+    return false;
+}
+
 /** Skip `-R o/r`, `--repo o/r`, `--repo=o/r`, `-Ro/r`; return the next index. */
 function skipRepo(argv, index, repo) {
     const arg = argv[index];
@@ -181,9 +202,27 @@ function mergeCommands(command) {
     const found = [];
     for (const raw of simpleCommands(command)) {
         const { assignments, rest } = splitAssignments(raw);
-        if (rest[0] !== 'gh') continue;
+        // Wrappers, keywords and absolute paths (CORE-2530 review B): `command gh`,
+        // `env X=1 gh`, `sudo -E gh`, `time gh`, `nohup gh`, `exec gh`, `xargs gh`,
+        // `/usr/bin/gh`, a leading `!`, `(`, `{`, `then`, `do`, `else`.
+        let start = 0;
+        for (;;) {
+            const word = rest[start];
+            if (word === undefined) break;
+            if (word === '!' || word === '(' || word === '{' || word === 'then' || word === 'do' || word === 'else' || word === 'elif' || word === 'if') { start += 1; continue; }
+            if (word === 'command' || word === 'env' || word === 'sudo' || word === 'time' || word === 'nohup' || word === 'exec' || word === 'xargs') {
+                start += 1;
+                while (rest[start] !== undefined && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(rest[start]) || rest[start].charAt(0) === '-')) start += 1;
+                continue;
+            }
+            break;
+        }
+        const program = rest[start];
+        if (!program) continue;
+        const base = program.slice(program.lastIndexOf('/') + 1);
+        if (base !== 'gh') continue;
         const repo = { value: '' };
-        let index = 1;
+        let index = start + 1;
         let sawPr = false;
         while (index < rest.length) {
             const next = skipRepo(rest, index, repo);
@@ -204,11 +243,11 @@ function mergeCommands(command) {
             break;
         }
         if (verb !== 'merge') continue;
-        // Help for this command is not a merge.
-        const own = rest.slice(rest.indexOf('pr') + 1);
-        if (own.some((arg) => arg === '--help' || arg === '-h')) continue;
+        // Help for this command is not a merge. Only the merge command's own
+        // flags count: a value such as `--body -h` is a body, not help.
+        if (hasOwnHelp(rest.slice(index + 1))) continue;
         // gh's own argv without the program name, which is what the shim sees too.
-        found.push({ argv: rest.slice(1), assignments });
+        found.push({ argv: rest.slice(start + 1), assignments });
     }
     return found;
 }
@@ -240,6 +279,11 @@ function pre(payload) {
     // (CORE-2530 review, ruled). The hook still allows; the reminder is a post
     // concern and is unaffected.
     if (!guardEnabled(process.env)) allow();
+    if (JSON.stringify(merges.map((merge) => merge.argv)).length > 100_000) {
+        // A single argv above the exec limit cannot be handed to xt (E2BIG). Say
+        // what happened instead of reporting a merge refusal (CORE-2530 review G).
+        block('merge blocked (xtrm-review-gate): this command is too large to inspect (over 100 kB of arguments); pass the PR number explicitly, or turn the guard off with ' + GUARD_ENV + '.');
+    }
     const cwd = (payload && payload.cwd) || process.cwd();
     for (const merge of merges) {
         // The hook never decides an override: it forwards every `VAR=value` prefix

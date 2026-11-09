@@ -133,7 +133,9 @@ if (argv[0] === 'identity' && argv[1] === 'merge-check' && argv.indexOf('--gh-ar
     process.stdout.write(JSON.stringify({ allow: false, repo: target.repo, pr: target.pr, head: target.head, message: 'merge refused: no review at the current head' }));
     process.exit(1);
   }
-  process.stdout.write(JSON.stringify({ allow: true, repo: target.repo, pr: target.pr, head: target.head, message: 'merge allowed' }));
+  // An override decision carries no head; the shim must resolve and pin it (A).
+  const head = process.env.STUB_NO_HEAD ? '' : target.head;
+  process.stdout.write(JSON.stringify({ allow: true, repo: target.repo, pr: target.pr, head, message: 'merge allowed' }));
   process.exit(0);
 }
 `);
@@ -257,6 +259,16 @@ describe('the guard flag ON path', () => {
         const posted = workCalls().find((argv) => argv[1] === 'review-post');
         expect(posted?.[posted.indexOf('--repo') + 1]).toBe('xtrm-dev/core');
         expect(posted?.[posted.indexOf('--pr') + 1]).toBe('5');
+    });
+
+    it('pins the head the override path lost, and records it (review A)', () => {
+        const result = runShim(['pr', 'merge', '123', '--repo', 'xtrm-dev/core', '--squash'], { STUB_ROLE: 'coordinator', XTRM_MERGE_GUARD: 'on', STUB_NO_HEAD: '1' });
+        expect(result.status).toBe(0);
+        const merges = readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'merge');
+        expect(merges[0]).toContain('--match-head-commit');
+        expect(merges[0][merges[0].indexOf('--match-head-commit') + 1]).toBe('b'.repeat(40));
+        const record = mergeRecords().pop();
+        expect(record?.[record.indexOf('--head') + 1]).toBe('b'.repeat(40));
     });
 
     it('does not append a second --match-head-commit when one is already given', () => {
@@ -489,6 +501,12 @@ describe('the api header allowlist and endpoint rules (batch 5, item 4)', () => 
             expect(result.status, args.join(' ')).not.toBe(0);
             expect(result.stderr, args.join(' ')).toMatch(/Accept or X-GitHub-Api-Version/);
         }
+    });
+
+    it('refuses Accept-Language, which shares the accept prefix (review H, M35)', () => {
+        const result = runShim(['api', 'repos/o/r/pulls/5', '-H', 'Accept-Language:x'], { STUB_ROLE: 'reviewer' });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toMatch(/only send Accept or X-GitHub-Api-Version/);
     });
 
     it('allows the two representation headers', () => {

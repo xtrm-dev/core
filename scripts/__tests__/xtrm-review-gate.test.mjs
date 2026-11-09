@@ -19,6 +19,7 @@ const NODE_DIR = path.dirname(process.execPath);
 let tmp = '';
 let bin = '';
 let calls = '';
+let nodeOnly = '';
 
 function writeExecutable(file, content) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -44,7 +45,7 @@ function runHook(mode, payload, extraEnv = {}, options = {}) {
         env: {
             // The fake xt runs on node, so node's own directory stays on PATH; the
             // hook's `xt` lookup is confined to the first entry.
-            PATH: `${options.path ?? bin}:${NODE_DIR}`,
+            PATH: `${options.path ?? bin}:${nodeOnly}`,
             HOME: tmp,
             ...extraEnv,
         },
@@ -74,6 +75,9 @@ beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-gate-'));
     bin = path.join(tmp, 'bin');
     calls = path.join(tmp, 'calls.log');
+    nodeOnly = path.join(tmp, 'node-only');
+    fs.mkdirSync(nodeOnly, { recursive: true });
+    fs.symlinkSync(process.execPath, path.join(nodeOnly, 'node'));
     fs.mkdirSync(bin, { recursive: true });
     fakeXt();
 });
@@ -191,6 +195,139 @@ describe('guarded forms (item 5)', () => {
         const result = runHook('pre', mergePayload('gh api repos/o/r/pulls/5/merge -X PUT'), { XTRM_MERGE_GUARD: 'on' });
         assert.equal(result.status, 0);
         assert.equal(checkCalls().length, 0);
+    });
+});
+
+
+describe('wrappers and absolute paths are gated (review B)', () => {
+    const commands = [
+        '/usr/bin/gh pr merge 5',
+        'command gh pr merge 5',
+        'env X=1 gh pr merge 5',
+        'sudo -E gh pr merge 5',
+        'time gh pr merge 5',
+        'nohup gh pr merge 5',
+        'exec gh pr merge 5',
+        'xargs gh pr merge 5',
+        '! gh pr merge 5',
+        '( gh pr merge 5 )',
+        '{ gh pr merge 5; }',
+    ];
+    for (const command of commands) {
+        it(`gates: ${command}`, () => {
+            const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+            assert.equal(result.status, 0, result.stderr);
+            const checks = checkCalls();
+            assert.equal(checks.length, 1, checks.map((call) => call.argv.join(' ')).join(' | '));
+            const argvAt = checks[0].argv.indexOf('--gh-args');
+            const forwarded = JSON.parse(checks[0].argv[argvAt + 1]);
+            assert.equal(forwarded[0], 'pr');
+            assert.equal(forwarded[1], 'merge');
+            assert.equal(forwarded[2], '5');
+        });
+    }
+
+    it('leaves eval and command substitution to the shim', () => {
+        for (const command of ['eval "gh pr merge 5"', 'sh -c "gh pr merge 5"', 'gh pr merge $(pr-number)']) {
+            const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+            assert.equal(result.status, 0, `${command}: ${result.stderr}`);
+        }
+    });
+});
+
+describe('heredocs, comments and continuations (review C)', () => {
+    it('does not gate a merge line inside a heredoc body', () => {
+        const command = 'cat <<EOF > notes.txt\ngh pr merge 5\nEOF\ngit status';
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(checkCalls().length, 0);
+    });
+
+    it('still sees the merge after a heredoc command', () => {
+        const command = 'cat <<\'EOF\' > notes.txt\nbody\nEOF\ngh pr merge 5';
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks.length, 1, checks.map((call) => call.argv.join(' ')).join(' | '));
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '5']);
+    });
+
+    it('ignores an apostrophe in a comment', () => {
+        const command = "# don't gh pr merge here\ngh status";
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(checkCalls().length, 0);
+    });
+
+    it('treats backslash-newline as a continuation, not as a target', () => {
+        const command = 'gh pr \\\nmerge \\\n5';
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks.length, 1, checks.map((call) => call.argv.join(' ')).join(' | '));
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '5']);
+    });
+});
+
+describe('fail-closed, help, chains, cwd and tool scope (review D)', () => {
+    it('blocks with guard ON when xt cannot run, and names the flag', () => {
+        // A non-executable `xt` on PATH: spawn fails, the hook must fail closed
+        // rather than let an unchecked merge through. (A truly absent binary is the
+        // same branch; node's own bin directory may itself contain a global xt.)
+        const broken = path.join(tmp, 'no-xt');
+        fs.mkdirSync(broken, { recursive: true });
+        fs.writeFileSync(path.join(broken, 'xt'), 'not executable');
+        const result = runHook('pre', mergePayload('gh pr merge 5'), { XTRM_MERGE_GUARD: 'on' }, { path: broken });
+        assert.equal(result.status, 2);
+        assert.match(result.stderr, /XTRM_MERGE_GUARD/);
+    });
+
+    it('does not treat a flag VALUE of -h or --help as help', () => {
+        for (const command of ['gh pr merge 5 --body -h', 'gh pr merge 5 --body-file --help']) {
+            const before = checkCalls().length;
+            const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(checkCalls().length - before, 1, command);
+        }
+    });
+
+    it('does not gate the merge command\'s own --help', () => {
+        const result = runHook('pre', mergePayload('gh pr merge 5 --help'), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(checkCalls().length, 0);
+    });
+
+    it('forwards the payload cwd to merge-check', () => {
+        const cwd = path.join(tmp, 'work');
+        fs.mkdirSync(cwd, { recursive: true });
+        const result = runHook('pre', mergePayload('gh pr merge 5', cwd), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks[0].argv[checks[0].argv.indexOf('--cwd') + 1], cwd);
+    });
+
+    it('checks every merge in a chain', () => {
+        const result = runHook('pre', mergePayload('gh pr merge 5 && gh pr merge 6'), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const forwarded = checkCalls().map((call) => JSON.parse(call.argv[call.argv.indexOf('--gh-args') + 1]));
+        assert.deepEqual(forwarded, [['pr', 'merge', '5'], ['pr', 'merge', '6']]);
+    });
+
+    it('never checks a non-Bash tool', () => {
+        const result = runHook('pre', { hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { command: 'gh pr merge 5' } }, { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0);
+        assert.equal(checkCalls().length, 0);
+    });
+
+    it('reports an oversized command accurately, and allows it with the guard off', () => {
+        const huge = `gh pr merge 5 --body ${'x'.repeat(110_000)}`;
+        const on = runHook('pre', mergePayload(huge), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(on.status, 2);
+        assert.match(on.stderr, /too large to inspect/);
+        const off = runHook('pre', mergePayload(huge), {});
+        assert.equal(off.status, 0);
     });
 });
 

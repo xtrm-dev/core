@@ -71809,7 +71809,14 @@ function main() {
     }
     const repo = checked.data.repo;
     const pr = checked.data.pr;
-    const head = checked.data.head || '';
+    // The pin must survive the override path: a decision without a head (the
+    // coordinator override, App absent) still needs the resolved head, and
+    // resolve-gh is the same resolver that produced the repo and PR above.
+    let head = checked.data.head || '';
+    if (!head) {
+      const resolved = xtJson(['identity', 'resolve-gh', '--argv', JSON.stringify(args), '--cwd', process.cwd()]);
+      head = (resolved.data && resolved.data.head) || '';
+    }
     const pinned = args.some((arg) => arg === '--match-head-commit' || arg.indexOf('--match-head-commit=') === 0);
     const mergeArgs = pinned || !head ? args : [...args, '--match-head-commit', head];
     const merged = spawnSync(real, mergeArgs, { stdio: 'inherit' });
@@ -72503,6 +72510,9 @@ function resolveGhTarget(argvText, cwd) {
       if (view.ok && typeof view.data?.headRefOid === "string") head = view.data.headRefOid;
     }
     return { ...base, repo, pr: inv.pr, head };
+  }
+  if (inv.target && /[$`]/.test(inv.target)) {
+    return { ...base, repo: inv.repo, pr: 0, head: "", error: `cannot resolve '${inv.target}' statically (an unexpanded variable or command substitution); pass an explicit PR number` };
   }
   if (inv.target) {
     if (!inv.repo) return { ...base, repo: "", pr: 0, head: "", error: `cannot resolve branch '${inv.target}' without --repo` };

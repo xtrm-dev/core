@@ -209,6 +209,9 @@ export function resolveGhTarget(argvText: string, cwd: string): GhTarget {
         }
         return { ...base, repo, pr: inv.pr, head };
     }
+    if (inv.target && /[$`]/.test(inv.target)) {
+        return { ...base, repo: inv.repo, pr: 0, head: '', error: `cannot resolve '${inv.target}' statically (an unexpanded variable or command substitution); pass an explicit PR number` };
+    }
     if (inv.target) {
         // A branch: look the PR up in the named repository, never in the cwd.
         if (!inv.repo) return { ...base, repo: '', pr: 0, head: '', error: `cannot resolve branch '${inv.target}' without --repo` };

@@ -130,7 +130,9 @@ so on stderr.
   guard as a PreToolUse check: it tokenises the Bash command and gates only a simple command whose
   argv is `gh … pr … merge`, then hands that argv to `xt identity merge-check --gh-args`. Text in
   quotes, heredocs or another program's arguments never triggers it, and the PR it checks is the
-  PR the shim resolves. The hook is **Claude Code only**; Pi and Codex rely on the shim.
+  PR the shim resolves. A branch target without `--repo` is refused by design: neither the hook nor
+  the CLI guesses a repository for it. The hook is **Claude Code only**; Pi and Codex rely on the
+  shim.
 
 For a review, read the pushed head and post one review at that head: PASS -> APPROVE,
 PARTIAL -> COMMENT, FAIL -> REQUEST_CHANGES. A stale approval is not evidence.
@@ -138,6 +140,10 @@ PARTIAL -> COMMENT, FAIL -> REQUEST_CHANGES. A stale approval is not evidence.
 Client-side only: any agent that holds the operator's `gh` login can call the GitHub API directly,
 and `gh api …/pulls/N/merge` is refused only for the reviewer role by the shim. The guard catches
 errors and stale or missing reviews; it is not protection against a hostile agent on the same unix
-user. The hook parses one command string: `$GH pr merge`, `g\h pr merge`, and commands handed to
-`sh -c` or `eval` are invisible to it — the shim is the backstop there. When the reviewer App is
+user. The hook parses one command string. It does gate common spellings — `/usr/bin/gh`,
+`command gh`, `env X=1 gh`, `sudo gh`, `time gh`, `nohup gh`, `exec gh`, `xargs gh`, a leading `!`,
+`(`, `{`, `then`/`do`/`else`, quoted `'pr'`/`"gh"`, and `g\h` — but `$GH pr merge`, `$(…)` and
+backticks, and commands handed to `sh -c` or `eval`, are invisible to it; the shim is the backstop
+there, and a target it cannot resolve statically is reported as such, asking for an explicit PR
+number. When the reviewer App is
 unavailable the guard blocks merges and the override is the documented way out.

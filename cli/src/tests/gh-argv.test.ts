@@ -3,7 +3,8 @@
 // number, URL or branch wins; only a command with no target falls back to the cwd
 // PR; a flag value is never the target.
 
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -63,6 +64,13 @@ describe('parseInvocation', () => {
     });
 });
 
+describe('parseInvocation (repo flags)', () => {
+    it('takes the LAST repo flag, as gh does', () => {
+        expect(parseInvocation(['pr', '-R', 'first/repo', 'merge', '5', '-R', 'last/repo'])).toMatchObject({ repo: 'last/repo', pr: 5 });
+        expect(parseInvocation(['pr', '--repo=first/repo', 'merge', '5', '--repo=last/repo'])).toMatchObject({ repo: 'last/repo', pr: 5 });
+    });
+});
+
 describe('resolveGhTarget (target rules)', () => {
     it('resolves an explicit number in the cwd repository, not the cwd PR', () => {
         const resolved = resolve(['pr', 'merge', '5']);
@@ -93,9 +101,92 @@ describe('resolveGhTarget (target rules)', () => {
         expect(resolved.pr).toBe(77);
     });
 
+    it('refuses an unexpanded variable or substitution as a target (report G)', () => {
+        for (const target of ['$PR', '$(pr-number)']) {
+            const resolved = resolve(['pr', 'merge', target]);
+            expect(resolved.error).toMatch(/statically/);
+            expect(resolved.error).toMatch(/explicit PR number/);
+        }
+    });
+
     it('refuses a branch without a repository instead of guessing the cwd PR', () => {
         const resolved = resolve(['pr', 'merge', 'feat-x']);
         expect(resolved.error).toMatch(/without --repo/);
         expect(resolved.pr).toBe(0);
     });
+});
+
+describe('xt identity merge-check --gh-args (report E)', () => {
+    it('resolves the target from the JSON argv, with no --repo/--pr given', () => {
+        const dist = path.resolve(__dirname, '..', '..', 'dist', 'index.cjs');
+        const env: NodeJS.ProcessEnv = { ...process.env, XTRM_REAL_GH: ghPath, HOME: root };
+        delete env.SUBSTRATE_HOLDER;
+        delete env.XTRM_MERGE_GUARD;
+        const result = spawnSync(process.execPath, [dist, 'identity', 'merge-check', '--gh-args', JSON.stringify(['pr', 'merge', '5']), '--cwd', root, '--json'], { encoding: 'utf8', env, timeout: 20000, killSignal: 'SIGKILL' });
+        expect(result.status).toBe(0);
+        const decision = JSON.parse(result.stdout);
+        expect(decision.repo).toBe('o/r');
+        expect(decision.pr).toBe(5);
+        expect(decision.message).toMatch(/merge guard is off/);
+    });
+
+    it('fails when --gh-args is ignored (the option is not decorative)', () => {
+        const dist = path.resolve(__dirname, '..', '..', 'dist', 'index.cjs');
+        const env: NodeJS.ProcessEnv = { ...process.env, XTRM_REAL_GH: ghPath, HOME: root };
+        delete env.SUBSTRATE_HOLDER;
+        delete env.XTRM_MERGE_GUARD;
+        // Same command without --gh-args: nothing resolves, so the CLI must refuse.
+        const result = spawnSync(process.execPath, [dist, 'identity', 'merge-check', '--cwd', root], { encoding: 'utf8', env, timeout: 20000, killSignal: 'SIGKILL' });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toMatch(/pass --repo and --pr/);
+    });
+});
+
+describe('the three verb finders agree (report H)', () => {
+    const spellings = [
+        'gh pr merge 5',
+        'gh -R o/r pr merge 5',
+        'gh pr -R o/r merge 5',
+        "gh 'pr' merge 5",
+        '/usr/bin/gh pr merge 5',
+        'command gh pr merge 5',
+        'env X=1 gh pr merge 5',
+        'sudo gh pr merge 5',
+        'gh pr merge --repo o/r -b 42 5',
+    ];
+
+    for (const spelling of spellings) {
+        it(`CLI and hook agree on: ${spelling}`, () => {
+            // CLI finder.
+            const argv = spelling
+                .replace(/^(?:\/usr\/bin\/|command |env X=1 |sudo )/, '')
+                .replace(/'/g, '')
+                .replace(/^gh /, '')
+                .split(/\s+/);
+            const cli = parseInvocation(argv);
+            expect(cli.verb).toBe('merge');
+
+            // Hook finder, as a real process with a stub xt that records its argv.
+            const hook = path.resolve(__dirname, '..', '..', '..', 'hooks', 'xtrm-review-gate.mjs');
+            const log = path.join(root, 'hook.log');
+            const dir = path.join(root, 'hook-bin');
+            mkdirSync(dir, { recursive: true });
+            const xt = path.join(dir, 'xt');
+            writeFileSync(xt, `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(log)}, process.argv.slice(2)[process.argv.slice(2).indexOf('--gh-args') + 1] + '\\n');\nprocess.stdout.write(JSON.stringify({ allow: true, repo: 'o/r', pr: 5, head: '' }));\n`);
+            chmodSync(xt, 0o755);
+            const result = spawnSync(process.execPath, [hook, 'pre'], {
+                input: JSON.stringify({ tool_name: 'Bash', cwd: root, tool_input: { command: spelling } }),
+                encoding: 'utf8',
+                env: { PATH: `${dir}:${path.dirname(process.execPath)}`, HOME: root, XTRM_MERGE_GUARD: 'on' },
+                timeout: 20000,
+                killSignal: 'SIGKILL',
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const forwarded = JSON.parse(require('node:fs').readFileSync(log, 'utf8').trim().split('\n').pop()!);
+            const hookParsed = parseInvocation(forwarded);
+            expect(hookParsed.verb).toBe(cli.verb);
+            expect(hookParsed.pr).toBe(cli.pr);
+            expect(hookParsed.repo).toBe(cli.repo);
+        });
+    }
 });

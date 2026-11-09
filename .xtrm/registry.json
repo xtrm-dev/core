@@ -71,7 +71,7 @@
           "version": "0.15.3"
         },
         "xtrm-review-gate.mjs": {
-          "hash": "36bb7da06e5363816ee2aaa0bac8777ae07e352efb895cc9bd29df64a7873133",
+          "hash": "9f3369143135026feadd7de4d9fcab8d592b0bece685e98d23f3ca9b4b0f5907",
           "version": "0.15.3"
         },
         "xtrm-session-logger.mjs": {
@@ -122,7 +122,7 @@
           "version": "0.15.3"
         },
         "engineering-quality/references/review.md": {
-          "hash": "b548714818cabb460b3d88a53dace08569b981a6b37e0bf4c3268390d4be38a8",
+          "hash": "7e2e1e25a684e205589647c35e6bfc42faaeda16bf42d326670b562a9f246272",
           "version": "0.15.3"
         },
         "engineering-quality/references/testing.md": {
