@@ -163,12 +163,27 @@ export function createHelpCommand(): Command {
                 '    After a shim change run xt jira setup. See docs/jira-identity.md.',
             ]));
 
-            blocks.push(section('AGENT GIT IDENTITY', [
+            blocks.push(section('AGENT IDENTITY (GITHUB APPS)', [
                 '  xt identity env [--json]',
-                '    Print the git author/committer env an agent commit carries (CORE-2525).',
+                '    Print this session\'s git author env and role (CORE-2525/2528).',
                 '    Name = SUBSTRATE_HOLDER; email = the operator email until the role Apps exist.',
-                '    Empty for an operator session (no SUBSTRATE_HOLDER). Launchers export the same env.',
+                '    Empty for an operator session, so the load command is always safe.',
                 '    KEY=VALUE lines; load with: eval "$(xt identity env | sed \'s/^/export /\')".',
+                '  xt identity role-map | token --repo <owner/name> | credential <get|store|erase>',
+                '    Role routing (reviewer | coordinator | worker), one-hour App tokens, and the',
+                '    git credential helper that answers only for this role\'s App.',
+                '  xt identity review-post --repo <r> --pr <n> --body-file <file>',
+                '    One formal review. The body carries line 1 "Review by <role> (<model>) at head',
+                '    <sha12>" and exactly one "- Verdict: PASS|PARTIAL|FAIL"; head, model and event are',
+                '    derived from it, a disagreeing flag is refused, and the tool adds the line-2 marker.',
+                '    Agents reach it through the gh shim: plain `gh pr review`.',
+                '  xt identity merge-check --repo <r> --pr <n>',
+                '    Allow or refuse a merge; called by the gh shim and by the xtrm-review-gate hook.',
+                '    Allows only a reviewer-App review at the current head (or PARTIAL plus a Journal',
+                '    decision). Override: XTRM_MERGE_GUARD_OVERRIDE=<reason>, coordinator/operator only.',
+                '  xt identity setup | doctor [--json]',
+                '    Install/refresh the gh shim, role map and routing reminder; report App and key state.',
+                '    The GitHub Apps themselves are operator-created: see docs/github-apps-operator-runbook.md.',
             ]));
 
             blocks.push(section('SESSION CLOSE', [

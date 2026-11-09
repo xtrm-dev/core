@@ -133,7 +133,8 @@ describe('DISPATCHER_ENV_KEYS', () => {
 
 describe('readIdentityEnv', () => {
     it('reports no identity for an operator session', () => {
-        expect(readIdentityEnv({}, '/tmp')).toEqual({ holder: null, env: {} });
+        // CORE-2528 adds the role field to the same report.
+        expect(readIdentityEnv({}, '/tmp')).toEqual({ holder: null, role: null, env: {} });
     });
 
     it('reports the holder and its git env', () => {

@@ -233,6 +233,59 @@ Secrets and non-secrets live apart.
 
 4. Do not put the key in a worktree, `/tmp`, a shell profile, a tmux environment or the Substrate store. Later phases read it by path; nothing prints it.
 
+## What the code provides once an App exists (CORE-2528)
+
+Without an App on disk, every token path fails closed with a message naming the missing file and no agent
+picks up a credential. Two routes behave differently by design: the review route refuses (a review cannot be
+postponed to the operator's login without lying about who reviewed), while the merge route is flag-gated and
+OFF by default, so installing the shim cannot refuse every agent merge before the Apps exist.
+
+Known limits, accepted rather than hidden:
+
+- `SUBSTRATE_HOLDER`, `XTRM_ROLE`, `XTRM_MERGE_GUARD`, `XTRM_MERGE_GUARD_OVERRIDE` and the `<!-- xtrm … -->`
+  marker all live in the agent's own environment, so that agent can change them; they are signed by nothing.
+  This is the accepted same-unix-user limit, not a control. The shim's pass-through uses that process's own
+  `gh` login, which is the operator login unless the App credential is configured. The controls are attribution on
+  every review (agent/run marker plus a Journal receipt), refusal of a review of the holder's own PR, a
+  refusal to review a PR that carries no marker at all, and a merge guard that reads GitHub's review state
+  rather than the local declaration.
+- `xt identity token --role` is honoured only in an operator shell outside an agent tree; inside an agent tree
+  it may only name the process's own resolved role. The reviewer token is minted by the `review-post` path and,
+  for reads only, by `merge-check` and `merge-record`; it is never printed. An unknown role name gets no credential.
+- The reviewer's `gh api` restriction is an allowlist (a plain GET only: no method other than GET, no
+  field/input flags, no graphql, no issues endpoint), not a complete sandbox: anything the shim passes through
+  reaches the real `gh` with the operator's login, and `gh issue close` is not intercepted.
+- Each guarded `gh` call (`pr merge`, `pr close|edit|ready|reopen`, `api`) costs one `xt identity role --json`
+  lookup, measured at about 0.17 s; other commands do not pay it.
+- `XTRM_MERGE_GUARD` (unset = off; `on`, `1`, `true`, `yes` enable it) gates the merge check. With it off the
+  shim passes `gh pr merge` through and prints one line saying the guard is off. With it on, an unreachable
+  GitHub or App is still refusable by `XTRM_MERGE_GUARD_OVERRIDE` from the coordinator or the operator, and an
+  override whose log and Journal receipt both fail is refused, not allowed.
+
+| Command | What it does |
+| --- | --- |
+| `xt identity doctor` | Reports role map validity, each App's `app.json` and key mode, recorded installations and the `gh` shim. Exit 1 on a hard failure (bad role map, missing/foreign/stale shim, key readable by group/other). |
+| `xt identity setup` | Creates `~/.xtrm/config/identity-role-map.json` (when absent), installs the `gh` shim to `~/.local/bin/gh`, installs the reviewer routing reminder. Never creates an App. |
+| `xt identity token --repo <owner/name> [--role <role>]` | Mints or reuses a one-hour installation token for this process's resolved role. `--role` is an operator-shell convenience: inside an agent tree it may only name that session's own role, an unknown name is refused, and the reviewer token is refused here (`review-post` and, for reads, `merge-check`/`merge-record` mint it). Prints the token by design (an agent that runs it puts the token in its transcript). The shim mints internally and never prints; `review-post` prints the review URL, id, `commit_id` and state, never a token. |
+| `xt identity credential get` | The git credential helper answer: `username=x-access-token`, `password=<installation token>`. Answers only for `https://github.com/<owner>/…` and only for this role's App; otherwise it stays silent. |
+| `xt identity review-post --repo <r> --pr <n> --body-file <file>` | One formal review. The body's line 1 (`Review by <role> (<model>) at head <sha12>`) supplies the head and model, and its single `- Verdict:` line supplies the event; a disagreeing flag or environment value is refused. The tool pins `commit_id`, adds the line-2 marker (agent, run, Issue) and prints url, id, `commit_id` and state. Called by the `gh` shim, so agents keep plain `gh pr review`. |
+| `xt identity merge-check --repo <r> --pr <n>` | Allow or refuse a merge. Off unless `XTRM_MERGE_GUARD=on`. Refusal names the ways to get a review and the coordinator/operator override; an override whose log and Journal writes both fail is itself refused. |
+| `xt identity merge-record` | Post-merge `github-merge` Journal ref, called by the shim after a successful `gh pr merge`. |
+
+Files the code reads (nothing else is authoritative):
+
+- `~/.xtrm/identities/github-apps/<slug>/app.json` — `slug`, `appId`, `owner`, `installations` (account to id).
+- `~/.secrets/github-apps/<slug>.pem` — the private key, mode `600`; its directory mode `700`.
+- `~/.xtrm/config/identity-role-map.json` — role and specialist routing. Absent means the shipped default (worker); invalid means every agent gets no credential.
+- `~/.xtrm/config/reviewer-routing.md` — the text the review reminder prints. Operator-editable.
+
+Token cache: `$XDG_RUNTIME_DIR/xtrm/gh-tokens/<slug>-<account>.json` (fallback `~/.xtrm/run/...`, created `0700`),
+mode `600`, reused for 5 minutes before its expiry. The key must be mode `600` at mint time, not only when
+`doctor` runs, and the cache directory is tightened to `0700` — if it cannot be, the mint fails rather than
+writing a token into a readable directory (`writeCached` throws). Nothing prints or logs a token except the
+`token` command above; `xt identity doctor` shows no key material. The override log honours `XDG_STATE_HOME`
+(`$XDG_STATE_HOME/xtrm/merge-guard-override.log`, mode `600`).
+
 ## Verification checklist
 
 This runbook does not mint tokens, so most behavioural checks cannot pass at install time. The list is split by what makes each check possible.
