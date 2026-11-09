@@ -227,8 +227,14 @@ describe('compile-policies — output structure', () => {
     const parsed = JSON.parse(result.stdout);
     for (const [event, groups] of Object.entries<Array<{ hooks: Array<{ command: string }> }>>(parsed.hooks)) {
       const commands = groups.flatMap((g) => g.hooks.map((h) => h.command));
-      expect(commands, `${event} commands`).toHaveLength(1);
-      expect(commands[0], `${event} command`).toMatch(/\/hooks\/dispatch\.mjs (pre|post|session|event)$/);
+      // CORE-2530: one dispatcher process per event, plus the named review gate
+      // on Bash only. Any other second process fails this test.
+      const dispatchers = commands.filter((command) => command.includes('/hooks/dispatch.mjs'));
+      expect(dispatchers, `${event} dispatcher`).toHaveLength(1);
+      expect(dispatchers[0], `${event} command`).toMatch(/\/hooks\/dispatch\.mjs (pre|post|session|event)$/);
+      for (const extra of commands.filter((command) => !command.includes('/hooks/dispatch.mjs'))) {
+        expect(extra, `${event} extra hook`).toMatch(/\/hooks\/xtrm-review-gate\.mjs (pre|post)$/);
+      }
     }
     expect(Object.keys(parsed.hooks).sort()).toEqual(
       ['Notification', 'PostToolUse', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'SubagentStop', 'UserPromptSubmit'],

@@ -1,0 +1,23 @@
+{
+  "id": "xtrm-review-gate",
+  "description": "Client-side review gate (CORE-2530): a Bash PreToolUse runs `xt identity merge-check` before any `gh pr merge` and blocks on a refusal, so no merge lands without a reviewer-App review at the current head; a Bash PostToolUse prints the reviewer routing reminder after `gh pr create` and never blocks it. GitHub Actions is billing-locked, so this hook plus policies/hook-dispatcher.json is the whole gate. It runs as its own process because merge-check calls the GitHub API and Substrate, which exceeds the 2 s PreToolUse budget of the shared dispatcher.",
+  "version": "1",
+  "runtime": "claude",
+  "order": 20,
+  "claude": {
+    "hooks": [
+      {
+        "event": "PreToolUse",
+        "matcher": "Bash",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-review-gate.mjs pre",
+        "timeout": 30000
+      },
+      {
+        "event": "PostToolUse",
+        "matcher": "Bash",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-review-gate.mjs post",
+        "timeout": 10000
+      }
+    ]
+  }
+}

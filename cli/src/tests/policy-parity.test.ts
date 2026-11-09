@@ -101,7 +101,11 @@ describe('cross-runtime coverage', () => {
     // XTRM-592: the agent host reporter (XTRM-569; its Pi side is the
     // xtrm-agent-host extension) and the Stop inbox reminder run inside the
     // dispatcher too, so it is the only policy with Claude hooks.
-    expect(claudePolicies.map(p => p.file).sort()).toEqual(['hook-dispatcher.json']);
+    // CORE-2530 adds xtrm-review-gate.json: the client-side merge guard and the
+    // reviewer reminder run on Claude Code's PreToolUse/PostToolUse Bash surface.
+    // Pi needs no equivalent — every runtime reaches the same guard through the
+    // gh shim (`gh pr merge` -> xt identity merge-check), which is runtime-agnostic.
+    expect(claudePolicies.map(p => p.file).sort()).toEqual(['hook-dispatcher.json', 'xtrm-review-gate.json']);
   });
 
   it('every policy declares wiring only for the runtimes it targets', () => {
@@ -120,7 +124,9 @@ describe('cross-runtime coverage', () => {
     // regression this file exists to catch.
     const claudeOnly = claudePolicies
       .map(p => p.file)
-      .filter(file => file !== 'hook-dispatcher.json');
+      .filter(file => file !== 'hook-dispatcher.json' && file !== 'xtrm-review-gate.json');
+    // xtrm-review-gate.json is the one accepted Claude-only policy (CORE-2530):
+    // Pi agents get the same enforcement from the gh shim, not from a hook.
     expect(claudeOnly).toEqual([]);
   });
 

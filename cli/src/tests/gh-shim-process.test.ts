@@ -10,7 +10,7 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import path, { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ghShimSource } from '../core/gh-shim.js';
@@ -42,9 +42,14 @@ function readLog(path: string): string[][] {
     }
 }
 
-/** The shim asks xt for its resolved role first; that call is not the work. */
+/** The shim's identity work, without the role lookup. */
 function workCalls(): string[][] {
     return readLog(xtLog).filter((argv) => argv[0] === 'identity' && argv[1] !== 'role');
+}
+
+/** What the shim actually merged and recorded, which carries the resolved PR. */
+function mergeRecords(): string[][] {
+    return workCalls().filter((argv) => argv[1] === 'merge-record');
 }
 
 function runShim(args: string[], env: Record<string, string> = {}): { status: number | null; stdout: string; stderr: string } {
@@ -95,16 +100,42 @@ if (process.argv.slice(2).join(' ') === 'pr view --json number,url,headRefOid') 
 }
 `);
     stub('xt', xtLog, `
+const { spawnSync } = require('node:child_process');
+const DIST = ${JSON.stringify(path.join(process.cwd(), 'dist', 'index.cjs'))};
+const REAL_GH = ${JSON.stringify(join(bin, 'gh'))};
 const argv = process.argv.slice(2);
-if (argv[0] === 'identity' && argv[1] === 'merge-check' && process.env.STUB_CHECK === 'refuse') {
-  process.stderr.write('merge refused: no review at the current head\\n');
-  process.exit(1);
+function runDist(extra) {
+  const result = spawnSync(process.execPath, [DIST, ...extra], {
+    encoding: 'utf8',
+    env: { ...process.env, XTRM_REAL_GH: REAL_GH },
+  });
+  return result;
 }
-if (process.argv.slice(2).join(' ') === 'identity role --json') {
-  // Log FIRST: otherwise a role lookup is invisible to the laziness test.
-  fs.appendFileSync(${JSON.stringify(xtLog)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+if (argv[0] === 'identity' && argv[1] === 'role') {
+  fs.appendFileSync(${JSON.stringify(xtLog)}, JSON.stringify(argv) + '\\n');
   if (process.env.STUB_ROLE === 'fail') process.exit(1);
   process.stdout.write(JSON.stringify({ role: process.env.STUB_ROLE || null, source: 'specialist', holder: 'h' }));
+  process.exit(0);
+}
+if (argv[0] === 'identity' && argv[1] === 'resolve-gh') {
+  // The REAL resolver runs, with the stub gh pretending to be GitHub.
+  const result = runDist(['identity', 'resolve-gh', ...argv.slice(2)]);
+  process.stdout.write(result.stdout || '');
+  process.stderr.write(result.stderr || '');
+  process.exit(result.status === null ? 1 : result.status);
+}
+if (argv[0] === 'identity' && argv[1] === 'merge-check' && argv.indexOf('--gh-args') > 0) {
+  // Real resolution, stubbed decision: the guard's verdict is what the shim tests.
+  const resolved = runDist(['identity', 'resolve-gh', '--argv', argv[argv.indexOf('--gh-args') + 1], '--cwd', argv[argv.indexOf('--cwd') + 1] || process.cwd()]);
+  let target = { repo: '', pr: 0, head: '' };
+  try { target = JSON.parse(resolved.stdout || '{}'); } catch (error) { target = { repo: '', pr: 0, head: '' }; }
+  if (process.env.STUB_CHECK === 'refuse') {
+    process.stdout.write(JSON.stringify({ allow: false, repo: target.repo, pr: target.pr, head: target.head, message: 'merge refused: no review at the current head' }));
+    process.exit(1);
+  }
+  // An override decision carries no head; the shim must resolve and pin it (A).
+  const head = process.env.STUB_NO_HEAD ? '' : target.head;
+  process.stdout.write(JSON.stringify({ allow: true, repo: target.repo, pr: target.pr, head, message: 'merge allowed' }));
   process.exit(0);
 }
 `);
@@ -133,8 +164,8 @@ describe('gh pr review through the real shim process', () => {
         expect(result.stderr).toBe('');
         expect(result.status).toBe(0);
 
-        const calls = workCalls();
-        expect(calls).toHaveLength(1);
+        const calls = workCalls().filter((argv) => argv[1] === 'review-post');
+        expect(calls.map((argv) => argv.slice(0, 2).join(' '))).toHaveLength(1);
         const argv = calls[0];
         expect(argv.slice(0, 2)).toEqual(['identity', 'review-post']);
         const prFlags = argv.filter((arg) => arg === '--pr');
@@ -203,9 +234,7 @@ describe('the guard flag ON path', () => {
     it('checks, merges and records the PR named in the argument, not the cwd PR', () => {
         const result = runShim(['pr', 'merge', '123', '--repo', 'xtrm-dev/core', '--squash'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
         expect(result.status).toBe(0);
-        const check = workCalls().find((argv) => argv[1] === 'merge-check');
-        const record = workCalls().find((argv) => argv[1] === 'merge-record');
-        expect(check?.[check.indexOf('--pr') + 1]).toBe('123');
+        const record = mergeRecords().pop();
         expect(record?.[record.indexOf('--pr') + 1]).toBe('123');
         const merges = readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'merge');
         expect(merges[0]?.slice(0, 2)).toEqual(['pr', 'merge']);
@@ -215,21 +244,31 @@ describe('the guard flag ON path', () => {
     it('resolves a bare number through the current repository', () => {
         const result = runShim(['pr', 'merge', '123', '--squash'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
         expect(result.status).toBe(0);
-        const check = workCalls().find((argv) => argv[1] === 'merge-check');
-        expect(check?.[check.indexOf('--repo') + 1]).toBe('xtrm-dev/core');
-        expect(check?.[check.indexOf('--pr') + 1]).toBe('123');
+        const record = mergeRecords().pop();
+        expect(record?.[record.indexOf('--repo') + 1]).toBe('xtrm-dev/core');
+        expect(record?.[record.indexOf('--pr') + 1]).toBe('123');
     });
 
     it('parses a PR URL and a -Ro/r form', () => {
         const url = runShim(['pr', 'merge', 'https://github.com/xtrm-dev/core/pull/77', '--squash'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
         expect(url.status).toBe(0);
-        expect(workCalls().find((argv) => argv[1] === 'merge-check')).toContain('77');
+        expect(mergeRecords().pop()?.[mergeRecords()[0].indexOf('--pr') + 1]).toBe('77');
 
         const attached = runShim(['pr', 'review', '5', '-Rxtrm-dev/core', '--comment', '--body-file', join(root, 'f.md')], { STUB_ROLE: 'reviewer' });
         expect(attached.status).toBe(0);
         const posted = workCalls().find((argv) => argv[1] === 'review-post');
         expect(posted?.[posted.indexOf('--repo') + 1]).toBe('xtrm-dev/core');
         expect(posted?.[posted.indexOf('--pr') + 1]).toBe('5');
+    });
+
+    it('pins the head the override path lost, and records it (review A)', () => {
+        const result = runShim(['pr', 'merge', '123', '--repo', 'xtrm-dev/core', '--squash'], { STUB_ROLE: 'coordinator', XTRM_MERGE_GUARD: 'on', STUB_NO_HEAD: '1' });
+        expect(result.status).toBe(0);
+        const merges = readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'merge');
+        expect(merges[0]).toContain('--match-head-commit');
+        expect(merges[0][merges[0].indexOf('--match-head-commit') + 1]).toBe('b'.repeat(40));
+        const record = mergeRecords().pop();
+        expect(record?.[record.indexOf('--head') + 1]).toBe('b'.repeat(40));
     });
 
     it('does not append a second --match-head-commit when one is already given', () => {
@@ -251,11 +290,9 @@ describe('branch and short-flag targets (CORE-2528 delta review #1, #2)', () => 
     it('resolves a branch target to its own PR, not the cwd PR', () => {
         const merged = runShim(['pr', 'merge', 'feat-x', '--repo', 'o/r'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
         expect(merged.status).toBe(0);
-        const check = workCalls().find((argv) => argv[1] === 'merge-check');
-        const record = workCalls().find((argv) => argv[1] === 'merge-record');
-        expect(check?.[check.indexOf('--pr') + 1]).toBe('7');
-        expect(check?.[check.indexOf('--repo') + 1]).toBe('o/r');
+        const record = mergeRecords().pop();
         expect(record?.[record.indexOf('--pr') + 1]).toBe('7');
+        expect(record?.[record.indexOf('--repo') + 1]).toBe('o/r');
         const merges = readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'merge');
         expect(merges[0]?.slice(0, 3)).toEqual(['pr', 'merge', 'feat-x']);
     });
@@ -272,8 +309,8 @@ describe('branch and short-flag targets (CORE-2528 delta review #1, #2)', () => 
         for (const flag of ['-s', '-m', '-r']) {
             const result = runShim(['pr', 'merge', flag, '123', '--repo', 'o/r'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
             expect(result.status, flag).toBe(0);
-            const check = workCalls().find((argv) => argv[1] === 'merge-check');
-            expect(check?.[check.indexOf('--pr') + 1], flag).toBe('123');
+            const record = mergeRecords().pop();
+            expect(record?.[record.indexOf('--pr') + 1], flag).toBe('123');
         }
     });
 
@@ -318,10 +355,10 @@ describe('global flags before the verb (batch 4, item 1)', () => {
             const result = runShim(args, { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
             expect(result.status, args.join(' ')).toBe(0);
             const called = mergeCalls().slice(before);
-            expect(called.length, args.join(' ')).toBeGreaterThanOrEqual(2); // check + record
-            const check = called.find((argv) => argv[1] === 'merge-check');
-            expect(check?.[check.indexOf('--repo') + 1], args.join(' ')).toBe('o/r');
-            expect(check?.[check.indexOf('--pr') + 1], args.join(' ')).toBe('5');
+            expect(called.length, args.join(' ')).toBeGreaterThanOrEqual(1); // the guard was consulted
+            const record = mergeRecords().pop();
+            expect(record?.[record.indexOf('--repo') + 1], args.join(' ')).toBe('o/r');
+            expect(record?.[record.indexOf('--pr') + 1], args.join(' ')).toBe('5');
         }
     });
 
@@ -406,9 +443,9 @@ describe('root-level flags before pr (batch 5, item 1)', () => {
         for (const args of [['-R', 'o/r', 'pr', 'merge', '5'], ['--repo=o/r', 'pr', 'merge', '5']]) {
             const result = runShim(args, { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
             expect(result.status, args.join(' ')).toBe(0);
-            const check = workCalls().filter((argv) => argv[1] === 'merge-check').pop();
-            expect(check?.[check.indexOf('--repo') + 1], args.join(' ')).toBe('o/r');
-            expect(check?.[check.indexOf('--pr') + 1], args.join(' ')).toBe('5');
+            const record = mergeRecords().pop();
+            expect(record?.[record.indexOf('--repo') + 1], args.join(' ')).toBe('o/r');
+            expect(record?.[record.indexOf('--pr') + 1], args.join(' ')).toBe('5');
         }
     });
 
@@ -466,6 +503,12 @@ describe('the api header allowlist and endpoint rules (batch 5, item 4)', () => 
         }
     });
 
+    it('refuses Accept-Language, which shares the accept prefix (review H, M35)', () => {
+        const result = runShim(['api', 'repos/o/r/pulls/5', '-H', 'Accept-Language:x'], { STUB_ROLE: 'reviewer' });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toMatch(/only send Accept or X-GitHub-Api-Version/);
+    });
+
     it('allows the two representation headers', () => {
         for (const args of [
             ['api', 'repos/o/r/pulls/5', '-H', 'Accept: application/vnd.github+json'],
@@ -508,8 +551,8 @@ describe('merge value flags keep the next argument (batch 4, item 5)', () => {
         ]) {
             const result = runShim(args, { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
             expect(result.status, args.join(' ')).toBe(0);
-            const check = workCalls().filter((argv) => argv[1] === 'merge-check').pop();
-            expect(check?.[check.indexOf('--pr') + 1], args.join(' ')).toBe('123');
+            const record = mergeRecords().pop();
+            expect(record?.[record.indexOf('--pr') + 1], args.join(' ')).toBe('123');
         }
     });
 });

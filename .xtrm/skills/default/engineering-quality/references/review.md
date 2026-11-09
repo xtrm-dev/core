@@ -105,3 +105,49 @@ shell nodes and mutating tools run only after the operator issues the trusted-ru
 that run — never assume it. Experimental workflow flags stay off by default. The receipt is the
 inspected revision digest plus the run result, or the failure evidence when a run fails; record
 it verbatim and invent nothing.
+## Merge gate and reviewer routing (CORE-2530)
+
+A PR merges only with a review by the reviewer App (**`xtrm-reviewer[bot]`**) at its current
+head. GitHub Actions is billing-locked and the organisation is on the Free plan, so nothing on
+GitHub enforces it: the check runs on the agent's machine.
+
+The merge guard is **OFF by default**: it runs only when `XTRM_MERGE_GUARD` is `on`, `1`, `true`
+or `yes`. With it off, both the `gh` shim and the Claude Code hook pass the merge through and say
+so on stderr.
+
+- `gh pr merge` first runs `xt identity merge-check`. It refuses when the bot's latest review is
+  missing, is at an older head, or requested changes. A `COMMENT` (PARTIAL) review passes only
+  with a later coordinator decision, for that head, in the Issue Journal. The refusal text names
+  the allowed reviewer paths; `XTRM_MERGE_GUARD_OVERRIDE=<reason>` is for the coordinator and the
+  operator, is logged, and journals a decision on the Issue.
+- The tier rule — HIGH or critical needs a Claude-backed reviewer — lives in the reminder
+  (`~/.xtrm/config/reviewer-routing.md`, installed by `xt identity setup`).
+- The `gh` shim (`xt identity setup` installs it as `~/.local/bin/gh`) carries the merge guard and
+  turns `gh pr review` into a formal review pinned to the reviewed head when the agent runs as the
+  reviewer role. The shim has **no** `gh pr create` handling: the create reminder below is the
+  Claude Code hook's, so Pi and Codex agents get no reminder.
+- The Claude Code hook `xtrm-review-gate` (policy `policies/xtrm-review-gate.json`) runs the same
+  guard as a PreToolUse check: it tokenises the Bash command and gates only a simple command whose
+  argv is `gh … pr … merge`, then hands that argv to `xt identity merge-check --gh-args`. Text in
+  quotes, heredocs or another program's arguments never triggers it, and the PR it checks is the
+  PR the shim resolves. A branch target without `--repo` is refused by design: neither the hook nor
+  the CLI guesses a repository for it. The hook is **Claude Code only**; Pi and Codex rely on the
+  shim.
+
+For a review, read the pushed head and post one review at that head: PASS -> APPROVE,
+PARTIAL -> COMMENT, FAIL -> REQUEST_CHANGES. A stale approval is not evidence.
+
+Client-side only: any agent that holds the operator's `gh` login can call the GitHub API directly,
+and `gh api …/pulls/N/merge` is refused only for the reviewer role by the shim. The guard catches
+errors and stale or missing reviews; it is not protection against a hostile agent on the same unix
+user. The hook parses one command string. It gates the common spellings — `/usr/bin/gh`,
+`command gh`, `env X=1 gh`, `sudo gh`, `time gh`, `nohup gh`, `exec gh`, `xargs gh`, a leading `!`,
+`(`, `{`, `then`/`do`/`else`, quoted `'pr'`/`"gh"`, `g\h`, and CRLF line endings — and it treats a
+`$(…)` substitution as a command boundary, so the merge is still gated even though the substitution's
+value is not seen. Not gated and not parsed: `sudo -u root gh` (a value between `sudo` and `gh`),
+`timeout`, `nice`, `stdbuf`, `setsid`, `watch`, `parallel`, `busybox` and `find -exec`; the shim is
+the backstop for those. `xargs gh pr merge` takes its target from stdin, so the hook checks the cwd
+PR instead of the piped one. A target the resolver cannot read statically (`$PR`) is refused with a
+message asking for an explicit PR number, and an argv over 100 kB is reported as too large to
+inspect. Backticks, `eval` and `sh -c` strings are invisible to the hook. When the reviewer App is
+unavailable the guard blocks merges and the override is the documented way out.

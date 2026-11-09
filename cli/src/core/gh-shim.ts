@@ -152,6 +152,13 @@ function xtPassthrough(args) {
   return result.status === null ? 1 : result.status;
 }
 
+function xtJson(args) {
+  const answer = xtQuiet(args);
+  let data = null;
+  try { data = JSON.parse(answer.stdout || 'null'); } catch (error) { data = null; }
+  return { status: answer.status, data, stderr: (answer.stderr || '').trim() };
+}
+
 function xtQuiet(args) {
   return spawnSync('xt', args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
 }
@@ -160,76 +167,7 @@ function xtQuiet(args) {
 // The real gh flag tables (CORE-2528 delta review #2). A value flag consumes the
 // next argument; a boolean flag does not. Short forms differ per verb: -r is
 // --request-changes for pr review and --rebase for pr merge.
-const MERGE_VALUE_FLAGS = new Set(['-b', '--body', '-F', '--body-file', '-t', '--subject', '-A', '--author-email', '-R', '--repo', '--match-head-commit']);
-const REVIEW_VALUE_FLAGS = new Set(['-b', '--body', '-F', '--body-file', '-R', '--repo']);
-const EDIT_VALUE_FLAGS = new Set(['-b', '--body', '-t', '--title', '-B', '--base', '-R', '--repo', '--add-label', '--remove-label', '--add-assignee', '--add-reviewer', '--milestone']);
 
-function valueFlags(verb) {
-  if (verb === 'review') return REVIEW_VALUE_FLAGS;
-  if (verb === 'edit') return EDIT_VALUE_FLAGS;
-  return MERGE_VALUE_FLAGS;
-}
-
-/**
- * Split a gh argument list into its repository, its positional target and the
- * remaining arguments. The target is a number, a PR URL or a branch name; the
- * repository comes from --repo/-R (separate, =value or attached -Rvalue).
- */
-function parseTarget(rest, verb) {
-  const values = valueFlags(verb);
-  let repo = '';
-  const kept = [];
-  for (let i = 0; i < rest.length; i += 1) {
-    const arg = rest[i];
-    if (arg === '--repo' || arg === '-R') {
-      repo = rest[i + 1] || repo;
-      i += 1;
-      continue;
-    }
-    if (arg.indexOf('--repo=') === 0) { repo = arg.slice('--repo='.length); continue; }
-    if (arg.indexOf('-R=') === 0) { repo = arg.slice('-R='.length); continue; }
-    if (arg.indexOf('-R') === 0 && arg.length > 2) { repo = arg.slice(2); continue; }
-    kept.push(arg);
-  }
-  let target = '';
-  const forwarded = [];
-  for (let i = 0; i < kept.length; i += 1) {
-    const arg = kept[i];
-    if (arg === '--') { forwarded.push(...kept.slice(i + 1)); break; }
-    if (arg.charAt(0) === '-') {
-      forwarded.push(arg);
-      if (values.has(arg) && i + 1 < kept.length) { forwarded.push(kept[i + 1]); i += 1; }
-      continue;
-    }
-    // The first bare word is the target: a number, a URL or a branch name.
-    if (!target) {
-      target = arg;
-    } else {
-      forwarded.push(arg);
-    }
-  }
-  return { repo, target, forwarded };
-}
-
-/** gh's review short flags, translated to the long options xt defines. */
-function translateReviewFlags(args) {
-  const map = { '-a': '--approve', '-c': '--comment', '-r': '--request-changes', '-b': '--body', '-F': '--body-file' };
-  const takesValue = new Set(['-b', '-F', '--body', '--body-file']);
-  const out = [];
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
-    if (takesValue.has(arg)) {
-      // The next token is a VALUE: never rewrite it, even when it looks like a
-      // flag (gh pr review 5 --body -c means the body is "-c").
-      out.push(map[arg] || arg);
-      if (i + 1 < args.length) { out.push(args[i + 1]); i += 1; }
-      continue;
-    }
-    if (arg.indexOf('--body=') === 0 || arg.indexOf('--body-file=') === 0) { out.push(arg); continue; }
-    out.push(map[arg] || arg);
-  }
-  return out;
-}
 
 const RESTRICTED_WHEN_UNRESOLVED = '__role_lookup_failed__';
 
@@ -254,13 +192,6 @@ function resolvedRole() {
 /** Restricted means "may not merge, close, edit, reopen or ready". */
 function isRestricted(role) {
   return role === 'reviewer' || role === RESTRICTED_WHEN_UNRESOLVED;
-}
-
-function targetPr(target) {
-  if (!target) return 0;
-  const url = /^https?:\\/\\/github\\.com\\/[^/]+\\/[^/]+\\/pull\\/(\\d+)/.exec(target);
-  if (url) return Number(url[1]);
-  return /^\\d+$/.test(target) ? Number(target) : 0;
 }
 
 /**
@@ -313,64 +244,6 @@ function reviewerApiVerdict(args) {
   if (/\\/issues(\\/|$)/i.test(endpoint)) return 'the reviewer role may not write through the issues endpoint';
   if (/\\/merge(\\/|$)/i.test(endpoint)) return 'the reviewer role may not merge (gh api .../merge)';
   return null;
-}
-
-function viewInfo(view) {
-  if (view.status !== 0) return { repo: '', pr: 0, head: '' };
-  let info;
-  try { info = JSON.parse(view.stdout); } catch (error) { return { repo: '', pr: 0, head: '' }; }
-  const match = /^https?:\\/\\/github\\.com\\/([^/]+\\/[^/]+)\\/pull\\/(\\d+)$/.exec(info.url || '');
-  return { repo: match ? match[1] : '', pr: match ? Number(match[2]) : 0, head: info.headRefOid || '' };
-}
-
-function repoFromUrl(target) {
-  const match = /^https?:\\/\\/github\\.com\\/([^/]+)\\/([^/]+)\\/pull\\/(\\d+)/.exec(target || '');
-  return match ? { repo: match[1] + '/' + match[2], pr: Number(match[3]) } : null;
-}
-
-/** The current repository, for a bare PR number. */
-function currentRepo(real) {
-  const view = capture(real, ['repo', 'view', '--json', 'nameWithOwner']);
-  if (view.status !== 0) return '';
-  try {
-    const parsed = JSON.parse(view.stdout);
-    return typeof parsed.nameWithOwner === 'string' ? parsed.nameWithOwner : '';
-  } catch (error) {
-    return '';
-  }
-}
-
-/**
- * Resolve the repository and PR the user means. A URL carries both; a number
- * needs --repo or the current repository; a branch needs --repo and is looked up
- * as a PR. Nothing here falls back to the cwd PR when a target was named.
- */
-function resolveTarget(real, parsed) {
-  const fromUrl = repoFromUrl(parsed.target);
-  if (fromUrl) return { repo: parsed.repo || fromUrl.repo, pr: fromUrl.pr, head: '' };
-  const number = targetPr(parsed.target);
-  if (number) {
-    return { repo: parsed.repo || currentRepo(real), pr: number, head: '' };
-  }
-  if (parsed.target) {
-    const repo = parsed.repo || currentRepo(real);
-    if (!repo) return { repo: '', pr: 0, head: '' };
-    const view = capture(real, ['pr', 'view', parsed.target, '--repo', repo, '--json', 'number,headRefOid']);
-    if (view.status !== 0) return { repo: '', pr: 0, head: '' };
-    try {
-      const info = JSON.parse(view.stdout);
-      return { repo, pr: Number(info.number) || 0, head: info.headRefOid || '' };
-    } catch (error) {
-      return { repo: '', pr: 0, head: '' };
-    }
-  }
-  const here = currentPr(real);
-  return { repo: parsed.repo || here.repo, pr: here.pr, head: here.head };
-}
-
-
-function currentPr(real) {
-  return viewInfo(capture(real, ['pr', 'view', '--json', 'number,url,headRefOid']));
 }
 
 function mergeGuardOn() {
@@ -432,16 +305,14 @@ function main() {
   };
 
   if (verb === 'review') {
-    // A real parser: the target may be a number, a URL or a branch; --repo may be
-    // --repo=o/r; a number after a boolean flag is the target, not a value.
-    const parsed = parseTarget(args.slice(found.index + 1), 'review');
-    const looked = resolveTarget(real, { repo: parsed.repo || found.repo, target: parsed.target });
-    const repo = looked.repo;
-    const pr = looked.pr;
-    if (!repo || !pr) die('cannot tell which pull request to review: pass a number, a URL or --repo');
-    // gh's short flags (-a, -c, -r, -b, -F) are gh's own; map them to xt's options.
-    const forwarded = translateReviewFlags(parsed.forwarded);
-    process.exit(xtPassthrough(['identity', 'review-post', '--repo', repo, '--pr', String(pr), ...forwarded]));
+    // One parser for the target (CORE-2530 review): the CLI resolves the same gh
+    // argv the shim received, so a hook and a shim can never pick different PRs.
+    const resolved = xtJson(['identity', 'resolve-gh', '--argv', JSON.stringify(args), '--cwd', process.cwd()]);
+    if (!resolved.data || !resolved.data.repo || !resolved.data.pr) {
+      die('cannot tell which pull request to review: ' + (resolved.stderr || 'pass a number, a URL or --repo'));
+    }
+    const forwarded = Array.isArray(resolved.data.forwarded) ? resolved.data.forwarded : [];
+    process.exit(xtPassthrough(['identity', 'review-post', '--repo', resolved.data.repo, '--pr', String(resolved.data.pr), ...forwarded]));
   }
 
   if (verb === 'merge') {
@@ -452,18 +323,22 @@ function main() {
       process.stderr.write('gh (xtrm): merge guard is off (XTRM_MERGE_GUARD is not set); the merge is not checked\\n');
       pass(real, args);
     }
-    const parsed = parseTarget(args.slice(found.index + 1), 'merge');
-    const looked = resolveTarget(real, { repo: parsed.repo || found.repo, target: parsed.target });
-    let repo = looked.repo;
-    let pr = looked.pr;
-    let head = looked.head;
-    if (pr && !head) {
-      const view = capture(real, ['pr', 'view', String(pr), '--repo', repo, '--json', 'headRefOid']);
-      if (view.status === 0) { try { head = JSON.parse(view.stdout).headRefOid || ''; } catch (error) { head = ''; } }
+    const checked = xtJson(['identity', 'merge-check', '--gh-args', JSON.stringify(args), '--cwd', process.cwd(), '--json']);
+    if (checked.status !== 0 || !checked.data || checked.data.allow !== true) {
+      const message = (checked.data && checked.data.message) || checked.stderr || 'the merge guard refused this merge';
+      process.stderr.write(message + '\\n');
+      process.exit(1);
     }
-    if (!repo || !pr) die('cannot tell which pull request to merge: pass a number, a URL or --repo');
-    const checked = xtPassthrough(['identity', 'merge-check', '--repo', repo, '--pr', String(pr)]);
-    if (checked !== 0) process.exit(checked);
+    const repo = checked.data.repo;
+    const pr = checked.data.pr;
+    // The pin must survive the override path: a decision without a head (the
+    // coordinator override, App absent) still needs the resolved head, and
+    // resolve-gh is the same resolver that produced the repo and PR above.
+    let head = checked.data.head || '';
+    if (!head) {
+      const resolved = xtJson(['identity', 'resolve-gh', '--argv', JSON.stringify(args), '--cwd', process.cwd()]);
+      head = (resolved.data && resolved.data.head) || '';
+    }
     const pinned = args.some((arg) => arg === '--match-head-commit' || arg.indexOf('--match-head-commit=') === 0);
     const mergeArgs = pinned || !head ? args : [...args, '--match-head-commit', head];
     const merged = spawnSync(real, mergeArgs, { stdio: 'inherit' });
@@ -478,8 +353,8 @@ function main() {
     process.exit(status);
   }
 
-  // The verb test comes FIRST: gh pr view and gh issue list must not pay a
-  // role lookup (CORE-2528 batch 5).
+  // The verb test comes FIRST: gh pr view and gh issue list must not pay a role
+  // lookup (CORE-2528 batch 5).
   if ((verb === 'close' || verb === 'edit' || verb === 'ready' || verb === 'reopen') && isRestricted(roleOf())) {
     die('the reviewer role may not change PR state (gh pr ' + verb + ')');
   }

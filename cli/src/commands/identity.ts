@@ -53,6 +53,7 @@ import {
 import { applyOverride, mergeCheck, mergeGuardEnabled, recordMerge, MERGE_GUARD_ENV_VAR, OVERRIDE_ENV_VAR, type MergeDecision } from '../core/merge-guard.js';
 import { isSafeIssueRef } from '../core/review-posting.js';
 import { installRoutingReminder } from '../core/reviewer-routing.js';
+import { parseInvocation } from '../core/gh-argv.js';
 
 export interface IdentityEnvReport {
     holder: string | null;
@@ -134,6 +135,95 @@ async function reviewerTokenFor(repo: string, map: RoleMap): Promise<{ token: st
     const slug = appSlugForRole('reviewer', map);
     const minted = await mintInstallationToken({ slug, account }, appDeps());
     return { token: minted.token, slug, account };
+}
+
+interface GhTarget {
+    verb: string | null;
+    repo: string;
+    pr: number;
+    head: string;
+    forwarded: string[];
+    assignments: Record<string, string>;
+    error?: string;
+}
+
+function realGh(): string {
+    return (process.env.XTRM_REAL_GH ?? '').trim() || 'gh';
+}
+
+function ghView(args: string[], cwd: string): { ok: boolean; data?: Record<string, unknown> } {
+    const result = spawnSync(realGh(), args, {
+        encoding: 'utf8',
+        cwd,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 20_000,
+        env: process.env,
+    });
+    if (result.error || result.status !== 0) return { ok: false };
+    try {
+        const data = JSON.parse(result.stdout) as Record<string, unknown>;
+        return { ok: true, data };
+    } catch {
+        return { ok: false };
+    }
+}
+
+function prFromView(data: Record<string, unknown> | undefined): { repo: string; pr: number; head: string } | null {
+    if (!data) return null;
+    const url = typeof data.url === 'string' ? data.url : '';
+    const match = /^https?:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/.exec(url);
+    if (match) return { repo: match[1], pr: Number(match[2]), head: typeof data.headRefOid === 'string' ? data.headRefOid : '' };
+    const pr = Number(data.number);
+    return Number.isInteger(pr) && pr > 0 ? { repo: '', pr, head: typeof data.headRefOid === 'string' ? data.headRefOid : '' } : null;
+}
+
+/**
+ * Resolve a gh argv to the PR it acts on (CORE-2530 review). The target rules are
+ * the ones the merged shim uses: an explicit number, branch or URL wins; only a
+ * command with no target falls back to the cwd PR; flag values are never targets.
+ */
+export function resolveGhTarget(argvText: string, cwd: string): GhTarget {
+    let argv: string[];
+    try {
+        const parsed = JSON.parse(argvText);
+        if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+            return { verb: null, repo: '', pr: 0, head: '', forwarded: [], assignments: {}, error: 'the argv must be a JSON array of strings' };
+        }
+        argv = parsed as string[];
+    } catch (error) {
+        return { verb: null, repo: '', pr: 0, head: '', forwarded: [], assignments: {}, error: `cannot parse --argv: ${(error as Error).message}` };
+    }
+    const inv = parseInvocation(argv, { fallbackVerb: 'merge' });
+    const base = { verb: inv.verb, forwarded: inv.forwarded, assignments: inv.assignments };
+    let repo = inv.repo;
+    if (!repo && inv.pr) {
+        // A bare number: the repository is the one at cwd, exactly as gh needs.
+        const view = ghView(['repo', 'view', '--json', 'nameWithOwner'], cwd);
+        if (view.ok && typeof view.data?.nameWithOwner === 'string') repo = view.data.nameWithOwner;
+    }
+    if (inv.pr) {
+        let head = '';
+        if (repo) {
+            const view = ghView(['pr', 'view', String(inv.pr), '--repo', repo, '--json', 'headRefOid'], cwd);
+            if (view.ok && typeof view.data?.headRefOid === 'string') head = view.data.headRefOid;
+        }
+        return { ...base, repo, pr: inv.pr, head };
+    }
+    if (inv.target && /[$`]/.test(inv.target)) {
+        return { ...base, repo: inv.repo, pr: 0, head: '', error: `cannot resolve '${inv.target}' statically (an unexpanded variable or command substitution); pass an explicit PR number` };
+    }
+    if (inv.target) {
+        // A branch: look the PR up in the named repository, never in the cwd.
+        if (!inv.repo) return { ...base, repo: '', pr: 0, head: '', error: `cannot resolve branch '${inv.target}' without --repo` };
+        const view = ghView(['pr', 'view', inv.target, '--repo', inv.repo, '--json', 'number,headRefOid'], cwd);
+        if (!view.ok) return { ...base, repo: inv.repo, pr: 0, head: '', error: `cannot resolve '${inv.target}' to a pull request in ${inv.repo}` };
+        const number = Number(view.data?.number);
+        const head = typeof view.data?.headRefOid === 'string' ? view.data.headRefOid : '';
+        return { ...base, repo: inv.repo, pr: Number.isInteger(number) ? number : 0, head };
+    }
+    const here = prFromView(ghView(['pr', 'view', '--json', 'number,url,headRefOid'], cwd).data);
+    if (!here) return { ...base, repo: inv.repo, pr: 0, head: '', error: 'no pull request matches this command and the current directory has none' };
+    return { ...base, repo: inv.repo || here.repo, pr: here.pr, head: here.head };
 }
 
 function runSb(args: string[]): { ok: boolean; error?: string } {
@@ -391,14 +481,37 @@ export function createIdentityCommand(): Command {
         });
 
     identity
+        .command('resolve-gh')
+        .description('Resolve a gh argv to the repository, PR and head it acts on (used by the gh shim and the gate hook)')
+        .requiredOption('--argv <json>', 'The gh argv as a JSON array, e.g. ["pr","merge","5"]')
+        .option('--cwd <dir>', 'Directory for the cwd-PR fallback', process.cwd())
+        .option('--json', 'Emit JSON (always, kept for symmetry)', false)
+        .action((opts: { argv: string; cwd: string }) => {
+            const resolved = resolveGhTarget(opts.argv, opts.cwd);
+            console.log(JSON.stringify(resolved));
+            if (resolved.error || !resolved.pr || !resolved.repo) process.exit(1);
+        });
+
+    identity
         .command('merge-check')
         .description('Allow or refuse a merge: the reviewer App\'s latest review must be at the current head')
-        .requiredOption('--repo <owner/name>', 'Repository')
-        .requiredOption('--pr <number>', 'Pull request number')
+        .option('--repo <owner/name>', 'Repository (with --pr)')
+        .option('--pr <number>', 'Pull request number (with --repo)')
+        .option('--gh-args <json>', 'A gh argv as a JSON array; the target is resolved the way gh resolves it')
+        .option('--cwd <dir>', 'Directory for the cwd-PR fallback', process.cwd())
         .option('--json', 'Emit JSON', false)
-        .action(async (opts: { repo: string; pr: string; json: boolean }) => {
-            const pr = Number(opts.pr);
-            if (!Number.isInteger(pr) || pr <= 0) fail(`--pr ${opts.pr} is not a pull request number`);
+        .action(async (opts: { repo?: string; pr?: string; ghArgs?: string; cwd: string; json: boolean }) => {
+            let repo = (opts.repo ?? '').trim();
+            let pr = Number(opts.pr ?? 0);
+            if (opts.ghArgs) {
+                const resolved = resolveGhTarget(opts.ghArgs, opts.cwd);
+                if (resolved.error) fail(resolved.error);
+                repo = resolved.repo;
+                pr = resolved.pr;
+            }
+            if (!repo || !Number.isInteger(pr) || pr <= 0) {
+                fail('pass --repo and --pr, or --gh-args \'["pr","merge","5"]\'');
+            }
             const { map } = effectiveRole();
             if (!map) fail('the role map is invalid; the guard fails closed');
             // One source of truth: mergeCheck owns the flag. The CLI only decides
@@ -409,7 +522,7 @@ export function createIdentityCommand(): Command {
             let unreachable: string | null = null;
             if (guardOn) {
                 try {
-                    token = (await reviewerTokenFor(opts.repo, map)).token;
+                    token = (await reviewerTokenFor(repo, map)).token;
                 } catch (error) {
                     unreachable = error instanceof GitHubAppError ? error.message : (error as Error).message;
                 }
@@ -423,8 +536,8 @@ export function createIdentityCommand(): Command {
             // The override must be reachable exactly when the token cannot be
             // minted, so applyOverride runs on the unreachable refusal too.
             let decision = unreachable
-                ? await unreachableRefusal(opts.repo, pr, unreachable)
-                : await mergeCheck({ repo: opts.repo, pr }, deps);
+                ? await unreachableRefusal(repo, pr, unreachable)
+                : await mergeCheck({ repo, pr }, deps);
             if (!decision.allow && (process.env[OVERRIDE_ENV_VAR] ?? '').trim()) {
                 decision = await applyOverride(decision, deps);
             }

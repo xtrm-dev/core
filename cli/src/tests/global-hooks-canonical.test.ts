@@ -45,6 +45,9 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
       ...['UserPromptSubmit', 'Notification', 'Stop', 'SubagentStop', 'SessionEnd'].map(
         (event) => `${event}:dispatch.mjs event`,
       ),
+      // CORE-2530: the Bash-only review gate (merge guard + reviewer routing).
+      'PreToolUse:xtrm-review-gate.mjs pre',
+      'PostToolUse:xtrm-review-gate.mjs post',
     ];
     expect([...entries].sort()).toEqual([...expected].sort());
   });
@@ -63,11 +66,11 @@ describe('canonical hook template (.xtrm/config/hooks.json)', () => {
     // the dispatcher's routing table (see dispatch.mjs EDIT_TOOLS/GITNEXUS_TOOLS).
     // XTRM-592: PreToolUse has no matcher either — the agent host reporter needs
     // every tool; the guards keep their tools via PRE_TOOLS in hook-routing.mjs.
-    expect(byEvent.PreToolUse).toEqual(['']);
-    // PostToolUse has no matcher: the old xtrm-tool-logger was registered for
-    // every tool (and kept full tool.call logging coverage that way). The
-    // dispatcher's internal routing is the narrower part.
-    expect(byEvent.PostToolUse).toEqual(['']);
+    expect(byEvent.PreToolUse).toEqual(['', 'Bash']);
+    // PostToolUse: the dispatcher is unconditional (the old xtrm-tool-logger was
+    // registered for every tool, and kept full tool.call logging coverage that
+    // way); the second group is CORE-2530's Bash-only review gate.
+    expect(byEvent.PostToolUse).toEqual(['', 'Bash']);
     expect(byEvent.SessionStart).toEqual(['']);
   });
 

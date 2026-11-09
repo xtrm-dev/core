@@ -9,6 +9,16 @@
             "timeout": 2000
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-review-gate.mjs pre",
+            "timeout": 30000
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -18,6 +28,16 @@
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.mjs post",
             "timeout": 30000
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/xtrm-review-gate.mjs post",
+            "timeout": 10000
           }
         ]
       }
