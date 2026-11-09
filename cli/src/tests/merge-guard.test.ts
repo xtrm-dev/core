@@ -118,6 +118,19 @@ describe('mergeCheck', () => {
         expect((await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github))).allow).toBe(false);
     });
 
+    it('refuses an approval at the head when the PR has no resolvable Issue (test first)', async () => {
+        // CORE-2528/CORE-2530: the guard ALWAYS refuses without an Issue, even for
+        // an APPROVED review at the current head. A PR body with no marker and a
+        // branch with no Issue ref leaves nothing to record the merge against.
+        const github = fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': pull(HEAD, 'a PR body with no marker'),
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [review('APPROVED')] },
+        });
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/no [Rr]esolvable|no Substrate Issue/i);
+    });
+
     it('allows an approval at the current head', async () => {
         const github = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': pull(),

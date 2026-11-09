@@ -109,6 +109,36 @@ describe('merge-check reachability and the audit trail (CORE-2528 delta M6)', ()
         }
     });
 
+    it('records the resolved head in the override log when the App is absent (test first)', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-noapp-'));
+        const state = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-state-'));
+        const bin = path.join(home, 'bin');
+        fs.mkdirSync(bin, { recursive: true });
+        const head = 'd'.repeat(40);
+        // A stub gh answers the only call the CLI makes: pr view --json number,headRefOid.
+        const gh = path.join(bin, 'gh');
+        fs.writeFileSync(gh, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ number: 42, headRefOid: '${head}' }));\n`);
+        fs.chmodSync(gh, 0o755);
+        try {
+            const result = runMergeCheck({
+                HOME: home,
+                XDG_STATE_HOME: state,
+                XTRM_MERGE_GUARD: 'on',
+                SUBSTRATE_HOLDER: 'core-xt-pi-0fln',
+                XTRM_ROLE: 'coordinator',
+                XTRM_MERGE_GUARD_OVERRIDE: 'App absent, head still recorded',
+                XTRM_REAL_GH: gh,
+            });
+            expect(result.status).toBe(0);
+            const log = fs.readFileSync(path.join(state, 'xtrm', 'merge-guard-override.log'), 'utf8');
+            const entry = JSON.parse(log.trim().split('\n').pop() ?? '{}');
+            expect(entry.head).toBe(head);
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
+            fs.rmSync(state, { recursive: true, force: true });
+        }
+    });
+
     it('refuses an override whose log and Journal writes both fail', () => {
         const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-noapp-'));
         // A regular FILE as the parent: mkdir reports ENOTDIR immediately. Never a
@@ -235,20 +265,17 @@ describe('merge-check with the guard off needs no App (batch 5, item 5)', () => 
     it('exits 0 without minting anything', () => {
         const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-noapp-'));
         try {
+            // Hermetic (CORE-2528 review, LOW): a developer shell that exports the
+            // guard flag, an override, a role or a stub must not decide this test.
+            const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, SUBSTRATE_HOLDER: 'h' };
+            for (const key of ['XTRM_MERGE_GUARD', 'XTRM_MERGE_GUARD_OVERRIDE', 'XTRM_ROLE']) delete env[key];
+            for (const key of Object.keys(env)) {
+                if (key.startsWith('STUB_')) delete env[key];
+            }
             const result = spawnSync(
                 process.execPath,
                 [CLI, 'identity', 'merge-check', '--repo', 'xtrm-dev/core', '--pr', '42'],
-                {
-                    encoding: 'utf8',
-                    env: {
-                        ...process.env,
-                        HOME: home,
-                        SUBSTRATE_HOLDER: 'h',
-                        // XTRM_MERGE_GUARD deliberately unset.
-                    },
-                    timeout: 15000,
-                    killSignal: 'SIGKILL',
-                },
+                { encoding: 'utf8', env, timeout: 15000, killSignal: 'SIGKILL' },
             );
             const stderr = String(result.stderr ?? '');
             expect(result.status).toBe(0);

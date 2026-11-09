@@ -539,6 +539,13 @@ export function createIdentityCommand(): Command {
                 ? await unreachableRefusal(repo, pr, unreachable)
                 : await mergeCheck({ repo, pr }, deps);
             if (!decision.allow && (process.env[OVERRIDE_ENV_VAR] ?? '').trim()) {
+                // The override log and the receipt need the head even when the App was
+                // unreachable and the decision carries none (CORE-2528 review).
+                if (!decision.head) {
+                    const argv = opts.ghArgs ?? JSON.stringify(['pr', 'merge', '--repo', repo, String(pr)]);
+                    const resolved = await resolveGhTarget(argv, opts.cwd ?? process.cwd());
+                    if (resolved.head) decision = { ...decision, head: resolved.head };
+                }
                 decision = await applyOverride(decision, deps);
             }
             if (opts.json) {

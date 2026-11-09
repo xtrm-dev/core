@@ -80,7 +80,9 @@ function simpleCommands(command) {
     let word = '';
     let started = false;
     let quote = '';
-    let heredoc = null;
+    // Heredocs are queued on the command line and their bodies follow the NEXT
+    // newline, in order: `cat <<'A' <<"B"` has both bodies after the newline.
+    const pending = [];
     let index = 0;
     const flushWord = () => {
         if (started) { argv.push(word); }
@@ -92,21 +94,40 @@ function simpleCommands(command) {
         if (argv.length) commands.push(argv);
         argv = [];
     };
+    const readDelimiter = (from) => {
+        let cursor = from;
+        let stripTabs = false;
+        if (command[cursor] === '-') { stripTabs = true; cursor += 1; }
+        while (cursor < command.length && (command[cursor] === ' ' || command[cursor] === '\t')) cursor += 1;
+        let delimiter = '';
+        let inner = '';
+        while (cursor < command.length) {
+            const char = command[cursor];
+            if (inner === "'") { if (char === "'") { inner = ''; } else { delimiter += char; } cursor += 1; continue; }
+            if (inner === '"') { if (char === '"') { inner = ''; } else { delimiter += char; } cursor += 1; continue; }
+            if (char === "'" || char === '"') { inner = char; cursor += 1; continue; }
+            if (char === '\\') { delimiter += command[cursor + 1] ?? ''; cursor += 2; continue; }
+            if (/[A-Za-z0-9_]/.test(char)) { delimiter += char; cursor += 1; continue; }
+            break;
+        }
+        return { delimiter, stripTabs, cursor };
+    };
+    const consumeBodies = () => {
+        for (const heredoc of pending.splice(0)) {
+            while (index < command.length) {
+                const newline = command.indexOf('\n', index);
+                const raw = newline < 0 ? command.slice(index) : command.slice(index, newline);
+                const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+                index = newline < 0 ? command.length : newline + 1;
+                // An unquoted `<<-` strips leading TABS from the body lines; the
+                // terminator matches the line exactly, never after trim().
+                const candidate = heredoc.stripTabs ? line.replace(/^\t+/, '') : line;
+                if (candidate === heredoc.delimiter) break;
+            }
+        }
+    };
     while (index < command.length) {
         const char = command[index];
-        if (heredoc) {
-            // Consume the body up to a line that is exactly the delimiter.
-            const newline = command.indexOf('\n', index);
-            const line = newline < 0 ? command.slice(index) : command.slice(index, newline);
-            if (line.trim() === heredoc) {
-                heredoc = null;
-                index = newline < 0 ? command.length : newline + 1;
-                continue;
-            }
-            if (newline < 0) break;
-            index = newline + 1;
-            continue;
-        }
         if (quote === "'") {
             if (char === "'") { quote = ''; } else { word += char; }
             index += 1;
@@ -119,44 +140,33 @@ function simpleCommands(command) {
             continue;
         }
         if (char === "'" || char === '"') { quote = char; started = true; index += 1; continue; }
-        if (char === '\\' && command[index + 1] === '\n') { index += 2; continue; }
-        if (char === '\\' && index + 1 < command.length) { word += command[index + 1]; started = true; index += 2; continue; }
+        if (char === '\\' && index + 1 < command.length) {
+            if (command[index + 1] === '\n') { index += 2; continue; }
+            word += command[index + 1]; started = true; index += 2; continue;
+        }
         if (char === '<' && command[index + 1] === '<') {
-            // Heredoc marker with quote removal: <<EOF, <<-EOF, <<'EOF', <<"EOF",
-            // <<\EOF and the mixed E"O"F form all name the same terminator.
-            let cursor = index + 2;
-            if (command[cursor] === '-') cursor += 1;
-            while (cursor < command.length && (command[cursor] === ' ' || command[cursor] === '\t')) cursor += 1;
-            let delimiter = '';
-            let heredocQuote = '';
-            while (cursor < command.length) {
-                const next = command[cursor];
-                if (heredocQuote === "'") { if (next === "'") heredocQuote = ''; else delimiter += next; cursor += 1; continue; }
-                if (heredocQuote === '"') { if (next === '"') heredocQuote = ''; else delimiter += next; cursor += 1; continue; }
-                if (next === "'" || next === '"') { heredocQuote = next; cursor += 1; continue; }
-                if (next === '\\' && cursor + 1 < command.length) { delimiter += command[cursor + 1]; cursor += 2; continue; }
-                if (/[A-Za-z0-9_]/.test(next)) { delimiter += next; cursor += 1; continue; }
-                break;
-            }
-            // The command carrying the heredoc ends at the body: flush it, so the
-            // next command after the terminator is parsed on its own.
+            const parsed = readDelimiter(index + 2);
+            if (parsed.delimiter) pending.push({ delimiter: parsed.delimiter, stripTabs: parsed.stripTabs });
             flushCommand();
-            heredoc = delimiter || null;
-            index = cursor;
+            index = parsed.cursor;
             continue;
         }
-        if (char === ';' || char === '|' || char === '&' || char === '\n' || char === '(' || char === ')' || char === '{' || char === '}') {
+        if (char === '\n') {
             flushCommand();
             index += 1;
+            if (pending.length) consumeBodies();
             continue;
         }
         if (char === '#' && !started) {
-            // A comment runs to the end of the line; an apostrophe in it is not a
-            // quote. Stop AT the newline so the newline still separates commands,
-            // otherwise `git status # check` swallows the next `gh pr merge`.
+            // The comment ends AT the newline: the newline still separates commands.
             flushCommand();
             const newline = command.indexOf('\n', index);
             index = newline < 0 ? command.length : newline;
+            continue;
+        }
+        if (char === ';' || char === '|' || char === '&' || char === '(' || char === ')' || char === '{' || char === '}') {
+            flushCommand();
+            index += 1;
             continue;
         }
         if (char === ' ' || char === '\t' || char === '\r') { flushWord(); index += 1; continue; }

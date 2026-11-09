@@ -394,6 +394,66 @@ describe('parentheses and braces separate commands (H25)', () => {
     }
 });
 
+describe('heredoc LOWs from the #883 review', () => {
+    it('registers two heredocs on one line and skips both bodies', () => {
+        // `cat <<'A' <<"B"` has both bodies after the newline, in order.
+        const command = "cat <<'A' <<\"B\" > out.txt\ngh pr merge 7\nA\ngh pr merge 8\nB\ngh pr merge 9";
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks.length, 1, checks.map((call) => call.argv.join(' ')).join(' | '));
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '9']);
+    });
+
+    it('matches the terminator exactly for an unquoted heredoc', () => {
+        // ' EOF' and 'EOFX' are body lines, not terminators; the merge inside the
+        // body must stay inert and the merge after the exact terminator must gate.
+        const command = "cat <<EOF > out.txt\nbody\n EOF\ngh pr merge 7\nEOF\ngh pr merge 9";
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks.length, 1);
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '9']);
+    });
+
+    it('accepts blanks between << and the delimiter', () => {
+        const command = "cat <<   'EOF' > out.txt\ngh pr merge 7\nEOF\ngh pr merge 9";
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        const checks = checkCalls();
+        assert.equal(checks.length, 1);
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '9']);
+    });
+
+    it('gates a merge after a tab-indented <<- terminator', () => {
+        const command = 'cat <<-EOF > out.txt\n\tbody\n\tEOF\ngh pr merge 5';
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        const checks = checkCalls();
+        assert.equal(checks.length, 1);
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '5']);
+    });
+
+    it('does not let an apostrophe in a trailing comment hide the next merge (H22)', () => {
+        const result = runHook('pre', mergePayload("git status # don't merge\ngh pr merge 5"), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks.length, 1);
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '5']);
+    });
+
+    it('carries no carriage return into the argv for a CRLF command (H32)', () => {
+        const result = runHook('pre', mergePayload('gh pr merge 5\r\n'), { XTRM_MERGE_GUARD: 'on' });
+        const checks = checkCalls();
+        assert.equal(checks.length, 1);
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '5']);
+    });
+});
+
 describe('the create reminder (post)', () => {
     it('prints the tier line from the fallback reminder when no file is installed', () => {
         const result = runHook('post', {
