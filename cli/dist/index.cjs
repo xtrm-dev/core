@@ -71570,7 +71570,7 @@ function findRealGh(deps = {}) {
   }
   return null;
 }
-function ghShimSource(realGh) {
+function ghShimSource(realGh2) {
   const body = `#!/usr/bin/env node
 ${GH_SHIM_MARKER}
 // Installed by \`xt identity setup\`. Do not edit; re-run the command instead.
@@ -71580,7 +71580,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const MARKER = '${GH_SHIM_FINGERPRINT}';
-const REAL_GH = ${JSON.stringify(realGh ?? "")};
+const REAL_GH = ${JSON.stringify(realGh2 ?? "")};
 const SELF = (() => { try { return fs.realpathSync(__filename); } catch { return __filename; } })();
 
 function die(message, code) {
@@ -71630,6 +71630,13 @@ function xtPassthrough(args) {
   return result.status === null ? 1 : result.status;
 }
 
+function xtJson(args) {
+  const answer = xtQuiet(args);
+  let data = null;
+  try { data = JSON.parse(answer.stdout || 'null'); } catch (error) { data = null; }
+  return { status: answer.status, data, stderr: (answer.stderr || '').trim() };
+}
+
 function xtQuiet(args) {
   return spawnSync('xt', args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
 }
@@ -71638,76 +71645,7 @@ function xtQuiet(args) {
 // The real gh flag tables (CORE-2528 delta review #2). A value flag consumes the
 // next argument; a boolean flag does not. Short forms differ per verb: -r is
 // --request-changes for pr review and --rebase for pr merge.
-const MERGE_VALUE_FLAGS = new Set(['-b', '--body', '-F', '--body-file', '-t', '--subject', '-A', '--author-email', '-R', '--repo', '--match-head-commit']);
-const REVIEW_VALUE_FLAGS = new Set(['-b', '--body', '-F', '--body-file', '-R', '--repo']);
-const EDIT_VALUE_FLAGS = new Set(['-b', '--body', '-t', '--title', '-B', '--base', '-R', '--repo', '--add-label', '--remove-label', '--add-assignee', '--add-reviewer', '--milestone']);
 
-function valueFlags(verb) {
-  if (verb === 'review') return REVIEW_VALUE_FLAGS;
-  if (verb === 'edit') return EDIT_VALUE_FLAGS;
-  return MERGE_VALUE_FLAGS;
-}
-
-/**
- * Split a gh argument list into its repository, its positional target and the
- * remaining arguments. The target is a number, a PR URL or a branch name; the
- * repository comes from --repo/-R (separate, =value or attached -Rvalue).
- */
-function parseTarget(rest, verb) {
-  const values = valueFlags(verb);
-  let repo = '';
-  const kept = [];
-  for (let i = 0; i < rest.length; i += 1) {
-    const arg = rest[i];
-    if (arg === '--repo' || arg === '-R') {
-      repo = rest[i + 1] || repo;
-      i += 1;
-      continue;
-    }
-    if (arg.indexOf('--repo=') === 0) { repo = arg.slice('--repo='.length); continue; }
-    if (arg.indexOf('-R=') === 0) { repo = arg.slice('-R='.length); continue; }
-    if (arg.indexOf('-R') === 0 && arg.length > 2) { repo = arg.slice(2); continue; }
-    kept.push(arg);
-  }
-  let target = '';
-  const forwarded = [];
-  for (let i = 0; i < kept.length; i += 1) {
-    const arg = kept[i];
-    if (arg === '--') { forwarded.push(...kept.slice(i + 1)); break; }
-    if (arg.charAt(0) === '-') {
-      forwarded.push(arg);
-      if (values.has(arg) && i + 1 < kept.length) { forwarded.push(kept[i + 1]); i += 1; }
-      continue;
-    }
-    // The first bare word is the target: a number, a URL or a branch name.
-    if (!target) {
-      target = arg;
-    } else {
-      forwarded.push(arg);
-    }
-  }
-  return { repo, target, forwarded };
-}
-
-/** gh's review short flags, translated to the long options xt defines. */
-function translateReviewFlags(args) {
-  const map = { '-a': '--approve', '-c': '--comment', '-r': '--request-changes', '-b': '--body', '-F': '--body-file' };
-  const takesValue = new Set(['-b', '-F', '--body', '--body-file']);
-  const out = [];
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
-    if (takesValue.has(arg)) {
-      // The next token is a VALUE: never rewrite it, even when it looks like a
-      // flag (gh pr review 5 --body -c means the body is "-c").
-      out.push(map[arg] || arg);
-      if (i + 1 < args.length) { out.push(args[i + 1]); i += 1; }
-      continue;
-    }
-    if (arg.indexOf('--body=') === 0 || arg.indexOf('--body-file=') === 0) { out.push(arg); continue; }
-    out.push(map[arg] || arg);
-  }
-  return out;
-}
 
 const RESTRICTED_WHEN_UNRESOLVED = '__role_lookup_failed__';
 
@@ -71732,13 +71670,6 @@ function resolvedRole() {
 /** Restricted means "may not merge, close, edit, reopen or ready". */
 function isRestricted(role) {
   return role === 'reviewer' || role === RESTRICTED_WHEN_UNRESOLVED;
-}
-
-function targetPr(target) {
-  if (!target) return 0;
-  const url = /^https?:\\/\\/github\\.com\\/[^/]+\\/[^/]+\\/pull\\/(\\d+)/.exec(target);
-  if (url) return Number(url[1]);
-  return /^\\d+$/.test(target) ? Number(target) : 0;
 }
 
 /**
@@ -71791,64 +71722,6 @@ function reviewerApiVerdict(args) {
   if (/\\/issues(\\/|$)/i.test(endpoint)) return 'the reviewer role may not write through the issues endpoint';
   if (/\\/merge(\\/|$)/i.test(endpoint)) return 'the reviewer role may not merge (gh api .../merge)';
   return null;
-}
-
-function viewInfo(view) {
-  if (view.status !== 0) return { repo: '', pr: 0, head: '' };
-  let info;
-  try { info = JSON.parse(view.stdout); } catch (error) { return { repo: '', pr: 0, head: '' }; }
-  const match = /^https?:\\/\\/github\\.com\\/([^/]+\\/[^/]+)\\/pull\\/(\\d+)$/.exec(info.url || '');
-  return { repo: match ? match[1] : '', pr: match ? Number(match[2]) : 0, head: info.headRefOid || '' };
-}
-
-function repoFromUrl(target) {
-  const match = /^https?:\\/\\/github\\.com\\/([^/]+)\\/([^/]+)\\/pull\\/(\\d+)/.exec(target || '');
-  return match ? { repo: match[1] + '/' + match[2], pr: Number(match[3]) } : null;
-}
-
-/** The current repository, for a bare PR number. */
-function currentRepo(real) {
-  const view = capture(real, ['repo', 'view', '--json', 'nameWithOwner']);
-  if (view.status !== 0) return '';
-  try {
-    const parsed = JSON.parse(view.stdout);
-    return typeof parsed.nameWithOwner === 'string' ? parsed.nameWithOwner : '';
-  } catch (error) {
-    return '';
-  }
-}
-
-/**
- * Resolve the repository and PR the user means. A URL carries both; a number
- * needs --repo or the current repository; a branch needs --repo and is looked up
- * as a PR. Nothing here falls back to the cwd PR when a target was named.
- */
-function resolveTarget(real, parsed) {
-  const fromUrl = repoFromUrl(parsed.target);
-  if (fromUrl) return { repo: parsed.repo || fromUrl.repo, pr: fromUrl.pr, head: '' };
-  const number = targetPr(parsed.target);
-  if (number) {
-    return { repo: parsed.repo || currentRepo(real), pr: number, head: '' };
-  }
-  if (parsed.target) {
-    const repo = parsed.repo || currentRepo(real);
-    if (!repo) return { repo: '', pr: 0, head: '' };
-    const view = capture(real, ['pr', 'view', parsed.target, '--repo', repo, '--json', 'number,headRefOid']);
-    if (view.status !== 0) return { repo: '', pr: 0, head: '' };
-    try {
-      const info = JSON.parse(view.stdout);
-      return { repo, pr: Number(info.number) || 0, head: info.headRefOid || '' };
-    } catch (error) {
-      return { repo: '', pr: 0, head: '' };
-    }
-  }
-  const here = currentPr(real);
-  return { repo: parsed.repo || here.repo, pr: here.pr, head: here.head };
-}
-
-
-function currentPr(real) {
-  return viewInfo(capture(real, ['pr', 'view', '--json', 'number,url,headRefOid']));
 }
 
 function mergeGuardOn() {
@@ -71910,16 +71783,14 @@ function main() {
   };
 
   if (verb === 'review') {
-    // A real parser: the target may be a number, a URL or a branch; --repo may be
-    // --repo=o/r; a number after a boolean flag is the target, not a value.
-    const parsed = parseTarget(args.slice(found.index + 1), 'review');
-    const looked = resolveTarget(real, { repo: parsed.repo || found.repo, target: parsed.target });
-    const repo = looked.repo;
-    const pr = looked.pr;
-    if (!repo || !pr) die('cannot tell which pull request to review: pass a number, a URL or --repo');
-    // gh's short flags (-a, -c, -r, -b, -F) are gh's own; map them to xt's options.
-    const forwarded = translateReviewFlags(parsed.forwarded);
-    process.exit(xtPassthrough(['identity', 'review-post', '--repo', repo, '--pr', String(pr), ...forwarded]));
+    // One parser for the target (CORE-2530 review): the CLI resolves the same gh
+    // argv the shim received, so a hook and a shim can never pick different PRs.
+    const resolved = xtJson(['identity', 'resolve-gh', '--argv', JSON.stringify(args), '--cwd', process.cwd()]);
+    if (!resolved.data || !resolved.data.repo || !resolved.data.pr) {
+      die('cannot tell which pull request to review: ' + (resolved.stderr || 'pass a number, a URL or --repo'));
+    }
+    const forwarded = Array.isArray(resolved.data.forwarded) ? resolved.data.forwarded : [];
+    process.exit(xtPassthrough(['identity', 'review-post', '--repo', resolved.data.repo, '--pr', String(resolved.data.pr), ...forwarded]));
   }
 
   if (verb === 'merge') {
@@ -71930,18 +71801,15 @@ function main() {
       process.stderr.write('gh (xtrm): merge guard is off (XTRM_MERGE_GUARD is not set); the merge is not checked\\n');
       pass(real, args);
     }
-    const parsed = parseTarget(args.slice(found.index + 1), 'merge');
-    const looked = resolveTarget(real, { repo: parsed.repo || found.repo, target: parsed.target });
-    let repo = looked.repo;
-    let pr = looked.pr;
-    let head = looked.head;
-    if (pr && !head) {
-      const view = capture(real, ['pr', 'view', String(pr), '--repo', repo, '--json', 'headRefOid']);
-      if (view.status === 0) { try { head = JSON.parse(view.stdout).headRefOid || ''; } catch (error) { head = ''; } }
+    const checked = xtJson(['identity', 'merge-check', '--gh-args', JSON.stringify(args), '--cwd', process.cwd(), '--json']);
+    if (checked.status !== 0 || !checked.data || checked.data.allow !== true) {
+      const message = (checked.data && checked.data.message) || checked.stderr || 'the merge guard refused this merge';
+      process.stderr.write(message + '\\n');
+      process.exit(1);
     }
-    if (!repo || !pr) die('cannot tell which pull request to merge: pass a number, a URL or --repo');
-    const checked = xtPassthrough(['identity', 'merge-check', '--repo', repo, '--pr', String(pr)]);
-    if (checked !== 0) process.exit(checked);
+    const repo = checked.data.repo;
+    const pr = checked.data.pr;
+    const head = checked.data.head || '';
     const pinned = args.some((arg) => arg === '--match-head-commit' || arg.indexOf('--match-head-commit=') === 0);
     const mergeArgs = pinned || !head ? args : [...args, '--match-head-commit', head];
     const merged = spawnSync(real, mergeArgs, { stdio: 'inherit' });
@@ -71956,8 +71824,8 @@ function main() {
     process.exit(status);
   }
 
-  // The verb test comes FIRST: gh pr view and gh issue list must not pay a
-  // role lookup (CORE-2528 batch 5).
+  // The verb test comes FIRST: gh pr view and gh issue list must not pay a role
+  // lookup (CORE-2528 batch 5).
   if ((verb === 'close' || verb === 'edit' || verb === 'ready' || verb === 'reopen') && isRestricted(roleOf())) {
     die('the reviewer role may not change PR state (gh pr ' + verb + ')');
   }
@@ -71977,27 +71845,27 @@ main();
 }
 function installGhShim(deps = {}) {
   const file2 = defaultGhShimPath(deps);
-  const realGh = findRealGh(deps);
+  const realGh2 = findRealGh(deps);
   const warnings = [];
-  if (!realGh) {
+  if (!realGh2) {
     return { ok: false, path: file2, realGh: null, reason: "no real gh on PATH (only the xtrm shim, if any)", warnings };
   }
   const exists = deps.exists ?? ((f) => (0, import_node_fs18.existsSync)(f));
   if (exists(file2) && !isShimFile(deps, file2)) {
-    return { ok: false, path: file2, realGh, reason: `${file2} exists and is not the xtrm shim; move it aside first`, warnings };
+    return { ok: false, path: file2, realGh: realGh2, reason: `${file2} exists and is not the xtrm shim; move it aside first`, warnings };
   }
-  const ordered = pathOrder(deps, file2, realGh);
-  if (!ordered) warnings.push(`${import_node_path43.default.dirname(file2)} comes after ${import_node_path43.default.dirname(realGh)} on PATH; the shim will not be used`);
+  const ordered = pathOrder(deps, file2, realGh2);
+  if (!ordered) warnings.push(`${import_node_path43.default.dirname(file2)} comes after ${import_node_path43.default.dirname(realGh2)} on PATH; the shim will not be used`);
   (0, import_node_fs18.mkdirSync)(import_node_path43.default.dirname(file2), { recursive: true });
-  (0, import_node_fs18.writeFileSync)(file2, ghShimSource(realGh), { mode: 493 });
+  (0, import_node_fs18.writeFileSync)(file2, ghShimSource(realGh2), { mode: 493 });
   (0, import_node_fs18.chmodSync)(file2, 493);
-  return { ok: true, path: file2, realGh, warnings };
+  return { ok: true, path: file2, realGh: realGh2, warnings };
 }
-function pathOrder(deps, shim, realGh) {
+function pathOrder(deps, shim, realGh2) {
   const env3 = deps.env ?? process.env;
   const dirs = (env3.PATH ?? "").split(import_node_path43.default.delimiter).filter(Boolean);
   const shimDir = import_node_path43.default.dirname(shim);
-  const realDir = import_node_path43.default.dirname(realGh);
+  const realDir = import_node_path43.default.dirname(realGh2);
   const shimIndex = dirs.indexOf(shimDir);
   const realIndex = dirs.indexOf(realDir);
   if (shimIndex < 0) return false;
@@ -72012,14 +71880,14 @@ function ghShimStatus(deps = {}) {
   }
   const installed = read(file2);
   const recorded = /const REAL_GH = "([^"]*)";/.exec(installed)?.[1] ?? null;
-  const realGh = recorded && exists(recorded) ? recorded : findRealGh(deps);
+  const realGh2 = recorded && exists(recorded) ? recorded : findRealGh(deps);
   return {
     path: file2,
     installed: true,
-    current: installed === ghShimSource(realGh),
-    realGh,
+    current: installed === ghShimSource(realGh2),
+    realGh: realGh2,
     recordedRealGh: recorded,
-    pathOrderOk: realGh ? pathOrder(deps, file2, realGh) : false
+    pathOrderOk: realGh2 ? pathOrder(deps, file2, realGh2) : false
   };
 }
 
@@ -72379,6 +72247,164 @@ function installRoutingReminder(home = import_node_os24.default.homedir()) {
   }
 }
 
+// src/core/gh-argv.ts
+var MERGE_VALUE_FLAGS = ["-b", "--body", "-F", "--body-file", "-t", "--subject", "-A", "--author-email", "-R", "--repo", "--match-head-commit"];
+var REVIEW_VALUE_FLAGS = ["-b", "--body", "-F", "--body-file", "-R", "--repo"];
+var EDIT_VALUE_FLAGS = ["-b", "--body", "-t", "--title", "-B", "--base", "-R", "--repo", "--add-label", "--remove-label", "--add-assignee", "--add-reviewer", "--milestone"];
+function valueFlags(verb) {
+  if (verb === "review") return REVIEW_VALUE_FLAGS;
+  if (verb === "edit") return EDIT_VALUE_FLAGS;
+  return MERGE_VALUE_FLAGS;
+}
+function splitAssignments(argv) {
+  const assignments = {};
+  let index = 0;
+  while (index < argv.length) {
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(argv[index]);
+    if (!match) break;
+    assignments[match[1]] = match[2];
+    index += 1;
+  }
+  return { assignments, rest: argv.slice(index) };
+}
+function skipGlobalFlag(args, index, repo) {
+  const arg = args[index];
+  if (arg === "-R" || arg === "--repo") {
+    if (args[index + 1] !== void 0) repo.value = args[index + 1];
+    return 2;
+  }
+  if (arg.indexOf("--repo=") === 0) {
+    repo.value = arg.slice("--repo=".length);
+    return 1;
+  }
+  if (arg.indexOf("-R=") === 0) {
+    repo.value = arg.slice("-R=".length);
+    return 1;
+  }
+  if (arg.indexOf("-R") === 0 && arg.length > 2) {
+    repo.value = arg.slice(2);
+    return 1;
+  }
+  return 0;
+}
+function findVerb(args) {
+  const repo = { value: "" };
+  let index = 0;
+  let sawPr = false;
+  while (index < args.length) {
+    const skip = skipGlobalFlag(args, index, repo);
+    if (skip) {
+      index += skip;
+      continue;
+    }
+    const arg = args[index];
+    if (arg === "pr") {
+      sawPr = true;
+      index += 1;
+      break;
+    }
+    if (arg.charAt(0) === "-") {
+      index += 1;
+      continue;
+    }
+    return { verb: null, index: -1, repo: repo.value };
+  }
+  if (!sawPr) return { verb: null, index: -1, repo: repo.value };
+  while (index < args.length) {
+    const skip = skipGlobalFlag(args, index, repo);
+    if (skip) {
+      index += skip;
+      continue;
+    }
+    const arg = args[index];
+    if (arg.charAt(0) === "-") {
+      index += 1;
+      continue;
+    }
+    return { verb: arg, index, repo: repo.value };
+  }
+  return { verb: null, index: -1, repo: repo.value };
+}
+function parseGhArgs(args, verb) {
+  const values = valueFlags(verb);
+  const repo = { value: "" };
+  const kept = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const skip = skipGlobalFlag(args, index, repo);
+    if (skip) {
+      index += skip - 1;
+      continue;
+    }
+    kept.push(args[index]);
+  }
+  let target = "";
+  const forwarded = [];
+  for (let index = 0; index < kept.length; index += 1) {
+    const arg = kept[index];
+    if (arg === "--") {
+      forwarded.push(...kept.slice(index + 1));
+      break;
+    }
+    if (arg.charAt(0) === "-") {
+      forwarded.push(arg);
+      if (values.includes(arg) && index + 1 < kept.length) {
+        forwarded.push(kept[index + 1]);
+        index += 1;
+      }
+      continue;
+    }
+    if (!target) target = arg;
+    else forwarded.push(arg);
+  }
+  return { repo: repo.value, target, forwarded };
+}
+function translateReviewFlags(args) {
+  const map2 = { "-a": "--approve", "-c": "--comment", "-r": "--request-changes", "-b": "--body", "-F": "--body-file" };
+  const takesValue = ["-b", "-F", "--body", "--body-file"];
+  const out = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (takesValue.includes(arg)) {
+      out.push(map2[arg] ?? arg);
+      if (index + 1 < args.length) {
+        out.push(args[index + 1]);
+        index += 1;
+      }
+      continue;
+    }
+    if (arg.indexOf("--body=") === 0 || arg.indexOf("--body-file=") === 0) {
+      out.push(arg);
+      continue;
+    }
+    out.push(map2[arg] ?? arg);
+  }
+  return out;
+}
+function targetPr(target) {
+  if (!target) return 0;
+  const url2 = /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/.exec(target);
+  if (url2) return Number(url2[1]);
+  return /^\d+$/.test(target) ? Number(target) : 0;
+}
+function repoFromUrl(target) {
+  const match = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(target ?? "");
+  return match ? { repo: `${match[1]}/${match[2]}`, pr: Number(match[3]) } : null;
+}
+function parseInvocation(argv, options = {}) {
+  const { assignments, rest } = splitAssignments(argv);
+  const found = findVerb(rest);
+  const verb = found.verb ?? options.fallbackVerb ?? null;
+  if (!found.verb) {
+    return { verb, repo: found.repo, pr: 0, target: "", forwarded: rest.slice(1), assignments };
+  }
+  const parsed = parseGhArgs(rest.slice(found.index + 1), found.verb);
+  const fromUrl = repoFromUrl(parsed.target);
+  const repo = parsed.repo || found.repo || fromUrl?.repo || "";
+  const pr = fromUrl ? fromUrl.pr : targetPr(parsed.target);
+  const forwarded = found.verb === "review" ? translateReviewFlags(parsed.forwarded) : parsed.forwarded;
+  return { verb, repo, pr, target: parsed.target, forwarded, assignments };
+}
+
 // src/commands/identity.ts
 function readIdentityEnv(env3 = process.env, cwd = process.cwd(), appDeps2 = {}) {
   const holder = (env3[SUBSTRATE_HOLDER_VAR] ?? "").trim() || null;
@@ -72424,6 +72450,71 @@ async function reviewerTokenFor(repo, map2) {
   const slug = appSlugForRole("reviewer", map2);
   const minted = await mintInstallationToken({ slug, account }, appDeps());
   return { token: minted.token, slug, account };
+}
+function realGh() {
+  return (process.env.XTRM_REAL_GH ?? "").trim() || "gh";
+}
+function ghView(args, cwd) {
+  const result = (0, import_node_child_process21.spawnSync)(realGh(), args, {
+    encoding: "utf8",
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 2e4,
+    env: process.env
+  });
+  if (result.error || result.status !== 0) return { ok: false };
+  try {
+    const data = JSON.parse(result.stdout);
+    return { ok: true, data };
+  } catch {
+    return { ok: false };
+  }
+}
+function prFromView(data) {
+  if (!data) return null;
+  const url2 = typeof data.url === "string" ? data.url : "";
+  const match = /^https?:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/.exec(url2);
+  if (match) return { repo: match[1], pr: Number(match[2]), head: typeof data.headRefOid === "string" ? data.headRefOid : "" };
+  const pr = Number(data.number);
+  return Number.isInteger(pr) && pr > 0 ? { repo: "", pr, head: typeof data.headRefOid === "string" ? data.headRefOid : "" } : null;
+}
+function resolveGhTarget(argvText, cwd) {
+  let argv;
+  try {
+    const parsed = JSON.parse(argvText);
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+      return { verb: null, repo: "", pr: 0, head: "", forwarded: [], assignments: {}, error: "the argv must be a JSON array of strings" };
+    }
+    argv = parsed;
+  } catch (error51) {
+    return { verb: null, repo: "", pr: 0, head: "", forwarded: [], assignments: {}, error: `cannot parse --argv: ${error51.message}` };
+  }
+  const inv = parseInvocation(argv, { fallbackVerb: "merge" });
+  const base = { verb: inv.verb, forwarded: inv.forwarded, assignments: inv.assignments };
+  let repo = inv.repo;
+  if (!repo && inv.pr) {
+    const view = ghView(["repo", "view", "--json", "nameWithOwner"], cwd);
+    if (view.ok && typeof view.data?.nameWithOwner === "string") repo = view.data.nameWithOwner;
+  }
+  if (inv.pr) {
+    let head = "";
+    if (repo) {
+      const view = ghView(["pr", "view", String(inv.pr), "--repo", repo, "--json", "headRefOid"], cwd);
+      if (view.ok && typeof view.data?.headRefOid === "string") head = view.data.headRefOid;
+    }
+    return { ...base, repo, pr: inv.pr, head };
+  }
+  if (inv.target) {
+    if (!inv.repo) return { ...base, repo: "", pr: 0, head: "", error: `cannot resolve branch '${inv.target}' without --repo` };
+    const view = ghView(["pr", "view", inv.target, "--repo", inv.repo, "--json", "number,headRefOid"], cwd);
+    if (!view.ok) return { ...base, repo: inv.repo, pr: 0, head: "", error: `cannot resolve '${inv.target}' to a pull request in ${inv.repo}` };
+    const number4 = Number(view.data?.number);
+    const head = typeof view.data?.headRefOid === "string" ? view.data.headRefOid : "";
+    return { ...base, repo: inv.repo, pr: Number.isInteger(number4) ? number4 : 0, head };
+  }
+  const here = prFromView(ghView(["pr", "view", "--json", "number,url,headRefOid"], cwd).data);
+  if (!here) return { ...base, repo: inv.repo, pr: 0, head: "", error: "no pull request matches this command and the current directory has none" };
+  return { ...base, repo: inv.repo || here.repo, pr: here.pr, head: here.head };
 }
 function runSb(args) {
   const result = (0, import_node_child_process21.spawnSync)("sb", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -72623,9 +72714,23 @@ function createIdentityCommand() {
       fail2(error51.message);
     }
   });
-  identity.command("merge-check").description("Allow or refuse a merge: the reviewer App's latest review must be at the current head").requiredOption("--repo <owner/name>", "Repository").requiredOption("--pr <number>", "Pull request number").option("--json", "Emit JSON", false).action(async (opts) => {
-    const pr = Number(opts.pr);
-    if (!Number.isInteger(pr) || pr <= 0) fail2(`--pr ${opts.pr} is not a pull request number`);
+  identity.command("resolve-gh").description("Resolve a gh argv to the repository, PR and head it acts on (used by the gh shim and the gate hook)").requiredOption("--argv <json>", 'The gh argv as a JSON array, e.g. ["pr","merge","5"]').option("--cwd <dir>", "Directory for the cwd-PR fallback", process.cwd()).option("--json", "Emit JSON (always, kept for symmetry)", false).action((opts) => {
+    const resolved = resolveGhTarget(opts.argv, opts.cwd);
+    console.log(JSON.stringify(resolved));
+    if (resolved.error || !resolved.pr || !resolved.repo) process.exit(1);
+  });
+  identity.command("merge-check").description("Allow or refuse a merge: the reviewer App's latest review must be at the current head").option("--repo <owner/name>", "Repository (with --pr)").option("--pr <number>", "Pull request number (with --repo)").option("--gh-args <json>", "A gh argv as a JSON array; the target is resolved the way gh resolves it").option("--cwd <dir>", "Directory for the cwd-PR fallback", process.cwd()).option("--json", "Emit JSON", false).action(async (opts) => {
+    let repo = (opts.repo ?? "").trim();
+    let pr = Number(opts.pr ?? 0);
+    if (opts.ghArgs) {
+      const resolved = resolveGhTarget(opts.ghArgs, opts.cwd);
+      if (resolved.error) fail2(resolved.error);
+      repo = resolved.repo;
+      pr = resolved.pr;
+    }
+    if (!repo || !Number.isInteger(pr) || pr <= 0) {
+      fail2(`pass --repo and --pr, or --gh-args '["pr","merge","5"]'`);
+    }
     const { map: map2 } = effectiveRole();
     if (!map2) fail2("the role map is invalid; the guard fails closed");
     const guardOn = mergeGuardEnabled();
@@ -72633,7 +72738,7 @@ function createIdentityCommand() {
     let unreachable = null;
     if (guardOn) {
       try {
-        token = (await reviewerTokenFor(opts.repo, map2)).token;
+        token = (await reviewerTokenFor(repo, map2)).token;
       } catch (error51) {
         unreachable = error51 instanceof GitHubAppError ? error51.message : error51.message;
       }
@@ -72644,7 +72749,7 @@ function createIdentityCommand() {
       reviewerSlug: appSlugForRole("reviewer", map2),
       roleMap: map2
     };
-    let decision = unreachable ? await unreachableRefusal(opts.repo, pr, unreachable) : await mergeCheck({ repo: opts.repo, pr }, deps);
+    let decision = unreachable ? await unreachableRefusal(repo, pr, unreachable) : await mergeCheck({ repo, pr }, deps);
     if (!decision.allow && (process.env[OVERRIDE_ENV_VAR] ?? "").trim()) {
       decision = await applyOverride(decision, deps);
     }

@@ -111,24 +111,33 @@ A PR merges only with a review by the reviewer App (**`xtrm-reviewer[bot]`**) at
 head. GitHub Actions is billing-locked and the organisation is on the Free plan, so nothing on
 GitHub enforces it: the check runs on the agent's machine.
 
+The merge guard is **OFF by default**: it runs only when `XTRM_MERGE_GUARD` is `on`, `1`, `true`
+or `yes`. With it off, both the `gh` shim and the Claude Code hook pass the merge through and say
+so on stderr.
+
 - `gh pr merge` first runs `xt identity merge-check`. It refuses when the bot's latest review is
   missing, is at an older head, or requested changes. A `COMMENT` (PARTIAL) review passes only
   with a later coordinator decision, for that head, in the Issue Journal. The refusal text names
   the allowed reviewer paths; `XTRM_MERGE_GUARD_OVERRIDE=<reason>` is for the coordinator and the
   operator, is logged, and journals a decision on the Issue.
-- `gh pr create` prints the routing reminder (`~/.xtrm/config/reviewer-routing.md`, installed by
-  `xt identity setup`). The tier rule — HIGH or critical needs a Claude-backed reviewer — is the
-  reminder's job, not a second copy in this reference.
-- The `gh` shim carries both (`xt identity setup` installs it as `~/.local/bin/gh`). Agents keep
-  plain `gh`; `gh pr review` becomes a formal review pinned to the reviewed head when the agent
-  runs as the reviewer role.
+- The tier rule — HIGH or critical needs a Claude-backed reviewer — lives in the reminder
+  (`~/.xtrm/config/reviewer-routing.md`, installed by `xt identity setup`).
+- The `gh` shim (`xt identity setup` installs it as `~/.local/bin/gh`) carries the merge guard and
+  turns `gh pr review` into a formal review pinned to the reviewed head when the agent runs as the
+  reviewer role. The shim has **no** `gh pr create` handling: the create reminder below is the
+  Claude Code hook's, so Pi and Codex agents get no reminder.
 - The Claude Code hook `xtrm-review-gate` (policy `policies/xtrm-review-gate.json`) runs the same
-  guard as a PreToolUse check on `gh pr merge`, and prints the reminder after `gh pr create`.
+  guard as a PreToolUse check: it tokenises the Bash command and gates only a simple command whose
+  argv is `gh … pr … merge`, then hands that argv to `xt identity merge-check --gh-args`. Text in
+  quotes, heredocs or another program's arguments never triggers it, and the PR it checks is the
+  PR the shim resolves. The hook is **Claude Code only**; Pi and Codex rely on the shim.
 
 For a review, read the pushed head and post one review at that head: PASS -> APPROVE,
 PARTIAL -> COMMENT, FAIL -> REQUEST_CHANGES. A stale approval is not evidence.
 
-Client-side only: any agent that holds the operator's `gh` login can call the GitHub API directly.
-The guard catches errors and stale or missing reviews; it is not protection against a hostile
-agent on the same unix user. When the reviewer App is unavailable the guard blocks merges and the
-override is the documented way out.
+Client-side only: any agent that holds the operator's `gh` login can call the GitHub API directly,
+and `gh api …/pulls/N/merge` is refused only for the reviewer role by the shim. The guard catches
+errors and stale or missing reviews; it is not protection against a hostile agent on the same unix
+user. The hook parses one command string: `$GH pr merge`, `g\h pr merge`, and commands handed to
+`sh -c` or `eval` are invisible to it — the shim is the backstop there. When the reviewer App is
+unavailable the guard blocks merges and the override is the documented way out.
