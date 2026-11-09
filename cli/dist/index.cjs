@@ -58267,8 +58267,8 @@ function buildGitTransportEnv(input) {
     // repository it is answering for and refuses (it must, to stay scoped).
     ["credential.https://github.com.useHttpPath", "true"]
   ];
-  const inherited = input.append ? Number.parseInt((input.env ?? {}).GIT_CONFIG_COUNT ?? "0", 10) : 0;
-  const base = Number.isInteger(inherited) && inherited > 0 ? inherited : 0;
+  const requested = input.baseCount ?? 0;
+  const base = input.append && Number.isInteger(requested) && requested > 0 ? requested : 0;
   const env3 = { GIT_CONFIG_COUNT: String(base + entries.length) };
   entries.forEach(([key, value], offset) => {
     env3[`GIT_CONFIG_KEY_${base + offset}`] = key;
@@ -58308,19 +58308,24 @@ var SPECIALIST_DEFAULT_ENV = "XTRM_SPECIALIST_DEFAULT";
 var SUPERVISOR_MARKERS = ["SPECIALISTS_JOB_ID", "XTRM_SUPERVISOR_LAUNCH"];
 var ROLE_NAMES = ["reviewer", "worker", "coordinator"];
 var ROLE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+var COUNT = /^\d+$/;
 function roleMapConfigured(home) {
   return (0, import_node_fs5.existsSync)(roleMapPath(home));
 }
 function asRole(name) {
   return ROLE_NAMES.includes(name) ? name : null;
 }
-function mappedRole(map2, name) {
-  if (!Object.hasOwn(map2.specialists, name)) return void 0;
-  return map2.specialists[name];
+function hasEntry(map2, name) {
+  return Object.hasOwn(map2.specialists, name);
 }
 function mappedSpecialists(map2) {
   const names = Object.keys(map2.specialists).filter((name) => map2.specialists[name]);
   return names.length ? names.join(", ") : "(none)";
+}
+function nearMiss(map2, name) {
+  const wanted = name.toLowerCase();
+  const known = [...ROLE_NAMES, ...Object.keys(map2.specialists)];
+  return known.find((candidate) => candidate !== name && candidate.toLowerCase() === wanted) ?? null;
 }
 function parseGithubOrigin(url2) {
   const text = url2.trim();
@@ -58343,162 +58348,139 @@ function detectRepo(cwd) {
     return null;
   }
 }
+function isSupervisor(env3) {
+  return SUPERVISOR_MARKERS.some((marker) => (env3[marker] ?? "").trim());
+}
 function resolveRole(input) {
-  const { env: env3, map: map2, configured, supervisor } = input;
+  const { env: env3, map: map2, configured } = input;
+  const supervisor = isSupervisor(env3);
   const explicit = (input.roleName ?? "").trim();
-  if (explicit) {
-    const direct = asRole(explicit);
-    if (direct) return { role: direct, requested: explicit, refused: null, source: "explicit role" };
-    const mapped = mappedRole(map2, explicit);
-    if (mapped) return { role: mapped, requested: explicit, refused: null, source: `specialist ${explicit}` };
-    if (mapped === null) return { role: null, requested: explicit, refused: null, source: `specialist ${explicit} is mapped to no role` };
+  const handSet = (env3.XTRM_ROLE ?? "").trim();
+  const fallback = (env3[SPECIALIST_DEFAULT_ENV] ?? "").trim();
+  const asked = explicit || handSet || (supervisor ? fallback : "");
+  if (!asked) {
     if (supervisor && configured) {
       return {
         role: null,
-        requested: explicit,
-        refused: `specialist '${explicit}' has no role mapping; mapped specialists: ${mappedSpecialists(map2)}`,
-        source: "explicit specialist"
+        requested: "",
+        refused: `supervisor-launched activation names no role; set ${SPECIALIST_DEFAULT_ENV} or add the specialist to the role map (mapped: ${mappedSpecialists(map2)})`,
+        source: "supervisor"
       };
     }
-    return { role: null, requested: explicit, refused: null, source: `specialist ${explicit} is not mapped` };
+    return { role: map2.default, requested: "", refused: null, source: "role map default" };
   }
-  const handSet = (env3.XTRM_ROLE ?? "").trim();
-  if (handSet) {
-    const runtime = resolveAgentRole(handSet, map2);
-    if (runtime === null && supervisor && configured && mappedRole(map2, handSet) === void 0 && !asRole(handSet)) {
-      return {
-        role: null,
-        requested: handSet,
-        refused: `specialist '${handSet}' has no role mapping; mapped specialists: ${mappedSpecialists(map2)}`,
-        source: "launch environment"
-      };
-    }
-    return { role: runtime, requested: handSet, refused: null, source: "launch environment" };
-  }
-  const fallback = (env3[SPECIALIST_DEFAULT_ENV] ?? "").trim();
-  if (fallback && supervisor) {
-    const direct = asRole(fallback);
-    if (direct) return { role: direct, requested: fallback, refused: null, source: "specialist default" };
-    const mapped = mappedRole(map2, fallback);
-    if (mapped) return { role: mapped, requested: fallback, refused: null, source: `specialist default ${fallback}` };
-    if (configured) {
-      return {
-        role: null,
-        requested: fallback,
-        refused: `specialist '${fallback}' has no role mapping; mapped specialists: ${mappedSpecialists(map2)}`,
-        source: "specialist default"
-      };
-    }
+  const role = resolveAgentRole(asked, map2);
+  if (role) return { role, requested: asked, refused: null, source: explicit === asked ? "explicit" : "launch environment" };
+  const deliberateNull = hasEntry(map2, asked) && map2.specialists[asked] === null;
+  if (deliberateNull) {
+    return { role: null, requested: asked, refused: null, source: `${asked} is mapped to no role` };
   }
   if (supervisor && configured) {
     return {
       role: null,
-      requested: "",
-      refused: `supervisor-launched activation names no role; set ${SPECIALIST_DEFAULT_ENV} or add the specialist to the role map (mapped: ${mappedSpecialists(map2)})`,
+      requested: asked,
+      refused: `specialist '${asked}' has no role mapping; mapped specialists: ${mappedSpecialists(map2)}`,
       source: "supervisor"
     };
   }
-  return { role: map2.default, requested: "", refused: null, source: "role map default" };
-}
-function isSupervisor(env3) {
-  return SUPERVISOR_MARKERS.some((marker) => (env3[marker] ?? "").trim());
-}
-function transportFor(role, map2, deps, env3) {
-  return buildGitTransportEnv({ role, map: map2, deps, env: env3, append: true });
+  return { role: null, requested: asked, refused: null, source: `${asked} is not mapped` };
 }
 function evaluate(input) {
   const env3 = input.env ?? process.env;
   const deps = input.deps ?? {};
   const configured = deps.roleMapExists ?? roleMapConfigured(deps.home);
+  const notes = [];
   const explicit = (input.roleName ?? "").trim();
   if (explicit && !ROLE_NAME.test(explicit)) {
     return {
       role: null,
       requested: explicit,
       refused: `role '${explicit}' is not a valid role or specialist name (letters, digits, '.', '_' and '-'; no path separators)`,
-      note: null,
+      notes,
       env: {},
       configured
-    };
-  }
-  if (!configured) {
-    return {
-      role: asRole(explicit),
-      requested: explicit,
-      refused: null,
-      note: explicit ? `role ${explicit} has no identity mapping; launching with the operator identity` : null,
-      env: {},
-      configured: false
     };
   }
   const map2 = loadRoleMap({ home: deps.home });
-  if (!map2) {
-    return {
-      role: asRole(explicit),
-      requested: explicit,
-      refused: null,
-      // Loud, never silent: the file exists but cannot be read, so the launch
-      // keeps today's behaviour.
-      note: `role map invalid at ${roleMapPath(deps.home)}; launching with the operator identity`,
-      env: {},
-      configured: true
-    };
+  if (configured && !map2) {
+    notes.push(`role map invalid at ${roleMapPath(deps.home)}; launching with the operator identity`);
+    return { role: asRole(explicit), requested: explicit, refused: null, notes, env: {}, configured };
   }
-  const resolved = resolveRole({
-    roleName: explicit,
-    env: env3,
-    map: map2,
-    configured,
-    supervisor: isSupervisor(env3)
-  });
+  const effectiveMap = map2 ?? { version: 1, default: "worker", specialists: {}, apps: { worker: "xtrm-worker", reviewer: "xtrm-reviewer", coordinator: "xtrm-coord" } };
+  const resolved = resolveRole({ roleName: explicit, env: env3, map: effectiveMap, configured });
   if (resolved.refused) {
-    return { role: null, requested: resolved.requested, refused: resolved.refused, note: null, env: {}, configured };
+    return { role: null, requested: resolved.requested, refused: resolved.refused, notes, env: {}, configured };
+  }
+  if (!resolved.role && resolved.requested) {
+    const suggestion = nearMiss(effectiveMap, resolved.requested);
+    if (suggestion) {
+      return {
+        role: null,
+        requested: resolved.requested,
+        refused: `role '${resolved.requested}' is not mapped; did you mean '${suggestion}'?`,
+        notes,
+        env: {},
+        configured
+      };
+    }
+  }
+  if (!configured) {
+    if (resolved.requested) notes.push(`role ${resolved.requested} has no identity mapping; launching with the operator identity`);
+    return { role: resolved.role, requested: resolved.requested, refused: null, notes, env: {}, configured: false };
   }
   if (!resolved.role) {
-    return {
-      role: null,
-      requested: resolved.requested,
-      refused: null,
-      note: resolved.requested ? `role ${resolved.requested} has no identity mapping; launching with the operator identity` : null,
-      env: {},
-      configured
-    };
+    if (resolved.requested) {
+      notes.push(resolved.source.includes("mapped to no role") ? `role ${resolved.requested} is mapped to no role; launching with the operator identity` : `role ${resolved.requested} has no identity mapping; launching with the operator identity`);
+    }
+    return { role: null, requested: resolved.requested, refused: null, notes, env: {}, configured };
   }
   const role = resolved.role;
-  const slug = appSlugForRole(role, map2);
+  const slug = appSlugForRole(role, effectiveMap);
   const repo = deps.repo ?? detectRepo(input.cwd);
   const owner = repo ? repoOwner(repo) : null;
   const config3 = readAppConfig(slug, deps);
   const installation = config3 && repo ? installationForRepo(config3, repo) : null;
   if (!config3 || !installation) {
     const why = !repo ? "the worktree has no github.com origin, so the installation cannot be checked" : !config3 ? `no ${slug} App is configured on this host` : `the ${slug} App is not installed for ${owner}`;
-    const reviewerAsked = role === "reviewer" || asRole(resolved.requested) === "reviewer" || resolved.requested === "reviewer";
-    const refused = reviewerAsked && config3 ? `role reviewer: ${why}; refusing to launch a reviewer with the operator identity` : null;
-    return {
-      role,
-      requested: resolved.requested,
-      refused,
-      note: refused ? null : `${why}; launching with the operator identity (no XTRM_ROLE, no transport rewrite)`,
-      env: {},
-      configured
-    };
+    const reviewerAsked = role === "reviewer";
+    if (reviewerAsked && config3) {
+      return {
+        role,
+        requested: resolved.requested,
+        refused: `role reviewer: ${why}; refusing to launch a reviewer with the operator identity`,
+        notes,
+        env: {},
+        configured
+      };
+    }
+    if (resolved.requested) notes.push(`${why}; launching with the operator identity (no XTRM_ROLE, no transport rewrite)`);
+    return { role, requested: resolved.requested, refused: null, notes, env: {}, configured };
   }
-  return {
-    role,
-    requested: resolved.requested,
-    refused: null,
-    note: `role ${role} uses the ${slug} App of ${installation.account}`,
-    env: { XTRM_ROLE: role, ...transportFor(role, map2, deps, env3) },
-    configured
-  };
+  const rawCount = (env3.GIT_CONFIG_COUNT ?? "").trim();
+  const base = COUNT.test(rawCount) ? Number.parseInt(rawCount, 10) : 0;
+  if (rawCount && !COUNT.test(rawCount)) {
+    notes.push(`GIT_CONFIG_COUNT='${rawCount}' is not a number; treating it as 0`);
+  }
+  const transport = buildGitTransportEnv({ role, map: effectiveMap, deps, append: true, baseCount: base });
+  const out = { XTRM_ROLE: role };
+  if (input.forwardInherited) {
+    for (let index = 0; index < base; index += 1) {
+      const key = env3[`GIT_CONFIG_KEY_${index}`];
+      const value = env3[`GIT_CONFIG_VALUE_${index}`];
+      if (key !== void 0) out[`GIT_CONFIG_KEY_${index}`] = key;
+      if (value !== void 0) out[`GIT_CONFIG_VALUE_${index}`] = value;
+    }
+  }
+  return { role, requested: resolved.requested, refused: null, notes, env: { ...out, ...transport }, configured };
 }
 function preflightLaunchIdentity(input) {
   const evaluated = evaluate(input);
   return {
     role: evaluated.role,
     refused: evaluated.refused,
-    // A launch that asked for a role but will not carry it says so once.
-    warning: !evaluated.refused && evaluated.note && (evaluated.requested || evaluated.role) ? evaluated.note : null
+    // One note per launch, and only when the launch asked for a role or the role
+    // map itself is broken.
+    warning: !evaluated.refused && evaluated.notes.length ? evaluated.notes.join("; ") : null
   };
 }
 function resolveLaunchIdentity(input) {
@@ -58509,7 +58491,7 @@ function resolveLaunchIdentity(input) {
     configured: evaluated.configured,
     exported: Object.keys(evaluated.env).length > 0,
     refused: evaluated.refused,
-    note: evaluated.note
+    note: evaluated.notes.length ? evaluated.notes.join("; ") : null
   };
 }
 
@@ -60731,11 +60713,6 @@ async function launchWorktreeSession(opts) {
   }
   const directSessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
   const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
-  if (directIdentity.refused) {
-    process.stderr.write(`xt: ${directIdentity.refused}
-`);
-    process.exit(1);
-  }
   const launchResult2 = (0, import_node_child_process6.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
@@ -60846,12 +60823,7 @@ async function launchTmuxSession(args) {
   const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(" ");
   const agentEnv = buildAgentEnv(plan.paneOptions);
   const dispatcherEnv = buildDispatcherEnv(sessionSlug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) });
-  const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath });
-  if (launchIdentity.refused) {
-    process.stderr.write(`xt: ${launchIdentity.refused}
-`);
-    process.exit(1);
-  }
+  const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
   const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
   if (currentPaneMode) {
     const sessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
@@ -63996,12 +63968,7 @@ async function launchCodexWorktreeSession(opts) {
     ...roleName ? [{ key: "@agent_role", value: roleName }] : []
   ];
   const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
-  const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
-  if (launchIdentity.refused) {
-    process.stderr.write(`xt: ${launchIdentity.refused}
-`);
-    process.exit(1);
-  }
+  const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
   const agentEnv = {
     ...buildAgentEnv(paneOptions),
     XTMUX_AGENT_RUNTIME: "codex",
@@ -73127,7 +73094,9 @@ function createIdentityCommand() {
         check: "role map",
         ok: map2 !== null,
         detail: map2 ? `${roleMapPath(home)} (version ${ROLE_MAP_VERSION})` : `${roleMapPath(home)} is invalid; launches keep the operator identity and print a warning`,
-        hard: false
+        // A broken role map is a hard failure, as on base: every launch silently
+        // falls back to the operator identity otherwise.
+        hard: !map2
       });
     }
     for (const [role, slug] of Object.entries((map2 ?? DEFAULT_ROLE_MAP).apps)) {

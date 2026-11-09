@@ -255,6 +255,10 @@ Known limits, accepted rather than hidden:
 - The reviewer's `gh api` restriction is an allowlist (a plain GET only: no method other than GET, no
   field/input flags, no graphql, no issues endpoint), not a complete sandbox: anything the shim passes through
   reaches the real `gh` with the operator's login, and `gh issue close` is not intercepted.
+- The launcher appends the transport at the inherited `GIT_CONFIG_COUNT` (strictly digits, otherwise 0 with a
+  note) and never removes an inherited entry. On the tmux `-e` paths it forwards the inherited
+  `GIT_CONFIG_KEY_i`/`VALUE_i` entries as well: a pane does not inherit xt's environment, so a count without
+  those keys makes every `git` command in the pane fail.
 - The launcher exports `XTRM_ROLE` and the `GIT_CONFIG_*` transport only for a role whose App is configured on
   this host **and** installed for the repository owner. Every other launch — a role with no App, a repo with no
   installation, a worktree with no `github.com` origin — keeps the operator identity and does no transport
@@ -286,11 +290,14 @@ Files the code reads (nothing else is authoritative):
 - `~/.secrets/github-apps/<slug>.pem` — the private key, mode `600`; its directory mode `700`.
 - `~/.xtrm/config/identity-role-map.json` — role and specialist routing. Absent means identities are not
   configured: a launch keeps the operator identity and exports nothing, and `xt identity doctor` says so in one
-  line. Invalid (unreadable or unparsable) means the same behaviour with a loud stderr warning; nothing is
-  exported and no launch is refused. An interactive `--role` that maps to nothing also launches as today and
-  prints `role <name> has no identity mapping`. Only a supervisor-launched activation with no mapping, an
-  invalid role name, or an explicit reviewer that cannot get its App is refused, and always before a worktree
-  or branch exists.
+  line and `xt identity doctor` fails hard. Invalid (unreadable or unparsable) means the same launch behaviour
+  with a loud stderr warning on every launch, including one that names no role; nothing is exported and no
+  launch is refused. An interactive `--role` that maps to nothing also launches as today and prints
+  `role <name> has no identity mapping`; a case-only typo (`Reviewer`) is refused with "did you mean". Only a
+  supervisor-launched activation with no mapping, an invalid role name, or an explicit reviewer that cannot
+  get its App is refused, and always before a worktree or branch exists. A role name is invalid when it is
+  empty, path-like (`a/b`, `../x`), option-like (`--force`) or contains whitespace; letters, digits, `.`, `_`
+  and `-` are accepted, which covers every `sp list` specialist name.
 - `~/.xtrm/config/reviewer-routing.md` — the text the review reminder prints. Operator-editable.
 
 Token cache: `$XDG_RUNTIME_DIR/xtrm/gh-tokens/<slug>-<account>.json` (fallback `~/.xtrm/run/...`, created `0700`),

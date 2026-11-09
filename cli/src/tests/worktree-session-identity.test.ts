@@ -160,8 +160,12 @@ describe('xt/tmux launcher session-identity propagation', () => {
   beforeEach(async () => {
     // CORE-2525 review: a GIT_* value exported in the developer's shell must
     // never make these tests pass or fail; the launcher resolves its own.
-    for (const key of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) {
+    for (const key of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL',
+      'SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH', 'XTRM_ROLE', 'XTRM_SPECIALIST_DEFAULT']) {
       delete process.env[key];
+    }
+    for (const key of Object.keys(process.env)) {
+      if (key === 'GIT_CONFIG_COUNT' || key.startsWith('GIT_CONFIG_KEY_') || key.startsWith('GIT_CONFIG_VALUE_')) delete process.env[key];
     }
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-session-id-'));
     repoRoot = path.join(tempRoot, 'repo');
@@ -467,6 +471,32 @@ describe('xt/tmux launcher session-identity propagation', () => {
       }
       const worktreeCalls = mocked.spawnSync.mock.calls.filter(([, args]) => (args ?? []).includes('worktree') && (args ?? []).includes('add'));
       expect(worktreeCalls).toHaveLength(0);
+    });
+
+    it('exports and forwards the reviewer identity on the current-pane spawn (CORE-2528)', async () => {
+      armDispatcher();
+      process.env.TMUX = '/tmp/tmux-1000/default,9,0';
+      process.env.TMUX_PANE = '%9';
+      installMock(h);
+      writeIdentityConfig();
+      const saved = { count: process.env.GIT_CONFIG_COUNT, key0: process.env.GIT_CONFIG_KEY_0, value0: process.env.GIT_CONFIG_VALUE_0 };
+      process.env.GIT_CONFIG_COUNT = '1';
+      process.env.GIT_CONFIG_KEY_0 = 'http.proxy';
+      process.env.GIT_CONFIG_VALUE_0 = 'http://proxy:3128';
+      try {
+        const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+        await expect(launchWorktreeSession({ runtime: 'claude', name: 'dwk-cp', role: 'reviewer' })).rejects.toThrow('exit:0');
+      } finally {
+        for (const [key, value] of [['GIT_CONFIG_COUNT', saved.count], ['GIT_CONFIG_KEY_0', saved.key0], ['GIT_CONFIG_VALUE_0', saved.value0]] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+      // The pane does not inherit xt's env: the forwarded list must be complete.
+      expect(h.piSpawnEnv?.['XTRM_ROLE']).toBe('reviewer');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBe('6');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_KEY_0']).toBe('http.proxy');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_KEY_1']).toBe('url.https://github.com/.insteadOf');
     });
 
     it('launches an interactive unmapped role as today and warns on stderr (CORE-2528)', async () => {

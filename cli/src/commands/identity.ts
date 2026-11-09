@@ -666,7 +666,9 @@ export function createIdentityCommand(): Command {
                     detail: map
                         ? `${roleMapPath(home)} (version ${ROLE_MAP_VERSION})`
                         : `${roleMapPath(home)} is invalid; launches keep the operator identity and print a warning`,
-                    hard: false,
+                    // A broken role map is a hard failure, as on base: every launch silently
+                    // falls back to the operator identity otherwise.
+                    hard: !map,
                 });
             }
             for (const [role, slug] of Object.entries((map ?? DEFAULT_ROLE_MAP).apps)) {

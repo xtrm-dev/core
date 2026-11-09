@@ -385,11 +385,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
     // CORE-2528: role App identity when this host has the App and its installation
     // covers the repo owner; otherwise the operator identity, as before.
-    const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
-    if (launchIdentity.refused) {
-        process.stderr.write(`xt: ${launchIdentity.refused}\n`);
-        process.exit(1);
-    }
+    const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
     const agentEnv = {
         ...buildAgentEnv(paneOptions),
         XTMUX_AGENT_RUNTIME: 'codex',

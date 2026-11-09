@@ -1,18 +1,17 @@
 /**
  * Launch-time identity for `xt claude|pi|codex` (CORE-2528 remainder).
  *
- * One function decides what a launched session inherits:
- * - always: the dispatcher identity (holder, git author) that CORE-2525 exports;
- * - ONLY when this host has the role's App AND an installation for the repo
- *   owner: `XTRM_ROLE` plus the `GIT_CONFIG_*` transport rewrite, APPENDED to the
- *   entries the caller already has. Nothing inherited is removed: an operator's
- *   `http.proxy` or a coordinator's `XTRM_ROLE` must survive a launch.
- * - an explicit reviewer launch that cannot export its identity on a host where
- *   the reviewer App IS configured is refused before any worktree exists — a
- *   reviewer that falls back to the operator login defeats the App.
- * - a supervisor-launched activation whose specialist maps to nothing is refused
- *   (only when a role map exists); an interactive `--role` that maps to nothing
- *   launches as today and says so on stderr.
+ * One rule: the launcher adds identity variables, and removes nothing.
+ * - `XTRM_ROLE` and the `GIT_CONFIG_*` transport are exported ONLY when this
+ *   host has the role's App and an installation for the repo owner; the
+ *   transport APPENDS at the inherited count (strictly parsed) so an operator's
+ *   `http.proxy` and a coordinator's marker survive a launch.
+ * - The tmux `-e` paths forward the inherited entries too: a pane does not
+ *   inherit xt's environment, so a bare `COUNT=base+5` with only our keys makes
+ *   every `git` command in the pane fail.
+ * - Role resolution delegates to `resolveAgentRole`, the runtime's rule, in every
+ *   branch (explicit `--role`, hand-set marker, supervisor default); the launcher
+ *   only decides the gates (refuse / note).
  */
 
 import { existsSync } from 'node:fs';
@@ -29,6 +28,7 @@ export const SUPERVISOR_MARKERS = ['SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH
 const ROLE_NAMES: readonly AgentRole[] = ['reviewer', 'worker', 'coordinator'];
 /** A role or specialist name: no path separators, no leading dash, bounded. */
 const ROLE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const COUNT = /^\d+$/;
 
 export interface LaunchIdentityDeps extends GitHubAppDeps {
     home?: string;
@@ -40,11 +40,16 @@ export interface LaunchIdentityDeps extends GitHubAppDeps {
 
 export interface LaunchIdentityInput {
     holder: string;
-    /** The launch's `--role` value, resolved through the role map. */
+    /** The launch's `--role` value. */
     roleName?: string | null;
     cwd: string;
     env?: NodeJS.ProcessEnv;
     deps?: LaunchIdentityDeps;
+    /**
+     * tmux `-e` paths: forward the inherited GIT_CONFIG_* entries as well, because
+     * the pane does not inherit xt's environment (CORE-2528 review).
+     */
+    forwardInherited?: boolean;
 }
 
 export interface LaunchIdentityResult {
@@ -53,7 +58,6 @@ export interface LaunchIdentityResult {
     role: AgentRole | null;
     configured: boolean;
     exported: boolean;
-    /** Set when the launch must be refused before the runtime starts. */
     refused: string | null;
     /** One line for stderr: why the identity was or was not exported. */
     note: string | null;
@@ -80,15 +84,22 @@ function asRole(name: string): AgentRole | null {
     return (ROLE_NAMES as readonly string[]).includes(name) ? (name as AgentRole) : null;
 }
 
-function mappedRole(map: RoleMap, name: string): AgentRole | null | undefined {
+function hasEntry(map: RoleMap, name: string): boolean {
     // Own property only: `constructor`, `__proto__` and friends must not resolve.
-    if (!Object.hasOwn(map.specialists, name)) return undefined;
-    return map.specialists[name];
+    return Object.hasOwn(map.specialists, name);
 }
 
 function mappedSpecialists(map: RoleMap): string {
     const names = Object.keys(map.specialists).filter((name) => map.specialists[name]);
     return names.length ? names.join(', ') : '(none)';
+}
+
+/** The closest known name, case-insensitively, for a "did you mean" refusal. */
+function nearMiss(map: RoleMap, name: string): string | null {
+    const wanted = name.toLowerCase();
+    const known = [...ROLE_NAMES, ...Object.keys(map.specialists)];
+    // A same-spelling entry that maps to null is a deliberate "no role", not a typo.
+    return known.find((candidate) => candidate !== name && candidate.toLowerCase() === wanted) ?? null;
 }
 
 /**
@@ -121,159 +132,123 @@ export function detectRepo(cwd: string): string | null {
 
 interface RoleResolution {
     role: AgentRole | null;
-    /** The name the launch asked for, if any. */
+    /** Non-empty only when the launch explicitly asked for a role. */
     requested: string;
     refused: string | null;
     source: string;
-}
-
-/**
- * Resolve the role of a launch with the SAME rule the runtime uses
- * (`resolveAgentRole`: a specialist entry wins over a bare role name, and a
- * `null` entry means "no role"). An explicit `--role` is resolved here first.
- */
-function resolveRole(input: { roleName?: string | null; env: NodeJS.ProcessEnv; map: RoleMap; configured: boolean; supervisor: boolean }): RoleResolution {
-    const { env, map, configured, supervisor } = input;
-    const explicit = (input.roleName ?? '').trim();
-    if (explicit) {
-        const direct = asRole(explicit);
-        if (direct) return { role: direct, requested: explicit, refused: null, source: 'explicit role' };
-        const mapped = mappedRole(map, explicit);
-        if (mapped) return { role: mapped, requested: explicit, refused: null, source: `specialist ${explicit}` };
-        if (mapped === null) return { role: null, requested: explicit, refused: null, source: `specialist ${explicit} is mapped to no role` };
-        // An unmapped specialist: interactive launches keep today's behaviour; a
-        // supervisor launch fails closed, because it has nobody to ask.
-        if (supervisor && configured) {
-            return {
-                role: null,
-                requested: explicit,
-                refused: `specialist '${explicit}' has no role mapping; mapped specialists: ${mappedSpecialists(map)}`,
-                source: 'explicit specialist',
-            };
-        }
-        return { role: null, requested: explicit, refused: null, source: `specialist ${explicit} is not mapped` };
-    }
-    const handSet = (env.XTRM_ROLE ?? '').trim();
-    if (handSet) {
-        // The runtime's rule, not a second one: a specialist entry wins over a bare
-        // role name, and an explicit null means no role.
-        const runtime = resolveAgentRole(handSet, map);
-        if (runtime === null && supervisor && configured && mappedRole(map, handSet) === undefined && !asRole(handSet)) {
-            return {
-                role: null,
-                requested: handSet,
-                refused: `specialist '${handSet}' has no role mapping; mapped specialists: ${mappedSpecialists(map)}`,
-                source: 'launch environment',
-            };
-        }
-        return { role: runtime, requested: handSet, refused: null, source: 'launch environment' };
-    }
-    const fallback = (env[SPECIALIST_DEFAULT_ENV] ?? '').trim();
-    if (fallback && supervisor) {
-        const direct = asRole(fallback);
-        if (direct) return { role: direct, requested: fallback, refused: null, source: 'specialist default' };
-        const mapped = mappedRole(map, fallback);
-        if (mapped) return { role: mapped, requested: fallback, refused: null, source: `specialist default ${fallback}` };
-        if (configured) {
-            return {
-                role: null,
-                requested: fallback,
-                refused: `specialist '${fallback}' has no role mapping; mapped specialists: ${mappedSpecialists(map)}`,
-                source: 'specialist default',
-            };
-        }
-    }
-    if (supervisor && configured) {
-        return {
-            role: null,
-            requested: '',
-            refused: `supervisor-launched activation names no role; set ${SPECIALIST_DEFAULT_ENV} or add the specialist to the role map (mapped: ${mappedSpecialists(map)})`,
-            source: 'supervisor',
-        };
-    }
-    return { role: map.default, requested: '', refused: null, source: 'role map default' };
 }
 
 function isSupervisor(env: NodeJS.ProcessEnv): boolean {
     return SUPERVISOR_MARKERS.some((marker) => (env[marker] ?? '').trim());
 }
 
-function transportFor(role: AgentRole, map: RoleMap, deps: LaunchIdentityDeps, env: NodeJS.ProcessEnv): Record<string, string> {
-    return buildGitTransportEnv({ role, map, deps, env, append: true });
+/**
+ * Resolve through `resolveAgentRole` in every branch, then apply only the launch
+ * gates. The runtime and the launcher must never disagree about the role.
+ */
+function resolveRole(input: { roleName?: string | null; env: NodeJS.ProcessEnv; map: RoleMap; configured: boolean }): RoleResolution {
+    const { env, map, configured } = input;
+    const supervisor = isSupervisor(env);
+    const explicit = (input.roleName ?? '').trim();
+    const handSet = (env.XTRM_ROLE ?? '').trim();
+    const fallback = (env[SPECIALIST_DEFAULT_ENV] ?? '').trim();
+    const asked = explicit || handSet || (supervisor ? fallback : '');
+    if (!asked) {
+        if (supervisor && configured) {
+            return {
+                role: null,
+                requested: '',
+                refused: `supervisor-launched activation names no role; set ${SPECIALIST_DEFAULT_ENV} or add the specialist to the role map (mapped: ${mappedSpecialists(map)})`,
+                source: 'supervisor',
+            };
+        }
+        return { role: map.default, requested: '', refused: null, source: 'role map default' };
+    }
+    // One resolver: the runtime decides, including a specialist entry that maps to
+    // null and a specialist name that shadows a role name.
+    const role = resolveAgentRole(asked, map);
+    if (role) return { role, requested: asked, refused: null, source: explicit === asked ? 'explicit' : 'launch environment' };
+    const deliberateNull = hasEntry(map, asked) && map.specialists[asked] === null;
+    if (deliberateNull) {
+        return { role: null, requested: asked, refused: null, source: `${asked} is mapped to no role` };
+    }
+    if (supervisor && configured) {
+        return {
+            role: null,
+            requested: asked,
+            refused: `specialist '${asked}' has no role mapping; mapped specialists: ${mappedSpecialists(map)}`,
+            source: 'supervisor',
+        };
+    }
+    return { role: null, requested: asked, refused: null, source: `${asked} is not mapped` };
 }
 
-/** Shared body of preflight and resolve: what this launch would do. */
-function evaluate(input: LaunchPreflightInput & { holder?: string }): {
+interface Evaluation {
     role: AgentRole | null;
     requested: string;
     refused: string | null;
-    note: string | null;
+    notes: string[];
     env: Record<string, string>;
     configured: boolean;
-} {
+}
+
+function evaluate(input: LaunchPreflightInput & { holder?: string; forwardInherited?: boolean }): Evaluation {
     const env = input.env ?? process.env;
     const deps = input.deps ?? {};
     const configured = deps.roleMapExists ?? roleMapConfigured(deps.home);
+    const notes: string[] = [];
     const explicit = (input.roleName ?? '').trim();
     if (explicit && !ROLE_NAME.test(explicit)) {
         return {
             role: null,
             requested: explicit,
             refused: `role '${explicit}' is not a valid role or specialist name (letters, digits, '.', '_' and '-'; no path separators)`,
-            note: null,
+            notes,
             env: {},
             configured,
         };
+    }
+    // A role map that exists but cannot be parsed is loud on EVERY launch, even one
+    // that names no role: silence is what made this defect invisible.
+    const map = loadRoleMap({ home: deps.home });
+    if (configured && !map) {
+        notes.push(`role map invalid at ${roleMapPath(deps.home)}; launching with the operator identity`);
+        return { role: asRole(explicit), requested: explicit, refused: null, notes, env: {}, configured };
+    }
+    const effectiveMap = map ?? { version: 1, default: 'worker' as AgentRole, specialists: {}, apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer', coordinator: 'xtrm-coord' } };
+    const resolved = resolveRole({ roleName: explicit, env, map: effectiveMap, configured });
+    if (resolved.refused) {
+        return { role: null, requested: resolved.requested, refused: resolved.refused, notes, env: {}, configured };
+    }
+    // A case-only near miss is a typo, not an unmapped specialist: refuse it before
+    // the worktree rather than launching with the operator identity.
+    if (!resolved.role && resolved.requested) {
+        const suggestion = nearMiss(effectiveMap, resolved.requested);
+        if (suggestion) {
+            return {
+                role: null,
+                requested: resolved.requested,
+                refused: `role '${resolved.requested}' is not mapped; did you mean '${suggestion}'?`,
+                notes,
+                env: {},
+                configured,
+            };
+        }
     }
     if (!configured) {
-        return {
-            role: asRole(explicit),
-            requested: explicit,
-            refused: null,
-            note: explicit
-                ? `role ${explicit} has no identity mapping; launching with the operator identity`
-                : null,
-            env: {},
-            configured: false,
-        };
-    }
-    const map = loadRoleMap({ home: deps.home });
-    if (!map) {
-        return {
-            role: asRole(explicit),
-            requested: explicit,
-            refused: null,
-            // Loud, never silent: the file exists but cannot be read, so the launch
-            // keeps today's behaviour.
-            note: `role map invalid at ${roleMapPath(deps.home)}; launching with the operator identity`,
-            env: {},
-            configured: true,
-        };
-    }
-    const resolved = resolveRole({
-        roleName: explicit,
-        env,
-        map,
-        configured,
-        supervisor: isSupervisor(env),
-    });
-    if (resolved.refused) {
-        return { role: null, requested: resolved.requested, refused: resolved.refused, note: null, env: {}, configured };
+        if (resolved.requested) notes.push(`role ${resolved.requested} has no identity mapping; launching with the operator identity`);
+        return { role: resolved.role, requested: resolved.requested, refused: null, notes, env: {}, configured: false };
     }
     if (!resolved.role) {
-        return {
-            role: null,
-            requested: resolved.requested,
-            refused: null,
-            note: resolved.requested
-                ? `role ${resolved.requested} has no identity mapping; launching with the operator identity`
-                : null,
-            env: {},
-            configured,
-        };
+        if (resolved.requested) {
+            notes.push(resolved.source.includes('mapped to no role')
+                ? `role ${resolved.requested} is mapped to no role; launching with the operator identity`
+                : `role ${resolved.requested} has no identity mapping; launching with the operator identity`);
+        }
+        return { role: null, requested: resolved.requested, refused: null, notes, env: {}, configured };
     }
     const role = resolved.role;
-    const slug = appSlugForRole(role, map);
+    const slug = appSlugForRole(role, effectiveMap);
     const repo = deps.repo ?? detectRepo(input.cwd);
     const owner = repo ? repoOwner(repo) : null;
     const config = readAppConfig(slug, deps);
@@ -284,29 +259,39 @@ function evaluate(input: LaunchPreflightInput & { holder?: string }): {
             : !config
                 ? `no ${slug} App is configured on this host`
                 : `the ${slug} App is not installed for ${owner}`;
-        const reviewerAsked = role === 'reviewer' || asRole(resolved.requested) === 'reviewer' || resolved.requested === 'reviewer';
-        // An explicit reviewer launch on a host where the reviewer App IS configured
-        // must not fall back to the operator login: refuse it before the worktree.
-        const refused = reviewerAsked && config
-            ? `role reviewer: ${why}; refusing to launch a reviewer with the operator identity`
-            : null;
-        return {
-            role,
-            requested: resolved.requested,
-            refused,
-            note: refused ? null : `${why}; launching with the operator identity (no XTRM_ROLE, no transport rewrite)`,
-            env: {},
-            configured,
-        };
+        const reviewerAsked = role === 'reviewer';
+        if (reviewerAsked && config) {
+            return {
+                role,
+                requested: resolved.requested,
+                refused: `role reviewer: ${why}; refusing to launch a reviewer with the operator identity`,
+                notes,
+                env: {},
+                configured,
+            };
+        }
+        if (resolved.requested) notes.push(`${why}; launching with the operator identity (no XTRM_ROLE, no transport rewrite)`);
+        return { role, requested: resolved.requested, refused: null, notes, env: {}, configured };
     }
-    return {
-        role,
-        requested: resolved.requested,
-        refused: null,
-        note: `role ${role} uses the ${slug} App of ${installation.account}`,
-        env: { XTRM_ROLE: role, ...transportFor(role, map, deps, env) },
-        configured,
-    };
+    // Strictly parse the inherited count: parseInt('3abc') would silently shift every
+    // index and break git in the child.
+    const rawCount = (env.GIT_CONFIG_COUNT ?? '').trim();
+    const base = COUNT.test(rawCount) ? Number.parseInt(rawCount, 10) : 0;
+    if (rawCount && !COUNT.test(rawCount)) {
+        notes.push(`GIT_CONFIG_COUNT='${rawCount}' is not a number; treating it as 0`);
+    }
+    const transport = buildGitTransportEnv({ role, map: effectiveMap, deps, append: true, baseCount: base });
+    const out: Record<string, string> = { XTRM_ROLE: role };
+    if (input.forwardInherited) {
+        // The pane does not inherit xt's env, so the list must be self-consistent.
+        for (let index = 0; index < base; index += 1) {
+            const key = env[`GIT_CONFIG_KEY_${index}`];
+            const value = env[`GIT_CONFIG_VALUE_${index}`];
+            if (key !== undefined) out[`GIT_CONFIG_KEY_${index}`] = key;
+            if (value !== undefined) out[`GIT_CONFIG_VALUE_${index}`] = value;
+        }
+    }
+    return { role, requested: resolved.requested, refused: null, notes, env: { ...out, ...transport }, configured };
 }
 
 /** Run BEFORE any worktree or branch exists: it decides whether to start at all. */
@@ -315,8 +300,9 @@ export function preflightLaunchIdentity(input: LaunchPreflightInput): LaunchPref
     return {
         role: evaluated.role,
         refused: evaluated.refused,
-        // A launch that asked for a role but will not carry it says so once.
-        warning: !evaluated.refused && evaluated.note && (evaluated.requested || evaluated.role) ? evaluated.note : null,
+        // One note per launch, and only when the launch asked for a role or the role
+        // map itself is broken.
+        warning: !evaluated.refused && evaluated.notes.length ? evaluated.notes.join('; ') : null,
     };
 }
 
@@ -328,6 +314,6 @@ export function resolveLaunchIdentity(input: LaunchIdentityInput): LaunchIdentit
         configured: evaluated.configured,
         exported: Object.keys(evaluated.env).length > 0,
         refused: evaluated.refused,
-        note: evaluated.note,
+        note: evaluated.notes.length ? evaluated.notes.join('; ') : null,
     };
 }

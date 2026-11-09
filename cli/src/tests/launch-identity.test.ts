@@ -12,6 +12,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { parseGithubOrigin, preflightLaunchIdentity, resolveLaunchIdentity, roleMapConfigured } from '../core/launch-identity.js';
+import { resolveAgentRole } from '../core/identity-roles.js';
 
 let home = '';
 
@@ -78,11 +79,12 @@ describe('only the reviewer App exists (today)', () => {
     });
 
     it('exports nothing for a worker and adds nothing it does not own', () => {
-        const result = resolve('worker');
+        const result = resolve(null);
         expect(result.configured).toBe(true);
         expect(result.exported).toBe(false);
         expect(result.env).toEqual({});
-        expect(result.note).toMatch(/no xtrm-worker App is configured/);
+        // A plain worker launch is not a request for an identity: no stderr noise.
+        expect(result.note).toBeNull();
     });
 
     it('exports nothing for a coordinator', () => {
@@ -188,6 +190,123 @@ describe('role resolution matches the runtime', () => {
     it('behaves as today for an interactive launch with no name', () => {
         expect(resolve(null).role).toBe('worker');
         expect(resolve(null).refused).toBeNull();
+    });
+});
+
+describe('prototype pollution', () => {
+    it('does not resolve a specialist injected on Object.prototype', () => {
+        writeRoleMap();
+        writeApp('xtrm-reviewer', { 'xtrm-dev': '42' });
+        (Object.prototype as Record<string, unknown>).ghost = 'reviewer';
+        try {
+            const result = resolve('ghost');
+            expect(result.role).toBeNull();
+            expect(result.env).toEqual({});
+            expect(result.refused).toBeNull();
+        } finally {
+            delete (Object.prototype as Record<string, unknown>).ghost;
+        }
+    });
+});
+
+describe('invalid role map (item 4)', () => {
+    it('warns on a plain launch when the map file exists but cannot be parsed', () => {
+        writeFile(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), '{not json');
+        const result = resolveLaunchIdentity({ holder: 'w', roleName: null, cwd: home, env: {}, deps: { home, repo: 'xtrm-dev/core' } });
+        expect(result.configured).toBe(true);
+        expect(result.env).toEqual({});
+        expect(result.note).toMatch(/role map invalid at .* launching with the operator identity/);
+    });
+});
+
+describe('append details from the review', () => {
+    beforeEach(() => {
+        writeRoleMap();
+        writeApp('xtrm-reviewer', { 'xtrm-dev': '42' });
+    });
+
+    it('treats a non-numeric GIT_CONFIG_COUNT as 0 and says so', () => {
+        const result = resolve('reviewer', { GIT_CONFIG_COUNT: '3abc', GIT_CONFIG_KEY_0: 'http.proxy' });
+        expect(result.env.GIT_CONFIG_COUNT).toBe('5');
+        expect(result.note).toMatch(/is not a number; treating it as 0/);
+    });
+
+    it('forwards the inherited entries for a tmux -e list (count 3)', () => {
+        const env = {
+            GIT_CONFIG_COUNT: '3',
+            GIT_CONFIG_KEY_0: 'http.proxy',
+            GIT_CONFIG_VALUE_0: 'http://proxy:3128',
+            GIT_CONFIG_KEY_1: 'credential.helper',
+            GIT_CONFIG_VALUE_1: 'store',
+            GIT_CONFIG_KEY_2: 'safe.directory',
+            GIT_CONFIG_VALUE_2: '*',
+        };
+        const result = resolveLaunchIdentity({ holder: 'w', roleName: 'reviewer', cwd: home, env, deps: { home, repo: 'xtrm-dev/core' }, forwardInherited: true });
+        expect(result.env.GIT_CONFIG_COUNT).toBe('8');
+        expect(result.env.GIT_CONFIG_KEY_0).toBe('http.proxy');
+        expect(result.env.GIT_CONFIG_VALUE_2).toBe('*');
+        expect(result.env.GIT_CONFIG_KEY_3).toBe('url.https://github.com/.insteadOf');
+        expect(result.env.GIT_CONFIG_KEY_7).toBe('credential.https://github.com.useHttpPath');
+    });
+
+    it('does not forward inherited entries on a direct spawn (the env is inherited)', () => {
+        const result = resolve('reviewer', { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.proxy', GIT_CONFIG_VALUE_0: 'x' });
+        expect(result.env.GIT_CONFIG_COUNT).toBe('6');
+        expect(result.env.GIT_CONFIG_KEY_0).toBeUndefined();
+    });
+
+    it('refuses a case-only near miss with a suggestion', () => {
+        const result = resolve('Reviewer');
+        expect(result.refused).toMatch(/did you mean 'reviewer'/);
+        expect(resolve('PR-Reviewer').refused).toMatch(/did you mean 'pr-reviewer'/);
+    });
+
+    it('treats an explicitly requested null-mapped specialist as "no role", not a typo', () => {
+        fs.writeFileSync(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+            version: 1, default: 'worker', specialists: { 'pr-reviewer': null },
+            apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer', coordinator: 'xtrm-coord' },
+        }));
+        const result = resolve('pr-reviewer');
+        expect(result.role).toBeNull();
+        expect(result.refused).toBeNull();
+        expect(result.note).toMatch(/pr-reviewer is mapped to no role/);
+    });
+
+    it('matches resolveAgentRole for every input (198-case table)', () => {
+        const names = [
+            'worker', 'reviewer', 'coordinator', 'pr-reviewer', 'seconder', 'reviewer-subagent',
+            'chain-coordinator', 'mystery', 'Constructor', 'toString', '', 'a/b', '../x', '--force',
+            'has space', 'UPPER', 'with.dots', 'with_underscores', 'with-dashes', 'x1', '1x', 'very-long-but-valid-name',
+        ];
+        const maps = [
+            { 'pr-reviewer': 'reviewer', 'seconder': 'reviewer' },
+            { 'pr-reviewer': null, 'seconder': 'reviewer' },
+            { reviewer: null },
+            { coordinator: 'reviewer' },
+            { worker: 'reviewer', reviewer: 'worker' },
+            { 'pr-reviewer': 'reviewer', 'chain-coordinator': 'coordinator', 'mystery': null },
+            { 'Reviewer': 'reviewer' },
+            {},
+            { 'pr-reviewer': 'reviewer', 'pr-reviewer ': 'worker' },
+        ] as Array<Record<string, string | null>>;
+        let compared = 0;
+        for (const specialists of maps) {
+            fs.writeFileSync(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+                version: 1, default: 'worker', specialists, apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer', coordinator: 'xtrm-coord' },
+            }));
+            const map = { version: 1, default: 'worker' as const, specialists, apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer', coordinator: 'xtrm-coord' } };
+            for (const name of names) {
+                // Explicit --role and the hand-set marker must agree with the runtime.
+                const explicit = resolveLaunchIdentity({ holder: 'w', roleName: name, cwd: home, env: {}, deps: { home, repo: 'xtrm-dev/core' } });
+                const handSet = resolveLaunchIdentity({ holder: 'w', roleName: null, cwd: home, env: { XTRM_ROLE: name }, deps: { home, repo: 'xtrm-dev/core' } });
+                const runtime = resolveAgentRole(name, map as never);
+                if (!explicit.refused) expect(explicit.role).toBe(runtime);
+                if (!handSet.refused) expect(handSet.role).toBe(runtime);
+                compared += 2;
+            }
+        }
+        // 9 maps x 22 names x 2 forms (explicit --role, hand-set marker) = 396 comparisons.
+        expect(compared).toBe(396);
     });
 });
 

@@ -14,7 +14,14 @@ import { describe, expect, it } from 'vitest';
 
 const CLI = resolve(__dirname, '..', '..', 'dist', 'index.cjs');
 
-function runEnvCommand(env: NodeJS.ProcessEnv): { status: number | null; stdout: string; stderr: string } {
+function runEnvCommand(input: NodeJS.ProcessEnv): { status: number | null; stdout: string; stderr: string } {
+    const env: NodeJS.ProcessEnv = { ...input };
+    // CORE-2528: a supervisor-launched session exports these; the test env must
+    // not decide any identity outcome.
+    for (const key of ['SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH', 'XTRM_ROLE', 'XTRM_SPECIALIST_DEFAULT']) delete env[key];
+    for (const key of Object.keys(env)) {
+        if (key === 'GIT_CONFIG_COUNT' || key.startsWith('GIT_CONFIG_KEY_') || key.startsWith('GIT_CONFIG_VALUE_')) delete env[key];
+    }
     const result = spawnSync(process.execPath, [CLI, 'identity', 'env'], { encoding: 'utf8', env, timeout: 15000, killSignal: 'SIGKILL' });
     return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
 }

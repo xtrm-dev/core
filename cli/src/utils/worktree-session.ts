@@ -3377,10 +3377,6 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // and an installation for the repo owner. Otherwise the launch keeps the
     // operator identity (no XTRM_ROLE, no transport rewrite).
     const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
-    if (directIdentity.refused) {
-        process.stderr.write(`xt: ${directIdentity.refused}\n`);
-        process.exit(1);
-    }
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
@@ -3544,11 +3540,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // CORE-2390: who dispatched this worker and its Substrate participant name.
     const dispatcherEnv = buildDispatcherEnv(sessionSlug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) });
     // CORE-2528: role App identity for every tmux `-e` env (see resolveLaunchIdentity).
-    const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath });
-    if (launchIdentity.refused) {
-        process.stderr.write(`xt: ${launchIdentity.refused}\n`);
-        process.exit(1);
-    }
+    const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
     // CORE-2454: first-turn hold signal — only Pi, only with an initial prompt.
     const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
 
