@@ -40,6 +40,7 @@ import {
 } from '../core/git-transport.js';
 import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
 import { resolveAgentRunId } from '../core/agent-run-id.js';
+import { resolveLaunchIdentity, roleMapConfigured } from '../core/launch-identity.js';
 import {
     eventForFlags,
     eventForOutcome,
@@ -647,6 +648,16 @@ export function createIdentityCommand(): Command {
             const home = os.homedir();
             const checks: Array<{ check: string; ok: boolean; detail: string; hard: boolean }> = [];
             const map = loadRoleMap();
+            if (!roleMapConfigured(home)) {
+                // No role map: identities are not configured on this host, so a launch
+                // keeps the operator identity. One line, not a warning per App.
+                checks.push({
+                    check: 'identities',
+                    ok: true,
+                    detail: `identities not configured (no role map at ${roleMapPath(home)}); launches keep the operator identity`,
+                    hard: false,
+                });
+            }
             checks.push({
                 check: 'role map',
                 ok: map !== null,

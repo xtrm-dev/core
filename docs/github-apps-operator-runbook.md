@@ -255,6 +255,14 @@ Known limits, accepted rather than hidden:
 - The reviewer's `gh api` restriction is an allowlist (a plain GET only: no method other than GET, no
   field/input flags, no graphql, no issues endpoint), not a complete sandbox: anything the shim passes through
   reaches the real `gh` with the operator's login, and `gh issue close` is not intercepted.
+- The launcher exports `XTRM_ROLE` and the `GIT_CONFIG_*` transport only for a role whose App is configured on
+  this host **and** installed for the repository owner. Every other launch — a role with no App, a repo with no
+  installation, a worktree with no `github.com` origin — keeps the operator identity and does no transport
+  rewrite. That is why a worker can still `git push` while only `xtrm-reviewer` exists.
+- What no app can intercept: the shim rewrites `gh` only. An agent that keeps the operator identity can still
+  push over ssh (`git@github.com:`), run `gh issue close` (not intercepted), or call the REST API directly with
+  the operator's token. The launch guard narrows the mistake surface (role marker, transport, credential
+  helper); it is not a sandbox, and the environment variables it sets are writable by the same unix user.
 - Each guarded `gh` call (`pr merge`, `pr close|edit|ready|reopen`, `api`) costs one `xt identity role --json`
   lookup, measured at about 0.17 s; other commands do not pay it.
 - `XTRM_MERGE_GUARD` (unset = off; `on`, `1`, `true`, `yes` enable it) gates the merge check. With it off the

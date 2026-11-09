@@ -13,6 +13,7 @@ import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
 import { buildDispatcherEnv, stripDispatcherEnv } from '../core/dispatcher-identity.js';
+import { resolveLaunchIdentity, stripIdentityEnv } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
 import {
     buildDetachedLaunchOutcome,
@@ -3331,7 +3332,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     };
 
     if (resolvedRole) {
-        await launchTmuxSession({ ...common, mode: 'role', role: resolvedRole, renderedTask });
+        await launchTmuxSession({ ...common, mode: 'role', role: resolvedRole, renderedTask, requestedRole: roleName });
         return; // launchTmuxSession never returns (calls process.exit)
     }
 
@@ -3362,10 +3363,18 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // is no session to observe and the variables stay absent (never
     // fabricated) so X1 readers keep one absent-means-unknown rule.
     const directSessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
+    // CORE-2528: the role App identity, when this host has the App for that role
+    // and an installation for the repo owner. Otherwise the launch keeps the
+    // operator identity (no XTRM_ROLE, no transport rewrite).
+    const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
+    if (directIdentity.refused) {
+        process.stderr.write(`xt: ${directIdentity.refused}\n`);
+        process.exit(1);
+    }
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }), ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripIdentityEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3436,6 +3445,8 @@ type TmuxLaunchArgs = {
     turn1Body: string;
     explicitSkillPaths?: string[];
     passthrough?: string[];
+    /** The operator's `--role` value, for identity resolution (CORE-2528). */
+    requestedRole?: string;
     newSession?: boolean;
     parent?: string;
     child?: boolean;
@@ -3449,6 +3460,8 @@ type TmuxLaunchArgs = {
     | {
         mode: 'role';
         role: ResolvedRole;
+        /** The name the operator typed: resolved through the role map for identity. */
+        requestedRole?: string;
         /** render-task metadata for telemetry only (turn1Body owns the actual body). */
         renderedTask?: RenderedRoleTask;
     }
@@ -3520,6 +3533,12 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const agentEnv = buildAgentEnv(plan.paneOptions);
     // CORE-2390: who dispatched this worker and its Substrate participant name.
     const dispatcherEnv = buildDispatcherEnv(sessionSlug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) });
+    // CORE-2528: role App identity for every tmux `-e` env (see resolveLaunchIdentity).
+    const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath });
+    if (launchIdentity.refused) {
+        process.stderr.write(`xt: ${launchIdentity.refused}\n`);
+        process.exit(1);
+    }
     // CORE-2454: first-turn hold signal — only Pi, only with an initial prompt.
     const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
 
@@ -3568,7 +3587,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
-                env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv },
+                env: { ...stripIdentityEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
             });
             process.exit(runtimeResult.status ?? 0);
         }
@@ -3579,7 +3598,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
             stdio: 'inherit',
-            env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...initialPromptEnv },
+            env: { ...stripIdentityEnv(stripDispatcherEnv(process.env)), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
         });
         const runtimeExit = new Promise<number>((resolve) => {
             runtimeProcess.once('error', () => resolve(1));
@@ -3655,7 +3674,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         ? buildSessionIdentityEnv(windowIdentity)
         : buildSessionIdentityEnv({ sessionName: plan.sessionName });
     const envArgs: string[] = [];
-    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv, ...initialPromptEnv })) {
+    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv })) {
         envArgs.push('-e', `${k}=${v}`);
     }
 

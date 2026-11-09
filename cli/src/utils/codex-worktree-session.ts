@@ -19,6 +19,7 @@ import {
     type CodexTrustProfile,
 } from '../core/codex-session.js';
 import { buildDispatcherEnv } from '../core/dispatcher-identity.js';
+import { resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import {
@@ -375,11 +376,19 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     // CORE-2390: dispatcher identity; a --window worker also carries the
     // caller session's identity, since that is the session it runs in.
     const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
+    // CORE-2528: role App identity when this host has the App and its installation
+    // covers the repo owner; otherwise the operator identity, as before.
+    const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
+    if (launchIdentity.refused) {
+        process.stderr.write(`xt: ${launchIdentity.refused}\n`);
+        process.exit(1);
+    }
     const agentEnv = {
         ...buildAgentEnv(paneOptions),
         XTMUX_AGENT_RUNTIME: 'codex',
         ...(windowIdentity ? buildSessionIdentityEnv(windowIdentity) : {}),
         ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }),
+        ...launchIdentity.env,
     };
     const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
     let windowPaneId = '';

@@ -46,6 +46,9 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEma
     if (command === 'git' && args[0] === 'symbolic-ref') return { status: 0, stdout: 'origin/main\n', stderr: '' };
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === '--quiet' && (args[3] ?? '').startsWith('origin/')) return { status: 0, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'rev-parse') return { status: 1, stdout: '', stderr: '' };
+    if (command === 'git' && joined.includes('remote get-url origin')) {
+      return { status: 0, stdout: 'https://github.com/xtrm-dev/core.git\n', stderr: '' };
+    }
     if (command === 'git' && args[0] === 'config') {
       return opts.gitEmail
         ? { status: 0, stdout: `${opts.gitEmail}\n`, stderr: '' }
@@ -369,6 +372,68 @@ describe('xt/tmux launcher session-identity propagation', () => {
       expectDispatcher(envPairs(h.newSessionArgs), 'dwk4');
       // The role payload keeps its XTRM_SESSION_* contract; the holder rides -e only.
       expect(Object.keys((h.loadedPayload?.['sessionEnv'] ?? {}) as object).every((k) => k.startsWith('XTRM_SESSION_'))).toBe(true);
+    });
+
+    function writeIdentityConfig(): void {
+      // Reviewer-only host: the role map exists and only xtrm-reviewer has an App.
+      fs.mkdirSync(path.join(homeRoot, '.xtrm', 'config'), { recursive: true });
+      fs.writeFileSync(path.join(homeRoot, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+        version: 1,
+        default: 'worker',
+        specialists: { 'pr-reviewer': 'reviewer' },
+        apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer', coordinator: 'xtrm-coord' },
+      }));
+      fs.mkdirSync(path.join(homeRoot, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeRoot, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer', 'app.json'),
+        JSON.stringify({ slug: 'xtrm-reviewer', appId: '12345', owner: 'xtrm-dev', installations: { 'xtrm-dev': '42' } }),
+      );
+    }
+
+    it('exports the reviewer identity on the direct spawn only where the App and installation exist (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      // The direct path is a bare launch; the role arrives from the session that
+      // launches it (a hand-set XTRM_ROLE, which the launcher never overrides).
+      process.env.XTRM_ROLE = 'reviewer';
+      try {
+        await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-id' })).rejects.toThrow('exit:0');
+      } finally {
+        delete process.env.XTRM_ROLE;
+      }
+      expect(h.piSpawnEnv?.['XTRM_ROLE']).toBe('reviewer');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBe('5');
+    });
+
+    it('keeps today’s env for a worker while only the reviewer App exists (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      process.env.XTRM_ROLE = 'worker';
+      try {
+        await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-w' })).rejects.toThrow('exit:0');
+      } finally {
+        delete process.env.XTRM_ROLE;
+      }
+      expect(h.piSpawnEnv?.['SUBSTRATE_HOLDER']).toBe('dwk-w');
+      expect(h.piSpawnEnv?.['XTRM_ROLE']).toBeUndefined();
+      expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBeUndefined();
+    });
+
+    it('exports the reviewer identity in the tmux -e block (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'claude', name: 'dwk-tm', role: 'reviewer', attach: false })).rejects.toThrow('exit:0');
+      expect(envPairs(h.newSessionArgs)['XTRM_ROLE']).toBe('reviewer');
+      expect(envPairs(h.newSessionArgs)['GIT_CONFIG_COUNT']).toBe('5');
     });
 
     it('carries the resolved operator email on the tmux plan path too (CORE-2525)', async () => {

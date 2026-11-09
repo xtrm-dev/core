@@ -261,6 +261,25 @@ describe('a refused override is explained on stderr (batch 4, item 5)', () => {
     });
 });
 
+describe('identity doctor without a role map (CORE-2528 remainder)', () => {
+    it('says identities are not configured instead of warning per App', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-nomap-'));
+        try {
+            const result = spawnSync(process.execPath, [CLI, 'identity', 'doctor', '--json'], {
+                encoding: 'utf8',
+                env: { ...process.env, HOME: home },
+                timeout: 15000,
+                killSignal: 'SIGKILL',
+            });
+            const report = JSON.parse(String(result.stdout ?? '{}'));
+            const checks = JSON.stringify(report);
+            expect(checks).toContain('identities not configured');
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
+        }
+    });
+});
+
 describe('merge-check with the guard off needs no App (batch 5, item 5)', () => {
     it('exits 0 without minting anything', () => {
         const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-noapp-'));

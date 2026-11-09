@@ -205,12 +205,25 @@ describe('Codex worktree launcher', () => {
         const codexHome = path.join(repoRoot, 'codex-home');
         const homeRoot = path.join(repoRoot, 'home');
         const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', `${path.basename(repoRoot)}-xt-codex-win`);
-        const saved = { HOME: process.env.HOME, TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE, SUBSTRATE_HOLDER: process.env.SUBSTRATE_HOLDER };
+        const saved = { HOME: process.env.HOME, TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE, SUBSTRATE_HOLDER: process.env.SUBSTRATE_HOLDER, XTRM_ROLE: process.env.XTRM_ROLE };
         process.env.CODEX_HOME = codexHome;
         process.env.HOME = homeRoot;
         process.env.TMUX = '/tmp/tmux-1000/default,1,0';
         process.env.TMUX_PANE = '%5';
         process.env.SUBSTRATE_HOLDER = 'coord-self';
+        // CORE-2528: a reviewer-only host; the hand-set XTRM_ROLE must survive and
+        // the transport must be exported for the reviewer App.
+        fs.mkdirSync(path.join(homeRoot, '.xtrm', 'config'), { recursive: true });
+        fs.writeFileSync(path.join(homeRoot, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+            version: 1, default: 'worker', specialists: { 'pr-reviewer': 'reviewer' },
+            apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer', coordinator: 'xtrm-coord' },
+        }));
+        fs.mkdirSync(path.join(homeRoot, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer'), { recursive: true });
+        fs.writeFileSync(
+            path.join(homeRoot, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer', 'app.json'),
+            JSON.stringify({ slug: 'xtrm-reviewer', appId: '12345', owner: 'xtrm-dev', installations: { 'xtrm-dev': '42' } }),
+        );
+        process.env.XTRM_ROLE = 'reviewer';
         fs.ensureDirSync(path.join(homeRoot, '.claude', 'sessions'));
         fs.writeJsonSync(path.join(homeRoot, '.claude', 'sessions', `${process.ppid}.json`), {
             pid: process.ppid, name: 'coord-1', messagingSocketPath: '/run/cc/77.sock',
@@ -223,6 +236,7 @@ describe('Codex worktree launcher', () => {
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
             if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
+            if (command === 'git' && joined.includes('remote get-url origin')) return { status: 0, stdout: 'https://github.com/xtrm-dev/core.git\n', stderr: '' };
             if (command === 'git' && joined.startsWith('show-ref --verify')) return { status: 1, stdout: '', stderr: '' };
             // CORE-2525: the operator email the launcher resolves for the child.
             if (command === 'git' && args[0] === 'config' && args[1] === '--get') return { status: 0, stdout: 'op@example.com\n', stderr: '' };
@@ -276,6 +290,9 @@ describe('Codex worktree launcher', () => {
             XTRM_PARENT_PANE_ID: '%5',
             XTRM_PARENT_SESSION_ID: '$42',
             XTMUX_AGENT_RUNTIME: 'codex',
+            // CORE-2528: the reviewer App identity and transport, when installed.
+            XTRM_ROLE: 'reviewer',
+            GIT_CONFIG_COUNT: '5',
         });
         expect(mocked.spawnSync.mock.calls.some(([c, a]) => c === 'tmux' && a?.[0] === 'new-session')).toBe(false);
         expect(stdoutSpy).toHaveBeenCalledWith('coord-sess:%21\n');
