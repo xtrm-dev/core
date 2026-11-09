@@ -65,9 +65,12 @@ describe('parseInvocation', () => {
 });
 
 describe('parseInvocation (repo flags)', () => {
-    it('takes the LAST repo flag, as gh does', () => {
+    it('takes the LAST repo flag, as gh does (M40: all four orders)', () => {
+        // attached and separate, before and after the verb
         expect(parseInvocation(['pr', '-R', 'first/repo', 'merge', '5', '-R', 'last/repo'])).toMatchObject({ repo: 'last/repo', pr: 5 });
         expect(parseInvocation(['pr', '--repo=first/repo', 'merge', '5', '--repo=last/repo'])).toMatchObject({ repo: 'last/repo', pr: 5 });
+        expect(parseInvocation(['-R', 'first/repo', 'pr', '-R', 'last/repo', 'merge', '5'])).toMatchObject({ repo: 'last/repo', pr: 5 });
+        expect(parseInvocation(['pr', 'merge', '-R', 'first/repo', '-R', 'last/repo', '5'])).toMatchObject({ repo: 'last/repo', pr: 5 });
     });
 });
 

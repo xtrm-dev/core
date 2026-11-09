@@ -140,10 +140,14 @@ PARTIAL -> COMMENT, FAIL -> REQUEST_CHANGES. A stale approval is not evidence.
 Client-side only: any agent that holds the operator's `gh` login can call the GitHub API directly,
 and `gh api …/pulls/N/merge` is refused only for the reviewer role by the shim. The guard catches
 errors and stale or missing reviews; it is not protection against a hostile agent on the same unix
-user. The hook parses one command string. It does gate common spellings — `/usr/bin/gh`,
+user. The hook parses one command string. It gates the common spellings — `/usr/bin/gh`,
 `command gh`, `env X=1 gh`, `sudo gh`, `time gh`, `nohup gh`, `exec gh`, `xargs gh`, a leading `!`,
-`(`, `{`, `then`/`do`/`else`, quoted `'pr'`/`"gh"`, and `g\h` — but `$GH pr merge`, `$(…)` and
-backticks, and commands handed to `sh -c` or `eval`, are invisible to it; the shim is the backstop
-there, and a target it cannot resolve statically is reported as such, asking for an explicit PR
-number. When the reviewer App is
+`(`, `{`, `then`/`do`/`else`, quoted `'pr'`/`"gh"`, `g\h`, and CRLF line endings — and it treats a
+`$(…)` substitution as a command boundary, so the merge is still gated even though the substitution's
+value is not seen. Not gated and not parsed: `sudo -u root gh` (a value between `sudo` and `gh`),
+`timeout`, `nice`, `stdbuf`, `setsid`, `watch`, `parallel`, `busybox` and `find -exec`; the shim is
+the backstop for those. `xargs gh pr merge` takes its target from stdin, so the hook checks the cwd
+PR instead of the piped one. A target the resolver cannot read statically (`$PR`) is refused with a
+message asking for an explicit PR number, and an argv over 100 kB is reported as too large to
+inspect. Backticks, `eval` and `sh -c` strings are invisible to the hook. When the reviewer App is
 unavailable the guard blocks merges and the override is the documented way out.

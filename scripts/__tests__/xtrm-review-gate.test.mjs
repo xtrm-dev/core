@@ -331,6 +331,69 @@ describe('fail-closed, help, chains, cwd and tool scope (review D)', () => {
     });
 });
 
+
+describe('quoted heredoc delimiters (review 1)', () => {
+    const bodies = [
+        ["<<'EOF'", 'EOF'],
+        ['<<"EOF"', 'EOF'],
+        ['<<\\EOF', 'EOF'],
+        ['<<E"O"F', 'EOF'],
+        ['<<-EOF', '\tEOF'],
+    ];
+    for (const [marker, terminator] of bodies) {
+        it(`skips a ${marker} body that contains a merge`, () => {
+            const command = `gh pr create --body-file - ${marker}\nReview body\ngh pr merge 5\n${terminator}`;
+            const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(checkCalls().length, 0, command);
+        });
+    }
+
+    it('an apostrophe in a quoted body does not hide the merge after the terminator', () => {
+        const command = "cat <<'EOF' > f\ndon't merge this\nEOF\ngh pr merge 5";
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks.length, 1, checks.map((call) => call.argv.join(' ')).join(' | '));
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '5']);
+    });
+});
+
+describe('a trailing comment does not swallow the next command (review 2)', () => {
+    it('gates the merge after a commented command', () => {
+        const command = 'git status # check\ngh pr merge --repo o/r 5';
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks.length, 1, checks.map((call) => call.argv.join(' ')).join(' | '));
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '--repo', 'o/r', '5']);
+    });
+
+    it('still ignores a leading comment line and a CRLF command', () => {
+        const leading = runHook('pre', mergePayload('# check\ngh pr merge 5'), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(leading.status, 0, leading.stderr);
+        assert.equal(checkCalls().length, 1);
+        const crlf = runHook('pre', mergePayload('gh pr merge 5\r\n'), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(crlf.status, 0, crlf.stderr);
+        assert.equal(checkCalls().length, 2);
+    });
+});
+
+describe('parentheses and braces separate commands (H25)', () => {
+    for (const command of ['(gh pr merge 5)', 'gh pr merge 5) || true', '{ gh pr merge 5; }', '( gh pr merge 5 ) && true']) {
+        it(`gates: ${command}`, () => {
+            const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+            assert.equal(result.status, 0, result.stderr);
+            const checks = checkCalls();
+            assert.equal(checks.length, 1, checks.map((call) => call.argv.join(' ')).join(' | '));
+            const argvAt = checks[0].argv.indexOf('--gh-args');
+            assert.equal(JSON.parse(checks[0].argv[argvAt + 1])[2], '5');
+        });
+    }
+});
+
 describe('the create reminder (post)', () => {
     it('prints the tier line from the fallback reminder when no file is installed', () => {
         const result = runHook('post', {

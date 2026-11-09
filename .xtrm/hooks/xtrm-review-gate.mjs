@@ -122,14 +122,24 @@ function simpleCommands(command) {
         if (char === '\\' && command[index + 1] === '\n') { index += 2; continue; }
         if (char === '\\' && index + 1 < command.length) { word += command[index + 1]; started = true; index += 2; continue; }
         if (char === '<' && command[index + 1] === '<') {
-            // Heredoc marker: <<EOF, <<'EOF', <<-EOF.
+            // Heredoc marker with quote removal: <<EOF, <<-EOF, <<'EOF', <<"EOF",
+            // <<\EOF and the mixed E"O"F form all name the same terminator.
             let cursor = index + 2;
             if (command[cursor] === '-') cursor += 1;
-            while (cursor < command.length && command[cursor] === ' ') cursor += 1;
+            while (cursor < command.length && (command[cursor] === ' ' || command[cursor] === '\t')) cursor += 1;
             let delimiter = '';
-            while (cursor < command.length && /[A-Za-z0-9_]/.test(command[cursor])) { delimiter += command[cursor]; cursor += 1; }
+            let heredocQuote = '';
+            while (cursor < command.length) {
+                const next = command[cursor];
+                if (heredocQuote === "'") { if (next === "'") heredocQuote = ''; else delimiter += next; cursor += 1; continue; }
+                if (heredocQuote === '"') { if (next === '"') heredocQuote = ''; else delimiter += next; cursor += 1; continue; }
+                if (next === "'" || next === '"') { heredocQuote = next; cursor += 1; continue; }
+                if (next === '\\' && cursor + 1 < command.length) { delimiter += command[cursor + 1]; cursor += 2; continue; }
+                if (/[A-Za-z0-9_]/.test(next)) { delimiter += next; cursor += 1; continue; }
+                break;
+            }
             // The command carrying the heredoc ends at the body: flush it, so the
-            // next command after the delimiter is parsed on its own.
+            // next command after the terminator is parsed on its own.
             flushCommand();
             heredoc = delimiter || null;
             index = cursor;
@@ -141,12 +151,15 @@ function simpleCommands(command) {
             continue;
         }
         if (char === '#' && !started) {
-            // A comment runs to the end of the line; an apostrophe in it is not a quote.
+            // A comment runs to the end of the line; an apostrophe in it is not a
+            // quote. Stop AT the newline so the newline still separates commands,
+            // otherwise `git status # check` swallows the next `gh pr merge`.
+            flushCommand();
             const newline = command.indexOf('\n', index);
-            index = newline < 0 ? command.length : newline + 1;
+            index = newline < 0 ? command.length : newline;
             continue;
         }
-        if (char === ' ' || char === '\t') { flushWord(); index += 1; continue; }
+        if (char === ' ' || char === '\t' || char === '\r') { flushWord(); index += 1; continue; }
         word += char;
         started = true;
         index += 1;
