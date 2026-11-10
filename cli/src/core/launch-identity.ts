@@ -29,6 +29,8 @@ const ROLE_NAMES: readonly AgentRole[] = ['reviewer', 'worker', 'coordinator'];
 /** A role or specialist name: no path separators, no leading dash, bounded. */
 const ROLE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const COUNT = /^\d+$/;
+/** Above this many inherited entries the launch refuses to walk them. */
+const MAX_INHERITED_CONFIG = 1024;
 
 export interface LaunchIdentityDeps extends GitHubAppDeps {
     home?: string;
@@ -82,11 +84,6 @@ export function roleMapConfigured(home?: string): boolean {
 
 function asRole(name: string): AgentRole | null {
     return (ROLE_NAMES as readonly string[]).includes(name) ? (name as AgentRole) : null;
-}
-
-function hasEntry(map: RoleMap, name: string): boolean {
-    // Own property only: `constructor`, `__proto__` and friends must not resolve.
-    return Object.hasOwn(map.specialists, name);
 }
 
 function mappedSpecialists(map: RoleMap): string {
@@ -168,7 +165,10 @@ function resolveRole(input: { roleName?: string | null; env: NodeJS.ProcessEnv; 
     // null and a specialist name that shadows a role name.
     const role = resolveAgentRole(asked, map);
     if (role) return { role, requested: asked, refused: null, source: explicit === asked ? 'explicit' : 'launch environment' };
-    const deliberateNull = hasEntry(map, asked) && map.specialists[asked] === null;
+    // An own `null` entry is the deliberate "no credential" case. A prototype key
+    // (`constructor`, `__proto__`) is never `null` here, so it falls through to the
+    // unknown path, and the role itself always comes from resolveAgentRole.
+    const deliberateNull = map.specialists[asked] === null;
     if (deliberateNull) {
         return { role: null, requested: asked, refused: null, source: `${asked} is mapped to no role` };
     }
@@ -236,7 +236,9 @@ function evaluate(input: LaunchPreflightInput & { holder?: string; forwardInheri
         }
     }
     if (!configured) {
-        if (resolved.requested) notes.push(`role ${resolved.requested} has no identity mapping; launching with the operator identity`);
+        // Only an explicit --role is a request for an identity; an inherited marker
+        // on an unconfigured host must not print on every nested launch.
+        if (explicit) notes.push(`role ${resolved.requested} has no identity mapping; launching with the operator identity`);
         return { role: resolved.role, requested: resolved.requested, refused: null, notes, env: {}, configured: false };
     }
     if (!resolved.role) {
@@ -276,9 +278,13 @@ function evaluate(input: LaunchPreflightInput & { holder?: string; forwardInheri
     // Strictly parse the inherited count: parseInt('3abc') would silently shift every
     // index and break git in the child.
     const rawCount = (env.GIT_CONFIG_COUNT ?? '').trim();
-    const base = COUNT.test(rawCount) ? Number.parseInt(rawCount, 10) : 0;
+    const parsed = COUNT.test(rawCount) ? Number.parseInt(rawCount, 10) : 0;
+    // Cap the forwarding loop: a hostile or corrupt count must not make a launch hang.
+    const base = parsed > MAX_INHERITED_CONFIG ? 0 : parsed;
     if (rawCount && !COUNT.test(rawCount)) {
         notes.push(`GIT_CONFIG_COUNT='${rawCount}' is not a number; treating it as 0`);
+    } else if (parsed > MAX_INHERITED_CONFIG) {
+        notes.push(`GIT_CONFIG_COUNT=${parsed} exceeds ${MAX_INHERITED_CONFIG}; ignoring the inherited entries`);
     }
     const transport = buildGitTransportEnv({ role, map: effectiveMap, deps, append: true, baseCount: base });
     const out: Record<string, string> = { XTRM_ROLE: role };

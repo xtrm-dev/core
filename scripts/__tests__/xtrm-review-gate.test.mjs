@@ -473,6 +473,27 @@ describe('heredoc LOWs from the #883 review', () => {
     });
 });
 
+describe('heredoc terminator details from the #883 review (H33b, H37)', () => {
+    it('does not strip tabs for a plain heredoc, so an indented terminator is body (H33b)', () => {
+        // Only `<<-` strips leading tabs. Here "\tEOF" is a body line, so the merge
+        // after it is still inside the body and must never be gated.
+        const command = 'cat <<EOF > out.txt\n\tEOF\ngh pr merge 5';
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(checkCalls().length, 0, 'a tab-indented terminator must not end a plain heredoc');
+    });
+
+    it('matches a CRLF terminator and gates the merge after it (H37)', () => {
+        const command = 'cat <<EOF > out.txt\r\nbody\r\nEOF\r\ngh pr merge 5';
+        const result = runHook('pre', mergePayload(command), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        const checks = checkCalls();
+        assert.equal(checks.length, 1);
+        const argvAt = checks[0].argv.indexOf('--gh-args');
+        assert.deepEqual(JSON.parse(checks[0].argv[argvAt + 1]), ['pr', 'merge', '5']);
+    });
+});
+
 describe('the create reminder (post)', () => {
     it('prints the tier line from the fallback reminder when no file is installed', () => {
         const result = runHook('post', {
