@@ -19,6 +19,7 @@ import {
     type CodexTrustProfile,
 } from '../core/codex-session.js';
 import { buildDispatcherEnv } from '../core/dispatcher-identity.js';
+import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import {
@@ -217,6 +218,13 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     if (existingBranch.status !== 1) fail(`Could not verify worktree branch ownership: ${branchName}`);
     if (existsSync(worktreePath)) fail(`Worktree path already exists: ${worktreePath}`);
 
+    // CORE-2528: decide BEFORE the worktree and branch are created, and before
+    // `sp view` runs: an invalid role name, an unmapped supervisor activation or
+    // an explicit reviewer without its App must not leave state behind.
+    const identityPreflight = preflightLaunchIdentity({ roleName: opts.role, cwd: mainRoot });
+    if (identityPreflight.refused) fail(identityPreflight.refused);
+    if (identityPreflight.warning) process.stderr.write(`xt: ${identityPreflight.warning}\n`);
+
     let roleName: string | undefined;
     let developerInstructions: string | undefined;
     let selectedModel = opts.model;
@@ -375,11 +383,15 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     // CORE-2390: dispatcher identity; a --window worker also carries the
     // caller session's identity, since that is the session it runs in.
     const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
+    // CORE-2528: role App identity when this host has the App and its installation
+    // covers the repo owner; otherwise the operator identity, as before.
+    const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
     const agentEnv = {
         ...buildAgentEnv(paneOptions),
         XTMUX_AGENT_RUNTIME: 'codex',
         ...(windowIdentity ? buildSessionIdentityEnv(windowIdentity) : {}),
         ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }),
+        ...launchIdentity.env,
     };
     const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
     let windowPaneId = '';

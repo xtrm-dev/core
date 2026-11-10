@@ -40,6 +40,7 @@ import {
 } from '../core/git-transport.js';
 import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
 import { resolveAgentRunId } from '../core/agent-run-id.js';
+import { resolveLaunchIdentity, roleMapConfigured } from '../core/launch-identity.js';
 import {
     eventForFlags,
     eventForOutcome,
@@ -647,14 +648,29 @@ export function createIdentityCommand(): Command {
             const home = os.homedir();
             const checks: Array<{ check: string; ok: boolean; detail: string; hard: boolean }> = [];
             const map = loadRoleMap();
-            checks.push({
-                check: 'role map',
-                ok: map !== null,
-                detail: map
-                    ? `${roleMapPath(home)} (version ${ROLE_MAP_VERSION})`
-                    : `${roleMapPath(home)} is invalid: every agent acts as no role`,
-                hard: true,
-            });
+            if (!roleMapConfigured(home)) {
+                // No role map: identities are not configured on this host, so a launch
+                // keeps the operator identity. One line, not a warning per App.
+                checks.push({
+                    check: 'identities',
+                    ok: true,
+                    detail: `identities not configured (no role map at ${roleMapPath(home)}); launches keep the operator identity`,
+                    hard: false,
+                });
+            }
+            // With no role map the next check would contradict the identities line.
+            if (roleMapConfigured(home)) {
+                checks.push({
+                    check: 'role map',
+                    ok: map !== null,
+                    detail: map
+                        ? `${roleMapPath(home)} (version ${ROLE_MAP_VERSION})`
+                        : `${roleMapPath(home)} is invalid; launches keep the operator identity and print a warning`,
+                    // A broken role map is a hard failure, as on base: every launch silently
+                    // falls back to the operator identity otherwise.
+                    hard: !map,
+                });
+            }
             for (const [role, slug] of Object.entries((map ?? DEFAULT_ROLE_MAP).apps)) {
                 const config = readAppConfig(slug, { home });
                 if (!config) {

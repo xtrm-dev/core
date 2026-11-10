@@ -255,6 +255,21 @@ Known limits, accepted rather than hidden:
 - The reviewer's `gh api` restriction is an allowlist (a plain GET only: no method other than GET, no
   field/input flags, no graphql, no issues endpoint), not a complete sandbox: anything the shim passes through
   reaches the real `gh` with the operator's login, and `gh issue close` is not intercepted.
+- The launcher appends the transport at the inherited `GIT_CONFIG_COUNT` (strictly digits, otherwise 0 with a
+  note) and never removes an inherited entry. On the tmux `-e` paths it forwards the inherited
+  `GIT_CONFIG_KEY_i`/`VALUE_i` entries as well: a pane does not inherit xt's environment, so a count without
+  those keys makes every `git` command in the pane fail.
+- For a reviewer launch the launcher forwards the operator's inherited `GIT_CONFIG_*` entries through the tmux
+  `-e` flag, so those values appear in the pane's environment and in the `tmux` argv. Keep secrets out of
+  `GIT_CONFIG_VALUE_*` in any shell that launches reviewers.
+- The launcher exports `XTRM_ROLE` and the `GIT_CONFIG_*` transport only for a role whose App is configured on
+  this host **and** installed for the repository owner. Every other launch — a role with no App, a repo with no
+  installation, a worktree with no `github.com` origin — keeps the operator identity and does no transport
+  rewrite. That is why a worker can still `git push` while only `xtrm-reviewer` exists.
+- What no app can intercept: the shim rewrites `gh` only. An agent that keeps the operator identity can still
+  push over ssh (`git@github.com:`), run `gh issue close` (not intercepted), or call the REST API directly with
+  the operator's token. The launch guard narrows the mistake surface (role marker, transport, credential
+  helper); it is not a sandbox, and the environment variables it sets are writable by the same unix user.
 - Each guarded `gh` call (`pr merge`, `pr close|edit|ready|reopen`, `api`) costs one `xt identity role --json`
   lookup, measured at about 0.17 s; other commands do not pay it.
 - `XTRM_MERGE_GUARD` (unset = off; `on`, `1`, `true`, `yes` enable it) gates the merge check. With it off the
@@ -276,7 +291,23 @@ Files the code reads (nothing else is authoritative):
 
 - `~/.xtrm/identities/github-apps/<slug>/app.json` — `slug`, `appId`, `owner`, `installations` (account to id).
 - `~/.secrets/github-apps/<slug>.pem` — the private key, mode `600`; its directory mode `700`.
-- `~/.xtrm/config/identity-role-map.json` — role and specialist routing. Absent means the shipped default (worker); invalid means every agent gets no credential.
+- `~/.xtrm/config/identity-role-map.json` — role and specialist routing.
+  - **Absent** means identities are not configured. Doctor prints one `identities not configured …` check
+    (`ok: true`, not a hard failure) and exits `0` when every other check passes; a launch keeps the operator
+    identity and exports nothing.
+  - **Invalid** (unreadable or unparsable) is a hard doctor failure: the `role map` check is `ok: false` with
+    `hard: true`, so doctor exits `1`. Every launch also warns on stderr, including one that names no role;
+    nothing is exported and no launch is refused.
+  - An interactive `--role` that maps to nothing launches as today and prints
+    `role <name> has no identity mapping`; a case-only typo (`Reviewer`, `PR-Reviewer`) is refused with
+    "did you mean" before any worktree. Only a supervisor-launched activation with no mapping, an invalid role
+    name, or an explicit reviewer that cannot get its App is refused, and always before a worktree or branch
+    exists.
+  - An accepted name matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`: the first character is an ASCII letter or
+    digit, the rest (up to 63) are ASCII letters, digits, `.`, `_` or `-`, so a name is at most 64 characters.
+    Rejected: empty names, names starting with `_`, `.` or `-`, path separators (`a/b`, `../x`), option-like
+    names (`--force`), whitespace, other punctuation and non-ASCII characters. This covers every `sp list`
+    specialist name on this host.
 - `~/.xtrm/config/reviewer-routing.md` — the text the review reminder prints. Operator-editable.
 
 Token cache: `$XDG_RUNTIME_DIR/xtrm/gh-tokens/<slug>-<account>.json` (fallback `~/.xtrm/run/...`, created `0700`),

@@ -46,6 +46,9 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEma
     if (command === 'git' && args[0] === 'symbolic-ref') return { status: 0, stdout: 'origin/main\n', stderr: '' };
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === '--quiet' && (args[3] ?? '').startsWith('origin/')) return { status: 0, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'rev-parse') return { status: 1, stdout: '', stderr: '' };
+    if (command === 'git' && joined.includes('remote get-url origin')) {
+      return { status: 0, stdout: 'https://github.com/xtrm-dev/core.git\n', stderr: '' };
+    }
     if (command === 'git' && args[0] === 'config') {
       return opts.gitEmail
         ? { status: 0, stdout: `${opts.gitEmail}\n`, stderr: '' }
@@ -157,8 +160,12 @@ describe('xt/tmux launcher session-identity propagation', () => {
   beforeEach(async () => {
     // CORE-2525 review: a GIT_* value exported in the developer's shell must
     // never make these tests pass or fail; the launcher resolves its own.
-    for (const key of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) {
+    for (const key of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL',
+      'SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH', 'XTRM_ROLE', 'XTRM_SPECIALIST_DEFAULT']) {
       delete process.env[key];
+    }
+    for (const key of Object.keys(process.env)) {
+      if (key === 'GIT_CONFIG_COUNT' || key.startsWith('GIT_CONFIG_KEY_') || key.startsWith('GIT_CONFIG_VALUE_')) delete process.env[key];
     }
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-session-id-'));
     repoRoot = path.join(tempRoot, 'repo');
@@ -369,6 +376,152 @@ describe('xt/tmux launcher session-identity propagation', () => {
       expectDispatcher(envPairs(h.newSessionArgs), 'dwk4');
       // The role payload keeps its XTRM_SESSION_* contract; the holder rides -e only.
       expect(Object.keys((h.loadedPayload?.['sessionEnv'] ?? {}) as object).every((k) => k.startsWith('XTRM_SESSION_'))).toBe(true);
+    });
+
+    function writeIdentityConfig(): void {
+      // Reviewer-only host: the role map exists and only xtrm-reviewer has an App.
+      fs.mkdirSync(path.join(homeRoot, '.xtrm', 'config'), { recursive: true });
+      fs.writeFileSync(path.join(homeRoot, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+        version: 1,
+        default: 'worker',
+        specialists: { 'pr-reviewer': 'reviewer' },
+        apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer', coordinator: 'xtrm-coord' },
+      }));
+      fs.mkdirSync(path.join(homeRoot, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeRoot, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer', 'app.json'),
+        JSON.stringify({ slug: 'xtrm-reviewer', appId: '12345', owner: 'xtrm-dev', installations: { 'xtrm-dev': '42' } }),
+      );
+    }
+
+    it('exports the reviewer identity on the direct spawn only where the App and installation exist (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      // The direct path is a bare launch; the role arrives from the session that
+      // launches it (a hand-set XTRM_ROLE, which the launcher never overrides).
+      process.env.XTRM_ROLE = 'reviewer';
+      try {
+        await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-id' })).rejects.toThrow('exit:0');
+      } finally {
+        delete process.env.XTRM_ROLE;
+      }
+      expect(h.piSpawnEnv?.['XTRM_ROLE']).toBe('reviewer');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBe('5');
+    });
+
+    it('removes nothing the caller inherited and adds nothing for a worker (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      const saved = {
+        role: process.env.XTRM_ROLE,
+        count: process.env.GIT_CONFIG_COUNT,
+        key0: process.env.GIT_CONFIG_KEY_0,
+        value0: process.env.GIT_CONFIG_VALUE_0,
+      };
+      // The reviewer's ruling: the launcher touches nothing it does not set. A
+      // coordinator's marker and an operator's proxy entry must survive.
+      process.env.XTRM_ROLE = 'coordinator';
+      process.env.GIT_CONFIG_COUNT = '1';
+      process.env.GIT_CONFIG_KEY_0 = 'http.proxy';
+      process.env.GIT_CONFIG_VALUE_0 = 'http://proxy:3128';
+      try {
+        await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-w' })).rejects.toThrow('exit:0');
+      } finally {
+        for (const [key, value] of [['XTRM_ROLE', saved.role], ['GIT_CONFIG_COUNT', saved.count], ['GIT_CONFIG_KEY_0', saved.key0], ['GIT_CONFIG_VALUE_0', saved.value0]] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+      expect(h.piSpawnEnv?.['SUBSTRATE_HOLDER']).toBe('dwk-w');
+      // Byte-identity for everything the identity feature could touch.
+      expect(h.piSpawnEnv?.['XTRM_ROLE']).toBe('coordinator');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBe('1');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_KEY_0']).toBe('http.proxy');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_VALUE_0']).toBe('http://proxy:3128');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_KEY_1']).toBeUndefined();
+    });
+
+    it('refuses an invalid role name before any worktree exists (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-bad', role: '../evil' })).rejects.toThrow('exit:1');
+      const worktreeCalls = mocked.spawnSync.mock.calls.filter(([, args]) => (args ?? []).includes('worktree') && (args ?? []).includes('add'));
+      expect(worktreeCalls).toHaveLength(0);
+    });
+
+    it('refuses an unmapped supervisor activation before any worktree exists (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const saved = process.env.SPECIALISTS_JOB_ID;
+      process.env.SPECIALISTS_JOB_ID = 'job-1';
+      try {
+        const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+        await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-sup', role: 'mystery-specialist' })).rejects.toThrow('exit:1');
+      } finally {
+        if (saved === undefined) delete process.env.SPECIALISTS_JOB_ID;
+        else process.env.SPECIALISTS_JOB_ID = saved;
+      }
+      const worktreeCalls = mocked.spawnSync.mock.calls.filter(([, args]) => (args ?? []).includes('worktree') && (args ?? []).includes('add'));
+      expect(worktreeCalls).toHaveLength(0);
+    });
+
+    it('exports and forwards the reviewer identity on the current-pane spawn (CORE-2528)', async () => {
+      armDispatcher();
+      process.env.TMUX = '/tmp/tmux-1000/default,9,0';
+      process.env.TMUX_PANE = '%9';
+      installMock(h);
+      writeIdentityConfig();
+      const saved = { count: process.env.GIT_CONFIG_COUNT, key0: process.env.GIT_CONFIG_KEY_0, value0: process.env.GIT_CONFIG_VALUE_0 };
+      process.env.GIT_CONFIG_COUNT = '1';
+      process.env.GIT_CONFIG_KEY_0 = 'http.proxy';
+      process.env.GIT_CONFIG_VALUE_0 = 'http://proxy:3128';
+      try {
+        const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+        await expect(launchWorktreeSession({ runtime: 'claude', name: 'dwk-cp', role: 'reviewer' })).rejects.toThrow('exit:0');
+      } finally {
+        for (const [key, value] of [['GIT_CONFIG_COUNT', saved.count], ['GIT_CONFIG_KEY_0', saved.key0], ['GIT_CONFIG_VALUE_0', saved.value0]] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+      // The pane does not inherit xt's env: the forwarded list must be complete.
+      expect(h.piSpawnEnv?.['XTRM_ROLE']).toBe('reviewer');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_COUNT']).toBe('6');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_KEY_0']).toBe('http.proxy');
+      expect(h.piSpawnEnv?.['GIT_CONFIG_KEY_1']).toBe('url.https://github.com/.insteadOf');
+    });
+
+    it('launches an interactive unmapped role as today and warns on stderr (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk-cc', role: 'chain-coordinator' })).rejects.toThrow('exit:0');
+      const said = stderr.mock.calls.map(([line]) => String(line)).join('');
+      expect(said).toMatch(/role chain-coordinator has no identity mapping/);
+      expect(h.piSpawnEnv?.['XTRM_ROLE']).toBeUndefined();
+      stderr.mockRestore();
+    });
+
+    it('exports the reviewer identity in the tmux -e block (CORE-2528)', async () => {
+      armDispatcher();
+      installMock(h);
+      writeIdentityConfig();
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'claude', name: 'dwk-tm', role: 'reviewer', attach: false })).rejects.toThrow('exit:0');
+      expect(envPairs(h.newSessionArgs)['XTRM_ROLE']).toBe('reviewer');
+      expect(envPairs(h.newSessionArgs)['GIT_CONFIG_COUNT']).toBe('5');
     });
 
     it('carries the resolved operator email on the tmux plan path too (CORE-2525)', async () => {

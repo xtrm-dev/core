@@ -14,7 +14,14 @@ import { describe, expect, it } from 'vitest';
 
 const CLI = resolve(__dirname, '..', '..', 'dist', 'index.cjs');
 
-function runEnvCommand(env: NodeJS.ProcessEnv): { status: number | null; stdout: string; stderr: string } {
+function runEnvCommand(input: NodeJS.ProcessEnv): { status: number | null; stdout: string; stderr: string } {
+    const env: NodeJS.ProcessEnv = { ...input };
+    // CORE-2528: a supervisor-launched session exports these; the test env must
+    // not decide any identity outcome.
+    for (const key of ['SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH', 'XTRM_ROLE', 'XTRM_SPECIALIST_DEFAULT']) delete env[key];
+    for (const key of Object.keys(env)) {
+        if (key === 'GIT_CONFIG_COUNT' || key.startsWith('GIT_CONFIG_KEY_') || key.startsWith('GIT_CONFIG_VALUE_')) delete env[key];
+    }
     const result = spawnSync(process.execPath, [CLI, 'identity', 'env'], { encoding: 'utf8', env, timeout: 15000, killSignal: 'SIGKILL' });
     return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
 }
@@ -255,6 +262,26 @@ describe('a refused override is explained on stderr (batch 4, item 5)', () => {
             const stderr = String(result.stderr ?? '');
             expect(stderr).toMatch(/override refused/);
             expect(stderr).toMatch(/role worker may not override/);
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('identity doctor without a role map (CORE-2528 remainder)', () => {
+    it('says identities are not configured, prints no contradictory role-map line, and still names the Apps', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-nomap-'));
+        try {
+            const result = spawnSync(process.execPath, [CLI, 'identity', 'doctor', '--json'], {
+                encoding: 'utf8',
+                env: { ...process.env, HOME: home },
+                timeout: 15000,
+                killSignal: 'SIGKILL',
+            });
+            const report = JSON.parse(String(result.stdout ?? '{}'));
+            const checks = JSON.stringify(report);
+            expect(checks).toContain('identities not configured');
+            expect(checks).not.toContain('"check":"role map"');
         } finally {
             fs.rmSync(home, { recursive: true, force: true });
         }
