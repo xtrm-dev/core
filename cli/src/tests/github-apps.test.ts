@@ -212,4 +212,14 @@ describe('mintInstallationToken', () => {
         expect(JSON.stringify(calls)).not.toContain('PRIVATE KEY');
         expect(minted.token).toBe('ghs_secret');
     });
+
+    it('accepts a numeric appId, as a hand-written app.json carries it (live finding)', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-appnum-'));
+        const file = githubAppPaths(home).appFile('xtrm-reviewer');
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify({ slug: 'xtrm-reviewer', appId: 5669067, owner: 'Jaggerxtrm', keyPath: '/tmp/x.pem', installations: { Jaggerxtrm: 179891878 } }));
+        const config = readAppConfig('xtrm-reviewer', { home });
+        expect(config?.appId).toBe('5669067');
+        expect(config?.installations).toEqual({ Jaggerxtrm: '179891878' });
+    });
 });

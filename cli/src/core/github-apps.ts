@@ -111,7 +111,10 @@ export function readAppConfig(slug: string, deps: GitHubAppDeps = {}): AppConfig
     if (!raw || typeof raw !== 'object') return null;
     const record = raw as Record<string, unknown>;
     if (record.slug !== slug) return null;
-    if (typeof record.appId !== 'string' || !record.appId.trim()) return null;
+    // A hand-written app.json naturally carries a JSON number; the runbook never said
+    // "string", and a live run failed with no clear reason because of it.
+    const rawAppId = typeof record.appId === 'number' ? String(record.appId) : record.appId;
+    if (typeof rawAppId !== 'string' || !rawAppId.trim()) return null;
     const installations: Record<string, string> = {};
     const rawInstallations = record.installations;
     if (rawInstallations && typeof rawInstallations === 'object') {
@@ -122,7 +125,7 @@ export function readAppConfig(slug: string, deps: GitHubAppDeps = {}): AppConfig
     }
     return {
         slug,
-        appId: record.appId.trim(),
+        appId: rawAppId.trim(),
         owner: typeof record.owner === 'string' ? record.owner : '',
         keyPath: typeof record.keyPath === 'string' && record.keyPath.trim()
             ? record.keyPath
