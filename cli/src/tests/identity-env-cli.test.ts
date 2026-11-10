@@ -14,6 +14,20 @@ import { describe, expect, it } from 'vitest';
 
 const CLI = resolve(__dirname, '..', '..', 'dist', 'index.cjs');
 
+function writeHeadStub(home: string, head = 'd'.repeat(40)): string {
+    const bin = path.join(home, 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const stub = path.join(bin, 'gh');
+    fs.writeFileSync(stub, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'repo') { process.stdout.write(JSON.stringify({ nameWithOwner: 'xtrm-dev/core' })); process.exit(0); }
+process.stdout.write(JSON.stringify({ number: 42, headRefOid: '${head}', url: 'https://github.com/xtrm-dev/core/pull/42' }));
+`, { mode: 0o755 });
+    return stub;
+}
+
+
+
 function runEnvCommand(input: NodeJS.ProcessEnv): { status: number | null; stdout: string; stderr: string } {
     const env: NodeJS.ProcessEnv = { ...input };
     // CORE-2528: a supervisor-launched session exports these; the test env must
@@ -105,6 +119,7 @@ describe('merge-check reachability and the audit trail (CORE-2528 delta M6)', ()
                 SUBSTRATE_HOLDER: 'core-xt-pi-0fln',
                 XTRM_ROLE: 'coordinator',
                 XTRM_MERGE_GUARD_OVERRIDE: 'validation without the App',
+                XTRM_REAL_GH: writeHeadStub(home),
             });
             expect(result.status).toBe(0);
             expect(result.stdout).toMatch(/merge allowed for xtrm-dev\/core#42 by XTRM_MERGE_GUARD_OVERRIDE/);
@@ -160,6 +175,7 @@ describe('merge-check reachability and the audit trail (CORE-2528 delta M6)', ()
                 SUBSTRATE_HOLDER: 'core-xt-pi-0fln',
                 XTRM_ROLE: 'coordinator',
                 XTRM_MERGE_GUARD_OVERRIDE: 'no audit trail',
+                XTRM_REAL_GH: writeHeadStub(home),
             });
             expect(result.status).toBe(1);
             expect(result.stderr).toMatch(/audit trail failed/);
@@ -205,6 +221,7 @@ describe('the credential helper refuses what it must not answer (delta review #3
 describe('a pathological state directory fails fast (delta batch 3, item 1)', () => {
     it('refuses within seconds on /proc and names the state directory in the refusal', () => {
         const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-noapp-'));
+        writeHeadStub(home);
         try {
             const result = spawnSync(
                 process.execPath,
@@ -219,6 +236,7 @@ describe('a pathological state directory fails fast (delta batch 3, item 1)', ()
                         SUBSTRATE_HOLDER: 'h',
                         XTRM_ROLE: 'coordinator',
                         XTRM_MERGE_GUARD_OVERRIDE: 'why',
+                        XTRM_REAL_GH: path.join(home, 'bin', 'gh'),
                     },
                     // 5 s: with checkStateDir removed the child hangs in mkdir and is
                     // killed here, so the test goes red instead of blocking the run.
@@ -262,6 +280,62 @@ describe('a refused override is explained on stderr (batch 4, item 5)', () => {
             const stderr = String(result.stderr ?? '');
             expect(stderr).toMatch(/override refused/);
             expect(stderr).toMatch(/role worker may not override/);
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('doctor hard-fails on an invalid role map (M37)', () => {
+    it('reports the role map as a hard failure and exits 1', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-badmap-'));
+        try {
+            fs.mkdirSync(path.join(home, '.xtrm', 'config'), { recursive: true });
+            fs.writeFileSync(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), '{not json');
+            const result = spawnSync(process.execPath, [CLI, 'identity', 'doctor', '--json'], {
+                encoding: 'utf8', env: { ...process.env, HOME: home }, timeout: 15000, killSignal: 'SIGKILL',
+            });
+            expect(result.status).toBe(1);
+            const report = JSON.parse(String(result.stdout ?? '{}'));
+            const roleMap = report.checks.find((check: { check: string }) => check.check === 'role map');
+            expect(roleMap).toMatchObject({ ok: false, hard: true });
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('merge-check refuses an override whose head cannot be resolved (C1)', () => {
+    it('fails closed when the stub gh cannot report the PR head', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-nohead-'));
+        const bin = path.join(home, 'bin');
+        fs.mkdirSync(bin, { recursive: true });
+        // A gh that can name the repo but never the PR: no head, no URL.
+        const stub = path.join(bin, 'gh');
+        fs.writeFileSync(stub, `#!/usr/bin/env bash
+if [ "$1" = "repo" ]; then echo '{"nameWithOwner":"xtrm-dev/core"}'; exit 0; fi
+if [ "$1" = "pr" ]; then echo '{"number":5}' ; exit 0; fi
+echo '{}'
+`, { mode: 0o755 });
+        try {
+            const result = spawnSync(process.execPath, [CLI, 'identity', 'merge-check', '--gh-args', '["pr","merge","5"]', '--json'], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    HOME: home,
+                    XTRM_MERGE_GUARD: 'on',
+                    XTRM_MERGE_GUARD_OVERRIDE: 'because',
+                    XTRM_ROLE: 'coordinator',
+                    SUBSTRATE_HOLDER: 'coord',
+                    XTRM_REAL_GH: stub,
+                },
+                timeout: 20000,
+                killSignal: 'SIGKILL',
+            });
+            expect(result.status).toBe(1);
+            const decision = JSON.parse(String(result.stdout ?? '{}'));
+            expect(decision.allow).toBe(false);
+            expect(decision.reason).toMatch(/the reviewed head could not be resolved, so the override is refused/);
         } finally {
             fs.rmSync(home, { recursive: true, force: true });
         }

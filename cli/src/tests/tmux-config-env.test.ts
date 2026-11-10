@@ -18,7 +18,8 @@ import { resolveLaunchIdentity } from '../core/launch-identity.js';
 
 const socket = path.join(os.tmpdir(), `xtrm-tmux-cfg-${process.pid}.sock`);
 let home = '';
-let tmuxAvailable = false;
+// Computed at collection time: `it.skipIf` is evaluated before any hook runs.
+const tmuxAvailable = spawnSync('tmux', ['-V'], { encoding: 'utf8' }).status === 0;
 
 function tmux(args: string[], input?: string): { status: number | null; stdout: string; stderr: string } {
     const result = spawnSync('tmux', ['-S', socket, ...args], { encoding: 'utf8', input, timeout: 10000 });
@@ -31,7 +32,6 @@ function writeFile(file: string, body: string): void {
 }
 
 beforeAll(() => {
-    tmuxAvailable = spawnSync('tmux', ['-V'], { encoding: 'utf8' }).status === 0;
     if (!tmuxAvailable) return;
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-tmux-cfg-home-'));
     writeFile(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
@@ -55,8 +55,9 @@ afterAll(() => {
 
 describe('tmux -e forwards the inherited GIT_CONFIG entries', () => {
     for (const base of [0, 1, 3]) {
-        it(`git config --list succeeds in the pane with base ${base}`, async () => {
-            if (!tmuxAvailable) return;
+        // An explicit skip with a reason: a silent return would hide the whole
+        // property on a machine without tmux (M29b).
+        it.skipIf(!tmuxAvailable)(`git config --list succeeds in the pane with base ${base} (skipped without tmux)`, async () => {
             const inherited: Record<string, string> = {};
             if (base > 0) {
                 inherited.GIT_CONFIG_COUNT = String(base);

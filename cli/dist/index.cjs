@@ -58486,14 +58486,12 @@ var SUPERVISOR_MARKERS = ["SPECIALISTS_JOB_ID", "XTRM_SUPERVISOR_LAUNCH"];
 var ROLE_NAMES = ["reviewer", "worker", "coordinator"];
 var ROLE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 var COUNT = /^\d+$/;
+var MAX_INHERITED_CONFIG = 1024;
 function roleMapConfigured(home) {
   return (0, import_node_fs6.existsSync)(roleMapPath(home));
 }
 function asRole(name) {
   return ROLE_NAMES.includes(name) ? name : null;
-}
-function hasEntry(map2, name) {
-  return Object.hasOwn(map2.specialists, name);
 }
 function mappedSpecialists(map2) {
   const names = Object.keys(map2.specialists).filter((name) => map2.specialists[name]);
@@ -58548,7 +58546,7 @@ function resolveRole(input) {
   }
   const role = resolveAgentRole(asked, map2);
   if (role) return { role, requested: asked, refused: null, source: explicit === asked ? "explicit" : "launch environment" };
-  const deliberateNull = hasEntry(map2, asked) && map2.specialists[asked] === null;
+  const deliberateNull = map2.specialists[asked] === null;
   if (deliberateNull) {
     return { role: null, requested: asked, refused: null, source: `${asked} is mapped to no role` };
   }
@@ -58602,7 +58600,7 @@ function evaluate(input) {
     }
   }
   if (!configured) {
-    if (resolved.requested) notes.push(`role ${resolved.requested} has no identity mapping; launching with the operator identity`);
+    if (explicit) notes.push(`role ${resolved.requested} has no identity mapping; launching with the operator identity`);
     return { role: resolved.role, requested: resolved.requested, refused: null, notes, env: {}, configured: false };
   }
   if (!resolved.role) {
@@ -58634,9 +58632,12 @@ function evaluate(input) {
     return { role, requested: resolved.requested, refused: null, notes, env: {}, configured };
   }
   const rawCount = (env3.GIT_CONFIG_COUNT ?? "").trim();
-  const base = COUNT.test(rawCount) ? Number.parseInt(rawCount, 10) : 0;
+  const parsed = COUNT.test(rawCount) ? Number.parseInt(rawCount, 10) : 0;
+  const base = parsed > MAX_INHERITED_CONFIG ? 0 : parsed;
   if (rawCount && !COUNT.test(rawCount)) {
     notes.push(`GIT_CONFIG_COUNT='${rawCount}' is not a number; treating it as 0`);
+  } else if (parsed > MAX_INHERITED_CONFIG) {
+    notes.push(`GIT_CONFIG_COUNT=${parsed} exceeds ${MAX_INHERITED_CONFIG}; ignoring the inherited entries`);
   }
   const transport = buildGitTransportEnv({ role, map: effectiveMap, deps, append: true, baseCount: base });
   const out = { XTRM_ROLE: role };
@@ -72444,7 +72445,7 @@ async function mergeCheck(input, deps) {
   if (latest.state === "APPROVED") {
     if (!issueRef) {
       return deny(
-        "the PR names no Substrate Issue in a marker, so the guard refuses even an approval at the current head",
+        "the PR carries no resolvable Substrate Issue: add the line-2 marker <!-- xtrm issue=<REF> holder=<holder> run=<id> --> to the PR body, or contact the operator; the guard refuses even an approval at the current head",
         { head, issueRef, ...reviewInfo },
         markerGuidance()
       );
@@ -72526,6 +72527,14 @@ async function applyOverride(refusal, deps) {
   if (!mayOverride) {
     const who = source === "unknown" ? `an unresolved role (${(env3.XTRM_ROLE ?? "").trim() || "no role"} is not a role or a mapped specialist)` : `role ${role}`;
     return { ...refusal, reason: `${refusal.reason} (override refused: ${who} may not override the merge guard)` };
+  }
+  if (!refusal.head) {
+    const why = "the reviewed head could not be resolved, so the override is refused";
+    return {
+      ...refusal,
+      reason: `${refusal.reason} (override refused: ${why})`,
+      message: `merge refused for ${refusal.repo}#${refusal.pr}: ${why}`
+    };
   }
   const actorRole = source === "operator" ? "operator" : String(role);
   const log = appendOverrideLog(deps, {

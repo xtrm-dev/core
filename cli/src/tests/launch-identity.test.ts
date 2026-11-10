@@ -193,6 +193,46 @@ describe('role resolution matches the runtime', () => {
     });
 });
 
+describe('cap, parity and silence (PR C1)', () => {
+    beforeEach(() => {
+        writeRoleMap();
+        writeApp('xtrm-reviewer', { 'xtrm-dev': '42' });
+    });
+
+    it('caps an absurd inherited count instead of walking it', () => {
+        const started = Date.now();
+        const result = resolveLaunchIdentity({
+            holder: 'w', roleName: 'reviewer', cwd: home,
+            env: { GIT_CONFIG_COUNT: '99999999999' }, deps: { home, repo: 'xtrm-dev/core' },
+            forwardInherited: true,
+        });
+        expect(Date.now() - started).toBeLessThan(2000);
+        expect(result.env.GIT_CONFIG_COUNT).toBe('5');
+        expect(result.note).toMatch(/exceeds 1024; ignoring the inherited entries/);
+    });
+
+    it('agrees with the runtime on a self-contradictory map', () => {
+        fs.writeFileSync(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+            version: 1, default: 'worker', specialists: { reviewer: null, 'pr-reviewer': 'reviewer' },
+            apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer', coordinator: 'xtrm-coord' },
+        }));
+        // `reviewer` is deliberately null; `pr-reviewer` maps to reviewer. The role
+        // itself always comes from resolveAgentRole, so the two cannot disagree.
+        expect(resolve('pr-reviewer').role).toBe('reviewer');
+        expect(resolve('reviewer').role).toBeNull();
+        expect(resolve(null, { XTRM_ROLE: 'reviewer' }).role).toBeNull();
+        expect(resolve(null, { XTRM_ROLE: 'pr-reviewer' }).role).toBe('reviewer');
+    });
+
+    it('stays silent for an inherited worker marker on an unconfigured host', () => {
+        fs.rmSync(path.join(home, '.xtrm'), { recursive: true, force: true });
+        const result = resolveLaunchIdentity({ holder: 'w', roleName: null, cwd: home, env: { XTRM_ROLE: 'worker' }, deps: { home, repo: 'xtrm-dev/core' } });
+        expect(result.note).toBeNull();
+        // An explicit request on the same host still explains itself.
+        expect(resolveLaunchIdentity({ holder: 'w', roleName: 'pr-reviewer', cwd: home, env: {}, deps: { home, repo: 'xtrm-dev/core' } }).note).toMatch(/no identity mapping/);
+    });
+});
+
 describe('prototype pollution', () => {
     it('does not resolve a specialist injected on Object.prototype', () => {
         writeRoleMap();
