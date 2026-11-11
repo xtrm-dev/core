@@ -22,6 +22,9 @@ export default defineConfig(async () => ({
     reporters: await loadReporters(),
     testTimeout: 30000,
     setupFiles: ['./test/setup.ts'],
+    // CORE-2612: count owned temp entries before and after the suite; fail when
+    // a test leaves its scratch directory behind.
+    globalSetup: ['./test/tmp-leak-guard.ts'],
     retry: {
       count: 2,
       delay: 500,

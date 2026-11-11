@@ -9,7 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 import {
     ATTACH_TIMEOUT_MS,
@@ -459,6 +459,12 @@ describe('the real sb surface', () => {
     })();
     const dir = mkdtempSync(join(tmpdir(), 'xtrm-sb-surface-'));
     const db = join(dir, 'state.db');
+    // The probe below runs before the skip checks, so the directory exists even
+    // when this file ends in context.skip(). CORE-2612: remove it here, not only
+    // in the finally of the executed branch.
+    afterAll(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
 
     function runSb(args: string[]): string {
         const result = spawnSync(SB, [...args, '--db', db, '--json'], { encoding: 'utf8', timeout: 20_000 });

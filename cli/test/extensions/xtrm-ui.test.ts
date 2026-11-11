@@ -1,7 +1,20 @@
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// CORE-2612: scratch dirs are registered and removed after each test.
+const uiTempDirs: string[] = [];
+
+function uiTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "xtrm-ui-"));
+  uiTempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of uiTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 vi.mock("@earendil-works/pi-coding-agent", () => {
   const tool = (name: string) => ({ name, description: name, parameters: {}, execute: vi.fn() });
@@ -561,7 +574,7 @@ describe("xtrm-ui built-in tool rendering", () => {
 
   it("renders edit diffs and new writes flat", async () => {
     const { tools } = await loadTreeExtension();
-    const path = join(mkdtempSync(join(tmpdir(), "xtrm-ui-")), "new.txt");
+    const path = join(uiTempDir(), "new.txt");
     const content = Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join("\n");
     const writeContext = context({ path, content });
     tools.write.renderCall(writeContext.args, theme, writeContext);
@@ -588,7 +601,7 @@ describe("xtrm-ui built-in tool rendering", () => {
 
   it("keeps pre-write diff data in renderer-local state", async () => {
     const { tools } = await loadTreeExtension();
-    const path = join(mkdtempSync(join(tmpdir(), "xtrm-ui-")), "probe.txt");
+    const path = join(uiTempDir(), "probe.txt");
     writeFileSync(path, "before\n");
     const renderContext = context({ path, content: "after\n" });
 

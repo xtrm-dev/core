@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { afterAll, describe, expect, it } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -10,8 +10,16 @@ function git(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...env } }).trim();
 }
 
+// CORE-2612: every fixture repository created here is removed after the file.
+const repos: string[] = [];
+
+afterAll(() => {
+  for (const dir of repos.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function initRepo(): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'xt-release-'));
+  repos.push(dir);
   git(['init'], dir);
   git(['config', 'user.email', 'test@example.com'], dir);
   git(['config', 'user.name', 'Test User'], dir);
