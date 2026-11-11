@@ -56,7 +56,7 @@ export function jiraIdentityPaths(home: string = os.homedir()): JiraIdentityPath
  * argv: <work dir> jira workitem <verb> ...; it writes the final acli argument list (NUL separated) to
  * <work>/argv and, for a transition, a label step to <work>/pre. Attribution never blocks a write: any
  * failure here makes the shim run the original command. The header and run-id rules mirror
- * scripts/jira.py in programme-coordination; keep the two in step (the tests compare them).
+ * scripts/jira.py in project-management; keep the two in step (the tests compare them).
  * acli facts this relies on (checked live, acli 1.3.19): edit --labels and edit --from-json labelsToAdd ADD to the
  * existing labels; create-bulk reads the item key "label" (a "labels" key is silently ignored) and its assignee
  * needs an account id (@me and an email are refused), taken from the bot's acli profile.

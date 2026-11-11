@@ -216,7 +216,7 @@ describe('shim routing (real bash)', () => {
 });
 
 describe('jira.py identity rule', () => {
-    const script = path.resolve(__dirname, '../../../.xtrm/skills/optional/programme/programme-coordination/scripts');
+    const script = path.resolve(__dirname, '../../../.xtrm/skills/optional/project-management/project-management/scripts');
     const py = (extra: Record<string, string>, h: string) => {
         const env: NodeJS.ProcessEnv = { ...process.env, HOME: h, ...extra };
         for (const k of ['JIRA_EMAIL', 'JIRA_TOKEN_FILE', 'SUBSTRATE_HOLDER', 'XTRM_JIRA_AS', 'XTRM_JIRA_WALK_FROM']) if (!(k in extra)) delete env[k];
@@ -354,7 +354,7 @@ describe('sweepUnassigned', () => {
 });
 
 describe('jira.py default assignee', () => {
-    const script = path.resolve(__dirname, '../../../.xtrm/skills/optional/programme/programme-coordination/scripts');
+    const script = path.resolve(__dirname, '../../../.xtrm/skills/optional/project-management/project-management/scripts');
     const code = `
 import sys, json, io, urllib.request
 sys.path.insert(0, ${JSON.stringify(script)})
@@ -565,7 +565,7 @@ describe('shim attribution (real bash)', () => {
         });
 
         it('is the same string jira.py computes inside the same agent process', () => {
-            const script = path.resolve(__dirname, '../../../.xtrm/skills/optional/programme/programme-coordination/scripts');
+            const script = path.resolve(__dirname, '../../../.xtrm/skills/optional/project-management/project-management/scripts');
             for (const holder of ['', 'w']) {
                 fs.removeSync(log);
                 const claude = path.join(home, 'claude');
@@ -909,7 +909,7 @@ describe('shim attribution (real bash)', () => {
 });
 
 describe('jira.py attribution', () => {
-    const script = path.resolve(__dirname, '../../../.xtrm/skills/optional/programme/programme-coordination/scripts');
+    const script = path.resolve(__dirname, '../../../.xtrm/skills/optional/project-management/project-management/scripts');
     const code = `
 import os, sys, json, io, runpy, urllib.request, urllib.error
 sys.path.insert(0, ${JSON.stringify(script)})

@@ -41,16 +41,16 @@ Verified with `git grep`; the files were not all re-read.
 
 ## AgentRun
 
-- `.xtrm/skills/optional/programme/board-audit/references/agentrun.md`: cookbook. Use the CLI
+- `.xtrm/skills/optional/project-management/board-audit/references/agentrun.md`: cookbook. Use the CLI
   path; the host `agentrun` tool fails on `opencode-go` with 400 `MissingSessionID`.
-- `.xtrm/skills/optional/programme/board-audit/references/audit-harness.md`: rubric and
+- `.xtrm/skills/optional/project-management/board-audit/references/audit-harness.md`: rubric and
   stability history.
-- `.xtrm/skills/optional/programme/programme-coordination/references/agentrun.md`:
+- `.xtrm/skills/optional/project-management/project-management/references/agentrun.md`:
   coordination rules (describe, inspect, run; `--trusted`; verdicts are claims).
 - `/agentrun-author` skill: authoring.
 - Working workflows: `.xtrm/skills/default/service-knowledge/scripts/coverage_audit/`
   (`workflows/*.mjs`, `run-coverage.mjs`, `run-prs.mjs`);
-  `.xtrm/skills/optional/programme/board-audit/scripts/agentrun-config-stock.mjs`.
+  `.xtrm/skills/optional/project-management/board-audit/scripts/agentrun-config-stock.mjs`.
 
 ## CORE-2580 (Claude Code port) and CORE-2581 (recall design)
 
