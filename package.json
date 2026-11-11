@@ -117,7 +117,7 @@
     "postcss": "^8.5.23",
     "@aws-sdk/xml-builder": "3.972.22",
     "vite": "8.3.8",
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.2"
   },
   "pi": {
     "extensions": [
@@ -137,6 +137,6 @@
     ]
   },
   "devDependencies": {
-    "git-cliff": "2.13.1"
+    "git-cliff": "2.14.2"
   }
 }

@@ -24,7 +24,7 @@
     "scripts/ghgrep.mjs"
   ],
   "scripts": {
-    "prebuild": "node -e \"const f=require('fs'),real=p=>{try{return f.lstatSync(p).isDirectory()}catch{return false}};if(process.cwd().includes('/.xtrm/worktrees/')&&!(real('node_modules')&&real('../node_modules'))){console.error('ERROR: refusing to build — this worktree has no node_modules of its own.\\ntsup would then resolve deps from the main repo and embed worktree-relative paths in cli/dist, so the CI dist check fails.\\nFix: run npm ci at the worktree root AND in cli/, then rebuild.\\nOr build from the main repo: cd <repo-root>/cli && npm run build');process.exit(1)}\"",
+    "prebuild": "node -e \"const f=require('fs'),real=p=>{try{return f.lstatSync(p).isDirectory()}catch{return false}};if(process.cwd().includes('/.xtrm/worktrees/')&&!(real('node_modules')&&real('../node_modules'))){console.error('ERROR: refusing to build \u2014 this worktree has no node_modules of its own.\\ntsup would then resolve deps from the main repo and embed worktree-relative paths in cli/dist, so the CI dist check fails.\\nFix: run npm ci at the worktree root AND in cli/, then rebuild.\\nOr build from the main repo: cd <repo-root>/cli && npm run build');process.exit(1)}\"",
     "build": "tsup",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
@@ -46,8 +46,8 @@
     "ora": "^9.3.0",
     "project": "^0.1.6",
     "prompts": "^2.4.2",
-    "yaml": "^2.4.2",
-    "zod": "^4.3.6"
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
@@ -55,10 +55,10 @@
     "@types/prompts": "^2.4.9",
     "@xtrm/contracts": "^0.13.0",
     "ajv": "^8.20.0",
-    "esbuild": "0.28.1",
-    "fast-check": "^4.6.0",
+    "esbuild": "0.28.2",
+    "fast-check": "^4.10.2",
     "tsup": "^8.5.1",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "8.3.8",
     "vitest": "^4.1.12"
