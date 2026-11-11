@@ -328,6 +328,21 @@ const CLAUDE_MODEL_ALIASES: ReadonlySet<string> = new Set([
     'best', 'default', 'haiku', 'opus', 'opusplan', 'sonnet',
 ]);
 
+// A role pinned for the bridge (`execution.claude_bridge`) carries the provider
+// prefix that means something to pi and nothing to Claude Code: the bridge is
+// pi's route to Claude, so the bare id after the prefix is the Claude Code name.
+// Forwarded verbatim, the whole id fails in claude at turn 1 with "There's an
+// issue with the selected model" (CORE-2608).
+export const CLAUDE_BRIDGE_PROVIDER = 'claude-bridge';
+
+/** `claude-bridge/<id>` -> `<id>`; anything else -> undefined. */
+export function claudeBridgeModelId(model: string): string | undefined {
+    const prefix = `${CLAUDE_BRIDGE_PROVIDER}/`;
+    const trimmed = model.trim();
+    if (!trimmed.toLowerCase().startsWith(prefix)) return undefined;
+    return trimmed.slice(prefix.length).trim() || undefined;
+}
+
 export function isClaudeRunnableModel(
     model: string,
     env: Record<string, string | undefined> = process.env,
@@ -338,8 +353,15 @@ export function isClaudeRunnableModel(
     if (env.ANTHROPIC_BASE_URL) return true;
     const base = name.replace(/\[[^\]]*\]$/, '');
     if (CLAUDE_MODEL_ALIASES.has(base)) return true;
-    if (base.startsWith('claude-')) return true;
+    // A Bedrock application-inference-profile ARN is a real id and carries a
+    // slash; check it before the provider-prefix rule below.
     if (base.startsWith('arn:aws:bedrock:')) return true;
+    // `<provider>/<id>` is a pi-surface route, never a Claude Code name. A
+    // claude-bridge/… id is mapped to its bare id before this gate; every other
+    // prefixed id (openrouter/anthropic/claude-x included) is foreign here, so
+    // the bare `claude-` test below must not see it (CORE-2608).
+    if (base.includes('/')) return false;
+    if (base.startsWith('claude-')) return true;
     return base.startsWith('anthropic.') || base.includes('.anthropic.');
 }
 
@@ -2191,13 +2213,21 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
     // for the pi surface, so when claude cannot resolve it in its own catalogue
     // drop it and let claude inherit its configured model instead of spawning a
     // session that dies at turn 1.
+    // A claude-bridge/<id> role default is pi's route to Claude Code, so the
+    // bare id is what claude resolves; the pi runtime keeps the prefixed id
+    // untouched (CORE-2608).
     let model = modelOverride ?? role.model;
-    if (runtime === 'claude' && !modelOverride && role.model && !isClaudeRunnableModel(role.model)) {
-        process.stderr.write(kleur.yellow(
-            `  ⚠ role '${role.name}': ignoring model '${role.model}'; claude inherits its own default.`
-            + ` Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.\n`,
-        ));
-        model = undefined;
+    if (runtime === 'claude' && !modelOverride && role.model) {
+        const bridgedModel = claudeBridgeModelId(role.model);
+        if (bridgedModel) {
+            model = bridgedModel;
+        } else if (!isClaudeRunnableModel(role.model)) {
+            process.stderr.write(kleur.yellow(
+                `  ⚠ role '${role.name}': ignoring model '${role.model}'; claude inherits its own default.`
+                + ` Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.\n`,
+            ));
+            model = undefined;
+        }
     }
 
     return finalizeTmuxPlan({

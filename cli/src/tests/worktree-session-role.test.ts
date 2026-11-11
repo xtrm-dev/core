@@ -847,6 +847,19 @@ describe('buildRoleTmuxPlan (pi runtime)', () => {
         const thinkIdx = plan.runtimeArgs.indexOf('--thinking');
         expect(plan.runtimeArgs[thinkIdx + 1]).toBe('medium');
     });
+
+    // CORE-2608: the bridge prefix is pi's own route, so the pi runtime keeps it
+    // verbatim. Only the claude runtime strips it.
+    it('forwards a claude-bridge role default unchanged', () => {
+        const plan = buildRoleTmuxPlan({ ...WT,
+            runtime: 'pi',
+            role: { ...role, model: 'claude-bridge/claude-opus-5-5' },
+            parentSessionId: '',
+            turn1Body: '',
+        });
+        const modelIdx = plan.runtimeArgs.indexOf('--model');
+        expect(plan.runtimeArgs[modelIdx + 1]).toBe('claude-bridge/claude-opus-5-5');
+    });
 });
 
 describe('isForeignProviderModel', () => {
@@ -899,6 +912,11 @@ describe('isClaudeRunnableModel', () => {
         'opencode-go/glm-5.3-flash',
         'qwencloud/qwen3.8-max-preview',
         'anthropic/claude-sonnet-5',
+        // CORE-2608: the claude-bridge provider prefix is pi's route to Claude
+        // Code, not a Claude Code name. The bare id is what claude resolves, so
+        // the prefixed form must never pass the gate.
+        'claude-bridge/claude-opus-5-5',
+        'openrouter/anthropic/claude-x',
         'my-custom-model',
         '',
         '   ',
@@ -1086,6 +1104,65 @@ describe('buildRoleTmuxPlan (claude runtime)', () => {
         });
         const modelIdx = plan.runtimeArgs.indexOf('--model');
         expect(plan.runtimeArgs[modelIdx + 1]).toBe('claude-opus-4-8');
+    });
+
+    // CORE-2608: the home specialist layer pins
+    // claude-bridge/claude-opus-5-5 with execution.claude_bridge true. Claude
+    // Code knows only the bare id, so the prefixed one killed the session at
+    // start with "There's an issue with the selected model".
+    it('maps a claude-bridge role default to the bare Claude Code id', () => {
+        const plan = buildRoleTmuxPlan({ ...WT,
+            runtime: 'claude',
+            role: { ...role, model: 'claude-bridge/claude-opus-5-5' },
+            parentSessionId: '',
+            turn1Body: '',
+        });
+        const modelIdx = plan.runtimeArgs.indexOf('--model');
+        expect(plan.runtimeArgs[modelIdx + 1]).toBe('claude-opus-5-5');
+        expect(plan.runtimeArgs).not.toContain('claude-bridge/claude-opus-5-5');
+    });
+
+    it('maps a claude-bridge role default even when a gateway translates ids', () => {
+        const before = process.env.ANTHROPIC_BASE_URL;
+        process.env.ANTHROPIC_BASE_URL = 'https://gateway.example';
+        try {
+            const plan = buildRoleTmuxPlan({ ...WT,
+                runtime: 'claude',
+                role: { ...role, model: 'claude-bridge/claude-opus-5-5' },
+                parentSessionId: '',
+                turn1Body: '',
+            });
+            const modelIdx = plan.runtimeArgs.indexOf('--model');
+            expect(plan.runtimeArgs[modelIdx + 1]).toBe('claude-opus-5-5');
+        } finally {
+            if (before === undefined) delete process.env.ANTHROPIC_BASE_URL;
+            else process.env.ANTHROPIC_BASE_URL = before;
+        }
+    });
+
+    it('keeps the explicit --model over a claude-bridge role default', () => {
+        const plan = buildRoleTmuxPlan({ ...WT,
+            runtime: 'claude',
+            role: { ...role, model: 'claude-bridge/claude-opus-5-5' },
+            parentSessionId: '',
+            turn1Body: '',
+            modelOverride: 'sonnet',
+        });
+        const modelIdx = plan.runtimeArgs.indexOf('--model');
+        expect(plan.runtimeArgs[modelIdx + 1]).toBe('sonnet');
+    });
+
+    // The prefix never reaches claude with any other provider, whatever the
+    // nested model is named (openrouter/anthropic/claude-x is an OpenRouter id).
+    it('drops a prefixed non-bridge id whose model name starts with claude-', () => {
+        const plan = buildRoleTmuxPlan({ ...WT,
+            runtime: 'claude',
+            role: { ...role, model: 'openrouter/anthropic/claude-x' },
+            parentSessionId: '',
+            turn1Body: '',
+        });
+        expect(plan.runtimeArgs).not.toContain('--model');
+        expect(plan.runtimeArgs).not.toContain('openrouter/anthropic/claude-x');
     });
 
     it('omits --model for a surface-resolved Claude default', () => {
