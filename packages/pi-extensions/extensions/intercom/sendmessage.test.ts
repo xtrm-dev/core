@@ -1,9 +1,16 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
+import * as realPiCodingAgent from "../../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import nodeFs from "node:fs";
 import nodeOs from "node:os";
 import nodePath from "node:path";
 
-mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" }));
+mock.module("@earendil-works/pi-coding-agent", () => ({
+  // CORE-2605: the real exports stay available. Bun keeps one mock
+  // registration for the whole process, so a factory that omits an export a
+  // sibling suite imports breaks that suite in a shuffled run.
+  ...(realPiCodingAgent as object),
+  VERSION: "1.0.0-test",
+}));
 
 const sendmessage = await import("./sendmessage.ts");
 const { intercomWaiting } = await import("./waiting.ts");

@@ -1,5 +1,6 @@
 import "./isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import * as realPiCodingAgent from "../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,10 @@ const { parseContextBlock, contextBlock } = await import("../extensions/substrat
 
 // The advisor chain needs the SDK mocked before the extension module loads.
 mock.module("@earendil-works/pi-coding-agent", () => ({
+  // CORE-2605: the real exports stay available. Bun keeps one mock
+  // registration for the whole process, so a factory that omits an export a
+  // sibling suite imports breaks that suite in a shuffled run.
+  ...(realPiCodingAgent as object),
   VERSION: "test",
   isToolCallEventType: (toolName: string, event: any) => event?.toolName === toolName,
   isBashToolResult: (event: any) => event?.toolName === "bash",

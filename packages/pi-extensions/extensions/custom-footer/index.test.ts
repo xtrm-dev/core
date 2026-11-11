@@ -1,12 +1,9 @@
-import { describe, expect, mock, test } from "bun:test";
-// Complete mock: spread the real pi-tui so neighbouring suites sharing the
-// module registry under full-suite runs keep working exports (matchesKey).
-import * as realPiTui from "../../../../node_modules/@earendil-works/pi-tui/dist/index.js";
-
-mock.module("@earendil-works/pi-tui", () => ({
-	...(realPiTui as object),
-	truncateToWidth: (value: string, width: number) => (value.length > width ? value.slice(0, width) : value),
-}));
+import { describe, expect, test } from "bun:test";
+// CORE-2605: no pi-tui mock. Bun keeps a mock.module registration for the whole
+// process, and a length-based truncateToWidth here left 80 columns of CJK in a
+// 40-column footer for every later suite; the real module is what production
+// renders with, so the width tests below run against it.
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 const { default: registerExtension, registerFooterSection, shouldHideGitGroup } = await import("./index.ts");
 
@@ -114,7 +111,21 @@ describe("registerFooterSection seam", () => {	test("statusline is a single line
 		try {
 			const lines = render(40);
 			expect(lines).toHaveLength(2);
-			for (const line of lines) expect(line.length).toBeLessThanOrEqual(40);
+			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+		} finally {
+			un();
+		}
+	});
+
+	test("section truncation counts display columns, not code units", async () => {
+		// CORE-2605: a length-based truncator keeps 40 CJK characters in a
+		// 40-column footer (80 columns of ink); the real one keeps 20.
+		const { render } = await makeFooter();
+		const un = registerFooterSection("wide-cjk", () => ["日".repeat(200)]);
+		try {
+			const lines = render(40);
+			expect(lines).toHaveLength(2);
+			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
 		} finally {
 			un();
 		}

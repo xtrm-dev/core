@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as realPiCodingAgent from "../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 // Complete mock: spread the real pi-tui so neighbouring suites sharing the
 // module registry under full-suite runs keep working exports (matchesKey).
-import * as realPiTui from "../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 // CORE-2403: the `xt end` worktree reminder lived in the retired
 // session-flow extension and was restored in git-checkpoint. These tests
@@ -14,6 +14,10 @@ import * as realPiTui from "../../../node_modules/@earendil-works/pi-tui/dist/in
 // breaks sibling files when scheduling interleaves.
 mock.module("@earendil-works/pi-ai", () => ({ complete: async () => ({}) }));
 mock.module("@earendil-works/pi-coding-agent", () => ({
+  // CORE-2605: the real exports stay available. Bun keeps one mock
+  // registration for the whole process, so a factory that omits an export a
+  // sibling suite imports breaks that suite in a shuffled run.
+  ...(realPiCodingAgent as object),
   BorderedLoader: class {},
   CustomEditor: class {},
   VERSION: "test",
@@ -28,13 +32,8 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isReadToolResult: (event: { toolName: string }) => event.toolName === "read",
   isToolCallEventType: () => false,
 }));
-// CORE-2605: keep the real width helpers. Bun shares mock.module
-// registrations process-wide, so a stunted visibleWidth/truncateToWidth
-// here made every later card suite overrun its width.
-// CORE-2605: the real Box/Text stay in place. Bun keeps a mock.module
-// registration for the whole process, and a `Text` without pi's `.text`
-// broke the python renderer in every later file of a full-suite run.
-mock.module("@earendil-works/pi-tui", () => ({ ...(realPiTui as object) }));
+// CORE-2605: no pi-tui mock. Bun keeps a mock.module registration for the
+// whole process, and the real module is what production renders with.
 mock.module("@mariozechner/pi-coding-agent", () => ({}));
 
 const gitCheckpoint = (await import("../extensions/git-checkpoint/index.ts")).default;

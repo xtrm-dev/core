@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
+import * as realPiCodingAgent from "../../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-mock.module("@earendil-works/pi-coding-agent", () => ({ VERSION: "1.0.0-test" }));
+mock.module("@earendil-works/pi-coding-agent", () => ({
+  // CORE-2605: the real exports stay available. Bun keeps one mock
+  // registration for the whole process, so a factory that omits an export a
+  // sibling suite imports breaks that suite in a shuffled run.
+  ...(realPiCodingAgent as object),
+  VERSION: "1.0.0-test",
+}));
 
 const { createAgentHostBridge, repositoryFromRemote } = await import("./index.ts");
 const { startAgentHost } = await import("../../../../cli/src/core/agent-host.ts");
