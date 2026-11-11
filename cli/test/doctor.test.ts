@@ -21,9 +21,13 @@ const setupCheckMock = vi.hoisted(() => vi.fn(() => ({
 // This integration fixture is intentionally hermetic. The real doctor command
 // otherwise launches npm and sb subprocesses, which contend with the full
 // Vitest worker pool and make the existing 30s test budget load-sensitive.
-vi.mock('../src/core/pi-runtime.js', () => ({
-  getXtManagedPiPackageDoctorReport: getPiDoctorReportMock,
-}));
+vi.mock('../src/core/pi-runtime.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/pi-runtime.js')>();
+  return {
+    ...actual,
+    getXtManagedPiPackageDoctorReport: getPiDoctorReportMock,
+  };
+});
 vi.mock('../src/utils/npm-latest.js', () => ({
   checkXtrmUpdates: checkUpdatesMock,
   defaultCacheFile: vi.fn(() => '/tmp/xtrm-doctor-cache.json'),

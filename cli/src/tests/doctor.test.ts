@@ -20,9 +20,13 @@ const runSetupCheckMock = vi.hoisted(() => vi.fn(() => ({
   raw: '{}',
 })));
 
-vi.mock('../core/pi-runtime.js', () => ({
-  getXtManagedPiPackageDoctorReport: getXtManagedPiPackageDoctorReportMock,
-}));
+vi.mock('../core/pi-runtime.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../core/pi-runtime.js')>();
+  return {
+    ...actual,
+    getXtManagedPiPackageDoctorReport: getXtManagedPiPackageDoctorReportMock,
+  };
+});
 
 // Hermetic substrate boundary: the real doctor action otherwise spawns sb,
 // npm, and node subprocesses, which contend with the full Vitest worker pool
@@ -124,6 +128,13 @@ describe('xt doctor command', () => {
 
     const textLogs = await runDoctorCli([]);
     expect(textLogs.join('\n')).toContain('claude CLI not found; the Claude Code route will refuse at dispatch');
+  });
+
+  it('reports the Node floor for the Claude Code bridge (CORE-2591)', async () => {
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
+
+    const textLogs = await runDoctorCli([]);
+    expect(textLogs.join('\n')).toContain('meets the Claude Code bridge floor (>= 20)');
   });
 
   it('reports the resolved bridge version and src entry in the Pi packages section (CORE-2591)', async () => {

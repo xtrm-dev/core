@@ -288,6 +288,17 @@ export const PI_CLAUDE_BRIDGE_NPM_NAME = 'pi-claude-bridge';
  */
 export const PI_CLAUDE_BRIDGE_VERSION = '0.12.0';
 export const PI_CLAUDE_BRIDGE_PACKAGE_ID = `npm:${PI_CLAUDE_BRIDGE_NPM_NAME}@${PI_CLAUDE_BRIDGE_VERSION}`;
+/** Node major the bridge declares in its own `engines.node` (`>=20` in 0.12.0). */
+export const PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR = 20;
+
+/** True when the running Node major meets the bridge floor; a malformed version fails closed. */
+export function satisfiesNodeFloor(
+    version: string = process.versions.node,
+    minMajor: number = PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR,
+): boolean {
+    const major = Number(String(version).replace(/^v/, '').split('.')[0]);
+    return Number.isInteger(major) && major >= minMajor;
+}
 
 const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true },

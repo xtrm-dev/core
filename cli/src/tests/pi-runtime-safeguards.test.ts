@@ -179,6 +179,43 @@ describe('pi runtime safeguards', () => {
     expect(getPinnedPiPackageVersion('npm:@jaggerxtrm/substrate')).toBeNull();
   });
 
+  it('reports an installed 0.12.0 as current and an absent install as missing for the pinned id', async () => {
+    // regression: CORE-2591 - freshness and missing detection work on the pinned id, and a
+    // newer registry release cannot downgrade the pinned install to 'outdated'.
+    const { getManagedPiPackageFreshness, getXtManagedPiPackages, resolveExpectedPiPackageVersion, PI_CLAUDE_BRIDGE_PACKAGE_ID } = await import('../core/pi-runtime.js');
+    const bridgeOnly = getXtManagedPiPackages().filter(pkg => pkg.id === PI_CLAUDE_BRIDGE_PACKAGE_ID);
+    const registry = vi.fn(async () => '0.13.0');
+
+    const installedPin = await getManagedPiPackageFreshness(
+      async (piPackageId, npmPackageName) => ({
+        installedVersion: '0.12.0',
+        expectedVersion: await resolveExpectedPiPackageVersion(piPackageId, npmPackageName, registry),
+      }),
+      bridgeOnly,
+      [],
+    );
+    expect(installedPin).toHaveLength(1);
+    expect(installedPin[0]).toMatchObject({ npmPackageName: 'pi-claude-bridge', expectedVersion: '0.12.0', state: 'current' });
+    expect(registry).not.toHaveBeenCalled();
+
+    const absent = await getManagedPiPackageFreshness(async () => ({ installedVersion: null, expectedVersion: '0.12.0' }), bridgeOnly, []);
+    expect(absent[0].state).toBe('missing');
+
+    const drifted = await getManagedPiPackageFreshness(async () => ({ installedVersion: '0.11.0', expectedVersion: '0.12.0' }), bridgeOnly, []);
+    expect(drifted[0].state).toBe('outdated');
+  });
+
+  it('checks the Node floor the bridge declares in its own engines field', async () => {
+    // regression: CORE-2591 - pi-claude-bridge@0.12.0 declares engines.node >= 20.
+    const { satisfiesNodeFloor, PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR } = await import('../core/pi-runtime.js');
+
+    expect(PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR).toBe(20);
+    expect(satisfiesNodeFloor('v24.19.0')).toBe(true);
+    expect(satisfiesNodeFloor('20.0.0')).toBe(true);
+    expect(satisfiesNodeFloor('18.20.4')).toBe(false);
+    expect(satisfiesNodeFloor('not-a-version')).toBe(false);
+  });
+
   it('resolves the bridge package and its src entry from the user Pi npm store', async () => {
     // regression: CORE-2591 - the package ships no main/exports; the resolver reads
     // <agentDir>/npm/node_modules/pi-claude-bridge/src/index.ts.

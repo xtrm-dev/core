@@ -6,7 +6,7 @@ import kleur from 'kleur';
 import Table from 'cli-table3';
 import { checkDrift, type DriftReport } from '../core/drift.js';
 import { checkRuntimeSkillsViews, type RuntimeViewCheckResult } from '../core/skills-runtime-views.js';
-import { getXtManagedPiPackageDoctorReport, type XtManagedPiPackageDoctorReport } from '../core/pi-runtime.js';
+import { getXtManagedPiPackageDoctorReport, PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR, satisfiesNodeFloor, type XtManagedPiPackageDoctorReport } from '../core/pi-runtime.js';
 import { discoverDefaultSkills, type DiscoveredSkill } from '../core/skill-discovery.js';
 import { ensureBeadsSharedServerEnabled, hasBeadsDir, type SharedBeadsServerState } from '../core/beads-shared-server.js';
 import { findProjectRoot } from '../utils/repo-root.js';
@@ -737,6 +737,11 @@ export function createDoctorCommand(): Command {
       const piAvailable = spawnSync('pi', ['--version'], { stdio: 'ignore' }).status === 0;
       const pnpmAvailable = spawnSync('pnpm', ['--version'], { stdio: 'ignore' }).status === 0;
       claudeAvailable ? ok('claude CLI available') : warn(CLAUDE_CLI_MISSING_MESSAGE);
+      if (satisfiesNodeFloor()) {
+        ok(`Node ${process.versions.node} meets the Claude Code bridge floor (>= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR})`);
+      } else {
+        warn(`pi-claude-bridge requires Node >= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR}; this runtime is ${process.versions.node} — do not install the Claude Code bridge here`);
+      }
       piAvailable ? ok('pi CLI available') : warn('pi CLI not found');
       pnpmAvailable ? ok('pnpm available') : warn('pnpm not found');
       const piAgentDir = process.env.PI_AGENT_DIR ?? path.join(process.env.HOME ?? '', '.pi', 'agent');

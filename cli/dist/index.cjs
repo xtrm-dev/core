@@ -56577,6 +56577,11 @@ var MANAGED_PI_EXTENSION_OWNED_IDS = /* @__PURE__ */ new Set([
 var PI_CLAUDE_BRIDGE_NPM_NAME = "pi-claude-bridge";
 var PI_CLAUDE_BRIDGE_VERSION = "0.12.0";
 var PI_CLAUDE_BRIDGE_PACKAGE_ID = `npm:${PI_CLAUDE_BRIDGE_NPM_NAME}@${PI_CLAUDE_BRIDGE_VERSION}`;
+var PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR = 20;
+function satisfiesNodeFloor(version3 = process.versions.node, minMajor = PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR) {
+  const major2 = Number(String(version3).replace(/^v/, "").split(".")[0]);
+  return Number.isInteger(major2) && major2 >= minMajor;
+}
 var MANAGED_PACKAGES = [
   { id: "npm:pi-gitnexus", displayName: "pi-gitnexus", required: true },
   { id: "npm:@aliou/pi-guardrails", displayName: "pi-guardrails", required: false },
@@ -76427,6 +76432,11 @@ ${kleur_default.bold("xt doctor")}
     const piAvailable = (0, import_node_child_process29.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
     const pnpmAvailable = (0, import_node_child_process29.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
     claudeAvailable ? ok("claude CLI available") : warn(CLAUDE_CLI_MISSING_MESSAGE);
+    if (satisfiesNodeFloor()) {
+      ok(`Node ${process.versions.node} meets the Claude Code bridge floor (>= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR})`);
+    } else {
+      warn(`pi-claude-bridge requires Node >= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR}; this runtime is ${process.versions.node} \u2014 do not install the Claude Code bridge here`);
+    }
     piAvailable ? ok("pi CLI available") : warn("pi CLI not found");
     pnpmAvailable ? ok("pnpm available") : warn("pnpm not found");
     const piAgentDir = process.env.PI_AGENT_DIR ?? import_node_path55.default.join(process.env.HOME ?? "", ".pi", "agent");
