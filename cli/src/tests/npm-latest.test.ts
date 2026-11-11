@@ -1,13 +1,22 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkXtrmUpdates, formatUpdateRows, updatesSummary, XTRM_PACKAGES, type XtrmPackage } from '../utils/npm-latest.js';
 
+// CORE-2612: register every scratch dir so the file removes it, including when a
+// test fails before its own cleanup.
+const tempDirs: string[] = [];
+
 function tmpCacheFile(): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'npm-latest-'));
+  tempDirs.push(dir);
   return path.join(dir, 'npm-latest.json');
 }
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const fixedNow = () => 1_700_000_000_000;
 

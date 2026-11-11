@@ -214,7 +214,8 @@ describe('mintInstallationToken', () => {
     });
 
     it('accepts a numeric appId, as a hand-written app.json carries it (live finding)', () => {
-        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-appnum-'));
+        // CORE-2612: use the per-test sandbox, which afterEach removes; a second
+        // mkdtemp here leaked one directory per run.
         const file = githubAppPaths(home).appFile('xtrm-reviewer');
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, JSON.stringify({ slug: 'xtrm-reviewer', appId: 5669067, owner: 'Jaggerxtrm', keyPath: '/tmp/x.pem', installations: { Jaggerxtrm: 179891878 } }));

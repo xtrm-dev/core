@@ -115,6 +115,10 @@ jobs:
       run: npm run check:payload-hygiene
 
     - name: Run Tests
+      env:
+        # CORE-2612: the temp-dir guard counts every new entry and fails the job
+        # on a survivor. Explicit because macOS always sets TMPDIR.
+        XTRM_TMP_STRICT: "1"
       run: |
         npm test --prefix cli
         npm run test:scripts

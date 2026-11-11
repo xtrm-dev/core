@@ -3,7 +3,7 @@ import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach } from 'vitest';
+import { afterAll, afterEach, beforeEach } from 'vitest';
 
 import { needsTmpGitGuard } from '../src/tests/tmp-git-guard.js';
 
@@ -123,6 +123,20 @@ async function assertRealHomeUntouched(): Promise<void> {
 // ~/.pi, ~/.claude and ~/.xtrm even when a single test forgets its own
 // sandbox. Per-test sandboxes (beforeEach mkdtemp) still win where present;
 // this is the backstop, not a replacement.
+// CORE-2612: capture the caller's environment so afterAll can restore it before
+// removing the sandbox. Before this, every test file left an xtrm-cli-home-*
+// directory in the OS temp dir (179 per full run, each tens of MB after an npm
+// install).
+const savedEnv: Record<string, string | undefined> = {
+  HOME: process.env.HOME,
+  PI_AGENT_DIR: process.env.PI_AGENT_DIR,
+  PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
+  CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
+  npm_config_cache: process.env.npm_config_cache,
+  NPM_CONFIG_CACHE: process.env.NPM_CONFIG_CACHE,
+  TMUX_TMPDIR: process.env.TMUX_TMPDIR,
+};
+
 const sandboxHome = fsSync.mkdtempSync(path.join(tempRoot, 'xtrm-cli-home-'));
 fsSync.mkdirSync(path.join(sandboxHome, '.pi', 'agent'), { recursive: true });
 fsSync.mkdirSync(path.join(sandboxHome, '.claude'), { recursive: true });
@@ -131,6 +145,36 @@ process.env.HOME = sandboxHome;
 process.env.PI_AGENT_DIR = path.join(sandboxHome, '.pi', 'agent');
 process.env.PI_CODING_AGENT_DIR = process.env.PI_AGENT_DIR;
 process.env.CLAUDE_CONFIG_DIR = path.join(sandboxHome, '.claude');
+// CORE-2612: a spawned real npm wrote its cache to the shared temp dir. Point the
+// cache inside the sandbox so it disappears with it.
+process.env.npm_config_cache = path.join(sandboxHome, '.npm-cache');
+process.env.NPM_CONFIG_CACHE = process.env.npm_config_cache;
+// CORE-2612: any tmux client call creates $TMUX_TMPDIR/tmux-<uid> and never
+// removes it. With the default that lands in /tmp: on the hosted runner (where
+// the run's own uid is 1001) the suite's tmux spawns left tmux-1001 behind and
+// the temp-dir guard failed on it in run 43051889519. Pointing TMUX_TMPDIR into
+// the sandbox puts the socket directory inside a tree this file removes, and it
+// also keeps test tmux calls off an operator's real server.
+process.env.TMUX_TMPDIR = path.join(sandboxHome, '.tmux');
+fsSync.mkdirSync(process.env.TMUX_TMPDIR, { recursive: true });
+
+// The guard (test/tmp-leak-guard.ts) sweeps anything this run registered but a
+// file could not remove itself: a skipped file never runs afterAll, and a
+// daemonised child (bd's eventkit) can recreate its home after the file ends.
+const registry = process.env.XTRM_TMP_REGISTRY;
+if (registry) {
+  try {
+    fsSync.appendFileSync(registry, `${sandboxHome}\n`);
+  } catch { /* the guard reports the leak instead */ }
+}
+
+afterAll(() => {
+  for (const [key, value] of Object.entries(savedEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  fsSync.rmSync(sandboxHome, { recursive: true, force: true });
+});
 
 // CORE-2450: a real `npm install -g @jaggerxtrm/substrate` once landed
 // cli/bin/sb and cli/lib/node_modules in checkouts during suite runs. Fail the

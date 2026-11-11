@@ -792,6 +792,9 @@ describe('claude-receipt-ack Stop fail-open (CORE-2496)', () => {
 
     afterEach(async () => {
         await rm(dir, { recursive: true, force: true });
+        // The stateFile-is-a-directory case makes the atomic writer leave
+        // `<stateFile>.<pid>.tmp` beside it (CORE-2612).
+        await rm(`${dir}.${process.pid}.tmp`, { force: true });
     });
 
     it('missing, absent, directory and garbage transcripts resolve empty without throwing', async () => {
