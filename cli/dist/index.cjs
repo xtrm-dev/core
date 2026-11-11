@@ -57609,6 +57609,7 @@ function resolveDispatcher(deps = {}) {
   if (address) inherited.address = address;
   return inherited;
 }
+var MERGE_GUARD_VAR = "XTRM_MERGE_GUARD";
 function buildDispatcherEnv(workerName, deps = {}) {
   const env3 = deps.env ?? process.env;
   const out = {};
@@ -57621,6 +57622,7 @@ function buildDispatcherEnv(workerName, deps = {}) {
   }
   const agentName = cleanAgentName(deps.agentName);
   if (agentName) out[XTRM_AGENT_NAME_VAR] = agentName;
+  out[MERGE_GUARD_VAR] = clean(env3[MERGE_GUARD_VAR]) ?? "on";
   const dispatcher = resolveDispatcher(deps);
   if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
   if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;

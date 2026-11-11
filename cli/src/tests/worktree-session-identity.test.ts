@@ -249,6 +249,20 @@ describe('xt/tmux launcher session-identity propagation', () => {
     expect(env['XTRM_AGENT_NAME']).not.toBe('stale-parent-name');
   });
 
+  it('forwards an inherited merge guard into the tmux -e block (CORE-2528)', async () => {
+    // A launched coordinator's guard value must reach the pane explicitly: a new tmux
+    // session starts from the server's env, so an inherited value alone never arrives.
+    process.env.XTRM_MERGE_GUARD = 'on';
+    try {
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'guard1', attach: false })).rejects.toThrow('exit:0');
+      expect(envPairs(h.newSessionArgs)['XTRM_MERGE_GUARD']).toBe('on');
+    } finally {
+      delete process.env.XTRM_MERGE_GUARD;
+    }
+  });
+
   it('prepends the shim directory when the launcher PATH does not contain it (CORE-2524.4)', async () => {
     const previousPath = process.env.PATH;
     process.env.PATH = `/usr/bin${path.delimiter}/bin`;
