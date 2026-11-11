@@ -38,6 +38,7 @@
     "npm:pi-ast-grep",
     "npm:@parcha/agentrun-pi@beta",
     "npm:billion-context",
-    "npm:@jaggerxtrm/substrate"
+    "npm:@jaggerxtrm/substrate",
+    "npm:pi-claude-bridge"
   ]
 }

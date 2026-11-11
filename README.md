@@ -211,7 +211,10 @@ pi-ast-grep
 @parcha/agentrun-pi@beta
 billion-context
 @jaggerxtrm/substrate
+pi-claude-bridge
 ```
+
+The Claude Code bridge (`pi-claude-bridge`) is managed optional and installs into the Pi npm store, where the specialists Claude Code route resolves it. Installing it does not enable that route: the route stays opt-in through `claude_bridge.enabled` in the specialists config, and Core never writes that setting.
 
 The live managed registry in Core is authority for exact install selectors. Local Core development may load `packages/pi-extensions` from the checkout, but the portable managed identity is `npm:@jaggerxtrm/pi-extensions`—never a developer-specific absolute path.
 

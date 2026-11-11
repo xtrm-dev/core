@@ -146,7 +146,21 @@ describe('pi runtime safeguards', () => {
       'npm:@parcha/agentrun-pi@beta',
       'npm:billion-context',
       'npm:@jaggerxtrm/substrate',
+      'npm:pi-claude-bridge',
     ]);
+  });
+
+  it('manages pi-claude-bridge as an optional package that never affects runtime health', async () => {
+    // regression: CORE-2591 - the specialists Claude Code route resolves pi-claude-bridge from
+    // the managed npm store; core installs it without enabling the route (SPECIALISTS-4403).
+    const { getXtManagedPiPackages } = await import('../core/pi-runtime.js');
+
+    const bridge = getXtManagedPiPackages().find(pkg => pkg.id === 'npm:pi-claude-bridge');
+    expect(bridge).toEqual({
+      id: 'npm:pi-claude-bridge',
+      displayName: 'pi-claude-bridge',
+      required: false,
+    });
   });
 
   it('installs every absent managed package using its canonical Pi install selector', async () => {

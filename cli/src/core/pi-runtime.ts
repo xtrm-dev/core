@@ -289,6 +289,8 @@ const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:@parcha/agentrun-pi@beta', displayName: 'agentrun-pi', required: false },
     { id: 'npm:billion-context', displayName: 'billion-context', required: false },
     { id: 'npm:@jaggerxtrm/substrate', displayName: 'substrate', required: false },
+    // CORE-2591: managed optional; the Claude Code route stays opt-in (SPECIALISTS-4403).
+    { id: 'npm:pi-claude-bridge', displayName: 'pi-claude-bridge', required: false },
 ];
 
 const PROJECT_REQUIRED_PACKAGE_IDS = [

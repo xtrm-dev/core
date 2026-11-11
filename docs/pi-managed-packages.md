@@ -2,8 +2,8 @@
 title: Managed Pi Package Baseline
 scope: pi-runtime
 category: reference
-version: 1.1.0
-updated: 2026-10-17
+version: 1.2.0
+updated: 2026-11-11
 description: "XTRM-managed Pi packages, ownership, install selectors, health semantics, and known compatibility boundaries"
 source_of_truth_for:
   - "cli/src/core/pi-runtime.ts"
@@ -11,7 +11,7 @@ source_of_truth_for:
   - ".xtrm/config/pi/settings.json.template"
   - "package.json#pi"
 domain: [pi, packages, runtime, coordination]
-updated_at: 2026-09-05
+updated_at: 2026-11-11
 ---
 
 # Managed Pi package baseline
@@ -40,6 +40,9 @@ The runtime also marks packages as either required or optional for health semant
 | `npm:@parcha/agentrun-pi@beta` | managed optional | agent run integration (`beta` dist-tag selector) |
 | `npm:billion-context` | managed optional | context tooling |
 | `npm:@jaggerxtrm/substrate` | managed optional | Substrate integration for Pi |
+| `npm:pi-claude-bridge` | managed optional | Claude Code model route for Pi and specialists; opt-in through `claude_bridge.enabled` |
+
+`npm:pi-claude-bridge` is installed into the Pi npm store, where the specialists Claude Code route resolves it (SPECIALISTS-4405, SPECIALISTS-4422). Installing the package does not enable the route: the route stays opt-in under the SPECIALISTS-4403 ruling, and Core never writes `claude_bridge.enabled` or `execution.claude_bridge` in any specialists config. Its absence never makes the runtime unhealthy.
 
 `native-specialists` and `xtmux` are local packages added by their own repos; Core does not install them.
 
@@ -62,6 +65,7 @@ continuation/work        goal + tasks + first-party background extension
 runtime access           Pi built-in MCP (`pi.mcp.json`)
 coordination             first-party intercom extension (SendMessage, ListAgents)
 XTRM context/runtime     pi-extensions + pi-service-knowledge
+Claude Code route        pi-claude-bridge (installed, opt-in)
 operator UX              xtrm-ui (inside pi-extensions)
 engineering posture      XTRM engineering-quality doctrine
 ```

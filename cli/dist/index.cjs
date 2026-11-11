@@ -56583,7 +56583,9 @@ var MANAGED_PACKAGES = [
   { id: "npm:pi-ast-grep", displayName: "pi-ast-grep", required: true },
   { id: "npm:@parcha/agentrun-pi@beta", displayName: "agentrun-pi", required: false },
   { id: "npm:billion-context", displayName: "billion-context", required: false },
-  { id: "npm:@jaggerxtrm/substrate", displayName: "substrate", required: false }
+  { id: "npm:@jaggerxtrm/substrate", displayName: "substrate", required: false },
+  // CORE-2591: managed optional; the Claude Code route stays opt-in (SPECIALISTS-4403).
+  { id: "npm:pi-claude-bridge", displayName: "pi-claude-bridge", required: false }
 ];
 var PROJECT_REQUIRED_PACKAGE_IDS = [
   PROJECT_EXTENSION_PACKAGE_ID,
