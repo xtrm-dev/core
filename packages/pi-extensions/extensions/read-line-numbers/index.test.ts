@@ -1,9 +1,14 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as realPiCodingAgent from "../../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 
 // NOTE: keep this factory a structural superset of the sibling factories for
 // the same module (see extensions/xtprompt/index.test.ts, CORE-2360): bun shares
 // mock.module registrations process-wide across test files.
 mock.module("@earendil-works/pi-coding-agent", () => ({
+  // CORE-2605: the real exports stay available. Bun keeps one mock
+  // registration for the whole process, so a factory that omits an export a
+  // sibling suite imports breaks that suite in a shuffled run.
+  ...(realPiCodingAgent as object),
   VERSION: "test",
   isBashToolResult: (event: { toolName: string }) => event.toolName === "bash",
   isReadToolResult: (event: { toolName: string }) => event.toolName === "read",

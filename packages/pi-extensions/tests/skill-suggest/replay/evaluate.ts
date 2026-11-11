@@ -200,7 +200,8 @@ export async function replay(
         process.chdir(root);
         (roster as { resetRosterCache?: () => void }).resetRosterCache?.();
         (skill as { resetIndex?: () => void }).resetIndex?.();
-        await (skill as { rebuildIndex?: (cwd: string) => Promise<void> }).rebuildIndex?.(root);
+        await (skill as { rebuildIndex?: (cwd: string, options?: { home?: string }) => Promise<void> })
+          .rebuildIndex?.(root, { home: world.home });
         current = root;
       }
       pipeline?.resetPipeline?.();

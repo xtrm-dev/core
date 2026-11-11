@@ -1,9 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as realPiCodingAgent from "../../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-// Complete mock: spread the real pi-tui so neighbouring suites sharing the
-// module registry under full-suite runs keep working exports (matchesKey).
-import * as realPiTui from "../../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 const streamCalls: unknown[][] = [];
 let streamImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
@@ -18,9 +16,18 @@ const registryStreamSimple = (...args: unknown[]) => {
 };
 
 mock.module("@earendil-works/pi-coding-agent", () => ({
+  // CORE-2605: the real exports stay available. Bun keeps one mock
+  // registration for the whole process, so a factory that omits an export a
+  // sibling suite imports breaks that suite in a shuffled run.
+  ...(realPiCodingAgent as object),
   BorderedLoader: class {
     signal = new AbortController().signal;
     onAbort?: () => void;
+  },
+  // CORE-2605: constructible, like the real editor; a sibling suite that renders
+  // a session under this registration must not get an undefined constructor.
+  CustomEditor: class {
+    constructor(public text = "") {}
   },
   VERSION: "test",
   createBashTool: () => ({}),
@@ -35,13 +42,9 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isToolCallEventType: () => false,
 }));
 
-mock.module("@earendil-works/pi-tui", () => ({
-  ...(realPiTui as object),
-  Box: () => null,
-  Text: () => null,
-  truncateToWidth: (value: string) => value,
-  visibleWidth: (value: string) => value.length,
-}));
+// CORE-2605: no pi-tui mock at all. Bun keeps a mock.module registration for
+// the whole process, and a non-constructible Box/Text here reached every later
+// suite that renders; the real module is what production uses.
 
 // The registry smoke test below loads src/registry.ts, which now registers
 // the managed python-kernel extension (xtrm-3ljgz.1). That extension imports

@@ -62,11 +62,11 @@ export function currentIndex(cwd: string, now = Date.now()): RetrievalIndex<Rost
   return indexState && indexState.cwd === cwd ? indexState.index : null;
 }
 
-export function rebuildIndex(cwd: string): Promise<void> {
+export function rebuildIndex(cwd: string, { home }: { home?: string } = {}): Promise<void> {
   if (indexBuild) return indexBuild;
   indexBuild = (async () => {
     try {
-      indexState = { cwd, at: Date.now(), index: await buildIndex(cwd) };
+      indexState = { cwd, at: Date.now(), index: await buildIndex(cwd, { home }) };
     } catch {
       /* fail-open: the seams skip while no index exists */
     } finally {

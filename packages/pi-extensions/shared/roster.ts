@@ -108,8 +108,7 @@ export function extractReferenceSummary(md: string): { name: string; description
   return { name, description: description.length > 0 ? description : heading };
 }
 
-async function skillDirs(repoRoot: string): Promise<string[]> {
-  const home = homedir();
+async function skillDirs(repoRoot: string, home = homedir()): Promise<string[]> {
   const roots = [
     join(repoRoot, ".xtrm", "skills"),
     join(repoRoot, ".agents", "skills"),
@@ -227,14 +226,24 @@ export async function repoRootOf(cwd: string): Promise<string> {
 
 /**
  * Discover the two-tier roster with async IO, so a rebuild never blocks pi's
- * event loop. 5-min cached per cwd.
+ * event loop. 5-min cached per cwd and home root.
+ *
+ * `home` defaults to the process home. A caller that materializes its own home
+ * (the replay harness) must pass it: the home roots are discovered from here,
+ * and Bun caches os.homedir() for the life of the process, so swapping
+ * process.env.HOME after start does not move them (CORE-2605).
  */
-export async function discoverRoster(cwd: string, now = Date.now()): Promise<RosterEntry[]> {
-  if (cache.key === cwd && now - cache.at < CACHE_TTL_MS) return cache.entries;
+export async function discoverRoster(
+  cwd: string,
+  now = Date.now(),
+  { home = homedir() }: { home?: string } = {},
+): Promise<RosterEntry[]> {
+  const cacheKey = `${cwd}\u0000${home}`;
+  if (cache.key === cacheKey && now - cache.at < CACHE_TTL_MS) return cache.entries;
   const repoRoot = await repoRootOf(cwd);
   const entries: RosterEntry[] = [];
   try {
-    for (const root of await skillDirs(repoRoot)) {
+    for (const root of await skillDirs(repoRoot, home)) {
       for (const childName of await listDir(root)) {
         const childDir = join(root, childName);
         // CORE-2361: pack-less root — ~/.agents/skills/<skill>/SKILL.md sits at
@@ -259,9 +268,10 @@ export async function discoverRoster(cwd: string, now = Date.now()): Promise<Ros
           return direct;
         };
         for (const rel of await packSkills(childDir, 1)) {
-          // CORE-2555: an installed tool package keeps its skill in a `skills/`
-          // folder (default/service-knowledge/skills/SKILL.md); the skill is
-          // the package, not "skills".
+          // CORE-2555/CORE-2601: a package that keeps its skill one level down
+          // (…/<pkg>/skills/SKILL.md) is named after the package, not "skills".
+          // The vendored service-knowledge skill is the package root since
+          // core #903, so this covers older and nested installs only.
           const parts = rel.split(/[\\/]/);
           const bare = (parts.length > 1 && parts[parts.length - 1] === "skills" ? parts[parts.length - 2] : parts[parts.length - 1]) ?? rel;
           await scanSkillDir(entries, cwd, join(childDir, ...rel.split("/")), bare);
@@ -281,6 +291,6 @@ export async function discoverRoster(cwd: string, now = Date.now()): Promise<Ros
     return true;
   });
   const bounded = deduped.slice(0, ROSTER_SAFETY_MAX);
-  cache = { at: now, key: cwd, entries: bounded };
+  cache = { at: now, key: cacheKey, entries: bounded };
   return bounded;
 }

@@ -1,14 +1,18 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as realPiCodingAgent from "../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import manifest from "../src/manifest.json" with { type: "json" };
 // Complete mock: spread the real pi-tui so neighbouring suites sharing the
 // module registry under full-suite runs keep working exports (matchesKey).
-import * as realPiTui from "../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 mock.module("@earendil-works/pi-ai", () => ({ complete: async () => ({}) }));
 mock.module("@earendil-works/pi-coding-agent", () => ({
+  // CORE-2605: the real exports stay available. Bun keeps one mock
+  // registration for the whole process, so a factory that omits an export a
+  // sibling suite imports breaks that suite in a shuffled run.
+  ...(realPiCodingAgent as object),
   BorderedLoader: class {},
   CustomEditor: class {},
   VERSION: "test",
@@ -23,13 +27,8 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isReadToolResult: (event: { toolName: string }) => event.toolName === "read",
   isToolCallEventType: () => false,
 }));
-mock.module("@earendil-works/pi-tui", () => ({
-  ...(realPiTui as object),
-  Box: class {},
-  Text: class {},
-  truncateToWidth: (value: string) => value,
-  visibleWidth: (value: string) => value.length,
-}));
+// CORE-2605: no pi-tui mock. Bun keeps a mock.module registration for the
+// whole process, and the real module is what production renders with.
 mock.module("@mariozechner/pi-coding-agent", () => ({}));
 
 const repoRoot = join(import.meta.dir, "../../..");

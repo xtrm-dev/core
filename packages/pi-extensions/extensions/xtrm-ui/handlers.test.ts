@@ -1,10 +1,15 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as realPiCodingAgent from "../../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 // Complete mock: spread the real pi-tui so neighbouring suites sharing the
 // module registry under full-suite runs keep working exports (matchesKey).
 import * as realPiTui from "../../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 mock.module("@earendil-works/pi-ai", () => ({ complete: async () => ({}) }));
 mock.module("@earendil-works/pi-coding-agent", () => ({
+  // CORE-2605: the real exports stay available. Bun keeps one mock
+  // registration for the whole process, so a factory that omits an export a
+  // sibling suite imports breaks that suite in a shuffled run.
+  ...(realPiCodingAgent as object),
   BorderedLoader: class {},
   CustomEditor: class {},
   VERSION: "test",
@@ -18,14 +23,15 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isBashToolResult: () => false,
   isToolCallEventType: () => false,
 }));
+// CORE-2605: keep the real width helpers. Bun shares mock.module
+// registrations process-wide, so a stunted visibleWidth/truncateToWidth
+// here made every later card suite overrun its width.
 mock.module("@earendil-works/pi-tui", () => ({
   ...(realPiTui as object),
   Box: class {},
   Text: class {
     constructor(public text: string) {}
   },
-  truncateToWidth: (value: string) => value,
-  visibleWidth: (value: string) => value.length,
 }));
 mock.module("@mariozechner/pi-coding-agent", () => ({}));
 
@@ -34,6 +40,7 @@ const { createPatchedUpdateContent } = await import("./index.ts");
 const { buildThinkingRecap } = await import("./index.ts");
 const { createThinkingPreviewInstallState } = await import("./index.ts");
 const { carrierThinkingRow, INDENT_ANCHOR } = await import("./index.ts");
+const { setActivePrefsSnapshotForTests, DEFAULT_PREFS } = await import("./index.ts");
 
 type RegisteredTool = {
   name: string;
@@ -227,28 +234,35 @@ describe("xtrm-ui presentation-only boundary", () => {
   });
 
   test("with folding on, a reply that has text draws no thinking; a step without text keeps it", () => {
-    type ContentBlock = { type: string; text?: string; thinking?: string };
-    const rendered: ContentBlock[][] = [];
-    const component = {
-      hideThinkingBlock: true,
-      lastMessage: undefined as unknown,
-      updateContent(message: { content: ContentBlock[] }) {
-        rendered.push(message.content);
-      },
-    };
-    component.updateContent = createPatchedUpdateContent(
-      component.updateContent as never,
-      { label: (text: string) => text, recap: (text: string) => text, sep: " · " },
-      { followsToggle: false },
-    );
-    const reply = { content: [{ type: "thinking", thinking: "Summarizing evidence" }, { type: "text", text: "Done." }] };
-    component.updateContent(reply as never);
-    expect(rendered.at(-1)).toEqual([{ type: "text", text: "Done." }]);
-    // pi re-renders from lastMessage: it must stay the raw message.
-    expect(component.lastMessage).toBe(reply);
+    // CORE-2605: folding reads a module-level prefs snapshot, and another test
+    // in this file switches it off, so pin it here instead of relying on order.
+    setActivePrefsSnapshotForTests({ ...DEFAULT_PREFS, ultracompact: true, foldTools: true });
+    try {
+      type ContentBlock = { type: string; text?: string; thinking?: string };
+      const rendered: ContentBlock[][] = [];
+      const component = {
+        hideThinkingBlock: true,
+        lastMessage: undefined as unknown,
+        updateContent(message: { content: ContentBlock[] }) {
+          rendered.push(message.content);
+        },
+      };
+      component.updateContent = createPatchedUpdateContent(
+        component.updateContent as never,
+        { label: (text: string) => text, recap: (text: string) => text, sep: " · " },
+        { followsToggle: false },
+      );
+      const reply = { content: [{ type: "thinking", thinking: "Summarizing evidence" }, { type: "text", text: "Done." }] };
+      component.updateContent(reply as never);
+      expect(rendered.at(-1)).toEqual([{ type: "text", text: "Done." }]);
+      // pi re-renders from lastMessage: it must stay the raw message.
+      expect(component.lastMessage).toBe(reply);
 
-    component.updateContent({ content: [{ type: "thinking", thinking: "Looking around" }] } as never);
-    expect(rendered.at(-1)![0]!.text).toContain("Looking around");
+      component.updateContent({ content: [{ type: "thinking", thinking: "Looking around" }] } as never);
+      expect(rendered.at(-1)![0]!.text).toContain("Looking around");
+    } finally {
+      setActivePrefsSnapshotForTests(null);
+    }
   });
 
   test("thinking toggle re-renders existing thinking rows (xtrm-5vi8u)", () => {
