@@ -21,6 +21,7 @@
  *   the head/model/verdict are derived from its text, not flags.
  */
 
+import { cleanAgentName } from './dispatcher-identity.js';
 import { githubRequest, type GitHubRequestDeps } from './github-apps.js';
 
 export type ReviewOutcome = 'PASS' | 'PARTIAL' | 'FAIL';
@@ -93,16 +94,6 @@ export function buildMarker(input: { holder: string; runId: string; issueRef?: s
     return `<!-- ${parts.join(' ')} -->`;
 }
 
-/**
- * A name safe for the visible attribution line: control characters become
- * spaces, runs collapse, the result is bounded. The line is written by the tool,
- * but the name it carries comes from the environment, so treat it as untrusted.
- */
-export function sanitizeAgentName(value: string | null | undefined, max = 96): string | null {
-    const cleaned = (value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
-    return cleaned ? cleaned.slice(0, max) : null;
-}
-
 export interface AttributionInput {
     /** The full agent name (`<repo>-xt-<runtime>-<name>`), when the launcher gave one. */
     agentName?: string | null;
@@ -120,16 +111,16 @@ export interface AttributionInput {
  * by omission, so an incomplete environment never produces "undefined".
  */
 export function buildAttribution(input: AttributionInput, env: NodeJS.ProcessEnv = process.env): string {
-    const agent = sanitizeAgentName(input.agentName)
-        ?? sanitizeAgentName(env.XTRM_AGENT_NAME)
-        ?? sanitizeAgentName(input.holder);
+    const agent = cleanAgentName(input.agentName)
+        ?? cleanAgentName(env.XTRM_AGENT_NAME)
+        ?? cleanAgentName(input.holder);
     const parts: string[] = [];
     if (agent) parts.push(`Agent ${agent}`);
-    const runId = sanitizeAgentName(input.runId, 96);
+    const runId = cleanAgentName(input.runId);
     if (runId) parts.push(`run ${runId}`);
-    const issueRef = sanitizeAgentName(input.issueRef, 96);
+    const issueRef = cleanAgentName(input.issueRef);
     if (issueRef) parts.push(`Issue ${issueRef}`);
-    const activationId = sanitizeAgentName(input.activationId, 96);
+    const activationId = cleanAgentName(input.activationId);
     if (activationId) parts.push(`activation ${activationId}`);
     return parts.join(' · ');
 }

@@ -293,6 +293,8 @@ describe('Codex worktree launcher', () => {
         expect(panePathValue.split(path.delimiter).filter((entry: string) => entry === shimDir)).toHaveLength(1);
         expect(env).toMatchObject({
             SUBSTRATE_HOLDER: 'win',
+            // CORE-2606: the visible review attribution reads the full worktree name.
+            XTRM_AGENT_NAME: path.basename(worktreePath),
             // CORE-2525: the worker's own git identity rides the same -e block.
             GIT_AUTHOR_NAME: 'win',
             GIT_COMMITTER_NAME: 'win',

@@ -634,9 +634,25 @@ describe('recordMerge', () => {
         });
         expect(ok.ok).toBe(true);
         const failed = recordMerge({ repo: 'xtrm-dev/core', pr: 42, head: HEAD, issueRef: ISSUE }, {
-            token: '', runSb: () => ({ status: 2, stdout: '', stderr: 'issue closed' }),
+            token: '', sbBinary: '/opt/sb', runSb: () => ({ status: 2, stdout: '', stderr: 'issue closed' }),
         });
-        expect(failed).toEqual({ ok: false, error: 'issue closed' });
+        expect(failed).toEqual({ ok: false, error: 'sb (/opt/sb) exited 2: issue closed' });
+    });
+
+    // CORE-2606: `sb --json` reports its refusal on STDOUT with empty stderr, so a
+    // stderr-only message loses the reason (the live "sb exited 1" warning).
+    it('names the binary and the stdout JSON reason when stderr is empty', () => {
+        const failed = recordMerge({ repo: 'xtrm-dev/core', pr: 42, head: HEAD, issueRef: ISSUE }, {
+            token: '',
+            sbBinary: '/opt/sb',
+            runSb: () => ({
+                status: 1,
+                stdout: '{"ok":false,"error":"invalid result payload: result.verdict is not a bounded result field"}',
+                stderr: '',
+            }),
+        });
+        expect(failed.ok).toBe(false);
+        expect(String(failed.error)).toBe('sb (/opt/sb) exited 1: (stdout) invalid result payload: result.verdict is not a bounded result field');
     });
 });
 
