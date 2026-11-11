@@ -21,8 +21,8 @@ test('rendering is deterministic and matches the committed PRD body', () => {
 
 test('every phase step is covered, in page order', () => {
   const report = coverageReport(source, renderBody(source));
-  assert.equal(report.counts.phaseSteps, 62, 'phase steps in index.html');
-  assert.equal(report.counts.allSteps, 67, 'step entries including the five lettered asks');
+  assert.equal(report.counts.phaseSteps, 63, 'phase steps in index.html');
+  assert.equal(report.counts.allSteps, 68, 'step entries including the five lettered asks');
   assert.equal(report.missing.length, 0, 'no step from index.html may be dropped');
   assert.equal(report.inOrder, true, 'step headings follow page order');
 });

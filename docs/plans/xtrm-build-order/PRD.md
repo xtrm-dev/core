@@ -62,7 +62,7 @@ Jira programme epic that mirrors this PRD: [XT-217](https://mercuryintel.atlassi
 
 ## The build order, from safe installs to the new xtrm-app
 
-There are 46 numbered steps and 16 lettered additions in six phases. Each phase gives the next one something it cannot work without. Two rules run through the whole plan. Every Jira item, Substrate issue, PR and commit links to the others. Every Substrate duty is done by the host or enforced by a gate, so no agent can skip it.
+There are 46 numbered steps and 17 lettered additions in six phases. Each phase gives the next one something it cannot work without. Two rules run through the whole plan. Every Jira item, Substrate issue, PR and commit links to the others. Every Substrate duty is done by the host or enforced by a gate, so no agent can skip it.
 
 **What changed since version 1.** You confirmed the reading of XT-104, XT-110, XT-114, XT-178 and XT-184. You asked for a strong GitHub and Jira binding. I measured how linking works today; it barely does (next section). I added a linking spine to phases 1–4 and folded 27 open XT tickets into the steps they belong to.
 
@@ -669,7 +669,7 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 
 [partly done] (v4) [new] `CORE-2532 · specialists Claude mod`
 
-- **Brings** — One core library (roster, classifier client, decision log) used by the Pi extension and by a Claude mod. The mod uses a prompt-submit hook, as the specialists fleet-pane mod already does for its surface. substrate-suggest moves into the same library.
+- **Brings** — One core library (roster, classifier client, decision log) used by the Pi extension and by a Claude mod. The mod is a plugin monitor, not a hook: it reads the end of the session transcript, knows whether a turn is running, binds each suggestion to the turn it was computed for, and drops it if that turn has ended. It never wakes an idle session. substrate-suggest moves into the same library.
 - **Why here** — It ships with the Claude plugin (12), so both runtimes get the same suggestions from the same version.
 
 > **Ruling on your note · 10-29**
@@ -683,6 +683,21 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - The field report (worker XTRM-680-bili) proves the extension has been dead since 10-13: 281 roster items against a classifier limit of 255, every call HTTP 422, the error swallowed.
 > - Before it died, its pointers were acted on in 6.3% of 446 injections. Agents do not open a file they are told exists. So every pointer we design from here (22c, 22d, 16b) hands over an explicit “read these first” list with absolute paths, or the rule text itself, never a bare mention.
 > - Your note asks for the same thing as a Claude plugin after hardening: that is this step; 4c is the hotfix.
+
+> **Measurement · 11-11 · CORE-2580 Journal seq 3 and 5**
+> - Why a monitor and not a hook: your constraint on this work is that a hook, if used, adds no memory and no latency (CORE-2580 Journal seq 2). On Claude Code 2.1.318, median of 8 turns per path, machine load 9 to 11, the hook was the slowest path and the only one that starts a process on every call. The differences are tens of milliseconds, so read them as direction.
+> - Time from pressing Enter to the request leaving: no mod 54 ms; hook running node 104 ms, with a process of about 45 MB for each call; hook running `true` 80 ms; plugin monitor 68 ms, one resident process of about 46 MB with node; channel 63 ms, one resident process of about 45 MB.
+> - A monitor can tell whether a turn is running from the transcript tail within about 0.15 s: six live scenarios, 2.2% disagreement with the terminal indicator, 0.16 ms to read and classify the tail. It answers “unknown” when the transcript layout changes, and then sends nothing. The transcript layout is internal and undocumented, so that guard is required.
+> - A wake turn on an idle session cost about 39.6k cached input tokens, so a suggestion for a finished turn is dropped, never delivered by waking the session.
+> - Not yet measured: an authenticated classifier call from the monitor process, and the drop rate. CORE-2594 measures both before anything is built.
+> - The mod is a standalone plugin directory that the xtrm Claude plugin (step 12, CORE-2391) adopts unchanged. Nothing is merged into that plugin before step 12.
+
+### Step 12c — Substrate recall: one search over project memory
+
+(v6) [draft] [new] `CORE-2581 · CORE-2594 to CORE-2599 · packages/substrate`
+
+- **Brings** — `sb recall "<terms>"` and a `recall` tool for Claude and Pi. One local index over the Substrate journals of all projects, then Jira comments, PRs and commits for core and MMD. An answer is at most three short snippets with a link, a date, an authority and a superseded flag. Secrets are scrubbed before anything is stored. Operator rulings rank first. The suggestions of step 12b can append the snippets to a nudge.
+- **Why here** — Facts recorded in journals, Jira comments and PRs are missed because nothing searches them together: on 11-04 a Substrate result was reported as missing and operator rulings were recovered by hand. It follows 12b because the nudge carries the snippets, and the generated Substrate reference (16) teaches the tool from `sb help --json`.
 
 ### Step 13 — Picker fixes; remove herdr and orca writers
 
