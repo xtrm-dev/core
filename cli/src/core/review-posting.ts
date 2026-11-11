@@ -23,6 +23,7 @@
 
 import { cleanAgentName } from './dispatcher-identity.js';
 import { githubRequest, type GitHubRequestDeps } from './github-apps.js';
+import { resolveReceiptProject, withReceiptProject, type ReceiptProjectDeps } from './sb-receipt.js';
 
 export type ReviewOutcome = 'PASS' | 'PARTIAL' | 'FAIL';
 export type ReviewVerdict = 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES';
@@ -452,7 +453,13 @@ async function dismissStaleChangesRequested(
 }
 
 /** The Journal receipt: a `github-review` ref plus a bounded result payload. */
-export function reviewJournalArgs(receipt: PostedReview, input: PostReviewInput, issueRef: string, slug?: string | null): string[] {
+export function reviewJournalArgs(
+    receipt: PostedReview,
+    input: PostReviewInput,
+    issueRef: string,
+    slug?: string | null,
+    project?: string | null,
+): string[] {
     const refs = JSON.stringify([{
         kind: 'github-review',
         key: receipt.url,
@@ -474,5 +481,27 @@ export function reviewJournalArgs(receipt: PostedReview, input: PostReviewInput,
         artifactRefs: [receipt.url],
         findings: [`verdict ${receipt.verdict}`, `head ${receipt.head}`],
     });
-    return ['journal', 'append', issueRef, '--kind', 'result', '--result', result, '--refs', refs, '--json'];
+    return withReceiptProject(
+        ['journal', 'append', issueRef, '--kind', 'result', '--result', result, '--refs', refs, '--json'],
+        project,
+    );
+}
+
+/**
+ * CORE-2611: the receipt argv for a review, with its project named explicitly.
+ *
+ * `sb` resolves the project from the cwd, so a review of an `xtrm` PR from a
+ * `core` worktree was refused and lost its receipt. The project is resolved
+ * from the Issue ref (falling back to the PR repository) and passed as
+ * `--project`; an unresolvable project leaves the argv as it was.
+ */
+export function reviewReceiptArgs(
+    receipt: PostedReview,
+    input: PostReviewInput,
+    issueRef: string,
+    slug?: string | null,
+    deps: ReceiptProjectDeps = {},
+): string[] {
+    const project = resolveReceiptProject({ issueRef, repo: input.repo }, deps);
+    return reviewJournalArgs(receipt, input, issueRef, slug, project);
 }

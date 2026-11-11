@@ -28,7 +28,7 @@ import path from 'node:path';
 import { githubRequest, repoOwner, type FetchLike } from './github-apps.js';
 import { explainAgentRole, type AgentRole, type RoleMap, DEFAULT_ROLE_MAP } from './identity-roles.js';
 import { isSafeIssueRef, parseIssueMarkers, sha12, type ReviewVerdict } from './review-posting.js';
-import { describeSbFailure, resolveSbBinary } from './sb-receipt.js';
+import { describeSbFailure, parseProjectList, pickReceiptProject, resolveSbBinary, withReceiptProject } from './sb-receipt.js';
 
 export const OVERRIDE_ENV_VAR = 'XTRM_MERGE_GUARD_OVERRIDE';
 
@@ -536,7 +536,11 @@ export async function applyOverride(
             pr: refusal.pr,
             override: true,
         });
-        const result = run('sb', ['journal', 'append', refusal.issueRef, '--kind', 'decision', '--semantic', semantic, '--json'], {});
+        // CORE-2611: the override entry names its project too, so an override of a
+        // cross-repo merge is not refused by the cwd-resolved project.
+        const args = ['journal', 'append', refusal.issueRef, '--kind', 'decision', '--semantic', semantic, '--json'];
+        const project = receiptProject({ repo: refusal.repo, issueRef: refusal.issueRef }, run);
+        const result = run('sb', withReceiptProject(args, project), {});
         journaled = result.status === 0;
         if (!journaled) {
             const journalError = result.stderr.trim() || `sb exited ${result.status}`;
@@ -564,6 +568,24 @@ export async function applyOverride(
     };
 }
 
+/**
+ * CORE-2611: the merge receipt's project, resolved from the Issue ref through
+ * one read-only `sb project list --json`. Same rule as the review receipt: an
+ * unresolved project leaves the argv untouched rather than guessing.
+ */
+function receiptProject(
+    input: { repo: string; issueRef: string },
+    run: RunFn,
+): string | null {
+    try {
+        const listed = run('sb', ['project', 'list', '--json'], { timeout: ISSUE_LOOKUP_TIMEOUT_MS });
+        if (listed.status !== 0) return null;
+        return pickReceiptProject(parseProjectList(listed.stdout), input);
+    } catch {
+        return null;
+    }
+}
+
 /** After a successful merge: append the `github-merge` ref to the Issue's Journal. */
 export function recordMerge(
     input: { repo: string; pr: number; head: string; issueRef: string },
@@ -578,14 +600,15 @@ export function recordMerge(
     }]);
     // Bounded result fields only (a live run rejected `head`/`pr`): the SHA and the PR
     // stay in the summary and in the github-merge ref, which carry them as data.
-    const result = run('sb', ['journal', 'append', input.issueRef, '--kind', 'result',
+    const args = ['journal', 'append', input.issueRef, '--kind', 'result',
         '--result', JSON.stringify({
             summary: `merged ${input.repo}#${input.pr} at ${sha12(input.head)}`,
             outcome: 'merged',
             findings: [`head ${input.head}`],
             artifactRefs: [`https://github.com/${input.repo}/pull/${input.pr}`],
         }),
-        '--refs', refs, '--json'], {});
+        '--refs', refs, '--json'];
+    const result = run('sb', withReceiptProject(args, receiptProject(input, run)), {});
     if (result.status === 0) return { ok: true };
     // CORE-2606: the same diagnostics the review receipt uses. `sb --json` puts its
     // refusal on STDOUT, so a stderr-only message reads "sb exited 1" with no reason.

@@ -2,6 +2,13 @@
 // prints a refusal on STDOUT and exits non-zero with empty stderr, so a message
 // built from stderr alone loses the reason — that is how the live warning came
 // to say only "Journal receipt failed: sb exited 1".
+//
+// CORE-2611: a receipt also names its project. `sb` resolves the project from
+// the cwd, so a reviewer working in a `core` worktree that reviews an `xtrm` PR
+// was refused: "ref XTRM-728 belongs to project prj_xtrm, not the effective
+// project prj_core: pass --project prj_xtrm". The receipt resolves the project
+// from data `sb` already owns (the Issue ref prefix, or the PR repository name)
+// and passes `--project <id>` explicitly.
 
 import { spawnSync } from 'node:child_process';
 
@@ -44,6 +51,112 @@ export function describeSbFailure(failure: SbFailure): string {
     const fromStdout = sbJsonError(failure.stdout);
     const reason = stderr || (fromStdout ? `(stdout) ${fromStdout}` : 'no stderr and no JSON error on stdout');
     return `sb (${binary}) exited ${failure.status}: ${reason}`;
+}
+
+/** One project as `sb project list --json` reports it. */
+export interface SbProject {
+    id: string;
+    prefix: string;
+    name: string;
+}
+
+/** Parse `sb project list --json`; anything unparseable yields no projects. */
+export function parseProjectList(stdout: string | null | undefined): SbProject[] {
+    const text = (stdout ?? '').trim();
+    if (!text.startsWith('{')) return [];
+    try {
+        const parsed = JSON.parse(text) as { data?: unknown };
+        if (!Array.isArray(parsed.data)) return [];
+        const projects: SbProject[] = [];
+        for (const entry of parsed.data) {
+            if (!entry || typeof entry !== 'object') continue;
+            const record = entry as Record<string, unknown>;
+            if (typeof record.id !== 'string' || typeof record.prefix !== 'string') continue;
+            projects.push({
+                id: record.id,
+                prefix: record.prefix,
+                name: typeof record.name === 'string' ? record.name : '',
+            });
+        }
+        return projects;
+    } catch {
+        return [];
+    }
+}
+
+/** `XTRM-184.2.3` -> `xtrm`; a ref with no prefix yields an empty string. */
+export function issueRefPrefix(ref: string | null | undefined): string {
+    const match = /^([A-Za-z][A-Za-z0-9_]*)-/.exec((ref ?? '').trim());
+    return match ? match[1].toLowerCase() : '';
+}
+
+/** The repository's last segment: `xtrm-dev/xtrm` -> `xtrm`. */
+function repoSegment(repo: string | null | undefined): string {
+    const parts = (repo ?? '').trim().split('/');
+    return (parts[parts.length - 1] ?? '').toLowerCase();
+}
+
+/**
+ * The project a receipt belongs to, from data `sb` already owns.
+ *
+ * The Issue ref prefix is authoritative (`XTRM-728` -> the project whose prefix
+ * is XTRM); the PR repository name is the fallback. An unmatched or ambiguous
+ * target yields null, so the receipt keeps the previous cwd-resolved behaviour
+ * instead of guessing a project.
+ */
+export function pickReceiptProject(
+    projects: SbProject[],
+    target: { issueRef?: string | null; repo?: string | null },
+): string | null {
+    const prefix = issueRefPrefix(target.issueRef);
+    if (prefix) {
+        const matches = projects.filter((project) => project.prefix.trim().toLowerCase() === prefix);
+        if (matches.length === 1) return matches[0].id;
+        if (matches.length > 1) return null;
+    }
+    const segment = repoSegment(target.repo);
+    if (!segment) return null;
+    const byName = projects.filter((project) => project.name.trim().toLowerCase() === segment);
+    return byName.length === 1 ? byName[0].id : null;
+}
+
+export interface RunSbJson {
+    (args: string[], env: NodeJS.ProcessEnv): { status: number | null; stdout: string | null; stderr: string | null };
+}
+
+export interface ReceiptProjectDeps {
+    env?: NodeJS.ProcessEnv;
+    /** Runs `sb`; tests inject a fake so no real store is touched. */
+    runSb?: RunSbJson;
+}
+
+/**
+ * Resolve the receipt's project with one read-only `sb project list --json`, or
+ * null when `sb` cannot answer. Never throws: an unresolved project degrades to
+ * the previous behaviour, never to a wrong one.
+ */
+export function resolveReceiptProject(
+    target: { issueRef?: string | null; repo?: string | null },
+    deps: ReceiptProjectDeps = {},
+): string | null {
+    const env = deps.env ?? process.env;
+    const run: RunSbJson = deps.runSb ?? ((args, runEnv) => {
+        const binary = resolveSbBinary(runEnv);
+        const result = spawnSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: runEnv });
+        return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    });
+    try {
+        const result = run(['project', 'list', '--json'], env);
+        if (result.status !== 0) return null;
+        return pickReceiptProject(parseProjectList(result.stdout), target);
+    } catch {
+        return null;
+    }
+}
+
+/** Append `--project <id>` to a receipt argv; an unresolved project leaves it as is. */
+export function withReceiptProject(args: string[], projectId: string | null | undefined): string[] {
+    return projectId ? [...args, '--project', projectId] : args;
 }
 
 /** Run one `sb` receipt; never throws, and names the binary and its reason. */

@@ -71970,6 +71970,66 @@ function describeSbFailure(failure) {
   const reason = stderr || (fromStdout ? `(stdout) ${fromStdout}` : "no stderr and no JSON error on stdout");
   return `sb (${binary}) exited ${failure.status}: ${reason}`;
 }
+function parseProjectList(stdout) {
+  const text = (stdout ?? "").trim();
+  if (!text.startsWith("{")) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.data)) return [];
+    const projects = [];
+    for (const entry of parsed.data) {
+      if (!entry || typeof entry !== "object") continue;
+      const record2 = entry;
+      if (typeof record2.id !== "string" || typeof record2.prefix !== "string") continue;
+      projects.push({
+        id: record2.id,
+        prefix: record2.prefix,
+        name: typeof record2.name === "string" ? record2.name : ""
+      });
+    }
+    return projects;
+  } catch {
+    return [];
+  }
+}
+function issueRefPrefix(ref) {
+  const match = /^([A-Za-z][A-Za-z0-9_]*)-/.exec((ref ?? "").trim());
+  return match ? match[1].toLowerCase() : "";
+}
+function repoSegment(repo) {
+  const parts = (repo ?? "").trim().split("/");
+  return (parts[parts.length - 1] ?? "").toLowerCase();
+}
+function pickReceiptProject(projects, target) {
+  const prefix = issueRefPrefix(target.issueRef);
+  if (prefix) {
+    const matches = projects.filter((project) => project.prefix.trim().toLowerCase() === prefix);
+    if (matches.length === 1) return matches[0].id;
+    if (matches.length > 1) return null;
+  }
+  const segment = repoSegment(target.repo);
+  if (!segment) return null;
+  const byName = projects.filter((project) => project.name.trim().toLowerCase() === segment);
+  return byName.length === 1 ? byName[0].id : null;
+}
+function resolveReceiptProject(target, deps = {}) {
+  const env3 = deps.env ?? process.env;
+  const run5 = deps.runSb ?? ((args, runEnv) => {
+    const binary = resolveSbBinary(runEnv);
+    const result = (0, import_node_child_process22.spawnSync)(binary, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: runEnv });
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  });
+  try {
+    const result = run5(["project", "list", "--json"], env3);
+    if (result.status !== 0) return null;
+    return pickReceiptProject(parseProjectList(result.stdout), target);
+  } catch {
+    return null;
+  }
+}
+function withReceiptProject(args, projectId) {
+  return projectId ? [...args, "--project", projectId] : args;
+}
 function runReceipt(args, env3 = process.env) {
   const binary = resolveSbBinary(env3);
   const result = (0, import_node_child_process22.spawnSync)(binary, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: env3 });
@@ -72273,7 +72333,7 @@ async function dismissStaleChangesRequested(input, deps, botLogin, warnings) {
   }
   return dismissed;
 }
-function reviewJournalArgs(receipt, input, issueRef, slug) {
+function reviewJournalArgs(receipt, input, issueRef, slug, project) {
   const refs = JSON.stringify([{
     kind: "github-review",
     key: receipt.url,
@@ -72291,7 +72351,14 @@ function reviewJournalArgs(receipt, input, issueRef, slug) {
     artifactRefs: [receipt.url],
     findings: [`verdict ${receipt.verdict}`, `head ${receipt.head}`]
   });
-  return ["journal", "append", issueRef, "--kind", "result", "--result", result, "--refs", refs, "--json"];
+  return withReceiptProject(
+    ["journal", "append", issueRef, "--kind", "result", "--result", result, "--refs", refs, "--json"],
+    project
+  );
+}
+function reviewReceiptArgs(receipt, input, issueRef, slug, deps = {}) {
+  const project = resolveReceiptProject({ issueRef, repo: input.repo }, deps);
+  return reviewJournalArgs(receipt, input, issueRef, slug, project);
 }
 
 // src/core/merge-guard.ts
@@ -72629,7 +72696,9 @@ async function applyOverride(refusal, deps) {
       pr: refusal.pr,
       override: true
     });
-    const result = run5("sb", ["journal", "append", refusal.issueRef, "--kind", "decision", "--semantic", semantic, "--json"], {});
+    const args = ["journal", "append", refusal.issueRef, "--kind", "decision", "--semantic", semantic, "--json"];
+    const project = receiptProject({ repo: refusal.repo, issueRef: refusal.issueRef }, run5);
+    const result = run5("sb", withReceiptProject(args, project), {});
     journaled = result.status === 0;
     if (!journaled) {
       const journalError = result.stderr.trim() || `sb exited ${result.status}`;
@@ -72654,6 +72723,15 @@ async function applyOverride(refusal, deps) {
     message: `merge allowed for ${refusal.repo}#${refusal.pr} by ${OVERRIDE_ENV_VAR}: ${reason}`
   };
 }
+function receiptProject(input, run5) {
+  try {
+    const listed = run5("sb", ["project", "list", "--json"], { timeout: ISSUE_LOOKUP_TIMEOUT_MS });
+    if (listed.status !== 0) return null;
+    return pickReceiptProject(parseProjectList(listed.stdout), input);
+  } catch {
+    return null;
+  }
+}
 function recordMerge(input, deps) {
   const env3 = deps.env ?? process.env;
   const run5 = deps.runSb ?? defaultRunSb();
@@ -72662,7 +72740,7 @@ function recordMerge(input, deps) {
     key: `https://github.com/${input.repo}/pull/${input.pr}`,
     value: { repo: input.repo, pr: input.pr, head: input.head, actor: `${env3.SUBSTRATE_HOLDER ?? ""}`.trim() || "operator" }
   }]);
-  const result = run5("sb", [
+  const args = [
     "journal",
     "append",
     input.issueRef,
@@ -72678,7 +72756,8 @@ function recordMerge(input, deps) {
     "--refs",
     refs,
     "--json"
-  ], {});
+  ];
+  const result = run5("sb", withReceiptProject(args, receiptProject(input, run5)), {});
   if (result.status === 0) return { ok: true };
   return {
     ok: false,
@@ -73169,7 +73248,7 @@ function createIdentityCommand() {
         expectedModel: (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? "").trim() || null
       }, { token, slug: appSlugForRole("reviewer", map2), apiBase: DEFAULT_API_BASE });
       let journaled = null;
-      if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole("reviewer", map2)));
+      if (posted.issueRef) journaled = runSb(reviewReceiptArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole("reviewer", map2)));
       const out = {
         url: posted.url,
         id: posted.id,
