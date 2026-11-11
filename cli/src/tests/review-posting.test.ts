@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { cleanAgentName } from '../core/dispatcher-identity.js';
 import {
     bodyVerdicts,
     buildAttribution,
@@ -21,7 +22,6 @@ import {
     parseIssueMarkers,
     postReview,
     reviewJournalArgs,
-    sanitizeAgentName,
     sha12,
     ReviewRefused,
     type PostedReview,
@@ -228,7 +228,7 @@ describe('the visible attribution line (CORE-2606)', () => {
         const line = buildAttribution({ holder: 'h', runId: 'r' });
         expect(line).toBe('Agent evil name with spaces · run r');
         expect(line.split('\n')).toHaveLength(1);
-        expect(sanitizeAgentName('\u0000\u001b')).toBeNull();
+        expect(cleanAgentName('\u0000\u001b')).toBeNull();
     });
 
     it('posts the attribution on line 2 and the hidden marker on line 3', async () => {

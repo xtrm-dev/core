@@ -72019,19 +72019,15 @@ function buildMarker(input) {
   ];
   return `<!-- ${parts.join(" ")} -->`;
 }
-function sanitizeAgentName(value, max = 96) {
-  const cleaned = (value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
-  return cleaned ? cleaned.slice(0, max) : null;
-}
 function buildAttribution(input, env3 = process.env) {
-  const agent = sanitizeAgentName(input.agentName) ?? sanitizeAgentName(env3.XTRM_AGENT_NAME) ?? sanitizeAgentName(input.holder);
+  const agent = cleanAgentName(input.agentName) ?? cleanAgentName(env3.XTRM_AGENT_NAME) ?? cleanAgentName(input.holder);
   const parts = [];
   if (agent) parts.push(`Agent ${agent}`);
-  const runId = sanitizeAgentName(input.runId, 96);
+  const runId = cleanAgentName(input.runId);
   if (runId) parts.push(`run ${runId}`);
-  const issueRef = sanitizeAgentName(input.issueRef, 96);
+  const issueRef = cleanAgentName(input.issueRef);
   if (issueRef) parts.push(`Issue ${issueRef}`);
-  const activationId = sanitizeAgentName(input.activationId, 96);
+  const activationId = cleanAgentName(input.activationId);
   if (activationId) parts.push(`activation ${activationId}`);
   return parts.join(" \xB7 ");
 }
