@@ -55,7 +55,7 @@ class Monitor:
         self.errors = 0
         self.watch = None        # read-after-suggest: the nudge's path, until it is read or the window ends
         self.prev_state = None
-        self.fresh_start = path is None   # no transcript yet at start: the first prompt is not history
+        self.fresh_start = False  # set on the first tick that finds no transcript: its first prompt is then not history
 
     # -- decision log: same file and row shape as the Pi extension, host="claude"
     def log(self, **row):
@@ -209,6 +209,8 @@ class Monitor:
         if not self.path:
             self.path = ts.find_transcript(self.sid) if self.sid else None
             if not self.path:
+                if not self.primed:
+                    self.fresh_start = True  # no transcript at the first look: whatever appears is this session's own
                 return
         st = os.stat(self.path)
         sig = (st.st_size, st.st_mtime_ns)

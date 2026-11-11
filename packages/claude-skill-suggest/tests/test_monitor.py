@@ -255,6 +255,21 @@ class TestDelivery(Env):
         self.assertIsNone(m.job)
         self.assertEqual(self.out, [])
 
+    def test_production_construction_over_a_running_history_does_not_nudge(self):
+        # main() builds Monitor(sid) with no path; a resumed session whose last turn was cut off classifies as running
+        home = os.path.join(self.d, "home"); proj = os.path.join(home, ".claude", "projects", "p"); os.makedirs(proj)
+        t = os.path.join(proj, "resumed1.jsonl")
+        self.append(user(PROMPT, uid="OLD"), path=t); self.append(tool_row("Read", file_path="/x"), path=t)
+        old = os.environ.get("HOME"); os.environ["HOME"] = home
+        try:
+            m = mon.Monitor("resumed1", emit=self.out.append)
+            for _ in range(10):
+                m.tick(); time.sleep(0.02)
+            self.assertIsNone(m.job)
+            self.assertEqual(self.out, [])
+        finally:
+            os.environ["HOME"] = old
+
     def test_garbage_transcript_never_raises_or_delivers(self):
         m = self.monitor()
         open(self.t, "a").write("garbage\n")

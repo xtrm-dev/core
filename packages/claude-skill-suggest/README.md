@@ -46,7 +46,8 @@ counts (`ctx_tools`, `ctx_files`, `ctx_issue`).
 
 After a nudge the monitor watches the transcript for a path-identical `Read` of the suggested file, as the Pi extension
 does. The log gets `{"seam":"read_after_suggest","outcome":"read"}` when the agent reads it, or `"outcome":"expired"`
-after three turn ends. The act-on rate is `read / (read + expired)` over those rows.
+after three turn ends. The act-on rate is `read / (read + expired)` over those rows. A watch that ends otherwise (a second nudge replaces it, or the session exits inside the window) writes no row,
+so the rate counts only resolved watches.
 
 ## Fail-open rules
 
