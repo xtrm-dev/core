@@ -69278,6 +69278,8 @@ function createHelpCommand() {
       "    refusal names PI_SESSION_ID (Pi) or the Claude session id. Called by the",
       "    gh shim before gh runs, so an agent never creates a PR with a run= that",
       "    cannot attribute it. Fail-open: only a refusal blocks.",
+      "    Shims call it with XTRM_MARKER_CHECK_TIMEOUT_MS (ms, 50-60000, default",
+      "    4000): a slower call is killed and the create proceeds unexplained.",
       "  xt identity setup | doctor [--json]",
       "    Install/refresh the gh shim, role map and routing reminder; report App and key state.",
       "    The GitHub Apps themselves are operator-created: see docs/github-apps-operator-runbook.md."

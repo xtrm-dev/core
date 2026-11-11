@@ -9,6 +9,7 @@
 // CI), because the gh shim executes it as a separate program.
 
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { join, resolve } from 'node:path';
@@ -181,5 +182,18 @@ describe('clear surface (CORE-2622 review, rule: a verb the shim calls is in xt 
         const identityBlock = result.stdout.slice(result.stdout.indexOf('AGENT IDENTITY (GITHUB APPS)'));
         expect(identityBlock.indexOf('xt identity marker-check')).toBeGreaterThan(-1);
         expect(identityBlock.indexOf('xt identity marker-check')).toBeLessThan(identityBlock.indexOf('xt identity setup'));
+        // A hidden knob is not a clear surface (CORE-2622 review): the budget,
+        // its range and its default are part of the help text.
+        expect(identityBlock).toContain('XTRM_MARKER_CHECK_TIMEOUT_MS');
+        expect(identityBlock).toContain('50-60000');
+        expect(identityBlock).toContain('default');
+    });
+
+    it('the operator runbook documents the marker budget with its range and default', () => {
+        const runbook = readFileSync(path.resolve(__dirname, '..', '..', '..', 'docs', 'github-apps-operator-runbook.md'), 'utf8');
+        const row = runbook.split('\n').find((line) => line.includes('`XTRM_MARKER_CHECK_TIMEOUT_MS`'));
+        expect(row).toBeDefined();
+        expect(row).toContain('50–60000');
+        expect(row).toContain('4000');
     });
 });
