@@ -40,6 +40,9 @@ export const ATTACH_TIMEOUT_MS = 5_000;
  */
 const ISSUE_REF = /^[A-Z][A-Z0-9]*-\d+(?:\.\d+)*$/;
 
+/** A ref-shaped token anywhere in a text, with its prefix captured. Literal. */
+const REF_SHAPED = /(?<![A-Za-z0-9_])([A-Z][A-Z0-9]*)-(?:\d+(?:\.\d+)*)(?![A-Za-z0-9])/gi;
+
 export interface CreatedPr {
     owner: string;
     repo: string;
@@ -142,26 +145,29 @@ export function readCreateTitle(argv: string[]): string {
     return lastFlagValue(argv, '--title', '-t') ?? '';
 }
 
-function escapeRegExp(text: string): string {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /**
  * Every ref-shaped token in a text whose prefix is one of the project prefixes.
  * Case-insensitive (a branch is usually `core-2607-…`), and the boundaries reject
  * a longer word: `CORE-2607` inside `XXCORE-2607` is not a ref.
+ *
+ * One literal pattern, filtered by the prefix set, rather than a pattern built
+ * per prefix: a project prefix from `sb` never becomes regex syntax (a
+ * non-literal RegExp is also the ReDoS shape semgrep refuses), and the scan
+ * stays a single pass.
  */
 export function issueRefsInText(text: string | null | undefined, projectPrefixes: string[]): string[] {
     const source = typeof text === 'string' ? text : '';
-    const out: string[] = [];
+    const prefixes = new Set<string>();
     for (const raw of projectPrefixes) {
-        const prefix = raw.trim();
-        if (!prefix) continue;
-        const pattern = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(prefix)}-\\d+(?:\\.\\d+)*(?![A-Za-z0-9])`, 'gi');
-        for (const match of source.matchAll(pattern)) {
-            const ref = match[0].toUpperCase();
-            if (!out.includes(ref)) out.push(ref);
-        }
+        const prefix = (raw ?? '').trim().toUpperCase();
+        if (prefix) prefixes.add(prefix);
+    }
+    if (prefixes.size === 0) return [];
+    const out: string[] = [];
+    for (const match of source.matchAll(REF_SHAPED)) {
+        const ref = match[0].toUpperCase();
+        if (!prefixes.has(match[1].toUpperCase())) continue;
+        if (!out.includes(ref)) out.push(ref);
     }
     return out;
 }

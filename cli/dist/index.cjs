@@ -72404,6 +72404,7 @@ var import_node_child_process23 = require("child_process");
 var import_node_fs20 = require("fs");
 var ATTACH_TIMEOUT_MS = 5e3;
 var ISSUE_REF = /^[A-Z][A-Z0-9]*-\d+(?:\.\d+)*$/;
+var REF_SHAPED = /(?<![A-Za-z0-9_])([A-Z][A-Z0-9]*)-(?:\d+(?:\.\d+)*)(?![A-Za-z0-9])/gi;
 function parseCreatedPrUrl(stdout) {
   const text = typeof stdout === "string" ? stdout : "";
   let found = null;
@@ -72460,20 +72461,19 @@ function lastIndexOfFlag(argv, long, short) {
 function readCreateTitle(argv) {
   return lastFlagValue(argv, "--title", "-t") ?? "";
 }
-function escapeRegExp(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 function issueRefsInText(text, projectPrefixes) {
   const source = typeof text === "string" ? text : "";
-  const out = [];
+  const prefixes = /* @__PURE__ */ new Set();
   for (const raw of projectPrefixes) {
-    const prefix = raw.trim();
-    if (!prefix) continue;
-    const pattern = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(prefix)}-\\d+(?:\\.\\d+)*(?![A-Za-z0-9])`, "gi");
-    for (const match of source.matchAll(pattern)) {
-      const ref = match[0].toUpperCase();
-      if (!out.includes(ref)) out.push(ref);
-    }
+    const prefix = (raw ?? "").trim().toUpperCase();
+    if (prefix) prefixes.add(prefix);
+  }
+  if (prefixes.size === 0) return [];
+  const out = [];
+  for (const match of source.matchAll(REF_SHAPED)) {
+    const ref = match[0].toUpperCase();
+    if (!prefixes.has(match[1].toUpperCase())) continue;
+    if (!out.includes(ref)) out.push(ref);
   }
   return out;
 }
