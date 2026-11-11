@@ -22,6 +22,7 @@ HARD_KILL_S = float(os.environ.get("SKILL_SUGGEST_HARD_KILL_S", "4.0"))
 COOLDOWN_S = 30 * 60           # one suggestion per catalog id per 30 minutes, as the Pi extension
 SLOTS = int(os.environ.get("SKILL_SUGGEST_SLOTS", "3"))   # host-wide worker cap
 NUDGE_MAX = 600
+READ_WINDOW_TURNS = 3          # as the Pi input seam: the suggested file counts as acted on if read within 3 turns
 PROMPT_MAX = 4000
 
 
@@ -52,6 +53,9 @@ class Monitor:
         self.cooldown = {}
         self.sig = None
         self.errors = 0
+        self.watch = None        # read-after-suggest: the nudge's path, until it is read or the window ends
+        self.prev_state = None
+        self.fresh_start = path is None   # no transcript yet at start: the first prompt is not history
 
     # -- decision log: same file and row shape as the Pi extension, host="claude"
     def log(self, **row):
@@ -112,7 +116,7 @@ class Monitor:
         except Exception:
             pass
 
-    def spawn(self, epoch, prompt, cwd):
+    def spawn(self, epoch, prompt, cwd, tools=()):
         cmd = worker_cmd()
         if not cmd:
             return self.log(seam="input", outcome="skip", reason="no_runtime", epoch=epoch)
@@ -120,9 +124,19 @@ class Monitor:
         if slot is None:
             return self.log(seam="input", outcome="skip", reason="no_slot", epoch=epoch)  # the cap: drop, never queue
         try:
-            payload = json.dumps({"sid": self.sid, "epoch": epoch, "cwd": cwd, "prompt": prompt[:PROMPT_MAX]})
+            ctx = ts.structured_context(list(tools))
+            ctx["issue"] = os.environ.get("SUBSTRATE_ISSUE_REF") or os.environ.get("SUBSTRATE_ISSUE") or None
+            payload = json.dumps({"sid": self.sid, "epoch": epoch, "cwd": cwd, "prompt": prompt[:PROMPT_MAX], **ctx})
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
-            proc.stdin.write(payload.encode()); proc.stdin.close()
+            try:
+                proc.stdin.write(payload.encode()); proc.stdin.close()
+            except Exception:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except Exception:
+                    pass
+                proc.wait(timeout=1)  # never leave a process or a slot behind
+                raise
             self.job = {"proc": proc, "epoch": epoch, "t0": self.clock(), "slot": slot}
         except Exception as e:
             os.close(slot)
@@ -146,6 +160,8 @@ class Monitor:
         line = " ".join(out["nudge"].split())[:NUDGE_MAX]
         self.cooldown[pick] = now
         self.emit(line)
+        if isinstance(out.get("path"), str):
+            self.watch = {"pick": pick, "path": out["path"], "left": READ_WINDOW_TURNS, "seen": {t[0] for t in s.get("tools", [])}}
         self.log(seam="input", pick=pick, outcome="deliver", reason="delivered", injected=True, epoch=job["epoch"], score=out.get("score"), ms=int((now - job["t0"]) * 1000))
 
     def poll_job(self):
@@ -169,6 +185,24 @@ class Monitor:
             return self.log(seam="input", outcome="skip", reason="worker_failed", epoch=j["epoch"], rc=rc)
         self.deliver(j, out)
 
+    def watch_step(self, s):
+        """read_after_suggest, the act-on rate: a path-identical Read of the suggested file within the window."""
+        w, prev, self.prev_state = self.watch, self.prev_state, s["state"]
+        if not w:
+            return
+        for tid, name, fp in s.get("tools", []):
+            if tid in w["seen"]:
+                continue
+            w["seen"].add(tid)
+            if name == "Read" and fp and os.path.abspath(fp) == os.path.abspath(w["path"]):
+                self.watch = None
+                return self.log(seam="read_after_suggest", pick=w["pick"], outcome="read", path=w["path"])
+        if prev == "running" and s["state"] == "idle":
+            w["left"] -= 1
+            if w["left"] <= 0:
+                self.watch = None
+                self.log(seam="read_after_suggest", pick=w["pick"], outcome="expired")
+
     def tick(self):
         """One pass. Cheap when nothing changed: one stat."""
         self.poll_job()
@@ -182,10 +216,13 @@ class Monitor:
             return
         self.sig = sig
         s = ts.snapshot(self.path, st.st_size)
+        self.watch_step(s)
         if not self.primed:  # a resumed session: do not act on history
-            self.primed, self.seen_epoch = True, s["epoch"]
+            self.primed = True
+            self.seen_epoch = None if self.fresh_start else s["epoch"]
             self.log(seam="monitor", outcome="start", reason="primed", state=s["why"])
-            return
+            if not self.fresh_start:
+                return
         if s["epoch"] is None or s["epoch"] == self.seen_epoch:
             return
         self.seen_epoch = s["epoch"]
@@ -197,7 +234,7 @@ class Monitor:
             return
         if s["state"] != "running":
             return self.log(seam="input", outcome="skip", reason="turn_ended" if s["state"] == "idle" else "state_unknown", epoch=s["epoch"])
-        self.spawn(s["epoch"], prompt, (s["row"] or {}).get("cwd") or os.getcwd())
+        self.spawn(s["epoch"], prompt, (s["row"] or {}).get("cwd") or os.getcwd(), s.get("tools", []))
 
     def run(self):
         while True:

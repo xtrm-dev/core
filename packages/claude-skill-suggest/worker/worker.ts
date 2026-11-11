@@ -53,10 +53,12 @@ export async function loadIndex(cwd: string, now = Date.now()): Promise<{ index:
 
 const oneLine = (s: string, n: number): string => s.replace(/\s+/g, " ").trim().slice(0, n);
 
+/** The absolute path a nudge names; repo-local roster entries carry repo-relative paths. */
+export const absolutePath = (entry: RosterEntry, cwd: string): string => (isAbsolute(entry.path) ? entry.path : resolve(cwd, entry.path));
+
 /** The nudge: one line (a monitor line is one notification), an absolute path, the rule text, at most NUDGE_MAX characters. */
 export function nudgeText(entry: RosterEntry, cwd: string): string {
-  // Repo-local roster entries carry repo-relative paths; the nudge must name one the agent can open from anywhere.
-  const path = isAbsolute(entry.path) ? entry.path : resolve(cwd, entry.path);
+  const path = absolutePath(entry, cwd); // the nudge must name a path the agent can open from anywhere
   const what = entry.level === "skill" ? `skill "${entry.skill}"` : `reference "${entry.name}" of skill "${entry.skill}"`;
   const tail = " Ignore it if it does not fit.";
   const head = `[skill-suggest] This request may call for ${what}: `;
@@ -65,8 +67,9 @@ export function nudgeText(entry: RosterEntry, cwd: string): string {
   return `${head}${oneLine(entry.description, Math.max(40, room)).replace(/[.\s]+$/, "")}.${read}${tail}`.slice(0, NUDGE_MAX);
 }
 
-export interface WorkerInput { sid?: string; epoch?: string; cwd: string; prompt: string }
-export type WorkerOutput = { outcome: "fire"; pick: string; score: number | null; nudge: string; model: string | null } | { outcome: "skip"; reason: string };
+/** PRD 12b structured context: the claimed Issue ref, the last few tool names, and the files in play (service territory). */
+export interface WorkerInput { sid?: string; epoch?: string; cwd: string; prompt: string; issue?: string | null; tools?: string[]; files?: string[] }
+export type WorkerOutput = { outcome: "fire"; pick: string; score: number | null; nudge: string; path: string; model: string | null } | { outcome: "skip"; reason: string };
 
 export async function run(input: WorkerInput): Promise<WorkerOutput> {
   const base = { ts: new Date().toISOString(), host: "claude", seam: "input", sid: input.sid ?? null, epoch: input.epoch ?? null };
@@ -78,15 +81,20 @@ export async function run(input: WorkerInput): Promise<WorkerOutput> {
     await primeApiKey();
     if (!readApiKey()) return skip("no_key");
     const { index, cached } = await loadIndex(input.cwd);
-    const j = await judge("input", null, index, { request: input.prompt.slice(0, 2000), recent_conversation: "", cwd: input.cwd }, { text: input.prompt, files: [] }, STAGE_TIMEOUT_MS);
-    const facts = { prompt_chars: input.prompt.length, roster_cached: cached, ...j.facts };
+    const tools = (input.tools ?? []).filter((t) => typeof t === "string").slice(-5);
+    const files = (input.files ?? []).filter((f) => typeof f === "string").slice(-10);
+    const state: Record<string, unknown> = { request: input.prompt.slice(0, 2000), recent_conversation: "", cwd: input.cwd };
+    if (typeof input.issue === "string" && input.issue) state["claimed_issue"] = input.issue;
+    if (tools.length) state["recent_tools"] = tools.join(", ");
+    const j = await judge("input", null, index, state, { text: input.prompt, files }, STAGE_TIMEOUT_MS);
+    const facts = { prompt_chars: input.prompt.length, roster_cached: cached, ctx_tools: tools.length, ctx_files: files.length, ctx_issue: Boolean(input.issue), ...j.facts };
     if (j.skip !== null) return skip(j.skip, facts);
     if (!j.entry) {
       log.append({ ...base, pick: j.pick ?? "none", outcome: "abstain", reason: j.reason, injected: false, ...facts });
       return { outcome: "skip", reason: j.reason };
     }
     log.append({ ...base, pick: j.entry.id, outcome: "fire", reason: "fire", injected: false, ...facts });
-    return { outcome: "fire", pick: j.entry.id, score: j.score, nudge: nudgeText(j.entry, input.cwd), model: j.model };
+    return { outcome: "fire", pick: j.entry.id, score: j.score, nudge: nudgeText(j.entry, input.cwd), path: absolutePath(j.entry, input.cwd), model: j.model };
   } catch (e) {
     return skip(`error:${(e as Error)?.name ?? "unknown"}`);
   }

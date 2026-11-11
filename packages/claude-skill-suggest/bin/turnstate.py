@@ -112,6 +112,33 @@ def eligible_prompt(row):
     return txt, None
 
 
+def tool_uses(rows):
+    """[(tool_use id, tool name, file path or None)] for every tool call in the rows, oldest first."""
+    out = []
+    for r in rows:
+        if r.get("type") != "assistant":
+            continue
+        c = (r.get("message") or {}).get("content")
+        for b in c if isinstance(c, list) else []:
+            if isinstance(b, dict) and b.get("type") == "tool_use":
+                inp = b.get("input") if isinstance(b.get("input"), dict) else {}
+                fp = inp.get("file_path") or inp.get("path")
+                out.append((b.get("id"), str(b.get("name")), fp if isinstance(fp, str) else None))
+    return out
+
+
+def structured_context(tools):
+    """PRD 12b: a small structured context for the classifier: the last few tool names and the files in play."""
+    names = [t[1] for t in tools][-5:]
+    files = []
+    for _, _, fp in reversed(tools):
+        if fp and fp not in files:
+            files.append(fp)
+        if len(files) >= 10:
+            break
+    return {"tools": names, "files": files[::-1]}
+
+
 def snapshot(path, size, need_epoch=False):
     """Read the tail and return {state, why, epoch, row}. Never raises.
 
@@ -130,9 +157,9 @@ def snapshot(path, size, need_epoch=False):
             if (why == "drift:no-user-rows" or (need_epoch and start is None)) and w < TAIL_MAX and w < size:
                 w *= 4
                 continue
-            return {"state": state, "why": why, "epoch": (start or {}).get("uuid"), "row": start}
+            return {"state": state, "why": why, "epoch": (start or {}).get("uuid"), "row": start, "tools": tool_uses(rows)}
     except Exception as e:  # bad json, io: fail open
-        return {"state": "unknown", "why": "exc:" + type(e).__name__, "epoch": None, "row": None}
+        return {"state": "unknown", "why": "exc:" + type(e).__name__, "epoch": None, "row": None, "tools": []}
 
 
 def find_transcript(sid, home=None):

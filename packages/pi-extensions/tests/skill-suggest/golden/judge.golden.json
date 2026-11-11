@@ -969,6 +969,182 @@
     },
     "payloads": []
   },
+  "stage1-timeout": {
+    "judgement": {
+      "skip": "classifier:timeout",
+      "failure": "timeout",
+      "facts": {
+        "roster": 7,
+        "shortlist": 5,
+        "wide": 5,
+        "dropped": 0,
+        "territory": [],
+        "jev_ms": "<ms>",
+        "jev_path": null
+      }
+    },
+    "payloads": [
+      {
+        "state": {},
+        "questions": {
+          "skill": {
+            "type": "choice",
+            "instructions": "Pick the single skill or reference document whose stated use applies to the task this request starts, so that following it would change what the agent does next; otherwise pick none. A procedure that only shares a topic or keyword does not apply. Base it only on the request and the provided descriptions.",
+            "criteria": {
+              "deploy-pipeline": "deploy-pipeline: Deploy the release pipeline; debug a failed regression run.",
+              "review-pipeline": "review-pipeline: Debug and review the release pipeline after a regression; covers triage, bisecting the failing change, reading the logs, and writing the regression test that proves the fix.",
+              "quality-gates": "quality-gates: Run quality gates on a release; debug a regression in a gate.",
+              "engineering-quality": "engineering-quality: Debug, review, test and verify changes. Use for regressions.",
+              "releasing": "releasing: Release process: changelog tag, registry, publish.",
+              "none": "No listed procedure governs this: narration or a status report, a reply or relay to another agent, a decision the operator states, a question answered from the conversation, or work only sharing a topic or keyword with a listed procedure."
+            }
+          },
+          "starts_governed_task": {
+            "type": "bool",
+            "instructions": "Does the request (or the agent's stated next step) start a concrete piece of work, such as debugging, reviewing, releasing, deploying, planning, coordinating workers or operating a named service, rather than chat, a status check, a decision the operator states, or a reply to another agent?",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          },
+          "prose_suffices": {
+            "type": "bool",
+            "instructions": "Could a knowledgeable generalist fully satisfy this request in prose, with no tools and no access to the user's files? (Counts against suggesting.)",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          },
+          "wide": {
+            "type": "choice",
+            "instructions": "Which of these documents is the right one for the agent to read before it starts on this request? Judge what each document is for, not shared words.",
+            "criteria": {
+              "deploy-pipeline": "deploy-pipeline: Deploy the release pipeline; debug a failed regression run.",
+              "review-pipeline": "review-pipeline: Debug and review the release pipeline after a regression; covers triage, bisecting ",
+              "quality-gates": "quality-gates: Run quality gates on a release; debug a regression in a gate.",
+              "engineering-quality": "engineering-quality: Debug, review, test and verify changes. Use for regressions.",
+              "releasing": "releasing: Release process: changelog tag, registry, publish."
+            }
+          },
+          "n_named": {
+            "type": "bool",
+            "instructions": "Does the request name a specific tool, service, command, workflow or documented procedure to use?",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          }
+        }
+      }
+    ]
+  },
+  "stage2-timeout": {
+    "judgement": {
+      "skip": "classifier:timeout",
+      "failure": "timeout",
+      "facts": {
+        "roster": 7,
+        "shortlist": 5,
+        "wide": 5,
+        "dropped": 0,
+        "territory": [],
+        "jev_ms": "<ms>",
+        "jev_path": "registry"
+      }
+    },
+    "payloads": [
+      {
+        "state": {},
+        "questions": {
+          "skill": {
+            "type": "choice",
+            "instructions": "Pick the single skill or reference document whose stated use applies to the task this request starts, so that following it would change what the agent does next; otherwise pick none. A procedure that only shares a topic or keyword does not apply. Base it only on the request and the provided descriptions.",
+            "criteria": {
+              "deploy-pipeline": "deploy-pipeline: Deploy the release pipeline; debug a failed regression run.",
+              "review-pipeline": "review-pipeline: Debug and review the release pipeline after a regression; covers triage, bisecting the failing change, reading the logs, and writing the regression test that proves the fix.",
+              "quality-gates": "quality-gates: Run quality gates on a release; debug a regression in a gate.",
+              "engineering-quality": "engineering-quality: Debug, review, test and verify changes. Use for regressions.",
+              "releasing": "releasing: Release process: changelog tag, registry, publish.",
+              "none": "No listed procedure governs this: narration or a status report, a reply or relay to another agent, a decision the operator states, a question answered from the conversation, or work only sharing a topic or keyword with a listed procedure."
+            }
+          },
+          "starts_governed_task": {
+            "type": "bool",
+            "instructions": "Does the request (or the agent's stated next step) start a concrete piece of work, such as debugging, reviewing, releasing, deploying, planning, coordinating workers or operating a named service, rather than chat, a status check, a decision the operator states, or a reply to another agent?",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          },
+          "prose_suffices": {
+            "type": "bool",
+            "instructions": "Could a knowledgeable generalist fully satisfy this request in prose, with no tools and no access to the user's files? (Counts against suggesting.)",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          },
+          "wide": {
+            "type": "choice",
+            "instructions": "Which of these documents is the right one for the agent to read before it starts on this request? Judge what each document is for, not shared words.",
+            "criteria": {
+              "deploy-pipeline": "deploy-pipeline: Deploy the release pipeline; debug a failed regression run.",
+              "review-pipeline": "review-pipeline: Debug and review the release pipeline after a regression; covers triage, bisecting ",
+              "quality-gates": "quality-gates: Run quality gates on a release; debug a regression in a gate.",
+              "engineering-quality": "engineering-quality: Debug, review, test and verify changes. Use for regressions.",
+              "releasing": "releasing: Release process: changelog tag, registry, publish."
+            }
+          },
+          "n_named": {
+            "type": "bool",
+            "instructions": "Does the request name a specific tool, service, command, workflow or documented procedure to use?",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          }
+        }
+      },
+      {
+        "state": {},
+        "questions": {
+          "rr_wide": {
+            "type": "choice",
+            "instructions": "Exactly one of these documents is the right one for the agent to read before it starts on this request. Which one? Read what each actually covers, not just its name.",
+            "criteria": {
+              "deploy-pipeline": "deploy-pipeline: Deploy the release pipeline; debug a failed regression run. — Cut the release only after the changelog tag is set and the registry is regenerated.",
+              "review-pipeline": "review-pipeline: Debug and review the release pipeline after a regression; covers triage, bisecting the failing change, reading the logs, and writing the regression test that proves the fix. — Start from the symptom. Find the first bad observation, trace the code path, then name the change that caused it. Only then patch. Step 1: keep the evidence, name the mechanism, and write the regression test first. Step 2: keep the evidence, name the mechanism, and write the regression test first. Step 3: keep the evidence, name the mechanism, and write the regression test first. Step 4: keep the evidence, name the mechanism, and write the regression test first. Step 5: keep the evidence, name the mechanism, and write the regression test first. Step 6: keep the evidence, name the mechanism, and write the regression test first. Step 7: keep the evidence, name the mechanism, and write the regr",
+              "quality-gates": "quality-gates: Run quality gates on a release; debug a regression in a gate. — Start from the symptom. Find the first bad observation, trace the code path, then name the change that caused it. Only then patch. Step 1: keep the evidence, name the mechanism, and write the regression test first. Step 2: keep the evidence, name the mechanism, and write the regression test first. Step 3: keep the evidence, name the mechanism, and write the regression test first. Step 4: keep the evidence, name the mechanism, and write the regression test first. Step 5: keep the evidence, name the mechanism, and write the regression test first. Step 6: keep the evidence, name the mechanism, and write the regression test first. Step 7: keep the evidence, name the mechanism, and write the regr"
+            }
+          },
+          "fits::0": {
+            "type": "bool",
+            "instructions": "Does the document 'deploy-pipeline' describe how to do the specific work this request asks for? It is described as: deploy-pipeline: Deploy the release pipeline; debug a failed regression run.",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          },
+          "fits::1": {
+            "type": "bool",
+            "instructions": "Does the document 'review-pipeline' describe how to do the specific work this request asks for? It is described as: review-pipeline: Debug and review the release pipeline after a regression; covers triage, bisecting the failing change, reading the logs, and writing the regression test that proves the fix.",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          },
+          "fits::2": {
+            "type": "bool",
+            "instructions": "Does the document 'quality-gates' describe how to do the specific work this request asks for? It is described as: quality-gates: Run quality gates on a release; debug a regression in a gate.",
+            "criteria": {
+              "true": "The answer is yes.",
+              "false": "The answer is no."
+            }
+          }
+        }
+      }
+    ]
+  },
   "no-registry": {
     "judgement": {
       "skip": "classifier:transport",

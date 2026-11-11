@@ -80,6 +80,31 @@ describe("run: fail-open and offline", () => {
   });
 });
 
+describe("run: Jev failure modes and structured context", () => {
+  const withFetch = async (status: number, body: unknown, f: () => Promise<unknown>) => {
+    const realFetch = globalThis.fetch;
+    const seen: string[] = [];
+    process.env["TYPESAFE_API_KEY"] = "test-key-not-real";
+    globalThis.fetch = (async (_u: unknown, init?: { body?: string }) => { seen.push(String(init?.body ?? "")); return new Response(JSON.stringify(body), { status }); }) as unknown as typeof fetch;
+    try { return { out: await f(), seen }; } finally { globalThis.fetch = realFetch; delete process.env["TYPESAFE_API_KEY"]; }
+  };
+  const input = { cwd: repo, prompt: "debug the failing demo procedure in staging", sid: "s", epoch: "e", issue: "CORE-2594", tools: ["Read", "Bash"], files: ["/repo/a.py"] };
+  it("a 402 from Jev is a skip, never a nudge", async () => {
+    const { out } = await withFetch(402, { error: "payment required" }, () => run(input));
+    expect(out).toEqual({ outcome: "skip", reason: "classifier:http_402" });
+  });
+  it("sends the claimed Issue and the last tool names with the request (PRD 12b)", async () => {
+    const { seen } = await withFetch(500, {}, () => run(input));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toContain("CORE-2594");
+    expect(seen[0]).toContain("Read, Bash");
+  });
+  it("a request without context still works", async () => {
+    const { out } = await withFetch(402, {}, () => run({ cwd: repo, prompt: "debug the failing demo procedure in staging" }));
+    expect(out).toEqual({ outcome: "skip", reason: "classifier:http_402" });
+  });
+});
+
 describe("worker process contract", () => {
   const exec = (input: string) => spawnSync("bun", [join(import.meta.dir, "..", "worker", "worker.ts")], { input, env: { PATH: process.env["PATH"] ?? "", HOME: tmp, SKILL_SUGGEST_LOG_DIR: join(tmp, "log"), SKILL_SUGGEST_CACHE_DIR: join(tmp, "cache") }, encoding: "utf8", timeout: 20_000 });
   it("prints exactly one JSON line on stdout and exits 0, even for bad input", () => {

@@ -94,6 +94,7 @@
     "plan:md:check": "node scripts/plan-to-md.mjs --check",
     "check:registry-pack-parity": "node scripts/check-registry-pack-parity.mjs",
     "check:payload-hygiene": "node scripts/check-payload-hygiene.mjs",
+    "check:claude-skill-suggest": "sh packages/claude-skill-suggest/scripts/check-bundle.sh && python3 -W ignore -m unittest discover -s packages/claude-skill-suggest/tests && (cd packages/claude-skill-suggest && bun test)",
     "check:deprecations": "node scripts/check-command-deprecations.mjs",
     "check:pi-manifest": "node scripts/check-pi-extension-manifest.mjs",
     "check:runtime-compat": "node scripts/check-runtime-compatibility.mjs",

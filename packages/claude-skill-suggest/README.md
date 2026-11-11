@@ -35,6 +35,19 @@ transcript tail ──► bin/monitor.py ──spawn──► dist/worker.mjs �
    running**. Otherwise it drops the result and logs why. One worker per session; a new epoch kills the old worker;
    a worker that runs over 4 s is killed; at most 3 workers run on the host at once (lock files).
 
+## What the classifier is given
+
+The prompt, plus the small structured context of PRD step 12b: the claimed Issue ref (`SUBSTRATE_ISSUE_REF`, when the
+session has one), the last five tool names, and the files those tools touched, which the shortlist uses as service
+territory. The work stage is not sent yet. No transcript text is stored or logged; the decision log carries only the
+counts (`ctx_tools`, `ctx_files`, `ctx_issue`).
+
+## Act-on rate
+
+After a nudge the monitor watches the transcript for a path-identical `Read` of the suggested file, as the Pi extension
+does. The log gets `{"seam":"read_after_suggest","outcome":"read"}` when the agent reads it, or `"outcome":"expired"`
+after three turn ends. The act-on rate is `read / (read + expired)` over those rows.
+
 ## Fail-open rules
 
 | Situation | Result |
@@ -75,6 +88,8 @@ the decision row (`fire`, `abstain`, or `skip` with the reason); the monitor wri
 
 ## Build and test
 
+`npm run check:claude-skill-suggest` runs all three checks below in one command. No CI job runs it yet.
+
 ```
 sh packages/claude-skill-suggest/scripts/build.sh          # rebuild dist/worker.mjs after changing worker/ or shared/
 sh packages/claude-skill-suggest/scripts/check-bundle.sh   # the committed bundle equals a fresh build, node builtins only
@@ -91,4 +106,9 @@ cd packages/pi-extensions && bun test tests/skill-suggest                   # th
   bad JSON) turn a layout change into `unknown`, which delivers nothing, instead of a wrong answer.
 - Delivery is check-then-write. The re-read happens immediately before the write; a turn that ends in that gap of a
   few milliseconds can still receive a nudge.
+- One nudge per epoch: a message typed while a turn runs is a new epoch and is classified on its own.
+- A turn that ends through an API-error row inside the 4 s worker window is not recognised as ended; the nudge can then
+  land in a session that is about to stop.
+- Reuse for CORE-2351 (tool-discipline nudges): `deliver()` is the host-agnostic stale-drop gate (epoch bound, turn
+  must still run, never wake an idle session). A tool-discipline producer can feed the same gate.
 - Not covered by a measurement yet: behaviour during permission prompts, compaction, subagents and resumed sessions.

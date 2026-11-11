@@ -44,7 +44,7 @@ const choice = (c: string, probabilities: Record<string, number>) => ({ type: "c
 const bool = (p: number) => ({ type: "bool", probability: p });
 
 /** A scripted registry: `script(call, questions)` returns the answers or throws. */
-function registry(script: (call: number, q: Record<string, any>) => Answers | "error") {
+function registry(script: (call: number, q: Record<string, any>) => Answers | "error", delayOnCall = 0, delayMs = 0) {
   const calls: Array<{ state: unknown; questions: unknown }> = [];
   return {
     calls,
@@ -52,6 +52,7 @@ function registry(script: (call: number, q: Record<string, any>) => Answers | "e
       getAvailableOfType: async () => [{ provider: "typesafe", id: "jev-1.14.0" }],
       classify: async (_m: unknown, ctx: { state: unknown; questions: Record<string, any> }) => {
         calls.push({ state: ctx.state, questions: ctx.questions });
+        if (delayOnCall === calls.length) await new Promise((r) => setTimeout(r, delayMs));
         const a = script(calls.length, ctx.questions);
         return a === "error" ? { stopReason: "error", errorMessage: "x" } : { answers: a, model: "jev-1.14.0", usage: { input: 10, output: 5 } };
       },
@@ -74,7 +75,7 @@ const stage2 = (q: Record<string, any>, o: { winner?: string; fits?: number; dro
   return a;
 };
 
-const SCENARIOS: Record<string, { seam: "input" | "agent_end"; q?: typeof query; script: (c: number, q: Record<string, any>) => Answers | "error"; noRegistry?: boolean }> = {
+const SCENARIOS: Record<string, { seam: "input" | "agent_end"; q?: typeof query; script: (c: number, q: Record<string, any>) => Answers | "error"; noRegistry?: boolean; delayOnCall?: number; timeoutMs?: number }> = {
   "fire-input": { seam: "input", script: (c, q) => (c === 1 ? stage1(q) : stage2(q)) },
   "fire-agent_end": { seam: "agent_end", script: (c, q) => (c === 1 ? stage1(q) : stage2(q)) },
   "below-score": { seam: "input", script: (c, q) => (c === 1 ? stage1(q, { skillNone: 0.95, task: 0.1, named: 0.1, prose: 0.9 }) : stage2(q, { fits: 0.05 })) },
@@ -85,13 +86,16 @@ const SCENARIOS: Record<string, { seam: "input" | "agent_end"; q?: typeof query;
   "stage1-error": { seam: "input", script: () => "error" },
   "stage2-error": { seam: "input", script: (c, q) => (c === 1 ? stage1(q) : "error") },
   "no-candidates": { seam: "input", q: { text: "zzzz qqqq", files: [] }, script: () => "error" },
+  // timeoutMs must bound BOTH Jev calls: a slow answer on either is a timeout skip
+  "stage1-timeout": { seam: "input", delayOnCall: 1, timeoutMs: 40, script: (c, q) => (c === 1 ? stage1(q) : stage2(q)) },
+  "stage2-timeout": { seam: "input", delayOnCall: 2, timeoutMs: 40, script: (c, q) => (c === 1 ? stage1(q) : stage2(q)) },
   "no-registry": { seam: "input", noRegistry: true, script: () => "error" },
 };
 
 async function run(name: string) {
   const s = SCENARIOS[name]!;
-  const r = registry(s.script);
-  const out = await judge(s.seam, s.noRegistry ? null : r.reg, index, {}, s.q ?? query, 5000);
+  const r = registry(s.script, s.delayOnCall ?? 0, 400);
+  const out = await judge(s.seam, s.noRegistry ? null : r.reg, index, {}, s.q ?? query, s.timeoutMs ?? 5000);
   // ms are wall time: the payloads and decision are what must not move.
   // Entries carry absolute fixture paths: normalise them so the golden holds on any machine.
   const scrub = (v: any) => JSON.parse(JSON.stringify(v, (k, x) => (k === "jev_ms" ? "<ms>" : x)).split(FX).join("<FX>"));

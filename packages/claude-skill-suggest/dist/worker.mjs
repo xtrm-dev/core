@@ -594,7 +594,7 @@ function headingsOf(md, max = 12) {
   const out = [];
   for (const line of md.split(`
 `)) {
-    const m = /^#{2,3}\s+(.{1,80}?)\s*$/.exec(line);
+    const m = /^#{2,3}\s+(\S.{0,79})$/.exec(line.trimEnd());
     if (m && !out.includes(m[1]))
       out.push(m[1]);
     if (out.length >= max)
@@ -1020,8 +1020,9 @@ async function loadIndex(cwd, now = Date.now()) {
   return { index: buildRetrievalIndex(entries, services, repoRoot, cwd), cached: false };
 }
 var oneLine2 = (s, n) => s.replace(/\s+/g, " ").trim().slice(0, n);
+var absolutePath = (entry, cwd) => isAbsolute2(entry.path) ? entry.path : resolve2(cwd, entry.path);
 function nudgeText(entry, cwd) {
-  const path = isAbsolute2(entry.path) ? entry.path : resolve2(cwd, entry.path);
+  const path = absolutePath(entry, cwd);
   const what = entry.level === "skill" ? `skill "${entry.skill}"` : `reference "${entry.name}" of skill "${entry.skill}"`;
   const tail = " Ignore it if it does not fit.";
   const head = `[skill-suggest] This request may call for ${what}: `;
@@ -1040,8 +1041,15 @@ async function run(input) {
     if (!readApiKey())
       return skip("no_key");
     const { index, cached } = await loadIndex(input.cwd);
-    const j = await judge("input", null, index, { request: input.prompt.slice(0, 2000), recent_conversation: "", cwd: input.cwd }, { text: input.prompt, files: [] }, STAGE_TIMEOUT_MS);
-    const facts = { prompt_chars: input.prompt.length, roster_cached: cached, ...j.facts };
+    const tools = (input.tools ?? []).filter((t) => typeof t === "string").slice(-5);
+    const files = (input.files ?? []).filter((f) => typeof f === "string").slice(-10);
+    const state = { request: input.prompt.slice(0, 2000), recent_conversation: "", cwd: input.cwd };
+    if (typeof input.issue === "string" && input.issue)
+      state["claimed_issue"] = input.issue;
+    if (tools.length)
+      state["recent_tools"] = tools.join(", ");
+    const j = await judge("input", null, index, state, { text: input.prompt, files }, STAGE_TIMEOUT_MS);
+    const facts = { prompt_chars: input.prompt.length, roster_cached: cached, ctx_tools: tools.length, ctx_files: files.length, ctx_issue: Boolean(input.issue), ...j.facts };
     if (j.skip !== null)
       return skip(j.skip, facts);
     if (!j.entry) {
@@ -1049,7 +1057,7 @@ async function run(input) {
       return { outcome: "skip", reason: j.reason };
     }
     log.append({ ...base, pick: j.entry.id, outcome: "fire", reason: "fire", injected: false, ...facts });
-    return { outcome: "fire", pick: j.entry.id, score: j.score, nudge: nudgeText(j.entry, input.cwd), model: j.model };
+    return { outcome: "fire", pick: j.entry.id, score: j.score, nudge: nudgeText(j.entry, input.cwd), path: absolutePath(j.entry, input.cwd), model: j.model };
   } catch (e) {
     return skip(`error:${e?.name ?? "unknown"}`);
   }
@@ -1070,6 +1078,7 @@ if (__require.main == __require.module) {
 }
 export {
   NUDGE_MAX,
+  absolutePath,
   loadIndex,
   nudgeText,
   run

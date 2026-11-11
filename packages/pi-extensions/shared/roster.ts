@@ -45,7 +45,8 @@ export function resetRosterCache(): void {
 export function headingsOf(md: string, max = 12): string[] {
   const out: string[] = [];
   for (const line of md.split("\n")) {
-    const m = /^#{2,3}\s+(.{1,80}?)\s*$/.exec(line);
+    // CodeQL: the old pattern backtracked polynomially on long runs of spaces. Trim first, then match a bounded capture.
+    const m = /^#{2,3}\s+(\S.{0,79})$/.exec(line.trimEnd());
     if (m && !out.includes(m[1])) out.push(m[1]);
     if (out.length >= max) break;
   }

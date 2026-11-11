@@ -29,7 +29,7 @@ class Env(unittest.TestCase):
         open(self.t, "w").close()
         os.environ.update(SKILL_SUGGEST_LOG_DIR=os.path.join(self.d, "log"), SKILL_SUGGEST_SLOT_DIR=os.path.join(self.d, "slots"),
                           SKILL_SUGGEST_WORKER_CMD=json.dumps([sys.executable, FAKE]), SKILL_SUGGEST_SLOTS="3")
-        for k in ("FAKE_DELAY", "FAKE_FAIL", "FAKE_PICK", "FAKE_PIDFILE"):
+        for k in ("FAKE_DELAY", "FAKE_FAIL", "FAKE_PICK", "FAKE_PIDFILE", "FAKE_STDIN_DUMP", "FAKE_PATH", "FAKE_NUDGE_LEN", "FAKE_GRANDCHILD"):
             os.environ.pop(k, None)
         mon.SLOTS = 3
         mon.HARD_KILL_S = 4.0
@@ -263,6 +263,80 @@ class TestDelivery(Env):
         self.assertEqual(self.out, [])
 
 
+def tool_row(name, **inp):
+    r = asst("tool_use")
+    r["message"]["content"] = [{"type": "tool_use", "id": "tu-" + str(uuid.uuid4())[:8], "name": name, "input": inp}]
+    return r
+
+
+class TestContextAndActOn(Env):
+    def test_structured_context_reaches_the_worker(self):  # PRD 12b
+        os.environ["FAKE_STDIN_DUMP"] = os.path.join(self.d, "stdin.json")
+        os.environ["SUBSTRATE_ISSUE_REF"] = "CORE-2594"
+        try:
+            m = self.monitor()
+            self.append(user("first request about the staging config please", uid="E0"), tool_row("Read", file_path="/repo/a.py"), tool_row("Bash", command="ls"), tool_row("Edit", file_path="/repo/b.py"), asst("end_turn"), END)
+            for _ in range(5):
+                m.tick(); time.sleep(0.02)
+            m.cancel("reset"); m.seen_epoch = "E0"
+            self.append(user(PROMPT, uid="E1"))
+            self.pump(m, lambda: os.path.exists(os.environ["FAKE_STDIN_DUMP"]) and os.path.getsize(os.environ["FAKE_STDIN_DUMP"]) > 0, 4)
+            got = json.load(open(os.environ["FAKE_STDIN_DUMP"]))
+            self.assertEqual(got["tools"], ["Read", "Bash", "Edit"])
+            self.assertEqual(got["files"], ["/repo/a.py", "/repo/b.py"])
+            self.assertEqual(got["issue"], "CORE-2594")
+            self.assertEqual(got["prompt"], PROMPT)
+            m.cancel("test_end")
+        finally:
+            os.environ.pop("SUBSTRATE_ISSUE_REF", None)
+
+    def delivered_with_path(self, path="/abs/doc.md"):
+        os.environ["FAKE_PATH"] = path
+        m = self.monitor()
+        self.append(user(PROMPT, uid="E1"))
+        self.assertTrue(self.pump(m, lambda: self.out))
+        return m
+
+    def test_read_of_the_suggested_file_is_logged_once(self):
+        m = self.delivered_with_path()
+        self.append(tool_row("Read", file_path="/abs/other.md"))      # a different file: not acted on
+        for _ in range(5):
+            m.tick(); time.sleep(0.02)
+        self.assertEqual([r for r in self.rows() if r.get("seam") == "read_after_suggest"], [])
+        self.append(tool_row("Read", file_path="/abs/doc.md"))
+        self.assertTrue(self.pump(m, lambda: any(r.get("seam") == "read_after_suggest" for r in self.rows()), 4))
+        rows = [r for r in self.rows() if r.get("seam") == "read_after_suggest"]
+        self.assertEqual([(r["outcome"], r["pick"], r["path"]) for r in rows], [("read", "eng/debug", "/abs/doc.md")])
+        self.append(tool_row("Read", file_path="/abs/doc.md"))
+        for _ in range(5):
+            m.tick(); time.sleep(0.02)
+        self.assertEqual(len([r for r in self.rows() if r.get("seam") == "read_after_suggest"]), 1)
+
+    def test_a_read_that_predates_the_nudge_does_not_count(self):
+        os.environ["FAKE_PATH"] = "/abs/doc.md"
+        os.environ["FAKE_DELAY"] = "0.3"
+        m = self.monitor()
+        self.append(user(PROMPT, uid="E1"), tool_row("Read", file_path="/abs/doc.md"))   # read before any nudge exists
+        self.assertTrue(self.pump(m, lambda: self.out, 5))
+        self.append(asst("tool_use"))                                  # any later transcript change triggers a watch step
+        for _ in range(5):
+            m.tick(); time.sleep(0.02)
+        self.assertEqual([r for r in self.rows() if r.get("seam") == "read_after_suggest"], [])
+
+    def test_window_expires_after_three_turn_ends(self):
+        m = self.delivered_with_path()
+        for i in range(3):
+            self.append(asst("end_turn"), END)
+            self.pump(m, lambda: True, 0.1)
+            for _ in range(3):
+                m.tick(); time.sleep(0.02)
+            self.append(user("another long enough request number %d" % i, uid="N%d" % i))
+            for _ in range(3):
+                m.tick(); time.sleep(0.02)
+        self.assertTrue(self.pump(m, lambda: any(r.get("outcome") == "expired" for r in self.rows()), 4))
+        m.cancel("test_end")
+
+
 class TestHostCap(Env):
     def test_burst_of_ten_sessions_is_capped_at_three_workers(self):
         os.environ["FAKE_DELAY"] = "1.0"
@@ -286,6 +360,48 @@ class TestHostCap(Env):
         self.pump(m, lambda: m.job is not None, 2)
         self.assertIsNotNone(m.job)
         m.cancel("test_end")
+
+
+class TestResources(Env):
+    def test_slot_is_released_when_a_job_finishes_normally(self):
+        os.environ["SKILL_SUGGEST_SLOTS"] = "1"; mon.SLOTS = 1
+        m = self.monitor()
+        for i in range(3):  # with one slot, a leak would drop every prompt after the first
+            self.append(asst("tool_use"), user("a separate request number %d about the pipeline" % i, uid="P%d" % i)) if i else self.append(user(PROMPT, uid="P0"))
+            self.assertTrue(self.pump(m, lambda n=len(self.out): len(self.out) > n, 4), "prompt %d was not served" % i)
+            os.environ["FAKE_PICK"] = "pick-%d" % (i + 1)   # a new pick, so the cooldown does not hide a leak
+        self.assertNotIn("no_slot", self.reasons())
+
+    def test_nudge_is_capped_at_600_characters(self):
+        os.environ["FAKE_NUDGE_LEN"] = "500"
+        m = self.monitor()
+        self.append(user(PROMPT, uid="E1"))
+        self.assertTrue(self.pump(m, lambda: self.out))
+        self.assertLessEqual(len(self.out[0]), 600)
+
+    def test_cancel_kills_the_whole_worker_group(self):
+        os.environ["FAKE_DELAY"] = "10"
+        os.environ["FAKE_GRANDCHILD"] = os.path.join(self.d, "gc.pid")
+        m = self.monitor()
+        self.append(user(PROMPT, uid="E1"))
+        self.pump(m, lambda: m.job is not None and os.path.exists(os.environ["FAKE_GRANDCHILD"]) and os.path.getsize(os.environ["FAKE_GRANDCHILD"]) > 0, 4)
+        gc = int(open(os.environ["FAKE_GRANDCHILD"]).read())
+        m.cancel("test_end")
+        time.sleep(0.3)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(gc, 0)                       # a plain kill of the worker would orphan its child
+
+    def test_first_prompt_is_served_when_the_transcript_appears_late(self):
+        home = os.path.join(self.d, "home"); proj = os.path.join(home, ".claude", "projects", "p"); os.makedirs(proj)
+        old = os.environ.get("HOME"); os.environ["HOME"] = home
+        try:
+            m = mon.Monitor("late1", path=None, emit=self.out.append)
+            m.tick()                                         # no transcript yet
+            self.append(user(PROMPT, uid="E1"), path=os.path.join(proj, "late1.jsonl"))   # created with the first prompt in it
+            self.assertTrue(self.pump(m, lambda: self.out, 5))
+        finally:
+            os.environ["HOME"] = old
+            m.cancel("test_end")
 
 
 class TestProcess(Env):
