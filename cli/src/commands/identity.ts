@@ -533,6 +533,10 @@ export function createIdentityCommand(): Command {
                 apiBase: DEFAULT_API_BASE,
                 reviewerSlug: appSlugForRole('reviewer', map),
                 roleMap: map,
+                // Passed explicitly: the guard reads its flags and the Issue-existence
+                // check from this environment, and runs `sb` from the caller's cwd.
+                env: process.env,
+                cwd: opts.cwd,
             };
             // The override must be reachable exactly when the token cannot be
             // minted, so applyOverride runs on the unreachable refusal too.
@@ -575,7 +579,7 @@ export function createIdentityCommand(): Command {
         .requiredOption('--repo <owner/name>', 'Repository')
         .requiredOption('--pr <number>', 'Pull request number')
         .requiredOption('--head <sha>', 'Merged head')
-        .option('--issue <ref>', 'Issue ref (default: resolved from the PR body or branch)')
+        .option('--issue <ref>', 'Issue ref (default: the PR body marker)')
         .action(async (opts: { repo: string; pr: string; head: string; issue?: string }) => {
             const pr = Number(opts.pr);
             if (!Number.isInteger(pr) || pr <= 0) fail(`--pr ${opts.pr} is not a pull request number`);
@@ -721,12 +725,12 @@ export function createIdentityCommand(): Command {
 }
 
 async function fetchPullBody(repo: string, pr: number, token: string): Promise<{ issueRef?: string }> {
-    const pull = await githubRequest<{ body?: string | null; head?: { ref?: string } }>(
+    const pull = await githubRequest<{ body?: string | null }>(
         { method: 'GET', path: `/repos/${repo}/pulls/${pr}` },
         { token, apiBase: DEFAULT_API_BASE },
     );
+    // The marker is the only Issue source; a branch ref such as `fix/UTF-8-parser`
+    // used to become a fake Issue here (CORE-2590).
     const marker = parseIssueMarker(pull.data.body ?? '');
-    if (marker?.issue) return { issueRef: marker.issue };
-    const { issueRefFromBranch } = await import('../core/review-posting.js');
-    return { issueRef: issueRefFromBranch(pull.data.head?.ref) ?? undefined };
+    return { issueRef: marker?.issue };
 }

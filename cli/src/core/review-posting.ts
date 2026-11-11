@@ -112,33 +112,84 @@ export function lintModelBody(body: string): string | null {
 
 export interface IssueMarker { issue?: string; holder?: string; run?: string }
 
-/** The hidden `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->` marker. */
-export function parseIssueMarker(text: string): IssueMarker | null {
-    const match = /<!--[^>]*?xtrm\b([^>]*?)-->/.exec(text ?? '');
-    if (!match) return null;
+// A marker is an xtrm comment whose content STARTS with `xtrm`, and only a marker
+// that carries `issue=` counts (CORE-2590 review findings 1 and 3): a later comment
+// such as `<!-- see xtrm-tools run=9 -->` must not displace the real marker, and a
+// holder-only comment names no Issue, so it is ignored rather than selected as the
+// last one.
+const XTRM_MARKER = /<!--[ \t]*xtrm[ \t]+([^>]*?)-->/g;
+
+function markerAttributes(attributes: string): IssueMarker {
     const out: IssueMarker = {};
-    for (const [key, value] of match[1].trim().split(/\s+/).map((part) => {
+    for (const part of attributes.trim().split(/\s+/)) {
         const index = part.indexOf('=');
-        return index > 0 ? [part.slice(0, index), part.slice(index + 1)] as const : null;
-    }).filter((entry): entry is readonly [string, string] => entry !== null)) {
+        if (index <= 0) continue;
+        const key = part.slice(0, index);
+        const value = part.slice(index + 1);
         if (key === 'issue') out.issue = value;
         else if (key === 'holder') out.holder = value;
         else if (key === 'run') out.run = value;
     }
-    return out.issue || out.holder || out.run ? out : null;
+    return out;
 }
 
-/** Branch names such as `issue/CORE-2309-...` or `xt/MMD-1234` carry the ref. */
+/** A fence opens with up to 3 spaces, then 3+ backticks or 3+ tildes. */
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+/** A fence closes on the same character, at least as long, with nothing else. */
+const FENCE_CLOSE = /^ {0,3}(`+|~+)[ \t]*$/;
+
+/**
+ * Every valid marker, in body order. A marker inside a fenced code block or on a
+ * `>` quote line is pasted text, not a declaration, so it is not a marker: either
+ * is a way to make a fake ref look like the real one (CORE-2590).
+ *
+ * Fences follow CommonMark rather than a toggle (CORE-2590 review finding 2): a
+ * fence closes only on the same character with at least the opening length, so a
+ * 4-backtick block that contains a 3-backtick line does not leak its content, and
+ * a `~~~` line cannot close a ``` block.
+ */
+export function parseIssueMarkers(text: string): IssueMarker[] {
+    const out: IssueMarker[] = [];
+    let fence: { char: string; length: number } | null = null;
+    // CRLF: a GitHub-web-editor body keeps a `\r` on every line, and a `$`-anchored
+    // fence pattern would then never match (review 5853004574, finding A).
+    for (const line of (text ?? '').split(/\r?\n/)) {
+        if (fence) {
+            const close = line.match(FENCE_CLOSE);
+            if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;
+            continue;
+        }
+        const open = line.match(FENCE_OPEN);
+        // A backtick fence's info string may not contain a backtick (CommonMark).
+        if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
+            fence = { char: open[1][0], length: open[1].length };
+            continue;
+        }
+        if (/^\s*>/.test(line)) continue;
+        for (const match of line.matchAll(XTRM_MARKER)) {
+            const marker = markerAttributes(match[1]);
+            if (marker.issue) out.push(marker);
+        }
+    }
+    return out;
+}
+
+/**
+ * The hidden `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->` marker. The
+ * LAST valid marker wins: a body may be appended to, and only the final
+ * declaration speaks for the PR (CORE-2590).
+ */
+export function parseIssueMarker(text: string): IssueMarker | null {
+    const markers = parseIssueMarkers(text);
+    return markers.length ? markers[markers.length - 1] : null;
+}
+
+/** The ref format a Substrate Issue uses: an upper-case key, a dash and digits. */
 export const ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
 
 /** True only for a ref safe to pass to `sb` as an argument (no leading dash). */
 export function isSafeIssueRef(ref: string | null | undefined): boolean {
     return ISSUE_REF_PATTERN.test((ref ?? '').trim());
-}
-
-export function issueRefFromBranch(ref: string | null | undefined): string | null {
-    const match = /(?:^|[^A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d+)(?![0-9])/.exec(ref ?? '');
-    return match ? match[1] : null;
 }
 
 export interface PostReviewInput {
@@ -270,13 +321,15 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     if (marker.holder === input.holder) {
         throw new ReviewRefused(`refusing own-PR review: PR #${input.pr} was opened by holder ${input.holder}`);
     }
-    const candidate = input.issueRef ?? marker.issue ?? issueRefFromBranch(pull.data.head?.ref) ?? null;
+    // The marker is the only Issue source: a branch name such as `fix/UTF-8-parser`
+    // matched the ref format and became a fake Issue (CORE-2590).
+    const candidate = input.issueRef ?? marker.issue ?? null;
     // A ref from the PR body is attacker-controlled text on its way to `sb`.
     if (candidate && !isSafeIssueRef(candidate)) {
         throw new ReviewRefused(`the Issue ref '${candidate}' is not a Substrate ref (expected e.g. CORE-2528); refusing to journal it`);
     }
     const issueRef = candidate;
-    if (!issueRef) warnings.push('no Substrate Issue ref in the PR body or branch; the review is not journaled');
+    if (!issueRef) warnings.push('no Substrate Issue ref in the PR body; the review is not journaled');
 
     const lines = input.body.split('\n');
     const line1 = (lines[0] ?? '').trim();

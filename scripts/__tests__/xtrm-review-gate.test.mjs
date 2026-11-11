@@ -104,6 +104,25 @@ describe('mentions never trigger the guard (item 1)', () => {
     }
 });
 
+describe('an unverified Issue is visible on the allow path (CORE-2590 review 1)', () => {
+    it('prints one warning line naming the reason and still allows', () => {
+        fakeXt({
+            allow: true,
+            repo: 'o/r',
+            pr: 5,
+            head: 'b'.repeat(40),
+            issueRef: 'CORE-2590',
+            issueLookup: 'unknown',
+            issueLookupDetail: 'XTRM_MERGE_GUARD_OFFLINE is set',
+        });
+        const result = runHook('pre', mergePayload('gh pr merge 5 --repo o/r --squash'), { XTRM_MERGE_GUARD: 'on' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(result.stderr, /merge allowed without an Issue check/);
+        assert.match(result.stderr, /XTRM_MERGE_GUARD_OFFLINE is set/);
+        assert.equal(checkCalls().length, 1);
+    });
+});
+
 describe('guard OFF is inert in every case (item 2)', () => {
     it('allows with no cwd PR and with xt absent from PATH', () => {
         const empty = path.join(tmp, 'empty-bin');

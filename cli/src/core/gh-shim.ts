@@ -329,6 +329,14 @@ function main() {
       process.stderr.write(message + '\\n');
       process.exit(1);
     }
+    // CORE-2590 review finding 1: an unknown Issue state allows the merge, and
+    // this shim is the path agents use, so the one-line warning must be written
+    // here; the JSON decision alone is discarded by the caller.
+    if (checked.data.issueLookup === 'unknown') {
+      const ref = checked.data.issueRef || 'this pull request';
+      const why = checked.data.issueLookupDetail || 'reason not reported';
+      process.stderr.write('gh (xtrm): the Issue was not verified for ' + ref + ': ' + why + '; merging anyway\\n');
+    }
     const repo = checked.data.repo;
     const pr = checked.data.pr;
     // The pin must survive the override path: a decision without a head (the

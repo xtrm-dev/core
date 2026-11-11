@@ -10,10 +10,10 @@ import {
     buildMarker,
     eventForFlags,
     eventForOutcome,
-    issueRefFromBranch,
     lintModelBody,
     parseHeaderLine,
     parseIssueMarker,
+    parseIssueMarkers,
     postReview,
     reviewJournalArgs,
     sha12,
@@ -128,12 +128,52 @@ describe('reading the model body', () => {
             .toBe('<!-- agent=h run=r activation=act:1 -->');
     });
 
-    it('parses the PR marker and the branch convention', () => {
+    it('parses the PR marker and ignores fenced, quoted and earlier markers', () => {
         expect(parseIssueMarker(pullBody('CORE-2528'))).toMatchObject({ issue: 'CORE-2528', holder: 'core-2528-worker', run: 'abc123' });
         expect(parseIssueMarker('nothing here')).toBeNull();
-        expect(issueRefFromBranch('xt/worker-CORE-2528-github-apps')).toBe('CORE-2528');
-        expect(issueRefFromBranch('main')).toBeNull();
-        expect(issueRefFromBranch(null)).toBeNull();
+        // A fenced block and a > quote are pasted text, not a declaration.
+        expect(parseIssueMarkers(`\`\`\`\n<!-- xtrm issue=CORE-1 holder=w run=r -->\n\`\`\`\n`)).toEqual([]);
+        expect(parseIssueMarkers('> <!-- xtrm issue=CORE-1 holder=w run=r -->')).toEqual([]);
+        // The LAST valid marker wins; the list keeps body order.
+        expect(parseIssueMarkers('<!-- xtrm issue=CORE-1 holder=a run=1 -->\n<!-- xtrm issue=CORE-2 holder=b run=2 -->'))
+            .toEqual([{ issue: 'CORE-1', holder: 'a', run: '1' }, { issue: 'CORE-2', holder: 'b', run: '2' }]);
+        expect(parseIssueMarker('<!-- xtrm issue=CORE-1 holder=a run=1 -->\n<!-- xtrm issue=CORE-2 holder=b run=2 -->'))
+            .toMatchObject({ issue: 'CORE-2', holder: 'b' });
+    });
+
+    it('tracks CommonMark fences by character and length (CORE-2590 review 2)', () => {
+        // A 4-backtick block that contains a 3-backtick line keeps its content.
+        expect(parseIssueMarkers('````\n```\n<!-- xtrm issue=FAKE-1 holder=w run=r -->\n```\n````\n')).toEqual([]);
+        // The real marker after the proper close still counts.
+        expect(parseIssueMarkers('````\n```\n<!-- xtrm issue=FAKE-1 holder=w run=r -->\n```\n````\n<!-- xtrm issue=CORE-9 holder=w run=r -->\n'))
+            .toEqual([{ issue: 'CORE-9', holder: 'w', run: 'r' }]);
+        // A tilde line does not close a backtick fence.
+        expect(parseIssueMarkers('```\n~~~\n<!-- xtrm issue=FAKE-2 holder=w run=r -->\n```\n')).toEqual([]);
+        // A shorter close does not close a longer fence.
+        expect(parseIssueMarkers('`````\n````\n<!-- xtrm issue=FAKE-3 holder=w run=r -->\n`````\n')).toEqual([]);
+    });
+
+    it('treats a CRLF body like an LF body, fences included (CORE-2590 review 5853004574 A)', () => {
+        // A GitHub-web-editor body keeps a `\r` on every line; a `$`-anchored fence
+        // pattern does not match then, so the split must tolerate CRLF.
+        const crlf = (lines: string[]) => lines.join('\r\n');
+        expect(parseIssueMarkers(crlf(['```', '<!-- xtrm issue=FAKE-1 holder=w run=r -->', '```', '']))).toEqual([]);
+        expect(parseIssueMarkers(crlf(['```', '<!-- xtrm issue=FAKE-1 holder=w run=r -->', '```', '<!-- xtrm issue=CORE-9 holder=w run=r -->', ''])))
+            .toEqual([{ issue: 'CORE-9', holder: 'w', run: 'r' }]);
+        expect(parseIssueMarker(crlf(['<!-- xtrm issue=CORE-9 holder=w run=r -->', '']))).toMatchObject({ issue: 'CORE-9' });
+    });
+
+    it('ignores an xtrm-looking comment that does not start with xtrm, and one without issue= (CORE-2590 review 3)', () => {
+        // `xtrm\b` used to match inside `xtrm-tools`, so a later comment could
+        // displace the real marker and the guard denied with the wrong reason.
+        expect(parseIssueMarkers('<!-- xtrm issue=CORE-1 holder=a run=1 -->\n<!-- see xtrm-tools run=9 -->'))
+            .toEqual([{ issue: 'CORE-1', holder: 'a', run: '1' }]);
+        expect(parseIssueMarker('<!-- xtrm issue=CORE-1 holder=a run=1 -->\n<!-- see xtrm-tools run=9 -->'))
+            .toMatchObject({ issue: 'CORE-1' });
+        // A holder-only comment names no Issue, so it is not a marker at all.
+        expect(parseIssueMarkers('<!-- xtrm issue=CORE-1 holder=a run=1 -->\n<!-- xtrm holder=b run=2 -->'))
+            .toEqual([{ issue: 'CORE-1', holder: 'a', run: '1' }]);
+        expect(parseIssueMarkers('<!-- xtrm holder=b run=2 -->')).toEqual([]);
     });
 });
 
@@ -232,17 +272,30 @@ describe('postReview', () => {
         await expect(postReview(input(), github.deps)).rejects.toThrow(/own-PR/);
     });
 
-    it('falls back to the branch when the marker names no Issue, and refuses a PR with no marker at all', async () => {
+    it('does not derive the Issue from the branch, and refuses a PR with no marker at all', async () => {
+        // A branch named like a ref is not an Issue source: the marker is the only one.
         const withBranch = fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: { head: { sha: HEAD, ref: 'xt/worker-CORE-2528-x' }, body: 'no marker' },
+            },
+            'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [] },
+        });
+        await expect(postReview(input(), withBranch.deps)).rejects.toThrow(/carries no xtrm marker/);
+        expect(withBranch.calls.some((call) => call.method === 'POST')).toBe(false);
+
+        // A holder-only comment names no Issue, so it is not a marker either
+        // (CORE-2590 review finding 3): refused, not posted unattributed.
+        const holderOnly = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': {
                 status: 200,
                 data: { head: { sha: HEAD, ref: 'xt/worker-CORE-2528-x' }, body: '<!-- xtrm holder=core-2528-worker run=abc123 -->' },
             },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
-            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [] },
-            'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 1, html_url: 'u' } },
         });
-        expect((await postReview(input(), withBranch.deps)).issueRef).toBe('CORE-2528');
+        await expect(postReview(input(), holderOnly.deps)).rejects.toThrow(/carries no xtrm marker/);
+        expect(holderOnly.calls.some((call) => call.method === 'POST')).toBe(false);
 
         // No marker, no attribution: refused, never posted with a warning.
         const orphan = fakeGitHub({
