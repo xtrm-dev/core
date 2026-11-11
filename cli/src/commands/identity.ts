@@ -41,6 +41,7 @@ import {
     parseCredentialRequest,
 } from '../core/git-transport.js';
 import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
+import { linkCreatedPr } from '../core/gh-pr-link.js';
 import { resolveAgentRunId } from '../core/agent-run-id.js';
 import { resolveLaunchIdentity, roleMapConfigured } from '../core/launch-identity.js';
 import {
@@ -497,6 +498,34 @@ export function createIdentityCommand(): Command {
             const resolved = resolveGhTarget(opts.argv, opts.cwd);
             console.log(JSON.stringify(resolved));
             if (resolved.error || !resolved.pr || !resolved.repo) process.exit(1);
+        });
+
+    identity
+        .command('pr-link')
+        .description('Link a PR that `gh pr create` just opened to its Substrate Issue (called by the gh shim)')
+        .requiredOption('--argv <json>', 'The gh argv the shim received, as a JSON array')
+        .option('--stdout <text>', 'The captured `gh pr create` stdout', '')
+        .option('--cwd <dir>', 'Directory for git and sb', process.cwd())
+        .option('--json', 'Emit JSON', false)
+        .action((opts: { argv: string; stdout: string; cwd: string; json: boolean }) => {
+            // Fail-open by contract: the shim keeps gh's own exit code and turns
+            // anything printed here that is not `attached: true` into one warning.
+            const emit = (result: { attached: boolean; warning?: string }) => {
+                console.log(JSON.stringify(result, null, opts.json ? 2 : 0));
+                process.exit(result.attached ? 0 : 1);
+            };
+            let argv: string[];
+            try {
+                const parsed = JSON.parse(opts.argv) as unknown;
+                if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+                    throw new Error('the argv must be a JSON array of strings');
+                }
+                argv = parsed as string[];
+            } catch (error) {
+                emit({ attached: false, warning: `cannot read the gh argv: ${(error as Error).message}` });
+                return;
+            }
+            emit(linkCreatedPr(opts.stdout, argv, { cwd: opts.cwd }));
         });
 
     identity

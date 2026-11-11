@@ -2,9 +2,12 @@
  * The `gh` shim for agent processes (CORE-2528).
  *
  * Agents keep typing plain `gh`. For an agent process (SUBSTRATE_HOLDER or
- * XTRM_ROLE set) the shim intercepts three things and passes everything else to
+ * XTRM_ROLE set) the shim intercepts four things and passes everything else to
  * the real binary unchanged:
  *
+ *   gh pr create ...   -> the real gh, its output teed byte for byte, then a
+ *                         best-effort `sb provenance attach` link to the Issue
+ *                         the PR body marker (or the title and branch) names
  *   gh pr review ...   -> `xt identity review-post` (formal review, commit_id
  *                         pinned to the reviewed head, reviewer App token)
  *   gh pr merge ...    -> `xt identity merge-check` first, then the real gh with
@@ -152,15 +155,62 @@ function xtPassthrough(args) {
   return result.status === null ? 1 : result.status;
 }
 
-function xtJson(args) {
-  const answer = xtQuiet(args);
+function xtJson(args, timeoutMs) {
+  const answer = xtQuiet(args, timeoutMs);
   let data = null;
   try { data = JSON.parse(answer.stdout || 'null'); } catch (error) { data = null; }
   return { status: answer.status, data, stderr: (answer.stderr || '').trim() };
 }
 
-function xtQuiet(args) {
-  return spawnSync('xt', args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
+function xtQuiet(args, timeoutMs) {
+  const options = { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' };
+  if (timeoutMs) { options.timeout = timeoutMs; options.killSignal = 'SIGKILL'; }
+  return spawnSync('xt', args, options);
+}
+
+
+// CORE-2607: the Issue-to-PR link after a create. The budget bounds the whole
+// post-create step, so a slow or absent sb can never hold gh pr create open.
+const LINK_TIMEOUT_MS = 6000;
+
+/**
+ * Ask xt to attach the created PR to its Issue. One warning on stderr when it
+ * does not; it never changes the create's own output or exit code.
+ */
+function linkCreatedPr(stdout, args) {
+  const linked = xtJson(
+    ['identity', 'pr-link', '--argv', JSON.stringify(args), '--stdout', stdout, '--cwd', process.cwd()],
+    LINK_TIMEOUT_MS,
+  );
+  if (linked.status === 0 && linked.data && linked.data.attached === true) return;
+  const warning = linked.data && typeof linked.data.warning === 'string' ? linked.data.warning : '';
+  process.stderr.write('gh (xtrm): ' + (warning || 'the new pull request was not linked to its Substrate Issue') + '\\n');
+}
+
+/**
+ * gh pr create, teed. The real gh owns stdout, stderr and the exit code; the link
+ * runs only after exit 0 and its failure is one warning line. The help verb
+ * creates nothing and prints no URL, so it takes the plain pass-through.
+ */
+function createAndLink(real, args) {
+  if (args.indexOf('--help') >= 0 || args.indexOf('-h') >= 0) { pass(real, args); return; }
+  const run = spawnSync(real, args, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
+  if (run.error) die('cannot run ' + real + ': ' + run.error.message);
+  const out = typeof run.stdout === 'string' ? run.stdout : '';
+  const err = typeof run.stderr === 'string' ? run.stderr : '';
+  // Byte-identical: each stream goes out unchanged, before any warning of ours.
+  if (out) process.stdout.write(out);
+  if (err) process.stderr.write(err);
+  const status = run.status === null ? 1 : run.status;
+  if (status === 0) {
+    try {
+      linkCreatedPr(out, args);
+    } catch (error) {
+      process.stderr.write('gh (xtrm): the new pull request was not linked to its Substrate Issue: '
+        + ((error && error.message) || String(error)) + '\\n');
+    }
+  }
+  process.exit(status);
 }
 
 
@@ -303,6 +353,9 @@ function main() {
     if (roleCache === undefined) roleCache = resolvedRole();
     return roleCache;
   };
+
+  // CORE-2607: a create happens for any agent role; the link is not a permission.
+  if (verb === 'create') createAndLink(real, args);
 
   if (verb === 'review') {
     // One parser for the target (CORE-2530 review): the CLI resolves the same gh
