@@ -72432,7 +72432,7 @@ async function mergeCheck(input, deps) {
   if (latest.state === "APPROVED") {
     if (!issueRef) {
       return deny(
-        "the PR carries no resolvable Substrate Issue: add the line-2 marker <!-- xtrm issue=<REF> holder=<holder> run=<id> --> to the PR body, or contact the operator; the guard refuses even an approval at the current head",
+        "the PR names no Substrate Issue in a marker, so the guard refuses even an approval at the current head. Add the line-2 marker <!-- xtrm issue=<REF> holder=<holder> run=<id> --> to the PR body, or contact the operator",
         { head, issueRef, ...reviewInfo },
         markerGuidance()
       );
