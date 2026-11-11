@@ -48,7 +48,7 @@ import {
     eventForOutcome,
     parseIssueMarker,
     postReview,
-    reviewJournalArgs,
+    reviewReceiptArgs,
     sha12,
     ReviewRefused,
     type ReviewVerdict,
@@ -458,7 +458,7 @@ export function createIdentityCommand(): Command {
                     expectedModel: (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? '').trim() || null,
                 }, { token, slug: appSlugForRole('reviewer', map), apiBase: DEFAULT_API_BASE });
                 let journaled: { ok: boolean; error?: string } | null = null;
-                if (posted.issueRef) journaled = runSb(reviewJournalArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole('reviewer', map)));
+                if (posted.issueRef) journaled = runSb(reviewReceiptArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole('reviewer', map)));
                 const out = {
                     url: posted.url,
                     id: posted.id,

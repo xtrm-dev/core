@@ -10,6 +10,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { cleanAgentName } from '../core/dispatcher-identity.js';
+import { recordMerge } from '../core/merge-guard.js';
 import {
     bodyVerdicts,
     buildAttribution,
@@ -22,6 +23,7 @@ import {
     parseIssueMarkers,
     postReview,
     reviewJournalArgs,
+    reviewReceiptArgs,
     sha12,
     ReviewRefused,
     type PostedReview,
@@ -449,6 +451,58 @@ describe('postReview', () => {
     });
 });
 
+// CORE-2611: the receipt names its project. `sb` resolves the project from the
+// cwd, so reviewing an `xtrm` PR from a `core` worktree was refused and the
+// receipt lost. The argv must carry `--project` resolved from the Issue ref.
+describe('the receipt project (cross-repo)', () => {
+    const receipt: PostedReview = {
+        id: 55,
+        url: 'https://github.com/xtrm-dev/xtrm/pull/345#pullrequestreview-55',
+        verdict: 'COMMENT',
+        state: 'COMMENTED',
+        head: HEAD,
+        issueRef: 'XTRM-728',
+        dismissed: [],
+        warnings: [],
+    };
+    const projects = JSON.stringify({
+        ok: true,
+        data: [
+            { id: 'prj_core', prefix: 'CORE', name: 'core' },
+            { id: 'prj_xtrm', prefix: 'XTRM', name: 'xtrm' },
+        ],
+    });
+    const runSb = () => ({ status: 0, stdout: projects, stderr: '' });
+
+    it('carries --project resolved from the Issue ref, not the cwd project', () => {
+        const args = reviewReceiptArgs(receipt, input({ repo: 'xtrm-dev/xtrm' }), 'XTRM-728', 'xtrm-reviewer', { runSb });
+        // The project is the Issue's owner, and it is the last thing sb reads.
+        expect(args.slice(-2)).toEqual(['--project', 'prj_xtrm']);
+        expect(args.slice(0, 3)).toEqual(['journal', 'append', 'XTRM-728']);
+        expect(args).not.toContain('prj_core');
+    });
+
+    it('keeps a same-repo receipt on its own project', () => {
+        const args = reviewReceiptArgs(receipt, input({ repo: 'xtrm-dev/core' }), 'CORE-2610', 'xtrm-reviewer', { runSb });
+        expect(args.slice(-2)).toEqual(['--project', 'prj_core']);
+    });
+
+    it('leaves the argv unchanged when no project resolves, so sb still runs as before', () => {
+        const args = reviewReceiptArgs(receipt, input({ repo: 'acme/unknown' }), 'NOPE-1', null, {
+            runSb: () => ({ status: 1, stdout: '', stderr: 'sb: no database' }),
+        });
+        expect(args).not.toContain('--project');
+        expect(args).toEqual(reviewJournalArgs(receipt, input({ repo: 'acme/unknown' }), 'NOPE-1'));
+    });
+
+    it('never resolves a project from the pull request under review', () => {
+        // The marker's Issue is the authority; the PR repository is only a fallback
+        // for a ref whose prefix sb does not know.
+        const args = reviewReceiptArgs(receipt, input({ repo: 'xtrm-dev/core' }), 'XTRM-728', null, { runSb });
+        expect(args.slice(-2)).toEqual(['--project', 'prj_xtrm']);
+    });
+});
+
 // CORE-2606 (b): the receipt payload as the REAL `sb` receives it. The unit
 // tests prove the shape; this proves the CLI accepts it. The live run that
 // printed "Journal receipt failed: sb exited 1" is why it exists: the unbounded
@@ -464,11 +518,19 @@ describe('the review receipt against the real sb', () => {
     let repo = '';
     let env: NodeJS.ProcessEnv = {};
     let ref = '';
+    // CORE-2611: a second checkout whose project owns the cross-repo receipt.
+    let repoB = '';
+    let projectB = '';
+    let refB = '';
 
-    function run(command: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
-        const result = spawnSync(command, args, { encoding: 'utf8', cwd: repo, env, timeout: 30000 });
+    function inDir(dir: string, command: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+        const result = spawnSync(command, args, { encoding: 'utf8', cwd: dir, env, timeout: 30000 });
         if (result.error) throw result.error;
         return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
+    }
+
+    function run(command: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+        return inDir(repo, command, args);
     }
 
     const describeSb = sbPath ? describe : describe.skip;
@@ -512,6 +574,28 @@ describe('the review receipt against the real sb', () => {
             const parsed = JSON.parse(created.stdout) as { data?: { locator?: string } };
             ref = parsed.data?.locator ?? '';
             expect(ref).toMatch(/^[A-Z][A-Z0-9]*-\d+$/);
+
+            // The second project lives in its own checkout; the tests below run
+            // from repo A's cwd, which is what `sb` used to resolve the project.
+            repoB = path.join(root, 'repo-b');
+            fs.mkdirSync(repoB, { recursive: true });
+            fs.writeFileSync(path.join(repoB, 'f'), 'y\n');
+            expect(inDir(repoB, 'git', ['init', '-q', '-b', 'main', '.']).status).toBe(0);
+            expect(inDir(repoB, 'git', ['add', '.']).status).toBe(0);
+            expect(inDir(repoB, 'git', ['commit', '-qm', 'init']).status).toBe(0);
+            const initB = inDir(repoB, sbPath, ['init', '--json']);
+            expect(initB.status).toBe(0);
+            const projectBInit = JSON.parse(initB.stdout) as { data?: { project?: { id?: string } } };
+            projectB = projectBInit.data?.project?.id ?? '';
+            expect(projectB).toBeTruthy();
+            expect(projectB).not.toBe(project);
+            const createdB = inDir(repo, sbPath, ['issue', 'create', '--project', projectB, '--title', 'Cross-repo receipt target',
+                '--kind', 'task', '--contract', contract, '--json']);
+            expect(createdB.status).toBe(0);
+            const parsedB = JSON.parse(createdB.stdout) as { data?: { locator?: string } };
+            refB = parsedB.data?.locator ?? '';
+            expect(refB).toMatch(/^[A-Z][A-Z0-9]*-\d+$/);
+            expect(refB.split('-')[0]).not.toBe(ref.split('-')[0]);
         }, 60000);
 
         afterAll(() => {
@@ -569,6 +653,59 @@ describe('the review receipt against the real sb', () => {
             expect(refusal.ok).toBe(false);
             expect(String(refusal.error)).toMatch(/invalid result payload/);
             expect(String(refusal.error)).toMatch(/result\.verdict/);
+        }, 60000);
+
+        // CORE-2611: the live failure. A `core` cwd reviewing an `xtrm` PR was
+        // refused with "pass --project prj_xtrm to act on it deliberately" and lost
+        // the receipt. Here the shape is reproduced with two projects in one store.
+        it('records a receipt for another project from a different cwd', () => {
+            const receipt: PostedReview = {
+                id: 77,
+                url: 'https://github.com/xtrm-dev/other/pull/9#pullrequestreview-77',
+                verdict: 'COMMENT',
+                state: 'COMMENTED',
+                head: HEAD,
+                issueRef: refB,
+                dismissed: [],
+                warnings: [],
+            };
+            const review = input({ repo: 'xtrm-dev/other', pr: 9, role: 'reviewer' });
+
+            // The shape main shipped: no --project, so sb resolves the cwd project.
+            const legacy = run(sbPath, reviewJournalArgs(receipt, review, refB, 'xtrm-reviewer'));
+            expect(legacy.status).toBe(1);
+            expect(String((JSON.parse(legacy.stdout) as { error?: string }).error)).toMatch(/pass --project/);
+
+            // The fix: the project comes from the Issue ref, and the receipt lands.
+            const args = reviewReceiptArgs(receipt, review, refB, 'xtrm-reviewer', { env });
+            expect(args.slice(-2)).toEqual(['--project', projectB]);
+            const journal = run(sbPath, args);
+            expect(journal.stderr).toBe('');
+            expect(journal.status).toBe(0);
+            expect((JSON.parse(journal.stdout) as { ok?: boolean }).ok).toBe(true);
+
+            // Persisted on the OTHER project's Issue, read back from its own cwd.
+            const latest = JSON.parse(inDir(repoB, sbPath, ['journal', 'latest', refB, '--json']).stdout) as {
+                data?: { result?: Record<string, unknown>; participantId?: string };
+            };
+            expect(latest.data?.result?.summary).toBe(`Review COMMENT at head ${sha12(HEAD)} for xtrm-dev/other#9`);
+        }, 60000);
+
+        it('records a merge for another project from a different cwd', () => {
+            const realRunner = (command: string, args: string[], opts: { timeout?: number }) =>
+                spawnSync(command, args, { encoding: 'utf8', cwd: repo, env, timeout: opts.timeout ?? 30000 });
+            const merge = recordMerge({ repo: 'xtrm-dev/other', pr: 9, head: HEAD, issueRef: refB }, {
+                token: '', env, runSb: (command, args, opts) => {
+                    const result = realRunner(command, args, opts);
+                    return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
+                },
+            });
+            expect(merge).toEqual({ ok: true });
+            const latest = JSON.parse(inDir(repoB, sbPath, ['journal', 'latest', refB, '--json']).stdout) as {
+                data?: { kind?: string; refs?: unknown[]; result?: Record<string, unknown> };
+            };
+            expect(latest.data?.kind).toBe('result');
+            expect(latest.data?.result?.summary).toBe(`merged xtrm-dev/other#9 at ${sha12(HEAD)}`);
         }, 60000);
     });
 });

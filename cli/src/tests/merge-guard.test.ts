@@ -126,9 +126,50 @@ describe('Journal receipts use only bounded result fields (live finding)', () =>
         };
         const result = recordMerge({ repo: 'o/r', pr: 7, head: 'a'.repeat(40), issueRef: 'CORE-1' }, { token: '', runSb });
         expect(result.ok).toBe(true);
-        const args = calls[0];
+        const args = calls.find((call) => call.includes('journal')) ?? [];
+        expect(args).toContain('journal');
         const payload = JSON.parse(args[args.indexOf('--result') + 1]);
         expect(Object.keys(payload).sort()).toEqual(['artifactRefs', 'findings', 'outcome', 'summary']);
+    });
+
+    // CORE-2611: the merge receipt names its project, like the review receipt.
+    it('passes --project resolved from the Issue ref', () => {
+        const calls: string[][] = [];
+        const runSb = (command: string, args: string[]) => {
+            calls.push([command, ...args]);
+            if (args[0] === 'project') {
+                return {
+                    status: 0,
+                    stdout: JSON.stringify({
+                        ok: true,
+                        data: [
+                            { id: 'prj_core', prefix: 'CORE', name: 'core' },
+                            { id: 'prj_xtrm', prefix: 'XTRM', name: 'xtrm' },
+                        ],
+                    }),
+                    stderr: '',
+                };
+            }
+            return { status: 0, stdout: '{}', stderr: '' };
+        };
+        const result = recordMerge({ repo: 'xtrm-dev/xtrm', pr: 345, head: HEAD, issueRef: 'XTRM-728' }, { token: '', runSb });
+        expect(result.ok).toBe(true);
+        const journal = calls.find((call) => call.includes('journal')) ?? [];
+        expect(journal.slice(-2)).toEqual(['--project', 'prj_xtrm']);
+    });
+
+    it('leaves the argv unchanged when no project resolves', () => {
+        const calls: string[][] = [];
+        const runSb = (command: string, args: string[]) => {
+            calls.push([command, ...args]);
+            return args[0] === 'project'
+                ? { status: 1, stdout: '', stderr: 'sb: no database' }
+                : { status: 0, stdout: '{}', stderr: '' };
+        };
+        const result = recordMerge({ repo: 'acme/unknown', pr: 7, head: HEAD, issueRef: 'NOPE-1' }, { token: '', runSb });
+        expect(result.ok).toBe(true);
+        const journal = calls.find((call) => call.includes('journal')) ?? [];
+        expect(journal).not.toContain('--project');
     });
 });
 
