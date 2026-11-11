@@ -65,9 +65,22 @@ The monitor's stdout is a channel into the model. It prints the nudge line and n
 
 ## Install and run
 
+To install it for every session, add this directory as a local marketplace from a checkout of `xtrm-dev/core` on
+`main`, then install the plugin. A new session loads it; an open session does not.
+
+```
+claude plugin marketplace add /path/to/core/packages/claude-skill-suggest
+claude plugin install skill-suggest@skill-suggest
+```
+
+To try it in one session without installing it:
+
 ```
 claude --plugin-dir packages/claude-skill-suggest
 ```
+
+After `git pull` on that checkout, run `claude plugin marketplace update skill-suggest` and
+`claude plugin update skill-suggest@skill-suggest` to pick up a new version.
 
 The plugin needs `python3` and `bun` or `node` on `PATH` (it prefers `bun`). The Jev key comes from
 `TYPESAFE_API_KEY` or `~/.secrets/typesafe_api_key.txt`.
