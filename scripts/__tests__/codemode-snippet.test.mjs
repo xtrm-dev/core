@@ -1,6 +1,8 @@
-// CORE-2402: the codemode SKILL.md writer pre-flight snippet must resolve the
-// script via homedir(), never a "~" literal (JS strings never expand ~, so the
-// old snippet failed on every machine). Runs under `npm run test:scripts`.
+// CORE-2402: the codemode writer pre-flight snippet must resolve the script via
+// homedir(), never a "~" literal (JS strings never expand ~, so the old snippet
+// failed on every machine). CORE-2601 moved the snippet out of the 90-line root
+// into references/preflight-pattern.md; the root pointer is asserted so it cannot
+// rot. Runs under `npm run test:scripts`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -9,11 +11,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const skill = path.join(repo, '.xtrm/skills/default/codemode/SKILL.md');
+const skillDir = path.join(repo, '.xtrm/skills/default/codemode');
+const rootSkill = path.join(skillDir, 'SKILL.md');
+const patternRef = path.join(skillDir, 'references', 'preflight-pattern.md');
 
 function fence() {
-  const text = readFileSync(skill, 'utf8');
-  const section = text.indexOf('## Pattern: writer pre-flight');
+  const root = readFileSync(rootSkill, 'utf8');
+  assert.match(root, /references\/preflight-pattern\.md/, 'root must point at the pattern reference');
+  const text = readFileSync(patternRef, 'utf8');
+  const section = text.indexOf('# Writer pre-flight pattern');
   assert.notEqual(section, -1, 'snippet section not found');
   const start = text.indexOf('```js', section);
   const end = text.indexOf('```', start + 5);

@@ -383,10 +383,16 @@ describe('per-target routing (production path, no canonicalBody)', () => {
   });
 
   it('codemode skill gates the writer pre-flight pattern behind explicit scope', async () => {
-    const skillPath = path.join(resolvePackageRoot(), '.xtrm', 'skills', 'default', 'codemode', 'SKILL.md');
-    const skill = await fs.readFile(skillPath, 'utf8');
-    expect(skill).toMatch(/writer pre-flight.*explicit scope only/i);
-    expect(skill).toMatch(/OFF unless the pinned contract/i);
+    // CORE-2601 moved the pattern into references/ to keep the 90-line root budget;
+    // the root must still point at it, and the reference must carry the scope gate.
+    const skillDir = path.join(resolvePackageRoot(), '.xtrm', 'skills', 'default', 'codemode');
+    const skill = await fs.readFile(path.join(skillDir, 'SKILL.md'), 'utf8');
+    expect(skill).toMatch(/writer pre-flight/i);
+    expect(skill).toMatch(/explicit scope only/i);
+    expect(skill).toMatch(/references\/preflight-pattern\.md/);
+    const pattern = await fs.readFile(path.join(skillDir, 'references', 'preflight-pattern.md'), 'utf8');
+    expect(pattern).toMatch(/Writer pre-flight pattern \(explicit scope only/i);
+    expect(pattern).toMatch(/OFF unless the pinned contract/i);
   });
 
   it('review writer pre-flight lane is explicit-scope only', async () => {

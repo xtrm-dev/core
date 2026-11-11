@@ -256,7 +256,7 @@ Required features:
 | `file_watcher` | `state_inspector.py` | Mount accessible + state file present |
 | `scheduled_poller` | `auth_checker.py` | Token file present + not expired |
 
-See [references/script_quality_standards.md](references/script_quality_standards.md) for complete templates.
+See [script_quality_standards.md](script_quality_standards.md) for complete templates.
 
 #### `scripts/Makefile` (required)
 
@@ -521,8 +521,8 @@ Do not:
 
 ## References
 
-- [references/script_quality_standards.md](references/script_quality_standards.md) — Script templates and anti-patterns
-- [references/service_skill_system_guide.md](references/service_skill_system_guide.md) — System architecture
+- [script_quality_standards.md](script_quality_standards.md) — Script templates and anti-patterns
+- [system-guide.md](system-guide.md) — System architecture
 - `scripts/scaffolder.py` — Phase 1 skeleton generator with official docs detection
 - `scripts/deep_dive.py` — Service classifier + Phase 2 research agenda
 - `scripts/bootstrap.py` — Registry CRUD and path resolution utilities
