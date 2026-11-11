@@ -508,6 +508,9 @@ Folded in: **XT-106** Beads removal across machines
 > - Found: Substrate’s `prepare-commit-msg` hook exists but adds trailers only with `XTRM_RECEIPT_ID`, which nothing sets, and no repo installs it.
 > - XTRM-684: the hook resolves the Issue without a receipt (env, worktree binding, branch) and adds `XTRM-Issue`, revision, `Jira:` and `Agent:` (taken over from CORE-2525). CORE-2570: `xt` chains it into each repo’s existing hook and writes the worktree binding. XTRM-684 lands first.
 
+> **Measured · 11-11 · design note**
+> - The hook is not installed: 3 of the last 100 squash commits on core’s main carry the trailer, 0 of 100 on xtrm. xtrm squashes to the PR body, so T2 cannot count as delivery there until its squash setting keeps commit messages. Substrate’s `parseTrailers` is last-wins and needs an all-values form before T2 ships.
+
 ### Step 7 — Decide how Substrate works across two machines
 
 [partly done] [new] `prompt 3 · XT-127`
@@ -717,6 +720,9 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 - **Brings** — `xt merge` (unused since July, CORE-2552), the `xt-merge` and `node-coordinator` specialists (usage checked first), and the dead quality-gates Pi extension (CORE-2386). Each retirement counts real uses before removal and asks you if it finds one.
 - **Why here** — A stale command is a wrong route for agents. Removing them before the coordinator and identity work means nothing new is built on them.
 
+> **Found · 11-11 · design note**
+> - `xt end` is a retirement candidate: `xt end --dry-run` read a conventional-commit scope as an issue ref (`end.ts:191`) and invented an issue; its markers appear in 0 of the last 80 core PRs; it force-pushes, rebases and removes the worktree. Count real uses first, as this step requires.
+
 ### Step 14 — Substrate records PRs and commits
 
 (v2) [new] `XT-178 amendment · prj_xtrm`
@@ -730,6 +736,12 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 
 > **Answer to your note · 10-31**
 > - Two plans propose one tool set for both runtimes: XTRM-668 (commit `70879746`, “shared tool surface” for the Substrate Claude plugin and Pi extension) and XTRM-638 (codemode-first Pi tool architecture). This step uses that surface.
+
+> **Design note · 11-11 · proposal**
+> - Refined by the design note “Linking a Substrate issue to its pull request” (11-11, `soulful-karma-8zk3.here.now`, copy in `notes/issue-pr-linking.html`). A PR link has two relations: `created_from` (this PR delivered the issue; may close it) and `mentioned` (only named in prose; never closes it). Stored in a new `issue_pull_requests` table, written in one transaction with the PR artifact.
+> - Two kinds of delivery evidence: T1 a receipt (host record at PR open, or an `XTRM-Receipt` trailer of this issue); T2 a commit in the PR carrying `XTRM-Issue: <this issue>`, which survives squash because it reads the PR’s own commits.
+> - `sb provenance attach` accepts `github:org/repo#n`, `org/repo#n`, a PR URL or a bare `#N` (scoped to the issue’s repository) and stores `org/repo#n`. The opener is the `gh` shim now, the host later; not `xt end`.
+> - Delivery in five slices, each shippable alone: schema and read model with a dry-run check; writers; reconciler; enforcement (last, flagged, warn-only first); console.
 
 ### Step 15 — Gates refuse unlinked work
 
@@ -758,6 +770,10 @@ Folded in: **XT-167** close succeeds after the claim lapsed · **CORE-2527** to 
 > - Override for the operator and the coordinator role only: `XTRM_MERGE_GUARD_OVERRIDE=<reason>`. Each use writes a log line and a Journal decision entry. The App is a dependency: if it is down the guard blocks, and the override is the way out.
 > - Stop condition: a throwaway PR approved at head H, a new push, and the guard refusing the merge. Origin: the market-data build coordinator (errors this week were all about who reviewed or which head).
 > - The guard is client-side. An agent with the operator's gh login can still call the API; this stays documented. The release App remains deferred.
+
+> **Design note · 11-11 · proposal**
+> - The close gate reads rows, not prose: `created_from` plus its live artifact (T1), or the trailered commits merged into the default branch (T2), passes; a `mentioned`-only issue is refused with `gate_mentioned_only`; a link without its artifact fails as `gate_orphan_link`.
+> - Manual close accepts T1 or T2 while the PR is still open (stage stays merged-pending). `sb links check` is a new top-level verb owned by step 33 and consumed here.
 
 ### Step 15b — A review is a step in the trail, not a new issue
 
@@ -1084,6 +1100,9 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 > - A commit record keeps both SHAs: the one the agent made and the one that landed on the default branch (squash or rebase), so `sb provenance commit` finds either.
 > - A merged PR with no evidence at all is listed by `sb links check`. The merge guard (15) refuses such a PR in the first place.
 
+> **Design note · 11-11 · proposal**
+> - The reconciler is trailer-first. A trailer receipt must belong to the issue being linked; a foreign one gives `mentioned` plus a check finding. Title and branch references only ever give `mentioned`. Each row keeps its source. Live PR state lives in a separate `pull_requests` table.
+
 ### Step 27 — PR merged closes the Issue and reaps the worktree
 
 [new] `XT-184 lifecycle · XT-172 · XT-148`
@@ -1100,6 +1119,9 @@ Folded in: **XT-172** executor worktree and PR integration · **XT-148** paralle
 > - Stopping and reaping apply only to the activation and worktree that own the branch, from the registry (24). If the work landed through another PR, the owning activation gets a message naming it. Its worktree is removed only when every commit on its branch is already in the default branch (patch-id check) and nothing is uncommitted; otherwise it is kept and flagged.
 > - A revert of a trailered commit on main creates a reopen proposal for the coordinator. It never reopens the Issue by itself.
 > - Today none of this happens: Substrate has no PR records, and only 9 of 746 receipts carry a commit SHA. Steps 14, 22 and 26 create the evidence; this step only reads it.
+
+> **Design note · 11-11 · proposal**
+> - Auto-close needs T1 or T2, merged into the default branch, no other open PR linked, no live claim and no deploy window. A writer PR into a coordinator branch is integration, not delivery. Unreachable GitHub fails closed; an override is a Journal decision.
 
 ### Step 28 — Launcher options and the process panel
 

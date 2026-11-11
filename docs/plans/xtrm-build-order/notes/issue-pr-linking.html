@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Linking a Substrate issue to its pull request — XTRM design note</title>
+<style>
+:root{
+  --bg:#f6f8fa; --surface:#ffffff; --card:#f7fafc; --canvas:#ffffff;
+  --fg:#111c26; --mut:#5a6b7b;
+  --line:#e3eaf0; --line2:#d3dde6; --dot:rgba(120,140,160,.38); --shadow:rgba(17,28,38,.12);
+  --teal:#0f766e; --ok:#15803d; --okbg:#e8f6ee; --accent:#4338ca; --accentbg:#eceafd;
+  --att:#b45309; --warn:#92400e; --warnbg:#fef3e2; --bad:#b91c1c; --badbg:#fdecec;
+  --sched:#7b8a99; --neutral:#4a5b6b; --neutralbg:#eef2f6;
+  --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace; color-scheme:light;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 var(--font);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:44px 16px 96px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-weight:650;margin:0 0 12px}
+h1{font-size:37px;line-height:1.15;letter-spacing:-.02em;font-weight:700;margin:0 0 12px;text-wrap:balance}
+.dek{font-size:17.5px;color:var(--mut);margin:0;max-width:66ch}
+.meta{margin-top:16px;font-size:13px;color:var(--mut);display:flex;flex-wrap:wrap;gap:6px 18px}
+.meta code{font-size:12px}
+.kicker{font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);font-weight:650;margin:54px 0 6px}
+h2{font-size:25px;line-height:1.25;letter-spacing:-.01em;font-weight:680;margin:0 0 10px;text-wrap:balance}
+h2 small{display:block;font-size:14.5px;color:var(--mut);font-weight:400;margin-top:4px;max-width:74ch}
+h3{font-size:15.5px;font-weight:650;margin:0}
+p{margin:10px 0}
+ul,ol{margin:10px 0;padding-left:22px} li{margin:4px 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.card + .card{margin-top:12px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,185px),1fr));gap:12px;margin:26px 0 4px}
+.fact{border:1px solid var(--line);border-left:3px solid var(--c,var(--teal));border-radius:10px;padding:13px 16px;background:var(--surface)}
+.fact .v{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums}
+.fact .k{font-size:13px;color:var(--mut);margin-top:3px}
+.tbox{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin:12px 0;background:var(--surface)}
+.tbox{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--card);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+code{font:12.5px var(--mono);background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+pre{font:12.5px/1.55 var(--mono);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;margin:10px 0}
+pre code{background:none;border:0;padding:0;font-size:12.5px}
+.pill{display:inline-block;font-size:11px;font-weight:700;border-radius:20px;padding:1px 10px;white-space:nowrap;background:var(--cb);color:var(--cf)}
+.p-ok{--cb:var(--okbg);--cf:var(--ok)} .p-att{--cb:var(--warnbg);--cf:var(--warn)} .p-bad{--cb:var(--badbg);--cf:var(--bad)} .p-run{--cb:var(--accentbg);--cf:var(--accent)} .p-neu{--cb:var(--neutralbg);--cf:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.kc{display:inline-flex;gap:7px;align-items:center;border:1px solid var(--line);border-radius:20px;padding:3px 12px 3px 9px;font-size:12.5px;background:var(--surface);color:var(--mut)}
+.kc b{color:var(--fg);font-size:14px;font-variant-numeric:tabular-nums} .kc i{width:9px;height:9px;border-radius:50%;background:var(--c,var(--sched))}
+.fig-sec{margin:20px 0 8px}
+.fig-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:18px 0 8px}
+.canvas{background:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.5px);background-size:18px 18px;border:1px solid var(--line);border-radius:14px;margin:0;padding:16px 18px 12px}
+figure svg{width:100%;height:auto;display:block;color:var(--fg)}
+@media(max-width:820px){figure svg{min-width:760px}} figure svg text{fill:currentColor}
+.figscroll{overflow-x:auto}
+figcaption{font-size:13px;color:var(--mut);margin-top:8px;max-width:84ch}
+.equiv{margin:8px 0 0;font-size:13px;color:var(--mut)}
+.equiv summary{cursor:pointer;font-weight:600;color:var(--fg);font-size:13px}
+.banner{border:1px solid var(--line);border-left:3px solid var(--att);background:var(--warnbg);border-radius:0 10px 10px 0;padding:11px 16px;margin:16px 0;font-size:14px}
+.banner.ok{border-left-color:var(--ok);background:var(--okbg)}
+.banner.info{border-left-color:var(--accent);background:var(--accentbg)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+.term{background:#0f1720;color:#e6edf3;border-radius:12px;padding:16px 18px;overflow-x:auto;font:12.5px/1.65 var(--mono);border:1px solid #1f2b36}
+.term .c{color:#9fb3c8}.term .g{color:#7ee2a8}.term .y{color:#f3c777}.term .r{color:#ff9a9a}.term .k{color:#b7a6ff}
+.screen{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px var(--shadow)}
+.screen .bar{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--card);font-size:12px;color:var(--mut)}
+.screen .bar i{width:8px;height:8px;border-radius:50%;background:var(--line2)}
+.screen .body{padding:16px 18px}
+.screen h4{margin:0 0 2px;font-size:16px;font-weight:650}
+.screen .sub{color:var(--mut);font-size:12.5px;margin-bottom:12px}
+.chiprow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+.refchip{display:inline-flex;align-items:baseline;gap:7px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--surface);font-size:12.5px;max-width:100%}
+.refchip .n{font-family:var(--mono);color:var(--accent);font-weight:650}
+.refchip .repo{font-family:var(--mono);color:var(--mut);font-size:11.5px}
+.refchip .t{color:var(--mut);font-size:12px}
+.refchip .gh{margin-left:2px;color:var(--mut);font-size:12px}
+.tl{list-style:none;margin:12px 0 0;padding:0;border-left:2px solid var(--line);margin-left:6px}
+.tl li{position:relative;padding:0 0 12px 16px;font-size:13px;color:var(--mut)}
+.tl li:before{content:"";position:absolute;left:-5px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--c,var(--sched));border:2px solid var(--surface)}
+.tl b{color:var(--fg);font-weight:600}
+.small{font-size:12.5px;color:var(--mut)}
+.foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mut)}
+</style></head>
+<body>
+<div class="wrap">
+<p class="eyebrow">XTRM · Substrate design note · 2026-11-11</p>
+<h1>Linking a Substrate issue to its pull request</h1>
+<p class="dek">A pull request can be the work that delivered an issue, or a page that merely mentions it. Today Substrate stores neither. This design stores both, labels which is which, and shows the link in the CLI and in the console without guessing.</p>
+<div class="meta"><span>Aligned with build order v4 · steps 14, 15, 26, 27, 42, 43</span><span>Status: <span class="pill p-att">proposal</span></span><span>Pairs with <code>aware-soul-37hw.here.now</code></span></div>
+
+<div class="facts">
+  <div class="fact st-bad" style="--c:var(--bad)"><div class="v">0</div><div class="k">PR records in Substrate today</div></div>
+  <div class="fact" style="--c:var(--att)"><div class="v">2,468</div><div class="k">closures name the PR only in free text</div></div>
+  <div class="fact" style="--c:var(--att)"><div class="v">9 / 1,376</div><div class="k">receipts carry a commit SHA (verified today)</div></div>
+  <div class="fact" style="--c:var(--att)"><div class="v">1 / 400</div><div class="k">core commits name an XT key</div></div>
+  <div class="fact" style="--c:var(--accent)"><div class="v">2</div><div class="k">relations the field must tell apart</div></div>
+</div>
+<p class="small">Verified on the server on 2026-11-11: <strong>0</strong> PR artifacts, <strong>0</strong> external bindings, <strong>9</strong> of 1,376 receipts with a commit SHA, <strong>18,120</strong> closures. The 2,468 and 1/400 figures are the plan’s 2026-10-28 measurements.</p>
+<div class="banner"><strong>T2 reads the PR’s own commits, so squash does not erase it.</strong> Verified on core PRs #893 (5 commits), #865 and #863 (1 each): every commit returned by <code>pulls/N/commits</code> carries <code>XTRM-Issue:</code> after a squash merge. The squash setting decides what reaches main, not what the PR can prove. The real blocker is the step 6b hook, which is not installed: <strong>3 of the last 100</strong> squash commits on core’s main carry the trailer, <strong>0 of 100</strong> on xtrm. A direct PR to main gets T2 as soon as the hook lands; a coordinator chain needs <code>COMMIT_MESSAGES</code> so the writer’s trailers survive the second squash. <code>pulls/N/commits</code> is capped at 250 commits. Above that, <code>sb links check</code> records “T2 unverifiable: PR exceeds 250 commits” and the issue falls back to T1 or an operator decision; no second retrieval path. (If one is ever added, it must page and compare <code>base.sha…head.sha</code>, never branch names.)</div>
+
+<div class="kicker">The 30-second version</div>
+<h2>One PR, two very different claims</h2>
+<p>A worker opens <code>xtrm-dev/xtrm#335</code>. The title says <code>XTRM-718</code>. The opener records the PR against XTRM-718 in the same step — today the <code>gh</code> shim, later the host (step 27). The issue page and <code>sb issue show</code> now display a chip. Closing XTRM-718 may cite #335.</p>
+<p>Later, someone writes “the same fix as #339” in a comment. The reconciler sees #339 and records it too — but as <strong>mentioned</strong>. XTRM-718 will never close on #339, because #339 did not carry this issue’s work; it was only named in prose.</p>
+<div class="banner info"><strong>The rule in one line:</strong> the field shows both links, with a label. Only <code>created_from</code> is delivery evidence; <code>mentioned</code> is a pointer.</div>
+
+<div class="kicker">Semantics</div>
+<h2>Why a single “PR field” would be wrong</h2>
+<p>GitHub numbers PRs per repository, so a link always needs <code>owner/repo</code> plus the number. And the two claims above have different evidence, different writers and different consequences at close. Collapsing them produces predictable failures: a title-only PR closing an issue it never touched, a cross-repository <code>#335</code> resolving to the wrong project, or a prose mention being counted as delivery.</p>
+<div class="tbox"><table><thead><tr><th>Relation</th><th>Meaning</th><th>Evidence that may write it</th><th>Writer</th><th>Can close the issue?</th></tr></thead><tbody>
+<tr><td><span class="pill p-ok">created_from</span></td><td>The PR is the outcome of this issue’s work.</td><td><strong>T1</strong>: host record at PR open, or an <code>XTRM-Receipt</code> trailer whose receipt belongs to this issue; <strong>T2</strong>: a commit in the PR carries <code>XTRM-Issue: &lt;this issue&gt;</code> — no receipt needed (plan 6b/27)</td><td>T1: step-14 verb <code>sb provenance attach</code>; T2: reconciler or <code>sb links sync</code></td><td><strong>Yes</strong>: T1 with a live artifact, or T2 with the trailered commits, and merged into the default branch</td></tr>
+<tr><td><span class="pill p-att">mentioned</span></td><td>The issue’s prose names the PR. Nothing about origin.</td><td>title, body, branch, comment, or an explicit operator link</td><td><code>sb issue link pr --relation mentioned</code>; reconciler for title/branch</td><td><strong>No</strong></td></tr>
+</tbody></table></div>
+<p>GitHub and Jira users already know the difference: “Closes #123” versus “mentioned in #123”. This design keeps that distinction and stores it instead of inferring it at read time.</p>
+
+<div class="kicker">The model</div>
+<h2>Three identities, four stores</h2>
+<p>The issue is the authority. Jira is the human-facing view; GitHub is where the code and the PR live. Each arrow is a stored row with a writer, a source and a time — never a sentence in a close reason. State is a separate row: the link says “this PR is this issue’s work (or mentions it)”, the <code>pull_requests</code> row says what the PR is doing now.</p>
+
+<section class="fig-sec">
+  <div class="fig-head"><h3>The linking spine</h3><div class="chips"><span class="kc"><i style="--c:var(--ok)"></i>Jira ↔ Substrate <b>external_bindings</b></span><span class="kc"><i style="--c:var(--accent)"></i>Substrate ↔ GitHub <b>issue_pull_requests + artifact</b></span><span class="kc"><i style="--c:var(--sched)"></i>GitHub ↔ Jira <b>GitHub for Jira, installed</b></span></div></div>
+  <figure class="canvas" id="f1"><div class="figscroll"><svg viewBox="0 0 1000 404" role="img" aria-label="Three identities linked by stored records: Jira, Substrate and GitHub"><text x="30" y="26" font-size="12" font-weight="650" text-anchor="start" style="fill:var(--mut)" letter-spacing=".08em">One piece of work, three identities</text><rect x="30" y="44" width="230" height="192" rx="12" style="fill:var(--card);stroke:var(--line2)"/><text x="46" y="68" font-size="9" font-weight="700" text-anchor="start" style="fill:var(--mut)" letter-spacing=".08em">JIRA · FOR PEOPLE</text><text x="46" y="94" font-size="16" font-weight="700" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">XT-178</text><text x="46" y="118" font-size="11" font-weight="400" text-anchor="start" style="fill:var(--mut)">Epic brief, status, assignee</text><text x="46" y="133" font-size="11" font-weight="400" text-anchor="start" style="fill:var(--mut)">Dev panel: branches, PRs</text><rect x="46" y="194" width="81" height="20" rx="10" style="fill:var(--neutralbg)"/><text x="86.5" y="208" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--mut)">key + URL</text><rect x="30" y="44" width="4" height="192" rx="2" style="fill:var(--ok)"/><rect x="385" y="44" width="230" height="192" rx="12" style="fill:var(--card);stroke:var(--line2)"/><text x="401" y="68" font-size="9" font-weight="700" text-anchor="start" style="fill:var(--mut)" letter-spacing=".08em">SUBSTRATE · FOR AGENTS</text><text x="401" y="94" font-size="16" font-weight="700" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">CORE-2601</text><text x="401" y="118" font-size="11" font-weight="400" text-anchor="start" style="fill:var(--mut)">Contract, claim, journal</text><text x="401" y="133" font-size="11" font-weight="400" text-anchor="start" style="fill:var(--mut)">PR record + commit record</text><rect x="401" y="194" width="123" height="20" rx="10" style="fill:var(--neutralbg)"/><text x="462.5" y="208" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--mut)">source of truth</text><rect x="385" y="44" width="4" height="192" rx="2" style="fill:var(--accent)"/><rect x="740" y="44" width="230" height="192" rx="12" style="fill:var(--card);stroke:var(--line2)"/><text x="756" y="68" font-size="9" font-weight="700" text-anchor="start" style="fill:var(--mut)" letter-spacing=".08em">GITHUB · FOR CODE</text><text x="756" y="94" font-size="16" font-weight="700" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">xtrm-dev/core#845</text><text x="756" y="118" font-size="11" font-weight="400" text-anchor="start" style="fill:var(--mut)">Title carries CORE-2601</text><text x="756" y="133" font-size="11" font-weight="400" text-anchor="start" style="fill:var(--mut)">Trailers: XTRM-Issue, XTRM-Receipt</text><rect x="756" y="194" width="116" height="20" rx="10" style="fill:var(--neutralbg)"/><text x="814.0" y="208" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--mut)">opened by host</text><rect x="740" y="44" width="4" height="192" rx="2" style="fill:var(--sched)"/><path d="M260,130 L382,130" fill="none" style="stroke:var(--ok);stroke-width:1.6" marker-end="url(#mk-ok)" marker-start="url(#mk-ok)"/><text x="321" y="118" font-size="10" font-weight="650" text-anchor="middle" style="fill:var(--fg)">external_bindings</text><text x="321" y="106" font-size="9.5" font-weight="400" text-anchor="middle" style="fill:var(--mut)">key + URL</text><path d="M615,130 L737,130" fill="none" style="stroke:var(--accent);stroke-width:1.6" marker-end="url(#mk-accent)" marker-start="url(#mk-accent)"/><text x="676" y="118" font-size="10" font-weight="650" text-anchor="middle" style="fill:var(--fg)">issue_pull_requests</text><text x="676" y="106" font-size="9.5" font-weight="400" text-anchor="middle" style="fill:var(--mut)">org/repo#n + relation</text><path d="M145,236 C145,330 855,330 855,240" fill="none" style="stroke:var(--sched);stroke-width:1.6" stroke-dasharray="5 5" marker-end="url(#mk-sched)"/><text x="500" y="326" font-size="10" font-weight="400" text-anchor="middle" style="fill:var(--mut)">GitHub for Jira dev panel (installed): reads the Jira key in the branch and title</text><text x="500" y="382" font-size="11" font-weight="600" text-anchor="middle" style="fill:var(--fg)">Each arrow is a stored record, not prose. Exactly one writer owns each arrow.</text></svg></div><figcaption>The issue does not need to know how a link was discovered; it stores every arrow as a row with an owner, a source and a time.</figcaption></figure>
+  <details class="equiv"><summary>Text equivalent — The linking spine</summary><div class="tbox"><table><thead><tr><th>Arrow</th><th>Stored where</th><th>Who writes it</th><th>What it proves</th></tr></thead><tbody><tr><td>Jira → Substrate</td><td><code>external_bindings</code> (key, URL, mode)</td><td><code>sb jira bind</code> (step 33)</td><td>the Jira item and the Substrate issue are the same work</td></tr><tr><td>Substrate → GitHub</td><td><code>issue_pull_requests</code> + <code>artifact_bindings(kind='pr')</code></td><td>step-14 verb, reconciler, mention verb</td><td>this PR is (or mentions) this issue</td></tr><tr><td>GitHub → Jira</td><td>GitHub for Jira, no Substrate row</td><td>GitHub App (already installed)</td><td>the dev panel, for people</td></tr></tbody></table></div></details>
+</section>
+
+<section class="fig-sec">
+  <div class="fig-head"><h3>Four stores, one read model</h3><div class="chips"><span class="kc"><i style="--c:var(--accent)"></i>link index <b>issue_pull_requests</b></span><span class="kc"><i style="--c:var(--sched)"></i>evidence <b>receipt + artifact</b></span><span class="kc"><i style="--c:var(--ok)"></i>sync <b>external_bindings</b></span></div></div>
+  <figure class="canvas" id="f2"><div class="figscroll"><svg viewBox="0 0 1000 450" role="img" aria-label="Data model: issues, the link index, execution evidence and the sync mapping"><text x="30" y="24" font-size="12" font-weight="650" text-anchor="start" style="fill:var(--mut)" letter-spacing=".08em">Where each fact lives</text><rect x="30" y="170" width="210" height="96" rx="10" style="fill:var(--surface);stroke:var(--ok);stroke-width:1"/><text x="44" y="195" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">issues</text><text x="44" y="213" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">id · revision · project</text><rect x="116" y="180" width="114" height="17" rx="8.5" style="fill:var(--okbg)"/><text x="173.0" y="192.5" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--ok)" letter-spacing=".06em">substrate core</text><rect x="330" y="30" width="310" height="176" rx="10" style="fill:var(--surface);stroke:var(--accent);stroke-width:1.2"/><text x="346" y="54" font-size="13" font-weight="700" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">issue_pull_requests</text><text x="346" y="76" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">repository  text        -- owner/repo</text><text x="346" y="89" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">number      integer</text><text x="346" y="102" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">relation    created_from | mentioned</text><text x="346" y="115" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">source      provenance | explicit | trailer |</text><text x="346" y="128" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">            title | branch | prose | backfill</text><text x="346" y="141" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">actor · created_at</text><text x="346" y="190" font-size="9" font-weight="400" text-anchor="start" style="fill:var(--accent)" style="font-family:var(--mono)">PK (issue, repository, number, relation, source)</text><rect x="700" y="30" width="270" height="78" rx="10" style="fill:var(--surface);stroke:var(--sched);stroke-width:1"/><text x="714" y="55" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">work_receipts</text><text x="714" y="73" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">receipt of the execution</text><rect x="888" y="40" width="72" height="17" rx="8.5" style="fill:var(--neutralbg)"/><text x="924.0" y="52.5" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--mut)" letter-spacing=".06em">evidence</text><rect x="700" y="150" width="270" height="88" rx="10" style="fill:var(--surface);stroke:var(--sched);stroke-width:1"/><text x="714" y="175" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">artifact_bindings</text><text x="714" y="193" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">kind='pr' · value='org/repo#n'</text><rect x="330" y="290" width="310" height="96" rx="10" style="fill:var(--surface);stroke:var(--ok);stroke-width:1"/><text x="344" y="315" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">external_bindings</text><text x="344" y="333" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">provider · remote_scope · remote_id</text><rect x="530" y="300" width="100" height="17" rx="8.5" style="fill:var(--okbg)"/><text x="580.0" y="312.5" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--ok)" letter-spacing=".06em">sync mapping</text><path d="M240,200 C290,200 290,120 327,120" fill="none" style="stroke:var(--accent);stroke-width:1.6" marker-end="url(#mk-accent)"/><text x="286" y="160" font-size="10.5" font-weight="400" text-anchor="middle" style="fill:var(--mut)">1:N</text><path d="M135,170 L135,16 Q135,6 145,6 L825,6 Q835,6 835,16 L835,30" fill="none" style="stroke:var(--sched);stroke-width:1.6" marker-end="url(#mk-sched)"/><text x="300" y="16" font-size="9" font-weight="400" text-anchor="middle" style="fill:var(--mut)">1:N</text><path d="M240,240 C300,260 300,330 327,330" fill="none" style="stroke:var(--ok);stroke-width:1.6" marker-end="url(#mk-ok)"/><text x="288" y="300" font-size="10.5" font-weight="400" text-anchor="middle" style="fill:var(--mut)">1:N</text><path d="M835,108 L835,147" fill="none" style="stroke:var(--sched);stroke-width:1.6" marker-end="url(#mk-sched)"/><text x="915" y="130" font-size="9" font-weight="400" text-anchor="middle" style="fill:var(--mut)">1:N · UNIQUE(receipt, kind, value)</text><rect x="30" y="292" width="230" height="96" rx="10" style="fill:var(--surface);stroke:var(--sched);stroke-width:1"/><text x="46" y="316" font-size="13" font-weight="700" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">pull_requests</text><text x="46" y="338" font-size="10" font-weight="400" text-anchor="start" style="fill:var(--mut)">state · checks · merge SHA</text><text x="46" y="352" font-size="10" font-weight="400" text-anchor="start" style="fill:var(--mut)">host at open, then the reconciler</text><text x="46" y="378" font-size="9" font-weight="400" text-anchor="start" style="fill:var(--sched)" style="font-family:var(--mono)">live state, never the link</text><rect x="30" y="404" width="940" height="30" rx="8" style="fill:var(--warnbg);stroke:var(--line)"/><text x="46" y="423" font-size="10.5" font-weight="400" text-anchor="start" style="fill:var(--warn)">Invariant: a created_from row is written in the same transaction as its PR artifact. A mentioned row never has one. An orphan is a bug, reported by sb links check.</text></svg></div><figcaption>The relation table answers “what does this PR mean to this issue?”. The artifact answers “which execution produced it?”. The sync mapping answers “which Jira item is this?”. Reads merge them; writes never do.</figcaption></figure>
+  <details class="equiv"><summary>Text equivalent — Four stores, one read model</summary><div class="tbox"><table><thead><tr><th>Table</th><th>Row means</th><th>Written by</th><th>Never contains</th></tr></thead><tbody><tr><td><code>issue_pull_requests</code></td><td>a claim with a relation and a source</td><td>step-14 verb (<code>created_from</code>), reconciler (<code>created_from</code> from trailer, <code>mentioned</code> from title/branch), mention verb (<code>mentioned</code>)</td><td>GitHub state, checks, merge SHA — those stay live reads</td></tr><tr><td><code>artifact_bindings</code></td><td>this receipt produced PR X</td><td>the same step-14 transaction, after a receipt resolves</td><td>mentions, and any PR without a receipt</td></tr><tr><td><code>work_receipts</code></td><td>the host allocated evidence for one execution binding</td><td>host at dispatch/allocate, step 22</td><td>PR prose</td></tr><tr><td><code>external_bindings</code></td><td>this issue is bound to Jira key K</td><td><code>sb jira bind</code>, step 33</td><td>PR records</td></tr><tr><td><code>pull_requests</code></td><td>the PR’s live state: open/merged/closed, checks, merge SHA</td><td>host at open (head SHA); reconciler thereafter (step 26)</td><td>the link itself — that is <code>issue_pull_requests</code></td></tr><tr><td><code>issue_pr_commits</code></td><td>T2 evidence: this SHA belongs to this issue/PR; <code>landed_sha</code> after the merge</td><td>T2 writer, reconciler; <code>landed_sha</code> once</td><td>the relation — that is the parent row</td></tr></tbody></table></div></details>
+</section>
+
+<div class="kicker">How a link is made</div>
+<h2>Strong evidence at open, weak evidence at repair</h2>
+<div class="banner ok"><strong>Automatic by default.</strong> You do not type a link. When the host opens a PR it writes <code>created_from</code>; when a PR’s title, body or branch names an issue, the reconciler writes <code>mentioned</code>. Both land in the same field, in the CLI and on the issue page.</div>
+<div class="card">
+<h3>Why <code>xt end</code> is not the writer</h3>
+<p class="small" style="margin-top:6px">It is old, it is broken for this repository’s commit style, and almost nothing uses it. Verified on 2026-11-11:</p>
+<ul class="small">
+<li><code>xt end --dry-run</code> in this worktree produced title <strong>“Xtrm-app”</strong>, one issue <strong><code>xtrm-app</code></strong>, and <code>Closes: xtrm-app</code>. It read the conventional-commit <em>scope</em> <code>(xtrm-app)</code> as an issue ref (<code>end.ts:191</code>), then invented an issue when both <code>sb</code> and <code>bd</code> failed to resolve it.</li>
+<li>Its body markers appear in <strong>0 of the 80 most recent</strong> core PRs and <strong>3 of 80</strong> XTRM PRs; the newest is 2026-10-14.</li>
+<li>It force-pushes, rebases and removes the worktree — three destructive steps an agent session should not own.</li>
+</ul>
+<p class="small">Keep it out of the link path. If it is kept at all, fix <code>extractIssueIds</code> separately; the reconciler (step 26) is the backstop for every PR the opener misses.</p>
+</div>
+<p>The host path is the strong one: the host knows the issue and the PR it just opened, so it writes the evidence and the link in one transaction. The reconciler path exists for PRs the host did not open, and it may only record what the evidence supports. Typing <code>#335</code> in an issue comment does not create a link by itself; links are written from PR-side evidence or by the explicit mention verb.</p>
+
+<section class="fig-sec">
+  <div class="fig-head"><h3>A link made at PR open</h3><div class="chips"><span class="kc"><i style="--c:var(--ok)"></i>writes <b>1 transaction</b></span><span class="kc"><i style="--c:var(--warn)"></i>no receipt <b>refuse</b></span><span class="kc"><i style="--c:var(--accent)"></i>read <b>issue show · trace</b></span></div></div>
+  <figure class="canvas" id="f3"><div class="figscroll"><svg viewBox="0 0 1000 430" role="img" aria-label="Sequence: the host opens a PR and records it against a receipt in one transaction"><text x="30" y="24" font-size="12" font-weight="650" text-anchor="start" style="fill:var(--mut)" letter-spacing=".08em">PR opened by an agent (step 14) — the gh shim, then the host</text><rect x="0" y="40" width="140" height="38" rx="9" style="fill:var(--surface);stroke:var(--sched);stroke-width:1.2"/><text x="70" y="64" font-size="12" font-weight="650" text-anchor="middle" style="fill:var(--fg)">agent</text><line x1="70" y1="78" x2="70" y2="372" style="stroke:var(--line2);stroke-width:1.2;stroke-dasharray="4 5"/><rect x="200" y="40" width="140" height="38" rx="9" style="fill:var(--surface);stroke:var(--accent);stroke-width:1.2"/><text x="270" y="64" font-size="12" font-weight="650" text-anchor="middle" style="fill:var(--fg)">gh shim</text><line x1="270" y1="78" x2="270" y2="372" style="stroke:var(--line2);stroke-width:1.2;stroke-dasharray="4 5"/><rect x="410" y="40" width="140" height="38" rx="9" style="fill:var(--surface);stroke:var(--ok);stroke-width:1.2"/><text x="480" y="64" font-size="12" font-weight="650" text-anchor="middle" style="fill:var(--fg)" style="font-family:var(--mono)">sb CLI</text><line x1="480" y1="78" x2="480" y2="372" style="stroke:var(--line2);stroke-width:1.2;stroke-dasharray="4 5"/><rect x="620" y="40" width="140" height="38" rx="9" style="fill:var(--surface);stroke:var(--fg);stroke-width:1.2"/><text x="690" y="64" font-size="12" font-weight="650" text-anchor="middle" style="fill:var(--fg)" style="font-family:var(--mono)">state.db</text><line x1="690" y1="78" x2="690" y2="372" style="stroke:var(--line2);stroke-width:1.2;stroke-dasharray="4 5"/><rect x="810" y="40" width="140" height="38" rx="9" style="fill:var(--surface);stroke:var(--accent);stroke-width:1.2"/><text x="880" y="64" font-size="12" font-weight="650" text-anchor="middle" style="fill:var(--fg)">console</text><line x1="880" y1="78" x2="880" y2="372" style="stroke:var(--line2);stroke-width:1.2;stroke-dasharray="4 5"/><path d="M70,112 L270,112" fill="none" style="stroke:var(--sched);stroke-width:1.6" marker-end="url(#mk-sched)"/><text x="170.0" y="105" font-size="10" font-weight="400" text-anchor="middle" style="fill:var(--fg)">1  gh pr create …</text><path d="M270,150 L480,150" fill="none" style="stroke:var(--accent);stroke-width:1.6" marker-end="url(#mk-accent)"/><text x="375.0" y="143" font-size="10" font-weight="400" text-anchor="middle" style="fill:var(--fg)">2  attach &lt;ref&gt; pr &lt;url&gt; — else link --relation mentioned</text><path d="M480,188 L690,188" fill="none" style="stroke:var(--ok);stroke-width:1.6" marker-end="url(#mk-ok)"/><text x="585.0" y="181" font-size="10" font-weight="400" text-anchor="middle" style="fill:var(--fg)">3  resolve receipt: --receipt · live claim · latest</text><path d="M480,226 L690,226" fill="none" style="stroke:var(--ok);stroke-width:1.6" marker-end="url(#mk-ok)"/><text x="585.0" y="219" font-size="10" font-weight="400" text-anchor="middle" style="fill:var(--fg)">4  one tx: artifact + issue_pull_requests + event</text><path d="M480,264 L270,264" fill="none" style="stroke:var(--ok);stroke-width:1.6" stroke-dasharray="4 4" marker-end="url(#mk-ok)"/><text x="375.0" y="257" font-size="10" font-weight="400" text-anchor="middle" style="fill:var(--fg)">5  attached rcp_… (bnd_…) or mentioned</text><path d="M880,330 L690,330" fill="none" style="stroke:var(--accent);stroke-width:1.6" stroke-dasharray="4 4" marker-end="url(#mk-accent)"/><text x="785.0" y="323" font-size="10" font-weight="400" text-anchor="middle" style="fill:var(--fg)">6  issue show / trace read it</text><rect x="30" y="380" width="940" height="34" rx="8" style="fill:var(--warnbg);stroke:var(--line)"/><text x="46" y="402" font-size="10.5" font-weight="400" text-anchor="start" style="fill:var(--warn)">No receipt, no created_from: the shim writes a mention; the reconciler upgrades it when a trailered commit proves delivery. xt end is not in this path.</text></svg></div><figcaption>The opener already knows the issue and the PR URL. It resolves the receipt, normalizes the value, and writes the evidence and the link together; the console only reads.</figcaption></figure>
+  <details class="equiv"><summary>Text equivalent — A link made at PR open</summary><div class="tbox"><table><thead><tr><th>Step</th><th>Actor</th><th>Action</th><th>Failure</th></tr></thead><tbody><tr><td>1</td><td>agent</td><td>push the branch</td><td>nothing is recorded yet</td></tr><tr><td>2</td><td>gh shim / host</td><td>open the PR, then call the verb</td><td>no PR, no record</td></tr><tr><td>3</td><td>sb</td><td>resolve the receipt</td><td>refuse: dispatch first</td></tr><tr><td>4</td><td>sb</td><td>artifact + link row + event, one transaction</td><td>nothing partially written</td></tr><tr><td>5</td><td>host</td><td>receive the receipt and binding ids</td><td>visible in the feedback</td></tr><tr><td>6</td><td>console</td><td>read trace / issue show</td><td>link missing only if step 4 never ran</td></tr></tbody></table></div></details>
+</section>
+
+<section class="fig-sec">
+  <div class="fig-head"><h3>How a missed PR is repaired</h3><div class="chips"><span class="kc"><i style="--c:var(--ok)"></i>trailer + receipt <b>created_from</b></span><span class="kc"><i style="--c:var(--att)"></i>title / branch <b>mentioned</b></span><span class="kc"><i style="--c:var(--bad)"></i>foreign receipt <b>finding</b></span></div></div>
+  <figure class="canvas" id="f4"><div class="figscroll"><svg viewBox="0 0 1000 410" role="img" aria-label="Reconciler flow: poll, extract evidence, guard the receipt, write created_from or mentioned"><text x="30" y="24" font-size="12" font-weight="650" text-anchor="start" style="fill:var(--mut)" letter-spacing=".08em">Reconciler repair (step 26) — the weak paths</text><rect x="20" y="52" width="200" height="74" rx="10" style="fill:var(--surface);stroke:var(--sched);stroke-width:1"/><text x="34" y="77" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">1  Poll GitHub</text><text x="34" y="95" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">conditional requests</text><rect x="250" y="52" width="200" height="74" rx="10" style="fill:var(--surface);stroke:var(--sched);stroke-width:1"/><text x="264" y="77" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">2  New / changed PR</text><text x="264" y="95" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">one poller, host only</text><rect x="480" y="52" width="200" height="74" rx="10" style="fill:var(--surface);stroke:var(--sched);stroke-width:1"/><text x="494" y="77" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">3  Extract refs</text><text x="494" y="95" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">trailer · title · branch</text><rect x="710" y="52" width="270" height="74" rx="10" style="fill:var(--surface);stroke:var(--sched);stroke-width:1"/><text x="724" y="77" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">4  Resolve the issue</text><text x="724" y="95" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">by ref · per repository</text><path d="M220,89 L247,89" fill="none" style="stroke:var(--sched);stroke-width:1.6" marker-end="url(#mk-sched)"/><path d="M450,89 L477,89" fill="none" style="stroke:var(--sched);stroke-width:1.6" marker-end="url(#mk-sched)"/><path d="M680,89 L707,89" fill="none" style="stroke:var(--sched);stroke-width:1.6" marker-end="url(#mk-sched)"/><rect x="270" y="220" width="330" height="96" rx="10" style="fill:var(--surface);stroke:var(--ok);stroke-width:1"/><text x="284" y="245" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">created_from</text><text x="284" y="263" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">artifact on this issue's receipt</text><rect x="371" y="230" width="219" height="17" rx="8.5" style="fill:var(--neutralbg)"/><text x="480.5" y="242.5" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--mut)" letter-spacing=".06em">T1 trailer · T2 issue trailer</text><rect x="650" y="220" width="330" height="96" rx="10" style="fill:var(--surface);stroke:var(--att);stroke-width:1"/><text x="664" y="245" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">mentioned</text><text x="664" y="263" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">source = title | branch | prose</text><rect x="856" y="230" width="114" height="17" rx="8.5" style="fill:var(--neutralbg)"/><text x="913.0" y="242.5" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--mut)" letter-spacing=".06em">title / branch</text><rect x="20" y="220" width="210" height="96" rx="10" style="fill:var(--surface);stroke:var(--bad);stroke-width:1"/><text x="34" y="245" font-size="13" font-weight="600" text-anchor="start" style="fill:var(--fg)">foreign receipt</text><text x="34" y="263" font-size="9.5" font-weight="400" text-anchor="start" style="fill:var(--mut)" style="font-family:var(--mono)">mention + check finding</text><rect x="169" y="230" width="51" height="17" rx="8.5" style="fill:var(--neutralbg)"/><text x="194.5" y="242.5" font-size="8.5" font-weight="700" text-anchor="middle" style="fill:var(--mut)" letter-spacing=".06em">guard</text><path d="M800,126 C800,170 520,170 480,217" fill="none" style="stroke:var(--ok);stroke-width:1.6" marker-end="url(#mk-ok)"/><text x="620" y="176" font-size="10.5" font-weight="400" text-anchor="middle" style="fill:var(--mut)">trailer names this issue</text><path d="M860,126 C860,180 830,190 815,217" fill="none" style="stroke:var(--att);stroke-width:1.6" marker-end="url(#mk-att)"/><text x="890" y="176" font-size="10.5" font-weight="400" text-anchor="middle" style="fill:var(--mut)">no receipt evidence</text><path d="M760,126 C600,200 240,190 150,217" fill="none" style="stroke:var(--bad);stroke-width:1.6" marker-end="url(#mk-bad)"/><text x="330" y="205" font-size="10.5" font-weight="400" text-anchor="middle" style="fill:var(--mut)">names another issue</text><rect x="270" y="340" width="710" height="30" rx="8" style="fill:var(--card);stroke:var(--line)"/><text x="286" y="360" font-size="10.5" font-weight="400" text-anchor="start" style="fill:var(--mut)">Each row keeps its source, so a later reader can see which evidence made the link. Mentioned never satisfies the close gate.</text></svg></div><figcaption>The reconciler may repair the record, but it may not invent evidence: only a receipt that belongs to this issue can make a created_from link.</figcaption></figure>
+  <details class="equiv"><summary>Text equivalent — How a missed PR is repaired</summary><div class="tbox"><table><thead><tr><th>Evidence</th><th>Check</th><th>Relation written</th><th>Can close?</th></tr></thead><tbody><tr><td>host record</td><td>exists for this PR</td><td><code>created_from</code></td><td>yes</td></tr><tr><td><code>XTRM-Receipt</code> trailer</td><td>receipt exists, live, <code>receipt.issueId == issue</code></td><td><code>created_from</code></td><td>yes</td></tr><tr><td>title / branch / body ref</td><td>resolves to this issue</td><td><code>mentioned</code></td><td>no</td></tr><tr><td>trailer names a foreign receipt</td><td>receipt belongs to another issue</td><td><code>mentioned</code> + check finding</td><td>no</td></tr></tbody></table></div></details>
+</section>
+<div class="card">
+<h3>Five rules the writers share</h3>
+<ol>
+<li><strong>One writer per relation.</strong> Step 14 owns <code>created_from</code>; the mention verb and the reconciler own <code>mentioned</code>. No second path writes the same relation.</li>
+<li><strong>T1 needs a receipt; T2 needs the <code>XTRM-Issue</code> trailer.</strong> <code>artifact_bindings.receipt_id</code> stays <code>NOT NULL</code>. T1 without a receipt is refused with the next action; T2 is a commit trailer that names this issue. Neither falls back to a journal note. <em>Live receipt</em> means: not superseded, and its execution binding is the issue’s current revision; claim liveness is checked separately in b1/b2.</li>
+<li><strong>Canonical value.</strong> Accept <code>github:org/repo#n</code>, <code>org/repo#n</code>, a github.com PR URL, or a bare <code>#N</code> scoped to the issue’s repository; store <code>org/repo#n</code>. A bare number is never resolved against “whatever repository is selected”.</li>
+<li><strong>Cross-issue guard.</strong> A trailer receipt must belong to the issue being linked. A foreign receipt produces <code>mentioned</code> plus a check finding, never a silent attach.</li>
+<li><strong>One transaction.</strong> T1 <code>created_from</code> ⇒ artifact + link row + provenance event, together. T2 <code>created_from</code> ⇒ link row with commit SHAs. <code>mentioned</code> ⇒ link row only. A provenance row without its artifact is an orphan; <code>sb links check</code> reports it.</li>
+</ol>
+</div>
+
+<div class="kicker">What people see</div>
+<h2>The same field in the CLI and in the console</h2>
+<div class="grid2">
+<div>
+<p class="small" style="margin-top:0">Terminal — <code>sb issue show</code> gains a bounded block; <code>provenance pr</code> answers from both stores.</p>
+<div class="term"><span class="c">$ sb issue show XTRM-718</span>
+<span class="c">…</span>
+<span class="k">PULL REQUESTS</span>
+  <span class="g">created_from</span>  xtrm-dev/xtrm#335   merged   2026-11-11
+  <span class="y">mentioned</span>     xtrm-dev/xtrm#339   open     title-only
+
+<span class="c">$ sb provenance pr xtrm-dev/xtrm#335</span>
+receipt <span class="k">rcp_01a1c…</span>  binding <span class="k">bnd_01a19…</span>
+issue   XTRM-718   evidence <span class="g">trailer</span>   artifact <span class="g">live</span>
+<span class="c">$ sb links check --project prj_xtrm</span>
+<span class="y">unevidenced</span>  XTRM-718  xtrm-dev/xtrm#339  source=title
+<span class="r">orphan</span>      XTRM-702  xtrm-dev/xtrm#402  created_from without artifact</div>
+</div>
+<div>
+<p class="small" style="margin-top:0">Console — the issue page grows one block and the timeline gains PR events (step 42). The chips already work.</p>
+<div class="screen"><div class="bar"><i></i><i></i><i></i><span style="margin-left:6px">xtrm-dev/xtrm · work · XTRM-718</span></div>
+<div class="body">
+<h4>Console v2: Jira-style pull-request references</h4>
+<div class="sub">done · task · rev 1 · claim released</div>
+<div class="chiprow">
+  <span class="refchip"><span class="n">#335</span><span class="repo">xtrm-dev/xtrm</span><span class="t">bare #N pull-request references…</span><span class="gh">↗</span></span>
+  <span class="pill p-ok">created from</span>
+</div>
+<div class="chiprow">
+  <span class="refchip"><span class="n">#339</span><span class="repo">xtrm-dev/xtrm</span><span class="t">same fix, different issue</span><span class="gh">↗</span></span>
+  <span class="pill p-att">mentioned</span>
+</div>
+<ul class="tl">
+  <li style="--c:var(--ok)"><b>PR #335 merged</b> · created_from · trailer abeb8e79</li>
+  <li style="--c:var(--sched)"><b>PR #339 mentioned</b> · source title · no receipt</li>
+  <li style="--c:var(--accent)"><b>journal milestone</b> · deployed at 45871a2</li>
+</ul>
+</div></div>
+<p class="small">The PR column in the board list reads live GitHub state for the linked numbers; the link itself still comes from Substrate, never from a second store.</p>
+</div>
+</div>
+
+<div class="kicker">Enforcement</div>
+<h2>The gate joins two rows; it does not read prose</h2>
+<p>Build order step 15 requires a live claim, a result entry, and a PR or commit record before close. This design makes “PR record” precise: a <code>created_from</code> row plus its live artifact on the receipt. A mention, however visible, is refused with a reason the operator can read.</p>
+
+<section class="fig-sec">
+  <div class="fig-head"><h3>The gate is a join, not a sentence</h3><div class="chips"><span class="kc"><i style="--c:var(--ok)"></i>passes <b>created_from + artifact</b></span><span class="kc"><i style="--c:var(--att)"></i>refuses <b>mentioned only</b></span><span class="kc"><i style="--c:var(--bad)"></i>fails <b>orphan</b></span></div></div>
+  <figure class="canvas" id="f5"><div class="figscroll"><svg viewBox="0 0 1000 340" role="img" aria-label="Close gate matrix: only created_from with a live artifact passes"><text x="30" y="24" font-size="12" font-weight="650" text-anchor="start" style="fill:var(--mut)" letter-spacing=".08em">Close gate — what may cite what</text><text x="32" y="58" font-size="10" font-weight="700" text-anchor="start" style="fill:var(--mut)" letter-spacing=".06em">Evidence on the issue</text><text x="382" y="58" font-size="10" font-weight="700" text-anchor="start" style="fill:var(--mut)" letter-spacing=".06em">What Substrate wrote</text><text x="712" y="58" font-size="10" font-weight="700" text-anchor="start" style="fill:var(--mut)" letter-spacing=".06em">sb issue close</text><rect x="20" y="74" width="960" height="44" rx="8" style="fill:var(--surface);stroke:var(--line)"/><rect x="20" y="74" width="4" height="44" rx="2" style="fill:var(--ok)"/><text x="36" y="101" font-size="11.5" font-weight="600" text-anchor="start" style="fill:var(--fg)">T1 · receipt + artifact</text><text x="382" y="101" font-size="11.5" font-weight="400" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">created_from (provenance)</text><rect x="700" y="82" width="266" height="28" rx="14" style="fill:var(--okbg)"/><g transform="translate(720,96)" style="stroke:var(--ok);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M-4,0.5 L-1.2,3.2 L4.2,-3"/></g><text x="736" y="100" font-size="11" font-weight="700" text-anchor="start" style="fill:var(--ok)">PASS</text><rect x="20" y="124" width="960" height="44" rx="8" style="fill:var(--surface);stroke:var(--line)"/><rect x="20" y="124" width="4" height="44" rx="2" style="fill:var(--ok)"/><text x="36" y="151" font-size="11.5" font-weight="600" text-anchor="start" style="fill:var(--fg)">T2 · XTRM-Issue trailer</text><text x="382" y="151" font-size="11.5" font-weight="400" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">created_from (trailer) + SHAs</text><rect x="700" y="132" width="266" height="28" rx="14" style="fill:var(--okbg)"/><g transform="translate(720,146)" style="stroke:var(--ok);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M-4,0.5 L-1.2,3.2 L4.2,-3"/></g><text x="736" y="150" font-size="11" font-weight="700" text-anchor="start" style="fill:var(--ok)">PASS if merged to default</text><rect x="20" y="174" width="960" height="44" rx="8" style="fill:var(--surface);stroke:var(--line)"/><rect x="20" y="174" width="4" height="44" rx="2" style="fill:var(--att)"/><text x="36" y="201" font-size="11.5" font-weight="600" text-anchor="start" style="fill:var(--fg)">title / branch / prose only</text><text x="382" y="201" font-size="11.5" font-weight="400" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">mentioned, no artifact</text><rect x="700" y="182" width="266" height="28" rx="14" style="fill:var(--warnbg)"/><g transform="translate(720,196)" style="stroke:var(--att);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M-3,-2.2 Q-3,-4.6 0,-4.6 Q3,-4.6 3,-2 Q3,-0.4 0,0.6 L0,1.8 M0,4.2 v.1"/></g><text x="736" y="200" font-size="11" font-weight="700" text-anchor="start" style="fill:var(--warn)">REFUSE · unevidenced</text><rect x="20" y="224" width="960" height="44" rx="8" style="fill:var(--surface);stroke:var(--line)"/><rect x="20" y="224" width="4" height="44" rx="2" style="fill:var(--bad)"/><text x="36" y="251" font-size="11.5" font-weight="600" text-anchor="start" style="fill:var(--fg)">provenance row, no artifact</text><text x="382" y="251" font-size="11.5" font-weight="400" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">orphan (bug)</text><rect x="700" y="232" width="266" height="28" rx="14" style="fill:var(--badbg)"/><g transform="translate(720,246)" style="stroke:var(--bad);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M-3.5,-3.5 L3.5,3.5 M3.5,-3.5 L-3.5,3.5"/></g><text x="736" y="250" font-size="11" font-weight="700" text-anchor="start" style="fill:var(--bad)">FAIL · links check</text><rect x="20" y="274" width="960" height="44" rx="8" style="fill:var(--surface);stroke:var(--line)"/><rect x="20" y="274" width="4" height="44" rx="2" style="fill:var(--att)"/><text x="36" y="301" font-size="11.5" font-weight="600" text-anchor="start" style="fill:var(--fg)">nothing</text><text x="382" y="301" font-size="11.5" font-weight="400" text-anchor="start" style="fill:var(--fg)" style="font-family:var(--mono)">—</text><rect x="700" y="282" width="266" height="28" rx="14" style="fill:var(--warnbg)"/><g transform="translate(720,296)" style="stroke:var(--att);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"><path d="M-3.5,-3.5 L3.5,3.5 M3.5,-3.5 L-3.5,3.5"/></g><text x="736" y="300" font-size="11" font-weight="700" text-anchor="start" style="fill:var(--warn)">pr-review-gate fails</text><text x="20" y="336" font-size="10.5" font-weight="400" text-anchor="start" style="fill:var(--mut)">The gate reads the relation table and the artifact, never the Markdown. A mentioned row and a created_from row look identical in prose.</text></svg></div><figcaption>Evidence is a row you can point at, not a phrase someone wrote. A merge guard refuses a PR with no link; the close gate refuses an issue with only a mention.</figcaption></figure>
+  <details class="equiv"><summary>Text equivalent — The gate is a join, not a sentence</summary><div class="tbox"><table><thead><tr><th>Issue state</th><th>Row written</th><th>Close result</th><th>Reason code</th></tr></thead><tbody><tr><td>T1: host record / receipt trailer</td><td><code>created_from</code> + live artifact</td><td>pass</td><td>—</td></tr><tr><td>T2: <code>XTRM-Issue</code> trailer on a PR commit</td><td><code>created_from</code> + trailered SHAs</td><td>pass, if merged to default</td><td>—</td></tr><tr><td>title / branch / prose</td><td><code>mentioned</code></td><td>refuse</td><td><code>gate_mentioned_only</code></td></tr><tr><td>provenance row without artifact</td><td><code>created_from</code>, no artifact</td><td>fail</td><td><code>gate_orphan_link</code></td></tr><tr><td>no link</td><td>—</td><td>refuse</td><td><code>gate_no_evidence</code></td></tr></tbody></table></div></details>
+</section>
+<div class="card">
+<h3>Two gates, one conjunction</h3>
+<p class="small" style="margin-top:6px"><strong>Manual close (step 15)</strong> accepts a live claim, a result entry, and T1 or T2 even while the PR is open; the stage stays <em>merged-pending</em> and the reconciler completes it later. This keeps the close path free of live GitHub reads.</p>
+<p class="small"><strong>Auto-close (step 27)</strong> requires the full conjunction: T1 or T2, merged into the default branch, no other open PR linked to the issue, no live claim still working, no deploy or production window in the contract. The PR clause is one conjunct, never the whole gate.</p>
+<p class="small">Until step 26 stores merge state, “merged to default” is a live <code>gh</code> read. An unreachable GitHub is <strong>fail-closed</strong>: the operator override is a reason string that writes a Journal decision, exactly like the merge guard. Unknown never passes.</p>
+<p class="small">T2 names its evidence in a child table: <code>issue_pr_commits(issue_id, repository, number, sha, landed_sha, trailer_revision)</code>, indexed on <code>sha</code> so <code>provenance commit</code> and the step-27 revert check read SHA→issue in one hop. New pushes append rows. <code>landed_sha</code> is the one host-owned finalization, set when the merge lands. <code>trailer_revision</code> is audit only; a mismatch is reported, never gated. A conflicting writer keeps the first row and records <code>links check</code> “commit claimed by two issues”; it never throws, so one bad commit cannot stall the poll. T2 reads <strong>every</strong> <code>XTRM-Issue:</code> value on a commit: more than one distinct issue yields no T2 row plus a finding, because <code>parseTrailers</code> (<code>packages/substrate/src/domain/provenance.ts:108</code>) is last-wins today and must gain an all-values form before T2 ships. <code>landed_sha</code> is deliberately not unique: a squash commit on main can carry trailers for several issues, and the step-27 revert check resolves <code>landed_sha</code> through the child rows instead of re-parsing the main-branch message. A later <code>sb links check</code> finding flags T2 commits with no <code>Agent:</code>/hook marker; it does not block.</p>
+</div>
+
+<div class="kicker">Alignment</div>
+<h2>What changes in the build order text</h2>
+<div class="tbox"><table><thead><tr><th>Build order v4</th><th>This design</th><th>Delta</th></tr></thead><tbody>
+<tr><td><strong>step 14</strong> · <code>sb provenance attach &lt;ref&gt; pr github:org/repo#n</code></td><td>Same verb and receipt-bound path; accepts four input forms and stores <code>org/repo#n</code>; writes artifact + link row + event in one transaction.</td><td><span class="pill p-att">ruling</span> <code>github:</code> is input-only; storage is canonical.</td></tr>
+<tr><td><strong>step 15</strong> · gates refuse unlinked work; mentions <code>sb links check</code></td><td>Close gate reads <code>created_from</code> + live artifact; mentions refuse with <code>gate_mentioned_only</code>; <code>sb links check</code> reports unevidenced links and orphans.</td><td><span class="pill p-bad">gap</span> no <code>links</code> group exists in <code>KNOWN_GROUPS</code>; step 33 owns the verb, step 15 consumes it.</td></tr>
+<tr><td><strong>step 26</strong> · reconciler repairs from host record, trailers, title/branch; each link stores its evidence</td><td>Trailer-first with a cross-issue receipt guard; title/branch become <code>mentioned</code>; <code>source</code> records the evidence.</td><td><span class="pill p-att">ruling</span> title/branch evidence cannot be <code>created_from</code> without a receipt.</td></tr>
+<tr><td><strong>step 6b</strong> · every bound commit names its Issue</td><td>T2’s source: <code>XTRM-Issue</code> / <code>XTRM-Issue-Revision</code> trailers, no receipt needed.</td><td>slice 2 sequences after XTRM-684 / CORE-2570; per-repo squash setting must keep commit messages.</td></tr>
+<tr><td><strong>step 27</strong> · merged PR closes the issue</td><td>T1 with a live artifact, or T2 with the trailered SHAs, and a merge into the default branch. A writer PR into a coordinator branch is integration, not delivery. The opener is the host, not <code>xt end</code>.</td><td>none — the design supplies the missing record.</td></tr>
+<tr><td><strong>step 42</strong> · issue page timeline and PR column</td><td>PR block with relation labels, PR events in the timeline, board PR column from live GitHub state.</td><td>none.</td></tr>
+<tr><td><strong>step 43</strong> · <code>@pr:</code>, <code>@jira:</code> references</td><td><code>@pr:</code> already renders; <code>@jira:</code> waits for step 33 bindings.</td><td>none.</td></tr>
+</tbody></table></div>
+<div class="banner"><strong>Three rulings this note asks the plan to absorb.</strong> (1) The documented <code>github:org/repo#n</code> is an input form, not the stored form. (2) A PR known only from its title or branch is a mention, not delivery evidence. (3) <code>sb links check</code> is a new top-level verb owned by step 33 and consumed by step 15, not part of <code>project</code>.</div>
+
+<div class="kicker">Delivery</div>
+<h2>Five slices, each shippable alone</h2>
+<div class="tbox"><table><thead><tr><th>Slice</th><th>Contents</th><th>Depends on</th><th>Visible result</th></tr></thead><tbody>
+<tr><td>1 · schema + read model + dry run</td><td>migration <code>013_issue_pull_requests</code>, domain type, read merge, <code>issue show</code> block; <code>sb links check --dry-run</code> reports T2 candidates through <code>gh</code> and writes nothing</td><td>nothing; <code>gh</code> read access</td><td>the field and the measurement, before any gate</td></tr>
+<tr><td>2 · writers</td><td>T1 <code>sb provenance attach</code> (b1/b2/b3, canonical, one transaction) + T2 writer; the <code>gh</code> shim calls it fail-open, the host at step 27</td><td>slice 1; step 6b hook (direct PRs); <code>COMMIT_MESSAGES</code> for coordinator chains; a live receipt for T1</td><td>new PRs carry evidence, not prose</td></tr>
+<tr><td>3 · reconciler</td><td>step-26 poller: trailer-first, T2 issue match, title/branch as <code>mentioned</code>; PR state table stays with step 26</td><td>slice 2; poller</td><td>missed and mentioned PRs appear</td></tr>
+<tr><td>4 · enforcement (last, flagged)</td><td>close gate joins T1/T2 with merged-into-default; <code>sb links check</code>; named reasons; warn-only first</td><td>slices 1–3 and measured T2 coverage</td><td>a mention cannot close; rollback is a flag</td></tr>
+<tr><td>5 · console</td><td>issue page block + timeline events; board PR column from the GitHub adapter and step-26 state</td><td>slice 1; live PR reads</td><td>the same field on the issue page</td></tr>
+</tbody></table></div>
+
+<div class="card">
+<h3>Open decisions</h3>
+<ol>
+<li><strong>Names.</strong> <code>created_from</code> / <code>mentioned</code> matches the existing edge vocabulary (<code>discovered_from</code>); <code>implements</code> / <code>mentions</code> reads better in a sentence. Recommendation: <code>created_from</code> / <code>mentioned</code>.</li>
+<li><strong>Do mentions persist?</strong> Recommendation: yes, written only by an explicit verb, with actor and time. A read-time derivation silently changes when the prose is edited.</li>
+<li><strong>Do title/branch repairs count as delivery?</strong> Recommendation: no. They are mentions with a source, visible in <code>links check</code>; only receipt-bearing evidence closes.</li>
+<li><strong>Accept the T2 trailer tier as delivery evidence?</strong> Recommendation: yes — the plan already says the Issue trailer needs no receipt (6b) and that a different PR’s trailers link the work (27). It needs one amendment line under step 26/27. No claim-only tier.</li>
+<li><strong>Per-repo T2 capability.</strong> xtrm squashes to <code>PR_BODY</code>, so T2 cannot be delivery there until the setting is <code>COMMIT_MESSAGES</code> or a PR-body bridge exists. Recommendation: gate accepts T2 only where the merged message carries the trailer; otherwise T1.</li>
+<li><strong>May an explicit link claim <code>created_from</code> without a receipt or trailer?</strong> Recommendation: no. A claim proves who is working, not what the PR contains; nothing on the GitHub side can check it.</li>
+</ol>
+</div>
+
+<div class="kicker">Appendix</div>
+<h2>Shapes, once the decisions above land</h2>
+<pre><code>-- migration 013 · append-only, no revision bump, readiness untouched
+CREATE TABLE issue_pull_requests (
+  issue_id   TEXT    NOT NULL REFERENCES issues(id),
+  repository TEXT    NOT NULL,              -- owner/repo
+  number     INTEGER NOT NULL,
+  relation   TEXT    NOT NULL CHECK (relation IN ('created_from','mentioned')),
+  source     TEXT    NOT NULL CHECK (source IN ('provenance','explicit','trailer','title','branch','prose')),
+  url        TEXT    NULL,
+  actor      TEXT    NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (issue_id, repository, number, relation, source)
+);
+CREATE INDEX ix_issue_prs_repo ON issue_pull_requests (repository, number);
+
+-- T2 evidence is a child table: SHA -> issue/PR is the indexed read (step 26, 27)
+CREATE TABLE issue_pr_commits (
+  issue_id         TEXT    NOT NULL REFERENCES issues(id),
+  repository       TEXT    NOT NULL,
+  number           INTEGER NOT NULL,
+  sha              TEXT    NOT NULL,
+  landed_sha       TEXT    NULL,   -- set once when the merge lands
+  trailer_revision INTEGER NULL,   -- XTRM-Issue-Revision, audit only
+  PRIMARY KEY (issue_id, repository, number, sha),
+  UNIQUE (repository, number, sha)   -- one commit in one PR belongs to one issue
+);
+CREATE INDEX ix_issue_pr_commits_sha ON issue_pr_commits (sha);
+CREATE INDEX ix_issue_pr_commits_landed ON issue_pr_commits (landed_sha);</code></pre>
+<pre><code>-- live PR state (step 26) · host inserts at open, the reconciler owns every later change
+CREATE TABLE pull_requests (
+  repository       TEXT NOT NULL,
+  number           INTEGER NOT NULL,
+  state            TEXT NOT NULL,      -- open | merged | closed
+  draft            INTEGER NOT NULL DEFAULT 0,
+  head_sha         TEXT NULL,
+  merge_commit_sha TEXT NULL,
+  checks_state     TEXT NULL,
+  review_state     TEXT NULL,
+  updated_at       INTEGER NOT NULL,
+  PRIMARY KEY (repository, number)
+);</code></pre>
+<pre><code>sb provenance attach &lt;ref&gt; pr &lt;github:org/repo#n | org/repo#n | URL | #n&gt; [--receipt &lt;id&gt;]
+sb issue link pr &lt;ref&gt; &lt;org/repo#n&gt; --relation mentioned
+sb issue unlink pr &lt;ref&gt; &lt;org/repo#n&gt; --relation mentioned
+sb links check [--project &lt;id&gt;]   # --dry-run: list T2 candidates, write nothing
+sb links sync &lt;pr&gt;                 # one-shot T2 read through gh, no poller
+sb issue show &lt;ref&gt;      # PULL REQUESTS: created_from … / mentioned …</code></pre>
+<pre><code>{
+  "pullRequests": {
+    "createdFrom": [{ "repository": "xtrm-dev/xtrm", "number": 335, "source": "trailer",
+                      "receipt": "rcp_…", "url": "https://github.com/xtrm-dev/xtrm/pull/335" }],
+    "mentioned":   [{ "repository": "xtrm-dev/xtrm", "number": 339, "source": "title",
+                      "url": "https://github.com/xtrm-dev/xtrm/pull/339" }]
+  }
+}</code></pre>
+<p class="small">A T2 entry carries <code>"commits": ["9f2c…", "a71b…"]</code> from <code>issue_pr_commits</code>; a T1 entry carries <code>receipt</code> + <code>url</code>.</p>
+
+<p class="foot">Design note for the XTRM programme. Build order v4 is the authority for step order; this note refines steps 14, 15 and 26 and does not move a step. Measured figures are quoted from that page, not re-measured here.</p>
+</div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<marker id="mk-ok" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ok)"/></marker>
+<marker id="mk-accent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker>
+<marker id="mk-att" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--att)"/></marker>
+<marker id="mk-bad" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--bad)"/></marker>
+<marker id="mk-sched" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--sched)"/></marker>
+</defs></svg>
+</body></html>
