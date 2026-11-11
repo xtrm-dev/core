@@ -233,6 +233,53 @@ Secrets and non-secrets live apart.
 
 4. Do not put the key in a worktree, `/tmp`, a shell profile, a tmux environment or the Substrate store. Later phases read it by path; nothing prints it.
 
+## Turning on `xtrm-worker` and `xtrm-coord` later
+
+The reviewer App is live; the other two are not, so worker and coordinator sessions still act as the
+operator. Doing them later takes the same four steps, once per App, and nothing in the code changes:
+
+1. **Create the App** exactly as in "Create each App" above, with the permissions from the table
+   (`xtrm-worker`: Contents write, Pull requests write, Issues write; `xtrm-coord`: Contents read,
+   Pull requests write, Issues write).
+2. **Install it** on every account whose repositories the agents touch — `Jaggerxtrm`,
+   `mercuryintelligence`, `xtrm-dev`. "All repositories" is the simplest choice. An App that is not
+   installed on the repository's owner is not a partial identity: `xt identity doctor` reports it, and
+   an explicit reviewer launch is refused rather than falling back to the operator (the launcher rule).
+3. **Store the key and the identifiers** as in "Store the key and the identifiers":
+   `~/.xtrm/identities/github-apps/<slug>/app.json` with `slug`, `appId`, `owner`, `keyPath` and
+   `installations` (account to installation id), and the `.pem` at `~/.secrets/github-apps/<slug>.pem`
+   with mode `600`. A numeric `appId` is accepted as written in JSON.
+4. **Verify**: `xt identity doctor --json` must show `app <slug> ok: true` and an `installation <slug>`
+   row naming every account, and `xt identity role --json` inside a launched session must report the
+   role the launch asked for. Then one real push (worker) or one real mention answer (coordinator),
+   checked as `<slug>[bot]` in the GitHub UI.
+
+Where the role comes from: a plain `xt claude|pi|codex` session is a worker; `--role <specialist>`
+resolves through `~/.xtrm/config/identity-role-map.json` (`pr-reviewer` and `seconder` map to
+`reviewer`); a supervisor launch uses `XTRM_SPECIALIST_DEFAULT`. With no App for that role the launch
+prints one line and keeps the operator identity — nothing breaks, nothing is attributed either.
+
+Live finding (2026-11-10): the reviewer App was installed on `Jaggerxtrm` and `mercuryintelligence`
+but **not** on `xtrm-dev`, and its `app.json` still listed a dead `xtrm-dev` installation id. Both
+mistakes are silent at review time and fatal at mint time (HTTP 404, or "not installed for xtrm-dev").
+Check the `installations` map against `GET /app/installations` before trusting it.
+
+### Who sets `XTRM_MERGE_GUARD`
+
+Today: the person or launcher that starts the session, per shell. It is not written anywhere yet, and
+the guard is **off** unless it is set:
+
+```bash
+XTRM_MERGE_GUARD=on xt pi --role worker          # per launch
+export XTRM_MERGE_GUARD=on                       # per shell, before launching agents
+```
+
+A session started without it merges unchecked and the hook passes the merge through. Recommended next
+step (not implemented): have the launcher export `XTRM_MERGE_GUARD=on` for every agent session, so the
+guard is on by construction and an operator turns it off deliberately rather than forgetting to turn it
+on. That is a code change with its own Issue; until then, set it per launch and say so in every
+handoff.
+
 ## What the code provides once an App exists (CORE-2528)
 
 Without an App on disk, every token path fails closed with a message naming the missing file and no agent

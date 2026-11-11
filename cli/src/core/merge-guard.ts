@@ -573,8 +573,15 @@ export function recordMerge(
         key: `https://github.com/${input.repo}/pull/${input.pr}`,
         value: { repo: input.repo, pr: input.pr, head: input.head, actor: `${env.SUBSTRATE_HOLDER ?? ''}`.trim() || 'operator' },
     }]);
+    // Bounded result fields only (a live run rejected `head`/`pr`): the SHA and the PR
+    // stay in the summary and in the github-merge ref, which carry them as data.
     const result = run('sb', ['journal', 'append', input.issueRef, '--kind', 'result',
-        '--result', JSON.stringify({ summary: `merged ${input.repo}#${input.pr} at ${sha12(input.head)}`, head: input.head, pr: input.pr }),
+        '--result', JSON.stringify({
+            summary: `merged ${input.repo}#${input.pr} at ${sha12(input.head)}`,
+            outcome: 'merged',
+            findings: [`head ${input.head}`],
+            artifactRefs: [`https://github.com/${input.repo}/pull/${input.pr}`],
+        }),
         '--refs', refs, '--json'], {});
     if (result.status === 0) return { ok: true };
     return { ok: false, error: result.stderr.trim() || `sb exited ${result.status}` };

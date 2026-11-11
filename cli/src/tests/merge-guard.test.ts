@@ -117,6 +117,21 @@ afterEach(() => {
     fs.removeSync(stateHome);
 });
 
+describe('Journal receipts use only bounded result fields (live finding)', () => {
+    it('records a merge with summary/outcome/artifactRefs, never head/pr in --result', () => {
+        const calls: string[][] = [];
+        const runSb = (command: string, args: string[]) => {
+            calls.push([command, ...args]);
+            return { status: 0, stdout: '{}', stderr: '' };
+        };
+        const result = recordMerge({ repo: 'o/r', pr: 7, head: 'a'.repeat(40), issueRef: 'CORE-1' }, { token: '', runSb });
+        expect(result.ok).toBe(true);
+        const args = calls[0];
+        const payload = JSON.parse(args[args.indexOf('--result') + 1]);
+        expect(Object.keys(payload).sort()).toEqual(['artifactRefs', 'findings', 'outcome', 'summary']);
+    });
+});
+
 describe('mergeCheck', () => {
     it('refuses when no reviewer-App review exists', async () => {
         const github = fakeGitHub({

@@ -472,11 +472,16 @@ export function reviewJournalArgs(receipt: PostedReview, input: PostReviewInput,
             actor: slug ? `${slug}[bot]` : input.holder,
         },
     }]);
+    // Only the bounded result fields are accepted (summary|attempted|outcome|completed|
+    // validation|findings|artifactRefs|receiptRefs|provenanceRefs): a live run rejected
+    // `verdict`/`head`/`artifact`. The head and the verdict stay legible in the summary
+    // and in the github-review ref below, which carries them as structured data.
     const result = JSON.stringify({
         summary: `Review ${receipt.verdict} at head ${sha12(receipt.head)} for ${input.repo}#${input.pr}`,
-        verdict: receipt.verdict,
-        head: receipt.head,
-        artifact: { kind: 'review', head: receipt.head, verdict: receipt.verdict, url: receipt.url },
+        outcome: `review ${receipt.verdict}`,
+        validation: [`posted by ${input.role}${slug ? ` app ${slug}` : ''} at head ${sha12(receipt.head)}`],
+        artifactRefs: [receipt.url],
+        findings: [`verdict ${receipt.verdict}`, `head ${receipt.head}`],
     });
     return ['journal', 'append', issueRef, '--kind', 'result', '--result', result, '--refs', refs, '--json'];
 }

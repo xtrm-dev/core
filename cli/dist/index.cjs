@@ -58158,7 +58158,8 @@ function readAppConfig(slug, deps = {}) {
   if (!raw || typeof raw !== "object") return null;
   const record2 = raw;
   if (record2.slug !== slug) return null;
-  if (typeof record2.appId !== "string" || !record2.appId.trim()) return null;
+  const rawAppId = typeof record2.appId === "number" ? String(record2.appId) : record2.appId;
+  if (typeof rawAppId !== "string" || !rawAppId.trim()) return null;
   const installations = {};
   const rawInstallations = record2.installations;
   if (rawInstallations && typeof rawInstallations === "object") {
@@ -58169,7 +58170,7 @@ function readAppConfig(slug, deps = {}) {
   }
   return {
     slug,
-    appId: record2.appId.trim(),
+    appId: rawAppId.trim(),
     owner: typeof record2.owner === "string" ? record2.owner : "",
     keyPath: typeof record2.keyPath === "string" && record2.keyPath.trim() ? record2.keyPath : githubAppPaths(deps.home, deps.runtimeDir).defaultKeyPath(slug),
     installations,
@@ -72246,9 +72247,10 @@ function reviewJournalArgs(receipt, input, issueRef, slug) {
   }]);
   const result = JSON.stringify({
     summary: `Review ${receipt.verdict} at head ${sha12(receipt.head)} for ${input.repo}#${input.pr}`,
-    verdict: receipt.verdict,
-    head: receipt.head,
-    artifact: { kind: "review", head: receipt.head, verdict: receipt.verdict, url: receipt.url }
+    outcome: `review ${receipt.verdict}`,
+    validation: [`posted by ${input.role}${slug ? ` app ${slug}` : ""} at head ${sha12(receipt.head)}`],
+    artifactRefs: [receipt.url],
+    findings: [`verdict ${receipt.verdict}`, `head ${receipt.head}`]
   });
   return ["journal", "append", issueRef, "--kind", "result", "--result", result, "--refs", refs, "--json"];
 }
@@ -72628,7 +72630,12 @@ function recordMerge(input, deps) {
     "--kind",
     "result",
     "--result",
-    JSON.stringify({ summary: `merged ${input.repo}#${input.pr} at ${sha12(input.head)}`, head: input.head, pr: input.pr }),
+    JSON.stringify({
+      summary: `merged ${input.repo}#${input.pr} at ${sha12(input.head)}`,
+      outcome: "merged",
+      findings: [`head ${input.head}`],
+      artifactRefs: [`https://github.com/${input.repo}/pull/${input.pr}`]
+    }),
     "--refs",
     refs,
     "--json"
