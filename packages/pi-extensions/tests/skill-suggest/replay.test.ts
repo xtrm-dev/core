@@ -5,7 +5,7 @@
  * gates; FLOORS documents how each was set.
  */
 import "../isolate-logs.ts"; // CORE-2535: keep production decision logs untouched
-import { describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { CONTROL_ORIGINS, isServiceId, loadCorpus, loadFixture, loadPrior, loadTurns, replay, score, type Metrics } from "./replay/evaluate.ts";
 
 const corpus = loadCorpus();
@@ -61,11 +61,16 @@ describe("replay corpus", () => {
 
 describe("offline replay through the full decision path", () => {
   let metrics: Metrics;
-  it("replays every row", async () => {
+  // CORE-2605: the replay feeds every assertion below, so it runs as a hook —
+  // a randomized order must not reach a floor test before the metrics exist.
+  beforeAll(async () => {
     metrics = score(await replay(corpus));
     console.log(`[replay] ${JSON.stringify(metrics)}`);
-    expect(metrics.rows).toBe(corpus.length);
   }, 120_000);
+
+  it("replays every row", () => {
+    expect(metrics.rows).toBe(corpus.length);
+  });
 
   it("never shows the classifier more than 240 criteria", () => {
     expect(metrics.criteria_max).toBeLessThanOrEqual(FLOORS.criteria_max);
