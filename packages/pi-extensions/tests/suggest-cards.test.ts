@@ -59,7 +59,7 @@ describe("suggestion card layout", () => {
   });
 
   test("every line fits a narrow width, and a long path is split, never left to orphan a word", () => {
-    const path = "/opt/projects/mercury/market-data/.xtrm/worktrees/market-data-xt-pi-ISSUE-214-r2-watcher/.xtrm/skills/market-data/service-knowledge/services/ingesting-ohlcv/SKILL.md";
+    const path = "/srv/agents/projects/mercury/market-data/.xtrm/worktrees/market-data-xt-pi-ISSUE-214-r2-watcher/.xtrm/skills/market-data/service-knowledge/services/ingesting-ohlcv/SKILL.md";
     const details = resolveSuggestionMessage({
       details: { card: { identity: "consider skill · ingesting-ohlcv", summary: "the OHLCV Ingestor service is in play", body: [`Open its expert skill at ${path} before going deeper`], facts: "score 0.82", tint: "skill" } },
     })!;
