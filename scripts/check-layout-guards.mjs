@@ -9,9 +9,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
-// Batch G: per-runtime active/{claude,pi} subdirs were removed. These paths are
-// now definitively dead code — the guard prevents accidental re-introduction.
+// Batch G retired the per-REPO active tiers. The global runtime view
+// (`~/.xtrm/skills/active/<runtime>`, written by materializeGlobalRuntimeViews and
+// read by resolveGlobalRuntimeViewRoot) is still live, so a home-anchored reference
+// documents current layout — only an unanchored/repo-relative one is stale.
 const staleActiveTiers = ['.xtrm/skills/active/claude', '.xtrm/skills/active/pi'];
+const HOME_ANCHOR = /(~|\$HOME|\$\{HOME\})\/$/;
+
+export function staleActiveTierHits(text) {
+  const hits = [];
+  for (const stale of staleActiveTiers) {
+    for (let at = text.indexOf(stale); at >= 0; at = text.indexOf(stale, at + stale.length)) {
+      if (HOME_ANCHOR.test(text.slice(Math.max(0, at - 16), at))) continue;
+      hits.push(stale);
+    }
+  }
+  return hits;
+}
 const transientAllowlist = [
   '.beads/',
   '.xtrm/reports/',
@@ -22,6 +36,8 @@ const transientAllowlist = [
   // self-reference: this script contains the staleActiveTiers strings by
   // necessity to detect them elsewhere; skip itself to avoid a false positive.
   'scripts/check-layout-guards.mjs',
+  // its self-test feeds the stale (unanchored) form in and asserts it is flagged
+  'scripts/__tests__/check-layout-guards.test.mjs',
   // Legitimate references — code and docs that name the retired paths in
   // order to detect / strip / describe them. Adding these to the guard's
   // stale-tier check would forbid the very mechanism that keeps the
@@ -60,8 +76,8 @@ async function main() {
     } catch {
       continue;
     }
-    for (const stale of staleActiveTiers) {
-      if (text.includes(stale)) offenders.push(`${file} -> ${stale}`);
+    for (const stale of staleActiveTierHits(text)) {
+      offenders.push(`${file} -> ${stale}`);
     }
   }
 
@@ -83,4 +99,6 @@ async function main() {
   console.log('check-layout-guards passed');
 }
 
-await main();
+if (process.argv[1] === __filename) {
+  await main();
+}

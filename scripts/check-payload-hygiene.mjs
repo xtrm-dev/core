@@ -38,6 +38,10 @@ const allowlist = new Set([]);
 const ABSOLUTE_PATH_LEAK_ALLOWLIST = new Set([
   'CHANGELOG.md',
   'scripts/check-payload-hygiene.mjs',
+  // Recorded replay transcript (CORE-2535): already scrubbed to /home/user
+  // placeholders, and the text is replayed as conversation input, so rewriting
+  // it would change the decisions the fixture exists to measure (CORE-2601).
+  'packages/pi-extensions/tests/skill-suggest/replay/prior.json',
 ]);
 
 const __filename = fileURLToPath(import.meta.url);

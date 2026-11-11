@@ -15,6 +15,9 @@ const BUDGETS = {
   planning:                     180,
   'engineering-quality':        180,
   'using-specialists':          180,
+  // Vendored tool package: root router plus references/, scripts/ and the
+  // installer machinery its project-level consumers call by path.
+  'service-knowledge':         240,
   gitnexus:                     120,
   'skill-creator':              180,
   'find-skills':                140,

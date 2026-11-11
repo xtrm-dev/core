@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverRoster, resetRosterCache } from "../../extensions/skill-suggest/roster.ts";
 import { buildRetrievalIndex, loadServices, parseServiceRegistry, shortlist, SHORTLIST_MAX, type Retrievable } from "../../shared/shortlist.ts";
@@ -112,7 +112,7 @@ describe("service-registry matching", () => {
   });
 });
 
-const MARKET_DATA = "/home/dawid/projects/mercury/market-data";
+const MARKET_DATA = join(homedir(), "projects", "mercury", "market-data");
 describe.skipIf(!existsSync(join(MARKET_DATA, ".xtrm", "skills")))("live market-data registry", () => {
   it("the 2026-10-07 missed prompt shortlists migrating-schema first", async () => {
     resetRosterCache();

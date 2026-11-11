@@ -93,12 +93,16 @@
           "hash": "8ed79613b827b54f9ff974483c117e96606ec474cb7927fdc5b549b34a0cb035",
           "version": "0.15.3"
         },
+        "codemode/references/preflight-pattern.md": {
+          "hash": "6782104a2339d39e4b7f49af2f1f43d6118aebf7dd4334380219b5f81a7777a8",
+          "version": "0.15.3"
+        },
         "codemode/references/runtime-shapes.md": {
           "hash": "10332551b2b0843c94eac554900b8ba02b3b0098c47219e024a2f1d7a9cc7af7",
           "version": "0.15.3"
         },
         "codemode/SKILL.md": {
-          "hash": "5b25abe288f19ca2a45a98edc2b92bf3dfbcb20abdcfc88769aaae9f44247b1b",
+          "hash": "01ecd91d35f5c23a57b22c73d51c806fe49fa6db932ad683af72666e757bbf08",
           "version": "0.15.3"
         },
         "engineering-quality/references/causal-debugging.md": {
@@ -345,6 +349,30 @@
           "hash": "2947833d63aa1af67c5bf8fe9ce5adcd9362383c08758040dd06506aa80d9ac8",
           "version": "0.15.3"
         },
+        "service-knowledge/references/creating.md": {
+          "hash": "1ef08e777a22ef5aae162473a647f4c51f48b2f9d88b368805aefa4a9908a7ee",
+          "version": "0.15.3"
+        },
+        "service-knowledge/references/routing.md": {
+          "hash": "a19b5656c2a531d3bab55391eef573ce50f990badf6ba8e4d7828b31c971273e",
+          "version": "0.15.3"
+        },
+        "service-knowledge/references/script_quality_standards.md": {
+          "hash": "964476a17aea08505edddae1616899ebcc9f6f1f990e060cf37c1676a7f54b7c",
+          "version": "0.15.3"
+        },
+        "service-knowledge/references/system-guide.md": {
+          "hash": "0efcf611300fe00a50882b8c05c00268568035408c3f0a1ade76d82ca86cf4d4",
+          "version": "0.15.3"
+        },
+        "service-knowledge/references/updating.md": {
+          "hash": "b401c256c0a6311a74bb3df23d47bd3686928d075715a5f88516e43f7ca8cb16",
+          "version": "0.15.3"
+        },
+        "service-knowledge/references/using.md": {
+          "hash": "8cd29e0cf78be93058e39eb27da630335a246b2faade67b0fe1f422686bab790",
+          "version": "0.15.3"
+        },
         "service-knowledge/scripts/.xtrm/state/service-knowledge/events.jsonl": {
           "hash": "d62d1e5f2ca56af8c41298e7473aad0882b472a1b43f73c0a2beea821122b9e0",
           "version": "0.15.3"
@@ -489,32 +517,8 @@
           "hash": "0208171530b3e0043b385861c1a573cea423750bc618f67fa2965f2e8a6e40dd",
           "version": "0.15.3"
         },
-        "service-knowledge/skills/creating.md": {
-          "hash": "071d96b0296d90ff578fe8a4142410b5e8a8410ff65eabebdcab4f8c81c0f0eb",
-          "version": "0.15.3"
-        },
-        "service-knowledge/skills/routing.md": {
-          "hash": "a19b5656c2a531d3bab55391eef573ce50f990badf6ba8e4d7828b31c971273e",
-          "version": "0.15.3"
-        },
-        "service-knowledge/skills/script_quality_standards.md": {
-          "hash": "964476a17aea08505edddae1616899ebcc9f6f1f990e060cf37c1676a7f54b7c",
-          "version": "0.15.3"
-        },
-        "service-knowledge/skills/SKILL.md": {
+        "service-knowledge/SKILL.md": {
           "hash": "cadc404d57265c342a2413fa1020fd5d3b27d626662f788157e99c601f850b5c",
-          "version": "0.15.3"
-        },
-        "service-knowledge/skills/system-guide.md": {
-          "hash": "0efcf611300fe00a50882b8c05c00268568035408c3f0a1ade76d82ca86cf4d4",
-          "version": "0.15.3"
-        },
-        "service-knowledge/skills/updating.md": {
-          "hash": "b401c256c0a6311a74bb3df23d47bd3686928d075715a5f88516e43f7ca8cb16",
-          "version": "0.15.3"
-        },
-        "service-knowledge/skills/using.md": {
-          "hash": "8cd29e0cf78be93058e39eb27da630335a246b2faade67b0fe1f422686bab790",
           "version": "0.15.3"
         },
         "service-knowledge/VERSION": {
@@ -965,7 +969,7 @@
           "version": "0.15.3"
         },
         "programme/tabellone-keeper/SKILL.md": {
-          "hash": "7c0a49d395e47a62d9c9c1e4e71313bf4a21c12b3e644a5974168f9db0e16489",
+          "hash": "c76b1ab52335efc4a63211c89b2286dad1f03a508e286451d5ad13ab067f2380",
           "version": "0.15.3"
         },
         "README.txt": {

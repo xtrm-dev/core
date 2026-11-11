@@ -18,7 +18,7 @@ state into the artifact's database. You never decide whether something passed.
 Artifact for programme MMD-2331: https://velvet-breeze-fbm8.here.now (the claude.ai artifact
 is retired — never read it, never write it, never cite its URL).
 Run `sb` from the coordinator's worktree (for mon-coord:
-`/home/dawid/projects/mercury/market-data/.xtrm/worktrees/market-data-xt-claude-mon-coord`).
+`~/projects/mercury/market-data/.xtrm/worktrees/market-data-xt-claude-mon-coord`).
 
 ## Store (here.now Owner API)
 
