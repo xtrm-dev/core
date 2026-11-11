@@ -16,8 +16,9 @@
  *   unresolved thread can block a merge.
  * - The MODEL writes line 1 (`Review by <role> (<model>) at head <sha12>`) and
  *   exactly one `- Verdict:` line; the tool refuses a body without them and adds
- *   the hidden line-2 marker (agent, run, Issue). Attribution is never typed by
- *   the model, and the head/model/verdict are derived from its text, not flags.
+ *   line 2, the VISIBLE attribution (`Agent <name> · run <id> · Issue <REF>`),
+ *   followed by the hidden marker. Attribution is never typed by the model, and
+ *   the head/model/verdict are derived from its text, not flags.
  */
 
 import { githubRequest, type GitHubRequestDeps } from './github-apps.js';
@@ -81,7 +82,7 @@ export function bodyVerdicts(body: string): ReviewVerdict[] {
     return out;
 }
 
-/** The hidden marker the TOOL adds on line 2 (agent, run, Issue). */
+/** The hidden marker the TOOL adds under the visible attribution (line 3). */
 export function buildMarker(input: { holder: string; runId: string; issueRef?: string | null; activationId?: string | null }): string {
     const parts = [
         `agent=${input.holder}`,
@@ -90,6 +91,47 @@ export function buildMarker(input: { holder: string; runId: string; issueRef?: s
         ...(input.activationId ? [`activation=${input.activationId}`] : []),
     ];
     return `<!-- ${parts.join(' ')} -->`;
+}
+
+/**
+ * A name safe for the visible attribution line: control characters become
+ * spaces, runs collapse, the result is bounded. The line is written by the tool,
+ * but the name it carries comes from the environment, so treat it as untrusted.
+ */
+export function sanitizeAgentName(value: string | null | undefined, max = 96): string | null {
+    const cleaned = (value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    return cleaned ? cleaned.slice(0, max) : null;
+}
+
+export interface AttributionInput {
+    /** The full agent name (`<repo>-xt-<runtime>-<name>`), when the launcher gave one. */
+    agentName?: string | null;
+    /** `SUBSTRATE_HOLDER`, the fallback name. */
+    holder?: string | null;
+    runId?: string | null;
+    issueRef?: string | null;
+    activationId?: string | null;
+}
+
+/**
+ * Line 2 of every posted review (CORE-2606): the attribution a human can read.
+ * `XTRM_AGENT_NAME` wins over `SUBSTRATE_HOLDER`; `XTRM_SESSION_NAME` is never
+ * read (it names the tmux session, not the agent). Every absent field degrades
+ * by omission, so an incomplete environment never produces "undefined".
+ */
+export function buildAttribution(input: AttributionInput, env: NodeJS.ProcessEnv = process.env): string {
+    const agent = sanitizeAgentName(input.agentName)
+        ?? sanitizeAgentName(env.XTRM_AGENT_NAME)
+        ?? sanitizeAgentName(input.holder);
+    const parts: string[] = [];
+    if (agent) parts.push(`Agent ${agent}`);
+    const runId = sanitizeAgentName(input.runId, 96);
+    if (runId) parts.push(`run ${runId}`);
+    const issueRef = sanitizeAgentName(input.issueRef, 96);
+    if (issueRef) parts.push(`Issue ${issueRef}`);
+    const activationId = sanitizeAgentName(input.activationId, 96);
+    if (activationId) parts.push(`activation ${activationId}`);
+    return parts.join(' · ');
 }
 
 /**
@@ -203,6 +245,8 @@ export interface PostReviewInput {
     body: string;
     holder: string;
     runId: string;
+    /** Visible attribution name; default: `XTRM_AGENT_NAME`, then the holder. */
+    agentName?: string | null;
     /** Fallbacks when the PR carries no marker; the header's role wins otherwise. */
     role?: string | null;
     issueRef?: string | null;
@@ -334,7 +378,16 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     const lines = input.body.split('\n');
     const line1 = (lines[0] ?? '').trim();
     const rest = lines.slice(1).join('\n').trim();
-    const body = `${line1}\n\n${buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId })}\n${rest}\n`;
+    // Line 2 is the visible attribution; the hidden marker follows it (format
+    // unchanged) so existing readers keep working. An empty attribution degrades
+    // to the marker alone rather than to a blank line that looks like a bug.
+    // The ref may come from the PR marker rather than the input, so pass the
+    // resolved one: the line must name the Issue the receipt will journal.
+    const attribution = buildAttribution({ ...input, issueRef });
+    const hiddenMarker = buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId });
+    const body = attribution
+        ? `${line1}\n${attribution}\n${hiddenMarker}\n\n${rest}\n`
+        : `${line1}\n${hiddenMarker}\n\n${rest}\n`;
 
     // GitHub rejects a review body over 65536 characters; refuse here with a
     // useful number instead of letting 422 lose the dismissal ordering.

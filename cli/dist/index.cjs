@@ -57522,12 +57522,14 @@ function buildGitIdentityEnv(input) {
 
 // src/core/dispatcher-identity.ts
 var SUBSTRATE_HOLDER_VAR = "SUBSTRATE_HOLDER";
+var XTRM_AGENT_NAME_VAR = "XTRM_AGENT_NAME";
 var XTRM_DISPATCHER_NAME_VAR = "XTRM_DISPATCHER_NAME";
 var XTRM_DISPATCHER_ADDRESS_VAR = "XTRM_DISPATCHER_ADDRESS";
 var XTRM_PARENT_SESSION_ID_VAR = "XTRM_PARENT_SESSION_ID";
 var XTRM_PARENT_PANE_ID_VAR = "XTRM_PARENT_PANE_ID";
 var DISPATCHER_ENV_KEYS = [
   SUBSTRATE_HOLDER_VAR,
+  XTRM_AGENT_NAME_VAR,
   XTRM_DISPATCHER_NAME_VAR,
   XTRM_DISPATCHER_ADDRESS_VAR,
   XTRM_PARENT_SESSION_ID_VAR,
@@ -57542,6 +57544,11 @@ function clean(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+function cleanAgentName(value, max = 96) {
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, max) : null;
 }
 function defaultTmux(args) {
   const result = (0, import_node_child_process3.spawnSync)("tmux", args, { encoding: "utf8", stdio: "pipe" });
@@ -57612,6 +57619,8 @@ function buildDispatcherEnv(workerName, deps = {}) {
       Object.assign(out, buildGitIdentityEnv({ holder, email: deps.gitEmail }));
     }
   }
+  const agentName = cleanAgentName(deps.agentName);
+  if (agentName) out[XTRM_AGENT_NAME_VAR] = agentName;
   const dispatcher = resolveDispatcher(deps);
   if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
   if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
@@ -60907,7 +60916,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process6.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path19.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -61013,7 +61022,7 @@ async function launchTmuxSession(args) {
   const plan = args.mode === "role" ? buildRoleTmuxPlan({ ...planCommon, role: args.role }) : buildBareTmuxPlan({ ...planCommon, sessionSlug });
   const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(" ");
   const agentEnv = buildAgentEnv(plan.paneOptions);
-  const dispatcherEnv = buildDispatcherEnv(sessionSlug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) });
+  const dispatcherEnv = buildDispatcherEnv(sessionSlug, { gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path19.default.basename(worktreePath) });
   const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
   const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
   if (currentPaneMode) {
@@ -64165,7 +64174,7 @@ async function launchCodexWorktreeSession(opts) {
     ...buildAgentEnv(paneOptions),
     XTMUX_AGENT_RUNTIME: "codex",
     ...windowIdentity ? buildSessionIdentityEnv(windowIdentity) : {},
-    ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }),
+    ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path27.default.basename(worktreePath) }),
     ...launchIdentity.env
   };
   const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
@@ -72007,6 +72016,22 @@ function buildMarker(input) {
   ];
   return `<!-- ${parts.join(" ")} -->`;
 }
+function sanitizeAgentName(value, max = 96) {
+  const cleaned = (value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, max) : null;
+}
+function buildAttribution(input, env3 = process.env) {
+  const agent = sanitizeAgentName(input.agentName) ?? sanitizeAgentName(env3.XTRM_AGENT_NAME) ?? sanitizeAgentName(input.holder);
+  const parts = [];
+  if (agent) parts.push(`Agent ${agent}`);
+  const runId = sanitizeAgentName(input.runId, 96);
+  if (runId) parts.push(`run ${runId}`);
+  const issueRef = sanitizeAgentName(input.issueRef, 96);
+  if (issueRef) parts.push(`Issue ${issueRef}`);
+  const activationId = sanitizeAgentName(input.activationId, 96);
+  if (activationId) parts.push(`activation ${activationId}`);
+  return parts.join(" \xB7 ");
+}
 function lintModelBody(body) {
   const header = parseHeaderLine(body);
   if (!header) return 'review body line 1 must be "Review by <role> (<model>) at head <sha12>"';
@@ -72137,9 +72162,16 @@ async function postReview(input, deps) {
   const lines = input.body.split("\n");
   const line1 = (lines[0] ?? "").trim();
   const rest = lines.slice(1).join("\n").trim();
-  const body = `${line1}
+  const attribution = buildAttribution({ ...input, issueRef });
+  const hiddenMarker = buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId });
+  const body = attribution ? `${line1}
+${attribution}
+${hiddenMarker}
 
-${buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId })}
+${rest}
+` : `${line1}
+${hiddenMarker}
+
 ${rest}
 `;
   const MAX_BODY = 65536;
@@ -72810,7 +72842,11 @@ function readIdentityEnv(env3 = process.env, cwd = process.cwd(), appDeps2 = {})
     env: {
       ...buildGitIdentityEnv({ holder, email: resolveGitEmail({ cwd }) }),
       ...role ? { [ROLE_ENV_VAR]: role } : {},
-      ...buildGitTransportEnv({ role, map: map2 ?? DEFAULT_ROLE_MAP, deps: appDeps2 })
+      ...buildGitTransportEnv({ role, map: map2 ?? DEFAULT_ROLE_MAP, deps: appDeps2 }),
+      // CORE-2606: the visible review attribution reads it, so `eval "$(xt
+      // identity env)"` in a launched session must not drop it. Absent stays
+      // absent: a session without one falls back to the holder at review time.
+      ...(env3[XTRM_AGENT_NAME_VAR] ?? "").trim() ? { [XTRM_AGENT_NAME_VAR]: (env3[XTRM_AGENT_NAME_VAR] ?? "").trim() } : {}
     }
   };
 }
@@ -72912,11 +72948,30 @@ function resolveGhTarget(argvText, cwd) {
   if (!here) return { ...base, repo: inv.repo, pr: 0, head: "", error: "no pull request matches this command and the current directory has none" };
   return { ...base, repo: inv.repo || here.repo, pr: here.pr, head: here.head };
 }
+function resolveSbBinary() {
+  const found = (0, import_node_child_process22.spawnSync)("sh", ["-c", "command -v sb"], { encoding: "utf8" });
+  const resolved = (found.stdout || "").trim();
+  return resolved || "sb";
+}
+function sbJsonError(stdout) {
+  const text = (stdout ?? "").trim();
+  if (!text.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return typeof parsed.error === "string" && parsed.error.trim() ? parsed.error.trim() : null;
+  } catch {
+    return null;
+  }
+}
 function runSb(args) {
-  const result = (0, import_node_child_process22.spawnSync)("sb", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  if (result.error) return { ok: false, error: result.error.message };
+  const binary = resolveSbBinary();
+  const result = (0, import_node_child_process22.spawnSync)(binary, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (result.error) return { ok: false, error: `${binary}: ${result.error.message}` };
   if (result.status === 0) return { ok: true };
-  return { ok: false, error: (result.stderr || "").trim() || `sb exited ${result.status}` };
+  const stderr = (result.stderr || "").trim();
+  const fromStdout = sbJsonError(result.stdout);
+  const reason = stderr || (fromStdout ? `(stdout) ${fromStdout}` : "no stderr and no JSON error on stdout");
+  return { ok: false, error: `sb (${binary}) exited ${result.status}: ${reason}` };
 }
 function createIdentityCommand() {
   const identity = new Command("identity").description("Agent identity: git author env, role App tokens, the gh shim, review posting and the merge guard");
@@ -83215,6 +83270,7 @@ function buildLaunchEnv(base) {
   const env3 = { ...base, [LAUNCH_ENV]: "gui" };
   delete env3.TMUX;
   delete env3.TMUX_PANE;
+  delete env3[XTRM_AGENT_NAME_VAR];
   return env3;
 }
 async function resolveParentTmuxSession(run5, env3, parent) {

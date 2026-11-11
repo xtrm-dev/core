@@ -106,6 +106,25 @@ describe('buildDispatcherEnv', () => {
         expect(merged.XTRM_PARENT_PANE_ID).toBeUndefined();
     });
 
+    it('exports XTRM_AGENT_NAME next to the holder, and strips an inherited one (CORE-2606)', () => {
+        const env = { XTRM_AGENT_NAME: 'parent-xt-pi-self' };
+        expect(stripDispatcherEnv(env).XTRM_AGENT_NAME).toBeUndefined();
+        const out = buildDispatcherEnv('worker-a', {
+            startPid: 300, sessionsDir, readProcess, env, tmux: noTmux, agentName: 'core-xt-pi-worker-a',
+        });
+        expect(out).toMatchObject({ SUBSTRATE_HOLDER: 'worker-a', XTRM_AGENT_NAME: 'core-xt-pi-worker-a' });
+        // No name computed means no key at all, never an empty string.
+        expect(buildDispatcherEnv('worker-a', { startPid: 300, sessionsDir, readProcess, env: {}, tmux: noTmux }))
+            .not.toHaveProperty('XTRM_AGENT_NAME');
+    });
+
+    it('collapses a multi-line agent name to one line', () => {
+        const out = buildDispatcherEnv('worker-a', {
+            startPid: 300, sessionsDir, readProcess, env: {}, tmux: noTmux, agentName: 'core\nxt\tpi  worker-a',
+        });
+        expect(out.XTRM_AGENT_NAME).toBe('core xt pi worker-a');
+    });
+
     it('full identity: dispatcher, address, parent pane and session', () => {
         writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock' });
         const calls: string[][] = [];

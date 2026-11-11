@@ -12,6 +12,8 @@ import path from 'node:path';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { runSb } from '../commands/identity.js';
+
 const CLI = resolve(__dirname, '..', '..', 'dist', 'index.cjs');
 
 function writeHeadStub(home: string, head = 'd'.repeat(40)): string {
@@ -63,6 +65,18 @@ describe('xt identity env (CLI streams)', () => {
         for (const line of lines) expect(line).toMatch(/^[A-Z0-9_]+=\S+$/);
         expect(lines).toContain('GIT_AUTHOR_NAME=core-xt-pi-0fln');
         expect(lines).toContain('GIT_COMMITTER_NAME=core-xt-pi-0fln');
+    });
+
+    it('carries XTRM_AGENT_NAME when the session has one (CORE-2606)', () => {
+        const env: NodeJS.ProcessEnv = {
+            ...process.env, SUBSTRATE_HOLDER: '0fln', XTRM_AGENT_NAME: 'core-xt-pi-0fln',
+        };
+        delete env.XTRM_ROLE;
+        const result = runEnvCommand(env);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('XTRM_AGENT_NAME=core-xt-pi-0fln');
+        // The holder itself is not part of the eval'd env (it is the caller's own).
+        expect(result.stdout).not.toContain('SUBSTRATE_HOLDER=');
     });
 });
 
@@ -384,5 +398,62 @@ describe('merge-check with the guard off needs no App (batch 5, item 5)', () => 
         } finally {
             fs.rmSync(home, { recursive: true, force: true });
         }
+    });
+});
+
+// CORE-2606: the live receipt warning said only "Journal receipt failed: sb
+// exited 1", because sb reports a JSON refusal on STDOUT and leaves stderr
+// empty. The warning must name the resolved binary and the reason, and the
+// reason must be found on either stream.
+describe('the Journal receipt warning names sb and its reason (CORE-2606)', () => {
+    function withSbStub(script: string, body: (stub: string) => void): void {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-sbstub-'));
+        const stub = path.join(dir, 'sb');
+        fs.writeFileSync(stub, script, { mode: 0o755 });
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${dir}${path.delimiter}${previousPath ?? ''}`;
+        try {
+            body(stub);
+        } finally {
+            if (previousPath === undefined) delete process.env.PATH;
+            else process.env.PATH = previousPath;
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    it('names the resolved sb path and the stderr text', () => {
+        withSbStub('#!/bin/sh\necho "sb: invalid result payload" >&2\nexit 3\n', (stub) => {
+            const result = runSb(['journal', 'append', 'CORE-2606', '--kind', 'result']);
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain(stub);
+            expect(result.error).toContain('exited 3');
+            expect(result.error).toContain('sb: invalid result payload');
+        });
+    });
+
+    it('reads the JSON refusal from stdout when stderr is empty (the live case)', () => {
+        const refusal = 'invalid result payload: result.verdict is not a bounded result field';
+        withSbStub(`#!/bin/sh\necho '${JSON.stringify({ ok: false, error: refusal })}'\nexit 1\n`, (stub) => {
+            const result = runSb(['journal', 'append', 'CORE-2606', '--kind', 'result']);
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain(stub);
+            expect(result.error).toContain('exited 1');
+            expect(result.error).toContain(`(stdout) ${refusal}`);
+        });
+    });
+
+    it('says how it knows nothing when both streams are empty', () => {
+        withSbStub('#!/bin/sh\nexit 1\n', (stub) => {
+            const result = runSb(['journal', 'append', 'CORE-2606']);
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain(stub);
+            expect(result.error).toContain('no stderr and no JSON error on stdout');
+        });
+    });
+
+    it('reports success without inventing an error', () => {
+        withSbStub('#!/bin/sh\nexit 0\n', () => {
+            expect(runSb(['journal', 'append', 'CORE-2606'])).toEqual({ ok: true });
+        });
     });
 });
