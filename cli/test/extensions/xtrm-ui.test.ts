@@ -146,6 +146,7 @@ describe("xtrm-ui commands", () => {
     "xtrm-ui-diff-lines",
     "xtrm-ui-ext-compact",
     "xtrm-ui-ext-lines",
+    "xtrm-ui-fold",
     "xtrm-ui-forcetheme",
     "xtrm-ui-header",
     "xtrm-ui-reset",
@@ -249,6 +250,7 @@ describe("xtrm-ui commands", () => {
       diffPreviewLines: 18,
       extNoCompact: false,
       extPreviewLines: 6,
+      foldTools: true,
       resultPreviewLines: 6,
       showHeader: true,
       forceTheme: true,
@@ -421,8 +423,11 @@ describe("xtrm-ui built-in tool rendering", () => {
       context(args, { executionStarted: true, isPartial: true }),
     );
 
+    // CORE-2542: the call row stays until a result renders. Returning [] here
+    // dropped the row for the whole run (pi discards a box with no lines), so
+    // both phases now render the same row.
     expect(pending.render(200).join("\n")).toBe("● Ran echo context-label");
-    expect(running.render(200).join("\n")).toBe("");
+    expect(running.render(200).join("\n")).toBe("● Ran echo context-label");
   });
 
   it("renders multiline bash commands and six collapsed output lines flat", async () => {
@@ -499,7 +504,10 @@ describe("xtrm-ui built-in tool rendering", () => {
       spyTheme,
       context({ command: "echo fail" }, { isError: true }),
     );
-    expect(colors.slice(0, 3)).toEqual(["error", "error", "error"]);
+    // CORE-2542: the marker carries the state token; tool name and subject stay
+    // on the secondary grey, error state or not. The reason text keeps "error".
+    expect(colors.slice(0, 3)).toEqual(["error", "toolTitle", "toolTitle"]);
+    expect(colors).toContain("error");
 
     colors.length = 0;
     tools.bash.renderCall(
