@@ -68,8 +68,12 @@ happened; only the receipt was lost, so re-record it with
 
 ## A review posted as the operator instead of `<slug>[bot]`
 
-The shim was not used: `which gh` must resolve to `~/.local/bin/gh`. Check
-`xt identity doctor` for the shim row and the `PATH` order it reports.
+The shim was not used: `which gh` must resolve to `~/.local/bin/gh`. A launched
+session gets the shim directory first on its pane `PATH` from the launcher
+(CORE-2524.4), so this can only happen in a plain shell, an older launcher, or a
+session created outside `xt`. `xt identity doctor`'s `PATH`-order row evaluates
+the launcher's `PATH`, not the pane's. Observed live before the fix: a review on
+#888 posted as the operator and GitHub downgraded `--approve` to `COMMENTED`.
 
 ## The guard allows a merge that should be refused
 
