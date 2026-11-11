@@ -216,6 +216,33 @@ describe('pi runtime safeguards', () => {
     expect(satisfiesNodeFloor('not-a-version')).toBe(false);
   });
 
+  it('populates the bridge status on the real doctor report (CORE-2591)', async () => {
+    // The doctor fixtures mock the report function, so this test exercises the real
+    // builder and fails if `bridge` is dropped from it.
+    const { getXtManagedPiPackageDoctorReport } = await import('../core/pi-runtime.js');
+    const agentDir = process.env.PI_AGENT_DIR as string;
+    const packageDir = path.join(agentDir, 'npm', 'node_modules', 'pi-claude-bridge');
+    await fs.outputJson(path.join(packageDir, 'package.json'), {
+      name: 'pi-claude-bridge',
+      version: '0.12.0',
+      pi: { extensions: ['./src/index.ts'] },
+    });
+    await fs.outputFile(path.join(packageDir, 'src', 'index.ts'), 'export {};\n');
+
+    const installed = await getXtManagedPiPackageDoctorReport(async () => ({ installedVersion: '0.12.0', expectedVersion: '0.12.0' }));
+    expect(installed.bridge).toEqual({
+      npmPackageName: 'pi-claude-bridge',
+      installedVersion: '0.12.0',
+      packageDir,
+      entryPath: path.join(packageDir, 'src', 'index.ts'),
+      entryPresent: true,
+    });
+
+    await fs.remove(packageDir);
+    const absent = await getXtManagedPiPackageDoctorReport(async () => ({ installedVersion: null, expectedVersion: '0.12.0' }));
+    expect(absent.bridge).toBeNull();
+  });
+
   it('resolves the bridge package and its src entry from the user Pi npm store', async () => {
     // regression: CORE-2591 - the package ships no main/exports; the resolver reads
     // <agentDir>/npm/node_modules/pi-claude-bridge/src/index.ts.

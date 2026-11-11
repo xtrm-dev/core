@@ -61,15 +61,19 @@ vi.mock('../utils/npm-latest.js', () => ({
   updatesSummary: () => '',
 }));
 
-// CORE-2591: force the `claude` probe to miss so the doctor wording is deterministic;
-// every other binary still runs for real.
+// CORE-2591: the `claude` probe is switchable so a future "claude present" case is
+// possible; every other binary still runs for real. Default: absent (probe misses).
+const claudeProbe = vi.hoisted(() => ({ available: false }));
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
     ...actual,
-    spawnSync: (bin: Parameters<typeof actual.spawnSync>[0], args?: Parameters<typeof actual.spawnSync>[1], options?: Parameters<typeof actual.spawnSync>[2]) => (
-      bin === 'claude' ? { status: 1, stdout: '', stderr: '' } : actual.spawnSync(bin, args, options)
-    ),
+    spawnSync: (bin: Parameters<typeof actual.spawnSync>[0], args?: Parameters<typeof actual.spawnSync>[1], options?: Parameters<typeof actual.spawnSync>[2]) => {
+      if (bin !== 'claude') return actual.spawnSync(bin, args, options);
+      return claudeProbe.available
+        ? actual.spawnSync(bin, args, options)
+        : { status: 1, stdout: '', stderr: '' };
+    },
   };
 });
 
@@ -88,6 +92,7 @@ beforeEach(() => {
   checkRuntimeSkillsViewsMock.mockResolvedValue({ activeReady: true, globalClaudePointerReady: true, globalPiPointerReady: true, globalActivationReady: true, projectClaudePointerState: 'ready', projectPiPointerState: 'ready', projectCodexPointerState: 'ready', hasDeprecatedAgentsSkillsPath: false });
   discoverDefaultSkillsMock.mockResolvedValue([]);
   getXtManagedPiPackageDoctorReportMock.mockReset();
+  claudeProbe.available = false;
 });
 
 afterEach(() => {
@@ -123,11 +128,14 @@ function buildReport(overrides: Partial<Awaited<ReturnType<typeof getXtManagedPi
 }
 
 describe('xt doctor command', () => {
-  it('names the Claude Code consequence when the claude CLI is missing (CORE-2591)', async () => {
+  it('names the Claude Code consequence when the claude CLI is missing, without failing doctor (CORE-2591)', async () => {
     getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
+    const exitCodeBefore = process.exitCode;
 
     const textLogs = await runDoctorCli([]);
     expect(textLogs.join('\n')).toContain('claude CLI not found; the Claude Code route will refuse at dispatch');
+    // A missing optional CLI is a warning, never an error.
+    expect(process.exitCode).toBe(exitCodeBefore);
   });
 
   it('reports the Node floor for the Claude Code bridge (CORE-2591)', async () => {
