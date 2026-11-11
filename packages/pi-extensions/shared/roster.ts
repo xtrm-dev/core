@@ -268,9 +268,10 @@ export async function discoverRoster(
           return direct;
         };
         for (const rel of await packSkills(childDir, 1)) {
-          // CORE-2555: an installed tool package keeps its skill in a `skills/`
-          // folder (default/service-knowledge/skills/SKILL.md); the skill is
-          // the package, not "skills".
+          // CORE-2555/CORE-2601: a package that keeps its skill one level down
+          // (…/<pkg>/skills/SKILL.md) is named after the package, not "skills".
+          // The vendored service-knowledge skill is the package root since
+          // core #903, so this covers older and nested installs only.
           const parts = rel.split(/[\\/]/);
           const bare = (parts.length > 1 && parts[parts.length - 1] === "skills" ? parts[parts.length - 2] : parts[parts.length - 1]) ?? rel;
           await scanSkillDir(entries, cwd, join(childDir, ...rel.split("/")), bare);
