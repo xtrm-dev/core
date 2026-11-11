@@ -3,8 +3,8 @@
   "digest": "git-blob-sha1",
   "source": {
     "kind": "repo",
-    "ref": "3e4e7f95de291ce4d473e4005c8aceaca31591ca",
-    "resolved_sha": "3e4e7f95de291ce4d473e4005c8aceaca31591ca",
+    "ref": "865c4d52ec74e785c54abd6b3c87014d2a4751ad",
+    "resolved_sha": "865c4d52ec74e785c54abd6b3c87014d2a4751ad",
     "repo_path": "../specialists",
     "source_path": "config/skills"
   },
