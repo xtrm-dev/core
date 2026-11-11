@@ -73,12 +73,14 @@ describe("input seam decides, never mutates", () => {
   });
 
   it("logs Jev spend next to confidence on both deciding seams", async () => {
+    // CORE-2594: judge() lives in shared/judge.ts; the two call sites stay in the extension.
+    const judgeSrc = await Bun.file(new URL("../shared/judge.ts", import.meta.url)).text();
     const src = await Bun.file(new URL("../extensions/skill-suggest/index.ts", import.meta.url)).text();
     // Both confidence-bearing rows carry elapsed ms + registry/fallback split,
     // now measured by the shared classify() (CORE-2534).
     // CORE-2564: both seams decide through judge(): two calls, spend summed.
-    expect(src).toContain('facts["jev_path"] = one.path;');
-    expect(src).toContain('facts["jev_ms"] = one.ms + two.ms;');
+    expect(judgeSrc).toContain('facts["jev_path"] = one.path;');
+    expect(judgeSrc).toContain('facts["jev_ms"] = one.ms + two.ms;');
     expect(src.match(/await judge\(/g)?.length).toBe(2);
   });
   it("restores the skill description, plain and period-stripped, at the end of the block", async () => {
