@@ -37,6 +37,7 @@ describe('config schema integrity', () => {
                 'npm:@parcha/agentrun-pi@beta',
                 'npm:billion-context',
                 'npm:@jaggerxtrm/substrate',
+                'npm:pi-claude-bridge@0.12.0',
             ];
             for (const pkg of expected) {
                 expect(schema.packages).toContain(pkg);

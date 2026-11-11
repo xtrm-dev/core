@@ -20,9 +20,13 @@ const runSetupCheckMock = vi.hoisted(() => vi.fn(() => ({
   raw: '{}',
 })));
 
-vi.mock('../core/pi-runtime.js', () => ({
-  getXtManagedPiPackageDoctorReport: getXtManagedPiPackageDoctorReportMock,
-}));
+vi.mock('../core/pi-runtime.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../core/pi-runtime.js')>();
+  return {
+    ...actual,
+    getXtManagedPiPackageDoctorReport: getXtManagedPiPackageDoctorReportMock,
+  };
+});
 
 // Hermetic substrate boundary: the real doctor action otherwise spawns sb,
 // npm, and node subprocesses, which contend with the full Vitest worker pool
@@ -57,6 +61,22 @@ vi.mock('../utils/npm-latest.js', () => ({
   updatesSummary: () => '',
 }));
 
+// CORE-2591: the `claude` probe is switchable so a future "claude present" case is
+// possible; every other binary still runs for real. Default: absent (probe misses).
+const claudeProbe = vi.hoisted(() => ({ available: false }));
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawnSync: (bin: Parameters<typeof actual.spawnSync>[0], args?: Parameters<typeof actual.spawnSync>[1], options?: Parameters<typeof actual.spawnSync>[2]) => {
+      if (bin !== 'claude') return actual.spawnSync(bin, args, options);
+      return claudeProbe.available
+        ? actual.spawnSync(bin, args, options)
+        : { status: 1, stdout: '', stderr: '' };
+    },
+  };
+});
+
 import { createDoctorCommand } from '../commands/doctor.js';
 
 let tmpDir = '';
@@ -72,6 +92,7 @@ beforeEach(() => {
   checkRuntimeSkillsViewsMock.mockResolvedValue({ activeReady: true, globalClaudePointerReady: true, globalPiPointerReady: true, globalActivationReady: true, projectClaudePointerState: 'ready', projectPiPointerState: 'ready', projectCodexPointerState: 'ready', hasDeprecatedAgentsSkillsPath: false });
   discoverDefaultSkillsMock.mockResolvedValue([]);
   getXtManagedPiPackageDoctorReportMock.mockReset();
+  claudeProbe.available = false;
 });
 
 afterEach(() => {
@@ -107,6 +128,55 @@ function buildReport(overrides: Partial<Awaited<ReturnType<typeof getXtManagedPi
 }
 
 describe('xt doctor command', () => {
+  it('names the Claude Code consequence when the claude CLI is missing, without failing doctor (CORE-2591)', async () => {
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
+    const exitCodeBefore = process.exitCode;
+
+    const textLogs = await runDoctorCli([]);
+    expect(textLogs.join('\n')).toContain('claude CLI not found; the Claude Code route will refuse at dispatch');
+    // A missing optional CLI is a warning, never an error.
+    expect(process.exitCode).toBe(exitCodeBefore);
+  });
+
+  it('reports the Node floor for the Claude Code bridge (CORE-2591)', async () => {
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
+
+    const textLogs = await runDoctorCli([]);
+    expect(textLogs.join('\n')).toContain('meets the Claude Code bridge floor (>= 20)');
+  });
+
+  it('reports the resolved bridge version and src entry in the Pi packages section (CORE-2591)', async () => {
+    const packageDir = '/tmp/bridge-agent/npm/node_modules/pi-claude-bridge';
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport({
+      bridge: {
+        npmPackageName: 'pi-claude-bridge',
+        installedVersion: '0.12.0',
+        packageDir,
+        entryPath: `${packageDir}/src/index.ts`,
+        entryPresent: true,
+      },
+    }));
+
+    const textLogs = await runDoctorCli([]);
+    expect(textLogs.join('\n')).toContain(`pi-claude-bridge 0.12.0 → ${packageDir}/src/index.ts`);
+  });
+
+  it('warns when the installed bridge has no src entry (CORE-2591)', async () => {
+    const packageDir = '/tmp/bridge-agent/npm/node_modules/pi-claude-bridge';
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport({
+      bridge: {
+        npmPackageName: 'pi-claude-bridge',
+        installedVersion: '0.12.0',
+        packageDir,
+        entryPath: `${packageDir}/src/index.ts`,
+        entryPresent: false,
+      },
+    }));
+
+    const textLogs = await runDoctorCli([]);
+    expect(textLogs.join('\n')).toContain('missing src/index.ts; the specialists resolver cannot load it');
+  });
+
   it('prints clean text and json when all xt pi packages are current', async () => {
     getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
 

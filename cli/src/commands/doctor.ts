@@ -6,7 +6,7 @@ import kleur from 'kleur';
 import Table from 'cli-table3';
 import { checkDrift, type DriftReport } from '../core/drift.js';
 import { checkRuntimeSkillsViews, type RuntimeViewCheckResult } from '../core/skills-runtime-views.js';
-import { getXtManagedPiPackageDoctorReport, type XtManagedPiPackageDoctorReport } from '../core/pi-runtime.js';
+import { getXtManagedPiPackageDoctorReport, PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR, satisfiesNodeFloor, type XtManagedPiPackageDoctorReport } from '../core/pi-runtime.js';
 import { discoverDefaultSkills, type DiscoveredSkill } from '../core/skill-discovery.js';
 import { ensureBeadsSharedServerEnabled, hasBeadsDir, type SharedBeadsServerState } from '../core/beads-shared-server.js';
 import { findProjectRoot } from '../utils/repo-root.js';
@@ -349,6 +349,13 @@ function renderCatB(report: CatBJson): void {
 
 function renderXtManagedPiPackages(report: XtManagedPiPackageDoctorReport): boolean {
   section('Pi packages');
+  // CORE-2591: report the bridge store/entry the specialists resolver will read.
+  if (report.bridge) {
+    const { installedVersion, entryPath, entryPresent } = report.bridge;
+    const detail = `pi-claude-bridge ${installedVersion ?? 'version unknown'} → ${entryPath}`;
+    if (entryPresent) ok(detail);
+    else warn(detail + ' (missing src/index.ts; the specialists resolver cannot load it)');
+  }
   if (report.issues.length === 0) {
     ok('all xt-shipped Pi packages present and current');
     return true;
@@ -373,6 +380,12 @@ function renderXtManagedPiPackages(report: XtManagedPiPackageDoctorReport): bool
   console.log(kleur.dim('  outbound: npm view <pkg> version --registry https://registry.npmjs.org'));
   return false;
 }
+
+/**
+ * The Claude CLI is optional at install and required only to use the Claude Code route.
+ * Doctor states the consequence so a missing binary is not mistaken for a broken package.
+ */
+export const CLAUDE_CLI_MISSING_MESSAGE = 'claude CLI not found; the Claude Code route will refuse at dispatch';
 
 function hasCatBIssues(report: CatBJson): boolean {
   return report.skills.some(row => row.status !== 'in-sync')
@@ -723,7 +736,12 @@ export function createDoctorCommand(): Command {
       const claudeAvailable = spawnSync('claude', ['--version'], { stdio: 'ignore' }).status === 0;
       const piAvailable = spawnSync('pi', ['--version'], { stdio: 'ignore' }).status === 0;
       const pnpmAvailable = spawnSync('pnpm', ['--version'], { stdio: 'ignore' }).status === 0;
-      claudeAvailable ? ok('claude CLI available') : warn('claude CLI not found');
+      claudeAvailable ? ok('claude CLI available') : warn(CLAUDE_CLI_MISSING_MESSAGE);
+      if (satisfiesNodeFloor()) {
+        ok(`Node ${process.versions.node} meets the Claude Code bridge floor (>= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR})`);
+      } else {
+        warn(`pi-claude-bridge requires Node >= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR}; this runtime is ${process.versions.node} — do not install the Claude Code bridge here`);
+      }
       piAvailable ? ok('pi CLI available') : warn('pi CLI not found');
       pnpmAvailable ? ok('pnpm available') : warn('pnpm not found');
       const piAgentDir = process.env.PI_AGENT_DIR ?? path.join(process.env.HOME ?? '', '.pi', 'agent');

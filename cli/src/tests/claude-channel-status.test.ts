@@ -20,9 +20,13 @@ const runSetupCheckMock = vi.hoisted(() => vi.fn(() => ({
   raw: '{}',
 })));
 
-vi.mock('../core/pi-runtime.js', () => ({
-  getXtManagedPiPackageDoctorReport: getXtManagedPiPackageDoctorReportMock,
-}));
+vi.mock('../core/pi-runtime.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../core/pi-runtime.js')>();
+  return {
+    ...actual,
+    getXtManagedPiPackageDoctorReport: getXtManagedPiPackageDoctorReportMock,
+  };
+});
 
 // Hermetic substrate boundary: the real doctor action otherwise spawns sb,
 // npm, and node subprocesses.

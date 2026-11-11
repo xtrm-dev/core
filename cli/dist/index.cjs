@@ -56574,6 +56574,14 @@ var MANAGED_PI_EXTENSION_OWNED_IDS = /* @__PURE__ */ new Set([
   ...MANAGED_PI_EXTENSION_IDS,
   ...Object.keys(MANAGED_PI_EXTENSION_MANIFEST.disabled)
 ]);
+var PI_CLAUDE_BRIDGE_NPM_NAME = "pi-claude-bridge";
+var PI_CLAUDE_BRIDGE_VERSION = "0.12.0";
+var PI_CLAUDE_BRIDGE_PACKAGE_ID = `npm:${PI_CLAUDE_BRIDGE_NPM_NAME}@${PI_CLAUDE_BRIDGE_VERSION}`;
+var PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR = 20;
+function satisfiesNodeFloor(version3 = process.versions.node, minMajor = PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR) {
+  const major2 = Number(String(version3).replace(/^v/, "").split(".")[0]);
+  return Number.isInteger(major2) && major2 >= minMajor;
+}
 var MANAGED_PACKAGES = [
   { id: "npm:pi-gitnexus", displayName: "pi-gitnexus", required: true },
   { id: "npm:@aliou/pi-guardrails", displayName: "pi-guardrails", required: false },
@@ -56583,7 +56591,10 @@ var MANAGED_PACKAGES = [
   { id: "npm:pi-ast-grep", displayName: "pi-ast-grep", required: true },
   { id: "npm:@parcha/agentrun-pi@beta", displayName: "agentrun-pi", required: false },
   { id: "npm:billion-context", displayName: "billion-context", required: false },
-  { id: "npm:@jaggerxtrm/substrate", displayName: "substrate", required: false }
+  { id: "npm:@jaggerxtrm/substrate", displayName: "substrate", required: false },
+  // CORE-2591: managed optional. Installing the bridge does not enable the Claude Code
+  // route; that stays opt-in through claude_bridge.enabled (SPECIALISTS-4403).
+  { id: PI_CLAUDE_BRIDGE_PACKAGE_ID, displayName: PI_CLAUDE_BRIDGE_NPM_NAME, required: false }
 ];
 var PROJECT_REQUIRED_PACKAGE_IDS = [
   PROJECT_EXTENSION_PACKAGE_ID,
@@ -56832,6 +56843,30 @@ async function getExpectedPiPackageVersion(npmPackageName) {
   const version3 = (result.stdout ?? "").trim();
   return version3.length > 0 ? version3 : null;
 }
+function getPinnedPiPackageVersion(piPackageId) {
+  const npmPackageName = parseNpmPackageName(piPackageId);
+  if (!npmPackageName) return null;
+  const selector = piPackageId.slice("npm:".length).trim().slice(npmPackageName.length);
+  if (!selector.startsWith("@")) return null;
+  const version3 = selector.slice(1);
+  return /^\d+\.\d+\.\d+$/.test(version3) ? version3 : null;
+}
+async function resolveExpectedPiPackageVersion(piPackageId, npmPackageName, registryLookup = getExpectedPiPackageVersion) {
+  return getPinnedPiPackageVersion(piPackageId) ?? await registryLookup(npmPackageName);
+}
+async function getPiClaudeBridgeInstallStatus(agentDir = resolvePiAgentDir(), npmRootDir) {
+  const packageJsonPath = resolveInstalledPiPackageJsonPath(agentDir, PI_CLAUDE_BRIDGE_NPM_NAME, npmRootDir ?? void 0);
+  if (!await import_fs_extra13.default.pathExists(packageJsonPath)) return null;
+  const packageDir = import_path3.default.dirname(packageJsonPath);
+  const entryPath = import_path3.default.join(packageDir, "src", "index.ts");
+  return {
+    npmPackageName: PI_CLAUDE_BRIDGE_NPM_NAME,
+    installedVersion: await getInstalledPiPackageVersion(agentDir, PI_CLAUDE_BRIDGE_NPM_NAME, npmRootDir ?? void 0),
+    packageDir,
+    entryPath,
+    entryPresent: await import_fs_extra13.default.pathExists(entryPath)
+  };
+}
 async function getManagedPiPackageFreshness(versionProvider, packages = getXtManagedPiPackages(), installedPackageIds = getInstalledPiPackages()) {
   const statuses = [];
   for (const pkg of packages) {
@@ -56955,9 +56990,9 @@ async function ensureAlwaysGlobalPiPackages(dryRun, log, agentDir = resolvePiAge
 async function assureXtManagedPiPackages(dryRun, log, agentDir = resolvePiAgentDir(), installRunner = runPiPackageInstall, versionProvider, projectRoots) {
   const npmRootDir = await resolveGlobalNpmRootDir();
   const retiredM1 = await removeRetiredM1Packages(dryRun, log, agentDir, projectRoots);
-  const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
+  const resolvedVersionProvider = versionProvider ?? (async (piPackageId, npmPackageName) => ({
     installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? void 0),
-    expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
+    expectedVersion: await resolveExpectedPiPackageVersion(piPackageId, npmPackageName)
   }));
   const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider);
   const provided = [];
@@ -57004,9 +57039,9 @@ async function assureXtManagedPiPackages(dryRun, log, agentDir = resolvePiAgentD
 async function getXtManagedPiPackageDoctorReport(versionProvider) {
   const npmRootDir = await resolveGlobalNpmRootDir();
   const resolvedAgentDir = resolvePiAgentDir();
-  const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
+  const resolvedVersionProvider = versionProvider ?? (async (piPackageId, npmPackageName) => ({
     installedVersion: await getInstalledPiPackageVersion(resolvedAgentDir, npmPackageName, npmRootDir ?? void 0),
-    expectedVersion: await getExpectedPiPackageVersion(npmPackageName)
+    expectedVersion: await resolveExpectedPiPackageVersion(piPackageId, npmPackageName)
   }));
   const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider, getXtManagedPiPackages());
   const issues = statuses.filter((status2) => status2.state !== "current").map((status2) => ({
@@ -57016,7 +57051,8 @@ async function getXtManagedPiPackageDoctorReport(versionProvider) {
   const missing = issues.filter((issue2) => issue2.state === "missing");
   const outdated = issues.filter((issue2) => issue2.state === "outdated");
   const ok2 = statuses.filter((status2) => status2.state === "current").map((status2) => ({ ...status2, remediation: "" }));
-  return { issues, missing, outdated, ok: ok2, hasIssues: issues.length > 0 };
+  const bridge = await getPiClaudeBridgeInstallStatus(resolvedAgentDir, npmRootDir ?? void 0);
+  return { issues, missing, outdated, ok: ok2, hasIssues: issues.length > 0, bridge };
 }
 async function ensureCorePackageSymlink(coreSrcDir, projectRoot, dryRun, log) {
   if (!await import_fs_extra13.default.pathExists(coreSrcDir)) return "missing-source";
@@ -76078,6 +76114,12 @@ function renderCatB(report) {
 }
 function renderXtManagedPiPackages(report) {
   section2("Pi packages");
+  if (report.bridge) {
+    const { installedVersion, entryPath, entryPresent } = report.bridge;
+    const detail = `pi-claude-bridge ${installedVersion ?? "version unknown"} \u2192 ${entryPath}`;
+    if (entryPresent) ok(detail);
+    else warn(detail + " (missing src/index.ts; the specialists resolver cannot load it)");
+  }
   if (report.issues.length === 0) {
     ok("all xt-shipped Pi packages present and current");
     return true;
@@ -76098,6 +76140,7 @@ function renderXtManagedPiPackages(report) {
   console.log(kleur_default.dim("  outbound: npm view <pkg> version --registry https://registry.npmjs.org"));
   return false;
 }
+var CLAUDE_CLI_MISSING_MESSAGE = "claude CLI not found; the Claude Code route will refuse at dispatch";
 function hasCatBIssues(report) {
   return report.skills.some((row) => row.status !== "in-sync") || report.hooks.some((row) => row.status !== "in-sync") || !report.runtimeView.activeReady || !report.runtimeView.globalClaudePointerReady || !report.runtimeView.globalPiPointerReady || !report.runtimeView.globalActivationReady || report.runtimeView.projectClaudePointerState === "missing" || report.runtimeView.projectPiPointerState === "missing" || report.duplicates.length > 0;
 }
@@ -76388,7 +76431,12 @@ ${kleur_default.bold("xt doctor")}
     const claudeAvailable = (0, import_node_child_process29.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
     const piAvailable = (0, import_node_child_process29.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
     const pnpmAvailable = (0, import_node_child_process29.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
-    claudeAvailable ? ok("claude CLI available") : warn("claude CLI not found");
+    claudeAvailable ? ok("claude CLI available") : warn(CLAUDE_CLI_MISSING_MESSAGE);
+    if (satisfiesNodeFloor()) {
+      ok(`Node ${process.versions.node} meets the Claude Code bridge floor (>= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR})`);
+    } else {
+      warn(`pi-claude-bridge requires Node >= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR}; this runtime is ${process.versions.node} \u2014 do not install the Claude Code bridge here`);
+    }
     piAvailable ? ok("pi CLI available") : warn("pi CLI not found");
     pnpmAvailable ? ok("pnpm available") : warn("pnpm not found");
     const piAgentDir = process.env.PI_AGENT_DIR ?? import_node_path55.default.join(process.env.HOME ?? "", ".pi", "agent");

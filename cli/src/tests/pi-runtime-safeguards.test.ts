@@ -146,7 +146,150 @@ describe('pi runtime safeguards', () => {
       'npm:@parcha/agentrun-pi@beta',
       'npm:billion-context',
       'npm:@jaggerxtrm/substrate',
+      'npm:pi-claude-bridge@0.12.0',
     ]);
+  });
+
+  it('manages pi-claude-bridge as an optional package that never affects runtime health', async () => {
+    // regression: CORE-2591 - the specialists Claude Code route resolves pi-claude-bridge from
+    // the managed npm store; core installs it without enabling the route (SPECIALISTS-4403).
+    const { getXtManagedPiPackages, PI_CLAUDE_BRIDGE_PACKAGE_ID, PI_CLAUDE_BRIDGE_VERSION } = await import('../core/pi-runtime.js');
+
+    expect(PI_CLAUDE_BRIDGE_PACKAGE_ID).toBe('npm:pi-claude-bridge@0.12.0');
+    expect(PI_CLAUDE_BRIDGE_VERSION).toBe('0.12.0');
+    const bridge = getXtManagedPiPackages().find(pkg => pkg.id === PI_CLAUDE_BRIDGE_PACKAGE_ID);
+    expect(bridge).toEqual({
+      id: 'npm:pi-claude-bridge@0.12.0',
+      displayName: 'pi-claude-bridge',
+      required: false,
+    });
+  });
+
+  it('compares a pinned package against its pin, not the registry latest', async () => {
+    // regression: CORE-2591 - a newer upstream release must not mark the pinned bridge outdated.
+    const { resolveExpectedPiPackageVersion, getPinnedPiPackageVersion } = await import('../core/pi-runtime.js');
+    const registryLookup = vi.fn(async () => '0.13.0');
+
+    expect(await resolveExpectedPiPackageVersion('npm:pi-claude-bridge@0.12.0', 'pi-claude-bridge', registryLookup)).toBe('0.12.0');
+    expect(registryLookup).not.toHaveBeenCalled();
+    expect(await resolveExpectedPiPackageVersion('npm:billion-context', 'billion-context', registryLookup)).toBe('0.13.0');
+    expect(registryLookup).toHaveBeenCalledWith('billion-context');
+    // A dist-tag is not a pin; only an exact version is.
+    expect(getPinnedPiPackageVersion('npm:@parcha/agentrun-pi@beta')).toBeNull();
+    expect(getPinnedPiPackageVersion('npm:@jaggerxtrm/substrate')).toBeNull();
+  });
+
+  it('reports an installed 0.12.0 as current and an absent install as missing for the pinned id', async () => {
+    // regression: CORE-2591 - freshness and missing detection work on the pinned id, and a
+    // newer registry release cannot downgrade the pinned install to 'outdated'.
+    const { getManagedPiPackageFreshness, getXtManagedPiPackages, resolveExpectedPiPackageVersion, PI_CLAUDE_BRIDGE_PACKAGE_ID } = await import('../core/pi-runtime.js');
+    const bridgeOnly = getXtManagedPiPackages().filter(pkg => pkg.id === PI_CLAUDE_BRIDGE_PACKAGE_ID);
+    const registry = vi.fn(async () => '0.13.0');
+
+    const installedPin = await getManagedPiPackageFreshness(
+      async (piPackageId, npmPackageName) => ({
+        installedVersion: '0.12.0',
+        expectedVersion: await resolveExpectedPiPackageVersion(piPackageId, npmPackageName, registry),
+      }),
+      bridgeOnly,
+      [],
+    );
+    expect(installedPin).toHaveLength(1);
+    expect(installedPin[0]).toMatchObject({ npmPackageName: 'pi-claude-bridge', expectedVersion: '0.12.0', state: 'current' });
+    expect(registry).not.toHaveBeenCalled();
+
+    const absent = await getManagedPiPackageFreshness(async () => ({ installedVersion: null, expectedVersion: '0.12.0' }), bridgeOnly, []);
+    expect(absent[0].state).toBe('missing');
+
+    const drifted = await getManagedPiPackageFreshness(async () => ({ installedVersion: '0.11.0', expectedVersion: '0.12.0' }), bridgeOnly, []);
+    expect(drifted[0].state).toBe('outdated');
+  });
+
+  it('checks the Node floor the bridge declares in its own engines field', async () => {
+    // regression: CORE-2591 - pi-claude-bridge@0.12.0 declares engines.node >= 20.
+    const { satisfiesNodeFloor, PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR } = await import('../core/pi-runtime.js');
+
+    expect(PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR).toBe(20);
+    expect(satisfiesNodeFloor('v24.19.0')).toBe(true);
+    expect(satisfiesNodeFloor('20.0.0')).toBe(true);
+    expect(satisfiesNodeFloor('18.20.4')).toBe(false);
+    expect(satisfiesNodeFloor('not-a-version')).toBe(false);
+  });
+
+  it('populates the bridge status on the real doctor report (CORE-2591)', async () => {
+    // The doctor fixtures mock the report function, so this test exercises the real builder:
+    // dropping `, bridge` from its return turns it red.
+    const { getXtManagedPiPackageDoctorReport } = await import('../core/pi-runtime.js');
+    const previousHome = process.env.HOME;
+    const previousCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
+    const previousAgentDir = process.env.PI_AGENT_DIR;
+    const scratchHome = path.join(tempRoot, 'bridge-home');
+    const agentDir = path.join(scratchHome, '.pi', 'agent');
+    process.env.HOME = scratchHome;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    // resolvePiAgentDir deliberately reads PI_AGENT_DIR only (CORE-2412), so keep it in step.
+    process.env.PI_AGENT_DIR = agentDir;
+
+    const packageDir = path.join(agentDir, 'npm', 'node_modules', 'pi-claude-bridge');
+    const entryPath = path.join(packageDir, 'src', 'index.ts');
+    const provider = async () => ({ installedVersion: '0.12.0', expectedVersion: '0.12.0' });
+
+    try {
+      await fs.outputJson(path.join(packageDir, 'package.json'), {
+        name: 'pi-claude-bridge',
+        version: '0.12.0',
+        pi: { extensions: ['./src/index.ts'] },
+      });
+      await fs.outputFile(entryPath, 'export {};\n');
+
+      const installed = await getXtManagedPiPackageDoctorReport(provider);
+      expect(installed.bridge).toEqual({
+        npmPackageName: 'pi-claude-bridge',
+        installedVersion: '0.12.0',
+        packageDir,
+        entryPath,
+        entryPresent: true,
+      });
+
+      // Installed but its src entry is gone: the layout requirement is visibly broken.
+      await fs.remove(entryPath);
+      const entryMissing = await getXtManagedPiPackageDoctorReport(provider);
+      expect(entryMissing.bridge).toMatchObject({ installedVersion: '0.12.0', entryPath, entryPresent: false });
+
+      // Package absent entirely.
+      await fs.remove(packageDir);
+      const absent = await getXtManagedPiPackageDoctorReport(provider);
+      expect(absent.bridge).toBeNull();
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
+      if (previousCodingAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousCodingAgentDir;
+      if (previousAgentDir === undefined) delete process.env.PI_AGENT_DIR; else process.env.PI_AGENT_DIR = previousAgentDir;
+    }
+    // The real report resolves the global npm root with a subprocess; under a loaded
+    // worker pool that spawn can exceed the default budget.
+  }, 120_000);
+
+  it('resolves the bridge package and its src entry from the user Pi npm store', async () => {
+    // regression: CORE-2591 - the package ships no main/exports; the resolver reads
+    // <agentDir>/npm/node_modules/pi-claude-bridge/src/index.ts.
+    const { getPiClaudeBridgeInstallStatus } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'bridge-agent');
+    const packageDir = path.join(agentDir, 'npm', 'node_modules', 'pi-claude-bridge');
+    await fs.outputJson(path.join(packageDir, 'package.json'), {
+      name: 'pi-claude-bridge',
+      version: '0.12.0',
+      pi: { extensions: ['./src/index.ts'] },
+    });
+    await fs.outputFile(path.join(packageDir, 'src', 'index.ts'), 'export {};\n');
+
+    expect(await getPiClaudeBridgeInstallStatus(agentDir, null)).toEqual({
+      npmPackageName: 'pi-claude-bridge',
+      installedVersion: '0.12.0',
+      packageDir,
+      entryPath: path.join(packageDir, 'src', 'index.ts'),
+      entryPresent: true,
+    });
+    expect(await getPiClaudeBridgeInstallStatus(path.join(tempRoot, 'empty-agent'), null)).toBeNull();
   });
 
   it('installs every absent managed package using its canonical Pi install selector', async () => {
