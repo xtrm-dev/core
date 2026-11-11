@@ -59052,14 +59052,22 @@ var CLAUDE_MODEL_ALIASES = /* @__PURE__ */ new Set([
   "opusplan",
   "sonnet"
 ]);
+var CLAUDE_BRIDGE_PROVIDER = "claude-bridge";
+function claudeBridgeModelId(model) {
+  const prefix = `${CLAUDE_BRIDGE_PROVIDER}/`;
+  const trimmed = model.trim();
+  if (!trimmed.toLowerCase().startsWith(prefix)) return void 0;
+  return trimmed.slice(prefix.length).trim() || void 0;
+}
 function isClaudeRunnableModel(model, env3 = process.env) {
   const name = model.trim().toLowerCase();
   if (!name) return false;
   if (env3.ANTHROPIC_BASE_URL) return true;
   const base = name.replace(/\[[^\]]*\]$/, "");
   if (CLAUDE_MODEL_ALIASES.has(base)) return true;
-  if (base.startsWith("claude-")) return true;
   if (base.startsWith("arn:aws:bedrock:")) return true;
+  if (base.includes("/")) return false;
+  if (base.startsWith("claude-")) return true;
   return base.startsWith("anthropic.") || base.includes(".anthropic.");
 }
 function passthroughModels(passthrough) {
@@ -60152,12 +60160,17 @@ function buildRoleTmuxPlan(args) {
     runtimeArgs.push("--dangerously-skip-permissions");
   }
   let model = modelOverride ?? role.model;
-  if (runtime === "claude" && !modelOverride && role.model && !isClaudeRunnableModel(role.model)) {
-    process.stderr.write(kleur_default.yellow(
-      `  \u26A0 role '${role.name}': ignoring model '${role.model}'; claude inherits its own default. Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.
+  if (runtime === "claude" && !modelOverride && role.model) {
+    const bridgedModel = claudeBridgeModelId(role.model);
+    if (bridgedModel) {
+      model = bridgedModel;
+    } else if (!isClaudeRunnableModel(role.model)) {
+      process.stderr.write(kleur_default.yellow(
+        `  \u26A0 role '${role.name}': ignoring model '${role.model}'; claude inherits its own default. Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.
 `
-    ));
-    model = void 0;
+      ));
+      model = void 0;
+    }
   }
   return finalizeTmuxPlan({
     runtime,
