@@ -173,13 +173,13 @@ export function resolveDispatcher(deps: DispatcherIdentityDeps = {}): Dispatcher
     return inherited;
 }
 
+/** The merge guard's switch; the launcher owns the default (CORE-2528). */
+export const MERGE_GUARD_VAR = 'XTRM_MERGE_GUARD';
+
 /**
  * The full dispatcher-identity env for a worker named `workerName`.
  * Observed values only; unknown keys are absent.
  */
-/** The merge guard's switch; the launcher owns the default (CORE-2528). */
-export const MERGE_GUARD_VAR = 'XTRM_MERGE_GUARD';
-
 export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityDeps = {}): Record<string, string> {
     const env = deps.env ?? process.env;
     const out: Record<string, string> = {};
@@ -196,8 +196,10 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
 
     // The merge guard is on by construction for every launched agent session: an
     // operator turns it off deliberately (XTRM_MERGE_GUARD=off) instead of having to
-    // remember to turn it on. An inherited value always wins.
-    if (!clean(env[MERGE_GUARD_VAR])) out[MERGE_GUARD_VAR] = 'on';
+    // remember to turn it on. An inherited value is forwarded EXPLICITLY, because a
+    // new tmux session or window starts from the tmux server's env and never sees
+    // this process's environment (CORE-2528 review).
+    out[MERGE_GUARD_VAR] = clean(env[MERGE_GUARD_VAR]) ?? 'on';
 
     const dispatcher = resolveDispatcher(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;

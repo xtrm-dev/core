@@ -100,8 +100,10 @@ describe('buildDispatcherEnv', () => {
 
     it('turns the merge guard on by default and never overrides an inherited value', () => {
         expect(buildDispatcherEnv('w', { env: {} }).XTRM_MERGE_GUARD).toBe('on');
-        expect(buildDispatcherEnv('w', { env: { XTRM_MERGE_GUARD: 'off' } }).XTRM_MERGE_GUARD).toBeUndefined();
-        expect(buildDispatcherEnv('w', { env: { XTRM_MERGE_GUARD: 'yes' } }).XTRM_MERGE_GUARD).toBeUndefined();
+        // CORE-2528 review: an inherited value is forwarded, not dropped — the pane
+        // only sees what the launcher puts on the -e list.
+        expect(buildDispatcherEnv('w', { env: { XTRM_MERGE_GUARD: 'off' } }).XTRM_MERGE_GUARD).toBe('off');
+        expect(buildDispatcherEnv('w', { env: { XTRM_MERGE_GUARD: 'yes' } }).XTRM_MERGE_GUARD).toBe('yes');
     });
 
     it('holder is the worker name, never an inherited SUBSTRATE_HOLDER', () => {
