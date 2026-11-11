@@ -72696,7 +72696,9 @@ async function applyOverride(refusal, deps) {
       pr: refusal.pr,
       override: true
     });
-    const result = run5("sb", ["journal", "append", refusal.issueRef, "--kind", "decision", "--semantic", semantic, "--json"], {});
+    const args = ["journal", "append", refusal.issueRef, "--kind", "decision", "--semantic", semantic, "--json"];
+    const project = receiptProject({ repo: refusal.repo, issueRef: refusal.issueRef }, run5);
+    const result = run5("sb", withReceiptProject(args, project), {});
     journaled = result.status === 0;
     if (!journaled) {
       const journalError = result.stderr.trim() || `sb exited ${result.status}`;

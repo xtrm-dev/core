@@ -536,7 +536,11 @@ export async function applyOverride(
             pr: refusal.pr,
             override: true,
         });
-        const result = run('sb', ['journal', 'append', refusal.issueRef, '--kind', 'decision', '--semantic', semantic, '--json'], {});
+        // CORE-2611: the override entry names its project too, so an override of a
+        // cross-repo merge is not refused by the cwd-resolved project.
+        const args = ['journal', 'append', refusal.issueRef, '--kind', 'decision', '--semantic', semantic, '--json'];
+        const project = receiptProject({ repo: refusal.repo, issueRef: refusal.issueRef }, run);
+        const result = run('sb', withReceiptProject(args, project), {});
         journaled = result.status === 0;
         if (!journaled) {
             const journalError = result.stderr.trim() || `sb exited ${result.status}`;

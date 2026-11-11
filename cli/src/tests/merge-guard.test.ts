@@ -648,10 +648,48 @@ describe('applyOverride', () => {
         const allowed = await applyOverride(refusal, coordinator);
         expect(allowed.allow).toBe(true);
         expect(allowed.override).toMatchObject({ journaled: true, logged: true });
-        expect(sb.calls[0][0]).toBe('journal');
-        expect(sb.calls[0].join(' ')).toContain('semantic');
+        const journal = sb.calls.find((call) => call[0] === 'journal') ?? [];
+        expect(journal[0]).toBe('journal');
+        expect(journal.join(' ')).toContain('semantic');
         const log = fs.readFileSync(path.join(stateHome, 'xtrm', 'merge-guard-override.log'), 'utf8');
         expect(log).toContain('sonnet unavailable');
+    });
+
+    // CORE-2611: an override decision is a receipt, so it names its project. A
+    // cross-repo override from another project's cwd was refused by sb.
+    it('passes --project resolved from the Issue ref on the decision entry', async () => {
+        const github = fakeGitHub({});
+        const calls: string[][] = [];
+        const runSb = (_cmd: string, args: string[]) => {
+            calls.push(args);
+            if (args[0] === 'project') {
+                return {
+                    status: 0,
+                    stdout: JSON.stringify({
+                        ok: true,
+                        data: [
+                            { id: 'prj_core', prefix: 'CORE', name: 'core' },
+                            { id: 'prj_xtrm', prefix: 'XTRM', name: 'xtrm' },
+                        ],
+                    }),
+                    stderr: '',
+                };
+            }
+            return { status: 0, stdout: JSON.stringify({ ok: true, data: [] }), stderr: '' };
+        };
+        const allowed = await applyOverride(
+            { ...refusal, repo: 'xtrm-dev/xtrm', issueRef: 'XTRM-728', message: 'refused' },
+            deps(github, {
+                env: { SUBSTRATE_HOLDER: 'core-85', XTRM_ROLE: 'coordinator', [OVERRIDE_ENV_VAR]: 'sonnet unavailable' },
+                runSb,
+                stateHome,
+            }),
+        );
+        expect(allowed.allow).toBe(true);
+        expect(allowed.override).toMatchObject({ journaled: true });
+        const journal = calls.find((call) => call[0] === 'journal') ?? [];
+        expect(journal.slice(-2)).toEqual(['--project', 'prj_xtrm']);
+        expect(journal.join(' ')).toContain('semantic');
     });
 
     it('allows for the operator (no holder, no role)', async () => {
