@@ -89,6 +89,18 @@
       "install_mode": "copy",
       "install_scope": "global",
       "files": {
+        "agent-identities/references/configuration.md": {
+          "hash": "7c656259c0d9a5f8b15bbb91f095cb59d1b9e266349c3761fda88a1ce3eeb69b",
+          "version": "0.15.3"
+        },
+        "agent-identities/references/troubleshooting.md": {
+          "hash": "bcdf6ae83d2c81818d05d5b8d1ccb609bcd1d5af196647dfe9634ead340ec305",
+          "version": "0.15.3"
+        },
+        "agent-identities/SKILL.md": {
+          "hash": "a7fe38c757ef15a775dcdf21af92aeee9b51dd23aacb25c92c914f1a075f1933",
+          "version": "0.15.3"
+        },
         "codemode/references/kernel-mechanics.md": {
           "hash": "8ed79613b827b54f9ff974483c117e96606ec474cb7927fdc5b549b34a0cb035",
           "version": "0.15.3"
