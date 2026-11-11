@@ -154,6 +154,11 @@ function inline(node) {
     case 'em':
     case 'i':
       return `*${collapse(kids())}*`;
+    case 'a': {
+      const body = collapse(kids());
+      const href = node.attrs?.href ?? '';
+      return href ? `[${body}](${href})` : body;
+    }
     case 'span': {
       const cls = classesOf(node);
       const body = collapse(kids());
@@ -261,18 +266,62 @@ function renderNoteBox(node) {
   return out;
 }
 
-function renderRuling(node) {
+// A ruling box is a sequence, not a single list: every child renders in order and an
+// element this generator cannot map stops the run. Silently keeping the first list is
+// how a second list, a paragraph or a table used to disappear (CORE-2600).
+function renderRuling(node, context = {}) {
   const out = [];
-  const label = find(node, 'span');
-  if (label && hasClass(label, 'ruling-k')) out.push(`> **${inlineOf(label)}**`);
-  const list = find(node, 'ul');
-  if (list) {
-    for (const li of elements(list)) {
-      if (li.tag === 'li') out.push(`> - ${inlineOf(li)}`);
+  let previousWasBlock = false;
+  const separate = () => {
+    if (previousWasBlock) out.push('>');
+    previousWasBlock = true;
+  };
+  const children = elements(node);
+  for (let i = 0; i < children.length; i += 1) {
+    const child = children[i];
+    if (hasClass(child, 'ruling-k')) {
+      out.push(`> **${inlineOf(child)}**`);
+      continue;
     }
+    if (child.tag === 'ul' || child.tag === 'ol') {
+      separate();
+      for (const li of elements(child).filter((n) => n.tag === 'li')) out.push(`> - ${inlineOf(li)}`);
+      continue;
+    }
+    if (child.tag === 'p') {
+      separate();
+      out.push(`> ${inlineOf(child)}`);
+      continue;
+    }
+    if (child.tag === 'table') {
+      separate();
+      for (const line of renderTable(child)) out.push(`> ${line}`);
+      continue;
+    }
+    if (child.tag === 'pre') {
+      separate();
+      const code = decodeEntities(rawText(child)).replace(/\n$/, '');
+      out.push('> ```', ...code.split('\n').map((line) => `> ${line}`), '> ```');
+      continue;
+    }
+    if (child.tag === 'h3' || child.tag === 'h4') {
+      separate();
+      out.push(`> **${inlineOf(child)}**`);
+      continue;
+    }
+    throw unknownElement(child, context, 'ruling box');
   }
   out.push('');
   return out;
+}
+
+function unknownElement(node, context, where) {
+  const cls = node.attrs?.class ? ` class="${node.attrs.class}"` : '';
+  const step = context?.step ? ` in step ${context.step}` : '';
+  return new Error(
+    `unknown element <${node.tag}${cls}> inside a ${where}${step}: scripts/plan-to-md.mjs cannot render it, ` +
+      'and dropping it silently is not allowed. Teach the generator this element, then rerun.',
+  );
 }
 
 function stepEntries(root) {
@@ -330,7 +379,7 @@ function renderStep(li) {
       continue;
     }
     if (hasClass(child, 'ruling')) {
-      out.push(...renderRuling(child));
+      out.push(...renderRuling(child, { step: num }));
       continue;
     }
     if (child.tag === 'table') {
@@ -487,7 +536,8 @@ function renderBlocks(nodes, source) {
       out.push(...renderBlocks(elements(child), source));
       return;
     }
-    // Unknown element with text: keep the text, never drop prose silently.
+    // Unknown element: a leaf keeps its text; a container cannot be reconstructed, so fail.
+    if (elements(child).length) throw unknownElement(child, {}, 'page section');
     const text = inlineOf(child);
     if (text) out.push(text, '');
   };
@@ -523,6 +573,82 @@ export function renderBody(source) {
   return tidy(lines);
 }
 
+// Markdown ornaments are a rendering detail; comparing prose to prose is the point.
+const PROSE_STRIP = /[`*\[\]()|]/g;
+
+function proseProjection(text) {
+  return text.replace(PROSE_STRIP, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function htmlProse(node) {
+  const walk = (n) => (n.tag === '#text' ? decodeEntities(n.text) : n.children.map(walk).join(' '));
+  return proseProjection(walk(node));
+}
+
+function blockProse(lines) {
+  const kept = lines
+    .map((line) => line.replace(/^>\s?/, ''))
+    .filter((line) => !(/^[|\s:-]+$/.test(line.trim()) && line.includes('---')))
+    .map((line) => line.replace(/^-\s+/, ''));
+  return proseProjection(kept.join(' '));
+}
+
+function stepNumOf(node) {
+  let current = node;
+  while (current) {
+    if (current.tag === 'li' && hasClass(current, 'step')) {
+      const numEl = elements(current).find((child) => hasClass(child, 'num'));
+      if (numEl) return plainText(numEl);
+    }
+    current = current.parent;
+  }
+  return '';
+}
+
+// Every ruling box must survive as one blockquote whose prose equals the box's prose, in
+// order. This catches a dropped second list, paragraph or table even when the renderer and
+// the committed file agree with each other (the CORE-2600 failure mode).
+export function boxCoverage(root, markdown) {
+  const lines = markdown.split('\n');
+  const boxes = findAll(root, (n) => n.tag === 'div' && hasClass(n, 'ruling'));
+  const mismatched = [];
+  let cursor = 0;
+  for (const box of boxes) {
+    const labelEl = elements(box).find((child) => hasClass(child, 'ruling-k'));
+    const label = labelEl ? proseProjection(plainText(labelEl)) : '';
+    let start = -1;
+    for (let i = cursor; i < lines.length; i += 1) {
+      if (!lines[i].startsWith('>')) continue;
+      if (blockProse([lines[i]]) === label) {
+        start = i;
+        break;
+      }
+    }
+    if (start === -1) {
+      mismatched.push({ step: stepNumOf(box), label: labelEl ? plainText(labelEl) : '(no label)', reason: 'box label absent from PRD.md' });
+      continue;
+    }
+    let end = start;
+    while (end < lines.length && lines[end].startsWith('>')) end += 1;
+    const block = lines.slice(start, end);
+    cursor = end;
+    const expected = htmlProse(box);
+    const actual = blockProse(block);
+    if (expected !== actual) {
+      let at = 0;
+      while (at < expected.length && at < actual.length && expected[at] === actual[at]) at += 1;
+      mismatched.push({
+        step: stepNumOf(box),
+        label: labelEl ? plainText(labelEl) : '(no label)',
+        reason: 'box content differs from index.html',
+        expected: expected.slice(Math.max(0, at - 60), at + 60),
+        actual: actual.slice(Math.max(0, at - 60), at + 60),
+      });
+    }
+  }
+  return { total: boxes.length, matched: boxes.length - mismatched.length, mismatched };
+}
+
 export function coverageReport(source, markdown) {
   const tree = parseHtml(source);
   const steps = phaseSteps(tree);
@@ -542,6 +668,7 @@ export function coverageReport(source, markdown) {
     order,
     missing,
     inOrder: sequence === actual,
+    boxes: boxCoverage(tree, markdown),
     counts: { phaseSteps: expected.length, headings: order.length, allSteps: stepEntries(tree).length },
   };
 }
@@ -554,10 +681,28 @@ export function splitDocument(markdown) {
   return { preamble, body };
 }
 
+function describeBoxFailures(report, label) {
+  if (!report.boxes.mismatched.length) return;
+  console.error(`${label}: ${report.boxes.mismatched.length} of ${report.boxes.total} ruling box(es) lost or changed content`);
+  for (const box of report.boxes.mismatched.slice(0, 10)) {
+    console.error(`  - step ${box.step || '?'} "${box.label}": ${box.reason}`);
+    if (box.expected) console.error(`      index.html: ${box.expected}`);
+    if (box.actual) console.error(`      PRD.md:     ${box.actual}`);
+  }
+  if (report.boxes.mismatched.length > 10) console.error(`  ... and ${report.boxes.mismatched.length - 10} more`);
+  process.exit(1);
+}
+
 function main() {
   const check = process.argv.includes('--check');
   const source = fs.readFileSync(SRC, 'utf8');
-  const body = renderBody(source);
+  let body;
+  try {
+    body = renderBody(source);
+  } catch (error) {
+    console.error(`render FAILED: ${error.message}`);
+    process.exit(1);
+  }
 
   let existing = null;
   if (fs.existsSync(OUT)) existing = fs.readFileSync(OUT, 'utf8');
@@ -578,6 +723,7 @@ function main() {
     console.error('step coverage FAILED: step headings are not in page order');
     process.exit(1);
   }
+  describeBoxFailures(report, 'box coverage FAILED');
 
   if (check) {
     const current = splitDocument(existing);
@@ -587,6 +733,9 @@ function main() {
       console.error(`stale: PRD.md is missing ${currentReport.missing.length} step(s) that index.html carries (absent or changed)`);
       for (const step of currentReport.missing.slice(0, 10)) console.error(`  - ${step.num} ${step.title}`);
       process.exit(1);
+    }
+    if (currentReport.boxes.mismatched.length) {
+      describeBoxFailures(currentReport, 'stale');
     }
     if (!same) {
       console.error('stale: PRD.md body does not match docs/plans/xtrm-build-order/index.html');

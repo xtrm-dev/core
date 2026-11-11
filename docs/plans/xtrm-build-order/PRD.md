@@ -72,7 +72,7 @@ There are 46 numbered steps and 17 lettered additions in six phases. Each phase 
 
 **Already written to Jira** as xtrm-bot: XT-178 is renamed and has an appended amendment with the linking design (the original text is unchanged). XT-110, XT-114 and XT-184 have a ruling comment each. Every folded-in ticket has a Relates link to its parent.
 
-**Jira sync · 11-11** (CORE-2593): the programme epic is XT-217, whose description carries this plan’s brief, the PRD path (`docs/plans/xtrm-build-order/PRD.md` in xtrm-dev/core) and this page. Its 43 plan-cited tickets are linked to it (Relates); 21 of them still need the epic set as their parent, which the server’s acli cannot do. XT-190, XT-127 and XT-126 moved to In corso. XT-125 and XT-191 stay open with a comment: the installer still falls back to `oh-pi` and the Pi extensions still compile against `^1.0.0`, so steps 10 and 11 are partly done, not done. Steps 13b (SPECIALISTS-4391 still open) and 15e (CORE-2528 merged in part) are partly done.
+**Jira sync · 11-11** (CORE-2593): the programme epic is [XT-217](https://mercuryintel.atlassian.net/browse/XT-217), whose description carries this plan’s brief, the PRD path (`docs/plans/xtrm-build-order/PRD.md` in xtrm-dev/core) and this page. Its 43 plan-cited tickets are linked to it (Relates); 21 of them still need the epic set as their parent, which the server’s acli cannot do. XT-190, XT-127 and XT-126 moved to In corso. XT-125 and XT-191 stay open with a comment: the installer still falls back to `oh-pi` and the Pi extensions still compile against `^1.0.0`, so steps 10 and 11 are partly done, not done. Steps 13b (SPECIALISTS-4391 still open) and 15e (CORE-2528 merged in part) are partly done.
 
 ## How linking works today
 
