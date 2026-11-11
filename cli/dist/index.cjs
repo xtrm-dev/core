@@ -58074,7 +58074,10 @@ function main() {
 
   // CORE-2622: a pr edit sets the same body, so it gets the same refusal.
   // An edit that carries no body never reaches the marker parser's work.
+  // The role gate must run HERE: pass() exits the process, so an edit that
+  // reached the shared gate below would never come back (review 6pgu, #921).
   if (verb === 'edit') {
+    if (isRestricted(roleOf())) die('the reviewer role may not change PR state (gh pr edit)');
     refuseBadRun(args, 'edit the pull request');
     pass(real, args);
   }

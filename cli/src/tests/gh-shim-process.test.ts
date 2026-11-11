@@ -922,6 +922,23 @@ describe('a tmux session id in the marker run= is refused before the create (COR
         expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'edit')).toHaveLength(0);
     });
 
+    // Review 6pgu (#921): the edit route exits through pass(), so it must run the
+    // reviewer gate itself. Without it a reviewer could edit a PR title or body.
+    it('refuses the reviewer role an edit by title, before the real gh', () => {
+        const result = runShim(['pr', 'edit', '123', '--repo', 'xtrm-dev/core', '--title', 'renamed'], { HOME: root, STUB_ROLE: 'reviewer' });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('the reviewer role may not change PR state (gh pr edit)');
+        expect(result.stdout).toBe('');
+        expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'edit')).toHaveLength(0);
+    });
+
+    it('refuses the reviewer role an edit by body, before the real gh', () => {
+        const result = runShim(['pr', 'edit', '123', '--repo', 'xtrm-dev/core', '--body', 'new body'], { HOME: root, STUB_ROLE: 'reviewer' });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('the reviewer role may not change PR state (gh pr edit)');
+        expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'edit')).toHaveLength(0);
+    });
+
     it('lets a gh pr edit that sets no body through untouched', () => {
         const result = runShim(['pr', 'edit', '5', '--title', 'renamed'], { HOME: root });
         // The real gh ran with the caller's status and no refusal on stderr.
