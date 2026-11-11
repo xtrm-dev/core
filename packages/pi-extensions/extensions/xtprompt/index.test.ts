@@ -35,12 +35,13 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isToolCallEventType: () => false,
 }));
 
+// CORE-2605: keep the real width helpers. Bun shares mock.module
+// registrations process-wide, so a stunted visibleWidth/truncateToWidth
+// here made every later card suite overrun its width.
 mock.module("@earendil-works/pi-tui", () => ({
   ...(realPiTui as object),
   Box: () => null,
   Text: () => null,
-  truncateToWidth: (value: string) => value,
-  visibleWidth: (value: string) => value.length,
 }));
 
 // The registry smoke test below loads src/registry.ts, which now registers

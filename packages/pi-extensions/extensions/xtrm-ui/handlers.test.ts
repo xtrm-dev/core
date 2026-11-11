@@ -18,14 +18,15 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isBashToolResult: () => false,
   isToolCallEventType: () => false,
 }));
+// CORE-2605: keep the real width helpers. Bun shares mock.module
+// registrations process-wide, so a stunted visibleWidth/truncateToWidth
+// here made every later card suite overrun its width.
 mock.module("@earendil-works/pi-tui", () => ({
   ...(realPiTui as object),
   Box: class {},
   Text: class {
     constructor(public text: string) {}
   },
-  truncateToWidth: (value: string) => value,
-  visibleWidth: (value: string) => value.length,
 }));
 mock.module("@mariozechner/pi-coding-agent", () => ({}));
 

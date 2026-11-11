@@ -28,13 +28,13 @@ mock.module("@earendil-works/pi-coding-agent", () => ({
   isReadToolResult: (event: { toolName: string }) => event.toolName === "read",
   isToolCallEventType: () => false,
 }));
-mock.module("@earendil-works/pi-tui", () => ({
-  ...(realPiTui as object),
-  Box: class {},
-  Text: class {},
-  truncateToWidth: (value: string) => value,
-  visibleWidth: (value: string) => value.length,
-}));
+// CORE-2605: keep the real width helpers. Bun shares mock.module
+// registrations process-wide, so a stunted visibleWidth/truncateToWidth
+// here made every later card suite overrun its width.
+// CORE-2605: the real Box/Text stay in place. Bun keeps a mock.module
+// registration for the whole process, and a `Text` without pi's `.text`
+// broke the python renderer in every later file of a full-suite run.
+mock.module("@earendil-works/pi-tui", () => ({ ...(realPiTui as object) }));
 mock.module("@mariozechner/pi-coding-agent", () => ({}));
 
 const gitCheckpoint = (await import("../extensions/git-checkpoint/index.ts")).default;
