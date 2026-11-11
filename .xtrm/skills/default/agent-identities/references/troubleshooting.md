@@ -97,12 +97,19 @@ happened; only the receipt was lost, so re-record it with
 
 ## A review posted as the operator instead of `<slug>[bot]`
 
-The shim was not used: `which gh` must resolve to `~/.local/bin/gh`. A launched
-session gets the shim directory first on its pane `PATH` from the launcher
-(CORE-2524.4), so this can only happen in a plain shell, an older launcher, or a
-session created outside `xt`. `xt identity doctor`'s `PATH`-order row evaluates
-the launcher's `PATH`, not the pane's. Observed live before the fix: a review
-posted as the operator and GitHub downgraded `--approve` to `COMMENTED`.
+The shim was not used. The cause seen on 11-10 was the pane `PATH`: a launched
+tmux pane inherited the tmux **server's** PATH, so `gh` resolved to the real
+binary instead of the `~/.local/bin/gh` shim. The launcher now forwards its own
+PATH to every session and window it creates (#891, merged 4de65af8), but only for
+panes created after it: a pane opened earlier keeps the server PATH.
+
+Check in the session that would post: `command -v gh` must print
+`~/.local/bin/gh`. If it prints anything else, relaunch the pane.
+
+`xt identity doctor`'s `PATH`-order row evaluates the launcher's `PATH`, not the
+pane's, so it cannot see a tmux server PATH that lacks the shim directory.
+Observed live before the fix: a review posted as the operator and GitHub
+downgraded `--approve` to `COMMENTED`.
 
 ## The guard allows a merge that should be refused
 
