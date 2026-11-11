@@ -24,11 +24,26 @@ const sessionId = identity.sessionId;
 const SESSION_NAME = 'refs-fixture';
 const RESPONSE = 'The contracts test passes now.';
 
-const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
+// CORE-2620: a worker shell exports GIT_AUTHOR_*/GIT_COMMITTER_* (xt sets them
+// for the holder), and those variables OVERRIDE `-c user.name`/`-c user.email`,
+// so the fixture's commit was authored by whoever ran the suite. Clear them at
+// the one place the fixture invokes git: the intent is a commit by "Ref Tester",
+// and that intent must not depend on who runs the test.
+const IDENTITY_ENV_VARS = ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL'];
+
+function fixtureGitEnv(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
+    for (const key of IDENTITY_ENV_VARS) delete env[key];
+    return env;
+}
+
+const gitEnv = fixtureGitEnv();
 function git(cwd: string, ...args: string[]): string {
+    // Per call, not once at module load: a test can export an identity and this
+    // helper must still produce the fixture's author.
     return execFileSync('git', ['-c', 'user.name=Ref Tester', '-c', 'user.email=ref@test.invalid', ...args], {
         cwd,
-        env: gitEnv,
+        env: fixtureGitEnv(),
         encoding: 'utf8',
     }).trim();
 }
@@ -207,6 +222,29 @@ describe('xt host reference resolution (XTRM-570)', () => {
         expect(binary.content).toBeUndefined();
         expect(outOfRange).toMatchObject({ status: 'unresolved', error: 'line_out_of_range' });
         expect(badRange).toMatchObject({ status: 'unresolved', error: 'invalid_line_range' });
+    });
+
+    it('authors the fixture commit as Ref Tester even when the shell exports an identity (CORE-2620)', () => {
+        // xt exports GIT_AUTHOR_*/GIT_COMMITTER_* into every worker shell, and
+        // those override `-c user.name`/`-c user.email`. Without the fixture's
+        // env cleaning this commit is authored by the worker, and the @commit
+        // assertion below fails only for whoever ran the suite as an agent.
+        const repo = path.join(dir, 'identity');
+        mkdirSync(repo);
+        git(repo, 'init', '-q');
+        writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+        git(repo, 'add', 'a.txt');
+        const saved = new Map(IDENTITY_ENV_VARS.map((key) => [key, process.env[key]]));
+        try {
+            for (const key of IDENTITY_ENV_VARS) process.env[key] = 'worker-shell';
+            git(repo, 'commit', '-q', '-m', 'fixture');
+        } finally {
+            for (const [key, value] of saved) {
+                if (value === undefined) delete process.env[key];
+                else process.env[key] = value;
+            }
+        }
+        expect(git(repo, 'log', '-1', '--format=%an <%ae>')).toBe('Ref Tester <ref@test.invalid>');
     });
 
     it('resolves @commit from local git with message, author and stat; the diff is a pointer', async () => {
