@@ -72024,7 +72024,7 @@ var FENCE_CLOSE = /^ {0,3}(`+|~+)[ \t]*$/;
 function parseIssueMarkers(text) {
   const out = [];
   let fence = null;
-  for (const line of (text ?? "").split("\n")) {
+  for (const line of (text ?? "").split(/\r?\n/)) {
     if (fence) {
       const close = line.match(FENCE_CLOSE);
       if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;

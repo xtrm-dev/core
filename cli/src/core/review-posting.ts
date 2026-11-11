@@ -151,7 +151,9 @@ const FENCE_CLOSE = /^ {0,3}(`+|~+)[ \t]*$/;
 export function parseIssueMarkers(text: string): IssueMarker[] {
     const out: IssueMarker[] = [];
     let fence: { char: string; length: number } | null = null;
-    for (const line of (text ?? '').split('\n')) {
+    // CRLF: a GitHub-web-editor body keeps a `\r` on every line, and a `$`-anchored
+    // fence pattern would then never match (review 5853004574, finding A).
+    for (const line of (text ?? '').split(/\r?\n/)) {
         if (fence) {
             const close = line.match(FENCE_CLOSE);
             if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;

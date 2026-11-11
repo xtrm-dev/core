@@ -153,6 +153,16 @@ describe('reading the model body', () => {
         expect(parseIssueMarkers('`````\n````\n<!-- xtrm issue=FAKE-3 holder=w run=r -->\n`````\n')).toEqual([]);
     });
 
+    it('treats a CRLF body like an LF body, fences included (CORE-2590 review 5853004574 A)', () => {
+        // A GitHub-web-editor body keeps a `\r` on every line; a `$`-anchored fence
+        // pattern does not match then, so the split must tolerate CRLF.
+        const crlf = (lines: string[]) => lines.join('\r\n');
+        expect(parseIssueMarkers(crlf(['```', '<!-- xtrm issue=FAKE-1 holder=w run=r -->', '```', '']))).toEqual([]);
+        expect(parseIssueMarkers(crlf(['```', '<!-- xtrm issue=FAKE-1 holder=w run=r -->', '```', '<!-- xtrm issue=CORE-9 holder=w run=r -->', ''])))
+            .toEqual([{ issue: 'CORE-9', holder: 'w', run: 'r' }]);
+        expect(parseIssueMarker(crlf(['<!-- xtrm issue=CORE-9 holder=w run=r -->', '']))).toMatchObject({ issue: 'CORE-9' });
+    });
+
     it('ignores an xtrm-looking comment that does not start with xtrm, and one without issue= (CORE-2590 review 3)', () => {
         // `xtrm\b` used to match inside `xtrm-tools`, so a later comment could
         // displace the real marker and the guard denied with the wrong reason.
