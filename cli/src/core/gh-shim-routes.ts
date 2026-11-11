@@ -95,10 +95,12 @@ export const READ_GROUPS: string[] = ['search', 'status'];
  * none of these lists, and a reviewer then gets a deliberate decision instead of
  * inheriting one. Several of these do write locally or remotely (`config`,
  * `extension`, `secret`, `variable`, `workflow`, `release`, `label`), and a
- * reviewer has no reason to run any of them.
+ * reviewer has no reason to run any of them. `alias` is here because an alias is
+ * how a restricted session would smuggle a write past a verb-shaped gate
+ * (review 5865051160 finding 4): `alias set` and `alias import` are writes.
  */
 export const WRITE_GROUPS: string[] = [
-    'browse', 'cache', 'codespace', 'config', 'extension', 'gist', 'gpg-key', 'label', 'org',
+    'alias', 'browse', 'cache', 'codespace', 'config', 'extension', 'gist', 'gpg-key', 'label', 'org',
     'project', 'release', 'ruleset', 'secret', 'ssh-key', 'variable', 'workflow',
 ];
 

@@ -57760,6 +57760,7 @@ var GROUP_ROUTES = {
 };
 var READ_GROUPS = ["search", "status"];
 var WRITE_GROUPS = [
+  "alias",
   "browse",
   "cache",
   "codespace",

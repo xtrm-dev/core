@@ -37,7 +37,7 @@ const GH_ISSUE_VERBS = [
 
 /** `gh --help` on 2.97.0, minus the shim's own handled groups. */
 const GH_GROUPS = [
-    'api', 'auth', 'browse', 'cache', 'codespace', 'config', 'extension', 'gist', 'gpg-key', 'issue',
+    'alias', 'api', 'auth', 'browse', 'cache', 'codespace', 'config', 'extension', 'gist', 'gpg-key', 'issue',
     'label', 'org', 'pr', 'project', 'release', 'repo', 'ruleset', 'run', 'search', 'secret',
     'ssh-key', 'status', 'variable', 'workflow',
 ];

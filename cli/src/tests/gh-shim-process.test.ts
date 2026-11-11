@@ -144,8 +144,10 @@ if (process.argv.slice(2).join(' ') === 'pr view --json number,url,headRefOid') 
   process.stdout.write(JSON.stringify({ number: 99, url: 'https://github.com/xtrm-dev/specialists/pull/99', headRefOid: 'a'.repeat(40) }));
   process.exit(0);
 }
-if (argv[0] === 'pr' && argv[1] === 'create') {
+if (argv[0] === 'pr' && (argv[1] === 'create' || argv[1] === 'new')) {
   // CORE-2607: the create the shim must tee, and link, without changing a byte.
+  // CORE-2626: gh's built-in new alias does the same, so the stub answers it
+  // identically — otherwise the link could not be observed for pr new.
   if (process.env.STUB_GH_TWO_URLS === '1') {
     process.stdout.write('Warning: a pull request already exists: https://github.com/xtrm-dev/core/pull/111\\n');
   }
@@ -1010,7 +1012,8 @@ describe('a restricted role reaches only the read allowlist (CORE-2626)', () => 
     it('refuses an unknown first token, which is what an alias or an extension looks like', () => {
         // An unknown token is shown alone: there is no subcommand to name.
         expectRefused(['co', '5'], 'may only read through this shim (refused: gh co)');
-        expectRefused(['alias', 'set', 'm', 'pr merge'], 'may only read through this shim (refused: gh alias)');
+        expectRefused(['alias', 'set', 'm', 'pr merge'], 'may only read through this shim (refused: gh alias set)');
+        expectRefused(['alias', 'import', 'aliases.yml'], 'may only read through this shim (refused: gh alias import)');
     });
 
     it('refuses a route spelled with a flag between pr and the verb', () => {
@@ -1033,21 +1036,32 @@ describe('a restricted role reaches only the read allowlist (CORE-2626)', () => 
         expect(refused.stderr).toContain('refusing to create the pull request');
         expect(readLog(ghLog)).toHaveLength(0);
 
-        const allowed = runShim(['pr', 'new', '--title', 'docs', '--body', 'plain body'], { ...REVIEWER, HOME: root });
+        const repo = scratchRepo({ branch: 'core-2626-gh-shim' });
+        const allowed = runShim(['pr', 'new', '--title', 'CORE-2626 route the alias', '--body', 'plain body'], { ...REVIEWER, HOME: root }, repo.dir);
         expect(allowed.status).toBe(0);
-        // gh's own alias runs the real gh, so the shim forwards `new` unchanged;
-        // that it went through the create path is what the refusal above proves.
-        expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'new')).toHaveLength(1);
+        // gh's own alias runs the real gh (the stub answers and exits before it
+        // logs, exactly like create), and the shim tees its output byte for byte.
+        expect(allowed.stdout).toBe(CREATE_STDOUT);
+        // And the create route linked the Issue, which is what makes `new` a
+        // create rather than a bare pass-through.
+        expect(
+            sbCalls().filter((argv) => argv[0] === 'provenance' || argv[0] === 'issue'),
+            'pr new should run the Issue link',
+        ).not.toHaveLength(0);
     });
 
     it('lets the read allowlist through without a refusal', () => {
         for (const args of [
             ['pr', 'view', '5'],
+            ['pr', 'list'],
             ['pr', 'diff', '5'],
             ['pr', 'checks', '5'],
-            ['pr', 'list'],
+            ['pr', 'status'],
+            ['pr', 'checkout', '5'],
+            ['pr', 'comment', '5', '--body', 'looks right'],
             ['issue', 'view', '5'],
             ['issue', 'list'],
+            ['issue', 'comment', '5', '--body', 'noted'],
             ['auth', 'status'],
             ['run', 'list'],
             ['search', 'issues', 'shim'],
@@ -1059,6 +1073,20 @@ describe('a restricted role reaches only the read allowlist (CORE-2626)', () => 
             expect(result.stderr, `gh ${args.join(' ')}`).not.toContain('may only read');
             expect(readLog(ghLog).length - before, `gh ${args.join(' ')}`).toBe(1);
         }
+    });
+
+    it('lets --help and --version through, and gh api GET on its GET-only verdict', () => {
+        for (const args of [['--help'], ['--version'], ['pr', 'view', '--help']]) {
+            const result = runShim(args, { ...REVIEWER, HOME: root });
+            expect(result.status, `gh ${args.join(' ')} should pass`).toBe(0);
+            expect(result.stderr, `gh ${args.join(' ')}`).not.toContain('may only read');
+        }
+        const get = runShim(['api', 'repos/xtrm-dev/core/pulls/921'], { ...REVIEWER, HOME: root });
+        expect(get.status).toBe(0);
+        expect(get.stderr).not.toContain('may only read');
+        // pr review is routed to review-post, not refused by the choke point.
+        const review = runShim(['pr', 'review', '5', '--approve'], { ...REVIEWER, HOME: root });
+        expect(review.stderr).not.toContain('may only read');
     });
 
     it('keeps gh api on its own GET-only verdict, even behind a global flag', () => {
