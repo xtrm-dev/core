@@ -3,7 +3,11 @@
 // wrote), and the tool adds the hidden marker. A fake GitHub proves every
 // refusal without the Apps.
 
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     bodyVerdicts,
@@ -20,6 +24,7 @@ import {
     sanitizeAgentName,
     sha12,
     ReviewRefused,
+    type PostedReview,
     type PostReviewInput,
 } from '../core/review-posting.js';
 
@@ -441,5 +446,124 @@ describe('postReview', () => {
             'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 422, data: { message: 'Unprocessable' } },
         }));
         await expect(postReview(input(), github.deps)).rejects.toThrow(/HTTP 422/);
+    });
+});
+
+// CORE-2606 (b): the receipt payload as the REAL `sb` receives it. The unit
+// tests prove the shape; this proves the CLI accepts it. The live run that
+// printed "Journal receipt failed: sb exited 1" is why it exists: the unbounded
+// `verdict`/`head`/`artifact` fields were refused, and the reason sat on stdout.
+describe('the review receipt against the real sb', () => {
+    const sbPath = (() => {
+        const found = spawnSync('sh', ['-c', 'command -v sb'], { encoding: 'utf8' });
+        return (found.stdout ?? '').trim();
+    })();
+    if (!sbPath) console.warn('[CORE-2606] real-sb receipt tests skipped: sb is not on PATH');
+
+    let root = '';
+    let repo = '';
+    let env: NodeJS.ProcessEnv = {};
+    let ref = '';
+
+    function run(command: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+        const result = spawnSync(command, args, { encoding: 'utf8', cwd: repo, env, timeout: 30000 });
+        if (result.error) throw result.error;
+        return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
+    }
+
+    const describeSb = sbPath ? describe : describe.skip;
+    describeSb('local store', () => {
+        beforeAll(() => {
+            root = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-receipt-'));
+            repo = path.join(root, 'repo');
+            const home = path.join(root, 'home');
+            fs.mkdirSync(repo, { recursive: true });
+            fs.mkdirSync(home, { recursive: true });
+            // Never the real HOME, and never the operator's git config.
+            env = {
+                ...process.env,
+                HOME: home,
+                SUBSTRATE_DB: path.join(root, 'substrate.db'),
+                GIT_CONFIG_GLOBAL: '/dev/null',
+                GIT_AUTHOR_NAME: 'receipt-test',
+                GIT_AUTHOR_EMAIL: 'receipt@example.invalid',
+                GIT_COMMITTER_NAME: 'receipt-test',
+                GIT_COMMITTER_EMAIL: 'receipt@example.invalid',
+            };
+            for (const key of ['SUBSTRATE_HOLDER', 'XTRM_AGENT_NAME', 'XTRM_SESSION_ID', 'XTRM_SESSION_NAME']) delete env[key];
+            fs.writeFileSync(path.join(repo, 'f'), 'x\n');
+            expect(run('git', ['init', '-q', '-b', 'main', '.']).status).toBe(0);
+            expect(run('git', ['add', '.']).status).toBe(0);
+            expect(run('git', ['commit', '-qm', 'init']).status).toBe(0);
+            const init = run(sbPath, ['init']);
+            expect(init.status).toBe(0);
+            const listed = JSON.parse(run(sbPath, ['project', 'list', '--json']).stdout) as { data?: Array<{ id?: string }> };
+            const project = listed.data?.[0]?.id;
+            expect(project).toBeTruthy();
+            const contract = path.join(root, 'contract.json');
+            fs.writeFileSync(contract, JSON.stringify({
+                problem: 'receipt probe', success: 'the journal accepts it', scope: ['probe'],
+                nonGoals: [], constraints: [], validation: [{ check: 'n/a' }],
+                output: [{ artifact: 'none' }], scrutiny: 'LOW',
+            }));
+            const created = run(sbPath, ['issue', 'create', '--project', String(project), '--title', 'Receipt target',
+                '--kind', 'task', '--contract', contract, '--json']);
+            expect(created.status).toBe(0);
+            const parsed = JSON.parse(created.stdout) as { data?: { locator?: string } };
+            ref = parsed.data?.locator ?? '';
+            expect(ref).toMatch(/^[A-Z][A-Z0-9]*-\d+$/);
+        }, 60000);
+
+        afterAll(() => {
+            if (root) fs.rmSync(root, { recursive: true, force: true });
+        });
+
+        it('persists the bounded payload the module builds', () => {
+            const receipt: PostedReview = {
+                id: 55,
+                url: 'https://github.com/xtrm-dev/core/pull/42#pullrequestreview-55',
+                verdict: 'APPROVE',
+                state: 'APPROVED',
+                head: HEAD,
+                issueRef: ref,
+                dismissed: [],
+                warnings: [],
+            };
+            const args = reviewJournalArgs(receipt, input({ role: 'reviewer' }), ref, 'xtrm-reviewer');
+            const journal = run(sbPath, args);
+            expect(journal.stderr).toBe('');
+            expect(journal.status).toBe(0);
+            const parsed = JSON.parse(journal.stdout) as { ok?: boolean; data?: { result?: Record<string, unknown> } };
+            expect(parsed.ok).toBe(true);
+            const result = parsed.data?.result ?? {};
+            expect(result).toMatchObject({
+                summary: `Review APPROVE at head ${sha12(HEAD)} for xtrm-dev/core#42`,
+                outcome: 'review APPROVE',
+                artifactRefs: [receipt.url],
+            });
+            expect(result).not.toHaveProperty('verdict');
+            expect(result).not.toHaveProperty('head');
+            expect(result).not.toHaveProperty('artifact');
+
+            const latest = JSON.parse(run(sbPath, ['journal', 'latest', ref, '--json']).stdout) as {
+                data?: { result?: Record<string, unknown> };
+            };
+            expect(latest.data?.result?.summary).toContain('Review APPROVE');
+        }, 60000);
+
+        it('is refused when the payload regresses to the unbounded fields (the live failure)', () => {
+            // The exact shape main shipped: sb refuses it on STDOUT, with empty
+            // stderr. If this ever passes, the bounded-field fix has been undone.
+            const legacy = ['journal', 'append', ref, '--kind', 'result', '--result', JSON.stringify({
+                summary: 'Review APPROVE at head 0123456789ab',
+                verdict: 'APPROVE',
+                head: HEAD,
+                artifact: { kind: 'review', head: HEAD, verdict: 'APPROVE' },
+            }), '--json'];
+            const refused = run(sbPath, legacy);
+            expect(refused.status).toBe(1);
+            expect(refused.stderr).toBe('');
+            expect(refused.stdout).toContain('result.verdict is not a bounded result field');
+        }, 60000);
     });
 });
