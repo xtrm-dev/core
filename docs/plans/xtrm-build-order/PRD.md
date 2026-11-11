@@ -427,7 +427,7 @@ Folded in: **XT-189** version the guard hooks in ~/.xtrm
 
 ### Step 4b — Unlock GitHub Actions for xtrm-dev
 
-[changed] (v4) [you] `billing · all xtrm-dev repos`
+[done] (v4) [you] `billing · all xtrm-dev repos`
 
 - **Brings** — Every xtrm-dev job fails at start with *“The job was not started because your account is locked due to a billing issue.”* The org is on the Free plan. core, specialists and mcp-inspector are public, so their Actions minutes cost nothing; xtrm and .github are private. Actions usage was fully discounted (net $0) in August, September and October. The only charged item is GitHub Advanced Security: $19 net in August and in September, and $11.65 so far in October.
 - **Why here** — No check can pass on core until this is fixed, and step 15's gates need running checks. Inference, not verified: the lock comes from an unpaid Advanced Security charge, not from Actions minutes.
@@ -443,6 +443,10 @@ Folded in: **XT-189** version the guard hooks in ~/.xtrm
 > - Checks run where the work runs: each repo gets one local command (`make ci` or `npm run ci`), workers run it before a PR, and the host records the result in the Issue Journal with the head SHA (step 14). The merge guard reads that record, not GitHub checks.
 > - Only core needs `--admin`: it requires four Actions checks (OSV, Semgrep, Gitleaks, pr-review-gate) that cannot start while Actions is locked. specialists requires none; private repos on the Free plan cannot have branch protection. Proposal: remove the four checks on core and run gitleaks, OSV and Semgrep in the local check command instead. Needs your yes: it changes branch protection.
 > - Mercury repos are unaffected: their self-hosted runners belong to mercuryintelligence, which is not locked.
+
+> **Done · 11-11**
+> - You restored GitHub Actions on xtrm-dev. Verified: a re-run of CI on core `main` (96e6c379) now executes its steps, where every run since the lock had started 0 steps.
+> - From now on a red check is a real result again: merges wait for green checks, or for failures shown to be identical on `main`. The 10-31 local-check rule stays as the fallback when runners are unavailable.
 
 ### Step 4c — Skill-suggest hotfix
 
