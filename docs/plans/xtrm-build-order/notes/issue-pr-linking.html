@@ -83,7 +83,7 @@ figcaption{font-size:13px;color:var(--mut);margin-top:8px;max-width:84ch}
 .small{font-size:12.5px;color:var(--mut)}
 .foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mut)}
 </style><meta property="og:title" content="Linking a Substrate issue to its pull request" />
-<meta property="og:description" content="A technical design note detailing the implementation of a structured linking system between Substrate issues and GitHub pull requests using distinct created from and mentioned relations." />
+<meta property="og:description" content="A technical design note detailing the implementation of structured PR linking in Substrate, distinguishing between delivery evidence and prose mentions." />
 <meta property="og:url" content="https://soulful-karma-8zk3.here.now/" />
 <meta property="og:type" content="website" />
 <meta property="og:image" content="https://here.now/og/soulful-karma-8zk3.jpg" />
@@ -284,9 +284,11 @@ CREATE TABLE issue_pull_requests (
   url        TEXT    NULL,
   actor      TEXT    NULL,
   created_at INTEGER NOT NULL,
+  superseded_at INTEGER NULL,   -- unlink supersedes, never deletes
   PRIMARY KEY (issue_id, repository, number, relation, source)
 );
 CREATE INDEX ix_issue_prs_repo ON issue_pull_requests (repository, number);
+CREATE INDEX ix_issue_prs_live ON issue_pull_requests (issue_id, superseded_at);
 
 -- T2 evidence is a child table: SHA -> issue/PR is the indexed read (step 26, 27)
 CREATE TABLE issue_pr_commits (
@@ -301,6 +303,7 @@ CREATE TABLE issue_pr_commits (
 );
 CREATE INDEX ix_issue_pr_commits_sha ON issue_pr_commits (sha);
 CREATE INDEX ix_issue_pr_commits_landed ON issue_pr_commits (landed_sha);</code></pre>
+<p class="small">Unlink never deletes: <code>issue_pull_requests.superseded_at</code> is set, and every read filters <code>superseded_at IS NULL</code>.</p>
 <pre><code>-- live PR state (step 26) · host inserts at open, the reconciler owns every later change
 CREATE TABLE pull_requests (
   repository       TEXT NOT NULL,
