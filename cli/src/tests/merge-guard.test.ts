@@ -463,12 +463,38 @@ describe('marker selection (CORE-2590)', () => {
         expect(sb.calls).toHaveLength(0);
     });
 
-    it('takes the LAST marker, so an appended holder-only marker names no Issue', async () => {
+    it('ignores a holder-only comment appended after the real marker (CORE-2590 review 3)', async () => {
+        const sb = sbIssue('verified');
         const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(withBody(
             `<!-- xtrm issue=${ISSUE} holder=w run=r -->\n<!-- xtrm holder=other run=2 -->\n`,
-        )));
-        expect(decision.allow).toBe(false);
-        expect(decision.reason).toMatch(/no Substrate Issue/);
+        ), { runSb: sb.runSb }));
+        expect(decision.allow).toBe(true);
+        expect(decision.issueRef).toBe(ISSUE);
+        expect(decision.issueLookup).toBe('verified');
+        expect(sb.calls).toHaveLength(1);
+    });
+
+    it('ignores an xtrm-looking comment that does not start with xtrm (CORE-2590 review 3)', async () => {
+        const sb = sbIssue('verified');
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(withBody(
+            `<!-- xtrm issue=${ISSUE} holder=w run=r -->\n<!-- see xtrm-tools run=9 -->\n`,
+        ), { runSb: sb.runSb }));
+        expect(decision.allow).toBe(true);
+        expect(decision.issueRef).toBe(ISSUE);
+        expect(decision.issueLookup).toBe('verified');
+        expect(decision.reason).not.toMatch(/no Substrate Issue/);
+    });
+
+    it('ignores a marker inside a 4-backtick fence that contains a 3-backtick line (CORE-2590 review 2)', async () => {
+        const sb = sbIssue('verified');
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(withBody(
+            '````\n```\n<!-- xtrm issue=ZZZ-999999 holder=w run=r -->\n```\n````\n'
+            + `<!-- xtrm issue=${ISSUE} holder=w run=r -->\n`,
+        ), { runSb: sb.runSb }));
+        expect(decision.allow).toBe(true);
+        expect(decision.issueRef).toBe(ISSUE);
+        expect(decision.reason).not.toMatch(/different Issues/);
+        expect(sb.calls).toHaveLength(1);
     });
 
     it('does not derive an Issue from a branch named like a ref', async () => {

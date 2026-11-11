@@ -133,6 +133,14 @@ if (argv[0] === 'identity' && argv[1] === 'merge-check' && argv.indexOf('--gh-ar
     process.stdout.write(JSON.stringify({ allow: false, repo: target.repo, pr: target.pr, head: target.head, message: 'merge refused: no review at the current head' }));
     process.exit(1);
   }
+  // CORE-2590 review finding 1: an unverified Issue allows, and the shim must say so.
+  if (process.env.STUB_CHECK === 'unknown') {
+    process.stdout.write(JSON.stringify({
+      allow: true, repo: target.repo, pr: target.pr, head: target.head, message: 'merge allowed',
+      issueRef: 'CORE-2590', issueLookup: 'unknown', issueLookupDetail: 'sb is absent or did not answer in 5 s',
+    }));
+    process.exit(0);
+  }
   // An override decision carries no head; the shim must resolve and pin it (A).
   const head = process.env.STUB_NO_HEAD ? '' : target.head;
   process.stdout.write(JSON.stringify({ allow: true, repo: target.repo, pr: target.pr, head, message: 'merge allowed' }));
@@ -229,6 +237,14 @@ describe('the guard flag ON path', () => {
         expect(result.status).not.toBe(0);
         expect(result.stderr).toMatch(/merge refused/);
         expect(readLog(ghLog).filter((argv) => argv[1] === 'merge')).toHaveLength(0);
+    });
+
+    it('warns on stderr when the Issue was not verified, and still merges (CORE-2590 review 1)', () => {
+        const result = runShim(['pr', 'merge', '123', '--repo', 'xtrm-dev/core', '--squash'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on', STUB_CHECK: 'unknown' });
+        expect(result.status).toBe(0);
+        expect(result.stderr).toMatch(/the Issue was not verified for CORE-2590/);
+        expect(result.stderr).toMatch(/sb is absent or did not answer in 5 s/);
+        expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'merge')).toHaveLength(1);
     });
 
     it('checks, merges and records the PR named in the argument, not the cwd PR', () => {

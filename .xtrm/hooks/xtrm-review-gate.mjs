@@ -20,7 +20,7 @@
 // eval. The gh shim (CORE-2528) is the backstop for those; see
 // .xtrm/skills/default/engineering-quality/references/review.md.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -335,6 +335,12 @@ function pre(payload) {
                 '',
                 'Do not retry the merge. Get a review at the current head first, then merge.',
             ].join('\n'));
+        }
+        // CORE-2590 review finding 1: an `unknown` Issue state allows the merge, and
+        // the JSON decision is discarded here, so the one-line warning is printed.
+        // writeSync because allow() exits at once and a pipe write may not flush.
+        if (decision.issueLookup === 'unknown') {
+            writeSync(2, `xtrm-review-gate: merge allowed without an Issue check: ${decision.issueLookupDetail || 'reason not reported'}\n`);
         }
     }
     allow();

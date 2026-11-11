@@ -57991,6 +57991,14 @@ function main() {
       process.stderr.write(message + '\\n');
       process.exit(1);
     }
+    // CORE-2590 review finding 1: an unknown Issue state allows the merge, and
+    // this shim is the path agents use, so the one-line warning must be written
+    // here; the JSON decision alone is discarded by the caller.
+    if (checked.data.issueLookup === 'unknown') {
+      const ref = checked.data.issueRef || 'this pull request';
+      const why = checked.data.issueLookupDetail || 'reason not reported';
+      process.stderr.write('gh (xtrm): the Issue was not verified for ' + ref + ': ' + why + '; merging anyway\\n');
+    }
     const repo = checked.data.repo;
     const pr = checked.data.pr;
     // The pin must survive the override path: a decision without a head (the
@@ -71997,7 +72005,7 @@ function lintModelBody(body) {
   if (verdicts.length > 1) return `the review body needs exactly one "- Verdict:" line, found ${verdicts.length}`;
   return null;
 }
-var XTRM_MARKER = /<!--[^>]*?xtrm\b([^>]*?)-->/g;
+var XTRM_MARKER = /<!--[ \t]*xtrm[ \t]+([^>]*?)-->/g;
 function markerAttributes(attributes) {
   const out = {};
   for (const part of attributes.trim().split(/\s+/)) {
@@ -72011,18 +72019,26 @@ function markerAttributes(attributes) {
   }
   return out;
 }
+var FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+var FENCE_CLOSE = /^ {0,3}(`+|~+)[ \t]*$/;
 function parseIssueMarkers(text) {
   const out = [];
-  let fenced = false;
+  let fence = null;
   for (const line of (text ?? "").split("\n")) {
-    if (/^\s{0,3}(```|~~~)/.test(line)) {
-      fenced = !fenced;
+    if (fence) {
+      const close = line.match(FENCE_CLOSE);
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;
       continue;
     }
-    if (fenced || /^\s*>/.test(line)) continue;
+    const open3 = line.match(FENCE_OPEN);
+    if (open3 && !(open3[1][0] === "`" && open3[2].includes("`"))) {
+      fence = { char: open3[1][0], length: open3[1].length };
+      continue;
+    }
+    if (/^\s*>/.test(line)) continue;
     for (const match of line.matchAll(XTRM_MARKER)) {
       const marker = markerAttributes(match[1]);
-      if (marker.issue || marker.holder || marker.run) out.push(marker);
+      if (marker.issue) out.push(marker);
     }
   }
   return out;
@@ -72103,7 +72119,7 @@ async function postReview(input, deps) {
     throw new ReviewRefused(`the Issue ref '${candidate}' is not a Substrate ref (expected e.g. CORE-2528); refusing to journal it`);
   }
   const issueRef = candidate;
-  if (!issueRef) warnings.push("no Substrate Issue ref in the PR body or branch; the review is not journaled");
+  if (!issueRef) warnings.push("no Substrate Issue ref in the PR body; the review is not journaled");
   const lines = input.body.split("\n");
   const line1 = (lines[0] ?? "").trim();
   const rest = lines.slice(1).join("\n").trim();

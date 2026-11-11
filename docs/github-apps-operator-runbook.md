@@ -285,12 +285,15 @@ Known limits, accepted rather than hidden:
   cannot detect a server PATH that lacks the shim directory.
 - The merge guard reads the **PR body marker** and nothing else: `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->`.
   A branch name such as `fix/CORE-2590-x` or `fix/UTF-8-parser` is **not** an Issue source (branch derivation was
-  removed by CORE-2590). Only the LAST marker in the body counts; a marker inside a fenced code block or on a
-  `>` quote line is ignored; two markers naming different refs are refused as ambiguous. When the review would
-  otherwise allow, the guard makes ONE read-only `sb issue show <REF> --json` call (5 s timeout, explicit cwd,
-  no stdin) and never prints the Issue body: an explicit not-found **denies** (fix the marker), while `sb`
-  absent, a timeout, unparseable output or `XTRM_MERGE_GUARD_OFFLINE=1` records the `unknown` state, prints one
-  warning and **allows** the merge — an outage must not block an approved merge.
+  removed by CORE-2590). Only comments whose content starts with `xtrm` and that carry `issue=` are markers, so a
+  comment such as `<!-- see xtrm-tools run=9 -->` or a holder-only comment is ignored; only the LAST marker in the
+  body counts; a marker inside a fenced code block (fences close only on the same character, at least as long, as
+  CommonMark requires) or on a `>` quote line is ignored; two markers naming different refs are refused as
+  ambiguous. When the review would otherwise allow, the guard makes ONE read-only `sb issue show <REF> --json`
+  call (5 s timeout, explicit cwd, no stdin) and never prints the Issue body: an explicit not-found **denies**
+  (fix the marker), while `sb` absent, a timeout, unparseable output or `XTRM_MERGE_GUARD_OFFLINE=1` records the
+  `unknown` state, prints one warning naming the reason on the path the agent sees (the `gh` shim, or the review
+  hook) and **allows** the merge — an outage must not block an approved merge.
 
 | Command | What it does |
 | --- | --- |

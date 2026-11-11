@@ -112,7 +112,12 @@ export function lintModelBody(body: string): string | null {
 
 export interface IssueMarker { issue?: string; holder?: string; run?: string }
 
-const XTRM_MARKER = /<!--[^>]*?xtrm\b([^>]*?)-->/g;
+// A marker is an xtrm comment whose content STARTS with `xtrm`, and only a marker
+// that carries `issue=` counts (CORE-2590 review findings 1 and 3): a later comment
+// such as `<!-- see xtrm-tools run=9 -->` must not displace the real marker, and a
+// holder-only comment names no Issue, so it is ignored rather than selected as the
+// last one.
+const XTRM_MARKER = /<!--[ \t]*xtrm[ \t]+([^>]*?)-->/g;
 
 function markerAttributes(attributes: string): IssueMarker {
     const out: IssueMarker = {};
@@ -128,23 +133,40 @@ function markerAttributes(attributes: string): IssueMarker {
     return out;
 }
 
+/** A fence opens with up to 3 spaces, then 3+ backticks or 3+ tildes. */
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+/** A fence closes on the same character, at least as long, with nothing else. */
+const FENCE_CLOSE = /^ {0,3}(`+|~+)[ \t]*$/;
+
 /**
  * Every valid marker, in body order. A marker inside a fenced code block or on a
  * `>` quote line is pasted text, not a declaration, so it is not a marker: either
  * is a way to make a fake ref look like the real one (CORE-2590).
+ *
+ * Fences follow CommonMark rather than a toggle (CORE-2590 review finding 2): a
+ * fence closes only on the same character with at least the opening length, so a
+ * 4-backtick block that contains a 3-backtick line does not leak its content, and
+ * a `~~~` line cannot close a ``` block.
  */
 export function parseIssueMarkers(text: string): IssueMarker[] {
     const out: IssueMarker[] = [];
-    let fenced = false;
+    let fence: { char: string; length: number } | null = null;
     for (const line of (text ?? '').split('\n')) {
-        if (/^\s{0,3}(```|~~~)/.test(line)) {
-            fenced = !fenced;
+        if (fence) {
+            const close = line.match(FENCE_CLOSE);
+            if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;
             continue;
         }
-        if (fenced || /^\s*>/.test(line)) continue;
+        const open = line.match(FENCE_OPEN);
+        // A backtick fence's info string may not contain a backtick (CommonMark).
+        if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
+            fence = { char: open[1][0], length: open[1].length };
+            continue;
+        }
+        if (/^\s*>/.test(line)) continue;
         for (const match of line.matchAll(XTRM_MARKER)) {
             const marker = markerAttributes(match[1]);
-            if (marker.issue || marker.holder || marker.run) out.push(marker);
+            if (marker.issue) out.push(marker);
         }
     }
     return out;
@@ -305,7 +327,7 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
         throw new ReviewRefused(`the Issue ref '${candidate}' is not a Substrate ref (expected e.g. CORE-2528); refusing to journal it`);
     }
     const issueRef = candidate;
-    if (!issueRef) warnings.push('no Substrate Issue ref in the PR body or branch; the review is not journaled');
+    if (!issueRef) warnings.push('no Substrate Issue ref in the PR body; the review is not journaled');
 
     const lines = input.body.split('\n');
     const line1 = (lines[0] ?? '').trim();
