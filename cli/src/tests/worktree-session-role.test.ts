@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync, rmSync } from 'node:fs';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClaudeCommand } from '../commands/claude.js';
 import { createPiCommand } from '../commands/pi.js';
 import {
@@ -1150,6 +1150,31 @@ describe('buildRoleTmuxPlan (claude runtime)', () => {
         });
         const modelIdx = plan.runtimeArgs.indexOf('--model');
         expect(plan.runtimeArgs[modelIdx + 1]).toBe('sonnet');
+    });
+
+    // 6pgu's LOW on PR #906 (CORE-2609): the mapping must not smuggle a model
+    // past the runtime gate. claude-bridge/gpt-5 maps to gpt-5, which claude
+    // cannot resolve, so it is dropped with the existing warning instead of
+    // launching a session that dies at turn 1.
+    it('drops a bridged id that the runtime gate rejects after mapping', () => {
+        const warnings: string[] = [];
+        const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+            warnings.push(String(chunk));
+            return true;
+        });
+        try {
+            const plan = buildRoleTmuxPlan({ ...WT,
+                runtime: 'claude',
+                role: { ...role, model: 'claude-bridge/gpt-5' },
+                parentSessionId: '',
+                turn1Body: '',
+            });
+            expect(plan.runtimeArgs).not.toContain('--model');
+            expect(plan.runtimeArgs).not.toContain('gpt-5');
+            expect(warnings.join('')).toContain("ignoring model 'claude-bridge/gpt-5'");
+        } finally {
+            spy.mockRestore();
+        }
     });
 
     // The prefix never reaches claude with any other provider, whatever the

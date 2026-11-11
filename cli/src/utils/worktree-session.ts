@@ -2212,16 +2212,17 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
     // CLI override wins over the specialist default. A role default is authored
     // for the pi surface, so when claude cannot resolve it in its own catalogue
     // drop it and let claude inherit its configured model instead of spawning a
-    // session that dies at turn 1.
-    // A claude-bridge/<id> role default is pi's route to Claude Code, so the
-    // bare id is what claude resolves; the pi runtime keeps the prefixed id
-    // untouched (CORE-2608).
+    // session that dies at turn 1. A claude-bridge/<id> role default is pi's
+    // route to Claude Code, so the bare id is what claude resolves and the
+    // runtime gate applies to that bare id — mapping must not smuggle a model
+    // past it (CORE-2608, CORE-2609). The pi runtime keeps the prefixed id
+    // untouched.
     let model = modelOverride ?? role.model;
     if (runtime === 'claude' && !modelOverride && role.model) {
-        const bridgedModel = claudeBridgeModelId(role.model);
-        if (bridgedModel) {
-            model = bridgedModel;
-        } else if (!isClaudeRunnableModel(role.model)) {
+        const resolvedModel = claudeBridgeModelId(role.model) ?? role.model;
+        if (isClaudeRunnableModel(resolvedModel)) {
+            model = resolvedModel;
+        } else {
             process.stderr.write(kleur.yellow(
                 `  ⚠ role '${role.name}': ignoring model '${role.model}'; claude inherits its own default.`
                 + ` Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.\n`,
