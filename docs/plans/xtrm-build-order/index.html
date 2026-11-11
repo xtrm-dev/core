@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XTRM Build Order</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0}
+/* Layout: one reading column; a pipeline diagram up top, then phases as numbered step lists with "brings / why here" pairs. Light-only by request. */
+:root{
+  --paper:#f6f7f4; --card:#ffffff; --ink:#1c2321; --muted:#5b6661; --rule:#dfe3dd;
+  --accent:#1f5a85;           /* XTRM blue */
+  --jira:#2a62c9; --sb:#a8581c; --app:#6b4aa3; --safe:#2f7a4f; --own:#8a6a12; --pub:#9b3b4a;
+  --tint-safe:#e6f2ea; --tint-inst:#e7eef6; --tint-own:#f6efdc; --tint-bind:#f5e9df; --tint-app:#eee8f6; --tint-loop:#f3e4e7;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme:light;
+}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6}
+.wrap{max-width:980px;margin:0 auto;padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:44px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(2rem,5vw,3rem);font-weight:700;letter-spacing:-.01em}
+h2{font-size:1.6rem;font-weight:700}
+h3{font-size:1.15rem;font-weight:600}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{font-size:1.1rem;color:var(--muted)}
+header{display:flex;flex-direction:column;gap:14px}
+section{display:flex;flex-direction:column;gap:16px}
+.note{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.note strong{font-weight:600}
+code,.mono{font-family:var(--mono);font-size:.86em}
+.fig{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:16px;overflow-x:auto}
+.fig svg{display:block;min-width:760px;width:100%;height:auto}
+.fig.small svg{min-width:560px}
+figcaption{font-size:.85rem;color:var(--muted);margin-top:8px}
+.phase{display:flex;flex-direction:column;gap:14px;border-top:3px solid var(--c);padding-top:18px}
+.phase-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px}
+.phase-head .tag{font-family:var(--mono);font-size:.75rem;padding:2px 8px;border-radius:99px;background:var(--t);color:var(--c);font-weight:500}
+ol.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.step{display:grid;grid-template-columns:3.2rem 1fr;gap:4px 14px;background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px 16px}
+.num{font-family:var(--display);font-size:1.5rem;font-weight:700;color:var(--c);line-height:1.1;font-variant-numeric:tabular-nums}
+.step-body{min-width:0;display:flex;flex-direction:column;gap:6px}
+.step-title{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}
+.step-title b{font-weight:600;font-size:1.02rem}
+.refs{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+.pair{display:grid;grid-template-columns:5.5rem 1fr;gap:2px 10px;font-size:.95rem}
+.pair dt{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:3px}
+.pair dd{margin:0;min-width:0}
+.chip{font-family:var(--mono);font-size:.7rem;padding:1px 7px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.done{color:var(--safe)} .ready{color:var(--accent)} .draft{color:var(--muted)} .new{color:var(--pub)} .gate{color:var(--own)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.85rem;color:var(--muted);align-items:center}
+.why-order{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.why-order .note h3{font-size:1rem}
+footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--rule);padding-top:16px}
+@media (max-width:520px){.step{grid-template-columns:1fr}.pair{grid-template-columns:1fr}}
+.fold{font-size:.88rem;color:var(--muted)}
+.fold b{font-family:var(--mono);font-size:.78rem;font-weight:500;color:var(--ink)}
+.ev{width:100%;border-collapse:collapse;font-size:.93rem;font-variant-numeric:tabular-nums}
+.ev th,.ev td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+.ev th{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.ev td.n{font-family:var(--display);font-weight:700;font-size:1.15rem;white-space:nowrap}
+.tablewrap{background:var(--card);border:1px solid var(--rule);border-radius:12px;overflow-x:auto}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.rule-k{font-family:var(--mono);font-size:.8rem;background:#f0f2ee;border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:nowrap}
+.new-badge{font-family:var(--mono);font-size:.7rem;background:var(--pub);color:#ffffff;border-radius:4px;padding:1px 6px}
+.notes{border-top:1px dashed var(--rule);margin-top:4px;padding-top:6px}
+.notes summary{cursor:pointer;font-family:var(--mono);font-size:.74rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);list-style:none;display:flex;gap:8px;align-items:center;min-height:28px}
+.notes summary::-webkit-details-marker{display:none}
+.notes summary::before{content:"+";display:inline-block;width:1em;color:var(--c,var(--accent));font-weight:700}
+.notes[open] summary::before{content:"\2212"}
+.notes summary:focus-visible,.notes textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.notes .has{display:none;color:var(--accent);text-transform:none;letter-spacing:0}
+.notes.filled .has{display:inline}
+.notes textarea{width:100%;box-sizing:border-box;min-height:6.5rem;resize:vertical;margin-top:6px;padding:8px 10px;font:inherit;font-size:.93rem;line-height:1.45;color:var(--ink);background:#fbfcfa;border:1px solid var(--rule);border-radius:8px}
+.notes textarea:disabled{opacity:.6}
+.notes .st{font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-top:4px;min-height:1em}
+.notes .st.err{color:var(--pub)}
+#nx{position:static;display:block;margin:0 auto 16px;font:600 .85rem var(--body,inherit);background:var(--accent);color:#fff;border:0;border-radius:99px;padding:10px 16px;min-height:40px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+#nx:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#nxp{position:static;max-width:948px;margin:0 auto 40px;background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:12px;box-shadow:0 4px 16px rgba(0,0,0,.15)}
+#nxp textarea{width:100%;box-sizing:border-box;height:40vh;font:.85rem var(--mono);border:1px solid var(--rule);border-radius:8px;padding:8px}
+#nxp p{margin:0 0 8px;font-size:.85rem;color:var(--muted)}
+.ruling{background:var(--t,#eef3f7);border-left:3px solid var(--c,var(--accent));border-radius:0 8px 8px 0;padding:8px 12px;font-size:.92rem}
+.ruling-k{display:block;font-family:var(--mono);font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;color:var(--c,var(--accent));margin-bottom:4px}
+.ruling ul{margin:0;padding-left:1.1rem;display:flex;flex-direction:column;gap:4px}
+.blocked-list{margin:0;padding-left:1.1rem}
+table.mini{border-collapse:collapse;margin:.6em 0;font-size:.9em;width:100%}table.mini th,table.mini td{border:1px solid var(--rule);padding:.35em .5em;text-align:left;vertical-align:top}table.mini th{color:var(--muted);font-weight:600}
+.chip.st-done{background:color-mix(in srgb,var(--safe) 18%,transparent);color:var(--safe);border-color:var(--safe)}.chip.st-part{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-color:var(--accent)}li.step.is-done>.num{background:var(--safe);color:var(--paper)}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">XTRM programme · ruling of 2026-10-29 · version 4</span>
+  <h1>The build order, from safe installs to the new xtrm-app</h1>
+  <p class="lede">There are 46 numbered steps and 13 lettered additions in six phases. Each phase gives the next one something it cannot work without. Two rules run through the whole plan. Every Jira item, Substrate issue, PR and commit links to the others. Every Substrate duty is done by the host or enforced by a gate, so no agent can skip it.</p>
+  <div class="note">
+    <p><strong>What changed since version 1.</strong> You confirmed the reading of XT-104, XT-110, XT-114, XT-178 and XT-184. You asked for a strong GitHub and Jira binding. I measured how linking works today; it barely does (next section). I added a linking spine to phases 1–4 and folded 27 open XT tickets into the steps they belong to.</p>
+    <p><strong>Version 3.</strong> You pointed at the gap between what Substrate can do and what the instructions tell agents. I measured it (section below). The plan now has a duty track (steps 8, 16, 22) and a stage model for statuses (step 30).</p>
+    <p><strong>Version 4.</strong> I read your notes from 10-29 and checked each one against the server. Steps with a note now carry a "Ruling on your note" box. New work is added as lettered steps (4b, 15b and so on), so no step number moved and every note stays on its step. The page now lives on here.now, and your notes save there.</p>
+    <p><strong>Already written to Jira</strong> as xtrm-bot: XT-178 is renamed and has an appended amendment with the linking design (the original text is unchanged). XT-110, XT-114 and XT-184 have a ruling comment each. Every folded-in ticket has a Relates link to its parent.</p>
+  </div>
+</header>
+
+<section>
+  <h2>How linking works today</h2>
+  <p>I measured this on the server database and in Jira on 2026-10-28.</p>
+  <div class="tablewrap">
+    <table class="ev">
+      <thead><tr><th>Measure</th><th>Value</th><th>What it means</th></tr></thead>
+      <tbody>
+        <tr><td>Closures naming a PR only in the free-text reason</td><td class="n">2,468</td><td>Of 16,693 closures. The PR is prose, so nothing can link to it or check it.</td></tr>
+        <tr><td>PR records in Substrate (artifact kind <code>pr</code>)</td><td class="n">0</td><td>The data model has the kind. No <code>sb</code> command and no host code writes it.</td></tr>
+        <tr><td>Work receipts with a commit SHA</td><td class="n">9 / 746</td><td>Commits are almost never tied to the work they belong to.</td></tr>
+        <tr><td>Jira bindings (<code>external_bindings</code>)</td><td class="n">0</td><td>Substrate knows no Jira key. Every link today is typed by hand.</td></tr>
+        <tr><td>PRs in the XT-114 dev panel</td><td class="n">0</td><td>GitHub for Jira <em>is</em> installed on both orgs and builds already show up. PRs don't, because branch names and PR titles carry no Jira key.</td></tr>
+        <tr><td>Recent core commits naming an XT key</td><td class="n">1 / 400</td><td>The convention that would light up the dev panel is not in use.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Example: CORE-2536 was merged as <code>xtrm-dev/core#845</code>, but <code>sb provenance trace CORE-2536</code> shows <code>prs: []</code> and <code>commits: []</code>. The only trace of the PR is a sentence in the close reason.</p>
+</section>
+
+<section>
+  <h2>The linking spine</h2>
+  <p>One piece of work has up to three identities. Each side stores the other two as a structured link, never as prose. Exactly one writer exists for each link.</p>
+  <figure class="fig" style="margin:0">
+    <svg viewBox="0 0 1000 340" role="img" aria-label="Jira item, Substrate issue and GitHub PR linked both ways; the host records the PR on open, the reconciler records state changes, gates refuse unlinked work">
+      <defs>
+        <marker id="s1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1c2321"/></marker>
+      </defs>
+      <g font-family="Public Sans, sans-serif">
+        <rect x="20" y="30" width="270" height="150" rx="12" fill="#eaf0fb" stroke="#2a62c9"/>
+        <text x="38" y="58" font-size="16" font-weight="700" fill="#1c2321">Jira · XT-178</text>
+        <g font-size="12.5" fill="#1c2321">
+          <text x="38" y="84">Dev panel: branches, commits, PRs</text>
+          <text x="38" y="104">Remote link → Substrate ref</text>
+          <text x="38" y="124">Label substrate:CORE-NNNN</text>
+          <text x="38" y="144">Comments: closure, receipt</text>
+        </g>
+        <text x="38" y="168" font-size="11" fill="#2a62c9" font-family="JetBrains Mono, monospace">via GitHub for Jira (installed)</text>
+
+        <rect x="365" y="30" width="270" height="150" rx="12" fill="#f8ede3" stroke="#a8581c"/>
+        <text x="383" y="58" font-size="16" font-weight="700" fill="#1c2321">Substrate · CORE-NNNN</text>
+        <g font-size="12.5" fill="#1c2321">
+          <text x="383" y="84">Jira binding: key + URL</text>
+          <text x="383" y="104">PR artifact: org/repo#n, URL</text>
+          <text x="383" y="124">head SHA, state, merge SHA</text>
+          <text x="383" y="144">Commits via receipt trailers</text>
+        </g>
+        <text x="383" y="168" font-size="11" fill="#a8581c" font-family="JetBrains Mono, monospace">sb issue show prints links</text>
+
+        <rect x="710" y="30" width="270" height="150" rx="12" fill="#eef4ee" stroke="#2f7a4f"/>
+        <text x="728" y="58" font-size="16" font-weight="700" fill="#1c2321">GitHub · PR #n</text>
+        <g font-size="12.5" fill="#1c2321">
+          <text x="728" y="84">Title: XT-178 CORE-NNNN: …</text>
+          <text x="728" y="104">Branch xt/XT-178-CORE-NNNN-…</text>
+          <text x="728" y="124">Body link block (host-written)</text>
+          <text x="728" y="144">Trailers: XTRM-Issue, Jira</text>
+        </g>
+        <text x="728" y="168" font-size="11" fill="#2f7a4f" font-family="JetBrains Mono, monospace">pr-review-gate checks it</text>
+
+        <g stroke="#1c2321" stroke-width="1.5" fill="none">
+          <path d="M292 95 H362" marker-end="url(#s1)"/><path d="M362 115 H292" marker-end="url(#s1)"/>
+          <path d="M637 95 H707" marker-end="url(#s1)"/><path d="M707 115 H637" marker-end="url(#s1)"/>
+        </g>
+
+        <rect x="20" y="220" width="300" height="100" rx="10" fill="#ffffff" stroke="#5b6661"/>
+        <text x="36" y="246" font-size="13.5" font-weight="600" fill="#1c2321">1 · Record on open</text>
+        <text x="36" y="268" font-size="12" fill="#5b6661">Host pushes the branch, opens the PR,</text>
+        <text x="36" y="286" font-size="12" fill="#5b6661">attaches the PR to the receipt in one step.</text>
+        <text x="36" y="306" font-size="11" fill="#5b6661" font-family="JetBrains Mono, monospace">step 14 · sb provenance attach</text>
+
+        <rect x="350" y="220" width="300" height="100" rx="10" fill="#ffffff" stroke="#5b6661"/>
+        <text x="366" y="246" font-size="13.5" font-weight="600" fill="#1c2321">2 · One reconciler</text>
+        <text x="366" y="268" font-size="12" fill="#5b6661">Polls GitHub; the only writer of review,</text>
+        <text x="366" y="286" font-size="12" fill="#5b6661">merged and closed. Feeds XT-184 and Jira.</text>
+        <text x="366" y="306" font-size="11" fill="#5b6661" font-family="JetBrains Mono, monospace">step 26 · agent host</text>
+
+        <rect x="680" y="220" width="300" height="100" rx="10" fill="#ffffff" stroke="#9b3b4a"/>
+        <text x="696" y="246" font-size="13.5" font-weight="600" fill="#1c2321">3 · Gates fail closed</text>
+        <text x="696" y="268" font-size="12" fill="#5b6661">No ref in the PR: gate fails. Code work</text>
+        <text x="696" y="286" font-size="12" fill="#5b6661">with no PR or commit: close is refused.</text>
+        <text x="696" y="306" font-size="11" fill="#9b3b4a" font-family="JetBrains Mono, monospace">step 15 · sb links check, step 33</text>
+      </g>
+    </svg>
+    <figcaption>Each arrow is a stored link you can open. Where the work is bound to Jira, the Jira key goes in front of the Substrate ref in branch and title, because GitHub for Jira only matches Jira keys.</figcaption>
+  </figure>
+  <div class="rules">
+    <div class="note"><h3>Names</h3><p class="rule-k">xt/XT-178-CORE-2601-pr-binding</p><p class="rule-k">XT-178 CORE-2601: record PRs on open</p><p>Unbound work drops the Jira key: <code>xt/CORE-2601-…</code>. The xt launcher and the specialists workspace lease create the names, so agents never type them.</p></div>
+    <div class="note"><h3>Opening anything from anything</h3><p>From Jira: the dev panel opens the PR, and a remote link opens the Substrate ref. From Substrate: <code>sb issue show</code> prints PR and Jira as clickable terminal links. From GitHub: the body block links both. Later, xtrm-app shows all three on one page (step 42).</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>What Substrate can do, what agents are told, what actually happens</h2>
+  <p>Only issues created in Substrate are counted: 2,478 of 19,180. The other 16,702 are Beads imports. Of the native issues, 1,357 are done.</p>
+  <div class="tablewrap">
+    <table class="ev">
+      <thead><tr><th>Substrate feature</th><th>Done issues that used it</th><th>Mentions in core instructions</th><th>Mentions in specialists</th></tr></thead>
+      <tbody>
+        <tr><td>Attestation before work</td><td class="n">94%</td><td>30</td><td>11</td></tr>
+        <tr><td>Journal entry of any kind</td><td class="n">92%</td><td>11 (append)</td><td>0</td></tr>
+        <tr><td>Result entry before close</td><td class="n">73%</td><td>11 (close)</td><td>0</td></tr>
+        <tr><td>Claim before work</td><td class="n">71%</td><td>many</td><td>60</td></tr>
+        <tr><td>Dispatch binding</td><td class="n">38%</td><td>1</td><td>0</td></tr>
+        <tr><td>Work receipt</td><td class="n">33%</td><td>22</td><td>0</td></tr>
+        <tr><td>Checkpoint</td><td class="n">7%</td><td>4</td><td>0</td></tr>
+        <tr><td>Finalized receipt</td><td class="n">1%</td><td>0</td><td>0</td></tr>
+        <tr><td>Commit record (trailers)</td><td class="n">1%</td><td>0</td><td>0</td></tr>
+        <tr><td>PR record</td><td class="n">0%</td><td>0</td><td>0</td></tr>
+        <tr><td><code>sb issue validate</code></td><td class="n">–</td><td>0</td><td>0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="why-order">
+    <div class="note"><h3>The pattern</h3><p>The less a feature is described, the less it is used. Checkpoints, receipts, commits and PRs, the features that give continuity and links, are almost absent from both the instructions and the data.</p></div>
+    <div class="note"><h3>The specialists side</h3><p>Only 9 of 25 specialist prompts and 5 of 25 mandatory rules mention Substrate at all. Retired Beads commands are still named 41 times in core instructions and 33 times in specialists.</p></div>
+    <div class="note"><h3>The ruling</h3><p>Better text alone will not fix this. Each duty moves to the host or behind a gate, so it happens even when an agent ignores its prompt. Instructions then describe what the machine already does, and they are generated from <code>sb help</code>, so they cannot drift from the CLI.</p></div>
+  </div>
+  <div class="tablewrap">
+    <table class="ev">
+      <thead><tr><th>Duty</th><th>Owner after hardening</th><th>What makes it unavoidable</th></tr></thead>
+      <tbody>
+        <tr><td>Claim</td><td>Launcher and dispatcher</td><td>Edit gate blocks bound work without a live claim; close after a lapsed claim fails</td></tr>
+        <tr><td>Validate and attest</td><td>Planner</td><td>Claim refuses an Issue whose contract fails <code>sb issue validate</code></td></tr>
+        <tr><td>Dispatch binding and receipt</td><td>Host at dispatch and at settle</td><td>Written by the host, never by the agent</td></tr>
+        <tr><td>Checkpoint</td><td>Stop and compact hooks</td><td>Every claimed session, not only bound ones (today 7%)</td></tr>
+        <tr><td>Commit record</td><td>Commit hook</td><td>Adds <code>XTRM-Issue</code> and <code>XTRM-Receipt</code> trailers automatically</td></tr>
+        <tr><td>PR record and state</td><td>Host on open, reconciler after</td><td>pr-review-gate fails a PR without the link block</td></tr>
+        <tr><td>Result entry</td><td>Agent</td><td>Close is refused without one</td></tr>
+        <tr><td>Close</td><td>Reconciler on merge, or agent</td><td>Close needs a result, a PR or commit record, and a live claim</td></tr>
+        <tr><td>Relations (discovered from, blocks)</td><td>Agent</td><td><code>sb links check</code> reports orphans</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Statuses: from five stored states to a work stage</h2>
+  <p><strong>Today</strong> Substrate stores five lifecycle states: <code>open</code>, <code>deferred</code>, <code>done</code>, <code>cancelled</code>, <code>archived</code>. On top of them the board derives three views: <code>ready</code>, <code>in_progress</code> (a live claim) and <code>blocked</code>. A close carries one of seven outcomes, such as completed, superseded or wont_fix. Nothing says "a PR is open" or "merged but not closed yet".</p>
+  <p><strong>Your idea, made mechanical.</strong> Add a <em>work stage</em> that Substrate derives from evidence, never from a command. Nobody sets it, so nobody can skip it or forget it. Each change of stage writes an event, and that event moves the Jira status.</p>
+  <figure class="fig" style="margin:0">
+    <svg viewBox="0 0 1000 260" role="img" aria-label="Work stages: draft, ready, in progress, in review, merged, done; side stages blocked and stalled; each derived from evidence and mapped to a Jira status">
+      <defs><marker id="st" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1c2321"/></marker></defs>
+      <g font-family="Public Sans, sans-serif">
+        <g font-size="13.5" font-weight="600" fill="#1c2321" text-anchor="middle">
+          <rect x="10" y="60" width="130" height="62" rx="10" fill="#f0f2ee" stroke="#5b6661"/><text x="75" y="88">draft</text>
+          <rect x="175" y="60" width="130" height="62" rx="10" fill="#e7eef6" stroke="#1f5a85"/><text x="240" y="88">ready</text>
+          <rect x="340" y="60" width="130" height="62" rx="10" fill="#f6efdc" stroke="#8a6a12"/><text x="405" y="88">in progress</text>
+          <rect x="505" y="60" width="130" height="62" rx="10" fill="#fbeef0" stroke="#9b3b4a" stroke-width="2"/><text x="570" y="88">in review</text>
+          <rect x="670" y="60" width="130" height="62" rx="10" fill="#fbeef0" stroke="#9b3b4a" stroke-width="2"/><text x="735" y="88">merged</text>
+          <rect x="835" y="60" width="150" height="62" rx="10" fill="#e6f2ea" stroke="#2f7a4f"/><text x="910" y="88">done</text>
+        </g>
+        <g font-size="10.5" fill="#5b6661" text-anchor="middle" font-family="JetBrains Mono, monospace">
+          <text x="75" y="108">no attestation</text>
+          <text x="240" y="108">attested, unblocked</text>
+          <text x="405" y="108">live claim</text>
+          <text x="570" y="108">open PR record</text>
+          <text x="735" y="108">PR merged, open</text>
+          <text x="910" y="108">closure recorded</text>
+        </g>
+        <g stroke="#1c2321" stroke-width="1.5" fill="none" marker-end="url(#st)">
+          <path d="M140 91 H173"/><path d="M305 91 H338"/><path d="M470 91 H503"/><path d="M635 91 H668"/><path d="M800 91 H833"/>
+        </g>
+        <g font-size="11" fill="#2a62c9" text-anchor="middle">
+          <text x="75" y="40">Da completare</text><text x="240" y="40">Pronto</text><text x="405" y="40">In corso</text>
+          <text x="570" y="40">In Review</text><text x="735" y="40">waiting-production</text><text x="910" y="40">Completata</text>
+        </g>
+        <text x="10" y="22" font-size="11" fill="#2a62c9" font-family="JetBrains Mono, monospace">JIRA STATUS</text>
+        <rect x="300" y="170" width="190" height="56" rx="10" fill="#ffffff" stroke="#5b6661" stroke-dasharray="4 3"/>
+        <text x="395" y="194" font-size="13.5" font-weight="600" fill="#1c2321" text-anchor="middle">blocked</text>
+        <text x="395" y="213" font-size="10.5" fill="#5b6661" text-anchor="middle" font-family="JetBrains Mono, monospace">open blocking edge → Blocked</text>
+        <rect x="520" y="170" width="230" height="56" rx="10" fill="#ffffff" stroke="#5b6661" stroke-dasharray="4 3"/>
+        <text x="635" y="194" font-size="13.5" font-weight="600" fill="#1c2321" text-anchor="middle">stalled</text>
+        <text x="635" y="213" font-size="10.5" fill="#5b6661" text-anchor="middle" font-family="JetBrains Mono, monospace">claim expired, no handoff · flag</text>
+        <path d="M405 124 V168" stroke="#5b6661" stroke-width="1.2" stroke-dasharray="4 3" fill="none"/>
+        <path d="M430 124 C 470 150, 560 150, 600 168" stroke="#5b6661" stroke-width="1.2" stroke-dasharray="4 3" fill="none"/>
+      </g>
+    </svg>
+    <figcaption>The two new stages, in review and merged, are the intermediate states you asked for. Blocked and stalled sit beside the main line. 287 claims have expired without a release so far; stalled makes them visible instead of silent.</figcaption>
+  </figure>
+  <div class="why-order">
+    <div class="note"><h3>Why derived, not a new stored state</h3><p>A stored state needs someone to set it, and today's numbers show what happens to duties that depend on someone. A derived stage follows the PR records and claims, which the host writes. The five stored states stay as they are, so nothing in the existing database changes.</p></div>
+    <div class="note"><h3>Merged is the step before done</h3><p>After a merge, the reconciler closes the Issue by itself when nothing else is pending. When the contract names a deploy or a production window, the Issue waits in merged (Jira waiting-production) until that evidence arrives.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>The pipeline at a glance</h2>
+  <figure class="fig" style="margin:0">
+    <svg viewBox="0 0 1000 392" role="img" aria-label="Six phases from left to right; the linking spine runs under phases 1 to 4 and names the steps that build it">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6661"/></marker>
+      </defs>
+      <g font-family="Public Sans, sans-serif">
+        <text x="580" y="18" font-size="11" fill="#5b6661" text-anchor="middle">session registry and PR records give the graph its edges</text>
+        <path d="M415 56 C 415 30, 745 30, 745 54" stroke="#8a6a12" stroke-width="1.4" fill="none" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+        <rect x="10" y="56" width="150" height="130" rx="10" fill="#e6f2ea" stroke="#2f7a4f"/>
+        <text x="22" y="80" font-size="12" fill="#2f7a4f" font-family="JetBrains Mono, monospace">PHASE 1 · 1–8</text>
+        <text x="22" y="102" font-size="16" font-weight="700" fill="#1c2321">Safe ground</text>
+        <text x="22" y="126" font-size="12" fill="#5b6661">updates never delete</text>
+        <text x="22" y="144" font-size="12" fill="#5b6661">two machines in sync</text>
+        <rect x="175" y="56" width="150" height="130" rx="10" fill="#e7eef6" stroke="#1f5a85"/>
+        <text x="187" y="80" font-size="12" fill="#1f5a85" font-family="JetBrains Mono, monospace">PHASE 2 · 9–18</text>
+        <text x="187" y="102" font-size="16" font-weight="700" fill="#1c2321">One command</text>
+        <text x="187" y="126" font-size="12" fill="#5b6661">XT-114 install, update</text>
+        <text x="187" y="144" font-size="12" fill="#5b6661">ends in a release</text>
+        <rect x="340" y="56" width="150" height="130" rx="10" fill="#f6efdc" stroke="#8a6a12"/>
+        <text x="352" y="80" font-size="12" fill="#8a6a12" font-family="JetBrains Mono, monospace">PHASE 3 · 19–28</text>
+        <text x="352" y="102" font-size="16" font-weight="700" fill="#1c2321">Ownership</text>
+        <text x="352" y="126" font-size="12" fill="#5b6661">XT-184 claims, limits</text>
+        <text x="352" y="144" font-size="12" fill="#5b6661">PR-merged lifecycle</text>
+        <rect x="505" y="56" width="150" height="130" rx="10" fill="#f5e9df" stroke="#a8581c"/>
+        <text x="517" y="80" font-size="12" fill="#a8581c" font-family="JetBrains Mono, monospace">PHASE 4 · 29–38</text>
+        <text x="517" y="102" font-size="16" font-weight="700" fill="#1c2321">Jira binding</text>
+        <text x="517" y="126" font-size="12" fill="#5b6661">XT-178 bind, status</text>
+        <text x="517" y="144" font-size="12" fill="#5b6661">backfill old links</text>
+        <rect x="670" y="56" width="150" height="130" rx="10" fill="#eee8f6" stroke="#6b4aa3"/>
+        <text x="682" y="80" font-size="12" fill="#6b4aa3" font-family="JetBrains Mono, monospace">PHASE 5 · 39–45</text>
+        <text x="682" y="102" font-size="16" font-weight="700" fill="#1c2321">xtrm-app</text>
+        <text x="682" y="126" font-size="12" fill="#5b6661">XT-110 + XT-104</text>
+        <text x="682" y="144" font-size="12" fill="#5b6661">one merged view</text>
+        <rect x="835" y="56" width="150" height="130" rx="10" fill="#f3e4e7" stroke="#9b3b4a"/>
+        <text x="847" y="80" font-size="12" fill="#9b3b4a" font-family="JetBrains Mono, monospace">PHASE 6 · 46</text>
+        <text x="847" y="102" font-size="16" font-weight="700" fill="#1c2321">Programme loop</text>
+        <text x="847" y="126" font-size="12" fill="#5b6661">no hand copying</text>
+        <text x="847" y="144" font-size="12" fill="#5b6661">report written once</text>
+        <g stroke="#5b6661" stroke-width="1.6" fill="none" marker-end="url(#ar)"><path d="M160 121 H173"/><path d="M325 121 H338"/><path d="M490 121 H503"/><path d="M655 121 H668"/><path d="M820 121 H833"/></g>
+        <path d="M250 186 C 250 250, 745 250, 745 188" stroke="#1f5a85" stroke-width="1.4" fill="none" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+        <text x="500" y="268" font-size="11" fill="#5b6661" text-anchor="middle">release carries the topology feed the navigator needs</text>
+        <text x="10" y="306" font-size="12.5" font-weight="600" fill="#9b3b4a">Linking spine · runs under phases 1–4</text>
+        <rect x="10" y="316" width="645" height="64" rx="8" fill="#fbeef0" stroke="#9b3b4a"/>
+        <g font-size="10.5" fill="#1c2321" font-family="JetBrains Mono, monospace">
+          <text x="22" y="343">6 names, 6b trailers</text><text x="22" y="364">8 duty map</text>
+          <text x="187" y="343">14 PR records</text><text x="187" y="364">15–15e gates, 16 text</text>
+          <text x="352" y="343">22 host, 22b sessions</text><text x="352" y="364">26 reconcile, 27 close</text>
+          <text x="517" y="343">30 stages</text><text x="517" y="364">33–37 Jira bind</text>
+        </g>
+        <g stroke="#e3c3c9" stroke-width="1"><path d="M171 324 V372"/><path d="M336 324 V372"/><path d="M501 324 V372"/></g>
+      </g>
+    </svg>
+    <figcaption>The linking spine starts in phase 1 and is finished in phase 4. Everything built after step 6 is linked from the day it is created.</figcaption>
+  </figure>
+  <div class="legend">
+    <span><span class="chip done">done</span> merged or closed</span>
+    <span><span class="chip ready">ready</span> contract ready in Substrate</span>
+    <span><span class="chip draft">draft</span> filed, contract not final</span>
+    <span><span class="chip new">new</span> no issue yet; I file it</span>
+    <span><span class="chip gate">you</span> needs your decision or hands</span>
+    <span><span class="new-badge">v2</span> <span class="new-badge">v3</span> <span class="new-badge">v4</span> added in version 2, 3 or 4</span>
+  </div>
+</section>
+
+<section>
+  <h2>Why this order</h2>
+  <div class="why-order">
+    <div class="note"><h3>Mechanics before instructions</h3><p>A duty the host does or a gate enforces happens every time. Instructions are written last, from the CLI, to describe what exists.</p></div>
+    <div class="note"><h3>Safety before features</h3><p>Every later phase installs code on two machines. While <code>xt update</code> can delete skills (CORE-2513), each install puts your configuration at risk.</p></div>
+    <div class="note"><h3>Names before code</h3><p>The naming rule costs almost nothing and starts at step 6. Every branch and PR from then on reaches the Jira dev panel, even before Substrate can store PRs.</p></div>
+    <div class="note"><h3>Records and gates before the release</h3><p>Phase 3 makes agents open PRs by themselves. If Substrate cannot record a PR, or the gate does not demand links by then, the new automation creates unlinked work faster than before.</p></div>
+    <div class="note"><h3>Claims before Jira status</h3><p>Jira status follows claim and merge events. If claims are lost mid-turn or merges go unseen, statuses flap. Phase 3 makes both reliable first.</p></div>
+    <div class="note"><h3>Binding before the UI</h3><p>XT-110's merged view shows linked items. Without the binding there are none, and the app would only be a second Jira browser.</p></div>
+    <div class="note"><h3>Release before the navigator</h3><p>The Sessions navigator needs the topology feed in a released <code>xt</code>. Step 18 publishes it.</p></div>
+  </div>
+</section>
+
+<!-- PHASE 1 -->
+<section class="phase" style="--c:var(--safe);--t:var(--tint-safe)">
+  <div class="phase-head"><span class="tag">Phase 1</span><h2>Safe ground</h2></div>
+  <p>Goal: no install or update can destroy configuration, this PC follows the server without guesswork, and new work is linked by name from now on.</p>
+  <ol class="steps">
+    <li class="step is-done"><span class="num">1</span><div class="step-body">
+      <div class="step-title"><b>Back up before overwrite</b><span class="chip st-done">done</span><span class="chip done">done</span><span class="refs">CORE-2538 · XT-126</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>xt update --apply</code> saves every locally edited file under <code>skills-backups/drift-&lt;time&gt;/</code> before it overwrites it.</dd>
+      <dt>Why here</dt><dd>The cheapest guard, already closed. Every later step can write files without losing local edits.</dd></dl>
+      <details class="notes" data-step="s01"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 1" placeholder="Questions and ideas for step 1" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">2</span><div class="step-body">
+      <div class="step-title"><b>Stop the silent skill wipe; keep hook changes across updates</b><span class="chip st-done">done</span><span class="chip ready">ready</span><span class="refs">CORE-2513 · XT-126</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The prune that deleted 121 skill files on 10-21 logs every removal, refuses a large shrink, takes a tarball first, and cleans per-runtime links. The 10-24 hook fixes merge, so an update stops reverting them.</dd>
+      <dt>Why here</dt><dd>It is the only known path that deletes your files with no trace. Until it is fixed, nothing in phase 2 is safe to run.</dd></dl>
+      <p class="fold">Folded in: <b>XT-185</b> core hook-template merge · <b>XT-187</b> <b>XT-188</b> the same fix in other repos</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Yes, git-managed <code>~/.xtrm</code> and <code>~/.specialists</code> become the default for everyone, with a local repository and no remote.</li><li><code>xt init</code> creates the repository. <code>xt update</code> commits a snapshot before it changes anything, then commits the result. Rollback is <code>git revert</code>.</li><li>A remote is opt-in. A <code>.gitignore</code> for secrets and a gitleaks pre-commit check ship with it.</li><li>PR 832 (guard, log, tarball) stays as it is; the git snapshot is a follow-up. PR 832 conflicts with main and needs a rebase first.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Done · 10-31</span><ul><li>xtrm-dev/core#863 (6b461ac8), CORE-2513 closed. A prune that retires more than 3 skills and over 25% of the managed set, or follows a shrunken registry, is refused; <code>XTRM_ALLOW_LARGE_PRUNE=1</code> overrides the guard only. Every prune is backed up first and logged to <code>~/.xtrm/logs/skills-migration.jsonl</code>; per-runtime active links are swept. 66 tests; reviewer PARTIAL, then fixed and verified.</li><li><code>xt update --apply</code> is no longer blocked by this step. CORE-2513 was the gate; the go-ahead stays yours.</li></ul></div>
+      <details class="notes" data-step="s02"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 2" placeholder="Questions and ideas for step 2" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">3</span><div class="step-body">
+      <div class="step-title"><b>Substrate creates and protects its own state; gates use Substrate</b><span class="chip st-done">done</span><span class="chip draft">draft</span><span class="refs">CORE-2381 · XT-127</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>sb</code> creates <code>~/.xtrm</code> (0700) and <code>state.db</code> (0600). The close and memory gates query Substrate, not the retired <code>bd</code>.</dd>
+      <dt>Why here</dt><dd>It is small, and the installer calls <code>sb init</code>. Gates that ask <code>bd</code> fail on any machine without Beads, including this PC.</dd></dl>
+      <p class="fold">Folded in: <b>XT-175</b> gates point at Substrate</p>
+      <div class="ruling"><span class="ruling-k">Done · 10-31</span><ul><li>xtrm-dev/xtrm#304 (e8459a8a), CORE-2381 closed. <code>openSubstrate</code> creates <code>~/.xtrm</code> 0700 and <code>state.db</code> 0600; <code>sb init</code> works on a fresh HOME. Existing world-readable DBs are not tightened (possible follow-up). Reviewer PASS.</li></ul></div>
+      <details class="notes" data-step="s03"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 3" placeholder="Questions and ideas for step 3" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">4</span><div class="step-body">
+      <div class="step-title"><b>Push the server's dotfile repos and write the machine manifest</b><span class="chip st-done">done</span><span class="chip gate">you</span><span class="refs">prompts 1–2 · XT-127</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>~/.xtrm</code> (3 commits ahead) and <code>~/.specialists</code> (6 ahead) reach GitHub after a secret scan, with the user-level Claude guard hooks versioned. A JSON manifest lists every tool and version on the server.</dd>
+      <dt>Why here</dt><dd>The manifest is the target this PC is compared with, and the first draft of the release manifest in phase 2.</dd></dl>
+      <p class="fold">Folded in: <b>XT-189</b> version the guard hooks in ~/.xtrm</p>
+      <div class="ruling"><span class="ruling-k">Done · 10-31</span><ul><li><code>~/.specialists</code> pushed (a3b805e, no leaks). <code>~/.claude</code> is now the private repo <code>Jaggerxtrm/.claude</code>: an allowlist tracks settings, <code>CLAUDE.md</code>, guard and xtmux hooks, agents, output style and plugin lists; credentials and sessions stay local. The PC keeps voice and <code>model</code> as a local change.</li><li>Manifest: <code>python3 ~/.xtrm/scripts/machine-manifest.py &lt;machine&gt;</code> writes <code>~/.xtrm/manifests/&lt;machine&gt;.json</code>; <code>--diff server pc</code> compares. Remaining gap: <code>acli</code> on the PC (needs your Atlassian login). Pi packages closed in step 10.</li><li>All three dotfile repos are now git checkouts on both machines: update with <code>git pull</code>, change through a branch and PR (the branch-model guard blocks direct pushes).</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Done · 11-01</span><ul><li>Rest of <code>~/.pi</code> copied from the server: 16 agents, 4 prompts, <code>AGENTS.md</code>, <code>APPEND_SYSTEM.md</code>, <code>tool-slim.js</code>, <code>copy-message.ts</code>, the MCP config, <code>trust.json</code>, <code>models-store.json</code>, <code>bin/fd</code>. Five config files hash-checked identical. The 4 themes are links into core (<code>packages/pi-extensions/themes/xtrm-ui</code>) and resolve on the PC.</li><li>Not versioned yet: the 16 Pi agents and 4 prompts are plain files that no repo ships, and the manifest does not cover them, so they can drift again.</li><li><code>skill-suggest/log.jsonl</code> is git-ignored in <code>~/.xtrm</code> (PR #8); it no longer causes conflicts on pull.</li><li>Headroom proxy removed from the PC: proxy, cron jobs, shell blocks and the tmux variable. Claude Code now connects to Anthropic directly, as on the server. Reason: Remote Control did not work on the PC, and the proxy address was the only difference found. Confirmed 11-02: Remote Control now works on the PC. Backup: <code>~/xtrm-parity-backup-20261031/headroom-20261101/</code>.</li></ul></div>
+      <details class="notes" data-step="s04"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 4" placeholder="Questions and ideas for step 4" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">4b</span><div class="step-body">
+      <div class="step-title"><b>Unlock GitHub Actions for xtrm-dev</b><span class="chip st-part">changed</span> <span class="new-badge">v4</span><span class="chip gate">you</span><span class="refs">billing · all xtrm-dev repos</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Every xtrm-dev job fails at start with <i>“The job was not started because your account is locked due to a billing issue.”</i> The org is on the Free plan. core, specialists and mcp-inspector are public, so their Actions minutes cost nothing; xtrm and .github are private. Actions usage was fully discounted (net $0) in August, September and October. The only charged item is GitHub Advanced Security: $19 net in August and in September, and $11.65 so far in October.</dd>
+      <dt>Why here</dt><dd>No check can pass on core until this is fixed, and step 15's gates need running checks. Inference, not verified: the lock comes from an unpaid Advanced Security charge, not from Actions minutes.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>You: settle the open charge or update the payment method in the xtrm-dev billing settings. The lock lifts once the account is in good standing.</li><li>Then turn off Advanced Security for the private repos unless you use it. Public repos get secret scanning and code scanning free.</li><li>Making <code>xtrm</code> public would also remove its minute cost, but it publishes the whole history. Scan it for secrets first.</li><li>mercuryintelligence is not affected: its runners are self-hosted.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 10-31 · replaces this step</span><ul><li>Actions on xtrm-dev stays locked: you will not pay, and no runner goes on this PC. A desktop that sleeps is a flaky CI, and a self-hosted runner on a public repo (core, specialists) can run code from any fork PR on your machine.</li><li>Checks run where the work runs: each repo gets one local command (<code>make ci</code> or <code>npm run ci</code>), workers run it before a PR, and the host records the result in the Issue Journal with the head SHA (step 14). The merge guard reads that record, not GitHub checks.</li><li>Only core needs <code>--admin</code>: it requires four Actions checks (OSV, Semgrep, Gitleaks, pr-review-gate) that cannot start while Actions is locked. specialists requires none; private repos on the Free plan cannot have branch protection. Proposal: remove the four checks on core and run gitleaks, OSV and Semgrep in the local check command instead. Needs your yes: it changes branch protection.</li><li>Mercury repos are unaffected: their self-hosted runners belong to mercuryintelligence, which is not locked.</li></ul></div>
+      <details class="notes" data-step="s04b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 4b" placeholder="Questions and ideas for step 4b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">4c</span><div class="step-body">
+      <div class="step-title"><b>Skill-suggest hotfix</b><span class="chip st-done">done</span> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">CORE-2532 · Pi extension</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The roster is split across calls so no call exceeds the 255-item cap. Every failed call writes a log row, and a doctor check reports it. The suggestion becomes a one-line instruction instead of a file path.</dd>
+      <dt>Why here</dt><dd>It has been broken since 10-13: 281 skills against a cap of 255, so every call returns HTTP 422 and the error is swallowed. The fix is small and nothing waits on it. The larger redesign is step 12b.</dd></dl>
+      <details class="notes" data-step="s04c"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 4c" placeholder="Questions and ideas for step 4c" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">5</span><div class="step-body">
+      <div class="step-title"><b>Sync this PC by copy, not by xt update</b><span class="chip st-done">done</span><span class="chip gate">you</span><span class="refs">report section 3</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The same repos, linked tools, <code>~/.claude</code> and <code>~/.pi</code> as the server, plus the <code>sb</code> SSH wrapper. Beads leftovers are removed on both machines. Remote Control and tmux are already done.</dd>
+      <dt>Why here</dt><dd>Both machines then run the same code. The copy avoids the updater until steps 1–3 land.</dd></dl>
+      <p class="fold">Folded in: <b>XT-106</b> Beads removal across machines</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your question · 10-29</span><ul><li>Found on the server: <code>~/dev/xtrm</code> still sets <code>core.hooksPath</code> to <code>.beads/hooks</code>, so the retired Beads hooks run on every commit there. The Beads removal (XT-106) resets it.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 10-29</span><ul><li>Specialists on this PC are linked to the <code>~/dev/specialists</code> checkout, exactly as on the server (global npm link), not installed from the npm registry. The registry package is older than master; a release is step 18.</li><li>The sync also runs <code>sp prune-stale-defaults --dry-run</code> in every repo: stale <code>.specialists/default</code> snapshots shadow the package and can name retired skills.</li><li><code>~/.claude/agents</code> on the server holds hand-kept mirrors of reviewer, executor, debugger, quant-methodologist and advisor; this PC has none. They are copied in this step, and versioned in <code>~/.xtrm</code> with the guard hooks (step 4), because no tool regenerates them and nothing diffs them against the specialists they mirror. A drift check joins step 16.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Done · 10-31</span><ul><li>PC now matches the server: <code>xt</code> 0.15.3 (linked to <code>~/dev/core</code>), <code>sp</code> 4.1.1 (linked to <code>~/dev/specialists</code>), <code>sb</code> 0.2.2 (npm). The old <code>sb</code> on the PC was the lrzsz serial tool.</li><li>Copied: 341 skill files (newest wins, nothing deleted), <code>~/.claude/agents</code>, <code>~/.specialists/user</code> (5 global specialists), both specialists <code>user.json</code> files, Pi <code>models.json</code> and <code>auth.json</code>. Same 28 specialists on both machines. Backup: <code>~/xtrm-parity-backup-20261031*</code>.</li><li>Core vendored skills brought to the server state: core#862; package source: xtrm#303. Both admin-merged.</li><li>Same on both machines, not caused by the sync: <code>service-knowledge-sync</code> cannot dispatch inside <code>~/dev/core</code> (core vendors the package root, no top-level <code>SKILL.md</code>); the specialists <code>user.json</code> has 15 entries failing schema validation.</li><li>Full <code>~/.xtrm</code>: the PC is now a git checkout of <code>Jaggerxtrm/.xtrm</code> <code>master</code> (8c55da5). The server pushed its working branch to <code>master</code>, with the newest mercury-visual-style restored (6f6322a). Update the PC from now on with <code>git -C ~/.xtrm pull</code>. Same 37 Claude and 35 Pi skills.</li><li><code>~/.claude</code>: the server’s settings (plugins, hooks, output style, skill overrides, statusline), its 14 plugins, global <code>CLAUDE.md</code>, hooks, commands, output styles, mods and the archon hooks. PC kept: voice, <code>model</code>. Dropped: the PC’s Orca hooks (step 13). <code>~/.claude</code> is not in git on the server; step 4 should version it.</li><li>Not done here: Pi 1.3.0 and packages (step 10, interactive list), Substrate data on the PC (step 7).</li></ul></div>
+      <details class="notes" data-step="s05"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 5" placeholder="Questions and ideas for step 5" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">6</span><div class="step-body">
+      <div class="step-title"><b>Linking names in force</b> <span class="new-badge">v2</span><span class="chip new">new</span><span class="refs">XT-178 amendment</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The xt launcher, the specialists workspace lease and the programme-coordination skill use <code>xt/&lt;JIRA&gt;-&lt;REF&gt;-slug</code> branches and <code>&lt;JIRA&gt; &lt;REF&gt;: …</code> PR titles. Commits get a <code>Jira:</code> trailer when the work is bound.</dd>
+      <dt>Why here</dt><dd>GitHub for Jira is installed and already sends builds, so the names alone fill the dev panel with PRs. It needs no Substrate change, so it starts now.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling · 11-01 · worktree names</span><ul><li>One worktree root for the whole stack: <code>&lt;repo&gt;/.xtrm/worktrees/</code>. Launcher sessions: <code>&lt;repo&gt;-xt-&lt;runtime&gt;-&lt;name&gt;</code> on <code>xt/…</code> (as today). Specialist writers: <code>&lt;repo&gt;-sp-&lt;role&gt;-&lt;issue&gt;</code> on <code>sp/&lt;issue&gt;</code>, based on <code>origin/&lt;default&gt;</code> (SPECIALISTS-4393; today they go to <code>&lt;repo&gt;/.worktrees/&lt;issue&gt;</code> from <code>HEAD</code>).</li><li>Ad-hoc worktrees under <code>~/.cache/&lt;issue&gt;/wt</code> (seven in market-data, mostly detached) are outside any naming and any reaper: steps 24 and 27 find all three kinds until they are gone.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Filed · 11-01</span><ul><li>CORE-2571: <code>&lt;prefix&gt;/&lt;JIRA&gt;-&lt;REF&gt;-&lt;slug&gt;</code> branches (prefix <code>xt</code> or <code>sp</code>, keys uppercase) and <code>&lt;JIRA&gt; &lt;REF&gt;: </code> PR titles; unbound work drops the Jira part. One helper for the launcher, the specialists lease and the skill text.</li></ul></div>
+      <details class="notes" data-step="s06"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 6" placeholder="Questions and ideas for step 6" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">6b</span><div class="step-body">
+      <div class="step-title"><b>Every bound commit names its Issue, in any session</b> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">git hooks · Substrate trailers · XT-178</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A git <code>prepare-commit-msg</code> hook adds <code>XTRM-Issue</code> and <code>XTRM-Issue-Revision</code>, plus <code>Jira: &lt;KEY&gt;</code> when the Issue is bound to Jira. It works the same in Claude, Pi, Codex, a specialist or a plain terminal, because git runs it, not the agent. It finds the Issue in this order: <code>SUBSTRATE_ISSUE_REF</code>; the worktree's own binding, which <code>xt</code> and the specialists lease write when they create or claim a worktree (<code>git config --worktree xtrm.issue</code>); the ref in the branch name. With no binding it adds nothing and never blocks.</dd>
+      <dt>Why here</dt><dd>The trailers are the evidence that survives rebase, squash and cherry-pick (steps 26, 27), and Substrate already has the code that writes and parses them (<code>provenance.ts</code>). Nothing calls it: 0 of the last 300 commits on core's main carry <code>XTRM-Issue</code>. The Issue trailer needs no receipt, so it can start in phase 1; the receipt trailer follows in step 22.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your question · 10-29</span><ul><li>Jira needs no extra machinery. GitHub for Jira already reads Jira keys from commit messages, branch names and PR titles; the hook only has to write the key. The key comes from the Substrate binding (step 33); until bindings exist, from the branch name (step 6).</li><li>Hooks must chain, not replace. core sets <code>core.hooksPath</code> to its own <code>.githooks</code>, market-data has its own pre-push hook, and service-knowledge installs hooks too. So <code>xt</code> adds one call to each repo's existing hook instead of setting a global hooks path.</li><li>Cost: one local <code>sb</code> read per commit. No network call.</li><li>The Claude-only <code>commit-check</code> hook in the Substrate plugin stays a nudge. It reads <code>SUBSTRATE_ISSUE_REF</code> and never blocks; the git hook is what makes it mechanical.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Filed · 11-01</span><ul><li>Found: Substrate’s <code>prepare-commit-msg</code> hook exists but adds trailers only with <code>XTRM_RECEIPT_ID</code>, which nothing sets, and no repo installs it.</li><li>XTRM-684: the hook resolves the Issue without a receipt (env, worktree binding, branch) and adds <code>XTRM-Issue</code>, revision, <code>Jira:</code> and <code>Agent:</code> (taken over from CORE-2525). CORE-2570: <code>xt</code> chains it into each repo’s existing hook and writes the worktree binding. XTRM-684 lands first.</li></ul></div>
+      <details class="notes" data-step="s06b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 6b" placeholder="Questions and ideas for step 6b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-part"><span class="num">7</span><div class="step-body">
+      <div class="step-title"><b>Decide how Substrate works across two machines</b><span class="chip st-part">partly done</span><span class="chip new">new</span><span class="refs">prompt 3 · XT-127</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The server stays the only database. The PC uses a remote <code>sb</code>, later served by the agent host over Tailscale. The decision covers claims across hosts, hook latency and offline use.</dd>
+      <dt>Why here</dt><dd>The registry, the reconciler and the Jira client all live in the agent host. Where Substrate lives decides how they reach it.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-31</span><ul><li>Yes: a setting, e.g. <code>substrate.remote = "ssh server"</code>. When set, <code>sb</code> forwards each call over ssh to the server; when unset, <code>sb</code> runs locally as now. Agents and skills type plain <code>sb</code> either way. Today the PC has <code>sb</code> but no data (<code>unresolvable ref</code>).</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Filed · 11-01</span><ul><li>XTRM-685 (HIGH): <code>substrate.remote</code> setting; <code>sb</code> forwards argv, stdin and exit code to the server and maps the working directory by git origin; unset means local. Offline fails clearly, never an empty local store. Includes the decision record.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Status · 11-01</span><ul><li>After the session restart the specialists plugin loads: 28 specialists, 22 dispatchable. The other 6 need Mercury repos, <code>pytest</code> or <code>yt-dlp</code> on the PC.</li><li>This step now blocks the plan: the PC Substrate plugin returns <code>unresolvable ref</code> for every server Issue, so no native dispatch can claim work on the PC. SPECIALISTS-4393 stays open until XTRM-685 lands and one live writer dispatch proves the worktree path.</li><li>Next: complete the XTRM-685 contract and ADR (transport choice: ssh per call, or an <code>sb</code> server over a tunnel), then attest. XTRM-684, CORE-2570 and CORE-2571 are also still drafts.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Scope change · 11-02 · XTRM-685 rev 2</span><ul><li>Forwarding <code>sb</code> alone does not unblock the PC. The Claude MCP plugin, the Pi extension and specialists native dispatch open <code>state.db</code> directly and never call <code>sb</code>; specialists also uses raw SQLite for activation authority.</li><li>The contract is now staged. Stage 1 is an ADR covering all five consumers, and work stops there for your transport decision. Stage 2 is the CLI forward. Consumers the CLI stage does not solve become follow-up Issues.</li><li>Worker: <code>core-xt-pi-6vnw</code> on Pi. The coordinator reviews and merges.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 11-02</span><ul><li>Transport: <code>ssh</code> with no listener and no daemon (ADR-008). Stage 2, the CLI forward, is released to the worker.</li><li>A worker runs where its code lives, and either machine can start one over <code>ssh</code>. Dispatch itself stays local to the session that starts it.</li><li>Goal: a server coordinator starts heavy workers on the PC, so they use PC resources instead of the production server. The server already reaches the PC over Tailscale (key login tested); the PC must be on and online.</li><li>Needed for that: a <code>Host pc</code> entry on the server, and the specialists remote-store follow-up, which is now the priority after Stage 2.</li><li>Claude MCP placement: a launcher reads <code>substrate.remote</code>. Set: the server runs it over <code>ssh</code>. Unset: it runs locally, as today.</li><li>Rule: every setting works both ways, by preference. A user with no server gets the local behaviour for every consumer, with no <code>ssh</code> requirement.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Merged · 11-02</span><ul><li><code>sb</code> remote mode merged: xtrm#307 (XTRM-685), commit <code>2d33ec76</code>. It covers the CLI and git hooks. It is not released yet: both machines still run <code>sb</code> 0.2.2 from npm.</li><li>Evidence: 918 tests, mutation checks, a security audit and four review rounds; live read and write from the PC against the real server. GitNexus rates the change critical because it touches the central <code>sb.ts</code> paths.</li><li>Follow-ups filed from ADR-008: XTRM-690 typed stdio service, then XTRM-691 Pi extension, XTRM-692 Claude plugin and launcher, XTRM-693 stale store guard, and the specialists Issue for native dispatch. Native dispatch from the PC stays blocked until those land.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Released · 11-02</span><ul><li>Released: <code>@jaggerxtrm/substrate</code> 0.2.4 is on npm (xtrm#308, commit <code>6252088d</code>), published from the server. Your ruling 11-02: publishing is allowed whenever the time is right, and it runs from the server, where npm is configured.</li><li>Installed on the PC. <code>sb remote setup ssh:server</code> is done in the core checkout, and <code>sb issue show CORE-2524</code> now reads the server record from the PC. Other repos need the same setup, run once inside each. <code>sb remote disable</code> returns the PC to local mode.</li><li>The server still runs <code>sb</code> 0.2.2. Upgrading it adds <code>--participant</code> on journal appends. XTRM-690 needs a newer server <code>sb</code>, so upgrade it together with that work.</li><li>The changelog had no 0.2.3 entry although 0.2.3 was on npm. A 0.2.3 section was reconstructed from commit subjects; check it.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Merged · 11-06</span><ul><li>The typed stdio service merged: xtrm#309 (XTRM-690), commit <code>264468e</code>. <code>sb serve --stdio</code> offers 60 named operations behind a handshake, plus a client that fails closed. It is not released yet; the server still runs <code>sb</code> 0.2.2.</li><li>Evidence: four review rounds. Round four fixed two high defects (identity fields were rejected by claim and journal operations in every harness session; the client refused to start when identity variables were set) and the host-name &ldquo;server&rdquo; being read as a missing verb. The coordinator re-ran the service tests (123 of 124, one skipped) and probed identity and transport classification directly. CI proves nothing: Actions still fail at startup.</li><li>Not verified by the coordinator: <code>tsc</code> (the worker reports it clean). Open small item: the oversized-answer refusal says &ldquo;the operation&rdquo; instead of naming it.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 11-06 · authority</span><ul><li>XTRM-700, option A: <code>authority.remove</code> requires the <code>specialist</code> and it must match the row. No compatibility window. The specialists host change ships before authority is switched on remotely. Options B (stale-state risk) and D were rejected.</li><li>New Issues: XTRM-701 (authority row cap and TTL), SPECIALISTS-4398 (dispatch refuses worktrees; ready) and SPECIALISTS-4399 (host <code>stop()</code> passes the specialist; ships before authority goes remote). XTRM-700 blocks the authority part of SPECIALISTS-4395.</li><li>Next, in order: a small follow-up PR, then release prep for the next substrate version, which the coordinator publishes from the server and then upgrades the server&rsquo;s <code>sb</code> and checks the handshake there. After that: XTRM-691 (Pi), XTRM-692 (Claude plugin and launcher), XTRM-693. Authority is switched on last.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Released · 11-06</span><ul><li><code>@jaggerxtrm/substrate</code> 0.2.5 is on npm (xtrm#319 and #320, commit <code>8709e0e</code>), published from the server after a clean-worktree verify (node and bun, 137 exports, plugin seam).</li><li>Server <code>sb</code> upgraded 0.2.2 to 0.2.5 after a consistent backup of <code>state.db</code> (<code>state.db.pre-sb-0.2.5-20261106</code>). The database was already at migration 12, the newest in 0.2.5, so no schema change. The PC runs 0.2.5 too.</li><li>Live proof: <code>sb serve --stdio</code> answers the handshake on the server (protocol 1, 60 operations). From the PC, the service client over ssh resolved CORE-2524 and read it, with and without <code>SUBSTRATE_HOLDER</code> and <code>XTRM_SESSION_ID</code> set. The CLI forward still works.</li><li>Next: XTRM-691 (Pi extension), then XTRM-692 (Claude plugin and launcher). Authority stays off until XTRM-700, XTRM-701, SPECIALISTS-4398 and SPECIALISTS-4399 land.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Merged and released · 11-06 · consumers</span><ul><li><code>@jaggerxtrm/substrate</code> 0.2.6 is on npm (xtrm#326, <code>f56457d</code>), published from the server. The server <code>sb</code> and the PC run 0.2.6. The PC Claude plugin is updated; Claude Code and Pi sessions must restart to load it.</li><li>Every consumer now reaches the server store: Pi tools through the typed service (xtrm#322), the Claude MCP launcher and hooks over one ssh (xtrm#325), a per-session connection with one retry for reads only (xtrm#327), and a Pi edit gate that blocks on all six transport failures, <code>timeout</code> included (xtrm#328). Mutations are never retried.</li><li>Defects the coordinator caught in review: #325 located the launcher script from the checkout instead of the installed package (reproduced live, fixed); #328 omitted <code>timeout</code> from the gate; #319 did not name the operation in the oversized-answer message.</li><li>Not verified by the coordinator: <code>tsc</code>. The worker reports it clean.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Merged · 11-06 · guard and owner</span><ul><li>xtrm#329 (XTRM-693, <code>7f5ff35</code>): <code>openSubstrate</code> refuses the canonical local store when a remote is selected (<code>remote_store_selected</code>). An explicit <code>--db</code> or <code>SUBSTRATE_DB</code> is honoured. Evidence: 4 guard tests pass and the CLI still reads CORE-2524 through the remote with the guard in place.</li><li>xtrm#330 (XTRM-700, <code>7afbf79</code>): <code>authority.remove</code> requires the owning <code>specialist</code>. A foreign owner gets <code>conflict</code> and the row stays. An unnamed call gets <code>bad_request</code>. A row that is already gone answers <code>removed: false</code>. Review caught one protocol test that passed for the wrong reason; it now names the owner and asserts the state message.</li><li>Open notes from #329: an explicit path equal to the canonical path is refused although the comment says explicit paths are honoured (later PR); <code>wake-on-event.mjs</code> opens the local store on the PC and was already quiet before the guard (own Issue).</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 11-06 · specialists host port</span><ul><li>Correction: the earlier diagnosis of SPECIALISTS-4398 mixed two stores. The specialists host reads the PC&rsquo;s stale local <code>state.db</code> and ignores <code>substrate.remote</code>.</li><li>Decision: refactor the host ports to async (option i). Rejected: a worker-thread synchronous facade (ii) and ssh-exec of <code>sb --json</code> (iii), which would add 5 to 8 seconds per dispatch. Size: 10 methods on <code>IssueServicePort</code>, 2 on <code>IssueStorePort</code>, 14 on <code>SpecialistWorkItemBoundary</code>, 6 source call sites, 24 test call sites, 5 fakes.</li><li>No default-off switch for <code>authority.*</code>. Sequence is the control: SPECIALISTS-4398 first, then SPECIALISTS-4399 with XTRM-700 (done), then XTRM-701 (row cap and TTL), and the authority switch (SPECIALISTS-4395) last.</li><li>Status: worker 6vnw holds SPECIALISTS-4398 on branch <code>xt/SPECIALISTS-4398-worktree-dispatch</code>. The ports return promises and the code does not typecheck yet (25 errors in one file). Evidence required: a live worktree dispatch against the server store. Specialists releases publish from the server and need the coordinator&rsquo;s go.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Status · 11-07</span><ul><li><b>Done and merged:</b> remote mode, the typed stdio service, Pi and Claude consumers, the Pi gate, the stale-store guard (XTRM-693 closed, xtrm#329) and the owner-required removal (xtrm#330). Substrate 0.2.6 is released. Live proof: the PC reads and writes the server store, and <code>gate.check</code> and <code>gate.dispatch</code> are answered over the wire.</li><li><b>In progress:</b> SPECIALISTS-4398, the specialists host reads the server store. The async port and the async settlement exclusion are built and typecheck (branch <code>xt/SPECIALISTS-4398-worktree-dispatch</code>, <code>b8095bfb</code>, pushed, no PR). The remote adapter, its fail-closed tests and the two live dispatch runs are not built. The first worker handed off with a full mapping note on the Issue; a new worker must pick it up.</li><li><b>Ruled:</b> over the remote, <code>completedBlockers</code> answers &ldquo;no blocker information&rdquo;. It only feeds prompt context. Parity is a draft, XTRM-715 (<code>issue.listActiveEdges</code>), unscheduled.</li><li><b>Still ahead, in order:</b> the adapter, then SPECIALISTS-4399 (host <code>stop()</code> names its owner), XTRM-701 (row cap and TTL), the authority switch (SPECIALISTS-4395) last. XTRM-700 stays open until the row-rewrite part is settled.</li><li><b>Correction:</b> the 11-06 checkpoint was written on CORE-2524 by mistake. CORE-2524 is the robot-identities Issue (step 20). Journal seq 23 there marks seq 22 as misfiled. A home for these checkpoints is an open question to you.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Merged · 11-07 · specialists reach the server store</span><ul><li>SPECIALISTS-4398 is closed. specialists#522 (<code>436b4a62</code>) and #523 (<code>5d881836</code>) are on master; xtrm#332 (ADR-008 consumer section) is on main. With <code>substrate.remote</code> set, a dispatch from a core worktree creates and claims its Issue on the server (probe CORE-2583). An unreachable server refuses with <code>connection_lost</code> and never opens the local store. After a dropped link the next call reopens a fresh connection; the failed call is not retried.</li><li>Not released: the PC&rsquo;s installed specialists does not have this yet. A specialists release needs your go.</li><li>Parked by your priority call: XTRM-715 (blocker parity), SPECIALISTS-4399, XTRM-701, and the authority switch (SPECIALISTS-4395). XTRM-700 is open with no holder.</li><li>Decided: <code>acli</code> and the Exa key stay on the server; the PC reaches them over ssh.</li></ul></div>
+      <details class="notes" data-step="s07"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 7" placeholder="Questions and ideas for step 7" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">8</span><div class="step-body">
+      <div class="step-title"><b>Duty map: every Substrate feature gets an owner</b> <span class="new-badge">v3</span><span class="chip new">new</span><span class="refs">ADR in prj_xtrm · XT-114</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One decision record lists each Substrate duty, who performs it (host, hook, gate or agent) and what makes it unavoidable. The table above is the draft.</dd>
+      <dt>Why here</dt><dd>Steps 15, 16, 22 and 30 each implement part of it. Without one map, each of them would decide again who owns what.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Skill-suggest is not a duty-map item. The hotfix is step 4c and the redesign is step 12b.</li></ul></div>
+      <details class="notes" data-step="s08"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 8" placeholder="Questions and ideas for step 8" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+  </ol>
+</section>
+
+<!-- PHASE 2 -->
+<section class="phase" style="--c:var(--accent);--t:var(--tint-inst)">
+  <div class="phase-head"><span class="tag">Phase 2 · XT-114</span><h2>One command to install, one to update</h2></div>
+  <p>Goal: <code>xt init</code> brings a fresh machine to a verified ready state and <code>xt update</code> brings an existing one to latest, both from one release manifest with exact pins. The release also ships PR recording and the link gate.</p>
+  <ol class="steps">
+    <li class="step"><span class="num">9</span><div class="step-body">
+      <div class="step-title"><b>Install runtimes before Substrate enrollment</b><span class="chip draft">draft</span><span class="refs">CORE-2380 · XT-126</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>xt init</code> installs node packages, Pi, Claude plugins and Python tools, then calls <code>sb init</code>. The audit needed six manual fixes on a fresh machine.</dd>
+      <dt>Why here</dt><dd>It shapes the installer; the Pi, plugin and picker steps plug into it.</dd></dl>
+      <details class="notes" data-step="s09"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 9" placeholder="Questions and ideas for step 9" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">10</span><div class="step-body">
+      <div class="step-title"><b>Real Pi runtime, current Pi, packages that really upgrade</b><span class="chip st-done">done</span><span class="chip draft">draft</span><span class="refs">CORE-2378 · CORE-2400 · CORE-2379 · XT-125</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The real <code>pi</code>, no oh-pi, the extension audit, and a refresh that verifies the installed version. The pin target is Pi 1.4.0 if that upgrade is proven first; otherwise 1.3.0. Specialists bundles keep their extension selection.</dd>
+      <dt>Why here</dt><dd>Pi runs the specialists. Dispatch in phase 3 breaks if Pi drifts between machines.</dd></dl>
+      <p class="fold">Folded in: <b>XT-191</b> Pi 1.4.0 upgrade · <b>XT-183</b> bundle drops extension selection</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>After the parity sync (step 5), a specialist inventories <code>~/.pi</code> settings and the packages that core, specialists and xtrm declare.</li><li>A package counts as active only when Pi loads it, it ran in the last 30 days, and code depends on it.</li><li>You get the result as a list and mark keep or remove per package. Step 11 removes only what you marked.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Done · 11-01 · packages (version open)</span><ul><li>Your choice, applied on both machines (backups <code>*.bak-20261101-pi-parity</code>): gitnexus, guardrails, pi-goal, pi-tasks, ast-grep, our pi-extensions (core checkout), service-knowledge, native-specialists, xtmux, agentrun-pi, billion-context, Substrate 0.2.2. Removed: ponytail, structured-return, mermaid-viewer and every retired package; Pi’s built-in MCP re-enabled on the PC; Orca extensions binned.</li><li>core#865 (CORE-2572): <code>xt update</code> keeps exactly this set and sweeps the retired ones. specialists#515 (SPECIALISTS-4394): researcher off <code>pi-mcp-adapter</code>, python-kernel pin at 0.15.3.</li><li>Pi version: your ruling 11-01 is 1.4.0 (agentrun runs through its DSL, rarely through pi-durable). PC upgraded and smoke-tested: every package loads and registers its tools (gitnexus, specialists, Substrate, agentrun, tasks, goal, ast-grep, python, background, messaging), no load errors. billion-context injects its tools per request, so its check is the next long session. Server upgraded 11-01 with the same result; the long-running session survived. Pi settings, models and auth now identical on both machines (manifest checks settings and models by digest).</li><li>Follow-up: Exa is in neither machine’s built-in MCP config, so the researcher has no Exa tools until an Exa key is added.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Filed · 11-11 · CORE-2591</span><ul><li><code>npm:pi-claude-bridge</code> joins the managed Pi package set as managed optional, so <code>xt init</code> installs it and <code>xt update</code> reconciles it. Today it is on the PC only because it was installed by hand (0.12.0). Installing it does not turn the Claude route on: that stays <code>claude_bridge.enabled</code>, opt-in, operator login only.</li><li>Worker <code>bridge-pkg</code> (xt pi). The server gets the package but not the switch (unattended fleet).</li></ul></div>
+      <details class="notes" data-step="s10"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 10" placeholder="Questions and ideas for step 10" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">11</span><div class="step-body">
+      <div class="step-title"><b>Manage the unmanaged Pi packages; remove dead ones</b><span class="chip st-done">done</span><span class="chip draft">draft</span><span class="refs">CORE-2385 · CORE-2386 · XT-125</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>pi-subagents and pi-processes join the managed list; the dead quality-gates extension goes.</dd>
+      <dt>Why here</dt><dd>Until every package has an owner, the update cannot tell a stale package from one you installed. That is how <code>~/.pi</code> drifted.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>After the parity sync (step 5), a specialist inventories <code>~/.pi</code> settings and the packages that core, specialists and xtrm declare.</li><li>A package counts as active only when Pi loads it, it ran in the last 30 days, and code depends on it.</li><li>You get the result as a list and mark keep or remove per package. Step 11 removes only what you marked.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Done · 11-01</span><ul><li>The unmanaged and dead packages are gone on both machines; the quality-gates extension removal stays CORE-2386 (step 13b).</li></ul></div>
+      <details class="notes" data-step="s11"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 11" placeholder="Questions and ideas for step 11" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">12</span><div class="step-body">
+      <div class="step-title"><b>One versioned xtrm Claude plugin</b><span class="chip draft">draft</span><span class="refs">CORE-2391 · XT-130</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One marketplace plugin owns the XTRM hooks, picker hooks, primer, coordination hooks and watch tools. The status lines merge into one. Third-party plugins stop rewriting <code>settings.json</code> on boot.</dd>
+      <dt>Why here</dt><dd>The two machines' hook sets differ today. A plugin makes them equal by version, and phase 3 adds hooks.</dd></dl>
+      <p class="fold">Folded in: <b>XT-181</b> coordination hooks in the roster · <b>XT-186</b> context-mode re-registers a hook · <b>XT-192</b> one status line</p>
+      <details class="notes" data-step="s12"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 12" placeholder="Questions and ideas for step 12" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-part"><span class="num">12b</span><div class="step-body">
+      <div class="step-title"><b>Context-aware suggestions, also as a Claude mod</b><span class="chip st-part">partly done</span> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">CORE-2532 · specialists Claude mod</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One core library (roster, classifier client, decision log) used by the Pi extension and by a Claude mod. The mod uses a prompt-submit hook, as the specialists fleet-pane mod already does for its surface. substrate-suggest moves into the same library.</dd>
+      <dt>Why here</dt><dd>It ships with the Claude plugin (12), so both runtimes get the same suggestions from the same version.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>What the extension reads today: the <code>input</code> event, which is the prompt that starts a turn. In your sessions that is what you type; in a worker it is the dispatcher's prompt. It never reads the agent's reasoning or tool output.</li><li>Challenge: reading the transcript costs more, not less. A second process would tail and re-parse a growing file for every session. The extension itself is cheap in memory; its cost is one model call per prompt.</li><li>Better context at the same cost: send the classifier a small structured context with the prompt: the claimed Issue (ref, kind, title), its work stage, the repo and service territory, and the last few tool names. All of it is already in memory or in the claim.</li><li>Skip the call when the prompt is a continuation (“go on”, “yes”), and reuse the last decision.</li><li>Success measure: how often agents act on a suggestion. Today it is about 6%. I set the target after one week of clean logs.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Evidence · 10-30 · XTRM-681 field report</span><ul><li>The field report (worker XTRM-680-bili) proves the extension has been dead since 10-13: 281 roster items against a classifier limit of 255, every call HTTP 422, the error swallowed.</li><li>Before it died, its pointers were acted on in 6.3% of 446 injections. Agents do not open a file they are told exists. So every pointer we design from here (22c, 22d, 16b) hands over an explicit “read these first” list with absolute paths, or the rule text itself, never a bare mention.</li><li>Your note asks for the same thing as a Claude plugin after hardening: that is this step; 4c is the hotfix.</li></ul></div>
+      <details class="notes" data-step="s12b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 12b" placeholder="Questions and ideas for step 12b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">13</span><div class="step-body">
+      <div class="step-title"><b>Picker fixes; remove herdr and orca writers</b><span class="chip ready">ready</span><span class="refs">CORE-2387 · CORE-2393 · XT-129</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Correct pane states; the picker looks exactly as now; two competing writers go.</dd>
+      <dt>Why here</dt><dd>Pane state seeds the phase 3 registry. Wrong states here would be wrong there.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>herdr and orca removal stays here.</li><li>The richer picker and the roster sidebar move to step 28b: the precise statuses need the registry (24) and the work stages (30).</li></ul></div>
+      <details class="notes" data-step="s13"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 13" placeholder="Questions and ideas for step 13" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">13b</span><div class="step-body">
+      <div class="step-title"><b>Retire dead commands and roles</b> <span class="new-badge">v5</span><span class="chip new">new</span><span class="refs">CORE-2552 · SPECIALISTS-4391 · CORE-2386</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>xt merge</code> (unused since July, CORE-2552), the <code>xt-merge</code> and <code>node-coordinator</code> specialists (usage checked first), and the dead quality-gates Pi extension (CORE-2386). Each retirement counts real uses before removal and asks you if it finds one.</dd>
+      <dt>Why here</dt><dd>A stale command is a wrong route for agents. Removing them before the coordinator and identity work means nothing new is built on them.</dd></dl>
+      <details class="notes" data-step="s13b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 13b" placeholder="Questions and ideas for step 13b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">14</span><div class="step-body">
+      <div class="step-title"><b>Substrate records PRs and commits</b> <span class="new-badge">v2</span><span class="chip new">new</span><span class="refs">XT-178 amendment · prj_xtrm</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A new <code>sb provenance attach &lt;ref&gt; pr github:org/repo#n</code> verb, using the existing <code>attachArtifact</code>. The host records the PR (number, URL, head SHA) in the same step that opens it, and the commit SHA at receipt. <code>sb issue show</code> and <code>trace</code> print them as clickable links.</dd>
+      <dt>Why here</dt><dd>It is the core of your ruling: an open PR means Substrate has its number and link. It ships in this release, so every PR from phase 3 on is recorded.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Confirmed as fully mechanical. The host writes the PR record locally in the step that opens the PR; no API call is involved.</li><li>The reconciler (26) uses conditional GitHub requests, so an unchanged answer costs almost nothing against the rate limit.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Answer to your note · 10-31</span><ul><li>Two plans propose one tool set for both runtimes: XTRM-668 (commit <code>70879746</code>, “shared tool surface” for the Substrate Claude plugin and Pi extension) and XTRM-638 (codemode-first Pi tool architecture). This step uses that surface.</li></ul></div>
+      <details class="notes" data-step="s14"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 14" placeholder="Questions and ideas for step 14" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">15</span><div class="step-body">
+      <div class="step-title"><b>Gates refuse unlinked work</b> <span class="new-badge">v2</span><span class="chip new">new</span><span class="refs">XT-178 amendment · XT-167</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>pr-review-gate fails a PR whose title or link block names no Substrate ref. <code>sb issue close</code> needs a live claim, a result entry, and a PR or commit record (or an explicit no-code reason). A claim refuses a contract that fails <code>sb issue validate</code>.</dd>
+      <dt>Why here</dt><dd>A rule nothing enforces decays, as the 1-in-400 figure shows. The gate goes live before agents open PRs by themselves. The gate template is fanned out by hand to the 16 repos.</dd></dl>
+      <p class="fold">Folded in: <b>XT-167</b> close succeeds after the claim lapsed · <b>CORE-2527</b> to <b>CORE-2531</b> identity apps, merge guard, <code>xt decision</code>, audit</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>pr-review-gate was not removed: it is still required on core's main. It fails in 3–4 seconds with zero steps because Actions is locked (step 4b).</li><li>So the link requirement is enforced where no runner is needed: the host writes the links when it opens a PR, and the merge guard (CORE-2530) refuses a PR without them. The Actions check is a third layer that runs when runners exist.</li><li>The agent identities programme (CORE-2524, XT-190) plugs in here: reviewer, builder and release GitHub Apps, <code>xt decision</code> and the merge guard.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 10-30 · CORE-2524 rev 9</span><ul><li>Two Apps now: reviewer (reviews, no code write) and builder (pushes <code>xt/*</code>, opens PRs). The release App and CORE-2530 are deferred: merging needs the same permission the builder has, so a separate actor only helps where a ruleset limits merges to it.</li><li>No new agent surface: agents keep plain <code>git</code>, <code>gh</code> and <code>sb</code>; wrappers add tokens, trailers and markers. No <code>xt decision</code>, no <code>--identity</code>. Coordinators record an accept with <code>sb journal append --kind decision</code>.</li><li>Role source: a plain <code>xt</code> session is builder; <code>--role</code> and specialists use one map under <code>~/.xtrm/config</code>; reviewer and merge tokens belong to the action, not the session.</li><li><code>xt merge</code> is retired: CORE-2552.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 11-08 · CORE-2530 rev 4</span><ul><li>The merge guard is now a read-only check, <code>xt identity merge-check</code>, repo-agnostic: the <code>gh pr merge</code> shim calls it, so it covers every repo and needs no stable branch. A repo with its own merge or promotion command may call the same check (market-data's <code>make promote-merge</code> is one optional example, owned by that repo). It allows a merge only when the latest <code>xtrm-reviewer[bot]</code> review is APPROVED and pinned to the PR's current head SHA, or is a COMMENT with a valid <code>decision</code> entry. A new push makes the review stale and the guard refuses. It also refuses on an active CHANGES_REQUESTED, no review, no resolvable Issue, or GitHub unreachable.</li><li>Why it is needed: the org is on the Free plan, so nothing refuses a merge, and <code>pr-review-gate</code> never requires a review to exist (a PR with no review passes it). The gate stays out of scope.</li><li>Reminder (CORE-2530 rev 5): every refusal says the review is missing or stale at head <i>sha12</i> and lists the ways to get one (the <code>reviewer</code> subagent in PR mode, <code>xt claude --role pr-reviewer</code>, or the specialist for a job verdict). A local hook, <code>xtrm-review-gate</code>, built as a policy and compiled to <code>hooks.json</code> (no GitHub Actions), reminds the agent after <code>gh pr create</code> and runs the check before <code>gh pr merge</code>.</li><li>Override for the operator and the coordinator role only: <code>XTRM_MERGE_GUARD_OVERRIDE=&lt;reason&gt;</code>. Each use writes a log line and a Journal decision entry. The App is a dependency: if it is down the guard blocks, and the override is the way out.</li><li>Stop condition: a throwaway PR approved at head H, a new push, and the guard refusing the merge. Origin: the market-data build coordinator (errors this week were all about who reviewed or which head).</li><li>The guard is client-side. An agent with the operator's gh login can still call the API; this stays documented. The release App remains deferred.</li></ul></div>
+      <details class="notes" data-step="s15"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 15" placeholder="Questions and ideas for step 15" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">15b</span><div class="step-body">
+      <div class="step-title"><b>A review is a step in the trail, not a new issue</b> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">pr-reviewer · Substrate provenance</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A review pass becomes a receipt on the reviewed Issue, with an artifact of kind <code>review</code> (head SHA, verdict, GitHub review link) and a Journal finding. Follow-up work found in review is a new Issue with a <code>discovered_from</code> edge to the reviewed one. <code>sb provenance trace &lt;ref&gt;</code> then shows the whole trail: dispatch, receipts, PR, reviews, decision, merge.</dd>
+      <dt>Why here</dt><dd>It needs the PR record (14) and the gates (15), and it must land before agents review each other at volume. MMD has 66 open issues named “pr-reviewer: …”, one per review pass; the Beads CLI had the same pattern.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>No Substrate refactor: receipts, review artifacts, Journal entries and <code>discovered_from</code> (2,604 uses) all exist today. The pr-reviewer specialist and the coordinator skill change to write them.</li><li>The original design (<code>substrate_design_it.md</code>) has a <code>validates</code> edge: the verifier is a node in the implementation's chain, not a separate blocker. It was never built. Substrate stores blocks, relates_to, discovered_from, supersedes, duplicates and parent_child. Chains live in the specialists database (<code>epic_chain_membership</code>, <code>node_runs</code>), not in Substrate.</li><li>I don't add <code>validates</code> now. A review artifact on the reviewed Issue says the same thing. I revisit it only if the trail view needs an edge.</li><li>The 66 open review issues close as superseded, with their verdicts copied into review records (step 37 backfill).</li><li>The review process page (MMD-2934, 10-26) already returns PASS, PARTIAL or FAIL at an exact head. That verdict is what the review record stores. Step 15e decides which reviewer writes it.</li></ul></div>
+      <details class="notes" data-step="s15b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 15b" placeholder="Questions and ideas for step 15b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">15c</span><div class="step-body">
+      <div class="step-title"><b>Service-knowledge: harden it, then install it everywhere</b> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">XTRM-631 · MMD-2437 · XTRM-641 · MMD-2788</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Drift is measured by content hashes instead of modification times, and top-level files count. The post-merge hook design gets its critique (XTRM-641). After that, a full install, including the git hooks, is part of every <code>xt init</code>.</dd>
+      <dt>Why here</dt><dd>A default that reports 364 drifted files in a fresh worktree when 81 really changed (XTRM-631) teaches agents to ignore it. Accuracy comes first, then reach.</dd></dl>
+      <p class="fold">Open evidence: <b>INFRA-620</b> 14 services and 53 files drifted, with three runtime claims that were false · <b>DARTHFEEDOR-579</b> lags main · <b>INFRA-288</b> 8 repos not installed · <b>MMD-2321</b> a standing human maintainer</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Git hooks yes: they record drift after a merge or checkout. Per-edit Claude hooks no, as MMD-2788 already decides.</li><li>Reconcile stops depending on a person remembering: the drift marker feeds the work stage and the promotion rule (15d).</li></ul></div>
+      <details class="notes" data-step="s15c"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 15c" placeholder="Questions and ideas for step 15c" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">15d</span><div class="step-body">
+      <div class="step-title"><b>Stable promotion updates service-knowledge</b> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">market-data first · <code>make promote</code></span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>make promote</code> runs service-knowledge drift on the master→stable range and posts a comment on the promotion PR listing what changed. The heavy lane on the stable PR fails unless drift is cleared or carries a written waiver. A local pre-push hook is the backup.</dd>
+      <dt>Why here</dt><dd>Your ruling for market-data needs a place that nobody can skip. <code>make promote</code> is already the only way to promote, and market-data's self-hosted runners make the heavy lane reliable.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Of your options: rule in the skill (no, memory), hook in the skill (no, only agents load it), CI (yes, heavy lane), local githook (yes, as backup), PR comment (yes, written by <code>make promote</code>).</li><li>The product-management skill (46) only names the rule. It does not enforce it.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-31</span><ul><li>Our repo setup (stable branch, promotion, <code>make</code> targets) becomes a product-management reference with a <code>make</code> template, offered, never required.</li><li>Service-knowledge reads the repo’s own configuration (default branch, release branch if any, sync trigger) instead of assuming <code>stable</code>.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Audit · 11-01</span><ul><li>A service-knowledge librarian reported 13 weaknesses after a <code>market-data</code> sync (MMD-3392). No Substrate Issue is filed yet. Two claims are checked in core&rsquo;s copy of the code: #3 (<code>sync</code> always stamps <code>_git_head</code>, <code>drift_detector.py:78</code>) and #5 (<code>reconcile.py:421</code> takes the repo name from the directory). The others are the reporter&rsquo;s observations, not rechecked.</li><li><b>First, dispatch and counts.</b> #1 <code>drift_detector.py scan</code> took 134.5 s and timed out a dispatch. #2 the drift headline is meaningless: 22 services and 180 files after one commit pair; the truthful set is <code>git diff &lt;last_sync_ref&gt;..HEAD</code> intersected with territory globs.</li><li><b>Second, stamping.</b> #3 <code>sync</code> cannot stamp the audited ref, which conflicts directly with this step: a stamp on <code>origin/stable</code> leaves the gate drifted. #4 the stamp and the umbrella table are separate writes, so the gate fails with an umbrella mismatch.</li><li><b>Third, runtime.</b> #5 the umbrella renames the skill after a worktree directory; it needs an explicit repo name. #6 two markers with different ranges, and a worktree cannot clear the parent marker. #7 <code>cli_error</code> degrades silently to <code>tier=unknown</code>. #8 the index is per-checkout state, so &ldquo;index rebuilt&rdquo; cannot be checked by anyone else.</li><li><b>Instructions.</b> #9 no tool emits or validates the per-service verdict schema. #10 write boundaries omit the umbrella <code>SKILL.md</code> and the index cache. #11 &ldquo;<code>audited-and-unchanged</code> is gitnexus-only&rdquo; cannot hold while real symbols are missing from the graph. #12 &ldquo;do not append sections&rdquo; conflicts with the per-sync sections in <code>release-flow</code>. #13 load limits are not in the doctrine.</li><li>Fix order follows the report: 1 and 2, then 3 and 4. It fits your note on this step, because the audited ref must come from the repo&rsquo;s own configuration, not a hardcoded <code>stable</code>.</li></ul></div>
+      <details class="notes" data-step="s15d"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 15d" placeholder="Questions and ideas for step 15d" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">15e</span><div class="step-body">
+      <div class="step-title"><b>One reviewer, chosen by evidence</b> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">MMD-2934 · SPECIALISTS-4386 · CORE-2528</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The eight-step comparison from the review process page runs on at least three qualifying PRs: a frozen head SHA, one brief, three arms (the <code>reviewer</code> specialist, the <code>pr-reviewer</code> specialist, the Claude <code>reviewer</code> subagent), and a blind arbiter scoring the findings. The winner becomes the one reviewer definition, with two modes: job review (verdict to the coordinator) and PR review (verdict on GitHub). It posts as <code>xtrm-reviewer[bot]</code>, and its verdict is stored as the review record of step 15b.</dd>
+      <dt>Why here</dt><dd>Three definitions share one checklist family and drift apart. Two of them post under the same GitHub account, told apart only by the first line of the comment. No live run has proven the OCR preflight yet. The gates (15) and the review trail (15b) need one reviewer whose verdict can be trusted.</dd></dl>
+      <p class="fold">From the review process page: OCR preflight (<code>ocr delegate preview</code>, <code>rule</code>) stays mandatory and the LLM OCR commands stay banned · <b>SPECIALISTS-4386</b> the seconder runs no OCR · <b>MMD-2938</b> quality baseline · market-data <code>rule.json</code> (PR #1092) is the first repo rule set</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>The verdict maps to the GitHub review type as the identities page proposes: PASS is APPROVE, PARTIAL is COMMENT, FAIL is REQUEST_CHANGES. The merge guard reads the record, not the comment text.</li><li>Provider risk: two of three providers are unusable today (opencode-go returns 429; openai-codex needs an interactive re-login), and one quota limit stops every reviewer at once. The comparison also records which provider each arm used, and the chosen reviewer gets a second provider as fallback.</li><li>A live MCP server keeps the old model configuration until it is reloaded. That is XT-157, fixed in step 21; until then every definition change ends with a reload.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 11-08 · CORE-2528 rev 3</span><ul><li>Reviews are posted through one path with no new agent command: the <code>gh</code> shim posts a formal review through the REST create-review call with <code>commit_id</code> set to the reviewed head, because <code>gh pr review</code> has no commit flag. It refuses if the head moved, and it refuses a review by the holder who opened the PR.</li><li>The Claude <code>reviewer</code> subagent in PR mode (today <code>gh pr comment</code>, "never run gh pr review") and <code>xt claude --role pr-reviewer</code> both move to this path.</li><li>Ruling (11-08, you): the <code>pr-reviewer</code> specialist stays valid, but is not advised for critical reviews at the moment. That is temporary and is lifted if Claude Code becomes a specialists backend. The routing must be universal, or a repo convention, or your instruction in the chat; precedence in that order, chat first. So all arms stay in the comparison, and the default routes by SCRUTINY tier: HIGH or critical goes to a Claude-backed reviewer (subagent or <code>xt claude --role pr-reviewer</code>), lower tiers may use the specialist. The merge guard never checks which kind of reviewer ran.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">State · 11-11 · Claude route for specialists</span><ul><li>Proven live 11-09 (SPECIALISTS-4405): a specialist ran on <code>claude-bridge/claude-sonnet-5-5</code> with Pi’s own tools, so the permission guard and READ_ONLY still bind. The route needs both the definition flag and <code>claude_bridge.enabled</code> in your <code>user.json</code>; your switch is on.</li><li>Merged 11-11, each reviewed at its exact head: specialists #529 (a bridged model with the route off is refused instead of silently falling back to another provider), #528 (bridge found in Pi’s package store, no env variable; relative paths ignored), #530 (dist refresh, byte-identical rebuilds). Next: a small test follow-up, docs, release, installs; core #893 adds the bridge to the installer (pinned 0.12.0).</li><li>Coordination: lane B (this route, installs, the 15e test) is run by <code>core-xt-claude-1rmj</code>; lane A (identities, merge guard) by <code>core-85</code>.</li><li>Once merged, the 15e arm “pr-reviewer specialist on the Claude route” can be tested on Pi and as a specialist, against the Claude subagent.</li></ul></div>
+      <details class="notes" data-step="s15e"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 15e" placeholder="Questions and ideas for step 15e" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">16</span><div class="step-body">
+      <div class="step-title"><b>Instructions generated from the CLI</b> <span class="new-badge">v3</span><span class="chip new">new</span><span class="refs">using-xtrm · primer · mandatory rules · XT-162</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One Substrate reference built from <code>sb help --json</code> and the duty map. It feeds using-xtrm, the session primer, the managed blocks, and a new specialists mandatory rule that every writer role loads. The 74 leftover Beads mentions go. A CI check fails when an instruction names a verb that does not exist, or a duty has no description.</dd>
+      <dt>Why here</dt><dd>It comes after the gates (15), so the text describes gates that exist, and before the release (18), so every machine gets it.</dd></dl>
+      <p class="fold">Folded in: <b>XT-162</b> one complete specialists skill per runtime</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>A check must never depend on a runner being available. Every required check gets one local command, in the <code>make ci-light</code> style.</li><li>Jobs do not cancel each other. A cheap check such as instruction drift fails alone, and the heavy jobs still run.</li><li>When runners are unavailable, the merge guard accepts a local run record (command, commit SHA, exit code, host) stored in Substrate as a validation artifact. It is written down and never silent.</li><li>This is a per-repo setting: local run record or hard block. For users other than you, the default is to block.</li></ul></div>
+      <details class="notes" data-step="s16"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 16" placeholder="Questions and ideas for step 16" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">16b</span><div class="step-body">
+      <div class="step-title"><b>One testing canon that reaches every judging role</b><span class="chip st-done">done</span> <span class="new-badge">v4</span><span class="chip done">done</span><span class="refs">MMD-2999 · MMD-2331 · “Regole dei test”</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The ten prepared patches in <code>~/.cache/MMD-test-canon/proposed/</code> on the server, none applied yet. The canon lives once, in <code>engineering-quality/references/testing.md</code> (01, 04). Planning points to it instead of keeping its own level table (02). Every VALIDATION check names its command, expected result, setup and cleanup, and what a failure would mean (03). The seconder may judge the value of changed tests and gets a <code>test-value</code> finding (05). The reviewer gates judge test value, not only test theatre (06). The test-engineer and the executor get the keep / fix / delete rule, and the executor's contradiction about running tests is fixed (07, 08). market-data's OCR rule and AGENTS.md point at the canon (09, 10).</dd>
+      <dt>Why here</dt><dd>It is the instruction gap of step 16, measured for tests: across 796 jobs in 6 roles, 0 say what a failure would mean, and only reviewer (18 of 186) and pr-reviewer (7 of 80) ever name test theatre. It lands next to step 16 so the same drift check covers it, and before the release (18) so every machine gets it.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling · 10-29</span><ul><li>Not yet as written. The standalone <code>test-planning</code> skill (542 lines, removed in the 09-04 refactor, core <code>4c82c4be</code>) held much more than today's 58 lines plus patch 01: three triggers (contract authoring, in-chain after the writer, a drift check at closure), layer signals, strategy by situation, the live → recorded fixture → mock ladder, the smoke command contract, the telemetry field list, done-when templates per layer, critical-path and deferred-path maps, test priority rules, three more anti-patterns (no assertion, shared mutable state, cannot fail under a realistic regression) and a who-enforces-what table.</li><li>Draft v2, translated from Beads to Substrate: <code>~/.cache/MMD-test-canon/proposed-v2/</code> on the server. It adds <code>engineering-quality/references/test-planning.md</code> (the procedure; <code>testing.md</code> stays the rules) and changes 01, 02, 04, 05, 06 and 07 to point at it. 03, 08, 09 and 10 are unchanged. The old evals are kept to test it.</li><li>Then approve, in order: 01 + the new reference, 04, 02, 03; then 05, 07, 08; then 06; then 09 and 10 as a normal market-data PR. Editing now is fine: it is text, and it does not wait for the parity sync.</li><li>06 edits three copies of the reviewer gate. Apply it to all three now, because it is small; step 15e then keeps one reviewer, so the copies stop drifting.</li><li>05 changes the seconder's JSON output (a new enum value). Before it merges, the readers of that enum are listed and checked.</li><li>Make it mechanical: the step 16 drift check also fails when a judging role (reviewer, pr-reviewer, seconder, test-engineer, executor) does not load the canon, or when a second copy of the level table appears.</li><li>A change counts as proven only when a later run shows it in use, as the page says: an OCR preflight digest, a job output using the new field, a new audit with the rubric.</li><li>No “25% useless tests” figure: the repo audit measured 1.1% (26 of 2,444). Any new number comes from a re-measurement with the rubric.</li><li>G0 on the page is an install problem: the runtime checkout under <code>~/.local/share/xtrm/runtime-checkouts/</code> still holds reviewer 2.1.0 and seconder 1.1.0, while the source has 2.6.0 and 1.5.0. Step 10 makes the update verify installed versions, so audits and runs read what is current.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Applied · 10-29</span><ul><li>Live on the server: the skill files in <code>~/.xtrm/skills/default</code> (testing.md, new planning-tests.md, SKILL.md route, planning pointer, VALIDATION template), and the Claude reviewer and executor subagents.</li><li>The pointer agents cannot skip: a <code>test-canon</code> mandatory rule set, appended to the prompt of seconder, reviewer, pr-reviewer, test-engineer and executor at spawn. It carries the rules inline, names both files by path, and requires a closing line <code>Test canon: read … · applied …</code> or <code>Test canon: NOT READ (reason)</code>. That line is the evidence the canon reached the role.</li><li>Merged with admin: xtrm-dev/specialists#513, xtrm-dev/core#852, mercuryintelligence/market-data#1139. <code>~/.xtrm</code> pushed. Live check: all five roles resolve to the package definitions with <code>test-canon</code> and every skill path present.</li><li>Found on the way: seven repos tracked May snapshots of reviewer and executor that named retired skills, so those roles could not dispatch there. Pruned and merged in economic-data, market-archive, quant, sierra-vps, terminal, website and transcriptoz; darth-feedor's stale reviewer overlay moved aside.</li></ul></div>
+      <details class="notes" data-step="s16b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 16b" placeholder="Questions and ideas for step 16b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">17</span><div class="step-body">
+      <div class="step-title"><b>One install story in docs; doctor checks</b><span class="chip draft">draft</span><span class="refs">CORE-2383 · CORE-2384 · XT-126</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Docs, skills and help describe the same two commands, expired aliases go, and <code>sp doctor</code> warns about a second specialists MCP server.</dd>
+      <dt>Why here</dt><dd>Written after steps 9–16, so it describes what exists.</dd></dl>
+      <p class="fold">Folded in: <b>XT-160</b> doctor warns on a second MCP server</p>
+      <details class="notes" data-step="s17"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 17" placeholder="Questions and ideas for step 17" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">18</span><div class="step-body">
+      <div class="step-title"><b>Clean-PATH end-to-end test, then publish</b><span class="chip gate">you</span><span class="refs">CORE-2382 · CORE-2377 · XT-128</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A CI sandbox installs from scratch and ends with <code>xt doctor</code> exit 0. After your approval, core, specialists, substrate and pi-extensions are published, and later releases publish on merge.</dd>
+      <dt>Why here</dt><dd>The release must contain everything above, and it carries the topology feed for phase 5.</dd></dl>
+      <p class="fold">Folded in: <b>XT-26</b> auto-publish pi-extensions on merge</p>
+      <details class="notes" data-step="s18"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 18" placeholder="Questions and ideas for step 18" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+  </ol>
+</section>
+
+<!-- PHASE 3 -->
+<section class="phase" style="--c:var(--own);--t:var(--tint-own)">
+  <div class="phase-head"><span class="tag">Phase 3 · XT-184</span><h2>Every session owns its resources</h2></div>
+  <p>Goal: a session, its processes, worktree, claim and PR live and die together. Nothing is reaped by age or by text matching.</p>
+  <ol class="steps">
+    <li class="step is-done"><span class="num">19</span><div class="step-body">
+      <div class="step-title"><b>Sessions keep their identity on resume</b><span class="chip st-done">done</span><span class="chip done">done</span><span class="refs">CORE-2536 · core#845 · XT-190</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>xt attach</code> restores <code>SUBSTRATE_HOLDER</code>. 26% of Journal entries had no participant before.</dd>
+      <dt>Why here</dt><dd>Already merged. Ownership needs an owner name.</dd></dl>
+      <details class="notes" data-step="s19"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 19" placeholder="Questions and ideas for step 19" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-done"><span class="num">19b</span><div class="step-body">
+      <div class="step-title"><b>The environment contract, tested</b><span class="chip st-done">done</span> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">CORE-2390 · CORE-2536</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One contract lists each variable, who sets it, who reads it and how long it lives: <code>SUBSTRATE_HOLDER</code>, <code>SUBSTRATE_ISSUE_REF</code>, <code>SUBSTRATE_PROJECT</code>, <code>XTRM_DISPATCHER_NAME</code> and <code>XTRM_DISPATCHER_ADDRESS</code> (who dispatched me), <code>XTRM_PARENT_PANE_ID</code> and <code>XTRM_PARENT_SESSION_ID</code>, and <code>XTRM_JIRA_AS</code>. One test launches <code>xt claude</code>, <code>xt pi</code>, <code>sp run</code> and an <code>xt attach</code> resume, and checks the variables inside each.</dd>
+      <dt>Why here</dt><dd>Ownership, the roster and the app all read these names. A variable that is set in one launcher and missing in another breaks them silently.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>“Who dispatched me” exists: <code>xt</code> sets <code>XTRM_DISPATCHER_NAME</code> and <code>XTRM_DISPATCHER_ADDRESS</code> from the nearest ancestor Claude or Pi session (CORE-2390). The test checks that specialists runs carry them too; I have not verified that yet.</li><li>The roster (28b) and the app's Sessions navigator show “dispatched by” from these variables.</li><li>Monorepo migration: deferred by your ruling. It is listed under “Not in this plan”.</li></ul></div>
+      <details class="notes" data-step="s19b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 19b" placeholder="Questions and ideas for step 19b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step is-part"><span class="num">20</span><div class="step-body">
+      <div class="step-title"><b>Agent commits carry an agent author</b><span class="chip st-part">partly done</span><span class="chip draft">draft</span><span class="refs">CORE-2525 · XT-190</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Per-agent git author and committer, plus an <code>Agent:</code> trailer, from xt and the specialists supervisor.</dd>
+      <dt>Why here</dt><dd>The reconciler and the lifecycle read who made a branch.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Confirmed.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 10-30 · CORE-2524 rev 9</span><ul><li>Two GitHub Apps now: <code>xtrm-reviewer[bot]</code> and <code>xtrm-builder[bot]</code>. None exists yet; the runbook is CORE-2527. Release App deferred (see step 14).</li><li>One App per role, not per agent: the agent name travels as the git author, the <code>Agent:</code> trailer and the comment marker. The service-knowledge updater is the service-skills-sync specialist, so it is a builder, not a fourth App.</li><li>Role source: a plain <code>xt</code> session is builder; <code>--role</code> and specialists read one map under <code>~/.xtrm/config</code> (never the specialist JSON); reviewer and merge tokens belong to the action. No <code>--identity</code> flag.</li><li>Jira side is done: CORE-2526 and CORE-2540 (agent account <code>xtrm-bot</code>).</li><li>Unused third-party Apps (<code>grok-by-xai</code> and <code>claude</code> with org administration, <code>chatgpt-codex-connector</code>) are still installed: uninstall if unused.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 11-02 · CORE-2524 rev 10</span><ul><li>Three GitHub Apps now: <code>xtrm-reviewer</code>, <code>xtrm-coord</code> (new) and <code>xtrm-worker</code> (renamed from <code>xtrm-builder</code>). This replaces the two-App ruling of 10-30.</li><li><code>xtrm-coord</code> lets a person tag a coordinator on a PR with a question such as &ldquo;why not merged&rdquo;, and routes it. It comments only: no contents write, no merge.</li><li>Every App post carries the run header: agent name, run id, and specialist activation id when present.</li><li>Order: XTRM-685, then the runbook CORE-2527 (rev 2), then you create the Apps. The runbook must establish how a mention reaches XTRM with Actions locked and no public webhook endpoint.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Done · 11-02</span><ul><li>Runbook merged: <code>docs/github-apps-operator-runbook.md</code> in core (#870, CORE-2527). The three App names are not taken on GitHub as of 11-02. You can create the Apps now; nothing uses them until token minting (Phases 3 and 4).</li><li>Apps are registered as <b>Any account</b>, because a private App cannot cover the three accounts. Anyone with the link can install one, so tokens are minted only for recorded installation ids.</li><li><code>xtrm-coord</code> mentions: polling first (next check, no new public surface). A webhook behind Traefik on the server is possible and near-instant, but needs your ruling. A correction: the server does have public ingress.</li><li>Still unverified: whether an App approval counts toward required reviews; the runbook carries the live test.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">State · 11-08</span><ul><li>None of the three Apps exists: <code>api.github.com/apps/xtrm-reviewer</code>, <code>xtrm-coord</code> and <code>xtrm-worker</code> return 404. You create them from the runbook; <code>xtrm-reviewer</code> first, because the reviewer path and the merge-guard test need it.</li><li>Contracts revised to match rev 10, all draft and structurally valid, not yet attested: CORE-2525 (git author and trailer), CORE-2528 (tokens, shim, formal reviews), CORE-2529 (worker App and push guard), CORE-2530 (merge guard), CORE-2531 (audit). Attestation waits for your go and the first App.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">State · 11-11</span><ul><li>Merged in core, each reviewed at its exact head: #881 agent git author (CORE-2525); #882 App tokens, <code>gh</code> shim, reviews pinned to the head, merge guard (CORE-2528); #883 <code>xtrm-review-gate</code> hook (CORE-2530); #884 guard follow-ups; #885 the launcher exports the role App identity only where that App is installed.</li><li><code>xtrm-reviewer</code> exists (App 5669067) and is installed on Jaggerxtrm, mercuryintelligence and xtrm-dev. <code>xtrm-coord</code> and <code>xtrm-worker</code> are not created; until they are, workers and coordinators keep your identity.</li><li>Live run found real defects. The first review on core #888 posted <b>as you</b> (<code>Jaggerxtrm</code>, plain comment) because the reviewer’s tmux pane did not get the shim on its PATH. #891 fixed that and merged (4de65af8) on the first real bot review: APPROVED by <code>xtrm-reviewer[bot]</code> pinned to the head. It carries the run marker (agent, run, Issue). Gap: its Journal receipt failed (<code>sb</code> exited 1), so CORE-2524 has no receipt for it; fix due in #887.</li><li>Server side: <code>main</code> on core requires linear history only, no review and no check. The guard is the only review gate.</li><li>Open core PRs, in merge order: #887 guard C1, #888 live-run fixes, #890 guard checks the Issue really exists, #889 guard on by default (last).</li><li>Limit that stays: the guard is client-side. A pane that bypasses the shim can still act with your <code>gh</code> login.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Decisions · 11-11</span><ul><li>Settled: you asked for the guard to be set automatically, so #889 (on by default for launched agents, <code>XTRM_MERGE_GUARD=off</code> opts out) replaces the 11-08 off-by-default ruling. It merges last. Your own shell still has it unset, so merges you run are not checked unless you set it.</li><li>Remove your <code>gh</code> login from agent panes, so a pane that bypasses the shim fails instead of posting as you. Recommendation: yes, once <code>xtrm-worker</code> exists, since workers push and open PRs with your login today.</li><li>Server-side enforcement: core is public, so a required approving review on <code>main</code> is possible and would make the rule unbypassable. Whether an App approval counts toward it is still the open live test.</li></ul></div>
+      <details class="notes" data-step="s20"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 20" placeholder="Questions and ideas for step 20" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">21</span><div class="step-body">
+      <div class="step-title"><b>Reliable claims and activations</b><span class="chip draft">draft</span><span class="refs">SPECIALISTS-4358 · 4359</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Claim then bind, claim renewal, fail closed on loss. Preflight runs before the claim. A coordinator restart no longer orphans activations. Dispatch reloads changed definitions, and a late wake does not replace the settled result.</dd>
+      <dt>Why here</dt><dd>XT-184 orders this before any PR flow, and Jira status follows these claims.</dd></dl>
+      <p class="fold">Folded in: <b>XT-161</b> claims before preflight · <b>XT-159</b> restart orphans activations · <b>XT-157</b> cached definition · <b>XT-158</b> first settle kept</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>XT-157 (an edited definition is ignored until restart) also explains why a live MCP server reviews with the old models until it is reloaded (review process page).</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Found · 10-31</span><ul><li>The <code>sp</code> CLI is deprecated: dispatch goes through the Claude Code plugin and the Pi extension. Its <code>sp run --issue-ref</code> still creates worktrees with the retired <code>bd</code> (only <code>src/cli/run.ts</code> and the legacy node supervisor do; the native activation path does not). SPECIALISTS-4392 closed as won’t fix. Skills and agent guides that still say <code>sp run</code> or <code>sp list</code> (this repo’s CLAUDE.md among them) should point at the plugin and extension tools: step 16.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Finding · 11-02</span><ul><li><code>in_progress</code> exists, but only as a view of a live claim. Claims default to 15 minutes, and no CLI, Pi or MCP path renews them, so a working session can drop back to READY. XTRM-685 did this live, and the board then showed nothing in progress.</li><li>Consequences: the board under-reports active work, and a second worker can claim an Issue that is still being worked.</li><li>Proposed: keep it derived (a stored status would drift). The session host renews claims while a session lives, and the board shows a lapsed claim on an Issue with recent activity. Interim: claim with a long <code>--ttl-ms</code>.</li></ul></div>
+      <details class="notes" data-step="s21"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 21" placeholder="Questions and ideas for step 21" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">22</span><div class="step-body">
+      <div class="step-title"><b>The host does the bookkeeping</b> <span class="new-badge">v3</span><span class="chip new">new</span><span class="refs">specialists native host · xt · substrate plugin</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Every dispatch writes a binding (today 38%). Every settle writes a checkpoint, finalizes the receipt (today 1%) and records the commit SHA. The commit hook adds the <code>XTRM-Issue</code> and <code>XTRM-Receipt</code> trailers. The stop hook checkpoints every claimed session, not only bound ones. An executor's final report is checked against the real diff.</dd>
+      <dt>Why here</dt><dd>A receipt belongs to a claim, so this follows the claim fixes (21). The reconciler (26) then finds a receipt to attach each PR to.</dd></dl>
+      <p class="fold">Folded in: <b>XT-6</b> executor report reconciled against the diff</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your question · 10-29</span><ul><li>The commit side of this step is two git hooks, not a Claude hook: <code>prepare-commit-msg</code> adds <code>XTRM-Receipt</code> when the session has a live receipt (6b already adds the Issue), and <code>post-commit</code> records the new SHA in that receipt. Both are local writes.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Status · 10-30 · XTRM-668 sb-improve</span><ul><li>The Substrate plugin and Pi extension redesign is under way as XTRM-668: equal behaviour on the sb CLI, the Claude plugin and the Pi extension; Claude hook outputs that were dropped; nudges for Pi; better resume capsule and errors; smaller MCP tool text. Branch <code>xt/sb-improve</code>, 4 commits ahead.</li><li>Overlap to settle: its “worktree identity” commit and core CORE-2536 both derive the holder. One derivation wins; CORE-2524 consumes it (Journal notes on both Issues).</li><li>This step builds on it rather than duplicating it.</li></ul></div>
+      <details class="notes" data-step="s22"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 22" placeholder="Questions and ideas for step 22" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">22b</span><div class="step-body">
+      <div class="step-title"><b>Specialist sessions are saved, named and resumable</b> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">specialists · Pi sessions</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Pi saves a session file for every activation, named the way the xt launcher names sessions (role, Issue, slug). A killed run gets its own status, <code>killed</code>, with a reason (memory, operator stop, timeout, host restart, scope exit) and the exact resume command. Resume restarts Pi on the same session file, with the same claim if it is still live, like <code>xt attach</code>. The fleet pane, the Pi footer and xtmux show it as loudly as any other event.</dd>
+      <dt>Why here</dt><dd>It needs the claim fixes (21) and the host bookkeeping (22). The resource budgets (23b) can then kill a run without losing it.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Verified: specialists start Pi with <code>--no-session</code> (<code>src/pi/session.ts</code>), so no session file exists and a killed run cannot be resumed.</li><li>Your question about duplication: partly yes. <code>observability.db</code> stores the event stream (text, tool calls) that a Pi session file would also hold. Its jobs, status and metrics tables have no Pi equivalent.</li><li>So the database keeps jobs, status, metrics and a pointer to the session file, and stops storing full event payloads. Old payloads get a retention limit. The files are large today: 2.8 GB in the specialists repo, 1.5 GB in console, 1.2 GB in core.</li></ul></div>
+      <details class="notes" data-step="s22b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 22b" placeholder="Questions and ideas for step 22b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">22c</span><div class="step-body">
+      <div class="step-title"><b>Take a role inside a running session</b> <span class="new-badge">v5</span><span class="chip new">new</span><span class="refs">SPECIALISTS-4389</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>sp role &lt;name&gt;</code> prints the specialist prompt, its mandatory rules (the same text a spawn appends) and a “Read these first” list of absolute skill, reference and script paths. <code>/role</code> in the Claude plugin and Pi wraps it; adoption leaves a Journal note on the claimed Issue. Review roles are refused: spawn them, because a reviewer is worth its separate context.</dd>
+      <dt>Why here</dt><dd>It reuses the resolver that 22b and the parity work fix. An adopted role is guidance only: model, tools and identity stay what the session started with.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Follow-ups · 10-30</span><ul><li>Name as role: <code>xt claude reviewer</code> or <code>xt claude test-engineer-2</code> applies that role and prints one line, <code>--no-role</code> to skip. No current session name collides with a specialist name.</li><li>Tab completion of specialist names for <code>xt claude|pi|codex</code>.</li><li>A session that grows into coordinating can take <code>coordinator</code> (22d) this way.</li></ul></div>
+      <details class="notes" data-step="s22c"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 22c" placeholder="Questions and ideas for step 22c" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">22d</span><div class="step-body">
+      <div class="step-title"><b>A coordinator role that picks its scale</b> <span class="new-badge">v5</span><span class="chip new">new</span><span class="refs">SPECIALISTS-4390 · 4391</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A top-level <code>coordinator</code> specialist you talk to: never implements product code, Substrate owns the record, dispatches through multiplexing or specialists, verifies worker claims. Its first step picks a scale reference unless you name one, and its first line says so: <code>Coordinating as: epic (planning + multiplexing)</code>. <code>chain-coordinator</code> stays the subordinate for one Issue chain. The legacy <code>node-coordinator</code> is retired after a usage check (4391).</dd>
+      <dt>Why here</dt><dd>It needs 22c to be taken mid-session and 46 for the programme reference. It has no GitHub identity of its own: a builder session, merges stay with you.</dd></dl>
+      <table class="mini"><tr><th>You ask for</th><th>Reference</th></tr><tr><td>One Issue through a specialist chain</td><td>using-specialists chain recipes (may spawn chain-coordinator)</td></tr><tr><td>An epic: a few Issues, a few peers</td><td>planning + multiplexing</td></tr><tr><td>A multi-week programme, Jira view</td><td>programme-coordination → product-management (46)</td></tr><tr><td>A PR queue or release window</td><td>review/merge reference + mercury-release</td></tr></table>
+      <details class="notes" data-step="s22d"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 22d" placeholder="Questions and ideas for step 22d" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">23</span><div class="step-body">
+      <div class="step-title"><b>Each session in a limited systemd scope</b><span class="chip new">new</span><span class="refs">XT-184 items 1–2</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>MemoryHigh, TasksMax and CPUWeight per session, tagged with session and Issue; MemoryMax only after measurement; a cap on live agents and parallel chains; <code>XT_NO_SCOPE=1</code> opts out.</dd>
+      <dt>Why here</dt><dd>The 10-22 incident can repeat any day. MemoryHigh slows a session down and never kills it, so it is safe first.</dd></dl>
+      <p class="fold">Folded in: <b>XT-173</b> live-agent process cap</p>
+      <details class="notes" data-step="s23"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 23" placeholder="Questions and ideas for step 23" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">23b</span><div class="step-body">
+      <div class="step-title"><b>Resource budgets for everything that runs</b> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">XT-184 · systemd</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Each scope reports memory and CPU to the registry, and the process panel shows it. Specialist runs, their extensions and their MCP servers share one slice with a total memory limit and a lower CPU weight. systemd-oomd watches that slice and, under pressure, stops the worst specialist run instead of letting the kernel kill the tmux server. Node processes get a heap cap per role through <code>NODE_OPTIONS</code>; Bun processes run with <code>--smol</code>, which collects garbage more often. A session idle beyond a limit with no claim saves a checkpoint and exits; <code>xt attach</code> resumes it.</dd>
+      <dt>Why here</dt><dd>It needs scopes (23). It comes before the registry (24) so the registry carries measured numbers from the start, and after 22b so a stopped specialist run can be resumed.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Measure first: the first week only samples and reports. Limits are set from those numbers, never guessed.</li><li>The session losses that <code>session-recovery</code> exists for were OOM kills. oomd on the specialists slice targets exactly that.</li></ul></div>
+      <details class="notes" data-step="s23b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 23b" placeholder="Questions and ideas for step 23b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">24</span><div class="step-body">
+      <div class="step-title"><b>Owned-resource registry and scope kill on exit</b><span class="chip new">new</span><span class="refs">XT-184 items 3–4</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One inventory of what each session owns: scope, MCP chains, worktree, branch, PR, claim, scratch dir. A session's exit ends its scope. The reaper reads only the inventory, never <code>pgrep -f</code>, and starts in dry run.</dd>
+      <dt>Why here</dt><dd>It needs scopes (23). The lifecycle (27) and the graph (44) read it.</dd></dl>
+      <p class="fold">Folded in: <b>XT-10</b> abandoned worktrees · <b>XT-174</b> per-activation scratch</p>
+      <details class="notes" data-step="s24"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 24" placeholder="Questions and ideas for step 24" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">25</span><div class="step-body">
+      <div class="step-title"><b>Lighter MCP chains; memory in xt status</b><span class="chip new">new</span><span class="refs">XT-184 items 5–6</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>GitNexus MCP as one direct process instead of three; per-session RSS and tasks in <code>xt status</code>.</dd>
+      <dt>Why here</dt><dd>Immediate load relief, and you can see step 23 working.</dd></dl>
+      <details class="notes" data-step="s25"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 25" placeholder="Questions and ideas for step 25" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">26</span><div class="step-body">
+      <div class="step-title"><b>The GitHub reconciler</b> <span class="new-badge">v2</span><span class="chip new">new</span><span class="refs">XT-178 amendment · XT-184</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One poller in the agent host, using conditional requests a few minutes apart. It is the only writer of PR state into Substrate (review, merged with SHA, closed). It also repairs a PR the host missed when its title, branch or trailer names a ref.</dd>
+      <dt>Why here</dt><dd>One event source serves three consumers: the lifecycle (27), the Jira status map (34) and the app. Built once, it adds no load per consumer.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your question · 10-29</span><ul><li>The reconciler links a PR to an Issue from evidence, in this order: the PR record the host wrote when it opened the PR; the <code>XTRM-Issue</code> trailers in the PR's commits; the Substrate ref in the branch name or title. Each link stores which evidence made it.</li><li>Trailers are the evidence that survives every way of landing code. A rebase merge rewrites SHAs but keeps messages. A squash merge on core, specialists and market-data keeps them too: those repos build the squash message from the commit messages (<code>COMMIT_MESSAGES</code>). A cherry-pick keeps the message.</li><li>A commit record keeps both SHAs: the one the agent made and the one that landed on the default branch (squash or rebase), so <code>sb provenance commit</code> finds either.</li><li>A merged PR with no evidence at all is listed by <code>sb links check</code>. The merge guard (15) refuses such a PR in the first place.</li></ul></div>
+      <details class="notes" data-step="s26"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 26" placeholder="Questions and ideas for step 26" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">27</span><div class="step-body">
+      <div class="step-title"><b>PR merged closes the Issue and reaps the worktree</b><span class="chip new">new</span><span class="refs">XT-184 lifecycle · XT-172 · XT-148</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The host pushes a writer's branch and opens one PR into the coordinator branch, recorded at once (14). On merge, the reconciler closes the Issue citing the PR record, stops the activation, and removes worktree and branch. Today 47 merged worktrees are never reaped.</dd>
+      <dt>Why here</dt><dd>It needs claims (21), the inventory (24), authors (20) and merge events (26).</dd></dl>
+      <p class="fold">Folded in: <b>XT-172</b> executor worktree and PR integration · <b>XT-148</b> parallel writers</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your question · 10-29</span><ul><li>Your case, a different PR lands the work: the trail is rebuilt from the commits, not from who opened the PR. The merged PR is linked to the Issue by its commits' trailers, the Issue moves to merged, and the original activation's receipt points at that PR.</li><li>Merged into the default branch is what counts. A writer PR merged into the coordinator branch is integration, not done. When the coordinator PR reaches main, each Issue whose trailered commits it contains gets its merged evidence. One PR can close several Issues.</li><li>Automatic close needs all of: a merged PR linked to the Issue, no other open PR linked to it, no live claim still working on it, and no deploy or production window in the contract. If any is missing, the Issue stays in merged and the coordinator's queue shows why.</li><li>Stopping and reaping apply only to the activation and worktree that own the branch, from the registry (24). If the work landed through another PR, the owning activation gets a message naming it. Its worktree is removed only when every commit on its branch is already in the default branch (patch-id check) and nothing is uncommitted; otherwise it is kept and flagged.</li><li>A revert of a trailered commit on main creates a reopen proposal for the coordinator. It never reopens the Issue by itself.</li><li>Today none of this happens: Substrate has no PR records, and only 9 of 746 receipts carry a commit SHA. Steps 14, 22 and 26 create the evidence; this step only reads it.</li></ul></div>
+      <details class="notes" data-step="s27"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 27" placeholder="Questions and ideas for step 27" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">28</span><div class="step-body">
+      <div class="step-title"><b>Launcher options and the process panel</b><span class="chip new">new</span><span class="refs">XT-184 operator proposals</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>xt --main</code> in the current folder (also outside git), a "HEAD is behind origin" warning, a full pre-launch summary, a <code>--window</code> fallback outside tmux, a launchable coordinator role, and a light <code>/processes</code> command that lists and kills the processes under the pane.</dd>
+      <dt>Why here</dt><dd>The panel reads the registry (24).</dd></dl>
+      <p class="fold">Folded in: <b>XT-166</b> window fallback, resume by attach · <b>XT-165</b> coordinator role via --role</p>
+      <details class="notes" data-step="s28"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 28" placeholder="Questions and ideas for step 28" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">28b</span><div class="step-body">
+      <div class="step-title"><b>A richer picker and a roster sidebar</b> <span class="new-badge">v4</span><span class="chip new">new</span><span class="refs">xtmux · XT-129</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>The xtmux picker for Pi and Claude shows the Issue, work stage, dispatcher, memory and last event. A tmux key opens a narrow read-only roster pane beside the current one. It refreshes on events instead of redrawing previews, so it stays light next to the full PREFIX+b picker.</dd>
+      <dt>Why here</dt><dd>The precise statuses come from the registry (24) and the stages (30), and the dispatcher from 19b.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>One renderer serves the sidebar, the picker and later the app's Sessions navigator (41).</li></ul></div>
+      <details class="notes" data-step="s28b"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 28b" placeholder="Questions and ideas for step 28b" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+  </ol>
+</section>
+
+<!-- PHASE 4 -->
+<section class="phase" style="--c:var(--sb);--t:var(--tint-bind)">
+  <div class="phase-head"><span class="tag">Phase 4 · XT-178</span><h2>Jira, GitHub and Substrate bound both ways</h2></div>
+  <p>Goal, from ruling D12: Jira tickets are the human-readable ADRs and Substrate holds the work. Version 2 adds GitHub as the third side. Each fact gets one owner; Substrate does not get slimmer.</p>
+  <figure class="fig small" style="margin:0">
+    <svg viewBox="0 0 760 300" role="img" aria-label="Field ownership between Jira and Substrate with events driving Jira status">
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a8581c"/></marker>
+      <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2a62c9"/></marker></defs>
+      <g font-family="Public Sans, sans-serif">
+        <rect x="10" y="20" width="250" height="260" rx="12" fill="#eaf0fb" stroke="#2a62c9"/>
+        <text x="26" y="48" font-size="17" font-weight="700" fill="#1c2321">Jira · for people</text>
+        <text x="26" y="68" font-size="11" fill="#2a62c9" font-family="JetBrains Mono, monospace">mercuryintel · XT, ISSUE</text>
+        <g font-size="13" fill="#1c2321">
+          <text x="26" y="100">Epic brief, written as an ADR</text>
+          <text x="26" y="124">Stories and sprints</text>
+          <text x="26" y="148">Assignee and priority</text>
+          <text x="26" y="172">Portfolio status</text>
+          <text x="26" y="196">Dev panel: branches, PRs</text>
+          <text x="26" y="220">Comments: results, reports</text>
+        </g>
+        <text x="26" y="258" font-size="11" fill="#5b6661">label substrate:&lt;ref&gt; + remote link</text>
+        <rect x="500" y="20" width="250" height="260" rx="12" fill="#f8ede3" stroke="#a8581c"/>
+        <text x="516" y="48" font-size="17" font-weight="700" fill="#1c2321">Substrate · for agents</text>
+        <text x="516" y="68" font-size="11" fill="#a8581c" font-family="JetBrains Mono, monospace">state.db on the server</text>
+        <g font-size="13" fill="#1c2321">
+          <text x="516" y="100">Seven-field contract</text>
+          <text x="516" y="124">Readiness and attestation</text>
+          <text x="516" y="148">Claims and leases</text>
+          <text x="516" y="172">Journal, resume capsule</text>
+          <text x="516" y="196">PR and commit records</text>
+          <text x="516" y="220">Leaf tasks, never mirrored</text>
+        </g>
+        <text x="516" y="258" font-size="11" fill="#5b6661">Jira binding: key + URL</text>
+        <g font-size="11" fill="#a8581c" text-anchor="middle">
+          <text x="380" y="34" font-weight="600">events drive Jira status</text>
+          <text x="380" y="50">claim → In corso</text>
+          <text x="380" y="64">PR open → In Review</text>
+          <text x="380" y="78">merged → Completata</text>
+        </g>
+        <path d="M496 94 C 430 86, 330 86, 264 94" stroke="#a8581c" stroke-width="1.6" fill="none" marker-end="url(#ar2)"/>
+        <rect x="280" y="108" width="200" height="98" rx="10" fill="#ffffff" stroke="#5b6661" stroke-dasharray="4 3"/>
+        <text x="380" y="132" font-size="13" font-weight="600" fill="#1c2321" text-anchor="middle">Binding</text>
+        <g font-size="11" fill="#5b6661" text-anchor="middle">
+          <text x="380" y="152" font-family="JetBrains Mono, monospace">sb jira bind</text>
+          <text x="380" y="168" font-family="JetBrains Mono, monospace">sb links check</text>
+          <text x="380" y="186">lists broken pairs</text>
+        </g>
+        <path d="M264 220 C 330 228, 430 228, 496 220" stroke="#2a62c9" stroke-width="1.6" fill="none" marker-end="url(#ar3)"/>
+        <g font-size="11" fill="#2a62c9" text-anchor="middle">
+          <text x="380" y="246">a brief edit in Jira raises</text>
+          <text x="380" y="260">a drift proposal; the contract</text>
+          <text x="380" y="274">is never rewritten</text>
+        </g>
+      </g>
+    </svg>
+    <figcaption>One owner per field. Status lives in Jira but moves only on Substrate events. Leaf tasks stay in Substrate.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li class="step"><span class="num">29</span><div class="step-body">
+      <div class="step-title"><b>Answer the three remaining decisions</b><span class="chip gate">you</span><span class="refs">XT-110 §1 · prompt 4</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Your answers on the primary ID (Jira key for epics and Stories, Substrate ref for leaves), brief authority (Jira only), and the Deferred category in XT. Two earlier questions are settled: GitHub for Jira is installed, and XTRM-versus-ISSUE was replaced by the move to XT.</dd>
+      <dt>Why here</dt><dd>XT-178 depends on them. I prepare a one-page list with a recommendation for each.</dd></dl>
+      <details class="notes" data-step="s29"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 29" placeholder="Questions and ideas for step 29" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">30</span><div class="step-body">
+      <div class="step-title"><b>Work stage model</b> <span class="new-badge">v3</span><span class="chip new">new</span><span class="refs">XT-178 · packages/substrate</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Substrate derives the stage of each Issue (draft, ready, in progress, in review, merged, done, plus blocked and stalled) from attestation, claims, edges and PR records. Each change writes an <code>issue.stage_changed</code> event. <code>sb issue show</code>, the board and <code>sb issue ready</code> show it.</dd>
+      <dt>Why here</dt><dd>It comes after the decisions (29) and before the Jira setup (31), so the Jira statuses copy the stages. The status map (34) then has one event to follow.</dd></dl>
+      <details class="notes" data-step="s30"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 30" placeholder="Questions and ideas for step 30" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">31</span><div class="step-body">
+      <div class="step-title"><b>Configure the XT project in Jira</b><span class="chip gate">you</span><span class="refs">XT-110 phase 1</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Renamed transitions; In Review, waiting-production, Blocked and Won't Do statuses that match the work stages; Substrate ref and Readiness fields, label namespaces, workflow and labels exported first. The GitHub for Jira connection is checked per repo.</dd>
+      <dt>Why here</dt><dd>The status map (34) needs these statuses. Only an admin in the Jira UI can change team-managed workflows; about one hour.</dd></dl>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>The setup steps also go into the product-management skill as a reference (step 46), so another user can map a different board.</li></ul></div>
+      <details class="notes" data-step="s31"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 31" placeholder="Questions and ideas for step 31" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">32</span><div class="step-body">
+      <div class="step-title"><b>Plan XTRM-639's children with full contracts</b><span class="chip draft">draft</span><span class="refs">XTRM-639</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One child per step 33–37, each passing <code>sb issue validate</code>, with no added host memory or CPU.</dd>
+      <dt>Why here</dt><dd>Contracts follow the decisions in step 29.</dd></dl>
+      <details class="notes" data-step="s32"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 32" placeholder="Questions and ideas for step 32" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">33</span><div class="step-body">
+      <div class="step-title"><b><code>sb jira bind</code> and <code>sb links check</code></b> <span class="new-badge">v2</span><span class="chip new">new</span><span class="refs">XT-178 scope 1–2 · XT-179 · XT-169</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One command binds a Jira item and an Issue: the label, the remote link, and a binding row in Substrate. <code>sb links check</code> lists closed Issues without a record, merged PRs on open Issues, open PRs on closed Issues, stale Jira statuses and unbound items. A reparent verb fixes misplaced Issues.</dd>
+      <dt>Why here</dt><dd>The coordinator stops typing keys by hand, and drift becomes visible. The check needs the bulk edges read path.</dd></dl>
+      <p class="fold">Folded in: <b>XT-179</b> bulk edges read path · <b>XT-169</b> reparent verb</p>
+      <details class="notes" data-step="s33"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 33" placeholder="Questions and ideas for step 33" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">34</span><div class="step-body">
+      <div class="step-title"><b>Jira sender and status map</b><span class="chip new">new</span><span class="refs">XT-178 scope 3 · XT-110 phase 3</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A Jira sender on the existing outbox. Each <code>issue.stage_changed</code> event fires the matching transition as xtrm-bot. Closures and receipts post as comments, each citing the PR link from Substrate.</dd>
+      <dt>Why here</dt><dd>It needs bindings (33), statuses (31), claims (21) and reconciler events (26).</dd></dl>
+      <details class="notes" data-step="s34"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 34" placeholder="Questions and ideas for step 34" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">35</span><div class="step-body">
+      <div class="step-title"><b>Test Teamwork Graph CLI as the read path</b><span class="chip draft">draft</span><span class="refs">XT-168</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A read-only trial against <code>jira.py</code> and <code>gh</code>, with a pinned installer, quarantined skills and no admin login. TWG also reads the dev panel, so it is a candidate for cross-checking links.</dd>
+      <dt>Why here</dt><dd>It decides whether the inbox (36) reads through TWG or plain JQL.</dd></dl>
+      <details class="notes" data-step="s35"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 35" placeholder="Questions and ideas for step 35" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">36</span><div class="step-body">
+      <div class="step-title"><b>Read changes back from Jira</b><span class="chip new">new</span><span class="refs">XT-110 phase 3</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A JQL cursor poll feeds intake events; a brief edit raises a drift proposal; <code>sb jira pull KEY</code> maps a brief into the seven fields.</dd>
+      <dt>Why here</dt><dd>Sending works alone; receiving with drift handling is the riskier half.</dd></dl>
+      <details class="notes" data-step="s36"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 36" placeholder="Questions and ideas for step 36" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">37</span><div class="step-body">
+      <div class="step-title"><b>Backfill the links that exist only as text</b> <span class="new-badge">v2</span><span class="chip gate">you</span><span class="refs">XT-178 amendment</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A dry-run parser turns the 2,468 PR mentions in close reasons into proposed PR records, and the Substrate refs listed in Jira theme tickets into proposed bindings. You approve; rows are marked <code>source=backfill</code>.</dd>
+      <dt>Why here</dt><dd>After bind (33) and check (33) exist, so backfilled links are checked like new ones.</dd></dl>
+      <details class="notes" data-step="s37"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 37" placeholder="Questions and ideas for step 37" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">38</span><div class="step-body">
+      <div class="step-title"><b>Clean the boards with the new rules</b><span class="chip gate">you</span><span class="refs">XT-110 phase 2 · jira-cleanup</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Parents for every non-epic, labels mapped, Relates links for follow-ups, the XTRM archive finished. The old backlog XT-1 to XT-83 is triaged: close, fold or keep. You approve each change.</dd>
+      <dt>Why here</dt><dd>Clean once, into a shape the sync keeps.</dd></dl>
+      <details class="notes" data-step="s38"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 38" placeholder="Questions and ideas for step 38" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+  </ol>
+</section>
+
+<!-- PHASE 5 -->
+<section class="phase" style="--c:var(--app);--t:var(--tint-app)">
+  <div class="phase-head"><span class="tag">Phase 5 · XT-110 + XT-104</span><h2>xtrm-app: one place to work</h2></div>
+  <p>Goal, from XT-104: "I want to stay here, not in the terminal, not another harness."</p>
+  <ol class="steps">
+    <li class="step"><span class="num">39</span><div class="step-body">
+      <div class="step-title"><b>Choose the design direction</b><span class="chip gate">you</span><span class="refs">XTRM-628 · ADR-001 · XT-104</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Your pick among focus canvas, cockpit, or fleet and focus, after the component study and a Claude design pass.</dd>
+      <dt>Why here</dt><dd>ADR-001 requires design first. It needs only your time, so it can run during phases 3 and 4.</dd></dl>
+      <details class="notes" data-step="s39"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 39" placeholder="Questions and ideas for step 39" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">40</span><div class="step-body">
+      <div class="step-title"><b>Agent host Jira client and the J / S / S·J model</b><span class="chip new">new</span><span class="refs">XT-110 slice 1</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One client in the agent host, shared with Substrate, with the token kept on the host. Items are Jira-only, Substrate-only or linked, each with its PRs.</dd>
+      <dt>Why here</dt><dd>It reuses the sender (34). Linked items exist because of phase 4.</dd></dl>
+      <details class="notes" data-step="s40"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 40" placeholder="Questions and ideas for step 40" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">41</span><div class="step-body">
+      <div class="step-title"><b>Sessions navigator</b><span class="chip draft">draft</span><span class="refs">XTRM-630 · XT-105</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Navigation from live tmux sessions, attention first, in rows that move only on state change.</dd>
+      <dt>Why here</dt><dd>It needs the released topology feed (18), correct pane states (13) and the registry (24).</dd></dl>
+      <details class="notes" data-step="s41"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 41" placeholder="Questions and ideas for step 41" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">42</span><div class="step-body">
+      <div class="step-title"><b>Merged list, drawer and issue page</b><span class="chip new">new</span><span class="refs">XT-110 slices 2–4</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>One list across Jira and Substrate with source marks, sync dots, owner glyphs and a PR column (state, checks, merge). The issue page has the brief first, then the contract, then one timeline of comments, Journal entries, PR events and receipts.</dd>
+      <dt>Why here</dt><dd>It uses the model (40), the design (39) and the PR records (14, 26).</dd></dl>
+      <details class="notes" data-step="s42"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 42" placeholder="Questions and ideas for step 42" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">43</span><div class="step-body">
+      <div class="step-title"><b><code>@jira:</code> and <code>@pr:</code> references</b><span class="chip new">new</span><span class="refs">XT-110 slice 8</span></div>
+      <dl class="pair"><dt>Brings</dt><dd><code>@jira:XT-178</code> sits next to <code>@issue:</code>, <code>@agent:</code> and <code>@pr:</code>, and each resolves to its linked partners.</dd>
+      <dt>Why here</dt><dd>Small once the client and the links exist.</dd></dl>
+      <details class="notes" data-step="s43"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 43" placeholder="Questions and ideas for step 43" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">44</span><div class="step-body">
+      <div class="step-title"><b>Graph workspace</b><span class="chip new">new</span><span class="refs">XT-110 slice 5 · XT-105</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Jira item → Issue → agent → session → worktree → branch → PR → commit, with every node opening its own surface.</dd>
+      <dt>Why here</dt><dd>Every edge comes from a stored link: the registry (24), PR records (14, 26) and bindings (33). Built earlier, the graph would have no edges.</dd></dl>
+      <details class="notes" data-step="s44"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 44" placeholder="Questions and ideas for step 44" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">45</span><div class="step-body">
+      <div class="step-title"><b>Your 30-minute working session</b><span class="chip gate">you</span><span class="refs">XT-104 acceptance</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>Screenshots match the design; no layout shift while streaming; the 45-test host suite stays green; it works over SSH and Tailscale; then 30 minutes of real work.</dd>
+      <dt>Why here</dt><dd>XT-104 closes on your verdict, because XTRM-557 passed every test and still looked wrong.</dd></dl>
+      <details class="notes" data-step="s45"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 45" placeholder="Questions and ideas for step 45" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+  </ol>
+</section>
+
+<!-- PHASE 6 -->
+<section class="phase" style="--c:var(--pub);--t:var(--tint-loop)">
+  <div class="phase-head"><span class="tag">Phase 6</span><h2>The programme loop runs itself</h2></div>
+  <ol class="steps">
+    <li class="step"><span class="num">46</span><div class="step-body">
+      <div class="step-title"><b>The programme skill becomes product-management</b><span class="chip new">new</span><span class="refs">XT-110 phase 5 · XT-163</span></div>
+      <dl class="pair"><dt>Brings</dt><dd>A window issue created in Substrate creates the Jira Task with parent, sprint and link. The daily report is written once. The skill loses every step about copying keys, PR numbers and statuses.</dd>
+      <dt>Why here</dt><dd>It is the payoff of phases 4 and 5, and it answers the original complaint.</dd></dl>
+      <p class="fold">Folded in: <b>XT-163</b> programme-coordination final rewrite</p>
+      <div class="ruling"><span class="ruling-k">Ruling on your note · 10-29</span><ul><li>Rename programme-coordination to product-management. Today it is 446 lines of SKILL.md plus 1,258 lines of references.</li><li>SKILL.md keeps the daily loop. Each surface (Substrate, Jira, fleet, AgentRun) is a reference loaded on demand.</li><li>New reference: Jira board setup for Substrate. It covers the minimal steps and a mapping table: work stages to Jira statuses, Issue kinds to Jira types, the Substrate ref field and remote link, GitHub for Jira, the bot account, the <code>actor=agent</code> label. A user with other preferences fills in their own column.</li><li>Self-improvement lands as a reviewed change with evidence, not as edits in place. The skill folder holds two <code>.bak</code> copies from 10-28 edits today.</li></ul></div>
+      <div class="ruling"><span class="ruling-k">Ruling · 10-30</span><ul><li>Product-management becomes the programme-scale reference of the new <code>coordinator</code> role (22d), next to planning, multiplexing and the chain recipes. The Jira board setup reference lives here.</li></ul></div>
+      <details class="notes" data-step="s46"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step 46" placeholder="Questions and ideas for step 46" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+  </ol>
+</section>
+
+<section>
+  <h2>Not in this plan</h2>
+  <div class="note">
+    <p><b>Separate programmes:</b> XT-131 (codemode) and XT-132 (coordinators on Specialists and AgentRun), with their decision tickets XT-138 to XT-150, XT-164 and XT-171. They share no blocking dependency with this plan, except XT-172 and XT-148, which are folded into step 27.</p>
+    <p><b>Infrastructure:</b> XT-7 (CI runner disk) and XT-9 (filesystem alert) belong to the infra repo.</p>
+    <p><b>Monorepo migration:</b> deferred by your ruling of 10-29. <code>docs/monorepo-migration.md</code> is a draft from June and needs re-checking against today's repos before it is picked up.</p>
+    <p><b>Old backlog:</b> XT-1 to XT-83 are triaged in step 38.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Where the work runs</h2>
+  <figure class="fig small" style="margin:0">
+    <svg viewBox="0 0 760 210" role="img" aria-label="The server holds the single Substrate database and the agent host; the PC uses an sb wrapper over SSH">
+      <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6661"/></marker></defs>
+      <g font-family="Public Sans, sans-serif">
+        <rect x="10" y="20" width="330" height="170" rx="12" fill="#ffffff" stroke="#1f5a85"/>
+        <text x="26" y="48" font-size="16" font-weight="700" fill="#1c2321">Server · the authority</text>
+        <g font-size="13" fill="#1c2321">
+          <text x="26" y="78">~/.xtrm/state.db, the only Substrate</text>
+          <text x="26" y="102">Agent host: registry, reconciler, Jira</text>
+          <text x="26" y="126">Bound agents: xt claude | pi, specialists</text>
+          <text x="26" y="150">Mercury timers and cron (not copied)</text>
+        </g>
+        <rect x="420" y="20" width="330" height="170" rx="12" fill="#ffffff" stroke="#2f7a4f"/>
+        <text x="436" y="48" font-size="16" font-weight="700" fill="#1c2321">This PC · the same stack</text>
+        <g font-size="13" fill="#1c2321">
+          <text x="436" y="78">Same repos, tools, settings, tmux</text>
+          <text x="436" y="102">sb = SSH wrapper to the server</text>
+          <text x="436" y="126">Unbound local sessions edit freely</text>
+          <text x="436" y="150">Remote Control into server sessions</text>
+        </g>
+        <path d="M418 92 H342" stroke="#5b6661" stroke-width="1.6" marker-end="url(#ar4)"/>
+        <text x="380" y="84" font-size="11" fill="#5b6661" text-anchor="middle">sb over ssh</text>
+        <path d="M342 136 H418" stroke="#5b6661" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar4)"/>
+        <text x="380" y="128" font-size="11" fill="#5b6661" text-anchor="middle">manifest diff</text>
+      </g>
+    </svg>
+    <figcaption>One database, two machines. Step 7 turns the SSH wrapper into a proper remote client.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>What I need from you, in order</h2>
+  <ol class="steps" style="--c:var(--own)">
+    <li class="step"><span class="num">A</span><div class="step-body"><p>Run prompts 1 and 2 on the server, and run <code>gh auth login</code> on this PC. That unblocks steps 4–5.</p>
+      <details class="notes" data-step="sA"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step A" placeholder="Questions and ideas for step A" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">B</span><div class="step-body"><p>Approve the local sync (step 5) once CORE-2513 has merged.</p>
+      <details class="notes" data-step="sB"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step B" placeholder="Questions and ideas for step B" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">C</span><div class="step-body"><p>Approve publishing at step 18 and the backfill at step 37.</p>
+      <details class="notes" data-step="sC"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step C" placeholder="Questions and ideas for step C" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">D</span><div class="step-body"><p>About an hour of Jira admin at step 31, three answers at step 29, and the design pick at step 39, which can happen any time before phase 5.</p>
+      <details class="notes" data-step="sD"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step D" placeholder="Questions and ideas for step D" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+    <li class="step"><span class="num">E</span><div class="step-body"><p>Fix the xtrm-dev billing lock (step 4b). Until then no check on core can pass.</p>
+      <details class="notes" data-step="sE"><summary>Your notes<span class="has">· has notes</span></summary><textarea aria-label="Notes for step E" placeholder="Questions and ideas for step E" disabled></textarea><div class="st" aria-live="polite">Loading…</div></details></div></li>
+  </ol>
+</section>
+
+<footer>
+  <p>Each step has a notes box. Your notes save to this site as you type, and Claude reads them back with the site owner's key.</p>
+  <p>Sources: Jira XT-104, XT-110, XT-114 with themes XT-125 to XT-130, XT-168, XT-178 (amendment of 2026-10-28), XT-184, XT-190, and the open XT list. Substrate CORE-2376, CORE-2377, CORE-2513, CORE-2538, CORE-2381, CORE-2536, XTRM-639. Server <code>state.db</code>, read-only, on 2026-10-28 and 10-29. GitHub billing usage and check runs for xtrm-dev. specialists and core source on the server. Jira dev-status for XT-114, and GitHub org app installations. Steps marked "new" have no Substrate issue yet; I file them when the phase starts.</p>
+</footer>
+
+</div>
+
+
+<script>
+(async () => {
+  const API = './.herenow/data/notes';
+  const boxes = [...document.querySelectorAll('details.notes')];
+  const byStep = new Map(boxes.map(b => [b.dataset.step, b]));
+  const state = new Map(boxes.map(b => [b.dataset.step, { id: null, dirty: false, saving: false, timer: null }]));
+  const stamp = d => new Date(d).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const mark = (b, text) => b.classList.toggle('filled', !!text.trim());
+  const say = (b, msg, err) => { const s = b.querySelector('.st'); s.textContent = msg; s.classList.toggle('err', !!err); };
+  const errText = async r => { try { const j = await r.json(); return j.message || j.error || ('HTTP ' + r.status); } catch (e) { return 'HTTP ' + r.status; } };
+
+  async function load() {
+    const latest = new Map();
+    let cursor = '';
+    do {
+      const r = await fetch(API + '?limit=100' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''), { cache: 'no-store' });
+      if (!r.ok) throw new Error(await errText(r));
+      const j = await r.json();
+      for (const rec of j.records || []) {
+        const k = rec.data && rec.data.step; if (!k) continue;
+        const prev = latest.get(k);
+        if (!prev || rec.updatedAt > prev.updatedAt) latest.set(k, rec);
+      }
+      cursor = j.nextCursor || '';
+    } while (cursor);
+    latest.forEach((rec, k) => {
+      const b = byStep.get(k), s = state.get(k); if (!b) return;
+      s.id = rec.id;
+      const ta = b.querySelector('textarea');
+      if (s.dirty || s.saving || document.activeElement === ta) return;
+      const text = String(rec.data.text || '');
+      if (ta.value !== text) ta.value = text;
+      mark(b, text);
+      say(b, text ? 'Saved ' + stamp(rec.updatedAt) : '');
+    });
+  }
+
+  async function save(k) {
+    const b = byStep.get(k), s = state.get(k), ta = b.querySelector('textarea');
+    clearTimeout(s.timer); s.timer = null;
+    if (!s.dirty || s.saving) return;
+    s.saving = true; s.dirty = false; say(b, 'Saving…');
+    const text = ta.value;
+    try {
+      const r = s.id
+        ? await fetch(API + '/' + s.id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+        : await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ step: k, text }) });
+      if (!r.ok) throw new Error(await errText(r));
+      const { record } = await r.json();
+      s.id = record.id;
+      say(b, 'Saved ' + stamp(record.updatedAt));
+    } catch (e) {
+      s.dirty = true;
+      say(b, 'Not saved: ' + e.message + '. It retries when you type again or leave the box.', true);
+    } finally {
+      s.saving = false;
+      if (s.dirty && ta.value !== text) s.timer = setTimeout(() => save(k), 2000);
+    }
+  }
+
+  try { await load(); }
+  catch (e) { boxes.forEach(b => say(b, 'Notes could not load: ' + e.message, true)); return; }
+  boxes.forEach(b => {
+    const k = b.dataset.step, ta = b.querySelector('textarea'), s = state.get(k);
+    ta.disabled = false;
+    if (!ta.value) say(b, '');
+    ta.addEventListener('input', () => { s.dirty = true; mark(b, ta.value); say(b, 'Editing…'); clearTimeout(s.timer); s.timer = setTimeout(() => save(k), 2000); });
+    ta.addEventListener('blur', () => save(k));
+  });
+  window.addEventListener('pagehide', () => state.forEach((s, k) => { if (s.dirty) save(k); }));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load().catch(() => {}); });
+})();
+</script>
+<button id="nx" type="button">Copy all notes</button>
+<div id="nxp" hidden><p id="nxm"></p><textarea readonly aria-label="All notes"></textarea></div>
+<script>
+(() => {
+  const btn = document.getElementById('nx'), pane = document.getElementById('nxp'), msg = document.getElementById('nxm'), out = pane.querySelector('textarea');
+  btn.addEventListener('click', async () => {
+    if (!pane.hidden) { pane.hidden = true; btn.textContent = 'Copy all notes'; return; }
+    const parts = [];
+    document.querySelectorAll('details.notes').forEach(d => {
+      const t = d.querySelector('textarea').value.trim(); if (!t) return;
+      const li = d.closest('.step'), n = li.querySelector('.num').textContent.trim(), title = li.querySelector('.step-title b').textContent.trim();
+      parts.push('## Step ' + n + ' — ' + title + '\n' + t);
+    });
+    const text = parts.length ? parts.join('\n\n') : '';
+    out.value = text; pane.hidden = false; btn.textContent = 'Close';
+    if (!text) { msg.textContent = 'No notes found. If boxes still say "Loading…", wait a moment and try again.'; return; }
+    try { await navigator.clipboard.writeText(text); msg.textContent = parts.length + ' notes copied. Paste them into Claude Code.'; }
+    catch (e) { out.focus(); out.select(); msg.textContent = parts.length + ' notes. The text is selected: press Ctrl+C, then paste it into Claude Code.'; }
+  });
+})();
+</script>
+</body>
+</html>
