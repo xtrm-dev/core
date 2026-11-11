@@ -73,8 +73,9 @@ claude plugin marketplace add xtrm-dev/specialists   # once; the marketplace is 
 claude plugin install skill-suggest@xtrm
 ```
 
-A new session loads it; an open session does not. `claude plugin update skill-suggest@xtrm` picks up a new
-version. Claude Code keys its plugin cache on the `version` in `.claude-plugin/plugin.json`, so a change to the
+A new session loads it; an open session does not. To pick up a new version, run
+`claude plugin marketplace update xtrm`, then `claude plugin update skill-suggest@xtrm`, then `/reload-plugins` or
+restart. Claude Code keys its plugin cache on the `version` in `.claude-plugin/plugin.json`, so a change to the
 plugin ships to installed users only when that version is bumped.
 
 To try a local checkout in one session without installing it:
