@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1",
+  "name": "project-management",
+  "version": "1.4.0",
+  "description": "Run multi-week engineering projects with a coordinator, Substrate as the single record and Jira as the operator view",
+  "skills": [
+    "project-management",
+    "board-audit",
+    "tabellone-keeper"
+  ]
+}

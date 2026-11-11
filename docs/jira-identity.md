@@ -15,7 +15,7 @@ A process is an agent when `SUBSTRATE_HOLDER` is set, or when a `claude`, `pi` o
 | Isolated `HOME` with the bot's acli profile | `~/.xtrm/identities/atlassian-agent/home` | `xt jira setup` |
 | acli shim | `~/.local/bin/acli` (must come before the real `acli` on `PATH`) | `xt jira setup` |
 
-`jira.py` (programme-coordination) reads `identity.json`. `xt` never writes, copies or prints the token.
+`jira.py` (project-management) reads `identity.json`. `xt` never writes, copies or prints the token.
 
 ## Set up
 
@@ -51,7 +51,7 @@ Labels: an agent create, create-bulk, field edit and transition add the label `a
 - Edit: `jira.py PUT /rest/api/3/issue/<KEY>` (also with a query string) adds `update.labels` `{"add": "actor=agent"}` and keeps the caller's `fields` and `update`. Jira refuses one field in both `fields` and `update`, so a caller's `fields.labels` (a replace) gets the label inside its own list. Other PUT routes (`/assignee`, `/comment/<id>`) are untouched. `acli jira workitem edit` gets `--labels actor=agent` (acli adds to the existing labels), or `actor=agent` appended to the caller's `--labels` value, or `labelsToAdd` in the private `--from-json` copy. An edit that removes the label (`--remove-labels` or `labelsToRemove` naming `actor=agent`) is left as it is.
 - Transition: the label goes on first, then the status moves. `jira.py transition` sends `update.labels add`; the shim runs `acli jira workitem edit` with the same `--key`, `--jql` or `--filter` and `--labels actor=agent --yes`. When the label step fails, a warning goes to stderr and the transition still runs.
 
-After a change to the shim, run `xt jira setup` again to install it; `xt jira doctor` (`shim current`) tells when that is due. `jira.py` is part of the programme-coordination skill.
+After a change to the shim, run `xt jira setup` again to install it; `xt jira doctor` (`shim current`) tells when that is due. `jira.py` is part of the project-management skill.
 
 ## Default assignee
 
