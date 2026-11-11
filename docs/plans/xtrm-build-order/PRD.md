@@ -741,7 +741,7 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 
 ### Step 14 — Substrate records PRs and commits
 
-(v2) [partly done] [new] `XT-178 amendment · prj_xtrm · XTRM-725 · XTRM-726 … 730`
+(v2) [done] [new] `XT-178 amendment · prj_xtrm · XTRM-725 · XTRM-726 … 730`
 
 - **Brings** — A new `sb provenance attach <ref> pr github:org/repo#n` verb, using the existing `attachArtifact`. The host records the PR (number, URL, head SHA) in the same step that opens it, and the commit SHA at receipt. `sb issue show` and `trace` print them as clickable links.
 - **Why here** — It is the core of your ruling: an open PR means Substrate has its number and link. It ships in this release, so every PR from phase 3 on is recorded.
@@ -764,8 +764,10 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - Delivery in five slices, each shippable alone: schema and read model with a dry-run check; writers; reconciler; enforcement (last, flagged, warn-only first); console.
 > - Filed 11-11: the epic is `XTRM-725`; the slices are `XTRM-726` schema, read model and `sb links check` dry run, `XTRM-727` T1 and T2 writers, `XTRM-728` reconciler, `XTRM-729` close gate and `sb links check`, `XTRM-730` console. `XTRM-734` (parseTrailers keeps only the last `XTRM-Issue` trailer) blocks `XTRM-727`.
 
-> **Filed · 11-11 · slice status**
-> - Shipped: `XTRM-726` (schema, read model and the `sb links check` dry run) and `XTRM-727` (the T1 and T2 writers) are done. `XTRM-728` (the reconciler) is in review as xtrm#345. `XTRM-729` (the close gate) carries no attestation yet, and `XTRM-730` (the console) is still a draft.
+> **Delivered · 11-11 · all five linking slices merged**
+> - Each was reviewed by the xtrm-reviewer App at its exact head: `XTRM-726` schema, read model and `sb links check` dry run (xtrm#340, `a7618c09`); `XTRM-727` the T1 and T2 writers (xtrm#344, `f5aee0d2`); `XTRM-728` the reconciler (xtrm#345, `5eeeb9b7`); `XTRM-729` the close gate (xtrm#347, `50e21f02`); `XTRM-730` the console PR block, timeline and board column (xtrm#353, `6cbf97a4`). `XTRM-734` (xtrm#341) reads every trailer, not only the last.
+> - The host side: `CORE-2607` (core#912, `c9cf3777`) makes the `gh pr create` shim record the PR on its Issue as it opens it: `sb provenance attach` for T1, then `sb issue link pr` with the commit range for T2. It fails open with one warning.
+> - Delivered is not deployed. Live use needs an `sb` deploy: the `sb` on the operator PC is 0.2.6, which predates these verbs, so the shim warns once and skips until then. The epic `XTRM-725` stays open for that.
 
 ### Step 15 — Gates refuse unlinked work
 
@@ -802,6 +804,10 @@ Folded in: **XT-167** close succeeds after the claim lapsed · **CORE-2527** to 
 > **Filed · 11-11 · identity Apps shipped**
 > - Merged 11-11, each reviewed at its exact head: #887 (an override is refused when the head it names does not resolve), #888 (a numeric `appId` is accepted, and receipt payloads use the bounded Journal fields), #889 (the guard is on by default for launched agents, and an inherited value is forwarded explicitly, so a coordinator’s `off` reaches its workers as `off`), #892 (the agent-identities skill: three roles, the export rule, and the failures seen live), #909 (one shared receipt diagnostic, plus the CORE-2606 review lows).
 > - The receipt root cause is fixed on main (#888, #909); a host gets it once its core checkout is updated. `review-post`, `merge-check` and `merge-record` now write a receipt the Journal accepts. Still open here: `pr-review-gate`’s link check and the template fan-out to the 16 repos; `sb issue close`’s PR-or-commit requirement behind XTRM-729, which has no attestation yet.
+
+> **Delivered · 11-11 · the close gate merged**
+> - `XTRM-729` merged as xtrm#347 (`50e21f02`): the close gate reads the link rows at the done transition. `XTRM_LINK_GATE` is `warn` by default (`enforce` and `off` are opt-in), only `outcome=completed` is gated, `beads-import` and `beads-repair` are named exemptions, and `--gate-override` records why. `sb links check` shows each verdict.
+> - Still open in this step: switching the gate to `enforce`, the claim refusing a contract that fails `sb issue validate`, and the pr-review-gate fan-out. Live use needs an `sb` deploy: the `sb` on the operator PC is 0.2.6, which predates these verbs, so the shim warns once and skips until then.
 
 ### Step 15b — A review is a step in the trail, not a new issue
 
@@ -1125,7 +1131,7 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 
 ### Step 26 — The GitHub reconciler
 
-(v2) [new] `XT-178 amendment · XT-184 · XTRM-728`
+(v2) [partly done] [new] `XT-178 amendment · XT-184 · XTRM-728`
 
 - **Brings** — One poller in the agent host, using conditional requests a few minutes apart. It is the only writer of PR state into Substrate (review, merged with SHA, closed). It also repairs a PR the host missed when its title, branch or trailer names a ref.
 - **Why here** — One event source serves three consumers: the lifecycle (27), the Jira status map (34) and the app. Built once, it adds no load per consumer.
@@ -1139,8 +1145,9 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 > **Ruling · 11-11 · design note**
 > - The reconciler is trailer-first. A trailer receipt must belong to the issue being linked; a foreign one gives `mentioned` plus a check finding. Title and branch references only ever give `mentioned`. Each row keeps its source. Live PR state lives in a separate `pull_requests` table.
 
-> **Filed · 11-11 · slice 3 in review**
-> - `XTRM-728` implements this step and is in review as xtrm#345: `sb links sync`, a one-shot reconciler over conditional `gh api` reads (`If-None-Match`, `If-Modified-Since`; a 304 writes nothing), with trailer-first linkage, the cross-issue guard and live PR state in its own `pull_requests` table. Until it merges, nothing writes PR state into Substrate automatically.
+> **Delivered · 11-11 · the reconciler merged**
+> - `XTRM-728` merged as xtrm#345 (`5eeeb9b7`): `sb links sync`, a one-shot reconciler over conditional `gh api` reads (`If-None-Match`, `If-Modified-Since`; a 304 writes nothing), with trailer-first linkage, the cross-issue guard and live PR state in its own `pull_requests` table.
+> - Still to build here: running it on a schedule in the agent host (today it runs when called), and serving the consumers in steps 27 and 34. Live use needs an `sb` deploy: the `sb` on the operator PC is 0.2.6, which predates these verbs, so the shim warns once and skips until then.
 
 ### Step 27 — PR merged closes the Issue and reaps the worktree
 
